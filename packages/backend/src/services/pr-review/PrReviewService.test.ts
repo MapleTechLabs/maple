@@ -44,8 +44,6 @@ import {
 	VcsProviderRegistry,
 	type VcsProviderRegistryApi,
 } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
@@ -91,8 +89,8 @@ const chatSessionsFake = (begun: Array<Begun>, aborted: Array<string>, options: 
 			begun.push({ sessionId: input.sessionId, text: input.text })
 			return { cursor: 0, messageId: "m", turnMessageId: "t" }
 		},
-		abort: async () => {
-			aborted.push(sessionId)
+		abort: async (reason) => {
+			aborted.push(`${sessionId} (${reason ?? "none"})`)
 		},
 	}))
 
@@ -105,7 +103,6 @@ const layerFor = (
 		readonly publishFails?: boolean
 		readonly busy?: boolean
 		readonly withWorkerEnv?: boolean
-		readonly rolledOut?: boolean
 		readonly threads?: ReadonlyArray<PullRequestReviewThread>
 		readonly resolvedThreads?: Array<string>
 		/** Present: pushes are debounced through this queue, which records what it was sent. */
@@ -280,10 +277,6 @@ const layerFor = (
 				options.telemetry === undefined
 					? Layer.empty
 					: Layer.succeed(PrReviewTelemetryService, telemetryReaderFake(options.telemetry)),
-				OrganizationFeatureFlagsService.fixed({
-					...ENABLED_ORGANIZATION_FEATURE_FLAGS,
-					prReview: options.rolledOut ?? true,
-				}),
 			),
 		),
 	)
@@ -543,19 +536,6 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
 
-	it.effect("does nothing for an organization outside the staged rollout, even with the switch on", () => {
-		const testDb = createTestDb(trackedDbs)
-		const begun: Array<Begun> = []
-		return Effect.gen(function* () {
-			yield* seed(true)
-			const reviews = yield* PrReviewService
-			const outcome = yield* reviews.onPullRequestEvent(orgId, job())
-			assert.equal(outcome.outcome, "skipped")
-			assert.equal(outcome.skipReason, "not_rolled_out")
-			assert.equal(begun.length, 0)
-		}).pipe(Effect.provide(layerFor(testDb, { begun, rolledOut: false })))
-	})
-
 	it.effect("does nothing for a repository that has not opted in", () => {
 		const testDb = createTestDb(trackedDbs)
 		const begun: Array<Begun> = []
@@ -618,7 +598,7 @@ describe("PrReviewService.onPullRequestEvent", () => {
 				job({ action: "synchronize", headSha: HEAD_2 }),
 			)
 			assert.equal(second.outcome, "started")
-			assert.deepEqual(aborted, [`${orgId}:pr-${first.reviewId}`])
+			assert.deepEqual(aborted, [`${orgId}:pr-${first.reviewId} (superseded)`])
 			const superseded = yield* reviews.getReview(orgId, first.reviewId!)
 			assert.equal(Option.getOrThrow(superseded).status, "skipped")
 			assert.equal(Option.getOrThrow(superseded).skipReason, "superseded")
@@ -2065,6 +2045,66 @@ describe("PrReviewService before-merge checklist", () => {
 				["Create the flag"],
 			)
 		}).pipe(Effect.provide(layerFor(testDb, {})))
+	})
+})
+
+describe("PrReviewService privacy scan", () => {
+	const leaky: PullRequestFile = {
+		path: "apps/api/src/auth.ts",
+		previousPath: null,
+		status: "modified",
+		additions: 2,
+		deletions: 0,
+		patch: [
+			"@@ -1,1 +1,3 @@",
+			" export const login = (user: User) => {",
+			'+\tspan.setAttribute("user.email", user.email)',
+			'+\tlogger.warn("bad login", { password })',
+		].join("\n"),
+	}
+
+	it.effect("files what the diff writes to telemetry, unless the reviewer filed it on those lines", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						new PrReviewFinding({
+							path: "apps/api/src/auth.ts",
+							line: 3,
+							category: "security",
+							checkId: "PII-01",
+							severity: "critical",
+							title: "`password` from the login form is logged in clear",
+							body: "Every failed login writes the submitted password to the log.",
+						}),
+					]),
+				}),
+			)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.deepStrictEqual(
+				stored.report?.findings.map((finding) => [
+					finding.line,
+					finding.severity,
+					finding.checkId,
+					finding.title,
+				]),
+				[
+					[3, "critical", "PII-01", "`password` from the login form is logged in clear"],
+					[2, "warn", "PII-01", "Personal data `user.email` written to a span attribute"],
+				],
+			)
+			assert.include(
+				published[0]!.comments.map((comment) => comment.body).join("\n"),
+				"security · PII-01",
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { published, prFiles: [leaky] })))
 	})
 })
 

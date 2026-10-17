@@ -78,6 +78,9 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 					htmlUrl: repo.htmlUrl,
 					isPrivate: repo.isPrivate,
 					isArchived: repo.isArchived,
+					...(repo.syncStatus === "error"
+						? { syncError: repo.lastSyncError ?? "the last sync failed" }
+						: undefined),
 				})),
 			}
 		}),
@@ -101,7 +104,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 							doc.list(
 								output.repositories.map(
 									(repo) =>
-										`${repo.fullName}: tracked ref \`${repo.trackedBranch}\`${repo.isArchived ? " (archived)" : ""}`,
+										`${repo.fullName}: tracked ref \`${repo.trackedBranch}\`${repo.isArchived ? " (archived)" : ""}${repo.syncError === undefined ? "" : `. NOT SYNCING: ${repo.syncError}. Reads of it may fail; grant the GitHub App access to it again.`}`,
 								),
 							),
 						],

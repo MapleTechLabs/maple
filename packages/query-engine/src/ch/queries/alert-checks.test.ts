@@ -147,6 +147,7 @@ describe("alert check rows decode timestamps to DateTime.Utc", () => {
 					errorMessage: null,
 					errorCategory: "",
 					skipReason: "",
+					level: "",
 				},
 			])
 			expect(DateTime.formatIso(row!.timestamp)).toBe("2024-01-01T10:00:00.250Z")

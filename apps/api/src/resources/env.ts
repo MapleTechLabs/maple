@@ -35,6 +35,8 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 		// Dev only: on a deploy a pin would point the whole API at one tenant.
 		...(stage.kind === "dev" ? [optionalPlain("MAPLE_ORG_ID_OVERRIDE")] : []),
+		// PR previews only: the shared key behind the sign-in page's preview access form.
+		...(stage.kind === "pr" ? [optionalSecret("PREVIEW_SIGNIN_KEY")] : []),
 		authEnv,
 		ingestKeyCryptoEnv,
 		requireSecretEntry("MAPLE_SHARE_TOKEN_HMAC_KEY"),
@@ -79,4 +81,5 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		optionalPlain("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
 	)

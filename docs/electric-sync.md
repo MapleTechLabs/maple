@@ -199,8 +199,11 @@ service runs `desiredCount: 1` with `minimumHealthyPercent: 0`: stop the old
 task, then start the new one. Every deploy therefore has a ~60s window with no
 sync. `/dashboards` degrades to its HTTP snapshot (`SyncDegradedBanner`), while
 the alerts lists have no fallback and sit in their retry state. This is why the
-image tag is pinned in `apps/electric/Dockerfile` rather than tracking `:latest`
-as local docker does.
+image is pinned by digest (`ELECTRIC_IMAGE` in `apps/electric/alchemy.run.ts`)
+rather than tracking `:latest` as local docker does, and why it is mirrored as an
+image ref instead of built from a Dockerfile: alchemy hashes a build context
+together with `bun.lock`, so any dependency bump retagged the image and restarted
+Electric (two ~2 min gaps on 2026-10-14).
 
 ### Standing it up
 

@@ -2,8 +2,16 @@ import { act, cleanup, render } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { useIntervalRefresh } from "./use-interval-refresh"
 
-function Probe({ refresh, enabled = true }: { refresh: () => void; enabled?: boolean }) {
-	useIntervalRefresh(refresh, { intervalMs: 10_000, enabled })
+function Probe({
+	refresh,
+	enabled = true,
+	catchUp,
+}: {
+	refresh: () => void
+	enabled?: boolean
+	catchUp?: boolean
+}) {
+	useIntervalRefresh(refresh, { intervalMs: 10_000, enabled, catchUp })
 	return null
 }
 
@@ -36,6 +44,41 @@ describe("useIntervalRefresh", () => {
 		view.unmount()
 		act(() => vi.advanceTimersByTime(20_000))
 		expect(refresh).toHaveBeenCalledTimes(2)
+	})
+
+	it("refreshes the moment a hidden tab returns only with catchUp", () => {
+		let hidden = true
+		vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden)
+		const plain = vi.fn()
+		const catching = vi.fn()
+		const view = render(
+			<>
+				<Probe refresh={plain} />
+				<Probe refresh={catching} catchUp />
+			</>,
+		)
+
+		hidden = false
+		act(() => {
+			document.dispatchEvent(new Event("visibilitychange"))
+		})
+		expect(plain).not.toHaveBeenCalled()
+		expect(catching).toHaveBeenCalledTimes(1)
+
+		// Going hidden is no reason to refresh.
+		hidden = true
+		act(() => {
+			document.dispatchEvent(new Event("visibilitychange"))
+		})
+		expect(catching).toHaveBeenCalledTimes(1)
+
+		// The listener goes with the component.
+		view.unmount()
+		hidden = false
+		act(() => {
+			document.dispatchEvent(new Event("visibilitychange"))
+		})
+		expect(catching).toHaveBeenCalledTimes(1)
 	})
 
 	it("replaces the timer when the refresh callback changes", () => {

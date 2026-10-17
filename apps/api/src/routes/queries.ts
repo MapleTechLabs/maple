@@ -7,6 +7,7 @@ import type {
 	HostInfraTimeseriesRequest,
 	CloudflareInfraZoneFacetsRequest,
 	CloudflareInfraZoneDetailRequest,
+	CloudflareInfraWorkerDetailRequest,
 	ServicePlanetScaleStatsRequest,
 	CloudflareInfraPlatformResourcesRequest,
 	CloudflareInfraWorkersRequest,
@@ -15,6 +16,11 @@ import type {
 	CloudflareInfraZoneTimeseriesRequest,
 	CloudflareInfraZonesRequest,
 	ContainerInfraTimeseriesRequest,
+	GcpInfraMetricsRequest,
+	GcpInfraPresenceRequest,
+	GcpCloudSqlInstanceRequest,
+	GcpInfraSparklinesRequest,
+	GcpInfraTimeseriesRequest,
 	GetLogRequest,
 	NodeInfraTimeseriesRequest,
 	PlanetScaleInfraTimeseriesRequest,
@@ -23,6 +29,7 @@ import type {
 	RailwayInfraServiceTimeseriesRequest,
 	ServiceCloudflareStatsRequest,
 	SpanDetailRequest,
+	TraceSpanEventsRequest,
 	WorkloadInfraTimeseriesRequest,
 } from "@maple/domain/http"
 import {
@@ -287,6 +294,83 @@ const railwayInfraServiceTimeseries = defineQuery({
 		}),
 })
 
+// A small read of the hourly catalog that decides which tabs /infra/gcp shows.
+const gcpInfraPresence = defineQuery({
+	id: "gcpInfraPresence",
+	profile: "discovery",
+	cache: 60,
+	compile: (payload: GcpInfraPresenceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraPresenceSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpInfraMetrics = defineQuery({
+	id: "gcpInfraMetrics",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraMetricsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraMetricsSQL(payload.service), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpInfraTimeseries = defineQuery({
+	id: "gcpInfraTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraTimeseriesSQL(payload.source, payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			// The poller stores one point per minute.
+			bucketSeconds: Math.max(60, payload.bucketSeconds),
+		}),
+})
+
+const gcpInfraSparklines = defineQuery({
+	id: "gcpInfraSparklines",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraSparklinesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraSparklinesSQL(payload.service), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			// The poller stores one point per minute.
+			bucketSeconds: Math.max(60, payload.bucketSeconds),
+		}),
+})
+
+const gcpCloudSqlTopQueries = defineQuery({
+	id: "gcpCloudSqlTopQueries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpCloudSqlInstanceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpCloudSqlTopQueriesSQL(payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpCloudSqlDatabases = defineQuery({
+	id: "gcpCloudSqlDatabases",
+	profile: "list",
+	cache: 15,
+	compile: (payload: GcpCloudSqlInstanceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpCloudSqlDatabasesSQL(payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
 const zoneDetailParams = (payload: CloudflareInfraZoneDetailRequest, orgId: OrgId) => ({
 	orgId,
 	serviceName: payload.serviceName,
@@ -324,6 +408,54 @@ const cloudflareInfraZoneDetailLatency = defineQuery({
 	cache: 15,
 	compile: (payload: CloudflareInfraZoneDetailRequest, orgId: OrgId) =>
 		CH.compile(Integrations.cloudflareZoneLatencyTimeseriesSQL(), zoneDetailParams(payload, orgId)),
+})
+
+const workerDetailParams = (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) => ({
+	orgId,
+	serviceName: payload.serviceName,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+	bucketSeconds: payload.bucketSeconds,
+	// Declared by the query either way; only read when `byAccount` adds the condition.
+	accountId: payload.accountId ?? "",
+})
+
+const workerDetailOpts = (payload: CloudflareInfraWorkerDetailRequest) => ({
+	// Rows without the account attribute carry "", which would match nothing: treat it as absent.
+	byAccount: (payload.accountId ?? "") !== "",
+})
+
+const cloudflareInfraWorkerDetailOutcomes = defineQuery({
+	id: "cloudflareInfraWorkerDetailOutcomes",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.cloudflareWorkerOutcomeTimeseriesSQL(workerDetailOpts(payload)),
+			workerDetailParams(payload, orgId),
+		),
+})
+
+const cloudflareInfraWorkerDetailLatency = defineQuery({
+	id: "cloudflareInfraWorkerDetailLatency",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.cloudflareWorkerLatencyTimeseriesSQL(workerDetailOpts(payload)),
+			workerDetailParams(payload, orgId),
+		),
+})
+
+const cloudflareInfraWorkerDetailDurableObjects = defineQuery({
+	id: "cloudflareInfraWorkerDetailDurableObjects",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.cloudflareWorkerDurableObjectTimeseriesSQL(workerDetailOpts(payload)),
+			workerDetailParams(payload, orgId),
+		),
 })
 
 // Each reads either the database-level or the branch-level rollup depending on
@@ -624,6 +756,50 @@ export const Queries = {
 		},
 	}),
 
+	/**
+	 * Events of a span `spanDetail` already resolved. Keyed by the span's exact
+	 * start second, so the row it reads is written and immutable.
+	 */
+	spanEvents: defineQuery({
+		id: "spanEvents",
+		profile: "discovery",
+		cache: 600,
+		compile: (
+			payload: {
+				readonly traceId: string
+				readonly spanId: string
+				readonly serviceName: string
+				readonly spanName: string
+				readonly startTime: string
+				readonly endTime: string
+			},
+			orgId: OrgId,
+		) =>
+			CH.compile(
+				CH.spanEventsQuery({
+					traceId: payload.traceId,
+					spanId: payload.spanId,
+					serviceName: payload.serviceName,
+					spanName: payload.spanName,
+				}),
+				{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			),
+	}),
+
+	/** Event times and names for every span of a trace, for the timeline markers. */
+	traceSpanEvents: defineQuery({
+		id: "traceSpanEvents",
+		profile: "list",
+		cache: (payload: TraceSpanEventsRequest, nowMs: number) =>
+			traceCacheTtlSeconds(payload.endTime, nowMs),
+		compile: (payload: TraceSpanEventsRequest, orgId: OrgId) =>
+			CH.compile(CH.spanEventsByTraceQuery({ traceId: payload.traceId }), {
+				orgId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+			}),
+	}),
+
 	podInfraTimeseries: defineQuery({
 		id: "podInfraTimeseries",
 		profile: "aggregation",
@@ -714,11 +890,20 @@ export const Queries = {
 	planetscaleInfraTimeseries,
 	railwayInfraServices,
 	railwayInfraServiceTimeseries,
+	gcpInfraPresence,
+	gcpInfraMetrics,
+	gcpInfraTimeseries,
+	gcpInfraSparklines,
+	gcpCloudSqlTopQueries,
+	gcpCloudSqlDatabases,
 
 	// ZoneDetail / PlanetScaleStats sub-queries, declared above.
 	cloudflareInfraZoneDetailStatus,
 	cloudflareInfraZoneDetailCache,
 	cloudflareInfraZoneDetailLatency,
+	cloudflareInfraWorkerDetailOutcomes,
+	cloudflareInfraWorkerDetailLatency,
+	cloudflareInfraWorkerDetailDurableObjects,
 	planetscaleServiceGauges,
 	planetscaleServiceConnections,
 	planetscaleServiceStorage,

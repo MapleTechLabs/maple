@@ -7,6 +7,7 @@ import {
 	type RawSqlValidationError,
 	SpanHierarchyResponse,
 	SpanDetailResponse,
+	TraceSpanEventsResponse,
 	ErrorsByTypeResponse,
 	ErrorsSparkResponse,
 	ErrorsSummaryResponse,
@@ -18,11 +19,18 @@ import {
 	ServiceApdexResponse,
 	PlanetScaleInfraTimeseriesResponse,
 	RailwayInfraRowsResponse,
+	GcpInfraMetricsResponse,
+	GcpInfraPresenceResponse,
+	GcpInfraSparklinesResponse,
+	GcpCloudSqlDatabasesResponse,
+	GcpCloudSqlTopQueriesResponse,
+	GcpInfraTimeseriesResponse,
 	ServiceCloudflareStatsResponse,
 	ServicePlanetScaleStatsResponse,
 	CloudflareInfraZonesResponse,
 	CloudflareInfraZoneTimeseriesResponse,
 	CloudflareInfraZoneDetailResponse,
+	CloudflareInfraWorkerDetailResponse,
 	CloudflareInfraZoneSecurityResponse,
 	CloudflareInfraZoneBreakdownResponse,
 	CloudflareInfraZoneDnsResponse,
@@ -95,6 +103,7 @@ import {
 	TraceId,
 	SpanId,
 } from "@maple/domain/http"
+import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { isAiContentFormat } from "@maple/domain/ai-traffic"
 import { Cause, Clock, DateTime, Effect, Option, Schema } from "effect"
@@ -113,6 +122,7 @@ import {
 	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
 	QueryEngineExecuteBatchResponse,
+	parseSpanEvents,
 	parseWarehouseDateTime,
 } from "@maple/query-engine"
 
@@ -249,17 +259,21 @@ const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 	const processRuntimeName = row.processRuntimeName
 	// cluster.name alone does not prove the service runs in Kubernetes.
 	const isKubernetes = k8sPodName !== "" || k8sDeploymentName !== ""
-	// Host infrastructure takes precedence over SDK self-report.
-	const platform: "kubernetes" | "cloudflare" | "lambda" | "web" | "unknown" =
+	// Host infrastructure takes precedence over SDK self-report. Google Cloud's
+	// detector sets `faas.name` on Cloud Run and Cloud Functions, so it is checked
+	// before the Lambda rule.
+	const platform: "kubernetes" | "cloudflare" | "gcp" | "lambda" | "web" | "unknown" =
 		cloudPlatform === "cloudflare.workers" || cloudProvider === "cloudflare"
 			? "cloudflare"
-			: faasName !== "" || cloudPlatform === "aws_lambda"
-				? "lambda"
-				: isKubernetes
-					? "kubernetes"
-					: mapleSdkType === "client"
-						? "web"
-						: "unknown"
+			: cloudProvider === "gcp"
+				? "gcp"
+				: faasName !== "" || cloudPlatform === "aws_lambda"
+					? "lambda"
+					: isKubernetes
+						? "kubernetes"
+						: mapleSdkType === "client"
+							? "web"
+							: "unknown"
 	return {
 		serviceName: decodeServiceName(row.serviceName),
 		platform,
@@ -516,14 +530,48 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						const row = yield* runQueryFirst(Queries.spanDetail, tenant, payload)
+						if (!row) return new SpanDetailResponse({ data: null })
+						// `trace_detail_spans` has no Events columns; read them off `traces`
+						// by the sorting key the detail row just resolved.
+						const startMs = DateTime.toEpochMillis(row.startTime)
+						const events = yield* runQueryFirst(Queries.spanEvents, tenant, {
+							traceId: row.traceId,
+							spanId: row.spanId,
+							serviceName: row.serviceName,
+							spanName: row.rawSpanName,
+							startTime: formatWarehouseDateTime(startMs),
+							endTime: formatWarehouseDateTime(startMs + 1000),
+						}).pipe(
+							Effect.map((raw) => (raw ? parseSpanEvents(raw) : [])),
+							// Events are supplementary; a failed lookup must not hide the attributes.
+							Effect.tapError((error) => Effect.logWarning("span events lookup failed", error)),
+							Effect.orElseSucceed(() => []),
+						)
 						return new SpanDetailResponse({
-							data: row
-								? {
-										...row,
-										traceId: decodeTraceId(row.traceId),
-										spanId: decodeSpanId(row.spanId),
-									}
-								: null,
+							data: {
+								traceId: decodeTraceId(row.traceId),
+								spanId: decodeSpanId(row.spanId),
+								spanAttributes: row.spanAttributes,
+								resourceAttributes: row.resourceAttributes,
+								events,
+							},
+						})
+					}),
+				)
+				.handle("traceSpanEvents", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.traceSpanEvents, tenant, payload)
+						return new TraceSpanEventsResponse({
+							data: rows.flatMap((row) => {
+								const events = parseSpanEvents(row).map(({ name, offsetMs }) => ({
+									name,
+									offsetMs,
+								}))
+								return events.length === 0
+									? []
+									: [{ spanId: decodeSpanId(row.spanId), events }]
+							}),
 						})
 					}),
 				)
@@ -807,6 +855,57 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
+				.handle("gcpInfraPresence", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraPresence, tenant, payload)
+						const reported = new Set(rows.map((row) => row.metric))
+						return new GcpInfraPresenceResponse({
+							services: GCP_INFRA_SERVICE_IDS.filter((service) =>
+								gcpInfraMetrics(service).some((metric) => reported.has(metric.name)),
+							),
+						})
+					}),
+				)
+				.handle("gcpInfraMetrics", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraMetrics, tenant, payload)
+						return new GcpInfraMetricsResponse({ data: rows })
+					}),
+				)
+				.handle("gcpInfraTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraTimeseries, tenant, payload)
+						return new GcpInfraTimeseriesResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("gcpInfraSparklines", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraSparklines, tenant, payload)
+						return new GcpInfraSparklinesResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("gcpCloudSqlTopQueries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpCloudSqlTopQueries, tenant, payload)
+						return new GcpCloudSqlTopQueriesResponse({ data: rows })
+					}),
+				)
+				.handle("gcpCloudSqlDatabases", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpCloudSqlDatabases, tenant, payload)
+						return new GcpCloudSqlDatabasesResponse({ databases: rows.map((row) => row.database) })
+					}),
+				)
 				.handle("cloudflareInfraZones", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -829,7 +928,11 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								serviceName: row.serviceName,
 								requests: row.requests,
 								errors5xx: row.errors5xx,
+								errors4xx: row.errors4xx,
+								requests2xx: row.requests2xx,
+								requests3xx: row.requests3xx,
 								cacheHits: row.cacheHits,
+								cacheableRequests: row.cacheableRequests,
 								bytes: row.bytes,
 								visits: row.visits,
 								ttfbP50Ms: latency?.ttfbP50Ms ?? 0,
@@ -889,6 +992,25 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								Integrations.CF_METRIC.edgeTtfb,
 								Integrations.CF_METRIC.originDuration,
 							]),
+						})
+					}),
+				)
+				.handle("cloudflareInfraWorkerDetail", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [outcomeRows, latencyRows, durableObjectRows] = yield* Effect.all(
+							[
+								runQuery(Queries.cloudflareInfraWorkerDetailOutcomes, tenant, payload),
+								runQuery(Queries.cloudflareInfraWorkerDetailLatency, tenant, payload),
+								runQuery(Queries.cloudflareInfraWorkerDetailDurableObjects, tenant, payload),
+							],
+							{ concurrency: 3 },
+						)
+						return new CloudflareInfraWorkerDetailResponse({
+							outcomeBuckets: outcomeRows.map((row) => ({ ...row })),
+							latencyBuckets: latencyRows.map((row) => ({ ...row })),
+							durableObjectBuckets: durableObjectRows.map((row) => ({ ...row })),
 						})
 					}),
 				)
@@ -1057,11 +1179,15 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							],
 							{ concurrency: 2 },
 						)
-						const latencyByService = new Map(latencyRows.map((row) => [row.serviceName, row]))
+						// Keyed by account too: same-named scripts in two accounts are different Workers.
+						const workerKey = (row: { serviceName: string; accountId: string }) =>
+							`${row.accountId}|${row.serviceName}`
+						const latencyByWorker = new Map(latencyRows.map((row) => [workerKey(row), row]))
 						const data = counterRows.map((row) => {
-							const latency = latencyByService.get(row.serviceName)
+							const latency = latencyByWorker.get(workerKey(row))
 							return {
 								serviceName: row.serviceName,
+								accountId: row.accountId,
 								requests: row.requests,
 								errors: row.errors,
 								subrequests: row.subrequests,
@@ -1819,9 +1945,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								environment: row.environment,
 								podCount: row.podCount || 0,
 								lastSeen: DateTime.formatIso(row.lastSeen),
-								avgCpuLimitPct: row.avgCpuLimitPct || 0,
-								avgMemoryLimitPct: row.avgMemoryLimitPct || 0,
-								avgCpuUsage: row.avgCpuUsage || 0,
+								desiredReplicas: row.replicaSamples > 0 ? row.desiredReplicas : null,
+								readyReplicas: row.replicaSamples > 0 ? row.readyReplicas : null,
+								failedPods: row.failedPods || 0,
+								restarts: row.restarts || 0,
+								lastTerminatedReason: row.lastTerminatedReason,
+								peakCpuLimitPct: row.peakCpuLimitPct || 0,
+								peakMemoryLimitPct: row.peakMemoryLimitPct || 0,
+								cpuUsage: row.cpuUsage || 0,
 							})),
 						})
 					}),

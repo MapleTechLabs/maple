@@ -1,4 +1,5 @@
-import { useMemo } from "react"
+import { conditionSubject } from "@/components/alerts/rule-condition-bar"
+import { useMemo, type ReactNode } from "react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -9,17 +10,21 @@ import { cn } from "@maple/ui/lib/utils"
 import type { AlertRulePreviewResponse } from "@maple/domain/http"
 import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
-import { CheckIcon, EyeIcon, FireIcon } from "@/components/icons"
+import { RuleEditImpact } from "@/components/alerts/rule-edit-impact"
+import { CheckIcon, CircleWarningIcon, EyeIcon, FireIcon } from "@/components/icons"
 import { breachStatsFromPreview, formatBreachDuration, type BreachStats } from "@/lib/alerts/breach-stats"
+import {
+	countSkippedWindows,
+	draftThresholds,
+	focusPreviewOnClosestGroups,
+	type RuleFieldChange,
+	type SkippedWindows,
+} from "@/lib/alerts/preview-insights"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { TimeRangePicker } from "@/components/time-range-picker/time-range-picker"
 import type { TimeRange } from "@/components/time-range-picker/types"
-import {
-	formThresholdToDomain,
-	formatSignalValue,
-	signalLabels,
-	type RuleFormState,
-} from "@/lib/alerts/form-utils"
+import type { AlertIncidentDocument } from "@maple/domain/http"
+import { displaySignalType, formatSignalValue, type RuleFormState } from "@/lib/alerts/form-utils"
 
 interface RuleLiveChartHeroProps {
 	form: RuleFormState
@@ -38,15 +43,22 @@ interface RuleLiveChartHeroProps {
 	/** The picker's own (unresolved) selection — preset or custom bounds. */
 	timeRange: TimeRange
 	onTimeRangeChange: (range: TimeRange) => void
+	/** Edit mode: the saved rule's replay and what the edit changes, drawn above the chart. */
+	comparison?: {
+		savedPreview: AlertRulePreviewResponse | null
+		savedLoading: boolean
+		changes: readonly RuleFieldChange[]
+		clearedIncidents: readonly AlertIncidentDocument[]
+	} | null
+	/** The condition bar, docked under the chart it redraws. */
+	children?: ReactNode
 }
 
 /**
- * Hero block sitting above the form: the SAME chart the rule detail page
- * renders, fed by the evaluator's own preview over a user-picked lookback —
- * threshold line, per-window observations, and shaded "would have fired"
- * spans. The would-have-fired count is folded into the header strip as a
- * compact pill so the entire hero stays inside one short card. Raw-SQL rules
- * get a real preview too (the endpoint replays the SQL per evaluation window).
+ * The editor's preview: the same chart the rule detail page renders, fed by
+ * the evaluator's own replay over a user-picked lookback, with the threshold
+ * line, would-fire bands and the verdict. The condition bar docks under it, and
+ * edit mode adds the saved-vs-draft replay above it.
  */
 export function RuleLiveChartHero({
 	form,
@@ -59,15 +71,13 @@ export function RuleLiveChartHero({
 	range,
 	timeRange,
 	onTimeRangeChange,
+	comparison = null,
+	children,
 }: RuleLiveChartHeroProps) {
-	// The preview plots observed signal data in domain units (error_rate as a
-	// 0–1 ratio), so the threshold line must be converted from the form's percent
-	// input to the same domain units to line up with the data.
-	const threshold = formThresholdToDomain(form.signalType, form.threshold)
-	const thresholdUpper =
-		form.thresholdUpper.trim().length > 0 && Number.isFinite(Number(form.thresholdUpper))
-			? formThresholdToDomain(form.signalType, form.thresholdUpper)
-			: null
+	// The preview plots domain units (error rate as a 0–1 ratio); the form's
+	// threshold goes through the same conversion the save does.
+	const { threshold, upper: thresholdUpper, critical: criticalThreshold } = draftThresholds(form)
+	const displaySignal = displaySignalType(form)
 
 	// The chart's domain is the exact window the preview query ran over, so the
 	// axis, threshold line, and would-fire bands stay in step with the picker.
@@ -80,20 +90,21 @@ export function RuleLiveChartHero({
 	)
 
 	const stats = useMemo(() => breachStatsFromPreview(preview), [preview])
-
-	const safeThreshold = Number.isFinite(threshold) ? threshold : 0
+	const skipped = useMemo(() => countSkippedWindows(preview), [preview])
+	// A split rule draws only the groups nearest to firing; the verdict still counts them all.
+	const focused = useMemo(() => focusPreviewOnClosestGroups(preview), [preview])
 	const groupBySummary = formatGroupBySummary(form)
 
 	return (
-		<Card className="overflow-hidden">
+		<Card className="gap-0 overflow-hidden p-0">
 			<div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2">
 				<div className="flex min-w-0 items-center gap-2">
 					<Badge variant="outline" className="font-mono text-xs">
-						{signalLabels[form.signalType]}
+						{conditionSubject(form)}
 					</Badge>
 					{groupBySummary && (
 						<span className="hidden max-w-[360px] truncate text-muted-foreground text-xs md:inline">
-							Grouped by {groupBySummary}
+							per {groupBySummary}
 						</span>
 					)}
 					<BreachPill stats={stats} />
@@ -105,7 +116,7 @@ export function RuleLiveChartHero({
 						<PreviewBadge
 							status={previewResult.status}
 							value={previewResult.value}
-							signalType={form.signalType}
+							signalType={displaySignal}
 						/>
 					)}
 					{/* Preview-only lookback: it re-runs the preview query, never the
@@ -132,20 +143,75 @@ export function RuleLiveChartHero({
 				</div>
 			</div>
 
-			<div className="px-4 pb-4">
+			{comparison !== null && (
+				<RuleEditImpact
+					{...comparison}
+					draftPreview={preview}
+					draftLoading={previewLoading}
+					form={form}
+					domain={window}
+				/>
+			)}
+
+			<div className="space-y-2 px-4 pt-3 pb-4">
 				<AlertRuleChart
-					preview={preview}
+					preview={focused.preview}
 					showWouldFire
-					threshold={safeThreshold}
+					threshold={threshold}
 					thresholdUpper={thresholdUpper}
+					criticalThreshold={criticalThreshold}
 					comparator={form.comparator}
-					signalType={form.signalType}
+					signalType={displaySignal}
 					window={window}
 					loading={previewLoading}
 					error={previewError}
 				/>
+				{focused.hiddenGroupCount > 0 && (
+					<p className="text-2xs text-muted-foreground">
+						Showing the {focused.shownGroups.length} groups closest to the threshold ·{" "}
+						{focused.hiddenGroupCount} more
+					</p>
+				)}
+				<SkippedWindowsWarning skipped={skipped} form={form} />
 			</div>
+
+			{children && <div className="border-t bg-muted/20 px-4 py-3">{children}</div>}
 		</Card>
+	)
+}
+
+/**
+ * Said while editing, not after saving: windows the evaluator would skip can
+ * never fire, so a rule that skips most of them is quieter than it looks.
+ */
+function SkippedWindowsWarning({ skipped, form }: { skipped: SkippedWindows; form: RuleFormState }) {
+	if (skipped.skipped === 0) return null
+	const share = skipped.skipped / Math.max(skipped.total, 1)
+	const reasons = [
+		skipped.byReason.below_min_samples > 0 &&
+			`${skipped.byReason.below_min_samples} under ${form.minimumSampleCount} samples`,
+		skipped.byReason.no_data > 0 && `${skipped.byReason.no_data} with no data`,
+		skipped.byReason.no_value > 0 && `${skipped.byReason.no_value} with no value`,
+	].filter((reason): reason is string => reason !== false)
+	const advice =
+		skipped.byReason.below_min_samples >= skipped.byReason.no_data
+			? "Lower Min samples so they count."
+			: form.alertOnNoData
+				? null
+				: "Turn on alerting when there is no data to count them."
+	return (
+		<div
+			className={cn(
+				"flex items-start gap-2 text-xs",
+				share >= 0.25 ? "text-severity-warn" : "text-muted-foreground",
+			)}
+		>
+			<CircleWarningIcon size={14} className="mt-px shrink-0" />
+			<span>
+				{skipped.skipped} of {skipped.total} windows would be skipped ({reasons.join(", ")}), and a
+				skipped window can't fire.{advice && ` ${advice}`}
+			</span>
+		</div>
 	)
 }
 

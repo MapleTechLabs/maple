@@ -70,6 +70,9 @@ const forwardOverBinding = (
 		},
 		(client) => {
 			const forwarded = new Request(target, request)
+			// Copying the request copies the browser's `Host: app.…`, and a service binding passes it
+			// through as-is. The API builds OAuth redirect URIs from Host, so it must name the API.
+			forwarded.headers.set("host", target.host)
 			Object.entries(HttpTraceContext.toHeaders(client)).forEach(([name, value]) =>
 				forwarded.headers.set(name, value),
 			)

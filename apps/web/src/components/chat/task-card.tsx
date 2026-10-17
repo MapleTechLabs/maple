@@ -3,12 +3,13 @@ import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { SectionHeading } from "@/components/common/section-heading"
-import { Sheet, SheetContent, SheetPanel } from "@maple/ui/components/ui/sheet"
+import { Sheet, SheetContent, SheetPanel, SheetTrigger } from "@maple/ui/components/ui/sheet"
+import { Trace, TraceDescription, TraceIcon, TraceLine, TraceTitle } from "@maple/ui/components/ui/trace"
 import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { ChevronRightIcon, CircleCheckIcon, CircleWarningIcon, CircleXmarkIcon } from "@/components/icons"
 import { agentPresentation } from "@/components/ai-elements/agent-metadata"
 import { DotLoader } from "@/components/ai-elements/dot-loader"
-import { RunningClock, Tool, TranscriptRowButton } from "@/components/ai-elements/tool"
+import { RunningClock, Tool } from "@/components/ai-elements/tool"
 import { RichText } from "@/components/ai-elements/rich-text"
 import type { UIMessage } from "@/components/ai-elements/types"
 import { toolNameFor, type ToolPart } from "./transcript-rows"
@@ -35,19 +36,10 @@ const OUTCOME: Record<Exclude<TaskStatus, "running">, string> = {
 } satisfies Record<Exclude<TaskStatus, "running">, string>
 
 function StatusGlyph({ status }: { status: TaskStatus }) {
-	return (
-		<span className="flex size-5 shrink-0 items-center justify-center">
-			{status === "running" ? (
-				<DotLoader />
-			) : status === "error" ? (
-				<CircleXmarkIcon className="size-3.5 text-severity-error" />
-			) : status === "aborted" ? (
-				<CircleWarningIcon className="size-3.5 text-muted-foreground" />
-			) : (
-				<CircleCheckIcon className="size-3.5 text-severity-info" />
-			)}
-		</span>
-	)
+	if (status === "running") return <DotLoader />
+	if (status === "error") return <CircleXmarkIcon className="size-3.5 text-severity-error" />
+	if (status === "aborted") return <CircleWarningIcon className="size-3.5 text-muted-foreground" />
+	return <CircleCheckIcon className="size-3.5 text-severity-info" />
 }
 
 /**
@@ -79,34 +71,38 @@ export function TaskCard({
 	const { label, activity, icon: AgentIcon } = agentPresentation(agent)
 
 	return (
-		<div className="text-xs">
-			<TranscriptRowButton onClick={() => setOpen(true)}>
-				<StatusGlyph status={status} />
-				{/* While it runs the loader is the glyph; once it settles the agent's own mark is
-				    what distinguishes this line from the tool rows around it. */}
-				{running ? null : <AgentIcon className="size-3.5 shrink-0 text-muted-foreground/70" />}
-				<span
-					className={cn(
-						"shrink-0 font-medium",
-						running ? "shimmer text-foreground" : "text-foreground",
-					)}
-				>
-					{running ? `${activity}…` : label}
-				</span>
-				<span className="min-w-0 flex-1 truncate text-2xs text-muted-foreground/70">
-					<span className="mr-1 text-muted-foreground/40">·</span>
-					{prompt}
-				</span>
-				{status === "error" ? (
-					<span className={cn("shrink-0 text-2xs", TONE_TEXT.crit)}>failed</span>
-				) : budgetExhausted === true ? (
-					<span className={cn("shrink-0 text-2xs", TONE_TEXT.warn)}>partial</span>
-				) : null}
-				{running ? <RunningClock /> : null}
-				<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground/60" />
-			</TranscriptRowButton>
-
+		<Trace>
 			<Sheet open={open} onOpenChange={setOpen}>
+				<SheetTrigger>
+					<TraceLine status={running ? "running" : status === "error" ? "error" : undefined}>
+						<TraceIcon className={running ? "size-5" : undefined}>
+							<StatusGlyph status={status} />
+						</TraceIcon>
+						{/* While it runs the loader is the glyph; once it settles the agent's own mark is
+						    what distinguishes this line from the tool rows around it. */}
+						{running ? null : (
+							<TraceIcon>
+								<AgentIcon className="size-3.5 text-muted-foreground/70" />
+							</TraceIcon>
+						)}
+						<TraceTitle className="shrink-0 font-medium text-foreground">
+							{running ? `${activity}…` : label}
+						</TraceTitle>
+						<TraceDescription className="min-w-0 shrink truncate text-2xs">
+							<span className="mr-1 text-muted-foreground/40">·</span>
+							{prompt}
+						</TraceDescription>
+						{status === "error" ? (
+							<span className={cn("shrink-0 text-2xs", TONE_TEXT.crit)}>failed</span>
+						) : budgetExhausted === true ? (
+							<span className={cn("shrink-0 text-2xs", TONE_TEXT.warn)}>partial</span>
+						) : null}
+						{running ? <RunningClock /> : null}
+						<TraceIcon>
+							<ChevronRightIcon className="size-3 text-muted-foreground/60" />
+						</TraceIcon>
+					</TraceLine>
+				</SheetTrigger>
 				<SheetContent className="sm:max-w-xl">
 					{/* The title is the question, unclamped: the thing the row cannot show. */}
 					<SheetDetailHeader
@@ -196,6 +192,6 @@ export function TaskCard({
 					</SheetPanel>
 				</SheetContent>
 			</Sheet>
-		</div>
+		</Trace>
 	)
 }

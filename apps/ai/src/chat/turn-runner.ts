@@ -18,14 +18,13 @@
  *     `env: workerEnv ?? {}` fallback silently degrading the model config when a caller forgot to
  *     thread the worker env through.
  */
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import type { PrReviewFailureReason } from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
@@ -50,19 +49,7 @@ import {
 	SUBMIT_REVIEW,
 } from "./tools"
 
-/**
- * Low-cardinality facts collected during the run and emitted once on the turn span.
- *
- * Mutable because the run discovers its outcome after the caller has already created the span.
- */
-interface TurnObservability {
-	outcome?: "stop" | "aborted" | "error" | "max-steps" | "abandoned" | "resume_skipped" | "unknown"
-	failureReason?: string
-	/** Model-context compactions across the pass and its close-out; see `ChatRunOutcome`. */
-	compactions?: number
-}
-
-const makeTurnObservability = (): TurnObservability => ({})
+import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
 import { agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn, type ChatRunOutcome } from "./run"
@@ -91,13 +78,11 @@ const ENGINE_BOOKKEEPING_SPANS = [
 
 // Deliberately not `maple-api`: background work sharing the request-facing
 // service's name skewed its percentiles (p99 32s, 2026-09-04).
-const telemetry = MapleCloudflareSDK.make(
-	workerTelemetryConfig({
-		serviceName: "maple-chat",
-		anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
-		dropSpanNames: ENGINE_BOOKKEEPING_SPANS,
-	}),
-)
+const telemetry = runtimeTelemetry({
+	serviceName: "maple-chat",
+	anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+	dropSpanNames: ENGINE_BOOKKEEPING_SPANS,
+})
 
 export interface RunChatSessionTurnInput {
 	/** The Durable Object itself. Appends are direct calls, not stub RPC. */
@@ -119,6 +104,8 @@ export interface RunChatSessionTurnInput {
 	readonly resume?: { readonly userMessageId: string; readonly text: string; readonly attempt: number }
 	/** The turn was evicted too often to start again: record that it failed, and run nothing. */
 	readonly abandoned?: true
+	/** Aborted, with a `ChatAbortReason`, when the session aborts this turn: the run is interrupted. */
+	readonly signal?: AbortSignal
 }
 
 /**
@@ -313,16 +300,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	let recordedTerminal = false
 	// `empty_output` and `recovery_count` are gone with the machinery that produced them: they
 	// counted the old loop's own repair attempts, and the engine has no equivalent to report.
-	const annotateTurn = () =>
-		Effect.annotateCurrentSpan({
-			"maple.chat.outcome": observability.outcome ?? "unknown",
-			...(observability.compactions === undefined
-				? undefined
-				: { "maple.chat.compactions": observability.compactions }),
-			...(observability.failureReason === undefined
-				? undefined
-				: { "maple.chat.failure_reason": observability.failureReason }),
-		})
+	const annotateTurn = () => Effect.annotateCurrentSpan(turnSpanAttributes(observability, input.signal))
 
 	const investigationId = investigationForSession(input.sessionId)
 	const prReviewId = prReviewForSession(input.sessionId)
@@ -414,7 +392,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// Rebuilt from the turn's settings so the org's key, when there is one, replaces the runtime's.
 			const openRouterClient = layerOpenRouterClient(settings)
 			const model = yield* Match.value(agent.model).pipe(
-				Match.when("triage", () => Effect.succeed(resolveTriageModel(settings, tags))),
+				Match.when("triage", () =>
+					Effect.succeed(
+						resolveTriageModel(settings, tags, isAutonomousTurn(input.sessionId, origin)),
+					),
+				),
 				Match.when("review", () =>
 					reviews
 						.reviewModel(tenant.orgId)
@@ -694,6 +676,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const orgKey = yield* (yield* OrgOpenRouterKeyService).resolveForRun(tenant.orgId)
 		yield* Effect.annotateCurrentSpan("maple.llm.byok", Option.isSome(orgKey))
 		return yield* turnBody(orgKey).pipe(
+			interruptOnAbort(input.signal, observability),
 			// `ensuring`, not a trailing statement: a turn that failed, was aborted, or ran out of steps
 			// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them.
 			Effect.ensuring(

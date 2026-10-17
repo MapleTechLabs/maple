@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 
 import type { ErrorIssueDocument, IssueKind } from "@maple/domain/http"
+import { ERROR_ISSUE_SEARCH_MAX_LENGTH } from "@maple/domain/http/v2"
 
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { Atom, Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
@@ -18,7 +19,7 @@ import {
 	sparkFingerprintHashes,
 } from "@/lib/models/error-signal"
 
-import { ACTIONABLE_VIEWS, ErrorsHubView, type HubPaging, viewCovers } from "./errors-hub-view"
+import { ErrorsHubView, type HubPaging, viewCovers } from "./errors-hub-view"
 import { ErrorsStatStrip } from "./errors-stat-strip"
 
 /**
@@ -65,6 +66,8 @@ export interface ErrorsHubProps {
 	env?: string
 	kind?: IssueKind
 	regressed?: boolean
+	/** Free-text search, matched server-side on type, message, label and service. */
+	search?: string
 	/** Present while a sidebar filter is on, for the empty state's way out.
 	 *  Owned by the route, which is where navigation lives. */
 	onClearFilters?: () => void
@@ -130,15 +133,18 @@ export function ErrorsHub(props: ErrorsHubProps) {
 			...(props.service ? { service_name: props.service } : undefined),
 			...(props.env ? { deployment_environment: props.env } : undefined),
 			...(props.kind ? { kind: props.kind } : undefined),
-			// One state per request is all the API takes, so multi-state views are
-			// filtered client-side from the page. `actionable` covers the common
-			// triage+active case server-side so that page is the right one; the
-			// regression toggle is a single state and replaces it outright.
+			// The server narrows every view, so paging reaches every match. Filtering
+			// a mixed page client-side left Closed empty whenever the newest page was
+			// all open issues.
 			...(props.regressed
 				? { workflow_state: "regressed" as const }
-				: ACTIONABLE_VIEWS.includes(props.view)
-					? { actionable: "true" as const }
-					: undefined),
+				: props.view === "all"
+					? undefined
+					: { state: props.view }),
+			// Done issues are archived two weeks after closing; they still belong in Closed.
+			...(props.view === "open" ? undefined : { include_archived: "true" as const }),
+			// A pasted log line can outrun the API's cap; clamp rather than fail the page.
+			...(props.search ? { search: props.search.slice(0, ERROR_ISSUE_SEARCH_MAX_LENGTH) } : undefined),
 			...(warehouseFirst ? { fingerprint_hash: rankedHashes.join(",") } : undefined),
 		}
 	}, [
@@ -149,6 +155,7 @@ export function ErrorsHub(props: ErrorsHubProps) {
 		props.env,
 		props.kind,
 		props.regressed,
+		props.search,
 		warehouseFirst,
 		rankedHashes,
 	])
@@ -312,6 +319,8 @@ export function ErrorsHub(props: ErrorsHubProps) {
 			onViewChange={(value) => setSearch({ view: value === "open" ? undefined : value })}
 			onSortChange={(value) => setSearch({ sort: value === "last_seen" ? undefined : value })}
 			onSeverityChange={(value) => setSearch({ severity: value === "all" ? undefined : value })}
+			search={props.search ?? ""}
+			onSearchChange={(value) => setSearch({ q: value })}
 			stats={<ErrorsStatStrip filters={warehouseFilters} />}
 			paging={paging}
 			onClearFilters={props.onClearFilters}

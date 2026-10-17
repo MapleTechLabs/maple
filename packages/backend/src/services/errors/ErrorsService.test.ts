@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { Cause, Clock, ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
+import { Cause, Clock, ConfigProvider, Effect, Exit, Latch, Layer, Ref, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	ErrorPersistenceError,
@@ -20,6 +20,7 @@ import {
 	ErrorIssueEventId,
 	ErrorIssueId,
 } from "@maple/domain/primitives"
+import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDestinations,
@@ -909,6 +910,20 @@ const scanRow = (overrides: Record<string, unknown> = {}): Record<string, unknow
 	...overrides,
 })
 
+const loadIssueById = (issueId: ErrorIssueId) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		const rows = yield* database.execute((db) =>
+			db.run(
+				PG.from(ErrorIssues)
+					.select()
+					.where(($) => [$.id.eq(issueId)]),
+			),
+		)
+		assert.lengthOf(rows, 1)
+		return rows[0]!
+	})
+
 const loadIssuesByFingerprint = (fingerprintHash: string) =>
 	Effect.gen(function* () {
 		const database = yield* Database
@@ -1474,6 +1489,89 @@ describe("ErrorsService.runTick", () => {
 			Effect.provide(makeErrorsLayer(() => rows, undefined, undefined, undefined, retryingDispatcher)),
 		)
 	})
+
+	it.effect(
+		"leases each outbox row from its own claim, so a slow drain never holds an expired lease",
+		() => {
+			// Set once the test has the database; the dispatcher reads each row's lease
+			// while that row is being delivered.
+			let inspect: (deliveryKey: string) => Effect.Effect<void> = () => Effect.void
+			const dispatcher: (typeof NotificationDispatcher)["Service"] = {
+				dispatch: (_orgId, _destinationIds, context) =>
+					inspect(context.deliveryKey).pipe(Effect.as({ delivered: 1, failed: 0 })),
+			}
+			return Effect.gen(function* () {
+				const errors = yield* ErrorsService
+				const database = yield* Database
+				yield* TestClock.setTime(TICK_MS)
+				// One more row than the drain's concurrency, so the last is claimed late.
+				yield* database.execute((db) =>
+					db.run(
+						PG.insertInto(ErrorNotificationDeliveries).values(
+							Array.from({ length: 6 }, (_, index) => ({
+								id: randomUUID(),
+								orgId: ORG,
+								destinationId: asDestinationId("7d31c9e1-0000-4000-8000-000000000001"),
+								deliveryKey: `lease-${index}`,
+								payloadJson: {
+									kind: "open",
+									issueId: randomUUID(),
+									incidentId: randomUUID(),
+									serviceName: "checkout",
+									exceptionType: "TypeError",
+									severity: "warning",
+									threshold: 1,
+									count: 1,
+								},
+								status: "queued" as const,
+								attemptCount: 0,
+								scheduledAt: TICK_MS - 1_000,
+								claimedAt: null,
+								claimExpiresAt: null,
+								claimedBy: null,
+								attemptedAt: null,
+								errorMessage: null,
+								createdAt: TICK_MS - 1_000,
+								updatedAt: TICK_MS - 1_000,
+							})),
+						),
+					),
+				)
+
+				// The first five deliveries hold their slots until all five are in
+				// flight, then take longer than the lease TTL; the sixth row is claimed
+				// only after that.
+				const allInFlight = yield* Latch.make(false)
+				const arrivals = yield* Ref.make(0)
+				const leaseHeadroomMs: Array<number> = []
+				inspect = (deliveryKey) =>
+					Effect.gen(function* () {
+						const [row] = yield* database.execute((db) =>
+							db.run(
+								PG.from(ErrorNotificationDeliveries)
+									.select("claimExpiresAt")
+									.where(($) => [$.deliveryKey.eq(deliveryKey)]),
+							),
+						)
+						const now = yield* Clock.currentTimeMillis
+						leaseHeadroomMs.push((row?.claimExpiresAt ?? 0) - now)
+						if ((yield* Ref.updateAndGet(arrivals, (n) => n + 1)) === 5) {
+							yield* TestClock.adjust("31 seconds")
+							yield* allInFlight.open
+						}
+						yield* allInFlight.await
+					}).pipe(Effect.orDie)
+
+				yield* errors.runTick()
+
+				assert.lengthOf(leaseHeadroomMs, 6)
+				assert.isTrue(
+					leaseHeadroomMs.every((headroom) => headroom > 0),
+					`a row was delivered under an expired lease: ${leaseHeadroomMs.join(", ")}`,
+				)
+			}).pipe(Effect.provide(makeErrorsLayer(() => [], undefined, undefined, undefined, dispatcher)))
+		},
+	)
 
 	it.effect("overlapping ticks dispatch each incident notification exactly once", () => {
 		let rows: ReadonlyArray<Record<string, unknown>> = [scanRow()]
@@ -2354,6 +2452,95 @@ describe("ErrorsService.runTick", () => {
 			assert.lengthOf(purgedStates, 0)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
+
+	it.effect("the retention phase archives an issue left on an older fingerprint version", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			const stale = asIssueId(randomUUID())
+			const current = asIssueId(randomUUID())
+			yield* seedIssue(stale, { fingerprintVersion: FINGERPRINT_VERSION - 1 })
+			yield* seedIssue(current, { fingerprintVersion: FINGERPRINT_VERSION })
+
+			const result = yield* errors.runTick()
+
+			assert.strictEqual(result.issuesArchived, 1)
+			assert.strictEqual((yield* loadIssueById(stale)).archivedAt, RETENTION_TICK_MS)
+			assert.isNull((yield* loadIssueById(current)).archivedAt)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("an archived open issue that occurs again comes back with its state intact", () => {
+		const rows = [scanRow()]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			// Archived by a fingerprint bump while its old hash was still live: a
+			// self-hosted warehouse that has not applied the new view, or a deploy gap.
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				workflowState: "in_progress",
+				priority: 1,
+				archivedAt: TICK_MS - DAY_MS,
+			})
+
+			yield* errors.runTick()
+
+			const issue = yield* loadIssueById(issueId)
+			assert.isNull(issue.archivedAt)
+			assert.strictEqual(issue.workflowState, "in_progress")
+			assert.strictEqual(issue.priority, 1)
+			// Restamped, so the version sweep does not archive it again.
+			assert.strictEqual(issue.fingerprintVersion, FINGERPRINT_VERSION)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("a regression on an archived resolved issue reopens it where it can be seen", () => {
+		const rows = [scanRow()]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION,
+				workflowState: "done",
+				resolvedAt: TICK_MS - 20 * DAY_MS,
+				archivedAt: TICK_MS - 6 * DAY_MS,
+			})
+
+			yield* errors.runTick()
+
+			const issue = yield* loadIssueById(issueId)
+			assert.strictEqual(issue.workflowState, "regressed")
+			assert.isNull(issue.archivedAt)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("an archived resolved issue stays archived for an occurrence from a pre-fix build", () => {
+		const rows = [scanRow({ serviceVersions: ["1.4.0"] })]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION,
+				workflowState: "done",
+				resolvedAt: TICK_MS - 20 * DAY_MS,
+				resolvedVersionsJson: ["1.4.0"],
+				archivedAt: TICK_MS - 6 * DAY_MS,
+			})
+
+			yield* errors.runTick()
+
+			const issue = yield* loadIssueById(issueId)
+			assert.strictEqual(issue.workflowState, "done")
+			assert.strictEqual(issue.archivedAt, TICK_MS - 6 * DAY_MS)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
 })
 
 // Idle-cursor harness

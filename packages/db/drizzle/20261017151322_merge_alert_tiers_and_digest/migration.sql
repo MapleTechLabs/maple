@@ -1,0 +1,3 @@
+-- Custom SQL migration. Separate statements with a line holding only:
+-- --> statement-breakpoint
+-- Joins the alert severity tiers and digest send hour branches; runs nothing.

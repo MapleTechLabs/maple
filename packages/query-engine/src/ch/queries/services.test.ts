@@ -13,6 +13,7 @@ import {
 	serviceUsageQuery,
 	serviceUsageWithPreviousQuery,
 	servicesFacetsQuery,
+	servicePresenceQuery,
 } from "./services"
 import { OrgId } from "@maple/domain"
 
@@ -485,5 +486,12 @@ describe("servicesFacetsQuery", () => {
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM service_overview_hourly")
 		expect(sql).toContain("UNION ALL")
+	})
+})
+
+describe("servicePresenceQuery", () => {
+	it("filters on the service name even when it is blank", () => {
+		const { sql } = compileUnsafe(servicePresenceQuery({ serviceName: "" }), baseParams)
+		expect(sql).toMatch(/WHERE [\w.]*bServiceName = ''/)
 	})
 })

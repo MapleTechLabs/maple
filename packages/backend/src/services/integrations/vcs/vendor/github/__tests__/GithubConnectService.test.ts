@@ -12,8 +12,6 @@ import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import type { HttpClient } from "effect/http"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
@@ -74,7 +72,6 @@ const connectLayer = (
 	testDb: TestDb,
 	http: Layer.Layer<HttpClient.HttpClient>,
 	sent: Array<VcsSyncJob>,
-	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
 ) => {
 	const env = testEnv(GITHUB_APP_CONFIG)
 	const data = Layer.mergeAll(
@@ -87,7 +84,7 @@ const connectLayer = (
 		Layer.provide(env),
 	)
 	const service = Layer.effect(GithubConnectService, GithubConnectService.make).pipe(
-		Layer.provide(Layer.mergeAll(env, githubAppClient, data, featureFlags)),
+		Layer.provide(Layer.mergeAll(env, githubAppClient, data)),
 	)
 	return Layer.mergeAll(service, data)
 }
@@ -607,6 +604,31 @@ describe("GithubConnectService", () => {
 			return { orgId, repository: yield* repoFor(repo, orgId, "7") }
 		})
 
+	it.effect("CI traces are on for a new connection and an admin can turn them off and back on", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId } = yield* connectedRepo(svc, repo)
+			assert.strictEqual((yield* svc.getStatus(orgId)).ciTracesEnabled, true)
+			assert.strictEqual((yield* svc.setCiTracesEnabled(orgId, false)).enabled, false)
+			assert.strictEqual((yield* svc.getStatus(orgId)).ciTracesEnabled, false)
+			yield* svc.setCiTracesEnabled(orgId, true)
+			assert.strictEqual((yield* svc.getStatus(orgId)).ciTracesEnabled, true)
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect("setCiTracesEnabled refuses an organization without a GitHub connection", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const exit = yield* svc.setCiTracesEnabled(asOrgId("org_none"), false).pipe(Effect.exit)
+			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
 	it.effect("setPrReviewEnabled turns reviews on for a flagged organization", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
@@ -701,33 +723,6 @@ describe("GithubConnectService", () => {
 			assert.deepStrictEqual(effective.ignorePaths, ["dist/"])
 		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
 	})
-
-	it.effect(
-		"setPrReviewEnabled refuses an organization outside the staged rollout, but still turns off",
-		() => {
-			const testDb = createTestDb(trackedDbs)
-			const sent: Array<VcsSyncJob> = []
-			return Effect.gen(function* () {
-				const svc = yield* GithubConnectService
-				const repo = yield* VcsRepository
-				const { orgId, repository } = yield* connectedRepo(svc, repo)
-				const refused = yield* svc.setPrReviewEnabled(orgId, repository.id, true).pipe(Effect.exit)
-				assert.ok(findError(refused) instanceof IntegrationsValidationError)
-				assert.strictEqual((yield* repoFor(repo, orgId, "7")).prReviewEnabled, false)
-				const off = yield* svc.setPrReviewEnabled(orgId, repository.id, false)
-				assert.strictEqual(off.enabled, false)
-			}).pipe(
-				Effect.provide(
-					connectLayer(
-						testDb,
-						scriptedHttp(connectResponders()),
-						sent,
-						OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
-					),
-				),
-			)
-		},
-	)
 
 	it.effect(
 		"setTrackedBranch validates the branch, no-ops on the current one, and wipes+resyncs on change",

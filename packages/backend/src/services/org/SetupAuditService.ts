@@ -27,11 +27,16 @@ import {
 	runSetupAudit,
 } from "@maple/domain/setup-audit"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, Effect, Layer } from "effect"
+import { Clock, Context, Effect, Layer, Option } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
+import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { readOrgCreatedAt } from "@maple/backend/services/org/org-created-at"
+import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import * as Integrations from "@maple/query-engine-integrations"
 
 /** Telemetry lookback for the warehouse-backed checks — matches the recommendations reconcile. */
@@ -51,10 +56,22 @@ export interface SetupAuditServiceApi {
 	readonly run: (tenant: TenantContext) => Effect.Effect<SetupAuditReport, SetupAuditUnavailableError>
 }
 
-const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQueryService> = Effect.gen(
+type SetupAuditServiceRequirements =
+	| Database
+	| WarehouseQueryService
+	| IntegrationInventoryService
+	| OnboardingService
+	| OrganizationService
+	| SignalPresenceService
+
+const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirements> = Effect.gen(
 	function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
+		const inventory = yield* IntegrationInventoryService
+		const onboarding = yield* OnboardingService
+		const organizations = yield* OrganizationService
+		const signals = yield* SignalPresenceService
 
 		const dbExecute = makeDbExecute(
 			database,
@@ -220,9 +237,16 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			)
 
 			const clickhouseRow = rows.clickhouse[0]
+			// Optional: an unreadable inventory drops the inventory-backed checks to a pass, not the audit.
+			const integrationInventory = yield* inventory.list(orgId).pipe(
+				Effect.tapError((error) =>
+					Effect.logWarning("Setup audit could not read integrations", error.message),
+				),
+				Effect.option,
+			)
 
 			const config: ConfigAuditInputs = {
-				firstDataReceivedAt: rows.onboarding[0]?.firstDataReceivedAt ?? null,
+				telemetry: (rows.onboarding[0]?.firstDataReceivedAt ?? null) === null ? "absent" : "present",
 				alertRules: rows.rules.map((rule) => ({
 					id: rule.id,
 					name: rule.name,
@@ -302,6 +326,9 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 					lastScrapeError: target.lastScrapeError,
 				})),
 				openRecommendationCount: rows.openRecommendations[0]?.count ?? 0,
+				...(Option.isSome(integrationInventory)
+					? { integrationInventory: integrationInventory.value }
+					: undefined),
 			}
 
 			return config
@@ -474,21 +501,65 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			return inputs
 		})
 
+		/**
+		 * `firstDataReceivedAt` has no ingest-side writer, so an unstamped org is checked against the
+		 * warehouse (same predicate as the onboarding checklist) and stamped here. `unavailable`
+		 * leaves the row unstamped so the next run probes again.
+		 */
+		const resolveTelemetry = Effect.fn("SetupAuditService.resolveTelemetry")(function* (
+			tenant: TenantContext,
+			recorded: ConfigAuditInputs["telemetry"],
+		) {
+			if (recorded === "present") return recorded
+			const report = yield* signals.read(tenant)
+			const hasTelemetry = report.signals.some(
+				(signal) =>
+					signal.status === "present" &&
+					(signal.signal === "traces" || signal.signal === "logs" || signal.signal === "metrics"),
+			)
+			const probe: ConfigAuditInputs["telemetry"] = report.warehouseAvailable
+				? hasTelemetry
+					? "present"
+					: "absent"
+				: "unavailable"
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.audit.first_data_probe": probe })
+			if (probe !== "present") return probe
+
+			// A failed write must not hide the audit from an org that has data; the next run retries.
+			const stamped = yield* onboarding
+				.recordFirstDataReceived(tenant.orgId, readOrgCreatedAt(organizations, tenant.orgId))
+				.pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning("Setup audit could not stamp first data received", error.message),
+					),
+					Effect.orElseSucceed(() => false),
+				)
+			yield* Effect.annotateCurrentSpan({ "maple.audit.first_data_stamped": stamped })
+			return probe
+		})
+
 		const run = Effect.fn("SetupAuditService.run")(function* (tenant: TenantContext) {
-			const config = yield* fetchConfigInputs(tenant.orgId)
+			const recorded = yield* fetchConfigInputs(tenant.orgId)
+			const config: ConfigAuditInputs = {
+				...recorded,
+				telemetry: yield* resolveTelemetry(tenant, recorded.telemetry),
+			}
 
 			// A warehouse outage must not take the whole audit down — the configuration half is the
 			// part that most often explains "why didn't anything page me", and it is always readable.
 			// `catchCause` rather than `Effect.option` deliberately: a driver-level defect should
 			// degrade this diagnostic endpoint to skipped checks, not 500 it.
-			const warehouseInputs = yield* fetchWarehouseInputs(tenant).pipe(
-				Effect.catchCause((cause) =>
-					Effect.logWarning("Setup audit telemetry checks skipped — warehouse unavailable").pipe(
-						Effect.annotateLogs({ cause }),
-						Effect.as(undefined),
-					),
-				),
-			)
+			// The presence probe already found the warehouse unreachable: skip the telemetry checks.
+			const warehouseInputs =
+				config.telemetry === "unavailable"
+					? undefined
+					: yield* fetchWarehouseInputs(tenant).pipe(
+							Effect.catchCause((cause) =>
+								Effect.logWarning(
+									"Setup audit telemetry checks skipped: warehouse unavailable",
+								).pipe(Effect.annotateLogs({ cause }), Effect.as(undefined)),
+							),
+						)
 
 			const now = yield* Clock.currentTimeMillis
 			const report = runSetupAudit({ now, config, warehouse: warehouseInputs })
@@ -514,5 +585,15 @@ export class SetupAuditService extends Context.Service<SetupAuditService, SetupA
 	"@maple/api/services/SetupAuditService",
 	{ make },
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				IntegrationInventoryService.layer,
+				OnboardingService.layer,
+				OrganizationService.layer,
+				SignalPresenceService.layer,
+			),
+		),
+	)
 }

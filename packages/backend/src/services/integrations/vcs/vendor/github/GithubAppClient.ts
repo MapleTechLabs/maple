@@ -1,5 +1,5 @@
-import { GitCommitSha } from "@maple/domain/http"
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { GitCommitSha, VcsRepositoryBlockedError, VcsRepoUnavailableError } from "@maple/domain/http"
+import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schedule, Schema, Stream } from "effect"
 import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
@@ -29,6 +29,33 @@ export class GithubAppError extends Schema.TaggedError<GithubAppError>()(
 	},
 ) {}
 
+/** GitHub's answer for a resource that is gone or that this installation can no longer see. */
+export const isGoneStatus = (status?: number) => status === 404 || status === 410
+
+// GitHub answers 451 for a repository taken down for legal reasons, and carries
+// the same `{"block":{"reason":"dmca"}}` body on the 403 variant. Neither clears
+// on retry, so both are terminal — matched on the body rather than on 403 alone,
+// which is otherwise an ordinary (retryable) permission failure.
+const BLOCK_BODY = /"block"\s*:|Repository access blocked/
+export const isBlockedRepository = (error: GithubAppError) =>
+	error.status === 451 || (error.status === 403 && BLOCK_BODY.test(error.message))
+
+export type RepositoryListingError = GithubAppError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+
+// A gone or blocked repository is an answer the sync records, not a client fault. Failing with
+// the anticipated domain error keeps the listing span out of error tracking.
+const toRepositoryListingError = (error: GithubAppError): RepositoryListingError => {
+	if (error.retryAfterSeconds !== undefined) return error
+	if (isBlockedRepository(error)) {
+		return new VcsRepositoryBlockedError({
+			message: error.message,
+			...(error.status === undefined ? undefined : { status: error.status }),
+		})
+	}
+	if (isGoneStatus(error.status)) return new VcsRepoUnavailableError({ message: error.message })
+	return error
+}
+
 const GITHUB_API_VERSION = "2022-11-28"
 const USER_AGENT = "maple-vcs-integration"
 const PER_PAGE = 100
@@ -37,6 +64,14 @@ const MAX_COMPARE_FILES = 300
 // Paginate effectively to the end (up to 100k items) while still bounding a
 // pathological loop. Hitting this cap is logged — truncation is never silent.
 const MAX_PAGES = 1000
+/** Pages of check-run annotations read looking for a failure, past warnings and notices. */
+const MAX_ANNOTATION_PAGES = 3
+/**
+ * A job's log can trail its `completed` webhook by a few seconds; until then GitHub answers 404.
+ * Three retries from two seconds wait out about fourteen.
+ */
+const JOB_LOG_NOT_READY_RETRIES = 3
+const JOB_LOG_NOT_READY_BACKOFF = Duration.seconds(2)
 /** GitHub lists at most 3,000 files for one pull request. */
 const MAX_PR_FILE_PAGES = 30
 
@@ -477,6 +512,17 @@ const decodePullRequest = Schema.decodeUnknownEffect(GithubApiPullRequestSchema)
 const decodePullRequestFiles = Schema.decodeUnknownEffect(GithubApiPullRequestFileList)
 const decodeCheckRun = Schema.decodeUnknownEffect(GithubApiCheckRunSchema)
 const decodeOwnCheckRunList = Schema.decodeUnknownEffect(GithubApiOwnCheckRunList)
+const decodeCheckRunAnnotations = Schema.decodeUnknownEffect(
+	Schema.Array(
+		Schema.Struct({
+			annotation_level: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			message: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			title: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			path: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			start_line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		}),
+	),
+)
 const decodePullRequestCommits = Schema.decodeUnknownEffect(GithubApiPullRequestCommitList)
 const decodeDiscussionComments = Schema.decodeUnknownEffect(GithubApiDiscussionCommentList)
 const decodeCheckRunList = Schema.decodeUnknownEffect(GithubApiCheckRunList)
@@ -608,10 +654,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						// immediate-redelivery loop after we stop spinning.
 						const exhausted = inlineRetries >= MAX_INLINE_RATE_LIMIT_RETRIES
 						if (waitS > INLINE_BACKOFF_CAP_S || exhausted) {
+							const retryAfterSeconds = exhausted ? Math.max(waitS, 60) : waitS
 							return yield* new GithubAppError({
-								message: `GitHub rate limited (retry after ${waitS}s)`,
+								message: `GitHub rate limited (retry after ${retryAfterSeconds}s)`,
 								status: response.status,
-								retryAfterSeconds: exhausted ? Math.max(waitS, 60) : waitS,
+								retryAfterSeconds,
 							})
 						}
 						// Surface the inline-wait on the active HTTP span so a slow GitHub call
@@ -839,7 +886,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							token,
 							`${base}?per_page=${PER_PAGE}&page=${page}`,
 						)
-						if (!isOk(response)) return yield* failure(response, "List branches", "repository")
+						if (!isOk(response))
+							return yield* failure(response, "List branches", "repository").pipe(
+								Effect.mapError(toRepositoryListingError),
+							)
 						const json = yield* parseJson(response, "List branches")
 						return yield* decodeBranchList(json).pipe(
 							Effect.mapError(
@@ -871,8 +921,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				repo: string,
 				params: { sha?: string; sinceIso?: string; untilIso?: string },
 			) {
-				const rateLimited = (error: GithubAppError, commits: ReadonlyArray<GithubApiCommit>) =>
-					error.retryAfterSeconds === undefined
+				const rateLimited = (
+					error: RepositoryListingError,
+					commits: ReadonlyArray<GithubApiCommit>,
+				) =>
+					!(error instanceof GithubAppError) || error.retryAfterSeconds === undefined
 						? Effect.fail(error)
 						: Effect.succeed({
 								commits,
@@ -895,7 +948,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						// Anything else non-2xx (incl. 404 = repo deleted / access lost) is
 						// surfaced as a repository-scoped failure so the orchestrator can mark
 						// the repo unavailable rather than mistaking it for an empty repo.
-						if (!isOk(response)) return yield* failure(response, "List commits", "repository")
+						if (!isOk(response))
+							return yield* failure(response, "List commits", "repository").pipe(
+								Effect.mapError(toRepositoryListingError),
+							)
 						const json = yield* parseJson(response, "List commits")
 						return yield* decodeCommitList(json).pipe(
 							Effect.mapError(
@@ -908,7 +964,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					const walk = (
 						page: number,
 						commits: ReadonlyArray<GithubApiCommit>,
-					): Effect.Effect<CommitWalk, GithubAppError> =>
+					): Effect.Effect<CommitWalk, RepositoryListingError> =>
 						page > COMMIT_PAGES_PER_INVOCATION
 							? // Full final page with no break → more remain; yield a continuation.
 								Effect.succeed({
@@ -919,7 +975,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							: fetchPage(page).pipe(
 									Effect.matchEffect({
 										onFailure: (error) => rateLimited(error, commits),
-										onSuccess: (decoded): Effect.Effect<CommitWalk, GithubAppError> => {
+										onSuccess: (
+											decoded,
+										): Effect.Effect<CommitWalk, RepositoryListingError> => {
 											if (decoded === undefined)
 												return Effect.succeed({ commits, complete: true as const })
 											const next = [...commits, ...decoded]
@@ -1858,6 +1916,95 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			// An Actions job id is its check run id. Reading annotations needs only `checks: read`,
+			// which the App's `checks: write` covers. Paging stops at the first page holding a failure:
+			// that is what CI traces want, and warnings before it should not hide it.
+			const listCheckRunAnnotations = Effect.fn("GithubAppClient.listCheckRunAnnotations")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				checkRunId: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const url = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs/${encodeURIComponent(checkRunId)}/annotations`
+				const pages = yield* Stream.paginate(1, (page: number) =>
+					Effect.gen(function* () {
+						const response = yield* authedGet(
+							config,
+							token,
+							`${url}?per_page=${PER_PAGE}&page=${page}`,
+						)
+						if (!isOk(response))
+							return yield* failure(response, "List check run annotations", "repository")
+						const annotations = yield* decodeCheckRunAnnotations(
+							yield* parseJson(response, "List check run annotations"),
+						).pipe(
+							Effect.mapError(
+								(cause) =>
+									new GithubAppError({ message: "Unexpected annotations payload", cause }),
+							),
+						)
+						const more =
+							annotations.length >= PER_PAGE &&
+							page < MAX_ANNOTATION_PAGES &&
+							!annotations.some((annotation) => annotation.annotation_level === "failure")
+						return [[annotations], more ? Option.some(page + 1) : Option.none<number>()] as const
+					}),
+				).pipe(Stream.runCollect)
+				return pages.flat()
+			})
+
+			// An Actions job's log as text lines, read as it downloads so a long log never sits in
+			// memory and a caller that stops early stops the download. Needs `actions: read`, which the
+			// App holds for its workflow webhooks. GitHub redirects to a short-lived signed URL on
+			// another host; the redirect is followed by hand so the installation token is not sent there.
+			const streamJobLog = (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				jobId: string,
+			): Stream.Stream<string, GithubAppError> =>
+				Stream.unwrap(
+					Effect.gen(function* () {
+						const config = yield* resolveConfig
+						const token = yield* mintInstallationToken(externalInstallationId)
+						const url = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${encodeURIComponent(jobId)}/logs`
+						const downloadUrl = yield* authedGet(config, token, url).pipe(
+							Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+							Effect.flatMap((response) => {
+								const location = response.headers["location"]
+								if (response.status >= 300 && response.status < 400 && location !== undefined)
+									return Effect.succeed(location)
+								return failure(response, "Get job log", "repository")
+							}),
+							Effect.retry({
+								while: (error) => error.status === 404,
+								schedule: Schedule.exponential(JOB_LOG_NOT_READY_BACKOFF),
+								times: JOB_LOG_NOT_READY_RETRIES,
+							}),
+						)
+						const download = yield* tracedFetch(
+							downloadUrl,
+							{ headers: { "user-agent": USER_AGENT } },
+							"GitHub job log download failed",
+						)
+						if (!isOk(download)) return yield* failure(download, "Download job log", "repository")
+						return download.stream.pipe(
+							Stream.mapError(
+								(cause) =>
+									new GithubAppError({ message: "GitHub job log download failed", cause }),
+							),
+							Stream.decodeText,
+							Stream.splitLines,
+						)
+					}),
+				).pipe(
+					Stream.withSpan("GithubAppClient.streamJobLog", {
+						attributes: { "cicd.pipeline.task.run.id": jobId },
+					}),
+				)
+
 			// Used by the dashboard connect flow to populate the installation row.
 			const getInstallation = Effect.fn("GithubAppClient.getInstallation")(function* (
 				externalInstallationId: string,
@@ -1991,6 +2138,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				upsertIssueComment,
 				searchCode,
 				getSourceFile,
+				listCheckRunAnnotations,
+				streamJobLog,
 				mintCloneCredentials,
 				getInstallation,
 				exchangeUserOAuthCode,

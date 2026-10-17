@@ -20,3 +20,11 @@ export function useIsOrgAdmin(): boolean {
 		.onSuccess((session) => session.roles.some((role) => role === "root" || role === "org:admin"))
 		.orElse(() => false)
 }
+
+/** The signed-in user's id from the same session atom, or `null` until it loads. */
+export function useSessionUserId(): string | null {
+	const sessionResult = useAtomValue(retainedQuery("auth", "session", {}))
+	return Result.builder(sessionResult)
+		.onSuccess((session): string | null => session.userId)
+		.orElse(() => null)
+}

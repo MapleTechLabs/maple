@@ -9,6 +9,8 @@ import {
 	tracesDurationStatsQuery,
 	spanHierarchyQuery,
 	spanDetailQuery,
+	spanEventsQuery,
+	spanEventsByTraceQuery,
 	traceTimeProbeQuery,
 	recentTraceTimeProbeQuery,
 } from "./queries/errors"
@@ -942,6 +944,46 @@ describe("converted queries", () => {
 		})
 		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
 		expect(sql).toContain("Timestamp <= '2026-04-15 15:00:00'")
+	})
+
+	it("spanEventsQuery seeks traces by the sorting-key prefix and returns the Events arrays", () => {
+		const q = spanEventsQuery({ traceId: "abc", spanId: "s1", serviceName: "api", spanName: "GET" })
+		const { sql } = compileUnsafe(q, {
+			orgId: OrgId.make("org_1"),
+			startTime: "2026-04-15 13:00:00",
+			endTime: "2026-04-15 13:00:01",
+		})
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("ServiceName = 'api'")
+		expect(sql).toContain("SpanName = 'GET'")
+		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
+		expect(sql).toContain("Timestamp <= '2026-04-15 13:00:01'")
+		expect(sql).toContain("TraceId = 'abc'")
+		expect(sql).toContain("SpanId = 's1'")
+		expect(sql).toContain("toJSONString(traces.EventsTimestamp) AS eventsTimestamp")
+		expect(sql).toContain("toJSONString(traces.EventsName) AS eventsName")
+		expect(sql).toContain("toJSONString(traces.EventsAttributes) AS eventsAttributes")
+		expect(sql).toContain("LIMIT 1")
+	})
+
+	it("spanEventsByTraceQuery reads only spans with events inside the trace window", () => {
+		const q = spanEventsByTraceQuery({ traceId: "abc", limit: 10 })
+		const { sql } = compileUnsafe(q, {
+			orgId: OrgId.make("org_1"),
+			startTime: "2026-04-15 13:00:00",
+			endTime: "2026-04-15 13:00:05",
+		})
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("TraceId = 'abc'")
+		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
+		expect(sql).toContain("Timestamp <= '2026-04-15 13:00:05'")
+		expect(sql).toContain("notEmpty(traces.EventsName)")
+		expect(sql).toMatch(/ORDER BY spanStart ASC\s+LIMIT 10/)
+		expect(sql).toContain("toJSONString(traces.EventsName) AS eventsName")
+		expect(sql).not.toContain("EventsAttributes")
+		expect(sql).toContain("LIMIT 10")
 	})
 
 	it("traceTimeProbeQuery is a cheap LIMIT-1 timestamp seek with no ORDER BY", () => {

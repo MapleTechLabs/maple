@@ -14,14 +14,14 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
-import { Cause, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { Cause, Duration, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import type { Tracer } from "effect"
 import { AiError, LanguageModel, Tool, Toolkit } from "effect/ai"
 import type { Response as AiResponse } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
 import { instrumentLanguageModel } from "./genai-spans"
-import { layerLlm, MODEL_CALL_OUTPUT_TOKENS, resolveTriageModel } from "./Llm"
+import { layerLlm, MODEL_ATTEMPT_CAP, MODEL_CALL_OUTPUT_TOKENS, resolveTriageModel } from "./Llm"
 
 /** Two frames, the first naming the response and the model that served it. */
 const SSE = [
@@ -703,6 +703,178 @@ describe("runaway model calls", () => {
 				Effect.provideService(FetchHttpClient.Fetch, capture),
 			)
 			assert.deepInclude(bodies[0], { max_tokens: MODEL_CALL_OUTPUT_TOKENS })
+		}),
+	)
+})
+
+describe("model calls cut at their attempt cap", () => {
+	/** Reasoning at one delta every 10s, never finishing: a long generation, not a stalled one. */
+	const slowReasoning = Stream.fromIterable<AiResponse.StreamPartEncoded>([
+		{ type: "reasoning-start", id: "r" },
+	]).pipe(
+		Stream.concat(
+			Stream.fromEffect(Effect.sleep("10 seconds")).pipe(
+				Stream.as<AiResponse.StreamPartEncoded>({ type: "reasoning-delta", id: "r", delta: "hmm " }),
+				Stream.forever,
+			),
+		),
+	)
+	const quickAnswer = Stream.fromIterable<AiResponse.StreamPartEncoded>([
+		{ type: "text-start", id: "t" },
+		{ type: "text-delta", id: "t", delta: "done" },
+		{ type: "text-end", id: "t" },
+		{ type: "finish", reason: "stop", usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } } },
+	])
+
+	/** A model whose calls are answered by `responses` in order, counting how many it was asked. */
+	const scripted = (
+		responses: ReadonlyArray<Stream.Stream<AiResponse.StreamPartEncoded>>,
+		retried: Array<number>,
+	) => {
+		let calls = 0
+		return Layer.effect(
+			LanguageModel.LanguageModel,
+			instrumentLanguageModel(
+				LanguageModel.make({
+					generateText: () => Effect.succeed([]),
+					streamText: () => Stream.suspend(() => responses[calls++] ?? quickAnswer),
+				}),
+				{ providerName: "fake", sessionAttributes: {} },
+				{
+					attempts: {
+						cap: Duration.seconds(90),
+						retry: (stream) =>
+							Stream.onStart(
+								stream,
+								Effect.sync(() => void retried.push(calls)),
+							),
+					},
+				},
+			),
+		)
+	}
+
+	it.effect("cuts a call still reasoning at the cap and hands over only the retry's answer", () =>
+		Effect.gen(function* () {
+			const retried: Array<number> = []
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runCollect,
+				Effect.provide(scripted([slowReasoning, quickAnswer], retried)),
+				Effect.forkChild,
+			)
+			yield* TestClock.adjust("80 seconds")
+			assert.isUndefined(fiber.pollUnsafe(), "a call inside its cap keeps going")
+			yield* TestClock.adjust("10 seconds")
+			const parts = yield* Fiber.join(fiber)
+			assert.lengthOf(retried, 1)
+			// Nothing of the cut attempt reached the engine, so it may treat the retry as the only call.
+			assert.deepStrictEqual(
+				parts.map((part) => part.type),
+				["text-start", "text-delta", "text-end", "finish"],
+			)
+		}),
+	)
+
+	it.effect("delivers a call that finishes inside the cap as it was, without a retry", () =>
+		Effect.gen(function* () {
+			const retried: Array<number> = []
+			const parts = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runCollect,
+				Effect.provide(scripted([quickAnswer], retried)),
+			)
+			assert.lengthOf(retried, 0)
+			assert.strictEqual(parts.length, 4)
+		}),
+	)
+
+	it.effect("still fails a retry that runs past the call's own ceiling", () =>
+		Effect.gen(function* () {
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.provide(scripted([slowReasoning, slowReasoning], [])),
+				Effect.forkChild,
+			)
+			yield* TestClock.adjust("4 minutes")
+			const exit = yield* Fiber.await(fiber)
+			const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+			assert.include(
+				String(AiError.isAiError(error) ? error.message : ""),
+				"did not finish within 4 minutes",
+			)
+		}),
+	)
+
+	/** The first request never sends a byte past its headers; every later one answers at once. */
+	const stalledThenAnswered =
+		(bodies: Array<Record<string, unknown>>): typeof globalThis.fetch =>
+		(input, init) => {
+			bodies.push(JSON.parse(String(init?.body)))
+			if (bodies.length > 1) return sseFetch(input, init)
+			const open = new ReadableStream<Uint8Array>({
+				start: (controller) =>
+					controller.enqueue(new TextEncoder().encode(": OPENROUTER PROCESSING\n\n")),
+			})
+			return Promise.resolve(
+				new Response(open, { status: 200, headers: { "content-type": "text/event-stream" } }),
+			)
+		}
+
+	/** Real time, not the test clock: the request goes out on a promise, after the fork returns. */
+	const untilSent = (bodies: ReadonlyArray<unknown>, count: number) =>
+		Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5))).pipe(
+			Effect.repeat({ until: () => bodies.length >= count, times: 400 }),
+		)
+
+	const unattendedCall = (
+		env: Parameters<typeof resolveTriageModel>[0],
+		bodies: Array<Record<string, unknown>>,
+	) =>
+		LanguageModel.streamText({ prompt: "hi" }).pipe(
+			Stream.runCollect,
+			Effect.provide(Layer.provideMerge(resolveTriageModel(env, undefined, true).layer, layerLlm(env))),
+			Effect.provideService(FetchHttpClient.Fetch, stalledThenAnswered(bodies)),
+			Effect.forkChild,
+		)
+
+	it.effect("asks an unattended OpenRouter call again at low reasoning effort after the cap", () =>
+		Effect.gen(function* () {
+			const bodies: Array<Record<string, unknown>> = []
+			const fiber = yield* unattendedCall({ ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "high" }, bodies)
+			yield* untilSent(bodies, 1)
+			yield* TestClock.adjust(MODEL_ATTEMPT_CAP)
+			const parts = yield* Fiber.join(fiber)
+			assert.lengthOf(bodies, 2)
+			assert.deepInclude(bodies[0], { reasoning: { effort: "high" } })
+			assert.deepInclude(bodies[1], { reasoning: { effort: "low" } })
+			assert.isTrue(parts.some((part) => part.type === "finish"))
+		}),
+	)
+
+	it.effect("reads the cap from the deployment's settings", () =>
+		Effect.gen(function* () {
+			const bodies: Array<Record<string, unknown>> = []
+			const fiber = yield* unattendedCall({ ...ENV, MAPLE_MODEL_ATTEMPT_CAP_SECONDS: "30" }, bodies)
+			yield* untilSent(bodies, 1)
+			yield* TestClock.adjust("30 seconds")
+			yield* Fiber.join(fiber)
+			assert.lengthOf(bodies, 2)
+		}),
+	)
+
+	it.effect("never cuts an attended call at the cap", () =>
+		Effect.gen(function* () {
+			const bodies: Array<Record<string, unknown>> = []
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.provide(Layer.provideMerge(resolveTriageModel(ENV).layer, layerLlm(ENV))),
+				Effect.provideService(FetchHttpClient.Fetch, stalledThenAnswered(bodies)),
+				Effect.forkChild,
+			)
+			yield* untilSent(bodies, 1)
+			yield* TestClock.adjust("100 seconds")
+			assert.isUndefined(fiber.pollUnsafe())
+			assert.lengthOf(bodies, 1)
+			yield* Fiber.interrupt(fiber)
 		}),
 	)
 })

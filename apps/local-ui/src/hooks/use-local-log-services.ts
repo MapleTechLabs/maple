@@ -1,9 +1,10 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import type { FilterOption } from "@maple/ui/components/filters/filter-section"
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import type { TimeBounds } from "../lib/time"
 import type { LogFilters } from "./use-local-logs"
+import { windowed } from "../lib/query-cache"
 
 /**
  * Distinct services that emitted logs in the selected window, under every log
@@ -29,16 +30,15 @@ export function compileLocalLogServicesQuery(
 
 export function useLocalLogServices(filters: LogFilters, bounds: TimeBounds) {
 	return useQuery<ReadonlyArray<FilterOption>>({
-		queryKey: [
+		...windowed([
 			"local",
 			"logs",
 			"services",
 			filters.severity ?? null,
 			filters.search ?? null,
 			boundsKey(bounds),
-		],
+		]),
 		staleTime: 60_000,
-		placeholderData: keepPreviousData,
 		queryFn: async ({ signal }) => {
 			const compiled = compileLocalLogServicesQuery(bounds.startTime, bounds.endTime, filters)
 			const rows = await executeLocalCompiledQuery(compiled, signal)

@@ -114,7 +114,8 @@ jobs:
                   AWS_ACCOUNT_ID: ${{ steps.setup.outputs.aws-account-id }}
               run: bun run alchemy:deploy:pr
 
-            # Seeds demo telemetry as the dev test user, then fails on any 5xx from a read path.
+            # Provisions the preview reviewer, seeds demo telemetry into its org, then fails on any
+            # 5xx from a read path.
             - name: Seed and smoke-test the preview
               id: smoke
               if: ${{ env.TEARDOWN != 'true' && steps.deploy.outcome == 'success' }}
@@ -122,6 +123,31 @@ jobs:
                   API_URL: ${{ steps.deploy.outputs.api_url }}
                   WEB_URL: ${{ steps.deploy.outputs.web_url }}
               run: bun scripts/preview-seed-smoke.ts
+
+            # Browser e2e against the fresh preview (apps/web/e2e/README.md). Non-blocking while
+            # it beds in; `agent.*` tests register only once ANTHROPIC_API_KEY is in Infisical.
+            - name: End-to-end tests against the preview
+              id: e2e
+              if: ${{ env.TEARDOWN != 'true' && steps.smoke.outcome == 'success' }}
+              continue-on-error: true
+              working-directory: apps/web/e2e
+              env:
+                  MAPLE_E2E_APP_URL: ${{ steps.deploy.outputs.web_url }}
+                  MAPLE_E2E_API_URL: ${{ steps.deploy.outputs.api_url }}
+                  E2E_TELEMETRY_DISABLED: "1"
+              run: |
+                  bunx e2e-web install chromium --with-deps
+                  bunx e2e run --reporter list,junit
+
+            - name: Upload e2e results
+              if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: e2e-results
+                  path: apps/web/e2e/.e2e/
+                  if-no-files-found: warn
+                  include-hidden-files: true
+                  retention-days: 7
 
             - name: Destroy PR preview stack with Alchemy
               id: destroy
@@ -207,6 +233,8 @@ jobs:
                         failure) echo "Smoke test: failed (see the workflow run)" ;;
                         *) printf 'Smoke test: %s\n' "${SMOKE_OUTCOME:-not run}" ;;
                       esac
+                      echo
+                      echo 'Sign in with the **PR preview** form on the sign-in page and the preview access key (`PREVIEW_SIGNIN_KEY` in Infisical), or run `bun run preview:signin '"$PR_NUMBER"'` for a signed-in link.'
                       echo
                       printf 'Deployed from [`%s`](%s) · [View workflow run](%s)\n' "$short_sha" "$COMMIT_URL" "$RUN_URL"
                     else

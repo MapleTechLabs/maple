@@ -368,6 +368,45 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "560a5a62db3961c68d815eeab700525cb3a59df3a2aadcf84033417c76a87f0b",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// TODO(v30): what changed, whether any part is rewritten or any row
+		// moves, and what this edge does NOT backfill.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 30,
+		fingerprint: "5e8afdb803653665",
+		digest: "5e8afdb80365366551f730f44b42482c16d8f8923ba27060600ce4df1beec44a",
+		manifestDigest: "7fe927d0537e697ee7e9ad0c565c3294efee9e958d9894292afed234fbe560ab",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// TODO(v31): what changed, whether any part is rewritten or any row
+		// moves, and what this edge does NOT backfill.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 31,
+		fingerprint: "ea8d1656ca6f4b4f",
+		digest: "ea8d1656ca6f4b4f7cfda050291fb26fca73cc7d4ce21d50fff04cff5276b079",
+		manifestDigest: "020f17fa907a00c3c44ab7a05cc4306933a4d8f4542ea99d441728b47b7eaca6",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// alert_checks gains Level (metadata-only ADD COLUMN with a '' default):
+		// no part is rewritten, no row moves, and existing checks are not backfilled.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 32,
+		fingerprint: "7bc1c04157f9f51f",
+		digest: "7bc1c04157f9f51f68efd2668e1447385491a3589d384844810e929df83becc7",
+		manifestDigest: "4b47147a87fbdda6a9efa8c96bc45306e356339f7b664ed40f3058d802dc2d1e",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)
 
 /** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */

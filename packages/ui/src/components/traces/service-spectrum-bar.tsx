@@ -2,13 +2,17 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/
 import { cn } from "../../lib/utils"
 import { formatDuration, formatPercent } from "../../lib/format"
 import { getServiceColor } from "../../lib/colors"
+import { spanStartMs } from "../../lib/span-tree"
 
-/** The minimal span shape the share computation needs — both the web app's
- * warehouse `Span` and this package's `lib/types` `Span` satisfy it. */
+/** The minimal span-tree shape the share computation needs; `SpanNode` from
+ * either the web app or this package satisfies it. */
 export interface SpectrumSpan {
 	serviceName: string
 	startTime: string
 	durationMs: number
+	clockSkewMs?: number
+	isMissing?: boolean
+	children: ReadonlyArray<SpectrumSpan>
 }
 
 export interface ServiceShare {
@@ -17,52 +21,88 @@ export interface ServiceShare {
 	percent: number
 }
 
-/**
- * Wall-clock time attributable to each service, as the union of that service's
- * span intervals — a parent and its child in the same service never
- * double-count. Percentages are shares of the summed union (not the trace's
- * total duration), so segments always total 100% even when services run in
- * parallel. Sorted by share, descending.
- */
-export function computeServiceShares(spans: ReadonlyArray<SpectrumSpan>): Array<ServiceShare> {
-	const intervalsByService = new Map<string, Array<[number, number]>>()
-	for (const span of spans) {
-		const start = Date.parse(span.startTime)
-		if (Number.isNaN(start)) continue
-		const list = intervalsByService.get(span.serviceName)
-		const interval: [number, number] = [start, start + Math.max(span.durationMs, 0)]
-		if (list) list.push(interval)
-		else intervalsByService.set(span.serviceName, [interval])
-	}
+type Interval = [number, number]
 
-	const unions: Array<{ serviceName: string; durationMs: number }> = []
-	for (const [serviceName, intervals] of intervalsByService) {
-		intervals.sort((a, b) => a[0] - b[0])
-		let unionMs = 0
-		let [curStart, curEnd] = intervals[0]
-		for (let i = 1; i < intervals.length; i++) {
-			const [start, end] = intervals[i]
-			if (start <= curEnd) {
-				curEnd = Math.max(curEnd, end)
-			} else {
-				unionMs += curEnd - curStart
-				curStart = start
-				curEnd = end
+/** The parts of `[start, end]` not covered by any child: the span's self time. */
+function selfIntervals(start: number, end: number, children: ReadonlyArray<SpectrumSpan>): Array<Interval> {
+	const covered = children
+		.map((child): Interval => {
+			const childStart = spanStartMs(child)
+			return [Math.max(childStart, start), Math.min(childStart + child.durationMs, end)]
+		})
+		.filter(([s, e]) => e > s)
+		.sort((a, b) => a[0] - b[0])
+
+	const gaps: Array<Interval> = []
+	let cursor = start
+	for (const [s, e] of covered) {
+		if (s > cursor) gaps.push([cursor, s])
+		cursor = Math.max(cursor, e)
+	}
+	if (end > cursor) gaps.push([cursor, end])
+	return gaps
+}
+
+/**
+ * Wall-clock time attributable to each service: every instant goes to the
+ * innermost spans running then (split evenly between parallel ones), so a
+ * parent that only waits on a child in another service is not credited with
+ * the child's time. Shares sum to 100%. Sorted by share, descending.
+ */
+export function computeServiceShares(rootSpans: ReadonlyArray<SpectrumSpan>): Array<ServiceShare> {
+	// Sweep events over every span's self intervals: +1/-1 at each edge, per service.
+	const events: Array<{ at: number; service: string; delta: 1 | -1 }> = []
+	const services = new Set<string>()
+	const visit = (span: SpectrumSpan) => {
+		if (!span.isMissing) {
+			const start = spanStartMs(span)
+			// Skip the whole subtree: the parent already counts this span's time as its own.
+			if (Number.isNaN(start)) return
+			services.add(span.serviceName)
+			for (const [s, e] of selfIntervals(start, start + Math.max(span.durationMs, 0), span.children)) {
+				events.push({ at: s, service: span.serviceName, delta: 1 })
+				events.push({ at: e, service: span.serviceName, delta: -1 })
 			}
 		}
-		unionMs += curEnd - curStart
-		unions.push({ serviceName, durationMs: unionMs })
+		for (const child of span.children) visit(child)
+	}
+	for (const root of rootSpans) visit(root)
+
+	events.sort((a, b) => a.at - b.at || a.delta - b.delta)
+	const active = new Map<string, number>()
+	const attributed = new Map<string, number>()
+	let activeTotal = 0
+	let prev = events[0]?.at ?? 0
+	for (const event of events) {
+		const dt = event.at - prev
+		if (dt > 0 && activeTotal > 0) {
+			for (const [service, count] of active) {
+				attributed.set(service, (attributed.get(service) ?? 0) + (dt * count) / activeTotal)
+			}
+		}
+		prev = event.at
+		const next = (active.get(event.service) ?? 0) + event.delta
+		if (next === 0) active.delete(event.service)
+		else active.set(event.service, next)
+		activeTotal += event.delta
 	}
 
-	const total = unions.reduce((sum, u) => sum + u.durationMs, 0)
-	return unions
-		.map((u) => ({ ...u, percent: total > 0 ? (u.durationMs / total) * 100 : 100 / unions.length }))
+	const total = [...attributed.values()].reduce((sum, ms) => sum + ms, 0)
+	return [...services]
+		.map((serviceName) => {
+			const durationMs = attributed.get(serviceName) ?? 0
+			return {
+				serviceName,
+				durationMs,
+				percent: total > 0 ? (durationMs / total) * 100 : 100 / services.size,
+			}
+		})
 		.sort((a, b) => b.durationMs - a.durationMs)
 }
 
 /**
  * Segmented "where did the time go" bar: one segment per service, sized by its
- * share of union wall-clock time, colored by the service's identity color.
+ * share of wall-clock time, colored by the service's identity color.
  * Decorative reinforcement of the legend chips beside it — each segment still
  * carries a tooltip with the exact figures.
  */

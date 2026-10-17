@@ -261,6 +261,77 @@ describe("buildSessionSummary — tokens and models", () => {
 		expect(summary.cost).toBe(0.002)
 	})
 
+	it("counts the gateway cost eve stamps on the step above its model call", () => {
+		// eve on Vercel AI Gateway: the cost is on `agent.step`, the tokens on
+		// its `chat` call, and the turn total on `invoke_agent` repeats them.
+		const summary = summarize([
+			agentSpan({
+				spanId: "turn",
+				startMs: 0,
+				durationMs: 3 * SECOND,
+				genAi: { usageInputTokens: 2700, usageOutputTokens: 50, mapleLlmCall: 0 },
+			}),
+			makeSpan({
+				spanId: "step",
+				parentSpanId: "turn",
+				spanName: "agent.step",
+				startMs: 0,
+				durationMs: 2 * SECOND,
+				genAi: { operationName: "workflow", usageCost: 0.0004263, mapleLlmCall: 0, mapleCost: 0.0004263 },
+			}),
+			llmSpan({
+				spanId: "chat",
+				parentSpanId: "step",
+				startMs: 0,
+				durationMs: 2 * SECOND,
+				genAi: {
+					usageInputTokens: 2700,
+					usageOutputTokens: 50,
+					mapleLlmCall: 1,
+					mapleInputTokens: 2700,
+					mapleOutputTokens: 50,
+				},
+			}),
+		])
+
+		expect(summary.cost).toBe(0.0004263)
+		expect(summary.tokens.total).toBe(2750)
+		expect(summary.work.llmCalls).toBe(1)
+	})
+
+	it("lists a model once whatever snapshot each call answered with", () => {
+		const call = (spanId: string, startMs: number, responseModel?: string) =>
+			llmSpan({
+				spanId,
+				startMs,
+				durationMs: SECOND,
+				genAi: { requestModel: "openai/gpt-4o-mini", responseModel, usageInputTokens: 10, usageOutputTokens: 1 },
+			})
+		const summary = summarize([
+			call("a", 0, "gpt-4o-mini-2024-07-18"),
+			call("b", 2 * SECOND, "gpt-4o-mini"),
+			call("c", 4 * SECOND),
+			llmSpan({
+				spanId: "routed",
+				startMs: 6 * SECOND,
+				durationMs: SECOND,
+				genAi: { requestModel: "openrouter/auto", responseModel: "anthropic/claude-sonnet-4.5" },
+			}),
+			llmSpan({
+				spanId: "pinned",
+				startMs: 8 * SECOND,
+				durationMs: SECOND,
+				genAi: { requestModel: "openai/gpt-4o-2024-05-13", responseModel: "gpt-4o-2024-08-06" },
+			}),
+		])
+
+		expect(summary.models.map((model) => model.model).sort()).toEqual([
+			"anthropic/claude-sonnet-4.5",
+			"gpt-4o-2024-08-06",
+			"openai/gpt-4o-mini",
+		])
+	})
+
 	it("counts usage at the deepest span that reports it", () => {
 		const summary = summarize([
 			// The framework reports a turn total on the agent span AND on each model

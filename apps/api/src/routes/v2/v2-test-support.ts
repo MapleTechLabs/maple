@@ -15,6 +15,7 @@ import { InvestigationService } from "@maple/backend/services/errors/Investigati
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
@@ -42,11 +43,14 @@ import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2IngestKeysLive } from "./ingest-keys.http"
 import { HttpV2ChatIntegrationsLive } from "./integrations-chat.http"
+import { HttpV2GcpIntegrationsLive } from "./integrations-gcp.http"
 import { HttpV2PlanetScaleIntegrationsLive } from "./integrations.http"
+import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { HttpV2ErrorIssuesLive } from "./error-issues.http"
 import { HttpV2AnomaliesLive } from "./anomalies.http"
 import { HttpV2InvestigationsLive } from "./investigations.http"
 import { HttpV2MobileDevicesLive } from "./mobile-devices.http"
+import { HttpV2McpConnectionsLive } from "./mcp-connections.http"
 import { HttpV2AgentFeedbackLive } from "./agent-feedback.http"
 import { HttpV2OnboardingChecklistLive } from "./onboarding-checklist.http"
 import { HttpV2SupportChannelLive } from "./support-channel.http"
@@ -155,6 +159,9 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 			Layer.provide(Layer.mergeAll(MobileDevicesService.layer, LiveActivitiesService.layer)),
 		),
 		HttpV2AgentFeedbackLive.pipe(Layer.provide(AgentFeedbackService.layer)),
+		HttpV2McpConnectionsLive.pipe(Layer.provide(McpConnectionsService.layer)),
+		// Same, plus the Env every harness provides as well.
+		HttpV2GcpIntegrationsLive.pipe(Layer.provide(GcpConnectorService.layer)),
 		// Real reads over whichever `WarehouseQueryService` stub the test provides.
 		HttpV2SessionReplaysLive.pipe(
 			Layer.provide(

@@ -63,6 +63,8 @@ export interface EnvConfig {
 	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted<string>>
 	/** Svix signing secret (`whsec_…`) for `POST /webhooks/clerk`; the route answers 503 while unset. */
 	readonly CLERK_WEBHOOK_SECRET: Option.Option<Redacted.Redacted<string>>
+	/** Shared access key for PR-preview sign-in; bound on `pr-<n>` stages only (`PreviewSignInService`). */
+	readonly PREVIEW_SIGNIN_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
 	readonly AUTUMN_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly AUTUMN_API_URL: string
@@ -144,6 +146,16 @@ export interface EnvConfig {
 	readonly GITHUB_APP_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly GITHUB_APP_WEBHOOK_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly GITHUB_API_BASE_URL: string
+	/**
+	 * Maple's own Google service account. Customers grant it permission to impersonate the
+	 * metrics reader their setup script creates. Unset: the GCP integration is logs-only.
+	 */
+	readonly MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: Option.Option<string>
+	/**
+	 * A key of that service account: its JSON key file, base64-encoded. The metrics and resource
+	 * poller signs in with it. Unset: nothing is polled.
+	 */
+	readonly MAPLE_GCP_SERVICE_ACCOUNT_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly CLOUDFLARE_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly CLOUDFLARE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly CLOUDFLARE_OAUTH_SCOPES: string
@@ -212,6 +224,7 @@ const envConfig = Config.all({
 	CLERK_PUBLISHABLE_KEY: optionalString("CLERK_PUBLISHABLE_KEY"),
 	CLERK_JWT_KEY: optionalRedacted("CLERK_JWT_KEY"),
 	CLERK_WEBHOOK_SECRET: optionalRedacted("CLERK_WEBHOOK_SECRET"),
+	PREVIEW_SIGNIN_KEY: optionalRedacted("PREVIEW_SIGNIN_KEY"),
 	MAPLE_ORG_ID_OVERRIDE: optionalString("MAPLE_ORG_ID_OVERRIDE"),
 	AUTUMN_SECRET_KEY: optionalRedacted("AUTUMN_SECRET_KEY"),
 	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", "https://api.useautumn.com"),
@@ -251,6 +264,8 @@ const envConfig = Config.all({
 	GITHUB_APP_CLIENT_SECRET: optionalRedacted("GITHUB_APP_CLIENT_SECRET"),
 	GITHUB_APP_WEBHOOK_SECRET: optionalRedacted("GITHUB_APP_WEBHOOK_SECRET"),
 	GITHUB_API_BASE_URL: stringWithDefault("GITHUB_API_BASE_URL", "https://api.github.com"),
+	MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: optionalString("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
+	MAPLE_GCP_SERVICE_ACCOUNT_KEY: optionalRedacted("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 	CLOUDFLARE_OAUTH_CLIENT_ID: optionalString("CLOUDFLARE_OAUTH_CLIENT_ID"),
 	CLOUDFLARE_OAUTH_CLIENT_SECRET: optionalRedacted("CLOUDFLARE_OAUTH_CLIENT_SECRET"),
 	// Cloudflare OAuth scope ids are DOT-delimited (mirroring API-token permission names;

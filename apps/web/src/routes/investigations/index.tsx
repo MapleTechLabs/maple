@@ -411,11 +411,7 @@ function BudgetExhaustedNotice({
 			</AlertDescription>
 			{canEditSettings ? (
 				<AlertAction>
-					<Button
-						size="sm"
-						variant="ghost"
-						render={<Link to="/settings" search={{ tab: "automation" }} />}
-					>
+					<Button size="sm" variant="ghost" render={<Link to="/settings" search={{ tab: "ai" }} />}>
 						Raise the limit
 					</Button>
 				</AlertAction>
@@ -464,10 +460,7 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 				label={stats.critical > 0 ? `to review (${stats.critical} critical)` : "to review"}
 				tone={stats.review.length > 0 ? "warn" : undefined}
 			/>
-			<ToolbarStat
-				value={stats.resolved.length}
-				label="resolved in 24h"
-			/>
+			<ToolbarStat value={stats.resolved.length} label="resolved in 24h" />
 		</ToolbarStats>
 	)
 }

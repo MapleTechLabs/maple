@@ -14,6 +14,7 @@
 
 export * from "./ai/index"
 export * from "./cloudflare/index"
+export * from "./gcp/index"
 export * from "./planetscale/index"
 export * from "./product/index"
 export * from "./railway/index"

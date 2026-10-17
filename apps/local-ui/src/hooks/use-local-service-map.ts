@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { CH, coerceServiceOverviewRows, summarizeSampling, type ServiceOverview } from "@maple/query-engine"
 import type {
 	ServiceMapDbEdgeRow,
@@ -8,6 +8,7 @@ import type {
 import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 import type { TimeBounds } from "../lib/time"
+import { windowed } from "../lib/query-cache"
 
 export interface LocalServiceMapData {
 	readonly edges: ReadonlyArray<ServiceMapEdgeRow>
@@ -107,6 +108,8 @@ function toDbEdge(row: CH.ServiceDbEdgesOutput, durationSeconds: number): Servic
 /** Same precedence as the cloud API's platform classifier: host infrastructure beats SDK self-report. */
 export function classifyPlatform(row: CH.ServicePlatformsOutput): ServicePlatform {
 	if (row.cloudPlatform === "cloudflare.workers" || row.cloudProvider === "cloudflare") return "cloudflare"
+	// Before the Lambda rule: Google Cloud's detector sets `faas.name` on Cloud Run and Cloud Functions.
+	if (row.cloudProvider === "gcp") return "gcp"
 	if (row.faasName !== "" || row.cloudPlatform === "aws_lambda") return "lambda"
 	// `k8s.cluster.name` alone does not prove the service runs in Kubernetes.
 	if (row.k8sPodName !== "" || row.k8sDeploymentName !== "") return "kubernetes"
@@ -120,8 +123,7 @@ export function classifyPlatform(row: CH.ServicePlatformsOutput): ServicePlatfor
  */
 export function useLocalServiceMap(bounds: TimeBounds, durationSeconds: number) {
 	return useQuery({
-		queryKey: ["local", "service-map", boundsKey(bounds), durationSeconds],
-		placeholderData: keepPreviousData,
+		...windowed(["local", "service-map", durationSeconds, boundsKey(bounds)]),
 		queryFn: async ({ signal }): Promise<LocalServiceMapData> => {
 			const params = localParams(bounds)
 			const [edgeRows, dbEdgeRows, overviewRows, platformRows] = await Promise.all([

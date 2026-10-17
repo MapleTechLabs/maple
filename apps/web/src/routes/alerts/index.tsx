@@ -1,41 +1,61 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 
-import { AlertsOverviewTab } from "@/components/alerts/overview/alerts-overview-tab"
-import { AlertsSettingsTab, useDestinationManager } from "@/components/alerts/overview/settings-tab"
+import { AlertsHub, AlertsTabCountsBoundary } from "@/components/alerts/overview/alerts-hub"
+import { AlertsRoutingTab, useDestinationManager } from "@/components/alerts/overview/routing-tab"
 import { DestinationDialog } from "@/components/alerts/destination-dialog"
 import { OpenDestinationDialogProvider } from "@/components/alerts/destination-manager-context"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PlusIcon } from "@/components/icons"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
+import type { RuleBucket } from "@/lib/alerts/overview-derive"
 import { retainedQuery } from "@/lib/services/common/atom-client"
-import { BooleanFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Button } from "@maple/ui/components/ui/button"
+import { cn } from "@maple/ui/lib/utils"
 import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 
-type AlertsTab = "overview" | "settings"
+type AlertsTab = "inbox" | "rules" | "routing"
 
-// The URL value stays `settings` so existing links keep resolving.
 const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
-	{ value: "overview", label: "Overview" },
-	{ value: "settings", label: "Destinations" },
+	{ value: "inbox", label: "Inbox" },
+	{ value: "rules", label: "Rules" },
+	{ value: "routing", label: "Routing" },
 ]
 
+/** Legacy `tab` values map onto the current tabs so old links keep resolving. */
+const resolveTab = (tab: string | undefined): AlertsTab => {
+	switch (tab) {
+		case "rules":
+			return "rules"
+		case "routing":
+		case "settings":
+			return "routing"
+		default:
+			return "inbox"
+	}
+}
+
+/** `attention` is the legacy name of the blind bucket. */
+const resolveStatus = (status: string | undefined): RuleBucket | undefined => {
+	switch (status) {
+		case "firing":
+		case "blind":
+		case "healthy":
+		case "disabled":
+			return status
+		case "attention":
+			return "blind"
+		default:
+			return undefined
+	}
+}
+
 const AlertsSearch = Schema.Struct({
-	/**
-	 * Accepts any string so legacy deep links (`tab=monitor`, `tab=rules`) keep
-	 * resolving — anything that isn't "settings" lands on the overview.
-	 */
 	tab: Schema.optional(Schema.String),
 	serviceName: Schema.optional(Schema.String),
-	createdBy: Schema.optional(Schema.String),
-	/** Health-summary filter over the rules list. */
-	status: Schema.optional(Schema.Literals(["firing", "attention", "healthy", "disabled"])),
-	/** Tag filter, shared by the incidents and rules lists. */
-	tags: OptionalStringArrayParam,
-	/** When set, the active list is grouped into per-tag sections. */
-	groupByTag: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
+	/** Rules tab status filter. */
+	status: Schema.optional(Schema.String),
 })
 
 export const Route = createFileRoute("/alerts/")({
@@ -46,48 +66,71 @@ export const Route = createFileRoute("/alerts/")({
 function AlertsPage() {
 	const search = Route.useSearch()
 
-	const activeTab: AlertsTab = search.tab === "settings" ? "settings" : "overview"
+	const activeTab = resolveTab(search.tab)
+	const navigate = Route.useNavigate()
 
-	// Session + destinations back the header action only; the tabs own the rest
+	// Session gates the header actions; destinations feed the hub. The tabs own the rest
 	// of their data (the atoms are shared, so this costs no extra requests).
 	const sessionResult = useAtomValue(retainedQuery("auth", "session", {}))
 	const { result: destinationsResult } = useAlertDestinationsList()
 	const isAdmin = Result.builder(sessionResult)
 		.onSuccess((session) => session.roles.some((role) => role === "root" || role === "org:admin"))
 		.orElse(() => false)
-	const hasDestinations = Result.builder(destinationsResult)
-		.onSuccess((response) => response.destinations.length > 0)
-		.orElse(() => false)
+	const destinations = Result.builder(destinationsResult)
+		.onSuccess((response) => response.destinations)
+		.orElse(() => [])
 
 	const destinationManager = useDestinationManager()
 
 	const tabBar = (
-		<UnderlineTabStrip navigation label="Alerts sections">
-			{ALERTS_TABS.map((tab) => (
-				<Link
-					key={tab.value}
-					to="/alerts"
-					search={(prev: Record<string, unknown>) => ({ ...prev, tab: tab.value })}
-					aria-current={tab.value === activeTab ? "page" : undefined}
-					className={underlineTabClass(tab.value === activeTab)}
-				>
-					{tab.label}
-				</Link>
-			))}
-		</UnderlineTabStrip>
+		<AlertsTabCountsBoundary>
+			{(counts) => (
+				<UnderlineTabStrip navigation label="Alerts sections">
+					{ALERTS_TABS.map((tab) => {
+						const count =
+							tab.value === "inbox"
+								? counts?.open
+								: tab.value === "rules"
+									? counts?.rules
+									: undefined
+						return (
+							<Link
+								key={tab.value}
+								to="/alerts"
+								search={(prev: Record<string, unknown>) => ({ ...prev, tab: tab.value })}
+								aria-current={tab.value === activeTab ? "page" : undefined}
+								className={underlineTabClass(tab.value === activeTab)}
+							>
+								{tab.label}
+								{count !== undefined && count > 0 && (
+									<span
+										className={cn(
+											"font-mono text-xs tabular-nums",
+											tab.value === "inbox"
+												? "text-severity-error"
+												: "text-muted-foreground",
+										)}
+									>
+										{count}
+									</span>
+								)}
+							</Link>
+						)
+					})}
+				</UnderlineTabStrip>
+			)}
+		</AlertsTabCountsBoundary>
 	)
 
-	const headerActions =
-		activeTab === "settings" ? (
-			// Settings: the header owns the add action only once destinations exist.
-			// While empty, the empty-state CTA is the single add affordance (avoids a duplicate).
-			isAdmin && hasDestinations ? (
-				<Button size="sm" onClick={() => destinationManager.openDialog()}>
+	// Both actions on every tab: creating a destination is admin-only server side.
+	const headerActions = (
+		<div className="flex items-center gap-2">
+			{isAdmin && (
+				<Button size="sm" variant="outline" onClick={() => destinationManager.openDialog()}>
 					<PlusIcon />
-					Add destination
+					New destination
 				</Button>
-			) : undefined
-		) : (
+			)}
 			<Button
 				size="sm"
 				render={<Link to="/alerts/create" search={{ serviceName: search.serviceName }} />}
@@ -95,15 +138,23 @@ function AlertsPage() {
 				<PlusIcon />
 				New rule
 			</Button>
-		)
+		</div>
+	)
 
 	return (
 		<OpenDestinationDialogProvider value={isAdmin ? () => destinationManager.openDialog() : null}>
 			<DashboardPage breadcrumbs={[{ label: "Alerts" }]} headerActions={headerActions} tabs={tabBar}>
-				{activeTab === "overview" ? (
-					<AlertsOverviewTab />
+				{activeTab === "routing" ? (
+					<AlertsRoutingTab manager={destinationManager} isAdmin={isAdmin} />
 				) : (
-					<AlertsSettingsTab manager={destinationManager} isAdmin={isAdmin} />
+					<AlertsHub
+						tab={activeTab}
+						destinations={destinations}
+						isAdmin={isAdmin}
+						serviceName={search.serviceName}
+						status={resolveStatus(search.status)}
+						onStatusChange={(status) => navigate({ search: (prev) => ({ ...prev, status }) })}
+					/>
 				)}
 			</DashboardPage>
 			<DestinationDialog

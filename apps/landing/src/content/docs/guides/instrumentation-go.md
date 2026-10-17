@@ -237,6 +237,36 @@ func processOrder(ctx context.Context, orderID string) error {
 
 Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map). Always pass `ctx` down the call chain so child spans link to their parent.
 
+## Attributes Maple uses
+
+Most attributes are optional. These unlock specific features.
+
+### Commits and GitHub
+
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+
+```bash
+export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
+```
+
+### Databases
+
+`otelsql` and `otelpgx` wrap `database/sql` and `pgx` and set these attributes for you. For a driver without instrumentation, set them on a `Client` span:
+
+```go
+ctx, span := tracer.Start(ctx, "SELECT users",
+	trace.WithSpanKind(trace.SpanKindClient),
+	trace.WithAttributes(
+		attribute.String("db.system.name", "postgresql"),
+		attribute.String("db.namespace", "app"),
+		attribute.String("db.query.text", "SELECT * FROM users WHERE id = $1"),
+	),
+)
+defer span.End()
+```
+
+`db.system.name` and `db.namespace` draw the database node on the [service map](/docs/explore/service-map). `db.query.text` groups statements into query shapes, so record it with placeholders, not bound values. See [Database queries](/docs/concepts/otel-conventions#database-queries) for the full list.
+
 ## Log correlation
 
 The `otelslog` bridge sends `log/slog` records to the logger provider configured above. Records logged with a context that holds an active span carry its trace and span IDs:

@@ -1,0 +1,3 @@
+# Run output; `cache/` holds replay recordings and is committed once agent steps run in CI.
+.e2e/*
+!.e2e/cache/

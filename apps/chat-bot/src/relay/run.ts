@@ -9,10 +9,9 @@
  */
 import type { ChatConnector, ConnectorCredentials, InboundEvent } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
@@ -48,12 +47,10 @@ import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticip
  * for, so the spans a turn produces are exported from here or not at all — and flushed when the
  * event is done, because nothing else closes a scope around it.
  */
-const telemetry = MapleCloudflareSDK.make(
-	workerTelemetryConfig({
-		serviceName: "maple-chat-bot",
-		anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
-	}),
-)
+const telemetry = runtimeTelemetry({
+	serviceName: "maple-chat-bot",
+	anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+})
 
 const APP_BASE_URL_FALLBACK = "https://app.maple.dev"
 

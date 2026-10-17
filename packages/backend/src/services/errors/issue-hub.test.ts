@@ -333,6 +333,48 @@ describe("upsertAlertIssue", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("raises a detector severity when a critical incident reopens a wontfix issue", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			const database = yield* Database
+			const first = yield* upsertAlertIssue(baseInput())
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ workflowState: "wontfix", snoozeUntil: T0 + 50_000 })
+						.where(($) => [$.id.eq(first.issueId!)]),
+				),
+			)
+
+			yield* upsertAlertIssue(
+				baseInput({ incidentId: INCIDENT_2, severity: "critical", timestamp: T0 + 100_000 }),
+			)
+			const issues = yield* loadIssue
+			assert.strictEqual(issues[0]?.workflowState, "triage")
+			assert.strictEqual(issues[0]?.severity, "critical")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("keeps a manually set severity when a critical incident re-fires", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			const database = yield* Database
+			const first = yield* upsertAlertIssue(baseInput())
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(ErrorIssues)
+						.set({ severity: "low", severitySource: "manual" })
+						.where(($) => [$.id.eq(first.issueId!)]),
+				),
+			)
+
+			yield* upsertAlertIssue(
+				baseInput({ incidentId: INCIDENT_2, severity: "critical", timestamp: T0 + 100_000 }),
+			)
+			assert.strictEqual((yield* loadIssue)[0]?.severity, "low")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("reports { issueId: null, action: 'error' } instead of failing when the DB breaks", () =>
 		Effect.gen(function* () {
 			yield* TestClock.setTime(T0)

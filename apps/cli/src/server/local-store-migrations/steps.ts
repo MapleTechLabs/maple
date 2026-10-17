@@ -1223,5 +1223,86 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// TODO(v29 -> v30): what changes, and what is NOT backfilled. Fill beforeBootstrap
+		// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
+		// plan line and dispositions. The v30 physical verify fails an unfinished row.
+		id: "local-0029-to-0030-error-fingerprint-v3",
+		from: 29,
+		to: 30,
+		description: "Rebuild the error-events views with fingerprint v3 grouping and a version-salted hash",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so new occurrences are hashed with fingerprint v3",
+			],
+		],
+		verifies: "Verify the v30 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their v2 FingerprintHash untouched; occurrences materialized after the migration carry v3 hashes, and the v2 rows age out with the retention window.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		id: "local-0030-to-0031-error-fingerprint-span-name-frames",
+		from: 30,
+		to: 31,
+		description: "Drop location-less Effect span frames from the error fingerprint",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so a location-less span frame no longer enters the hash",
+			],
+		],
+		verifies: "Verify the v31 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; only occurrences whose stack carries a location-less span frame hash differently after the migration.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		id: "local-0031-to-0032-alert-checks-level",
+		from: 31,
+		to: 32,
+		description: "Add Level to alert_checks",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [addColumns("alert_checks", [["Level", "LowCardinality(String) DEFAULT ''"]])],
+		plan: [
+			[
+				"widen-alert-checks",
+				"Add Level to alert_checks so checks record the severity tier they breached",
+			],
+		],
+		verifies: "Verify the v32 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "alert_checks",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing check rows are kept as written with an empty Level; only checks recorded after the migration carry one.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

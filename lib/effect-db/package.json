@@ -7,7 +7,7 @@
 		"./electric": "./src/electric/index.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
 		"@electric-sql/client": "1.5.28",

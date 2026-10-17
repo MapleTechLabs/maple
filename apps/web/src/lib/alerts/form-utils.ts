@@ -23,6 +23,7 @@ import {
 	type AlertSignalType,
 	type ChatWorkspaceId,
 	type QueryBuilderQueryDraftPayload,
+	MAX_ALERT_BREACH_WINDOW,
 } from "@maple/domain/http"
 import type {
 	V2AlertCheck,
@@ -32,9 +33,11 @@ import type {
 	V2AlertRuleCreateParams,
 	V2AlertRulePreviewResult,
 	V2AlertRuleTestParams,
+	V2AlertThreshold,
 } from "@maple/domain/http/v2"
+import { fromV2Threshold } from "@maple/domain/http/v2"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import {
 	buildTimeseriesQuerySpec,
 	createQueryDraft,
@@ -79,11 +82,17 @@ export type RuleFormState = {
 	comparator: AlertComparator
 	threshold: string
 	thresholdUpper: string
+	/** Where the signal must get back to before the incident clears; "" clears once it stops breaching. */
+	recoveryValue: string
+	/** The critical tier over a warning one; null on a one-tier rule. */
+	escalation: EscalationTierForm | null
 	windowMinutes: string
 	minimumSampleCount: string
 	/** Count an empty window as a breach instead of skipping it. */
 	alertOnNoData: boolean
 	consecutiveBreachesRequired: string
+	/** Fire on N breaches out of the last M checks; "" counts N in a row. */
+	breachesOutOf: string
 	consecutiveHealthyRequired: string
 	renotifyIntervalMinutes: string
 	apdexThresholdMs: string
@@ -103,6 +112,13 @@ export type RuleFormState = {
 	 */
 	notificationTitle: string
 	notificationBody: string
+}
+
+/** The critical tier of a two-tier rule. Range and equality comparators have one tier only. */
+export interface EscalationTierForm {
+	threshold: string
+	recoveryValue: string
+	destinationIds: AlertDestinationId[]
 }
 
 export const signalLabels: Record<AlertSignalType, string> = {
@@ -168,22 +184,57 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 	}
 }
 
-/**
- * Threshold unit conversion at the form↔domain boundary.
- *
- * The domain stores `error_rate` thresholds as a 0–1 ratio (matching the query
- * engine's `countIf(Error)/count()` and the evaluation comparison). The form
- * lets users enter a percent (e.g. `5` = 5%), so we divide by 100 on submit and
- * multiply by 100 on load. All other signals pass through unchanged.
- */
-export function formThresholdToDomain(signalType: AlertSignalType, value: string): number {
-	const n = Number(value)
-	return signalType === "error_rate" ? n / 100 : n
+/** What decides a threshold's unit: the signal, and for builder rules the aggregation. */
+export type ThresholdSubject = {
+	readonly signalType: AlertSignalType
+	readonly queryBuilderDraft?: { readonly dataSource: string; readonly aggregation: string }
 }
 
-export function domainThresholdToForm(signalType: AlertSignalType, value: number): string {
+const isPercentSignal = (subject: ThresholdSubject): boolean =>
+	subject.signalType === "error_rate" ||
+	(subject.signalType === "builder_query" &&
+		subject.queryBuilderDraft?.dataSource === "traces" &&
+		subject.queryBuilderDraft.aggregation === "error_rate")
+
+const BUILDER_LATENCY_AGGREGATIONS = new Set(["avg_duration", "p50_duration", "p95_duration", "p99_duration"])
+
+/**
+ * The signal a rule's values read as, for formatting. A builder query over
+ * `error_rate` or a duration percentile reads like the matching built-in, so
+ * the chart, the threshold and the input all speak one unit.
+ */
+export function displaySignalType(subject: ThresholdSubject): AlertSignalType {
+	if (subject.signalType !== "builder_query" || subject.queryBuilderDraft?.dataSource !== "traces") {
+		return subject.signalType
+	}
+	if (isPercentSignal(subject)) return "error_rate"
+	if (BUILDER_LATENCY_AGGREGATIONS.has(subject.queryBuilderDraft.aggregation)) return "p95_latency"
+	return "builder_query"
+}
+
+/** The suffix the threshold input shows: `%` for error rates, `ms` for latencies. */
+export function thresholdUnitLabel(subject: ThresholdSubject): string | null {
+	const display = displaySignalType(subject)
+	if (display === "error_rate") return "%"
+	if (display === "p95_latency" || display === "p99_latency") return "ms"
+	return null
+}
+
+/**
+ * Threshold unit conversion at the form↔domain boundary, the one place it
+ * happens. The domain stores error rates as a 0–1 ratio (built-in and builder
+ * `error_rate` alike); the form takes a percent, so `5` means 5% in every mode.
+ */
+export function formThresholdToDomain(subject: ThresholdSubject, value: string): number {
+	const n = Number(value)
+	// Same rounding as `domainThresholdToForm`: 0.7 / 100 is 0.006999999999999999, which
+	// the API reads as an edit of the stored 0.007 and rejects on a tiered rule.
+	return isPercentSignal(subject) ? Number((n / 100).toPrecision(12)) : n
+}
+
+export function domainThresholdToForm(subject: ThresholdSubject, value: number): string {
 	// toPrecision(12) drops float noise: 0.07 * 100 is 7.000000000000001.
-	return signalType === "error_rate" ? String(Number((value * 100).toPrecision(12))) : String(value)
+	return isPercentSignal(subject) ? String(Number((value * 100).toPrecision(12))) : String(value)
 }
 
 function parsePositiveNumber(value: string, fallback: number): number {
@@ -249,10 +300,13 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		comparator: "gt",
 		threshold: "5",
 		thresholdUpper: "",
+		recoveryValue: "",
+		escalation: null,
 		windowMinutes: "5",
 		minimumSampleCount: "50",
 		alertOnNoData: false,
 		consecutiveBreachesRequired: "2",
+		breachesOutOf: "",
 		consecutiveHealthyRequired: "2",
 		renotifyIntervalMinutes: "30",
 		apdexThresholdMs: "500",
@@ -276,11 +330,15 @@ export function ruleFormIsGrouped(form: RuleFormState): boolean {
 
 export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 	const queryBuilderDraft = normalizeRuleQueryDraft(rule.queryBuilderDraft)
+	const unitSubject = { signalType: rule.signalType, queryBuilderDraft }
+	const toForm = (value: number | null) => (value === null ? "" : domainThresholdToForm(unitSubject, value))
+	// Tiers arrive lowest severity first: the first is the form's main row, a second is the escalation.
+	const [primary, escalation] = rule.thresholds
 	return {
 		name: rule.name,
 		notes: rule.notes ?? "",
 		enabled: rule.enabled,
-		severity: rule.severity,
+		severity: primary.severity,
 		serviceNames: rule.serviceNames?.length > 0 ? [...rule.serviceNames] : [],
 		excludeServiceNames: rule.excludeServiceNames?.length > 0 ? [...rule.excludeServiceNames] : [],
 		environments: rule.environments?.length > 0 ? [...rule.environments] : [],
@@ -288,20 +346,29 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 		groupBy: rule.groupBy ? [...rule.groupBy] : [],
 		signalType: rule.signalType,
 		comparator: rule.comparator,
-		threshold: domainThresholdToForm(rule.signalType, rule.threshold),
-		thresholdUpper:
-			rule.thresholdUpper == null ? "" : domainThresholdToForm(rule.signalType, rule.thresholdUpper),
+		threshold: toForm(primary.value),
+		thresholdUpper: toForm(primary.upper),
+		recoveryValue: toForm(primary.recoveryValue),
+		escalation:
+			escalation === undefined
+				? null
+				: {
+						threshold: toForm(escalation.value),
+						recoveryValue: toForm(escalation.recoveryValue),
+						destinationIds: [...escalation.destinationIds],
+					},
 		windowMinutes: String(rule.windowMinutes),
 		minimumSampleCount: String(rule.minimumSampleCount),
 		alertOnNoData: rule.noDataBehavior === "alert",
 		consecutiveBreachesRequired: String(rule.consecutiveBreachesRequired),
+		breachesOutOf: rule.breachesOutOf === null ? "" : String(rule.breachesOutOf),
 		consecutiveHealthyRequired: String(rule.consecutiveHealthyRequired),
 		renotifyIntervalMinutes: String(rule.renotifyIntervalMinutes),
 		apdexThresholdMs: rule.apdexThresholdMs == null ? "500" : String(rule.apdexThresholdMs),
 		queryBuilderDraft,
 		rawQuerySql: rule.rawQuerySql ?? DEFAULT_RAW_QUERY_SQL,
 		rawQueryReducer: rule.rawQueryReducer ?? "identity",
-		destinationIds: [...rule.destinationIds],
+		destinationIds: [...primary.destinationIds],
 		notificationTitle: rule.notificationTemplate?.title ?? "",
 		notificationBody: rule.notificationTemplate?.body ?? "",
 	}
@@ -335,6 +402,104 @@ export function deriveRuleQueryIssues(form: RuleFormState): string[] {
 	return issues
 }
 
+/** Whether the comparator takes a critical tier and recovery values: range and equality ones do not. */
+export function comparatorSupportsTiers(comparator: AlertComparator): boolean {
+	return !isRangeComparator(comparator) && comparator !== "eq" && comparator !== "neq"
+}
+
+/** A form value that may be left empty, in domain units; null when empty or not a number. */
+export function optionalFormThreshold(subject: ThresholdSubject, value: string): number | null {
+	return value.trim().length > 0 && Number.isFinite(Number(value))
+		? formThresholdToDomain(subject, value)
+		: null
+}
+
+/** Whether `value` breaches `threshold`, for the one-sided comparators that carry tiers. */
+function breachesOneSided(value: number, comparator: AlertComparator, threshold: number): boolean {
+	return comparator === "gt"
+		? value > threshold
+		: comparator === "gte"
+			? value >= threshold
+			: comparator === "lt"
+				? value < threshold
+				: value <= threshold
+}
+
+/** `Number("")` is 0, so an empty field would otherwise pass as a value of zero. */
+export const isFilledNumber = (value: string): boolean =>
+	value.trim().length > 0 && Number.isFinite(Number(value))
+
+/**
+ * The tier and breach-window problems the server would reject, named for the form. Mirrors
+ * `validateThresholds` / `validateBreachWindow` in the backend.
+ */
+export function deriveTierIssues(form: RuleFormState): string[] {
+	const issues: string[] = []
+	const tiered = comparatorSupportsTiers(form.comparator)
+	// Tier ordering is strict even for inclusive comparators: equal tiers would always fire together.
+	const strict = form.comparator === "gte" ? "gt" : form.comparator === "lte" ? "lt" : form.comparator
+	const recoveryIssue = (label: string, threshold: string, recovery: string) => {
+		if (recovery.trim().length === 0 || !isFilledNumber(threshold)) return
+		if (
+			!isFilledNumber(recovery) ||
+			breachesOneSided(Number(recovery), form.comparator, Number(threshold))
+		) {
+			issues.push(label)
+		}
+	}
+	if (tiered) recoveryIssue("Recovery value", form.threshold, form.recoveryValue)
+	const escalation = tiered ? form.escalation : null
+	if (escalation !== null) {
+		if (!isFilledNumber(escalation.threshold)) {
+			issues.push("Critical threshold")
+		} else if (
+			isFilledNumber(form.threshold) &&
+			!breachesOneSided(Number(escalation.threshold), strict, Number(form.threshold))
+		) {
+			issues.push("Critical threshold past warning")
+		} else if (
+			isFilledNumber(escalation.recoveryValue) &&
+			breachesOneSided(Number(form.threshold), strict, Number(escalation.recoveryValue))
+		) {
+			issues.push("Critical recovery past warning")
+		}
+		recoveryIssue("Critical recovery value", escalation.threshold, escalation.recoveryValue)
+		if (escalation.destinationIds.length === 0) issues.push("Critical destinations")
+	}
+	if (form.breachesOutOf.trim().length > 0) {
+		const outOf = Number(form.breachesOutOf)
+		const required = Number(form.consecutiveBreachesRequired)
+		if (!Number.isInteger(outOf) || outOf < required || outOf > MAX_ALERT_BREACH_WINDOW) {
+			issues.push("Breach window")
+		}
+	}
+	return issues
+}
+
+/** The tiers the form saves, lowest severity first, in domain units. */
+export function formThresholds(form: RuleFormState): Arr.NonEmptyReadonlyArray<V2AlertThreshold> {
+	const tiered = comparatorSupportsTiers(form.comparator)
+	const escalation = tiered ? form.escalation : null
+	const primary: V2AlertThreshold = {
+		severity: escalation === null ? form.severity : "warning",
+		value: formThresholdToDomain(form, form.threshold),
+		upper: isRangeComparator(form.comparator) ? optionalFormThreshold(form, form.thresholdUpper) : null,
+		recovery_value: tiered ? optionalFormThreshold(form, form.recoveryValue) : null,
+		destination_ids: [...new Set(form.destinationIds)],
+	}
+	if (escalation === null) return [primary]
+	return [
+		primary,
+		{
+			severity: "critical",
+			value: formThresholdToDomain(form, escalation.threshold),
+			upper: null,
+			recovery_value: optionalFormThreshold(form, escalation.recoveryValue),
+			destination_ids: [...new Set(escalation.destinationIds)],
+		},
+	]
+}
+
 /**
  * Assemble the v2 `POST /v2/alerts/rules` body from the form. Field names are
  * the v2 snake_case wire spelling; IDs stay the internal branded values — the
@@ -354,11 +519,16 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 					...(notificationBody.length > 0 ? { body: notificationBody } : undefined),
 				}
 			: null
+	// `thresholds` is what the server stores; the single-threshold fields mirror it the way the
+	// server reports them, for the change list and preview identity that compare payloads.
+	const thresholds = formThresholds(form)
+	const primary = Arr.headNonEmpty(thresholds)
 	return {
 		name: form.name.trim(),
 		notes: form.notes.trim() || null,
 		enabled: form.enabled,
-		severity: form.severity,
+		thresholds,
+		severity: Arr.lastNonEmpty(thresholds).severity,
 		tags: form.tags,
 		service_names: queryOwnsScope ? [] : form.serviceNames.filter((s) => s.trim().length > 0),
 		exclude_service_names: queryOwnsScope
@@ -368,16 +538,13 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 		group_by: queryOwnsScope ? null : form.groupBy.length > 0 ? form.groupBy : null,
 		signal_type: signalType,
 		comparator: form.comparator,
-		threshold: formThresholdToDomain(signalType, form.threshold),
-		threshold_upper: isRangeComparator(form.comparator)
-			? Number.isFinite(Number(form.thresholdUpper))
-				? formThresholdToDomain(signalType, form.thresholdUpper)
-				: null
-			: null,
+		threshold: primary.value,
+		threshold_upper: primary.upper,
 		window_minutes: parsePositiveNumber(form.windowMinutes, 5),
 		minimum_sample_count: parseNonNegativeNumber(form.minimumSampleCount, 0),
 		alert_on_no_data: form.alertOnNoData && !ruleFormIsGrouped(form),
 		consecutive_breaches_required: parsePositiveNumber(form.consecutiveBreachesRequired, 2),
+		breaches_out_of: form.breachesOutOf.trim().length === 0 ? null : Number(form.breachesOutOf),
 		consecutive_healthy_required: parsePositiveNumber(form.consecutiveHealthyRequired, 2),
 		renotify_interval_minutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),
 		apdex_threshold_ms: signalType === "apdex" ? parsePositiveNumber(form.apdexThresholdMs, 500) : null,
@@ -387,10 +554,7 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 				: null,
 		raw_query_sql: signalType === "raw_query" ? form.rawQuerySql.trim() || null : null,
 		raw_query_reducer: signalType === "raw_query" ? form.rawQueryReducer : null,
-		// Dedupe so the same destination is never persisted twice (e.g. when editing a
-		// rule that already had duplicates). The server is authoritative (normalizeRule),
-		// but keeping the request clean avoids a needless write-then-normalize round trip.
-		destination_ids: [...new Set(form.destinationIds)],
+		destination_ids: Arr.dedupe(thresholds.flatMap((tier) => tier.destination_ids)),
 		notification_template: notificationTemplate,
 	}
 }
@@ -404,10 +568,9 @@ export function buildRuleTestParamsV2(form: RuleFormState, sendNotification: boo
 
 export function isRulePreviewReady(form: RuleFormState): boolean {
 	if (form.name.trim().length === 0) return false
-	if (!Number.isFinite(Number(form.threshold))) return false
-	if (isRangeComparator(form.comparator) && !Number.isFinite(Number(form.thresholdUpper))) {
-		return false
-	}
+	if (!isFilledNumber(form.threshold)) return false
+	if (isRangeComparator(form.comparator) && !isFilledNumber(form.thresholdUpper)) return false
+	if (deriveTierIssues(form).some((issue) => issue !== "Critical destinations")) return false
 	if (form.signalType === "builder_query") return deriveRuleQueryIssues(form).length === 0
 	if (form.signalType === "raw_query") {
 		// The alert workload additionally requires $__timeFilter, and the shared
@@ -731,6 +894,7 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 		windowMinutes: result.window_minutes,
 		threshold: result.threshold,
 		thresholdUpper: result.threshold_upper,
+		thresholds: Arr.map(result.thresholds, fromV2Threshold),
 		comparator: result.comparator,
 		truncatedToStart: asIsoOrNull(result.truncated_to_start),
 		series: result.series.map(
@@ -750,6 +914,7 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 								...(point.provisional !== undefined
 									? { provisional: point.provisional }
 									: undefined),
+								...(point.level !== undefined ? { level: point.level } : undefined),
 							}),
 					),
 				}),
@@ -760,6 +925,7 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 					groupKey: span.group_key,
 					start: asIso(span.start),
 					end: asIso(span.end),
+					severity: span.severity,
 				}),
 		),
 	})
@@ -784,6 +950,7 @@ export function v2CheckToDocument(check: V2AlertCheck): AlertCheckDocument {
 		consecutiveHealthy: check.consecutive_healthy,
 		incidentId: check.incident_id,
 		incidentTransition: check.incident_transition,
+		level: check.level,
 		evaluationDurationMs: check.evaluation_duration_ms,
 		errorMessage: check.error_message,
 		errorCategory: check.error_category,

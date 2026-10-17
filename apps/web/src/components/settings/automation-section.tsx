@@ -17,7 +17,6 @@ import { SeverityBadge } from "@/components/errors/severity-badge"
 import { ErrorState } from "@/components/common/error-state"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { SeveritySelect } from "@/components/errors/severity-select"
-import { AiTriageSettingsSection } from "./ai-triage-settings-section"
 import { EscalationPolicySection } from "./escalation-policy-section"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
@@ -28,40 +27,38 @@ import { toastExit } from "@/lib/error-toast"
 
 const CONFIDENCES: ReadonlyArray<EscalationConfidence> = ["high", "medium", "low"]
 
-export function AutomationSection({
-	isAdmin,
-	hasEntitlement,
-}: {
-	isAdmin: boolean
-	hasEntitlement: boolean
-}) {
+export function AutomationSection({ isAdmin }: { isAdmin: boolean }) {
+	// The evaluate endpoint only reads the stored policy, so unsaved edits are invisible to it.
+	// `revision` bumps on every edit, so a decision computed before it is never shown after a save.
+	const [policy, setPolicy] = useState({ dirty: false, revision: 0 })
+	const onDirtyChange = (dirty: boolean) =>
+		setPolicy((current) => ({ dirty, revision: dirty ? current.revision + 1 : current.revision }))
 	return (
 		<SettingsSections>
-			<SettingsSection title="Automatic investigations" framed={false}>
-				<AiTriageSettingsSection isAdmin={isAdmin} hasEntitlement={hasEntitlement} />
-			</SettingsSection>
 			<SettingsSection
 				title="Severity and confidence routing"
 				description="Confidence gates apply only to AI decisions. A manual severity change is explicit human intent and bypasses the confidence threshold."
 				framed={false}
 			>
-				<EscalationPolicySection isAdmin={isAdmin} />
+				<EscalationPolicySection isAdmin={isAdmin} onDirtyChange={onDirtyChange} />
 			</SettingsSection>
-			<PolicySimulator />
+			<PolicySimulator policyDirty={policy.dirty} policyRevision={policy.revision} />
 			<RecentDeliveries />
 		</SettingsSections>
 	)
 }
 
-function PolicySimulator() {
+function PolicySimulator({ policyDirty, policyRevision }: { policyDirty: boolean; policyRevision: number }) {
 	const [severity, setSeverity] = useState<IssueSeverity>("high")
 	const [source, setSource] = useState<"ai" | "manual">("ai")
 	const [confidence, setConfidence] = useState<EscalationConfidence>("high")
-	const [decision, setDecision] = useState<{
+	const [evaluated, setEvaluated] = useState<{
+		revision: number
 		outcome: "route" | "skip"
 		destinationIds: ReadonlyArray<string>
 		skipReason: string | null
 	} | null>(null)
+	const decision = evaluated?.revision === policyRevision ? evaluated : null
 	const evaluate = useAtomSet(MapleInternalAtomClient.mutation("errors", "evaluateEscalationPolicy"), {
 		mode: "promiseExit",
 	})
@@ -71,7 +68,7 @@ function PolicySimulator() {
 		.orElse(() => [])
 
 	const [run, busy] = useAsyncAction(async () => {
-		setDecision(null)
+		setEvaluated(null)
 		const result = await evaluate({
 			payload: new EscalationPolicyEvaluationRequest({
 				severity,
@@ -80,7 +77,7 @@ function PolicySimulator() {
 			}),
 		})
 		if (toastExit(result, { error: "Policy evaluation failed" }) && Exit.isSuccess(result)) {
-			setDecision(result.value)
+			setEvaluated({ ...result.value, revision: policyRevision })
 		}
 	})
 
@@ -125,10 +122,14 @@ function PolicySimulator() {
 				</Field>
 			</div>
 			<div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
-				<Button size="sm" onClick={() => void run()} loading={busy}>
+				<Button size="sm" onClick={() => void run()} loading={busy} disabled={policyDirty}>
 					Evaluate policy
 				</Button>
-				{decision ? (
+				{policyDirty ? (
+					<span className="text-sm text-muted-foreground">
+						Save the policy above to simulate it. The simulator evaluates the saved policy.
+					</span>
+				) : decision ? (
 					<>
 						<Badge variant="outline" className="capitalize">
 							{decision.outcome}
@@ -147,7 +148,7 @@ function PolicySimulator() {
 					</>
 				) : (
 					<span className="text-sm text-muted-foreground">
-						Preview the exact worker decision without sending a notification.
+						Preview the worker's decision under the saved policy without sending a notification.
 					</span>
 				)}
 			</div>

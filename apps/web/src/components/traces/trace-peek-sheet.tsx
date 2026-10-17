@@ -23,7 +23,7 @@ import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
-import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
+import { getHttpInfo } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
 
 import type { Span, SpanHierarchyResponse, SpanNode } from "@/api/warehouse/traces"
@@ -33,6 +33,8 @@ import { SheetDetailHeader } from "@/components/common/sheet-detail-header"
 import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
+import { TraceErrorCallout } from "@/components/traces/trace-error-callout"
+import { collectTraceErrors } from "@/lib/traces/trace-errors"
 import { TraceIdBadge } from "@maple/ui/components/traces/trace-id-badge"
 import { TraceLogsLink } from "@/components/traces/trace-logs-link"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -333,6 +335,7 @@ function TracePeekLoaded({
 	)
 	const handleSelectSpan = React.useCallback((span: SpanNode) => onSelectSpan(span.spanId), [onSelectSpan])
 	const handleCloseSpan = React.useCallback(() => onSelectSpan(undefined), [onSelectSpan])
+	const errors = React.useMemo(() => collectTraceErrors(data.rootSpans), [data.rootSpans])
 
 	if (!rootSpan || traceStartTime === undefined) {
 		return (
@@ -353,13 +356,6 @@ function TracePeekLoaded({
 	}
 
 	const rootHttpInfo = getHttpInfo(rootSpan)
-	const hasError = data.spans.some((s: Span) => {
-		if (s.statusCode === "Error") return true
-		const httpStatus =
-			s.spanAttributes?.["http.response.status_code"] || s.spanAttributes?.["http.status_code"]
-		const code = typeof httpStatus === "string" ? parseInt(httpStatus) : httpStatus
-		return typeof code === "number" && httpStatusTone(code) === "crit"
-	})
 
 	return (
 		<div
@@ -393,16 +389,24 @@ function TracePeekLoaded({
 
 			<div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
 				<TraceAnatomyStrip
-					spans={data.spans}
+					rootSpans={data.rootSpans}
+					spanCount={data.spans.length}
+					startTime={traceStartTime}
 					totalDurationMs={data.totalDurationMs}
 					traceId={traceId}
-					hasError={hasError}
+					hasError={errors.spans.length > 0}
 					httpStatusCode={rootHttpInfo?.statusCode}
 					deploymentEnv={
 						rootSpan.resourceAttributes?.["deployment.environment.name"] ||
 						rootSpan.resourceAttributes?.["deployment.environment"]
 					}
 					commitSha={rootSpan.resourceAttributes?.["vcs.ref.head.revision"]}
+				/>
+
+				<TraceErrorCallout
+					errors={errors}
+					selectedSpanId={selectedSpan?.spanId}
+					onSelectSpan={handleSelectSpan}
 				/>
 
 				{/* Stacked, not side by side: the sheet is narrower than the page, and a
@@ -428,6 +432,7 @@ function TracePeekLoaded({
 							<ResizablePanel defaultSize={45} minSize={25}>
 								<SpanDetailPanel
 									span={selectedSpan}
+									onSelectSpanId={onSelectSpan}
 									onClose={handleCloseSpan}
 									traceStartTime={traceStartTime}
 									totalDurationMs={data.totalDurationMs}

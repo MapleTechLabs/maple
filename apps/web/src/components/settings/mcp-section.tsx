@@ -1,157 +1,176 @@
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
+import { Button } from "@maple/ui/components/ui/button"
+import { CopyableField } from "@maple/ui/components/ui/copyable-field"
 import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
-import { Button } from "@maple/ui/components/ui/button"
-import { PlusIcon } from "@/components/icons"
-import { CopyableField } from "@maple/ui/components/ui/copyable-field"
-import { mcpUrl } from "@/lib/services/common/mcp-url"
+import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
 import { McpToolsList } from "@/components/mcp/mcp-tools-list"
-import { CreateApiKeyDialog } from "@/components/settings/create-api-key-dialog"
 import { CodeBlock } from "@/components/quick-start/code-block"
+import { CreateApiKeyDialog } from "@/components/settings/create-api-key-dialog"
+import {
+	claudeCodeCommand,
+	isMcpClient,
+	MCP_CLIENTS,
+	mcpClientConfig,
+	type McpClient,
+} from "@/components/settings/mcp-client-config"
+import { McpConnectedClientsSection } from "@/components/settings/mcp-connected-clients"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
+import { mcpUrl } from "@/lib/services/common/mcp-url"
 
 const mcpEndpoint = `${mcpUrl}/mcp`
 
-function generateConfig(client: "claude-code" | "cursor" | "windsurf" | "other", apiKey?: string) {
-	const isWindsurf = client === "windsurf"
-	const urlKey = isWindsurf ? "serverUrl" : "url"
-	const config = {
-		mcpServers: {
-			maple: {
-				...(!isWindsurf ? { type: "http" } : undefined),
-				[urlKey]: mcpEndpoint,
-				...(apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : undefined),
-			},
-		},
+const keysLinkClass = "text-foreground underline underline-offset-2 hover:no-underline"
+
+/** Snippets carry the bearer secret once a key is created; the dashboard records itself with rrweb. */
+function Snippet({ hint, code, language }: { hint: ReactNode; code: string; language: string }) {
+	return (
+		<div className="space-y-2">
+			<p className="text-xs text-muted-foreground">{hint}</p>
+			<CodeBlock code={code} language={language} className={REPLAY_BLOCK_CLASS} />
+		</div>
+	)
+}
+
+function ClientSnippets({ client, apiKey }: { client: McpClient; apiKey: string | undefined }) {
+	const json = mcpClientConfig(client, mcpEndpoint, apiKey)
+	switch (client) {
+		case "claude-code":
+			return (
+				<div className="space-y-4">
+					<Snippet
+						hint="Run in your terminal"
+						code={claudeCodeCommand(mcpEndpoint, apiKey)}
+						language="bash"
+					/>
+					<Snippet
+						hint={
+							<>
+								Or add to <InlineCode>.mcp.json</InlineCode> in your project
+							</>
+						}
+						code={json}
+						language="json"
+					/>
+				</div>
+			)
+		case "cursor":
+			return (
+				<Snippet
+					hint={
+						<>
+							Add to <InlineCode>.cursor/mcp.json</InlineCode> in your project, or{" "}
+							<InlineCode>~/.cursor/mcp.json</InlineCode> for every project
+						</>
+					}
+					code={json}
+					language="json"
+				/>
+			)
+		case "windsurf":
+			return (
+				<Snippet
+					hint={
+						<>
+							Add to <InlineCode>~/.codeium/windsurf/mcp_config.json</InlineCode>
+						</>
+					}
+					code={json}
+					language="json"
+				/>
+			)
+		case "other":
+			return (
+				<Snippet
+					hint="Add the server URL to any client that supports remote MCP servers over HTTP"
+					code={json}
+					language="json"
+				/>
+			)
 	}
-	return JSON.stringify(config, null, 2)
 }
 
-function generateCliCommand(apiKey?: string) {
-	return apiKey
-		? `claude mcp add --transport http maple ${mcpEndpoint} \\
-  --header "Authorization: Bearer ${apiKey}"`
-		: `claude mcp add --transport http maple ${mcpEndpoint}`
-}
-
-const CONFIG_FILE_HINTS: Record<string, string> = {
-	"claude-code": "~/.claude/claude_desktop_config.json",
-	cursor: ".cursor/mcp.json",
-	windsurf: "~/.codeium/windsurf/mcp_config.json",
-	other: "",
-} satisfies Record<string, string>
-
-export function McpSection() {
+function ConnectClientSection() {
 	const [createDialogOpen, setCreateDialogOpen] = useState(false)
 	const [createdSecret, setCreatedSecret] = useState<string | null>(null)
-	const [configTab, setConfigTab] = useState("claude-code")
+	const [client, setClient] = useState<McpClient>("claude-code")
+	const apiKey = createdSecret ?? undefined
 
 	return (
-		<SettingsSections>
-			<SettingsSection
-				title="Server endpoint"
-				description="Use this URL to connect MCP-compatible clients to Maple."
-			>
-				<div className="space-y-4">
-					<CopyableField value={mcpEndpoint} copyLabel="MCP endpoint" />
-					<div className="flex flex-wrap items-center gap-2">
-						<p className="text-muted-foreground text-xs">
-							Compatible clients open Maple in your browser and connect with OAuth.
-						</p>
-						{createdSecret && (
-							<p className="text-severity-info text-xs font-medium">
-								Key created. Config below is ready to copy.
-							</p>
-						)}
-						<Button variant="outline" size="xs" onClick={() => setCreateDialogOpen(true)}>
-							<PlusIcon data-icon="inline-start" />
-							{createdSecret ? "Create another" : "Use API key fallback"}
-						</Button>
-					</div>
-				</div>
-			</SettingsSection>
-
-			<SettingsSection
-				title="Quick setup"
-				description="Add the server URL. Your client will open Maple to approve access to a workspace."
-			>
-				<Tabs value={configTab} onValueChange={setConfigTab}>
+		<SettingsSection
+			title="Connect a client"
+			description="Add Maple as a remote MCP server in your editor or agent."
+		>
+			<div className="space-y-4">
+				<CopyableField value={mcpEndpoint} label="Server URL" copyLabel="Server URL" />
+				<Tabs
+					value={client}
+					onValueChange={(value) => {
+						if (isMcpClient(value)) setClient(value)
+					}}
+				>
 					<TabsList variant="underline">
-						<TabsTrigger value="claude-code">Claude Code</TabsTrigger>
-						<TabsTrigger value="cursor">Cursor</TabsTrigger>
-						<TabsTrigger value="windsurf">Windsurf</TabsTrigger>
-						<TabsTrigger value="other">Other</TabsTrigger>
+						{MCP_CLIENTS.map(({ id, label }) => (
+							<TabsTrigger key={id} value={id}>
+								{label}
+							</TabsTrigger>
+						))}
 					</TabsList>
-					<TabsContent value="claude-code" className="pt-3">
-						<div className="space-y-4">
-							<div className="space-y-2">
-								<p className="text-muted-foreground text-xs">Run in your terminal</p>
-								<CodeBlock
-									code={generateCliCommand(createdSecret ?? undefined)}
-									language="bash"
-								/>
-							</div>
-							<div className="space-y-2">
-								<p className="text-muted-foreground text-xs">
-									Or add to <InlineCode>{CONFIG_FILE_HINTS["claude-code"]}</InlineCode>
-								</p>
-								<CodeBlock
-									code={generateConfig("claude-code", createdSecret ?? undefined)}
-									language="json"
-								/>
-							</div>
-						</div>
-					</TabsContent>
-					{(["cursor", "windsurf", "other"] as const).map((client) => (
-						<TabsContent key={client} value={client} className="pt-3">
-							<div className="space-y-2">
-								{CONFIG_FILE_HINTS[client] && (
-									<p className="text-muted-foreground text-xs">
-										Add to <InlineCode>{CONFIG_FILE_HINTS[client]}</InlineCode>
-									</p>
-								)}
-								<CodeBlock
-									code={generateConfig(client, createdSecret ?? undefined)}
-									language="json"
-								/>
-							</div>
+					{MCP_CLIENTS.map(({ id }) => (
+						<TabsContent key={id} value={id} className="pt-3">
+							<ClientSnippets client={id} apiKey={apiKey} />
 						</TabsContent>
 					))}
 				</Tabs>
-				{!createdSecret && (
-					<p className="text-muted-foreground text-xs mt-3">
-						Client does not support OAuth?{" "}
-						<Button
-							variant="link"
-							size="xs"
-							className="h-auto p-0 align-baseline underline underline-offset-2 hover:no-underline"
-							onClick={() => setCreateDialogOpen(true)}
-						>
-							Create an MCP key
-						</Button>{" "}
-						or manage existing keys in{" "}
-						<Link
-							to="/settings"
-							search={{ tab: "api-keys" }}
-							className="text-foreground underline underline-offset-2 hover:no-underline"
-						>
-							API Keys
-						</Link>
-						.
+				<div className="space-y-1 border-t pt-3 text-xs">
+					<p className="text-muted-foreground">
+						Your client opens Maple in the browser to approve access.
 					</p>
-				)}
-			</SettingsSection>
-
-			<McpToolsList />
-
+					{createdSecret ? (
+						<p className="text-muted-foreground">
+							Key created and added to the snippets above. Manage it in{" "}
+							<Link to="/settings" search={{ tab: "keys" }} className={keysLinkClass}>
+								Keys
+							</Link>
+							.
+						</p>
+					) : (
+						<p>
+							Client without OAuth?{" "}
+							<Button
+								variant="link"
+								size="xs"
+								className="h-auto p-0 align-baseline text-xs underline underline-offset-2 hover:no-underline"
+								onClick={() => setCreateDialogOpen(true)}
+							>
+								Create an MCP key
+							</Button>{" "}
+							in{" "}
+							<Link to="/settings" search={{ tab: "keys" }} className={keysLinkClass}>
+								Keys
+							</Link>
+						</p>
+					)}
+				</div>
+			</div>
 			<CreateApiKeyDialog
 				open={createDialogOpen}
 				onOpenChange={setCreateDialogOpen}
 				onCreated={(secret) => setCreatedSecret(secret)}
 				kind="mcp"
 			/>
+		</SettingsSection>
+	)
+}
+
+export function McpSection() {
+	return (
+		<SettingsSections>
+			<ConnectClientSection />
+			<McpConnectedClientsSection />
+			<McpToolsList />
 		</SettingsSections>
 	)
 }

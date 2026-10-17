@@ -25,7 +25,7 @@ import {
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
 } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Match, Option, Redacted, Schema, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import type {
 	PullRequestDelta,
@@ -41,6 +41,9 @@ import {
 	type GithubApiPullRequest,
 	GithubAppClient,
 	GithubAppError,
+	isBlockedRepository,
+	isGoneStatus,
+	type RepositoryListingError,
 } from "./GithubAppClient"
 import { timestampMs } from "@maple/backend/platform/time"
 
@@ -188,6 +191,79 @@ const ReviewCommentPayload = Schema.Struct({
 	installation: Schema.Struct({ id: Schema.Number }),
 })
 
+// `workflow_run` / `workflow_job`: CI runs and jobs, mapped only once `completed`. Timestamps
+// stay strings here and are parsed by the mapper, which skips an event it cannot place in time.
+const WorkflowRunPayload = Schema.Struct({
+	action: Schema.String,
+	workflow_run: Schema.Struct({
+		id: Schema.Number,
+		name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		path: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		run_number: Schema.Number,
+		run_attempt: Schema.optionalKey(Schema.Number),
+		event: Schema.String,
+		conclusion: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		head_branch: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		head_sha: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		html_url: Schema.String,
+		created_at: Schema.String,
+		run_started_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		updated_at: Schema.String,
+		actor: Schema.optionalKey(Schema.NullOr(Schema.Struct({ login: Schema.optionalKey(Schema.String) }))),
+		pull_requests: Schema.optionalKey(Schema.Array(Schema.Struct({ number: Schema.Number }))),
+	}),
+	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
+	installation: Schema.Struct({ id: Schema.Number }),
+})
+
+const WorkflowJobStepPayload = Schema.Struct({
+	number: Schema.Number,
+	name: Schema.String,
+	conclusion: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	started_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	completed_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+})
+
+const WorkflowJobPayload = Schema.Struct({
+	action: Schema.String,
+	workflow_job: Schema.Struct({
+		id: Schema.Number,
+		run_id: Schema.Number,
+		run_attempt: Schema.optionalKey(Schema.Number),
+		name: Schema.String,
+		workflow_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		conclusion: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		head_branch: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		head_sha: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		html_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		created_at: Schema.String,
+		started_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		completed_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		runner_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		labels: Schema.optionalKey(Schema.Array(Schema.String)),
+		steps: Schema.optionalKey(Schema.Array(WorkflowJobStepPayload)),
+	}),
+	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
+	installation: Schema.Struct({ id: Schema.Number }),
+})
+
+// A job's steps ride in one queue message, so their count and names are bounded to stay under
+// QUEUE_MESSAGE_LIMIT_BYTES whatever the workflow looks like.
+const MAX_WORKFLOW_STEPS = 300
+const MAX_WORKFLOW_NAME_LENGTH = 200
+const boundName = (name: string) =>
+	name.length > MAX_WORKFLOW_NAME_LENGTH ? `${name.slice(0, MAX_WORKFLOW_NAME_LENGTH)}...` : name
+
+const decodeWorkflowRun = Schema.decodeUnknownEffect(WorkflowRunPayload)
+const decodeWorkflowJob = Schema.decodeUnknownEffect(WorkflowJobPayload)
+
+/** A GitHub timestamp as epoch ms, or null when absent or unparseable. */
+const optionalTimestampMs = (value: string | null | undefined): number | null => {
+	if (value === null || value === undefined) return null
+	const ms = timestampMs(value)
+	return Number.isFinite(ms) ? ms : null
+}
+
 const decodeGitShaOption = Schema.decodeUnknownOption(GitCommitSha)
 const decodeIssueComment = Schema.decodeUnknownEffect(IssueCommentPayload)
 const decodeReviewComment = Schema.decodeUnknownEffect(ReviewCommentPayload)
@@ -223,42 +299,34 @@ const parsePayload = <A, E>(event: string, decoded: Effect.Effect<A, E>) =>
 	)
 
 // Classify a GitHub HTTP failure into a semantic VCS error. HTTP-status
-// knowledge lives here, in the provider — the orchestrator only ever sees the
-// semantic outcome. A rate limit (carrying `retryAfterSeconds`) becomes a
+// knowledge lives here and in the client, never in the orchestrator, which only
+// sees the semantic outcome. A rate limit (carrying `retryAfterSeconds`) becomes a
 // VcsRateLimitedError; a gone/410 on the installation-auth call is the
 // authoritative disconnect signal; on a repo call it means the repo is gone;
-// everything else (incl. 401/403/5xx) is transient and retryable.
-const isGone = (status?: number) => status === 404 || status === 410
-
-// GitHub answers 451 for a repository taken down for legal reasons, and carries
-// the same `{"block":{"reason":"dmca"}}` body on the 403 variant. Neither clears
-// on retry, so both are terminal — matched on the body rather than on 403 alone,
-// which is otherwise an ordinary (retryable) permission failure.
-const BLOCK_BODY = /"block"\s*:|Repository access blocked/
-const isBlocked = (error: GithubAppError) =>
-	error.status === 451 || (error.status === 403 && BLOCK_BODY.test(error.message))
-
+// everything else (incl. 401/403/5xx) is transient and retryable. The repository
+// listings classify gone and blocked repos themselves and pass them through.
 const toVcsError = (
-	error: GithubAppError,
+	error: RepositoryListingError,
 ):
 	| VcsProviderError
 	| VcsInstallationGoneError
 	| VcsRepoUnavailableError
 	| VcsRepositoryBlockedError
 	| VcsRateLimitedError => {
+	if (!(error instanceof GithubAppError)) return error
 	if (error.retryAfterSeconds !== undefined) {
 		return new VcsRateLimitedError({
 			message: error.message,
 			retryAfterSeconds: error.retryAfterSeconds,
 		})
 	}
-	if (isBlocked(error)) {
+	if (isBlockedRepository(error)) {
 		return new VcsRepositoryBlockedError({
 			message: error.message,
 			...(!(error.status === undefined) ? { status: error.status } : undefined),
 		})
 	}
-	if (isGone(error.status)) {
+	if (isGoneStatus(error.status)) {
 		if (error.scope === "installation") return new VcsInstallationGoneError({ message: error.message })
 		if (error.scope === "repository") return new VcsRepoUnavailableError({ message: error.message })
 	}
@@ -273,7 +341,7 @@ const toVcsError = (
 // so a rate-limit error never reaches this path. Narrow the mapper accordingly so
 // `fetchCommits` keeps the port's 3-way error channel (no VcsRateLimitedError).
 const toVcsCommitError = (
-	error: GithubAppError,
+	error: RepositoryListingError,
 ): VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError => {
 	const mapped = toVcsError(error)
 	return mapped._tag === "@maple/http/errors/VcsRateLimitedError"
@@ -825,6 +893,111 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					return [job]
 				})
 
+			const workflowSkip = (reason: string) =>
+				Effect.annotateCurrentSpan({
+					"vcs.webhook.outcome": "skipped",
+					"vcs.webhook.skip_reason": reason,
+				}).pipe(Effect.as<ReadonlyArray<VcsSyncJob>>([]))
+
+			// A finished workflow run becomes the root span of its CI trace.
+			const mapWorkflowRun = (raw: unknown) =>
+				Effect.gen(function* () {
+					const payload = yield* parsePayload("workflow_run", decodeWorkflowRun(raw))
+					const run = payload.workflow_run
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider.installation_id": String(payload.installation.id),
+						"vcs.repository.external_id": String(payload.repository.id),
+						"vcs.webhook.action": payload.action,
+					})
+					if (payload.action !== "completed") return yield* workflowSkip("workflow_not_completed")
+					const startedAtMs = optionalTimestampMs(run.run_started_at ?? run.created_at)
+					const completedAtMs = optionalTimestampMs(run.updated_at)
+					if (startedAtMs === null || completedAtMs === null)
+						return yield* workflowSkip("workflow_unparseable_time")
+					yield* Effect.annotateCurrentSpan({ "vcs.webhook.outcome": "handled" })
+					const job: VcsSyncJob = {
+						kind: "workflow-run",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						runId: String(run.id),
+						runAttempt: run.run_attempt ?? 1,
+						runNumber: run.run_number,
+						workflowName: run.name ?? run.path ?? "workflow",
+						workflowPath: run.path ?? null,
+						triggerEvent: run.event,
+						conclusion: run.conclusion ?? null,
+						headBranch: run.head_branch ?? null,
+						headSha: run.head_sha ?? null,
+						actorLogin: run.actor?.login ?? null,
+						pullRequestNumbers: (run.pull_requests ?? []).map((pr) => pr.number),
+						url: run.html_url,
+						startedAtMs,
+						completedAtMs: Math.max(startedAtMs, completedAtMs),
+					}
+					return [job]
+				})
+
+			// A finished job becomes a child span of its run, with a span per step that ran.
+			const mapWorkflowJob = (raw: unknown) =>
+				Effect.gen(function* () {
+					const payload = yield* parsePayload("workflow_job", decodeWorkflowJob(raw))
+					const ciJob = payload.workflow_job
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider.installation_id": String(payload.installation.id),
+						"vcs.repository.external_id": String(payload.repository.id),
+						"vcs.webhook.action": payload.action,
+					})
+					if (payload.action !== "completed") return yield* workflowSkip("workflow_not_completed")
+					const queuedAtMs = optionalTimestampMs(ciJob.created_at)
+					const completedAtMs = optionalTimestampMs(ciJob.completed_at)
+					if (queuedAtMs === null || completedAtMs === null)
+						return yield* workflowSkip("workflow_unparseable_time")
+					// A job skipped before it reached a runner has no start; it then spans nothing.
+					const startedAtMs = optionalTimestampMs(ciJob.started_at) ?? completedAtMs
+					// Steps that never ran carry no times and are left out.
+					const steps = (ciJob.steps ?? []).slice(0, MAX_WORKFLOW_STEPS).flatMap((step) => {
+						const stepStart = optionalTimestampMs(step.started_at)
+						const stepEnd = optionalTimestampMs(step.completed_at)
+						return stepStart === null || stepEnd === null
+							? []
+							: [
+									{
+										number: step.number,
+										name: boundName(step.name),
+										conclusion: step.conclusion ?? null,
+										startedAtMs: stepStart,
+										completedAtMs: Math.max(stepStart, stepEnd),
+									},
+								]
+					})
+					yield* Effect.annotateCurrentSpan({ "vcs.webhook.outcome": "handled" })
+					const job: VcsSyncJob = {
+						kind: "workflow-job",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						runId: String(ciJob.run_id),
+						runAttempt: ciJob.run_attempt ?? 1,
+						jobId: String(ciJob.id),
+						name: boundName(ciJob.name),
+						workflowName: ciJob.workflow_name ?? null,
+						conclusion: ciJob.conclusion ?? null,
+						headBranch: ciJob.head_branch ?? null,
+						headSha: ciJob.head_sha ?? null,
+						runnerName: ciJob.runner_name ?? null,
+						labels: ciJob.labels ?? [],
+						url: ciJob.html_url ?? "",
+						queuedAtMs,
+						startedAtMs: Math.max(queuedAtMs, startedAtMs),
+						completedAtMs: Math.max(queuedAtMs, startedAtMs, completedAtMs),
+						steps,
+					}
+					return [job]
+				})
+
 			// Dispatch a verified, parsed event to its mapper. Annotations (outcome /
 			// skip_reason / identifiers) are made by each mapper onto the surrounding
 			// `webhookToJobs` span.
@@ -838,6 +1011,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					Match.when("installation_repositories", () => mapInstallationRepositories(parsed)),
 					Match.when("create", () => mapRefEvent("created")(parsed)),
 					Match.when("delete", () => mapRefEvent("deleted")(parsed)),
+					Match.when("workflow_run", () => mapWorkflowRun(parsed)),
+					Match.when("workflow_job", () => mapWorkflowJob(parsed)),
 					Match.orElse(() =>
 						// ping and unhandled events are accepted no-ops.
 						Effect.annotateCurrentSpan({
@@ -1525,6 +1700,53 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
 					.pipe(Effect.mapError(toVcsCommitError))
 
+			const streamWorkflowJobLog: VcsProviderClient["streamWorkflowJobLog"] = (
+				installation,
+				repo,
+				jobId,
+			) =>
+				client
+					.streamJobLog(installation.externalInstallationId, repo.owner, repo.name, jobId)
+					.pipe(Stream.mapError(toVcsCommitError))
+
+			const fetchWorkflowJobAnnotations: VcsProviderClient["fetchWorkflowJobAnnotations"] = (
+				installation,
+				repo,
+				jobId,
+			) =>
+				client
+					.listCheckRunAnnotations(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						jobId,
+					)
+					.pipe(
+						Effect.map((annotations) =>
+							annotations.flatMap((annotation) =>
+								annotation.message === null || annotation.message === undefined
+									? []
+									: [
+											{
+												level: annotation.annotation_level ?? "failure",
+												message: annotation.message,
+												title: annotation.title ?? null,
+												path: annotation.path ?? null,
+												startLine: annotation.start_line ?? null,
+											},
+										],
+							),
+						),
+						Effect.mapError(toVcsCommitError),
+						Effect.withSpan("GithubProvider.fetchWorkflowJobAnnotations", {
+							attributes: {
+								"vcs.owner.name": repo.owner,
+								"vcs.repository.name": repo.name,
+								"cicd.pipeline.task.run.id": jobId,
+							},
+						}),
+					)
+
 			return {
 				id: PROVIDER,
 				reviewerMention,
@@ -1552,6 +1774,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchSourceFile,
 				resolveRef,
 				fetchCloneCredentials,
+				fetchWorkflowJobAnnotations,
+				streamWorkflowJobLog,
 			} satisfies VcsProviderClient
 		}),
 	},

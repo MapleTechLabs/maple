@@ -2,7 +2,8 @@ import { assert, describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Layer, Schema, Tracer } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
-import { McpToolExecutor, listMcpTools } from "./dispatcher"
+import { McpToolExecutor } from "./dispatcher"
+import { listMcpTools } from "./tool-catalog"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
 import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
@@ -387,6 +388,8 @@ describe("McpToolExecutor repository preparation", () => {
 		htmlUrl: `https://github.com/${fullName}`,
 		isPrivate: false,
 		isArchived,
+		syncStatus: "ready",
+		lastSyncError: null,
 	})
 
 	it.effect("prepares every unarchived connected repository through the sandbox it acquired", () => {

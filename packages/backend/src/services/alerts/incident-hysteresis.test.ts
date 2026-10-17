@@ -310,8 +310,10 @@ describe("host-neutral alert lifecycle parity", () => {
 				const actual = planAlertLifecycle({
 					policy: {
 						consecutiveBreachesRequired: 3,
+						breachWindow: 3,
 						consecutiveHealthyRequired: 2,
 						renotifyIntervalMinutes: 60,
+						severities: ["warning"],
 					},
 					evaluation: {
 						status,
@@ -322,6 +324,15 @@ describe("host-neutral alert lifecycle parity", () => {
 						comparator: "gte",
 						reason: "parity",
 						derivedFromNoData: false,
+						levels:
+							status === "skipped"
+								? []
+								: [
+										{
+											severity: "warning",
+											status: status === "breached" ? "breach" : "clear",
+										},
+									],
 					},
 					state: {
 						consecutiveBreaches: row.consecutiveBreaches,
@@ -329,6 +340,7 @@ describe("host-neutral alert lifecycle parity", () => {
 					},
 					openIncident: row.incidentOpen
 						? {
+								severity: "warning",
 								firstTriggeredAtMs: START_MS,
 								lastNotifiedAtMs: START_MS,
 								lastDeliveredEventType: "trigger",
@@ -336,7 +348,9 @@ describe("host-neutral alert lifecycle parity", () => {
 						: null,
 					nowMs,
 				})
-				expect(actual.state).toEqual({
+				// The state is rebuilt from counters alone each tick, so this also
+				// proves a pre-history row replays exactly.
+				expect(actual.state).toMatchObject({
 					consecutiveBreaches: expected.consecutiveBreaches,
 					consecutiveHealthy: expected.consecutiveHealthy,
 				})
@@ -347,7 +361,8 @@ describe("host-neutral alert lifecycle parity", () => {
 				)
 				row = {
 					...row,
-					...actual.state,
+					consecutiveBreaches: actual.state.consecutiveBreaches,
+					consecutiveHealthy: actual.state.consecutiveHealthy,
 					incidentOpen:
 						actual.transition === "opened" ||
 						(row.incidentOpen && actual.transition !== "resolved"),

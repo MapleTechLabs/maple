@@ -53,6 +53,18 @@ describe("handleRequest API proxy", () => {
 		expect(await request?.text()).toBe("hello")
 	})
 
+	it("sends the API's host, not the app's, so OAuth callbacks stay on the API", async () => {
+		const { env, forwarded } = recordingEnv()
+		await handleRequest(
+			new Request("https://app.maple.test/_api/v2/integrations/chat_connectors/slack/install", {
+				method: "POST",
+				headers: { host: "app.maple.test" },
+			}),
+			env,
+		)
+		expect(forwarded[0]?.headers.get("host")).toBe("api.maple.test")
+	})
+
 	it("never leaves the API's host for a protocol-relative path", async () => {
 		const { env, forwarded } = recordingEnv()
 		await handleRequest(new Request("https://app.maple.test/_api//evil.test/steal"), env)

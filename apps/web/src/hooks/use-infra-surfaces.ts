@@ -25,10 +25,10 @@ const BUCKET_MS = 5 * 60 * 1000
  * Which Infrastructure surfaces this org actually has.
  *
  * Two sources, because the section mixes two kinds of page. The five OTel
- * surfaces come from the warehouse probe. Cloudflare, PlanetScale and Railway are
- * integration pages — you have them because you connected the integration, not
- * because a metric arrived — so they read the same status atoms the
- * integrations hub uses. Only those three are mounted here: this hook lives in
+ * surfaces come from the warehouse probe. Cloudflare, PlanetScale, Railway and
+ * Google Cloud are integration pages — you have them because you connected the
+ * integration, not because a metric arrived — so they read the same status atoms
+ * the integrations hub uses. Only those four are mounted here: this hook lives in
  * the sidebar, so every atom it touches is a request on every page.
  *
  * Pass `window` to ask about a specific range instead of the last hour: the
@@ -69,6 +69,10 @@ export function useInfraSurfaces(window?: {
 		}),
 	)
 
+	const gcpResult = useAtomValue(
+		retainedQueryV2("gcpIntegration", "status", { reactivityKeys: ["gcpIntegration"] }),
+	)
+
 	const telemetry = Result.builder(presenceResult)
 		.onSuccess((response): ReadonlyArray<NavSurface> | null => response.surfaces)
 		.onInitial((): ReadonlyArray<NavSurface> | null => null)
@@ -86,6 +90,10 @@ export function useInfraSurfaces(window?: {
 	const railway = Result.builder(railwayResult)
 		.onSuccess((status) => status.connected)
 		.orElse(() => false)
+	// The page reads metrics and the inventory, which a logs-only connection does not collect.
+	const gcp = Result.builder(gcpResult)
+		.onSuccess((status) => status.connectors.some((connector) => connector.metrics_enabled))
+		.orElse(() => false)
 
 	return useMemo(() => {
 		if (telemetry === null) return null
@@ -93,6 +101,7 @@ export function useInfraSurfaces(window?: {
 		if (cloudflare) surfaces.add("cloudflare")
 		if (planetscale) surfaces.add("planetscale")
 		if (railway) surfaces.add("railway")
+		if (gcp) surfaces.add("gcp")
 		return surfaces
-	}, [telemetry, cloudflare, planetscale, railway])
+	}, [telemetry, cloudflare, planetscale, railway, gcp])
 }

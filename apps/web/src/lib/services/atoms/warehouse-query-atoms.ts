@@ -72,6 +72,7 @@ import {
 	getCloudflarePlatformResources,
 	getCloudflareTopTraffic,
 	getCloudflareWorkers,
+	getCloudflareWorkerDetail,
 	getCloudflareZoneBreakdown,
 	getCloudflareZoneDetail,
 	getCloudflareZoneDns,
@@ -87,6 +88,14 @@ import {
 } from "@/api/warehouse/planetscale-infra"
 import { getRailwayServices, getRailwayServiceTimeseries } from "@/api/warehouse/railway-infra"
 import {
+	getGcpCloudSqlInstancesOfDatabase,
+	getGcpCloudSqlTopQueries,
+	getGcpCloudSqlTraceSide,
+	getGcpInfraFleet,
+	getGcpInfraSparklines,
+	getGcpInfraTimeseries,
+} from "@/api/warehouse/gcp-infra"
+import {
 	getServiceHealthBaseline,
 	getServiceHealthSnapshot,
 	getServiceOverview,
@@ -99,6 +108,7 @@ import {
 	getSpanAttributeValues,
 	getSpanDetail,
 	getSpanHierarchy,
+	getTraceSpanEvents,
 	getTracesFacetValues,
 	getTracesFacets,
 	listTraces,
@@ -500,6 +510,10 @@ export const getReplaysForTraceResultAtom = makeQueryAtomFamily(getReplaysForTra
 	staleTime: 60_000,
 })
 
+export const getTraceSpanEventsResultAtom = makeQueryAtomFamily(getTraceSpanEvents, {
+	staleTime: 60_000,
+})
+
 export const getSpanDetailResultAtom = makeQueryAtomFamily(getSpanDetail, {
 	staleTime: 60_000,
 })
@@ -680,6 +694,10 @@ export const cloudflareWorkersResultAtom = makeQueryAtomFamily(getCloudflareWork
 	staleTime: 30_000,
 })
 
+export const cloudflareWorkerDetailResultAtom = makeQueryAtomFamily(getCloudflareWorkerDetail, {
+	staleTime: 30_000,
+})
+
 export const cloudflareZoneSecurityResultAtom = makeQueryAtomFamily(getCloudflareZoneSecurity, {
 	staleTime: 30_000,
 })
@@ -792,6 +810,31 @@ export const railwayServicesResultAtom = makeQueryAtomFamily(getRailwayServices,
 export const railwayServiceTimeseriesResultAtom = makeQueryAtomFamily(getRailwayServiceTimeseries, {
 	staleTime: 15_000,
 })
+
+export const gcpInfraFleetResultAtom = makeQueryAtomFamily(getGcpInfraFleet, {
+	staleTime: 15_000,
+})
+
+export const gcpInfraTimeseriesResultAtom = makeQueryAtomFamily(getGcpInfraTimeseries, {
+	staleTime: 15_000,
+})
+
+export const gcpInfraSparklinesResultAtom = makeQueryAtomFamily(getGcpInfraSparklines, {
+	staleTime: 15_000,
+})
+
+export const gcpCloudSqlTopQueriesResultAtom = makeQueryAtomFamily(getGcpCloudSqlTopQueries, {
+	staleTime: 15_000,
+})
+
+export const gcpCloudSqlTraceSideResultAtom = makeQueryAtomFamily(getGcpCloudSqlTraceSide, {
+	staleTime: 15_000,
+})
+
+export const gcpCloudSqlInstancesOfDatabaseResultAtom = makeQueryAtomFamily(
+	getGcpCloudSqlInstancesOfDatabase,
+	{ staleTime: 60_000 },
+)
 
 export const planetscaleQueryInsightsResultAtom = makeQueryAtomFamily(getPlanetScaleQueryInsights, {
 	// Server-side edge cache is 60s; match it so refreshes don't hammer PlanetScale.

@@ -1,6 +1,13 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { ExternalUserId, ScrapeTargetId, UserId } from "../primitives"
+import {
+	ExternalUserId,
+	GcpProjectId,
+	GcpResourceNumber,
+	GcpScopeType,
+	ScrapeTargetId,
+	UserId,
+} from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
@@ -697,6 +704,8 @@ export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatu
 		accountLogin: Schema.NullOr(Schema.String),
 		accountType: Schema.NullOr(VcsAccountType),
 		repositorySelection: Schema.NullOr(VcsRepoSelection),
+		/** Whether GitHub Actions runs become traces. True before the org has connected. */
+		ciTracesEnabled: Schema.Boolean,
 		repositories: Schema.Array(GithubRepoSummary),
 	},
 ) {}
@@ -740,6 +749,18 @@ export class GithubSetTrackedBranchResponse extends Schema.Class<GithubSetTracke
 	trackedBranch: Schema.String,
 	// True when the change enqueued a historical backfill of the new branch.
 	backfillQueued: Schema.Boolean,
+}) {}
+
+export class GithubSetCiTracesRequest extends Schema.Class<GithubSetCiTracesRequest>(
+	"GithubSetCiTracesRequest",
+)({
+	enabled: Schema.Boolean,
+}) {}
+
+export class GithubSetCiTracesResponse extends Schema.Class<GithubSetCiTracesResponse>(
+	"GithubSetCiTracesResponse",
+)({
+	enabled: Schema.Boolean,
 }) {}
 
 export class GithubSetPrReviewRequest extends Schema.Class<GithubSetPrReviewRequest>(
@@ -857,6 +878,62 @@ export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesRespons
 		ranges: Schema.Array(VcsCommitRangeResponse),
 	},
 ) {}
+
+/** A Cloud SQL instance's settings, read off its Cloud Asset Inventory resource. */
+export const GcpCloudSqlSettings = Schema.Struct({
+	/** `POSTGRES_15`, `MYSQL_8_0`, `SQLSERVER_2022_STANDARD`, ... */
+	databaseVersion: Schema.NullOr(Schema.String),
+	/** `ENTERPRISE` or `ENTERPRISE_PLUS`. */
+	edition: Schema.NullOr(Schema.String),
+	tier: Schema.NullOr(Schema.String),
+	/** Read off the tier; null for a tier Maple does not know. */
+	cpus: Schema.NullOr(Schema.Finite),
+	memoryGb: Schema.NullOr(Schema.Finite),
+	/** `REGIONAL` is high availability, `ZONAL` is not. */
+	availabilityType: Schema.NullOr(Schema.String),
+	/** The primary of a read replica, as `<project>:<instance>`. */
+	primary: Schema.NullOr(Schema.String),
+	diskSizeGb: Schema.NullOr(Schema.Finite),
+	queryInsightsEnabled: Schema.Boolean,
+	/**
+	 * The `max_connections` flag, or PostgreSQL's default for the memory of the larger of the
+	 * instance and its primary. Null when neither is known.
+	 */
+	maxConnections: Schema.NullOr(Schema.Finite),
+	maxConnectionsSource: Schema.NullOr(Schema.Literals(["flag", "default"])),
+})
+export type GcpCloudSqlSettings = Schema.Schema.Type<typeof GcpCloudSqlSettings>
+
+/** Rows one read of the Google Cloud resource inventory returns. */
+export const GCP_RESOURCES_LIMIT = 500
+
+/** One Cloud Asset Inventory entry in the scope of a Google Cloud connector. */
+export const GcpResource = Schema.Struct({
+	/** Full resource name: `//run.googleapis.com/projects/p/locations/l/services/s`. */
+	name: Schema.String,
+	assetType: Schema.String,
+	projectId: Schema.String,
+	location: Schema.NullOr(Schema.String),
+	displayName: Schema.NullOr(Schema.String),
+	state: Schema.NullOr(Schema.String),
+	labels: Schema.Record(Schema.String, Schema.String),
+	/** A Cloud SQL instance's settings; null for every other type, and until the sync reads them. */
+	details: Schema.NullOr(GcpCloudSqlSettings),
+})
+export type GcpResource = Schema.Schema.Type<typeof GcpResource>
+
+export class GcpResourcesResponse extends Schema.Class<GcpResourcesResponse>("GcpResourcesResponse")({
+	/** The first `GCP_RESOURCES_LIMIT` resources matching the filter, by asset type and name. */
+	resources: Schema.Array(GcpResource),
+	/** How many resources match the filter. */
+	total: Schema.Number,
+	/** The whole inventory by asset type: the type filter's options, and the project count. */
+	types: Schema.Array(Schema.Struct({ assetType: Schema.String, count: Schema.Number })),
+	/** Every project with a resource: the project filter's options. */
+	projects: Schema.Array(Schema.String),
+}) {}
+
+const GcpResourceFilterValue = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))
 
 export class RailwayEnvironmentStatus extends Schema.Class<RailwayEnvironmentStatus>(
 	"RailwayEnvironmentStatus",
@@ -1028,6 +1105,42 @@ export class IntegrationsNotFoundError extends HttpTaggedError<IntegrationsNotFo
 	},
 ) {}
 
+/** The organization already has a connector for this Google Cloud project, folder or organization. */
+export class GcpScopeAlreadyConnectedError extends HttpTaggedError<GcpScopeAlreadyConnectedError>()(
+	"@maple/http/errors/GcpScopeAlreadyConnectedError",
+	{
+		scopeType: GcpScopeType,
+		scopeId: Schema.Union([GcpProjectId, GcpResourceNumber]),
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "gcp_scope_already_connected",
+		title: "Already connected",
+		param: "scope_id",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** Metrics were requested on a deployment that has no Google identity to collect them with. */
+export class GcpMetricsUnavailableError extends HttpTaggedError<GcpMetricsUnavailableError>()(
+	"@maple/http/errors/GcpMetricsUnavailableError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "gcp_metrics_unavailable",
+		title: "Metrics collection is not available",
+		param: "metrics_enabled",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
 export type IntegrationHttpError =
 	| IntegrationsForbiddenError
 	| IntegrationsConfigurationError
@@ -1189,6 +1302,20 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		// The inventory behind Infrastructure -> Google Cloud. Connectors are public v2
+		// (`/v2/integrations/gcp`); only the dashboard reads what they discovered.
+		HttpApiEndpoint.get("gcpResources", "/gcp/resources", {
+			query: Schema.Struct({
+				assetType: Schema.optional(GcpResourceFilterValue),
+				projectId: Schema.optional(GcpResourceFilterValue),
+				/** The last segment of the resource name: how a workload's page finds its resource. */
+				name: Schema.optional(GcpResourceFilterValue),
+			}),
+			success: GcpResourcesResponse,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.get("githubStatus", "/github/status", {
 			success: GithubIntegrationStatus,
 			error: IntegrationsPersistenceError,
@@ -1230,6 +1357,14 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			},
 			payload: GithubSetTrackedBranchRequest,
 			success: GithubSetTrackedBranchResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Org-wide opt-out of CI traces from GitHub Actions. Admin only.
+		HttpApiEndpoint.put("githubSetCiTraces", "/github/ci-traces", {
+			payload: GithubSetCiTracesRequest,
+			success: GithubSetCiTracesResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)

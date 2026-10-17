@@ -13,7 +13,7 @@
 		"./console": "./src/replay/capture/console.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test": "vitest run",
 		"bench": "vitest bench --run"
 	},

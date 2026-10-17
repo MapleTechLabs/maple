@@ -85,7 +85,6 @@ import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
@@ -100,6 +99,7 @@ import {
 import { FindingEmbedder } from "./FindingEmbedder"
 import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
 import { POST_MERGE_FIRST_LOOK } from "./telemetry/post-merge"
+import { privacyFindings, withoutReviewerOverlap } from "./telemetry/privacy"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import {
 	buildChecklist,
@@ -126,6 +126,7 @@ import {
 	renderFollowUp,
 	renderIgnoredPaths,
 	resolvedByHandle,
+	SEVERITY_RANK,
 	threadForFinding,
 	type TrackedFinding,
 	withoutRepeats,
@@ -412,8 +413,6 @@ const renderConfigRules = (config: PrReviewRepositoryConfig | undefined): Readon
 		lines.push(`File findings only in these categories: ${config.categories.join(", ")}.`, "")
 	return lines
 }
-
-const SEVERITY_RANK = { info: 0, warn: 1, critical: 2 } as const satisfies Record<PrReviewSeverity, number>
 
 const severityLevel = (severity: PrReviewFinding["severity"]): PullRequestCheckAnnotation["level"] => {
 	switch (severity) {
@@ -1021,7 +1020,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const dbExecute = makeDbExecute(database, "PrReviewService", toPersistence)
 			const repositories = yield* VcsRepository
 			const providers = yield* VcsProviderRegistry
-			const featureFlags = yield* OrganizationFeatureFlagsService
 			// Present inside a Worker, absent in tests; without it a trigger records `agent_unavailable`.
 			const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 			// Present where webhooks are consumed; without it a push's review starts at once.
@@ -1298,12 +1296,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 
 			/**
-			 * The reads behind the "before merge" checklist, at submit: the diff's candidates, and a
-			 * verdict for each name from a search of the default branch (5 hits, so a whole-word match
-			 * can be found among token matches). A failed search leaves the name unverified.
-			 * `undefined` when the files cannot be read; the review posts without diff steps.
+			 * The diff's reads at submit: the "before merge" candidates with a verdict for each name
+			 * from a search of the default branch (5 hits, so a whole-word match can be found among
+			 * token matches; a failed search leaves the name unverified), and the privacy scan.
+			 * `undefined` when the files cannot be read; the review posts without either.
 			 */
-			const mergeStepsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
+			const diffFactsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
 				Effect.gen(function* () {
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
@@ -1319,10 +1317,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							),
 						{ concurrency: 2 },
 					)
-					return { detected, verdicts: new Map<string, NameVerdict>(verdicts.flat()) }
+					return {
+						detected,
+						verdicts: new Map<string, NameVerdict>(verdicts.flat()),
+						privacy: privacyFindings(files),
+					}
 				}).pipe(
 					Effect.timeout("15 seconds"),
-					Effect.withSpan("PrReviewService.mergeStepsFor"),
+					Effect.withSpan("PrReviewService.diffFactsFor"),
 					Effect.catchCause((cause) =>
 						Effect.logWarning(
 							"[PrReview] could not read the diff for the before-merge steps",
@@ -1595,7 +1597,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						Effect.gen(function* () {
 							if (row.sessionId !== null && chatSessions !== undefined) {
 								const stub = chatSessions.session(row.sessionId)
-								yield* stub.abort().pipe(
+								yield* stub.abort("superseded").pipe(
 									Effect.catchCause((cause) =>
 										Effect.logWarning("Could not abort a superseded review turn").pipe(
 											Effect.annotateLogs({
@@ -1959,13 +1961,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return skip("disabled")
 				}
 				const repo: VcsRepo = repository.value
-				// Staged rollout, checked on the server so a repository enabled before the flag was
-				// withdrawn still stops. After the repository check: that one is a database read,
-				// this one a call to the identity provider.
-				if (!(yield* featureFlags.flags(orgId)).prReview) {
-					yield* annotate("skipped", { "maple.pr_review.skip_reason": "not_rolled_out" })
-					return skip("not_rolled_out")
-				}
 				const config = yield* repositories
 					.getEffectivePrReviewConfig(orgId, repo.id)
 					.pipe(Effect.mapError(toPersistence))
@@ -2397,7 +2392,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						),
 						Option.isNone(repository)
 							? Effect.succeed(undefined)
-							: mergeStepsFor(orgId, repository.value, review.number),
+							: diffFactsFor(orgId, repository.value, review.number),
 					],
 					{ concurrency: "unbounded" },
 				)
@@ -2436,10 +2431,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const stillOpen = open.filter((finding) => !resolved.includes(finding))
 				// The model's findings weighed by production traffic, and the facts the service files
 				// itself. The repository's settings are enforced here, not only stated in the kickoff.
-				const allowed = [
+				const scanned = withoutReviewerOverlap(read?.privacy ?? [], request.report.findings)
+				const proposed = [
 					...weighByTraffic(request.report.findings, telemetry),
 					...telemetryFindings(telemetry),
-				].filter(
+					...scanned,
+				]
+				const allowed = proposed.filter(
 					(finding) =>
 						!pathIgnored(finding.path, config.ignorePaths) &&
 						(config.categories === undefined ||
@@ -2516,7 +2514,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.findings": report.findings.length,
 					"maple.pr_review.repeated": repeated,
 					"maple.pr_review.suppressed": feedback.suppressed.length,
-					"maple.pr_review.ignored": request.report.findings.length - allowed.length,
+					"maple.pr_review.ignored": proposed.length - allowed.length,
+					"maple.pr_review.privacy.scanned": read?.privacy.length ?? 0,
+					"maple.pr_review.privacy.filed": scanned.length,
 					"maple.pr_review.resolved": resolved.length,
 					"maple.pr_review.carried_open": stillOpen.length,
 					"maple.pr_review.coverage": report.coverage.length,
@@ -2970,7 +2970,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			Layer.mergeAll(
 				VcsRepository.layer,
 				VcsProviderRegistry.layer,
-				OrganizationFeatureFlagsService.layer,
 				PrReviewTelemetryService.layer,
 			),
 		),

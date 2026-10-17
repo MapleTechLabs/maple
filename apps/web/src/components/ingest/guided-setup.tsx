@@ -45,7 +45,7 @@ const ROLE_DEFAULT_FRAMEWORK = {
 } satisfies Record<OnboardingRole, FrameworkId>
 
 interface GuidedSetupProps {
-	/** Public ingest key, interpolated into the instrument snippet. */
+	/** Private ingest key: every snippet configures a server-side sender. */
 	apiKey: string
 	apiKeyStatus?: IngestKeyStatus
 	/** Render the endpoint + key credentials column beside the snippet tabs. */
@@ -110,6 +110,18 @@ export function GuidedSetup({ apiKey, apiKeyStatus, showCredentials = false }: G
 	)
 }
 
+/** Every supported stack's icon, for a collapsed "add another service" row. */
+export function FrameworkIconStrip({ className }: { className?: string }) {
+	return (
+		<span className={cn("text-muted-foreground flex shrink-0 items-center gap-2", className)} aria-hidden>
+			{sdkSnippets.map((snippet) => {
+				const Icon = frameworkIconMap[snippet.language]
+				return <Icon key={snippet.language} size={14} />
+			})}
+		</span>
+	)
+}
+
 export function FrameworkPicker({
 	selected,
 	onSelect,
@@ -170,6 +182,7 @@ export function ConnectInstructions({
 	variant = "boxed",
 }: {
 	framework: FrameworkId
+	/** Private ingest key: every snippet configures a server-side sender. */
 	apiKey: string
 	apiKeyStatus?: IngestKeyStatus
 	showCredentials?: boolean
@@ -216,10 +229,7 @@ export function ConnectInstructions({
 				/>
 			</TabsContent>
 
-			<TabsContent
-				value="claude-code"
-				className={cn("overflow-auto mt-0 space-y-2", contentPadding)}
-			>
+			<TabsContent value="claude-code" className={cn("overflow-auto mt-0 space-y-2", contentPadding)}>
 				<p className="text-xs text-muted-foreground">
 					Install the Maple skills, then run the prompt in Claude Code, Codex, or Cursor. The{" "}
 					<InlineCode>maple-onboard</InlineCode> skill walks every service in the repo, installs
@@ -246,9 +256,9 @@ export function ConnectInstructions({
 				{apiKeyStatus === "failed" ? (
 					<IngestKeysUnavailableNote />
 				) : apiKeyStatus === "loading" || !apiKey ? (
-					<CopyableFieldSkeleton label="API key" />
+					<CopyableFieldSkeleton label="Private ingest key" />
 				) : (
-					<CopyableField value={apiKey} label="API key" masked />
+					<CopyableField value={apiKey} label="Private ingest key" masked />
 				)}
 			</div>
 			{tabs}

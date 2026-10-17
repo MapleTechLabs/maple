@@ -45,6 +45,54 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/cloudflare",
+		title: "Cloudflare",
+		description:
+			"The Cloudflare zone and Worker lists and the zone page, whole, over a copy of production data.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp",
+		title: "Google Cloud log filter",
+		description:
+			"The Google Cloud configuration's Log filter for a new connection and an existing sink, with what each choice asks the setup script for.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-connect",
+		title: "Google Cloud connect",
+		description:
+			"Every step and run state of the Google Cloud connect dialog over fixture connectors, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-connections",
+		title: "Google Cloud connections",
+		description:
+			"A Google Cloud connection in each state, healthy to failing, over fixture connectors, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-infra",
+		title: "Google Cloud infrastructure",
+		description:
+			"The Google Cloud list (services, Pub/Sub, Cloud SQL) over fixtures that reproduce the Paper artboards: three projects, problems first.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-workload",
+		title: "Google Cloud workload",
+		description:
+			"The Google Cloud workload page, whole, over fixture series: a Cloud Run 5xx burst at peak instances and a Cloud SQL instance.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/onboarding",
 		title: "Onboarding",
 		description:
@@ -57,6 +105,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Chat loaders",
 		description:
 			"Every dot-matrix loader in the chat's pool, inline at both sizes it is used at, against real text.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-dashboard",
+		title: "Google Cloud dashboard",
+		description:
+			"The Google Cloud template as a board: tabs, Project / Region / Workload filters over fixture series, and the variables dialog.",
 		kind: "lab",
 		session: "none",
 	},
@@ -79,7 +135,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/timeline",
 		title: "Trace timeline",
 		description:
-			"The trace view tabs over a synthetic trace with a wide dynamic range — a 2s root down to sub-millisecond spans that only resolve at deep zoom.",
+			"The trace view tabs over a synthetic trace with a wide dynamic range — a 2s root down to sub-millisecond spans that only resolve at deep zoom, with span event markers and the events panel.",
 		kind: "lab",
 		session: "none",
 	},
@@ -167,6 +223,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Errors list",
 		description:
 			"The `/errors` list over a fixture holding every row state at once — surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/alerts",
+		title: "Alerts",
+		description:
+			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation.",
 		kind: "lab",
 		session: "none",
 	},

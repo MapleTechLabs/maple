@@ -27,6 +27,7 @@ import {
 const RULE_ID = "99999999-8888-4777-8666-555544443333"
 const INCIDENT_ID = "aaaa1111-2222-4333-8444-555566667777"
 const DEST_ID = "abababab-cdcd-4efe-8aba-121212121212"
+const PAGER_ID = "cdcdcdcd-abab-4efe-8aba-343434343434"
 
 const ruleRow: AlertRuleRow = {
 	id: RULE_ID,
@@ -145,6 +146,51 @@ describe("rowToAlertRuleDocument", () => {
 		)
 		assert.strictEqual(doc.signalType, "raw_query")
 		assert.strictEqual(doc.rawQueryReducer, "sum")
+	})
+
+	it("reads a row written before severity tiers as one tier from its legacy columns", () => {
+		const doc = rowToAlertRuleDocument(ruleRow, new Map())
+		assert.deepStrictEqual<unknown>(doc.thresholds, [
+			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [DEST_ID] },
+		])
+		assert.strictEqual(doc.breachesOutOf, null)
+	})
+
+	it("reads stored tiers lowest first and derives the single-threshold fields from them", () => {
+		const doc = rowToAlertRuleDocument(
+			{
+				...ruleRow,
+				thresholds_json: [
+					{
+						severity: "critical",
+						value: 0.2,
+						upper: null,
+						recoveryValue: 0.1,
+						destinationIds: [PAGER_ID],
+					},
+					{
+						severity: "warning",
+						value: 0.05,
+						upper: null,
+						recoveryValue: null,
+						destinationIds: [DEST_ID],
+					},
+				],
+				breaches_out_of: 5,
+			},
+			new Map(),
+		)
+		assert.deepStrictEqual(
+			doc.thresholds.map((tier) => [tier.severity, tier.value, tier.recoveryValue]),
+			[
+				["warning", 0.05, null],
+				["critical", 0.2, 0.1],
+			],
+		)
+		assert.strictEqual(doc.severity, "critical")
+		assert.strictEqual(doc.threshold, 0.05)
+		assert.deepStrictEqual<unknown>([...doc.destinationIds], [DEST_ID, PAGER_ID])
+		assert.strictEqual(doc.breachesOutOf, 5)
 	})
 })
 

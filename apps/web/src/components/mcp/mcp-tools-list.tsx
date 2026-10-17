@@ -1,154 +1,162 @@
-import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
+import { useState } from "react"
+import type { McpToolCatalogEntry } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
+import { Button } from "@maple/ui/components/ui/button"
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@maple/ui/components/ui/collapsible"
+import { SearchInput } from "@maple/ui/components/ui/search-input"
+import { SkeletonList } from "@maple/ui/components/ui/skeleton"
+import { cn } from "@maple/ui/lib/utils"
+import { ChevronRightIcon } from "@/components/icons"
+import { SettingsSection } from "@/components/settings/settings-section"
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import { MapleAiAtomClient } from "@/lib/services/common/ai-atom-client"
+import { groupMcpTools, type McpToolGroup } from "./mcp-tool-groups"
 
-const MCP_TOOLS = [
-	{
-		name: "system_health",
-		description:
-			"Get system health snapshot: error rate, latency percentiles (P50/P95), top errors, per-service breakdown, and data volume. Best starting point for any investigation.",
-	},
-	{
-		name: "diagnose_service",
-		description:
-			"Deep investigation of a single service: health metrics, top errors, recent logs, slow traces, and Apdex score.",
-	},
-	{
-		name: "find_errors",
-		description: "Find and categorize errors by type, with counts, affected services, and timestamps.",
-	},
-	{
-		name: "error_detail",
-		description:
-			"Investigate a specific error type: shows sample traces with metadata and correlated logs.",
-	},
-	{
-		name: "search_traces",
-		description:
-			"Search traces by service, duration, error status, HTTP method, span name, or custom attributes (e.g. user.id).",
-	},
-	{
-		name: "find_slow_traces",
-		description: "Find the slowest traces with percentile context (P50, P95 benchmarks).",
-	},
-	{
-		name: "inspect_trace",
-		description:
-			"Deep-dive into a trace: full span tree with durations and status, plus correlated logs.",
-	},
-	{
-		name: "search_logs",
-		description: "Search and filter logs by service, severity, time range, or body text.",
-	},
-	{
-		name: "list_metrics",
-		description: "Discover available metrics with type, service, description, and data point counts.",
-	},
-	{
-		name: "query_data",
-		description:
-			"Query timeseries or breakdown data from traces, logs, or metrics. Supports attribute filtering, environment/commit comparison, and apdex.",
-	},
-	{
-		name: "service_map",
-		description:
-			"Show service-to-service dependencies with call counts, error rates, and latency per edge.",
-	},
-	{
-		name: "compare_periods",
-		description:
-			"Compare system health between two time periods to detect regressions. Flags error_rate_up, latency_up, throughput_drop automatically.",
-	},
-	{
-		name: "explore_attributes",
-		description:
-			"Discover attribute keys/values for traces and metrics. Also discover environments and commit SHAs (source=services).",
-	},
-	{
-		name: "list_alert_rules",
-		description: "List configured alert rules with their severity, signal type, and condition.",
-	},
-	{
-		name: "list_alert_incidents",
-		description: "List triggered alert incidents with their status, severity, and observed values.",
-	},
-	{
-		name: "create_alert_rule",
-		description:
-			"Create an alert rule from a template (high_error_rate, slow_p95, slow_p99, low_apdex, throughput_drop) or with custom parameters.",
-	},
-	{
-		name: "list_dashboards",
-		description: "List all dashboards with widget counts and timestamps.",
-	},
-	{
-		name: "get_dashboard",
-		description: "Retrieve full dashboard configuration with all widgets.",
-	},
-	{
-		name: "create_dashboard",
-		description:
-			"Create a dashboard from a template (service_health, error_tracking, blank) or custom JSON.",
-	},
-	{
-		name: "list_agent_sessions",
-		description:
-			"List AI agent sessions with their agent, vendor, models, LLM and tool calls, failures, tokens, and cost. Filter by vendor, service, agent, model, tool or errors, and sort by cost, tokens, duration or failures.",
-	},
-	{
-		name: "get_agent_session",
-		description:
-			"Read one AI agent session: verdict and findings, active/idle time, token and cost breakdown, models and tools used, and turn counts. The transcript tool reads it turn by turn.",
-	},
-	{
-		name: "get_agent_session_transcript",
-		description:
-			"Read what an AI agent session did, step by step: prompts, replies, tool calls with their arguments and results, sub-agent runs, and what failed.",
-	},
-	{
-		name: "get_agent_tools_overview",
-		description:
-			"Show how often each AI agent tool is called, how often it fails, and how slow it is, compared with the previous window. Select a tool to list its failure groups.",
-	},
-	{
-		name: "get_agent_tool_error",
-		description:
-			"Investigate one agent tool failure group: affected sessions, message variants, models and services, and sample calls with their arguments and results.",
-	},
-] as const
+/** Groups open on first view; the rest start collapsed. */
+const OPEN_GROUPS = 3
+/** Rows a group shows before "Show more". */
+const PREVIEW_ROWS = 4
+
+function ToolRow({ tool }: { tool: McpToolCatalogEntry }) {
+	return (
+		<li className="grid grid-cols-[minmax(0,13rem)_minmax(0,1fr)_auto] items-center gap-4 py-1.5 max-sm:grid-cols-[minmax(0,1fr)_auto]">
+			<code className="truncate font-mono text-xs font-medium text-foreground">{tool.name}</code>
+			<p className="truncate text-xs text-muted-foreground max-sm:hidden" title={tool.description}>
+				{tool.description}
+			</p>
+			{tool.readOnly ? (
+				<Badge variant="muted" size="sm">
+					Read only
+				</Badge>
+			) : (
+				<Badge variant="warn" size="sm">
+					Writes
+				</Badge>
+			)}
+		</li>
+	)
+}
+
+function ToolGroup({
+	group,
+	open,
+	onOpenChange,
+	showAll,
+	onShowAll,
+}: {
+	group: McpToolGroup
+	open: boolean
+	onOpenChange: (open: boolean) => void
+	showAll: boolean
+	onShowAll: () => void
+}) {
+	const hidden = showAll ? 0 : Math.max(0, group.tools.length - PREVIEW_ROWS)
+	const rows = hidden === 0 ? group.tools : group.tools.slice(0, PREVIEW_ROWS)
+	return (
+		<Collapsible open={open} onOpenChange={onOpenChange}>
+			<CollapsibleTrigger className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-muted/40">
+				<ChevronRightIcon
+					size={14}
+					className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+				/>
+				<span className="font-medium">{group.label}</span>
+				<span className="text-xs text-muted-foreground tabular-nums">{group.tools.length}</span>
+			</CollapsibleTrigger>
+			<CollapsiblePanel className="px-4 pb-3 pl-10">
+				<ul>
+					{rows.map((tool) => (
+						<ToolRow key={tool.name} tool={tool} />
+					))}
+				</ul>
+				{hidden > 0 && (
+					<Button
+						variant="ghost"
+						size="xs"
+						className="-ml-2 mt-1 text-muted-foreground"
+						onClick={onShowAll}
+					>
+						Show {hidden} more
+					</Button>
+				)}
+			</CollapsiblePanel>
+		</Collapsible>
+	)
+}
+
+/** Toggles a member of a set without mutating it. */
+const toggled = (set: ReadonlySet<string>, id: string) => {
+	const next = new Set(set)
+	if (next.has(id)) next.delete(id)
+	else next.add(id)
+	return next
+}
+
+function ToolCatalog({ tools }: { tools: ReadonlyArray<McpToolCatalogEntry> }) {
+	const [search, setSearch] = useState("")
+	// Groups whose open state differs from the default, so the default can depend on position.
+	const [flipped, setFlipped] = useState<ReadonlySet<string>>(new Set())
+	const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+	const searching = search.trim() !== ""
+	const groups = groupMcpTools(tools, search)
+
+	return (
+		<>
+			<div className="border-b p-2">
+				<SearchInput
+					value={search}
+					onValueChange={setSearch}
+					placeholder={`Search ${tools.length} tools`}
+					aria-label="Search tools"
+				/>
+			</div>
+			{groups.length === 0 ? (
+				<p className="px-4 py-6 text-center text-sm text-muted-foreground">
+					No tools match “{search}”.
+				</p>
+			) : (
+				<div className="divide-y">
+					{groups.map((group, index) => (
+						<ToolGroup
+							key={group.id}
+							group={group}
+							open={searching || index < OPEN_GROUPS !== flipped.has(group.id)}
+							onOpenChange={() => {
+								if (!searching) setFlipped((current) => toggled(current, group.id))
+							}}
+							showAll={searching || expanded.has(group.id)}
+							onShowAll={() => setExpanded((current) => toggled(current, group.id))}
+						/>
+					))}
+				</div>
+			)}
+		</>
+	)
+}
 
 export function McpToolsList() {
+	const result = useAtomValue(MapleAiAtomClient.query("mcpTools", "list", { timeToLive: "1 hour" }))
+	const count = Result.builder(result)
+		.onSuccess((catalog): number | null => catalog.tools.length)
+		.orElse(() => null)
+
 	return (
-		<Card>
-			<CardHeader>
-				<div className="flex items-center gap-2">
-					<CardTitle>Available tools</CardTitle>
-					<Badge variant="secondary">{MCP_TOOLS.length}</Badge>
-				</div>
-			</CardHeader>
-			<CardContent>
-				<KeyValueList
-					layout="grid"
-					divided
-					className="gap-x-6 max-sm:grid-cols-1 [&>div]:gap-y-1 [&>div]:py-2.5 [&>div:first-child]:pt-0 [&>div:last-child]:pb-0"
-				>
-					{MCP_TOOLS.map((tool) => (
-						<KeyValue
-							key={tool.name}
-							label={
-								<code className="font-mono text-xs font-medium text-foreground">
-									{tool.name}
-								</code>
-							}
-							wrap
-							className="max-sm:col-span-1!"
-							valueClassName="text-muted-foreground leading-relaxed"
-						>
-							{tool.description}
-						</KeyValue>
-					))}
-				</KeyValueList>
-			</CardContent>
-		</Card>
+		<SettingsSection
+			title={count === null ? "Tools" : `Tools · ${count}`}
+			description="What a connected client can do. Tools marked Writes change data."
+			padded={false}
+		>
+			{Result.builder(result)
+				.onSuccess((catalog) => <ToolCatalog tools={catalog.tools} />)
+				.onError(() => (
+					<p className="px-4 py-6 text-center text-sm text-muted-foreground">
+						The tool list could not be loaded.
+					</p>
+				))
+				.orElse(() => (
+					<div className="p-4">
+						<SkeletonList rows={6} />
+					</div>
+				))}
+		</SettingsSection>
 	)
 }

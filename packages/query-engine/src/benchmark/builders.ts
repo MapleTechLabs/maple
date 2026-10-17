@@ -817,6 +817,29 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		// query-engine.http.ts spanDetail, after the detail row resolves the span's keys
+		module: "errors",
+		name: "spanEventsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.spanEventsQuery({
+					traceId: TRACE_ID,
+					spanId: SPAN_ID,
+					serviceName: "api",
+					spanName: "GET",
+				}),
+				window,
+			),
+	},
+	{
+		// query-engine.http.ts traceSpanEvents, the trace timeline's event markers
+		module: "errors",
+		name: "spanEventsByTraceQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.spanEventsByTraceQuery({ traceId: TRACE_ID }), window),
+	},
+	{
 		// ErrorsService errorIssuesScan (the scheduled sweep)
 		module: "errors",
 		name: "errorIssuesQuery",
@@ -1120,6 +1143,82 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "allRuns",
+		compile: () => CH.compileUnsafe(CH.ciRunsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciRunsQuery({
+					pipeline: "CI",
+					repository: "api",
+					branch: "main",
+					result: "failure",
+					limit: 50,
+				}),
+				window,
+			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciFailedJobsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.ciFailedJobsQuery({ traceIds: ["abc123"] }), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "pageAfterCursor",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciRunsQuery({
+					ranOnly: true,
+					before: { startedAt: START_UTC, traceId: "abc123" },
+					limit: 51,
+				}),
+				{ ...window, beforeStartedAt: START_UTC, beforeTraceId: "abc123" },
+			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunTotalsQuery",
+		label: "allWorkflows",
+		compile: () => CH.compileUnsafe(CH.ciRunTotalsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunSeriesQuery",
+		label: "sixHourly",
+		compile: () => CH.compileUnsafe(CH.ciRunSeriesQuery({}), { ...window, bucketSeconds: 21_600 }),
+	},
+	{
+		module: "ci-runs",
+		name: "ciPipelineStatsQuery",
+		label: "oneRepository",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciPipelineStatsQuery({ owner: "acme", repository: "api", pipeline: "CI" }),
+				window,
+			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciJobStatsQuery",
+		label: "allWorkflows",
+		compile: () => CH.compileUnsafe(CH.ciJobStatsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciQueueTotalsQuery",
+		label: "allWorkflows",
+		compile: () => CH.compileUnsafe(CH.ciQueueTotalsQuery({}), window),
+	},
+	{
 		module: "pr-review",
 		name: "operationTrafficHourlyQuery",
 		label: "allServices",
@@ -1188,6 +1287,14 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				}),
 				window,
 			),
+	},
+
+	// apps/cli `serviceHasTelemetry`: the `-s <name>` typo check.
+	{
+		module: "services",
+		name: "servicePresenceQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.servicePresenceQuery({ serviceName: "checkout" }), window),
 	},
 
 	// Service-catalog hourly-rollup splice.
@@ -1634,6 +1741,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "default",
 		compile: () =>
 			CH.compileUnsafe(CH.serviceDependenciesForServiceQuery({ serviceName: "web" }), window),
+	},
+	{
+		module: "service-map",
+		name: "serviceDependenciesInvolvingServiceQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceDependenciesInvolvingServiceQuery({ serviceName: "web" }), window),
 	},
 	{
 		// Hourly MV UNION ALL the two partial hours from raw traces. Absent from

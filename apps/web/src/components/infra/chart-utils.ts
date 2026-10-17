@@ -12,6 +12,7 @@ import {
 	formatLatency,
 	formatLoad,
 	formatPercent,
+	formatRate,
 	formatThroughput,
 } from "@maple/ui/lib/format"
 import { formatTimeInTimezone } from "@/lib/timezone-format"
@@ -40,6 +41,9 @@ export type ChartUnit =
 	// whole seconds and renders anything at or below zero as an em dash.
 	| "milliseconds"
 	| "rate"
+	// A quantity: per-bucket event counts (requests, invocations) or levels (instances,
+	// connections), compact like "1.2K" and fractional below one.
+	| "count"
 
 /** Compact, human duration ("45s", "12m", "3h 20m", "2d 4h"). */
 export function formatSeconds(seconds: number): string {
@@ -64,7 +68,8 @@ export function formatValueWithUnit(value: number, unit: ChartUnit): string {
 		case "percent":
 			return formatPercent(value)
 		case "cores":
-			return `${value.toLocaleString(undefined, { maximumFractionDigits: 3 })} cores`
+			// A sidecar idles at a fraction of a millicore, which three decimals round to zero.
+			return `${value.toLocaleString(undefined, Math.abs(value) < 0.01 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 3 })} cores`
 		case "seconds":
 			return formatSeconds(value)
 		case "load":
@@ -77,6 +82,8 @@ export function formatValueWithUnit(value: number, unit: ChartUnit): string {
 			return formatLatency(value)
 		case "rate":
 			return formatThroughput(value, "/s")
+		case "count":
+			return formatRate(value)
 	}
 }
 
