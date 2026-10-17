@@ -42,7 +42,7 @@ import {
 	buildCumulativeSeries,
 	type CumulativePoint,
 	FEATURE_COLORS,
-	FEATURE_SHORT_LABELS,
+	FEATURE_LABELS,
 	SPEND_FEATURES,
 	type SpendModel,
 } from "@/lib/billing/spend"
@@ -71,15 +71,15 @@ const SPEND_CHART_HEIGHT = 300
 
 const chartConfig = {
 	base: { label: "Base plan", color: "#57534a" },
-	logs: { label: FEATURE_SHORT_LABELS.logs, color: FEATURE_COLORS.logs },
-	traces: { label: FEATURE_SHORT_LABELS.traces, color: FEATURE_COLORS.traces },
-	metrics: { label: FEATURE_SHORT_LABELS.metrics, color: FEATURE_COLORS.metrics },
+	logs: { label: FEATURE_LABELS.logs, color: FEATURE_COLORS.logs },
+	traces: { label: FEATURE_LABELS.traces, color: FEATURE_COLORS.traces },
+	metrics: { label: FEATURE_LABELS.metrics, color: FEATURE_COLORS.metrics },
 	browser_sessions: {
-		label: FEATURE_SHORT_LABELS.browser_sessions,
+		label: FEATURE_LABELS.browser_sessions,
 		color: FEATURE_COLORS.browser_sessions,
 	},
 	product_events: {
-		label: FEATURE_SHORT_LABELS.product_events,
+		label: FEATURE_LABELS.product_events,
 		color: FEATURE_COLORS.product_events,
 	},
 } satisfies Record<string, { label: string; color: string }>

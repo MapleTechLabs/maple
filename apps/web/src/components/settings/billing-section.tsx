@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useRef, useState } from "react"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Button } from "@maple/ui/components/ui/button"
@@ -18,13 +18,12 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatDateInTimezone } from "@/lib/timezone-format"
 import { AdminOnlyNote, SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { getLegacyPlanInfo, getTrialStatus, type TrialStatus } from "@/lib/billing/plan-gating"
-import { buildSpendModel } from "@/lib/billing/spend"
+import { buildSpendModel, type SpendFeatureId } from "@/lib/billing/spend"
 import { estimateCycleCost } from "@/lib/billing/cost-estimate"
-import { maximumInvoiceCents, spendLimitFor } from "@/lib/billing/controls"
+import { maximumInvoiceCents } from "@/lib/billing/controls"
 import { BillingKpis, BillingKpisSkeleton } from "./billing-kpis"
-import { FeatureUsageCards, FeatureUsageCardsSkeleton } from "./feature-usage-cards"
 import { SpendChart, SpendChartSkeleton } from "./spend-chart"
-import { BillingControlsCard, BillingControlsCardSkeleton } from "./billing-controls-card"
+import { BillingUsageTable, BillingUsageTableSkeleton } from "./billing-usage-table"
 import { PlanOffer } from "./plan-offer"
 import { CostBreakdown, CostBreakdownSkeleton } from "./cost-breakdown"
 import { InvoicesSection } from "./invoices-section"
@@ -178,12 +177,8 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 		[customer, plans, usageTotal],
 	)
 	const maximumInvoice = maximumInvoiceCents(model, customer)
-	const overageCaps = Object.fromEntries(
-		(model?.features ?? []).map((feature) => [
-			feature.featureId,
-			spendLimitFor(customer, feature.featureId)?.overageLimit ?? null,
-		]),
-	)
+	const [editingCap, setEditingCap] = useState<SpendFeatureId | null>(null)
+	const usageRef = useRef<HTMLDivElement>(null)
 
 	const billingDetails = (
 		<SettingsSection title="Billing details" description="Printed on every invoice" framed={false}>
@@ -233,31 +228,31 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 				<BillingKpis model={model} maximumInvoiceCents={maximumInvoice} />
 			)}
 
-			<SettingsSection title="Usage by feature" description={billingPeriodLabel} framed={false}>
-				{isLoading || model === null ? (
-					<FeatureUsageCardsSkeleton />
-				) : (
-					<FeatureUsageCards model={model} overageCaps={overageCaps} />
-				)}
-			</SettingsSection>
-
 			{isLoading || model === null || Result.isInitial(dailySpendResult) ? (
 				<SpendChartSkeleton />
 			) : (
 				<SpendChart model={model} daily={daily} />
 			)}
 
-			<SettingsSection
-				title="Billing controls"
-				description="Paid overage caps, enforced per feature"
-				framed={false}
-			>
-				{customer === undefined ? (
-					<BillingControlsCardSkeleton />
-				) : (
-					<BillingControlsCard customer={customer} model={model} canEdit={isAdmin} />
-				)}
-			</SettingsSection>
+			<div ref={usageRef} className="scroll-mt-6">
+				<SettingsSection
+					title="Usage"
+					description="Included usage resets each cycle. A cap limits paid overage for one feature; data past the cap is still recorded."
+					framed={false}
+				>
+					{isLoading || model === null || customer === undefined ? (
+						<BillingUsageTableSkeleton />
+					) : (
+						<BillingUsageTable
+							model={model}
+							customer={customer}
+							canEdit={isAdmin}
+							editing={editingCap}
+							onEditingChange={setEditingCap}
+						/>
+					)}
+				</SettingsSection>
+			</div>
 
 			{billingDetails}
 
