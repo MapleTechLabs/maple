@@ -42,7 +42,7 @@ import {
 } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatDateInTimezone } from "@/lib/timezone-format"
-import { useAsyncAction } from "@/hooks/use-mutation-action"
+import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 
 /** A role change waiting on the inline confirm strip under the member's row. */
@@ -60,6 +60,7 @@ interface MemberToRemove {
 
 interface InvitationTarget {
 	readonly email: string
+	readonly id: string
 	readonly role: OrgRole
 	readonly revoke: () => Promise<unknown>
 }
@@ -88,7 +89,7 @@ export function MembersSection() {
 
 	const [invitationToRevoke, setInvitationToRevoke] = useState<InvitationTarget | null>(null)
 	const [withRevokeLoading, revokeLoading] = useAsyncAction((task: () => Promise<void>) => task())
-	const [withResending] = useAsyncAction((task: () => Promise<void>) => task())
+	const resending = useKeyedAsyncAction((_invitationId: string, task: () => Promise<void>) => task())
 	const { effectiveTimezone } = useTimezonePreference()
 
 	const isAdmin = useIsOrgAdmin()
@@ -150,8 +151,8 @@ export function MembersSection() {
 
 	/** Clerk has no resend: revoke the old invitation, then invite the same email with the same role. */
 	function handleResend(target: InvitationTarget) {
-		if (!organization) return
-		return withResending(async () => {
+		if (!organization || resending.isPending(target.id)) return
+		return resending.run(target.id, async () => {
 			const revoked = await settleClerk(target.revoke(), { error: "Failed to resend invitation" })
 			if (!revoked) return
 			await settleClerk(organization.inviteMember({ emailAddress: target.email, role: target.role }), {
@@ -199,6 +200,8 @@ export function MembersSection() {
 	const memberList = memberships?.data ?? []
 	const invitationList = invitations?.data ?? []
 	const columnCount = isAdmin ? 4 : 3
+	const membersLoading =
+		memberList.length === 0 && (memberships?.isLoading === true || memberships?.isFetching === true)
 
 	const inviteButton = isAdmin ? (
 		<Button size="sm" onClick={() => setInviteOpen(true)}>
@@ -228,6 +231,27 @@ export function MembersSection() {
 						</TableRow>
 					</TableHeader>
 					<TableBody>
+						{membersLoading &&
+							Array.from({ length: 3 }, (_, index) => (
+								<TableRow key={`skeleton-${index}`}>
+									<TableCell>
+										<div className="flex items-center gap-3">
+											<Skeleton className="size-6 rounded-full" />
+											<div className="space-y-1.5">
+												<Skeleton className="h-3 w-32" />
+												<Skeleton className="h-3 w-48" />
+											</div>
+										</div>
+									</TableCell>
+									<TableCell>
+										<Skeleton className="h-3 w-16" />
+									</TableCell>
+									<TableCell>
+										<Skeleton className="h-3 w-20" />
+									</TableCell>
+									{isAdmin && <TableCell />}
+								</TableRow>
+							))}
 						{memberList.map((member) => {
 							const userData = member.publicUserData
 							const isCurrentUser = userData?.userId === userId
@@ -390,10 +414,12 @@ export function MembersSection() {
 						<TableBody>
 							{invitationList.map((invitation) => {
 								const target: InvitationTarget = {
+									id: invitation.id,
 									email: invitation.emailAddress,
 									role: toOrgRole(invitation.role),
 									revoke: () => invitation.revoke(),
 								}
+								const isResending = resending.isPending(invitation.id)
 								return (
 									<TableRow key={invitation.id}>
 										<TruncatedCell>
@@ -421,13 +447,15 @@ export function MembersSection() {
 													label={`Actions for ${invitation.emailAddress}`}
 												>
 													<DropdownMenuItem
+														disabled={isResending}
 														onClick={() => void handleResend(target)}
 													>
 														<ArrowRotateAnticlockwiseIcon />
-														Resend
+														{isResending ? "Resending" : "Resend"}
 													</DropdownMenuItem>
 													<DropdownMenuItem
 														variant="destructive"
+														disabled={isResending}
 														onClick={() => setInvitationToRevoke(target)}
 													>
 														<TrashIcon />

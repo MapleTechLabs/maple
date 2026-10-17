@@ -111,11 +111,13 @@ export function GeneralSection() {
 
 	/** After the org is gone for this user, switch to another one (or none) and go home. */
 	async function switchAway(orgId: string) {
+		// The org is gone, so a dirty name must not trip the unsaved changes guard on the way out.
+		nameDraft.discard()
 		const next =
 			(userMemberships?.data ?? []).find((m) => m.organization.id !== orgId)?.organization.id ?? null
 		// A failed switch falls through to navigation; Clerk's session refreshes on next load.
 		if (setActive) await setActive({ organization: next }).catch(() => undefined)
-		void navigate({ to: "/" })
+		void navigate({ to: "/", ignoreBlocker: true })
 	}
 
 	function handleSaveName() {
