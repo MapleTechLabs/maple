@@ -381,7 +381,7 @@ export interface ModelCallAttempts {
 }
 
 /** Which attempt a model-call span is; only a retry past the cap carries it. */
-export const MODEL_CALL_ATTEMPT_ATTR = "maple_ai.model_call.attempt"
+const MODEL_CALL_ATTEMPT_ATTR = "maple_ai.model_call.attempt"
 
 /**
  * Build a provider's language model so that every `streamText` call — the only call Maple makes, and
