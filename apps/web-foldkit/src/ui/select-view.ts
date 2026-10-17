@@ -39,8 +39,8 @@ export type ViewInputs = Readonly<{
 	className?: string
 	/** `<SelectTrigger size>`. */
 	size?: "default" | "sm"
-	/** `<SelectValue>`'s render function: the trigger's content for the selected option. */
-	renderValue?: (option: SelectOption) => ReadonlyArray<Html | string>
+	/** `<SelectValue>`'s render function: the trigger's content for the value, listed or not. */
+	renderValue?: (value: string) => ReadonlyArray<Html | string>
 	/** A `<SelectItem>`'s children when they are more than its label. */
 	renderItem?: (option: SelectOption) => ReadonlyArray<Html | string>
 }>
@@ -253,10 +253,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		[
 			h.span(
 				[h.Class(selectValueStyles), h.DataAttribute("slot", "select-value")],
-				Option.match(selected, {
-					onNone: () => [""],
-					onSome: (item) => inputs.renderValue?.(item) ?? [item.label],
-				}),
+				inputs.renderValue?.(model.value) ??
+					Option.match(selected, { onNone: () => [""], onSome: (item) => [item.label] }),
 			),
 			h.span(
 				[

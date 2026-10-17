@@ -70,6 +70,12 @@ export const ChartSpec = defineTaggedUnion({
 		/** Bumped when the data arrives again: React rebuilds the definition on every new result. */
 		revision: Schema.Number,
 	},
+	/** `IssueOccurrenceChart` (apps/web/src/components/errors): bucketed counts as bars. */
+	Occurrences: {
+		points: Schema.Array(Schema.Struct({ bucket: Schema.String, count: Schema.Number })),
+		color: Schema.String,
+		timeZone: Schema.String,
+	},
 	/** `HistogramSpike` (binX over raw observations) in apps/web/src/lab/charts/histogram-spike.tsx. */
 	BinnedHistogram: {
 		values: Schema.Array(Schema.Number),

@@ -7,6 +7,8 @@ import {
 	pageHeaderActionsStyles,
 	pageHeaderStyles,
 	pageHeaderTextStyles,
+	pageRightSidebarStyles,
+	pageRightSidebarWidthStyles,
 	pageScrollAreaStyles,
 	pageStickyAreaStyles,
 } from "@maple/ui/styles/ui/page-layout"
@@ -25,6 +27,13 @@ export type DashboardPageOptions = Readonly<{
 	/** The header's right side: `headerActions` and the time controls, already composed. */
 	actions?: Html
 	scrollClassName?: string
+	/** `header`: replaces the composed header (a page with its own title block). */
+	header?: Html
+	/** `DashboardLayout.Tabs`: page tabs pinned under the header. */
+	tabs?: Html
+	/** `DashboardLayout.RightPanel` as the inline rail (lg and up). TODO(lg): the sheet below lg. */
+	rightPanel?: Html
+	rightPanelWidth?: string
 }>
 
 /** `PageLayout.Body`. */
@@ -86,11 +95,35 @@ export const dashboardPage = <M>(
 	children: ReadonlyArray<Html>,
 ): Html => {
 	const hasHeader = options.titleContent !== undefined || options.actions !== undefined
+	const header =
+		options.header ?? (hasHeader ? pageHeader(h, options.titleContent, options.actions) : undefined)
+	const sticky = [
+		...(header === undefined ? [] : [header]),
+		...(options.tabs === undefined
+			? []
+			: [h.div([h.DataAttribute("slot", "page-tabs"), h.Class("min-w-0")], [options.tabs])]),
+	]
 	return pageBody(h, [
 		...(options.filters === undefined ? [] : [filterRail(h, options.filters, options.filtersWidth)]),
 		pageContent(h, [
-			...(hasHeader ? [stickyArea(h, [pageHeader(h, options.titleContent, options.actions)])] : []),
+			...(sticky.length === 0 ? [] : [stickyArea(h, sticky)]),
 			scrollArea(h, children, options.scrollClassName),
 		]),
+		...(options.rightPanel === undefined
+			? []
+			: [
+					h.aside(
+						[
+							h.DataAttribute("slot", "page-right-sidebar"),
+							h.Class(
+								cn(
+									pageRightSidebarStyles,
+									options.rightPanelWidth ?? pageRightSidebarWidthStyles,
+								),
+							),
+						],
+						[options.rightPanel],
+					),
+				]),
 	])
 }

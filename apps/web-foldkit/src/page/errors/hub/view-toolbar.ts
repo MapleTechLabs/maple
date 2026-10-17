@@ -191,7 +191,7 @@ export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null)
 							entries: SEVERITY_ENTRIES,
 							size: "sm",
 							className: "h-7 w-[122px] text-xs",
-							renderValue: (option) => severityContent(h, option.value, SEVERITY_TRIGGER_LABEL),
+							renderValue: (value) => severityContent(h, value, SEVERITY_TRIGGER_LABEL),
 							renderItem: (option) => severityContent(h, option.value, SEVERITY_FILTER_LABEL),
 							toView: (parts) => h.div([h.Class("contents")], parts),
 						},

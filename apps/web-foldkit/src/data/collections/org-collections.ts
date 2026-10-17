@@ -2,7 +2,11 @@ import { createEffectCollection } from "@maple/effect-db/electric"
 import { electricSyncBaseUrl } from "@maple/web/lib/services/common/electric-sync-url"
 import { Context, Duration, Effect, Layer, ManagedRuntime, Option, type Scope, SynchronizedRef } from "effect"
 import { SessionBearer } from "../../platform/session-bearer"
-import { AlertIncidentRowSchema, AlertRuleRowSchema } from "@maple/web-data/collections/alerts"
+import {
+	AlertDestinationRowSchema,
+	AlertIncidentRowSchema,
+	AlertRuleRowSchema,
+} from "@maple/web-data/collections/alerts"
 import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
 
 /** `getOrgCollections`'s 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
@@ -60,9 +64,24 @@ const makeSet = (
 			parser: timestamptzParser,
 		},
 	}),
+	alertDestinations: createEffectCollection({
+		id: `alert_destinations_v2:${orgId}`,
+		runtime,
+		schema: AlertDestinationRowSchema,
+		getKey: (row) => row.id,
+		shapeOptions: {
+			url: syncProxyUrl,
+			params: { shape: "alert_destinations_v2", org: orgId },
+			fetchClient,
+			parser: timestamptzParser,
+		},
+	}),
 })
 export type OrgCollectionSet = ReturnType<typeof makeSet>
-type SyncedCollection = OrgCollectionSet["alertRules"] | OrgCollectionSet["alertIncidents"]
+type SyncedCollection =
+	| OrgCollectionSet["alertRules"]
+	| OrgCollectionSet["alertIncidents"]
+	| OrgCollectionSet["alertDestinations"]
 
 /** `cleanupCollectionWhenIdle`: wait for the last live query to let go, then clean up. */
 const cleanupWhenIdle = (collection: SyncedCollection): Effect.Effect<void> =>
@@ -103,7 +122,11 @@ function makeOrgCollections(): Effect.Effect<OrgCollections["Service"], never, S
 		const retire = (set: OrgCollectionSet) =>
 			Effect.asVoid(
 				Effect.forkIn(
-					Effect.all([cleanupWhenIdle(set.alertRules), cleanupWhenIdle(set.alertIncidents)]),
+					Effect.all([
+						cleanupWhenIdle(set.alertRules),
+						cleanupWhenIdle(set.alertIncidents),
+						cleanupWhenIdle(set.alertDestinations),
+					]),
 					scope,
 				),
 			)

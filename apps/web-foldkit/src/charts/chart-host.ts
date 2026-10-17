@@ -12,6 +12,7 @@ import {
 	buildNumericHistogram,
 } from "./definitions/histogram"
 import { buildPie, buildPieSpike } from "./definitions/pie"
+import { buildOccurrences } from "./definitions/occurrences"
 import { buildSparkline } from "./definitions/sparkline"
 
 /**
@@ -128,6 +129,8 @@ export const createChartHost = (
 			),
 		Sparkline: (sparkline) =>
 			hostFor(container, sparkline, height, variant("Sparkline"), buildSparkline, options),
+		Occurrences: (occurrences) =>
+			hostFor(container, occurrences, height, variant("Occurrences"), buildOccurrences, options),
 		BinnedHistogram: (histogram) =>
 			hostFor(container, histogram, height, variant("BinnedHistogram"), buildBinnedHistogram, options),
 	})

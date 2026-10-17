@@ -69,7 +69,7 @@ const windowed = (search = {}): Model => {
 	return pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
 }
 
-const withPage = (model: Model, data: ReadonlyArray<typeof V2ErrorIssue.Type>): Model =>
+const withPage = (model: Model, data: ReadonlyArray<V2ErrorIssue>): Model =>
 	pageUpdate(
 		model,
 		Message.CompletedFetchPage({
