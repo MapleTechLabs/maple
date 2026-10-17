@@ -116,11 +116,17 @@ export class TraceSamplingPolicyService extends Context.Service<
 						if (Option.isNone(locked)) {
 							const created = yield* db.run(
 								PG.insertInto(OrgIngestSamplingPolicies)
-									.values({ orgId, createdAt: now, ...DEFAULT_TRACE_SAMPLING_POLICY, ...changed })
+									.values({
+										orgId,
+										createdAt: now,
+										...DEFAULT_TRACE_SAMPLING_POLICY,
+										...changed,
+									})
 									.onConflictDoNothing()
 									.returning("orgId"),
 							)
-							if (created.length > 0) return { before: toDocument(locked), after: yield* readAfter }
+							if (created.length > 0)
+								return { before: toDocument(locked), after: yield* readAfter }
 						}
 						// A lost insert race waited for the winner to commit, so its row is visible now.
 						const before = toDocument(Option.isSome(locked) ? locked : yield* lockRow)
