@@ -3527,6 +3527,9 @@ async fn authorize_custom_key(
         ));
     }
     if custom.is_paused(now_ms) {
+        let signal = signals.first().map_or("unknown", |signal| signal.as_str());
+        metrics::custom_key_paused_drop(&resolved_key.org_id, signal);
+        Span::current().record("maple.ingest.reject_reason", "custom_key_paused");
         debug!(key_id = %custom.public_id, "Custom ingest key paused; dropping");
         return Ok(KeyAdmission::Drop);
     }
