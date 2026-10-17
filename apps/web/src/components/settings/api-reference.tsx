@@ -17,11 +17,20 @@ const SCOPE_FAMILY_ROWS = [
 		description: "Alert rules (incl. test/preview/checks), destinations, and incidents",
 	},
 	{ id: "ingest_keys", label: "Ingest keys", description: "View and roll telemetry ingest keys" },
-	{ id: "attribute_mappings", label: "Attribute mappings", description: "Ingest-time attribute rewrite rules" },
+	{
+		id: "attribute_mappings",
+		label: "Attribute mappings",
+		description: "Ingest-time attribute rewrite rules",
+	},
 	{
 		id: "scrape_targets",
 		label: "Scrape targets",
 		description: "Prometheus/PlanetScale scrape targets, probes, and checks",
+	},
+	{
+		id: "trace_sampling",
+		label: "Trace sampling",
+		description: "Read and change the ingest trace sampling policy",
 	},
 	{ id: "instrumentation", label: "Recommendations", description: "Instrumentation recommendations" },
 	{
