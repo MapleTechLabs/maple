@@ -19,6 +19,46 @@ const HELD_MS = 60_000
 const tracesTable = (page: Page) => page.getByRole("table", { name: "Traces" })
 const firstRowSettled = (page: Page) => tracesTable(page).getByRole("row").nth(1).waitFor()
 
+/** `/traces/$traceId` states on dataset `default`: the pool-timeout trace, held, failing, unknown. */
+const POOL_TIMEOUT_TRACE = "6843a8853182b32339b2dd5120d423f2"
+const detail = (id: string, title: string, options: Partial<Scenario> = {}): Scenario => ({
+	id: `traces-detail-${id}`,
+	title: `Trace detail: ${title}`,
+	path: `/traces/${POOL_TIMEOUT_TRACE}`,
+	dataset: "default",
+	viewports: ["desktop"],
+	themes: ["light", "dark"],
+	area: "traces",
+	...options,
+})
+
+export const traceDetailStatesArea: AreaModule = {
+	area: "traces",
+	scenarios: [
+		detail("loading", "loading (span hierarchy held)", {
+			faults: { delays: { "queryEngine.spanHierarchy": HELD_MS } },
+			settle: "held",
+		}),
+		detail("error", "span hierarchy failing", {
+			faults: {
+				failures: {
+					"queryEngine.spanHierarchy": {
+						status: 502,
+						body: {
+							_tag: "@maple/http/errors/QueryEngineExecutionError",
+							message: "ui-parity: injected span hierarchy failure",
+						},
+					},
+				},
+			},
+			settle: "quiet",
+		}),
+		detail("unknown", "a well-formed id with no spans", {
+			path: "/traces/00000000000000000000000000000001",
+		}),
+	],
+}
+
 export const tracesPageArea: AreaModule = {
 	area: "traces",
 	scenarios: [
