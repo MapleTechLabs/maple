@@ -6,7 +6,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
-import { Table, TableBody, TableCell, TableRow } from "@maple/ui/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { ArrowRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -79,6 +79,7 @@ function InvoiceRow({
 						href={invoice.hostedInvoiceUrl}
 						target="_blank"
 						rel="noopener noreferrer"
+						aria-label={`View invoice from ${formatDateInTimezone(invoice.createdAt, { timeZone })}`}
 						className="text-primary text-xs font-medium hover:underline"
 					>
 						View
@@ -88,6 +89,8 @@ function InvoiceRow({
 		</TableRow>
 	)
 }
+
+const INVOICE_COLUMNS = ["Date", "Plan", "Status", "Amount", "Invoice link"] as const
 
 function InvoicesSkeleton() {
 	return (
@@ -161,6 +164,16 @@ export function InvoicesSection({
 			) : (
 				<Panel>
 					<Table>
+						{/* The rows read without labels, so the headers exist for assistive tech only. */}
+						<TableHeader className="[&_tr]:border-0">
+							<TableRow>
+								{INVOICE_COLUMNS.map((column) => (
+									<TableHead key={column} className="h-0 p-0">
+										<span className="sr-only">{column}</span>
+									</TableHead>
+								))}
+							</TableRow>
+						</TableHeader>
 						<TableBody>
 							{invoices.slice(0, RECENT_INVOICES).map((invoice, index) => (
 								<InvoiceRow
