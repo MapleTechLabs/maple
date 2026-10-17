@@ -16,6 +16,7 @@ import { AutomationSection } from "@/components/settings/automation-section"
 import { OrgClickHouseSettingsSection } from "@/components/settings/org-clickhouse-settings-section"
 import { OrganizationSection } from "@/components/settings/organization-section"
 import { SetupAuditSection } from "@/components/settings/setup-audit-section"
+import { AuditLogSearchFields, pickAuditLogSearch } from "@/components/settings/audit-log-filters"
 import {
 	legacySettingsTabValues,
 	resolveActiveSettingsTab,
@@ -31,6 +32,7 @@ const SettingsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacySettingsTabValues])),
 	// Stripe Checkout return marker — see `lib/billing/checkout-return.ts`.
 	checkout: Schema.optional(Schema.Literal("complete")),
+	...AuditLogSearchFields,
 })
 
 export const Route = createFileRoute("/settings")({
@@ -62,7 +64,8 @@ function SettingsPage() {
 	const activeTab = resolveActiveSettingsTab(search.tab, visibleItems)
 
 	function handleTabSelect(tab: SettingsTab) {
-		navigate({ search: { tab } })
+		// Audit log filters ride along, so leaving the tab and coming back keeps them.
+		void navigate({ search: { tab, ...pickAuditLogSearch(search) } })
 	}
 
 	// `data-platform` is the only tab whose visibility depends on the billing
