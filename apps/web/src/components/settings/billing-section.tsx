@@ -72,11 +72,7 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 			<BillingDetailsSection canEdit={isAdmin} />
 		</SettingsSection>
 	)
-	const invoices = (
-		<SettingsSection title="Invoices" framed={false}>
-			<InvoicesSection canManageBilling={isAdmin} onManageBilling={manageBilling} />
-		</SettingsSection>
-	)
+	const invoices = <InvoicesSection canManageBilling={isAdmin} onManageBilling={manageBilling} />
 
 	// Every spend view is derived from the customer, so a failed read would otherwise
 	// leave them all on skeletons forever. Details and invoices load on their own.
