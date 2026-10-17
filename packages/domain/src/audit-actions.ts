@@ -12,7 +12,7 @@ import { type PublicIdPrefix, PublicIdPrefixes } from "./http/v2/public-id"
  * those is a type error.
  *
  * Adding an entry here is what makes `record({ action: "<resource>.<verb>" })`
- * compile — a typo, or an action recorded before it is declared, fails the build.
+ * compile: a typo, or an action recorded before it is declared, fails the build.
  */
 export const AuditResources = {
 	agent: { prefix: PublicIdPrefixes.actor, verbs: ["registered"] },
@@ -26,7 +26,7 @@ export const AuditResources = {
 	},
 	alert_rule: { prefix: PublicIdPrefixes.alertRule, verbs: ["created", "updated", "deleted"] },
 	anomaly_incident: { prefix: PublicIdPrefixes.anomalyIncident, verbs: ["resolved"] },
-	/** Org-singleton settings — no resource id. */
+	/** Org-singleton settings, no resource id. */
 	anomaly_settings: { verbs: ["updated"] },
 	/** Refused requests, recorded by the auth layers; the route is in `metadata`. */
 	api: { verbs: ["request"] },
@@ -42,12 +42,12 @@ export const AuditResources = {
 	/**
 	 * Chat workspaces linked to the org. `install_started` is the admin action
 	 * Maple sees; the platform's callback completes the link. `metadata` names
-	 * the connector — the platform is a value here, never part of the action.
+	 * the connector; the platform is a value here, never part of the action.
 	 *
 	 * `identity_*` are the per-member half: one person binding their own chat
 	 * account to their Maple user, which is standing authority to act as them from
 	 * the chat platform. `identity_link_started` records the member starting it, the
-	 * platform's callback completes it, and neither carries a resource id — the
+	 * platform's callback completes it, and neither carries a resource id: the
 	 * subject of both is the actor.
 	 */
 	chat_integration: {
@@ -61,7 +61,7 @@ export const AuditResources = {
 		],
 	},
 	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
-	/** Verbs mirror the issue event types — `recordEvent` audits every one it attributes. */
+	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
 	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
 	gcp_connector: { prefix: PublicIdPrefixes.gcpConnector, verbs: ["created", "updated", "deleted"] },
@@ -87,7 +87,7 @@ export const AuditResources = {
 		verbs: ["connect_started", "organization_selected", "metrics_token_set", "disconnected"],
 	},
 	/**
-	 * Org membership, learned from Clerk's webhook — the web app changes members
+	 * Org membership, learned from Clerk's webhook; the web app changes members
 	 * in Clerk directly, so nothing reaches Maple's own API. The member is the
 	 * entry's `affected_user`; no prefix, since Clerk IDs are already public.
 	 */
@@ -99,7 +99,7 @@ export const AuditResources = {
 	organization: { verbs: ["deleted", "region_chosen"] },
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
 	/**
-	 * Reads of recorded browser sessions — the surface most likely to carry
+	 * Reads of recorded browser sessions, the surface most likely to carry
 	 * end-user data. Recorded by the auth layers from the `AuditedRead` annotation.
 	 */
 	session_replay: { verbs: ["read"] },
@@ -124,7 +124,7 @@ interface AuditResourceDefinition {
 
 export type AuditResourceType = keyof typeof AuditResources
 
-/** `<resource>.<verb>` for every declared pair — the closed set of audit actions. */
+/** `<resource>.<verb>` for every declared pair: the closed set of audit actions. */
 export type AuditAction = {
 	[K in AuditResourceType]: `${K}.${(typeof AuditResources)[K]["verbs"][number]}`
 }[AuditResourceType]

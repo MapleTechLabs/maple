@@ -128,7 +128,7 @@ function isPlaceholder(value: unknown): value is string {
 	return typeof value === "string" && /^<[a-z]+>$/.test(value)
 }
 
-// JSON.stringify(undefined) is undefined — surface it as text.
+// JSON.stringify(undefined) is undefined; surface it as text.
 function formatScalar(value: unknown): string {
 	if (typeof value === "string") return value
 	return JSON.stringify(value) ?? "undefined"
