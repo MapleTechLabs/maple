@@ -1,6 +1,11 @@
-import type { GcpSetupPlan } from "./setup-plan"
+import {
+	GCP_PUSH_SUBSCRIPTION,
+	GCP_READER_PROJECT_ROLE,
+	GCP_READER_SCOPE_ROLES,
+	type GcpSetupPlan,
+} from "@maple/domain/gcp"
+import type { GcpExisting } from "./terraform"
 
-const DOCS_URL = "https://maple.dev/docs/integrations/gcp"
 // The alchemy the stack is written for: version 2 is in beta, and resource props still change.
 const ALCHEMY_VERSION = "2.0.0-beta.83"
 
@@ -11,27 +16,22 @@ const ts = (value: string): string => JSON.stringify(value)
 const SINKS = { project: "Sink", folder: "FolderSink", organization: "OrganizationSink" } as const
 
 const logsSection = (plan: GcpSetupPlan, logs: NonNullable<GcpSetupPlan["logs"]>) => {
-	const sink = SINKS[plan.scopeType]
 	const parent =
 		plan.scopeType === "project"
 			? ""
 			: `\n      ${plan.scopeType === "folder" ? "folderId" : "organization"}: ${ts(plan.scopeId)},`
 	return `
     // ---- Log forwarding ----
-    // A Log Router sink on the ${plan.scopeType} routes entries into a Pub/Sub topic, whose push
-    // subscription delivers each LogEntry to Maple, signed as the push service account.
     const topic = yield* GCP.PubSub.Topic("maple-topic", { topicId: ${ts(logs.topic)} })
 
-    // What Pub/Sub signs its pushes as. It holds no role anywhere: a token for it proves only
-    // that a push came from this subscription.
+    // What Pub/Sub signs its pushes as. It holds no role anywhere.
     const pushAccount = yield* GCP.IAM.ServiceAccount("maple-push", {
       project: PROJECT_ID,
       accountId: ${ts(logs.pushServiceAccountId)},
       displayName: "Maple log push identity",
       description: "Signs Pub/Sub push requests to Maple. Holds no roles.",
     })
-    // Pub/Sub's service agent mints the push tokens. Newer projects allow it by default, older
-    // ones need this grant.
+    // Pub/Sub's service agent mints the push tokens: needed in projects created before April 2021.
     yield* GCP.IAM.Member("maple-push-token-creator", {
       kind: "iam.serviceAccount",
       name: pushAccount.name,
@@ -39,53 +39,46 @@ const logsSection = (plan: GcpSetupPlan, logs: NonNullable<GcpSetupPlan["logs"]>
       member: \`serviceAccount:service-\${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com\`,
     })
 
-    // One LogEntry per request, unwrapped. Alchemy sends noWrapper as given, though its type
-    // leaves it out: hence a variable rather than an inline object.
+    // One LogEntry per request, unwrapped. noWrapper is sent as given though alchemy's type omits it.
     const pushConfig = {
       pushEndpoint: PUSH_ENDPOINT,
       noWrapper: { writeMetadata: false },
       oidcToken: { serviceAccountEmail: pushAccount.email, audience: PUSH_ENDPOINT },
     }
-    // A day of retention bounds what is replayed after an outage. An expiration policy without
-    // a ttl never expires.
+    // A day of retention bounds a replay. An expiration policy without a ttl never expires.
     yield* GCP.PubSub.Subscription("maple-subscription", {
       subscriptionId: ${ts(logs.subscription)},
       topic: topic.name,
-      ackDeadlineSeconds: ${logs.ackDeadlineSeconds},
-      messageRetentionDuration: "${logs.messageRetentionSeconds}s",
+      ackDeadlineSeconds: ${GCP_PUSH_SUBSCRIPTION.ackDeadlineSeconds},
+      messageRetentionDuration: "${GCP_PUSH_SUBSCRIPTION.messageRetentionSeconds}s",
       expirationPolicy: {},
-      retryPolicy: { minimumBackoff: "${logs.minRetryDelaySeconds}s", maximumBackoff: "${logs.maxRetryDelaySeconds}s" },
+      retryPolicy: {
+        minimumBackoff: "${GCP_PUSH_SUBSCRIPTION.minRetryDelaySeconds}s",
+        maximumBackoff: "${GCP_PUSH_SUBSCRIPTION.maxRetryDelaySeconds}s",
+      },
       pushConfig,
     })
 
-    const sink = yield* GCP.Logging.${sink}("maple-sink", {${parent}
+    const sink = yield* GCP.Logging.${SINKS[plan.scopeType]}("maple-sink", {${parent}
       sinkId: ${ts(logs.sink)},
       destination: Output.interpolate\`pubsub.googleapis.com/\${topic.name}\`,
       filter: LOG_FILTER,
       ${plan.scopeType === "project" ? "uniqueWriterIdentity: true" : "includeChildren: true"},
     })
-    // The sink writes as a Google-managed identity: Logs Writer on the project that holds the
-    // destination, and Pub/Sub Publisher on this one topic.
-    const writer = Output.map(sink.writerIdentity, (identity) => identity ?? "")
-    yield* GCP.IAM.Member("maple-sink-log-writer", {
-      kind: "project",
-      name: PROJECT_ID,
-      role: "roles/logging.logWriter",
-      member: writer,
-    })
+    // The sink writes as the logging service agent every sink on the ${plan.scopeType} shares. Publisher
+    // on this topic is all it needs; a project role it holds is not this stack's to revoke.
     yield* GCP.IAM.Member("maple-sink-publisher", {
       kind: "pubsub.topic",
       name: topic.name,
       role: "roles/pubsub.publisher",
-      member: writer,
+      member: Output.map(sink.writerIdentity, (identity) => identity ?? ""),
     })
 `
 }
 
 const readerSection = (reader: NonNullable<GcpSetupPlan["reader"]>) => `
     // ---- Metrics and resources ----
-    // A read-only service account Maple reads metrics and resources as, through short-lived
-    // tokens its own account may mint for this one account. No key is created.
+    // A read-only account Maple reads as through short-lived tokens. No key is created.
     const reader = yield* GCP.IAM.ServiceAccount("maple-reader", {
       project: PROJECT_ID,
       accountId: ${ts(reader.serviceAccountId)},
@@ -97,10 +90,8 @@ const readerSection = (reader: NonNullable<GcpSetupPlan["reader"]>) => `
       role: "roles/iam.serviceAccountTokenCreator",
       member: \`serviceAccount:\${MAPLE_SERVICE_ACCOUNT}\`,
     })
-    // The narrowest predefined roles for Maple's two calls, monitoring.timeSeries.list and
-    // cloudasset.assets.searchAllResources, and the quota of the project its reads are billed to.
-    // All read-only; Cloud Asset Viewer can also read resource metadata and IAM policies.
-    for (const role of [${[...reader.scopeRoles, ...reader.projectRoles].map(ts).join(", ")}]) {
+    // The narrowest predefined roles for Maple's reads, and the quota they count against.
+    for (const role of [${[...GCP_READER_SCOPE_ROLES, GCP_READER_PROJECT_ROLE].map(ts).join(", ")}]) {
       yield* GCP.IAM.Member(\`maple-reader-\${role.split("/")[1]}\`, {
         kind: "project",
         name: PROJECT_ID,
@@ -112,12 +103,14 @@ const readerSection = (reader: NonNullable<GcpSetupPlan["reader"]>) => `
 
 /**
  * A self-contained Alchemy stack for the connection. Null for a folder or organization with
- * read-only access: Alchemy's IAM members reach projects, service accounts and topics only, not
- * a folder's or an organization's policy.
+ * read-only access: Alchemy's IAM members can't reach a folder's or organization's policy.
  */
-export const renderGcpAlchemy = (plan: GcpSetupPlan): string | null => {
+export const renderGcpAlchemy = (plan: GcpSetupPlan, existing: GcpExisting): string | null => {
 	const { logs, reader } = plan
 	if (reader !== null && plan.scopeType !== "project") return null
+	const takeOver = existing.logs || existing.reader
+	// Alchemy keys its state by stack name: one per connection, or a second replaces the first.
+	const stackName = logs?.topic ?? reader?.serviceAccountId ?? "maple-gcp"
 	const constants = [
 		...(logs === null
 			? []
@@ -132,15 +125,21 @@ export const renderGcpAlchemy = (plan: GcpSetupPlan): string | null => {
 	return `// Maple connection for Google Cloud ${plan.scopeType} ${plan.scopeId}
 //   Log forwarding:        ${logs === null ? "off" : "on"}
 //   Metrics and resources: ${reader === null ? "off" : "on"}
-// It holds no secret${logs === null ? "." : ": Pub/Sub signs each push as the push service account, and Maple accepts only\n// that account's tokens."} Details: ${DOCS_URL}
+// This file carries no secret${logs === null ? "." : `: Pub/Sub signs each push as ${logs.pushServiceAccountId},\n// and Maple checks the signature.`}
+// Details: https://maple.dev/docs/integrations/gcp-infrastructure-as-code
 //
-// Written for alchemy ${ALCHEMY_VERSION}: bun add alchemy@${ALCHEMY_VERSION} effect@^4
+// Written for alchemy ${ALCHEMY_VERSION}: bun add alchemy@${ALCHEMY_VERSION} effect@^4 @effect/platform-bun@^4
 // Alchemy does not wait for an API to be switched on, so switch them on first:
 //   gcloud services enable ${plan.apis.join(" ")} --project=${plan.projectId}
-// Then deploy as an account allowed to create these resources. Alchemy creates them in the project
-// it signs in to, which must be ${plan.projectId}:
-//   GOOGLE_ACCESS_TOKEN="$(gcloud auth print-access-token)" GOOGLE_PROJECT_ID=${plan.projectId} bunx alchemy deploy maple.ts --stage maple
-// \`destroy\` instead of \`deploy\` removes it again; it needs the state alchemy keeps in .alchemy/.
+// Then deploy as an account allowed to create these resources, in the project it signs in to,
+// which must be ${plan.projectId}${takeOver ? ". --adopt takes over what the setup script created" : ""}:
+//   GOOGLE_ACCESS_TOKEN="$(gcloud auth print-access-token)" GOOGLE_PROJECT_ID=${plan.projectId} bunx alchemy deploy maple.ts --stage maple${takeOver ? " --adopt" : ""}${
+		logs === null
+			? ""
+			: `
+// A destroy deletes the topic right after the sink, and Google may log a sink error for the
+// minutes it keeps routing. To avoid it, delete the sink in the console two minutes earlier.`
+	}
 import * as Alchemy from "alchemy"
 import * as GCP from "alchemy/GCP"
 import * as Output from "alchemy/Output"
@@ -151,7 +150,7 @@ const PROJECT_ID = ${ts(plan.projectId)}
 ${constants.join("\n")}
 ${logs === null ? "" : `if (!/^\\d+$/.test(PROJECT_NUMBER)) throw new Error("Set PROJECT_NUMBER at the top of maple.ts.")\n`}
 export default Alchemy.Stack(
-  "maple-gcp",
+  ${ts(stackName)},
   { providers: GCP.providers(), state: Alchemy.localState() },
   Effect.gen(function* () {${logs === null ? "" : logsSection(plan, logs)}${reader === null ? "" : readerSection(reader)}  }),
 )

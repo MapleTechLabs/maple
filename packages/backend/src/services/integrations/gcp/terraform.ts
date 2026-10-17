@@ -1,6 +1,9 @@
-import type { GcpSetupPlan } from "./setup-plan"
-
-const DOCS_URL = "https://maple.dev/docs/integrations/gcp"
+import {
+	GCP_PUSH_SUBSCRIPTION,
+	GCP_READER_PROJECT_ROLE,
+	GCP_READER_SCOPE_ROLES,
+	type GcpSetupPlan,
+} from "@maple/domain/gcp"
 
 /** An HCL string literal: `${` and `%{` would start a template, a newline would end the line. */
 export const hcl = (value: string): string =>
@@ -13,60 +16,72 @@ export const hcl = (value: string): string =>
 		.replaceAll("%{", "%%{")}"`
 
 const hclList = (values: ReadonlyArray<string>) =>
-	values.length === 1
-		? `[${values.map(hcl).join("")}]`
-		: `[\n${values.map((value) => `    ${hcl(value)},\n`).join("")}  ]`
+	`[\n${values.map((value) => `    ${hcl(value)},\n`).join("")}  ]`
 
 // `terraform fmt` aligns the equals signs of consecutive attributes.
-const attributes = (pairs: ReadonlyArray<readonly [string, string]>, indent = "  ") => {
+const attributes = (pairs: ReadonlyArray<readonly [string, string]>) => {
 	const width = Math.max(...pairs.map(([name]) => name.length))
-	return pairs.map(([name, value]) => `${indent}${name.padEnd(width)} = ${value}\n`).join("")
+	return pairs.map(([name, value]) => `  ${name.padEnd(width)} = ${value}\n`).join("")
 }
 
-// How each scope's sink and read-only grants are addressed.
+// Per scope: the sink resource, the IAM member resource, their scope argument and value, and the
+// sink's import ID prefix.
 const SCOPES = {
-	project: {
-		sink: "google_logging_project_sink",
-		sinkScope: "project",
-		iam: "google_project_iam_member",
-		iamScope: "project",
-	},
-	folder: {
-		sink: "google_logging_folder_sink",
-		sinkScope: "folder",
-		iam: "google_folder_iam_member",
-		iamScope: "folder",
-	},
-	organization: {
-		sink: "google_logging_organization_sink",
-		sinkScope: "org_id",
-		iam: "google_organization_iam_member",
-		iamScope: "org_id",
-	},
+	project: [
+		"google_logging_project_sink",
+		"google_project_iam_member",
+		"project",
+		"local.project_id",
+		"projects",
+	],
+	folder: [
+		"google_logging_folder_sink",
+		"google_folder_iam_member",
+		"folder",
+		"local.folder_id",
+		"folders",
+	],
+	organization: [
+		"google_logging_organization_sink",
+		"google_organization_iam_member",
+		"org_id",
+		"local.organization_id",
+		"organizations",
+	],
 } as const
 
-const scopeLocal = {
-	project: "local.project_id",
-	folder: "local.folder_id",
-	organization: "local.organization_id",
+const importBlock = (to: string, id: string) => `
+import {
+  to = ${to}
+  id = ${hcl(id)}
+}
+`
+
+/** What a setup script already created: Terraform imports it rather than failing on a duplicate. */
+export interface GcpExisting {
+	readonly logs: boolean
+	readonly reader: boolean
 }
 
-const logsSection = (plan: GcpSetupPlan, logs: NonNullable<GcpSetupPlan["logs"]>) => {
-	const scope = SCOPES[plan.scopeType]
+const logsSection = (plan: GcpSetupPlan, logs: NonNullable<GcpSetupPlan["logs"]>, existing: boolean) => {
+	const [sink, , scopeArg, scopeValue, sinkPrefix] = SCOPES[plan.scopeType]
+	const host = plan.projectId
 	return `
 # ---- Log forwarding ----
-# A Log Router sink on the ${plan.scopeType} routes entries into a Pub/Sub topic in the host project,
-# whose push subscription delivers each LogEntry to Maple, signed as the push service account.
-
-resource "google_pubsub_topic" "maple" {
+${
+	existing
+		? `# The setup script created the topic, subscription and sink: Terraform takes them over.
+${importBlock("google_pubsub_topic.maple", `projects/${host}/topics/${logs.topic}`)}${importBlock("google_pubsub_subscription.maple", `projects/${host}/subscriptions/${logs.subscription}`)}${importBlock(`${sink}.maple`, `${sinkPrefix}/${plan.scopeId}/sinks/${logs.sink}`)}
+`
+		: ""
+}resource "google_pubsub_topic" "maple" {
   project = local.project_id
   name    = ${hcl(logs.topic)}
 
   depends_on = [google_project_service.maple]
 }
 
-# What Pub/Sub signs its pushes as. It holds no role anywhere: a token for it proves only that a
-# push came from this subscription.
+# What Pub/Sub signs its pushes as. It holds no role anywhere.
 resource "google_service_account" "maple_push" {
   project      = local.project_id
   account_id   = ${hcl(logs.pushServiceAccountId)}
@@ -80,8 +95,7 @@ data "google_project" "host" {
   project_id = local.project_id
 }
 
-# Pub/Sub's service agent mints the push tokens. Newer projects allow it by default, older ones
-# need this grant. After the topic: Google creates the agent on first use.
+# Pub/Sub's service agent mints the push tokens: needed in projects created before April 2021.
 resource "google_service_account_iam_member" "maple_push_token_creator" {
   service_account_id = google_service_account.maple_push.name
   role               = "roles/iam.serviceAccountTokenCreator"
@@ -90,22 +104,21 @@ resource "google_service_account_iam_member" "maple_push_token_creator" {
   depends_on = [google_pubsub_topic.maple]
 }
 
-# One LogEntry per request, unwrapped. A day of retention bounds what is replayed after an outage,
-# and the subscription never expires while it is idle.
+# One LogEntry per request, unwrapped. A day of retention bounds a replay; it never expires idle.
 resource "google_pubsub_subscription" "maple" {
   project                    = local.project_id
   name                       = ${hcl(logs.subscription)}
   topic                      = google_pubsub_topic.maple.id
-  ack_deadline_seconds       = ${logs.ackDeadlineSeconds}
-  message_retention_duration = "${logs.messageRetentionSeconds}s"
+  ack_deadline_seconds       = ${GCP_PUSH_SUBSCRIPTION.ackDeadlineSeconds}
+  message_retention_duration = "${GCP_PUSH_SUBSCRIPTION.messageRetentionSeconds}s"
 
   expiration_policy {
     ttl = ""
   }
 
   retry_policy {
-    minimum_backoff = "${logs.minRetryDelaySeconds}s"
-    maximum_backoff = "${logs.maxRetryDelaySeconds}s"
+    minimum_backoff = "${GCP_PUSH_SUBSCRIPTION.minRetryDelaySeconds}s"
+    maximum_backoff = "${GCP_PUSH_SUBSCRIPTION.maxRetryDelaySeconds}s"
   }
 
   push_config {
@@ -124,17 +137,17 @@ resource "google_pubsub_subscription" "maple" {
   depends_on = [google_service_account_iam_member.maple_push_token_creator]
 }
 
-# Google keeps routing for a while after a sink is deleted. With the topic gone by then it logs an
-# error in the host project and may notify its contacts, so the topic outlives the sink a minute.
+# Google keeps routing over a minute after a sink is deleted: the subscription and topic outlive it
+# two minutes, or Google logs an error. The sink also waits for the subscription to deliver to.
 resource "time_sleep" "maple_sink_drain" {
-  destroy_duration = "60s"
+  destroy_duration = "120s"
 
-  depends_on = [google_pubsub_topic.maple]
+  depends_on = [google_pubsub_subscription.maple]
 }
 
-resource "${scope.sink}" "maple" {
+resource "${sink}" "maple" {
 ${attributes([
-	[scope.sinkScope, scopeLocal[plan.scopeType]],
+	[scopeArg, scopeValue],
 	["name", hcl(logs.sink)],
 	["destination", `"pubsub.googleapis.com/\${google_pubsub_topic.maple.id}"`],
 	["filter", "local.log_filter"],
@@ -143,31 +156,35 @@ ${attributes([
   depends_on = [time_sleep.maple_sink_drain]
 }
 
-# The sink writes as a Google-managed identity: Logs Writer on the project that holds the
-# destination, and Pub/Sub Publisher on this one topic.
-resource "google_project_iam_member" "maple_sink_log_writer" {
-  project = local.project_id
-  role    = "roles/logging.logWriter"
-  member  = ${scope.sink}.maple.writer_identity
-}
-
+# The sink writes as the logging service agent every sink on the ${plan.scopeType} shares. Publisher on
+# this topic is all it needs; a project role it holds is not this file's to revoke.
 resource "google_pubsub_topic_iam_member" "maple_sink_publisher" {
   project = local.project_id
   topic   = google_pubsub_topic.maple.name
   role    = "roles/pubsub.publisher"
-  member  = ${scope.sink}.maple.writer_identity
+  member  = ${sink}.maple.writer_identity
 }
 `
 }
 
-const readerSection = (plan: GcpSetupPlan, reader: NonNullable<GcpSetupPlan["reader"]>) => {
-	const scope = SCOPES[plan.scopeType]
+const readerSection = (
+	plan: GcpSetupPlan,
+	reader: NonNullable<GcpSetupPlan["reader"]>,
+	existing: boolean,
+) => {
+	const [, member, scopeArg, scopeValue] = SCOPES[plan.scopeType]
 	return `
 # ---- Metrics and resources ----
-# A read-only service account Maple reads metrics and resources as, through short-lived tokens its
-# own account may mint for this one account. No key is created.
-
-resource "google_service_account" "maple_reader" {
+# A read-only account Maple reads as through short-lived tokens. No key is created.
+${
+	existing
+		? `${importBlock(
+				"google_service_account.maple_reader",
+				`projects/${plan.projectId}/serviceAccounts/${reader.serviceAccountEmail}`,
+			)}
+`
+		: ""
+}resource "google_service_account" "maple_reader" {
   project      = local.project_id
   account_id   = ${hcl(reader.serviceAccountId)}
   display_name = "Maple metrics and resource reader"
@@ -181,37 +198,27 @@ resource "google_service_account_iam_member" "maple_reader_token_creator" {
   member             = "serviceAccount:\${local.maple_service_account}"
 }
 
-# On the ${plan.scopeType}${plan.scopeType === "project" ? "" : ", inherited by every project under it"}. The narrowest predefined roles for Maple's two
-# calls, monitoring.timeSeries.list and cloudasset.assets.searchAllResources. Both are read-only,
-# and broader than the calls: Cloud Asset Viewer can also read resource metadata and IAM policies.
-resource "${scope.iam}" "maple_reader" {
-  for_each = toset(${hclList(reader.scopeRoles)})
+# The narrowest predefined roles for Maple's reads, on the ${plan.scopeType}. Cloud Asset Viewer can also read IAM policies.
+resource "${member}" "maple_reader" {
+  for_each = toset(${hclList(GCP_READER_SCOPE_ROLES)})
 
 ${attributes([
-	[
-		scope.iamScope,
-		plan.scopeType === "folder" ? `"folders/\${local.folder_id}"` : scopeLocal[plan.scopeType],
-	],
+	[scopeArg, plan.scopeType === "folder" ? `"folders/\${local.folder_id}"` : scopeValue],
 	["role", "each.value"],
 	["member", `"serviceAccount:\${google_service_account.maple_reader.email}"`],
 ])}}
 
-# Maple's reads name the host project as the one their quota is counted against.
+# Maple's reads count against the host project's quota.
 resource "google_project_iam_member" "maple_reader_quota" {
-  for_each = toset(${hclList(reader.projectRoles)})
-
   project = local.project_id
-  role    = each.value
+  role    = ${hcl(GCP_READER_PROJECT_ROLE)}
   member  = "serviceAccount:\${google_service_account.maple_reader.email}"
 }
 `
 }
 
-/**
- * A self-contained Terraform file for the connection: every resource inline, so it can be read in
- * full before it is applied. It holds no secret, so it can be committed.
- */
-export const renderGcpTerraform = (plan: GcpSetupPlan): string => {
+/** A self-contained Terraform file for the connection: every resource inline, readable before it is applied. */
+export const renderGcpTerraform = (plan: GcpSetupPlan, existing: GcpExisting): string => {
 	const { logs, reader } = plan
 	const locals: ReadonlyArray<readonly [string, string]> = [
 		["project_id", hcl(plan.projectId)],
@@ -230,10 +237,12 @@ export const renderGcpTerraform = (plan: GcpSetupPlan): string => {
 	return `# Maple connection for Google Cloud ${plan.scopeType} ${plan.scopeId}
 #   Log forwarding:        ${logs === null ? "off" : "on"}
 #   Metrics and resources: ${reader === null ? "off" : "on"}
-# It holds no secret${logs === null ? "." : ": Pub/Sub signs each push as the push service account, and Maple accepts only\n# that account's tokens."} Resource names follow the connection, so a second connection goes
-# in a module of its own. Details: ${DOCS_URL}
+# This configuration carries no secret${logs === null ? "." : `: Pub/Sub signs each push as ${logs.pushServiceAccountId},\n# and Maple checks the signature.`} Names follow the connection: one connection per module.
+# Details: https://maple.dev/docs/integrations/gcp-infrastructure-as-code
 
 terraform {
+  required_version = ">= 1.5"
+
   # Drop this block where your configuration declares these providers already.
   required_providers {
     google = {
@@ -252,7 +261,6 @@ terraform {
 }
 
 locals {
-  # The host project holds Maple's Pub/Sub topic, subscription and service accounts.
 ${attributes(locals)}}
 
 # APIs in the host project. They stay on when this is destroyed.
@@ -263,5 +271,5 @@ resource "google_project_service" "maple" {
   service            = each.value
   disable_on_destroy = false
 }
-${logs === null ? "" : logsSection(plan, logs)}${reader === null ? "" : readerSection(plan, reader)}`
+${logs === null ? "" : logsSection(plan, logs, existing.logs)}${reader === null ? "" : readerSection(plan, reader, existing.reader)}`
 }
