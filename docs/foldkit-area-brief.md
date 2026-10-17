@@ -25,6 +25,11 @@ tables, s5 service map, s6 data, s7 overlays), and `packages/ui-parity/README.md
   0 unmocked calls, no console errors.
 - Loading and error states: add `faults` scenarios (README "Timed and error states") for each page
   with data, and make them match.
+- Every interactive control legacy has is wired, not just drawn. Parity only sees what a scenario
+  does, so add an interaction scenario for each one: menus and popovers opened, filters applied,
+  tabs switched, and every write (status changes, create, edit, delete, claim) clicked through so
+  its request lands in the call log and the behavior diff checks the payload. A control you cannot
+  wire yet is listed in the report, never silently drawn inert.
 - Scene tests for every page's update logic; `bun run --cwd apps/web-foldkit typecheck`;
   `cd apps/web-foldkit && bunx vitest run` all pass;
   `bunx oxlint -c .oxlintrc.effect.json --quiet apps/web-foldkit/src` clean.
