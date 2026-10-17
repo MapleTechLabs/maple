@@ -71,6 +71,8 @@ export type FilterSectionConfig<M> = Readonly<{
 	onToggle: (name: string) => M
 	onOnly?: (name: string) => M
 	onExclude?: (name: string) => M
+	/** `colorMap`: a swatch before the label (`serviceColorMap` for services). */
+	colorOf?: (name: string) => string | undefined
 }>
 
 /** `FilterRowAction`: the `tag` badge as a button, transparent until the row is hovered. */
@@ -105,6 +107,24 @@ const rowAction = <M>(
 		],
 		[text],
 	)
+
+const swatch = <M>(h: HtmlBuilder<M>, color: string | undefined, isExcluded: boolean): Html[] =>
+	color === undefined || color === ""
+		? []
+		: [
+				h.span(
+					[
+						h.Class(
+							cn(
+								"size-2.5 rounded-[35%] [corner-shape:squircle] shrink-0",
+								isExcluded && "opacity-40",
+							),
+						),
+						h.Style({ "background-color": color }),
+					],
+					[],
+				),
+			]
 
 const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option: FilterOption): Html => {
 	const excluded = config.excluded ?? []
@@ -141,7 +161,10 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 					),
 					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(optionLabel)],
 				},
-				[h.span([h.Class("truncate")], [option.name])],
+				[
+					...swatch(h, config.colorOf?.(option.name), isExcluded),
+					h.span([h.Class("truncate")], [option.name]),
+				],
 			),
 			h.span(
 				[h.Class("relative flex shrink-0 items-center justify-end")],

@@ -22,6 +22,7 @@ const NAMES = [
 	"AlertWarningIcon",
 	"ArrowRotateAnticlockwiseIcon",
 	"ArrowRotateClockwiseIcon",
+	"ArrowUpDownIcon",
 	"ArrowUpIcon",
 	"AwsLambdaIcon",
 	"BellIcon",

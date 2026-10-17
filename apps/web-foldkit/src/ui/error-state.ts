@@ -81,6 +81,35 @@ const droppedSignalGlyph = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
 		],
 	)
 
+/** `SignalBreakTick`: the break motif at icon scale, for the inline variant's chip. */
+const signalBreakTick = <M>(h: HtmlBuilder<M>): Html =>
+	h.svg(attr(h, { "aria-hidden": "true", fill: "none", height: "12", viewBox: "0 0 12 12", width: "12" }), [
+		h.polyline(
+			attr(h, {
+				fill: "none",
+				points: "1,7 3,6 5,7.5 6.5,6",
+				stroke: "currentColor",
+				"stroke-linecap": "round",
+				"stroke-linejoin": "round",
+				"stroke-width": "1.5",
+			}),
+		),
+		h.circle(attr(h, { cx: "7.5", cy: "6", fill: "currentColor", r: "1.25" })),
+		h.line(
+			attr(h, {
+				opacity: "0.6",
+				stroke: "currentColor",
+				"stroke-dasharray": "1.5 1.75",
+				"stroke-linecap": "round",
+				"stroke-width": "1.25",
+				x1: "9.5",
+				x2: "11.5",
+				y1: "6",
+				y2: "6",
+			}),
+		),
+	])
+
 const alertRegion = <M>(h: HtmlBuilder<M>) => [h.Role("alert"), h.AriaLive("polite"), h.AriaAtomic(true)]
 
 export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>): Html => {
@@ -112,7 +141,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 								),
 								h.AriaHidden(true),
 							],
-							[],
+							[signalBreakTick(h)],
 						),
 						h.p([h.Class("text-xs font-medium text-foreground")], [heading]),
 					],
