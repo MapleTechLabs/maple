@@ -51,6 +51,5 @@ export const labCanvasArea: AreaModule = {
 		variant("lab-bench-service-map-wheel-zoom", "Lab: Service map, wheel zoom", SMALL_MAP, async (page) => {
 			await waitForMap(page)
 			await wheelZoom(300)(page)
-		}),
-	],
+		}),	],
 }

@@ -24,7 +24,10 @@ export interface FlowNodeView<M> {
 	/** `nopan draggable` for draggable nodes. */
 	readonly className?: string
 	readonly zIndex?: number
+	/** Spread over the wrapper style last, like `node.style`. */
 	readonly style?: Readonly<Record<string, string>>
+	/** `focusable: false` drops `tabindex` and the `group` role. */
+	readonly focusable?: boolean
 	readonly onClick?: M
 	readonly children: ReadonlyArray<Html>
 }
@@ -44,8 +47,7 @@ export const flowNode = <M>(h: HtmlBuilder<M>, node: FlowNodeView<M>): Html =>
 			}),
 			h.DataAttribute("id", node.id),
 			h.DataAttribute("testid", `rf__node-${node.id}`),
-			h.Tabindex(0),
-			h.Role("group"),
+			...(node.focusable === false ? [] : [h.Tabindex(0), h.Role("group")]),
 			h.Attribute("aria-roledescription", "node"),
 			h.AriaDescribedBy("react-flow__node-desc-1"),
 			...(node.onClick === undefined ? [] : [h.OnClick(node.onClick, { propagation: "Stop" })]),

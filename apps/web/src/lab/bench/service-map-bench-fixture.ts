@@ -1,11 +1,55 @@
-import type { CloudflareService, ServiceDbEdge, ServiceEdge, ServicePlatform } from "@/api/warehouse/service-map"
-import type { ServiceOverview } from "@/api/warehouse/services"
-import type { ServiceWorkload } from "@/api/warehouse/service-infra"
+import type { ServiceOverview } from "@maple/query-engine"
 
 /**
  * Deterministic synthetic topology for the service-map bench, shared by the React
  * bench (`service-map-bench.tsx`) and the Foldkit port. Framework-free.
+ *
+ * The row types restate `@/api/warehouse/*` structurally: those modules resolve `@/`
+ * against apps/web, which the Foldkit app cannot follow.
  */
+
+type ServicePlatform = "kubernetes" | "cloudflare" | "gcp" | "lambda" | "web" | "unknown"
+
+interface ServiceEdge {
+	sourceService: string
+	targetService: string
+	callCount: number
+	estimatedCallCount: number
+	errorCount: number
+	errorRate: number
+	avgDurationMs: number
+	maxDurationMs: number
+	hasSampling: boolean
+	samplingWeight: number
+}
+
+interface ServiceDbEdge extends Omit<ServiceEdge, "targetService"> {
+	dbSystem: string
+	dbNamespace: string
+	p95DurationMs: number
+}
+
+interface ServiceWorkload {
+	serviceName: string
+	workloadKind: "deployment"
+	workloadName: string
+	namespace: string
+	clusterName: string
+	podCount: number
+	avgCpuLimitUtilization: number
+	avgMemoryLimitUtilization: number
+}
+
+interface CloudflareService {
+	serviceName: string
+	kind: "worker"
+	displayName: string
+	requests: number
+	throughput: number
+	errorRate: number
+	latencyP99Ms: number
+	cpuP99Ms?: number
+}
 
 // Fixed window so callsPerSecond (and thus particle pressure) is driven purely
 // by generated callCount, independent of wall-clock.

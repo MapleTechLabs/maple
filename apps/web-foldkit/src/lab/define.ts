@@ -19,3 +19,16 @@ export const defineLab = <Model, Message extends { _tag: string }>(
 		Runtime.run(Runtime.makeElement<Model, Message, Resources>({ ...program, container, resources: ResourcesLive }))
 	},
 })
+
+/** {@link defineLab} for a page that reads Flags first (e.g. its search params, like a bench). */
+export const defineLabWithFlags = <Model, Message extends { _tag: string }, Flags>(
+	title: string,
+	program: Omit<Runtime.ElementConfigWithFlags<Model, Message, Flags, Resources>, "container" | "resources">,
+): LabEntry => ({
+	title,
+	start: (container) => {
+		Runtime.run(
+			Runtime.makeElement<Model, Message, Flags, Resources>({ ...program, container, resources: ResourcesLive }),
+		)
+	},
+})
