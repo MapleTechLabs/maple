@@ -1,8 +1,11 @@
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { cn } from "@maple/ui/lib/utils"
+import { REFRESH_INTERVAL_OPTIONS } from "@maple/web/lib/dashboard-controls/search-params"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
+import type * as Menu from "../../ui/menu"
+import * as MenuView from "../../ui/menu-view"
 
 // `LogsLiveControls` (apps/web/src/components/logs/logs-live-controls.tsx), shared by /logs and /lab/logs.
 
@@ -14,6 +17,9 @@ export type LiveControlsInputs<M> = Readonly<{
 	isReloading: boolean
 	onReload: M
 	onJumpToLatest: M
+	/** The cadence menu (Base UI DropdownMenu); picking an interval is its `SelectedRadio`. */
+	menu: Menu.Model
+	toMenuMessage: (message: Menu.Message) => M
 }>
 
 /** `formatRefreshInterval`: 0 is the off sentinel. */
@@ -76,45 +82,69 @@ export const liveControls = <M>(h: HtmlBuilder<M>, model: LiveControlsInputs<M>)
 							h.span([], ["Reload"]),
 						],
 					),
-					// The interval menu (Base UI DropdownMenu) is not ported; the trigger renders closed.
-					h.button(
-						[
-							h.Type("button"),
-							h.Class(
-								cn(
-									buttonVariants({
-										className:
-											"relative -ml-px rounded-l-none before:rounded-l-none focus-visible:z-10",
-										size: "sm",
-										variant: "outline",
-									}),
-								),
-							),
-							h.DataAttribute("slot", "dropdown-menu-trigger"),
-							h.Title(
-								isOn
-									? `Reloading every ${refreshLabel(model.refreshInterval)}`
-									: "Auto-refresh is off",
-							),
-							h.AriaLabel(
-								isOn
-									? `Auto-refresh every ${refreshLabel(model.refreshInterval)}`
-									: "Auto-refresh off",
-							),
-							h.AriaExpanded(false),
-							h.AriaHasPopup("menu"),
-							h.Tabindex(0),
-						],
-						[
-							h.span(
-								[h.Class(cn("tabular-nums", !isOn && "text-muted-foreground"))],
-								[refreshLabel(model.refreshInterval)],
-							),
-							icon(h, "ChevronDownIcon", { size: 24, className: "size-3 opacity-60" }),
-						],
-					),
+					refreshMenu(h, model),
 				],
 			),
 		],
 	)
+}
+
+/** `RefreshControls`' cadence half: the trigger names the interval, the menu offers the closed set. */
+const refreshMenu = <M>(h: HtmlBuilder<M>, model: LiveControlsInputs<M>): Html => {
+	const isOn = model.refreshInterval > 0
+	const label = refreshLabel(model.refreshInterval)
+	return h.submodel({
+		slotId: "logs-refresh-menu",
+		model: model.menu,
+		view: MenuView.view,
+		toParentMessage: model.toMenuMessage,
+		viewInputs: {
+			entries: [
+				{
+					_tag: "RadioGroup",
+					label: "Auto-refresh",
+					isItemLabelWrapped: true,
+					items: REFRESH_INTERVAL_OPTIONS.map((seconds) => ({
+						value: String(seconds),
+						label: refreshLabel(seconds),
+						isChecked: seconds === model.refreshInterval,
+					})),
+				},
+			],
+			className: "min-w-40",
+			align: "end",
+			toView: ({ trigger, withTrigger }) =>
+				h.div(
+					[h.Class("contents")],
+					withTrigger(
+						h.button(
+							[
+								h.Type("button"),
+								h.Class(
+									cn(
+										buttonVariants({
+											className:
+												"relative -ml-px rounded-l-none before:rounded-l-none focus-visible:z-10",
+											size: "sm",
+											variant: "outline",
+										}),
+									),
+								),
+								h.Title(isOn ? `Reloading every ${label}` : "Auto-refresh is off"),
+								h.AriaLabel(isOn ? `Auto-refresh every ${label}` : "Auto-refresh off"),
+								h.Tabindex(0),
+								...trigger,
+							],
+							[
+								h.span(
+									[h.Class(cn("tabular-nums", !isOn && "text-muted-foreground"))],
+									[label],
+								),
+								icon(h, "ChevronDownIcon", { size: 24, className: "size-3 opacity-60" }),
+							],
+						),
+					),
+				),
+		},
+	})
 }

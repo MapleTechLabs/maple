@@ -8,6 +8,9 @@ import { TimeWindow } from "../../../data/time-range"
 import { LogsSearch } from "../../../route/search"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as LogsStream from "../../../ui/logs/logs-stream"
+import * as Menu from "../../../ui/menu"
+import * as Popover from "../../../ui/popover"
+import * as Tooltip from "../../../ui/tooltip"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
@@ -85,6 +88,11 @@ export const Model = Schema.Struct({
 	presence: SignalPresenceData.schema,
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,
+	/** `RefreshControls`' cadence menu. */
+	refreshMenu: Menu.Model,
+	/** The toolbar's three tooltips, one Tooltip shared by its triggers. */
+	toolbarTooltip: Tooltip.Model,
+	columnsPopover: Popover.Model,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
 	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */

@@ -6,6 +6,9 @@ import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as LogsStream from "../../../ui/logs/logs-stream"
+import * as Menu from "../../../ui/menu"
+import * as Popover from "../../../ui/popover"
+import * as Tooltip from "../../../ui/tooltip"
 import { SignalPresences } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { AttributeKey, Density, LogsFacets, LogsPage, VolumeBucket } from "./model"
@@ -60,6 +63,10 @@ export const Message = defineMessageUnion({
 	GotStreamMessage: { message: LogsStream.Message },
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
+	GotRefreshMenuMessage: { message: Menu.Message },
+	GotToolbarTooltipMessage: { message: Tooltip.Message },
+	GotColumnsPopoverMessage: { message: Popover.Message },
+	ToggledColumn: { key: Schema.String },
 	GotVolumeChartMessage: { message: Chart.Message },
 })
 export type Message = typeof Message.Type

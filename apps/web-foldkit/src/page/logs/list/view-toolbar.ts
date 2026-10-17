@@ -1,51 +1,120 @@
 import { cn } from "@maple/ui/lib/utils"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { toggleVariants } from "@maple/ui/styles/ui/toggle"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { AsyncData } from "foldkit"
+import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
+import { filterSection } from "../../../ui/filters/filter-section"
+import * as FilterSections from "../../../ui/filters/filter-sections"
 import { icon } from "../../../ui/icon"
+import * as Popover from "../../../ui/popover"
 import { togglePrimitive } from "../../../ui/toggle"
+import * as Tooltip from "../../../ui/tooltip"
 import { Message } from "./message"
 import type { Model } from "./model"
 
 // `LogsTableToolbar` (apps/web/src/components/logs/logs-table-toolbar.tsx): the Columns picker,
-// wrap and density. Wrap and density persist to localStorage; pinned columns live in `?columns`.
-// TODO(toolbar-overlays): the Columns popover (a searchable section of attribute keys) and the
-// three tooltips (`TooltipProvider delay={250}`); the triggers render closed.
+// wrap and density, under one `TooltipProvider delay={250}`. Pinned columns live in `?columns`.
 
-const tooltipTrigger = (h: HtmlBuilder<Message>, id: string) => [
-	h.DataAttribute("base-ui-tooltip-trigger", ""),
-	h.DataAttribute("slot", "tooltip-trigger"),
-	h.Id(id),
-	h.Tabindex(0),
-]
+export const COLUMNS_TRIGGER = "logs-columns-trigger"
+export const WRAP_TRIGGER = "logs-wrap-trigger"
+export const DENSITY_TRIGGER = "logs-density-trigger"
 
-const columnsButton = (h: HtmlBuilder<Message>, pinnedCount: number): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.AriaExpanded(false),
-			h.AriaHasPopup("dialog"),
-			h.AriaLabel("Pin attributes as columns"),
-			h.Class(cn(buttonVariants({ variant: "outline", size: "sm" }))),
-			h.DataAttribute("base-ui-click-trigger", ""),
-			...tooltipTrigger(h, "logs-columns-trigger"),
-		],
-		[
-			icon(h, "ThumbtackIcon", { size: 13, className: "text-muted-foreground" }),
-			"Columns",
-			...(pinnedCount > 0
-				? [
-						badge(h, { variant: "secondary", size: "sm", className: "tabular-nums" }, [
-							String(pinnedCount),
-						]),
-					]
-				: []),
-		],
-	)
+/** The tooltip text for each trigger. */
+const tipOf = (model: Model, triggerId: string): string =>
+	triggerId === WRAP_TRIGGER
+		? model.wrap
+			? "Stop wrapping lines"
+			: "Wrap long lines"
+		: triggerId === DENSITY_TRIGGER
+			? model.density === "comfortable"
+				? "Comfortable rows"
+				: "Compact rows"
+			: "Pin attributes as columns"
+
+/** Keys the time range reported, plus pinned keys outside it (so they can be unpinned here). */
+const columnOptions = (model: Model) => {
+	const keys = AsyncData.getData(model.attributeKeys.data)
+	const options = keys._tag === "Some" ? [...keys.value] : []
+	const pinned = model.search.columns ?? []
+	return [
+		...options,
+		...pinned.filter((key) => !options.some((o) => o.name === key)).map((name) => ({ name, count: 0 })),
+	]
+}
+
+const columnsContent = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> => {
+	const options = columnOptions(model)
+	if (options.length === 0)
+		return [
+			h.p(
+				[h.Class("py-2 text-xs text-muted-foreground")],
+				["No attribute keys in the selected time range."],
+			),
+		]
+	const section = filterSection(h, {
+		title: "Columns",
+		options,
+		selected: model.search.columns ?? [],
+		isSearchable: true,
+		sections: model.filterSections,
+		toSectionsMessage: (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message }),
+		onToggle: (key) => Message.ToggledColumn({ key }),
+	})
+	return section === null ? [] : [section]
+}
+
+type Tip = (id: string) => ReadonlyArray<ChildAttribute>
+
+/** The Columns `PopoverTrigger` rendered through a `TooltipTrigger` (the outer slot wins). */
+const columnsPicker = (h: HtmlBuilder<Message>, model: Model, tip: Tip): Html =>
+	h.submodel({
+		slotId: "logs-columns-popover",
+		model: model.columnsPopover,
+		view: Popover.view,
+		toParentMessage: (message) => Message.GotColumnsPopoverMessage({ message }),
+		viewInputs: {
+			className: "w-72",
+			toView: ({ trigger, withTrigger }) =>
+				h.div(
+					[h.Class("contents")],
+					withTrigger(
+						h.button(
+							[
+								h.Type("button"),
+								h.AriaLabel("Pin attributes as columns"),
+								h.Class(cn(buttonVariants({ variant: "outline", size: "sm" }))),
+								...trigger,
+								...tip(COLUMNS_TRIGGER),
+								h.DataAttribute("slot", "tooltip-trigger"),
+							],
+							[
+								icon(h, "ThumbtackIcon", { size: 13, className: "text-muted-foreground" }),
+								"Columns",
+								...((model.search.columns?.length ?? 0) > 0
+									? [
+											badge(
+												h,
+												{
+													variant: "secondary",
+													size: "sm",
+													className: "tabular-nums",
+												},
+												[String(model.search.columns?.length ?? 0)],
+											),
+										]
+									: []),
+							],
+						),
+					),
+				),
+			toContent: () => columnsContent(h, model),
+		},
+	})
 
 const viewToggle = (
 	h: HtmlBuilder<Message>,
+	tip: Tip,
 	options: Readonly<{
 		id: string
 		label: string
@@ -61,33 +130,41 @@ const viewToggle = (
 			onClick: options.onClick,
 			className: cn(toggleVariants({ variant: "outline", size: "sm" })),
 			slot: "tooltip-trigger",
-			attributes: [
-				h.AriaLabel(options.label),
-				h.DataAttribute("base-ui-tooltip-trigger", ""),
-				h.Id(options.id),
-			],
+			attributes: [h.AriaLabel(options.label), ...tip(options.id)],
 		},
 		[icon(h, options.iconName, { size: 14 })],
 	)
 
 export const toolbar = (h: HtmlBuilder<Message>, model: Model): Html =>
-	h.div(
-		[h.Class("flex shrink-0 items-center justify-end gap-1.5 pb-1.5")],
-		[
-			columnsButton(h, model.search.columns?.length ?? 0),
-			viewToggle(h, {
-				id: "logs-wrap-trigger",
-				label: "Wrap long log lines",
-				isPressed: model.wrap,
-				onClick: Message.ClickedWrap(),
-				iconName: "TextWrapIcon",
-			}),
-			viewToggle(h, {
-				id: "logs-density-trigger",
-				label: "Toggle comfortable row density",
-				isPressed: model.density === "comfortable",
-				onClick: Message.ClickedDensity(),
-				iconName: "LineHeightIcon",
-			}),
-		],
-	)
+	h.submodel({
+		slotId: "logs-toolbar-tooltip",
+		model: model.toolbarTooltip,
+		view: Tooltip.view,
+		toParentMessage: (message) => Message.GotToolbarTooltipMessage({ message }),
+		viewInputs: {
+			triggerIds: [COLUMNS_TRIGGER, WRAP_TRIGGER, DENSITY_TRIGGER],
+			toContent: (triggerId) => [tipOf(model, triggerId)],
+			toView: ({ trigger, portal }) =>
+				h.div(
+					[h.Class("flex shrink-0 items-center justify-end gap-1.5 pb-1.5")],
+					[
+						columnsPicker(h, model, trigger),
+						viewToggle(h, trigger, {
+							id: WRAP_TRIGGER,
+							label: "Wrap long log lines",
+							isPressed: model.wrap,
+							onClick: Message.ClickedWrap(),
+							iconName: "TextWrapIcon",
+						}),
+						viewToggle(h, trigger, {
+							id: DENSITY_TRIGGER,
+							label: "Toggle comfortable row density",
+							isPressed: model.density === "comfortable",
+							onClick: Message.ClickedDensity(),
+							iconName: "LineHeightIcon",
+						}),
+						...(portal === null ? [] : [portal]),
+					],
+				),
+		},
+	})

@@ -13,6 +13,9 @@ import type { Resources } from "../../../platform/resources"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import { logTimeFormat, toLogRowView } from "../../../ui/logs/log-row-view"
 import * as LogsStream from "../../../ui/logs/logs-stream"
+import * as Menu from "../../../ui/menu"
+import * as Popover from "../../../ui/popover"
+import * as Tooltip from "../../../ui/tooltip"
 import { listFooterText } from "../../../ui/logs/viewer"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
@@ -321,6 +324,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		presence: SignalPresenceData.Idle(),
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("logs-time-range"),
+		refreshMenu: Menu.init("logs-refresh-menu"),
+		toolbarTooltip: Tooltip.init("logs-toolbar-tooltip", { openDelayMs: 250 }),
+		columnsPopover: Popover.init("logs-columns-popover", { align: "end" }),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		refreshVersion: 0,
@@ -569,6 +575,41 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return liftChild({ ...model, filterSections: next.model }, next.commands, (m) =>
 				Message.GotFilterSectionsMessage({ message: m }),
 			)
+		},
+		GotToolbarTooltipMessage: ({ message: inner }) => {
+			const next = Tooltip.update(model.toolbarTooltip, inner)
+			return liftChild({ ...model, toolbarTooltip: next.model }, next.commands, (m) =>
+				Message.GotToolbarTooltipMessage({ message: m }),
+			)
+		},
+		GotColumnsPopoverMessage: ({ message: inner }) => {
+			const next = Popover.update(model.columnsPopover, inner)
+			return liftChild({ ...model, columnsPopover: next.model }, next.commands, (m) =>
+				Message.GotColumnsPopoverMessage({ message: m }),
+			)
+		},
+		// `setColumns`: the picked keys in `?columns`, none leaves the URL.
+		ToggledColumn: ({ key }) => {
+			const pinned = model.search.columns ?? []
+			const next = pinned.includes(key) ? pinned.filter((k) => k !== key) : [...pinned, key]
+			return navigate(model, { ...model.search, columns: next.length > 0 ? next : undefined })
+		},
+		GotRefreshMenuMessage: ({ message: inner }) => {
+			const next = Menu.update(model.refreshMenu, inner)
+			const lifted = liftChild({ ...model, refreshMenu: next.model }, next.commands, (m) =>
+				Message.GotRefreshMenuMessage({ message: m }),
+			)
+			if (next.outMessage?._tag !== "SelectedRadio") return lifted
+			// The cadence lives in `?refresh=`, written in place (a replace, not a new entry).
+			const seconds = Number(next.outMessage.value)
+			return {
+				...navigate(
+					lifted.model,
+					{ ...model.search, refresh: seconds === 0 ? undefined : seconds },
+					true,
+				),
+				commands: lifted.commands,
+			}
 		},
 		GotVolumeChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.volumeChart, inner)

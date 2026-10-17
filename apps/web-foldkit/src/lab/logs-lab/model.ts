@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Shell from "../../shell"
 import * as LogsStream from "../../ui/logs/logs-stream"
+import * as Menu from "../../ui/menu"
 import * as Toast from "../../ui/toast"
 
 /** The lab's header toggles (apps/web's `LogsLabPage`), pins aside. */
@@ -21,6 +22,7 @@ export const Model = Schema.Struct({
 	isReloading: Schema.Boolean,
 	/** Auto-refresh cadence in seconds, 0 for off. */
 	refreshInterval: Schema.Number,
+	refreshMenu: Menu.Model,
 	isInspecting: Schema.Boolean,
 	isScrolledAway: Schema.Boolean,
 	wrap: Schema.Boolean,
@@ -47,5 +49,6 @@ export const Message = defineMessageUnion({
 	ElapsedReloadSpin: { version: Schema.Number },
 	GotToastMessage: { message: Toast.Message },
 	GotShellMessage: { message: Shell.Message },
+	GotRefreshMenuMessage: { message: Menu.Message },
 })
 export type Message = typeof Message.Type

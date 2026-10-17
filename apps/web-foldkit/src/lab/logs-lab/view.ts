@@ -60,6 +60,8 @@ const pageHeader = (h: HtmlBuilder<Message>, model: Model): Html =>
 						...model,
 						onReload: Message.ClickedReload(),
 						onJumpToLatest: Message.ClickedJumpToLatest(),
+						menu: model.refreshMenu,
+						toMenuMessage: (message) => Message.GotRefreshMenuMessage({ message }),
 					}),
 				],
 			),

@@ -133,6 +133,8 @@ const headerActions = (h: HtmlBuilder<Message>, model: Model): Html => {
 					isReloading: model.isReloading,
 					onReload: Message.ClickedReload(),
 					onJumpToLatest: Message.ClickedJumpToLatest(),
+					menu: model.refreshMenu,
+					toMenuMessage: (message) => Message.GotRefreshMenuMessage({ message }),
 				}),
 		trigger: (label) =>
 			h.submodel({

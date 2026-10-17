@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { toggleVariants } from "@maple/ui/styles/ui/toggle"
 import { Schema } from "effect"
 import type { Update } from "foldkit"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { VariantProps } from "class-variance-authority"
 
@@ -39,7 +39,7 @@ export const togglePrimitive = <Message>(
 		className: string
 		slot: string
 		tabIndex?: number
-		attributes?: ReadonlyArray<Attribute<Message>>
+		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 	}>,
 	children: ReadonlyArray<Html | string>,
 ): Html => {

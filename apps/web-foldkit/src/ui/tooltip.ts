@@ -35,12 +35,20 @@ export const Model = Schema.Struct({
 	requestedSide: Side,
 	requestedAlign: Align,
 	sideOffset: Schema.Number,
+	/** The provider's `delay` (`TooltipProvider delay={250}`); Base UI's default is 600. */
+	openDelayMs: Schema.Number,
 })
 export type Model = typeof Model.Type
 
 export const OPEN_DELAY = Duration.millis(600)
 
-export type InitOptions = Readonly<{ isOpen?: boolean; side?: Side; align?: Align; sideOffset?: number }>
+export type InitOptions = Readonly<{
+	isOpen?: boolean
+	side?: Side
+	align?: Align
+	sideOffset?: number
+	openDelayMs?: number
+}>
 
 /** `<TooltipPopup>`'s defaults: above the trigger, centred, 4px away. */
 export const init = (id: string, options: InitOptions = {}): Model => {
@@ -53,6 +61,7 @@ export const init = (id: string, options: InitOptions = {}): Model => {
 		requestedSide: side,
 		requestedAlign: align,
 		sideOffset: options.sideOffset ?? 4,
+		openDelayMs: options.openDelayMs ?? Duration.toMillis(OPEN_DELAY),
 	}
 }
 
@@ -74,10 +83,10 @@ export type Message = typeof Message.Type
 
 /** The open delay; a newer pointer move bumps the generation and drops this one. */
 export const WaitOpenDelay = Command.define("WaitOpenDelay", {
-	args: { generation: Schema.Number },
+	args: { generation: Schema.Number, millis: Schema.Number },
 	messages: [Message.ElapsedOpenDelay],
-	execute: ({ generation }) =>
-		Effect.sleep(OPEN_DELAY).pipe(Effect.as(Message.ElapsedOpenDelay({ generation }))),
+	execute: ({ generation, millis }) =>
+		Effect.sleep(Duration.millis(millis)).pipe(Effect.as(Message.ElapsedOpenDelay({ generation }))),
 })
 
 const transition = makeTransition<Model, Message>(
@@ -100,7 +109,7 @@ const enter = (model: Model, nextTriggerId: string): UpdateReturn => {
 	const generation = Number.increment(model.hoverGeneration)
 	return {
 		model: { ...model, hoverGeneration: generation, triggerId: nextTriggerId },
-		commands: [WaitOpenDelay({ generation })],
+		commands: [WaitOpenDelay({ generation, millis: model.openDelayMs })],
 	}
 }
 

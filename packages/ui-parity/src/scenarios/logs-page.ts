@@ -85,6 +85,35 @@ export const logsPageArea: AreaModule = {
 			await page.getByText("Severity", { exact: true }).last().waitFor()
 			await page.mouse.move(5, 5)
 		}),
+		logs("refresh-menu", "the auto-refresh menu open", async (page) => {
+			await page.getByRole("button", { name: "Auto-refresh off" }).click()
+			await page.getByRole("menu").waitFor()
+		}),
+		logs(
+			"live-paused",
+			"a live tail held while the pointer is over the stream",
+			async (page) => {
+				await stream(page).hover({ position: { x: 120, y: 120 } })
+				await page.getByText("Paused while you inspect").waitFor()
+			},
+			"/logs?refresh=30",
+		),
+		logs("columns-popover", "the Columns picker open", async (page) => {
+			await page.getByRole("button", { name: "Pin attributes as columns" }).click()
+			await page.getByRole("dialog").waitFor()
+		}),
+		logs("toolbar-tooltip", "the wrap toggle's tooltip", async (page) => {
+			await page.getByRole("button", { name: "Wrap long log lines" }).hover()
+			await page.getByText("Wrap long lines", { exact: true }).waitFor()
+		}),
+		logs("search-help", "the search help popover", async (page) => {
+			await page.getByRole("button", { name: "What you can search for" }).hover()
+			await page.getByRole("dialog").waitFor()
+		}),
+		logs("detail-sheet", "a row opened in the detail sheet", async (page) => {
+			await stream(page).getByRole("listitem").first().click()
+			await page.getByRole("dialog").waitFor()
+		}),
 		logs("row-expanded", "the first row expanded", async (page) => {
 			await stream(page).getByRole("button", { name: "Expand log" }).first().click()
 			await page.mouse.move(5, 5)

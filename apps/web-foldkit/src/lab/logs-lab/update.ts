@@ -10,6 +10,7 @@ import { Command, Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import { logTimeFormat, toLogRowView } from "../../ui/logs/log-row-view"
 import * as LogsStream from "../../ui/logs/logs-stream"
+import * as Menu from "../../ui/menu"
 import type { Resources } from "../../platform/resources"
 import { listFooterText, type ViewerFlags } from "../../ui/logs/viewer"
 import { foldLabShell, initLabShell, type LabShellFlags } from "../app-shell"
@@ -60,6 +61,7 @@ export const init = (flags: ViewerFlags & LabShellFlags): Return => {
 		refreshVersion: 0,
 		isReloading: false,
 		refreshInterval: 0,
+		refreshMenu: Menu.init("logs-lab-refresh-menu"),
 		isInspecting: false,
 		isScrolledAway: false,
 		wrap: false,
@@ -193,4 +195,17 @@ export const update = (model: Model, message: Message): Return =>
 				: { model },
 		GotToastMessage: ({ message }) => foldToasts(model, message),
 		GotShellMessage: ({ message }) => foldShell(model, message),
+		GotRefreshMenuMessage: ({ message }) => {
+			const next = Menu.update(model.refreshMenu, message)
+			return {
+				model: modifyFields(model, {
+					refreshMenu: () => next.model,
+					refreshInterval: (current) =>
+						next.outMessage?._tag === "SelectedRadio" ? Number(next.outMessage.value) : current,
+				}),
+				commands: Command.mapMessages(next.commands ?? [], (inner) =>
+					Message.GotRefreshMenuMessage({ message: inner }),
+				),
+			}
+		},
 	})
