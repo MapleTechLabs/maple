@@ -48,7 +48,7 @@ export const CANONICAL_ORIGIN = "http://localhost:4800"
  * The pinned reference UI: `bun run parity build legacy` builds this commit unless `--ref` is given.
  * Move it only in a dedicated re-pin commit, with legacy-vs-legacy parity showing what changed.
  */
-export const LEGACY_BASELINE_REF = "160fdbd8a655fff3cee0e5f52c8bc934f73097fb"
+export const LEGACY_BASELINE_REF = "2247b5973f175a0194a09d0072e2c0caa110f980"
 
 export type TargetName = "legacy" | "legacy-head" | "foldkit"
 export type AuthMode = "self_hosted" | "clerk"
