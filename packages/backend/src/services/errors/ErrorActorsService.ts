@@ -128,7 +128,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	const insertActorIfAbsent = (insert: ActorInsert) =>
 		dbExecute((db) => db.run(PG.insertInto(Actors).values(insert).onConflictDoNothing()))
 
-	const lookupActor: ErrorActorsServiceApi["lookupActor"] = Effect.fn("ErrorsService.lookupActor")(
+	const lookupActor: ErrorActorsServiceApi["lookupActor"] = Effect.fn("ErrorActorsService.lookupActor")(
 		function* (orgId, actorId) {
 			const row = yield* selectActorRow(orgId, actorId)
 			if (!row) {
@@ -165,7 +165,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		)
 
 	const ensureUserActor: ErrorActorsServiceApi["ensureUserActor"] = Effect.fn(
-		"ErrorsService.ensureUserActor",
+		"ErrorActorsService.ensureUserActor",
 	)(function* (orgId, userId) {
 		const existing = yield* selectUserActor(orgId, userId)
 		if (existing[0]) return actorRowToDocument(existing[0])
@@ -196,7 +196,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	})
 
 	const ensureAgentActor: ErrorActorsServiceApi["ensureAgentActor"] = Effect.fn(
-		"ErrorsService.ensureAgentActor",
+		"ErrorActorsService.ensureAgentActor",
 	)(function* (orgId, agentName, opts) {
 		const selectByName = selectAgentByName(orgId, agentName)
 		const existing = yield* selectByName
@@ -230,61 +230,61 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	const ensureSystemActor: ErrorActorsServiceApi["ensureSystemActor"] = (orgId) =>
 		ensureAgentActor(orgId, SYSTEM_ERRORS_AGENT_NAME, { capabilities: ["system", "auto-triage"] })
 
-	const registerAgent: ErrorActorsServiceApi["registerAgent"] = Effect.fn("ErrorsService.registerAgent")(
-		function* (orgId, byUserId, request) {
-			const name = request.name.trim()
-			if (name.length === 0) {
-				return yield* Effect.fail(
-					new ErrorValidationError({
-						message: "Agent name must not be empty",
-						details: [request.name],
-					}),
-				)
-			}
-			if (isReservedAgentName(name)) {
-				return yield* Effect.fail(
-					new ErrorValidationError({
-						message: `Agent name '${name}' is reserved`,
-						details: [name],
-					}),
-				)
-			}
+	const registerAgent: ErrorActorsServiceApi["registerAgent"] = Effect.fn(
+		"ErrorActorsService.registerAgent",
+	)(function* (orgId, byUserId, request) {
+		const name = request.name.trim()
+		if (name.length === 0) {
+			return yield* Effect.fail(
+				new ErrorValidationError({
+					message: "Agent name must not be empty",
+					details: [request.name],
+				}),
+			)
+		}
+		if (isReservedAgentName(name)) {
+			return yield* Effect.fail(
+				new ErrorValidationError({
+					message: `Agent name '${name}' is reserved`,
+					details: [name],
+				}),
+			)
+		}
 
-			const timestamp = yield* Clock.currentTimeMillis
-			const id = newActorId()
-			const capabilities = request.capabilities ?? []
-			const insert: ActorInsert = {
-				id,
-				orgId,
-				type: "agent",
-				userId: null,
-				agentName: name,
-				model: request.model ?? null,
-				capabilitiesJson: capabilities,
-				createdBy: byUserId,
-				createdAt: timestamp,
-				lastActiveAt: timestamp,
-			}
+		const timestamp = yield* Clock.currentTimeMillis
+		const id = newActorId()
+		const capabilities = request.capabilities ?? []
+		const insert: ActorInsert = {
+			id,
+			orgId,
+			type: "agent",
+			userId: null,
+			agentName: name,
+			model: request.model ?? null,
+			capabilitiesJson: capabilities,
+			createdBy: byUserId,
+			createdAt: timestamp,
+			lastActiveAt: timestamp,
+		}
 
-			yield* insertActorIfAbsent(insert)
-			const rows = yield* selectAgentByName(orgId, name)
-			const row = rows[0]
-			if (!row) {
-				return yield* Effect.fail(new ErrorPersistenceError({ message: "Failed to register agent" }))
-			}
-			if (row.id !== id) {
-				return yield* Effect.fail(
-					new ErrorValidationError({
-						message: `An agent named '${name}' already exists for this org`,
-						details: [name],
-					}),
-				)
-			}
-			return actorRowToDocument(row)
-		},
-	)
+		yield* insertActorIfAbsent(insert)
+		const rows = yield* selectAgentByName(orgId, name)
+		const row = rows[0]
+		if (!row) {
+			return yield* Effect.fail(new ErrorPersistenceError({ message: "Failed to register agent" }))
+		}
+		if (row.id !== id) {
+			return yield* Effect.fail(
+				new ErrorValidationError({
+					message: `An agent named '${name}' already exists for this org`,
+					details: [name],
+				}),
+			)
+		}
+		return actorRowToDocument(row)
+	})
 
-	const listAgents: ErrorActorsServiceApi["listAgents"] = Effect.fn("ErrorsService.listAgents")(
+	const listAgents: ErrorActorsServiceApi["listAgents"] = Effect.fn("ErrorActorsService.listAgents")(
 		function* (orgId) {
 			const rows = yield* dbExecute((db) =>
 				db.run(

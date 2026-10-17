@@ -24,64 +24,25 @@ import { RecommendationIssueService } from "@maple/backend/services/errors/Recom
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { McpToolNotFoundError, type McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
+import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Context, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
-import {
-	executeRegisteredMcpToolUnscoped,
-	inputSchemaOf,
-	mapleToolCatalogFor,
-	toOutputSchema,
-} from "./tools/registry"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import { CurrentMcpTenant } from "./lib/query-warehouse"
 import { recordExpectedMcpFailure } from "./expected-failures"
+import { loadRegistry } from "./tool-catalog"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
-
-/**
- * Built on first use, not at module scope.
- *
- * `apps/api/src/chat/tools.ts` imports this module and is itself reachable from the tool registry's
- * own import graph (registry -> a tool -> issue-hub/ai-triage-enqueue -> chat/session -> chat/tools
- * -> here). Computing the descriptors eagerly meant that whichever module the bundler happened to
- * evaluate first could observe the tool catalog as `undefined`. Deferring removes the
- * ordering dependency entirely rather than papering over one edge of the cycle.
- */
-let toolDescriptors: ReadonlyArray<McpToolDescriptor> | undefined
-
-const listToolDescriptors = (): ReadonlyArray<McpToolDescriptor> =>
-	(toolDescriptors ??= mapleToolCatalogFor("mcp").map((definition) => ({
-		name: definition.name,
-		// Current spec reads the top-level `title`; Claude's directory and older clients read `annotations.title`.
-		title: definition.title,
-		description: definition.description,
-		inputSchema: inputSchemaOf(definition),
-		...(definition.outputSchema === undefined
-			? undefined
-			: { outputSchema: toOutputSchema(definition.outputSchema) }),
-		...(definition.hints === undefined
-			? undefined
-			: {
-					annotations: {
-						title: definition.title,
-						readOnlyHint: definition.hints.readOnly,
-						// The protocol defaults both of these to true; every Maple tool states them.
-						destructiveHint: !definition.hints.readOnly && definition.hints.destructive === true,
-						idempotentHint: definition.hints.readOnly || definition.hints.idempotent === true,
-						openWorldHint: definition.hints.openWorld === true,
-					},
-				}),
-	})))
-
-/** The public transport's `tools/list`: the catalog minus every `internal` tool. */
-export const listMcpTools = Effect.sync(listToolDescriptors)
 
 /**
  * How a failure reads to the model: one short lead naming the kind of failure, never an error tag.
@@ -123,10 +84,11 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 	// solely because each handler happens to carry its own `McpTool.<name>` span
 	// — every usage query had to reconstruct it with `substring(SpanName, 9)`.
 	yield* Effect.annotateCurrentSpan("maple.mcp.tool", name)
-	return yield* executeRegisteredMcpToolUnscoped(name, input, surface).pipe(
-		Effect.catchTag("@maple/mcp/decode-error", (error) =>
+	const registry = yield* loadRegistry
+	return yield* registry.executeRegisteredMcpToolUnscoped(name, input, surface).pipe(
+		Effect.catchTag("@maple/mcp/errors/McpDecodeError", (error) =>
 			recordExpectedMcpFailure(error, "Invalid parameters").pipe(
-				Effect.as(failureResult(error.errorMessage, "invalid_parameters")),
+				Effect.as(failureResult(error.message, "invalid_parameters")),
 			),
 		),
 		Effect.catchTags({
@@ -298,11 +260,15 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	ErrorIssueWorkflowService.layer,
 	ErrorPolicyService.layer,
 	ErrorsService.layer,
+	IntegrationInventoryService.layer,
 	IssueFixVerificationService.layer,
 	QueryEngineService.layer,
+	RailwayMetricsService.layer,
 	RecommendationIssueService.layer,
 	RepoSandboxService.layer,
+	ScrapeTargetsService.layer,
 	SetupAuditService.layer,
+	VcsCommitService.layer,
 	VcsSourceService.layer,
 	WarehouseQueryService.layer,
 ).pipe(
@@ -320,6 +286,8 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 	{
 		make: Effect.gen(function* () {
 			const runtimeServices = yield* Effect.context<McpToolRuntimeRequirements>()
+			const sandbox = yield* RepoSandboxService
+			const source = yield* VcsSourceService
 
 			const execute = Effect.fn("McpToolExecutor.execute")(function* (
 				tenant: TenantContext,
@@ -352,13 +320,11 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 				target: RepositoryTarget,
 			) {
 				yield* Effect.annotateCurrentSpan({ "vcs.repository.full_name": target.repository })
-				const sandbox = yield* RepoSandboxService
 				yield* sandbox.prepare(tenant.orgId, target)
-			}, Effect.provide(runtimeServices))
+			})
 
 			const prepareConnectedRepositories = Effect.fn("McpToolExecutor.prepareConnectedRepositories")(
 				function* (tenant: TenantContext) {
-					const source = yield* VcsSourceService
 					const repositories = (yield* source.listRepositories(tenant.orgId)).filter(
 						(repository) => !repository.isArchived,
 					)
@@ -385,7 +351,6 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 						Effect.annotateLogs({ error: error.message }),
 					),
 				),
-				Effect.provide(runtimeServices),
 			)
 
 			return { execute, prepareRepository, prepareConnectedRepositories }

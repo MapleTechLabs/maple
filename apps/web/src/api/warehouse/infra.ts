@@ -6,6 +6,7 @@ import {
 	ListPodsRequest,
 	PodsSummaryRequest,
 	PodDetailSummaryRequest,
+	PodRestartsRequest,
 	PodInfraTimeseriesRequest,
 	PodFacetsRequest,
 	ListNodesRequest,
@@ -28,6 +29,7 @@ import {
 	type ListPodsResponse,
 	type PodsSummaryResponse,
 	type PodDetailSummaryResponse,
+	type PodRestartsResponse,
 	type PodInfraTimeseriesResponse,
 	type PodFacetsResponse,
 	type ListNodesResponse,
@@ -48,7 +50,7 @@ import { Effect } from "effect"
 import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { runWarehouseQuery } from "./effect-utils"
 
-export type WorkloadKind = "deployment" | "statefulset" | "daemonset"
+export type WorkloadKind = "deployment" | "statefulset" | "daemonset" | "job"
 
 /** Mirrors PodSortKeyLiteral in @maple/domain — `saturation` is peak-of-either-limit. */
 export type PodSortKey = "saturation" | "cpuUsage" | "cpuLimitPct" | "memoryLimitPct" | "podName" | "lastSeen"
@@ -354,6 +356,32 @@ export function podDetailSummary({ data }: { data: PodDetailSummaryInput }) {
 	)
 }
 
+export interface PodRestartsInput {
+	startTime: string
+	endTime: string
+	podNames?: ReadonlyArray<string>
+	namespace?: string
+	limit?: number
+}
+
+export function podRestarts({ data }: { data: PodRestartsInput }) {
+	return runWarehouseQuery("podRestarts", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			const response: PodRestartsResponse = yield* client.queryEngine.podRestarts({
+				payload: new PodRestartsRequest({
+					startTime: data.startTime,
+					endTime: data.endTime,
+					podNames: data.podNames,
+					namespace: data.namespace,
+					limit: data.limit,
+				}),
+			})
+			return response
+		}),
+	)
+}
+
 export type PodInfraMetric = "cpu_usage" | "cpu_limit" | "cpu_request" | "memory_limit" | "memory_request"
 
 export interface PodInfraTimeseriesInput {
@@ -466,7 +494,7 @@ export function nodeDetailSummary({ data }: { data: NodeDetailSummaryInput }) {
 	)
 }
 
-export type NodeInfraMetric = "cpu_usage" | "uptime"
+export type NodeInfraMetric = NodeInfraTimeseriesRequest["metric"]
 
 export interface NodeInfraTimeseriesInput {
 	startTime: string

@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 
 export class RailwayApiError extends Schema.TaggedError<RailwayApiError>()(
-	"@maple/api/integrations/RailwayApiError",
+	"@maple/backend/integrations/RailwayApiError",
 	{
 		message: Schema.String,
 		kind: Schema.Literals(["unauthorized", "rate_limited", "upstream"]),

@@ -11,6 +11,8 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  *   - `/internal/chat/apply` — a typed `HttpApi` group, because deciding an
  *     approval-gated proposal is an ordinary request/response with a schema
  *     worth pinning.
+ *   - `/internal/mcp/tools`: the public tool catalog for Settings > MCP, typed and
+ *     served here because the registry lives in this Worker.
  *   - `/internal/triage/classify` — the decision model behind the investigation
  *     gate, typed for the same reason. Reached only over a service binding: api
  *     does not forward it, and the callers are the Workers that open incidents.
@@ -27,6 +29,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import { McpLive } from "../mcp/app"
 import { HttpChatLive } from "../routes/internal/chat.http"
 import { HttpTriageLive } from "../routes/internal/triage.http"
+import { HttpMcpToolsLive } from "../routes/internal/mcp-tools.http"
 import { layerDecisionModelFromConfig } from "../platform/Llm"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { ChatSessionsRouter } from "../routes/chat-sessions.http"
@@ -37,7 +40,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
-import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import type { AiPortsLayer } from "../worker/bindings"
@@ -82,6 +85,7 @@ const DecisionModelLive = Layer.unwrap(Effect.map(WorkersAiGateway, layerDecisio
 
 const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(HttpChatLive),
+	Layer.provide(HttpMcpToolsLive),
 	Layer.provide(HttpTriageLive.pipe(Layer.provide(DecisionModelLive))),
 	Layer.provide(ApiErrorBoundaryLive),
 )
@@ -101,7 +105,7 @@ export const AllRoutes = Layer.mergeAll(AiInternalRoutes, RawRoutes).pipe(
  * `McpOAuthRateLimiter` is deliberately absent: the OAuth endpoints stayed on
  * api, which still owns its own limiter for them.
  */
-export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLayer).pipe(
+export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLive).pipe(
 	// `/mcp` falls back to session auth when the bearer is neither an API key nor
 	// an MCP OAuth token, so the transport resolves tenants through this too.
 	Layer.provideMerge(AuthService.layer),

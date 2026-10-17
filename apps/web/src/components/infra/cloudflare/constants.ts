@@ -1,16 +1,6 @@
 // Shared vocabulary for the Cloudflare infra pages: chart bucketing plus the
-// fixed color mappings for HTTP status classes and cache statuses. The cache
-// palette is shared by the detail breakdown chart and the edge-share band so
-// the same status never renders in two hues on one page.
-
-/**
- * The list charts plot at most {@link MAX_ZONE_SERIES} zones; the remainder
- * pools into one "Other zones" series in the shared `OTHER_COLOR`. The cap is legibility, a
- * stacked area of more than a handful of zones reads as mush — not palette
- * size; zone colors come from the shared identity hash.
- */
-export const MAX_ZONE_SERIES = 6
-export const OTHER_ZONES_SERIES = "Other zones"
+// fixed color mappings for HTTP status classes and cache statuses, so the same
+// status never renders in two hues on one page.
 
 /**
  * The pooled tail of a high-cardinality breakdown. Both the poller (its per-window top-N tail) and
@@ -34,8 +24,6 @@ export const STATUS_CLASS_COLORS: Record<string, string> = {
 	"5xx": "var(--severity-error)",
 	unknown: "color-mix(in oklab, var(--muted-foreground) 55%, transparent)",
 } satisfies Record<string, string>
-
-export const STATUS_CLASS_ORDER = ["1xx", "2xx", "3xx", "4xx", "5xx", "unknown"]
 
 /** Cache statuses the edge answered without touching origin, strongest first. */
 export const EDGE_SERVED_STATUSES: ReadonlyArray<{ status: string; label: string; color: string }> = [
@@ -64,13 +52,3 @@ export const CACHE_STATUS_COLORS: Record<string, string> = {
 	none: "color-mix(in oklab, var(--muted-foreground) 35%, transparent)",
 	unknown: "color-mix(in oklab, var(--muted-foreground) 25%, transparent)",
 } satisfies Record<string, string>
-
-export const CACHE_STATUS_ORDER = [
-	...EDGE_SERVED_STATUSES.map((s) => s.status),
-	"miss",
-	"expired",
-	"bypass",
-	"dynamic",
-	"none",
-	"unknown",
-]

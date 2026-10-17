@@ -1,4 +1,6 @@
 import { Clock, Effect, Schema } from "effect"
+import type * as AsyncResult from "effect/reactivity/AsyncResult"
+import type { V2IngestKeys } from "@maple/domain/http/v2"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
@@ -6,6 +8,8 @@ import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { getServiceOverviewResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+
+export type IngestKeyStatus = "loading" | "ready" | "failed"
 
 export interface IngestConnection {
 	/** `connected` once non-demo telemetry is observed in the last hour. */
@@ -16,8 +20,12 @@ export interface IngestConnection {
 	firstRealService?: string
 	/** Spans per minute across real services, averaged over the 1h window. */
 	spansPerMinute: number
-	/** The org's public ingest key (empty string until loaded / when denied). */
-	apiKey: string
+	/** Public key, for browser senders such as the test event (empty until loaded / when denied). */
+	publicKey: string
+	/** Private key, for the server-side SDK snippets (empty until loaded / when denied). */
+	privateKey: string
+	/** `failed` when the keys could not be read (members cannot read org ingest keys). */
+	apiKeyStatus: IngestKeyStatus
 	/** Force an immediate re-poll of the service overview. */
 	refresh: () => void
 }
@@ -27,17 +35,29 @@ interface UseIngestConnectionOptions {
 	poll?: boolean
 }
 
+/** Both keys come from one admin-only read, so a member sees neither rather than just the public one. */
+export function readIngestKeys(result: AsyncResult.AsyncResult<V2IngestKeys, unknown>): {
+	publicKey: string
+	privateKey: string
+	status: IngestKeyStatus
+} {
+	if (result._tag === "Success") {
+		return { publicKey: result.value.public_key, privateKey: result.value.private_key, status: "ready" }
+	}
+	return { publicKey: "", privateKey: "", status: result._tag === "Failure" ? "failed" : "loading" }
+}
+
 /**
  * Live ingest-connection state, shared across the Connect popover, ingestion
  * settings, and the dashboard setup checklist. Polls the service overview and
  * filters out the seeded `demo-` services so the signal reflects the user's own
- * telemetry. Reuses the cached `ingestKeys` query for the public key.
+ * telemetry. Reuses the cached `ingestKeys` query for both keys.
  */
 export function useIngestConnection({ poll = true }: UseIngestConnectionOptions = {}): IngestConnection {
 	const { startTime, endTime } = useEffectiveTimeRange(undefined, undefined, "1h")
 
 	const keysResult = useAtomValue(retainedQueryV2("ingestKeys", "retrieve", {}))
-	const apiKey = Result.isSuccess(keysResult) ? keysResult.value.public_key : ""
+	const keys = readIngestKeys(keysResult)
 
 	const overviewAtom = getServiceOverviewResultAtom({ data: { startTime, endTime } })
 	const overviewResult = useAtomValue(overviewAtom)
@@ -59,7 +79,9 @@ export function useIngestConnection({ poll = true }: UseIngestConnectionOptions 
 		serviceCount: realServices.length,
 		firstRealService,
 		spansPerMinute,
-		apiKey,
+		publicKey: keys.publicKey,
+		privateKey: keys.privateKey,
+		apiKeyStatus: keys.status,
 		refresh,
 	}
 }

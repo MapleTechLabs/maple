@@ -16,6 +16,7 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { ListRow } from "@maple/ui/components/ui/list-row"
+import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { RelativeTime } from "@/components/common/relative-time"
 
@@ -37,6 +38,7 @@ import {
 } from "@/components/code-review/code-review-search"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
 import { ResultView } from "@/components/common/result-view"
+import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
@@ -53,7 +55,17 @@ const PAGE = 50
 const MAX_ROWS = 200
 const ALL = "all"
 
+/** Above the page, so the header's reload re-resolves the window the page reads. */
 function CodeReviewIssuesPage() {
+	const search = Route.useSearch()
+	return (
+		<PageRefreshProvider timePreset={search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET}>
+			<CodeReviewIssuesPageContent />
+		</PageRefreshProvider>
+	)
+}
+
+function CodeReviewIssuesPageContent() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 	const preset = search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET
@@ -226,6 +238,11 @@ function FilterSelect<T extends string>({
 	)
 }
 
+/** Last path segment: kept visible when a long path middle-truncates. */
+function basename(path: string): string {
+	return path.slice(path.lastIndexOf("/") + 1)
+}
+
 function FindingRow({
 	finding,
 	selected,
@@ -250,10 +267,18 @@ function FindingRow({
 				title={finding.title}
 				meta={
 					<span className="flex min-w-0 items-center gap-1.5">
-						<span className="truncate font-mono">
-							{finding.path}:{finding.line}
-						</span>
-						<span className="shrink-0">
+						<MiddleTruncate
+							text={`${finding.path}:${finding.line}`}
+							tail={Math.min(
+								40,
+								Array.from(`${basename(finding.path)}:${finding.line}`).length,
+							)}
+							mono
+						/>
+						<span
+							className="min-w-0 max-w-[45%] shrink-0 truncate"
+							title={`${finding.repositoryFullName}#${finding.number}`}
+						>
 							· {finding.repositoryFullName}#{finding.number}
 						</span>
 					</span>

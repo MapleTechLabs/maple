@@ -23,6 +23,7 @@ import {
 import { builderFixtures } from "./builders"
 import * as activityQueries from "../ch/queries/activity"
 import * as alertCheckQueries from "../ch/queries/alert-checks"
+import * as ciRunsQueries from "../ch/queries/ci-runs"
 import * as auditLogQueries from "../ch/queries/audit-log"
 import * as anomalyQueries from "../ch/queries/anomaly"
 import * as attributeKeyQueries from "../ch/queries/attribute-keys"
@@ -261,6 +262,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	activity: activityQueries,
 	"alert-checks": alertCheckQueries,
 	"audit-log": auditLogQueries,
+	"ci-runs": ciRunsQueries,
 	anomaly: anomalyQueries,
 	"attribute-keys": attributeKeyQueries,
 	containers: containerQueries,
@@ -366,8 +368,6 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 	"infra/listPodsQuery",
 	"infra/listPodsSummaryQuery",
 	"infra/podDetailSummaryQuery",
-	"infra/listNodesQuery",
-	"infra/nodeDetailSummaryQuery",
 	"infra/listWorkloadsQuery",
 	"infra/workloadDetailSummaryQuery",
 	"service-infra/serviceWorkloadsSQL",
@@ -399,13 +399,10 @@ describe("builder coverage", () => {
 	})
 
 	it("declares fixtures whose module/name actually exists", () => {
-		for (const fixture of builderFixtures) {
-			const module = QUERY_MODULES[fixture.module]
-			expect(module, `unknown module ${fixture.module}`).toBeDefined()
-			expect(typeof module?.[fixture.name], `${fixture.module} does not export ${fixture.name}`).toBe(
-				"function",
-			)
-		}
+		const unresolved = builderFixtures
+			.filter((fixture) => !(QUERY_MODULES[fixture.module]?.[fixture.name] instanceof Function))
+			.map((fixture) => `${fixture.module}.${fixture.name}`)
+		expect(unresolved).toEqual([])
 	})
 
 	it("covers or exempts every exported builder", () => {

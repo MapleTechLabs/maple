@@ -413,7 +413,10 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				// spans per call: the inner one closed interrupt-only as `Ok` while the
 				// outer recorded the real `Error`, so every timed-out request showed up
 				// twice — once at 30s `Ok`, once at 30s `Error`.
-				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, routeName })
+				yield* Effect.annotateCurrentSpan({
+					orgId: tenant.orgId,
+					"maple.query_engine.route_name": routeName,
+				})
 				return yield* withTimeout(
 					Effect.gen(function* () {
 						const startMs = yield* Clock.currentTimeMillis

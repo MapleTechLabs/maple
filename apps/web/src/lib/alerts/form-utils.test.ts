@@ -19,6 +19,7 @@ import {
 	deriveRuleQueryIssues,
 	domainThresholdToForm,
 	formThresholdToDomain,
+	formatSignalValue,
 	normalizeRuleQueryDraft,
 	pickDefaultDestination,
 	suggestedDestinationName,
@@ -27,12 +28,9 @@ import {
 	v2DeliveryToDocument,
 	v2PreviewToResponse,
 } from "./form-utils"
+import { formatErrorRate } from "@maple/ui/lib/format"
 
 describe("rule notes", () => {
-	it("defaults to an empty note", () => {
-		expect(defaultRuleForm().notes).toBe("")
-	})
-
 	it("carries a trimmed note onto the create params", () => {
 		const params = buildRuleCreateParamsV2({
 			...defaultRuleForm(),
@@ -53,16 +51,34 @@ describe("threshold unit conversion", () => {
 	it("converts error_rate thresholds between percent (form) and ratio (domain)", () => {
 		// User enters 5 (%), domain stores 0.05 (ratio) — the unit the query
 		// engine emits and AlertsService compares against.
-		expect(formThresholdToDomain("error_rate", "5")).toBe(0.05)
-		expect(formThresholdToDomain("error_rate", "50")).toBe(0.5)
-		expect(domainThresholdToForm("error_rate", 0.05)).toBe("5")
-		expect(domainThresholdToForm("error_rate", 0.5)).toBe("50")
+		expect(formThresholdToDomain({ signalType: "error_rate" }, "5")).toBe(0.05)
+		expect(formThresholdToDomain({ signalType: "error_rate" }, "50")).toBe(0.5)
+		expect(domainThresholdToForm({ signalType: "error_rate" }, 0.05)).toBe("5")
+		expect(domainThresholdToForm({ signalType: "error_rate" }, 0.5)).toBe("50")
+	})
+
+	it("drops float noise when converting error_rate ratios to percent", () => {
+		expect(domainThresholdToForm({ signalType: "error_rate" }, 0.07)).toBe("7")
+		expect(domainThresholdToForm({ signalType: "error_rate" }, 0.29)).toBe("29")
+	})
+
+	it("round-trips a percent the form read back to the stored ratio", () => {
+		for (const ratio of [0.007, 0.011, 0.0029, 0.333]) {
+			const form = domainThresholdToForm({ signalType: "error_rate" }, ratio)
+			expect(formThresholdToDomain({ signalType: "error_rate" }, form)).toBe(ratio)
+		}
+	})
+
+	it("keeps precision for error rates below 0.01%", () => {
+		expect(formatSignalValue("error_rate", 0.00005)).toBe("0.0050%")
+		expect(formatSignalValue("error_rate", 0.05)).toBe(formatErrorRate(0.05))
+		expect(formatSignalValue("error_rate", 0)).toBe("0%")
 	})
 
 	it("passes non-error_rate thresholds through unchanged", () => {
-		expect(formThresholdToDomain("p95_latency", "500")).toBe(500)
-		expect(domainThresholdToForm("p95_latency", 500)).toBe("500")
-		expect(formThresholdToDomain("throughput", "1000")).toBe(1000)
+		expect(formThresholdToDomain({ signalType: "p95_latency" }, "500")).toBe(500)
+		expect(domainThresholdToForm({ signalType: "p95_latency" }, 500)).toBe("500")
+		expect(formThresholdToDomain({ signalType: "throughput" }, "1000")).toBe(1000)
 	})
 
 	it("stores error_rate threshold as a ratio on the create params", () => {
@@ -89,13 +105,10 @@ describe("threshold unit conversion", () => {
 
 describe("buildRuleCreateParamsV2", () => {
 	it("dedupes destination ids", () => {
-		const form = defaultRuleForm()
-		const params = buildRuleCreateParamsV2({
-			...form,
-			name: "A",
-			destinationIds: [...form.destinationIds, ...form.destinationIds],
-		})
-		expect(params.destination_ids).toEqual([...new Set(params.destination_ids)])
+		const a = AlertDestinationId.make("00000000-0000-4000-8000-0000000000a1")
+		const b = AlertDestinationId.make("00000000-0000-4000-8000-0000000000b2")
+		const params = buildRuleCreateParamsV2({ ...defaultRuleForm(), name: "A", destinationIds: [a, b, a] })
+		expect(params.destination_ids).toEqual([a, b])
 	})
 
 	it("empties the rule-level scope for query-owned signals", () => {
@@ -123,11 +136,6 @@ describe("buildRuleCreateParamsV2", () => {
 			environments: ["production", "  ", "staging"],
 		})
 		expect(params.environments).toEqual(["production", "staging"])
-	})
-
-	it("defaults to an empty environment scope (all environments)", () => {
-		const params = buildRuleCreateParamsV2({ ...defaultRuleForm(), name: "A" })
-		expect(params.environments).toEqual([])
 	})
 
 	it("normalizes and submits one query-builder draft", () => {
@@ -278,6 +286,9 @@ describe("v2 response mappers", () => {
 			window_minutes: 5,
 			threshold: 0.05,
 			threshold_upper: null,
+			thresholds: [
+				{ severity: "warning", value: 0.05, upper: null, recovery_value: 0.03, destination_ids: [] },
+			],
 			comparator: "gt",
 			truncated_to_start: "2026-07-15T00:00:00.000Z",
 			series: [
@@ -299,10 +310,14 @@ describe("v2 response mappers", () => {
 					group_key: "__total__",
 					start: "2026-07-15T09:10:00.000Z",
 					end: "2026-07-15T09:40:00.000Z",
+					severity: "warning",
 				},
 			],
 		})
 
+		expect(response.thresholds).toEqual([
+			{ severity: "warning", value: 0.05, upper: null, recoveryValue: 0.03, destinationIds: [] },
+		])
 		expect(response.bucketSeconds).toBe(300)
 		expect(response.windowMinutes).toBe(5)
 		expect(response.truncatedToStart).toBe("2026-07-15T00:00:00.000Z")
@@ -318,6 +333,7 @@ describe("v2 response mappers", () => {
 			groupKey: "__total__",
 			start: "2026-07-15T09:10:00.000Z",
 			end: "2026-07-15T09:40:00.000Z",
+			severity: "warning",
 		})
 	})
 
@@ -341,6 +357,7 @@ describe("v2 response mappers", () => {
 			consecutive_healthy: 0,
 			incident_id: null,
 			incident_transition: "opened",
+			level: "warning",
 			evaluation_duration_ms: 412,
 			error_message: null,
 			error_category: null,

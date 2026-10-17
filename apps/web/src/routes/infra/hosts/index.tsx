@@ -178,7 +178,7 @@ function HostList({
 						? `${formatNumber(filtered.length)} of the ${formatNumber(HOST_LIST_LIMIT)} most recently seen hosts`
 						: filtered.length === hosts.length
 							? countLabel(hosts.length, hosts.length, "host")
-							: `${filtered.length} of ${hosts.length} hosts`
+							: `${formatNumber(filtered.length)} of ${formatNumber(hosts.length)} hosts`
 				}
 			/>
 			{filtered.length === 0 ? (

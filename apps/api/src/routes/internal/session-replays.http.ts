@@ -7,8 +7,8 @@ import {
 	TraceId,
 } from "@maple/domain/http"
 import { DateTime, Effect, Option, Schema } from "effect"
-import { CH, parseUtc } from "@maple/query-engine"
-import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { parseUtc } from "@maple/query-engine"
+import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 
@@ -28,15 +28,16 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 	"sessionReplaysInternal",
 	(handlers) =>
 		Effect.gen(function* () {
-			const warehouse = yield* WarehouseQueryService
+			const replays = yield* SessionReplayReadService
 
 			return handlers
 				.handle("facets", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-						const compiled = CH.compileUnion(
-							CH.sessionReplaysFacetsQuery({
+						const rows = yield* replays.facets(
+							tenant,
+							{
 								serviceName: payload.serviceName,
 								browser: payload.browser,
 								country: payload.country,
@@ -49,17 +50,9 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 								search: payload.search,
 								pagePath: payload.pagePath,
 								tags: payload.tags,
-							}),
-							{
-								orgId: tenant.orgId,
-								startTime: payload.startTime,
-								endTime: payload.endTime,
 							},
+							{ startTime: payload.startTime, endTime: payload.endTime },
 						)
-						const rows = yield* warehouse.compiledQuery(tenant, compiled, {
-							profile: "list",
-							context: "replaysFacets",
-						})
 						// The union derives its row schema from the first branch, so `count` is
 						// already a number here even where ClickHouse quotes a UInt64.
 						const pick = (facetType: string) =>
@@ -95,22 +88,10 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 							orgId: tenant.orgId,
 							"maple.trace.count": payload.traceIds.length,
 						})
-						// `TraceId IN ()` is invalid SQL; a session with no correlated traces
-						// short-circuits to an empty result without touching the warehouse.
-						if (payload.traceIds.length === 0) {
-							return new SessionTraceSummariesResponse({ data: [] })
-						}
-						const compiled = CH.compile(
-							CH.sessionTraceSummariesQuery({
-								traceIds: payload.traceIds,
-								startTime: optionalUtc(payload.windowStart),
-								endTime: optionalUtc(payload.windowEnd),
-							}),
-							{ orgId: tenant.orgId },
-						)
-						const rows = yield* warehouse.compiledQuery(tenant, compiled, {
-							profile: "list",
-							context: "sessionTraceSummaries",
+						const rows = yield* replays.traceSummaries(tenant, {
+							traceIds: payload.traceIds,
+							startTime: optionalUtc(payload.windowStart),
+							endTime: optionalUtc(payload.windowEnd),
 						})
 						return new SessionTraceSummariesResponse({
 							data: rows.map((row) => ({

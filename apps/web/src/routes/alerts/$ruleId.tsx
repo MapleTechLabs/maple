@@ -71,7 +71,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
 import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
-import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, countLabel, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { useAlertRulePreview } from "@/hooks/use-alert-rule-preview"
@@ -89,6 +89,9 @@ const SIGNAL_SOURCE_DESCRIPTION: Record<SignalSource, string> = {
 	preview: "The rule's query, replayed now over the selected window.",
 	checks: "What the evaluator actually observed and stored, one point per check.",
 } satisfies Record<SignalSource, string>
+
+/** Incidents rendered before "Show all"; a noisy grouped rule can carry hundreds. */
+const INCIDENT_RENDER_LIMIT = 100
 
 function formatBucketRange(bucket: { start: number; end: number }, timeZone: string): string {
 	const time = (ms: number) => formatTimeInTimezone(ms, { timeZone })
@@ -261,6 +264,7 @@ function RuleDetailContent() {
 				consecutiveHealthy: 0,
 				incidentId: null,
 				incidentTransition: point.transitionCount > 0 ? "continued" : "none",
+				level: null,
 				evaluationDurationMs: 0,
 				errorMessage: null,
 				errorCategory: null,
@@ -366,6 +370,10 @@ function RuleDetailContent() {
 		if (stateFilter === "all") return ruleIncidents
 		return ruleIncidents.filter((i) => i.status === stateFilter)
 	}, [ruleIncidents, stateFilter])
+	const [showAllIncidents, setShowAllIncidents] = useState(false)
+	const visibleIncidents = showAllIncidents
+		? filteredIncidents
+		: filteredIncidents.slice(0, INCIDENT_RENDER_LIMIT)
 
 	// Incident the Overview AI-summary card binds to: the open one, else most recent.
 	const overviewIncident = useMemo(
@@ -507,7 +515,9 @@ function RuleDetailContent() {
 					title={rule.name}
 					meta={
 						<>
-							<AlertSeverityBadge severity={rule.severity} />
+							{rule.thresholds.map((tier) => (
+								<AlertSeverityBadge key={tier.severity} severity={tier.severity} />
+							))}
 							{isFiring ? (
 								<AlertStatusBadge
 									state={
@@ -615,6 +625,7 @@ function RuleDetailContent() {
 									incidents={ruleIncidents}
 									threshold={rule.threshold}
 									thresholdUpper={rule.thresholdUpper}
+									criticalThreshold={rule.thresholds[1]?.value ?? null}
 									comparator={rule.comparator}
 									signalType={rule.signalType}
 									window={timelineRange}
@@ -725,19 +736,23 @@ function RuleDetailContent() {
 													</div>
 												</ConfigRow>
 											)}
-											<ConfigRow label="Condition">
-												<span className="font-mono font-medium">
-													{comparatorLabels[rule.comparator]}{" "}
-													{formatSignalValue(rule.signalType, rule.threshold)} /{" "}
-													{rule.windowMinutes}min
-												</span>
-											</ConfigRow>
-											<ConfigRow label="Severity">
-												<AlertSeverityBadge severity={rule.severity} />
-											</ConfigRow>
-											<ConfigRow label="Consecutive breaches">
+											{rule.thresholds.map((tier) => (
+												<ConfigRow
+													key={tier.severity}
+													label={
+														tier.severity === "critical" ? "Critical" : "Warning"
+													}
+												>
+													<span className="font-mono font-medium">
+														{tierCondition(rule, tier)} / {rule.windowMinutes}min
+													</span>
+												</ConfigRow>
+											))}
+											<ConfigRow label="Breaches to fire">
 												<span className="font-medium tabular-nums">
-													{rule.consecutiveBreachesRequired}
+													{rule.breachesOutOf === null
+														? `${rule.consecutiveBreachesRequired} in a row`
+														: `${rule.consecutiveBreachesRequired} of last ${rule.breachesOutOf}`}
 												</span>
 											</ConfigRow>
 											<ConfigRow label="Healthy to resolve">
@@ -905,9 +920,10 @@ function RuleDetailContent() {
 														>
 															<Badge
 																variant="outline"
-																className="text-xs shrink-0 truncate max-w-[160px]"
+																className="min-w-0 max-w-[160px] shrink justify-start text-xs"
+																title={groupKey}
 															>
-																{groupKey}
+																<span className="truncate">{groupKey}</span>
 															</Badge>
 															<Meter
 																value={count}
@@ -969,7 +985,7 @@ function RuleDetailContent() {
 												</TableRow>
 											</TableHeader>
 											<TableBody>
-												{filteredIncidents.map((incident) => {
+												{visibleIncidents.map((incident) => {
 													const isOpen = incident.status === "open"
 													return (
 														<TableRow key={incident.id}>
@@ -985,7 +1001,10 @@ function RuleDetailContent() {
 																/>
 															</TableCell>
 															<TableCell>
-																<span className="font-mono text-muted-foreground">
+																<span
+																	className="block max-w-[180px] truncate font-mono text-muted-foreground"
+																	title={incident.groupKey ?? "all"}
+																>
 																	{incident.groupKey ?? "all"}
 																</span>
 															</TableCell>
@@ -1060,8 +1079,7 @@ function RuleDetailContent() {
 																				)
 																			}
 																		>
-																			<ChatBubbleSparkleIcon
-																			/>
+																			<ChatBubbleSparkleIcon />
 																			Open investigation
 																		</DropdownMenuItem>
 																		<DropdownMenuItem
@@ -1085,6 +1103,14 @@ function RuleDetailContent() {
 											</TableBody>
 										</Table>
 									)}
+									{visibleIncidents.length < filteredIncidents.length && (
+										<div className="flex justify-center pt-3">
+											<LoadMoreButton
+												onClick={() => setShowAllIncidents(true)}
+												label={`Show all ${filteredIncidents.length.toLocaleString()}`}
+											/>
+										</div>
+									)}
 								</div>
 							)}
 						</ResultView>
@@ -1095,8 +1121,24 @@ function RuleDetailContent() {
 	)
 }
 
+/** One tier's condition, e.g. "> 2.00% (recovers < 1.50%)". */
+function tierCondition(rule: AlertRuleDocument, tier: AlertRuleDocument["thresholds"][number]): string {
+	const value = (n: number) => formatSignalValue(rule.signalType, n)
+	const bound = tier.upper === null ? value(tier.value) : `${value(tier.value)} – ${value(tier.upper)}`
+	const healthy = rule.comparator === "gt" || rule.comparator === "gte" ? "<" : ">"
+	const recovery = tier.recoveryValue === null ? "" : ` (recovers ${healthy} ${value(tier.recoveryValue)})`
+	return `${comparatorLabels[rule.comparator]} ${bound}${recovery}`
+}
+
 function ruleSubtitle(rule: AlertRuleDocument): string {
-	return `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${formatSignalValue(rule.signalType, rule.threshold)} over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${rule.serviceNames.join(", ")}` : ""}${rule.environments?.length > 0 ? ` in ${rule.environments.join(", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${rule.excludeServiceNames.join(", ")})` : ""}`
+	const tiers = rule.thresholds
+		.map((tier) =>
+			rule.thresholds.length > 1
+				? `${tier.severity} ${formatSignalValue(rule.signalType, tier.value)}`
+				: formatSignalValue(rule.signalType, tier.value),
+		)
+		.join(", ")
+	return `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${tiers} over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${rule.serviceNames.join(", ")}` : ""}${rule.environments?.length > 0 ? ` in ${rule.environments.join(", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${rule.excludeServiceNames.join(", ")})` : ""}`
 }
 
 function ConfigRow({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
@@ -1478,12 +1520,20 @@ function ChecksPanel({
 												</div>
 											)}
 										</TableCell>
-										<TableCell className="tabular-nums text-muted-foreground">
-											{check.sampleCount}
+										<TableCell
+											className="tabular-nums text-muted-foreground"
+											title={check.sampleCount.toLocaleString()}
+										>
+											{formatNumber(check.sampleCount)}
 										</TableCell>
 										{isGrouped && (
 											<TableCell className="font-mono text-muted-foreground">
-												{check.groupKey || "all"}
+												<span
+													className="block max-w-[180px] truncate"
+													title={check.groupKey || "all"}
+												>
+													{check.groupKey || "all"}
+												</span>
 											</TableCell>
 										)}
 										<TableCell>

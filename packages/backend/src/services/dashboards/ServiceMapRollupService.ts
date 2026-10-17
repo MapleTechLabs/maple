@@ -94,61 +94,47 @@ export class ServiceMapRollupService extends Context.Service<
 
 			const existingCompiled = CH.serviceMapEdgesExistingHoursSQL(windowParams)
 			const existingRows = yield* warehouse.compiledQuery(tenant, existingCompiled, {
+				profile: "aggregation",
 				context: "serviceMapRollupExistingHours",
 			})
 			const existing = CH.serviceMapHourSet(existingRows)
 
 			const missing = CH.serviceMapRollupMissingHours(candidates, existing)
 
-			let hoursRolledUp = 0
-			let edgesWritten = 0
-			let resolutionsWritten = 0
-			let resolutionHoursChecked = 0
-			let emptyResolutionHours = 0
-			yield* Effect.forEach(
-				missing,
-				(hourMs) =>
-					Effect.gen(function* () {
-						const hourParams = CH.serviceMapRollupHourParams(orgId, hourMs)
+			const rolledUp = yield* Effect.forEach(missing, (hourMs) =>
+				Effect.gen(function* () {
+					const hourParams = CH.serviceMapRollupHourParams(orgId, hourMs)
 
-						const rollup = CH.serviceMapEdgesRollupSQL(hourParams)
-						const rows = yield* warehouse.compiledQuery(tenant, rollup, {
-							context: "serviceMapRollup",
-						})
-						if (rows.length > 0) {
-							// Not metered to Autumn: derived from spans that were already billed
-							// on arrival at the ingest gateway.
-							yield* warehouse.ingest(tenant, "service_map_edges_hourly_ingest", rows)
-							edgesWritten += rows.length
-						}
+					const rollup = CH.serviceMapEdgesRollupSQL(hourParams)
+					const rows = yield* warehouse.compiledQuery(tenant, rollup, {
+						profile: "aggregation",
+						context: "serviceMapRollup",
+					})
+					if (rows.length > 0) {
+						// Not metered to Autumn: derived from spans that were already billed
+						// on arrival at the ingest gateway.
+						yield* warehouse.ingest(tenant, "service_map_edges_hourly_ingest", rows)
+					}
 
-						// Companion write: address-resolutions, used by the external-edges
-						// query's anti-join to suppress internal-service overlap. Separate
-						// SQL pass (~same cost as the edges JOIN) so the existing rollup
-						// query keeps its tight shape; failure of one ingest doesn't
-						// invalidate the other (per-org Effect failure already isolated).
-						//
-						// A bounded repair pass below re-evaluates this companion stream
-						// for already-sealed edge hours, so a transient ingest failure does
-						// not leave a permanent address-resolution gap.
-						const resolutionsRollup = CH.serviceMapResolutionsRollupSQL(hourParams)
-						const resolutionsRows = yield* warehouse.compiledQuery(tenant, resolutionsRollup, {
-							context: "serviceMapResolutionsRollup",
-						})
-						resolutionHoursChecked += 1
-						if (resolutionsRows.length > 0) {
-							yield* warehouse.ingest(
-								tenant,
-								"service_address_resolutions_hourly",
-								resolutionsRows,
-							)
-							resolutionsWritten += resolutionsRows.length
-						} else {
-							emptyResolutionHours += 1
-						}
-						hoursRolledUp += 1
-					}),
-				{ discard: true },
+					// Companion write: address-resolutions, used by the external-edges
+					// query's anti-join to suppress internal-service overlap. Separate
+					// SQL pass (~same cost as the edges JOIN) so the existing rollup
+					// query keeps its tight shape; failure of one ingest doesn't
+					// invalidate the other (per-org Effect failure already isolated).
+					//
+					// A bounded repair pass below re-evaluates this companion stream
+					// for already-sealed edge hours, so a transient ingest failure does
+					// not leave a permanent address-resolution gap.
+					const resolutionsRollup = CH.serviceMapResolutionsRollupSQL(hourParams)
+					const resolutionsRows = yield* warehouse.compiledQuery(tenant, resolutionsRollup, {
+						profile: "aggregation",
+						context: "serviceMapResolutionsRollup",
+					})
+					if (resolutionsRows.length > 0) {
+						yield* warehouse.ingest(tenant, "service_address_resolutions_hourly", resolutionsRows)
+					}
+					return { edges: rows.length, resolutions: resolutionsRows.length }
+				}),
 			)
 
 			// Edge rows are the seal for an hour, but the companion resolution
@@ -162,35 +148,36 @@ export class ServiceMapRollupService extends Context.Service<
 			const resolvedRows = yield* warehouse.compiledQuery(
 				tenant,
 				CH.serviceMapResolutionsExistingHoursSQL(windowParams),
-				{ context: "serviceMapResolutionsExistingHours" },
+				{ profile: "aggregation", context: "serviceMapResolutionsExistingHours" },
 			)
 			const resolved = CH.serviceMapHourSet(resolvedRows)
 
-			yield* Effect.forEach(
+			const repaired = yield* Effect.forEach(
 				CH.serviceMapResolutionRepairHours(candidates, existing, resolved),
 				(hourMs) =>
 					Effect.gen(function* () {
 						const resolutionsRows = yield* warehouse.compiledQuery(
 							tenant,
 							CH.serviceMapResolutionsRollupSQL(CH.serviceMapRollupHourParams(orgId, hourMs)),
-							{ context: "serviceMapResolutionsRepair" },
+							{ profile: "aggregation", context: "serviceMapResolutionsRepair" },
 						)
-						resolutionHoursChecked += 1
-						if (resolutionsRows.length === 0) {
-							emptyResolutionHours += 1
-							return
+						if (resolutionsRows.length > 0) {
+							yield* warehouse.ingest(
+								tenant,
+								"service_address_resolutions_hourly",
+								resolutionsRows,
+							)
 						}
-						yield* warehouse.ingest(tenant, "service_address_resolutions_hourly", resolutionsRows)
-						resolutionsWritten += resolutionsRows.length
+						return resolutionsRows.length
 					}),
-				{ discard: true },
 			)
+			const resolutionCounts = [...rolledUp.map((hour) => hour.resolutions), ...repaired]
 			return {
-				hoursRolledUp,
-				edgesWritten,
-				resolutionsWritten,
-				resolutionHoursChecked,
-				emptyResolutionHours,
+				hoursRolledUp: rolledUp.length,
+				edgesWritten: rolledUp.reduce((sum, hour) => sum + hour.edges, 0),
+				resolutionsWritten: resolutionCounts.reduce((sum, count) => sum + count, 0),
+				resolutionHoursChecked: resolutionCounts.length,
+				emptyResolutionHours: resolutionCounts.filter((count) => count === 0).length,
 				failed: false,
 			}
 		})
@@ -268,9 +255,9 @@ export class ServiceMapRollupService extends Context.Service<
 			const targetOrgs =
 				active === undefined ? knownOrgs : knownOrgs.filter((orgId) => active.has(orgId))
 			yield* Effect.annotateCurrentSpan({
-				knownOrgs: knownOrgs.length,
-				targetOrgs: targetOrgs.length,
-				activeOrgDiscovery: active === undefined ? "failed" : "ok",
+				"maple.service_map.known_orgs": knownOrgs.length,
+				"maple.service_map.target_orgs": targetOrgs.length,
+				"maple.service_map.active_org_discovery": active === undefined ? "failed" : "ok",
 			})
 
 			const results = yield* Effect.forEach(

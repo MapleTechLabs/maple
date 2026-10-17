@@ -39,19 +39,18 @@ describe("DashboardGrid outside a dashboard", () => {
 	// `DashboardActionsProvider` is never mounted above them. Before the optional
 	// read this threw on render and took the whole route with it.
 	it("renders with no DashboardActionsProvider above it", () => {
-		expect(() =>
-			render(
-				<ShareWidgetStatesProvider states={{}}>
-					<DashboardGrid
-						widgets={[widget("w-1")]}
-						width={1200}
-						tier={GRID_TIERS[0]}
-						editable={false}
-						renderWidget={SharedWidgetRenderer}
-					/>
-				</ShareWidgetStatesProvider>,
-			),
-		).not.toThrow()
+		const { container } = render(
+			<ShareWidgetStatesProvider states={{}}>
+				<DashboardGrid
+					widgets={[widget("w-1")]}
+					width={1200}
+					tier={GRID_TIERS[0]}
+					editable={false}
+					renderWidget={SharedWidgetRenderer}
+				/>
+			</ShareWidgetStatesProvider>,
+		)
+		expect(container.querySelectorAll("[data-grid-item]")).toHaveLength(1)
 	})
 
 	// The gutter belongs between tiles; the surrounding layout owns the outer

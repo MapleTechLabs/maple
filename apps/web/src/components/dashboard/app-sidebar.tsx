@@ -96,7 +96,7 @@ function UserMenu() {
 	const { user } = useUser()
 	const { signOut } = useClerk()
 
-	const name = user?.fullName ?? "User"
+	const name = user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "User"
 	const email = user?.primaryEmailAddress?.emailAddress ?? ""
 	const imageUrl = user?.imageUrl
 	const initials = userInitials(name)
@@ -125,9 +125,13 @@ function UserMenu() {
 								name={name}
 							/>
 							<div className="grid flex-1 text-left text-sm leading-tight">
-								<span className="truncate font-medium">{name}</span>
+								<span className="truncate font-medium" title={name}>
+									{name}
+								</span>
 								{email && (
-									<span className="truncate text-muted-foreground text-xs">{email}</span>
+									<span className="truncate text-muted-foreground text-xs" title={email}>
+										{email}
+									</span>
 								)}
 							</div>
 						</div>
@@ -298,7 +302,8 @@ function NavRow({
 		const seen = new Set<NavSubItem["icon"]>()
 		const unique: NavSubItem[] = []
 		for (const sub of item.subItems) {
-			if (!sub.icon || seen.has(sub.icon)) continue
+			// The section's own front door (Infrastructure's Overview) is not one of its contents.
+			if (!sub.icon || sub.href === item.href || seen.has(sub.icon)) continue
 			seen.add(sub.icon)
 			unique.push(sub)
 		}
@@ -307,7 +312,7 @@ function NavRow({
 		// preview is all or nothing. Six fits both sections we ship (Explore
 		// with Agent Sessions on, Infrastructure) at the tightened gap below.
 		return unique.length > NAV_PREVIEW_MAX_GLYPHS ? undefined : unique
-	}, [isOpen, item.subItems])
+	}, [isOpen, item.subItems, item.href])
 
 	// The sub-list can't render at 48px, so the rail turns the row into a menu.
 	// Without this, every child route is stranded while the sidebar is collapsed
@@ -391,8 +396,8 @@ function NavRow({
 			</SidebarMenuButton>
 			{item.badge ? (
 				<SidebarMenuBadge>
-					<Badge className="h-4 px-1.5 py-0 font-medium text-3xs" variant="secondary">
-						{item.badge}
+					<Badge className="gap-0.5 bg-primary font-semibold text-primary-foreground" variant="tag">
+						<span className="badge-shiny">{item.badge}</span>
 					</Badge>
 				</SidebarMenuBadge>
 			) : null}
@@ -502,7 +507,7 @@ function PinnedGroup({ currentPath }: { currentPath: string }) {
 								size="sm"
 							>
 								<GridSquareCirclePlusIcon className="size-3.5 text-muted-foreground" />
-								<span>{dashboard.name}</span>
+								<span title={dashboard.name}>{dashboard.name}</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 					))}

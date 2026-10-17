@@ -188,7 +188,7 @@ const writeDiagnosis = (orm: MapleDb, input: ApplyDiagnosisInput) =>
 export const applyDiagnosisWrites: (
 	input: ApplyDiagnosisInput,
 ) => Effect.Effect<void, DatabaseError | TriageActorMissingError, Database> = Effect.fn(
-	"applyDiagnosisWrites",
+	"ApplyDiagnosis.applyDiagnosisWrites",
 )(function* (input) {
 	const database = yield* Database
 	yield* makeDbExecute(database, "applyDiagnosisWrites", identity)((db) => writeDiagnosis(db, input))
@@ -255,7 +255,13 @@ const writeInconclusive = (orm: MapleDb, input: ApplyInconclusiveInput) =>
  */
 export const applyInconclusiveWrites: (
 	input: ApplyInconclusiveInput,
-) => Effect.Effect<void, DatabaseError, Database> = Effect.fn("applyInconclusiveWrites")(function* (input) {
-	const database = yield* Database
-	yield* makeDbExecute(database, "applyInconclusiveWrites", identity)((db) => writeInconclusive(db, input))
-})
+) => Effect.Effect<void, DatabaseError, Database> = Effect.fn("ApplyDiagnosis.applyInconclusiveWrites")(
+	function* (input) {
+		const database = yield* Database
+		yield* makeDbExecute(
+			database,
+			"applyInconclusiveWrites",
+			identity,
+		)((db) => writeInconclusive(db, input))
+	},
+)

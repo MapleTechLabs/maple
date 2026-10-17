@@ -1,4 +1,5 @@
 import { feature, plan, reward } from "atmn"
+import { OPENROUTER_BYOK_ADDON_ID, OPENROUTER_BYOK_FEATURE_ID } from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
 
 // Features
@@ -71,6 +72,13 @@ export const bringYourOwnCloud = feature({
 	type: "boolean",
 })
 
+// AI turns run on the org's own OpenRouter key, and its tokens stop being metered here.
+export const openRouterByok = feature({
+	id: OPENROUTER_BYOK_FEATURE_ID,
+	name: "Bring Your Own OpenRouter Key",
+	type: "boolean",
+})
+
 export const startup = plan({
 	id: "startup",
 	name: "Startup",
@@ -120,14 +128,16 @@ export const startup = plan({
 			},
 		},
 		{
-			// BETA (2026-08-17): free and unlimited while product events are in
-			// beta. Usage is still metered by the gateway and tracked in Autumn so
-			// we know real volumes before pricing it. To start charging, replace
-			// `unlimited` with e.g. `included: 1_000_000` and a
-			// `price: { amount: 0.05, billingUnits: 1000, billingMethod:
-			// "usage_based", interval: "month" }` ($0.05 per 1,000 events).
+			// $5 per 1M events past 1M. Billed per 1,000 because Autumn rounds
+			// overage up to whole blocks; a 1M block would charge $5 for one event.
 			featureId: "product_events",
-			unlimited: true,
+			included: 1_000_000,
+			price: {
+				amount: 0.005,
+				billingUnits: 1000,
+				billingMethod: "usage_based",
+				interval: "month",
+			},
 		},
 		{
 			// One credit is one dollar of model spend after markup.
@@ -159,6 +169,21 @@ export const bringYourOwnCloudAddOn = plan({
 	items: [
 		{
 			featureId: "bringyourowncloud",
+		},
+	],
+})
+
+export const openRouterByokAddOn = plan({
+	id: OPENROUTER_BYOK_ADDON_ID,
+	name: "Bring Your Own OpenRouter Key",
+	addOn: true,
+	price: {
+		amount: 15,
+		interval: "month",
+	},
+	items: [
+		{
+			featureId: OPENROUTER_BYOK_FEATURE_ID,
 		},
 	],
 })

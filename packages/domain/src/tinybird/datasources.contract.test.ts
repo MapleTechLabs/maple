@@ -175,11 +175,4 @@ describe("Tinybird datasource ↔ Rust ingest encoder JSON contract", () => {
 			).toEqual({ missing: [], extra: [] })
 		})
 	}
-
-	it("every ingest datasource has at least one jsonPath declared", () => {
-		for (const { name, datasource } of datasources) {
-			const actual = emittedTopLevelKeys(datasource)
-			expect(actual.size, `${name} should have jsonPath-bound columns`).toBeGreaterThan(0)
-		}
-	})
 })

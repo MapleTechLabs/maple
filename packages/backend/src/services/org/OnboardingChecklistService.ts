@@ -26,6 +26,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { readOrgCreatedAt } from "@maple/backend/services/org/org-created-at"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 
@@ -136,15 +137,7 @@ const make = Effect.gen(function* () {
 			}
 		}
 
-		const createdAt = yield* organizations.retrieve(tenant.orgId).pipe(
-			Effect.map((org) => org.createdAtMs),
-			Effect.catchCause((cause) =>
-				Effect.logWarning("Onboarding checklist could not read the org's creation time").pipe(
-					Effect.annotateLogs({ orgId: tenant.orgId, cause }),
-					Effect.as<number | null>(null),
-				),
-			),
-		)
+		const createdAt = yield* readOrgCreatedAt(organizations, tenant.orgId)
 		if (createdAt === null) return { orgCreatedAtMs: null, rewardClaimedAtMs: null }
 
 		const row = yield* unavailable(
@@ -253,8 +246,8 @@ const make = Effect.gen(function* () {
 		const report = evaluateOnboardingChecklist(inputs, now)
 		yield* Effect.annotateCurrentSpan({
 			orgId: tenant.orgId,
-			"onboarding.status": report.status,
-			"onboarding.completed": report.completedCount,
+			"maple.onboarding.status": report.status,
+			"maple.onboarding.completed": report.completedCount,
 		})
 		return report
 	})
@@ -348,7 +341,7 @@ const make = Effect.gen(function* () {
 		)
 		yield* unavailable("finalizeRewardClaim", onboarding.finalizeRewardClaim(orgId))
 		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
-		yield* Effect.annotateCurrentSpan({ orgId, "onboarding.rewardClaimed": true })
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.onboarding.reward_claimed": true })
 
 		return { report: yield* read(tenant), newlyClaimed: true }
 	})

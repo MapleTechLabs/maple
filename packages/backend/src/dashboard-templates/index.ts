@@ -16,6 +16,7 @@ import { mysqlTemplate } from "./database/mysql"
 import { postgresTemplate } from "./database/postgres"
 import { redisTemplate } from "./database/redis"
 import { cloudflareTemplate } from "./infrastructure/cloudflare"
+import { gcpTemplate } from "./infrastructure/gcp"
 import { planetscaleTemplate } from "./infrastructure/planetscale"
 import { hostMetricsTemplate } from "./infrastructure/host-metrics"
 import { kubernetesClusterTemplate } from "./infrastructure/kubernetes-cluster"
@@ -46,6 +47,7 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	// Infrastructure
 	cloudflareTemplate,
 	planetscaleTemplate,
+	gcpTemplate,
 	hostMetricsTemplate,
 	kubernetesClusterTemplate,
 	kubernetesPodTemplate,
@@ -79,15 +81,32 @@ function previewKindForWidget(visualization: string, chartId: unknown): Dashboar
 	return widgetTypeByVisualization(visualization)?.panelType ?? "line"
 }
 
+/**
+ * What a viewer first sees: the root canvas, then each section's first tab, stacked
+ * in order. A widget's `layout.y` is relative to its container, so each container
+ * starts below the previous one.
+ */
 export function buildTemplatePreview(template: TemplateDefinition): TemplatePreviewWidget[] {
-	return template.build({}).widgets.map((w) => ({
-		x: w.layout.x,
-		y: w.layout.y,
-		w: w.layout.w,
-		h: w.layout.h,
-		kind: previewKindForWidget(w.visualization, w.display.chartId),
-		title: w.display.title ?? "",
-	}))
+	const { widgets, sections = [] } = template.build({})
+	const containers = [
+		widgets.filter((w) => w.sectionId === undefined),
+		...sections.map((section) =>
+			widgets.filter((w) => w.sectionId === section.id && w.tabId === section.tabs[0]?.id),
+		),
+	]
+	let top = 0
+	return containers.flatMap((container) => {
+		const offset = top
+		top += Math.max(0, ...container.map((w) => w.layout.y + w.layout.h))
+		return container.map((w) => ({
+			x: w.layout.x,
+			y: w.layout.y + offset,
+			w: w.layout.w,
+			h: w.layout.h,
+			kind: previewKindForWidget(w.visualization, w.display.chartId),
+			title: w.display.title ?? "",
+		}))
+	})
 }
 
 // Previews are derived from the (pure, deterministic) template builds; compute once, on first use.

@@ -189,10 +189,12 @@ export const traceIdHex = (value: string | undefined, field: string): string =>
 export const spanIdHex = (value: string | undefined, field: string): string =>
 	idHex(value, SPAN_ID_BYTES, field)
 
+const MAX_DATETIME64_9_NANOS = 9_223_372_036_854_775_807n
+
 /**
  * Port of Rust `format_timestamp_nano`: nanoseconds-since-epoch (decimal
  * string) → UTC `"YYYY-MM-DD HH:MM:SS.nnnnnnnnn"` with exactly 9 fractional
- * digits. `"0"`/empty → epoch. Uses BigInt to avoid precision loss.
+ * digits. `"0"`/empty/out of DateTime64(9) range → epoch. Uses BigInt.
  */
 export function formatTimestampNano(nanos: string | number | undefined): string {
 	const epoch = "1970-01-01 00:00:00.000000000"
@@ -205,7 +207,9 @@ export function formatTimestampNano(nanos: string | number | undefined): string 
 	} catch {
 		return epoch
 	}
-	if (value === 0n) {
+	// DateTime64(9) is an Int64 of nanoseconds; anything outside it makes chDB
+	// reject the whole insert with DECIMAL_OVERFLOW.
+	if (value <= 0n || value > MAX_DATETIME64_9_NANOS) {
 		return epoch
 	}
 	const NS_PER_SEC = 1_000_000_000n

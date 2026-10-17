@@ -25,7 +25,7 @@ import {
 	AlertRules,
 	AlertRuleStates,
 } from "@maple/db/tables"
-import { Array as Arr, Context, Effect, HashSet, Layer, Schema } from "effect"
+import { Array as Arr, Context, Effect, HashSet, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
@@ -36,8 +36,10 @@ import {
 	normalizeOptionalString,
 	rowToRuleDocument,
 	selectStoredAlertRules,
+	storedRuleCondition,
 	type RuleEvaluationState,
 } from "./AlertRuleModel"
+import { tierConditionChanged } from "./alert-thresholds"
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 
@@ -79,7 +81,9 @@ export const makeAlertRulePersistence = (options: {
 
 	const dbExecute = makeDbExecute(database, "AlertRulesService", makePersistenceError)
 
-	const requireAdmin = Effect.fn("AlertsService.requireAdmin")(function* (roles: ReadonlyArray<RoleName>) {
+	const requireAdmin = Effect.fn("AlertRulesService.requireAdmin")(function* (
+		roles: ReadonlyArray<RoleName>,
+	) {
 		if (isAdmin(roles)) return
 		return yield* Effect.fail(
 			new AlertForbiddenError({
@@ -89,7 +93,7 @@ export const makeAlertRulePersistence = (options: {
 		)
 	})
 
-	const findRuleRow = Effect.fn("AlertsService.findRuleRow")(function* (
+	const findRuleRow = Effect.fn("AlertRulesService.findRuleRow")(function* (
 		orgId: OrgId,
 		ruleId: AlertRuleDocument["id"],
 	) {
@@ -103,7 +107,7 @@ export const makeAlertRulePersistence = (options: {
 		return rows[0]
 	})
 
-	const requireRuleRow = Effect.fn("AlertsService.requireRuleRow")(function* (
+	const requireRuleRow = Effect.fn("AlertRulesService.requireRuleRow")(function* (
 		orgId: OrgId,
 		ruleId: AlertRuleDocument["id"],
 	) {
@@ -117,7 +121,7 @@ export const makeAlertRulePersistence = (options: {
 		)
 	})
 
-	const requireDestinationIds = Effect.fn("AlertsService.requireDestinationIds")(function* (
+	const requireDestinationIds = Effect.fn("AlertRulesService.requireDestinationIds")(function* (
 		orgId: OrgId,
 		destinationIds: ReadonlyArray<AlertDestinationId>,
 	) {
@@ -142,7 +146,7 @@ export const makeAlertRulePersistence = (options: {
 		}
 	})
 
-	const writeRuleRow = Effect.fn("AlertsService.writeRuleRow")(function* (
+	const writeRuleRow = Effect.fn("AlertRulesService.writeRuleRow")(function* (
 		orgId: OrgId,
 		userId: UserId,
 		existingId: AlertRuleId | null,
@@ -167,9 +171,11 @@ export const makeAlertRulePersistence = (options: {
 			comparator: normalized.comparator,
 			threshold: normalized.threshold,
 			thresholdUpper: normalized.thresholdUpper,
+			thresholdsJson: normalized.thresholds,
 			windowMinutes: normalized.windowMinutes,
 			minimumSampleCount: normalized.minimumSampleCount,
 			consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
+			breachesOutOf: normalized.breachesOutOf,
 			consecutiveHealthyRequired: normalized.consecutiveHealthyRequired,
 			renotifyIntervalMinutes: normalized.renotifyIntervalMinutes,
 			apdexThresholdMs: normalized.apdexThresholdMs,
@@ -228,6 +234,22 @@ export const makeAlertRulePersistence = (options: {
 						}
 					}
 
+					const [previousRow] =
+						existingId == null
+							? []
+							: yield* db.run(
+									selectStoredAlertRules().where(($) => [
+										$.orgId.eq(orgId),
+										$.id.eq(existingId),
+									]),
+								)
+					const previous =
+						previousRow === undefined ? Option.none() : yield* storedRuleCondition(previousRow)
+					const conditionChanged = Option.match(previous, {
+						onNone: () => true,
+						onSome: (condition) => tierConditionChanged(condition, normalized),
+					})
+
 					return existingId == null
 						? yield* db.run(
 								PG.insertInto(AlertRules)
@@ -240,11 +262,40 @@ export const makeAlertRulePersistence = (options: {
 									})
 									.returning(() => ({ txid: currentTxid })),
 							)
-						: yield* db.run(
-								PG.update(AlertRules)
-									.set(ruleFields)
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(existingId)])
-									.returning(() => ({ txid: currentTxid })),
+						: yield* Effect.andThen(
+								// Ends any tick's claim on the old config: its next fenced write
+								// fails with AlertRuleClaimLostError instead of paging on it.
+								db.run(
+									PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(existingId)]),
+								),
+								db
+									.run(
+										PG.update(AlertRules)
+											.set(ruleFields)
+											.where(($) => [$.orgId.eq(orgId), $.id.eq(existingId)])
+											.returning(() => ({ txid: currentTxid })),
+									)
+									.pipe(
+										// Ticks judged against the old condition must not count toward the new one.
+										// Read under the lock, so a concurrent edit cannot restore it unnoticed.
+										Effect.tap(() =>
+											conditionChanged
+												? db.run(
+														PG.update(AlertRuleStates)
+															.set({
+																historyJson: [],
+																consecutiveBreaches: 0,
+																consecutiveHealthy: 0,
+																updatedAt: timestamp,
+															})
+															.where(($) => [
+																$.orgId.eq(orgId),
+																$.ruleId.eq(existingId),
+															]),
+													)
+												: Effect.void,
+										),
+									),
 							)
 				}),
 			),
@@ -257,7 +308,7 @@ export const makeAlertRulePersistence = (options: {
 		}
 	})
 
-	const upsertRuleRow = Effect.fn("AlertsService.upsertRuleRow")(function* (
+	const upsertRuleRow = Effect.fn("AlertRulesService.upsertRuleRow")(function* (
 		orgId: OrgId,
 		userId: UserId,
 		existingId: AlertRuleId,
@@ -276,7 +327,7 @@ export const makeAlertRulePersistence = (options: {
 		return txid === undefined ? document : new AlertRuleDocument({ ...document, txid })
 	})
 
-	const listRules = Effect.fn("AlertsService.listRules")(function* (orgId: OrgId) {
+	const listRules = Effect.fn("AlertRulesService.listRules")(function* (orgId: OrgId) {
 		const rows = yield* dbExecute((db) =>
 			db.run(
 				selectStoredAlertRules()
@@ -306,7 +357,7 @@ export const makeAlertRulePersistence = (options: {
 		return new AlertRulesListResponse({ rules })
 	})
 
-	const createRule = Effect.fn("AlertsService.createRule")(function* (
+	const createRule = Effect.fn("AlertRulesService.createRule")(function* (
 		orgId: OrgId,
 		userId: UserId,
 		roles: ReadonlyArray<RoleName>,
@@ -322,7 +373,7 @@ export const makeAlertRulePersistence = (options: {
 		})
 	})
 
-	const deleteRule = Effect.fn("AlertsService.deleteRule")(function* (
+	const deleteRule = Effect.fn("AlertRulesService.deleteRule")(function* (
 		orgId: OrgId,
 		roles: ReadonlyArray<RoleName>,
 		ruleId: AlertRuleDocument["id"],

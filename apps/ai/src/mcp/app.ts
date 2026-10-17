@@ -5,12 +5,12 @@ import { RpcSerialization } from "effect/rpc"
 import { Cause, Effect, Layer } from "effect"
 import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { McpToolRegistration } from "./server"
-import { layerStatelessMcpHttp, statelessMcpServerLayer } from "./transport/stateless-http"
+import { layerStatelessMcpHttp, layerStatelessMcpServer } from "./transport/stateless-http"
 import { DebugErrorsPrompt } from "./prompts/debug-errors"
 import { LatencyAnalysisPrompt } from "./prompts/latency-analysis"
 import { IncidentTriagePrompt } from "./prompts/incident-triage"
 import { InstructionsResource } from "./resources/instructions"
-import type { McpToolExecutor } from "./dispatcher"
+import type { McpToolExecutorLoader } from "./executor-loader"
 import { CurrentMcpRequestTenant, CurrentMcpTenant, resolveHttpMcpTenant } from "./lib/query-warehouse"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { INTERNAL_SERVICE_PREFIX } from "./lib/resolve-tenant"
@@ -144,7 +144,6 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 		const auth = yield* AuthService
 		const env = yield* Env
 		const rateLimiter = yield* McpToolRateLimiter
-		const tools = yield* McpToolRegistration
 		return (httpEffect) =>
 			Effect.gen(function* () {
 				const request = yield* HttpServerRequest.HttpServerRequest
@@ -163,7 +162,6 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 								})
 								if (outcome === "limited") return mcpRateLimited()
 							}
-							yield* tools.ensureRegistered
 							return yield* Effect.provideService(httpEffect, CurrentMcpTenant, tenant).pipe(
 								Effect.provideService(CurrentMcpRequestTenant, tenant),
 								// Without this an MCP mutation reads the reference's `undefined`
@@ -198,12 +196,19 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 // keeps sessions in an isolate-local map and 404s anything it did not issue,
 // which on Workers is every request after `initialize`. See
 // `transport/stateless-http.ts`.
-const McpTransportLive = layerStatelessMcpHttp({
-	path: "/mcp",
-	protocol: NEGOTIATED_PROTOCOL,
-}).pipe(Layer.provide(RpcSerialization.layerJsonRpc()), Layer.provide(McpAuthorizationMiddleware.layer))
+// Behind the authorization middleware, so only an authorized `tools/*` request registers tools.
+const McpTransportLive = Layer.unwrap(
+	Effect.gen(function* () {
+		const tools = yield* McpToolRegistration
+		return layerStatelessMcpHttp({
+			path: "/mcp",
+			protocol: NEGOTIATED_PROTOCOL,
+			registerTools: tools.ensureRegistered,
+		})
+	}),
+).pipe(Layer.provide(RpcSerialization.layerJsonRpc()), Layer.provide(McpAuthorizationMiddleware.layer))
 
-const McpHttpLive = statelessMcpServerLayer({
+const McpHttpLive = layerStatelessMcpServer({
 	name: "maple-observability",
 	// Kept equal to the public `server.json` manifest (`@maple/domain/mcp-manifest`).
 	version: MAPLE_MCP_SERVER_VERSION,
@@ -214,7 +219,7 @@ const McpHttpLive = statelessMcpServerLayer({
 export const McpLive: Layer.Layer<
 	never,
 	Cause.IllegalArgumentError,
-	HttpRouter.HttpRouter | ApiKeysService | AuthService | Env | McpToolExecutor | McpToolRateLimiter
+	HttpRouter.HttpRouter | ApiKeysService | AuthService | Env | McpToolExecutorLoader | McpToolRateLimiter
 > = Layer.mergeAll(
 	McpHttpLive,
 	DebugErrorsPrompt,

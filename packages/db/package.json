@@ -11,7 +11,7 @@
 		"./tables": "./src/tables/index.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test": "vitest run --passWithNoTests",
 		"db:generate": "bun --bun effect-orm generate",
 		"db:check": "bun --bun effect-orm check",
@@ -23,8 +23,8 @@
 		"db:backfill:dashboards-v3": "bun scripts/backfill-dashboard-datasource-v3.ts"
 	},
 	"dependencies": {
-		"@effect/sql-pg": "4.0.1",
-		"@effect/sql-pglite": "4.0.1",
+		"@effect/sql-pg": "4.0.4",
+		"@effect/sql-pglite": "4.0.4",
 		"@electric-sql/pglite": "^0.5.8",
 		"@maple/domain": "workspace:*",
 		"@maple-dev/effect-orm": "0.5.0",

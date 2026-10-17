@@ -22,9 +22,9 @@
  * deletes when the request scope closes — instead of under a session id, which
  * nothing ever deletes, and it reads headers off the message rather than the
  * live request. No `mcp-session-id` is issued, so clients never send one back
- * and the 404 branch cannot be reached. See `statelessMcpServerLayer`.
+ * and the 404 branch cannot be reached. See `layerStatelessMcpServer`.
  */
-import { Cause, Context, Effect, Layer, Predicate, Queue, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Predicate, Queue, Scope } from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
@@ -35,6 +35,7 @@ import {
 	RequestId,
 	type RequestEncoded,
 } from "effect/rpc/RpcMessage"
+import type { McpToolsUnavailableError } from "../executor-loader"
 
 /**
  * JSON-RPC id for the `initialize` this transport synthesises. Namespaced so it
@@ -80,6 +81,30 @@ const omitRouter = (
 const isInitializeMessage = (message: FromClientEncoded): boolean =>
 	message._tag === "Request" && message.tag === "initialize"
 
+const isToolMessage = (message: FromClientEncoded): boolean =>
+	message._tag === "Request" && message.tag.startsWith("tools/")
+
+/**
+ * The server advertises `tools` in its `initialize` reply only once a tool is registered.
+ * Registration is deferred to the first `tools/*` request, so the reply to a client's own
+ * `initialize` states the capability here. Every other field is the server's.
+ */
+const withToolsCapability =
+	(initializeIds: ReadonlySet<string | number>) =>
+	(response: FromServerEncoded): FromServerEncoded => {
+		if (response._tag !== "Exit" || response.exit._tag !== "Success") return response
+		if (!initializeIds.has(response.requestId)) return response
+		const result = response.exit.value
+		if (!Predicate.isObject(result) || !Predicate.isObject(result.capabilities)) return response
+		return {
+			...response,
+			exit: {
+				_tag: "Success",
+				value: { ...result, capabilities: { tools: { listChanged: true }, ...result.capabilities } },
+			},
+		}
+	}
+
 const jsonRpcError = (id: string | number | null, code: number, message: string) =>
 	HttpServerResponse.jsonUnsafe({ jsonrpc: "2.0", id, error: { code, message } })
 
@@ -110,6 +135,9 @@ export const layerStatelessMcpHttp = (options: {
 	 * transport says whether JSON-RPC batches are accepted at all. */
 	readonly protocol: McpProtocol.ProtocolAdapter
 	readonly allowedOrigins?: ReadonlyArray<string> | undefined
+	/** Registers the server's tools. Runs before any `tools/*` request, not up front: most
+	 * requests never touch a tool, and building the catalog dominates a cold request's CPU. */
+	readonly registerTools: Effect.Effect<void, McpToolsUnavailableError>
 }): Layer.Layer<RpcServer.Protocol, never, RpcSerialization.RpcSerialization | HttpRouter.HttpRouter> =>
 	Layer.effect(RpcServer.Protocol)(
 		Effect.gen(function* () {
@@ -210,38 +238,63 @@ export const layerStatelessMcpHttp = (options: {
 						return HttpServerResponse.empty({ status: 400 })
 					}
 
+					if (messages.some(isToolMessage)) {
+						const registered = yield* Effect.exit(options.registerTools)
+						if (Exit.isFailure(registered)) {
+							yield* Effect.logError("MCP tool registration failed", registered.cause)
+							return HttpServerResponse.jsonUnsafe(
+								{
+									error: "service_unavailable",
+									message: "MCP tools are temporarily unavailable; retry with backoff.",
+								},
+								{ status: 503, headers: { "cache-control": "no-store" } },
+							)
+						}
+					}
+
 					// The handshake the client did not send, so the server has a negotiated
 					// profile for this exchange.
 					if (!messages.some(isInitializeMessage)) {
 						const synthetic = parser.decode(
 							JSON.stringify(syntheticInitialize(options.protocol.protocolVersion)),
 						) as ReadonlyArray<FromClientEncoded>
-						for (const message of synthetic) {
-							yield* write(message)
-						}
+						yield* Effect.forEach(synthetic, (message) => write(message), { discard: true })
 					}
 
-					for (const message of messages) {
-						if (message._tag === "Request") {
-							requestIds.push(RequestId(message.id))
-							;(message as RequestEncoded & { headers: typeof requestHeaders }).headers =
-								requestHeaders.concat(message.headers)
-						}
-						yield* write(message)
-					}
+					yield* Effect.forEach(
+						messages,
+						(message) =>
+							Effect.suspend(() => {
+								if (message._tag === "Request") {
+									requestIds.push(RequestId(message.id))
+									;(
+										message as RequestEncoded & { headers: typeof requestHeaders }
+									).headers = requestHeaders.concat(message.headers)
+								}
+								return write(message)
+							}),
+						{ discard: true },
+					)
 
 					yield* write(constEof)
 
 					const responses = yield* Queue.collect(queue)
 					// The synthetic handshake is Maple's, not the caller's; its reply must
 					// not reach the wire.
-					const visible = responses.filter(
-						(response) =>
-							!(
-								Predicate.hasProperty(response, "requestId") &&
-								response.requestId === SYNTHETIC_INITIALIZE_ID
-							),
+					const initializeIds = new Set(
+						messages.flatMap((message) =>
+							message._tag === "Request" && isInitializeMessage(message) ? [message.id] : [],
+						),
 					)
+					const visible = responses
+						.filter(
+							(response) =>
+								!(
+									Predicate.hasProperty(response, "requestId") &&
+									response.requestId === SYNTHETIC_INITIALIZE_ID
+								),
+						)
+						.map(withToolsCapability(initializeIds))
 					return HttpServerResponse.text(parser.encode(visible) as string, {
 						contentType: serialization.contentType,
 					})
@@ -265,9 +318,11 @@ export const layerStatelessMcpHttp = (options: {
 				isAllowedOrigin(request, options.allowedOrigins)
 					? Effect.succeed(HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } }))
 					: Effect.succeed(HttpServerResponse.empty({ status: 403 }))
-			for (const method of ["GET", "PUT", "PATCH", "DELETE", "OPTIONS"] as const) {
-				yield* router.add(method, options.path, methodNotAllowed)
-			}
+			yield* Effect.forEach(
+				["GET", "PUT", "PATCH", "DELETE", "OPTIONS"] as const,
+				(method) => router.add(method, options.path, methodNotAllowed),
+				{ discard: true },
+			)
 
 			return yield* RpcServer.Protocol.make((writeRequest_) => {
 				writeRequest = writeRequest_
@@ -304,7 +359,7 @@ export const layerStatelessMcpHttp = (options: {
  * register its route — is kept out of the server's own context. The caller provides
  * `McpServer`, so tool registration can share the instance from outside the transport.
  */
-export const statelessMcpServerLayer = (options: {
+export const layerStatelessMcpServer = (options: {
 	readonly name: string
 	readonly version: string
 	readonly instructions?: string | undefined

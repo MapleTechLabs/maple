@@ -109,7 +109,7 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 		}) {
 			const tenant = yield* CurrentMcpTenant
 			const statusFilter = status ?? "open"
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, status: statusFilter })
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.ai.status": statusFilter })
 
 			// Reconciles live span keys against persisted issues: calling this tool refreshes
 			// usage counts and auto-resolves fixed issues, same as the dashboard settings page.

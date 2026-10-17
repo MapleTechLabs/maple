@@ -35,6 +35,8 @@ import {
 	ErrorIssueVerifications,
 } from "./errors"
 import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
+import { GcpConnectors } from "./gcp-connectors"
+import { GcpResources } from "./gcp-resources"
 import { Investigations } from "./investigations"
 import { LiveActivities } from "./live-activities"
 import { McpOAuthClients, McpOAuthAuthorizations, McpOAuthRefreshTokens } from "./mcp-oauth"
@@ -54,6 +56,7 @@ import {
 	PlanetscaleEvents,
 	PlanetscaleIssueReceipts,
 } from "./planetscale-inventory"
+import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
 import { OrgSupportChannels } from "./support-channels"
@@ -65,6 +68,7 @@ import {
 	PrReviews,
 	PrReviewFindings,
 	PrReviewFindingEmbeddings,
+	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
 	PrReviewSettings,
@@ -87,6 +91,8 @@ export * from "./dashboards"
 export * from "./digest"
 export * from "./errors"
 export * from "./escalations"
+export * from "./gcp-connectors"
+export * from "./gcp-resources"
 export * from "./investigations"
 export * from "./live-activities"
 export * from "./mcp-oauth"
@@ -101,6 +107,7 @@ export * from "./org-ingest-sampling-policies"
 export * from "./org-recommendation-issues"
 export * from "./planetscale-connections"
 export * from "./planetscale-inventory"
+export * from "./openrouter-keys"
 export * from "./railway"
 export * from "./scrape-targets"
 export * from "./support-channels"
@@ -144,6 +151,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	ErrorIssueVerifications,
 	IssueEscalationPolicies,
 	IssueEscalations,
+	GcpConnectors,
+	GcpResources,
 	Investigations,
 	LiveActivities,
 	McpOAuthClients,
@@ -158,6 +167,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	OrgIngestAttributeMappings,
 	OrgIngestKeys,
 	OrgIngestSamplingPolicies,
+	OrgOpenRouterKeys,
 	OrgRecommendationIssues,
 	PlanetscaleConnections,
 	PlanetscalePollState,
@@ -176,6 +186,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	PrReviews,
 	PrReviewFindings,
 	PrReviewFindingEmbeddings,
+	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
 	PrReviewSettings,

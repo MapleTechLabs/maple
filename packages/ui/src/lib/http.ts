@@ -158,8 +158,12 @@ export function getHttpInfo({ spanName, spanAttributes, spanKind }: HttpSpanInpu
 		Option.getOrNull,
 	)
 
-	const rawStatus = attrs["http.status_code"] ?? attrs["http.response.status_code"]
-	const statusCode = rawStatus ? parseInt(rawStatus, 10) || null : null
+	// `attr` skips blanks: projected attribute maps carry every key, absent ones as "".
+	const statusCode = pipe(
+		attr(attrs, "http.status_code", "http.response.status_code"),
+		Option.map((raw) => parseInt(raw, 10) || null),
+		Option.getOrNull,
+	)
 
 	return {
 		method: method.value.toUpperCase(),

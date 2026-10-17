@@ -82,6 +82,21 @@ describe("classifyPlatform", () => {
 			"cloudflare",
 		)
 		expect(classifyPlatform(platformRow({ faasName: "fn", k8sPodName: "pod" }))).toBe("lambda")
+		// Cloud Run and GKE: Google Cloud's detector also sets `faas.name` / the k8s attributes.
+		expect(
+			classifyPlatform(
+				platformRow({ cloudProvider: "gcp", cloudPlatform: "gcp_cloud_run", faasName: "checkout" }),
+			),
+		).toBe("gcp")
+		expect(
+			classifyPlatform(
+				platformRow({
+					cloudProvider: "gcp",
+					cloudPlatform: "gcp_kubernetes_engine",
+					k8sPodName: "pod",
+				}),
+			),
+		).toBe("gcp")
 		expect(classifyPlatform(platformRow({ k8sDeploymentName: "api" }))).toBe("kubernetes")
 		expect(classifyPlatform(platformRow({ mapleSdkType: "client" }))).toBe("web")
 	})

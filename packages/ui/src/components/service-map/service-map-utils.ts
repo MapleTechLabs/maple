@@ -114,6 +114,7 @@ export interface ServiceNodeData {
 const PLATFORM_COLORS: Record<ServicePlatform | "unknown", string> = {
 	kubernetes: "oklch(0.62 0.16 250)",
 	cloudflare: CLOUDFLARE_COLOR,
+	gcp: "oklch(0.63 0.2 27)",
 	lambda: "oklch(0.7 0.18 60)",
 	web: "oklch(0.65 0.15 145)",
 	unknown: "oklch(0.55 0.02 270)",
@@ -255,6 +256,47 @@ function deriveServiceList(
 	return Array.from(services).sort()
 }
 
+/**
+ * One row per service across its environment rows ("All environments" yields several).
+ * Rates sum; error rate and p50 are throughput-weighted; p95 takes the worst row.
+ */
+export function aggregateServiceOverviews<T extends ServiceMapOverviewRow & { p95LatencyMs?: number }>(
+	rows: ReadonlyArray<T>,
+): Map<string, T> {
+	const groups = new Map<string, T[]>()
+	for (const row of rows) {
+		const group = groups.get(row.serviceName)
+		if (group) group.push(row)
+		else groups.set(row.serviceName, [row])
+	}
+	const out = new Map<string, T>()
+	for (const [name, group] of groups) {
+		const top = group.reduce((a, b) => (b.throughput > a.throughput ? b : a))
+		if (group.length === 1) {
+			out.set(name, top)
+			continue
+		}
+		const throughput = group.reduce((sum, r) => sum + r.throughput, 0)
+		const weighted = (pick: (r: T) => number) =>
+			throughput > 0
+				? group.reduce((sum, r) => sum + pick(r) * r.throughput, 0) / throughput
+				: pick(top)
+		const p95s = group.flatMap((r) => (r.p95LatencyMs === undefined ? [] : [r.p95LatencyMs]))
+		const merged: T = {
+			...top,
+			throughput,
+			tracedThroughput: group.reduce((sum, r) => sum + r.tracedThroughput, 0),
+			hasSampling: group.some((r) => r.hasSampling),
+			samplingWeight: Math.max(...group.map((r) => r.samplingWeight)),
+			errorRate: weighted((r) => r.errorRate),
+			p50LatencyMs: weighted((r) => r.p50LatencyMs),
+		}
+		if (p95s.length > 0) merged.p95LatencyMs = Math.max(...p95s)
+		out.set(name, merged)
+	}
+	return out
+}
+
 export interface BuildFlowElementsInput {
 	edges: ReadonlyArray<ServiceMapEdgeRow>
 	dbEdges?: ReadonlyArray<ServiceMapDbEdgeRow>
@@ -306,14 +348,7 @@ export function buildFlowElements({
 }: BuildFlowElementsInput): { nodes: Node<ServiceNodeData>[]; edges: Edge<ServiceEdgeData>[] } {
 	const services = deriveServiceList(edges, serviceOverviews)
 
-	const overviewMap = new Map<string, ServiceMapOverviewRow>()
-	for (const svc of serviceOverviews) {
-		// Duplicate names resolve to their highest-throughput row.
-		const existing = overviewMap.get(svc.serviceName)
-		if (!existing || svc.throughput > existing.throughput) {
-			overviewMap.set(svc.serviceName, svc)
-		}
-	}
+	const overviewMap = aggregateServiceOverviews(serviceOverviews)
 
 	// Aggregate per-service infra rollup. Pod / workload counts are summed
 	// across all (workloadKind, workloadName, namespace, cluster) rows that map

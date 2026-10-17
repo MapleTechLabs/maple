@@ -30,6 +30,7 @@ import {
 import { AuthorLabel } from "@/components/code-review/author-avatar"
 import { ReviewDetailSheet } from "@/components/code-review/review-detail-sheet"
 import { ResultView } from "@/components/common/result-view"
+import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { CircleCheckIcon, CircleWarningIcon, ClockIcon, LoaderIcon } from "@/components/icons"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -64,7 +65,17 @@ const isStatus = (value: unknown): value is Status =>
 	value === "running" ||
 	value === "queued"
 
+/** Above the page, so the header's reload re-resolves the window the page reads. */
 function CodeReviewPullRequestsPage() {
+	const search = Route.useSearch()
+	return (
+		<PageRefreshProvider timePreset={search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET}>
+			<CodeReviewPullRequestsPageContent />
+		</PageRefreshProvider>
+	)
+}
+
+function CodeReviewPullRequestsPageContent() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 	const preset = search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET
@@ -252,18 +263,23 @@ function ReviewTable({
 										<span className="shrink-0 text-muted-foreground">
 											#{review.number}
 										</span>
-										<span className="truncate font-medium">
+										<span
+											className="truncate font-medium"
+											title={review.title ?? "Untitled pull request"}
+										>
 											{review.title ?? "Untitled pull request"}
 										</span>
 									</button>
 									<div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-										<span className="truncate">{review.repositoryFullName}</span>
+										<span className="min-w-0 truncate" title={review.repositoryFullName}>
+											{review.repositoryFullName}
+										</span>
 										{review.authorLogin ? (
 											<>
 												<span className="shrink-0">·</span>
 												<AuthorLabel
 													login={review.authorLogin}
-													className="shrink-0"
+													className="max-w-[40%] min-w-0"
 												/>
 											</>
 										) : null}

@@ -1,6 +1,6 @@
 import { assert, describe, it, vi } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { IsolateAge } from "@maple/infra/isolate-age"
+import { ISOLATE_AGE_HEADER, ISOLATE_ORDINAL_HEADER, IsolateAge } from "@maple/infra/isolate-age"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -17,11 +17,14 @@ import { makeFetch } from "./http"
  */
 const ExportedSpan = Schema.Struct({
 	name: Schema.String,
+	kind: Schema.optionalKey(Schema.Finite),
 	attributes: Schema.Array(
 		Schema.Struct({ key: Schema.String, value: Schema.Record(Schema.String, Schema.Unknown) }),
 	),
 })
 type ExportedSpan = typeof ExportedSpan.Type
+/** OTLP `SPAN_KIND_SERVER`. Effect names server spans by method alone, so kind is what marks one. */
+const SERVER_KIND = 2
 const decodeExportedTraces = Schema.decodeUnknownSync(
 	Schema.Struct({
 		resourceSpans: Schema.optionalKey(
@@ -59,7 +62,7 @@ const capturedServerSpans = Effect.acquireRelease(
 						decodeExportedTraces(JSON.parse(String(init?.body ?? "{}"))).resourceSpans ?? [],
 				)
 				.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
-				.filter((span) => span.name.startsWith("http.server ")),
+				.filter((span) => span.kind === SERVER_KIND),
 	),
 )
 
@@ -93,6 +96,11 @@ const event = (fetch: HttpEffect, method: string, path: string) =>
 			span: server?.name,
 			ordinal: attributeOf(server, "maple.isolate.request_ordinal"),
 			ageMs: attributeOf(server, "maple.isolate.age_ms"),
+			// What maple-api reads back: its span is the one that sees cold-start CPU.
+			headers: {
+				ordinal: response.headers.get(ISOLATE_ORDINAL_HEADER) ?? undefined,
+				ageMs: response.headers.get(ISOLATE_AGE_HEADER) ?? undefined,
+			},
 		}
 	}).pipe(Effect.scoped)
 
@@ -101,7 +109,7 @@ class GraphBuildFailure extends Schema.TaggedError<GraphBuildFailure>()("GraphBu
 }) {}
 
 describe("the maple-ai Worker through alchemy's bridge", () => {
-	it.effect("stamps isolate age on the server span, counting graph-build failures but not liveness", () =>
+	it.effect("stamps isolate age on span and response, counting build failures but not liveness", () =>
 		Effect.gen(function* () {
 			// Two handlers on one isolate: the counter is the isolate's, not the handler's.
 			const serving = yield* makeFetch(
@@ -121,16 +129,24 @@ describe("the maple-ai Worker through alchemy's bridge", () => {
 
 			assert.deepStrictEqual(health, {
 				status: 200,
-				span: "http.server GET",
+				span: "GET",
 				ordinal: undefined,
 				ageMs: undefined,
+				headers: { ordinal: undefined, ageMs: undefined },
 			})
-			assert.deepStrictEqual(first, { status: 200, span: "http.server POST", ordinal: "1", ageMs: "0" })
+			assert.deepStrictEqual(first, {
+				status: 200,
+				span: "POST",
+				ordinal: "1",
+				ageMs: "0",
+				headers: { ordinal: "1", ageMs: "0" },
+			})
 			assert.deepStrictEqual(failed, {
 				status: 503,
-				span: "http.server POST",
+				span: "POST",
 				ordinal: "2",
 				ageMs: "250",
+				headers: { ordinal: "2", ageMs: "250" },
 			})
 		}).pipe(Effect.provide(IsolateAge.layer)),
 	)

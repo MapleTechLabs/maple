@@ -101,6 +101,35 @@ export type PostgresTransactionId = Schema.Schema.Type<typeof PostgresTransactio
 export const ScrapeTargetId = MapleUuidId("@maple/ScrapeTargetId", "Scrape Target ID")
 export type ScrapeTargetId = Schema.Schema.Type<typeof ScrapeTargetId>
 
+export const GcpConnectorId = MapleUuidId("@maple/GcpConnectorId", "GCP Connector ID")
+export type GcpConnectorId = Schema.Schema.Type<typeof GcpConnectorId>
+
+// Google's project id rules. The id is interpolated into a shell script, so nothing looser.
+export const GcpProjectId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u)).pipe(
+	Schema.brand("@maple/GcpProjectId"),
+	Schema.annotate({ identifier: "@maple/GcpProjectId", title: "Google Cloud Project ID" }),
+)
+export type GcpProjectId = Schema.Schema.Type<typeof GcpProjectId>
+
+/** The numeric id of a Google Cloud folder or organization. */
+export const GcpResourceNumber = Schema.String.check(Schema.isPattern(/^[0-9]{1,20}$/u)).pipe(
+	Schema.brand("@maple/GcpResourceNumber"),
+	Schema.annotate({ identifier: "@maple/GcpResourceNumber", title: "Google Cloud Resource Number" }),
+)
+export type GcpResourceNumber = Schema.Schema.Type<typeof GcpResourceNumber>
+
+/** What a Google Cloud connector covers: one project, or everything under a folder or organization. */
+export const GcpScopeType = Schema.Literals(["project", "folder", "organization"])
+export type GcpScopeType = Schema.Schema.Type<typeof GcpScopeType>
+
+/**
+ * A runtime whose application output a log sink forwards or leaves out: what its code writes to
+ * stdout and stderr. `cloud_run` covers services, jobs, worker pools and 2nd gen functions,
+ * `cloud_functions` the 1st gen ones. In display order.
+ */
+export const GcpLogRuntime = Schema.Literals(["cloud_run", "cloud_functions", "app_engine", "gke"])
+export type GcpLogRuntime = Schema.Schema.Type<typeof GcpLogRuntime>
+
 export const AlertDestinationId = MapleUuidId("@maple/AlertDestinationId", "Alert Destination ID")
 export type AlertDestinationId = Schema.Schema.Type<typeof AlertDestinationId>
 
@@ -115,6 +144,10 @@ export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventI
 
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
+
+/** One MCP OAuth grant: the refresh-token family a connected client rotates through. */
+export const McpConnectionId = MapleUuidId("@maple/McpConnectionId", "MCP Connection ID")
+export type McpConnectionId = Schema.Schema.Type<typeof McpConnectionId>
 
 export const AgentFeedbackId = MapleUuidId("@maple/AgentFeedbackId", "Agent Feedback ID")
 export type AgentFeedbackId = Schema.Schema.Type<typeof AgentFeedbackId>

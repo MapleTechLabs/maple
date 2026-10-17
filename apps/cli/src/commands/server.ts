@@ -30,6 +30,8 @@ import {
 	SERVER_PID_NAME,
 	serverDiscoveryPath,
 	serverPidPath,
+	storeMarkerPath,
+	UNVERSIONED_STORE,
 } from "../server/store-version"
 import { durableWrite } from "../server/durable-files"
 import { abandonLocalStoreMigration, localMigrationIsIncomplete } from "../server/local-store-migrations"
@@ -46,6 +48,7 @@ import {
 	writeBackupConfig,
 } from "../server/checkpoints"
 import { resolveUiAssets } from "../server/ui-assets"
+import { clearStartFailures, guardStartFailures } from "./start-failures"
 import { debugLog } from "../lib/debug"
 import { MAPLE_VERSION } from "../version"
 import { jsonFormatRequested, writeJson } from "./json-output"
@@ -663,6 +666,15 @@ export const dirtyStoreRecoveryAdvice = (
 			`Run \`${bold(mapleCommand("restore --yes", scope))}\` to restore from the last checkpoint ` +
 			`(${dim(availability.checkpointId)}), or \`${resetCommand}\` to wipe it.`
 		)
+	}
+	if (availability.reason === "other_build") {
+		const taken = `The last checkpoint (${dim(availability.checkpointId)}) was taken by another maple build, which this one cannot restore (${availability.detail}). `
+		return availability.restoreWith === null
+			? `${taken}Start fresh with \`${resetCommand}\`, which discards the live data.`
+			: taken +
+					`Restore it with maple ${availability.restoreWith}: \`${bold(mapleCommand(`update --tag v${availability.restoreWith}`, scope))}\`, ` +
+					`then \`${bold(mapleCommand("restore --yes", scope))}\`. ` +
+					`Or start fresh with \`${resetCommand}\`, which discards the live data.`
 	}
 	const why =
 		availability.reason === "none"
@@ -1309,7 +1321,13 @@ export const start = Command.make("start", {
 								`(store: ${compat.found}; build: ${compat.current}); loading it would crash chDB. ` +
 								`If a newer maple wrote it, reinstall that one (\`${bold("maple update")}\`). ` +
 								`Otherwise wipe it with \`${bold(mapleCommand("reset", scope))}\`, or start fresh via ` +
-								`\`${bold(mapleCommand("start --reset", scope))}\`.`,
+								`\`${bold(mapleCommand("start --reset", scope))}\`.` +
+								// The marker is a sidecar beside the data dir, so a volume mounted at
+								// the data dir itself loses it on every container re-creation.
+								(compat.found === UNVERSIONED_STORE
+									? ` The version marker lives beside the data dir (${prettyPath(storeMarkerPath(dataDir))}); ` +
+										`if ${prettyPath(dataDir)} is a mounted volume, mount its parent directory instead.`
+									: ""),
 						})
 					}
 
@@ -1434,6 +1452,7 @@ export const start = Command.make("start", {
 						assets,
 					})
 					started = true
+					yield* clearStartFailures(dataDir)
 
 					const bindAddr = serverUrl(bindHost, boundPort)
 					const connectAddr = serverUrl(advertiseHost, boundPort)
@@ -1501,7 +1520,7 @@ export const start = Command.make("start", {
 
 					return yield* Effect.never
 				}),
-			)
+			).pipe(guardStartFailures(dataDir, { detachedChild: pidHandoverFrom() !== undefined }))
 		}),
 	),
 )
@@ -1831,8 +1850,14 @@ export const restore = Command.make("restore", {
 									? `no checkpoint exists under ${prettyPath(dataDir)}; nothing to restore. ` +
 										`Checkpoints are created by \`${bold(mapleCommand("checkpoint", scope))}\` while the server is running. ` +
 										`To start over from an unreadable store, use \`${bold(mapleCommand("start --reset", scope))}\`.`
-									: `the checkpoint registry under ${prettyPath(dataDir)} is unusable: ${availability.detail}. ` +
-										`Preserve it for inspection, or start over with \`${bold(mapleCommand("start --reset", scope))}\`.`,
+									: availability.reason === "other_build"
+										? `the last checkpoint under ${prettyPath(dataDir)} (${availability.checkpointId}) was taken by another maple build: ${availability.detail}. ` +
+											(availability.restoreWith === null
+												? `Start over with \`${bold(mapleCommand("start --reset", scope))}\`.`
+												: `Restore it with maple ${availability.restoreWith} (\`${bold(mapleCommand(`update --tag v${availability.restoreWith}`, scope))}\`), ` +
+													`or start over with \`${bold(mapleCommand("start --reset", scope))}\`.`)
+										: `the checkpoint registry under ${prettyPath(dataDir)} is unusable: ${availability.detail}. ` +
+											`Preserve it for inspection, or start over with \`${bold(mapleCommand("start --reset", scope))}\`.`,
 						})
 					}
 

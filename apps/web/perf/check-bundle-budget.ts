@@ -96,7 +96,30 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // carries, the pill in the persistent top bar with its live clock, and the
 // hook's query and seen-flag atoms. The popover's panel and pointer are small
 // and render only while open, so nothing there is worth a lazy chunk.
-const maxGzipBytes = 695 * 1024
+// 697 KB from the MCP integrations and alerts hub merges (#1494, #1500, #1502,
+// 2026-10-15): each fit against its own base (694.2, 694.8, 694.3), but main
+// with all three measures 695.6 against 694.6 before them. No lazy-only chunk
+// leaked; the growth is contract and route-registry weight every page carries.
+// 699.5 KB from the Google Cloud connectors (#1321, 2026-10-15): ~2.5 KB of
+// startup measured in CI against main's 694.6 (695.6 since #1494, #1500,
+// #1502) — the connector group's endpoints and schemas on the v2 contract
+// every page's client carries. Each Google Cloud step below keeps ~1 KB of
+// headroom, since CI measures the PR merged with main.
+// 699.5 KB from the Google Cloud integration card (#1334, 2026-10-15): ~0.9 KB
+// of startup measured in CI against #1333's 697.3 from the card and its
+// contract additions.
+// 701.5 KB from the Infrastructure → Google Cloud page (#1336, 2026-10-15):
+// ~2 KB of startup measured in CI against #1335's 698.3 — the inventory
+// schemas on the contract, the connector status rules the sidebar and the
+// integrations hub read, and the Infrastructure nav entry with its icon. The
+// /infra/gcp pages stay in their route chunks.
+// 705.5 KB from the Google Cloud page redesign and Cloud SQL data (#1336, 2026-10-16):
+// ~3.8 KB of startup measured in CI on the stack's top at 708.2 against #1480's 704.4 — the
+// sparkline, top-statement and database endpoints on the query-engine contract, the Cloud SQL
+// settings on the inventory schema, and two lab registry entries. The pages stay in their
+// route chunks.
+// 706.5 KB with main's 1 KB from #1494, #1500, #1502 merged up the stack.
+const maxGzipBytes = 706.5 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

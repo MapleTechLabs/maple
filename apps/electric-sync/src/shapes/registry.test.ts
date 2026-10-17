@@ -12,6 +12,7 @@ describe("isShapeName", () => {
 		assert.isTrue(isSubscriptionName("dashboards"))
 		assert.isTrue(isSubscriptionName("alert_rules"))
 		assert.isTrue(isSubscriptionName("alert_destinations"))
+		assert.isTrue(isSubscriptionName("alert_destinations_v2"))
 		assert.isTrue(isSubscriptionName("api_keys"))
 		// Pruned from both the whitelist and the publication (0022) once their
 		// client collections were removed — they must not resolve as shapes.
@@ -29,12 +30,6 @@ describe("isShapeName", () => {
 })
 
 describe("lookupShape", () => {
-	it("resolves a definition with a table for every whitelisted subscription", () => {
-		for (const subscription of SUBSCRIPTION_NAMES) {
-			assert.isString(lookupSubscription(subscription).table, subscription)
-		}
-	})
-
 	it("keeps the PK in every column projection (Electric requires it)", () => {
 		for (const subscription of SUBSCRIPTION_NAMES) {
 			const columns = lookupSubscription(subscription).columns

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { TestClock } from "effect/testing"
-import { OrgId, UserId, WarehouseQueryError, WarehouseQueryResponse } from "@maple/domain/http"
+import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import type { WeeklyDigestProps } from "@maple/email/weekly-digest-core"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { DigestSubscriptions } from "@maple/db/tables"
@@ -10,6 +10,8 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { DigestService } from "./DigestService"
@@ -34,11 +36,11 @@ const testConfig = () =>
 		}),
 	)
 
-// Monday 2026-07-06 08:00 UTC — getUTCDay() === 1, matching the default
-// subscription dayOfWeek. All seeded timestamps derive from this epoch so
+// Monday 2026-07-06 09:00 UTC, when the default schedule (Monday, 09:00, UTC) is due.
+// All seeded timestamps derive from this epoch so
 // rows and the service (which reads Clock.currentTimeMillis) share one
 // time base.
-const TICK_MS = Date.UTC(2026, 6, 6, 8, 0, 0)
+const TICK_MS = Date.UTC(2026, 6, 6, 9, 0, 0)
 
 interface StubOverviewRow {
 	serviceName: string
@@ -52,14 +54,19 @@ interface StubOverviewRow {
 	period: "current" | "previous"
 }
 
-const overview = (over: Partial<StubOverviewRow> & { serviceName: string }): StubOverviewRow => ({
+const overview = (over: Partial<StubOverviewRow> & { serviceName: string }) => ({
 	environment: "production",
 	serviceNamespace: "",
 	throughput: over.estimatedSpanCount ?? 100,
 	estimatedSpanCount: 100,
 	errorCount: 2,
 	estimatedErrorCount: 2,
+	spanCount: over.estimatedSpanCount ?? 100,
+	p50LatencyMs: 20,
 	p95LatencyMs: 50,
+	p99LatencyMs: 80,
+	firstSeen: "2026-06-01 00:00:00",
+	commits: [],
 	period: "current",
 	...over,
 })
@@ -67,75 +74,77 @@ const overview = (over: Partial<StubOverviewRow> & { serviceName: string }): Stu
 /** One current-period service row so hasDigestContent() passes. */
 const overviewRow = overview({ serviceName: "checkout-api" })
 
-/** `custom_traces_breakdown` with `group_by_all` — one row for the window. */
-const summaryRow = (count: number, errorRate: number, p95Duration: number) => ({
-	name: "all",
+/** A `tracesBreakdownQuery` row; only the fields the digest reads vary. */
+const breakdownRow = (name: string, count: number, errorRate: number, p95Duration: number) => ({
+	name,
 	count,
-	errorRate,
+	spanCount: count,
+	avgDuration: 0,
+	p50Duration: 0,
 	p95Duration,
+	p99Duration: 0,
+	errorRate,
+	satisfiedCount: 0,
+	toleratingCount: 0,
+	apdexScore: 0,
+})
+
+/** The `groupBy: "all"` summary breakdown: one row for the window. */
+const summaryRow = (count: number, errorRate: number, p95Duration: number) =>
+	breakdownRow("all", count, errorRate, p95Duration)
+
+/** A daily `tracesTimeseriesQuery` bucket. */
+const seriesRow = (bucket: string, count: number, errorRate: number) => ({
+	...breakdownRow("", count, errorRate, 0),
+	bucket,
+	groupName: "all",
+	estimatedSpanCount: count,
 })
 
 /**
- * Fixture key → rows. Anything unlisted answers with no rows.
- *
- * `custom_traces_breakdown` is issued at two different grains, so its key
- * carries the grouping: `custom_traces_breakdown:all` for the summary row and
- * `custom_traces_breakdown:namespace` for the namespace table.
+ * Query context → wire rows, decoded through each query's real row schema.
+ * Anything unlisted answers with no rows. Both windows of a summary or
+ * namespace breakdown share one context, so they share one fixture.
  */
 type WarehouseFixture = Readonly<Record<string, ReadonlyArray<unknown>>>
 
-const fixtureKey = (pipeName: string, params: Record<string, unknown>): string => {
-	// The previous-window error lookup is the fingerprint-filtered one.
-	if (pipeName === "errors_by_type") {
-		return params.fingerprint_hashes != null ? "errors_by_type:previous" : "errors_by_type"
-	}
-	if (pipeName !== "custom_traces_breakdown") return pipeName
-	if (params.group_by_namespace != null) return "custom_traces_breakdown:namespace"
-	return "custom_traces_breakdown:all"
-}
+type SeenQuery = { context: string; sql: string }
 
 const defaultFixture = {
-	service_overview_compare: [overviewRow],
-	"custom_traces_breakdown:all": [summaryRow(100, 0.02, 50)],
+	digestServiceOverviewCompare: [overviewRow],
+	digestTracesSummary: [summaryRow(100, 0.02, 50)],
 } satisfies WarehouseFixture
 
 const makeWarehouseStub = (
 	fixture: WarehouseFixture = defaultFixture,
-	seen?: Array<{ pipeName: string; params: Record<string, unknown> }>,
-	/** Fixture keys whose query should fail, simulating a warehouse blip. */
+	seen?: Array<SeenQuery>,
+	/** Query contexts that should fail, simulating a warehouse blip. */
 	failing: ReadonlySet<string> = new Set(),
 ) =>
-	Layer.succeed(WarehouseQueryService, {
-		query: (_tenant, payload) =>
-			Effect.suspend(() => {
-				const params = (payload.params ?? {}) as Record<string, unknown>
-				const key = fixtureKey(payload.pipeName, params)
-				seen?.push({ pipeName: payload.pipeName, params })
-				if (failing.has(key)) {
-					return Effect.fail(
-						new WarehouseQueryError({
-							message: `stubbed failure for ${key}`,
-							pipeName: payload.pipeName,
-						}),
-					)
-				}
-				return Effect.succeed(new WarehouseQueryResponse({ data: [...(fixture[key] ?? [])] }))
-			}),
-		sqlQuery: () => Effect.die("sqlQuery not used by DigestService tests"),
-		rawSqlQuery: () => Effect.die("rawSqlQuery not used by DigestService tests"),
-		compiledQuery: () => Effect.die("compiledQuery not used by DigestService tests"),
-		compiledQueryFirst: () => Effect.die("compiledQueryFirst not used by DigestService tests"),
-		// The digest warms the route before its fan-out.
-		warmRoute: () => Effect.void,
-		ingest: () => Effect.die("ingest not used by DigestService tests"),
-		asExecutor: () => {
-			throw new Error("asExecutor not used by DigestService tests")
-		},
-	})
+	Layer.succeed(
+		WarehouseQueryService,
+		makeWarehouseServiceStub({
+			compiledQuery: (_tenant, input, options) =>
+				Effect.suspend(() => {
+					const compiled = compiledQueryOf(input)
+					const context = options?.context ?? ""
+					seen?.push({ context, sql: compiled.sql })
+					if (failing.has(context)) {
+						return Effect.fail(
+							new WarehouseQueryError({
+								message: `stubbed failure for ${context}`,
+								pipeName: context,
+							}),
+						)
+					}
+					return compiled.decodeRows(fixture[context] ?? []).pipe(Effect.orDie)
+				}),
+		}),
+	)
 
 const makeHarness = (
 	fixture: WarehouseFixture = defaultFixture,
-	seen?: Array<{ pipeName: string; params: Record<string, unknown> }>,
+	seen?: Array<SeenQuery>,
 	failing?: ReadonlySet<string>,
 ) => {
 	const sends: string[] = []
@@ -227,6 +236,22 @@ describe("DigestService.runDigestTick", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("sends only to subscribers whose own day, hour and zone have come round", () => {
+		const { sends, layer } = makeHarness()
+		return Effect.gen(function* () {
+			// 09:00 UTC Monday is 11:00 in Berlin, 02:00 in Los Angeles and 18:00 Monday in Tokyo.
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedSub({ email: "berlin@example.com", timezone: "Europe/Berlin", sendHour: 10 })
+			yield* seedSub({ email: "la@example.com", timezone: "America/Los_Angeles", sendHour: 9 })
+			yield* seedSub({ email: "tokyo@example.com", timezone: "Asia/Tokyo", dayOfWeek: 2, sendHour: 0 })
+
+			const digest = yield* DigestService
+			yield* digest.runDigestTick()
+
+			assert.deepStrictEqual(sends, ["berlin@example.com"])
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("does not re-send to a sub already attempted today when another sub is claimed", () => {
 		const { sends, layer } = makeHarness()
 		return Effect.gen(function* () {
@@ -272,7 +297,7 @@ describe("DigestService.runDigestTick", () => {
 
 	it.effect("sends nothing to an org that only had data the previous week", () => {
 		const { sends, layer } = makeHarness({
-			service_overview_compare: [overview({ serviceName: "checkout-api", period: "previous" })],
+			digestServiceOverviewCompare: [overview({ serviceName: "checkout-api", period: "previous" })],
 		})
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(TICK_MS)
@@ -302,6 +327,42 @@ describe("DigestService.runDigestTick", () => {
 			assert.deepStrictEqual(sends, ["a@example.com"])
 			assert.strictEqual(second.sentCount, 0)
 			assert.strictEqual(second.errorCount, 0)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("one local send window gets one attempt even when it crosses UTC midnight", () => {
+		const { sends, layer } = makeHarness()
+		return Effect.gen(function* () {
+			// Monday 15:00 in Los Angeles is 22:00 UTC; the local Monday runs on past UTC midnight.
+			const firstTickMs = Date.UTC(2026, 6, 6, 22, 0, 0)
+			yield* TestClock.setTime(firstTickMs)
+			const id = yield* seedSub({
+				email: "la@example.com",
+				timezone: "America/Los_Angeles",
+				sendHour: 15,
+			})
+
+			const digest = yield* DigestService
+			yield* digest.runDigestTick()
+			assert.deepStrictEqual(sends, ["la@example.com"])
+
+			// The email went out but the lastSentAt write was lost.
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(DigestSubscriptions)
+						.set({ lastSentAt: null })
+						.where(($) => [$.id.eq(id)]),
+				),
+			)
+
+			// Tuesday 00:15 UTC is still Monday 17:15 in Los Angeles.
+			yield* TestClock.setTime(Date.UTC(2026, 6, 7, 0, 15, 0))
+			const second = yield* digest.runDigestTick()
+
+			assert.deepStrictEqual(sends, ["la@example.com"])
+			assert.strictEqual(second.sentCount, 0)
+			assert.strictEqual((yield* getSub(id)).lastAttemptedAt, firstTickMs)
 		}).pipe(Effect.provide(layer))
 	})
 })
@@ -359,7 +420,7 @@ const ORG_ID = OrgId.make("org_digest_test")
  * differ in nothing the old code looked at.
  */
 const multiEnvFixture = {
-	service_overview_compare: [
+	digestServiceOverviewCompare: [
 		overview({
 			serviceName: "api",
 			environment: "production",
@@ -395,14 +456,13 @@ const multiEnvFixture = {
 			period: "previous",
 		}),
 	],
-	"custom_traces_breakdown:all": [summaryRow(1_005_000, 0.004, 130)],
+	digestTracesSummary: [summaryRow(1_005_000, 0.004, 130)],
 	// True namespace grain — a service's traffic can be split across namespaces,
 	// which is exactly what summing the overview rows could not express.
-	"custom_traces_breakdown:namespace": [
-		{ name: "edge", count: 700_000, errorRate: 0.003, p95Duration: 110 },
-		{ name: "checkout", count: 305_000, errorRate: 0.006, p95Duration: 210 },
+	digestNamespaceBreakdown: [
+		breakdownRow("edge", 700_000, 0.003, 110),
+		breakdownRow("checkout", 305_000, 0.006, 210),
 	],
-	"custom_traces_breakdown:namespace:previous": [],
 } satisfies WarehouseFixture
 
 const findService = (props: WeeklyDigestProps, environment: string) => {
@@ -508,7 +568,7 @@ describe("DigestService.generateDigestData", () => {
 	it.effect("reports a service with no previous week as new rather than +100%", () => {
 		const { layer } = makeHarness({
 			...multiEnvFixture,
-			service_overview_compare: [
+			digestServiceOverviewCompare: [
 				overview({ serviceName: "fresh", estimatedSpanCount: 50_000, period: "current" }),
 			],
 		})
@@ -524,7 +584,7 @@ describe("DigestService.generateDigestData", () => {
 	it.effect("suppresses a percentage computed off a negligible previous week", () => {
 		const { layer } = makeHarness({
 			...multiEnvFixture,
-			service_overview_compare: [
+			digestServiceOverviewCompare: [
 				overview({ serviceName: "spiky", estimatedSpanCount: 40_000, period: "current" }),
 				overview({ serviceName: "spiky", estimatedSpanCount: 3, period: "previous" }),
 			],
@@ -556,9 +616,9 @@ describe("DigestService.generateDigestData", () => {
 	it.effect("uses sample-weighted counts, so requests match the sparkline's source", () => {
 		const { layer } = makeHarness({
 			...multiEnvFixture,
-			custom_traces_timeseries: [
-				{ bucket: "2026-06-29 00:00:00", count: 500_000, errorRate: 0.004 },
-				{ bucket: "2026-06-30 00:00:00", count: 505_000, errorRate: 0.004 },
+			digestDailySeries: [
+				seriesRow("2026-06-29 00:00:00", 500_000, 0.004),
+				seriesRow("2026-06-30 00:00:00", 505_000, 0.004),
 			],
 		})
 		return Effect.gen(function* () {
@@ -576,7 +636,7 @@ describe("DigestService.generateDigestData", () => {
 	})
 
 	it.effect("scopes every warehouse query when the subscription names a slice", () => {
-		const seen: Array<{ pipeName: string; params: Record<string, unknown> }> = []
+		const seen: Array<SeenQuery> = []
 		const { layer } = makeHarness(multiEnvFixture, seen)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(TICK_MS)
@@ -587,31 +647,35 @@ describe("DigestService.generateDigestData", () => {
 			})
 
 			const scoped = seen.filter((call) =>
-				["service_overview_compare", "custom_traces_breakdown", "custom_traces_timeseries"].includes(
-					call.pipeName,
-				),
+				[
+					"digestServiceOverviewCompare",
+					"digestTracesSummary",
+					"digestDailySeries",
+					"digestNamespaceBreakdown",
+				].includes(call.context),
 			)
 			assert.isAbove(scoped.length, 0)
 			for (const call of scoped) {
-				assert.strictEqual(call.params.environments, "production")
-				assert.strictEqual(call.params.namespaces, "edge")
+				assert.include(call.sql, "DeploymentEnv IN ('production')")
+				assert.include(call.sql, "ServiceNamespace IN ('edge')")
 			}
 
-			// `errors_by_type` has a deployment_envs param but no namespace one.
-			const errors = seen.find((call) => call.pipeName === "errors_by_type")
-			assert.strictEqual(errors?.params.deployment_envs, "production")
+			// `error_events` has a deployment env column but no namespace one.
+			const errors = seen.find((call) => call.context === "digestTopErrors")
+			assert.include(errors?.sql, "DeploymentEnv IN ('production')")
+			assert.notInclude(errors?.sql, "ServiceNamespace")
 
 			// `service_usage` has neither column, so the scope is approximated by
 			// service membership and the email says so.
-			const usage = seen.find((call) => call.pipeName === "get_service_usage_compare")
-			assert.strictEqual(usage?.params.services, "api")
+			const usage = seen.find((call) => call.context === "digestServiceUsageCompare")
+			assert.include(usage?.sql, "ServiceName IN ('api')")
 			assert.isTrue(props.ingestion.approximate)
 			assert.deepStrictEqual(props.scope, { environments: ["production"], namespaces: ["edge"] })
 		}).pipe(Effect.provide(layer))
 	})
 
 	it.effect("leaves an unscoped digest unfiltered and exact", () => {
-		const seen: Array<{ pipeName: string; params: Record<string, unknown> }> = []
+		const seen: Array<SeenQuery> = []
 		const { layer } = makeHarness(multiEnvFixture, seen)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(TICK_MS)
@@ -619,9 +683,9 @@ describe("DigestService.generateDigestData", () => {
 			const props = yield* digest.generateDigestData(ORG_ID)
 
 			for (const call of seen) {
-				assert.isUndefined(call.params.environments)
-				assert.isUndefined(call.params.namespaces)
-				assert.isUndefined(call.params.services)
+				assert.notInclude(call.sql, "DeploymentEnv IN")
+				assert.notInclude(call.sql, "ServiceNamespace IN")
+				assert.notInclude(call.sql, "ServiceName IN")
 			}
 			assert.isFalse(props.ingestion.approximate)
 		}).pipe(Effect.provide(layer))
@@ -635,7 +699,7 @@ describe("DigestService.generateDigestData — comparison identity", () => {
 		// comparison on it made a service whose busiest namespace shifted look new.
 		const { layer } = makeHarness({
 			...multiEnvFixture,
-			service_overview_compare: [
+			digestServiceOverviewCompare: [
 				overview({
 					serviceName: "api",
 					serviceNamespace: "checkout",
@@ -676,7 +740,7 @@ describe("DigestService.generateDigestData — comparison identity", () => {
 			)
 		const { layer } = makeHarness({
 			...multiEnvFixture,
-			service_overview_compare: [...many("current"), ...many("previous")],
+			digestServiceOverviewCompare: [...many("current"), ...many("previous")],
 		})
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(TICK_MS)
@@ -695,22 +759,22 @@ describe("DigestService.generateDigestData — scope containment", () => {
 	it.effect("scopes errors by service membership, not just by environment", () => {
 		// `error_events` has no namespace column, so a namespace-only scope would
 		// otherwise pull top errors from the whole org into a scoped digest.
-		const seen: Array<{ pipeName: string; params: Record<string, unknown> }> = []
+		const seen: Array<SeenQuery> = []
 		const { layer } = makeHarness(multiEnvFixture, seen)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(TICK_MS)
 			const digest = yield* DigestService
 			yield* digest.generateDigestData(ORG_ID, { environments: [], namespaces: ["edge"] })
 
-			const errors = seen.find((call) => call.pipeName === "errors_by_type")
-			assert.strictEqual(errors?.params.services, "api")
-			assert.isUndefined(errors?.params.deployment_envs, "no environment in this scope")
+			const errors = seen.find((call) => call.context === "digestTopErrors")
+			assert.include(errors?.sql, "ServiceName IN ('api')")
+			assert.notInclude(errors?.sql, "DeploymentEnv IN", "no environment in this scope")
 		}).pipe(Effect.provide(layer))
 	})
 
 	it.effect("treats a scope that matches nothing as empty, not as unfiltered", () => {
-		const seen: Array<{ pipeName: string; params: Record<string, unknown> }> = []
-		const { layer } = makeHarness({ ...multiEnvFixture, service_overview_compare: [] }, seen)
+		const seen: Array<SeenQuery> = []
+		const { layer } = makeHarness({ ...multiEnvFixture, digestServiceOverviewCompare: [] }, seen)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(TICK_MS)
 			const digest = yield* DigestService
@@ -721,8 +785,8 @@ describe("DigestService.generateDigestData — scope containment", () => {
 
 			// Dropping the filter here would have shown org-wide ingestion and
 			// org-wide errors inside a digest claiming to cover one namespace.
-			assert.isUndefined(seen.find((call) => call.pipeName === "get_service_usage_compare"))
-			assert.isUndefined(seen.find((call) => call.pipeName === "errors_by_type"))
+			assert.isUndefined(seen.find((call) => call.context === "digestServiceUsageCompare"))
+			assert.isUndefined(seen.find((call) => call.context === "digestTopErrors"))
 			assert.strictEqual(props.ingestion.totalBytes, 0)
 			assert.deepStrictEqual(props.topErrors, [])
 		}).pipe(Effect.provide(layer))
@@ -736,13 +800,14 @@ describe("DigestService.generateDigestData — scope containment", () => {
 		affectedServicesCount: 1,
 		firstSeen: "2026-07-01 00:00:00",
 		lastSeen: "2026-07-05 00:00:00",
+		serviceNames: [],
 	}
 
 	it.effect("badges an error new only when the previous window genuinely lacks it", () => {
 		const { layer } = makeHarness({
 			...multiEnvFixture,
-			errors_by_type: [errorRow],
-			"errors_by_type:previous": [],
+			digestTopErrors: [errorRow],
+			digestPreviousErrors: [],
 		})
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(TICK_MS)
@@ -755,9 +820,9 @@ describe("DigestService.generateDigestData — scope containment", () => {
 
 	it.effect("does not badge every error new when the previous-window lookup fails", () => {
 		const { layer } = makeHarness(
-			{ ...multiEnvFixture, errors_by_type: [errorRow], "errors_by_type:previous": [] },
+			{ ...multiEnvFixture, digestTopErrors: [errorRow], digestPreviousErrors: [] },
 			undefined,
-			new Set(["errors_by_type:previous"]),
+			new Set(["digestPreviousErrors"]),
 		)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(TICK_MS)

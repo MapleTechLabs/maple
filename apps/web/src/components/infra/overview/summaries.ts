@@ -5,9 +5,17 @@
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
-import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import { countLabel, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import {
+	GCP_INFRA_COLUMNS,
+	formatGcpValue,
+	gcpWorkloadName,
+	gcpWorkloadTone,
+	type GcpFleetService,
+} from "../gcp/tabs"
 import type { ContainerScopeCounts } from "../container-summary-band"
 import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-summary-band"
 import type { HostRow } from "../host-table"
@@ -15,7 +23,14 @@ import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../pl
 import { railwayInScope } from "../railway/railway-service-table"
 import type { Tone } from "../severity-tokens"
 
-export type SourceId = "hosts" | "containers" | "kubernetes" | "cloudflare" | "railway" | "planetscale"
+export type SourceId =
+	| "hosts"
+	| "containers"
+	| "kubernetes"
+	| "cloudflare"
+	| "railway"
+	| "planetscale"
+	| "gcp"
 
 export type FindingTone = Extract<Tone, "crit" | "warn"> | "stale"
 
@@ -28,12 +43,16 @@ export type FindingTarget =
 	| { kind: "zone"; zoneName: string }
 	| { kind: "railway"; serviceId: string; environmentId: string }
 	| { kind: "planetscale"; database: string }
+	| { kind: "gcp"; service: GcpInfraServiceId; keys: ReadonlyArray<string> }
+	| { kind: "gcpService"; service: GcpInfraServiceId }
 
 export interface Finding {
 	readonly key: string
 	readonly source: SourceId
 	readonly tone: FindingTone
 	readonly title: string
+	/** The entity name `title` starts with, so a row can truncate the name and keep the metric. */
+	readonly subject?: string
 	readonly detail: string
 	readonly target: FindingTarget
 }
@@ -80,6 +99,7 @@ export function summarizeHosts(hosts: ReadonlyArray<HostRow>, referenceTime: str
 			key: `host:${host.hostName}`,
 			source: "hosts",
 			tone: "crit",
+			subject: host.hostName,
 			title: `${host.hostName} at ${formatPercent(values[worst] ?? 0)} ${METRIC_NAMES[worst]}`,
 			detail: `CPU ${formatPercent(host.cpuPct)}, memory ${formatPercent(host.memoryPct)}, disk ${formatPercent(host.diskPct)}`,
 			target: { kind: "host", hostName: host.hostName },
@@ -217,16 +237,17 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 		key: `zone:${zone.zoneName}`,
 		source: "cloudflare",
 		tone: errorRateLevel(zone.errorRate) === "crit" ? "crit" : "warn",
-		title: `${zone.zoneName} returning ${formatPercent(zone.errorRate)} 5xx`,
+		subject: zone.zoneName,
+		title: `${zone.zoneName} returning ${formatErrorRate(zone.errorRate)} 5xx`,
 		detail: `${formatNumber(zone.requests)} requests, origin p99 ${Math.round(zone.originP99Ms)}ms`,
 		target: { kind: "zone", zoneName: zone.zoneName },
 	}))
 
 	let requests = 0
-	let cacheHits = 0
+	let clientErrors = 0
 	for (const zone of zones) {
 		requests += zone.requests
-		cacheHits += zone.cacheHits
+		clientErrors += zone.errors4xx
 	}
 	return {
 		resources: countLabel(zones.length, "zone"),
@@ -235,7 +256,8 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 			{ key: "elevated", count: erroring.length - crit },
 			{ key: "saturated", count: crit },
 		],
-		headline: `${formatNumber(requests)} requests, ${formatPercent(requests > 0 ? cacheHits / requests : 0)} cached`,
+		// 4xx, not cache share: hits over all requests read "0.1% cached" for any API-heavy account.
+		headline: `${formatNumber(requests)} requests, ${formatPercent(requests > 0 ? clientErrors / requests : 0)} 4xx`,
 		headlineTone: worstTone(findings),
 		findings,
 	}
@@ -249,6 +271,7 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 		key: `railway:${row.environmentId}:${row.serviceId}`,
 		source: "railway",
 		tone: "crit",
+		subject: row.serviceName || row.serviceId,
 		title: `${row.serviceName || row.serviceId} at its resource limit`,
 		detail: `${row.projectName} / ${row.environmentName}`,
 		target: { kind: "railway", serviceId: row.serviceId, environmentId: row.environmentId },
@@ -265,6 +288,81 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 			saturated.length + elevated > 0
 				? `${countLabel(saturated.length + elevated, "service")} above 60% of limit`
 				: "all under 60% of limit",
+		headlineTone: worstTone(findings),
+		findings,
+	}
+}
+
+const gcpTitles = (fleet: ReadonlyArray<GcpFleetService>) =>
+	fleet.map(({ service }) => GCP_INFRA_SERVICES[service].title).join(", ")
+
+/**
+ * Google Cloud workloads by their busiest share of a limit and by their error rate. A service
+ * whose read failed is a finding of its own, and null when none could be read.
+ */
+export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSummary | null {
+	const unread = fleet.filter(({ failed }) => failed)
+	if (unread.length > 0 && unread.length === fleet.length) return null
+	const flagged = fleet
+		.flatMap(({ service, workloads }) =>
+			workloads.map((workload) => {
+				const tone = gcpWorkloadTone(workload)
+				// The column behind the tone: the error rate when it is as bad, else the busiest limit.
+				const format = workload.errors === tone ? "errorRate" : "percent"
+				const worst = GCP_INFRA_COLUMNS[service]
+					.map((spec, index) => ({
+						label: spec.label,
+						format: spec.format,
+						value: workload.values[index] ?? 0,
+					}))
+					.filter((column) => column.format === format)
+					.reduce((a, b) => (b.value > a.value ? b : a), { label: "", format, value: 0 })
+				return { service, workload, tone, worst }
+			}),
+		)
+		.filter((entry) => entry.tone !== "neutral")
+		// Critical before elevated, then the larger share first.
+		.sort((a, b) => (a.tone === b.tone ? b.worst.value - a.worst.value : a.tone === "crit" ? -1 : 1))
+	const workloadFindings = flagged.map(({ service, workload, tone, worst }): Finding => ({
+		key: `gcp:${service}:${workload.keys.join("/")}`,
+		source: "gcp",
+		tone: tone === "crit" ? "crit" : "warn",
+		// "orders-db at 93% disk", "api at 8.0% 5xx rate": an acronym keeps its capitals.
+		title: `${gcpWorkloadName(service, workload.keys)} at ${formatGcpValue(worst.format, worst.value)} ${worst.label.replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())}`,
+		detail: [GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)].join(" / "),
+		target: { kind: "gcp", service, keys: workload.keys },
+	}))
+	// Capped like every source: critical workloads, then the unread services (their workloads are
+	// unknown, not healthy: the tab says the same and offers the reload), then elevated ones.
+	const findings = [
+		...workloadFindings.filter((finding) => finding.tone === "crit"),
+		...unread.map(({ service }): Finding => ({
+			key: `gcp:${service}:unread`,
+			source: "gcp",
+			tone: "warn",
+			// The service first: a phone shows only the start of a title.
+			title: `${GCP_INFRA_SERVICES[service].title} metrics could not be read`,
+			detail: "Reload to try again",
+			target: { kind: "gcpService", service },
+		})),
+		...workloadFindings.filter((finding) => finding.tone !== "crit"),
+	].slice(0, MAX_FINDINGS_PER_SOURCE)
+	const total = fleet.reduce((sum, { workloads }) => sum + workloads.length, 0)
+	const crit = flagged.filter((entry) => entry.tone === "crit").length
+	return {
+		resources: countLabel(total, "workload"),
+		segments: [
+			{ key: "ok", count: okCount(total, flagged.length) },
+			{ key: "elevated", count: flagged.length - crit },
+			{ key: "saturated", count: crit },
+		],
+		headline:
+			[
+				...(unread.length > 0 ? [`${gcpTitles(unread)} not read`] : []),
+				...(flagged.length > 0
+					? [`${countLabel(flagged.length, "workload")} elevated or erroring`]
+					: []),
+			].join(", ") || (fleet.length > 0 ? gcpTitles(fleet) : "no metrics in this window"),
 		headlineTone: worstTone(findings),
 		findings,
 	}
@@ -316,6 +414,7 @@ export function summarizePlanetScale(databases: ReadonlyArray<PlanetScaleDatabas
 				key: `planetscale:${db.database}:${gauge.id}`,
 				source: "planetscale",
 				tone: gauge.tone,
+				subject: db.database,
 				title: gauge.title,
 				detail: gauge.detail,
 				target: { kind: "planetscale", database: db.database },

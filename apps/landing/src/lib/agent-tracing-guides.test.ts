@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { AGENT_GUIDE_CATEGORIES, AGENT_GUIDES } from "./agent-tracing-guides"
+import { AGENT_GATEWAY_CARDS, AGENT_GUIDE_CATEGORIES, AGENT_GUIDES } from "./agent-tracing-guides"
 
 const hrefs = (id: string) => AGENT_GUIDE_CATEGORIES.find((c) => c.id === id)?.cards.map((c) => c.href)
 
@@ -19,6 +19,12 @@ describe("AGENT_GUIDE_CATEGORIES", () => {
 	it("lists the any-language guide only under other languages", () => {
 		expect(hrefs("other")).toEqual(["/docs/agent-tracing/opentelemetry"])
 		expect(hrefs("typescript")).not.toContain("/docs/agent-tracing/opentelemetry")
+	})
+
+	it("lists gateways once on their own, not under a language", () => {
+		expect(AGENT_GATEWAY_CARDS.map((c) => c.href)).toContain("/docs/agent-tracing/openrouter")
+		const languageHrefs = AGENT_GUIDE_CATEGORIES.flatMap((c) => c.cards.map((card) => card.href))
+		expect(languageHrefs.some((href) => href.startsWith("/docs/agent-tracing/openrouter"))).toBe(false)
 	})
 
 	it("points every guide at a page", () => {

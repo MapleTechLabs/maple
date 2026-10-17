@@ -1,9 +1,51 @@
 import { Duration, Effect } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import type { AlertSeverity } from "@maple/domain/http"
 import { displayGroupKey, truncate } from "../../alert-formatting"
-import type { HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
+import type { DispatchContext } from "../context"
+import type { HttpRequestSpec, HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
 
 type Config = SecretConfigOf<"pagerduty">
+
+const EVENTS_URL = "https://events.pagerduty.com/v2/enqueue"
+
+/**
+ * A rule with both a warning and a critical tier pages critical under its own
+ * dedup key: re-triggering the warning alert's key would only update that alert,
+ * and an acknowledged alert does not page again, so an escalation could go
+ * unheard. Every other rule keeps the incident's single key, which is what its
+ * already-open alerts were raised under.
+ */
+const criticalHasOwnKey = (context: Pick<DispatchContext, "ruleSeverities">): boolean =>
+	context.ruleSeverities !== undefined &&
+	context.ruleSeverities.includes("warning") &&
+	context.ruleSeverities.includes("critical")
+
+const criticalDedupKey = (dedupeKey: string): string => `${dedupeKey}:critical`
+
+/**
+ * The tier a delivery's key is chosen from: the queued event's, unless the
+ * incident has since fallen below it. A critical trigger retried after a
+ * de-escalation must not re-open (and re-page) the alert it closed.
+ */
+const keySeverity = (context: Pick<DispatchContext, "severity" | "incidentSeverity">): AlertSeverity =>
+	context.severity === "critical" && context.incidentSeverity === "warning" ? "warning" : context.severity
+
+export const pagerDutyDedupKey = (
+	context: Pick<DispatchContext, "dedupeKey" | "ruleSeverities">,
+	severity: AlertSeverity,
+): string =>
+	severity === "critical" && criticalHasOwnKey(context)
+		? criticalDedupKey(context.dedupeKey)
+		: context.dedupeKey
+
+const resolveRequest = (integrationKey: string, dedupKey: string): HttpRequestSpec => ({
+	url: EVENTS_URL,
+	headers: { "content-type": "application/json" },
+	guarded: false,
+	sensitivePath: false,
+	body: JSON.stringify({ routing_key: integrationKey, event_action: "resolve", dedup_key: dedupKey }),
+})
 
 /**
  * PagerDuty Events API v2. The body is machine-facing, so `custom_details`
@@ -21,18 +63,24 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 		return {
 			// Fixed vendor host: nothing user-supplied to guard against, and the
 			// path carries no credential (the routing key rides in the body).
-			url: "https://events.pagerduty.com/v2/enqueue",
+			url: EVENTS_URL,
 			headers: { "content-type": "application/json" },
 			guarded: false,
 			sensitivePath: false,
 			body: JSON.stringify({
 				routing_key: input.config.integrationKey,
 				event_action: context.eventType === "resolve" ? "resolve" : "trigger",
-				dedup_key: context.dedupeKey,
+				// A resolve closes the warning-keyed alert here and the critical one
+				// in `followUps`.
+				dedup_key: pagerDutyDedupKey(
+					context,
+					context.eventType === "resolve" ? "warning" : keySeverity(context),
+				),
 				payload: {
 					summary: truncate(templated?.title ?? `${context.ruleName} ${context.eventType}`, 1024),
 					source: displayGroupKey(context.groupKey) ?? "maple-alerts",
-					severity: context.severity === "critical" ? "critical" : "warning",
+					// The tier the key was chosen for, so a stale critical event cannot raise the warning alert.
+					severity: keySeverity(context) === "critical" ? "critical" : "warning",
 					custom_details: {
 						...(templated ? { message: templated.body } : undefined),
 						ruleName: context.ruleName,
@@ -53,9 +101,25 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 			}),
 		}
 	},
+	// The critical alert closes when the incident resolves or falls back to
+	// warning. The rule may have dropped its critical tier since the key was
+	// minted, so an incident that peaked at critical closes it too. Resolving a
+	// key PagerDuty has never seen is a no-op.
+	followUps: (input) => {
+		const { context } = input
+		const mayHoldCriticalKey = criticalHasOwnKey(context) || context.incidentPeakSeverity === "critical"
+		// Judged by where the incident is now, not by the queued event: a warning
+		// reminder delivered after an escalation must leave the critical page open.
+		const closesCritical =
+			context.eventType === "resolve" ||
+			(context.eventType !== "test" && (context.incidentSeverity ?? context.severity) === "warning")
+		return mayHoldCriticalKey && closesCritical
+			? [resolveRequest(input.config.integrationKey, criticalDedupKey(context.dedupeKey))]
+			: []
+	},
 	ack: (input) => ({
 		providerMessage: "Delivered to PagerDuty",
-		providerReference: input.context.dedupeKey,
+		providerReference: pagerDutyDedupKey(input.context, keySeverity(input.context)),
 	}),
 }
 

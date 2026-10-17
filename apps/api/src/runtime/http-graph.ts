@@ -8,6 +8,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
+import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
 import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/billing-public.http"
@@ -48,9 +49,11 @@ import { V2TransportErrorBoundaryLive } from "@/routes/v2/error-envelope"
 import { HttpV2ErrorIssuesLive } from "@/routes/v2/error-issues.http"
 import { HttpV2IngestKeysLive } from "@/routes/v2/ingest-keys.http"
 import { HttpV2ChatIntegrationsLive } from "@/routes/v2/integrations-chat.http"
+import { HttpV2GcpIntegrationsLive } from "@/routes/v2/integrations-gcp.http"
 import { HttpV2PlanetScaleIntegrationsLive } from "@/routes/v2/integrations.http"
 import { HttpV2InvestigationsLive } from "@/routes/v2/investigations.http"
 import { HttpV2AgentFeedbackLive } from "@/routes/v2/agent-feedback.http"
+import { HttpV2McpConnectionsLive } from "@/routes/v2/mcp-connections.http"
 import { HttpV2MobileDevicesLive } from "@/routes/v2/mobile-devices.http"
 import { HttpV2OrganizationLive } from "@/routes/v2/organization.http"
 import { HttpV2InstrumentationRecommendationsLive } from "@/routes/v2/recommendations.http"
@@ -72,13 +75,13 @@ import {
 } from "@/routes/v2/telemetry.http"
 import { HttpV2WidgetSummaryLive } from "@/routes/v2/widget-summary.http"
 import { HttpV2WidgetCredentialsLive } from "@/routes/v2/widget-credentials.http"
-import { ApiAuthorizationLayer } from "@maple/backend/services/auth/ApiAuthorizationLayer"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationLive } from "@maple/backend/services/auth/ApiAuthorizationLive"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import {
-	RegionlessSessionAuthorizationLayer,
-	SessionAuthorizationLayer,
-} from "@maple/backend/services/auth/SessionAuthorizationLayer"
-import { UserSessionAuthorizationLayer } from "@maple/backend/services/auth/UserSessionAuthorizationLayer"
+	RegionlessSessionAuthorizationLive,
+	SessionAuthorizationLive,
+} from "@maple/backend/services/auth/SessionAuthorizationLive"
+import { UserSessionAuthorizationLive } from "@maple/backend/services/auth/UserSessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
@@ -115,7 +118,7 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 /**
  * The dashboard's private transport, served under `/internal/*`.
  *
- * Session-only: `SessionAuthorizationLayer` refuses API-key-shaped bearers, so
+ * Session-only: `SessionAuthorizationLive` refuses API-key-shaped bearers, so
  * nothing here is reachable as public API, and it is absent from the API reference.
  */
 const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
@@ -127,7 +130,15 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpAiModelsInternalLive,
 		),
 	),
-	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpBillingLive, HttpDemoLive, HttpDigestLive)),
+	Layer.provide(
+		Layer.mergeAll(
+			HttpAiTriageLive,
+			HttpBillingLive,
+			HttpDemoLive,
+			HttpDigestLive,
+			HttpOpenRouterKeyLive,
+		),
+	),
 	Layer.provide(
 		Layer.mergeAll(
 			HttpCodeReviewLive,
@@ -154,6 +165,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2IngestKeysLive,
 			HttpV2ChatIntegrationsLive,
 			HttpV2PlanetScaleIntegrationsLive,
+			HttpV2GcpIntegrationsLive,
 			HttpV2ErrorIssuesLive,
 			HttpV2AttributeMappingsLive,
 			HttpV2AuditLogLive,
@@ -168,6 +180,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AnomaliesLive,
 			HttpV2OrganizationLive,
 			HttpV2MobileDevicesLive,
+			HttpV2McpConnectionsLive,
 			HttpV2AgentFeedbackLive,
 			HttpV2SessionReplaysLive,
 			HttpV2TracesLive,
@@ -234,11 +247,11 @@ export const AllRoutes = Layer.mergeAll(ApiRoutes, ApiInternalRoutes, ApiV2Route
 )
 
 export const ApiAuthLive = Layer.mergeAll(
-	ApiAuthorizationLayer,
-	ApiAuthorizationV2Layer,
-	SessionAuthorizationLayer,
-	RegionlessSessionAuthorizationLayer,
-	UserSessionAuthorizationLayer,
+	ApiAuthorizationLive,
+	ApiAuthorizationV2Live,
+	SessionAuthorizationLive,
+	RegionlessSessionAuthorizationLive,
+	UserSessionAuthorizationLive,
 ).pipe(
 	Layer.provideMerge(ApiV2RateLimiter.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),

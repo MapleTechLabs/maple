@@ -121,7 +121,7 @@ The preview sends nothing. Use it to check that a threshold would not have fired
 
 ## Create a rule over the API
 
-Rules are available at `/v2/alerts/rules` on `https://api.maple.dev` (`https://api.eu.maple.dev` for EU organizations). Use an API key (`maple_ak_…`) from **Settings → API Keys**. Creating, updating, deleting and testing a rule requires the `alerts:write` scope and the org admin role.
+Rules are available at `/v2/alerts/rules` on `https://api.maple.dev` (`https://api.eu.maple.dev` for EU organizations). Use an API key (`maple_ak_…`) from **Settings → Keys**. Creating, updating, deleting and testing a rule requires the `alerts:write` scope and the org admin role.
 
 ```bash
 curl -X POST https://api.maple.dev/v2/alerts/rules \

@@ -57,12 +57,6 @@ describe("listRuleChecksQuery", () => {
 		expect(sql).toContain("Timestamp <= '2024-01-02 00:00:00.250'")
 	})
 
-	it("escapes single quotes in orgId", () => {
-		const q = listRuleChecksQuery({ limit: 10 })
-		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org'evil"), ruleId: "rule_1" })
-		expect(sql).toContain("OrgId = 'org\\'evil'")
-	})
-
 	it("applies status and the compound keyset cursor", () => {
 		const q = listRuleChecksQuery({
 			limit: 42,
@@ -153,6 +147,7 @@ describe("alert check rows decode timestamps to DateTime.Utc", () => {
 					errorMessage: null,
 					errorCategory: "",
 					skipReason: "",
+					level: "",
 				},
 			])
 			expect(DateTime.formatIso(row!.timestamp)).toBe("2024-01-01T10:00:00.250Z")

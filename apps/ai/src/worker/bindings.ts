@@ -16,9 +16,9 @@ import { Stage } from "alchemy/Stage"
 import { Effect, Layer, Option } from "effect"
 import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { McpToolsRateLimit, RateLimitBindingError, type RateLimiter } from "@maple/backend/platform/bindings"
-import { type ChatSessionNamespace, chatSessionsLayer } from "@maple/backend/platform/chat-sessions"
+import { type ChatSessionNamespace, layerChatSessions } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
+import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import {
 	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
 	MCP_TOOLS_RATE_LIMIT_REQUESTS,
@@ -83,7 +83,7 @@ export const WorkersAiGatewayLive = Layer.effect(WorkersAiGateway, bindWorkersAi
 )
 
 /** The binding layers the init needs. */
-export const AiBindingLayers = Layer.mergeAll(
+export const AiBindingsLive = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Workers.RateLimitBinding,
 	WorkersAiGatewayLive,
@@ -117,9 +117,9 @@ export const aiPorts = (
 	Layer.mergeAll(
 		Layer.succeed(WorkersAiGateway, workersAi),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
-		mapleDbConnectionLayer(env),
+		layerMapleDbConnection(env),
 		envPorts(env),
-		chatSessionsLayer(chatSessions, env),
+		layerChatSessions(chatSessions, env),
 	)
 
 export type AiPortsLayer = ReturnType<typeof aiPorts>

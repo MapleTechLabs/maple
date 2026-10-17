@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Ref, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
-import { OrgId, UserId } from "@maple/domain/http"
+import { DashboardNotFoundError, DashboardPersistenceError, OrgId, UserId } from "@maple/domain/http"
 import { DashboardPublicId, DashboardTemplatePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -16,7 +16,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
-import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
@@ -52,13 +52,49 @@ const testConfig = () =>
 
 type Harness = ReturnType<typeof makeHarness>
 
+/** How the next `DashboardPersistenceService.get` should fail, if at all. */
+type DashboardGetFailure = "missing" | "unavailable"
+
 const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
+	// Passthrough unless a test arms a failure: the real store cannot fail a read
+	// on demand, nor keep a share live once its dashboard row is gone.
+	const dashboardGetFailure = Ref.makeUnsafe(Option.none<DashboardGetFailure>())
+	const persistenceLive = Layer.effect(
+		DashboardPersistenceService,
+		Effect.gen(function* () {
+			const live = yield* DashboardPersistenceService
+			return {
+				...live,
+				get: (orgId: OrgId, dashboardId: Parameters<typeof live.get>[1]) =>
+					Ref.get(dashboardGetFailure).pipe(
+						Effect.flatMap(
+							Option.match({
+								onNone: () => live.get(orgId, dashboardId),
+								onSome: (failure) =>
+									failure === "missing"
+										? Effect.fail(
+												new DashboardNotFoundError({
+													dashboardId,
+													message: "Dashboard not found",
+												}),
+											)
+										: Effect.fail(
+												new DashboardPersistenceError({
+													message: "connection reset",
+												}),
+											),
+							}),
+						),
+					),
+			}
+		}),
+	).pipe(Layer.provide(DashboardPersistenceService.layer))
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
 		AuthService.layer,
-		DashboardPersistenceService.layer,
+		persistenceLive,
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
@@ -69,7 +105,7 @@ const makeHarness = () => {
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
-		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
@@ -113,6 +149,8 @@ const makeHarness = () => {
 		testDb,
 		runtime,
 		ORG,
+		failDashboardGet: (failure: DashboardGetFailure) =>
+			Effect.runSync(Ref.set(dashboardGetFailure, Option.some(failure))),
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -321,7 +359,8 @@ describe("v2 dashboards over HTTP", () => {
 		expect(postgres.requirements).toEqual([postgres.requirement.label])
 
 		const cloudflare = listed.body.data.find((t: { name: string }) => t.name === "Cloudflare Edge")
-		expect(cloudflare.requirement).toMatchObject({ kind: "integration", missing: "not connected" })
+		expect(cloudflare.requirement).toMatchObject({ kind: "integration" })
+		expect(cloudflare.requirement.missing).toBeUndefined()
 
 		const blank = listed.body.data.find((t: { name: string }) => t.name === "Blank Dashboard")
 		expect(blank.requirement).toBeNull()
@@ -377,6 +416,35 @@ describe("v2 dashboards over HTTP", () => {
 		)
 		expect(missing.status).toBe(404)
 		expect(missing.body.error.code).toBe("dashboard_template_not_found")
+
+		await harness.dispose()
+	})
+
+	it("keeps a template's tabs and variables on the dashboard it creates", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:read", "dashboards:write"])
+
+		const listed = await harness.request("GET", "/v2/dashboards/templates?limit=100", key.secret)
+		const gcp = listed.body.data.find((t: { name: string }) => t.name === "Google Cloud")
+		const created = await harness.request(
+			"POST",
+			`/v2/dashboards/templates/${gcp.id}/instantiate`,
+			key.secret,
+			{ parameters: { project_id: "acme-prod" } },
+		)
+		expect(created.status).toBe(200)
+
+		const read = await harness.request("GET", `/v2/dashboards/${created.body.id}`, key.secret)
+		const [section] = read.body.sections
+		expect(section.tabs.map((tab: { title: string }) => tab.title)).toContain("Cloud SQL")
+		const tabIds = new Set(section.tabs.map((tab: { id: string }) => tab.id))
+		for (const widget of read.body.widgets) expect(tabIds).toContain(widget.tab_id)
+		expect(read.body.variables.map((v: { name: string }) => v.name)).toEqual([
+			"project",
+			"region",
+			"workload",
+		])
+		expect(read.body.variables[0].default_value).toBe("acme-prod")
 
 		await harness.dispose()
 	})
@@ -447,7 +515,7 @@ describe("v2 dashboard shares", () => {
 	 */
 	const resolve = (harness: Harness, token: string) =>
 		harness.runtime.runPromise(
-			SharedDashboardService.resolveByToken(token).pipe(
+			SharedDashboardService.use((shares) => shares.resolveByToken(token)).pipe(
 				Effect.map((resolved) => encodeDashboardPublicId(resolved.share.dashboardId)),
 				Effect.catchTag("@maple/http/errors/ShareNotFoundError", () =>
 					Effect.succeed("__not_found__"),
@@ -458,7 +526,7 @@ describe("v2 dashboard shares", () => {
 	/** The mode a token actually grants, or `"__not_found__"`. */
 	const resolveMode = (harness: Harness, token: string) =>
 		harness.runtime.runPromise(
-			SharedDashboardService.resolveByToken(token).pipe(
+			SharedDashboardService.use((shares) => shares.resolveByToken(token)).pipe(
 				Effect.map((resolved) => resolved.share.mode),
 				Effect.catchTag("@maple/http/errors/ShareNotFoundError", () =>
 					Effect.succeed("__not_found__"),
@@ -612,6 +680,61 @@ describe("v2 dashboard shares", () => {
 		// A live link to a deleted dashboard is the failure mode the foreign key's
 		// ON DELETE CASCADE exists to prevent.
 		expect(await resolve(harness, token)).toBe("__not_found__")
+
+		await harness.dispose()
+	})
+
+	/** A public link plus its preview-image id, minted while the board still reads. */
+	const openPublicShare = async (harness: Harness, key: string) => {
+		const id = await createDashboard(harness, key)
+		const shared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key, { mode: "public" })
+		const token: string = shared.body.token
+		const meta = await harness.request("POST", "/v2/share/og-meta", undefined, { token })
+		expect(meta.status).toBe(200)
+		const ogId: string = meta.body.imagePath.slice("/share/og/".length, -".png".length)
+		return { token, ogId }
+	}
+
+	it("answers a live link whose dashboard is gone exactly like an unknown token", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const { token, ogId } = await openPublicShare(harness, key.secret)
+
+		const unknown = await harness.request("POST", "/v2/share/resolve", undefined, {
+			token: "not-a-token",
+		})
+		expect(unknown.status).toBe(404)
+		expect(unknown.body.error.code).toBe("share_not_found")
+
+		harness.failDashboardGet("missing")
+		const reads = [
+			await harness.request("POST", "/v2/share/resolve", undefined, { token }),
+			await harness.request("POST", "/v2/share/og-meta", undefined, { token }),
+			await harness.request("POST", "/v2/share/og-card", undefined, { ogId }),
+		]
+		for (const read of reads) {
+			expect(read.status).toBe(404)
+			expect(read.body).toEqual(unknown.body)
+		}
+
+		await harness.dispose()
+	})
+
+	it("reports a failed dashboard read as a 503, never as a missing link", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const { token, ogId } = await openPublicShare(harness, key.secret)
+
+		harness.failDashboardGet("unavailable")
+		const reads = [
+			await harness.request("POST", "/v2/share/resolve", undefined, { token }),
+			await harness.request("POST", "/v2/share/og-meta", undefined, { token }),
+			await harness.request("POST", "/v2/share/og-card", undefined, { ogId }),
+		]
+		for (const read of reads) {
+			expect(read.status).toBe(503)
+			expect(read.body.error.code).toBe("share_persistence_failed")
+		}
 
 		await harness.dispose()
 	})

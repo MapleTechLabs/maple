@@ -1,3 +1,4 @@
+import { SpanPositionBar } from "@maple/ui/components/traces/span-position-bar"
 import { useState } from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { XmarkIcon, ClockIcon, CircleInfoIcon, ServerIcon } from "@/components/icons"
@@ -16,19 +17,25 @@ import { type Log, type LogsResponse } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "@/components/logs/log-detail-sheet"
 import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
-import { formatDuration } from "@maple/ui/lib/format"
+import { formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
 import { getCacheInfo, cacheResultStyles } from "@maple/ui/lib/cache"
 import { getCloudPlatform, outcomeBadgeStyle } from "@maple/ui/lib/cloud-platforms"
 import { GlobeIcon } from "@maple/ui/components/icons"
-import { getServiceColor } from "@maple/ui/lib/colors"
+import { calculateSelfTime, getServiceColor } from "@maple/ui/lib/colors"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import type { SpanNode, SpanDetailResult } from "@/api/warehouse/traces"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { getSpanDetailResultAtom, listLogsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { CopyableValue, AttributesSection, ResourceAttributesSection } from "@/components/attributes"
+import {
+	CopyableValue,
+	SelectableValue,
+	AttributesSection,
+	ResourceAttributesSection,
+} from "@/components/attributes"
 import { TraceAttributeFilterProvider } from "./trace-attribute-filter-provider"
+import { SpanEventsSection } from "./span-events-section"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
@@ -42,45 +49,9 @@ interface SpanDetailPanelProps {
 	/** Start of the whole trace (earliest span start) — anchors the position-in-trace bar. */
 	traceStartTime: string
 	totalDurationMs: number
+	/** Selects another span of the trace; makes the parent span ID a link to it. */
+	onSelectSpanId?: (spanId: string) => void
 	className?: string
-}
-
-/**
- * Where this span sits inside the whole trace: a muted track spanning the
- * trace's wall-clock time, with the span's own window in its service color.
- * Offsets are clamped so clock-skewed spans never paint outside the track.
- */
-function SpanPositionBar({
-	span,
-	traceStartTime,
-	totalDurationMs,
-	color,
-}: {
-	span: SpanNode
-	traceStartTime: string
-	totalDurationMs: number
-	color: string
-}) {
-	const offsetMs = new Date(span.startTime).getTime() - new Date(traceStartTime).getTime()
-	if (!Number.isFinite(offsetMs) || totalDurationMs <= 0) return null
-
-	const offsetPct = Math.min(Math.max((offsetMs / totalDurationMs) * 100, 0), 100)
-	const widthPct = Math.min(Math.max((span.durationMs / totalDurationMs) * 100, 0.75), 100 - offsetPct)
-
-	return (
-		<div className="py-1">
-			<div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
-				<div
-					className="absolute inset-y-0 rounded-full"
-					style={{ left: `${offsetPct}%`, width: `${widthPct}%`, backgroundColor: color }}
-				/>
-			</div>
-			<div className="mt-1 flex justify-between text-3xs text-muted-foreground tabular-nums">
-				<span>+{formatDuration(Math.max(offsetMs, 0))}</span>
-				<span>{formatDuration(totalDurationMs)} total</span>
-			</div>
-		</div>
-	)
 }
 
 const LOG_LIMIT = 100
@@ -181,6 +152,7 @@ export function SpanDetailPanel({
 	onClose,
 	traceStartTime,
 	totalDurationMs,
+	onSelectSpanId,
 	className,
 }: SpanDetailPanelProps) {
 	const { effectiveTimezone } = useTimezonePreference()
@@ -219,6 +191,9 @@ export function SpanDetailPanel({
 	const platform = getCloudPlatform(detailAttrs?.spanAttributes ?? span.spanAttributes)
 
 	const serviceColor = getServiceColor(span.serviceName)
+	// Self time only differs from the duration once there are children to wait on.
+	const selfTimeMs = span.children.length > 0 ? calculateSelfTime(span, span.children) : null
+	const traceShare = totalDurationMs > 0 ? span.durationMs / totalDurationMs : null
 
 	return (
 		<div className={cn("flex flex-col h-full bg-background overflow-hidden", className)}>
@@ -230,24 +205,27 @@ export function SpanDetailPanel({
 					style={{ backgroundColor: serviceColor }}
 				/>
 				<div className="flex-1 min-w-0 mr-2 overflow-hidden">
-					<CopyableValue value={span.spanName} className="block min-w-0 overflow-hidden">
-						<div className="min-w-0">
-							<HttpSpanLabel
-								spanName={span.spanName}
-								spanAttributes={span.spanAttributes}
-								spanKind={span.spanKind}
-								textClassName="font-semibold text-sm"
-							/>
-						</div>
-					</CopyableValue>
-					<div className="flex items-center gap-1.5 mt-0.5">
+					<SelectableValue
+						value={span.spanName}
+						label="span name"
+						className="flex min-w-0 items-center"
+						textClassName="min-w-0 flex-1"
+					>
+						<HttpSpanLabel
+							spanName={span.spanName}
+							spanAttributes={span.spanAttributes}
+							spanKind={span.spanKind}
+							textClassName="font-semibold text-sm"
+						/>
+					</SelectableValue>
+					<div className="flex min-w-0 items-center gap-1.5 mt-0.5">
 						<ServiceDot serviceName={span.serviceName} size="sm" />
-						<CopyableValue value={span.serviceName}>
+						<CopyableValue value={span.serviceName} className="min-w-0 truncate">
 							<span className="font-mono text-3xs" style={{ color: serviceColor }}>
 								{span.serviceName}
 							</span>
 						</CopyableValue>
-						<span className="text-3xs text-muted-foreground">{kindLabel}</span>
+						<span className="shrink-0 text-3xs text-muted-foreground">{kindLabel}</span>
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-0.5">
@@ -270,6 +248,19 @@ export function SpanDetailPanel({
 							</CopyableValue>
 						</span>
 					</div>
+					{selfTimeMs !== null && (
+						<span
+							className="font-mono text-muted-foreground"
+							title="Time not spent in child spans"
+						>
+							self <span className="text-foreground">{formatDuration(selfTimeMs)}</span>
+						</span>
+					)}
+					{traceShare !== null && !span.isMissing && (
+						<span className="font-mono text-muted-foreground">
+							{formatPercent(traceShare, { floor: 0.001 })} of trace
+						</span>
+					)}
 					<Badge variant="outline" size="xs" className={statusStyle}>
 						{span.statusCode || "Unset"}
 					</Badge>
@@ -417,9 +408,26 @@ export function SpanDetailPanel({
 										</KeyValue>
 										{span.parentSpanId && (
 											<KeyValue mono label="Parent span ID">
-												<CopyableValue value={span.parentSpanId}>
-													{span.parentSpanId}
-												</CopyableValue>
+												{onSelectSpanId ? (
+													// The copy button sits beside the link, not around it.
+													<SelectableValue
+														value={span.parentSpanId}
+														label="parent span ID"
+													>
+														<button
+															type="button"
+															className="font-mono underline decoration-dotted underline-offset-2 hover:text-primary"
+															title="Select the parent span"
+															onClick={() => onSelectSpanId(span.parentSpanId)}
+														>
+															{span.parentSpanId}
+														</button>
+													</SelectableValue>
+												) : (
+													<CopyableValue value={span.parentSpanId}>
+														{span.parentSpanId}
+													</CopyableValue>
+												)}
 											</KeyValue>
 										)}
 									</KeyValueList>
@@ -466,6 +474,7 @@ export function SpanDetailPanel({
 									))
 									.onSuccess((detail) => (
 										<>
+											<SpanEventsSection events={detail.events} />
 											<TraceAttributeFilterProvider scope="span">
 												<AttributesSection
 													attributes={detail.spanAttributes}

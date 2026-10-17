@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { isValidRawSql, rawAlertSampleCountWarning, RawSqlText, rawSqlIssue } from "./raw-sql"
+import { rawAlertSampleCountWarning, RawSqlText, rawSqlIssue } from "./raw-sql"
 
 const ok = "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 
@@ -140,14 +140,6 @@ describe("rawSqlIssue", () => {
 
 	it("does not mistake a column named settings or format for a clause", () => {
 		expect(rawSqlIssue("SELECT settings, format FROM t WHERE $__orgFilter")).toBeNull()
-	})
-})
-
-describe("isValidRawSql", () => {
-	it("mirrors rawSqlIssue", () => {
-		expect(isValidRawSql(ok)).toBe(true)
-		expect(isValidRawSql("SELECT 1")).toBe(false)
-		expect(isValidRawSql("SELECT count() FROM logs WHERE $__orgFilter", "alert")).toBe(false)
 	})
 })
 

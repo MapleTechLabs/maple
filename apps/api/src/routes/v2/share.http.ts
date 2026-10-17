@@ -28,6 +28,7 @@ import {
 	ShareNotConfiguredError,
 	ShareNotFoundError,
 	ShareOgCardResponse,
+	SharePersistenceError,
 	ShareOgMetaResponse,
 	ShareRateLimitedError,
 	ShareSignInRequiredError,
@@ -37,6 +38,7 @@ import {
 	ShareWrongOrgError,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
+import type { DashboardId } from "@maple/domain/primitives"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { hashShareToken, shareOgId, verifyAlertChartId, verifyChatChartId, verifyShareOgId } from "@maple/db"
 import { ChatSessions } from "@maple/backend/platform/bindings"
@@ -80,13 +82,25 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		const widgetData = yield* DashboardWidgetDataService
 		const warehouse = yield* WarehouseQueryService
 
+		// A dashboard deleted (or no longer decodable) under a live share reads as
+		// "no such link", identical to an unknown token; a database failure stays a 503.
+		const sharedDocument = (orgId: OrgId, dashboardId: DashboardId) =>
+			persistence.get(orgId, dashboardId).pipe(
+				Effect.catchTags({
+					"@maple/http/errors/DashboardNotFoundError": () => notFound,
+					"@maple/http/errors/DashboardStoredConfigInvalidError": () => notFound,
+					"@maple/http/errors/DashboardPersistenceError": (error) =>
+						Effect.fail(new SharePersistenceError({ message: error.message, cause: error })),
+				}),
+			)
+
 		/**
 		 * Two keys, both must pass: per token, so a leaked link cannot be scraped
 		 * without bound, and per client IP, so one actor cannot fan out across many
 		 * links. Fails open, like the v2 limiter — a limiter outage must not take
 		 * every shared dashboard down with it.
 		 */
-		const enforceRateLimit = Effect.fn("share.rateLimit")(function* (tokenHash: string) {
+		const enforceRateLimit = Effect.fn("HttpV2SharePublic.rateLimit")(function* (tokenHash: string) {
 			const request = yield* HttpServerRequest.HttpServerRequest
 			const ip = request.headers["cf-connecting-ip"]
 			// No `cf-connecting-ip` means this is not behind Cloudflare — self-hosted
@@ -118,7 +132,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		 * traffic can never exhaust the bucket protecting the people reading the
 		 * board.
 		 */
-		const enforceOgRateLimit = Effect.fn("share.ogRateLimit")(function* (shareKey: string) {
+		const enforceOgRateLimit = Effect.fn("HttpV2SharePublic.ogRateLimit")(function* (shareKey: string) {
 			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(shareKey.slice(0, 24)))
 			if (outcome === "limited") {
 				return yield* Effect.fail(
@@ -139,7 +153,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		 * knew an org id fill that bucket with ids that never verify. The signature
 		 * is a digest of the whole payload, so it differs from the first character.
 		 */
-		const enforceChartRateLimit = Effect.fn("share.chartRateLimit")(function* (chartId: string) {
+		const enforceChartRateLimit = Effect.fn("HttpV2SharePublic.chartRateLimit")(function* (
+			chartId: string,
+		) {
 			const signature = chartId.slice(chartId.indexOf(".") + 1)
 			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(signature.slice(0, 24)))
 			if (outcome === "limited") {
@@ -180,7 +196,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		 * cost the card its byline, not its render. Only the org's public
 		 * identity is read; nothing here reaches for the person who made the link.
 		 */
-		const ogOrg = Effect.fn("share.ogOrg")(function* (orgId: OrgId) {
+		const ogOrg = Effect.fn("HttpV2SharePublic.ogOrg")(function* (orgId: OrgId) {
 			const info = yield* Effect.option(organizations.retrieve(orgId))
 			if (Option.isNone(info)) return undefined
 
@@ -199,7 +215,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		 * The single funnel every handler goes through, so mode enforcement cannot
 		 * be forgotten on one endpoint and present on another.
 		 */
-		const openShare = Effect.fn("share.open")(function* (token: string) {
+		const openShare = Effect.fn("HttpV2SharePublic.open")(function* (token: string) {
 			const hmacKey = Option.map(env.MAPLE_SHARE_TOKEN_HMAC_KEY, Redacted.value)
 			// Rate-limited on the hash, so the raw token never becomes a limiter key.
 			if (Option.isSome(hmacKey)) yield* enforceRateLimit(hashShareToken(token, hmacKey.value))
@@ -237,11 +253,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 				}
 			}
 
-			// A dashboard deleted out from under a live share must read as "no such
-			// link", identical to an unknown token — never as a distinguishable 500.
-			const document = yield* persistence
-				.get(orgId, share.dashboardId)
-				.pipe(Effect.catch(() => notFound))
+			const document = yield* sharedDocument(orgId, share.dashboardId)
 
 			return { share, orgId, document }
 		})
@@ -393,9 +405,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// something the anonymous caller does not get to learn.
 					if (share.mode !== "public") return yield* notFound
 
-					const document = yield* persistence
-						.get(orgId, share.dashboardId)
-						.pipe(Effect.catch(() => notFound))
+					const document = yield* sharedDocument(orgId, share.dashboardId)
 
 					const dashboard = redactForShare(document, share.widgetId ?? null)
 					if (dashboard === null) return yield* notFound
@@ -423,9 +433,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// the link stops resolving.
 					const share = yield* shares.resolvePublicById(shareId)
 
-					const document = yield* persistence
-						.get(share.orgId, share.dashboardId)
-						.pipe(Effect.catch(() => notFound))
+					const document = yield* sharedDocument(share.orgId, share.dashboardId)
 
 					const dashboard = redactForShare(document, share.widgetId)
 					if (dashboard === null) return yield* notFound

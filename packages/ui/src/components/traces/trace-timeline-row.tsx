@@ -5,9 +5,14 @@ import { cn } from "../../lib/utils"
 import { getServiceColor } from "../../lib/colors"
 import { countLabel, formatDuration } from "../../lib/format"
 import { describeSpan } from "../../lib/span-category"
+import { spanEventMarkers, type TimelineSpanEvent } from "../../lib/span-event-markers"
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
 import type { TimelineBar } from "./trace-timeline-types"
 import { DEPTH_INDENT, ROW_HEIGHT } from "./trace-timeline-types"
-import { TONE_TEXT } from "../../lib/tone"
+
+/** Indent stops growing past this depth so deep traces keep room for the label. */
+const MAX_INDENT_DEPTH = 12
+import { TONE_FILL, TONE_TEXT } from "../../lib/tone"
 
 interface TraceTimelineRowProps {
 	bar: TimelineBar
@@ -22,6 +27,8 @@ interface TraceTimelineRowProps {
 	matched: boolean
 	/** A single-service trace repeats one name down every row — the header already said it. */
 	showService: boolean
+	/** Span events, drawn as ticks along the bar. */
+	events?: ReadonlyArray<TimelineSpanEvent>
 	onSelect: (spanId: string) => void
 	/** `wholeSubtree` comes from an Alt/Option-click. */
 	onToggleCollapse: (spanId: string, wholeSubtree: boolean) => void
@@ -53,6 +60,7 @@ function TraceTimelineRowImpl({
 	dimmed,
 	matched,
 	showService,
+	events,
 	onSelect,
 	onToggleCollapse,
 	onZoomSpan,
@@ -62,6 +70,7 @@ function TraceTimelineRowImpl({
 	const { category, cacheInfo } = describeSpan(bar.span)
 	const CategoryIcon = category.Icon
 	const durationLabel = formatDuration(bar.span.durationMs)
+	const indentDepth = Math.min(bar.depth, MAX_INDENT_DEPTH)
 
 	return (
 		<div
@@ -87,11 +96,11 @@ function TraceTimelineRowImpl({
 				// A container, so the trailing chips can drop out at narrow column widths without a
 				// re-render: a resize drag only rewrites `--sidebar-w`.
 				className="@container/label sticky left-0 z-10 relative flex items-center gap-1 shrink-0 border-r border-border bg-inherit pr-2 text-2xs"
-				style={{ width: "var(--sidebar-w)", paddingLeft: bar.depth * DEPTH_INDENT + 4 }}
+				style={{ width: "var(--sidebar-w)", paddingLeft: indentDepth * DEPTH_INDENT + 4 }}
 			>
 				{/* Ancestor indent guides */}
-				{bar.depth > 0 &&
-					Array.from({ length: bar.depth }).map((_, level) => (
+				{indentDepth > 0 &&
+					Array.from({ length: indentDepth }).map((_, level) => (
 						<span
 							key={level}
 							aria-hidden
@@ -103,6 +112,14 @@ function TraceTimelineRowImpl({
 					className="shrink-0"
 					style={{ width: 3, height: ROW_HEIGHT - 8, backgroundColor: bar.borderColor }}
 				/>
+				{bar.depth > MAX_INDENT_DEPTH && (
+					<span
+						className="shrink-0 font-mono text-3xs tabular-nums text-muted-foreground"
+						title={`Depth ${bar.depth}`}
+					>
+						L{bar.depth}
+					</span>
+				)}
 				{bar.hasChildren ? (
 					<button
 						type="button"
@@ -217,6 +234,15 @@ function TraceTimelineRowImpl({
 					</span>
 				</div>
 
+				{events && events.length > 0 && (
+					<SpanEventMarkers
+						events={events}
+						spanStartMs={bar.offsetStartMs}
+						durationMs={bar.span.durationMs}
+						onHover={onHover}
+					/>
+				)}
+
 				{/* Clipping chevrons, pinned to the cell edges (Jaeger). Toggled by the decoration
 				    pass — CSS can't tell whether the clamp above actually bit. */}
 				<span
@@ -236,6 +262,71 @@ function TraceTimelineRowImpl({
 					›
 				</span>
 			</div>
+		</div>
+	)
+}
+
+/**
+ * Event ticks over the bar, positioned on the time axis with the same `--vp0`/`--vpk` transform
+ * as the bar, so pan and zoom move them for free and a clamped bar can't shift them.
+ * Exceptions take the error colour.
+ */
+function SpanEventMarkers({
+	events,
+	spanStartMs,
+	durationMs,
+	onHover,
+}: {
+	events: ReadonlyArray<TimelineSpanEvent>
+	spanStartMs: number
+	durationMs: number
+	onHover: TraceTimelineRowProps["onHover"]
+}) {
+	const markers = React.useMemo(
+		() => spanEventMarkers(events, spanStartMs, durationMs),
+		[events, spanStartMs, durationMs],
+	)
+	return (
+		<div
+			className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2"
+			style={{ height: ROW_HEIGHT - 8 }}
+		>
+			{markers.map((marker, index) => (
+				<Tooltip key={index}>
+					<TooltipTrigger
+						render={
+							<span
+								data-span-event=""
+								tabIndex={0}
+								aria-label={`${marker.name || "(unnamed event)"} at ${marker.offsetLabel}`}
+								className="pointer-events-auto absolute -top-0.5 -bottom-0.5 z-[1] flex w-2 -translate-x-1/2 justify-center"
+								// Clamped like the bar: off-view markers stay just outside the clipping cell.
+								style={{
+									left: `clamp(-10%, calc((${marker.atMs} - var(--vp0)) * var(--vpk) * 1%), 110%)`,
+								}}
+								// The marker has its own tooltip; keep the span tooltip out of its way.
+								onMouseEnter={() => onHover(null, null)}
+								onMouseMove={(e) => e.stopPropagation()}
+							/>
+						}
+					>
+						<span
+							className={cn(
+								"h-full w-0.5 rounded-full",
+								marker.isException ? TONE_FILL.crit : "bg-foreground/55",
+							)}
+						/>
+					</TooltipTrigger>
+					<TooltipContent side="top" className="text-xs">
+						<span className={cn("font-mono", marker.isException && TONE_TEXT.crit)}>
+							{marker.name || "(unnamed event)"}
+						</span>{" "}
+						<span className="font-mono tabular-nums text-muted-foreground">
+							{marker.offsetLabel}
+						</span>
+					</TooltipContent>
+				</Tooltip>
+			))}
 		</div>
 	)
 }

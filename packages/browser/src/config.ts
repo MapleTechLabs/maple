@@ -3,6 +3,7 @@ import {
 	type MapleIdentity,
 	type MapleRegion,
 	normalizeIdentity,
+	type Persistence,
 	type ResolvedIdentity,
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
@@ -99,6 +100,13 @@ export interface MapleBrowserConfig extends SignalOptions {
 		 */
 		readonly persistVisitorId?: boolean
 		/**
+		 * `"memory"` keeps everything in memory: no cookies, localStorage,
+		 * sessionStorage or IndexedDB, and no visitor id. Each page load is a new
+		 * session, so a reload splits a replay, and `transport.offline` keeps
+		 * nothing. Default `"browser"`.
+		 */
+		readonly persistence?: Persistence
+		/**
 		 * Scope the visitor-id cookie to the registered domain, so a marketing site
 		 * and an app on sibling subdomains (`example.com` and `app.example.com`)
 		 * resolve to the same visitor and a pre-signup visit links to the account it
@@ -152,6 +160,7 @@ export interface ResolvedConfig extends ResolvedSignalOptions {
 	readonly maskAllInputs: boolean
 	readonly maskAllText: boolean
 	readonly persistVisitorId: boolean
+	readonly persistence: Persistence
 	readonly crossSubdomainCookie: boolean
 	readonly cookieDomain: string | undefined
 	readonly requireConsent: boolean
@@ -202,6 +211,7 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,
 		maskAllText: config.privacy?.maskAllText ?? false,
 		persistVisitorId: config.privacy?.persistVisitorId ?? true,
+		persistence: config.privacy?.persistence ?? "browser",
 		crossSubdomainCookie: config.privacy?.crossSubdomainCookie ?? true,
 		cookieDomain: config.privacy?.cookieDomain,
 		requireConsent: config.privacy?.requireConsent ?? false,

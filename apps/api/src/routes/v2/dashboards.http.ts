@@ -217,7 +217,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 		// code paths: the two sets of endpoints differ only in the scope they pass,
 		// so they run the same four operations rather than a parallel copy of each
 		// that could drift.
-		const openScope = Effect.fn("dashboards.openShareScope")(function* (
+		const openScope = Effect.fn("HttpV2Dashboards.openShareScope")(function* (
 			dashboardId: DashboardId,
 			widgetId: string | null,
 		) {
@@ -602,14 +602,10 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 								),
 						})
 
+						// The whole build, so a template's sections and variables come along.
 						const portable = new PortableDashboardDocument({
+							...built,
 							name: payload.name ?? built.name,
-							...(built.description !== undefined
-								? { description: built.description }
-								: undefined),
-							...(built.tags !== undefined ? { tags: built.tags } : undefined),
-							timeRange: built.timeRange,
-							widgets: built.widgets,
 						})
 						const tenant = yield* CurrentTenant.Context
 						const dashboard = yield* persistence.create(tenant.orgId, tenant.userId, portable)

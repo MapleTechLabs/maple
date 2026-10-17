@@ -7,7 +7,7 @@ import { AnimatePresence } from "motion/react"
 import { Link } from "@tanstack/react-router"
 import { Button } from "@maple/ui/components/ui/button"
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
-import { CatalogPlan } from "@maple/domain/http"
+import { CatalogPlan, CatalogPlanItem, CatalogPlanItemPrice } from "@maple/domain/http"
 import { STEP_IDS } from "@/atoms/quick-start-atoms"
 import type { OnboardingRole } from "@/lib/onboarding-role"
 import { OnboardingLayout } from "@/components/onboarding/onboarding-layout"
@@ -17,12 +17,33 @@ import { StepPlanLayout } from "@/components/onboarding/step-plan"
 import { PlanCards } from "@/components/settings/pricing-cards"
 
 // Illustrative catalog only. This lab never mounts billing or seed actions.
+const meteredItem = (
+	featureId: string,
+	included: number,
+	amount: number,
+	billingUnits: number,
+	secondaryText: string,
+) =>
+	new CatalogPlanItem({
+		featureId,
+		included,
+		price: new CatalogPlanItemPrice({ amount, billingUnits, interval: "month" }),
+		display: { secondaryText },
+	})
+
+// Mirrors `apps/api/autumn.config.ts`, with Autumn's own display text.
 const PLANS = [
 	new CatalogPlan({
 		id: "startup",
 		name: "Startup",
-		price: { amount: 25, interval: "month" },
-		items: [],
+		price: { amount: 39, interval: "month" },
+		items: [
+			meteredItem("logs", 100, 0.3, 1, "then $0.3 per Logs"),
+			meteredItem("traces", 100, 0.3, 1, "then $0.3 per Traces"),
+			meteredItem("metrics", 100, 0.3, 1, "then $0.3 per Metrics"),
+			meteredItem("browser_sessions", 5000, 0.002, 1, "then $0.002 per browser session"),
+			meteredItem("product_events", 1_000_000, 0.005, 1000, "then $0.005 per 1,000 product events"),
+		],
 		customerEligibility: { trialAvailable: true },
 	}),
 ]

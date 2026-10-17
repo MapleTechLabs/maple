@@ -88,6 +88,8 @@ export const INVESTIGATION_BUDGET: AgentBudget = {
 	maxDuration: "10 minutes",
 	tokenBudget: 25_600_000,
 	completionReserveTokens: 64_000,
+	// Without its clock the pass ran into the 10-minute rail instead of submitting before it.
+	runStatus: true,
 }
 
 /**

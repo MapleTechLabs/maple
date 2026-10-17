@@ -6,11 +6,20 @@ import { LatencyValue } from "@maple/ui/components/latency-value"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Spinner } from "@maple/ui/components/ui/spinner"
+import {
+	ApdexAreaChart,
+	ChartSkeleton,
+	ErrorRateAreaChart,
+	LatencyLineChart,
+	ThroughputAreaChart,
+} from "@maple/ui/components/charts"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { formatDuration, formatErrorRate, formatNumber } from "@maple/ui/lib/format"
-import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import { errorRateClass } from "@maple/ui/lib/error-rate"
+import { ErrorRateValue } from "@maple/ui/components/error-rate-value"
 import { cn } from "@maple/ui/lib/utils"
 import {
+	useLocalServiceGoldenSignals,
 	useLocalServiceOperations,
 	useLocalServiceOperationsTimeseries,
 	useLocalServiceOverview,
@@ -22,7 +31,9 @@ import { chartWindow, WIDEST_RANGE } from "../lib/time"
 import { LinkRow, RowLink } from "../components/row-link"
 import { SeriesChart } from "../components/series-chart"
 import { RefreshButton, TimeRangeSelect } from "../components/toolbar"
+import type { GoldenSignalPoint } from "../lib/golden-signals"
 import { EmptyState, ErrorState } from "../components/view-states"
+import { failedWithoutData } from "../lib/query"
 
 const CHART_SERIES_LIMIT = 8
 
@@ -56,6 +67,7 @@ export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDet
 	const firstSeenMs = overview.data?.firstSeenMs ?? null
 	const chart = useMemo(() => chartWindow(bounds, firstSeenMs), [bounds, firstSeenMs])
 	const timeseries = useLocalServiceOperationsTimeseries(serviceName, topSpanNames, bounds, chart)
+	const goldenSignals = useLocalServiceGoldenSignals(serviceName, bounds, chart)
 
 	const stats = overview.data?.stats
 
@@ -89,7 +101,7 @@ export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDet
 					<div className="flex h-full items-center justify-center">
 						<Spinner />
 					</div>
-				) : overview.isError ? (
+				) : failedWithoutData(overview) ? (
 					<ErrorState label="service" error={overview.error} onRetry={() => overview.refetch()} />
 				) : !stats ? (
 					<div className="flex h-full flex-col items-center justify-center gap-3">
@@ -115,7 +127,7 @@ export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDet
 							<StatCard
 								label="Error rate"
 								value={formatErrorRate(stats.errorRate)}
-								danger={errorRateLevel(stats.errorRate) === "crit"}
+								valueClassName={errorRateClass(stats.errorRate, { neutral: "" })}
 							/>
 							<StatCard
 								label="p50"
@@ -134,12 +146,23 @@ export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDet
 							/>
 						</section>
 
+						{failedWithoutData(goldenSignals) ? (
+							<ErrorState
+								label="service charts"
+								error={goldenSignals.error}
+								onRetry={() => goldenSignals.refetch()}
+							/>
+						) : (
+							<GoldenSignals points={goldenSignals.data} isPending={goldenSignals.isPending} />
+						)}
+
 						<section className="space-y-2">
 							<h3 className="text-sm font-medium">Throughput by operation</h3>
 							<SeriesChart
 								points={timeseries.data}
 								window={chart}
 								fill="zero"
+								unit="requests_per_sec"
 								isPending={timeseries.isPending && topSpanNames.length > 0}
 							/>
 						</section>
@@ -150,7 +173,7 @@ export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDet
 								<div className="flex h-24 items-center justify-center rounded-md border">
 									<Spinner />
 								</div>
-							) : operations.isError ? (
+							) : failedWithoutData(operations) ? (
 								<ErrorState
 									label="operations"
 									error={operations.error}
@@ -199,7 +222,7 @@ export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDet
 														)}
 													</TableCell>
 													<TableCell className="text-right tabular-nums">
-														{formatErrorRate(op.errorRate)}
+														<ErrorRateValue rate={op.errorRate} />
 													</TableCell>
 													<TableCell className="text-right">
 														<LatencyValue ms={op.avgDurationMs} scale="avg" />
@@ -251,5 +274,60 @@ function StatCard({
 				{value}
 			</div>
 		</div>
+	)
+}
+
+const GOLDEN_CHART_CLASS = "h-44 w-full"
+
+/** The four charts web's service page opens with: latency, throughput, Apdex, error rate. */
+function GoldenSignals({
+	points,
+	isPending,
+}: {
+	points: ReadonlyArray<GoldenSignalPoint> | undefined
+	isPending: boolean
+}) {
+	const data = useMemo(() => (points ? [...points] : []), [points])
+	const tiles = [
+		{
+			title: "Latency",
+			chart: (
+				<LatencyLineChart
+					data={data}
+					className={GOLDEN_CHART_CLASS}
+					legend="visible"
+					tooltip="visible"
+				/>
+			),
+		},
+		{
+			title: "Throughput",
+			chart: (
+				<ThroughputAreaChart
+					data={data}
+					className={GOLDEN_CHART_CLASS}
+					tooltip="visible"
+					rateMode="per_second"
+				/>
+			),
+		},
+		{
+			title: "Apdex",
+			chart: <ApdexAreaChart data={data} className={GOLDEN_CHART_CLASS} tooltip="visible" />,
+		},
+		{
+			title: "Error rate",
+			chart: <ErrorRateAreaChart data={data} className={GOLDEN_CHART_CLASS} tooltip="visible" />,
+		},
+	]
+	return (
+		<section className="grid gap-3 md:grid-cols-2">
+			{tiles.map((tile) => (
+				<div key={tile.title} className="space-y-2 rounded-md border p-3">
+					<h3 className="text-sm font-medium">{tile.title}</h3>
+					{isPending ? <ChartSkeleton variant="area" className={GOLDEN_CHART_CLASS} /> : tile.chart}
+				</div>
+			))}
+		</section>
 	)
 }

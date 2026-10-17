@@ -3,6 +3,7 @@ import * as React from "react"
 import { ExternalLinkIcon } from "@/components/icons"
 import { tryParseJson } from "@maple/ui/components/attributes"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import type { Log } from "@/api/warehouse/logs"
 import type { LogAttributeFilter } from "@/lib/logs/log-attribute-filters"
@@ -37,7 +38,7 @@ const FRAME = /^\s+(at |File "|from )/
  * area so a wide event reads in place without leaving the stream.
  */
 export function LogRowExpanded({ log, highlight, onOpenDetail, onAttributeFilter }: LogRowExpandedProps) {
-	const lines = React.useMemo(() => prettyBody(log.body).split("\n"), [log.body])
+	const lines = React.useMemo(() => prettyBody(stripAnsi(log.body)).split("\n"), [log.body])
 
 	return (
 		<div className="border-t border-border/60 bg-muted/20 px-3 py-3 pl-9 font-mono">

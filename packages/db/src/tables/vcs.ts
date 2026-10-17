@@ -4,6 +4,8 @@ import {
 	PrReviewCategory,
 	PrReviewFindingStatus,
 	PrReviewId,
+	PrReviewMergeStepKind,
+	PrReviewMergeStepStatus,
 	PrReviewPostMerge,
 	PrReviewPostMergeStatus,
 	PrReviewReport,
@@ -37,6 +39,9 @@ import { Schema } from "effect"
 // IMPORTANT: only `VcsRepository` (apps/api/src/services/vcs/VcsRepository.ts)
 // may import these tables. All other code goes through that repo service.
 
+/** Who a before-merge step came from: read off the diff, or named by the reviewer. */
+export const PrReviewMergeStepSourceSchema = Schema.Literals(["diff", "reviewer"])
+
 /** Where a mention-reply was posted on the pull request. */
 export const PrReviewReplySurfaceSchema = Schema.Literals(["conversation", "review_thread"])
 
@@ -57,6 +62,8 @@ export const VcsInstallations = PG.table("vcs_installations", {
 		}),
 		status: PG.column(PG.brand(PG.text, VcsInstallStatus), { default: "active" }),
 		suspendedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "suspended_at" }),
+		/** Opt-out: finished CI workflow runs become traces unless the org turns this off. */
+		ciTracesEnabled: PG.column(PG.bool, { name: "ci_traces_enabled", default: true }),
 		installedByUserId: PG.column(PG.brand(PG.text, UserId), { name: "installed_by_user_id" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
@@ -357,6 +364,41 @@ export const PrReviewReplies = PG.table("pr_review_replies", {
 	indexes: [
 		PG.uniqueIndex("pr_review_replies_repo_comment_idx", ["repositoryId", "commentId"]),
 		PG.index("pr_review_replies_org_created_idx", ["orgId", "createdAt"]),
+	],
+	tenantColumn: "orgId",
+})
+
+/**
+ * A "Before merge" step, tracked per pull request rather than per review: each review posts its
+ * own comment, so a box ticked on one push must carry to the next. `key` is the step's identity
+ * (`mergeStepKey`), the same one the comment tags each task with.
+ */
+export const PrReviewMergeSteps = PG.table("pr_review_merge_steps", {
+	columns: {
+		id: PG.text,
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		repositoryId: PG.column(PG.brand(PG.text, VcsRepositoryId), { name: "repository_id" }),
+		number: PG.int4,
+		key: PG.text,
+		kind: PG.brand(PG.text, PrReviewMergeStepKind),
+		/** The latest review's wording. */
+		title: PG.text,
+		source: PG.brand(PG.text, PrReviewMergeStepSourceSchema),
+		path: PG.nullable(PG.text),
+		status: PG.column(PG.brand(PG.text, PrReviewMergeStepStatus), { default: "open" }),
+		doneBy: PG.column(PG.nullable(PG.text), { name: "done_by" }),
+		doneAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "done_at" }),
+		/** When the pull request merged with this step open and the reminder claimed it; posts once. */
+		remindedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "reminded_at" }),
+		firstReviewId: PG.column(PG.brand(PG.text, PrReviewId), { name: "first_review_id" }),
+		lastReviewId: PG.column(PG.brand(PG.text, PrReviewId), { name: "last_review_id" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: ["id"],
+	indexes: [
+		PG.uniqueIndex("pr_review_merge_steps_pr_key_idx", ["repositoryId", "number", "key"]),
+		PG.index("pr_review_merge_steps_org_created_idx", ["orgId", "createdAt"]),
 	],
 	tenantColumn: "orgId",
 })

@@ -5,32 +5,44 @@ import { VcsRepositoryId } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
-import { BranchForkIcon, ChartBarIcon, CircleWarningIcon, GearIcon } from "@/components/icons"
+import {
+	BranchForkIcon,
+	ChartBarIcon,
+	CircleWarningIcon,
+	GearIcon,
+	PlayRotateClockwiseIcon,
+} from "@/components/icons"
 import { DashboardPage } from "@/components/layout/dashboard-page"
-import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { pickTimeRangeSearch } from "@/components/time-range-picker/search"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
-import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
-import { LONG_RANGE_PRESET_OPTIONS } from "@/lib/time-utils"
+import {
+	LONG_RANGE_PRESET_OPTIONS,
+	PRESET_OPTIONS,
+	relativeToAbsolute,
+	type TimePreset,
+} from "@/lib/time-utils"
 
 import { AuthorLabel } from "./author-avatar"
 import {
+	CODE_REVIEW_CI_DEFAULT_PRESET,
+	CODE_REVIEW_CI_MAX_RANGE_SECONDS,
 	CODE_REVIEW_DEFAULT_PRESET,
 	CODE_REVIEW_MAX_RANGE_SECONDS,
 	type CodeReviewSearch,
 } from "./code-review-search"
 
-export type CodeReviewTab = "analytics" | "pull-requests" | "issues" | "settings"
+export type CodeReviewTab = "analytics" | "pull-requests" | "ci" | "issues" | "settings"
 
 const TABS = [
 	{ tab: "analytics", to: "/code-review", label: "Analytics", Icon: ChartBarIcon },
 	{ tab: "pull-requests", to: "/code-review/pull-requests", label: "Pull requests", Icon: BranchForkIcon },
+	{ tab: "ci", to: "/code-review/ci", label: "CI", Icon: PlayRotateClockwiseIcon },
 	{ tab: "issues", to: "/code-review/issues", label: "Issues", Icon: CircleWarningIcon },
 	{ tab: "settings", to: "/code-review/settings", label: "Settings", Icon: GearIcon },
 ] as const
@@ -49,6 +61,8 @@ function CodeReviewTabs({
 	className?: string
 }) {
 	const carried = { ...pickTimeRangeSearch(search), repo: search.repo, author: search.author }
+	// CI reads two weeks at most: a longer window from another tab falls back to CI's default.
+	const toCi = fitsCi(search) ? carried : { repo: search.repo, author: search.author }
 	return (
 		<UnderlineTabStrip
 			navigation
@@ -61,7 +75,7 @@ function CodeReviewTabs({
 				<Link
 					key={tab}
 					to={to}
-					search={tab === "settings" ? {} : carried}
+					search={tab === "settings" ? {} : tab === "ci" ? toCi : carried}
 					aria-current={active === tab ? "page" : undefined}
 					className={cn(
 						underlineTabClass(active === tab),
@@ -77,10 +91,7 @@ function CodeReviewTabs({
 	)
 }
 
-/**
- * The frame every Code Review tab renders in. Gated on the `prReview` rollout like the reviewer
- * itself; while the flags load, a skeleton rather than a not-enabled flash.
- */
+/** The frame every Code Review tab renders in. */
 export function CodeReviewLayout({
 	active,
 	search,
@@ -93,49 +104,108 @@ export function CodeReviewLayout({
 	toolbar?: ReactNode
 	children: ReactNode
 }) {
-	const { flags, isLoaded } = useOrganizationFeatureFlags()
 	const label = TABS.find((tab) => tab.tab === active)?.label
 
-	const enabled = isLoaded && flags.prReview
-
 	return (
-		<PageRefreshProvider timePreset={search.timePreset ?? CODE_REVIEW_DEFAULT_PRESET}>
-			<DashboardPage
-				breadcrumbs={[{ label: "Code Review", href: "/code-review" }, ...(label ? [{ label }] : [])]}
-				headerActions={enabled ? toolbar : undefined}
-				tabs={
-					enabled ? (
-						<CodeReviewTabs active={active} search={search} className="border-b border-border" />
-					) : undefined
-				}
-				gap="lg"
-				scrollClassName="pb-8"
-			>
-				{!isLoaded ? (
-					<div className="space-y-4">
-						<Skeleton className="h-9 w-full" />
-						<Skeleton className="h-28 w-full" />
-						<Skeleton className="h-72 w-full" />
-					</div>
-				) : !flags.prReview ? (
-					<Empty>
-						<EmptyHeader>
-							<EmptyTitle>Code review is not enabled</EmptyTitle>
-							<EmptyDescription>
-								Pull request reviews are rolling out by organization. Ask us to turn them on
-								for yours.
-							</EmptyDescription>
-						</EmptyHeader>
-					</Empty>
-				) : (
-					children
-				)}
-			</DashboardPage>
-		</PageRefreshProvider>
+		<DashboardPage
+			breadcrumbs={[{ label: "Code Review", href: "/code-review" }, ...(label ? [{ label }] : [])]}
+			headerActions={toolbar}
+			tabs={<CodeReviewTabs active={active} search={search} className="border-b border-border" />}
+			gap="lg"
+			scrollClassName="pb-8"
+		>
+			{children}
+		</DashboardPage>
 	)
 }
 
 const ALL = "all"
+
+type FilterPatch = Partial<CodeReviewSearch> & { timePreset?: string }
+
+/** The GitHub installation's repositories; `reviewedOnly` keeps those with reviews on. */
+function useGithubRepositories(reviewedOnly: boolean) {
+	const status = useAtomValue(
+		retainedInternalQuery("integrations", "githubStatus", {
+			reactivityKeys: ["githubIntegrationStatus"],
+		}),
+	)
+	return Result.builder(status)
+		.onSuccess((response) =>
+			reviewedOnly
+				? response.repositories.filter((repo) => repo.prReviewEnabled)
+				: response.repositories,
+		)
+		.orElse(() => [])
+}
+
+function RepositorySelect({
+	reviewedOnly,
+	value,
+	onChange,
+}: {
+	reviewedOnly: boolean
+	value: VcsRepositoryId | undefined
+	onChange: (repo: VcsRepositoryId | undefined) => void
+}) {
+	const repositories = useGithubRepositories(reviewedOnly)
+	const items = Object.fromEntries([
+		[ALL, "All repositories"],
+		...repositories.map((repo) => [repo.id, repo.fullName]),
+	])
+	const isRepositoryId = Schema.is(VcsRepositoryId)
+	return (
+		<Select
+			items={items}
+			value={value ?? ALL}
+			onValueChange={(next) => onChange(isRepositoryId(next) ? next : undefined)}
+		>
+			<SelectTrigger size="sm" className="w-full min-w-0 @2xl/page:w-48" aria-label="Repository">
+				<SelectValue />
+			</SelectTrigger>
+			<SelectContent>
+				<SelectItem value={ALL}>All repositories</SelectItem>
+				{repositories.map((repo) => (
+					<SelectItem key={repo.id} value={repo.id}>
+						{repo.fullName}
+					</SelectItem>
+				))}
+			</SelectContent>
+		</Select>
+	)
+}
+
+function WindowControls({
+	search,
+	defaultPreset,
+	presets,
+	maxRangeSeconds,
+	onChange,
+}: {
+	search: CodeReviewSearch
+	defaultPreset: string
+	presets: ReadonlyArray<TimePreset>
+	maxRangeSeconds: number
+	onChange: (patch: FilterPatch) => void
+}) {
+	return (
+		<TimeRangeHeaderControls
+			startTime={search.startTime}
+			endTime={search.endTime}
+			presetValue={search.timePreset ?? (search.startTime ? undefined : defaultPreset)}
+			defaultPreset={defaultPreset}
+			presets={presets}
+			maxRangeSeconds={maxRangeSeconds}
+			onTimeChange={(range) =>
+				onChange(
+					range.presetValue
+						? { timePreset: range.presetValue, startTime: undefined, endTime: undefined }
+						: { startTime: range.startTime, endTime: range.endTime, timePreset: undefined },
+				)
+			}
+		/>
+	)
+}
 
 /**
  * Repository, author and window. The repositories are the GitHub installation's; the authors are
@@ -151,7 +221,7 @@ export function CodeReviewFilters({
 	search: CodeReviewSearch
 	/** The resolved window, epoch ms. */
 	window: { readonly startTime: number; readonly endTime: number }
-	onChange: (patch: Partial<CodeReviewSearch> & { timePreset?: string }) => void
+	onChange: (patch: FilterPatch) => void
 }) {
 	const authorsResult = useAtomValue(
 		retainedInternalQuery("codeReview", "analytics", {
@@ -161,43 +231,14 @@ export function CodeReviewFilters({
 	const authors: ReadonlyArray<string> = Result.builder(authorsResult)
 		.onSuccess((analytics) => analytics.authors.map((row) => row.author))
 		.orElse(() => [])
-	const status = useAtomValue(
-		retainedInternalQuery("integrations", "githubStatus", {
-			reactivityKeys: ["githubIntegrationStatus"],
-		}),
-	)
-	const repositories = Result.builder(status)
-		.onSuccess((response) => response.repositories.filter((repo) => repo.prReviewEnabled))
-		.orElse(() => [])
-	const repoItems = Object.fromEntries([
-		[ALL, "All repositories"],
-		...repositories.map((repo) => [repo.id, repo.fullName]),
-	])
 	// A filter from a link keeps its option even when the author has nothing in the new window.
 	const authorOptions =
 		search.author && !authors.includes(search.author) ? [search.author, ...authors] : authors
 	const authorItems = Object.fromEntries([[ALL, "All authors"], ...authorOptions.map((a) => [a, a])])
-	const isRepositoryId = Schema.is(VcsRepositoryId)
 
 	return (
 		<div className="flex flex-wrap items-center gap-2">
-			<Select
-				items={repoItems}
-				value={search.repo ?? ALL}
-				onValueChange={(value) => onChange({ repo: isRepositoryId(value) ? value : undefined })}
-			>
-				<SelectTrigger size="sm" className="w-full min-w-0 @2xl/page:w-48" aria-label="Repository">
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent>
-					<SelectItem value={ALL}>All repositories</SelectItem>
-					{repositories.map((repo) => (
-						<SelectItem key={repo.id} value={repo.id}>
-							{repo.fullName}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
+			<RepositorySelect reviewedOnly value={search.repo} onChange={(repo) => onChange({ repo })} />
 			<Select
 				items={authorItems}
 				value={search.author ?? ALL}
@@ -217,20 +258,86 @@ export function CodeReviewFilters({
 					))}
 				</SelectContent>
 			</Select>
-			<TimeRangeHeaderControls
-				startTime={search.startTime}
-				endTime={search.endTime}
-				presetValue={search.timePreset ?? (search.startTime ? undefined : CODE_REVIEW_DEFAULT_PRESET)}
+			<WindowControls
+				search={search}
 				defaultPreset={CODE_REVIEW_DEFAULT_PRESET}
 				presets={LONG_RANGE_PRESET_OPTIONS}
 				maxRangeSeconds={CODE_REVIEW_MAX_RANGE_SECONDS}
-				onTimeChange={(range) =>
-					onChange(
-						range.presetValue
-							? { timePreset: range.presetValue, startTime: undefined, endTime: undefined }
-							: { startTime: range.startTime, endTime: range.endTime, timePreset: undefined },
-					)
+				onChange={onChange}
+			/>
+		</div>
+	)
+}
+
+/** CI keeps two weeks of raw traces: the presets stop there. */
+const CI_PRESET_OPTIONS = PRESET_OPTIONS.filter((preset) => preset.value !== "1mo")
+
+const fitsCi = (search: CodeReviewSearch) => {
+	const range = search.timePreset !== undefined ? relativeToAbsolute(search.timePreset) : search
+	if (range === null || range.startTime === undefined || range.endTime === undefined) return true
+	return toEpochMs(range.endTime) - toEpochMs(range.startTime) <= CODE_REVIEW_CI_MAX_RANGE_SECONDS * 1000
+}
+
+/**
+ * The CI tab's repository, workflow and window. Every repository of the installation runs CI,
+ * reviewed or not. The workflows are those that ran in the window and repository, read without
+ * the workflow filter (the page's own query until one is picked).
+ */
+export function CodeReviewCiFilters({
+	search,
+	pipeline,
+	window,
+	onChange,
+}: {
+	search: CodeReviewSearch
+	pipeline: string | undefined
+	/** The resolved window, epoch ms. */
+	window: { readonly startTime: number; readonly endTime: number }
+	onChange: (patch: FilterPatch & { pipeline?: string }) => void
+}) {
+	const pipelinesResult = useAtomValue(
+		retainedInternalQuery("codeReview", "ciAnalytics", {
+			query: { ...window, repositoryId: search.repo, pipeline: undefined },
+		}),
+	)
+	const pipelines: ReadonlyArray<string> = Result.builder(pipelinesResult)
+		.onSuccess((analytics) => [...new Set(analytics.pipelines.map((row) => row.pipeline))].sort())
+		.orElse(() => [])
+	// A workflow from a link keeps its option even when it did not run in the new window.
+	const options = pipeline && !pipelines.includes(pipeline) ? [pipeline, ...pipelines] : pipelines
+	const items = Object.fromEntries([[ALL, "All workflows"], ...options.map((name) => [name, name])])
+	return (
+		<div className="flex flex-wrap items-center gap-2">
+			<RepositorySelect
+				reviewedOnly={false}
+				value={search.repo}
+				onChange={(repo) => onChange({ repo })}
+			/>
+			<Select
+				items={items}
+				value={pipeline ?? ALL}
+				onValueChange={(value) =>
+					onChange({ pipeline: typeof value === "string" && value !== ALL ? value : undefined })
 				}
+			>
+				<SelectTrigger size="sm" className="w-full min-w-0 @2xl/page:w-44" aria-label="Workflow">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value={ALL}>All workflows</SelectItem>
+					{options.map((name) => (
+						<SelectItem key={name} value={name}>
+							{name}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<WindowControls
+				search={search}
+				defaultPreset={CODE_REVIEW_CI_DEFAULT_PRESET}
+				presets={CI_PRESET_OPTIONS}
+				maxRangeSeconds={CODE_REVIEW_CI_MAX_RANGE_SECONDS}
+				onChange={onChange}
 			/>
 		</div>
 	)

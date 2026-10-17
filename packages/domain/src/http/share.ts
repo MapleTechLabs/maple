@@ -347,8 +347,9 @@ export class SharePersistenceError extends HttpTaggedError<SharePersistenceError
 		// retryable dependency failure rather than a generic 500.
 		status: 503,
 		code: "share_persistence_failed",
-		title: "Could not save the share link",
-		message: "Something went wrong updating this dashboard's share link.",
+		// Raised by both the owner's share writes and an anonymous viewer's read of the shared dashboard.
+		title: "Share link unavailable",
+		message: "Something went wrong loading or updating this share link. Try again in a moment.",
 		retry: "never",
 		recovery: "contact_support",
 		exposure: "redacted",

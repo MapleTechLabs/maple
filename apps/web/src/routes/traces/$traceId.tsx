@@ -1,8 +1,8 @@
 import { warmAtoms } from "@effect-router/core"
 import * as React from "react"
 import { useNavigate, useRouterState, createFileRoute } from "@tanstack/react-router"
-import { useAtomValue } from "@/lib/effect-atom"
-import { Schema } from "effect"
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Option, Schema } from "effect"
 import { TraceId } from "@maple/domain"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
@@ -12,20 +12,26 @@ import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { TraceLogsLink } from "@/components/traces/trace-logs-link"
 import { DocsLink } from "@/components/common/docs-link"
 import { ResourceNotFound } from "@/components/common/resource-not-found"
-import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
+import { TraceViewTabs, type TraceView } from "@maple/ui/components/traces/trace-view-tabs"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
+import { TraceErrorCallout } from "@/components/traces/trace-error-callout"
+import { collectTraceErrors } from "@/lib/traces/trace-errors"
 import { TraceProductEvents } from "@/components/traces/trace-product-events"
 import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@maple/ui/components/ui/resizable"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
 import { type Span, type SpanNode, type SpanHierarchyResponse } from "@/api/warehouse/traces"
-import { getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import {
+	getSpanHierarchyResultAtom,
+	getTraceSpanEventsResultAtom,
+} from "@/lib/services/atoms/warehouse-query-atoms"
+import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
-import { TraceIdBadge } from "@/components/traces/trace-id-badge"
-import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
+import { TraceIdBadge } from "@maple/ui/components/traces/trace-id-badge"
+import { getHttpInfo } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
 
 const TraceDetailSearchSchema = Schema.Struct({
@@ -34,12 +40,18 @@ const TraceDetailSearchSchema = Schema.Struct({
 	// referring page. Used to narrow the ClickHouse partition scan to a ±1h
 	// window — without it the query reads every retained daily partition.
 	t: Schema.optional(Schema.String),
+	// The open view tab, so a reload or a shared link lands where it was.
+	view: Schema.optional(Schema.Literals(["waterfall", "timeline", "flow"])),
 })
+
+/** A pasted id may carry whitespace; anything still undecodable renders the not-found state. */
+const decodeTraceIdParam = (raw: string) => Option.getOrNull(Schema.decodeUnknownOption(TraceId)(raw.trim()))
 
 function buildBackToTracesHref(searchStr: string): string {
 	const params = new URLSearchParams(searchStr)
 	params.delete("spanId")
 	params.delete("t")
+	params.delete("view")
 	const nextSearch = params.toString()
 	return nextSearch ? `/traces?${nextSearch}` : "/traces"
 }
@@ -49,13 +61,10 @@ export const Route = createFileRoute("/traces/$traceId")({
 	validateSearch: Schema.toStandardSchemaV1(TraceDetailSearchSchema),
 	loaderDeps: ({ search }) => ({ t: search.t }),
 	loader: ({ context, params, deps }) => {
+		const traceId = decodeTraceIdParam(params.traceId)
+		if (traceId === null) return
 		warmAtoms(context.effectRegistry, [
-			getSpanHierarchyResultAtom({
-				data: {
-					traceId: Schema.decodeSync(TraceId)(params.traceId),
-					timestamp: deps.t,
-				},
-			}),
+			getSpanHierarchyResultAtom({ data: { traceId, timestamp: deps.t } }),
 		])
 	},
 })
@@ -65,10 +74,11 @@ function TraceDetailPage() {
 	const search = Route.useSearch()
 	const searchStr = useRouterState({ select: (state) => state.location.searchStr })
 	const backToTracesHref = buildBackToTracesHref(searchStr)
+	const decodedTraceId = decodeTraceIdParam(traceId)
 	const result = useAtomValue(
-		getSpanHierarchyResultAtom({
-			data: { traceId: Schema.decodeSync(TraceId)(traceId), timestamp: search.t },
-		}),
+		decodedTraceId === null
+			? disabledResultAtom<SpanHierarchyResponse>()
+			: getSpanHierarchyResultAtom({ data: { traceId: decodedTraceId, timestamp: search.t } }),
 	)
 
 	return (
@@ -85,6 +95,16 @@ function TraceDetailPage() {
 			crumb={() => shortId(traceId, "trace")}
 			errorTitle="Failed to load trace details"
 			loading={<TraceDetailLoading />}
+			invalid={
+				decodedTraceId === null ? (
+					<TraceNotFound
+						traceId={traceId}
+						backToTracesHref={backToTracesHref}
+						title="Trace not found"
+						description="This is not a valid trace ID. Check that the link was copied in full."
+					/>
+				) : undefined
+			}
 			notFound={
 				<TraceNotFound
 					traceId={traceId}
@@ -220,6 +240,16 @@ function TraceDetailBody({
 		[search.spanId, navigate],
 	)
 
+	const handleViewChange = React.useCallback(
+		(view: TraceView) => {
+			navigate({
+				search: (prev: Record<string, unknown>) => ({ ...prev, view }),
+				replace: true,
+			})
+		},
+		[navigate],
+	)
+
 	const handleCloseSpanDetails = React.useCallback(() => {
 		navigate({
 			search: (prev: Record<string, unknown>) => ({ ...prev, spanId: undefined }),
@@ -238,6 +268,14 @@ function TraceDetailBody({
 
 	const isMobile = useIsMobile()
 
+	// Event markers arrive after the bars; until then (or on failure) the timeline draws none.
+	const spanEventsResult = useAtomValue(
+		getTraceSpanEventsResultAtom({
+			data: { traceId: data.traceId, traceStartTime, totalDurationMs: data.totalDurationMs },
+		}),
+	)
+	const spanEvents = Result.isSuccess(spanEventsResult) ? spanEventsResult.value : undefined
+
 	// Shared by both layouts below so the tabs keep their state across a breakpoint change.
 	const traceViewTabs = (
 		<TraceViewTabs
@@ -248,6 +286,9 @@ function TraceDetailBody({
 			services={services}
 			selectedSpanId={selectedSpan?.spanId}
 			onSelectSpan={handleSelectSpan}
+			view={search.view ?? "timeline"}
+			onViewChange={handleViewChange}
+			spanEvents={spanEvents}
 		/>
 	)
 
@@ -256,27 +297,26 @@ function TraceDetailBody({
 		rootSpan.resourceAttributes?.["deployment.environment.name"] ||
 		rootSpan.resourceAttributes?.["deployment.environment"]
 	const commitSha = rootSpan.resourceAttributes?.["vcs.ref.head.revision"]
-	const hasError = data.spans.some((s: Span) => {
-		if (s.statusCode === "Error") return true
-		const httpStatus =
-			s.spanAttributes?.["http.response.status_code"] || s.spanAttributes?.["http.status_code"]
-		if (httpStatus) {
-			const code = typeof httpStatus === "string" ? parseInt(httpStatus) : httpStatus
-			if (typeof code === "number" && httpStatusTone(code) === "crit") return true
-		}
-		return false
-	})
+	const errors = React.useMemo(() => collectTraceErrors(data.rootSpans), [data.rootSpans])
 
 	return (
 		<div className="flex flex-1 flex-col gap-y-3 min-h-0">
 			<TraceAnatomyStrip
-				spans={data.spans}
+				rootSpans={data.rootSpans}
+				spanCount={data.spans.length}
+				startTime={traceStartTime}
 				totalDurationMs={data.totalDurationMs}
 				traceId={traceId}
-				hasError={hasError}
+				hasError={errors.spans.length > 0}
 				httpStatusCode={rootHttpInfo?.statusCode}
 				deploymentEnv={deploymentEnv}
 				commitSha={commitSha}
+			/>
+
+			<TraceErrorCallout
+				errors={errors}
+				selectedSpanId={selectedSpan?.spanId}
+				onSelectSpan={handleSelectSpan}
 			/>
 
 			<TraceProductEvents
@@ -305,6 +345,7 @@ function TraceDetailBody({
 							{selectedSpan && (
 								<SpanDetailPanel
 									span={selectedSpan}
+									onSelectSpanId={handleSelectSpanId}
 									onClose={handleCloseSpanDetails}
 									traceStartTime={traceStartTime}
 									totalDurationMs={data.totalDurationMs}
@@ -328,6 +369,7 @@ function TraceDetailBody({
 							<ResizablePanel defaultSize={40} minSize={25}>
 								<SpanDetailPanel
 									span={selectedSpan}
+									onSelectSpanId={handleSelectSpanId}
 									onClose={handleCloseSpanDetails}
 									traceStartTime={traceStartTime}
 									totalDurationMs={data.totalDurationMs}

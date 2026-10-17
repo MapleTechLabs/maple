@@ -5,47 +5,57 @@ import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 
 export const AUDIT_LOG_PAGE_LIMIT = 50
 
-const ACTOR_TYPES: ReadonlyArray<AuditActorType> = ["user", "api_key", "agent", "system"]
-const OUTCOMES: ReadonlyArray<AuditOutcome> = ["allowed", "denied"]
-
 export interface AuditLogPageInput {
 	readonly cursor?: string
 	readonly actorType?: AuditActorType
+	readonly actorId?: string
 	readonly outcome?: AuditOutcome
+	/** Lower bound on `occurred_at`, from the date range filter. */
+	readonly since?: string
 	/**
-	 * Upper bound on `occurred_at`, pinned by the caller when it takes the first
-	 * page. Pagination here is offset-based over a newest-first, append-only
-	 * table, so an entry written mid-scroll shifts every later row down by one:
-	 * without a frozen ceiling the next page repeats a row and skips another.
+	 * Upper bound on `occurred_at`: the date range's end, or the ceiling the caller pins when it
+	 * takes the first page. Pagination here is offset-based over a newest-first, append-only
+	 * table, so an entry written mid-scroll would otherwise repeat a row and skip another.
 	 */
 	readonly until?: string
 }
 
-// Actor types and outcomes never contain "|", nor does an ISO timestamp, and the
-// cursor is the trailing segment — so splitting on the first three separators
-// stays unambiguous even for exotic cursors.
-const family = Atom.family((key: string) => {
-	const [actorRaw = "", outcomeRaw = "", until = ""] = key.split("|", 3)
-	const cursor = key.slice(actorRaw.length + outcomeRaw.length + until.length + 3)
-	const actorType = ACTOR_TYPES.find((type) => type === actorRaw)
-	const outcome = OUTCOMES.find((value) => value === outcomeRaw)
+// Keyed by a plain struct (Effect's structural equality), so no value can bleed into another field.
+interface AuditLogPageKey {
+	readonly cursor: string | undefined
+	readonly actorType: AuditActorType | undefined
+	readonly actorId: string | undefined
+	readonly outcome: AuditOutcome | undefined
+	readonly since: string | undefined
+	readonly until: string | undefined
+}
 
-	return MapleApiV2AtomClient.runtime.atom(
+const family = Atom.family(({ cursor, actorType, actorId, outcome, since, until }: AuditLogPageKey) =>
+	MapleApiV2AtomClient.runtime.atom(
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2AtomClient
 			return yield* client.auditLog.list({
 				query: {
 					limit: AUDIT_LOG_PAGE_LIMIT,
-					...(cursor !== "" ? { cursor } : undefined),
+					...(cursor !== undefined ? { cursor } : undefined),
 					...(actorType !== undefined ? { actor_type: actorType } : undefined),
+					...(actorId !== undefined ? { actor_id: actorId } : undefined),
 					...(outcome !== undefined ? { outcome } : undefined),
-					...(until !== "" ? { until } : undefined),
+					...(since !== undefined ? { since } : undefined),
+					...(until !== undefined ? { until } : undefined),
 				},
 			})
 		}),
-	)
-})
+	),
+)
 
 /** One page of the org's audit log, keyed by cursor + filters + the pinned ceiling. */
 export const auditLogPageAtom = (input: AuditLogPageInput) =>
-	family(`${input.actorType ?? ""}|${input.outcome ?? ""}|${input.until ?? ""}|${input.cursor ?? ""}`)
+	family({
+		cursor: input.cursor,
+		actorType: input.actorType,
+		actorId: input.actorId,
+		outcome: input.outcome,
+		since: input.since,
+		until: input.until,
+	})

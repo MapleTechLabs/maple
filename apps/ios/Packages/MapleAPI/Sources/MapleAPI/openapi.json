@@ -15,6 +15,7 @@
             "group_key": "__total__",
             "incident_id": "inc_tC4d9V79DCDzgbGKhAnff9",
             "incident_transition": "opened",
+            "level": "critical",
             "object": "alert_check",
             "observed_value": 0.09,
             "sample_count": 132,
@@ -63,6 +64,13 @@
           },
           "incident_transition": {
             "$ref": "#/components/schemas/_maple_AlertIncidentTransition"
+          },
+          "level": {
+            "$ref": "#/components/schemas/_maple_AlertSeverity",
+            "description": "The highest severity tier this check breached, or `null` when none did (and on checks recorded before tiers).",
+            "examples": [
+              "critical"
+            ]
           },
           "object": {
             "description": "The object type — always `\"alert_check\"`.",
@@ -176,6 +184,7 @@
         "properties": {
           "attempt_number": {
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "attempted_at": {
@@ -309,6 +318,7 @@
             "last_sample_count": 132,
             "last_triggered_at": "2026-07-15T09:40:00.000Z",
             "object": "alert_incident",
+            "peak_severity": "critical",
             "resolved_at": null,
             "rule_id": "alrt_gU26thvJECdQvu54Ad9jiz",
             "rule_name": "Checkout error rate",
@@ -380,6 +390,13 @@
               "alert_incident"
             ],
             "type": "string"
+          },
+          "peak_severity": {
+            "$ref": "#/components/schemas/_maple_AlertSeverity",
+            "description": "Highest severity the incident reached, or `null` on incidents opened before tiers.",
+            "examples": [
+              "critical"
+            ]
           },
           "resolved_at": {
             "description": "When the incident resolved, or `null` while it is still open.",
@@ -484,6 +501,7 @@
           {
             "alert_on_no_data": false,
             "apdex_threshold_ms": null,
+            "breaches_out_of": null,
             "comparator": "gt",
             "consecutive_breaches_required": 2,
             "consecutive_healthy_required": 3,
@@ -522,6 +540,17 @@
             ],
             "threshold": 0.05,
             "threshold_upper": null,
+            "thresholds": [
+              {
+                "destination_ids": [
+                  "dest_oybbpTBhtSFGShMjjLiCrh"
+                ],
+                "recovery_value": null,
+                "severity": "critical",
+                "upper": null,
+                "value": 0.05
+              }
+            ],
             "updated_at": "2026-07-14T08:30:00.000Z",
             "updated_by": "user_2Nk8mXqPfR3yZ1aB4cD5eF6g",
             "window_minutes": 5
@@ -540,15 +569,25 @@
             "exclusiveMinimum": 0,
             "type": "number"
           },
+          "breaches_out_of": {
+            "description": "Count the required breaches over the last M checks instead of in a row (\"N of M\"), or `null`.",
+            "examples": [
+              null
+            ],
+            "exclusiveMinimum": 0,
+            "maximum": 30,
+            "type": "integer"
+          },
           "comparator": {
             "$ref": "#/components/schemas/_maple_AlertComparator"
           },
           "consecutive_breaches_required": {
-            "description": "Consecutive breached checks required before an incident opens.",
+            "description": "Breached checks required before an incident opens or escalates (N). In a row unless `breaches_out_of` is set.",
             "examples": [
               2
             ],
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "consecutive_healthy_required": {
@@ -557,6 +596,7 @@
               3
             ],
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "created_at": {
@@ -566,7 +606,7 @@
             "$ref": "#/components/schemas/_maple_UserId"
           },
           "destination_ids": {
-            "description": "The alert destinations (`dest_…`) this rule notifies.",
+            "description": "Every destination (`dest_…`) any tier notifies. Derived from `thresholds`.",
             "items": {
               "$ref": "#/components/schemas/_maple_AlertDestinationId"
             },
@@ -628,6 +668,7 @@
             "examples": [
               50
             ],
+            "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
           },
@@ -676,6 +717,7 @@
               60
             ],
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "service_names": {
@@ -712,8 +754,17 @@
             "type": "number"
           },
           "threshold_upper": {
-            "description": "Upper bound for range comparators (`between` / `not_between`), otherwise `null`.",
+            "description": "The lowest tier's upper bound for range comparators, otherwise `null`.",
             "type": "number"
+          },
+          "thresholds": {
+            "description": "Severity tiers, lowest first. An incident opens at the tier the value breaches and moves between tiers as it changes.",
+            "items": {
+              "$ref": "#/components/schemas/AlertThreshold"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array"
           },
           "updated_at": {
             "type": "string"
@@ -737,6 +788,7 @@
           "name",
           "enabled",
           "severity",
+          "thresholds",
           "service_names",
           "exclude_service_names",
           "environments",
@@ -802,6 +854,43 @@
           "has_more"
         ],
         "title": "Alert rule list",
+        "type": "object"
+      },
+      "AlertThreshold": {
+        "additionalProperties": false,
+        "description": "One severity tier of an alert rule.",
+        "properties": {
+          "destination_ids": {
+            "description": "Destinations (`dest_…`) this severity notifies. A `critical` incident also notifies every `warning` destination.",
+            "items": {
+              "$ref": "#/components/schemas/_maple_AlertDestinationId"
+            },
+            "type": "array"
+          },
+          "recovery_value": {
+            "description": "The value the signal must cross back over before this tier clears, or `null` (the default) to clear as soon as it stops breaching. Must sit on the healthy side of `value`.",
+            "examples": [
+              0.03
+            ],
+            "type": "number"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/_maple_AlertSeverity"
+          },
+          "upper": {
+            "description": "Upper bound for range comparators (`between` / `not_between`), otherwise `null`. Defaults to `null`.",
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "severity",
+          "value",
+          "destination_ids"
+        ],
+        "title": "Alert threshold",
         "type": "object"
       },
       "AnomalyIncident": {
@@ -2490,6 +2579,7 @@
         "properties": {
           "bucket_seconds": {
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "end_time": {
@@ -2825,6 +2915,7 @@
           },
           "bucket_seconds": {
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "end_time": {
@@ -2902,6 +2993,7 @@
           },
           "bucket_seconds": {
             "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
             "type": "integer"
           },
           "end_time": {
@@ -3370,7 +3462,7 @@
         "type": "string"
       },
       "_maple_AlertIncidentTransition": {
-        "description": "How this check moved the incident state machine: `none`, `opened`, `continued`, or `resolved`.",
+        "description": "How this check moved the incident state machine: `none`, `opened`, `continued`, or `resolved`. A change of severity is `continued`; see `level`.",
         "enum": [
           "none",
           "opened",
@@ -3427,7 +3519,7 @@
         "type": "string"
       },
       "_maple_AlertSeverity": {
-        "description": "Severity attached to incidents this rule opens: `warning` or `critical`.",
+        "description": "The highest severity this rule can open an incident at: `warning` or `critical`. Derived from `thresholds`.",
         "enum": [
           "warning",
           "critical"
@@ -5377,6 +5469,38 @@
           {
             "in": "query",
             "name": "actionable",
+            "required": false,
+            "schema": {
+              "enum": [
+                "true"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "enum": [
+                "open",
+                "closed"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
             "required": false,
             "schema": {
               "enum": [
@@ -7738,6 +7862,10 @@
       "name": "PlanetScale Integration"
     },
     {
+      "description": "Connect Google Cloud projects, folders or organizations: register a connector, choose whether it forwards logs and whether Maple may read metrics and resources, fetch the `gcloud` scripts that set it up, and see whether logs are arriving.",
+      "name": "Google Cloud Integration"
+    },
+    {
       "description": "Deduplicated errors and alert-backed issues tracked through Maple's triage workflow.",
       "name": "Error Issues"
     },
@@ -7788,6 +7916,10 @@
     {
       "description": "Push-notification registrations for the native apps. Per user, per organization.",
       "name": "Mobile Devices"
+    },
+    {
+      "description": "MCP clients connected to the organization through OAuth, and revoking them. Org admins manage every member's connections; other members manage their own.",
+      "name": "MCP Connections"
     },
     {
       "description": "Feedback about Maple from agents: bugs, missing capabilities, misleading docs.",

@@ -20,12 +20,18 @@ import { registerGetAlertRuleTool } from "./get-alert-rule"
 import { registerGetDashboardTool } from "./get-dashboard"
 import { registerGetIncidentTimelineTool } from "./get-incident-timeline"
 import { registerAuditSetupTool } from "./audit-setup"
+import { registerListIntegrationsTool } from "./list-integrations"
+import { registerCiRunsTool } from "./ci-runs"
+import { registerCompareCommitsTool } from "./compare-commits"
+import { registerIntegrationWriteTools } from "./integration-writes"
 import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
 import { registerGetServiceTopOperationsTool } from "./get-service-top-operations"
 import { registerServiceDeploymentsTool } from "./service-deployments"
 import { registerRouteUsageTool } from "./route-usage"
 import { registerIngestFreshnessTool } from "./ingest-freshness"
 import { registerDbQueryVolumeTool } from "./db-query-volume"
+import { registerListInfraTool } from "./list-infra"
+import { registerInspectInfraTool } from "./inspect-infra"
 import { registerIngestUsageTool } from "./ingest-usage"
 import { registerInspectChartDataTool } from "./inspect-chart-data"
 import { registerInspectTraceTool } from "./inspect-trace"
@@ -66,6 +72,7 @@ import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerGetSessionTracesTool } from "./get-session-traces"
 import { registerListAgentSessionsTool } from "./list-agent-sessions"
 import { registerGetAgentSessionTool } from "./get-agent-session"
+import { registerGetAgentSessionTranscriptTool } from "./get-agent-session-transcript"
 import { registerGetAgentToolsOverviewTool } from "./get-agent-tools-overview"
 import { registerGetAgentToolErrorTool } from "./get-agent-tool-error"
 import { registerServiceMapTool } from "./service-map"
@@ -82,7 +89,7 @@ import {
 	type McpToolResult,
 } from "./types"
 import {
-	argumentNotices,
+	argumentWarnings,
 	enumValues,
 	formatDecodeFailure,
 	normalizeArguments,
@@ -117,13 +124,9 @@ export interface MapleToolCatalogEntry {
 	readonly phrases: McpToolPhrases
 }
 
-class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/decode-error", {
-	errorMessage: Schema.String,
-}) {
-	override get message(): string {
-		return this.errorMessage
-	}
-}
+class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/errors/McpDecodeError", {
+	message: Schema.String,
+}) {}
 
 /**
  * The output schema's JSON Schema. MCP requires an object root, as for inputs. Unlike inputs, a
@@ -373,6 +376,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerGetSessionTracesTool(registrar)
 	registerListAgentSessionsTool(registrar)
 	registerGetAgentSessionTool(registrar)
+	registerGetAgentSessionTranscriptTool(registrar)
 	registerGetAgentToolsOverviewTool(registrar)
 	registerGetAgentToolErrorTool(registrar)
 	registerDiagnoseServiceTool(registrar)
@@ -412,9 +416,15 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerRouteUsageTool(registrar)
 	registerIngestFreshnessTool(registrar)
 	registerDbQueryVolumeTool(registrar)
+	registerListInfraTool(registrar)
+	registerInspectInfraTool(registrar)
 	registerIngestUsageTool(registrar)
 	registerGetInstrumentationRecommendationsTool(registrar)
 	registerAuditSetupTool(registrar)
+	registerListIntegrationsTool(registrar)
+	registerCiRunsTool(registrar)
+	registerCompareCommitsTool(registrar)
+	registerIntegrationWriteTools(registrar)
 	registerSourceCodeTools(registrar)
 	registerSandboxTools(registrar)
 	registerPullRequestTools(registrar)
@@ -534,7 +544,7 @@ const isValidNextCall = (call: NextCall, surface: McpToolSurface): boolean => {
 const finish = Effect.fnUntraced(function* (
 	definition: MapleToolDefinition,
 	run: ToolRun,
-	notices: ReadonlyArray<string>,
+	warnings: ReadonlyArray<string>,
 	surface: McpToolSurface,
 ) {
 	const invalid = nextCallsOf(run.doc).filter((call) => !isValidNextCall(call, surface))
@@ -548,7 +558,7 @@ const finish = Effect.fnUntraced(function* (
 	}
 	const doc = invalid.length === 0 ? run.doc : filterNextCalls(run.doc, (call) => !invalid.includes(call))
 	const text = renderToolDocWithinBudget(
-		notices.length === 0 ? doc : { ...doc, notices: [...notices, ...(doc.notices ?? [])] },
+		warnings.length === 0 ? doc : { ...doc, warnings: [...warnings, ...(doc.warnings ?? [])] },
 	)
 	const result: McpToolResult = {
 		content: [{ type: "text", text }],
@@ -585,7 +595,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 
 	const normalized = normalizeFor(definition, input ?? {})
 	yield* Effect.annotateCurrentSpan({
-		tool: definition.name,
+		"maple.mcp.tool": definition.name,
 		"maple.mcp.tool.arguments": Object.keys(typeof input === "object" && input !== null ? input : {})
 			.sort()
 			.join(","),
@@ -600,7 +610,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 		Effect.mapError(
 			(error) =>
 				new McpDecodeError({
-					errorMessage: toDecodeErrorMessage(definition, error, normalized),
+					message: toDecodeErrorMessage(definition, error, normalized),
 				}),
 		),
 	)
@@ -611,7 +621,7 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 	return yield* finish(
 		definition,
 		{ ...run, doc: windowNotes.decorate(run.doc) },
-		argumentNotices(normalized, definition.name),
+		argumentWarnings(normalized, definition.name),
 		surface,
 	)
 })

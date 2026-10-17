@@ -106,7 +106,7 @@ const NORMAL_CLOSE = 1_000
 
 /** The services one step needs. Rebuilt per step, and both are a value each. */
 const stepLayer = (relays: ConnectorRelayClient) =>
-	Layer.mergeAll(FetchHttpClient.layer, InboundHandler.layer(relays))
+	Layer.mergeAll(FetchHttpClient.layer, InboundHandler.layerFromRelays(relays))
 
 /** A call into the object that rejected: the RPC caller (the cron) sees it as a typed failure. */
 export class ConnectorSocketCallFailed extends Schema.TaggedError<ConnectorSocketCallFailed>()(
@@ -264,8 +264,10 @@ export class ConnectorSocket {
 			const state = await this.protocolState(resolved.ingress)
 			const url = socketUrl(resolved.ingress.connectUrl(state, resolved.config))
 			if (url === undefined) {
-				console.error(
-					`[chat-bot.socket] ${resolved.connector.id} asked for a connection to something that is not a WebSocket URL`,
+				await Effect.runPromise(
+					Effect.logError("Chat socket connect URL is not a WebSocket URL").pipe(
+						Effect.annotateLogs({ "maple.chat.connector": resolved.connector.id }),
+					),
 				)
 				await this.applyDirective({ _tag: "reconnect", closeCode: NORMAL_CLOSE }, Date.now())
 				return
@@ -320,9 +322,7 @@ export class ConnectorSocket {
 	private enqueue(generation: number, run: RunStep): Promise<void> {
 		this.steps = this.steps
 			.then(() => this.step(generation, run))
-			.catch((cause: unknown) => {
-				console.error("[chat-bot.socket] step failed", cause)
-			})
+			.catch((cause: unknown) => Effect.runPromise(Effect.logError("Chat socket step failed", cause)))
 		return this.steps
 	}
 
@@ -396,7 +396,11 @@ export class ConnectorSocket {
 		if (directive._tag === "stop") {
 			await this.ctx.storage.put(KEY.stoppedUntil, now + STOP_RETRY_MS)
 			const connectorId = await this.ctx.storage.get<string>(KEY.connectorId)
-			console.error(`[chat-bot.socket] ${connectorId ?? "connector"} stopped: ${directive.reason}`)
+			await Effect.runPromise(
+				Effect.logError(`Chat socket stopped: ${directive.reason}`).pipe(
+					Effect.annotateLogs({ "maple.chat.connector": connectorId ?? "connector" }),
+				),
+			)
 			return
 		}
 		// Consecutive failures. A connection that stayed up past `ESTABLISHED_MS`

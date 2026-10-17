@@ -8,7 +8,7 @@ import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkl
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { Panel, PanelHeader } from "@maple/ui/components/ui/panel"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
-import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
+import { ToggleGroup } from "@maple/ui/components/ui/toggle-group"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
@@ -16,6 +16,7 @@ import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { ColumnHead, type SortDir } from "@/components/common/data-table"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { CountChip } from "./count-chip"
 import { CLOUDFLARE_ACCENT } from "./integration-catalog"
 
 const HOUR_MS = 3_600_000
@@ -346,32 +347,6 @@ interface DecoratedZone {
 	requests: number
 }
 
-/** One filter chip: state color dot (or none for "All") + label + count. */
-function ZoneChip({
-	value,
-	label,
-	count,
-	tone,
-}: {
-	value: string
-	label: string
-	count: number
-	tone?: Tone
-}) {
-	return (
-		<ToggleGroupItem
-			value={value}
-			className="group h-6 gap-1.5 rounded-full border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-pressed:border-transparent data-pressed:bg-muted data-pressed:text-foreground sm:h-6 sm:text-xs"
-		>
-			{tone ? <StatusDot tone={tone} /> : null}
-			{label}
-			<span className="tabular-nums text-muted-foreground/70 group-data-pressed:text-muted-foreground">
-				{count}
-			</span>
-		</ToggleGroupItem>
-	)
-}
-
 /**
  * The Cloudflare zone health board: a status rollup that doubles as filter chips, a name search, and
  * a sortable, bounded, internally-scrolling table. Replaces the old flat unbounded status-row list so
@@ -470,9 +445,9 @@ export function CloudflareZoneBoard({
 					onValueChange={handleFilter}
 					className="ml-auto gap-1.5"
 				>
-					<ZoneChip value="all" label="All" count={decorated.length} />
+					<CountChip value="all" label="All" count={decorated.length} />
 					{CHIP_ORDER.filter((kind) => counts[kind] > 0).map((kind) => (
-						<ZoneChip
+						<CountChip
 							key={kind}
 							value={kind}
 							label={STATUS_META[kind].label}

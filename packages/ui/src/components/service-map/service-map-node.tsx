@@ -9,11 +9,13 @@ import { latencyToneClass } from "../../lib/latency-tone"
 import { Eyebrow } from "../ui/eyebrow"
 import { StatusDot } from "../ui/status-dot"
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip"
+import { MiddleTruncate } from "../ui/middle-truncate"
 import {
 	AwsLambdaIcon,
 	CloudflareBrandIcon,
 	CubeIcon,
 	GlobeIcon,
+	GoogleCloudIcon,
 	type IconComponent,
 	KubernetesIcon,
 	ServerIcon,
@@ -33,6 +35,8 @@ function getPlatformIcon(platform: ServicePlatform | undefined): {
 			return { Icon: KubernetesIcon, label: "Kubernetes", branded: true }
 		case "cloudflare":
 			return { Icon: CloudflareBrandIcon, label: "Cloudflare Workers", branded: true }
+		case "gcp":
+			return { Icon: GoogleCloudIcon, label: "Google Cloud", branded: true }
 		case "lambda":
 			return { Icon: AwsLambdaIcon, label: "AWS Lambda", branded: true }
 		case "web":
@@ -172,7 +176,9 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 								<p>{systemLabel}</p>
 							</TooltipContent>
 						</Tooltip>
-						<span className="truncate text-xs font-medium text-foreground">{title}</span>
+						<span className="truncate text-xs font-medium text-foreground" title={title}>
+							{title}
+						</span>
 						<span
 							className="ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"
 							style={{ color }}
@@ -297,7 +303,11 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 								</p>
 							</TooltipContent>
 						</Tooltip>
-						<span className="truncate text-xs font-medium text-foreground">{label}</span>
+						<MiddleTruncate
+							text={label}
+							tail={12}
+							className="text-xs font-medium text-foreground"
+						/>
 						{runtimeInfo &&
 							(RuntimeIcon ? (
 								<Tooltip>

@@ -1,7 +1,7 @@
 import type { MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
-import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import {
 	AttributeKeysHourly,
 	AttributeValuesHourly,
@@ -143,23 +143,33 @@ export function metricScopedAttributeKeysQuery(opts: MetricScopedAttributeKeysOp
 export interface MetricScopedAttributeValuesOpts {
 	metricType: MetricType
 	attributeKey: string
+	/** `resource` reads `ResourceAttributes`; absent or `metric` reads the data-point `Attributes`. */
+	scope?: "metric" | "resource"
+	/** Several metrics of `metricType` in place of the `metricName` param. */
+	metricNames?: ReadonlyArray<string>
 	serviceName?: string
 	limit?: number
 }
 
 export function metricScopedAttributeValuesQuery(opts: MetricScopedAttributeValuesOpts) {
 	const { tbl } = resolveMetricTable(opts.metricType)
+	const attributeValue = ($: ColumnAccessor<typeof MetricsSum.columns>) =>
+		opts.scope === "resource"
+			? $.ResourceAttributes.get(opts.attributeKey)
+			: $.Attributes.get(opts.attributeKey)
 	return from(tbl as typeof MetricsSum)
 		.select(($) => ({
-			attributeValue: $.Attributes.get(opts.attributeKey),
+			attributeValue: attributeValue($),
 			usageCount: CH.count(),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.MetricName.eq(param.string("metricName")),
+			opts.metricNames
+				? CH.inList($.MetricName, opts.metricNames)
+				: $.MetricName.eq(param.string("metricName")),
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
-			$.Attributes.get(opts.attributeKey).neq(""),
+			attributeValue($).neq(""),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		])
 		.groupBy("attributeValue")

@@ -84,6 +84,8 @@ export type CancellationReviewOutcome =
 	| "refused"
 	/** The org lives on another region's instance, which reports it. */
 	| "other_region"
+	/** Clerk no longer has the org, so no region can report it and a retry never will. */
+	| "org_deleted"
 	/** An add-on going away is not the org leaving. */
 	| "not_a_plan"
 	/** The plan ended but the org still holds an active one: a switch or a resubscription. */
@@ -389,14 +391,15 @@ export class CancellationReviewService extends Context.Service<
 
 				// Every region's instance receives the webhook and exactly one may report,
 				// so an unanswered region lookup waits for the next delivery.
-				const servedHere = yield* regions.servedHere(orgId)
-				if (Option.isNone(servedHere)) {
+				const home = yield* regions.servedHere(orgId)
+				if (home === "unknown") {
 					return yield* new CancellationReviewError({
 						message: "Could not tell which region the org lives in",
 						step: "region",
 					})
 				}
-				if (!servedHere.value) return yield* outcome("other_region")
+				if (home === "deleted") return yield* outcome("org_deleted")
+				if (home === "elsewhere") return yield* outcome("other_region")
 
 				// The one required read: it says whether this plan is the org's plan at all.
 				const response = yield* autumn

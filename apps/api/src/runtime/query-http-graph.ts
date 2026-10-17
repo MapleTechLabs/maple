@@ -10,7 +10,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { NotFoundRouter } from "@/routes/discovery.http"
-import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -27,7 +27,7 @@ export const QueryRoutes = Layer.mergeAll(
 	Layer.fresh(NotFoundRouter),
 ).pipe(
 	Layer.provideMerge(HttpRouter.cors(API_CORS_OPTIONS)),
-	Layer.provideMerge(SessionAuthorizationLayer),
+	Layer.provideMerge(SessionAuthorizationLive),
 	// `provideMerge`, not `provide`: the raw-SQL handler records its own audit
 	// entry, and a handler's requirement is a phantom `Request<"Requires">`
 	// marker the build cannot refuse. Hidden behind the auth layer, the service

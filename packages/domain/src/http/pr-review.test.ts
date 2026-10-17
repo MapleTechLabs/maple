@@ -458,6 +458,17 @@ describe("normalizePrReviewFinding", () => {
 		assert.isUndefined(normalizePrReviewFinding({ path: "src/a.ts", line: 0 }))
 		assert.isUndefined(normalizePrReviewFinding({ path: "src/a.ts", line: 3, category: "observability" }))
 	})
+
+	it("keeps a privacy check id on a security finding, and no other id outside observability", () => {
+		const checkIdOf = (category: string, checkId: string) =>
+			normalizePrReviewFinding({ path: "src/a.ts", line: 3, category, checkId })?.checkId
+		assert.equal(checkIdOf("security", "pii-01"), "PII-01")
+		assert.isUndefined(checkIdOf("security", "SPAN-01"))
+		assert.isUndefined(checkIdOf("correctness", "PII-01"))
+		assert.equal(checkIdOf("observability", "SPAN-01"), "SPAN-01")
+		const uncategorized = normalizePrReviewFinding({ path: "src/a.ts", line: 3, checkId: "PII-01" })
+		assert.equal(uncategorized?.category, "security")
+	})
 })
 
 describe("prReviewFailureReason", () => {

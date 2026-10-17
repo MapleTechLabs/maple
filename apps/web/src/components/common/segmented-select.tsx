@@ -95,6 +95,7 @@ export function MultiSegmentedSelect<T extends string>({
 	onChange,
 	size = "default",
 	className,
+	disabled,
 	"aria-label": ariaLabel,
 }: {
 	options: ReadonlyArray<SegmentedOption<T>>
@@ -102,11 +103,13 @@ export function MultiSegmentedSelect<T extends string>({
 	onChange: (value: T[]) => void
 	size?: Size
 	className?: string
+	disabled?: boolean
 	"aria-label"?: string
 }) {
 	return (
 		<ToggleGroup
 			multiple
+			disabled={disabled}
 			connected={false}
 			value={value}
 			onValueChange={(next) => onChange(next as T[])}

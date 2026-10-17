@@ -20,7 +20,9 @@ import {
 	PulseIcon,
 } from "@maple/ui/components/icons"
 import { cn } from "@maple/ui/lib/utils"
-import { formatDuration } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatDuration } from "@maple/ui/lib/format"
+import { initialsFrom } from "@maple/ui/lib/initials"
+import { ServiceDot } from "@maple/ui/components/service-dot"
 import type { SessionTranscriptOutput } from "@maple/query-engine/ch"
 import {
 	useLocalSessionDetail,
@@ -38,7 +40,9 @@ import {
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay"
 import { ErrorState } from "../components/view-states"
+import { isLocalSessionLive, localSessionDurationMs } from "../lib/session-liveness"
 import { RefreshButton } from "../components/toolbar"
+import { failedWithoutData } from "../lib/query"
 
 interface SessionDetailViewProps {
 	sessionId: string
@@ -48,14 +52,14 @@ interface SessionDetailViewProps {
 
 export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetailViewProps) {
 	const detail = useLocalSessionDetail(sessionId)
-	const { data: session, isPending, isError, error } = detail
+	const { data: session, isPending, error } = detail
 	const traceIds = session?.traceIds ?? []
 	const traces = useLocalSessionTraces(traceIds)
 	const transcript = useLocalSessionTranscript(sessionId)
 
-	const isActive = session?.status === "active"
+	const isActive = session ? isLocalSessionLive(session) : false
 	const hasError = (session?.errorCount ?? 0) > 0
-	const label = session?.userId || "Anonymous"
+	const label = session?.userName || session?.userEmail || session?.userId || "Anonymous"
 	const DeviceIcon = session && isMobileDevice(session.deviceType) ? MobileIcon : ComputerIcon
 
 	return (
@@ -76,7 +80,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 					<div className="flex h-full items-center justify-center">
 						<Spinner />
 					</div>
-				) : isError ? (
+				) : failedWithoutData(detail) ? (
 					<ErrorState label="session" error={error} onRetry={() => detail.refetch()} />
 				) : !session ? (
 					<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -89,7 +93,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 							<div
 								className={`grid size-12 shrink-0 place-items-center rounded-full bg-gradient-to-br ${gradientFor(sessionId)} text-base font-semibold text-white shadow-sm`}
 							>
-								{(label[0] ?? "?").toUpperCase()}
+								{initialsFrom(label)}
 							</div>
 							<div className="min-w-0 flex-1">
 								<div className="flex items-center gap-2">
@@ -101,6 +105,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 										value={sessionId}
 										kind="session"
 										length={8}
+										copy
 										className="text-xs"
 									/>
 									<span className="inline-flex items-center gap-1.5">
@@ -123,7 +128,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 						<div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
 							<StatTile
 								label="Duration"
-								value={isActive ? "Live" : formatSessionDuration(session.durationMs)}
+								value={formatSessionDuration(localSessionDurationMs(session))}
 							/>
 							<StatTile label="Page views" value={String(session.pageViews)} />
 							<StatTile label="Clicks" value={String(session.clickCount)} />
@@ -157,9 +162,21 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 											</TruncatedText>
 										</KeyValue>
 										<KeyValue label="Service">
-											<TruncatedText text={session.serviceName}>
-												{session.serviceName || "-"}
-											</TruncatedText>
+											{session.serviceName ? (
+												<a
+													href={hrefFor(
+														`/services/${encodeURIComponent(session.serviceName)}`,
+													)}
+													className="flex min-w-0 items-center gap-1.5 hover:underline"
+												>
+													<ServiceDot serviceName={session.serviceName} size="sm" />
+													<TruncatedText text={session.serviceName}>
+														{session.serviceName}
+													</TruncatedText>
+												</a>
+											) : (
+												EMPTY_VALUE
+											)}
 										</KeyValue>
 										<KeyValue label="Entry URL" className="col-span-2">
 											<TruncatedText text={session.urlInitial}>
@@ -206,9 +223,17 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 																		length: 12,
 																	})}
 															</span>
-															<span className="block truncate text-xs text-muted-foreground">
-																{trace.rootServiceName || "unknown"} ·{" "}
-																{trace.spanCount} spans
+															<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+																{trace.rootServiceName ? (
+																	<ServiceDot
+																		serviceName={trace.rootServiceName}
+																		size="sm"
+																	/>
+																) : null}
+																<span className="truncate">
+																	{trace.rootServiceName || "unknown"} ·{" "}
+																	{countLabel(trace.spanCount, "span")}
+																</span>
 															</span>
 														</span>
 														<span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
@@ -229,7 +254,7 @@ export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetai
 							<Card title="Event transcript">
 								{transcript.isPending ? (
 									<Spinner className="size-4" />
-								) : transcript.isError ? (
+								) : failedWithoutData(transcript) ? (
 									<ErrorState label="transcript" error={transcript.error} />
 								) : (transcript.data?.length ?? 0) === 0 ? (
 									<p className="text-sm text-muted-foreground">

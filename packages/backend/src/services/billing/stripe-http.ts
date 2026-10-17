@@ -155,10 +155,10 @@ const callStripe = (
 
 				const errorBody = errorResponse(response.status, text)
 				if (typeof errorBody.code === "string") {
-					yield* Effect.annotateCurrentSpan({ "stripe.code": errorBody.code })
+					yield* Effect.annotateCurrentSpan({ "maple.stripe.code": errorBody.code })
 				}
 				return { statusCode: response.status, response: errorBody }
-			}).pipe(Effect.withSpan("stripe.request", { attributes: { "stripe.route": route } }))
+			}).pipe(Effect.withSpan("stripe.request", { attributes: { "maple.stripe.route": route } }))
 
 const customerPath = (stripeCustomerId: string) => `/v1/customers/${encodeURIComponent(stripeCustomerId)}`
 

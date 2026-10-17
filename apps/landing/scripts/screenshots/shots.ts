@@ -14,6 +14,8 @@ export interface Shot {
 	readonly range?: { readonly fromMinutes: number; readonly toMinutes: number }
 	/** Clicks that reach the framed state once the page has data. */
 	readonly setup?: (page: Page) => Promise<void>
+	/** Minutes after the seed anchor to pin the page clock at, for pages that read "now". */
+	readonly fakeNowMinutes?: number
 }
 
 /** Dev-account labels swapped for the demo's before every capture. */
@@ -135,5 +137,28 @@ export const SHOTS: ReadonlyArray<Shot> = [
 		id: "gallery-alert-create",
 		route: "/alerts/create",
 		search: { serviceName: "payment-svc", template: "high_error_rate" },
+	},
+
+	// GitHub: code review and CI. CI runs come from `scripts/seed-ci-runs.ts`, reviews from
+	// `scripts/seed-demo/code-review.ts`; both are relative to now, so no anchored range.
+	{ id: "surface-code-review", route: "/code-review" },
+	{
+		id: "gallery-code-review-pr",
+		route: "/code-review/pull-requests",
+		// acme/web #482, the seed's featured review.
+		search: { review: "139b07be-c8f1-4871-a7dc-a7ffbe9a2be5" },
+	},
+	{ id: "surface-ci", route: "/code-review/ci" },
+	{
+		id: "gallery-ci-trace",
+		route: "/code-review/ci",
+		setup: async (page) => {
+			const row = page.locator("tr", { hasText: "Failed" }).filter({ hasText: "View trace" }).first()
+			await followLink(
+				page,
+				await row.locator("a", { hasText: "View trace" }).first().getAttribute("href"),
+			)
+			await page.getByRole("tab", { name: "Waterfall" }).click()
+		},
 	},
 ]

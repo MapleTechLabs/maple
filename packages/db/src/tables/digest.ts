@@ -16,6 +16,8 @@ export const DigestSubscriptions = PG.table("digest_subscriptions", {
 		optedOutAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "opted_out_at" }),
 		dayOfWeek: PG.column(PG.int4, { name: "day_of_week", default: 1 }),
 		timezone: PG.column(PG.text, { default: "UTC" }),
+		/** Local hour (0-23) in `timezone` on `day_of_week` from which the digests are due. */
+		sendHour: PG.column(PG.int4, { name: "send_hour", default: 9 }),
 		/**
 		 * JSON-encoded string arrays scoping the digest to a slice of the org.
 		 * Empty array = every namespace / environment, which is the default and

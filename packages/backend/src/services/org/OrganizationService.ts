@@ -33,6 +33,8 @@ import {
 	ChatWorkspaces,
 	CliDeviceAuthorizations,
 	CloudflareLogpushConnectors,
+	GcpConnectors,
+	GcpResources,
 	Dashboards,
 	DashboardShares,
 	DashboardVersions,
@@ -51,6 +53,7 @@ import {
 	OAuthConnections,
 	OrgClickHouseSettings,
 	OrgIngestKeys,
+	OrgOpenRouterKeys,
 	PlanetscaleConnections,
 	PlanetscaleIssueReceipts,
 	RailwayConnections,
@@ -61,6 +64,7 @@ import {
 	PrReviewSettings,
 	PrReviewFindings,
 	PrReviewFindingEmbeddings,
+	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
 	VcsInstallations,
@@ -68,10 +72,12 @@ import {
 } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 
 const ROOT_ROLE = Schema.decodeSync(RoleName)("root")
 const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
@@ -120,6 +126,10 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	ChatIdentities,
 	DigestSubscriptions,
 	CloudflareLogpushConnectors,
+	// A surviving push secret would keep the ingest gateway accepting logs for a deleted org.
+	GcpConnectors,
+	// Also removed with its connector, by the foreign key.
+	GcpResources,
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,
@@ -133,6 +143,7 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	PrReviewSettings,
 	PrReviewFindings,
 	PrReviewFindingEmbeddings,
+	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
 	// Credentials that outlive the org unless they are purged here. `api_keys`
@@ -154,6 +165,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	RailwayConnections,
 	RailwayEnvironments,
+	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
+	OrgOpenRouterKeys,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
 	LiveActivities,
@@ -265,9 +278,11 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "OrganizationService", toPersistenceError)
 			const env = yield* Env
 
 			const autumn = yield* AutumnClient
+			const regions = yield* OrganizationRegionService
 
 			const requireAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
 				roles: ReadonlyArray<RoleName>,
@@ -287,19 +302,15 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				yield* Effect.forEach(
 					ORG_SCOPED_TABLES,
 					(table) =>
-						database
-							.execute((db) => db.run(PG.deleteFrom(table).where(($) => [$.orgId.eq(orgId)])))
-							.pipe(Effect.mapError(toPersistenceError)),
+						dbExecute((db) => db.run(PG.deleteFrom(table).where(($) => [$.orgId.eq(orgId)]))),
 					{ discard: true },
 				)
 				yield* Effect.forEach(
 					APPROVED_ORG_SCOPED_TABLES,
 					(table) =>
-						database
-							.execute((db) =>
-								db.run(PG.deleteFrom(table).where(($) => [$.approvedOrgId.eq(orgId)])),
-							)
-							.pipe(Effect.mapError(toPersistenceError)),
+						dbExecute((db) =>
+							db.run(PG.deleteFrom(table).where(($) => [$.approvedOrgId.eq(orgId)])),
+						),
 					{ discard: true },
 				)
 			})
@@ -358,7 +369,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				name: string,
 				region: MapleRegion,
 			) {
-				yield* Effect.annotateCurrentSpan({ userId, "maple.org_region": region })
+				yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "maple.org_region": region })
 				const clerk = clerkClient()
 				if (Option.isNone(clerk)) {
 					return yield* new OrganizationProviderError({
@@ -439,6 +450,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 							publicMetadata: organizationRegionMetadata(region),
 						}),
 				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				// A yes this instance cached before the write may now be wrong.
+				yield* regions.forget(orgId)
 				// Clerk has no conditional write, so two admins choosing at once both succeed and the
 				// later write wins. Answering with a fresh read rather than the request sends both to
 				// the region that stuck in all but a same-instant race. The write already landed, so a
@@ -478,10 +491,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(AutumnClient.layer))
-
-	static readonly retrieve = (orgId: OrgId) => this.use((service) => service.retrieve(orgId))
-
-	static readonly delete = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
-		this.use((service) => service.delete(orgId, roles))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.layer)),
+	)
 }

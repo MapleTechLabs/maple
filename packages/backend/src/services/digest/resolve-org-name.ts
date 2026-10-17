@@ -8,7 +8,7 @@ import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
  * Best-effort: an email must never fail because a name lookup did, so it falls
  * back to the raw orgId on any error or when Clerk isn't configured.
  */
-export const resolveOrgName = Effect.fn("resolveOrgName")(function* (
+export const resolveOrgName = Effect.fn("Digest.resolveOrgName")(function* (
 	env: {
 		readonly MAPLE_AUTH_MODE: string
 		readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>

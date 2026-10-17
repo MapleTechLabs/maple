@@ -458,7 +458,7 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					orgId: event.orgId,
 					"maple.alert.rule_id": event.ruleId,
 					"maple.alert.incident_id": event.incidentId,
-					"event.type": event.eventType,
+					"maple.push.event_type": event.eventType,
 				})
 				const empty: MobilePushSummary = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
 
@@ -546,56 +546,60 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					{ concurrency: SEND_CONCURRENCY },
 				)
 
-				let sent = 0
-				let failed = 0
-				let unregistered = 0
-				const pushed: Array<MobileDevice["id"]> = []
-				for (const { device, result } of results) {
-					switch (result.outcome) {
-						case "sent":
-							sent += 1
-							pushed.push(device.id)
-							break
-						case "unregistered":
-							unregistered += 1
-							// Loud on purpose: a disabled row is silence on the phone until
-							// the app re-registers, and the reason names the fix
-							// (`BadDeviceToken` = wrong environment for the token,
-							// `DeviceTokenNotForTopic` = a build signed for another app id).
-							yield* Effect.logWarning(
-								"Mobile push: Apple says the token is dead, disabling device",
-							).pipe(
-								Effect.annotateLogs({
-									orgId: event.orgId,
-									deviceId: device.id,
-									environment: device.environment,
-									bundleId: device.bundleId,
-									appVersion: device.appVersion ?? "",
-									reason: result.reason,
-								}),
-							)
-							yield* devices.disable(device.id, result.reason).pipe(
-								ignoreLogged("Mobile push: could not disable a dead device", {
-									orgId: event.orgId,
-									deviceId: device.id,
-								}),
-							)
-							break
-						case "failed":
-							failed += 1
-							yield* Effect.logWarning("Mobile push: APNs rejected the send").pipe(
-								Effect.annotateLogs({
-									orgId: event.orgId,
-									deviceId: device.id,
-									status: result.status,
-									reason: result.reason,
-									retryable: result.retryable,
-								}),
-							)
-							break
-					}
-				}
-				yield* devices.markPushed(pushed).pipe(
+				const countOutcome = (outcome: (typeof results)[number]["result"]["outcome"]) =>
+					results.filter(({ result }) => result.outcome === outcome).length
+				const sent = countOutcome("sent")
+				const failed = countOutcome("failed")
+				const unregistered = countOutcome("unregistered")
+				const pushed = results
+					.filter(({ result }) => result.outcome === "sent")
+					.map(({ device }) => device.id)
+				yield* Effect.forEach(
+					results,
+					({ device, result }) => {
+						switch (result.outcome) {
+							case "sent":
+								return Effect.void
+							case "unregistered":
+								// Loud on purpose: a disabled row is silence on the phone until
+								// the app re-registers, and the reason names the fix
+								// (`BadDeviceToken` = wrong environment for the token,
+								// `DeviceTokenNotForTopic` = a build signed for another app id).
+								return Effect.logWarning(
+									"Mobile push: Apple says the token is dead, disabling device",
+								).pipe(
+									Effect.annotateLogs({
+										orgId: event.orgId,
+										deviceId: device.id,
+										environment: device.environment,
+										bundleId: device.bundleId,
+										appVersion: device.appVersion ?? "",
+										reason: result.reason,
+									}),
+									Effect.andThen(
+										devices.disable(event.orgId, device.id, result.reason).pipe(
+											ignoreLogged("Mobile push: could not disable a dead device", {
+												orgId: event.orgId,
+												deviceId: device.id,
+											}),
+										),
+									),
+								)
+							case "failed":
+								return Effect.logWarning("Mobile push: APNs rejected the send").pipe(
+									Effect.annotateLogs({
+										orgId: event.orgId,
+										deviceId: device.id,
+										status: result.status,
+										reason: result.reason,
+										retryable: result.retryable,
+									}),
+								)
+						}
+					},
+					{ discard: true },
+				)
+				yield* devices.markPushed(event.orgId, pushed).pipe(
 					ignoreLogged("Mobile push: could not record which devices were pushed", {
 						orgId: event.orgId,
 						deviceCount: pushed.length,
@@ -722,31 +726,26 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 					{ concurrency: SEND_CONCURRENCY },
 				)
 
-				let sent = 0
-				let failed = 0
-				let unregistered = 0
-				for (const { device, result } of results) {
-					switch (result.outcome) {
-						case "sent":
-							sent += 1
-							break
-						case "unregistered":
-							unregistered += 1
-							yield* devices.disable(device.id, result.reason).pipe(
-								ignoreLogged("Mobile push: could not disable a dead device", {
-									orgId,
-									deviceId: device.id,
-								}),
-							)
-							break
-						case "failed":
-							// Quieter than the alert path on purpose: nobody is waiting
-							// on this, and a failed wake-up costs a widget some
-							// freshness, not a missed page.
-							failed += 1
-							break
-					}
-				}
+				const countOutcome = (outcome: (typeof results)[number]["result"]["outcome"]) =>
+					results.filter(({ result }) => result.outcome === outcome).length
+				// A failed wake-up is quieter than the alert path on purpose: nobody is
+				// waiting on this, and it costs a widget some freshness, not a missed page.
+				const sent = countOutcome("sent")
+				const failed = countOutcome("failed")
+				const unregistered = countOutcome("unregistered")
+				yield* Effect.forEach(
+					results,
+					({ device, result }) =>
+						result.outcome === "unregistered"
+							? devices.disable(orgId, device.id, result.reason).pipe(
+									ignoreLogged("Mobile push: could not disable a dead device", {
+										orgId,
+										deviceId: device.id,
+									}),
+								)
+							: Effect.void,
+					{ discard: true },
+				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.push.sent": sent,
 					"maple.push.failed": failed,

@@ -214,7 +214,10 @@ export function PlanetScaleDatabaseTable({
 						className={ROW_LINK_CLASS}
 					>
 						<div className="flex w-0 min-w-[220px] flex-1 items-center gap-2 overflow-hidden">
-							<span className="truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary">
+							<span
+								className="min-w-0 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary"
+								title={row.name}
+							>
 								{row.name}
 							</span>
 							<Badge variant="outline" className="shrink-0">
@@ -225,8 +228,17 @@ export function PlanetScaleDatabaseTable({
 									{state}
 								</Badge>
 							) : null}
-							{row.region ? <MetaChip>{row.region}</MetaChip> : null}
-							{row.plan ? <MetaChip>{row.plan}</MetaChip> : null}
+							{/* Region and plan are context the detail page repeats; they yield to the name. */}
+							{row.region ? (
+								<span className="hidden shrink-0 xl:inline-flex">
+									<MetaChip>{row.region}</MetaChip>
+								</span>
+							) : null}
+							{row.plan ? (
+								<span className="hidden shrink-0 xl:inline-flex">
+									<MetaChip>{row.plan}</MetaChip>
+								</span>
+							) : null}
 						</div>
 						<div className="hidden w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block">
 							{row.branchCount}

@@ -42,6 +42,8 @@ export {
 	FolderOpenIcon,
 	GlobeIcon,
 	GlobePointerIcon,
+	GoogleCloudIcon,
+	GoogleCloudMonoIcon,
 	KubernetesIcon,
 	LineHeightIcon,
 	LinkIcon,
@@ -78,6 +80,9 @@ export {
 	TrashIcon,
 	UserIcon,
 	XmarkIcon,
+	IdBadgeIcon,
+	ChartLineIcon,
+	PlayRotateClockwiseIcon,
 } from "@maple/ui/components/icons"
 
 // App-specific icons (not part of the core library).
@@ -104,7 +109,6 @@ export { ChatBubbleSparkleIcon } from "./chat-bubble-sparkle"
 export { ChartBarIcon } from "./chart-bar"
 export { ChartBarHorizontalIcon } from "./chart-bar-horizontal"
 export { ChartBarTrendUpIcon } from "./chart-bar-trend-up"
-export { ChartLineIcon } from "./chart-line"
 export { CirclePercentageIcon } from "./circle-percentage"
 export { CircleQuestionIcon } from "./circle-question"
 export { ClaudeIcon } from "./claude"
@@ -135,7 +139,6 @@ export { GearIcon } from "./gear"
 export { GeminiIcon } from "./gemini"
 export { GithubIcon } from "./github"
 export { GoogleIcon } from "./google"
-export { GoogleCloudIcon } from "./google-cloud"
 export { GrokIcon } from "./grok"
 export { HaystackIcon } from "./haystack"
 export { HuggingFaceIcon } from "./huggingface"
@@ -170,7 +173,6 @@ export { TagIcon } from "./tag"
 export { HazelIcon } from "./hazel"
 export { HistoryIcon } from "./history"
 export { HouseIcon } from "./house"
-export { IdBadgeIcon } from "./id-badge"
 export { ImageIcon } from "./image"
 export { KafkaIcon } from "./kafka"
 export { LangchainIcon } from "./langchain"
@@ -202,7 +204,6 @@ export { PixelNodesIcon } from "./pixel-nodes"
 export { PixelSparkleIcon } from "./pixel-sparkle"
 export { PixelTriangleWarningIcon } from "./pixel-triangle-warning"
 export { PixelWindowIcon } from "./pixel-window"
-export { PlayRotateClockwiseIcon } from "./play-rotate-clockwise"
 export { PlusIcon } from "./plus"
 export { PrometheusIcon } from "./prometheus"
 export { RabbitmqIcon } from "./rabbitmq"

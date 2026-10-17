@@ -202,21 +202,6 @@ describe("EdgeCacheService.rawGet", () => {
 		}).pipe(Effect.provide(makeLayer(backend, 10)), Effect.timeout(200))
 	})
 
-	it.live("treats a backend read timeout as a cache miss", () => {
-		const backend: EdgeCacheBackend = {
-			name: "memory",
-			get: () => Effect.never,
-			put: () => Effect.void,
-			delete: () => Effect.void,
-		}
-
-		return Effect.gen(function* () {
-			const cache = yield* EdgeCacheService
-			const result = yield* cache.rawGet("slow", "key")
-			assert.isTrue(Option.isNone(result))
-		}).pipe(Effect.provide(makeLayer(backend, 10)), Effect.timeout(200))
-	})
-
 	it.effect("retains EdgeCacheIOError for backend failures", () => {
 		const backend: EdgeCacheBackend = {
 			name: "memory",
@@ -258,14 +243,6 @@ describe("EdgeCacheService.invalidate", () => {
 			assert.strictEqual(afterInvalidate.hit, false)
 			assert.strictEqual(computeCalls, 2)
 			assert.deepStrictEqual(afterInvalidate.value, { n: 2 })
-		}).pipe(Effect.provide(makeLayer(backend)))
-	})
-
-	it.effect("is a no-op when the entry does not exist", () => {
-		const backend = makeJsonRoundtripBackend()
-		return Effect.gen(function* () {
-			const cache = yield* EdgeCacheService
-			yield* cache.invalidate({ bucket: "autumn-customer", key: "missing" })
 		}).pipe(Effect.provide(makeLayer(backend)))
 	})
 

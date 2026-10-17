@@ -49,8 +49,12 @@ describe("MCP tool catalog contract", () => {
 	it("publishes an object-rooted output schema for every tool", () => {
 		for (const tool of mapleToolCatalog) {
 			if (tool.outputSchema === undefined) continue
-			const output = tool.outputSchema
-			expect(() => toOutputSchema(output), tool.name).not.toThrow()
+			const document = toOutputSchema(tool.outputSchema)
+			// A `$ref` root points into `$defs`; follow it to the type a client sees.
+			const ref = typeof document.$ref === "string" ? document.$ref.replace("#/$defs/", "") : undefined
+			const defs = isRecord(document.$defs) ? document.$defs : {}
+			const root = ref === undefined ? document : defs[ref]
+			expect(isRecord(root) ? root.type : undefined, tool.name).toBe("object")
 		}
 	})
 

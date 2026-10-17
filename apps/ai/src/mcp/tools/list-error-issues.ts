@@ -223,12 +223,12 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 			const compact = params.compact !== false
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				workflowState: params.workflow_state ?? "all",
-				severity: params.severity ?? "all",
-				service: params.service ?? "all",
-				lastSeenAfter: params.last_seen_after ?? "none",
-				compact,
-				limit: params.limit,
+				"maple.ai.workflow_state": params.workflow_state ?? "all",
+				"maple.ai.severity": params.severity ?? "all",
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.last_seen_after": params.last_seen_after ?? "none",
+				"maple.ai.compact": compact,
+				"maple.ai.limit": params.limit,
 			})
 			const readModels = yield* ErrorIssueReadModelsService
 			const includeArchived = params.include_archived === true

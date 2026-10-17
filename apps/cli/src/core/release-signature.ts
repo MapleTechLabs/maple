@@ -5,11 +5,11 @@ import { createPublicKey, verify, type KeyObject } from "node:crypto"
 import { Effect, Schema } from "effect"
 
 /**
- * Base64 SPKI (DER) of the Ed25519 release public key. Empty until the key is
- * provisioned (docs/local-mode.md "Release signing"). scripts/install.sh embeds
- * the same value as `release_public_key`; release-signature.test.ts enforces it.
+ * Base64 SPKI (DER) of the Ed25519 release public key (docs/local-mode.md
+ * "Release signing"). scripts/install.sh embeds the same value as
+ * `release_public_key`; release-signature.test.ts enforces it.
  */
-export const MAPLE_RELEASE_PUBLIC_KEY = ""
+export const MAPLE_RELEASE_PUBLIC_KEY = "MCowBQYDK2VwAyEAT58nYzFjZrHs2utGCW2xooSnljsEl2je33QEJ4VspnI="
 
 const SignatureFailureReason = Schema.Literals(["malformed-public-key", "malformed-signature", "mismatch"])
 

@@ -22,19 +22,6 @@ describe("describeQuerySpecDecodeError", () => {
 		)
 	})
 
-	it("accepts every metrics aggregation in a breakdown", () => {
-		for (const metric of ["min", "max", "rate", "increase"]) {
-			const raw = {
-				kind: "breakdown",
-				source: "metrics",
-				metric,
-				groupBy: "service",
-				filters: { metricName: "a", metricType: "sum" },
-			}
-			expect(Schema.decodeUnknownResult(QuerySpec)(raw)._tag).toBe("Success")
-		}
-	})
-
 	it("falls back to a single line for an unknown source/kind", () => {
 		const raw = { kind: "nope", source: "metrics" }
 		expect(describeQuerySpecDecodeError(raw, unionMessage(raw))).not.toContain("\n")

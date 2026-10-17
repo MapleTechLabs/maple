@@ -1,6 +1,8 @@
 pub mod ai_session;
 pub mod aws;
 pub mod clickhouse_insert_mappings;
+pub mod gcp_logging;
+pub mod gcp_push_auth;
 pub mod metrics;
 pub mod otel;
 pub mod otlp_json;

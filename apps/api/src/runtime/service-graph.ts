@@ -14,7 +14,9 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
+import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
 
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -36,10 +38,12 @@ import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClass
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
+import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
@@ -63,13 +67,16 @@ import { MobileDevicesService } from "@maple/backend/services/push/MobileDevices
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalyticsService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
 /** Services consumed by HTTP routes; each service owns its implementation dependencies. */
@@ -84,6 +91,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	ApiKeysService.layer,
 	CliDeviceAuthService.layer,
 	McpOAuthService.layer,
+	McpConnectionsService.layer,
+	PreviewSignInService.layer,
 	CloudflareOAuthService.layer,
 	DashboardPersistenceService.layer,
 	SharedDashboardService.layer,
@@ -110,9 +119,12 @@ export const HttpServicesLive = Layer.mergeAll(
 	DailySpendService.layer,
 	CloudflareAnalyticsService.layer,
 	RailwayMetricsService.layer,
+	GcpConnectorService.layer,
+	OrgOpenRouterKeyService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
+	TelemetryReadService.layer,
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,
@@ -133,11 +145,13 @@ export const HttpServicesLive = Layer.mergeAll(
 	RecommendationIssueService.layer,
 	SetupAuditService.layer,
 	SignalPresenceService.layer,
+	SessionReplayReadService.layer,
 	DigestService.layer,
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,
 	GithubConnectService.layer,
 	PrReviewAnalyticsService.layer,
+	CiAnalyticsService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,

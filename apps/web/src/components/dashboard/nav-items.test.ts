@@ -65,22 +65,6 @@ describe("isNavItemActive", () => {
 })
 
 describe("navGroups", () => {
-	it("renders nine top-level rows", () => {
-		const rows = navGroups().flatMap((group) => group.items)
-		expect(rows.map((item) => item.title)).toEqual([
-			"Overview",
-			"Services",
-			"Service Map",
-			"Infrastructure",
-			"Explore",
-			"Web Analytics",
-			"Dashboards",
-			// "Investigations" is commented out of navGroups until the surface is ready.
-			"Errors",
-			"Alerts",
-		])
-	})
-
 	it("reaches Web Analytics from the palette", () => {
 		// The palette derives from navGroups, so the row being unconditional has to
 		// mean it is typeable too — this was gated behind a rollout flag, and the
@@ -124,11 +108,19 @@ describe("navGroups", () => {
 		}
 	})
 
-	it("keeps Infrastructure at six children with six unique glyphs", () => {
+	it("shows Code Review to every org", () => {
+		for (const flags of [undefined, DISABLED_ORGANIZATION_FEATURE_FLAGS]) {
+			expect(findItem("Code Review", flags).href).toBe("/code-review")
+			expect(paletteNavItems(flags).map((entry) => entry.href)).toContain("/code-review")
+		}
+	})
+
+	it("keeps Infrastructure at six sources with six unique glyphs", () => {
 		// Six is exactly NavRow's all-or-nothing preview cap, so a seventh unique
 		// glyph here would drop the closed row's miniatures entirely rather than
 		// truncate them. A new Kubernetes view goes in `views` (free); a new
-		// child with a new glyph is not free.
+		// child with a new glyph is not free. Overview is the section's own page
+		// and stays out of the preview.
 		const infra = findItem("Infrastructure")
 		expect(infra.subItems?.map((sub) => sub.title)).toEqual([
 			"Overview",
@@ -137,8 +129,10 @@ describe("navGroups", () => {
 			"Cloudflare",
 			"PlanetScale",
 			"Railway",
+			"Google Cloud",
 		])
-		expect(new Set(infra.subItems?.map((sub) => sub.icon)).size).toBe(NAV_PREVIEW_MAX_GLYPHS)
+		const sources = infra.subItems?.filter((sub) => sub.href !== infra.href)
+		expect(new Set(sources?.map((sub) => sub.icon)).size).toBe(NAV_PREVIEW_MAX_GLYPHS)
 	})
 
 	it("folds the Kubernetes views behind one row that points at the section root", () => {
@@ -195,12 +189,6 @@ describe("paletteNavItems", () => {
 		}
 	})
 
-	it("points the signal entries at their own routes", () => {
-		const entries = paletteNavItems()
-		expect(entries.find((e) => e.title === "Logs")?.href).toBe("/logs")
-		expect(entries.find((e) => e.title === "Replays")?.href).toBe("/replays")
-	})
-
 	it("emits no duplicate ids", () => {
 		const ids = paletteNavItems().map((entry) => entry.id)
 		expect(new Set(ids).size).toBe(ids.length)
@@ -214,7 +202,7 @@ describe("partitionInfraSubItems", () => {
 
 	it("shows every child while the org's surfaces are unknown", () => {
 		const { shown, hidden } = partitionInfraSubItems(subItems(), null, "/infra")
-		expect(shown).toHaveLength(6)
+		expect(shown).toHaveLength(7)
 		expect(hidden).toEqual([])
 	})
 
@@ -225,7 +213,7 @@ describe("partitionInfraSubItems", () => {
 			"/infra",
 		)
 		expect(titles(shown)).toEqual(["Overview", "Hosts", "PlanetScale"])
-		expect(titles(hidden)).toEqual(["Kubernetes", "Cloudflare", "Railway"])
+		expect(titles(hidden)).toEqual(["Kubernetes", "Cloudflare", "Railway", "Google Cloud"])
 	})
 
 	// Containers is a view of Hosts, so a Docker-only org still gets the row.

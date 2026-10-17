@@ -4,7 +4,7 @@
 // sub-component family local mode doesn't have. The shareable pieces (AttributesSection,
 // SeverityBadge, severity/format libs) already come from @maple/ui.
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, type CSSProperties } from "react"
 import { Option } from "effect"
 import { trySync } from "@maple/ui/lib/try-sync"
 import { Sheet, SheetContent, SheetTitle } from "@maple/ui/components/ui/sheet"
@@ -14,7 +14,10 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { shortId } from "@maple/ui/lib/ids"
-import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
+import { SeverityBadge, severityLabel } from "@maple/ui/components/logs/severity-badge"
+import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
+import { ServiceDot } from "@maple/ui/components/service-dot"
+import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import {
 	CircleInfoIcon,
 	ChevronDownIcon,
@@ -49,8 +52,8 @@ interface LogDetailSheetProps {
 export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps) {
 	if (!log) return null
 
-	const sev = log.severityText.toUpperCase()
-	const showErrorBanner = sev === "ERROR" || sev === "FATAL"
+	const sev = severityLabel(log.severityText, log.severityNumber).toUpperCase()
+	const showErrorBanner = sev === "ERROR" || sev === "FATAL" || sev === "CRITICAL"
 	// Identity used to remount the attributes panel (resets its search) per log.
 	const identity = logKey(log)
 	const traceHref = log.traceId
@@ -120,15 +123,15 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 	)
 }
 
-const HERO_TONE: Record<string, string> = {
-	TRACE: "bg-severity-trace/5 border-severity-trace/20",
-	DEBUG: "bg-severity-debug/5 border-severity-debug/20",
-	INFO: "bg-severity-info/5 border-severity-info/20",
-	WARN: "bg-severity-warn/5 border-severity-warn/20",
-	WARNING: "bg-severity-warn/5 border-severity-warn/20",
-	ERROR: "bg-severity-error/5 border-severity-error/20",
-	FATAL: "bg-severity-fatal/5 border-severity-fatal/20",
-} satisfies Record<string, string>
+/** A faint wash of the severity colour behind the hero; unknown levels keep the plain border. */
+function heroToneStyle(severity: string): CSSProperties | undefined {
+	const color = SEVERITY_COLORS[severity.toUpperCase()]
+	if (color === undefined) return undefined
+	return {
+		backgroundColor: `color-mix(in oklch, ${color} 5%, transparent)`,
+		borderColor: `color-mix(in oklch, ${color} 20%, transparent)`,
+	}
+}
 
 const BODY_LINE_THRESHOLD = 280
 
@@ -141,14 +144,17 @@ function prettyJson(value: string): Option.Option<string> {
 
 function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void }) {
 	const [expanded, setExpanded] = useState(false)
-	const tone = HERO_TONE[log.severityText.toUpperCase()] ?? "border-border"
-	const body = log.body ?? ""
+	const severity = severityLabel(log.severityText, log.severityNumber)
+	// ANSI color codes are stripped for display only; copy and Raw keep the original.
+	const body = useMemo(() => stripAnsi(log.body ?? ""), [log.body])
 
 	const pretty = useMemo(() => prettyJson(body), [body])
 	const isJson = Option.isSome(pretty)
 	const formatted = Option.getOrElse(pretty, () => body)
 	const highlighted = useMemo(() => (isJson ? highlightJson(formatted) : ""), [isJson, formatted])
-	const copyValue = isJson ? formatted : body
+	// Pretty JSON is the friendlier copy, but only when it is the original bytes reformatted:
+	// a body that carried ANSI codes copies as sent.
+	const copyValue = isJson && body === (log.body ?? "") ? formatted : (log.body ?? "")
 	const isLong = formatted.length > BODY_LINE_THRESHOLD || formatted.includes("\n")
 
 	const message = (clamp: boolean) =>
@@ -173,10 +179,11 @@ function LogHeroHeader({ log, onClose }: { log: LocalLog; onClose: () => void })
 		)
 
 	return (
-		<div className={cn("shrink-0 border-b px-4 py-3", tone)}>
+		<div className="shrink-0 border-b px-4 py-3" style={heroToneStyle(severity)}>
 			<div className="flex items-center gap-2">
-				<SeverityBadge severity={log.severityText} />
+				<SeverityBadge severity={log.severityText} severityNumber={log.severityNumber} />
 				<Badge variant="outline" size="xs" mono>
+					<ServiceDot serviceName={log.serviceName} size="sm" />
 					<CopyableValue value={log.serviceName}>{log.serviceName}</CopyableValue>
 				</Badge>
 				<Button
@@ -268,7 +275,7 @@ function LogAttributesPanel({ log }: { log: LocalLog }) {
 
 			<AttributesSection
 				attributes={log.logAttributes}
-				title="Log Attributes"
+				title="Log attributes"
 				searchQuery={attrSearch}
 				groupByNamespace
 			/>

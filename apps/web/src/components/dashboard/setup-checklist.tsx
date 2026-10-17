@@ -86,8 +86,12 @@ function SetupChecklistCard() {
 			>
 				<div className="overflow-hidden">
 					<CardContent className="border-t border-primary/20 p-5 space-y-5">
-						<GuidedSetup apiKey={connection.apiKey} showCredentials />
-						<SendTestEventStrip apiKey={connection.apiKey} onTestSent={connection.refresh} />
+						<GuidedSetup
+							apiKey={connection.privateKey}
+							apiKeyStatus={connection.apiKeyStatus}
+							showCredentials
+						/>
+						<SendTestEventStrip apiKey={connection.publicKey} onTestSent={connection.refresh} />
 					</CardContent>
 				</div>
 			</div>

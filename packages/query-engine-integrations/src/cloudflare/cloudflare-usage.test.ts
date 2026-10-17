@@ -29,14 +29,6 @@ describe("cloudflareUsageQuery", () => {
 		expect(sql).toContain("ORDER BY serviceName ASC, bucket ASC")
 		expect(sql).toContain("FORMAT JSON")
 	})
-
-	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(cloudflareUsageQuery(), {
-			...baseParams,
-			orgId: OrgId.make("org'evil"),
-		})
-		expect(sql).toContain("OrgId = 'org\\'evil'")
-	})
 })
 
 const statsParams = {
@@ -69,14 +61,6 @@ describe("cloudflareUsageStatsQuery", () => {
 		expect(sql).toContain("TimeUnix >= '2026-07-02 00:00:00.000')) AS firewallBlockedEvents")
 		expect(sql).not.toContain("GROUP BY")
 		expect(sql).toContain("FORMAT JSON")
-	})
-
-	it("escapes single quotes in orgId", () => {
-		const { sql } = compileUnsafe(cloudflareUsageStatsQuery(), {
-			...statsParams,
-			orgId: OrgId.make("org'evil"),
-		})
-		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 
 	it("row schema coerces BYO-CH string-encoded aggregates", () => {

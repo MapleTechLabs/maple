@@ -8,10 +8,7 @@ import {
 import { Effect, Layer } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
-import {
-	GithubHttp,
-	type GithubHttpApi,
-} from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
+import type { HttpClient } from "effect/http"
 import { GithubProvider } from "@maple/backend/services/integrations/vcs/vendor/github/GithubProvider"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
@@ -22,6 +19,7 @@ import {
 	expectSome,
 	findError,
 	GITHUB_APP_CONFIG,
+	fakeGithubHttp,
 	jsonResponse,
 	testEnv,
 	type VcsRepo,
@@ -42,35 +40,31 @@ const commitBody = (sha: string) => ({
 	author: { login: "octocat", avatar_url: "https://avatars/u/1" },
 })
 
-// GithubHttp seam: access-token POSTs always succeed; commit GETs return the canned
+// HttpClient seam: access-token POSTs always succeed; commit GETs return the canned
 // body or 404 based on `resolvable`. Counts GETs so tests can verify the negative cache.
 const routedHttp = (resolvable: (repoName: string, sha: string) => boolean) => {
 	const calls = { commitGets: 0 }
-	const layer = Layer.succeed(GithubHttp, {
-		fetch: async (input: string | URL | Request, init?: RequestInit) => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			const method = init?.method ?? "GET"
-			if (url.includes("/access_tokens") && method === "POST") {
-				return jsonResponse({ token: "ghs_test", expires_at: "2999-01-01T00:00:00Z" })
-			}
-			const match = url.match(/\/repos\/[^/]+\/([^/]+)\/commits\/([0-9a-fA-F]+)/)
-			if (match) {
-				calls.commitGets += 1
-				const [, repoName, sha] = match
-				return resolvable(repoName!, sha!.toLowerCase())
-					? jsonResponse(commitBody(sha!.toLowerCase()))
-					: jsonResponse({ message: "No commit found for SHA" }, { status: 404 })
-			}
-			return jsonResponse({ message: `unexpected ${method} ${url}` }, { status: 500 })
-		},
-	} satisfies GithubHttpApi)
+	const layer = fakeGithubHttp(({ url, method }) => {
+		if (url.includes("/access_tokens") && method === "POST") {
+			return jsonResponse({ token: "ghs_test", expires_at: "2999-01-01T00:00:00Z" })
+		}
+		const match = url.match(/\/repos\/[^/]+\/([^/]+)\/commits\/([0-9a-fA-F]+)/)
+		if (match) {
+			calls.commitGets += 1
+			const [, repoName, sha] = match
+			return resolvable(repoName!, sha!.toLowerCase())
+				? jsonResponse(commitBody(sha!.toLowerCase()))
+				: jsonResponse({ message: "No commit found for SHA" }, { status: 404 })
+		}
+		return jsonResponse({ message: `unexpected ${method} ${url}` }, { status: 500 })
+	})
 	return { layer, calls }
 }
 
-// Full layer stack over an in-memory PGlite + stubbed GithubHttp. `data` appears in
+// Full layer stack over an in-memory PGlite + stubbed HttpClient. `data` appears in
 // both the service deps and the returned merge so Effect memoizes one shared repo
 // instance.
-const commitLayer = (testDb: TestDb, http: Layer.Layer<GithubHttp>) => {
+const commitLayer = (testDb: TestDb, http: Layer.Layer<HttpClient.HttpClient>) => {
 	const env = testEnv(GITHUB_APP_CONFIG)
 	const data = VcsRepository.layer.pipe(Layer.provide(testDb.layer), Layer.provide(env))
 	const githubAppClient = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(

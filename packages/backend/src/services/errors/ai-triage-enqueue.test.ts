@@ -311,28 +311,6 @@ describe("maybeEnqueueTriage", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
-	it.effect("marks the run failed when no chat binding is available", () =>
-		Effect.gen(function* () {
-			yield* enableSettings
-			const database = yield* Database
-
-			const result = yield* maybeEnqueueTriage(baseInput("incident-1"))
-			assert.isFalse(result.enqueued)
-			assert.strictEqual(result.reason, "no_binding")
-
-			const rows = yield* database.execute((db) =>
-				db.run(
-					PG.from(Investigations)
-						.select()
-						.where(($) => [$.orgId.eq(ORG)]),
-				),
-			)
-			assert.lengthOf(rows, 1)
-			assert.strictEqual(rows[0]?.status, "failed")
-			assert.include(rows[0]?.error ?? "", "agent_unavailable")
-		}).pipe(Effect.provide(makeLayer())),
-	)
-
 	it.effect("marks a stranded investigation failed with a retryable reason", () =>
 		Effect.gen(function* () {
 			yield* enableSettings

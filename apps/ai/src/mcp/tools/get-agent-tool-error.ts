@@ -109,9 +109,9 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				tool,
-				fingerprint: fingerprint.value,
-				limit: params.samples_limit,
+				"maple.ai.tools.tool": tool,
+				"maple.ai.tools.fingerprint": fingerprint.value,
+				"maple.ai.limit": params.samples_limit,
 			})
 
 			const scope = {

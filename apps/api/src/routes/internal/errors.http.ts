@@ -23,8 +23,8 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
 					yield* Effect.annotateCurrentSpan({
 						orgId: tenant.orgId,
-						issueId: params.issueId,
-						toState: payload.toState,
+						"maple.issue.id": params.issueId,
+						"maple.errors.to_state": payload.toState,
 					})
 					return yield* errors.transitionIssue(
 						tenant.orgId,
@@ -48,8 +48,11 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 							: undefined
 					yield* Effect.annotateCurrentSpan({
 						orgId: tenant.orgId,
-						issueId: params.issueId,
-						leaseDurationMs: leaseDurationMs ?? "default",
+						"maple.issue.id": params.issueId,
+						"maple.errors.lease_defaulted": leaseDurationMs === undefined,
+						...(leaseDurationMs === undefined
+							? undefined
+							: { "maple.errors.lease_ms": leaseDurationMs }),
 					})
 					return yield* errors.claimIssue(tenant.orgId, actor.id, params.issueId, leaseDurationMs)
 				}).pipe(Effect.withSpan("HttpErrors.claimIssue")),
@@ -90,7 +93,10 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 			.handle("listIssuePullRequests", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, issueId: params.issueId })
+					yield* Effect.annotateCurrentSpan({
+						orgId: tenant.orgId,
+						"maple.issue.id": params.issueId,
+					})
 					const response = yield* verification.listPullRequests(tenant.orgId, params.issueId)
 					yield* Effect.annotateCurrentSpan({ "result.rowCount": response.pullRequests.length })
 					return response
@@ -99,7 +105,10 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 			.handle("linkIssuePullRequest", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, issueId: params.issueId })
+					yield* Effect.annotateCurrentSpan({
+						orgId: tenant.orgId,
+						"maple.issue.id": params.issueId,
+					})
 					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
 					return yield* verification.linkPullRequest(
 						tenant.orgId,
@@ -115,8 +124,8 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({
 						orgId: tenant.orgId,
-						issueId: params.issueId,
-						pullRequestId: params.pullRequestId,
+						"maple.issue.id": params.issueId,
+						"maple.pull_request.id": params.pullRequestId,
 					})
 					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
 					return yield* verification.unlinkPullRequest(
@@ -130,7 +139,10 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 			.handle("listIssueVerifications", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, issueId: params.issueId })
+					yield* Effect.annotateCurrentSpan({
+						orgId: tenant.orgId,
+						"maple.issue.id": params.issueId,
+					})
 					const response = yield* verification.listVerifications(tenant.orgId, params.issueId)
 					yield* Effect.annotateCurrentSpan({ "result.rowCount": response.verifications.length })
 					return response
@@ -142,8 +154,8 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
 					yield* Effect.annotateCurrentSpan({
 						orgId: tenant.orgId,
-						issueId: params.issueId,
-						severity: payload.severity ?? "null",
+						"maple.issue.id": params.issueId,
+						"maple.errors.severity": payload.severity ?? "null",
 					})
 					return yield* workflow.setSeverity(
 						tenant.orgId,
@@ -162,12 +174,12 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({
 						orgId: tenant.orgId,
-						issueId: params.issueId,
+						"maple.issue.id": params.issueId,
 					})
 					const response = yield* workflow.listIssueEvents(tenant.orgId, params.issueId, {
 						limit: query.limit,
 					})
-					yield* Effect.annotateCurrentSpan("eventCount", response.events.length)
+					yield* Effect.annotateCurrentSpan("result.eventCount", response.events.length)
 					return response
 				}).pipe(Effect.withSpan("HttpErrors.listIssueEvents")),
 			)

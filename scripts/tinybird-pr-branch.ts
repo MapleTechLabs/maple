@@ -141,6 +141,32 @@ const resolveBranch = async (
 	return { id: id as string, token: token as string }
 }
 
+/**
+ * The branch's "workspace admin token". Tinybird verifies self-signed JWTs only against
+ * that token; the environments list hands out a per-user admin token, which it rejects.
+ */
+const resolveSigningKey = async (
+	branch: { host: string; token: string },
+	branchName: string,
+): Promise<string> => {
+	const response = await fetch(`${branch.host}/v0/tokens`, {
+		headers: { Authorization: `Bearer ${branch.token}` },
+	})
+	if (!response.ok)
+		fail(`Could not list Tinybird tokens for branch ${branchName} (HTTP ${response.status}).`)
+	const parsed = (await response.json()) as {
+		tokens?: { name?: string; token?: string; scopes?: { type?: string }[] }[]
+	}
+	const admin = parsed.tokens?.find(
+		(candidate) =>
+			candidate.name === "workspace admin token" &&
+			candidate.scopes?.some((scope) => scope.type === "ADMIN"),
+	)
+	const token = admin?.token?.trim()
+	if (!token) fail(`Branch ${branchName} has no workspace admin token to sign raw-SQL JWTs with.`)
+	return token as string
+}
+
 const exportToGithubEnv = (vars: Record<string, string>): void => {
 	const githubEnv = process.env.GITHUB_ENV?.trim()
 	const lines = Object.entries(vars).map(([key, value]) => `${key}=${value}`)
@@ -182,17 +208,19 @@ const up = async (branchName: string): Promise<void> => {
 		fail(`Failed to deploy project schema to Tinybird branch ${branchName}.`)
 	}
 
-	// Mask the token in CI logs before it can appear anywhere downstream.
+	// Mask the tokens in CI logs before they can appear anywhere downstream.
 	console.log(`::add-mask::${branch.token}`)
+	const signingKey = await resolveSigningKey(branch, branchName)
+	console.log(`::add-mask::${signingKey}`)
 
 	// 4. Hand the branch creds to the rest of the workflow. The branch is reached on
 	//    the same regional host as its parent — the branch-scoped token does the
 	//    routing, so only the token changes. Raw-SQL JWTs are signed with the
-	//    branch's admin token and name the branch, or they would query the parent.
+	//    branch's workspace admin token and name the branch, or they would query the parent.
 	exportToGithubEnv({
 		TINYBIRD_HOST: branch.host,
 		TINYBIRD_TOKEN: branch.token,
-		TINYBIRD_SIGNING_KEY: branch.token,
+		TINYBIRD_SIGNING_KEY: signingKey,
 		TINYBIRD_WORKSPACE_ID: branchId,
 	})
 	console.log(`✓ Tinybird branch ${branchName} ready; preview stack will bind to it.`)

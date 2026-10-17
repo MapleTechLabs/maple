@@ -802,7 +802,7 @@ describe("POST /internal/ai-sessions/facets", () => {
 	})
 })
 
-describe("POST /internal/ai-sessions/list", () => {
+describe("POST /internal/ai-sessions/list filters and sort", () => {
 	// Every filter is a payload field the handler has to hand to the builder by
 	// name; a field the schema accepts and the handler forgets is a 200 that
 	// silently ignores the sidebar. So the compiled SQL is what gets asserted —

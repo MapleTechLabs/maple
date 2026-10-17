@@ -145,6 +145,92 @@ describe("discord transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 
+	it.effect("falls back to X-RateLimit-Reset-After when a 429 has no JSON body", () => {
+		const http = stub([
+			{ status: 429, body: "", headers: { "x-ratelimit-reset-after": "4" } },
+			{ status: 200, body: CREATED },
+		])
+		return Effect.gen(function* () {
+			const fiber = yield* Effect.forkChild(
+				discordOutbound.transport.pipe(Effect.flatMap((transport) => transport.post(target, []))),
+			)
+
+			yield* TestClock.adjust("3 seconds")
+			expect(http.seen).toHaveLength(1)
+
+			yield* TestClock.adjust("1 second")
+			yield* Fiber.join(fiber)
+			expect(http.seen).toHaveLength(2)
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("waits for a spent bucket to reset before the next message, instead of earning a 429", () => {
+		const http = stub([
+			{
+				status: 200,
+				body: CREATED,
+				headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset-after": "3" },
+			},
+			{ status: 200, body: CREATED },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			yield* transport.post(target, [])
+			const second = yield* Effect.forkChild(transport.post(target, []))
+
+			yield* TestClock.adjust("2 seconds")
+			expect(http.seen).toHaveLength(1)
+
+			yield* TestClock.adjust("1 second")
+			yield* Fiber.join(second)
+			expect(http.seen).toHaveLength(2)
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("queues a burst for one channel behind the message Discord is rate limiting", () => {
+		const http = stub([
+			{ status: 429, body: '{"retry_after":2}' },
+			{ status: 200, body: CREATED },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const burst = yield* Effect.forkChild(
+				Effect.all([transport.post(target, []), transport.post(target, [])], {
+					concurrency: "unbounded",
+				}),
+			)
+
+			// The second message does not race the first into the same 429.
+			yield* TestClock.adjust("1 second")
+			expect(http.seen).toHaveLength(1)
+
+			yield* TestClock.adjust("1 second")
+			yield* Fiber.join(burst)
+			expect(http.seen).toHaveLength(3)
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("holds every channel while a global 429 is in force", () => {
+		const http = stub([
+			{ status: 429, body: '{"retry_after":5}', headers: { "x-ratelimit-global": "true" } },
+			{ status: 200, body: CREATED },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const first = yield* Effect.forkChild(transport.post(target, []))
+			yield* TestClock.adjust("1 second")
+			const other = yield* Effect.forkChild(transport.post({ ...target, channelId: "conv_2" }, []))
+
+			yield* TestClock.adjust("3 seconds")
+			expect(http.seen).toHaveLength(1)
+
+			yield* TestClock.adjust("1 second")
+			yield* Fiber.join(first)
+			yield* Fiber.join(other)
+			expect(http.seen).toHaveLength(3)
+		}).pipe(Effect.provide(http.layer))
+	})
+
 	it.effect("opens a thread on the anchor message and answers with the id to address it by", () => {
 		const http = stub([{ status: 201, body: '{"id":"thread_7"}' }])
 		return Effect.gen(function* () {

@@ -176,8 +176,8 @@ export const OAuthDiscoveryRouter = HttpRouter.use((router) =>
 				return oauthJson(result, 201)
 			}).pipe(
 				Effect.catchTags({
-					"@maple/api/errors/McpOAuthProtocolError": tokenProtocolResponse,
-					"@maple/api/errors/McpOAuthRateLimitError": rateLimitResponse,
+					"@maple/backend/errors/McpOAuthProtocolError": tokenProtocolResponse,
+					"@maple/backend/errors/McpOAuthRateLimitError": rateLimitResponse,
 					"@maple/http/errors/McpOAuthPersistenceError": (error) =>
 						Effect.succeed(oauthError("temporarily_unavailable", error.message, 503)),
 				}),
@@ -215,8 +215,8 @@ export const OAuthDiscoveryRouter = HttpRouter.use((router) =>
 				})
 			}).pipe(
 				Effect.catchTags({
-					"@maple/api/errors/McpOAuthProtocolError": protocolResponse,
-					"@maple/api/errors/McpOAuthRateLimitError": rateLimitResponse,
+					"@maple/backend/errors/McpOAuthProtocolError": protocolResponse,
+					"@maple/backend/errors/McpOAuthRateLimitError": rateLimitResponse,
 					"@maple/http/errors/McpOAuthPersistenceError": (error) =>
 						Effect.succeed(oauthError("temporarily_unavailable", error.message, 503)),
 				}),
@@ -260,8 +260,8 @@ export const OAuthDiscoveryRouter = HttpRouter.use((router) =>
 				})
 			}).pipe(
 				Effect.catchTags({
-					"@maple/api/errors/McpOAuthProtocolError": tokenProtocolResponse,
-					"@maple/api/errors/McpOAuthRateLimitError": rateLimitResponse,
+					"@maple/backend/errors/McpOAuthProtocolError": tokenProtocolResponse,
+					"@maple/backend/errors/McpOAuthRateLimitError": rateLimitResponse,
 					"@maple/http/errors/McpOAuthPersistenceError": (error) =>
 						Effect.succeed(oauthError("temporarily_unavailable", error.message, 503)),
 				}),
@@ -276,7 +276,7 @@ export const OAuthDiscoveryRouter = HttpRouter.use((router) =>
 				return HttpServerResponse.empty({ status: 200, headers: noStoreHeaders })
 			}).pipe(
 				Effect.catchTags({
-					"@maple/api/errors/McpOAuthProtocolError": tokenProtocolResponse,
+					"@maple/backend/errors/McpOAuthProtocolError": tokenProtocolResponse,
 					"@maple/http/errors/McpOAuthPersistenceError": () =>
 						Effect.succeed(HttpServerResponse.empty({ status: 200, headers: noStoreHeaders })),
 				}),

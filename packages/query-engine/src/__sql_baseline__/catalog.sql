@@ -130,6 +130,223 @@ SELECT
         OFFSET 50
         FORMAT JSON
 
+-- builder:ci-runs:ciFailedJobsQuery:default  [85749449]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanAttributes['cicd.pipeline.task.name'] AS job,
+          traces.SpanAttributes['cicd.pipeline.task.run.result'] AS result,
+          traces.SpanAttributes['maple.cicd.failure.reason'] AS reason,
+          traces.SpanAttributes['cicd.pipeline.task.run.url.full'] AS url,
+          traces.Duration / 1000000 AS durationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.TraceId IN ('abc123')
+          AND traces.StatusCode = 'Error'
+          AND traces.SpanAttributes['cicd.pipeline.task.name'] != ''
+          AND traces.SpanAttributes['maple.cicd.step.number'] = ''
+        ORDER BY traceId ASC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:ci-runs:ciJobStatsQuery:allWorkflows  [6cc8534e]
+SELECT
+          traces.ResourceAttributes['vcs.owner.name'] AS owner,
+          traces.ResourceAttributes['vcs.repository.name'] AS repository,
+          traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
+          traces.SpanAttributes['cicd.pipeline.task.name'] AS job,
+          count() AS runs,
+          countIf(traces.SpanAttributes['cicd.pipeline.task.run.result'] IN ('failure', 'timeout', 'error')) AS failed,
+          countIf(traces.SpanAttributes['maple.cicd.run_attempt'] != '1') AS retried,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          sum(traces.Duration) / 1000000 AS totalDurationMs,
+          quantile(0.5)(toFloat64OrZero(traces.SpanAttributes['maple.cicd.queue_duration_ms'])) AS p50QueueMs,
+          quantile(0.95)(toFloat64OrZero(traces.SpanAttributes['maple.cicd.queue_duration_ms'])) AS p95QueueMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.SpanAttributes['cicd.pipeline.task.name'] != ''
+          AND traces.SpanAttributes['maple.cicd.step.number'] = ''
+          AND traces.SpanAttributes['cicd.pipeline.task.run.result'] != 'skip'
+          AND traces.Duration > 0
+        GROUP BY owner, repository, pipeline, job
+        ORDER BY totalDurationMs DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ci-runs:ciPipelineStatsQuery:oneRepository  [c7557d93]
+SELECT
+          traces.ResourceAttributes['vcs.owner.name'] AS owner,
+          traces.ResourceAttributes['vcs.repository.name'] AS repository,
+          traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
+          count() AS runs,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'success') AS succeeded,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] IN ('failure', 'timeout', 'error')) AS failed,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'cancellation') AS cancelled,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          sum(traces.Duration) / 1000000 AS totalDurationMs,
+          argMax(traces.SpanAttributes['cicd.pipeline.result'], traces.Timestamp) AS lastResult,
+          max(traces.Timestamp) AS lastStartedAt
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ResourceAttributes['vcs.owner.name'] = 'acme'
+          AND traces.ResourceAttributes['vcs.repository.name'] = 'api'
+          AND traces.SpanAttributes['cicd.pipeline.name'] = 'CI'
+          AND traces.ParentSpanId = ''
+          AND traces.SpanAttributes['cicd.pipeline.result'] != 'skip'
+        GROUP BY owner, repository, pipeline
+        ORDER BY runs DESC
+        LIMIT 100
+        FORMAT JSON
+
+-- builder:ci-runs:ciQueueTotalsQuery:allWorkflows  [57f8fbf3]
+SELECT
+          count() AS jobs,
+          quantile(0.5)(toFloat64OrZero(traces.SpanAttributes['maple.cicd.queue_duration_ms'])) AS p50QueueMs,
+          quantile(0.95)(toFloat64OrZero(traces.SpanAttributes['maple.cicd.queue_duration_ms'])) AS p95QueueMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.SpanAttributes['cicd.pipeline.task.name'] != ''
+          AND traces.SpanAttributes['maple.cicd.step.number'] = ''
+          AND traces.SpanAttributes['cicd.pipeline.task.run.result'] != 'skip'
+          AND traces.Duration > 0
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunSeriesQuery:sixHourly  [ff52eea3]
+SELECT
+          toStartOfInterval(traces.Timestamp, INTERVAL 21600 SECOND) AS bucket,
+          count() AS runs,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'success') AS succeeded,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] IN ('failure', 'timeout', 'error')) AS failed,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'cancellation') AS cancelled,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          sum(traces.Duration) / 1000000 AS totalDurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ParentSpanId = ''
+          AND traces.SpanAttributes['cicd.pipeline.result'] != 'skip'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunsQuery:allRuns  [b8a0ffdd]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
+          traces.SpanAttributes['cicd.pipeline.run.id'] AS runId,
+          traces.SpanAttributes['cicd.pipeline.result'] AS result,
+          traces.SpanAttributes['cicd.pipeline.run.url.full'] AS url,
+          traces.ResourceAttributes['vcs.repository.name'] AS repository,
+          traces.SpanAttributes['vcs.ref.head.name'] AS branch,
+          traces.SpanAttributes['vcs.ref.head.revision'] AS revision,
+          traces.SpanAttributes['maple.cicd.run_attempt'] AS attempt,
+          traces.SpanAttributes['maple.cicd.trigger_event'] AS trigger,
+          traces.SpanAttributes['maple.cicd.actor'] AS actor,
+          traces.SpanAttributes['vcs.change.id'] AS pullRequest,
+          traces.Duration / 1000000 AS durationMs,
+          traces.Timestamp AS startedAt
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ParentSpanId = ''
+        ORDER BY startedAt DESC, traceId DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunsQuery:filtered  [9a080dbd]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
+          traces.SpanAttributes['cicd.pipeline.run.id'] AS runId,
+          traces.SpanAttributes['cicd.pipeline.result'] AS result,
+          traces.SpanAttributes['cicd.pipeline.run.url.full'] AS url,
+          traces.ResourceAttributes['vcs.repository.name'] AS repository,
+          traces.SpanAttributes['vcs.ref.head.name'] AS branch,
+          traces.SpanAttributes['vcs.ref.head.revision'] AS revision,
+          traces.SpanAttributes['maple.cicd.run_attempt'] AS attempt,
+          traces.SpanAttributes['maple.cicd.trigger_event'] AS trigger,
+          traces.SpanAttributes['maple.cicd.actor'] AS actor,
+          traces.SpanAttributes['vcs.change.id'] AS pullRequest,
+          traces.Duration / 1000000 AS durationMs,
+          traces.Timestamp AS startedAt
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ParentSpanId = ''
+          AND traces.SpanAttributes['cicd.pipeline.name'] = 'CI'
+          AND traces.ResourceAttributes['vcs.repository.name'] = 'api'
+          AND traces.SpanAttributes['vcs.ref.head.name'] = 'main'
+          AND traces.SpanAttributes['cicd.pipeline.result'] = 'failure'
+        ORDER BY startedAt DESC, traceId DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunsQuery:pageAfterCursor  [d212a152]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
+          traces.SpanAttributes['cicd.pipeline.run.id'] AS runId,
+          traces.SpanAttributes['cicd.pipeline.result'] AS result,
+          traces.SpanAttributes['cicd.pipeline.run.url.full'] AS url,
+          traces.ResourceAttributes['vcs.repository.name'] AS repository,
+          traces.SpanAttributes['vcs.ref.head.name'] AS branch,
+          traces.SpanAttributes['vcs.ref.head.revision'] AS revision,
+          traces.SpanAttributes['maple.cicd.run_attempt'] AS attempt,
+          traces.SpanAttributes['maple.cicd.trigger_event'] AS trigger,
+          traces.SpanAttributes['maple.cicd.actor'] AS actor,
+          traces.SpanAttributes['vcs.change.id'] AS pullRequest,
+          traces.Duration / 1000000 AS durationMs,
+          traces.Timestamp AS startedAt
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ParentSpanId = ''
+          AND traces.SpanAttributes['cicd.pipeline.result'] != 'skip'
+          AND (traces.Timestamp < '2026-01-01 10:30:00' OR (traces.Timestamp = '2026-01-01 10:30:00' AND traces.TraceId < 'abc123'))
+        ORDER BY startedAt DESC, traceId DESC
+        LIMIT 51
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunTotalsQuery:allWorkflows  [10bab54f]
+SELECT
+          count() AS runs,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'success') AS succeeded,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] IN ('failure', 'timeout', 'error')) AS failed,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'cancellation') AS cancelled,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          sum(traces.Duration) / 1000000 AS totalDurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ParentSpanId = ''
+          AND traces.SpanAttributes['cicd.pipeline.result'] != 'skip'
+        FORMAT JSON
+
 -- builder:containers:containerCountersSummaryQuery:default  [1b4fe1f9]
 SELECT
           avg(hosts.memoryBytesAvg) AS memoryBytesAvg,
@@ -762,12 +979,13 @@ SELECT
         GROUP BY fingerprintHash
         FORMAT JSON
 
--- builder:errors:spanDetailQuery:default  [02aceae6]
+-- builder:errors:spanDetailQuery:default  [a53b55ab]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           trace_detail_spans.SpanId AS spanId,
           trace_detail_spans.ParentSpanId AS parentSpanId,
           if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
+          trace_detail_spans.SpanName AS rawSpanName,
           trace_detail_spans.ServiceName AS serviceName,
           trace_detail_spans.SpanKind AS spanKind,
           trace_detail_spans.Duration / 1000000 AS durationMs,
@@ -783,12 +1001,13 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:spanDetailQuery:narrowByTime  [39008ef8]
+-- builder:errors:spanDetailQuery:narrowByTime  [695c65dd]
 SELECT
           trace_detail_spans.TraceId AS traceId,
           trace_detail_spans.SpanId AS spanId,
           trace_detail_spans.ParentSpanId AS parentSpanId,
           if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
+          trace_detail_spans.SpanName AS rawSpanName,
           trace_detail_spans.ServiceName AS serviceName,
           trace_detail_spans.SpanKind AS spanKind,
           trace_detail_spans.Duration / 1000000 AS durationMs,
@@ -803,6 +1022,39 @@ SELECT
           AND trace_detail_spans.OrgId = 'org_sql_catalog'
           AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
           AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+        LIMIT 1
+        FORMAT JSON
+
+-- builder:errors:spanEventsByTraceQuery:default  [b03e077c]
+SELECT
+          traces.SpanId AS spanId,
+          toString(traces.Timestamp) AS spanStart,
+          toJSONString(traces.EventsTimestamp) AS eventsTimestamp,
+          toJSONString(traces.EventsName) AS eventsName
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND notEmpty(traces.EventsName)
+        ORDER BY spanStart ASC
+        LIMIT 5000
+        FORMAT JSON
+
+-- builder:errors:spanEventsQuery:default  [9e3ce44c]
+SELECT
+          toString(traces.Timestamp) AS spanStart,
+          toJSONString(traces.EventsTimestamp) AS eventsTimestamp,
+          toJSONString(traces.EventsName) AS eventsName,
+          toJSONString(traces.EventsAttributes) AS eventsAttributes
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'api'
+          AND traces.SpanName = 'GET'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND traces.SpanId = 'b7ad6b7169203331'
         LIMIT 1
         FORMAT JSON
 
@@ -1055,6 +1307,24 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
+-- builder:infra:hostFilesystemsQuery:default  [c12d4b7b]
+SELECT
+          metrics_gauge.Attributes['mountpoint'] AS mountpoint,
+          any(metrics_gauge.Attributes['device']) AS device,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.Attributes['state'] = 'used'), 0), 0) AS usedAvg,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.Attributes['state'] = 'used'), 0) AS usedMax
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
+          AND metrics_gauge.MetricName = 'system.filesystem.utilization'
+          AND metrics_gauge.Attributes['state'] = 'used'
+        GROUP BY mountpoint
+        ORDER BY usedMax DESC
+        LIMIT 20
+        FORMAT JSON
+
 -- builder:infra:hostGaugeTimeseriesQuery:default  [b4ba966f]
 SELECT
           toStartOfInterval(metrics_gauge.TimeUnix, INTERVAL 300 SECOND) AS bucket,
@@ -1137,6 +1407,60 @@ SELECT
         LIMIT 1
 FORMAT JSON
 
+-- builder:infra:listNodesQuery:default  [6fe8973a]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.node.name'] AS nodeName,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.node.uid'], metrics_gauge.ResourceAttributes['k8s.node.uid'] != '') AS nodeUid,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.cluster.name'], metrics_gauge.ResourceAttributes['k8s.cluster.name'] != '') AS clusterName,
+          anyIf(coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment']), coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment']) != '') AS environment,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.kubelet.version'], metrics_gauge.ResourceAttributes['k8s.kubelet.version'] != '') AS kubeletVersion,
+          max(metrics_gauge.TimeUnix) AS lastSeen,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) AS cpuUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0) AS cpuAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0), 0), 0) AS cpuUtilization,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) AS memoryUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0) AS memoryAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0), 0), 0) AS memoryUtilization,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.uptime'), 0) AS uptime
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.node.name'] != ''
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
+          AND metrics_gauge.MetricName IN ('k8s.node.cpu.usage', 'k8s.node.uptime', 'k8s.node.memory.working_set', 'k8s.node.allocatable_cpu', 'k8s.node.allocatable_memory')
+        GROUP BY nodeName
+        HAVING countIf(metrics_gauge.MetricName = 'k8s.node.cpu.usage') > 0
+        ORDER BY lastSeen DESC
+        LIMIT 200
+        OFFSET 0
+        FORMAT JSON
+
+-- builder:infra:nodeDetailSummaryQuery:default  [33fb2081]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.node.name'] AS nodeName,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.node.uid'], metrics_gauge.ResourceAttributes['k8s.node.uid'] != '') AS nodeUid,
+          anyIf(metrics_gauge.ResourceAttributes['k8s.kubelet.version'], metrics_gauge.ResourceAttributes['k8s.kubelet.version'] != '') AS kubeletVersion,
+          anyIf(coalesce(nullIf(metrics_gauge.ResourceAttributes['container.runtime.name'], ''), metrics_gauge.ResourceAttributes['container.runtime']), coalesce(nullIf(metrics_gauge.ResourceAttributes['container.runtime.name'], ''), metrics_gauge.ResourceAttributes['container.runtime']) != '') AS containerRuntime,
+          min(metrics_gauge.TimeUnix) AS firstSeen,
+          max(metrics_gauge.TimeUnix) AS lastSeen,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) AS cpuUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0) AS cpuAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.cpu.usage'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_cpu'), 0), 0), 0) AS cpuUtilization,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) AS memoryUsage,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0) AS memoryAllocatable,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0), 0), 0) AS memoryUtilization,
+          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.uptime'), 0) AS uptime
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.node.name'] = 'ip-10-0-1-42.ec2.internal'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
+          AND metrics_gauge.MetricName IN ('k8s.node.cpu.usage', 'k8s.node.uptime', 'k8s.node.memory.working_set', 'k8s.node.allocatable_cpu', 'k8s.node.allocatable_memory')
+        GROUP BY nodeName
+        FORMAT JSON
+
 -- builder:infra:nodeFacetsQuery:default  [0dff8530]
 SELECT
           metrics_gauge.ResourceAttributes['k8s.node.name'] AS name,
@@ -1199,6 +1523,22 @@ SELECT
           AND metrics_gauge.ResourceAttributes['k8s.node.name'] = 'ip-10-0-1-42.ec2.internal'
           AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
           AND metrics_gauge.MetricName = 'k8s.node.cpu.utilization'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:infra:nodeGaugeTimeseriesQuery:utilization  [f4c7789a]
+SELECT
+          toStartOfInterval(metrics_gauge.TimeUnix, INTERVAL 300 SECOND) AS bucket,
+          '' AS attributeValue,
+          ifNull(ifNotFinite(ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.memory.working_set'), 0), 0) / ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'k8s.node.allocatable_memory'), 0), 0), 0) AS avgValue
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['k8s.node.name'] = 'ip-10-0-1-42.ec2.internal'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] = ''
+          AND metrics_gauge.MetricName IN ('k8s.node.memory.working_set', 'k8s.node.allocatable_memory')
         GROUP BY bucket
         ORDER BY bucket ASC
         FORMAT JSON
@@ -1369,6 +1709,47 @@ SELECT
           AND metrics_gauge.MetricName = 'k8s.pod.cpu.utilization'
         GROUP BY bucket
         ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:infra:podRestartsQuery:default  [b489a972]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.pod.name'] AS podName,
+          metrics_gauge.ResourceAttributes['k8s.namespace.name'] AS namespace,
+          metrics_gauge.ResourceAttributes['k8s.container.name'] AS containerName,
+          ifNotFinite(greatest(argMax(metrics_gauge.Value, metrics_gauge.TimeUnix) - argMin(metrics_gauge.Value, metrics_gauge.TimeUnix), 0), 0) AS restarts,
+          ifNotFinite(argMax(metrics_gauge.Value, metrics_gauge.TimeUnix), 0) AS totalRestarts,
+          argMax(metrics_gauge.ResourceAttributes['k8s.container.status.last_terminated_reason'], metrics_gauge.TimeUnix) AS lastTerminatedReason
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.MetricName = 'k8s.container.restarts'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] != ''
+          AND metrics_gauge.ResourceAttributes['k8s.namespace.name'] = 'backend'
+          AND metrics_gauge.ResourceAttributes['k8s.deployment.name'] = 'api'
+        GROUP BY podName, namespace, containerName
+        ORDER BY restarts DESC, totalRestarts DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:infra:podRestartsQuery:podNames  [4976b882]
+SELECT
+          metrics_gauge.ResourceAttributes['k8s.pod.name'] AS podName,
+          metrics_gauge.ResourceAttributes['k8s.namespace.name'] AS namespace,
+          metrics_gauge.ResourceAttributes['k8s.container.name'] AS containerName,
+          ifNotFinite(greatest(argMax(metrics_gauge.Value, metrics_gauge.TimeUnix) - argMin(metrics_gauge.Value, metrics_gauge.TimeUnix), 0), 0) AS restarts,
+          ifNotFinite(argMax(metrics_gauge.Value, metrics_gauge.TimeUnix), 0) AS totalRestarts,
+          argMax(metrics_gauge.ResourceAttributes['k8s.container.status.last_terminated_reason'], metrics_gauge.TimeUnix) AS lastTerminatedReason
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.MetricName = 'k8s.container.restarts'
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] != ''
+          AND metrics_gauge.ResourceAttributes['k8s.pod.name'] IN ('api-7d9f8b6c5-x2n4k', 'worker-5c8d7f9b4-q7m2p')
+        GROUP BY podName, namespace, containerName
+        ORDER BY restarts DESC, totalRestarts DESC
+        LIMIT 500
         FORMAT JSON
 
 -- builder:infra:workloadFacetsQuery:default  [39bce5d0]
@@ -3969,6 +4350,73 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
+-- builder:service-map:serviceDependenciesInvolvingServiceQuery:default  [010fb51f]
+SELECT
+          edges.sourceService AS sourceService,
+          edges.targetService AS targetService,
+          sum(edges.bucketCallCount) AS callCount,
+          sum(edges.bucketErrorCount) AS errorCount,
+          ifNull(ifNotFinite(sum(edges.bucketDurationSumMs) / nullIf(sum(edges.bucketCallCount), 0), 0), 0) AS avgDurationMs,
+          max(edges.bucketMaxDurationMs) AS maxDurationMs,
+          sum(edges.bucketEstimatedSpanCount) AS estimatedSpanCount
+        FROM (
+SELECT
+          service_map_edges_hourly.SourceService AS sourceService,
+          service_map_edges_hourly.TargetService AS targetService,
+          sum(service_map_edges_hourly.CallCount) AS bucketCallCount,
+          sum(service_map_edges_hourly.ErrorCount) AS bucketErrorCount,
+          sum(service_map_edges_hourly.DurationSumMs) AS bucketDurationSumMs,
+          max(service_map_edges_hourly.MaxDurationMs) AS bucketMaxDurationMs,
+          sum(if(service_map_edges_hourly.SampleRateSum > 0, service_map_edges_hourly.SampleRateSum, toFloat64(service_map_edges_hourly.CallCount))) AS bucketEstimatedSpanCount
+        FROM service_map_edges_hourly
+        WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
+          AND (service_map_edges_hourly.SourceService = 'web' OR service_map_edges_hourly.TargetService = 'web')
+          AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY sourceService, targetService
+UNION ALL
+SELECT
+          p.ServiceName AS sourceService,
+          c.ServiceName AS targetService,
+          count() AS bucketCallCount,
+          countIf(c.StatusCode = 'Error') AS bucketErrorCount,
+          sum(c.Duration / 1000000) AS bucketDurationSumMs,
+          max(c.Duration / 1000000) AS bucketMaxDurationMs,
+          sum(multiIf(match(c.TraceState, 'th:[0-9a-f]+'), 1.0 / greatest(1.0 - reinterpretAsUInt64(reverse(unhex(rightPad(extract(c.TraceState, 'th:([0-9a-f]+)'), 16, '0')))) / pow(2.0, 64), 0.0001), 1.0)) AS bucketEstimatedSpanCount
+        FROM (SELECT
+          service_map_spans.OrgId AS OrgId,
+          service_map_spans.Timestamp AS Timestamp,
+          service_map_spans.TraceId AS TraceId,
+          service_map_spans.SpanId AS SpanId,
+          service_map_spans.ServiceName AS ServiceName,
+          service_map_spans.DeploymentEnv AS DeploymentEnv
+        FROM service_map_spans
+        WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
+          AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
+          AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
+          AND service_map_spans.OrgId = 'org_sql_catalog'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS p
+        INNER JOIN (SELECT
+          service_map_children.TraceId AS TraceId,
+          service_map_children.ParentSpanId AS ParentSpanId,
+          service_map_children.ServiceName AS ServiceName,
+          service_map_children.Duration AS Duration,
+          service_map_children.StatusCode AS StatusCode,
+          service_map_children.TraceState AS TraceState
+        FROM service_map_children
+        WHERE service_map_children.Timestamp >= toDateTime('2026-01-01 10:30:00')
+          AND service_map_children.Timestamp < toDateTime('2026-01-03 14:15:00')
+          AND service_map_children.OrgId = 'org_sql_catalog'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS c ON (p.SpanId = c.ParentSpanId AND p.TraceId = c.TraceId)
+        WHERE p.ServiceName != c.ServiceName
+          AND (p.ServiceName = 'web' OR c.ServiceName = 'web')
+        GROUP BY sourceService, targetService
+) AS edges
+        GROUP BY sourceService, targetService
+        ORDER BY callCount DESC
+        LIMIT 200
+        FORMAT JSON
+
 -- builder:service-map:serviceDependenciesSQL:default  [2aa810d6]
 SELECT
           edges.sourceService AS sourceService,
@@ -4102,7 +4550,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceExternalEdgesSQL:default  [a24b0a4c]
+-- builder:service-map:serviceExternalEdgesSQL:default  [5eb951e4]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetType AS targetType,
@@ -4152,7 +4600,7 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND traces.SpanKind IN ('Client', 'Producer')
-          AND traces.SpanAttributes['db.system.name'] = ''
+          AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = ''
           AND ((((((traces.SpanAttributes['server.address'] != '' OR traces.SpanAttributes['http.host'] != '') OR traces.SpanAttributes['url.authority'] != '') OR coalesce(nullIf(traces.SpanAttributes['messaging.destination.name'], ''), traces.SpanAttributes['messaging.destination']) != '') OR traces.SpanAttributes['messaging.system'] != '') OR traces.SpanAttributes['rpc.service'] != '') OR traces.SpanAttributes['rpc.system'] != '')
         GROUP BY sourceService, targetType, targetSystem, targetName
         HAVING targetName != ''
@@ -4171,7 +4619,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceExternalEdgesSQL:env-scoped  [616f7d2f]
+-- builder:service-map:serviceExternalEdgesSQL:env-scoped  [29394199]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetType AS targetType,
@@ -4222,7 +4670,7 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND traces.SpanKind IN ('Client', 'Producer')
-          AND traces.SpanAttributes['db.system.name'] = ''
+          AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = ''
           AND ((((((traces.SpanAttributes['server.address'] != '' OR traces.SpanAttributes['http.host'] != '') OR traces.SpanAttributes['url.authority'] != '') OR coalesce(nullIf(traces.SpanAttributes['messaging.destination.name'], ''), traces.SpanAttributes['messaging.destination']) != '') OR traces.SpanAttributes['messaging.system'] != '') OR traces.SpanAttributes['rpc.service'] != '') OR traces.SpanAttributes['rpc.system'] != '')
           AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'production'
         GROUP BY sourceService, targetType, targetSystem, targetName
@@ -4758,6 +5206,58 @@ SELECT
         ORDER BY estimatedSpanCount DESC, serviceName ASC
         LIMIT 50
         OFFSET 0
+        FORMAT JSON
+
+-- builder:services:servicePresenceQuery:default  [3abd8978]
+SELECT
+          sum(service_windows.bSpanCount) AS spanCount
+        FROM (
+SELECT
+          toStartOfHour(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bServiceName,
+          service_overview_spans.ServiceNamespace AS bServiceNamespace,
+          service_overview_spans.DeploymentEnv AS bEnvironment,
+          service_overview_spans.CommitSha AS bCommitSha,
+          count() AS bSpanCount,
+          sum(service_overview_spans.SampleRate) AS bEstimatedSpanCount,
+          countIf(service_overview_spans.StatusCode = 'Error') AS bErrorCount,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(service_overview_spans.Timestamp) AS bFirstSeen,
+          countIf((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration < 500000000)) AS bApdexSatisfiedCount,
+          countIf(((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration >= 500000000) AND service_overview_spans.Duration < 2000000000)) AS bApdexToleratingCount
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND service_overview_spans.ServiceName = 'checkout'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bServiceName,
+          service_overview_hourly.ServiceNamespace AS bServiceNamespace,
+          service_overview_hourly.DeploymentEnv AS bEnvironment,
+          service_overview_hourly.CommitSha AS bCommitSha,
+          sum(service_overview_hourly.SpanCount) AS bSpanCount,
+          sum(service_overview_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_hourly.ErrorCount) AS bErrorCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_hourly.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_hourly.FirstSeen) AS bFirstSeen,
+          sum(service_overview_hourly.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_hourly.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.ServiceName = 'checkout'
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+) AS service_windows
+        WHERE service_windows.bServiceName = 'checkout'
         FORMAT JSON
 
 -- builder:session-events:sessionActivityQuery:default  [bb249b01]

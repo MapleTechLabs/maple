@@ -221,12 +221,12 @@ const planetScaleRegistry = (
  * queue retries the delivery instead of acking a lost occurrence.
  */
 export class PlanetScaleIssueConflictUnresolved extends Schema.TaggedError<PlanetScaleIssueConflictUnresolved>()(
-	"@maple/api/planetscale/PlanetScaleIssueConflictUnresolved",
+	"@maple/backend/planetscale/PlanetScaleIssueConflictUnresolved",
 	{ message: Schema.String, orgId: Schema.String, fingerprintHash: Schema.String },
 ) {}
 
 export class PlanetScaleWebhookProjectionInvalid extends Schema.TaggedError<PlanetScaleWebhookProjectionInvalid>()(
-	"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
+	"@maple/backend/planetscale/PlanetScaleWebhookProjectionInvalid",
 	{ message: Schema.String, orgId: Schema.String, connectionId: Schema.String, cause: Schema.Defect() },
 ) {}
 
@@ -526,7 +526,7 @@ export interface InsertPlanetScaleEventInput {
 export const insertPlanetScaleEvent: (
 	input: InsertPlanetScaleEventInput,
 ) => Effect.Effect<{ readonly inserted: boolean }, DatabaseError, Database> = Effect.fn(
-	"planetscaleWebhook.insertEvent",
+	"PlanetScaleWebhookEvents.insertEvent",
 )(function* (input: InsertPlanetScaleEventInput) {
 	const database = yield* Database
 	return yield* database.execute((db) =>
@@ -607,7 +607,7 @@ export interface UpsertPlanetScaleIssueResult {
 export const upsertPlanetScaleIssue: (
 	input: UpsertPlanetScaleIssueInput,
 ) => Effect.Effect<UpsertPlanetScaleIssueResult, DatabaseError, Database> = Effect.fn(
-	"planetscaleWebhook.upsertIssue",
+	"PlanetScaleWebhookEvents.upsertIssue",
 )(function* (input: UpsertPlanetScaleIssueInput) {
 	const database = yield* Database
 	const databaseName = input.payload.database ?? "unknown"
@@ -850,7 +850,7 @@ export const upsertPlanetScaleIssue: (
 			),
 		)
 		.pipe(
-			Effect.catchTag("@maple/api/planetscale/PlanetScaleIssueConflictUnresolved", (error) =>
+			Effect.catchTag("@maple/backend/planetscale/PlanetScaleIssueConflictUnresolved", (error) =>
 				Effect.fail(new DatabaseError({ message: error.message, cause: error })),
 			),
 		)

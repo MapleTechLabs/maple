@@ -79,7 +79,7 @@ function UnsubscribeConfirm({ token }: { token: string }) {
 				<div className="mt-4">
 					<Button
 						variant="outline"
-						render={<Link to="/settings" search={{ tab: "notifications" }} />}
+						render={<Link to="/account" search={{ tab: "email-preferences" }} />}
 					>
 						Notification settings
 					</Button>

@@ -36,8 +36,8 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: params.service ?? "all",
-				environment: params.environment ?? "all",
+				"maple.ai.service": params.service ?? "all",
+				"maple.ai.environment": params.environment ?? "all",
 			})
 
 			const allEdges = yield* serviceMap({

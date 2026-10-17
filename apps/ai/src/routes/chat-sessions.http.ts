@@ -62,7 +62,7 @@ const decodeSendRequest = Schema.decodeUnknownEffect(Schema.fromJsonString(ChatS
  * path, a defect escaping into a recovery handler that fails the same way.
  */
 class ChatSessionUnavailableError extends Schema.TaggedError<ChatSessionUnavailableError>()(
-	"@maple/api/chat/ChatSessionUnavailableError",
+	"@maple/ai/chat/ChatSessionUnavailableError",
 	{ operation: Schema.String },
 ) {
 	override get message(): string {
@@ -107,7 +107,7 @@ interface ResolvedSession {
  * Resolve the session, authorising the caller against the org encoded in its id.
  * Returns an error response instead of the stub when anything does not line up.
  */
-const resolveSession = Effect.fn("chat.resolveSession")(function* (
+const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* (
 	request: HttpServerRequest.HttpServerRequest,
 ) {
 	const url = new URL(request.url, "http://internal")
@@ -264,7 +264,7 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				// turn, and a caller-supplied one named a message that never existed — so the
 				// `turn-end` it recorded matched nothing and no client ever cleared its streaming
 				// state.
-				const aborted = yield* sessionCall("abort", resolved.session.stub.abort()).pipe(Effect.option)
+				const aborted = yield* sessionCall("abort", resolved.session.stub.abort("user")).pipe(Effect.option)
 				if (Option.isNone(aborted)) return problem("The chat session is unavailable", 503)
 				return HttpServerResponse.empty({ status: 204 })
 			}),
