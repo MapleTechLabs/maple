@@ -337,6 +337,67 @@ describe("costBreakdown", () => {
 		expect(costBreakdown(result)[1]?.cents).toBe(2 * 9_900)
 	})
 
+	it("keeps an add-on missing from the catalog as an unitemized charge and marks the spend partial", () => {
+		const result = buildSpendModel({
+			customer: buildCustomer({
+				subscriptions: [
+					{
+						planId: "startup",
+						status: "active",
+						addOn: false,
+						currentPeriodStart: CYCLE_START,
+						currentPeriodEnd: CYCLE_END,
+					},
+					{ planId: "retired_addon", status: "active", addOn: true },
+				],
+			}),
+			plans: [startupPlan],
+			usage,
+			nowMs: NOW,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		expect(result.partial).toBe(true)
+		expect(result.baseCents).toBe(3_900)
+		expect(costBreakdown(result).map((line) => [line.label, line.cents])).toEqual([
+			["Startup plan", 3_900],
+			["retired_addon add-on", null],
+			["Usage overage", result.overageCents],
+		])
+	})
+
+	it("stays complete for an add-on billed by usage alone", () => {
+		const result = buildSpendModel({
+			customer: buildCustomer({
+				subscriptions: [
+					{
+						planId: "startup",
+						status: "active",
+						addOn: false,
+						currentPeriodStart: CYCLE_START,
+						currentPeriodEnd: CYCLE_END,
+					},
+					{ planId: "usage_addon", status: "active", addOn: true },
+				],
+			}),
+			plans: [
+				startupPlan,
+				{
+					id: "usage_addon",
+					name: "Usage add-on",
+					addOn: true,
+					items: [{ featureId: "logs", included: 10 }],
+				} as CatalogPlan,
+			],
+			usage,
+			nowMs: NOW,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		expect(result.partial).toBe(false)
+		expect(costBreakdown(result)[1]?.cents).toBe(0)
+	})
+
 	it("does not itemize fixed fees for a plan it cannot price", () => {
 		const result = buildSpendModel({
 			customer: buildCustomer({

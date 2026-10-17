@@ -17,7 +17,7 @@ import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 
 import { XmarkIcon } from "@/components/icons"
-import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
+import { useExclusiveAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { verificationBadge } from "@/lib/billing/billing-profile"
 import { toastExit } from "@/lib/error-toast"
 import { useAtomSet } from "@/lib/effect-atom"
@@ -67,7 +67,8 @@ function AddTaxIdRow({ profile }: { readonly profile: BillingProfile }) {
 	const [value, setValue] = useState("")
 	const [missingValue, setMissingValue] = useState(false)
 
-	const [handleAdd, adding] = useAsyncAction(async () => {
+	// Exclusive: Enter can repeat before `adding` re-renders, and each call creates a tax ID.
+	const [handleAdd, adding] = useExclusiveAsyncAction(async () => {
 		const trimmed = value.trim()
 		if (!isTaxIdType(type)) return
 		if (trimmed.length === 0) {

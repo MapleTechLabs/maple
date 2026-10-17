@@ -64,7 +64,8 @@ export function SettingsSaveBar({
 	const visible = dirty || pending
 	return (
 		<>
-			<UnsavedChangesGuard when={dirty && !pending} />
+			{/* Stays armed while a save is in flight: a failed save must not lose the edits. */}
+			<UnsavedChangesGuard when={dirty} />
 			{visible ? (
 				<section
 					aria-label="Unsaved changes"

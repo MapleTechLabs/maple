@@ -25,6 +25,28 @@ export function useAsyncAction<Args extends ReadonlyArray<unknown>, R>(
 	return [run, pending] as const
 }
 
+/**
+ * `useAsyncAction` that ignores calls while one is in flight. The guard is a ref, so a second
+ * Enter before React re-renders is dropped too; dropped calls resolve to undefined.
+ */
+export function useExclusiveAsyncAction<Args extends ReadonlyArray<unknown>, R>(
+	action: (...args: Args) => Promise<R>,
+): readonly [run: (...args: Args) => Promise<R | undefined>, pending: boolean] {
+	const inFlight = useRef(false)
+	const [runAction, pending] = useAsyncAction(action)
+	const run = useCallback(
+		(...args: Args): Promise<R | undefined> => {
+			if (inFlight.current) return Promise.resolve(undefined)
+			inFlight.current = true
+			return runAction(...args).finally(() => {
+				inFlight.current = false
+			})
+		},
+		[runAction],
+	)
+	return [run, pending] as const
+}
+
 export interface KeyedAction<K extends string, Args extends ReadonlyArray<unknown>, R> {
 	readonly run: (key: K, ...args: Args) => Promise<R>
 	readonly isPending: (key: K) => boolean
