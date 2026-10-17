@@ -251,6 +251,54 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/kit/buttons",
+		title: "Kit: buttons",
+		description:
+			"Every @maple/ui button variant and size, icon buttons, toggles, toggle groups, copy and refresh buttons, filter chips, badges, status dots, kbd and inline code.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/forms",
+		title: "Kit: forms",
+		description:
+			"Inputs in every size and state, textarea, input group, field with description and error, checkbox, radio, switch, native select, closed pickers and the OTP field.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/overlays",
+		title: "Kit: overlays",
+		description:
+			"One @maple/ui overlay rendered open per ?item= (dialog, sheet, menus, popovers, pickers, command palette, each toast type).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/display",
+		title: "Kit: display",
+		description:
+			"Cards, panels, alerts, empty states, items, list rows, key values, meters, stat figures, skeletons, tables, tabs and separators.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/content",
+		title: "Kit: content",
+		description:
+			"Page header, eyebrow, breadcrumb, avatar, spinner, marker, message, bubble, trace, truncation, setting rows, scroll area and calendar.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/navigation",
+		title: "Kit: navigation",
+		description:
+			"The sidebar expanded and collapsed with groups, badges and sub menus, resizable panels and the navigation menu.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/query-builder",
 		title: "Query builder",
 		description: "MVP query builder against real warehouse data for the signed-in org.",

@@ -14,7 +14,10 @@ const REGISTRY = "apps/web/src/lab/registry.ts"
 const registrySource = () => {
 	const path = resolve(repoRoot, REGISTRY)
 	if (existsSync(path)) return readFileSync(path, "utf8")
-	return execFileSync("git", ["show", `${LEGACY_BASELINE_REF}:${REGISTRY}`], { cwd: repoRoot, encoding: "utf8" })
+	return execFileSync("git", ["show", `${LEGACY_BASELINE_REF}:${REGISTRY}`], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	})
 }
 
 export interface LabRegistryEntry {
@@ -30,7 +33,8 @@ export const labRegistry = (): ReadonlyArray<LabRegistryEntry> => {
 		const path = block.match(/path: "([^"]+)"/)?.[1]
 		const title = block.match(/title: "([^"]+)"/)?.[1]
 		const session = block.match(/session: "(none|required)"/)?.[1]
-		if (path && title && (session === "none" || session === "required")) entries.push({ path, title, session })
+		if (path && title && (session === "none" || session === "required"))
+			entries.push({ path, title, session })
 	}
 	if (entries.length === 0) throw new Error(`ui-parity: no lab entries parsed from ${REGISTRY}`)
 	return entries
@@ -53,6 +57,9 @@ export const labArea: AreaModule = {
 	area: "lab",
 	scenarios: [
 		scenario("/lab", "Index"),
-		...labRegistry().map((entry) => scenario(entry.path, entry.title)),
+		...labRegistry()
+			// The kit gallery has its own area (`kit.ts`) with per-item and interaction scenarios.
+			.filter((entry) => !entry.path.startsWith("/lab/kit/"))
+			.map((entry) => scenario(entry.path, entry.title)),
 	],
 }
