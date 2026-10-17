@@ -467,7 +467,7 @@ describe("SourcesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it("gives each GitHub installation its own source and health", () => {
+	it.effect("gives each GitHub installation its own source and health", () => {
 		const testDb = createTestDb(trackedDbs)
 		const insertInstallation = (id: string, login: string, status: string) =>
 			Effect.promise(() =>
