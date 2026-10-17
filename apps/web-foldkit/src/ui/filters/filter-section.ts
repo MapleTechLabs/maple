@@ -167,8 +167,10 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 	const optionLabel = isExcluded ? `${text} (excluded)` : text
 	const title = isExcluded ? optionLabel : (config.getOptionDescription?.(option.name) ?? text)
 	const isTriState = config.onExclude !== undefined
+	// Keyed by name like React's rows: a reorder (selected first) moves the focused row with it.
 	return h.div(
 		[
+			h.Key(option.name),
 			h.Class("group/option flex items-center gap-2"),
 			...(isExcluded ? [h.DataAttribute("excluded", "")] : []),
 		],

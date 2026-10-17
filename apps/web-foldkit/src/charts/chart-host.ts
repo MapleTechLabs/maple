@@ -13,6 +13,7 @@ import {
 	buildNumericHistogram,
 } from "./definitions/histogram"
 import { buildFixedMetric } from "./definitions/fixed-metric"
+import { buildLogsVolume } from "./definitions/logs-volume"
 import { buildPie, buildPieSpike } from "./definitions/pie"
 import { buildOccurrences } from "./definitions/occurrences"
 import { buildSparkline } from "./definitions/sparkline"
@@ -135,6 +136,8 @@ export const createChartHost = (
 			hostFor(container, area, height, variant("QueryBuilderArea"), buildQueryBuilderArea, options),
 		Occurrences: (occurrences) =>
 			hostFor(container, occurrences, height, variant("Occurrences"), buildOccurrences, options),
+		LogsVolume: (volume) =>
+			hostFor(container, volume, height, variant("LogsVolume"), buildLogsVolume, options),
 		BinnedHistogram: (histogram) =>
 			hostFor(container, histogram, height, variant("BinnedHistogram"), buildBinnedHistogram, options),
 		FixedMetric: (metric) =>

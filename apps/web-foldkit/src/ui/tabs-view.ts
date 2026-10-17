@@ -36,6 +36,8 @@ export interface TabsViewInputs {
 	readonly ariaLabel?: string
 	/** Panel content for a value; values without one render no panel (Base UI unmounts it). */
 	readonly panel: (value: string) => ReadonlyArray<Html | string> | undefined
+	/** Which values have a panel, without building them (a panel holding a Submodel renders once). */
+	readonly hasPanel?: (value: string) => boolean
 }
 
 type H = HtmlBuilder<Message>
@@ -169,9 +171,11 @@ const tabPanel = (
 export const view = defineView<Model, Message, TabsViewInputs>((model, inputs, h) => {
 	// Each panel is built once: a panel holding a Submodel may only render it once per pass.
 	const content = inputs.panel(model.selected)
-	const panelValues = model.values.filter((value) =>
-		value === model.selected ? content !== undefined : inputs.panel(value) !== undefined,
-	)
+	const hasPanel =
+		inputs.hasPanel ??
+		((value: string) =>
+			value === model.selected ? content !== undefined : inputs.panel(value) !== undefined)
+	const panelValues = model.values.filter(hasPanel)
 	return h.div(
 		[
 			h.Class(cn(tabsStyles, inputs.className)),

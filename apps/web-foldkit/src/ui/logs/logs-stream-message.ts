@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as AttributesPanel from "../attributes/attributes-panel"
 
 /** A rendered row of the virtual window: which log, and where it sits in the list. */
 export const VirtualRow = Schema.Struct({ index: Schema.Number, start: Schema.Number })
@@ -34,6 +35,13 @@ export const Message = defineMessageUnion({
 	/** A chip open or close delay ran out; `generation` drops the ones a later event superseded. */
 	ElapsedChipDelay: { generation: Schema.Number },
 	CompletedCopy: {},
+	/** The expanded body's Details action and its JSON copy (status tracked like `useCopy`). */
+	ClickedDetails: { index: Schema.Number },
+	ClickedCopyJson: { index: Schema.Number },
+	SucceededCopyJson: { generation: Schema.Number },
+	FailedCopyJson: { generation: Schema.Number },
+	ElapsedCopyJsonStatus: { generation: Schema.Number },
+	GotPanelMessage: { index: Schema.Number, message: AttributesPanel.Message },
 	CompletedScroll: {},
 })
 export type Message = typeof Message.Type

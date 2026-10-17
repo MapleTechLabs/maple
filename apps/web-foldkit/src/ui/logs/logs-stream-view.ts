@@ -8,6 +8,8 @@ import type { LogRowView } from "./log-row-view"
 import type { Model } from "./logs-stream"
 import { Message } from "./logs-stream-message"
 import { eyebrow } from "../eyebrow"
+import type * as AttributesPanel from "../attributes/attributes-panel"
+import type { CopyStatus } from "../copy-button"
 import { COUNT_ATTRIBUTE, LAYOUT_ATTRIBUTE, STREAM_ATTRIBUTE, VirtualizeLogStream } from "./virtualize"
 
 export interface ViewInputs {
@@ -23,6 +25,13 @@ export interface ViewInputs {
 	readonly footerText: string
 	/** Adds "Filter in" / "Filter out" to the attribute card. */
 	readonly canFilter: boolean
+	/**
+	 * The parent renders the stream's box (with its toolbar before the stream, as apps/web's
+	 * `LogsTableView` does on /logs); the stream's own root is then `display: contents`.
+	 */
+	readonly isBare?: boolean
+	/** The row the detail sheet shows (`rowSelectedClass`). */
+	readonly selectedIndex?: number
 }
 
 const PINNED_COL_WIDTH = "150px"
@@ -38,6 +47,9 @@ const ROW_EVENTS: RowEvents<Message> = {
 	blurredChip: (index, key) => Message.BlurredChip({ index, key }),
 	clickedChip: (index, key) => Message.ClickedChip({ index, key }),
 	pressedChipEscape: (index, key) => Message.PressedChipEscape({ index, key }),
+	clickedDetails: (index) => Message.ClickedDetails({ index }),
+	clickedCopyJson: (index) => Message.ClickedCopyJson({ index }),
+	gotPanelMessage: (index, message) => Message.GotPanelMessage({ index, message }),
 }
 
 /** Sticky column labels (apps/web's `ColumnHeader`). */
@@ -82,14 +94,21 @@ const rowView = (
 	wrap: boolean,
 	density: Density,
 	highlight: string | undefined,
+	panel: AttributesPanel.Model | undefined,
+	jsonStatus: CopyStatus,
+	canFilter: boolean,
+	isSelected: boolean,
 ): Html =>
 	logRow(h, ROW_EVENTS, row, index, start, {
 		isFocused,
 		isExpanded,
-		isSelected: false,
+		isSelected,
 		wrap,
 		density,
 		highlight,
+		panel,
+		jsonStatus,
+		canFilter,
 	})
 
 // Rows are keyed by index like apps/web; the slot is `index % 256` so the cache stays bounded
@@ -115,19 +134,25 @@ export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 						inputs.wrap,
 						inputs.density,
 						inputs.searchText,
+						model.panels[String(index)],
+						model.jsonCopy.id === String(index) ? model.jsonCopy.status : "idle",
+						inputs.canFilter,
+						index === inputs.selectedIndex,
 					]),
 				]
 	})
 	return h.div(
-		[
-			h.Class(
-				cn(
-					"flex min-h-0 flex-1 flex-col",
-					inputs.isWaiting ? "opacity-60 transition-opacity" : "transition-opacity",
-				),
-			),
-			...(inputs.isWaiting ? [h.AriaBusy(true)] : []),
-		],
+		inputs.isBare === true
+			? [h.Class("contents")]
+			: [
+					h.Class(
+						cn(
+							"flex min-h-0 flex-1 flex-col",
+							inputs.isWaiting ? "opacity-60 transition-opacity" : "transition-opacity",
+						),
+					),
+					...(inputs.isWaiting ? [h.AriaBusy(true)] : []),
+				],
 		[
 			h.div(
 				[

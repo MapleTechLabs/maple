@@ -35,12 +35,22 @@ export const Model = Schema.Struct({
 	requestedSide: Side,
 	requestedAlign: Align,
 	sideOffset: Schema.Number,
+	/** The provider's `delay` (`TooltipProvider delay={250}`); Base UI's default is 600. */
+	openDelayMs: Schema.Number,
+	/** A press on a trigger is under way: the focus it brings is not keyboard focus. */
+	isPressingTrigger: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
 export const OPEN_DELAY = Duration.millis(600)
 
-export type InitOptions = Readonly<{ isOpen?: boolean; side?: Side; align?: Align; sideOffset?: number }>
+export type InitOptions = Readonly<{
+	isOpen?: boolean
+	side?: Side
+	align?: Align
+	sideOffset?: number
+	openDelayMs?: number
+}>
 
 /** `<TooltipPopup>`'s defaults: above the trigger, centred, 4px away. */
 export const init = (id: string, options: InitOptions = {}): Model => {
@@ -49,10 +59,12 @@ export const init = (id: string, options: InitOptions = {}): Model => {
 	return {
 		...initPopup(id, { isOpen: options.isOpen, side, align }),
 		hoverGeneration: 0,
+		isPressingTrigger: false,
 		triggerId: triggerId(id),
 		requestedSide: side,
 		requestedAlign: align,
 		sideOffset: options.sideOffset ?? 4,
+		openDelayMs: options.openDelayMs ?? Duration.toMillis(OPEN_DELAY),
 	}
 }
 
@@ -62,6 +74,8 @@ export const Message = defineMessageUnion({
 	EnteredTrigger: { triggerId: Schema.String },
 	LeftTrigger: {},
 	PressedTrigger: {},
+	FocusedTrigger: { triggerId: Schema.String },
+	BlurredTrigger: {},
 	ElapsedOpenDelay: { generation: Schema.Number },
 	PressedEscape: {},
 	CompletedMountTooltip: {},
@@ -74,10 +88,10 @@ export type Message = typeof Message.Type
 
 /** The open delay; a newer pointer move bumps the generation and drops this one. */
 export const WaitOpenDelay = Command.define("WaitOpenDelay", {
-	args: { generation: Schema.Number },
+	args: { generation: Schema.Number, millis: Schema.Number },
 	messages: [Message.ElapsedOpenDelay],
-	execute: ({ generation }) =>
-		Effect.sleep(OPEN_DELAY).pipe(Effect.as(Message.ElapsedOpenDelay({ generation }))),
+	execute: ({ generation, millis }) =>
+		Effect.sleep(Duration.millis(millis)).pipe(Effect.as(Message.ElapsedOpenDelay({ generation }))),
 })
 
 const transition = makeTransition<Model, Message>(
@@ -100,15 +114,21 @@ const enter = (model: Model, nextTriggerId: string): UpdateReturn => {
 	const generation = Number.increment(model.hoverGeneration)
 	return {
 		model: { ...model, hoverGeneration: generation, triggerId: nextTriggerId },
-		commands: [WaitOpenDelay({ generation })],
+		commands: [WaitOpenDelay({ generation, millis: model.openDelayMs })],
 	}
 }
 
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		EnteredTrigger: ({ triggerId: nextTriggerId }) => enter(model, nextTriggerId),
-		LeftTrigger: () => close(model),
-		PressedTrigger: () => close(model),
+		LeftTrigger: () => close({ ...model, isPressingTrigger: false }),
+		PressedTrigger: () => close({ ...model, isPressingTrigger: true }),
+		// Base UI opens on keyboard focus (focus-visible) at once; a press's focus does not open it.
+		FocusedTrigger: ({ triggerId: focusedId }) =>
+			model.isPressingTrigger
+				? { model: { ...model, isPressingTrigger: false } }
+				: transition.open({ ...cancelled(model), triggerId: focusedId }),
+		BlurredTrigger: () => (model.isOpen ? close(model) : { model }),
 		ElapsedOpenDelay: ({ generation }) =>
 			generation === model.hoverGeneration ? transition.open(model) : { model },
 		PressedEscape: () => close(model),
@@ -123,7 +143,14 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 /** Base UI's adaptive origin: the popup sticks to the positioner edge facing the trigger. */
 const pinPopup = (positioner: HTMLElement, popup: HTMLElement, side: Side): void => {
 	// The fractional box, as Base UI measures it: a rounded width would shift the centred popup.
+	// Measured from the origin at its natural width, so a popup near the viewport edge or sized by
+	// an earlier measurement is not shrunk to fit.
+	const placedLeft = positioner.style.left
+	positioner.style.left = "0px"
+	positioner.style.removeProperty("--positioner-width")
+	popup.style.removeProperty("position")
 	const box = popup.getBoundingClientRect()
+	positioner.style.left = placedLeft
 	positioner.style.setProperty("--positioner-width", `${box.width}px`)
 	positioner.style.setProperty("--positioner-height", `${box.height}px`)
 	popup.style.position = "absolute"
@@ -259,6 +286,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.OnMouseEnter(Message.EnteredTrigger({ triggerId: id })),
 			h.OnMouseLeave(Message.LeftTrigger()),
 			h.OnPointerDown(() => Option.some(Message.PressedTrigger())),
+			h.OnFocus(Message.FocusedTrigger({ triggerId: id })),
+			h.OnBlur(Message.BlurredTrigger()),
 		])
 	// Built here, not when `toView` asks: handlers bind to the boundary that builds them.
 	const triggers = new Map(

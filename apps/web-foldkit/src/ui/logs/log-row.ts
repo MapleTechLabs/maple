@@ -8,6 +8,9 @@ import { highlightedText } from "./highlight"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { CHIP_CLASS, CHIP_TONE_CLASSES, rowClass } from "./styles"
+import type * as AttributesPanel from "../attributes/attributes-panel"
+import type { CopyStatus } from "../copy-button"
+import { logRowExpanded } from "./log-row-expanded"
 
 /** The handlers a row raises, so the row view stays independent of the stream's Message union. */
 export interface RowEvents<Message> {
@@ -21,6 +24,9 @@ export interface RowEvents<Message> {
 	readonly blurredChip: (index: number, key: string) => Message
 	readonly clickedChip: (index: number, key: string) => Message
 	readonly pressedChipEscape: (index: number, key: string) => Message
+	readonly clickedDetails: (index: number) => Message
+	readonly clickedCopyJson: (index: number) => Message
+	readonly gotPanelMessage: (index: number, message: AttributesPanel.Message) => Message
 }
 
 export type Density = "compact" | "comfortable"
@@ -33,6 +39,10 @@ export interface RowState {
 	readonly wrap: boolean
 	readonly density: Density
 	readonly highlight: string | undefined
+	/** The expanded body's attribute panel, present while the row is expanded. */
+	readonly panel: AttributesPanel.Model | undefined
+	readonly jsonStatus: CopyStatus
+	readonly canFilter: boolean
 }
 
 /** Left-edge rail (and, for errors, a tint) so a scan down the stream stops on what is wrong. */
@@ -273,6 +283,23 @@ export const logRow = <Message>(
 					),
 				],
 			),
+			...(state.isExpanded && state.panel !== undefined
+				? [
+						logRowExpanded(
+							h,
+							row.log,
+							state.highlight,
+							state.panel,
+							state.jsonStatus,
+							state.canFilter,
+							{
+								clickedDetails: events.clickedDetails(index),
+								clickedCopyJson: events.clickedCopyJson(index),
+								toPanelMessage: (message) => events.gotPanelMessage(index, message),
+							},
+						),
+					]
+				: []),
 		],
 	)
 

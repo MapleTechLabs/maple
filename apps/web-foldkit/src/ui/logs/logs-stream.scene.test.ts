@@ -204,3 +204,52 @@ describe("logs stream: attribute card", () => {
 		)
 	})
 })
+
+describe("logs stream: expanded row", () => {
+	const expand = () => click(within(rowOf(0), role("button", { name: "Expand log" })))
+	const group = role("button", { name: /^attribute ?10$/ })
+
+	test("expanding shows the body and its attribute groups; a group over eight rows starts closed", () => {
+		scene(
+			program,
+			given(withWindow(0, 24)),
+			ackVirtualizer,
+			expand(),
+			expect(within(rowOf(0), text("Log Attributes"))).toExist(),
+			expect(group).toHaveAttr("aria-expanded", "false"),
+			expect(role("button", { name: "Copy attribute.0" })).not.toExist(),
+			click(group),
+			expect(group).toHaveAttr("aria-expanded", "true"),
+			expect(role("button", { name: "Copy attribute.0" })).toExist(),
+		)
+	})
+
+	test("Details opens the row's log", () => {
+		scene(
+			program,
+			given(withWindow(0, 24)),
+			ackVirtualizer,
+			expand(),
+			click(role("button", { name: "Details" })),
+			expectOutMessage(OutMessage.OpenedLog({ index: 0 })),
+		)
+	})
+
+	test("a filter from an attribute row becomes the stream's attribute filter", () => {
+		scene(
+			program,
+			given(withWindow(0, 24)),
+			ackVirtualizer,
+			expand(),
+			click(role("button", { name: "Exclude cloud.region = eu-central-1" })),
+			expectOutMessage(
+				OutMessage.ChoseAttributeFilter({
+					source: "resource",
+					key: "cloud.region",
+					value: "eu-central-1",
+					negated: true,
+				}),
+			),
+		)
+	})
+})

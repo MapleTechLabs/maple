@@ -302,8 +302,19 @@ export const menuCheckableItem = <Message>(
 }
 
 /** `<DropdownMenuRadioGroup>`. */
-export const menuRadioGroup = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
-	h.div([h.DataAttribute("slot", "dropdown-menu-radio-group"), h.Role("group")], children)
+export const menuRadioGroup = <Message>(
+	h: HtmlBuilder<Message>,
+	maybeLabelId: string | undefined,
+	children: Children,
+): Html =>
+	h.div(
+		[
+			...(maybeLabelId === undefined ? [] : [h.AriaLabelledBy(maybeLabelId)]),
+			h.DataAttribute("slot", "dropdown-menu-radio-group"),
+			h.Role("group"),
+		],
+		children,
+	)
 
 /** `<DropdownMenuSubTrigger>`: a `menuitem` that owns a submenu, with a trailing chevron. */
 export const menuSubTrigger = <Message>(

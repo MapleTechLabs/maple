@@ -1,7 +1,9 @@
-import { Duration, Schema, Stream } from "effect"
+import { Duration, Effect, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import * as LogsStream from "../../ui/logs/logs-stream"
 import { ViewerFlags, viewerFlags } from "../../ui/logs/viewer"
+import * as Shell from "../../shell"
+import { LabShellFlags, labShellFlags } from "../app-shell"
 import { defineLabWithFlags } from "../define"
 import { Message, Model } from "../logs-lab/model"
 import { init, update } from "../logs-lab/update"
@@ -11,7 +13,24 @@ import { view } from "../logs-lab/view"
  * `/lab/logs`: the logs stream over apps/web's production-like fixture, with the lab's toggles for
  * wrap, density, search and pinned columns, and a live tail that reveals held-back rows on reload.
  */
+const toShell = (message: Shell.Message) => Message.GotShellMessage({ message })
+
 const subscriptions = Subscription.make<Model, Message>()((entry) => ({
+	/** The shell's `useIsMobile` and its ⌘B toggle, as in the app root. */
+	shellViewport: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () => Stream.map(Shell.viewportChanges, toShell),
+		},
+	),
+	shellSidebarShortcut: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () => Stream.map(Shell.sidebarShortcut, toShell),
+		},
+	),
 	navigationKeys: entry(
 		{ hasRows: Schema.Boolean },
 		{
@@ -44,8 +63,11 @@ const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 
 export const lab = defineLabWithFlags("Logs stream", {
 	Model,
-	Flags: ViewerFlags,
-	flags: viewerFlags,
+	Flags: Schema.Struct({ ...ViewerFlags.fields, ...LabShellFlags.fields }),
+	flags: Effect.map(Effect.all([viewerFlags, labShellFlags]), ([viewer, shell]) => ({
+		...viewer,
+		...shell,
+	})),
 	init,
 	update,
 	view,

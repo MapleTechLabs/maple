@@ -10,7 +10,10 @@ import { Command, Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import { logTimeFormat, toLogRowView } from "../../ui/logs/log-row-view"
 import * as LogsStream from "../../ui/logs/logs-stream"
+import * as Menu from "../../ui/menu"
+import type { Resources } from "../../platform/resources"
 import { listFooterText, type ViewerFlags } from "../../ui/logs/viewer"
+import { foldLabShell, initLabShell, type LabShellFlags } from "../app-shell"
 import { foldLabToasts, initLabToasts } from "../toasts"
 import { Message, type Model, type Toggle } from "./model"
 
@@ -22,8 +25,8 @@ const ROWS_PER_TICK = 2
 /** `PageRefreshProvider` keeps the reload button busy this long. */
 const RELOAD_SPIN = Duration.millis(600)
 
-type Return = Update.Return<Model, Message>
-type Step = Update.Step<Model, Message>
+type Return = Update.Return<Model, Message, Resources>
+type Step = Update.Step<Model, Message, Resources>
 
 // DERIVED
 
@@ -48,7 +51,8 @@ const footerOf = (model: Model, shown: number) => {
 
 // INIT
 
-export const init = (flags: ViewerFlags): Return => {
+export const init = (flags: ViewerFlags & LabShellFlags): Return => {
+	const shell = initLabShell(flags)
 	const base: Model = {
 		stream: LogsStream.init("logs-lab", []),
 		footerText: "",
@@ -57,6 +61,7 @@ export const init = (flags: ViewerFlags): Return => {
 		refreshVersion: 0,
 		isReloading: false,
 		refreshInterval: 0,
+		refreshMenu: Menu.init("logs-lab-refresh-menu"),
 		isInspecting: false,
 		isScrolledAway: false,
 		wrap: false,
@@ -66,6 +71,7 @@ export const init = (flags: ViewerFlags): Return => {
 		isEmpty: false,
 		attrs: [],
 		toasts: initLabToasts(),
+		shell: shell.model,
 	}
 	const rows = rowsOf(base)
 	return {
@@ -73,6 +79,9 @@ export const init = (flags: ViewerFlags): Return => {
 			stream: () => LogsStream.init("logs-lab", rows),
 			footerText: () => footerOf(base, rows.length),
 		}),
+		commands: (shell.commands ?? []).map(
+			Command.mapMessage((message) => Message.GotShellMessage({ message })),
+		),
 	}
 }
 
@@ -164,6 +173,7 @@ const toggle = (model: Model, which: Toggle): Return => {
 }
 
 const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMessage({ message }))
+const foldShell = foldLabShell<Model, Message>((message) => Message.GotShellMessage({ message }))
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
@@ -184,4 +194,18 @@ export const update = (model: Model, message: Message): Return =>
 				? { model: modifyFields(model, { isReloading: () => false }) }
 				: { model },
 		GotToastMessage: ({ message }) => foldToasts(model, message),
+		GotShellMessage: ({ message }) => foldShell(model, message),
+		GotRefreshMenuMessage: ({ message }) => {
+			const next = Menu.update(model.refreshMenu, message)
+			return {
+				model: modifyFields(model, {
+					refreshMenu: () => next.model,
+					refreshInterval: (current) =>
+						next.outMessage?._tag === "SelectedRadio" ? Number(next.outMessage.value) : current,
+				}),
+				commands: Command.mapMessages(next.commands ?? [], (inner) =>
+					Message.GotRefreshMenuMessage({ message: inner }),
+				),
+			}
+		},
 	})

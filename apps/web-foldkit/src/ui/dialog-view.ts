@@ -111,6 +111,10 @@ export type ViewInputs = Readonly<{
 	className?: string
 	side?: SheetSide
 	hasTrigger?: boolean
+	/** `showCloseButton={false}`: the content renders its own close. */
+	showCloseButton?: boolean
+	/** Base UI points `aria-describedby` at a description only when one renders. */
+	hasDescription?: boolean
 }>
 
 const slotPrefix = (kind: Kind) => kind
@@ -132,17 +136,19 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		h.OnClick(Message.ClickedTrigger()),
 	])
 	const close = childAttributes([h.OnClick(Message.ClickedClose())])
-	const closeButton = Option.map(parts.closeButton, (className) =>
-		button(
-			h,
-			{
-				className,
-				size: "icon",
-				variant: "ghost",
-				attributes: [h.AriaLabel("Close"), h.Tabindex(0), h.OnClick(Message.ClickedClose())],
-			},
-			[icon(h, "XmarkIcon")],
-		),
+	const closeButton = Option.map(
+		Option.filter(parts.closeButton, () => inputs.showCloseButton !== false),
+		(className) =>
+			button(
+				h,
+				{
+					className,
+					size: "icon",
+					variant: "ghost",
+					attributes: [h.AriaLabel("Close"), h.Tabindex(0), h.OnClick(Message.ClickedClose())],
+				},
+				[icon(h, "XmarkIcon")],
+			),
 	)
 	const portal = isVisible
 		? h.div(
@@ -184,7 +190,9 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								[
 									...(parts.isLabelled
 										? [
-												h.AriaDescribedBy(descriptionId(model.id)),
+												...(inputs.hasDescription === false
+													? []
+													: [h.AriaDescribedBy(descriptionId(model.id))]),
 												h.AriaLabelledBy(titleId(model.id)),
 											]
 										: []),

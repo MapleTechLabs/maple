@@ -6,7 +6,24 @@ import { pickImportantAttributes } from "@maple/ui/lib/log-attributes"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { encodeLogKey } from "@maple/web/lib/log-key"
+import { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
+
+/** `LogRow` (`@maple/query-engine` route-rows): one log as the list renders it. */
+export const LogRecord = Schema.Struct({
+	timestamp: Schema.String,
+	exactTimestamp: Schema.String,
+	recordIdentity: Schema.optionalKey(Schema.UndefinedOr(Schema.String)),
+	severityText: Schema.String,
+	severityNumber: Schema.Number,
+	serviceName: Schema.String,
+	body: Schema.String,
+	traceId: Schema.UndefinedOr(TraceId),
+	spanId: Schema.UndefinedOr(SpanId),
+	logAttributes: Schema.Record(Schema.String, Schema.String),
+	resourceAttributes: Schema.Record(Schema.String, Schema.String),
+})
+export type LogRecord = typeof LogRecord.Type
 
 /**
  * Everything a log row renders, derived once per data, pin or timezone change (in `update`), so
@@ -48,6 +65,8 @@ export const LogRowView = Schema.Struct({
 	logKey: Schema.String,
 	pinned: Schema.Array(PinnedCell),
 	chips: Schema.Array(LogChip),
+	/** The log itself: the expanded body, its attributes and the JSON copy read it. */
+	log: LogRecord,
 })
 export type LogRowView = typeof LogRowView.Type
 
@@ -168,5 +187,6 @@ export const toLogRowView = (
 			}
 		}),
 		chips,
+		log,
 	}
 }

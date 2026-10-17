@@ -51,6 +51,10 @@ export type MenuEntry =
 	| Readonly<{
 			_tag: "RadioGroup"
 			items: ReadonlyArray<Readonly<{ value: string; label: string; isChecked: boolean }>>
+			/** A `DropdownMenuLabel` inside the group, which then names it (`aria-labelledby`). */
+			label?: string
+			/** Each item's text in its own `<span>` (`<DropdownMenuRadioItem><span>...</span>`). */
+			isItemLabelWrapped?: boolean
 	  }>
 	| Readonly<{ _tag: "Separator" }>
 
@@ -150,10 +154,11 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 				},
 				[entry.label],
 			)
-		case "RadioGroup":
-			return menuRadioGroup(
-				h,
-				entry.items.map((item, offset) =>
+		case "RadioGroup": {
+			const labelId = `${model.id}-group-${index}`
+			return menuRadioGroup(h, entry.label === undefined ? undefined : labelId, [
+				...(entry.label === undefined ? [] : [menuLabel(h, labelId, [entry.label])]),
+				...entry.items.map((item, offset) =>
 					menuCheckableItem(
 						h,
 						{
@@ -161,10 +166,11 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 							kind: "radio",
 							isChecked: item.isChecked,
 						},
-						[item.label],
+						[entry.isItemLabelWrapped === true ? h.span([], [item.label]) : item.label],
 					),
 				),
-			)
+			])
+		}
 		case "Separator":
 			return menuSeparator(h)
 	}

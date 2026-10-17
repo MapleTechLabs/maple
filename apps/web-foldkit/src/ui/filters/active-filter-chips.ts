@@ -14,10 +14,13 @@ export type ActiveFilterChip<M> = Readonly<{
 	values: ReadonlyArray<string>
 	isNegated?: boolean
 	onRemove: M
+	/** Stored value to display text (`getValueLabel`): a trace id shows its short form. */
+	valueLabel?: (value: string) => string
 }>
 
 const summarize = <M>(chip: ActiveFilterChip<M>): string => {
-	const shown = chip.values.slice(0, MAX_CHIP_VALUES).join(", ")
+	const labelFor = (value: string) => chip.valueLabel?.(value) ?? value
+	const shown = chip.values.slice(0, MAX_CHIP_VALUES).map(labelFor).join(", ")
 	const rest = chip.values.length - MAX_CHIP_VALUES
 	return rest > 0 ? `${shown} +${rest}` : shown
 }
