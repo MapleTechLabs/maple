@@ -89,7 +89,7 @@ function ProviderChoice({
 					if (value === "managed" && inUse) setConfirmRemove(true)
 					else setPicked(value === "openrouter" ? "openrouter" : "managed")
 				}}
-				className="grid items-start gap-3 sm:grid-cols-2"
+				className="grid gap-3 sm:grid-cols-2"
 			>
 				<ProviderCard
 					value="managed"
