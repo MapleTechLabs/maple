@@ -71,9 +71,7 @@ export const filtersRail = (h: H, model: Model): Html => {
 					onToggle: Message.ToggledFilterOption({ param: "regressed", name: "regressed" }),
 				}),
 				section(h, model, "Service", "service", services, search.service, {
-					colorMap: Object.fromEntries(
-						services.map((option) => [option.name, getServiceColor(option.name)]),
-					),
+					colorOf: getServiceColor,
 				}),
 				section(h, model, "Environment", "env", environments, search.env, { showCounts: false }),
 				section(
@@ -85,7 +83,7 @@ export const filtersRail = (h: H, model: Model): Html => {
 					search.kind,
 					{
 						hasDescription: true,
-						colorMap: SOURCE_COLOR,
+						colorOf: (name) => (isIssueKind(name) ? SOURCE_COLOR[name] : undefined),
 						getOptionDescription: (name) =>
 							isIssueKind(name) ? SOURCE_DESCRIPTION[name] : undefined,
 						getOptionLabel: (name) => (isIssueKind(name) ? KIND_LABEL[name] : name),

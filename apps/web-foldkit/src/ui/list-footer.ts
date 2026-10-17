@@ -1,13 +1,16 @@
 import { cn } from "@maple/ui/lib/utils"
 import {
 	listFooterCenterStyles,
+	loadingMoreRowSpinnerStyles,
+	loadingMoreRowStyles,
 	listFooterStartStyles,
 	listFooterStyles,
 } from "@maple/ui/styles/ui/list-footer"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
+import { spinner } from "./spinner"
 
-// Port of `ListFooter` and `LoadMoreButton` (packages/ui/src/components/ui/list-footer.tsx).
+// Port of `ListFooter`, `LoadMoreButton` and `LoadingMoreRow` (packages/ui/src/components/ui/list-footer.tsx).
 // The count reads `toLocaleString()` there; the app is en-US, so it is formatted en-US here.
 
 export type ListFooterOptions<M> = Readonly<{
@@ -75,3 +78,7 @@ export const listFooter = <M>(h: HtmlBuilder<M>, options: ListFooterOptions<M>):
 		],
 	)
 }
+
+/** `LoadingMoreRow`: the in-table "Loading more…" row of an infinite list. */
+export const loadingMoreRow = <M>(h: HtmlBuilder<M>, label = "Loading more…"): Html =>
+	h.div([h.Class(loadingMoreRowStyles), h.Role("status")], [spinner(h, loadingMoreRowSpinnerStyles), label])

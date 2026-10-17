@@ -112,7 +112,7 @@ export const update =
 						? refit(next, graph)
 						: next
 				// Legacy re-adopts its initial nodes once React Flow is ready, re-measuring handles at the fitted zoom.
-				return model.canvas.fitsApplied === 0 && refitted.canvas.fitsApplied > 0
+				return refitted.canvas.fitsApplied > model.canvas.fitsApplied && !refitted.canvas.movedByUser
 					? modifyFields(refitted, { canvas: Canvas.remeasure })
 					: refitted
 			},

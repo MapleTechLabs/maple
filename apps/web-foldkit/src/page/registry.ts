@@ -20,6 +20,8 @@ import * as MetricsBrowse from "./metrics/browse"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as ServicesList from "./services/list"
+import * as TraceDetail from "./traces/detail"
+import * as TracesList from "./traces/list"
 
 /**
  * Every ported page, registered once. Adding a page: import its module and append `X.page` below;
@@ -32,6 +34,8 @@ export const pages = [
 	MetricDetail.page,
 	ErrorsHub.page,
 	ErrorIssue.page,
+	TracesList.page,
+	TraceDetail.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

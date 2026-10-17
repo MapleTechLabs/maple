@@ -101,8 +101,13 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	/** `onClearFilters`: the Message the "Clear filters" button sends. */
 	onClearFilters?: M
 	onWidenRange?: M
+	/** Page detail under the description (Traces' excluded-values hint); `null` renders nothing. */
+	detail?: Html | null
 	className?: string
 }>
+
+const detailOf = (detail: Html | null | undefined): ReadonlyArray<Html> =>
+	detail === undefined || detail === null ? [] : [detail]
 
 /** `FilteredEmpty` with its defaults. */
 const filteredEmpty = <M>(
@@ -110,6 +115,7 @@ const filteredEmpty = <M>(
 	noun: string,
 	onClear: M | undefined,
 	className?: string,
+	detail?: Html | null,
 ): Html =>
 	empty(
 		h,
@@ -119,13 +125,24 @@ const filteredEmpty = <M>(
 				emptyTitle(h, [`No ${noun} match these filters`]),
 				emptyDescription(h, ["Everything in this time range was excluded by the current filters."]),
 			]),
-			...(onClear === undefined
+			...(onClear === undefined && detail === undefined
 				? []
 				: [
 						emptyContent(h, [
-							button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(onClear)] }, [
-								"Clear filters",
-							]),
+							...detailOf(detail),
+							...(onClear === undefined
+								? []
+								: [
+										button(
+											h,
+											{
+												variant: "outline",
+												size: "sm",
+												attributes: [h.OnClick(onClear)],
+											},
+											["Clear filters"],
+										),
+									]),
 						]),
 					]),
 		],
@@ -137,7 +154,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 	const copy = SIGNAL_COPY[options.signal]
 	const subject = options.noun ?? copy.noun
 	if (options.isFiltered === true)
-		return filteredEmpty(h, subject, options.onClearFilters, options.className)
+		return filteredEmpty(h, subject, options.onClearFilters, options.className, options.detail)
 	const { presence } = options
 	if (presence.status === "absent") {
 		return empty(
@@ -150,6 +167,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 					emptyDescription(h, [options.purpose ?? copy.purpose, " ", copy.source]),
 				]),
 				emptyContent(h, [
+					...detailOf(options.detail),
 					emptyActions(h, [
 						linkButton(h, { size: "sm", className: "gap-2", href: "/settings?tab=ingestion" }, [
 							icon(h, "ConnectionIcon"),
@@ -176,6 +194,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 					]),
 				]),
 				emptyContent(h, [
+					...detailOf(options.detail),
 					emptyActions(h, [
 						...(options.onWidenRange === undefined
 							? []
@@ -204,7 +223,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 				emptyTitle(h, ["No ", subject, " found"]),
 				emptyDescription(h, [options.purpose ?? copy.purpose]),
 			]),
-			emptyContent(h, [docsLink(h, options.guideDocs ?? copy.guideDocs)]),
+			emptyContent(h, [...detailOf(options.detail), docsLink(h, options.guideDocs ?? copy.guideDocs)]),
 		],
 		options.className,
 	)

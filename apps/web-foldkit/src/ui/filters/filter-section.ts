@@ -71,8 +71,8 @@ export type FilterSectionConfig<M> = Readonly<{
 	onToggle: (name: string) => M
 	onOnly?: (name: string) => M
 	onExclude?: (name: string) => M
-	/** Option name to swatch colour, drawn before the label. */
-	colorMap?: Readonly<Record<string, string>>
+	/** `colorMap`: a swatch before the label (`serviceColorMap` for services). */
+	colorOf?: (name: string) => string | undefined
 	getOptionLabel?: (name: string) => string
 	/** The label's `title` when it is more than the label. */
 	getOptionDescription?: (name: string) => string | undefined
@@ -141,6 +141,23 @@ export const filterDescriptionMark = <M>(h: HtmlBuilder<M>, title: string): Html
 		],
 		[icon(h, "CircleInfoIcon", { className: "size-3" })],
 	)
+const swatch = <M>(h: HtmlBuilder<M>, color: string | undefined, isExcluded: boolean): Html[] =>
+	color === undefined || color === ""
+		? []
+		: [
+				h.span(
+					[
+						h.Class(
+							cn(
+								"size-2.5 rounded-[35%] [corner-shape:squircle] shrink-0",
+								isExcluded && "opacity-40",
+							),
+						),
+						h.Style({ "background-color": color }),
+					],
+					[],
+				),
+			]
 
 const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option: FilterOption): Html => {
 	const excluded = config.excluded ?? []
@@ -149,7 +166,6 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 	const text = config.getOptionLabel?.(option.name) ?? option.name
 	const optionLabel = isExcluded ? `${text} (excluded)` : text
 	const title = isExcluded ? optionLabel : (config.getOptionDescription?.(option.name) ?? text)
-	const swatch = config.colorMap?.[option.name]
 	const isTriState = config.onExclude !== undefined
 	return h.div(
 		[
@@ -181,19 +197,7 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(title)],
 				},
 				[
-					...(swatch === undefined
-						? []
-						: [
-								h.span([
-									h.Class(
-										cn(
-											"size-2.5 rounded-[35%] [corner-shape:squircle] shrink-0",
-											isExcluded && "opacity-40",
-										),
-									),
-									h.Style({ "background-color": swatch }),
-								]),
-							]),
+					...swatch(h, config.colorOf?.(option.name), isExcluded),
 					h.span([h.Class("truncate")], [text]),
 				],
 			),

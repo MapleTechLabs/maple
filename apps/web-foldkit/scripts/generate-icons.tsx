@@ -25,6 +25,7 @@ const NAMES = [
 	"ArrowRotateClockwiseIcon",
 	"ArrowTrendDownIcon",
 	"ArrowTrendUpIcon",
+	"ArrowUpDownIcon",
 	"ArrowUpIcon",
 	"AwsLambdaIcon",
 	"BellIcon",
@@ -123,7 +124,18 @@ const NAMES = [
 	"UiLayersIcon",
 	"UserIcon",
 	"XmarkIcon",
+	"ArrowDownIcon",
+	"AspectRatioIcon",
+	"ChartBarTrendUpIcon",
+	"IdBadgeIcon",
+	"SquareMinusIcon",
+	"SquarePlusIcon",
+	"BracketsCurlyIcon",
+	"SparkleIcon",
 ] as const
+
+const duplicates = NAMES.filter((name, index) => NAMES.indexOf(name) !== index)
+if (duplicates.length > 0) throw new Error(`listed twice: ${duplicates.join(", ")}`)
 
 /** Names both icon sets export with different markup: which one the Foldkit callers mean. */
 const SOURCE_OF = new Map<string, "ui" | "web">([
