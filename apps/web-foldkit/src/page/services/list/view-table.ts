@@ -115,7 +115,7 @@ const sparkline = (
 					values,
 					color: resolveColor(ctx.theme, color),
 					className: "absolute inset-0 h-full w-full",
-					revision: ctx.model.sparklineRevision,
+					revision: ctx.model.rowRevision,
 				},
 			})
 
@@ -186,6 +186,7 @@ const serviceRow = (
 	service: ServiceRow,
 	subtitle: string,
 	baselines: ReturnType<typeof baselineMapOf> | undefined,
+	groupPath: string,
 ): Html => {
 	const health = healthOf(ctx.summary, service)
 	const series = FoldkitAsyncData.getData(ctx.model.sparklines.data).pipe(
@@ -201,7 +202,8 @@ const serviceRow = (
 		service.p95LatencyMs,
 		baselines?.get(baselineKey(service.serviceName, service.serviceNamespace, service.environment)),
 	)
-	const rowKey = `${service.serviceName}-${service.serviceNamespace}-${service.environment}`
+	// React keys rows inside their namespace and environment fragments, so a regrouped row remounts.
+	const rowKey = `${groupPath}/${service.serviceName}-${service.serviceNamespace}-${service.environment}`
 	const open = Message.ClickedServiceRow({
 		serviceName: service.serviceName,
 		environment: service.environment,
@@ -460,7 +462,14 @@ const desktopTable = (
 							mode === "namespace" ? "pl-4" : undefined,
 						),
 						...rows.map((service) =>
-							serviceRow(h, ctx, service, subtitleFor(service), baselines),
+							serviceRow(
+								h,
+								ctx,
+								service,
+								subtitleFor(service),
+								baselines,
+								`${namespace}/${environment}`,
+							),
 						),
 					]),
 				])

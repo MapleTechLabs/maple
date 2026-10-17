@@ -79,8 +79,11 @@ export const Model = Schema.Struct({
 	nowMs: Schema.Number,
 	overview: KeyedSchema(Schema.Array(ServiceRow), LoadFailure),
 	sparklines: KeyedSchema(Sparklines, LoadFailure),
-	/** Settled sparkline results so far: the charts redraw on each (see `Sparkline` inputs). */
-	sparklineRevision: Schema.Number,
+	/**
+	 * Bumped whenever a memoised `ServiceRow` would re-render (new rows, series, baseline, health or
+	 * search): its `PlotFrame` calls `adapter.update` on every render, so the sparklines redraw then.
+	 */
+	rowRevision: Schema.Number,
 	facets: KeyedSchema(ServicesFacets, LoadFailure),
 	baseline: KeyedSchema(Schema.Array(LatencyBaseline), LoadFailure),
 	anomalies: KeyedSchema(Schema.Array(V2AnomalyServiceCount), LoadFailure),

@@ -206,6 +206,10 @@ export const summaryOf = (model: Model) => {
 		: undefined
 }
 
+/** `rowRevision` after a slot settled: a new result is a new prop for every row. */
+const bumped = <A, E>(model: Model, before: Keyed.Keyed<A, E>, after: Keyed.Keyed<A, E>): number =>
+	before === after ? model.rowRevision : model.rowRevision + 1
+
 // NAVIGATION
 
 const navigate = (model: Model, search: Search): Return => ({
@@ -271,7 +275,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		isReloading: false,
 		overview: Keyed.idle(),
 		sparklines: Keyed.idle(),
-		sparklineRevision: 0,
+		rowRevision: 0,
 		facets: Keyed.idle(),
 		baseline: Keyed.idle(),
 		anomalies: Keyed.idle(),
@@ -307,7 +311,7 @@ export const routeChanged = (
 	context: PageContext,
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
-	const next = { ...model, search: route.search }
+	const next = { ...model, search: route.search, rowRevision: model.rowRevision + 1 }
 	// After a Reload the mount keeps resolving unsnapped (`refreshVersion > 0`), like legacy.
 	return {
 		model: next,
@@ -324,27 +328,25 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			followData(context)(requestAll({ ...model, nowMs }, context, window, mode)),
-		CompletedFetchOverview: ({ key, result }) =>
-			followData(context)({ model: { ...model, overview: Keyed.accept(model.overview, key, result) } }),
+		CompletedFetchOverview: ({ key, result }) => {
+			const overview = Keyed.accept(model.overview, key, result)
+			return followData(context)({
+				model: { ...model, overview, rowRevision: bumped(model, model.overview, overview) },
+			})
+		},
 		CompletedFetchSparklines: ({ key, result }) => {
 			const sparklines = Keyed.accept(model.sparklines, key, result)
 			return {
-				model: {
-					...model,
-					sparklines,
-					sparklineRevision:
-						sparklines === model.sparklines
-							? model.sparklineRevision
-							: model.sparklineRevision + 1,
-				},
+				model: { ...model, sparklines, rowRevision: bumped(model, model.sparklines, sparklines) },
 			}
 		},
 		CompletedFetchFacets: ({ key, result }) => ({
 			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
 		}),
-		CompletedFetchBaseline: ({ key, result }) => ({
-			model: { ...model, baseline: Keyed.accept(model.baseline, key, result) },
-		}),
+		CompletedFetchBaseline: ({ key, result }) => {
+			const baseline = Keyed.accept(model.baseline, key, result)
+			return { model: { ...model, baseline, rowRevision: bumped(model, model.baseline, baseline) } }
+		},
 		CompletedFetchAnomalies: ({ key, result }) =>
 			followData(context)({
 				model: { ...model, anomalies: Keyed.accept(model.anomalies, key, result) },
