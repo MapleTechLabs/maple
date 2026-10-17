@@ -30,17 +30,36 @@ export interface SettingsDraft<T> {
 	/** Drop the edits and follow the saved value again (the Discard action). */
 	readonly discard: () => void
 	/**
-	 * Call after a successful save. Keeps showing the edits until the saved value catches up
-	 * (equals them or `sent`, or changes at all), so the form does not flash back while the
-	 * refetch lands. Pass `sent` when the save normalized the edits (trimmed, parsed).
+	 * Call after a successful save with the draft it `submitted` (captured when the save started)
+	 * and, when the save normalized it (trimmed, parsed), the value it `sent`. Edits made after
+	 * submission stay dirty; otherwise the edits show until the refetch lands.
 	 */
-	readonly commit: (sent?: T) => void
+	readonly commit: (save: SettingsDraftSave<T>) => void
 }
 
-interface Edits<T> {
+export interface SettingsDraftSave<T> {
+	/** The draft as it was when the save started. */
+	readonly submitted: T
+	/** What the save actually stored, when it differs from `submitted`. */
+	readonly sent?: T
+}
+
+export interface Edits<T> {
 	readonly value: T
 	/** Set by `commit()`: the saved value the save started from and the value it sent. */
 	readonly committedOver?: { readonly saved: T; readonly sent: T }
+}
+
+/** Settles the edits a save stored; edits made after the save started stay plain (dirty). */
+export function commitEdits<T>(
+	current: Edits<T> | null,
+	{ submitted, sent }: SettingsDraftSave<T>,
+	saved: T,
+	isEqual: (a: T, b: T) => boolean,
+): Edits<T> | null {
+	if (current === null) return null
+	if (!isEqual(current.value, submitted)) return { value: current.value }
+	return { value: current.value, committedOver: { saved, sent: sent === undefined ? submitted : sent } }
 }
 
 /**
@@ -70,16 +89,8 @@ export function useSettingsDraft<T>(
 	)
 	const discard = React.useCallback(() => setEdits(null), [])
 	const commit = React.useCallback(
-		(sent?: T) =>
-			setEdits((current) =>
-				current === null
-					? null
-					: {
-							value: current.value,
-							committedOver: { saved, sent: sent === undefined ? current.value : sent },
-						},
-			),
-		[saved],
+		(save: SettingsDraftSave<T>) => setEdits((current) => commitEdits(current, save, saved, isEqual)),
+		[saved, isEqual],
 	)
 
 	return {
