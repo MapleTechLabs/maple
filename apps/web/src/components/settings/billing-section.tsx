@@ -132,7 +132,7 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 			<div ref={usageRef} className="scroll-mt-6">
 				<SettingsSection
 					title="Usage"
-					description="Included usage resets each cycle. A cap limits paid overage for one feature; data past the cap is still recorded."
+					description="Included usage resets each cycle. A cap limits paid overage for one feature; once it is reached, new data for that feature is rejected until the cycle resets or the cap is raised."
 					framed={false}
 				>
 					{isLoading || model === null || customer === undefined ? (

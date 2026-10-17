@@ -153,7 +153,7 @@ function CapSummary({ feature, cap }: { readonly feature: FeatureSpend; readonly
 			</span>
 			<span className={cn("text-2xs", reached ? "text-severity-error" : "text-muted-foreground")}>
 				{reached
-					? "Cap reached, usage rejected"
+					? "Cap reached, new data rejected"
 					: feature.included === null
 						? "Paid overage"
 						: `Stops at ${withUnit(feature.featureId, feature.included + cap)}`}
