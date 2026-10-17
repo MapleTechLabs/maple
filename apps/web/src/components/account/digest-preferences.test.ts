@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { digestTimeZoneOptions, sameDigestDraft } from "./digest-preferences"
+import { digestTimeZoneOptions, newDigestDraft, sameDigestDraft } from "./digest-preferences"
 
 const base = {
 	dayOfWeek: 1,
@@ -33,5 +33,22 @@ describe("digestTimeZoneOptions", () => {
 	it("lists each zone once", () => {
 		const zones = digestTimeZoneOptions(["UTC", "Europe/Berlin"], "Europe/Berlin", "Europe/Berlin")
 		expect(zones).toEqual(["UTC", "Europe/Berlin"])
+	})
+})
+
+describe("newDigestDraft", () => {
+	it("schedules a first-time subscriber in the browser's zone", () => {
+		expect(newDigestDraft("America/Los_Angeles")).toEqual({
+			dayOfWeek: 1,
+			sendHour: 9,
+			timezone: "America/Los_Angeles",
+			namespaces: [],
+			environments: [],
+		})
+	})
+
+	it("falls back to UTC when the browser reports no zone", () => {
+		expect(newDigestDraft(undefined).timezone).toBe("UTC")
+		expect(newDigestDraft("").timezone).toBe("UTC")
 	})
 })

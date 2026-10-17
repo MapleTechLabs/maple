@@ -15,11 +15,11 @@ import { ChartBarTrendUpIcon, EnvelopeIcon } from "@/components/icons"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { readDigestSubscription } from "@/components/account/digest-subscription-load"
 import {
-	DEFAULT_DIGEST_SCHEDULE,
 	DIGEST_DAYS,
 	DIGEST_HOURS,
 	type DigestPreferencesDraft,
 	digestTimeZoneOptions,
+	newDigestDraft,
 	sameDigestDraft,
 } from "@/components/account/digest-preferences"
 import { ErrorState } from "@/components/common/error-state"
@@ -79,10 +79,12 @@ export function EmailPreferencesSection() {
 	)
 }
 
-/** The saved schedule and scope, or what the server applies to someone who never saved one. */
+const browserTimeZone = (): string | undefined => Intl.DateTimeFormat().resolvedOptions().timeZone
+
+/** The saved schedule and scope, or the defaults in the browser's zone for someone who never saved. */
 const savedDraft = (saved: DigestSubscriptionResponse | null): DigestPreferencesDraft =>
 	saved === null
-		? { ...DEFAULT_DIGEST_SCHEDULE, namespaces: [], environments: [] }
+		? newDigestDraft(browserTimeZone())
 		: {
 				dayOfWeek: saved.dayOfWeek,
 				sendHour: saved.sendHour,
@@ -105,7 +107,10 @@ function DigestPreferences({
 	})
 	const enabled = saved?.enabled ?? true
 	const webAnalyticsEnabled = saved?.webAnalyticsEnabled ?? true
-	const { draft, isDirty, updateDraft, discard } = useSettingsDraft(savedDraft(saved), sameDigestDraft)
+	const baseline = savedDraft(saved)
+	const { draft, isDirty, updateDraft, discard } = useSettingsDraft(baseline, sameDigestDraft)
+	// The first write records the prefilled zone, so a toggle alone does not leave the row on UTC.
+	const firstWrite = saved === null ? { timezone: baseline.timezone } : {}
 
 	// `enabled` always rides along: the upsert treats a missing value as "on".
 	const upsert = async (
@@ -124,7 +129,7 @@ function DigestPreferences({
 
 	const [toggleOps, isTogglingOps] = useAsyncAction((checked: boolean) =>
 		upsert(
-			{},
+			firstWrite,
 			{ enabled: checked },
 			{
 				success: checked ? "Weekly ops digest turned on" : "Weekly ops digest turned off",
@@ -134,7 +139,7 @@ function DigestPreferences({
 	)
 	const [toggleWeb, isTogglingWeb] = useAsyncAction((checked: boolean) =>
 		upsert(
-			{ webAnalyticsEnabled: checked },
+			{ ...firstWrite, webAnalyticsEnabled: checked },
 			{ enabled },
 			{
 				success: checked ? "Web analytics digest turned on" : "Web analytics digest turned off",
@@ -236,12 +241,7 @@ function ScheduleField({
 	onChange: (patch: DraftPatch) => void
 }) {
 	const zones = useMemo(
-		() =>
-			digestTimeZoneOptions(
-				Intl.supportedValuesOf("timeZone"),
-				draft.timezone,
-				Intl.DateTimeFormat().resolvedOptions().timeZone,
-			),
+		() => digestTimeZoneOptions(Intl.supportedValuesOf("timeZone"), draft.timezone, browserTimeZone()),
 		[draft.timezone],
 	)
 	return (
@@ -292,6 +292,10 @@ function ScheduleField({
 				</NativeSelect>
 			</div>
 			<FieldDescription>Sent in your time zone. Both digests follow this schedule.</FieldDescription>
+			<p className="text-xs text-muted-foreground">
+				Changes apply from the next send, so moving the day right after a digest went out skips to
+				next week.
+			</p>
 		</Field>
 	)
 }

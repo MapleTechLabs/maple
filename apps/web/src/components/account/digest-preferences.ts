@@ -17,7 +17,7 @@ export const DIGEST_HOURS = Array.from({ length: 24 }, (_, hour) => ({
 }))
 
 /** What the server applies to a subscriber who never saved a schedule. */
-export const DEFAULT_DIGEST_SCHEDULE = { dayOfWeek: 1, sendHour: 9, timezone: "UTC" } as const
+const DEFAULT_DIGEST_SCHEDULE = { dayOfWeek: 1, sendHour: 9, timezone: "UTC" } as const
 
 export interface DigestPreferencesDraft {
 	readonly dayOfWeek: number
@@ -25,6 +25,20 @@ export interface DigestPreferencesDraft {
 	readonly timezone: string
 	readonly namespaces: ReadonlyArray<string>
 	readonly environments: ReadonlyArray<string>
+}
+
+/**
+ * The draft for someone with no subscription yet: the server's day and hour, but in the
+ * browser's own zone, so the schedule reads in local time before the first save.
+ */
+export function newDigestDraft(browserZone: string | undefined): DigestPreferencesDraft {
+	return {
+		...DEFAULT_DIGEST_SCHEDULE,
+		timezone:
+			browserZone !== undefined && browserZone !== "" ? browserZone : DEFAULT_DIGEST_SCHEDULE.timezone,
+		namespaces: [],
+		environments: [],
+	}
 }
 
 const sorted = (values: ReadonlyArray<string>) => [...values].sort()
