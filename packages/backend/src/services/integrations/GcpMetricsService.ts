@@ -23,6 +23,11 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import {
+	ensureIntegrationSource,
+	integrationSourceName,
+	stampableSourceId,
+} from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import {
 	fetchMapleAccessToken,
@@ -274,7 +279,12 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 			})
 
 			const emitMetrics = Effect.fnUntraced(
-				function* (httpClient: HttpClient.HttpClient, ingestKey: string, rows: GcpMetricRows) {
+				function* (
+					httpClient: HttpClient.HttpClient,
+					ingestKey: string,
+					sourceId: string | undefined,
+					rows: GcpMetricRows,
+				) {
 					const total = rows.sumRows.length + rows.gaugeRows.length
 					if (total === 0) return 0
 					const response = yield* httpClient
@@ -282,7 +292,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 							HttpClientRequest.post(ingestMetricsUrl).pipe(
 								HttpClientRequest.bearerToken(ingestKey),
 								HttpClientRequest.bodyJsonUnsafe(
-									metricRowsToOtlp(rows.sumRows, rows.gaugeRows),
+									metricRowsToOtlp(rows.sumRows, rows.gaugeRows, { sourceId }),
 								),
 							),
 						)
@@ -444,6 +454,24 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					}),
 				)
 
+			// The connector's pull source as its `src_` id; a failed lookup sends without it.
+			const resolveSourceId = (connector: GcpConnectorRow, now: number) =>
+				stampableSourceId(
+					dbExecute((db) =>
+						ensureIntegrationSource(
+							db,
+							connector.orgId,
+							{
+								platform: "gcp",
+								integrationId: connector.id,
+								name: integrationSourceName.gcp(connector),
+							},
+							now,
+						),
+					),
+					{ orgId: connector.orgId, platform: "gcp" },
+				)
+
 			/** One connector: its inventory sync when due, then its metrics window. */
 			const pollConnector = Effect.fn("GcpMetricsService.pollConnector")(
 				function* (connector: GcpConnectorRow, tick: Tick) {
@@ -468,6 +496,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					}
 					const ingestKey = (yield* ingestKeys.getOrCreate(connector.orgId, SYSTEM_USER_ID))
 						.publicKey
+					const sourceId = yield* resolveSourceId(connector, tick.now)
 
 					// The metrics get a full budget, whatever sign-in and the inventory sync took.
 					const startedAt = yield* Clock.currentTimeMillis
@@ -492,7 +521,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						buffer.sumRows.push(...rows.sumRows)
 						buffer.gaugeRows.push(...rows.gaugeRows)
 						if (buffer.sumRows.length + buffer.gaugeRows.length >= FLUSH_ROWS) {
-							rowsIngested += yield* emitMetrics(tick.httpClient, ingestKey, buffer)
+							rowsIngested += yield* emitMetrics(tick.httpClient, ingestKey, sourceId, buffer)
 							buffer = { sumRows: [], gaugeRows: [] }
 						}
 					})
@@ -611,7 +640,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					if (rowsIngested === 0 && complete + partial === 0) {
 						return firstFailure === undefined ? NOTHING : yield* firstFailure.error
 					}
-					rowsIngested += yield* emitMetrics(tick.httpClient, ingestKey, buffer)
+					rowsIngested += yield* emitMetrics(tick.httpClient, ingestKey, sourceId, buffer)
 
 					const incomplete = partial + skipped
 					const failed = METRIC_COUNT - complete - incomplete
