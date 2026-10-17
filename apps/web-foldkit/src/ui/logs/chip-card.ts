@@ -3,11 +3,13 @@ import { Array, Effect, Option, Schema } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"
+import { eyebrow } from "../eyebrow"
 import { icon } from "../icon"
 import type { LogChip } from "./log-row-view"
 import type { Model } from "./logs-stream"
 import { Message } from "./logs-stream-message"
-import { CHIP_FILTER_ACTION_CLASS, eyebrowVariants, HOVER_CARD_CONTENT_CLASS } from "./styles"
+import { hoverCardContentStyles } from "@maple/ui/styles/ui/hover-card"
+import { CHIP_FILTER_ACTION_CLASS } from "./styles"
 
 /** Base UI PreviewCard positioning for `side="bottom" align="start"`, offsets 4, collision padding 5. */
 const SIDE_OFFSET = 4
@@ -94,11 +96,8 @@ const valueCopyButton = (h: HtmlBuilder<Message>, label: string, onClick: Messag
 		attributes: [h.OnClick(onClick, { propagation: "Stop" })],
 	})
 
-const eyebrow = (h: HtmlBuilder<Message>, text: string): Html =>
-	h.div(
-		[h.Class(cn(eyebrowVariants({ variant: undefined }), "mb-0.5")), h.DataAttribute("slot", "eyebrow")],
-		[text],
-	)
+const cardEyebrow = (h: HtmlBuilder<Message>, text: string): Html =>
+	eyebrow(h, { as: "div", className: "mb-0.5" }, [text])
 
 const filterAction = (
 	h: HtmlBuilder<Message>,
@@ -140,7 +139,7 @@ const cardView = (h: HtmlBuilder<Message>, index: number, chip: LogChip, canFilt
 							h.Tabindex(-1),
 							h.DataAttribute("base-ui-focusable", ""),
 							h.DataAttribute("slot", "hover-card-content"),
-							h.Class(cn(HOVER_CARD_CONTENT_CLASS, "max-h-[60vh] w-80 overflow-auto p-0")),
+							h.Class(cn(hoverCardContentStyles, "max-h-[60vh] w-80 overflow-auto p-0")),
 							h.OnMouseEnter(Message.EnteredChipCard()),
 							h.OnMouseLeave(Message.LeftChipCard()),
 						],
@@ -148,7 +147,7 @@ const cardView = (h: HtmlBuilder<Message>, index: number, chip: LogChip, canFilt
 							h.div(
 								[h.Class("px-3 py-2 border-b")],
 								[
-									eyebrow(h, "Attribute"),
+									cardEyebrow(h, "Attribute"),
 									h.div(
 										[h.Class("font-mono text-xs break-all")],
 										[
@@ -173,7 +172,7 @@ const cardView = (h: HtmlBuilder<Message>, index: number, chip: LogChip, canFilt
 							h.div(
 								[h.Class("px-3 py-2")],
 								[
-									eyebrow(h, "Value"),
+									cardEyebrow(h, "Value"),
 									h.div(
 										[h.Class("font-mono text-xs break-all")],
 										[

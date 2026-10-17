@@ -5,7 +5,7 @@ import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import * as LogsStreamView from "../../ui/logs/logs-stream-view"
-import { eyebrowVariants } from "../../ui/logs/styles"
+import { eyebrow } from "../../ui/eyebrow"
 import { labSidebar, labTopbar } from "../shell"
 import { Message, type Model, PIN_OPTIONS, type Toggle } from "./model"
 
@@ -152,16 +152,7 @@ const pageHeader = (h: HtmlBuilder<Message>, model: Model): Html =>
 				[
 					h.div(
 						[h.Class("flex flex-wrap items-center gap-1.5")],
-						[
-							h.span(
-								[
-									h.Class(cn(eyebrowVariants({ variant: undefined }), "mr-1")),
-									h.DataAttribute("slot", "eyebrow"),
-								],
-								["Lab"],
-							),
-							...toggles(h, model),
-						],
+						[eyebrow(h, { className: "mr-1" }, ["Lab"]), ...toggles(h, model)],
 					),
 				],
 			),

@@ -8,7 +8,9 @@ import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
-import { eyebrow, middleTruncate, statusDot } from "../../ui/status"
+import { eyebrow } from "../../ui/eyebrow"
+import { middleTruncate } from "../../ui/middle-truncate"
+import { statusDot } from "../../ui/status-dot"
 import { flowHandle } from "../xyflow/view"
 import {
 	avgCell,
@@ -45,7 +47,7 @@ const podsCell =<M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 	h.div(
 		[h.Class("ml-auto flex flex-col items-end gap-px")],
 		[
-			eyebrow(h, "text-4xs text-muted-foreground/60", ["pods"]),
+			eyebrow(h, { className: "text-4xs text-muted-foreground/60" }, ["pods"]),
 			data.infra
 				? tooltipTrigger(h, [
 						h.span(
@@ -88,12 +90,12 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 										className: cn("shrink-0", !platformIcon.branded && "text-muted-foreground/80"),
 									}),
 								]),
-								middleTruncate(h, label, 12, "text-xs font-medium text-foreground"),
+								middleTruncate(h, { text: label, tail: 12, className: "text-xs font-medium text-foreground" }),
 								...(runtimeInfo === null
 									? []
 									: [
 											runtimeInfo.icon === null
-												? eyebrow(h, "shrink-0 text-4xs text-muted-foreground/60", [runtimeInfo.short])
+												? eyebrow(h, { className: "shrink-0 text-4xs text-muted-foreground/60" }, [runtimeInfo.short])
 												: tooltipTrigger(h, [
 														icon(h, runtimeInfo.icon, { size: 12, className: "shrink-0 text-muted-foreground/70" }),
 													]),

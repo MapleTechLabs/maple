@@ -7,7 +7,7 @@ import { type Density, logRow, type RowEvents } from "./log-row"
 import type { LogRowView } from "./log-row-view"
 import type { Model } from "./logs-stream"
 import { Message } from "./logs-stream-message"
-import { eyebrowVariants } from "./styles"
+import { eyebrow } from "../eyebrow"
 import { COUNT_ATTRIBUTE, LAYOUT_ATTRIBUTE, STREAM_ATTRIBUTE, VirtualizeLogStream } from "./virtualize"
 
 export interface ViewInputs {
@@ -46,16 +46,13 @@ const columnHeader = (
 	pinnedColumns: ReadonlyArray<string>,
 	timeZone: string,
 ): Html =>
-	h.div(
-		[
-			h.Class(
-				cn(
-					eyebrowVariants({ variant: undefined }),
-					"sticky top-0 z-10 flex items-center gap-3 px-3 py-1.5 bg-background border-b border-border select-none",
-				),
-			),
-			h.DataAttribute("slot", "eyebrow"),
-		],
+	eyebrow(
+		h,
+		{
+			as: "div",
+			className:
+				"sticky top-0 z-10 flex items-center gap-3 px-3 py-1.5 bg-background border-b border-border select-none",
+		},
 		[
 			h.span([h.AriaHidden(true), h.Class("-mr-1.5 shrink-0 w-4")]),
 			h.span([h.Class("shrink-0 w-[92px]"), h.Title(`Times in ${timeZone}`)], ["Time"]),

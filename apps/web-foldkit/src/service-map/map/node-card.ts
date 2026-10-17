@@ -8,7 +8,7 @@ import { type UtilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { IconName } from "../../ui/icon"
-import { eyebrow } from "../../ui/status"
+import { eyebrow } from "../../ui/eyebrow"
 
 // Shared pieces of `ServiceMapNode` (packages/ui `service-map/service-map-node.tsx`).
 
@@ -76,7 +76,7 @@ export const metricCell = <M>(h: HtmlBuilder<M>, label: string, value: string, v
 	h.div(
 		[h.Class("flex flex-col gap-px")],
 		[
-			eyebrow(h, "text-4xs text-muted-foreground/60", [label]),
+			eyebrow(h, { className: "text-4xs text-muted-foreground/60" }, [label]),
 			h.span(
 				[h.Class(cn("text-2xs font-medium font-mono tabular-nums text-secondary-foreground", valueClassName))],
 				[value],

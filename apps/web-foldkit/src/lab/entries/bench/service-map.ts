@@ -18,7 +18,7 @@ import { buildSourceGraph } from "../../../service-map/map/graph"
 import * as ServiceMap from "../../../service-map/map/service-map"
 import { view as serviceMapView } from "../../../service-map/map/view"
 import * as Canvas from "../../../service-map/xyflow/canvas"
-import { eyebrow } from "../../../ui/status"
+import { eyebrow } from "../../../ui/eyebrow"
 import { defineLabWithFlags } from "../../define"
 
 // `/lab/bench/service-map` (apps/web `routes/lab/bench/service-map.tsx` + `lab/bench/service-map-bench.tsx`):
@@ -174,7 +174,7 @@ const groupSwitch = (h: HtmlBuilder<Message>, groups: number): Html =>
 			),
 		],
 		[
-			eyebrow(h, undefined, ["Namespace groups"]),
+			eyebrow(h, {}, ["Namespace groups"]),
 			...GROUP_OPTIONS.map((option) =>
 				h.button(
 					[

@@ -5,7 +5,9 @@ import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { icon } from "../icon"
 import type { LogChip, LogRowView, PinnedCell } from "./log-row-view"
 import { highlightedText } from "./highlight"
-import { badgeVariants, CHIP_CLASS, CHIP_TONE_CLASSES, rowClass, rowSelectedClass } from "./styles"
+import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+import { CHIP_CLASS, CHIP_TONE_CLASSES, rowClass } from "./styles"
 
 /** The handlers a row raises, so the row view stays independent of the stream's Message union. */
 export interface RowEvents<Message> {

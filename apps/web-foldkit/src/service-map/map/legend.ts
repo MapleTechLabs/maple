@@ -1,6 +1,6 @@
 import { getPlatformColor, getServiceMapNodeColor, type ServiceMapColorMode } from "@maple/ui/components/service-map/service-map-utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { statusDot } from "../../ui/status"
+import { statusDot } from "../../ui/status-dot"
 
 // `ServiceMapLegend` (packages/ui `service-map/service-map-canvas.tsx`). The "+N more" popover
 // trigger renders closed; its popup is not ported in this spike.
