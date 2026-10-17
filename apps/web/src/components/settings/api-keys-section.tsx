@@ -109,13 +109,14 @@ const TYPE_BADGE = {
 	mcp: "ok",
 } as const satisfies Record<KeyType, "info" | "outline" | "muted" | "ok">
 
-// Shared column lanes so the header and rows stay aligned; secondary columns collapse on narrow viewports.
+// Shared column lanes so the header and rows stay aligned. Lanes collapse on the table's own width
+// (container queries), so they fit the settings column at any viewport. The type badge rides by the name.
 const COL = {
-	type: "hidden w-[120px] shrink-0 md:block",
-	access: "hidden w-[170px] shrink-0 lg:block",
-	createdBy: "hidden w-[150px] shrink-0 xl:block",
-	lastUsed: "hidden w-[80px] shrink-0 xl:block",
-	expires: "hidden w-[110px] shrink-0 md:block",
+	name: "w-0 min-w-[180px] flex-1",
+	access: "hidden w-[150px] shrink-0 @xl:block",
+	createdBy: "hidden w-[140px] shrink-0 @min-[820px]:block",
+	lastUsed: "hidden w-[80px] shrink-0 @2xl:block",
+	expires: "w-[100px] shrink-0",
 	menu: "w-7 shrink-0",
 }
 
@@ -406,10 +407,9 @@ function KeysTable({
 	const formatDate = (timestamp: string) => formatDateInTimezone(timestamp, { timeZone: effectiveTimezone })
 	return (
 		// The card frame replaces DataTable's own top/bottom rule.
-		<DataTable.Root ariaLabel="Keys" stickySurfaceClass="bg-card" className="border-y-0">
+		<DataTable.Root ariaLabel="Keys" stickySurfaceClass="bg-card" className="@container border-y-0">
 			<DataTable.Head>
-				<ColumnHead label="Name" width="min-w-0 flex-1" />
-				<ColumnHead label="Type" width={COL.type} />
+				<ColumnHead label="Name" width={COL.name} />
 				<ColumnHead label="Access" width={COL.access} />
 				<ColumnHead label="Created by" width={COL.createdBy} />
 				<ColumnHead label="Last used" width={COL.lastUsed} />
@@ -465,16 +465,21 @@ function IngestRow({
 }) {
 	return (
 		<div className={cn(ROW_CLASS, "hover:bg-muted/20")}>
-			<div className="flex min-w-0 flex-1 flex-col gap-1">
-				<span className="text-foreground text-sm font-medium">{row.name}</span>
-				<span className="text-muted-foreground text-2xs">{row.purpose}</span>
+			<div className={cn(COL.name, "flex flex-col gap-1")}>
+				<div className="flex min-w-0 items-center gap-2">
+					<TruncatedText text={row.name} className="text-foreground text-sm font-medium" />
+					<TypeBadge type={row.type} />
+				</div>
+				<TruncatedText text={row.purpose} className="text-muted-foreground text-2xs" />
 				<IngestKeyValue label={row.name} value={row.value} />
-				<span className="text-muted-foreground text-2xs">Rotated {formatDate(row.rotatedAt)}</span>
+				<span className="text-muted-foreground truncate text-2xs">
+					Rotated {formatDate(row.rotatedAt)}
+				</span>
 			</div>
-			<div className={COL.type}>
-				<TypeBadge type={row.type} />
-			</div>
-			<span className={cn(COL.access, "text-foreground/80 text-2xs")}>{keyAccessSummary(row)}</span>
+			<TruncatedText
+				text={keyAccessSummary(row)}
+				className={cn(COL.access, "text-foreground/80 text-2xs")}
+			/>
 			<span className={cn(COL.createdBy, "text-muted-foreground text-2xs")}>Organization</span>
 			<span className={cn(COL.lastUsed, "text-muted-foreground text-2xs")}>n/a</span>
 			<span className={cn(COL.expires, "text-muted-foreground text-2xs")}>Never</span>
@@ -519,28 +524,28 @@ function ApiRow({
 	const access = keyAccessSummary(row)
 	return (
 		<div className={cn(ROW_CLASS, dead ? "opacity-60" : "hover:bg-muted/20")}>
-			<div className="flex min-w-0 flex-1 flex-col gap-1">
-				<div className="flex min-w-0 items-baseline gap-2">
+			<div className={cn(COL.name, "flex flex-col gap-1")}>
+				<div className="flex min-w-0 items-center gap-2">
 					<TruncatedText text={key.name} className="text-foreground text-sm font-medium" />
 					<span className="text-muted-foreground shrink-0 font-mono text-2xs">
 						{key.key_prefix}
 					</span>
-					{/* Type and Expires collapse below `md`, so the states that matter ride here instead. */}
-					<span className="md:hidden">
-						<TypeBadge type={row.type} />
-					</span>
+					<TypeBadge type={row.type} />
 				</div>
 				{key.description ? (
 					<TruncatedText text={key.description} className="text-muted-foreground text-2xs" />
 				) : null}
 			</div>
-			<div className={COL.type}>
-				<TypeBadge type={row.type} />
-			</div>
 			<TruncatedText text={access} className={cn(COL.access, "text-foreground/80 text-2xs")} />
-			<div className={cn(COL.createdBy, "flex min-w-0 flex-col gap-0.5 text-2xs")}>
-				<TruncatedText text={key.created_by_email ?? EMPTY_VALUE} className="text-foreground/80" />
-				<span className="text-muted-foreground">{formatDate(key.created_at)}</span>
+			{/* Display lives on the lane wrapper so `hidden` is never merged away by an inner `flex`. */}
+			<div className={COL.createdBy}>
+				<div className="flex min-w-0 flex-col gap-0.5 text-2xs">
+					<TruncatedText
+						text={key.created_by_email ?? EMPTY_VALUE}
+						className="text-foreground/80"
+					/>
+					<span className="text-muted-foreground truncate">{formatDate(key.created_at)}</span>
+				</div>
 			</div>
 			<span className={cn(COL.lastUsed, "text-muted-foreground truncate text-2xs")}>
 				{key.last_used_at ? <RelativeTime value={key.last_used_at} tooltip="title" /> : EMPTY_VALUE}
