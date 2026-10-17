@@ -1,6 +1,7 @@
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { formatNumber } from "@maple/ui/lib/format"
 
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@maple/ui/components/ui/collapsible"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
 import { Input } from "@maple/ui/components/ui/input"
@@ -31,8 +32,50 @@ const SETTINGS_REACTIVITY_KEYS = ["aiTriageSettings"]
 const DESCRIPTION =
 	"When an error or anomaly incident opens, an agent investigates it with read-only tools and attaches a triage summary. Runs on the model provider above."
 
-/** Auto-triage on the AI tab: the switch saves at once, the two ceilings go through the save bar. */
-export function AutoTriageSection() {
+/**
+ * Auto-triage on the AI tab: the switch saves at once, the two ceilings go through the save bar.
+ * Orgs outside the rollout see the same rows disabled, marked as coming soon.
+ */
+export function AutoTriageSection({ available }: { available: boolean }) {
+	if (!available) return <AutoTriageTeaser />
+	return <AutoTriageSettings />
+}
+
+function AutoTriageTeaser() {
+	return (
+		<SettingsSection
+			title="Auto-triage"
+			description={DESCRIPTION}
+			actions={<Badge variant="muted">Coming soon</Badge>}
+			framed={false}
+		>
+			<Panel className="divide-y">
+				<SettingRow
+					className="p-4 opacity-60"
+					label="Investigate new incidents"
+					description="Not yet available for your organization."
+					control={<Switch checked={false} disabled />}
+				/>
+				<SettingRow
+					className="p-4 opacity-60"
+					label="Investigations per day"
+					description="Per UTC day. Investigations you start or retry yourself are never blocked."
+					control={
+						<Input
+							className="w-48"
+							disabled
+							value=""
+							readOnly
+							aria-label="Investigations per day"
+						/>
+					}
+				/>
+			</Panel>
+		</SettingsSection>
+	)
+}
+
+function AutoTriageSettings() {
 	const settingsQueryAtom = retainedInternalQuery("aiTriage", "getSettings", {
 		reactivityKeys: SETTINGS_REACTIVITY_KEYS,
 	})

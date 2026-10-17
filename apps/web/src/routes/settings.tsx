@@ -13,6 +13,7 @@ import { AuditLogSection } from "@/components/settings/audit-log-section"
 import { McpSection } from "@/components/settings/mcp-section"
 import { ModelProviderSection } from "@/components/settings/ai-provider-section"
 import { AutoTriageSection } from "@/components/settings/ai-triage-settings-section"
+import { AiEscalationCard } from "@/components/settings/ai-escalation-card"
 import { SettingsSections } from "@/components/settings/settings-section"
 import { AutomationSection } from "@/components/settings/automation-section"
 import { OrgClickHouseSettingsSection } from "@/components/settings/org-clickhouse-settings-section"
@@ -116,8 +117,9 @@ function SettingsPage() {
 					{activeTab === "ai" && (
 						<SettingsSections>
 							<ModelProviderSection />
-							{/* The tab is admin-only; auto-triage also needs its flag. */}
-							{canAccessAi && <AutoTriageSection />}
+							{/* The tab is admin-only; orgs outside the auto-triage rollout see a preview. */}
+							<AutoTriageSection available={canAccessAi} />
+							<AiEscalationCard />
 						</SettingsSections>
 					)}
 					{activeTab === "automation" && <AutomationSection isAdmin={isAdmin} />}
