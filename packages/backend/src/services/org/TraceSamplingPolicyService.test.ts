@@ -95,6 +95,16 @@ describe("TraceSamplingPolicyService", () => {
 		}).pipe(Effect.provide(makeLayer(createTestDb(trackedDbs)))),
 	)
 
+	it.effect("writes nothing for an empty update, so an org on defaults stays on defaults", () =>
+		Effect.gen(function* () {
+			const sampling = yield* TraceSamplingPolicyService
+			const { before, after } = yield* sampling.update(ORG, new TraceSamplingPolicyUpdateRequest({}))
+
+			assert.deepStrictEqual(after, before)
+			assert.isNull((yield* sampling.get(ORG)).updatedAt)
+		}).pipe(Effect.provide(makeLayer(createTestDb(trackedDbs)))),
+	)
+
 	it.effect("patches only the given fields and clears the slow threshold with null", () =>
 		Effect.gen(function* () {
 			const sampling = yield* TraceSamplingPolicyService
