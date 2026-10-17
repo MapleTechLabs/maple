@@ -11,7 +11,6 @@
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import {
 	GCP_ASSET_TYPES,
-	GCP_PROJECT_ASSET_TYPE,
 	gcpMetricAligner,
 	type GcpMetric,
 	type GcpMetricGroup,
@@ -431,22 +430,6 @@ export const searchResourcesPage = (
 				readMask: Object.keys(ResourceSearchResult.fields).join(","),
 				pageSize: RESOURCE_PAGE_SIZE,
 				pageToken,
-			}),
-		),
-		decodeResourcePage,
-	)
-
-/** One project of the scope: the access check's read. */
-export const searchOneProject = (httpClient: HttpClient.HttpClient, reader: GcpReader, scope: string) =>
-	call(
-		httpClient,
-		"Cloud Asset Inventory",
-		HttpClientRequest.get(`https://cloudasset.googleapis.com/v1/${scope}:searchAllResources`).pipe(
-			asReader(reader),
-			HttpClientRequest.setUrlParams({
-				assetTypes: [GCP_PROJECT_ASSET_TYPE],
-				readMask: "name,assetType",
-				pageSize: 1,
 			}),
 		),
 		decodeResourcePage,

@@ -219,37 +219,20 @@ describe("v2 gcp integration over HTTP", () => {
 		expect(Object.keys(both.body).sort()).toEqual([
 			"alchemy",
 			"cleanup_script",
-			"manual",
+			"log_filter",
+			"maple_service_account_email",
 			"object",
+			"push_endpoint",
 			"setup_script",
 			"terraform",
 		])
-		expect(both.body.object).toBe("gcp_connector.setup_scripts")
-		// Without the script, the subscription signs its pushes: nothing it is given has a secret.
-		const pushEndpoint = /PUSH_ENDPOINT='([^'?]+)\?secret=/.exec(both.body.setup_script)?.[1]
-		expect(both.body.manual).toMatchObject({
-			scope_type: "folder",
-			scope_id: "123456789012",
-			project_id: "acme-host",
-			logs: {
-				push_endpoint: pushEndpoint,
-				push_service_account_email: expect.stringMatching(
-					/^maple-push-[0-9a-f]{19}@acme-host\.iam\.gserviceaccount\.com$/,
-				),
-				include_children: true,
-				log_filter: /^LOG_FILTER='(.*)'$/m.exec(both.body.setup_script)?.[1],
-			},
-			reader: {
-				maple_service_account_email: "collector@maple-prod.iam.gserviceaccount.com",
-				scope_roles: ["roles/monitoring.viewer", "roles/cloudasset.viewer"],
-			},
-		})
+		// Without the script, Pub/Sub signs each push: nothing it is given carries the secret.
+		expect(both.body.push_endpoint).toMatch(/^https:\/\/ingest\.test\/v1\/logpush\/gcp\/[0-9a-f-]{36}$/)
 		expect(both.body.terraform).toContain('resource "google_logging_folder_sink" "maple"')
+		expect(both.body.terraform).not.toMatch(/maple_gcp_|secret=/)
 		// Alchemy can't grant the read-only roles on a folder.
 		expect(both.body.alchemy).toBeNull()
-		for (const config of [both.body.manual, both.body.terraform]) {
-			expect(JSON.stringify(config)).not.toMatch(/maple_gcp_|secret=/)
-		}
+		expect(both.body.object).toBe("gcp_connector.setup_scripts")
 		expect(both.body.setup_script).toMatch(
 			/PUSH_ENDPOINT='https:\/\/ingest\.test\/v1\/logpush\/gcp\/[0-9a-f-]{36}\?secret=maple_gcp_/,
 		)
@@ -285,12 +268,6 @@ describe("v2 gcp integration over HTTP", () => {
 		const metricsOnly = await harness.request("POST", `${path}/setup_scripts`, admin.secret, {})
 		expect(metricsOnly.body.setup_script).not.toContain("LOG_FILTER")
 		expect(metricsOnly.body.setup_script).toContain("gcloud logging sinks delete")
-		expect(metricsOnly.body.manual.logs).toBeNull()
-
-		// This deployment has no key of Maple's own account to sign in with.
-		const check = await harness.request("POST", `${path}/check_access`, admin.secret)
-		expect(check.status).toBe(409)
-		expect(check.body.error.code).toBe("gcp_metrics_unavailable")
 		await harness.dispose()
 	})
 
@@ -338,7 +315,7 @@ describe("v2 gcp integration over HTTP", () => {
 			["POST", CONNECTORS, { scope_type: "project", scope_id: "other-project" }],
 			["PATCH", path, { metrics_enabled: true }],
 			["POST", `${path}/setup_scripts`, {}],
-			["POST", `${path}/check_access`, undefined],
+			["POST", `${path}/confirm_removal`, undefined],
 			["DELETE", path, undefined],
 		] as const) {
 			const asMember = await harness.request(method, target, member.secret, body)

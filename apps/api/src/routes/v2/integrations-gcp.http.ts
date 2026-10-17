@@ -1,6 +1,6 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
-import type { V2GcpConnector, V2GcpManualSetup } from "@maple/domain/http/v2"
+import type { V2GcpConnector } from "@maple/domain/http/v2"
 import {
 	MapleApiV2,
 	isoTimestamp,
@@ -14,7 +14,6 @@ import {
 	GcpConnectorService,
 	type GcpConnector,
 } from "@maple/backend/services/integrations/GcpConnectorService"
-import type { GcpSetupPlan } from "@maple/backend/services/integrations/gcp/setup-plan"
 
 // Reading the status is open to every member. Everything else is admin-only: a connector decides
 // what may write logs into the org and what Maple reads, and its setup script carries the push
@@ -39,41 +38,6 @@ const toV2Connector = (connector: GcpConnector): V2GcpConnector => ({
 	last_metrics_error: connector.lastMetricsError,
 	discovered_project_count: connector.discoveredProjectCount,
 	last_resources_error: connector.lastResourcesError,
-})
-
-const toV2ManualSetup = ({ logs, reader, ...plan }: GcpSetupPlan): V2GcpManualSetup => ({
-	scope_type: plan.scopeType,
-	scope_id: plan.scopeId,
-	project_id: plan.projectId,
-	apis: plan.apis,
-	logs:
-		logs === null
-			? null
-			: {
-					topic: logs.topic,
-					subscription: logs.subscription,
-					sink: logs.sink,
-					sink_destination: logs.sinkDestination,
-					log_filter: logs.logFilter,
-					include_children: logs.includeChildren,
-					push_endpoint: logs.pushEndpoint,
-					push_service_account_id: logs.pushServiceAccountId,
-					push_service_account_email: logs.pushServiceAccountEmail,
-					ack_deadline_seconds: logs.ackDeadlineSeconds,
-					message_retention_seconds: logs.messageRetentionSeconds,
-					min_retry_delay_seconds: logs.minRetryDelaySeconds,
-					max_retry_delay_seconds: logs.maxRetryDelaySeconds,
-				},
-	reader:
-		reader === null
-			? null
-			: {
-					service_account_id: reader.serviceAccountId,
-					service_account_email: reader.serviceAccountEmail,
-					maple_service_account_email: reader.mapleServiceAccountEmail,
-					scope_roles: reader.scopeRoles,
-					project_roles: reader.projectRoles,
-				},
 })
 
 const auditMetadata = (connector: GcpConnector) => ({
@@ -145,23 +109,24 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 						object: "gcp_connector.setup_scripts" as const,
 						setup_script: scripts.setupScript,
 						cleanup_script: scripts.cleanupScript,
-						manual: toV2ManualSetup(scripts.plan),
+						push_endpoint: scripts.pushEndpoint,
+						log_filter: scripts.logFilter,
+						maple_service_account_email: scripts.mapleServiceAccountEmail,
 						terraform: scripts.terraform,
 						alchemy: scripts.alchemy,
 					}
 				}),
 			)
-			.handle("checkAccess", ({ params }) =>
+			.handle("confirmRemoval", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly)
-					const checked = yield* gcp.checkAccess(tenant.orgId, params.id)
-					return {
-						object: "gcp_connector.access_check" as const,
-						ok: checked.ok,
-						message: checked.message,
-						failed_step: checked.failedStep,
-					}
+					const connector = yield* gcp.confirmRemoval(tenant.orgId, params.id)
+					yield* recordHttpAudit("gcp_connector.removal_confirmed", {
+						resourceId: connector.id,
+						metadata: auditMetadata(connector),
+					})
+					return toV2Connector(connector)
 				}),
 			)
 			.handle("deleteConnector", ({ params }) =>

@@ -35,15 +35,18 @@ import { retainedQuery } from "@/lib/services/common/atom-client"
 import { getActiveOrgId } from "@/lib/services/common/auth-headers"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import {
+	GCP_LINK,
 	GCP_REACTIVITY_KEYS,
 	GCP_SETTLING_REFRESH_MS,
+	GCP_TITLE,
+	GcpCommand,
 	GcpConfigure,
 	GcpCopyScriptButton,
 	GcpDisconnectDialog,
+	GcpExternalLink,
 	GcpOpenCloudShellButton,
 	type GcpConfigureTarget,
 } from "./gcp-configure"
-import { GCP_LINK, GCP_TITLE, GcpCommand, GcpExternalLink } from "./gcp-primitives"
 import {
 	GCP_CONNECTION_LABEL,
 	GCP_LOG_STATUS,
@@ -161,9 +164,7 @@ function IssueNote({ issue }: { issue: Issue }) {
 			<div className="flex min-w-0 flex-col gap-1.5">
 				<p className="text-sm font-medium text-pretty">{issue.title}</p>
 				{issue.body === undefined ? null : (
-					<div className="max-w-2xl text-xs/[18px] text-pretty text-muted-foreground">
-						{issue.body}
-					</div>
+					<div className="max-w-2xl text-xs/[18px] text-pretty text-muted-foreground">{issue.body}</div>
 				)}
 				{issue.action === undefined ? null : <div className="flex pt-1">{issue.action}</div>}
 			</div>
@@ -263,12 +264,7 @@ function connectionIssues({
 		})
 	}
 	if (metrics.kind === "stalled") {
-		issues.push({
-			key: "metrics-stalled",
-			tone: "warn",
-			title: "No metrics in 30 minutes",
-			body: RETRIES,
-		})
+		issues.push({ key: "metrics-stalled", tone: "warn", title: "No metrics in 30 minutes", body: RETRIES })
 	}
 	if (log.kind === "waiting" && log.overdue) {
 		issues.push({
@@ -284,12 +280,7 @@ function connectionIssues({
 		})
 	}
 	if (metrics.kind === "waiting" && metrics.overdue) {
-		issues.push({
-			key: "metrics-overdue",
-			tone: "warn",
-			title: "No metrics have arrived yet",
-			body: RETRIES,
-		})
+		issues.push({ key: "metrics-overdue", tone: "warn", title: "No metrics have arrived yet", body: RETRIES })
 	}
 	if (metrics.kind === "receiving" && metrics.resourcesError !== null) {
 		issues.push({
@@ -358,18 +349,10 @@ function signalText(
 			case "idle":
 				return {
 					tone: "neutral",
-					text: (
-						<RelativeTime
-							value={log.lastLogReceivedAt}
-							prefix="Nothing in 24 hours · last entry"
-						/>
-					),
+					text: <RelativeTime value={log.lastLogReceivedAt} prefix="Nothing in 24 hours · last entry" />,
 				}
 			case "receiving":
-				return {
-					tone: "ok",
-					text: <RelativeTime value={log.lastLogReceivedAt} prefix="Last entry" />,
-				}
+				return { tone: "ok", text: <RelativeTime value={log.lastLogReceivedAt} prefix="Last entry" /> }
 		}
 	}
 	switch (metrics.kind) {
@@ -387,10 +370,7 @@ function signalText(
 					metrics.lastMetricsReceivedAt === null ? (
 						"Can't be read"
 					) : (
-						<RelativeTime
-							value={metrics.lastMetricsReceivedAt}
-							prefix="Can't be read · last read"
-						/>
+						<RelativeTime value={metrics.lastMetricsReceivedAt} prefix="Can't be read · last read" />
 					),
 			}
 		case "incomplete":
@@ -405,10 +385,7 @@ function signalText(
 				),
 			}
 		case "receiving":
-			return {
-				tone: "ok",
-				text: <RelativeTime value={metrics.lastMetricsReceivedAt} prefix="Last read" />,
-			}
+			return { tone: "ok", text: <RelativeTime value={metrics.lastMetricsReceivedAt} prefix="Last read" /> }
 	}
 }
 
@@ -541,12 +518,8 @@ export function GcpConnection({
 		.join(" · ")
 	const menu = (
 		<RowActionsMenu label={`Actions for ${label}`}>
-			{isAdmin ? (
-				<DropdownMenuItem onClick={() => onConfigure("choose")}>Configure</DropdownMenuItem>
-			) : null}
-			<DropdownMenuItem render={<Link to="/logs" search={logsSearch(connector)} />}>
-				View logs
-			</DropdownMenuItem>
+			{isAdmin ? <DropdownMenuItem onClick={() => onConfigure("choose")}>Configure</DropdownMenuItem> : null}
+			<DropdownMenuItem render={<Link to="/logs" search={logsSearch(connector)} />}>View logs</DropdownMenuItem>
 			<DropdownMenuItem render={<Link to="/infra/gcp" search={infraSearch(connector)} />}>
 				View infrastructure
 			</DropdownMenuItem>
@@ -619,11 +592,7 @@ export function GcpConnection({
 							signal={signalText("metrics", log, metrics)}
 							link={
 								lastRead === null ? undefined : (
-									<Link
-										to="/infra/gcp"
-										search={infraSearch(connector)}
-										className={SIGNAL_LINK}
-									>
+									<Link to="/infra/gcp" search={infraSearch(connector)} className={SIGNAL_LINK}>
 										View infrastructure
 										<ArrowRightIcon size={11} />
 									</Link>

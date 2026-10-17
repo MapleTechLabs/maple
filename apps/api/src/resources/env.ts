@@ -82,6 +82,4 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
 		optionalPlain("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
-		// Sign-in for a Google Cloud connector's access check; unset answers it as unavailable.
-		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 	)
