@@ -50,7 +50,7 @@ export interface DatasetIdentity {
 
 export interface DatasetSummary {
 	readonly name: string
-	/** Frozen wall clock for the browser (`installDeterminism` in runtime/stabilize.ts) and the seeded warehouse. */
+	/** Frozen wall clock for the browser (`page.clock.setFixedTime`) and the seeded warehouse. */
 	readonly now: string
 	/** `null` = signed out. */
 	readonly identity: DatasetIdentity | null

@@ -284,7 +284,7 @@ const installSession = async (
 	authMode: AuthMode,
 	dataset: DatasetSummary | undefined,
 ) => {
-	await page.addInitScript(installDeterminism, { seed: SEED, now: dataset?.now ?? NO_DATASET_NOW })
+	await page.addInitScript(installDeterminism, SEED)
 	await page.addInitScript(installTheme, theme)
 	if (authMode === "clerk")
 		await page.addInitScript(installClerkStub, dataset ? clerkIdentityFor(dataset) : null)
@@ -370,6 +370,7 @@ const captureVariant = async (
 		if (message.type() === "error") consoleErrors.push(message.text().slice(0, 300))
 	})
 	page.on("pageerror", (error) => consoleErrors.push(`pageerror: ${error.message.slice(0, 300)}`))
+	await page.clock.setFixedTime(dataset?.now ?? NO_DATASET_NOW)
 	await installSession(page, variant.theme, authMode, dataset)
 	await page.route(
 		"**/*",

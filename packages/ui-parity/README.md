@@ -79,10 +79,8 @@ lab dials panel and the service map's layout debug overlay. No `apps/web` source
   that the stub lacks are recorded per capture as `clerkUnknown`.
 - **Theme.** localStorage `maple-theme` = `light` | `dark` (the pre-paint script in `apps/web/index.html`
   and `@maple/ui/hooks/use-theme`), plus Playwright's `colorScheme`.
-- **Determinism** (`src/runtime/stabilize.ts`). Frozen `Date` (`dataset.now`, or `NO_DATASET_NOW`
-  without a dataset), set by `installDeterminism` itself. Timers and `requestAnimationFrame` stay
-  native: Playwright's `page.clock` fakes rAF as a 16 ms timer that runs outside rendering steps, which
-  made virtualized lists race ResizeObserver under load. UTC, en-US, `deviceScaleFactor: 1`, `reducedMotion`, seeded `Math.random`, intervals
+- **Determinism** (`src/runtime/stabilize.ts`). Frozen clock (`dataset.now`, or `NO_DATASET_NOW` without
+  a dataset), UTC, en-US, `deviceScaleFactor: 1`, `reducedMotion`, seeded `Math.random`, intervals
   clamped to one per frame, CSS animations and transitions frozen at their end state, infinite Web
   Animations paused after their first iteration, SMIL at t=0, carets and scrollbars hidden, service
   workers blocked. A capture waits for fonts and every image to decode, then 400ms without DOM
@@ -223,6 +221,8 @@ them per prefix. Electric shapes and raw routes are not covered.
 - Chromium only, and font rendering differs across OSes: compare captures made on the same machine.
 - The `routes` area and the Clerk flavor need the fixture backend; the Clerk stub no-ops Clerk's
   prebuilt components (`mountSignIn` and friends), so those containers capture empty.
-- `lab-bench-service-map-small` can capture an unfitted camera: `service-map-canvas.tsx` marks the
-  fit done before its rAF runs, and a re-render in between cancels the rAF. An app race, seen once.
+- `lab-worst-case` can flake under load: `span-hierarchy.tsx`'s scroll-to-selected loop stops on
+  estimated row heights unless ResizeObserver measured the rows first, leaving `scrollTop` 96 px short.
+  An app race; freezing only `Date` (real rAF instead of `page.clock`'s timer) did not fix it and
+  made the service-map fit race (`service-map-canvas.tsx` marks the fit done before its rAF) flaky.
 - `perf` from `docs/foldkit-migration.md` §3 is not ported yet.
