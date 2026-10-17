@@ -34,6 +34,8 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { readOrgCreatedAt } from "@maple/backend/services/org/org-created-at"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import * as Integrations from "@maple/query-engine-integrations"
 
@@ -59,6 +61,7 @@ type SetupAuditServiceRequirements =
 	| WarehouseQueryService
 	| IntegrationInventoryService
 	| OnboardingService
+	| OrganizationService
 	| SignalPresenceService
 
 const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirements> = Effect.gen(
@@ -67,6 +70,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 		const warehouse = yield* WarehouseQueryService
 		const inventory = yield* IntegrationInventoryService
 		const onboarding = yield* OnboardingService
+		const organizations = yield* OrganizationService
 		const signals = yield* SignalPresenceService
 
 		const dbExecute = makeDbExecute(
@@ -525,12 +529,17 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 
 				const now = yield* Clock.currentTimeMillis
 				// A failed write must not hide the audit from an org that has data; the next run retries.
-				const stamped = yield* onboarding.recordFirstDataReceived(tenant.orgId).pipe(
-					Effect.tapError((error) =>
-						Effect.logWarning("Setup audit could not stamp first data received", error.message),
-					),
-					Effect.orElseSucceed(() => false),
-				)
+				const stamped = yield* onboarding
+					.recordFirstDataReceived(tenant.orgId, readOrgCreatedAt(organizations, tenant.orgId))
+					.pipe(
+						Effect.tapError((error) =>
+							Effect.logWarning(
+								"Setup audit could not stamp first data received",
+								error.message,
+							),
+						),
+						Effect.orElseSucceed(() => false),
+					)
 				yield* Effect.annotateCurrentSpan({ "maple.audit.first_data_stamped": stamped })
 				return now
 			},
@@ -586,6 +595,7 @@ export class SetupAuditService extends Context.Service<SetupAuditService, SetupA
 				WarehouseQueryService.layer,
 				IntegrationInventoryService.layer,
 				OnboardingService.layer,
+				OrganizationService.layer,
 				SignalPresenceService.layer,
 			),
 		),
