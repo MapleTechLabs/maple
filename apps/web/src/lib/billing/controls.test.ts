@@ -107,4 +107,12 @@ describe("parseCapInput", () => {
 		expect(parseCapInput("-1")).toEqual({ valid: false })
 		expect(parseCapInput("abc")).toEqual({ valid: false })
 	})
+
+	it("rejects half-typed and non-decimal numbers instead of reading them as no cap", () => {
+		expect(parseCapInput("1e")).toEqual({ valid: false })
+		expect(parseCapInput("1e3")).toEqual({ valid: false })
+		expect(parseCapInput("0x10")).toEqual({ valid: false })
+		expect(parseCapInput("Infinity")).toEqual({ valid: false })
+		expect(parseCapInput(" 7. ")).toEqual({ valid: true, cap: 7 })
+	})
 })

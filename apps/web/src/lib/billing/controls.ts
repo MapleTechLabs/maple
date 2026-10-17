@@ -64,9 +64,12 @@ export const maximumInvoiceCents = (
 
 export type CapInput = { readonly valid: true; readonly cap: number | null } | { readonly valid: false }
 
+/** Plain decimals only: `Number()` alone would accept "1e3", "0x10" and "Infinity". */
+const DECIMAL = /^(\d+(\.\d*)?|\.\d+)$/
+
 /** A typed cap: empty removes the cap, zero or more sets it, anything else is invalid. */
 export const parseCapInput = (raw: string): CapInput => {
-	if (raw.trim() === "") return { valid: true, cap: null }
-	const value = Number(raw)
-	return Number.isFinite(value) && value >= 0 ? { valid: true, cap: value } : { valid: false }
+	const trimmed = raw.trim()
+	if (trimmed === "") return { valid: true, cap: null }
+	return DECIMAL.test(trimmed) ? { valid: true, cap: Number(trimmed) } : { valid: false }
 }
