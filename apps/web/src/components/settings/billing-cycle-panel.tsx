@@ -71,6 +71,7 @@ export function BillingCyclePanel({
 	maximumInvoiceCents,
 	uncappedCount,
 	onSetCaps,
+	setCapsDisabled = false,
 	chart,
 }: {
 	model: SpendModel
@@ -81,6 +82,8 @@ export function BillingCyclePanel({
 	uncappedCount: number
 	/** Opens the usage table's cap editor; omitted for members, who cannot set caps. */
 	onSetCaps?: () => void
+	/** True while a cap save is in flight, so the link cannot switch the open editor. */
+	setCapsDisabled?: boolean
 	chart: React.ReactNode
 }) {
 	const { effectiveTimezone: timeZone } = useTimezonePreference()
@@ -151,7 +154,8 @@ export function BillingCyclePanel({
 									<button
 										type="button"
 										onClick={onSetCaps}
-										className="font-medium text-primary hover:underline"
+										disabled={setCapsDisabled}
+										className="font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-50"
 									>
 										Set caps
 									</button>
