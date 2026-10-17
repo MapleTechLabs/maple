@@ -6,6 +6,7 @@ import {
 	type IntegrationInventoryInputs,
 	type IntegrationStatus,
 	scrapeResource,
+	worstStatus,
 } from "./integration-inventory"
 
 /** Worst first. */
@@ -115,4 +116,27 @@ export const gcpSourceHealth = (connector: GcpConnectorHealthInput, now: number)
 		return { status: "stale", lastDataAt, problem: "No logs in the last 24 hours" }
 	}
 	return { status: "healthy", lastDataAt, problem: null }
+}
+
+/** One GitHub installation, from the repositories under its account (repo names are `owner/name`). */
+export const githubInstallationHealth = (
+	entry: IntegrationEntry | undefined,
+	accountLogin: string,
+): SourceHealthResult => {
+	if (entry === undefined) return integrationSourceHealth(undefined)
+	const prefix = `${accountLogin.toLowerCase()}/`
+	const repos = entry.resources.filter((resource) => resource.name.toLowerCase().startsWith(prefix))
+	if (repos.length === 0) return { status: "pending", lastDataAt: null, problem: null }
+	const status = worstStatus(repos.map((repo) => repo.status))
+	const failing = repos.find((repo) => repo.status === status && repo.lastError !== null)
+	return {
+		status: fromIntegrationStatus(status),
+		lastDataAt: latest(...repos.map((repo) => repo.lastSuccessAt)),
+		problem:
+			status === "healthy"
+				? null
+				: failing === undefined
+					? `Repositories under ${accountLogin} are ${status}`
+					: `${failing.name}: ${failing.lastError}`,
+	}
 }
