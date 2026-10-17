@@ -17,6 +17,12 @@ import {
 	zonedTimeScale,
 } from "@maple/ui/components/plot/plot-scales"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
+import {
+	asFiniteNumber,
+	rowsDomainMs,
+	type TimeseriesAxisContext,
+	type TimeseriesRow,
+} from "./timeseries-rows"
 
 // The React-free half of `Timeseries` (packages/ui/src/components/plot/timeseries.tsx): row
 // normalisation, series keys and colour tokens, and the shared x and y axes. Copied, as that
@@ -24,18 +30,6 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 
 export const HARD_SERIES_LIMIT = 60
 export const SERIES_FALLBACK_COLOR = DEFAULT_TOKEN_FALLBACK
-
-/** One normalised row: the bucket, its parsed date, and every series value by chart key. */
-export interface TimeseriesRow extends Record<string, unknown> {
-	bucket: string
-	date: Date
-	partial?: boolean
-}
-
-export const asFiniteNumber = (value: unknown): number => {
-	const parsed = typeof value === "number" ? value : Number(value)
-	return Number.isFinite(parsed) ? parsed : 0
-}
 
 export interface SeriesDefinition {
 	readonly rawKey: string
@@ -105,27 +99,10 @@ export const seriesColorTokens = (
 	)
 }
 
-export interface AxisContext {
-	readonly rangeMs: number
-	readonly bucketSeconds: number | undefined
-	readonly domainMs?: readonly [number, number]
-	readonly timeZone?: string
-}
-
-export const rowsDomainMs = (
-	rows: ReadonlyArray<{ readonly date: Date }>,
-): readonly [number, number] | undefined => {
-	const first = rows[0]?.date.getTime()
-	const last = rows[rows.length - 1]?.date.getTime()
-	if (first === undefined || last === undefined || !Number.isFinite(first) || !Number.isFinite(last))
-		return undefined
-	return [Math.min(first, last), Math.max(first, last)]
-}
-
 export const axisContextOf = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	timeZone: string | undefined,
-): AxisContext => ({
+): TimeseriesAxisContext => ({
 	rangeMs: inferRangeMs(rows),
 	bucketSeconds: inferBucketSeconds(rows),
 	domainMs: rowsDomainMs(rows),
@@ -139,7 +116,7 @@ const HALF_CHAR_PX = 2.8
 const MAX_EDGE_FRACTION = 0.2
 
 /** `edgeTickAnchor`: keeps the end tick labels inside the plot instead of overhanging it. */
-const edgeTickAnchor = (axisContext: AxisContext) => {
+const edgeTickAnchor = (axisContext: TimeseriesAxisContext) => {
 	const domain = axisContext.domainMs
 	if (!domain) return undefined
 	const spanMs = domain[1] - domain[0]
@@ -157,7 +134,7 @@ const edgeTickAnchor = (axisContext: AxisContext) => {
 }
 
 /** `timeseriesXAxis`: a zoned time scale over `row.date`, round clock ticks 104px apart. */
-export const timeseriesXAxis = (axisContext: AxisContext) => ({
+export const timeseriesXAxis = (axisContext: TimeseriesAxisContext) => ({
 	scale: zonedTimeScale(axisContext.timeZone),
 	axis: {
 		line: false,
@@ -176,18 +153,27 @@ export interface YAxisOptions {
 	readonly visibleKeys: ReadonlyArray<string>
 	readonly unit?: string | undefined
 	readonly stacked?: boolean
+	readonly softMin?: number
+	readonly softMax?: number
+	/** Tick labels; defaults to `formatValueByUnit(value, unit)`. */
+	readonly format?: (value: number) => string
 }
 
-/** `timeseriesYAxis` without log, soft bounds or thresholds (the metric chart passes none). */
+/** `timeseriesYAxis`, linear, without log scale or thresholds. */
 export const timeseriesYAxis = (options: YAxisOptions) => {
 	const dataDomain = linearYDomain({
 		rows: options.rows,
 		keys: options.visibleKeys,
 		stacked: options.stacked,
+		softMin: options.softMin,
+		softMax: options.softMax,
 		fitYAxisToData: false,
 	})
 	const domain: [number, number] = niceLinearDomain(dataDomain)
-	const integerOnly = hasOnlyIntegerValues(options.rows, options.visibleKeys) && options.unit == null
+	const integerOnly =
+		hasOnlyIntegerValues(options.rows, options.visibleKeys) &&
+		options.unit == null &&
+		options.format == null
 	return {
 		domain,
 		y: {
@@ -200,7 +186,7 @@ export const timeseriesYAxis = (options: YAxisOptions) => {
 					size: 0,
 					padding: 6,
 					values: integerOnly ? integerTickValues(domain) : undefined,
-					format: (value: number) => formatValueByUnit(value, options.unit),
+					format: options.format ?? ((value: number) => formatValueByUnit(value, options.unit)),
 				},
 			},
 		},

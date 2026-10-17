@@ -5,18 +5,18 @@ import { formatBucketLabel, formatErrorRate, formatLatency, formatThroughput } f
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import {
-	asFiniteNumber,
 	ERROR_KEY,
 	type FixedMetricModel,
 	fixedMetricModel,
 	LATENCY_SERIES,
 	THROUGHPUT_KEY,
 	throughputPlot,
-	type TimeseriesRow,
 	TRACED_KEY,
 } from "../fixed-metric-series"
+import { timeseriesXAxis, timeseriesYAxis } from "../timeseries"
+import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"
-import { roundCapDasharray, timeseriesXAxis, timeseriesYAxis, verticalGradient } from "./fixed-metric-axes"
+import { roundCapDasharray, verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip } from "./plot-constants"
 
 // Ports of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`

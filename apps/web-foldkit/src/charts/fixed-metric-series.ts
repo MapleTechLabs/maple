@@ -2,35 +2,9 @@ import { findFirstPartialIndex, trimEmptyTrailingBuckets } from "@maple/ui/compo
 import { bucketIntervalLabel, inferBucketSeconds, inferRangeMs, parseBucketMs } from "@maple/ui/lib/format"
 
 // copied: the React-free halves of `useFixedMetricModel` (packages/ui/src/components/plot/fixed-metrics.tsx)
-// and the row types of timeseries.tsx. No `@tanstack/charts` import: views read this too.
+// No `@tanstack/charts` import: views read this too.
 
-export interface TimeseriesRow extends Record<string, unknown> {
-	bucket: string
-	date: Date
-	partial?: boolean
-}
-
-export interface TimeseriesAxisContext {
-	rangeMs: number
-	bucketSeconds: number | undefined
-	domainMs?: readonly [number, number]
-	timeZone?: string
-}
-
-export const asFiniteNumber = (value: unknown): number => {
-	const parsed = typeof value === "number" ? value : Number(value)
-	return Number.isFinite(parsed) ? parsed : 0
-}
-
-export const rowsDomainMs = (rows: ReadonlyArray<{ date: Date }>): readonly [number, number] | undefined => {
-	const first = rows[0]
-	const last = rows[rows.length - 1]
-	if (first === undefined || last === undefined) return undefined
-	const from = first.date.getTime()
-	const to = last.date.getTime()
-	if (!Number.isFinite(from) || !Number.isFinite(to)) return undefined
-	return [Math.min(from, to), Math.max(from, to)]
-}
+import { rowsDomainMs, type TimeseriesAxisContext, type TimeseriesRow } from "./timeseries-rows"
 
 /** `normaliseFixedRows`: rows with their bucket parsed; a row with no parseable bucket is dropped. */
 export const normaliseFixedRows = (data: ReadonlyArray<Record<string, unknown>>): Array<TimeseriesRow> =>

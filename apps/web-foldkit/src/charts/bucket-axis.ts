@@ -1,52 +1,12 @@
-import { bucketTimeScale, zonedTimeScale } from "@maple/ui/components/plot/plot-scales"
+import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
 import { formatBucketLabel } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// copied: `makeBucketAxis` (packages/ui/src/components/plot/bucket-axis.ts) with `timeseriesXAxis`
-// and `edgeTickAnchor` (plot/timeseries.tsx, a React module), so the chart host stays React-free.
+// copied: `makeBucketAxis` (packages/ui/src/components/plot/bucket-axis.ts) on the shared
+// `timeseriesXAxis`, so the chart host stays React-free.
 
-export interface TimeseriesAxisContext {
-	rangeMs: number
-	bucketSeconds: number | undefined
-	domainMs?: readonly [number, number]
-	timeZone?: string
-}
-
-const NOMINAL_PLOT_WIDTH = 600
-const HALF_CHAR_PX = 2.8
-const MAX_EDGE_FRACTION = 0.2
-
-/** Keeps the end tick labels inside the plot instead of overhanging it. */
-const edgeTickAnchor = (axisContext: TimeseriesAxisContext) => {
-	const domain = axisContext.domainMs
-	if (!domain) return undefined
-	const spanMs = domain[1] - domain[0]
-	if (spanMs <= 0) return undefined
-	return ({ value }: { value: Date }): "start" | "middle" | "end" => {
-		const at = value.getTime()
-		if (!Number.isFinite(at)) return "middle"
-		const label = formatBucketLabel(value.toISOString(), axisContext, "tick")
-		const fraction = Math.min(MAX_EDGE_FRACTION, (label.length * HALF_CHAR_PX) / NOMINAL_PLOT_WIDTH)
-		const slackMs = spanMs * fraction
-		if (at >= domain[1] - slackMs) return "end"
-		if (at <= domain[0] + slackMs) return "start"
-		return "middle"
-	}
-}
-
-export const timeseriesXAxis = (axisContext: TimeseriesAxisContext) => ({
-	scale: zonedTimeScale(axisContext.timeZone),
-	axis: {
-		line: false,
-		ticks: {
-			size: 0,
-			padding: 8,
-			spacing: 104,
-			format: (value: Date) => formatBucketLabel(value.toISOString(), axisContext, "tick"),
-		},
-		tickLabels: { thin: { minGap: 12 }, anchor: edgeTickAnchor(axisContext) },
-	},
-})
+import { timeseriesXAxis } from "./timeseries"
+import type { TimeseriesAxisContext } from "./timeseries-rows"
 
 export const bucketDate = (iso: string): Date => new Date(toEpochMs(iso))
 

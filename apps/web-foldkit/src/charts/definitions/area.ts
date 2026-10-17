@@ -10,7 +10,6 @@ import { areaY, defineChart, dot, lineY, type ChartLinearGradient, type ChartVal
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import {
-	asFiniteNumber,
 	axisContextOf,
 	bucketSecondsOf,
 	normaliseRows,
@@ -18,8 +17,8 @@ import {
 	seriesDefinitionsOf,
 	timeseriesXAxis,
 	timeseriesYAxis,
-	type TimeseriesRow,
 } from "../timeseries"
+import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
