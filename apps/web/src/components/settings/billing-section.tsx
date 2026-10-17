@@ -67,11 +67,7 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 		usageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
 	}
 
-	const billingDetails = (
-		<SettingsSection title="Billing details" description="Printed on every invoice" framed={false}>
-			<BillingDetailsSection canEdit={isAdmin} />
-		</SettingsSection>
-	)
+	const billingDetails = <BillingDetailsSection canEdit={isAdmin} />
 	const invoices = <InvoicesSection canManageBilling={isAdmin} onManageBilling={manageBilling} />
 
 	// Every spend view is derived from the customer, so a failed read would otherwise
@@ -95,7 +91,9 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 	return (
 		<SettingsSections>
 			{checkoutReturn === "confirming" && <CheckoutConfirmingPanel layout="row" />}
-			{checkoutReturn === "timed_out" && <CheckoutTimedOutNotice pickPlan="use Compare plans under Plan" />}
+			{checkoutReturn === "timed_out" && (
+				<CheckoutTimedOutNotice pickPlan="use Compare plans under Plan" />
+			)}
 			<AdminOnlyNotice subject="billing" />
 
 			<SettingsSection
