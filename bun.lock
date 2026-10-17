@@ -381,6 +381,7 @@
         "@maple/effect-db": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/query-model": "workspace:*",
+        "@maple/web": "workspace:*",
         "@maple/web-data": "workspace:*",
         "@tanstack/charts": "catalog:charts",
         "@tanstack/charts-scales": "catalog:charts",
