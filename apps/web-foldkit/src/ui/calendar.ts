@@ -135,7 +135,9 @@ export const tabbableDay = (model: Model): CalendarDate => {
 	const inView = (date: CalendarDate) => date.year === model.viewYear && date.month === model.viewMonth
 	const inGrid = (date: CalendarDate) => isInGrid(model, date)
 	return Option.getOrElse(
-		Option.orElse(Option.filter(model.maybeFocused, inGrid), () => Option.filter(model.maybeSelected, inView)),
+		Option.orElse(Option.filter(model.maybeFocused, inGrid), () =>
+			Option.filter(model.maybeSelected, inView),
+		),
 		() => (inView(model.today) ? model.today : firstOfView(model)),
 	)
 }
@@ -149,7 +151,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: {
 				...model,
 				maybeFocused: Option.some(date),
-				maybeSelected: Option.exists(model.maybeSelected, (selected) => Calendar.isEqual(selected, date))
+				maybeSelected: Option.exists(model.maybeSelected, (selected) =>
+					Calendar.isEqual(selected, date),
+				)
 					? Option.none()
 					: Option.some(date),
 			},

@@ -31,7 +31,14 @@ export const fitViewport = (
 ): Viewport | undefined => {
 	const bounds = measuredBounds(nodes)
 	if (bounds === undefined) return undefined
-	return getViewportForBounds(bounds, pane.width, pane.height, options.minZoom, options.maxZoom, options.padding)
+	return getViewportForBounds(
+		bounds,
+		pane.width,
+		pane.height,
+		options.minZoom,
+		options.maxZoom,
+		options.padding,
+	)
 }
 
 /** d3-zoom `scaleBy` around the pane centre (React Flow's `zoomIn` / `zoomOut`, factor 1.2). */
@@ -55,7 +62,9 @@ export const viewportTransform = (viewport: Viewport): string =>
 
 /** Inverse of {@link viewportTransform}, for syncing d3-zoom with the rendered camera. */
 export const parseViewportTransform = (transform: string): Viewport | undefined => {
-	const match = transform.match(/translate\(\s*(-?[\d.e+-]+)px,\s*(-?[\d.e+-]+)px\)\s*scale\((-?[\d.e+-]+)\)/)
+	const match = transform.match(
+		/translate\(\s*(-?[\d.e+-]+)px,\s*(-?[\d.e+-]+)px\)\s*scale\((-?[\d.e+-]+)\)/,
+	)
 	if (match === null) return undefined
 	return { x: Number(match[1]), y: Number(match[2]), zoom: Number(match[3]) }
 }

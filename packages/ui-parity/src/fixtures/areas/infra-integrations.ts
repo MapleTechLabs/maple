@@ -170,7 +170,13 @@ const gcpStatus = {
 	],
 }
 
-const gcpResource = (assetType: string, path: string, displayName: string, location: string | null, details: unknown = null) => ({
+const gcpResource = (
+	assetType: string,
+	path: string,
+	displayName: string,
+	location: string | null,
+	details: unknown = null,
+) => ({
 	name: `//${assetType.split("/")[0]}/projects/${GCP_PROJECT}/${path}`,
 	assetType,
 	projectId: GCP_PROJECT,
@@ -183,10 +189,30 @@ const gcpResource = (assetType: string, path: string, displayName: string, locat
 
 const GCP_RESOURCES = [
 	gcpResource("cloudresourcemanager.googleapis.com/Project", "", GCP_PROJECT, null),
-	gcpResource("run.googleapis.com/Service", "locations/us-central1/services/checkout-api", "checkout-api", "us-central1"),
-	gcpResource("run.googleapis.com/Service", "locations/us-central1/services/image-worker", "image-worker", "us-central1"),
-	gcpResource("cloudfunctions.googleapis.com/CloudFunction", "locations/us-central1/functions/send-receipt", "send-receipt", "us-central1"),
-	gcpResource("compute.googleapis.com/Instance", "zones/us-central1-a/instances/batch-runner-1", "batch-runner-1", "us-central1-a"),
+	gcpResource(
+		"run.googleapis.com/Service",
+		"locations/us-central1/services/checkout-api",
+		"checkout-api",
+		"us-central1",
+	),
+	gcpResource(
+		"run.googleapis.com/Service",
+		"locations/us-central1/services/image-worker",
+		"image-worker",
+		"us-central1",
+	),
+	gcpResource(
+		"cloudfunctions.googleapis.com/CloudFunction",
+		"locations/us-central1/functions/send-receipt",
+		"send-receipt",
+		"us-central1",
+	),
+	gcpResource(
+		"compute.googleapis.com/Instance",
+		"zones/us-central1-a/instances/batch-runner-1",
+		"batch-runner-1",
+		"us-central1-a",
+	),
 	gcpResource("sqladmin.googleapis.com/Instance", "instances/orders-db", "orders-db", "us-central1", {
 		databaseVersion: "POSTGRES_15",
 		edition: "ENTERPRISE",
@@ -245,10 +271,31 @@ const planetscaleInsights: EndpointHandler = () =>
 		object: "planetscale_integration.query_insight_list",
 		branch: "main",
 		data: [
-			insight(1, "SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT $2", "SELECT", 182_400, 1.8, 14.2),
+			insight(
+				1,
+				"SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT $2",
+				"SELECT",
+				182_400,
+				1.8,
+				14.2,
+			),
 			insight(2, "UPDATE carts SET updated_at = now() WHERE id = $1", "UPDATE", 64_120, 0.9, 6.4),
-			insight(3, "INSERT INTO payments (order_id, amount, status) VALUES ($1, $2, $3)", "INSERT", 21_870, 3.2, 41.5),
-			insight(4, "SELECT count(*) FROM order_items WHERE order_id = ANY($1)", "SELECT", 9_340, 12.4, 88.1),
+			insight(
+				3,
+				"INSERT INTO payments (order_id, amount, status) VALUES ($1, $2, $3)",
+				"INSERT",
+				21_870,
+				3.2,
+				41.5,
+			),
+			insight(
+				4,
+				"SELECT count(*) FROM order_items WHERE order_id = ANY($1)",
+				"SELECT",
+				9_340,
+				12.4,
+				88.1,
+			),
 		],
 		unavailable_reason: null,
 	})
@@ -279,7 +326,12 @@ const planetscaleEvents: EndpointHandler = () =>
 const emptyEvents: EndpointHandler = () =>
 	Effect.succeed({ object: "planetscale_integration.event_list", data: [], next_cursor: null })
 const emptyInsights: EndpointHandler = () =>
-	Effect.succeed({ object: "planetscale_integration.query_insight_list", branch: "main", data: [], unavailable_reason: null })
+	Effect.succeed({
+		object: "planetscale_integration.query_insight_list",
+		branch: "main",
+		data: [],
+		unavailable_reason: null,
+	})
 
 const USAGE_WINDOW_MS = DAY
 const USAGE_BUCKET_SECONDS = 3600
@@ -303,7 +355,15 @@ const cloudflareUsage =
 		Effect.gen(function* () {
 			const now = parseWarehouseDateTime(dataset.now)
 			const windowStart = now - USAGE_WINDOW_MS
-			const empty = { windowStart, windowEnd: now, bucketSeconds: USAGE_BUCKET_SECONDS, totalRequests: 0, previousTotalRequests: 0, firewallBlockedEvents: 0, services: [] }
+			const empty = {
+				windowStart,
+				windowEnd: now,
+				bucketSeconds: USAGE_BUCKET_SECONDS,
+				totalRequests: 0,
+				previousTotalRequests: 0,
+				firewallBlockedEvents: 0,
+				services: [],
+			}
 			if (!connected || dataset.identity === null) return empty
 			const orgId = parityOrgId(dataset.identity.orgId)
 			const tenant = warehouse.tenantOf(orgId)
@@ -334,7 +394,9 @@ const cloudflareUsage =
 				.map((serviceName) => {
 					const own = rows.filter((row) => row.serviceName === serviceName)
 					const match = SERVICE_KINDS.find(([, prefix]) => serviceName.startsWith(prefix))
-					const lastTimes = own.map((row) => parseWarehouseDateTime(row.lastTimeUnix)).filter(Number.isFinite)
+					const lastTimes = own
+						.map((row) => parseWarehouseDateTime(row.lastTimeUnix))
+						.filter(Number.isFinite)
 					return {
 						serviceName,
 						kind: match?.[0] ?? "zone",
@@ -349,7 +411,11 @@ const cloudflareUsage =
 						})),
 					}
 				})
-				.sort((a, b) => (a.kind === b.kind ? a.displayName.localeCompare(b.displayName) : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]))
+				.sort((a, b) =>
+					a.kind === b.kind
+						? a.displayName.localeCompare(b.displayName)
+						: KIND_ORDER[a.kind] - KIND_ORDER[b.kind],
+				)
 			return {
 				...empty,
 				totalRequests: services.reduce((sum, service) => sum + service.totalRequests, 0),

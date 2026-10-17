@@ -32,11 +32,36 @@ const listPlans: EndpointHandler = () =>
 				price: { amount: 39, interval: "month" },
 				items: [
 					{ featureId: "logs", included: 100, price: usagePrice(0.3), feature: { name: "Logs" } },
-					{ featureId: "metrics", included: 100, price: usagePrice(0.3), feature: { name: "Metrics" } },
-					{ featureId: "traces", included: 100, price: usagePrice(0.3), feature: { name: "Traces" } },
-					{ featureId: "browser_sessions", included: 5000, price: usagePrice(0.002), feature: { name: "Browser Sessions" } },
-					{ featureId: "product_events", included: 1_000_000, price: usagePrice(0.005, 1000), feature: { name: "Product Events" } },
-					{ featureId: "ai_credits", included: 10, price: usagePrice(1), feature: { name: "AI Credits" } },
+					{
+						featureId: "metrics",
+						included: 100,
+						price: usagePrice(0.3),
+						feature: { name: "Metrics" },
+					},
+					{
+						featureId: "traces",
+						included: 100,
+						price: usagePrice(0.3),
+						feature: { name: "Traces" },
+					},
+					{
+						featureId: "browser_sessions",
+						included: 5000,
+						price: usagePrice(0.002),
+						feature: { name: "Browser Sessions" },
+					},
+					{
+						featureId: "product_events",
+						included: 1_000_000,
+						price: usagePrice(0.005, 1000),
+						feature: { name: "Product Events" },
+					},
+					{
+						featureId: "ai_credits",
+						included: 10,
+						price: usagePrice(1),
+						feature: { name: "AI Credits" },
+					},
 				],
 				customerEligibility: { status: "active", attachAction: null, trialAvailable: false },
 			},
@@ -80,8 +105,23 @@ const profile: EndpointHandler = () =>
 	Effect.succeed({
 		linked: true,
 		name: `${acmeAdmin.orgName} Ltd`,
-		address: { line1: "1 Market Street", line2: null, city: "London", state: null, postalCode: "EC1A 1BB", country: "GB" },
-		taxIds: [{ id: "txi_parity_1", type: "gb_vat", value: "GB123456789", country: "GB", verificationStatus: "verified" }],
+		address: {
+			line1: "1 Market Street",
+			line2: null,
+			city: "London",
+			state: null,
+			postalCode: "EC1A 1BB",
+			country: "GB",
+		},
+		taxIds: [
+			{
+				id: "txi_parity_1",
+				type: "gb_vat",
+				value: "GB123456789",
+				country: "GB",
+				verificationStatus: "verified",
+			},
+		],
 	})
 
 /** `DailySpendService.get`: three warehouse reads, gap-filled across the whole cycle. */
@@ -92,16 +132,28 @@ const dailySpend =
 			const cycle = cycleOf(request)
 			const orgId = parityOrgId(request.dataset.identity?.orgId ?? "org_parity_signed_out")
 			const tenant = warehouse.tenantOf(orgId)
-			const params = { orgId, startTime: formatWarehouseDateTime(cycle.startMs), endTime: formatWarehouseDateTime(cycle.endMs) }
+			const params = {
+				orgId,
+				startTime: formatWarehouseDateTime(cycle.startMs),
+				endTime: formatWarehouseDateTime(cycle.endMs),
+			}
 			const run = <A>(compiled: CH.CompiledQueryInput<A>, context: string) =>
 				warehouse.executor.compiledQuery(tenant, compiled, { profile: "list", context })
-			const signals = yield* run(CH.compile(Integrations.dailySignalVolumeQuery(), params), "billingDailySignalVolume")
-			const sessions = yield* run(CH.compile(Integrations.dailySessionCountQuery(), params), "billingDailySessionCount")
-			// A cluster without `product_events` has ingested none: all zeros, not a failed chart.
-			const events = yield* run(CH.compile(Integrations.dailyProductEventCountQuery(), params), "billingDailyProductEventCount").pipe(
-				Effect.catchIf(isMissingProductEvents, () => Effect.succeed([])),
+			const signals = yield* run(
+				CH.compile(Integrations.dailySignalVolumeQuery(), params),
+				"billingDailySignalVolume",
 			)
-			const key = (day: DateTime.Utc) => new Date(DateTime.toEpochMillis(day)).toISOString().slice(0, 10)
+			const sessions = yield* run(
+				CH.compile(Integrations.dailySessionCountQuery(), params),
+				"billingDailySessionCount",
+			)
+			// A cluster without `product_events` has ingested none: all zeros, not a failed chart.
+			const events = yield* run(
+				CH.compile(Integrations.dailyProductEventCountQuery(), params),
+				"billingDailyProductEventCount",
+			).pipe(Effect.catchIf(isMissingProductEvents, () => Effect.succeed([])))
+			const key = (day: DateTime.Utc) =>
+				new Date(DateTime.toEpochMillis(day)).toISOString().slice(0, 10)
 			const byDay = new Map(signals.map((row) => [key(row.day), row]))
 			const sessionsByDay = new Map(sessions.map((row) => [key(row.day), row.sessions]))
 			const eventsByDay = new Map(events.map((row) => [key(row.day), row.events]))
@@ -139,7 +191,9 @@ const digest: EndpointHandler = (request) =>
 	})
 
 /** Tags no default answers; Billing and Notifications only render in Clerk builds. */
-export const clerkBillingEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => ({
+export const clerkBillingEndpoints = (
+	warehouse: FixtureWarehouse,
+): Readonly<Record<string, EndpointHandler>> => ({
 	"billingPublic.listPlans": listPlans,
 	"billing.getUsage": usage,
 	"billing.listInvoices": invoices,

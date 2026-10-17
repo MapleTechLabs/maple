@@ -8,7 +8,13 @@ import {
 	fixtureElectricOrigin,
 	outDir,
 } from "./config.ts"
-import { CAPTURE_HEADER, type CallLogEntry, DATASET_HEADER, type DatasetSummary, type FixtureBackend } from "./contract.ts"
+import {
+	CAPTURE_HEADER,
+	type CallLogEntry,
+	DATASET_HEADER,
+	type DatasetSummary,
+	type FixtureBackend,
+} from "./contract.ts"
 import { clerkIdentityFor, installClerkStub } from "./runtime/clerk-stub.ts"
 import { installSelfHostedSession, installTheme, selfHostedTokenFor } from "./runtime/session.ts"
 import { BOX_STYLE_PROPS, collectSnapshot, serializeDom, TEXT_STYLE_PROPS } from "./runtime/snapshot.ts"
@@ -103,7 +109,8 @@ const IGNORED_CONSOLE_ERRORS =
 	/Failed to load resource: the server responded with a status of 404|ERR_BLOCKED_BY_CLIENT|^Blocked script execution in '[^']*' because the document's frame is sandboxed and the 'allow-scripts' permission is not set\.$/
 
 /** With a null backend every Electric shape 404s, and the app logs each collection it preloads. */
-const NULL_BACKEND_CONSOLE_ERRORS = /^\[Live Query Error\] Source collection '[\w:-]+' entered error state|^An error occurred while syncing collection/
+const NULL_BACKEND_CONSOLE_ERRORS =
+	/^\[Live Query Error\] Source collection '[\w:-]+' entered error state|^An error occurred while syncing collection/
 
 /**
  * Settles the page, starting over if a client-side redirect (`navigate({ replace: true })` on mount)
@@ -131,7 +138,10 @@ const growToContent = async (page: Page, settleAfter: () => Promise<void>) => {
 			return most
 		}, size.height)
 		if (overflow <= 1 || size.height >= MAX_FULL_PAGE_HEIGHT) return
-		await page.setViewportSize({ width: size.width, height: Math.min(size.height + overflow, MAX_FULL_PAGE_HEIGHT) })
+		await page.setViewportSize({
+			width: size.width,
+			height: Math.min(size.height + overflow, MAX_FULL_PAGE_HEIGHT),
+		})
 		await settleAfter()
 	}
 }
@@ -183,7 +193,11 @@ const handleRoute = (context: RouteContext) => async (route: Route) => {
 		const resolved = resolveStatic(context.build, url.pathname)
 		if (resolved.kind === "file") return route.fulfill({ path: resolved.path })
 		if (resolved.kind === "html")
-			return route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: resolved.body })
+			return route.fulfill({
+				status: 200,
+				contentType: "text/html; charset=utf-8",
+				body: resolved.body,
+			})
 		return route.fulfill({ status: 404, body: "" })
 	}
 	if (!fixtureOrigins.has(url.origin)) {
@@ -201,14 +215,20 @@ const handleRoute = (context: RouteContext) => async (route: Route) => {
 				headers: {
 					"access-control-allow-origin": CANONICAL_ORIGIN,
 					"access-control-allow-credentials": "true",
-					"access-control-allow-headers": request.headers()["access-control-request-headers"] ?? "*",
+					"access-control-allow-headers":
+						request.headers()["access-control-request-headers"] ?? "*",
 					"access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 				},
 			})
-		context.localUnmocked.push(`${request.method()} ${url.origin === fixtureElectricOrigin ? "electric:" : ""}${url.pathname}`)
+		context.localUnmocked.push(
+			`${request.method()} ${url.origin === fixtureElectricOrigin ? "electric:" : ""}${url.pathname}`,
+		)
 		return route.fulfill({
 			status: 404,
-			headers: { "access-control-allow-origin": CANONICAL_ORIGIN, "access-control-allow-credentials": "true" },
+			headers: {
+				"access-control-allow-origin": CANONICAL_ORIGIN,
+				"access-control-allow-credentials": "true",
+			},
 			body: "",
 		})
 	}
@@ -224,10 +244,16 @@ const handleRoute = (context: RouteContext) => async (route: Route) => {
 const datasetHeader = (dataset: DatasetSummary | undefined): Record<string, string> =>
 	dataset === undefined ? {} : { [DATASET_HEADER]: dataset.name }
 
-const installSession = async (page: Page, theme: ThemeName, authMode: AuthMode, dataset: DatasetSummary | undefined) => {
+const installSession = async (
+	page: Page,
+	theme: ThemeName,
+	authMode: AuthMode,
+	dataset: DatasetSummary | undefined,
+) => {
 	await page.addInitScript(installDeterminism, SEED)
 	await page.addInitScript(installTheme, theme)
-	if (authMode === "clerk") await page.addInitScript(installClerkStub, dataset ? clerkIdentityFor(dataset) : null)
+	if (authMode === "clerk")
+		await page.addInitScript(installClerkStub, dataset ? clerkIdentityFor(dataset) : null)
 	else await page.addInitScript(installSelfHostedSession, dataset ? selfHostedTokenFor(dataset) : null)
 }
 
@@ -239,7 +265,8 @@ const readClerkUnknown = (page: Page) =>
 		})
 		.catch(() => [])
 
-const errorMessage = (cause: unknown) => (cause instanceof Error ? (cause.message.split("\n")[0] ?? "") : String(cause))
+const errorMessage = (cause: unknown) =>
+	cause instanceof Error ? (cause.message.split("\n")[0] ?? "") : String(cause)
 
 export interface CaptureOptions {
 	/** Build name under `.parity/builds/` (a target, or a custom `--out`). */
@@ -264,19 +291,31 @@ const failedResult = (variantId: string, error: string): CaptureResult => ({
 	durationMs: 0,
 })
 
-const captureVariant = async (browser: Browser, options: CaptureOptions, dir: string, variant: CaptureVariant) => {
+const captureVariant = async (
+	browser: Browser,
+	options: CaptureOptions,
+	dir: string,
+	variant: CaptureVariant,
+) => {
 	const started = performance.now()
 	const label = options.label ?? options.build
 	const datasetName = variant.scenario.dataset
-	const dataset = datasetName ? options.backend?.datasets.find((entry) => entry.name === datasetName) : undefined
+	const dataset = datasetName
+		? options.backend?.datasets.find((entry) => entry.name === datasetName)
+		: undefined
 	if (datasetName && !dataset)
 		return failedResult(
 			variant.id,
-			options.backend ? `unknown dataset "${datasetName}"` : `dataset "${datasetName}" needs the fixture backend (src/backend)`,
+			options.backend
+				? `unknown dataset "${datasetName}"`
+				: `dataset "${datasetName}" needs the fixture backend (src/backend)`,
 		)
 	const authMode: AuthMode = dataset?.auth ?? "self_hosted"
 	if (!buildExists(options.build, authMode))
-		return failedResult(variant.id, `no ${authMode} build "${options.build}" (bun run parity build <target> --auth ${authMode})`)
+		return failedResult(
+			variant.id,
+			`no ${authMode} build "${options.build}" (bun run parity build <target> --auth ${authMode})`,
+		)
 	const build = loadBuild(options.build, authMode)
 	const captureKey = `${label}/${variant.id}`
 	const context = await browser.newContext({
@@ -299,7 +338,10 @@ const captureVariant = async (browser: Browser, options: CaptureOptions, dir: st
 	page.on("pageerror", (error) => consoleErrors.push(`pageerror: ${error.message.slice(0, 300)}`))
 	await page.clock.setFixedTime(dataset?.now ?? NO_DATASET_NOW)
 	await installSession(page, variant.theme, authMode, dataset)
-	await page.route("**/*", handleRoute({ build, backend: options.backend, dataset, captureKey, blocked, localUnmocked }))
+	await page.route(
+		"**/*",
+		handleRoute({ build, backend: options.backend, dataset, captureKey, blocked, localUnmocked }),
+	)
 
 	let clerkUnknown: ReadonlyArray<string> = []
 	const backendUnmocked: string[] = []
@@ -310,7 +352,8 @@ const captureVariant = async (browser: Browser, options: CaptureOptions, dir: st
 			await variant.scenario.steps(page)
 			await settle(page, { quietMs: 300, timeoutMs: 5000 })
 		}
-		if (variant.scenario.fullPage ?? true) await growToContent(page, () => settle(page, { quietMs: 300, timeoutMs: 5000 }))
+		if (variant.scenario.fullPage ?? true)
+			await growToContent(page, () => settle(page, { quietMs: 300, timeoutMs: 5000 }))
 		const screenshot = await stableScreenshot(() =>
 			page.screenshot({
 				fullPage: variant.scenario.fullPage ?? true,
@@ -344,7 +387,11 @@ const captureVariant = async (browser: Browser, options: CaptureOptions, dir: st
 	)
 	await context.close()
 	// Late calls (after the screenshot) and the backend's own unmocked list, then forgotten.
-	const unmocked = [...localUnmocked, ...backendUnmocked, ...(options.backend?.takeCalls(captureKey).unmocked ?? [])]
+	const unmocked = [
+		...localUnmocked,
+		...backendUnmocked,
+		...(options.backend?.takeCalls(captureKey).unmocked ?? []),
+	]
 
 	const result: CaptureResult = {
 		variantId: variant.id,
@@ -352,7 +399,8 @@ const captureVariant = async (browser: Browser, options: CaptureOptions, dir: st
 		error,
 		consoleErrors: consoleErrors.filter(
 			(line) =>
-				!IGNORED_CONSOLE_ERRORS.test(line) && !(options.backend === null && NULL_BACKEND_CONSOLE_ERRORS.test(line)),
+				!IGNORED_CONSOLE_ERRORS.test(line) &&
+				!(options.backend === null && NULL_BACKEND_CONSOLE_ERRORS.test(line)),
 		),
 		blockedRequests: [...new Set(blocked)],
 		unmocked: [...new Set(unmocked)],

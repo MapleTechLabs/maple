@@ -93,10 +93,29 @@ const paymentLatencyRule = rule(2, {
 })
 
 const rules = [
-	rule(1, { name: "Checkout error rate", severity: "critical", signal: "error_rate", threshold: 2, services: ["checkout-api"] }),
+	rule(1, {
+		name: "Checkout error rate",
+		severity: "critical",
+		signal: "error_rate",
+		threshold: 2,
+		services: ["checkout-api"],
+	}),
 	paymentLatencyRule,
-	rule(3, { name: "Storefront p99 latency", severity: "warning", signal: "p99_latency", threshold: 1500, services: ["storefront"] }),
-	rule(4, { name: "Catalog error rate", severity: "warning", signal: "error_rate", threshold: 5, services: ["catalog-api"], enabled: false }),
+	rule(3, {
+		name: "Storefront p99 latency",
+		severity: "warning",
+		signal: "p99_latency",
+		threshold: 1500,
+		services: ["storefront"],
+	}),
+	rule(4, {
+		name: "Catalog error rate",
+		severity: "warning",
+		signal: "error_rate",
+		threshold: 5,
+		services: ["catalog-api"],
+		enabled: false,
+	}),
 ]
 
 /** Payment p95 has been breaching since the 3.5.0 rollout; everything else is healthy. */

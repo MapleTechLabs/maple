@@ -5,7 +5,14 @@ import type { Rect } from "../xyflow/geometry"
 
 // `ServiceMapControls`, `ServiceMapMiniMap` and `ServiceMapBackground` (packages/ui `service-map/`).
 
-const controlButton = <M>(h: HtmlBuilder<M>, kind: string, label: string, disabled: boolean, onClick: M, icon: Html) =>
+const controlButton = <M>(
+	h: HtmlBuilder<M>,
+	kind: string,
+	label: string,
+	disabled: boolean,
+	onClick: M,
+	icon: Html,
+) =>
 	h.button(
 		[
 			h.Type("button"),
@@ -18,7 +25,11 @@ const controlButton = <M>(h: HtmlBuilder<M>, kind: string, label: string, disabl
 		[icon],
 	)
 
-export const serviceMapControls = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Message) => M): Html =>
+export const serviceMapControls = <M>(
+	h: HtmlBuilder<M>,
+	model: Model,
+	toMessage: (message: Message) => M,
+): Html =>
 	h.div(
 		[
 			h.Class("react-flow__panel react-flow__controls vertical bottom left"),
@@ -26,9 +37,30 @@ export const serviceMapControls = <M>(h: HtmlBuilder<M>, model: Model, toMessage
 			h.AriaLabel("Control panel"),
 		],
 		[
-			controlButton(h, "zoomin", "Zoom in", model.viewport.zoom >= model.maxZoom, toMessage(Message.ClickedZoomIn()), icon(h, "PlusIcon", { className: "size-3" })),
-			controlButton(h, "zoomout", "Zoom out", model.viewport.zoom <= model.minZoom, toMessage(Message.ClickedZoomOut()), icon(h, "MinusIcon", { className: "size-3" })),
-			controlButton(h, "fitview", "Fit view", false, toMessage(Message.ClickedFitView()), icon(h, "MaximizeIcon", { className: "size-3" })),
+			controlButton(
+				h,
+				"zoomin",
+				"Zoom in",
+				model.viewport.zoom >= model.maxZoom,
+				toMessage(Message.ClickedZoomIn()),
+				icon(h, "PlusIcon", { className: "size-3" }),
+			),
+			controlButton(
+				h,
+				"zoomout",
+				"Zoom out",
+				model.viewport.zoom <= model.minZoom,
+				toMessage(Message.ClickedZoomOut()),
+				icon(h, "MinusIcon", { className: "size-3" }),
+			),
+			controlButton(
+				h,
+				"fitview",
+				"Fit view",
+				false,
+				toMessage(Message.ClickedFitView()),
+				icon(h, "MaximizeIcon", { className: "size-3" }),
+			),
 		],
 	)
 
@@ -115,7 +147,12 @@ export const serviceMapMiniMap = <M>(
 ): Html => {
 	const { viewport, pane } = model
 	const zoom = Math.max(viewport.zoom, 0.001)
-	const view = { x: -viewport.x / zoom, y: -viewport.y / zoom, width: pane.width / zoom, height: pane.height / zoom }
+	const view = {
+		x: -viewport.x / zoom,
+		y: -viewport.y / zoom,
+		width: pane.width / zoom,
+		height: pane.height / zoom,
+	}
 	let minX = Number.POSITIVE_INFINITY
 	let minY = Number.POSITIVE_INFINITY
 	let maxX = Number.NEGATIVE_INFINITY
@@ -141,7 +178,11 @@ export const serviceMapMiniMap = <M>(
 	const x = content.x - (viewWidth - content.width) / 2
 	const y = content.y - (viewHeight - content.height) / 2
 	return h.div(
-		[h.Class("react-flow__panel bottom right react-flow__minimap pointer-events-none !bg-muted/50 !border-border max-sm:hidden")],
+		[
+			h.Class(
+				"react-flow__panel bottom right react-flow__minimap pointer-events-none !bg-muted/50 !border-border max-sm:hidden",
+			),
+		],
 		[
 			h.svg(
 				[

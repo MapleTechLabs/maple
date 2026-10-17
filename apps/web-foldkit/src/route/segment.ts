@@ -9,7 +9,8 @@ const PercentEncoded = Schema.String.pipe(
 			decode: (raw, options) =>
 				Effect.try({
 					try: () => decodeURIComponent(raw),
-					catch: () => new SchemaIssue.InvalidValue({ message: "malformed percent-encoding" }, raw, options),
+					catch: () =>
+						new SchemaIssue.InvalidValue({ message: "malformed percent-encoding" }, raw, options),
 				}),
 			encode: (value) => Effect.succeed(encodeURIComponent(value)),
 		}),

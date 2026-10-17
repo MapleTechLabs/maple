@@ -27,7 +27,14 @@ const conversation = (nowMs: number) => {
 		"Rolling back to 3.4.2 or restoring `pool.max: 20` should clear it. The open alert *Payment p95 latency* will resolve once p95 drops under 800 ms.",
 	].join("\n")
 	return [
-		{ id: "msg_parity_user_1", role: "user", text: question, toolCalls: [], createdAt: at(12), startSeq: 1 },
+		{
+			id: "msg_parity_user_1",
+			role: "user",
+			text: question,
+			toolCalls: [],
+			createdAt: at(12),
+			startSeq: 1,
+		},
 		{
 			id: "msg_parity_assistant_1",
 			role: "assistant",
@@ -53,7 +60,9 @@ const conversation = (nowMs: number) => {
 					id: "call_parity_3",
 					name: "list_releases",
 					input: { service: "payment-svc" },
-					output: { releases: [{ version: "3.5.0", deployedMinutesAgo: 110 }, { version: "3.4.2" }] },
+					output: {
+						releases: [{ version: "3.5.0", deployedMinutesAgo: 110 }, { version: "3.4.2" }],
+					},
 					textOffset: 62,
 				},
 			],
@@ -67,7 +76,10 @@ const history: RawRoute = {
 	tag: "chat.history",
 	answer: ({ dataset, url, method }) => {
 		if (method !== "GET" || !HISTORY_PATH.test(url.pathname)) return undefined
-		const messages = dataset.name === CHAT_CONVERSATION_DATASET ? conversation(parseWarehouseDateTime(dataset.now)) : []
+		const messages =
+			dataset.name === CHAT_CONVERSATION_DATASET
+				? conversation(parseWarehouseDateTime(dataset.now))
+				: []
 		return Response.json({ messages, cursor: messages.length === 0 ? 0 : 40, running: false })
 	},
 }

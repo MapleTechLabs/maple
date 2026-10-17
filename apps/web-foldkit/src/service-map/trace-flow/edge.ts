@@ -16,7 +16,11 @@ const formatShare = (share: number): string | undefined => {
 	return pct >= 1 ? `${pct}%` : undefined
 }
 
-const labelContent = <M>(h: HtmlBuilder<M>, data: FlowEdgeData, hovered: boolean): ReadonlyArray<Html> | null => {
+const labelContent = <M>(
+	h: HtmlBuilder<M>,
+	data: FlowEdgeData,
+	hovered: boolean,
+): ReadonlyArray<Html> | null => {
 	const { isError, isMissing, share, count } = data
 	if (!(hovered || isError || count > 1 || share >= LABEL_SHARE_THRESHOLD)) return null
 	if (isMissing) return hovered ? [h.span([h.Class("italic text-muted-foreground/60")], ["no data"])] : null
@@ -27,10 +31,25 @@ const labelContent = <M>(h: HtmlBuilder<M>, data: FlowEdgeData, hovered: boolean
 			...(data.startOffsetMs !== undefined && data.startOffsetMs > 0
 				? [h.span([h.Class(data.accentText)], ["+", formatDuration(data.startOffsetMs), " → "])]
 				: []),
-			h.span(isError ? [h.Class(cn(isError && "text-severity-error"))] : [], [formatDuration(data.durationMs)]),
+			h.span(isError ? [h.Class(cn(isError && "text-severity-error"))] : [], [
+				formatDuration(data.durationMs),
+			]),
 			...(sharePct ? [h.span([], [" (", sharePct, ")"])] : []),
 			...(count > 1
-				? [h.span([], [" ", "· ×", String(count), ", ", formatDuration(data.minMs), "–", formatDuration(data.maxMs)])]
+				? [
+						h.span(
+							[],
+							[
+								" ",
+								"· ×",
+								String(count),
+								", ",
+								formatDuration(data.minMs),
+								"–",
+								formatDuration(data.maxMs),
+							],
+						),
+					]
 				: []),
 		]
 	}

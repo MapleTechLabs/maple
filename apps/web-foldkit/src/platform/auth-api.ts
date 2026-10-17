@@ -50,7 +50,10 @@ const withBearer = (token: string) => HttpClient.mapRequest(HttpClientRequest.be
 
 /** Session check: any answer but a transport failure ends the session (`resolveSelfHostedRouterAuth`). */
 const classifySessionCheck = (cause: unknown) =>
-	new SessionCheckError({ reason: Predicate.isTagged(cause, "HttpClientError") ? "Unreachable" : "Rejected", cause })
+	new SessionCheckError({
+		reason: Predicate.isTagged(cause, "HttpClientError") ? "Unreachable" : "Rejected",
+		cause,
+	})
 
 /** Renewal: only a 401 ends the session; anything else keeps the current token (`renewSessionToken`). */
 const classifyRenewal = (cause: unknown) =>
@@ -66,7 +69,8 @@ export class MapleAuthApi extends Context.Service<MapleAuthApi>()("@maple/web-fo
 		const provide = Effect.provideService(HttpClient.HttpClient, httpClient)
 		const anonymous = yield* makeClient()
 		return {
-			login: (password: string) => anonymous.authPublic.login({ payload: new SelfHostedLoginRequest({ password }) }),
+			login: (password: string) =>
+				anonymous.authPublic.login({ payload: new SelfHostedLoginRequest({ password }) }),
 			session: (token: string) =>
 				makeClient(withBearer(token)).pipe(
 					Effect.flatMap((client) => client.auth.session()),

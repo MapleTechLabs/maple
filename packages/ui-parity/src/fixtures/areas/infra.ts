@@ -73,7 +73,9 @@ interface FacetRow {
 
 /** One arm of the handlers' facet `switch`: the rows of one `facetType`. */
 const facet = (rows: ReadonlyArray<FacetRow>, facetType: string) =>
-	rows.filter((row) => row.facetType === facetType).map((row) => ({ name: row.name, count: row.count || 0 }))
+	rows
+		.filter((row) => row.facetType === facetType)
+		.map((row) => ({ name: row.name, count: row.count || 0 }))
 
 const nodeCapacity = (row: CH.NodeCapacityOutput) => ({
 	cpuUsage: row.cpuUsage || 0,
@@ -87,9 +89,18 @@ const nodeCapacity = (row: CH.NodeCapacityOutput) => ({
 
 /** The window and bucket every infra timeseries def compiles with (`apps/api/src/routes/queries.ts`). */
 const windowParams = (
-	payload: { readonly startTime: string; readonly endTime: string; readonly bucketSeconds?: number | undefined },
+	payload: {
+		readonly startTime: string
+		readonly endTime: string
+		readonly bucketSeconds?: number | undefined
+	},
 	orgId: OrgId,
-) => ({ orgId, startTime: payload.startTime, endTime: payload.endTime, bucketSeconds: payload.bucketSeconds ?? 60 })
+) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+	bucketSeconds: payload.bucketSeconds ?? 60,
+})
 
 /** The API-side defs (`apps/api/src/routes/queries.ts`) the timeseries handlers run; not in the shared registry. */
 const ApiQueries = {
@@ -98,7 +109,10 @@ const ApiQueries = {
 		profile: "aggregation",
 		cache: 15,
 		compile: (payload: HostInfraTimeseriesRequest, orgId: OrgId) =>
-			CHQ.compile(CHQ.hostNetworkTimeseriesQuery({ hostName: payload.hostName }), windowParams(payload, orgId)),
+			CHQ.compile(
+				CHQ.hostNetworkTimeseriesQuery({ hostName: payload.hostName }),
+				windowParams(payload, orgId),
+			),
 	}),
 	hostInfraGaugeTimeseries: defineQuery({
 		id: "hostInfraTimeseries",
@@ -173,7 +187,10 @@ const ApiQueries = {
 		cache: 15,
 		compile: (payload: NodeInfraTimeseriesRequest, orgId: OrgId) =>
 			CHQ.compile(
-				CHQ.nodeGaugeTimeseriesQuery({ nodeName: payload.nodeName, ...nodeMetricSpec(payload.metric) }),
+				CHQ.nodeGaugeTimeseriesQuery({
+					nodeName: payload.nodeName,
+					...nodeMetricSpec(payload.metric),
+				}),
 				windowParams(payload, orgId),
 			),
 	}),
@@ -195,53 +212,74 @@ const ApiQueries = {
 	}),
 }
 
-const timeseriesPoint = (row: { readonly bucket: DateTime.Utc; readonly attributeValue: string; readonly avgValue: number | null }) => ({
+const timeseriesPoint = (row: {
+	readonly bucket: DateTime.Utc
+	readonly attributeValue: string
+	readonly avgValue: number | null
+}) => ({
 	bucket: iso(row.bucket),
 	attributeValue: row.attributeValue,
 	value: Number(row.avgValue) || 0,
 })
 
 const hostEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => ({
-	"queryEngine.hostDetailSummary": warehouseEndpoint(warehouse, HostDetailSummaryRequest, HostDetailSummaryResponse, (payload, { runQueryFirst }) =>
-		Effect.map(
-			runQueryFirst(Queries.hostDetailSummary, payload),
-			(row) =>
-				new HostDetailSummaryResponse({
-					data: row
-						? {
-								hostName: row.hostName,
-								osType: row.osType,
-								hostArch: row.hostArch,
-								cloudProvider: row.cloudProvider,
-								cloudRegion: row.cloudRegion,
-								firstSeen: iso(row.firstSeen),
-								lastSeen: iso(row.lastSeen),
-								cpuPct: row.cpuPct || 0,
-								memoryPct: row.memoryPct || 0,
-								diskPct: row.diskPct || 0,
-								load15: row.load15 || 0,
-							}
-						: null,
-				}),
-		),
-	),
-	"queryEngine.hostInfraTimeseries": warehouseEndpoint(warehouse, HostInfraTimeseriesRequest, HostInfraTimeseriesResponse, (payload, { runQuery }) => {
-		const spec = hostMetricSpec(payload.metric)
-		const meta =
-			spec.groupByAttributeKey === undefined
-				? { unit: spec.unit }
-				: { unit: spec.unit, groupByAttributeKey: spec.groupByAttributeKey }
-		return spec.isNetwork
-			? Effect.map(runQuery(ApiQueries.hostInfraNetworkTimeseries, payload), (rows) =>
-					new HostInfraTimeseriesResponse({
-						data: rows.map((row) => ({ bucket: iso(row.bucket), attributeValue: row.attributeValue, value: row.sumValue || 0 })),
-						...meta,
+	"queryEngine.hostDetailSummary": warehouseEndpoint(
+		warehouse,
+		HostDetailSummaryRequest,
+		HostDetailSummaryResponse,
+		(payload, { runQueryFirst }) =>
+			Effect.map(
+				runQueryFirst(Queries.hostDetailSummary, payload),
+				(row) =>
+					new HostDetailSummaryResponse({
+						data: row
+							? {
+									hostName: row.hostName,
+									osType: row.osType,
+									hostArch: row.hostArch,
+									cloudProvider: row.cloudProvider,
+									cloudRegion: row.cloudRegion,
+									firstSeen: iso(row.firstSeen),
+									lastSeen: iso(row.lastSeen),
+									cpuPct: row.cpuPct || 0,
+									memoryPct: row.memoryPct || 0,
+									diskPct: row.diskPct || 0,
+									load15: row.load15 || 0,
+								}
+							: null,
 					}),
-				)
-			: Effect.map(runQuery(ApiQueries.hostInfraGaugeTimeseries, payload), (rows) =>
-					new HostInfraTimeseriesResponse({ data: rows.map(timeseriesPoint), ...meta }),
-				)
-	}),
+			),
+	),
+	"queryEngine.hostInfraTimeseries": warehouseEndpoint(
+		warehouse,
+		HostInfraTimeseriesRequest,
+		HostInfraTimeseriesResponse,
+		(payload, { runQuery }) => {
+			const spec = hostMetricSpec(payload.metric)
+			const meta =
+				spec.groupByAttributeKey === undefined
+					? { unit: spec.unit }
+					: { unit: spec.unit, groupByAttributeKey: spec.groupByAttributeKey }
+			return spec.isNetwork
+				? Effect.map(
+						runQuery(ApiQueries.hostInfraNetworkTimeseries, payload),
+						(rows) =>
+							new HostInfraTimeseriesResponse({
+								data: rows.map((row) => ({
+									bucket: iso(row.bucket),
+									attributeValue: row.attributeValue,
+									value: row.sumValue || 0,
+								})),
+								...meta,
+							}),
+					)
+				: Effect.map(
+						runQuery(ApiQueries.hostInfraGaugeTimeseries, payload),
+						(rows) =>
+							new HostInfraTimeseriesResponse({ data: rows.map(timeseriesPoint), ...meta }),
+					)
+		},
+	),
 })
 
 /** `listPods` total: the denominator follows the scope or lifecycle the list ran with. */
@@ -261,236 +299,311 @@ const podTotal = (payload: ListPodsRequest, count: CH.ListPodsSummaryOutput | nu
 	) || rows
 
 const podEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => ({
-	"queryEngine.listPods": warehouseEndpoint(warehouse, ListPodsRequest, ListPodsResponse, (payload, { runQuery, runQueryFirst }) =>
-		Effect.map(
-			Effect.all([runQuery(Queries.listPods, payload), runQueryFirst(Queries.listPodsCount, payload)]),
-			([rows, count]) =>
-				new ListPodsResponse({
-					data: rows.map((row) => ({
-						podName: row.podName,
-						namespace: row.namespace,
-						nodeName: row.nodeName,
-						clusterName: row.clusterName,
-						environment: row.environment,
-						deploymentName: row.deploymentName,
-						statefulsetName: row.statefulsetName,
-						daemonsetName: row.daemonsetName,
-						jobName: row.jobName,
-						qosClass: row.qosClass,
-						podUid: row.podUid,
-						computeType: row.computeType,
-						lastSeen: iso(row.lastSeen),
-						cpuUsage: row.cpuUsage || 0,
-						cpuLimitPct: row.cpuLimitPct || 0,
-						memoryLimitPct: row.memoryLimitPct || 0,
-						cpuRequestPct: row.cpuRequestPct || 0,
-						memoryRequestPct: row.memoryRequestPct || 0,
-						cpuUsagePeak: row.cpuUsagePeak || 0,
-						cpuLimitPctPeak: row.cpuLimitPctPeak || 0,
-						memoryLimitPctPeak: row.memoryLimitPctPeak || 0,
-						saturation: row.saturation || 0,
-					})),
-					totalCount: podTotal(payload, count, rows.length),
-				}),
-		),
+	"queryEngine.listPods": warehouseEndpoint(
+		warehouse,
+		ListPodsRequest,
+		ListPodsResponse,
+		(payload, { runQuery, runQueryFirst }) =>
+			Effect.map(
+				Effect.all([
+					runQuery(Queries.listPods, payload),
+					runQueryFirst(Queries.listPodsCount, payload),
+				]),
+				([rows, count]) =>
+					new ListPodsResponse({
+						data: rows.map((row) => ({
+							podName: row.podName,
+							namespace: row.namespace,
+							nodeName: row.nodeName,
+							clusterName: row.clusterName,
+							environment: row.environment,
+							deploymentName: row.deploymentName,
+							statefulsetName: row.statefulsetName,
+							daemonsetName: row.daemonsetName,
+							jobName: row.jobName,
+							qosClass: row.qosClass,
+							podUid: row.podUid,
+							computeType: row.computeType,
+							lastSeen: iso(row.lastSeen),
+							cpuUsage: row.cpuUsage || 0,
+							cpuLimitPct: row.cpuLimitPct || 0,
+							memoryLimitPct: row.memoryLimitPct || 0,
+							cpuRequestPct: row.cpuRequestPct || 0,
+							memoryRequestPct: row.memoryRequestPct || 0,
+							cpuUsagePeak: row.cpuUsagePeak || 0,
+							cpuLimitPctPeak: row.cpuLimitPctPeak || 0,
+							memoryLimitPctPeak: row.memoryLimitPctPeak || 0,
+							saturation: row.saturation || 0,
+						})),
+						totalCount: podTotal(payload, count, rows.length),
+					}),
+			),
 	),
-	"queryEngine.podFacets": warehouseEndpoint(warehouse, PodFacetsRequest, PodFacetsResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(Queries.podFacets, payload),
-			(rows) =>
-				new PodFacetsResponse({
-					data: {
-						pods: facet(rows, "pod"),
-						namespaces: facet(rows, "namespace"),
-						nodes: facet(rows, "node"),
-						clusters: facet(rows, "cluster"),
-						deployments: facet(rows, "deployment"),
-						statefulsets: facet(rows, "statefulset"),
-						daemonsets: facet(rows, "daemonset"),
-						jobs: facet(rows, "job"),
-						environments: facet(rows, "environment"),
-						computeTypes: facet(rows, "computeType"),
-					},
-				}),
-		),
+	"queryEngine.podFacets": warehouseEndpoint(
+		warehouse,
+		PodFacetsRequest,
+		PodFacetsResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(Queries.podFacets, payload),
+				(rows) =>
+					new PodFacetsResponse({
+						data: {
+							pods: facet(rows, "pod"),
+							namespaces: facet(rows, "namespace"),
+							nodes: facet(rows, "node"),
+							clusters: facet(rows, "cluster"),
+							deployments: facet(rows, "deployment"),
+							statefulsets: facet(rows, "statefulset"),
+							daemonsets: facet(rows, "daemonset"),
+							jobs: facet(rows, "job"),
+							environments: facet(rows, "environment"),
+							computeTypes: facet(rows, "computeType"),
+						},
+					}),
+			),
 	),
-	"queryEngine.podDetailSummary": warehouseEndpoint(warehouse, PodDetailSummaryRequest, PodDetailSummaryResponse, (payload, { runQueryFirst }) =>
-		Effect.map(
-			runQueryFirst(Queries.podDetailSummary, payload),
-			(row) =>
-				new PodDetailSummaryResponse({
-					data: row
-						? {
-								podName: row.podName,
-								namespace: row.namespace,
-								nodeName: row.nodeName,
-								deploymentName: row.deploymentName,
-								statefulsetName: row.statefulsetName,
-								daemonsetName: row.daemonsetName,
-								qosClass: row.qosClass,
-								podUid: row.podUid,
-								computeType: row.computeType,
-								podStartTime: row.podStartTime,
-								firstSeen: iso(row.firstSeen),
-								lastSeen: iso(row.lastSeen),
-								cpuUsage: row.cpuUsage || 0,
-								cpuLimitPct: row.cpuLimitPct || 0,
-								memoryLimitPct: row.memoryLimitPct || 0,
-								cpuRequestPct: row.cpuRequestPct || 0,
-								memoryRequestPct: row.memoryRequestPct || 0,
-							}
-						: null,
-				}),
-		),
+	"queryEngine.podDetailSummary": warehouseEndpoint(
+		warehouse,
+		PodDetailSummaryRequest,
+		PodDetailSummaryResponse,
+		(payload, { runQueryFirst }) =>
+			Effect.map(
+				runQueryFirst(Queries.podDetailSummary, payload),
+				(row) =>
+					new PodDetailSummaryResponse({
+						data: row
+							? {
+									podName: row.podName,
+									namespace: row.namespace,
+									nodeName: row.nodeName,
+									deploymentName: row.deploymentName,
+									statefulsetName: row.statefulsetName,
+									daemonsetName: row.daemonsetName,
+									qosClass: row.qosClass,
+									podUid: row.podUid,
+									computeType: row.computeType,
+									podStartTime: row.podStartTime,
+									firstSeen: iso(row.firstSeen),
+									lastSeen: iso(row.lastSeen),
+									cpuUsage: row.cpuUsage || 0,
+									cpuLimitPct: row.cpuLimitPct || 0,
+									memoryLimitPct: row.memoryLimitPct || 0,
+									cpuRequestPct: row.cpuRequestPct || 0,
+									memoryRequestPct: row.memoryRequestPct || 0,
+								}
+							: null,
+					}),
+			),
 	),
-	"queryEngine.podRestarts": warehouseEndpoint(warehouse, PodRestartsRequest, PodRestartsResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(Queries.podRestarts, payload),
-			(rows) =>
-				new PodRestartsResponse({
-					data: rows.map((row) => ({
-						podName: row.podName,
-						namespace: row.namespace,
-						containerName: row.containerName,
-						restarts: Number(row.restarts) || 0,
-						totalRestarts: Number(row.totalRestarts) || 0,
-						lastTerminatedReason: row.lastTerminatedReason,
-					})),
-				}),
-		),
+	"queryEngine.podRestarts": warehouseEndpoint(
+		warehouse,
+		PodRestartsRequest,
+		PodRestartsResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(Queries.podRestarts, payload),
+				(rows) =>
+					new PodRestartsResponse({
+						data: rows.map((row) => ({
+							podName: row.podName,
+							namespace: row.namespace,
+							containerName: row.containerName,
+							restarts: Number(row.restarts) || 0,
+							totalRestarts: Number(row.totalRestarts) || 0,
+							lastTerminatedReason: row.lastTerminatedReason,
+						})),
+					}),
+			),
 	),
-	"queryEngine.podInfraTimeseries": warehouseEndpoint(warehouse, PodInfraTimeseriesRequest, PodInfraTimeseriesResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(ApiQueries.podInfraTimeseries, payload),
-			(rows) => new PodInfraTimeseriesResponse({ data: rows.map(timeseriesPoint), unit: podMetricSpec(payload.metric).unit }),
-		),
+	"queryEngine.podInfraTimeseries": warehouseEndpoint(
+		warehouse,
+		PodInfraTimeseriesRequest,
+		PodInfraTimeseriesResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(ApiQueries.podInfraTimeseries, payload),
+				(rows) =>
+					new PodInfraTimeseriesResponse({
+						data: rows.map(timeseriesPoint),
+						unit: podMetricSpec(payload.metric).unit,
+					}),
+			),
 	),
 })
 
 const nodeEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => ({
-	"queryEngine.listNodes": warehouseEndpoint(warehouse, ListNodesRequest, ListNodesResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(Queries.listNodes, payload),
-			(rows) =>
-				new ListNodesResponse({
-					data: rows.map((row) => ({
-						nodeName: row.nodeName,
-						nodeUid: row.nodeUid,
-						clusterName: row.clusterName,
-						environment: row.environment,
-						kubeletVersion: row.kubeletVersion,
-						lastSeen: iso(row.lastSeen),
-						...nodeCapacity(row),
-					})),
-				}),
-		),
+	"queryEngine.listNodes": warehouseEndpoint(
+		warehouse,
+		ListNodesRequest,
+		ListNodesResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(Queries.listNodes, payload),
+				(rows) =>
+					new ListNodesResponse({
+						data: rows.map((row) => ({
+							nodeName: row.nodeName,
+							nodeUid: row.nodeUid,
+							clusterName: row.clusterName,
+							environment: row.environment,
+							kubeletVersion: row.kubeletVersion,
+							lastSeen: iso(row.lastSeen),
+							...nodeCapacity(row),
+						})),
+					}),
+			),
 	),
-	"queryEngine.nodeFacets": warehouseEndpoint(warehouse, NodeFacetsRequest, NodeFacetsResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(Queries.nodeFacets, payload),
-			(rows) =>
-				new NodeFacetsResponse({
-					data: { nodes: facet(rows, "node"), clusters: facet(rows, "cluster"), environments: facet(rows, "environment") },
-				}),
-		),
+	"queryEngine.nodeFacets": warehouseEndpoint(
+		warehouse,
+		NodeFacetsRequest,
+		NodeFacetsResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(Queries.nodeFacets, payload),
+				(rows) =>
+					new NodeFacetsResponse({
+						data: {
+							nodes: facet(rows, "node"),
+							clusters: facet(rows, "cluster"),
+							environments: facet(rows, "environment"),
+						},
+					}),
+			),
 	),
-	"queryEngine.nodeDetailSummary": warehouseEndpoint(warehouse, NodeDetailSummaryRequest, NodeDetailSummaryResponse, (payload, { runQueryFirst }) =>
-		Effect.map(
-			runQueryFirst(Queries.nodeDetailSummary, payload),
-			(row) =>
-				new NodeDetailSummaryResponse({
-					data: row
-						? {
-								nodeName: row.nodeName,
-								nodeUid: row.nodeUid,
-								kubeletVersion: row.kubeletVersion,
-								containerRuntime: row.containerRuntime,
-								firstSeen: iso(row.firstSeen),
-								lastSeen: iso(row.lastSeen),
-								...nodeCapacity(row),
-							}
-						: null,
-				}),
-		),
+	"queryEngine.nodeDetailSummary": warehouseEndpoint(
+		warehouse,
+		NodeDetailSummaryRequest,
+		NodeDetailSummaryResponse,
+		(payload, { runQueryFirst }) =>
+			Effect.map(
+				runQueryFirst(Queries.nodeDetailSummary, payload),
+				(row) =>
+					new NodeDetailSummaryResponse({
+						data: row
+							? {
+									nodeName: row.nodeName,
+									nodeUid: row.nodeUid,
+									kubeletVersion: row.kubeletVersion,
+									containerRuntime: row.containerRuntime,
+									firstSeen: iso(row.firstSeen),
+									lastSeen: iso(row.lastSeen),
+									...nodeCapacity(row),
+								}
+							: null,
+					}),
+			),
 	),
-	"queryEngine.nodeInfraTimeseries": warehouseEndpoint(warehouse, NodeInfraTimeseriesRequest, NodeInfraTimeseriesResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(ApiQueries.nodeInfraTimeseries, payload),
-			(rows) => new NodeInfraTimeseriesResponse({ data: rows.map(timeseriesPoint), unit: nodeMetricSpec(payload.metric).unit }),
-		),
+	"queryEngine.nodeInfraTimeseries": warehouseEndpoint(
+		warehouse,
+		NodeInfraTimeseriesRequest,
+		NodeInfraTimeseriesResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(ApiQueries.nodeInfraTimeseries, payload),
+				(rows) =>
+					new NodeInfraTimeseriesResponse({
+						data: rows.map(timeseriesPoint),
+						unit: nodeMetricSpec(payload.metric).unit,
+					}),
+			),
 	),
 })
 
 const workloadEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => ({
-	"queryEngine.listWorkloads": warehouseEndpoint(warehouse, ListWorkloadsRequest, ListWorkloadsResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(Queries.listWorkloads, payload),
-			(rows) =>
-				new ListWorkloadsResponse({
-					data: rows.map((row) => ({
-						workloadName: row.workloadName,
-						namespace: row.namespace,
-						clusterName: row.clusterName,
-						environment: row.environment,
-						podCount: row.podCount || 0,
-						lastSeen: iso(row.lastSeen),
-						desiredReplicas: row.replicaSamples > 0 ? row.desiredReplicas : null,
-						readyReplicas: row.replicaSamples > 0 ? row.readyReplicas : null,
-						failedPods: row.failedPods || 0,
-						restarts: row.restarts || 0,
-						lastTerminatedReason: row.lastTerminatedReason,
-						peakCpuLimitPct: row.peakCpuLimitPct || 0,
-						peakMemoryLimitPct: row.peakMemoryLimitPct || 0,
-						cpuUsage: row.cpuUsage || 0,
-					})),
-				}),
-		),
+	"queryEngine.listWorkloads": warehouseEndpoint(
+		warehouse,
+		ListWorkloadsRequest,
+		ListWorkloadsResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(Queries.listWorkloads, payload),
+				(rows) =>
+					new ListWorkloadsResponse({
+						data: rows.map((row) => ({
+							workloadName: row.workloadName,
+							namespace: row.namespace,
+							clusterName: row.clusterName,
+							environment: row.environment,
+							podCount: row.podCount || 0,
+							lastSeen: iso(row.lastSeen),
+							desiredReplicas: row.replicaSamples > 0 ? row.desiredReplicas : null,
+							readyReplicas: row.replicaSamples > 0 ? row.readyReplicas : null,
+							failedPods: row.failedPods || 0,
+							restarts: row.restarts || 0,
+							lastTerminatedReason: row.lastTerminatedReason,
+							peakCpuLimitPct: row.peakCpuLimitPct || 0,
+							peakMemoryLimitPct: row.peakMemoryLimitPct || 0,
+							cpuUsage: row.cpuUsage || 0,
+						})),
+					}),
+			),
 	),
-	"queryEngine.workloadFacets": warehouseEndpoint(warehouse, WorkloadFacetsRequest, WorkloadFacetsResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(Queries.workloadFacets, payload),
-			(rows) =>
-				new WorkloadFacetsResponse({
-					data: {
-						workloads: facet(rows, "workload"),
-						namespaces: facet(rows, "namespace"),
-						clusters: facet(rows, "cluster"),
-						environments: facet(rows, "environment"),
-						computeTypes: facet(rows, "computeType"),
-					},
-				}),
-		),
+	"queryEngine.workloadFacets": warehouseEndpoint(
+		warehouse,
+		WorkloadFacetsRequest,
+		WorkloadFacetsResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(Queries.workloadFacets, payload),
+				(rows) =>
+					new WorkloadFacetsResponse({
+						data: {
+							workloads: facet(rows, "workload"),
+							namespaces: facet(rows, "namespace"),
+							clusters: facet(rows, "cluster"),
+							environments: facet(rows, "environment"),
+							computeTypes: facet(rows, "computeType"),
+						},
+					}),
+			),
 	),
-	"queryEngine.workloadDetailSummary": warehouseEndpoint(warehouse, WorkloadDetailSummaryRequest, WorkloadDetailSummaryResponse, (payload, { runQueryFirst }) =>
-		Effect.map(
-			runQueryFirst(Queries.workloadDetailSummary, payload),
-			(row) =>
-				new WorkloadDetailSummaryResponse({
-					data: row
-						? {
-								workloadName: row.workloadName,
-								kind: payload.kind,
-								namespace: row.namespace,
-								podCount: row.podCount || 0,
-								firstSeen: iso(row.firstSeen),
-								lastSeen: iso(row.lastSeen),
-								avgCpuLimitPct: row.avgCpuLimitPct || 0,
-								avgMemoryLimitPct: row.avgMemoryLimitPct || 0,
-								avgCpuUsage: row.avgCpuUsage || 0,
-							}
-						: null,
-				}),
-		),
+	"queryEngine.workloadDetailSummary": warehouseEndpoint(
+		warehouse,
+		WorkloadDetailSummaryRequest,
+		WorkloadDetailSummaryResponse,
+		(payload, { runQueryFirst }) =>
+			Effect.map(
+				runQueryFirst(Queries.workloadDetailSummary, payload),
+				(row) =>
+					new WorkloadDetailSummaryResponse({
+						data: row
+							? {
+									workloadName: row.workloadName,
+									kind: payload.kind,
+									namespace: row.namespace,
+									podCount: row.podCount || 0,
+									firstSeen: iso(row.firstSeen),
+									lastSeen: iso(row.lastSeen),
+									avgCpuLimitPct: row.avgCpuLimitPct || 0,
+									avgMemoryLimitPct: row.avgMemoryLimitPct || 0,
+									avgCpuUsage: row.avgCpuUsage || 0,
+								}
+							: null,
+					}),
+			),
 	),
-	"queryEngine.workloadInfraTimeseries": warehouseEndpoint(warehouse, WorkloadInfraTimeseriesRequest, WorkloadInfraTimeseriesResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(ApiQueries.workloadInfraTimeseries, payload),
-			(rows) => new WorkloadInfraTimeseriesResponse({ data: rows.map(timeseriesPoint), unit: workloadMetricSpec(payload.metric).unit }),
-		),
+	"queryEngine.workloadInfraTimeseries": warehouseEndpoint(
+		warehouse,
+		WorkloadInfraTimeseriesRequest,
+		WorkloadInfraTimeseriesResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(ApiQueries.workloadInfraTimeseries, payload),
+				(rows) =>
+					new WorkloadInfraTimeseriesResponse({
+						data: rows.map(timeseriesPoint),
+						unit: workloadMetricSpec(payload.metric).unit,
+					}),
+			),
 	),
 })
 
-const containerTotal = (payload: ListContainersRequest, count: CH.ListContainersSummaryOutput | null, rows: number) =>
+const containerTotal = (
+	payload: ListContainersRequest,
+	count: CH.ListContainersSummaryOutput | null,
+	rows: number,
+) =>
 	Number(
 		payload.scope === "saturated"
 			? count?.saturatedContainers
@@ -502,48 +615,59 @@ const containerTotal = (payload: ListContainersRequest, count: CH.ListContainers
 	) || rows
 
 const containerEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => ({
-	"queryEngine.listContainers": warehouseEndpoint(warehouse, ListContainersRequest, ListContainersResponse, (payload, { runQuery, runQueryFirst }) =>
-		Effect.map(
-			Effect.all([runQuery(Queries.listContainers, payload), runQueryFirst(Queries.listContainersCount, payload)]),
-			([rows, count]) =>
-				new ListContainersResponse({
-					data: rows.map((row) => ({
-						containerName: row.containerName,
-						hostName: row.hostName,
-						containerId: row.containerId,
-						imageName: row.imageName,
-						composeProject: row.composeProject,
-						composeService: row.composeService,
-						runtime: row.runtime,
-						environment: row.environment,
-						lastSeen: iso(row.lastSeen),
-						cpuPct: row.cpuPct || 0,
-						memoryPct: row.memoryPct || 0,
-						cpuPctPeak: row.cpuPctPeak || 0,
-						memoryPctPeak: row.memoryPctPeak || 0,
-						cpuLimitCores: row.cpuLimitCores || 0,
-						uptimeSeconds: row.uptimeSeconds || 0,
-						saturation: row.saturation || 0,
-					})),
-					totalCount: containerTotal(payload, count, rows.length),
-				}),
-		),
+	"queryEngine.listContainers": warehouseEndpoint(
+		warehouse,
+		ListContainersRequest,
+		ListContainersResponse,
+		(payload, { runQuery, runQueryFirst }) =>
+			Effect.map(
+				Effect.all([
+					runQuery(Queries.listContainers, payload),
+					runQueryFirst(Queries.listContainersCount, payload),
+				]),
+				([rows, count]) =>
+					new ListContainersResponse({
+						data: rows.map((row) => ({
+							containerName: row.containerName,
+							hostName: row.hostName,
+							containerId: row.containerId,
+							imageName: row.imageName,
+							composeProject: row.composeProject,
+							composeService: row.composeService,
+							runtime: row.runtime,
+							environment: row.environment,
+							lastSeen: iso(row.lastSeen),
+							cpuPct: row.cpuPct || 0,
+							memoryPct: row.memoryPct || 0,
+							cpuPctPeak: row.cpuPctPeak || 0,
+							memoryPctPeak: row.memoryPctPeak || 0,
+							cpuLimitCores: row.cpuLimitCores || 0,
+							uptimeSeconds: row.uptimeSeconds || 0,
+							saturation: row.saturation || 0,
+						})),
+						totalCount: containerTotal(payload, count, rows.length),
+					}),
+			),
 	),
-	"queryEngine.containerFacets": warehouseEndpoint(warehouse, ContainerFacetsRequest, ContainerFacetsResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(Queries.containerFacets, payload),
-			(rows) =>
-				new ContainerFacetsResponse({
-					data: {
-						containers: facet(rows, "container"),
-						hosts: facet(rows, "host"),
-						images: facet(rows, "image"),
-						composeProjects: facet(rows, "composeProject"),
-						composeServices: facet(rows, "composeService"),
-						environments: facet(rows, "environment"),
-					},
-				}),
-		),
+	"queryEngine.containerFacets": warehouseEndpoint(
+		warehouse,
+		ContainerFacetsRequest,
+		ContainerFacetsResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(Queries.containerFacets, payload),
+				(rows) =>
+					new ContainerFacetsResponse({
+						data: {
+							containers: facet(rows, "container"),
+							hosts: facet(rows, "host"),
+							images: facet(rows, "image"),
+							composeProjects: facet(rows, "composeProject"),
+							composeServices: facet(rows, "composeService"),
+							environments: facet(rows, "environment"),
+						},
+					}),
+			),
 	),
 	"queryEngine.containerDetailSummary": warehouseEndpoint(
 		warehouse,
@@ -551,7 +675,10 @@ const containerEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string
 		ContainerDetailSummaryResponse,
 		(payload, { runQueryFirst }) =>
 			Effect.map(
-				Effect.all([runQueryFirst(Queries.containerDetailSummary, payload), runQueryFirst(Queries.containerCountersSummary, payload)]),
+				Effect.all([
+					runQueryFirst(Queries.containerDetailSummary, payload),
+					runQueryFirst(Queries.containerCountersSummary, payload),
+				]),
 				([row, counters]) =>
 					new ContainerDetailSummaryResponse({
 						data: row
@@ -585,14 +712,25 @@ const containerEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string
 		(payload, { runQuery }) => {
 			const spec = containerMetricSpec(payload.metric)
 			return spec.isSum
-				? Effect.map(runQuery(ApiQueries.containerInfraSumTimeseries, payload), (rows) =>
-						new ContainerInfraTimeseriesResponse({
-							data: rows.map((row) => ({ bucket: iso(row.bucket), attributeValue: row.attributeValue, value: Number(row.sumValue) || 0 })),
-							unit: spec.unit,
-						}),
+				? Effect.map(
+						runQuery(ApiQueries.containerInfraSumTimeseries, payload),
+						(rows) =>
+							new ContainerInfraTimeseriesResponse({
+								data: rows.map((row) => ({
+									bucket: iso(row.bucket),
+									attributeValue: row.attributeValue,
+									value: Number(row.sumValue) || 0,
+								})),
+								unit: spec.unit,
+							}),
 					)
-				: Effect.map(runQuery(ApiQueries.containerInfraGaugeTimeseries, payload), (rows) =>
-						new ContainerInfraTimeseriesResponse({ data: rows.map(timeseriesPoint), unit: spec.unit }),
+				: Effect.map(
+						runQuery(ApiQueries.containerInfraGaugeTimeseries, payload),
+						(rows) =>
+							new ContainerInfraTimeseriesResponse({
+								data: rows.map(timeseriesPoint),
+								unit: spec.unit,
+							}),
 					)
 		},
 	),

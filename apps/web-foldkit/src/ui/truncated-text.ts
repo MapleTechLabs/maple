@@ -20,7 +20,13 @@ export const truncatedText = <M>(
 ): Html =>
 	h.span(
 		[
-			h.Class(cn(truncatedTextStyles, (options.mono ?? false) && truncatedTextMonoStyles, options.className)),
+			h.Class(
+				cn(
+					truncatedTextStyles,
+					(options.mono ?? false) && truncatedTextMonoStyles,
+					options.className,
+				),
+			),
 			...((options.tooltip ?? "title") === "title" ? [h.Title(options.text)] : []),
 		],
 		children ?? [options.text],

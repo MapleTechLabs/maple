@@ -2,7 +2,13 @@
 export type WarehouseRow = Readonly<Record<string, unknown>>
 
 /** Raw tables the seed writes; every rollup is filled by the schema's materialized views. */
-export const TELEMETRY_TABLES = ["traces", "logs", "metrics_gauge", "metrics_sum", "metrics_histogram"] as const
+export const TELEMETRY_TABLES = [
+	"traces",
+	"logs",
+	"metrics_gauge",
+	"metrics_sum",
+	"metrics_histogram",
+] as const
 export type TelemetryTable = (typeof TELEMETRY_TABLES)[number]
 
 export type TelemetryRows = Readonly<Record<TelemetryTable, ReadonlyArray<WarehouseRow>>>

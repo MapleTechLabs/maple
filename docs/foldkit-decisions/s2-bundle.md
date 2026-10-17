@@ -30,13 +30,13 @@ All numbers are gzip of the JS in the static import graph of `index.html` (the s
 
 ## Numbers
 
-| Build | Startup gzip | Startup raw | All JS gzip |
-| --- | --- | --- | --- |
-| Today (132 startup chunks) | 703.1 KB | 2302 KB | 6701 KB |
-| No route splitting (26 chunks) | 2845.1 KB | 9840 KB | 6234 KB |
-| No splitting, Mount libs and lab external | 1840.0 KB | 6319 KB | 1931 KB |
-| Also React-only libs external | 1419.5 KB | 4834 KB | 1511 KB |
-| Foldkit estimate (see below) | 1430 to 1580 KB | about 5 MB | |
+| Build                                     | Startup gzip    | Startup raw | All JS gzip |
+| ----------------------------------------- | --------------- | ----------- | ----------- |
+| Today (132 startup chunks)                | 703.1 KB        | 2302 KB     | 6701 KB     |
+| No route splitting (26 chunks)            | 2845.1 KB       | 9840 KB     | 6234 KB     |
+| No splitting, Mount libs and lab external | 1840.0 KB       | 6319 KB     | 1931 KB     |
+| Also React-only libs external             | 1419.5 KB       | 4834 KB     | 1511 KB     |
+| Foldkit estimate (see below)              | 1430 to 1580 KB | about 5 MB  |             |
 
 Brotli for the last measured row is 1080 KB (today 605 KB).
 

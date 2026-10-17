@@ -37,23 +37,40 @@ interface SessionPlan {
 	readonly turns: ReadonlyArray<TurnPlan>
 }
 
-const TOOL_DESCRIPTIONS = new Map(Object.entries({
-	Read: "Reads a file from the local filesystem.",
-	Grep: "Searches file contents with a regular expression.",
-	Edit: "Performs exact string replacements in a file.",
-	Bash: "Executes a shell command in the workspace.",
-	lookup_order: "Fetches an order and its shipment status by id.",
-	refund_order: "Issues a full or partial refund for an order.",
-	search_kb: "Searches the help-center knowledge base.",
-	get_invoice: "Loads an invoice with its line items.",
-	apply_credit: "Applies an account credit to the next invoice.",
-	web_search: "Searches the web and returns the top results.",
-	fetch_url: "Downloads a page and returns its readable text.",
-} satisfies Record<string, string>))
+const TOOL_DESCRIPTIONS = new Map(
+	Object.entries({
+		Read: "Reads a file from the local filesystem.",
+		Grep: "Searches file contents with a regular expression.",
+		Edit: "Performs exact string replacements in a file.",
+		Bash: "Executes a shell command in the workspace.",
+		lookup_order: "Fetches an order and its shipment status by id.",
+		refund_order: "Issues a full or partial refund for an order.",
+		search_kb: "Searches the help-center knowledge base.",
+		get_invoice: "Loads an invoice with its line items.",
+		apply_credit: "Applies an account credit to the next invoice.",
+		web_search: "Searches the web and returns the top results.",
+		fetch_url: "Downloads a page and returns its readable text.",
+	} satisfies Record<string, string>),
+)
 
-const read = (path: string, ms = 40): ToolStep => ({ name: "Read", args: { file_path: path }, result: `(${path}: 182 lines)`, ms })
-const grep = (pattern: string, ms = 120): ToolStep => ({ name: "Grep", args: { pattern, path: "apps/checkout" }, result: "3 matches in 2 files", ms })
-const edit = (path: string): ToolStep => ({ name: "Edit", args: { file_path: path, old_string: "retries: 3", new_string: "retries: 5" }, result: "File updated", ms: 30 })
+const read = (path: string, ms = 40): ToolStep => ({
+	name: "Read",
+	args: { file_path: path },
+	result: `(${path}: 182 lines)`,
+	ms,
+})
+const grep = (pattern: string, ms = 120): ToolStep => ({
+	name: "Grep",
+	args: { pattern, path: "apps/checkout" },
+	result: "3 matches in 2 files",
+	ms,
+})
+const edit = (path: string): ToolStep => ({
+	name: "Edit",
+	args: { file_path: path, old_string: "retries: 3", new_string: "retries: 5" },
+	result: "File updated",
+	ms: 30,
+})
 const bash = (command: string, ms: number, error?: string): ToolStep => ({
 	name: "Bash",
 	args: { command },
@@ -61,7 +78,13 @@ const bash = (command: string, ms: number, error?: string): ToolStep => ({
 	ms,
 	...(error === undefined ? undefined : { error }),
 })
-const tool = (name: string, args: Readonly<Record<string, unknown>>, result: string, ms: number, error?: string): ToolStep => ({
+const tool = (
+	name: string,
+	args: Readonly<Record<string, unknown>>,
+	result: string,
+	ms: number,
+	error?: string,
+): ToolStep => ({
 	name,
 	args,
 	result,
@@ -83,7 +106,12 @@ const SESSIONS: ReadonlyArray<SessionPlan> = [
 				prompt: "the checkout retry test is flaky on CI, find out why",
 				answer: "The retry test races the payment mock: the mock resolves before the retry timer is armed.",
 				model: "claude-opus-4-1",
-				tools: [grep("retryPayment"), read("apps/checkout/src/retry.ts"), read("apps/checkout/test/retry.test.ts"), bash("bun run test retry", 8400, "1 failed: expected 2 attempts, received 1")],
+				tools: [
+					grep("retryPayment"),
+					read("apps/checkout/src/retry.ts"),
+					read("apps/checkout/test/retry.test.ts"),
+					bash("bun run test retry", 8400, "1 failed: expected 2 attempts, received 1"),
+				],
 			},
 			{
 				prompt: "fix it and run the suite again",
@@ -113,15 +141,32 @@ const SESSIONS: ReadonlyArray<SessionPlan> = [
 				answer: "Your order shows as lost in transit, so I issued a full refund of $84.00.",
 				model: "gpt-5-mini",
 				tools: [
-					tool("lookup_order", { orderId: "48213" }, '{"status":"lost_in_transit","total":84}', 210),
-					tool("refund_order", { orderId: "48213", amount: 84 }, '{"refundId":"re_31f9","status":"succeeded"}', 640),
+					tool(
+						"lookup_order",
+						{ orderId: "48213" },
+						'{"status":"lost_in_transit","total":84}',
+						210,
+					),
+					tool(
+						"refund_order",
+						{ orderId: "48213", amount: 84 },
+						'{"refundId":"re_31f9","status":"succeeded"}',
+						640,
+					),
 				],
 			},
 			{
 				prompt: "Thanks! How long until it shows on my card?",
 				answer: "Refunds usually appear within 5 to 10 business days.",
 				model: "gpt-5-mini",
-				tools: [tool("search_kb", { query: "refund timing card" }, "Refunds post in 5-10 business days.", 180)],
+				tools: [
+					tool(
+						"search_kb",
+						{ query: "refund timing card" },
+						"Refunds post in 5-10 business days.",
+						180,
+					),
+				],
 			},
 		],
 	},
@@ -157,7 +202,13 @@ const SESSIONS: ReadonlyArray<SessionPlan> = [
 				model: "gpt-5-mini",
 				tools: [
 					tool("lookup_order", { orderId: "47102" }, '{"status":"delivered","total":129}', 230),
-					tool("refund_order", { orderId: "47102", amount: 129 }, "", 1250, "PaymentProviderError: card_declined for refund re_9c20"),
+					tool(
+						"refund_order",
+						{ orderId: "47102", amount: 129 },
+						"",
+						1250,
+						"PaymentProviderError: card_declined for refund re_9c20",
+					),
 				],
 			},
 		],
@@ -177,7 +228,12 @@ const SESSIONS: ReadonlyArray<SessionPlan> = [
 				model: "gpt-4.1",
 				tools: [
 					tool("get_invoice", { invoiceId: "INV-2209" }, '{"charges":2,"amount":49}', 320),
-					tool("apply_credit", { amount: 49, reason: "duplicate charge" }, '{"creditId":"cr_77a1"}', 410),
+					tool(
+						"apply_credit",
+						{ amount: 49, reason: "duplicate charge" },
+						'{"creditId":"cr_77a1"}',
+						410,
+					),
 				],
 			},
 		],
@@ -197,8 +253,19 @@ const SESSIONS: ReadonlyArray<SessionPlan> = [
 				model: "gemini-2.5-pro",
 				tools: [
 					tool("web_search", { query: "CDN p99 latency benchmark 2026" }, "10 results", 900),
-					tool("fetch_url", { url: "https://example.test/cdn-report" }, "CDN report, 14 pages", 1600),
-					tool("fetch_url", { url: "https://example.test/edge-latency" }, "", 30000, "TimeoutError: fetch exceeded 30s"),
+					tool(
+						"fetch_url",
+						{ url: "https://example.test/cdn-report" },
+						"CDN report, 14 pages",
+						1600,
+					),
+					tool(
+						"fetch_url",
+						{ url: "https://example.test/edge-latency" },
+						"",
+						30000,
+						"TimeoutError: fetch exceeded 30s",
+					),
 				],
 			},
 			{
@@ -206,7 +273,10 @@ const SESSIONS: ReadonlyArray<SessionPlan> = [
 				answer: "",
 				model: "gemini-2.5-pro",
 				tools: [],
-				llmError: { type: "ContextWindowExceededError", message: "prompt is 1,204,331 tokens; the model accepts 1,048,576" },
+				llmError: {
+					type: "ContextWindowExceededError",
+					message: "prompt is 1,204,331 tokens; the model accepts 1,048,576",
+				},
 			},
 		],
 	},
@@ -223,7 +293,11 @@ const SESSIONS: ReadonlyArray<SessionPlan> = [
 				prompt: "add a dark mode toggle to the storefront header",
 				answer: "Added a theme toggle to the header that persists the choice in localStorage.",
 				model: "claude-sonnet-4-5",
-				tools: [read("apps/storefront/src/header.tsx"), edit("apps/storefront/src/header.tsx"), bash("bun run typecheck", 5200)],
+				tools: [
+					read("apps/storefront/src/header.tsx"),
+					edit("apps/storefront/src/header.tsx"),
+					bash("bun run typecheck", 5200),
+				],
 			},
 		],
 	},
@@ -240,30 +314,41 @@ const SESSIONS: ReadonlyArray<SessionPlan> = [
 				prompt: "Do you ship to Canada?",
 				answer: "Yes, we ship to Canada with delivery in 4 to 7 business days.",
 				model: "gpt-5-mini",
-				tools: [tool("search_kb", { query: "international shipping canada" }, "Canada: 4-7 business days.", 150)],
+				tools: [
+					tool(
+						"search_kb",
+						{ query: "international shipping canada" },
+						"Canada: 4-7 business days.",
+						150,
+					),
+				],
 			},
 		],
 	},
 ]
 
 /** USD per million input / output tokens, roughly list price. */
-const PRICES = new Map(Object.entries({
-	"claude-opus-4-1": [15, 75],
-	"claude-sonnet-4-5": [3, 15],
-	"claude-haiku-4-5": [1, 5],
-	"gpt-5-mini": [0.25, 2],
-	"gpt-4.1": [2, 8],
-	"gemini-2.5-pro": [1.25, 10],
-} satisfies Record<string, readonly [number, number]>))
+const PRICES = new Map(
+	Object.entries({
+		"claude-opus-4-1": [15, 75],
+		"claude-sonnet-4-5": [3, 15],
+		"claude-haiku-4-5": [1, 5],
+		"gpt-5-mini": [0.25, 2],
+		"gpt-4.1": [2, 8],
+		"gemini-2.5-pro": [1.25, 10],
+	} satisfies Record<string, readonly [number, number]>),
+)
 
-const PROVIDERS = new Map(Object.entries({
-	"claude-opus-4-1": "anthropic",
-	"claude-sonnet-4-5": "anthropic",
-	"claude-haiku-4-5": "anthropic",
-	"gpt-5-mini": "openai",
-	"gpt-4.1": "openai",
-	"gemini-2.5-pro": "gcp.gemini",
-} satisfies Record<string, string>))
+const PROVIDERS = new Map(
+	Object.entries({
+		"claude-opus-4-1": "anthropic",
+		"claude-sonnet-4-5": "anthropic",
+		"claude-haiku-4-5": "anthropic",
+		"gpt-5-mini": "openai",
+		"gpt-4.1": "openai",
+		"gemini-2.5-pro": "gcp.gemini",
+	} satisfies Record<string, string>),
+)
 
 interface Sink {
 	readonly orgId: string
@@ -315,7 +400,9 @@ const pushSpan = (sink: Sink, span: SpanInput) =>
 			"maple_ai.agent.name": span.session.agent,
 			"gen_ai.conversation.id": span.session.sessionId,
 			...span.attributes,
-			...(span.error === undefined ? undefined : { "maple_ai.error": "1", "error.type": span.error.type }),
+			...(span.error === undefined
+				? undefined
+				: { "maple_ai.error": "1", "error.type": span.error.type }),
 		},
 		EventsTimestamp: [],
 		EventsName: [],
@@ -329,19 +416,34 @@ const pushSpan = (sink: Sink, span: SpanInput) =>
 const text = (role: string, content: string) => ({ role, parts: [{ type: "text", content }] })
 
 /** One turn: an agent root, a model call, its tools, then the closing model call. */
-const emitTurn = (sink: Sink, session: SessionPlan, turn: TurnPlan, index: number, startUs: number): number => {
+const emitTurn = (
+	sink: Sink,
+	session: SessionPlan,
+	turn: TurnPlan,
+	index: number,
+	startUs: number,
+): number => {
 	const { rng } = sink
 	const traceId = rng.hex(32)
 	const rootId = rng.hex(16)
 	const [inPrice, outPrice] = PRICES.get(turn.model) ?? [1, 1]
-	const history = session.turns.slice(0, index).flatMap((earlier) => [text("user", earlier.prompt), text("assistant", earlier.answer)])
+	const history = session.turns
+		.slice(0, index)
+		.flatMap((earlier) => [text("user", earlier.prompt), text("assistant", earlier.answer)])
 	const llm = (startAt: number, final: boolean): number => {
 		const durationUs = rng.int(900, 4200) * 1000
 		const input = rng.int(1200, 9000)
 		const cacheRead = index === 0 ? 0 : rng.int(4000, 20000)
 		const output = final ? rng.int(120, 600) : rng.int(40, 160)
 		const cost = (input * inPrice + output * outPrice + cacheRead * inPrice * 0.1) / 1_000_000
-		const calls = final ? [] : turn.tools.map((step, call) => ({ type: "tool_call", id: `call_${index}_${call}`, name: step.name, arguments: step.args }))
+		const calls = final
+			? []
+			: turn.tools.map((step, call) => ({
+					type: "tool_call",
+					id: `call_${index}_${call}`,
+					name: step.name,
+					arguments: step.args,
+				}))
 		const failed = final && turn.llmError !== undefined
 		pushSpan(sink, {
 			session,
@@ -358,12 +460,20 @@ const emitTurn = (sink: Sink, session: SessionPlan, turn: TurnPlan, index: numbe
 				"gen_ai.provider.name": PROVIDERS.get(turn.model) ?? "openai",
 				"gen_ai.request.model": turn.model,
 				"gen_ai.response.model": turn.model,
-				"gen_ai.input.messages": JSON.stringify([text("system", `You are ${session.agent}.`), ...history, text("user", turn.prompt)]),
+				"gen_ai.input.messages": JSON.stringify([
+					text("system", `You are ${session.agent}.`),
+					...history,
+					text("user", turn.prompt),
+				]),
 				...(failed
 					? undefined
 					: {
 							"gen_ai.output.messages": JSON.stringify([
-								{ role: "assistant", parts: final ? [{ type: "text", content: turn.answer }] : calls, finish_reason: final ? "stop" : "tool_calls" },
+								{
+									role: "assistant",
+									parts: final ? [{ type: "text", content: turn.answer }] : calls,
+									finish_reason: final ? "stop" : "tool_calls",
+								},
 							]),
 							"gen_ai.response.finish_reasons": JSON.stringify([final ? "stop" : "tool_calls"]),
 							"maple_ai.usage.input_tokens": String(input),
@@ -394,7 +504,9 @@ const emitTurn = (sink: Sink, session: SessionPlan, turn: TurnPlan, index: numbe
 			kind: "Internal",
 			startUs: at,
 			durationUs,
-			...(step.error === undefined ? undefined : { error: { type: step.error.split(":")[0] ?? "ToolError", message: step.error } }),
+			...(step.error === undefined
+				? undefined
+				: { error: { type: step.error.split(":")[0] ?? "ToolError", message: step.error } }),
 			attributes: {
 				"gen_ai.operation.name": "execute_tool",
 				"gen_ai.tool.name": step.name,
@@ -433,12 +545,16 @@ const emitTurn = (sink: Sink, session: SessionPlan, turn: TurnPlan, index: numbe
 }
 
 /** Every session, ending `hoursAgo` before `now`, its turns a few minutes apart. */
-export const agentSessionsTelemetry = (options: { readonly orgId: string; readonly now: Date }): TelemetryRows => {
+export const agentSessionsTelemetry = (options: {
+	readonly orgId: string
+	readonly now: Date
+}): TelemetryRows => {
 	const sink: Sink = { orgId: options.orgId, rng: makePrng(41), traces: [] }
 	const nowUs = options.now.getTime() * 1000
 	SESSIONS.forEach((session) => {
 		session.turns.reduce(
-			(cursor, turn, index) => emitTurn(sink, session, turn, index, cursor) + sink.rng.int(40, 240) * 1_000_000,
+			(cursor, turn, index) =>
+				emitTurn(sink, session, turn, index, cursor) + sink.rng.int(40, 240) * 1_000_000,
 			nowUs - session.hoursAgo * HOUR_US,
 		)
 	})

@@ -9,7 +9,8 @@ export const VIEWPORT_ATTRIBUTE = "data-viewport"
 /** Bumped by the Model (`Canvas.remeasure`) to re-measure every node. */
 export const MEASURE_EPOCH_ATTRIBUTE = "data-measure-epoch"
 
-export const viewportAttribute =(viewport: Viewport): string => `${viewport.x},${viewport.y},${viewport.zoom}`
+export const viewportAttribute = (viewport: Viewport): string =>
+	`${viewport.x},${viewport.y},${viewport.zoom}`
 
 /**
  * The Model's camera, written on the empty `.react-flow__viewport-portal` leaf: an attribute that
@@ -18,7 +19,9 @@ export const viewportAttribute =(viewport: Viewport): string => `${viewport.x},$
 export const readViewport = (renderer: Element): Viewport | undefined => {
 	const leaf = renderer.querySelector(".react-flow__viewport-portal")
 	const parts = (leaf?.getAttribute(VIEWPORT_ATTRIBUTE) ?? "").split(",").map(Number)
-	return parts.length === 3 && parts.every(Number.isFinite) ? { x: parts[0], y: parts[1], zoom: parts[2] } : undefined
+	return parts.length === 3 && parts.every(Number.isFinite)
+		? { x: parts[0], y: parts[1], zoom: parts[2] }
+		: undefined
 }
 
 /** What the Mount reports; the zoom buttons are view events. */
@@ -26,7 +29,8 @@ type MountMessage = Extract<Message, { readonly _tag: "ChangedViewport" | "Resiz
 
 const HANDLE_SIDES = new Set(["top", "right", "bottom", "left"])
 
-const isSide = (value: string | null): value is HandleBounds["position"] => value !== null && HANDLE_SIDES.has(value)
+const isSide = (value: string | null): value is HandleBounds["position"] =>
+	value !== null && HANDLE_SIDES.has(value)
 
 /** `getHandleBounds` + `getDimensions` from @xyflow/system, for one `.react-flow__node`. */
 const measureNode = (node: HTMLElement, zoom: number): MeasuredNode | undefined => {
@@ -90,7 +94,9 @@ const observeNodes = (renderer: HTMLElement, emit: (message: MountMessage) => vo
 	additions.observe(renderer, { childList: true, subtree: true })
 	observeNew()
 	// The Model bumps the epoch to have every node measured again at the zoom of this moment.
-	const remeasure = new MutationObserver(() => measure(renderer.querySelectorAll<HTMLElement>(".react-flow__node")))
+	const remeasure = new MutationObserver(() =>
+		measure(renderer.querySelectorAll<HTMLElement>(".react-flow__node")),
+	)
 	remeasure.observe(renderer, { attributes: true, attributeFilter: [MEASURE_EPOCH_ATTRIBUTE] })
 	return () => {
 		remeasure.disconnect()
@@ -148,7 +154,8 @@ const attachPanZoom = (
 
 /** Pane size from the renderer, which fills the `.react-flow` wrapper. */
 const observePane = (renderer: HTMLElement, emit: (message: MountMessage) => void) => {
-	const report = () => emit(Message.ResizedPane({ width: renderer.offsetWidth, height: renderer.offsetHeight }))
+	const report = () =>
+		emit(Message.ResizedPane({ width: renderer.offsetWidth, height: renderer.offsetHeight }))
 	const observer = new ResizeObserver(report)
 	observer.observe(renderer)
 	return () => observer.disconnect()

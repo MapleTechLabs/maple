@@ -1,11 +1,20 @@
 import type { DeclutterFocus } from "@maple/ui/components/service-map/service-map-declutter"
-import { computeNodePositions, DEFAULT_LAYOUT_CONFIG } from "@maple/ui/components/service-map/service-map-utils"
+import {
+	computeNodePositions,
+	DEFAULT_LAYOUT_CONFIG,
+} from "@maple/ui/components/service-map/service-map-utils"
 import { Duration, Effect, Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import * as Canvas from "../xyflow/canvas"
-import { declutterGraph, type EffectiveGraph, EffectiveGraphSchema, type SourceGraph, SourceGraphSchema } from "./graph"
+import {
+	declutterGraph,
+	type EffectiveGraph,
+	EffectiveGraphSchema,
+	type SourceGraph,
+	SourceGraphSchema,
+} from "./graph"
 
 /**
  * `ServiceMapFlowCanvas` (packages/ui `service-map/service-map-canvas.tsx`) as a Submodel:
@@ -25,7 +34,13 @@ export const ColorMode = Schema.Literals(["service", "health", "platform"])
 export const Model = Schema.Struct({
 	source: SourceGraphSchema,
 	graph: EffectiveGraphSchema,
-	focus: Schema.Option(Schema.Struct({ serviceId: Schema.String, hops: Schema.Literals([1, 2]), mode: Schema.Literals(["dim", "hide"]) })),
+	focus: Schema.Option(
+		Schema.Struct({
+			serviceId: Schema.String,
+			hops: Schema.Literals([1, 2]),
+			mode: Schema.Literals(["dim", "hide"]),
+		}),
+	),
 	minTrafficPct: Schema.Number,
 	/** ELK's answer, or the synchronous stand-in it is replaced by after the grace period. */
 	layout: Schema.Struct({ status: LayoutStatus, positions: Positions }),
@@ -66,11 +81,15 @@ export const RunElkLayout = Command.define("RunElkLayout", {
 					[...graph.nodes],
 					[...graph.edges],
 					{ ...DEFAULT_LAYOUT_CONFIG },
-					Option.getOrUndefined(Option.map(previous, (positions) => new Map(Object.entries(positions)))),
+					Option.getOrUndefined(
+						Option.map(previous, (positions) => new Map(Object.entries(positions))),
+					),
 				),
 			),
 		).pipe(
-			Effect.map((result) => Message.SucceededElkLayout({ signature, positions: Object.fromEntries(result.positions) })),
+			Effect.map((result) =>
+				Message.SucceededElkLayout({ signature, positions: Object.fromEntries(result.positions) }),
+			),
 			Effect.orElseSucceed(() => Message.FailedElkLayout({ signature })),
 		),
 })
@@ -112,8 +131,10 @@ export const init = (source: SourceGraph, config: MapConfig): Update.Return<Mode
 }
 
 /** Where a node sits: the current layout, else the node's own position. */
-export const positionOf = (positions: Positions, node: { readonly id: string; readonly position: { x: number; y: number } }) =>
-	positions[node.id] ?? node.position
+export const positionOf = (
+	positions: Positions,
+	node: { readonly id: string; readonly position: { x: number; y: number } },
+) => positions[node.id] ?? node.position
 
 export const placedNodes = (model: Model) =>
 	model.graph.nodes.map((node) => ({ id: node.id, position: positionOf(model.layout.positions, node) }))
@@ -131,13 +152,24 @@ const fallbackPositions = (graph: EffectiveGraph): Positions =>
 
 /** A selection change can change what the traffic filter exempts, and with it the layout. */
 const reselect = (model: Model, selectedId: Option.Option<string>): Update.Return<Model, Message> => {
-	const graph = declutterGraph(model.source, declutterState(model.minTrafficPct, model.focus), exemptIds(selectedId))
+	const graph = declutterGraph(
+		model.source,
+		declutterState(model.minTrafficPct, model.focus),
+		exemptIds(selectedId),
+	)
 	const next = modifyFields(model, { selectedId: () => selectedId })
 	if (graph.signature === model.graph.signature) return { model: next }
 	return {
-		model: modifyFields(next, { graph: () => graph, layout: (layout) => ({ ...layout, status: "pending" as const }) }),
+		model: modifyFields(next, {
+			graph: () => graph,
+			layout: (layout) => ({ ...layout, status: "pending" as const }),
+		}),
 		commands: [
-			RunElkLayout({ signature: graph.signature, graph, previous: Option.some(model.layout.positions) }),
+			RunElkLayout({
+				signature: graph.signature,
+				graph,
+				previous: Option.some(model.layout.positions),
+			}),
 			WaitLayoutGrace({ signature: graph.signature }),
 		],
 	}
@@ -151,7 +183,9 @@ const fallBack = (model: Model, signature: string): Model =>
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match(message, {
 		GotCanvasMessage: ({ message: canvasMessage }) => ({
-			model: modifyFields(model, { canvas: () => Canvas.update(model.canvas, canvasMessage, placedNodes(model)) }),
+			model: modifyFields(model, {
+				canvas: () => Canvas.update(model.canvas, canvasMessage, placedNodes(model)),
+			}),
 		}),
 		SucceededElkLayout: ({ signature, positions }) => ({
 			model: signature === model.graph.signature ? reveal(model, "ready", positions) : model,
@@ -163,10 +197,13 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		ClickedPane: () => (Option.isNone(model.selectedId) ? { model } : reselect(model, Option.none())),
 		ClickedResort: () => ({
 			model: modifyFields(model, {
-				canvas: () => Canvas.requestFit(model.canvas, Canvas.placed(model.canvas, placedNodes(model)), MAP_FIT),
+				canvas: () =>
+					Canvas.requestFit(model.canvas, Canvas.placed(model.canvas, placedNodes(model)), MAP_FIT),
 			}),
 		}),
-		ChangedReducedMotion: ({ reduced }) => ({ model: modifyFields(model, { reducedMotion: () => reduced }) }),
+		ChangedReducedMotion: ({ reduced }) => ({
+			model: modifyFields(model, { reducedMotion: () => reduced }),
+		}),
 		CompletedMountParticles: () => ({ model }),
 	})
 

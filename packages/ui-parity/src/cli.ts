@@ -3,7 +3,13 @@ import { join } from "node:path"
 import { parseArgs } from "node:util"
 import { chromium } from "playwright"
 import { buildTarget } from "./build.ts"
-import { BROWSER_LAUNCH_OPTIONS, type CaptureResult, captureDir, captureTarget, expandVariants } from "./capture.ts"
+import {
+	BROWSER_LAUNCH_OPTIONS,
+	type CaptureResult,
+	captureDir,
+	captureTarget,
+	expandVariants,
+} from "./capture.ts"
 import { codegenFile } from "./codegen.ts"
 import { type AuthMode, isTargetName, PORT_BASE, targets, type TargetName } from "./config.ts"
 import { routeCoverage } from "./coverage.ts"
@@ -59,11 +65,17 @@ const fail = (message: string): never => {
 const timestamp = () => new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
 
 const authModeOf = (value: string | undefined): AuthMode =>
-	value === "clerk" ? "clerk" : value === "self_hosted" || value === undefined ? "self_hosted" : fail(`--auth must be self_hosted or clerk`)
+	value === "clerk"
+		? "clerk"
+		: value === "self_hosted" || value === undefined
+			? "self_hosted"
+			: fail(`--auth must be self_hosted or clerk`)
 
 const requireBuild = (name: string) => {
 	if (!buildExists(name))
-		fail(`No build "${name}". Run: bun run parity build ${isTargetName(name) ? name : `<target> --out ${name}`}`)
+		fail(
+			`No build "${name}". Run: bun run parity build ${isTargetName(name) ? name : `<target> --out ${name}`}`,
+		)
 	loadBuild(name)
 	return name
 }
@@ -84,7 +96,9 @@ switch (command) {
 
 	case "list": {
 		for (const variant of expandVariants(values.filter))
-			console.log(`${variant.id.padEnd(56)} ${variant.scenario.dataset ?? "-"}  ${variant.scenario.path}`)
+			console.log(
+				`${variant.id.padEnd(56)} ${variant.scenario.dataset ?? "-"}  ${variant.scenario.path}`,
+			)
 		break
 	}
 
@@ -92,14 +106,19 @@ switch (command) {
 		const routes = routeCoverage()
 		for (const { route, scenarios } of routes)
 			console.log(`${scenarios.length ? "✓" : "✗"} ${route.padEnd(56)} ${scenarios.join(", ")}`)
-		console.log(`\n${routes.filter((entry) => entry.scenarios.length).length}/${routes.length} routes covered (/lab excluded)`)
+		console.log(
+			`\n${routes.filter((entry) => entry.scenarios.length).length}/${routes.length} routes covered (/lab excluded)`,
+		)
 		break
 	}
 
 	case "codegen": {
 		const file = positionals[1]
 		if (!file) fail(usage)
-		else console.log(codegenFile(file, { line: values.line ? Number(values.line) : undefined, name: values.name }))
+		else
+			console.log(
+				codegenFile(file, { line: values.line ? Number(values.line) : undefined, name: values.name }),
+			)
 		break
 	}
 
@@ -109,7 +128,9 @@ switch (command) {
 		const backend = await startBackendIfPresent()
 		const results = await captureTarget({ build, run, variants: expandVariants(values.filter), backend })
 		await backend?.close()
-		console.log(`\n${results.filter((result) => result.ok).length}/${results.length} captured -> ${captureDir(run, build)}`)
+		console.log(
+			`\n${results.filter((result) => result.ok).length}/${results.length} captured -> ${captureDir(run, build)}`,
+		)
 		break
 	}
 
@@ -123,7 +144,14 @@ switch (command) {
 		// Same-build comparisons (legacy vs legacy) need distinct folders.
 		const candidateLabel = baseline === candidate ? `${candidate}-b` : candidate
 		const baselineResults = await captureTarget({ build: baseline, run, variants, backend, browser })
-		const candidateResults = await captureTarget({ build: candidate, label: candidateLabel, run, variants, backend, browser })
+		const candidateResults = await captureTarget({
+			build: candidate,
+			label: candidateLabel,
+			run,
+			variants,
+			backend,
+			browser,
+		})
 		await browser.close()
 		await backend?.close()
 		exitWith(
@@ -144,7 +172,8 @@ switch (command) {
 	case "compare": {
 		const run = values.run ?? fail(usage)
 		const baselineLabel = values.baseline
-		const candidateLabel = values.baseline === values.candidate ? `${values.candidate}-b` : values.candidate
+		const candidateLabel =
+			values.baseline === values.candidate ? `${values.candidate}-b` : values.candidate
 		const readResults = (label: string): CaptureResult[] =>
 			JSON.parse(readFileSync(join(captureDir(run, label), "_results.json"), "utf8"))
 		const baselineResults = readResults(baselineLabel)
@@ -184,8 +213,12 @@ switch (command) {
 				: `<script>(${installSelfHostedSession.toString()})(${JSON.stringify(dataset ? selfHostedTokenFor(dataset) : null)})</script>`
 		const names = Object.keys(targets).filter(isTargetName)
 		const available: TargetName[] = names.filter((name) => buildExists(name, authMode))
-		const servers = available.map((name) => serveStatic(loadBuild(name, authMode), targets[name].port, headScript))
-		console.log(`fixture backend  ${backend?.apiOrigin ?? "(none: src/backend missing)"}  dataset ${values.dataset}, port base ${PORT_BASE}`)
+		const servers = available.map((name) =>
+			serveStatic(loadBuild(name, authMode), targets[name].port, headScript),
+		)
+		console.log(
+			`fixture backend  ${backend?.apiOrigin ?? "(none: src/backend missing)"}  dataset ${values.dataset}, port base ${PORT_BASE}`,
+		)
 		for (const name of available) console.log(`${name.padEnd(16)} http://localhost:${targets[name].port}`)
 		console.log("Ctrl+C to stop. The clock is not frozen here, so relative times can differ.")
 		process.on("SIGINT", async () => {

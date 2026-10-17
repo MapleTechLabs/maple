@@ -77,7 +77,11 @@ export const AppRoute = defineRouteUnion({
 	InfraKubernetes: { search: Search.InfraKubernetesSearch },
 	InfraPlanetscale: { search: Search.InfraPlanetscaleSearch },
 	InfraRailway: { search: Search.InfraRailwaySearch },
-	DashboardWidget: { dashboardId: DashboardId, widgetId: Schema.String, search: Search.DashboardWidgetSearch },
+	DashboardWidget: {
+		dashboardId: DashboardId,
+		widgetId: Schema.String,
+		search: Search.DashboardWidgetSearch,
+	},
 	InfraCloudflareWorker: { scriptName: Schema.String, search: Search.InfraCloudflareWorkerSearch },
 	InfraGcpResource: { service: Schema.String, name: Schema.String, search: Search.InfraGcpResourceSearch },
 	InfraKubernetesNode: { nodeName: Schema.String, search: Search.InfraKubernetesNodeSearch },

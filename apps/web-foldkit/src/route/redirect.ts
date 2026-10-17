@@ -34,22 +34,35 @@ const errorsSearchOf = ({ search }: typeof AppRoute.ErrorIssues.Type): typeof Er
 	)
 }
 
-const redirect = (to: AppRoute, isReplace: boolean) => Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
+const redirect = (to: AppRoute, isReplace: boolean) =>
+	Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
 
 /** The `beforeLoad` redirects of legacy route files (connectors, developer, infra, errors/issues). */
 export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
-	AppRoute.matchOrElse<Option.Option<Redirect>>(route, {
-		Connectors: ({ search }) =>
-			redirect(
-				AppRoute.Integrations({
-					search: search.tab === "prometheus" || search.tab === "cloudflare" ? { integration: search.tab } : {},
-				}),
-				false,
-			),
-		Developer: ({ search }) =>
-			redirect(AppRoute.Settings({ search: { tab: search.tab === "ingestion" ? "ingestion" : "api-keys" } }), true),
-		InfraDiscover: () => redirect(AppRoute.Infra({ search: {} }), true),
-		InfraLegacyHost: ({ hostName }) => redirect(AppRoute.InfraHost({ hostName, search: {} }), true),
-		InfraKubernetes: ({ search }) => redirect(AppRoute.InfraKubernetesPods({ search }), true),
-		ErrorIssues: (issues) => redirect(AppRoute.Errors({ search: errorsSearchOf(issues) }), true),
-	}, () => Option.none())
+	AppRoute.matchOrElse<Option.Option<Redirect>>(
+		route,
+		{
+			Connectors: ({ search }) =>
+				redirect(
+					AppRoute.Integrations({
+						search:
+							search.tab === "prometheus" || search.tab === "cloudflare"
+								? { integration: search.tab }
+								: {},
+					}),
+					false,
+				),
+			Developer: ({ search }) =>
+				redirect(
+					AppRoute.Settings({
+						search: { tab: search.tab === "ingestion" ? "ingestion" : "api-keys" },
+					}),
+					true,
+				),
+			InfraDiscover: () => redirect(AppRoute.Infra({ search: {} }), true),
+			InfraLegacyHost: ({ hostName }) => redirect(AppRoute.InfraHost({ hostName, search: {} }), true),
+			InfraKubernetes: ({ search }) => redirect(AppRoute.InfraKubernetesPods({ search }), true),
+			ErrorIssues: (issues) => redirect(AppRoute.Errors({ search: errorsSearchOf(issues) }), true),
+		},
+		() => Option.none(),
+	)

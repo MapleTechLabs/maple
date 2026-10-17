@@ -22,7 +22,11 @@ export interface FixtureArea {
 export interface RawRoute {
 	/** Call-log tag for a matched request. */
 	readonly tag: string
-	readonly answer: (request: { readonly dataset: Dataset; readonly url: URL; readonly method: string }) => Response | undefined
+	readonly answer: (request: {
+		readonly dataset: Dataset
+		readonly url: URL
+		readonly method: string
+	}) => Response | undefined
 }
 
 const isFixtureArea = (value: unknown): value is FixtureArea =>
@@ -49,7 +53,9 @@ const mergeSynced = (into: SyncedTables, extra: SyncedTables): SyncedTables => {
 	return merged
 }
 
-const entries = (tables: SyncedTables): ReadonlyArray<readonly [SyncedTableName, ReadonlyArray<SyncedRow>]> => {
+const entries = (
+	tables: SyncedTables,
+): ReadonlyArray<readonly [SyncedTableName, ReadonlyArray<SyncedRow>]> => {
 	const out: Array<readonly [SyncedTableName, ReadonlyArray<SyncedRow>]> = []
 	const push = (table: SyncedTableName) => {
 		const rows = tables[table]
@@ -79,7 +85,9 @@ export const withFixtureAreas = (datasets: ReadonlyArray<Dataset>): ReadonlyArra
 	...fixtureAreas.flatMap((area) => area.datasets ?? []),
 ]
 
-export const fixtureAreaRawRoutes: ReadonlyArray<RawRoute> = fixtureAreas.flatMap((area) => area.rawRoutes ?? [])
+export const fixtureAreaRawRoutes: ReadonlyArray<RawRoute> = fixtureAreas.flatMap(
+	(area) => area.rawRoutes ?? [],
+)
 
 /** Two areas answering one endpoint would silently depend on file order, so that is an error. */
 export const fixtureAreaEndpoints = (warehouse: FixtureWarehouse): ReadonlyMap<string, EndpointHandler> => {

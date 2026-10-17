@@ -1,7 +1,12 @@
 import { Effect } from "effect"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { latestSnapshotStatements } from "@maple/domain/generated/clickhouse-schema"
-import { CH, parseWarehouseDateTime, type QueryEngineBatchOutcome, type QueryEngineExecuteRequest } from "@maple/query-engine"
+import {
+	CH,
+	parseWarehouseDateTime,
+	type QueryEngineBatchOutcome,
+	type QueryEngineExecuteRequest,
+} from "@maple/query-engine"
 import {
 	makeWarehouseExecutor,
 	WarehouseDriverError,
@@ -27,7 +32,8 @@ const INSERT_CHUNK_ROWS = 5000
 /** Column lists of the CLI's seal INSERTs (apps/cli/src/server/service-map-rollup.ts). */
 const EDGE_COLUMNS =
 	"OrgId, Hour, SourceService, TargetService, DeploymentEnv, CallCount, ErrorCount, DurationSumMs, MaxDurationMs, SampledSpanCount, UnsampledSpanCount, SampleRateSum"
-const RESOLUTION_COLUMNS = "OrgId, Hour, SourceService, ParentServerAddress, ResolvedTargetService, DeploymentEnv"
+const RESOLUTION_COLUMNS =
+	"OrgId, Hour, SourceService, ParentServerAddress, ResolvedTargetService, DeploymentEnv"
 
 const insertRows = (chdb: Chdb, table: string, rows: ReadonlyArray<unknown>) =>
 	Effect.forEach(
@@ -35,7 +41,9 @@ const insertRows = (chdb: Chdb, table: string, rows: ReadonlyArray<unknown>) =>
 			rows.slice(index * INSERT_CHUNK_ROWS, (index + 1) * INSERT_CHUNK_ROWS),
 		),
 		(chunk) =>
-			chdb.run(`INSERT INTO ${table} FORMAT JSONEachRow\n${chunk.map((row) => JSON.stringify(row)).join("\n")}`),
+			chdb.run(
+				`INSERT INTO ${table} FORMAT JSONEachRow\n${chunk.map((row) => JSON.stringify(row)).join("\n")}`,
+			),
 		{ discard: true },
 	)
 
@@ -55,11 +63,16 @@ const SEAL_HOURS = 24
  */
 const sealServiceMap = (chdb: Chdb, orgId: OrgId, nowMs: number) => {
 	const currentHourMs = Math.floor(nowMs / CH.SERVICE_MAP_ROLLUP_HOUR_MS) * CH.SERVICE_MAP_ROLLUP_HOUR_MS
-	const hours = Array.from({ length: SEAL_HOURS }, (_, index) => currentHourMs - (SEAL_HOURS - index) * CH.SERVICE_MAP_ROLLUP_HOUR_MS)
+	const hours = Array.from(
+		{ length: SEAL_HOURS },
+		(_, index) => currentHourMs - (SEAL_HOURS - index) * CH.SERVICE_MAP_ROLLUP_HOUR_MS,
+	)
 	const body = (compiled: Effect.Effect<{ readonly sql: string }, CH.QueryBuilderError>) =>
 		compiled.pipe(
 			Effect.map((query) => query.sql.replace(/\s+FORMAT\s+\w+\s*$/, "")),
-			Effect.mapError((error) => new ParityChdbError({ message: `service map seal: ${error.message}` })),
+			Effect.mapError(
+				(error) => new ParityChdbError({ message: `service map seal: ${error.message}` }),
+			),
 		)
 	return Effect.forEach(
 		hours,
@@ -68,8 +81,12 @@ const sealServiceMap = (chdb: Chdb, orgId: OrgId, nowMs: number) => {
 				const params = CH.serviceMapRollupHourParams(orgId, hourMs)
 				const resolutions = yield* body(CH.serviceMapResolutionsRollupSQL(params))
 				const edges = yield* body(CH.serviceMapEdgesRollupSQL(params))
-				yield* chdb.run(`INSERT INTO service_address_resolutions_hourly (${RESOLUTION_COLUMNS}) SELECT ${RESOLUTION_COLUMNS} FROM (${resolutions})`)
-				yield* chdb.run(`INSERT INTO service_map_edges_hourly_ingest (${EDGE_COLUMNS}) SELECT ${EDGE_COLUMNS} FROM (${edges})`)
+				yield* chdb.run(
+					`INSERT INTO service_address_resolutions_hourly (${RESOLUTION_COLUMNS}) SELECT ${RESOLUTION_COLUMNS} FROM (${resolutions})`,
+				)
+				yield* chdb.run(
+					`INSERT INTO service_map_edges_hourly_ingest (${EDGE_COLUMNS}) SELECT ${EDGE_COLUMNS} FROM (${edges})`,
+				)
 			}),
 		{ discard: true },
 	)
@@ -94,15 +111,21 @@ export const seedWarehouse = (seeds: ReadonlyArray<WarehouseSeed>): Effect.Effec
 		// by ~0.1 ms run to run), so parts stay exactly as the seed inserted them.
 		yield* once(
 			"schema",
-			Effect.forEach([...schemaStatements, "SYSTEM STOP MERGES"], (statement) => chdb.run(statement), { discard: true }),
+			Effect.forEach([...schemaStatements, "SYSTEM STOP MERGES"], (statement) => chdb.run(statement), {
+				discard: true,
+			}),
 		)
 		yield* Effect.forEach(
 			seeds,
 			(seed) =>
 				once(
 					`org:${seed.orgId}`,
-					Effect.forEach(TELEMETRY_TABLES, (table) => insertRows(chdb, table, seed.rows[table]), { discard: true }).pipe(
-						Effect.andThen(sealServiceMap(chdb, parityOrgId(seed.orgId), parseWarehouseDateTime(seed.now))),
+					Effect.forEach(TELEMETRY_TABLES, (table) => insertRows(chdb, table, seed.rows[table]), {
+						discard: true,
+					}).pipe(
+						Effect.andThen(
+							sealServiceMap(chdb, parityOrgId(seed.orgId), parseWarehouseDateTime(seed.now)),
+						),
 					),
 				),
 			{ discard: true },
@@ -115,16 +138,27 @@ const chdbClient = (chdb: Chdb): WarehouseSqlClient => ({
 		chdb.rows(statement.text).pipe(
 			Effect.map((data) => ({ data })),
 			Effect.mapError(
-				(error) => new WarehouseDriverError({ reason: "server", status: 500, message: error.message, cause: error }),
+				(error) =>
+					new WarehouseDriverError({
+						reason: "server",
+						status: 500,
+						message: error.message,
+						cause: error,
+					}),
 			),
 		),
 	insert: () =>
-		Effect.fail(new WarehouseDriverError({ reason: "config", message: "the fixture warehouse is read-only" })),
+		Effect.fail(
+			new WarehouseDriverError({ reason: "config", message: "the fixture warehouse is read-only" }),
+		),
 })
 
 export interface FixtureWarehouse {
 	/** One execute-batch item, answered as the API answers it: a per-item success or failure outcome. */
-	readonly execute: (orgId: OrgId, request: QueryEngineExecuteRequest) => Effect.Effect<QueryEngineBatchOutcome>
+	readonly execute: (
+		orgId: OrgId,
+		request: QueryEngineExecuteRequest,
+	) => Effect.Effect<QueryEngineBatchOutcome>
 	/** `QueryEngineService.execute` without its caches, for handlers that embed one result. */
 	readonly executeQuery: ReturnType<typeof makeQueryEngineExecute<ExecutionTenant>>
 	/** The `WarehouseQueryService` the API's dedicated handlers run their registry queries on. */
@@ -142,7 +176,13 @@ export const makeFixtureWarehouse = (chdb: Chdb): FixtureWarehouse => {
 		resolveRoute: () =>
 			Effect.succeed({
 				source: "managed" as const,
-				config: { kind: "tinybird-gateway" as const, url: "chdb://parity", username: "", password: "", database: "default" },
+				config: {
+					kind: "tinybird-gateway" as const,
+					url: "chdb://parity",
+					username: "",
+					password: "",
+					database: "default",
+				},
 				clientCacheKey: "parity",
 			}),
 		coalesceCapabilityProbes: true,
@@ -156,8 +196,13 @@ export const makeFixtureWarehouse = (chdb: Chdb): FixtureWarehouse => {
 		tenantOf,
 		execute: (orgId, request) =>
 			executeQuery(tenantOf(orgId), request).pipe(
-				Effect.map((response): QueryEngineBatchOutcome => ({ outcome: "success", result: response.result })),
-				Effect.catch((error) => Effect.succeed<QueryEngineBatchOutcome>({ outcome: "failure", error: error.error })),
+				Effect.map((response): QueryEngineBatchOutcome => ({
+					outcome: "success",
+					result: response.result,
+				})),
+				Effect.catch((error) =>
+					Effect.succeed<QueryEngineBatchOutcome>({ outcome: "failure", error: error.error }),
+				),
 			),
 	}
 }

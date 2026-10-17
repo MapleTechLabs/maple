@@ -3,7 +3,13 @@ import { Option, Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import * as Canvas from "../xyflow/canvas"
-import { findSpanById, type FlowEdge, type FlowNode, getLayoutedElements, transformSpansToFlow } from "./flow-graph"
+import {
+	findSpanById,
+	type FlowEdge,
+	type FlowNode,
+	getLayoutedElements,
+	transformSpansToFlow,
+} from "./flow-graph"
 import { describeSpan, SPAN_CATEGORIES, type SpanCategory } from "./span-category"
 
 /** `TraceFlowView` (packages/ui `traces/flow-view.tsx`) as a Submodel over a fixed trace. */
@@ -27,11 +33,18 @@ export interface FlowGraph {
 }
 
 export const buildFlowGraph = (input: TraceInput): FlowGraph => {
-	const { nodes, edges } = transformSpansToFlow([...input.rootSpans], [...input.services], input.totalDurationMs)
-	if (nodes.length > MAX_FLOW_NODES) return { input, nodes: [], edges: [], nodeCount: nodes.length, categories: [] }
+	const { nodes, edges } = transformSpansToFlow(
+		[...input.rootSpans],
+		[...input.services],
+		input.totalDurationMs,
+	)
+	if (nodes.length > MAX_FLOW_NODES)
+		return { input, nodes: [], edges: [], nodeCount: nodes.length, categories: [] }
 	const layouted = getLayoutedElements(nodes, edges)
 	const present = new Set(
-		layouted.nodes.filter((node) => !node.data.span.isMissing).map((node) => describeSpan(node.data.span).category.id),
+		layouted.nodes
+			.filter((node) => !node.data.span.isMissing)
+			.map((node) => describeSpan(node.data.span).category.id),
 	)
 	return {
 		input,
@@ -71,7 +84,8 @@ export type Message = typeof Message.Type
 export const isNodeSelected = (node: FlowNode, selectedSpanId: Option.Option<string>): boolean =>
 	Option.match(selectedSpanId, {
 		onNone: () => false,
-		onSome: (spanId) => node.id === spanId || node.data.combinedSpans.some((span) => span.spanId === spanId),
+		onSome: (spanId) =>
+			node.id === spanId || node.data.combinedSpans.some((span) => span.spanId === spanId),
 	})
 
 const refit = (model: Model, graph: FlowGraph): Model =>
@@ -84,23 +98,34 @@ const refit = (model: Model, graph: FlowGraph): Model =>
 			),
 	})
 
-export const update = (graph: FlowGraph) => (model: Model, message: Message): Model =>
-	Message.match(message, {
-		GotCanvasMessage: ({ message: canvasMessage }) => {
-			const next = modifyFields(model, { canvas: () => Canvas.update(model.canvas, canvasMessage, graph.nodes) })
-			// The pane settles after mount; refit on resize until the user takes over the camera.
-			const refitted = canvasMessage._tag === "ResizedPane" && !next.canvas.movedByUser ? refit(next, graph) : next
-			// Legacy re-adopts its initial nodes once React Flow is ready, re-measuring handles at the fitted zoom.
-			return model.canvas.fitsApplied === 0 && refitted.canvas.fitsApplied > 0
-				? modifyFields(refitted, { canvas: Canvas.remeasure })
-				: refitted
-		},
-		ClickedSpanNode: ({ nodeId }) => {
-			const span = findSpanById([...graph.input.rootSpans], nodeId)
-			return span === undefined ? model : modifyFields(model, { selectedSpanId: () => Option.some(span.spanId) })
-		},
-		HoveredEdge: ({ edgeId }) => modifyFields(model, { hoveredEdgeId: () => Option.some(edgeId) }),
-		LeftEdge: ({ edgeId }) =>
-			Option.contains(model.hoveredEdgeId, edgeId) ? modifyFields(model, { hoveredEdgeId: () => Option.none() }) : model,
-		ClickedFitView: () => refit(model, graph),
-	})
+export const update =
+	(graph: FlowGraph) =>
+	(model: Model, message: Message): Model =>
+		Message.match(message, {
+			GotCanvasMessage: ({ message: canvasMessage }) => {
+				const next = modifyFields(model, {
+					canvas: () => Canvas.update(model.canvas, canvasMessage, graph.nodes),
+				})
+				// The pane settles after mount; refit on resize until the user takes over the camera.
+				const refitted =
+					canvasMessage._tag === "ResizedPane" && !next.canvas.movedByUser
+						? refit(next, graph)
+						: next
+				// Legacy re-adopts its initial nodes once React Flow is ready, re-measuring handles at the fitted zoom.
+				return model.canvas.fitsApplied === 0 && refitted.canvas.fitsApplied > 0
+					? modifyFields(refitted, { canvas: Canvas.remeasure })
+					: refitted
+			},
+			ClickedSpanNode: ({ nodeId }) => {
+				const span = findSpanById([...graph.input.rootSpans], nodeId)
+				return span === undefined
+					? model
+					: modifyFields(model, { selectedSpanId: () => Option.some(span.spanId) })
+			},
+			HoveredEdge: ({ edgeId }) => modifyFields(model, { hoveredEdgeId: () => Option.some(edgeId) }),
+			LeftEdge: ({ edgeId }) =>
+				Option.contains(model.hoveredEdgeId, edgeId)
+					? modifyFields(model, { hoveredEdgeId: () => Option.none() })
+					: model,
+			ClickedFitView: () => refit(model, graph),
+		})

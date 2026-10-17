@@ -33,7 +33,10 @@ export const pageTitle = <M>(
 	)
 
 export const pageDescription = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
-	h.p([h.DataAttribute("slot", "page-description"), h.Class(cn(pageDescriptionStyles, className))], children)
+	h.p(
+		[h.DataAttribute("slot", "page-description"), h.Class(cn(pageDescriptionStyles, className))],
+		children,
+	)
 
 export interface PageHeaderOptions {
 	readonly title?: string
@@ -43,7 +46,11 @@ export interface PageHeaderOptions {
 }
 
 /** `PageLayout.Header`; renders nothing (`null`) when it has no content, like the React one. */
-export const pageHeader = <M>(h: HtmlBuilder<M>, options: PageHeaderOptions, children: Children = []): Html => {
+export const pageHeader = <M>(
+	h: HtmlBuilder<M>,
+	options: PageHeaderOptions,
+	children: Children = [],
+): Html => {
 	const title = options.title ?? ""
 	const description = options.description ?? ""
 	if (title === "" && options.titleContent === undefined && description === "" && children.length === 0) {

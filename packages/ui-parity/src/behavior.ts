@@ -43,7 +43,11 @@ const normalize = (value: Schema.Json): Schema.Json => {
 }
 
 /** First path where two normalized values differ: `.content`, `.attachmentIds[1]`, `` for the root. */
-const firstDifference = (a: Schema.Json | undefined, b: Schema.Json | undefined, path = ""): string | undefined => {
+const firstDifference = (
+	a: Schema.Json | undefined,
+	b: Schema.Json | undefined,
+	path = "",
+): string | undefined => {
 	if (JSON.stringify(a) === JSON.stringify(b)) return undefined
 	if (isJsonArray(a) && isJsonArray(b)) {
 		for (let index = 0; index < Math.max(a.length, b.length); index++) {

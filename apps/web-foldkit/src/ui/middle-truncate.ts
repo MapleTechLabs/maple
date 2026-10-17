@@ -21,7 +21,9 @@ export const middleTruncate = <M>(h: HtmlBuilder<M>, options: MiddleTruncateOpti
 	const tail = options.tail ?? 12
 	const chars = Array.from(options.text)
 	const attributes = [
-		h.Class(cn(middleTruncateStyles, (options.mono ?? false) && middleTruncateMonoStyles, options.className)),
+		h.Class(
+			cn(middleTruncateStyles, (options.mono ?? false) && middleTruncateMonoStyles, options.className),
+		),
 		h.Title(options.text),
 	]
 	if (chars.length <= tail * 2) {

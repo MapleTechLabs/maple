@@ -58,7 +58,9 @@ export type OutMessage = typeof OutMessage.Type
 // COMMAND
 
 const rejected = (error: { readonly message: string }) =>
-	Effect.succeed(Message.FailedSignInWithRootPassword({ failure: SignInFailure.Rejected({ message: error.message }) }))
+	Effect.succeed(
+		Message.FailedSignInWithRootPassword({ failure: SignInFailure.Rejected({ message: error.message }) }),
+	)
 
 /** `POST /api/auth/login` with the root password (`loginSelfHosted` in apps/web's sign-in route). */
 export const SignInWithRootPassword = Command.define("SignInWithRootPassword", {
@@ -77,11 +79,15 @@ export const SignInWithRootPassword = Command.define("SignInWithRootPassword", {
 					Effect.succeed(
 						Message.FailedSignInWithRootPassword({
 							failure:
-								error.reason._tag === "TransportError" ? SignInFailure.Unreachable() : SignInFailure.Unexpected(),
+								error.reason._tag === "TransportError"
+									? SignInFailure.Unreachable()
+									: SignInFailure.Unexpected(),
 						}),
 					),
 			}),
-			Effect.orElseSucceed(() => Message.FailedSignInWithRootPassword({ failure: SignInFailure.Unexpected() })),
+			Effect.orElseSucceed(() =>
+				Message.FailedSignInWithRootPassword({ failure: SignInFailure.Unexpected() }),
+			),
 		),
 })
 

@@ -1,4 +1,8 @@
-import { getPlatformColor, getServiceMapNodeColor, type ServiceMapColorMode } from "@maple/ui/components/service-map/service-map-utils"
+import {
+	getPlatformColor,
+	getServiceMapNodeColor,
+	type ServiceMapColorMode,
+} from "@maple/ui/components/service-map/service-map-utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "../../ui/status-dot"
 
@@ -29,7 +33,11 @@ const serviceSwatchColor = (service: string) =>
 const health = <M>(h: HtmlBuilder<M>, tone: "ok" | "warn" | "crit", label: string): Html =>
 	h.div([h.Class("flex items-center gap-1.5")], [statusDot(h, { tone, size: "lg" }), h.span([], [label])])
 
-export const serviceMapLegend = <M>(h: HtmlBuilder<M>, colorMode: ServiceMapColorMode, services: ReadonlyArray<string>): Html =>
+export const serviceMapLegend = <M>(
+	h: HtmlBuilder<M>,
+	colorMode: ServiceMapColorMode,
+	services: ReadonlyArray<string>,
+): Html =>
 	h.div(
 		[
 			h.Class(
@@ -43,14 +51,18 @@ export const serviceMapLegend = <M>(h: HtmlBuilder<M>, colorMode: ServiceMapColo
 			...(colorMode === "service" && services.length > 0
 				? [
 						h.span([h.Class("text-foreground/30 max-sm:hidden")], ["|"]),
-						...services.slice(0, 3).map((service) => swatch(h, serviceSwatchColor(service), service)),
+						...services
+							.slice(0, 3)
+							.map((service) => swatch(h, serviceSwatchColor(service), service)),
 						...(services.length > 3
 							? [
 									h.button(
 										[
 											h.AriaExpanded(false),
 											h.AriaHasPopup("dialog"),
-											h.Class("font-medium hover:text-foreground transition-colors cursor-pointer"),
+											h.Class(
+												"font-medium hover:text-foreground transition-colors cursor-pointer",
+											),
 											h.Attribute("data-base-ui-click-trigger", ""),
 											h.DataAttribute("slot", "popover-trigger"),
 											h.Tabindex(0),

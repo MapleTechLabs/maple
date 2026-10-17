@@ -29,9 +29,12 @@ const encodeRequest = Schema.encodeUnknownEffect(QueryEngineExecuteRequest)
 const encodeBatchResponse = Schema.encodeUnknownEffect(QueryEngineExecuteBatchResponse)
 const isBatchRequest = Schema.is(QueryEngineExecuteBatchRequest)
 
-export class ParityBackendError extends Schema.TaggedError<ParityBackendError>()("@maple/ui-parity/ParityBackendError", {
-	message: Schema.String,
-}) {}
+export class ParityBackendError extends Schema.TaggedError<ParityBackendError>()(
+	"@maple/ui-parity/ParityBackendError",
+	{
+		message: Schema.String,
+	},
+) {}
 
 /** Stable across runs and apps: a hash of the normalized wire request. */
 export const warehouseFingerprint = (normalized: unknown): string =>
@@ -111,7 +114,11 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 	)
 	const warehouse = makeFixtureWarehouse(chdb)
 	const calls = makeCallLog()
-	const builtIn = new Map([...defaultHandlers, ...warehouseEndpoints(warehouse), ...fixtureAreaEndpoints(warehouse)])
+	const builtIn = new Map([
+		...defaultHandlers,
+		...warehouseEndpoints(warehouse),
+		...fixtureAreaEndpoints(warehouse),
+	])
 		.set("queryEngine.executeBatch", executeBatch(warehouse))
 		.set("telemetrySignals.retrieve", telemetrySignalsEndpoint(warehouse))
 	const api = makeApiWebHandler({
@@ -128,11 +135,14 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 		for (const route of fixtureAreaRawRoutes) {
 			const answer = route.answer({ dataset, url, method: request.method })
 			if (answer === undefined) continue
-			if (!acceptsBearer(dataset, bearerOf(request))) return Response.json({ message: "Unauthorized" }, { status: 401 })
+			if (!acceptsBearer(dataset, bearerOf(request)))
+				return Response.json({ message: "Unauthorized" }, { status: 401 })
 			calls.record(
 				capture,
 				route.tag,
-				url.search ? { path: url.pathname, query: Object.fromEntries(url.searchParams) } : { path: url.pathname },
+				url.search
+					? { path: url.pathname, query: Object.fromEntries(url.searchParams) }
+					: { path: url.pathname },
 			)
 			return answer
 		}
@@ -148,10 +158,12 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 		port: options.apiPort,
 		idleTimeout: 0,
 		fetch: async (request) => {
-			if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
+			if (request.method === "OPTIONS")
+				return new Response(null, { status: 204, headers: corsHeaders(request) })
 			const url = new URL(request.url)
 			// Out-of-process access to `takeCalls` (the vitest suite runs the backend as a Bun child).
-			if (url.pathname === CALL_LOG_PATH) return Response.json(calls.take(url.searchParams.get("capture") ?? ""))
+			if (url.pathname === CALL_LOG_PATH)
+				return Response.json(calls.take(url.searchParams.get("capture") ?? ""))
 			const name = request.headers.get(DATASET_HEADER)
 			const dataset = datasetNamed(name)
 			if (dataset === undefined) return unknownDataset(request, name)
@@ -171,7 +183,11 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 			if (dataset === undefined) return unknownDataset(request, name)
 			const answer = handleSyncRequest(request, dataset, acceptsBearer(dataset, bearerOf(request)))
 			if (answer.logged !== undefined)
-				calls.record(request.headers.get(CAPTURE_HEADER), `shape:${answer.logged.table}`, answer.logged.payload)
+				calls.record(
+					request.headers.get(CAPTURE_HEADER),
+					`shape:${answer.logged.table}`,
+					answer.logged.payload,
+				)
 			return answer.response
 		},
 	})

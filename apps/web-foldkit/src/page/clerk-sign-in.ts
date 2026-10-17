@@ -15,7 +15,9 @@ const MountClerkSignIn = Mount.define("MountClerkSignIn", {
 				Effect.acquireRelease(
 					Effect.sync(() => {
 						if (element instanceof HTMLDivElement) {
-							clerk.mountSignIn(element, { forceRedirectUrl: Option.getOrUndefined(maybeRedirectUrl) })
+							clerk.mountSignIn(element, {
+								forceRedirectUrl: Option.getOrUndefined(maybeRedirectUrl),
+							})
 						}
 					}),
 					() =>

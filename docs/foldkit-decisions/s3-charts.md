@@ -9,11 +9,11 @@ and tooltips as Messages, pixel-identical to apps/web?
 
 `/lab/charts` against `legacy-head`, 1440x900, light and dark (`parity run --filter lab-charts`):
 
-| Scenario | Strict px | Perceptual px | Behavior |
-| --- | --- | --- | --- |
-| `lab-charts` (gallery, first viewport) | **0** / **0** | 0 / 0 | 0 diffs |
-| `lab-charts-hover-pie` (production pie, a slice hovered) | **0** / **0** | 0 / 0 | 0 diffs |
-| `lab-charts-hover-histogram` (production histogram, a bin hovered) | **0** / **0** | 0 / 0 | 0 diffs |
+| Scenario                                                           | Strict px     | Perceptual px | Behavior |
+| ------------------------------------------------------------------ | ------------- | ------------- | -------- |
+| `lab-charts` (gallery, first viewport)                             | **0** / **0** | 0 / 0         | 0 diffs  |
+| `lab-charts-hover-pie` (production pie, a slice hovered)           | **0** / **0** | 0 / 0         | 0 diffs  |
+| `lab-charts-hover-histogram` (production histogram, a bin hovered) | **0** / **0** | 0 / 0         | 0 diffs  |
 
 `selfcheck --target foldkit --filter lab-charts`: 6/6 identical. Hover scenarios
 (`packages/ui-parity/src/scenarios/charts.ts`) find the chart by `getByRole("img", { name })`, its
@@ -49,15 +49,15 @@ Bundle: `@tanstack/charts` + d3 load lazily in `chart-host` (67.6 KB gzip); the 
 
 ## Gotchas
 
-| Gotcha | Fix |
-| --- | --- |
-| Inline same-tag divs share one view identity, so when the pie's legend moves beside the plot the plot box was patched into the legend row (Mount on the wrong element, chart gone) | `plotBox` and `sideLegendRow` are named view functions |
-| `onTooltipBodyChange` must keep its identity: a new function makes the tooltip replace its body element and detach the portaled body | Callbacks created once per host, reading the current build from a holder |
-| Mounting at the measured height left the production histogram's dashed grid ±2 off on 323 px | Mount at `FALLBACK_HEIGHT` (320) then update, the order React's layout effects run |
-| Card content arriving after first paint re-rastered card corners (±1, 14 px) through partial invalidation | Render the whole gallery once theme and chart runtime are ready |
-| `plot-tooltip.css` is imported by `plot-frame.tsx`, not by a stylesheet | Imported by `plot-frame.ts` |
-| Foldkit has no `OnPointerEnter` | Legend rows use `OnMouseEnter` (same for mouse; touch differs) |
-| `@tanstack/charts` types need closed row types; polar marks take no `states` | Kept legacy's two-arc-mark hover and accessor channels |
+| Gotcha                                                                                                                                                                             | Fix                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Inline same-tag divs share one view identity, so when the pie's legend moves beside the plot the plot box was patched into the legend row (Mount on the wrong element, chart gone) | `plotBox` and `sideLegendRow` are named view functions                             |
+| `onTooltipBodyChange` must keep its identity: a new function makes the tooltip replace its body element and detach the portaled body                                               | Callbacks created once per host, reading the current build from a holder           |
+| Mounting at the measured height left the production histogram's dashed grid ±2 off on 323 px                                                                                       | Mount at `FALLBACK_HEIGHT` (320) then update, the order React's layout effects run |
+| Card content arriving after first paint re-rastered card corners (±1, 14 px) through partial invalidation                                                                          | Render the whole gallery once theme and chart runtime are ready                    |
+| `plot-tooltip.css` is imported by `plot-frame.tsx`, not by a stylesheet                                                                                                            | Imported by `plot-frame.ts`                                                        |
+| Foldkit has no `OnPointerEnter`                                                                                                                                                    | Legend rows use `OnMouseEnter` (same for mouse; touch differs)                     |
+| `@tanstack/charts` types need closed row types; polar marks take no `states`                                                                                                       | Kept legacy's two-arc-mark hover and accessor channels                             |
 
 ## What remains
 

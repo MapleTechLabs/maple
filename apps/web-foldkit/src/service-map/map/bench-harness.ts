@@ -21,7 +21,9 @@ interface Camera {
 }
 
 const percentile = (sorted: ReadonlyArray<number>, p: number): number =>
-	sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((p / 100) * (sorted.length - 1))))]
+	sorted.length === 0
+		? 0
+		: sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((p / 100) * (sorted.length - 1))))]
 
 const readCamera = (root: Element): Camera => readViewport(root) ?? { x: 0, y: 0, zoom: 1 }
 
@@ -47,7 +49,12 @@ export interface FrameReport {
 	readonly totalBlockingMs: number
 }
 
-const runFrames = (root: Element, emit: (message: HarnessMessage) => void, durationMs: number, pan: boolean) =>
+const runFrames = (
+	root: Element,
+	emit: (message: HarnessMessage) => void,
+	durationMs: number,
+	pan: boolean,
+) =>
 	new Promise<FrameReport>((resolve) => {
 		const longTasks: PerformanceEntry[] = []
 		const observer = new PerformanceObserver((list) => longTasks.push(...list.getEntries()))
@@ -63,7 +70,15 @@ const runFrames = (root: Element, emit: (message: HarnessMessage) => void, durat
 			if (pan) {
 				const phase = (elapsed / durationMs) * Math.PI * 2
 				const zoom = base.zoom * (0.85 + 0.15 * (1 + Math.sin(phase * 1.7)) * 0.5)
-				emit(HarnessMessage.RequestedCamera({ viewport: { x: base.x + Math.sin(phase) * 400, y: base.y + Math.cos(phase) * 250, zoom } }))
+				emit(
+					HarnessMessage.RequestedCamera({
+						viewport: {
+							x: base.x + Math.sin(phase) * 400,
+							y: base.y + Math.cos(phase) * 250,
+							zoom,
+						},
+					}),
+				)
 			}
 			if (elapsed < durationMs) {
 				requestAnimationFrame(tick)

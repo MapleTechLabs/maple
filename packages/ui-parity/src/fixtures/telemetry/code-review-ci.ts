@@ -28,7 +28,11 @@ const WORKFLOWS: NonEmpty<Workflow> = [
 		failRate: 0.12,
 		jobs: [
 			{ name: "lint", baseMs: 62_000, failure: "oxlint: 3 errors in src/checkout/cart.ts" },
-			{ name: "typecheck", baseMs: 118_000, failure: "TS2322: Type 'string' is not assignable to type 'OrderId'." },
+			{
+				name: "typecheck",
+				baseMs: 118_000,
+				failure: "TS2322: Type 'string' is not assignable to type 'OrderId'.",
+			},
 			{ name: "test (unit)", baseMs: 254_000, failure: "2 failed: payment retries the capture once" },
 			{ name: "build", baseMs: 171_000 },
 		],
@@ -40,8 +44,16 @@ const WORKFLOWS: NonEmpty<Workflow> = [
 		runsPerDay: 2,
 		failRate: 0.3,
 		jobs: [
-			{ name: "playwright (chromium)", baseMs: 512_000, failure: "checkout.spec.ts: timed out waiting for 'Order placed'" },
-			{ name: "playwright (webkit)", baseMs: 588_000, failure: "cart.spec.ts: expected 3 items, received 2" },
+			{
+				name: "playwright (chromium)",
+				baseMs: 512_000,
+				failure: "checkout.spec.ts: timed out waiting for 'Order placed'",
+			},
+			{
+				name: "playwright (webkit)",
+				baseMs: 588_000,
+				failure: "cart.spec.ts: expected 3 items, received 2",
+			},
 		],
 	},
 	{
@@ -60,7 +72,11 @@ const WORKFLOWS: NonEmpty<Workflow> = [
 
 const ACTORS: NonEmpty<string> = ["ada-l", "grace-h", "linus-t", "margaret-h"]
 /** Pull requests the reviews fixture knows, so a review's sheet lists its CI runs. */
-export const CI_PULL_REQUESTS: NonEmpty<{ readonly number: number; readonly branch: string; readonly author: string }> = [
+export const CI_PULL_REQUESTS: NonEmpty<{
+	readonly number: number
+	readonly branch: string
+	readonly author: string
+}> = [
 	{ number: 482, branch: "feat/checkout-retries", author: "ada-l" },
 	{ number: 479, branch: "fix/cart-rounding", author: "grace-h" },
 	{ number: 476, branch: "chore/otel-upgrade", author: "linus-t" },
@@ -71,7 +87,12 @@ const HOUR_MICROS = 3_600_000_000
 const DAYS = 21
 
 const jobRows = (
-	run: { readonly traceId: string; readonly spanId: string; readonly startMicros: number; readonly base: WarehouseRow },
+	run: {
+		readonly traceId: string
+		readonly spanId: string
+		readonly startMicros: number
+		readonly base: WarehouseRow
+	},
 	workflow: Workflow,
 	rng: Prng,
 	failedJob: number,
@@ -101,7 +122,9 @@ const jobRows = (
 					"cicd.pipeline.task.run.result": skipped ? "skip" : failed ? "failure" : "success",
 					"maple.cicd.queue_duration_ms": String(queueMs),
 					"maple.cicd.runner_labels": "ubuntu-latest",
-					...(failed ? { "maple.cicd.failure.reason": reason, "error.type": "failure" } : undefined),
+					...(failed
+						? { "maple.cicd.failure.reason": reason, "error.type": "failure" }
+						: undefined),
 				},
 			}
 			return { cursor: state.cursor + (skipped ? 0 : durationMs * 1000), rows: [...state.rows, row] }
@@ -111,18 +134,29 @@ const jobRows = (
 
 const sharedAttributes = (base: WarehouseRow): Readonly<Record<string, string>> => {
 	const attributes = base.SpanAttributes
-	return typeof attributes === "object" && attributes !== null ? Object.fromEntries(Object.entries(attributes)) : {}
+	return typeof attributes === "object" && attributes !== null
+		? Object.fromEntries(Object.entries(attributes))
+		: {}
 }
 
-export const codeReviewCiTelemetry = (options: { readonly orgId: string; readonly now: Date; readonly seed: number }): TelemetryRows => {
+export const codeReviewCiTelemetry = (options: {
+	readonly orgId: string
+	readonly now: Date
+	readonly seed: number
+}): TelemetryRows => {
 	const rng = makePrng(options.seed)
 	const nowMicros = options.now.getTime() * 1000
 	const traces = WORKFLOWS.flatMap((workflow, workflowIndex) =>
 		Array.from({ length: DAYS * workflow.runsPerDay }, (_, index) => {
-			const hoursAgo = ((DAYS * 24) / (DAYS * workflow.runsPerDay)) * (index + 0.5) + workflowIndex * 1.7
+			const hoursAgo =
+				((DAYS * 24) / (DAYS * workflow.runsPerDay)) * (index + 0.5) + workflowIndex * 1.7
 			const startMicros = nowMicros - Math.round(hoursAgo * HOUR_MICROS) - rng.int(0, 1_800_000_000)
-			const pr = index % 3 === 2 ? undefined : CI_PULL_REQUESTS[(index + workflowIndex) % CI_PULL_REQUESTS.length]
-			const repoPr = pr !== undefined && (workflow.repository === "payments") === (pr.number < 200) ? pr : undefined
+			const pr =
+				index % 3 === 2
+					? undefined
+					: CI_PULL_REQUESTS[(index + workflowIndex) % CI_PULL_REQUESTS.length]
+			const repoPr =
+				pr !== undefined && (workflow.repository === "payments") === pr.number < 200 ? pr : undefined
 			// E2E has been red for its three newest runs; every other workflow fails at its rate.
 			const red = workflow.name === "E2E" && index < 3
 			const cancelled = !red && rng.chance(0.05)
@@ -165,7 +199,12 @@ export const codeReviewCiTelemetry = (options: { readonly orgId: string; readonl
 					"maple.cicd.run_attempt": attempt,
 				},
 			}
-			const jobs = jobRows({ traceId, spanId, startMicros, base }, workflow, rng, cancelled ? -1 : failedJob)
+			const jobs = jobRows(
+				{ traceId, spanId, startMicros, base },
+				workflow,
+				rng,
+				cancelled ? -1 : failedJob,
+			)
 			const durationMicros = jobs.cursor - startMicros + 2_000_000
 			const result = cancelled ? "cancellation" : failed ? "failure" : "success"
 			const root: WarehouseRow = {

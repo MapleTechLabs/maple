@@ -72,28 +72,77 @@ const read =
 		Effect.gen(function* () {
 			const tenant = tenantFor(dataset)
 			if (tenant === undefined || !Schema.is(request)(payload))
-				return yield* new ParityAgentSessionsPayloadError({ message: "no tenant, or the payload does not match" })
-			const result = yield* run(tenant, payload).pipe(Effect.provideService(WarehouseQueryService, warehouse.executor))
+				return yield* new ParityAgentSessionsPayloadError({
+					message: "no tenant, or the payload does not match",
+				})
+			const result = yield* run(tenant, payload).pipe(
+				Effect.provideService(WarehouseQueryService, warehouse.executor),
+			)
 			return yield* Schema.encodeUnknownEffect(response)(result)
 		})
 
 const endpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => ({
 	"aiSessionsInternal.list": read(warehouse, ListAiSessionsRequest, ListAiSessionsResponse, listAiSessions),
-	"aiSessionsInternal.details": read(warehouse, ListAiSessionDetailsRequest, ListAiSessionDetailsResponse, readAiSessionDetails),
-	"aiSessionsInternal.facets": read(warehouse, ListAiSessionsFacetsRequest, ListAiSessionsFacetsResponse, readAiSessionFacets),
+	"aiSessionsInternal.details": read(
+		warehouse,
+		ListAiSessionDetailsRequest,
+		ListAiSessionDetailsResponse,
+		readAiSessionDetails,
+	),
+	"aiSessionsInternal.facets": read(
+		warehouse,
+		ListAiSessionsFacetsRequest,
+		ListAiSessionsFacetsResponse,
+		readAiSessionFacets,
+	),
 	"aiSessionsInternal.distributions": read(
 		warehouse,
 		ListAiSessionsDistributionsRequest,
 		ListAiSessionsDistributionsResponse,
 		readAiSessionDistributions,
 	),
-	"aiSessionsInternal.spans": read(warehouse, GetAiSessionSpansRequest, GetAiSessionSpansResponse, readAiSessionSpans),
-	"aiSessionsInternal.summary": read(warehouse, GetAiSessionSummaryRequest, GetAiSessionSummaryResponse, readAiSessionSummary),
-	"aiSessionsInternal.toolsSeries": read(warehouse, AiToolsSeriesRequest, AiToolsSeriesResponse, readAiToolsSeries),
-	"aiSessionsInternal.toolsTotals": read(warehouse, AiToolsTotalsRequest, AiToolsTotalsResponse, readAiToolsTotals),
-	"aiSessionsInternal.toolsBreakdowns": read(warehouse, AiToolsBreakdownsRequest, AiToolsBreakdownsResponse, readAiToolsBreakdowns),
-	"aiSessionsInternal.toolErrors": read(warehouse, AiToolErrorsRequest, AiToolErrorsResponse, readAiToolErrors),
-	"aiSessionsInternal.toolErrorDetail": read(warehouse, AiToolErrorDetailRequest, AiToolErrorDetailResponse, readAiToolErrorDetail),
+	"aiSessionsInternal.spans": read(
+		warehouse,
+		GetAiSessionSpansRequest,
+		GetAiSessionSpansResponse,
+		readAiSessionSpans,
+	),
+	"aiSessionsInternal.summary": read(
+		warehouse,
+		GetAiSessionSummaryRequest,
+		GetAiSessionSummaryResponse,
+		readAiSessionSummary,
+	),
+	"aiSessionsInternal.toolsSeries": read(
+		warehouse,
+		AiToolsSeriesRequest,
+		AiToolsSeriesResponse,
+		readAiToolsSeries,
+	),
+	"aiSessionsInternal.toolsTotals": read(
+		warehouse,
+		AiToolsTotalsRequest,
+		AiToolsTotalsResponse,
+		readAiToolsTotals,
+	),
+	"aiSessionsInternal.toolsBreakdowns": read(
+		warehouse,
+		AiToolsBreakdownsRequest,
+		AiToolsBreakdownsResponse,
+		readAiToolsBreakdowns,
+	),
+	"aiSessionsInternal.toolErrors": read(
+		warehouse,
+		AiToolErrorsRequest,
+		AiToolErrorsResponse,
+		readAiToolErrors,
+	),
+	"aiSessionsInternal.toolErrorDetail": read(
+		warehouse,
+		AiToolErrorDetailRequest,
+		AiToolErrorDetailResponse,
+		readAiToolErrorDetail,
+	),
 	"aiSessionsInternal.toolErrorSamples": read(
 		warehouse,
 		AiToolErrorSamplesRequest,

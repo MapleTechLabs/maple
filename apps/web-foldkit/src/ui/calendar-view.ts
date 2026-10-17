@@ -49,7 +49,11 @@ const navButton = (h: HtmlBuilder<Message>, direction: "Previous" | "Next"): Htm
 	h.button(
 		[
 			h.AriaLabel(`Go to the ${direction} Month`),
-			h.Class(direction === "Previous" ? calendarClassNames.button_previous : calendarClassNames.button_next),
+			h.Class(
+				direction === "Previous"
+					? calendarClassNames.button_previous
+					: calendarClassNames.button_next,
+			),
 			h.Type("button"),
 			h.OnClick(direction === "Previous" ? Message.ClickedPreviousMonth() : Message.ClickedNextMonth()),
 		],
@@ -88,10 +92,7 @@ const dayCell = (h: HtmlBuilder<Message>, date: CalendarDate, flags: DayFlags): 
 			h.Attribute("class", dayCellClass(flags)),
 			h.DataAttribute("day", isoDay(date)),
 			...(flags.isOutside
-				? [
-						h.DataAttribute("month", isoDay(date).slice(0, 7)),
-						h.DataAttribute("outside", "true"),
-					]
+				? [h.DataAttribute("month", isoDay(date).slice(0, 7)), h.DataAttribute("outside", "true")]
 				: []),
 			...(flags.isSelected ? [h.DataAttribute("selected", "true")] : []),
 			...(flags.isToday ? [h.DataAttribute("today", "true")] : []),
@@ -149,7 +150,11 @@ export const view = defineView<Model, Message, CalendarViewInputs>((model, input
 								[h.Class(calendarClassNames.month_caption)],
 								[
 									h.span(
-										[h.AriaLive("polite"), h.Class(calendarClassNames.caption_label), h.Role("status")],
+										[
+											h.AriaLive("polite"),
+											h.Class(calendarClassNames.caption_label),
+											h.Role("status"),
+										],
 										[caption],
 									),
 								],
@@ -164,7 +169,12 @@ export const view = defineView<Model, Message, CalendarViewInputs>((model, input
 								[
 									h.thead(
 										[h.AriaHidden(true)],
-										[h.tr([h.Class("rdp-weekdays")], DAY_NAMES.map((name) => weekdayHeader(h, name)))],
+										[
+											h.tr(
+												[h.Class("rdp-weekdays")],
+												DAY_NAMES.map((name) => weekdayHeader(h, name)),
+											),
+										],
 									),
 									h.tbody(
 										[h.Class("rdp-weeks")],

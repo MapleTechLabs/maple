@@ -10,10 +10,10 @@ every apps/web route) and render a real screen pixel-identical to apps/web?
 `apps/web-foldkit` renders `/sign-in` in `self_hosted` mode, built and served exactly like apps/web
 (same `VITE_*` env, static build, 1440x900, DPR 1, reduced motion), compared with pixelmatch:
 
-| Scenario                              | Strict px | Perceptual px | DOM (attributes sorted) | Console errors      |
-| ------------------------------------- | --------- | ------------- | ----------------------- | ------------------- |
-| sign-in, signed out                   | **0**     | **0**         | identical               | none                |
-| sign-in, wrong password (API 401)     | **0**     | **0**         | identical               | the 401 itself only |
+| Scenario                          | Strict px | Perceptual px | DOM (attributes sorted) | Console errors      |
+| --------------------------------- | --------- | ------------- | ----------------------- | ------------------- |
+| sign-in, signed out               | **0**     | **0**         | identical               | none                |
+| sign-in, wrong password (API 401) | **0**     | **0**         | identical               | the 401 itself only |
 
 After a successful login against a fixture API, `/` renders a placeholder shell that shows the
 result of `GET /internal/integrations/cloudflare/status`, the request the sidebar makes on every
@@ -85,19 +85,19 @@ self-hosted session logic (legacy is promise-based with module state and pulls i
 
 ## Gotchas found
 
-| Gotcha | Fix |
-| ------ | --- |
+| Gotcha                                                                                                                                                                             | Fix                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `HttpApiClient`'s `baseUrl` is applied after the inner client's `mapRequestEffect`, so a bearer transform keyed on `apiBaseUrl` only sees relative URLs and silently sends no auth | Prepend the base URL inside the HTTP client layer, before the bearer mapping; do not pass `baseUrl` to `HttpApiClient` |
-| A bearer-injecting client cannot also perform the renewal: it would wait on itself (apps/web uses `tracedFetch` there for the same reason) | Separate `MapleAuthApi` on a plain fetch client with explicit bearer |
-| apps/web's self-hosted token is in **sessionStorage** | Same storage, same key |
-| Foldkit's `string()` segment keeps percent-encoding; TanStack decodes `$param` | `segment()` = `schemaSegment` over a percent-decoding codec |
-| TanStack serialises search values as JSON per key (`?hasError=true` is a boolean, arrays are JSON) | One codec wraps every legacy schema (`tanstackSearch`) |
-| Legacy marks search arrays `Schema.mutable`; the route union is readonly, so the biparser types disagree | Readonly arrays in the mirrored schemas |
-| Base UI field attributes (`data-dirty/filled/focused/touched`) and `useId` ids (`base-ui-_r_0_`) appear in the DOM | Modelled field state; ids kept verbatim |
-| Legacy shows the browser's `TypeError` text for a network failure (`Failed to fetch` in Chromium) | `SignInFailure.Unreachable` renders that string; Safari/Firefox legacy text differs |
-| Middleware errors (`ApiUnexpectedError`) are not in an `HttpApiClient` endpoint's error channel | Only endpoint errors are matched by tag; the rest is `Unexpected` |
-| Scene's `blur` needs a DOM `Element` and fails in the node environment | Assert focus/touched via the DOM capture, not Scene |
-| `Schema.UnknownFromJsonString` is in effect's source but not its published types at 4.0.4 | `Schema.fromJsonString(Schema.Json)` |
+| A bearer-injecting client cannot also perform the renewal: it would wait on itself (apps/web uses `tracedFetch` there for the same reason)                                         | Separate `MapleAuthApi` on a plain fetch client with explicit bearer                                                   |
+| apps/web's self-hosted token is in **sessionStorage**                                                                                                                              | Same storage, same key                                                                                                 |
+| Foldkit's `string()` segment keeps percent-encoding; TanStack decodes `$param`                                                                                                     | `segment()` = `schemaSegment` over a percent-decoding codec                                                            |
+| TanStack serialises search values as JSON per key (`?hasError=true` is a boolean, arrays are JSON)                                                                                 | One codec wraps every legacy schema (`tanstackSearch`)                                                                 |
+| Legacy marks search arrays `Schema.mutable`; the route union is readonly, so the biparser types disagree                                                                           | Readonly arrays in the mirrored schemas                                                                                |
+| Base UI field attributes (`data-dirty/filled/focused/touched`) and `useId` ids (`base-ui-_r_0_`) appear in the DOM                                                                 | Modelled field state; ids kept verbatim                                                                                |
+| Legacy shows the browser's `TypeError` text for a network failure (`Failed to fetch` in Chromium)                                                                                  | `SignInFailure.Unreachable` renders that string; Safari/Firefox legacy text differs                                    |
+| Middleware errors (`ApiUnexpectedError`) are not in an `HttpApiClient` endpoint's error channel                                                                                    | Only endpoint errors are matched by tag; the rest is `Unexpected`                                                      |
+| Scene's `blur` needs a DOM `Element` and fails in the node environment                                                                                                             | Assert focus/touched via the DOM capture, not Scene                                                                    |
+| `Schema.UnknownFromJsonString` is in effect's source but not its published types at 4.0.4                                                                                          | `Schema.fromJsonString(Schema.Json)`                                                                                   |
 
 ## Not done in S1
 

@@ -38,7 +38,10 @@ export const dashboardShell = <Message>(h: HtmlBuilder<Message>, title: string, 
 						[
 							appTopbar(h, title),
 							h.div(
-								[h.Class("flex min-h-0 flex-1 overflow-hidden"), h.Attribute("data-slot", "page-body")],
+								[
+									h.Class("flex min-h-0 flex-1 overflow-hidden"),
+									h.Attribute("data-slot", "page-body"),
+								],
 								[
 									h.main(
 										[

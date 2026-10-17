@@ -25,10 +25,10 @@ on the first try. Shape (`apps/web-foldkit/src/service-map/xyflow/`):
 
 ## Parity (`--baseline legacy-head --candidate foldkit`, desktop light + dark)
 
-| Filter | Result |
-| --- | --- |
-| `lab-bench-service-map` (default, small graph, hover node, wheel zoom) | **8/8 identical**, strict 0 px, 0 behavior diffs |
-| `lab-flow` (default, hover node, select node, wheel zoom) | 8/8 visual **pass**: 0 perceptual px, 32 to 89 strict px |
+| Filter                                                                 | Result                                                   |
+| ---------------------------------------------------------------------- | -------------------------------------------------------- |
+| `lab-bench-service-map` (default, small graph, hover node, wheel zoom) | **8/8 identical**, strict 0 px, 0 behavior diffs         |
+| `lab-flow` (default, hover node, select node, wheel zoom)              | 8/8 visual **pass**: 0 perceptual px, 32 to 89 strict px |
 
 `lab-flow` reports `fail` only because the **legacy** capture is unhealthy: the legacy sidebar fires
 API calls without a session (six 401s and a live-query error) on every lab page in the shell. The
@@ -40,14 +40,14 @@ refactors were proven neutral: pre- vs post-refactor legacy captures are visuall
 
 Bench at 120 services / 400 edges, the spec's measurements (`apps/web-foldkit/perf/service-map-bench.ts`):
 
-| Metric | Legacy | Foldkit |
-| --- | --- | --- |
-| first map on screen (fallback layout), ms | 2275 / 2282 | 2187 / 2201 |
-| ELK layout on screen, ms | 4154 / 4583 | 4077 / 4124 |
-| idle fps · frame p95 ms · TBT | 60 · 16.7 · 0 | 59.9 · 16.7 · 0 |
-| pan fps (p50 / p95) | 52.6 / 59.8 | 52.6 / 52.8 |
-| pan frame p50 / p95 ms · TBT | 16.7 / 33.3 · 0 | 16.7 / 33.4 · 0 |
-| fit-all (whole graph) fps | 13.3 / 13.8 (earlier run 12.8 / 13.1) | 12.6 / 12.8 (12.6 / 13.2) |
+| Metric                                    | Legacy                                | Foldkit                   |
+| ----------------------------------------- | ------------------------------------- | ------------------------- |
+| first map on screen (fallback layout), ms | 2275 / 2282                           | 2187 / 2201               |
+| ELK layout on screen, ms                  | 4154 / 4583                           | 4077 / 4124               |
+| idle fps · frame p95 ms · TBT             | 60 · 16.7 · 0                         | 59.9 · 16.7 · 0           |
+| pan fps (p50 / p95)                       | 52.6 / 59.8                           | 52.6 / 52.8               |
+| pan frame p50 / p95 ms · TBT              | 16.7 / 33.3 · 0                       | 16.7 / 33.4 · 0           |
+| fit-all (whole graph) fps                 | 13.3 / 13.8 (earlier run 12.8 / 13.1) | 12.6 / 12.8 (12.6 / 13.2) |
 
 Within noise of legacy (fit-all moved between runs on both sides): pan script time is lower than
 React's (0.08 s vs 0.11 s per 3 s); frame drops are shared raster work. Startup unchanged (lab is lazy); `@xyflow/system` + d3 is 21 KB gzip.

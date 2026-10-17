@@ -13,7 +13,11 @@ export const bubbleGroup = <M>(h: HtmlBuilder<M>, children: Children, className?
 
 export const bubble = <M>(
 	h: HtmlBuilder<M>,
-	options: { readonly variant?: BubbleVariant; readonly align?: "start" | "end"; readonly className?: string },
+	options: {
+		readonly variant?: BubbleVariant
+		readonly align?: "start" | "end"
+		readonly className?: string
+	},
 	children: Children,
 ): Html => {
 	const variant = options.variant ?? "default"

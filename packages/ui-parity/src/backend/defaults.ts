@@ -26,7 +26,10 @@ const session = (dataset: Dataset) => {
 		: {
 				orgId: identity.orgId,
 				userId: identity.userId,
-				roles: dataset.auth === "self_hosted" ? ["root"] : [identity.role === "admin" ? "org:admin" : "org:member"],
+				roles:
+					dataset.auth === "self_hosted"
+						? ["root"]
+						: [identity.role === "admin" ? "org:admin" : "org:member"],
 				authMode: dataset.auth,
 			}
 }
@@ -94,7 +97,14 @@ const disconnectedPlanetScale = {
 const billingCustomer: EndpointHandler = ({ dataset }) =>
 	Effect.succeed({
 		id: dataset.identity?.orgId ?? "org_parity_signed_out",
-		subscriptions: [{ planId: "startup", status: "active", currentPeriodStart: parseWarehouseDateTime(dataset.now) - 10 * DAY, currentPeriodEnd: parseWarehouseDateTime(dataset.now) + 20 * DAY }],
+		subscriptions: [
+			{
+				planId: "startup",
+				status: "active",
+				currentPeriodStart: parseWarehouseDateTime(dataset.now) - 10 * DAY,
+				currentPeriodEnd: parseWarehouseDateTime(dataset.now) + 20 * DAY,
+			},
+		],
 	})
 
 /** Fixed fake keys: the settings page shows them masked, and they must not change run to run. */
@@ -106,7 +116,6 @@ const ingestKeys: EndpointHandler = ({ dataset }) =>
 		public_rotated_at: new Date(parseWarehouseDateTime(dataset.now) - 30 * DAY).toISOString(),
 		private_rotated_at: new Date(parseWarehouseDateTime(dataset.now) - 30 * DAY).toISOString(),
 	})
-
 
 // The real catalog lookup the API runs (`apps/api/src/routes/internal/ai-models.http.ts`).
 const detectAiModels: EndpointHandler = ({ payload }) =>
@@ -121,45 +130,49 @@ const constant =
 /** Defaults keyed `"<group>.<endpoint>"`; `queryEngine.executeBatch` is wired by the server itself. */
 export const defaultHandlers = new Map<string, EndpointHandler>(
 	Object.entries({
-	"authPublic.login": login,
-	"authPublic.previewSignInStatus": constant({ enabled: false }),
-	"auth.session": ({ dataset }) => Effect.succeed(session(dataset)),
-	"auth.sessionRefresh": sessionRefresh,
-	"aiModelsInternal.detectMany": detectAiModels,
-	"integrations.cloudflareStatus": constant(disconnectedCloudflare),
-	"integrations.railwayStatus": constant(disconnectedRailway),
-	"planetscaleIntegration.status": constant(disconnectedPlanetScale),
-	"gcpIntegration.status": constant({ object: "gcp_integration", metrics_available: false, connectors: [] }),
-	"anomalies.serviceCounts": constant(emptyList),
-	"investigations.list": constant(emptyList),
-	"alertDeliveries.list": constant(emptyList),
-	"sessionReplays.forTrace": constant(emptyList),
-	"dashboards.listShares": constant([]),
-	"billing.getCustomer": billingCustomer,
-	"integrations.githubStatus": constant({
-		connected: false,
-		state: "not_connected",
-		accountLogin: null,
-		accountType: null,
-		repositorySelection: null,
-		ciTracesEnabled: true,
-		repositories: [],
-	}),
-	"integrations.vcsCommitDetails": constant({ commits: [] }),
-	"integrations.cloudflareHyperdrives": constant({ configs: [] }),
-	"attributeMappings.list": constant(emptyList),
-	"anomalies.listIncidents": constant(emptyList),
-	// A seeded issue has no history beyond its warehouse occurrences.
-	"errors.listIssueEvents": constant({ events: [] }),
-	"errors.listIssuePullRequests": constant({ pullRequests: [], suggestedRepository: null }),
-	"errors.listIssueVerifications": constant({ verifications: [] }),
-	"errors.listIssueEscalations": constant({ attempts: [] }),
-	"ingestKeys.retrieve": ingestKeys,
-	"instrumentationRecommendations.list": constant(emptyList),
-	"planetscaleIntegration.databases": constant({
-		object: "planetscale_integration.database_list",
-		databases: [],
-		last_inventory_at: null,
-	}),
+		"authPublic.login": login,
+		"authPublic.previewSignInStatus": constant({ enabled: false }),
+		"auth.session": ({ dataset }) => Effect.succeed(session(dataset)),
+		"auth.sessionRefresh": sessionRefresh,
+		"aiModelsInternal.detectMany": detectAiModels,
+		"integrations.cloudflareStatus": constant(disconnectedCloudflare),
+		"integrations.railwayStatus": constant(disconnectedRailway),
+		"planetscaleIntegration.status": constant(disconnectedPlanetScale),
+		"gcpIntegration.status": constant({
+			object: "gcp_integration",
+			metrics_available: false,
+			connectors: [],
+		}),
+		"anomalies.serviceCounts": constant(emptyList),
+		"investigations.list": constant(emptyList),
+		"alertDeliveries.list": constant(emptyList),
+		"sessionReplays.forTrace": constant(emptyList),
+		"dashboards.listShares": constant([]),
+		"billing.getCustomer": billingCustomer,
+		"integrations.githubStatus": constant({
+			connected: false,
+			state: "not_connected",
+			accountLogin: null,
+			accountType: null,
+			repositorySelection: null,
+			ciTracesEnabled: true,
+			repositories: [],
+		}),
+		"integrations.vcsCommitDetails": constant({ commits: [] }),
+		"integrations.cloudflareHyperdrives": constant({ configs: [] }),
+		"attributeMappings.list": constant(emptyList),
+		"anomalies.listIncidents": constant(emptyList),
+		// A seeded issue has no history beyond its warehouse occurrences.
+		"errors.listIssueEvents": constant({ events: [] }),
+		"errors.listIssuePullRequests": constant({ pullRequests: [], suggestedRepository: null }),
+		"errors.listIssueVerifications": constant({ verifications: [] }),
+		"errors.listIssueEscalations": constant({ attempts: [] }),
+		"ingestKeys.retrieve": ingestKeys,
+		"instrumentationRecommendations.list": constant(emptyList),
+		"planetscaleIntegration.databases": constant({
+			object: "planetscale_integration.database_list",
+			databases: [],
+			last_inventory_at: null,
+		}),
 	} satisfies Readonly<Record<string, EndpointHandler>>),
 )

@@ -42,7 +42,9 @@ export const telemetrySignalsEndpoint = (warehouse: FixtureWarehouse): EndpointH
 			const tenant = tenantFor(dataset)
 			// Signed out: answer like the API's v2 auth middleware.
 			if (tenant === undefined) return yield* V2InvalidCredentials.make()
-			const report = yield* service.read(tenant).pipe(Effect.provideService(Clock.Clock, frozenClock(parseWarehouseDateTime(dataset.now))))
+			const report = yield* service
+				.read(tenant)
+				.pipe(Effect.provideService(Clock.Clock, frozenClock(parseWarehouseDateTime(dataset.now))))
 			return {
 				object: "telemetry_signals",
 				generated_at: iso(report.generatedAt),

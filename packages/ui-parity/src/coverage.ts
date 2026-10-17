@@ -20,7 +20,9 @@ export const legacyRoutes = (ref = LEGACY_BASELINE_REF) => {
 	})
 	const block = routeTree.match(/interface FileRoutesByFullPath \{([\s\S]*?)\n\}/)?.[1] ?? ""
 	const routes = [...block.matchAll(/'([^']+)':/g)].flatMap((match) => (match[1] ? [match[1]] : []))
-	return [...new Set(routes.map((route) => route.replace(/(.)\/$/, "$1")))].filter((route) => !EXCLUDED.test(route))
+	return [...new Set(routes.map((route) => route.replace(/(.)\/$/, "$1")))].filter(
+		(route) => !EXCLUDED.test(route),
+	)
 }
 
 /** `$param` matches one segment, a trailing splat `$` matches the rest. */

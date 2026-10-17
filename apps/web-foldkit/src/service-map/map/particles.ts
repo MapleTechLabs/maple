@@ -27,7 +27,8 @@ const decodeSpecs = Schema.decodeUnknownOption(
 	),
 )
 
-const readCamera = (renderer: Element | null) => (renderer === null ? undefined : readViewport(renderer)) ?? { x: 0, y: 0, zoom: 1 }
+const readCamera = (renderer: Element | null) =>
+	(renderer === null ? undefined : readViewport(renderer)) ?? { x: 0, y: 0, zoom: 1 }
 
 const drawFrame = (
 	ctx: CanvasRenderingContext2D,
@@ -149,7 +150,11 @@ const AnimateParticles = Mount.define("AnimateParticles", {
 })
 
 /** The particle canvas over the map; `tracks` is the serialized edge geometry. */
-export const particleCanvas = <M>(h: HtmlBuilder<M>, tracks: string, toMessage: (message: typeof ParticleMessage.Type) => M): Html =>
+export const particleCanvas = <M>(
+	h: HtmlBuilder<M>,
+	tracks: string,
+	toMessage: (message: typeof ParticleMessage.Type) => M,
+): Html =>
 	h.canvas([
 		h.Class("pointer-events-none absolute inset-0 h-full w-full"),
 		h.Style({ "z-index": "4" }),

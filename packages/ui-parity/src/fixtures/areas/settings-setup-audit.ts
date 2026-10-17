@@ -35,7 +35,11 @@ const nullableText = (row: SyncedRow, key: string): string | null => {
 }
 const epochMs = (row: SyncedRow, key: string): number | null => {
 	const value = row[key]
-	return typeof value === "string" ? parseWarehouseDateTime(value) : typeof value === "number" ? value : null
+	return typeof value === "string"
+		? parseWarehouseDateTime(value)
+		: typeof value === "number"
+			? value
+			: null
 }
 const stringList = (row: SyncedRow, key: string): ReadonlyArray<string> => {
 	const value = row[key]
@@ -91,7 +95,9 @@ const warehouseInputs = (warehouse: FixtureWarehouse, request: EndpointRequest, 
 		}
 		const logWindow = {
 			orgId,
-			startTime: formatWarehouseDateTime(now - Integrations.AUDIT_LOG_CORRELATION_MAX_HOURS * 60 * 60 * 1000),
+			startTime: formatWarehouseDateTime(
+				now - Integrations.AUDIT_LOG_CORRELATION_MAX_HOURS * 60 * 60 * 1000,
+			),
 			endTime: formatWarehouseDateTime(now),
 		}
 		const run = <A>(compiled: CH.CompiledQueryInput<A>, profile: "discovery" | "list") =>
@@ -99,10 +105,19 @@ const warehouseInputs = (warehouse: FixtureWarehouse, request: EndpointRequest, 
 		const results = yield* Effect.all(
 			{
 				usage: run(CH.compile(CH.serviceUsageQuery({}), window), "discovery"),
-				attributeKeys: run(CH.compile(Integrations.auditAttributeKeyInventoryQuery(), window), "discovery"),
+				attributeKeys: run(
+					CH.compile(Integrations.auditAttributeKeyInventoryQuery(), window),
+					"discovery",
+				),
 				spanShape: run(CH.compile(Integrations.auditSpanProfileByServiceQuery(), window), "list"),
-				logSeverity: run(CH.compile(Integrations.auditLogSeverityByServiceQuery(), window), "discovery"),
-				metricLabels: run(CH.compile(Integrations.auditMetricLabelCardinalityQuery(), window), "discovery"),
+				logSeverity: run(
+					CH.compile(Integrations.auditLogSeverityByServiceQuery(), window),
+					"discovery",
+				),
+				metricLabels: run(
+					CH.compile(Integrations.auditMetricLabelCardinalityQuery(), window),
+					"discovery",
+				),
 				peerValues: run(CH.compile(Integrations.auditPeerValueInventoryQuery(), window), "discovery"),
 				dbEdges: run(CH.compile(Integrations.auditDbEdgeIdentityQuery(), window), "discovery"),
 				logCorrelation: run(CH.compile(Integrations.auditLogCorrelationQuery(), logWindow), "list"),
@@ -121,14 +136,22 @@ const warehouseInputs = (warehouse: FixtureWarehouse, request: EndpointRequest, 
 		}
 		const joined = yield* Effect.all(
 			{
-				orphans: warehouse.executor.compiledQuery(tenant, Integrations.auditOrphanSpansSQL(traceWindow), {
-					profile: "aggregation",
-					context: "setupAuditOrphanSpans",
-				}),
-				rootless: warehouse.executor.compiledQuery(tenant, Integrations.auditRootlessTracesSQL(traceWindow), {
-					profile: "aggregation",
-					context: "setupAuditRootlessTraces",
-				}),
+				orphans: warehouse.executor.compiledQuery(
+					tenant,
+					Integrations.auditOrphanSpansSQL(traceWindow),
+					{
+						profile: "aggregation",
+						context: "setupAuditOrphanSpans",
+					},
+				),
+				rootless: warehouse.executor.compiledQuery(
+					tenant,
+					Integrations.auditRootlessTracesSQL(traceWindow),
+					{
+						profile: "aggregation",
+						context: "setupAuditRootlessTraces",
+					},
+				),
 			},
 			{ concurrency: 1 },
 		)
@@ -142,13 +165,20 @@ const warehouseInputs = (warehouse: FixtureWarehouse, request: EndpointRequest, 
 			lookbackHours: LOOKBACK_HOURS,
 			logCorrelationHours: Integrations.AUDIT_LOG_CORRELATION_MAX_HOURS,
 			traceCompleteness,
-			attributeKeys: results.attributeKeys.map((row) => ({ scope: row.scope, key: row.attributeKey, usageCount: row.usageCount })),
+			attributeKeys: results.attributeKeys.map((row) => ({
+				scope: row.scope,
+				key: row.attributeKey,
+				usageCount: row.usageCount,
+			})),
 			serviceUsage: results.usage.map((row) => ({
 				serviceName: row.serviceName,
 				logCount: row.totalLogCount,
 				traceCount: row.totalTraceCount,
 				metricCount:
-					row.totalSumMetricCount + row.totalGaugeMetricCount + row.totalHistogramMetricCount + row.totalExpHistogramMetricCount,
+					row.totalSumMetricCount +
+					row.totalGaugeMetricCount +
+					row.totalHistogramMetricCount +
+					row.totalExpHistogramMetricCount,
 			})),
 			spanShape: results.spanShape.map((row) => ({
 				serviceName: row.serviceName,
@@ -162,7 +192,10 @@ const warehouseInputs = (warehouse: FixtureWarehouse, request: EndpointRequest, 
 				badSpanKinds: row.badSpanKinds,
 			})),
 			logSeverity: results.logSeverity,
-			metricLabels: results.metricLabels.map((row) => ({ attributeKey: row.attributeKey, valueCardinality: row.valueCardinality })),
+			metricLabels: results.metricLabels.map((row) => ({
+				attributeKey: row.attributeKey,
+				valueCardinality: row.valueCardinality,
+			})),
 			peerValues: results.peerValues,
 			dbEdges: results.dbEdges,
 			logCorrelation: results.logCorrelation,
@@ -172,10 +205,10 @@ const warehouseInputs = (warehouse: FixtureWarehouse, request: EndpointRequest, 
 
 const PUBLIC_ID_PREFIX_BY_KIND = new Map(
 	Object.entries({
-	alert_rule: PublicIdPrefixes.alertRule,
-	alert_destination: PublicIdPrefixes.alertDestination,
-	attribute_mapping: PublicIdPrefixes.attributeMapping,
-	scrape_target: PublicIdPrefixes.scrapeTarget,
+		alert_rule: PublicIdPrefixes.alertRule,
+		alert_destination: PublicIdPrefixes.alertDestination,
+		attribute_mapping: PublicIdPrefixes.attributeMapping,
+		scrape_target: PublicIdPrefixes.scrapeTarget,
 	} satisfies Partial<Record<AuditAffectedEntity["kind"], PublicIdPrefix>>),
 )
 
@@ -197,7 +230,10 @@ const toV2 = (report: SetupAuditReport) => ({
 			const prefix = PUBLIC_ID_PREFIX_BY_KIND.get(entity.kind)
 			return {
 				kind: entity.kind,
-				id: prefix !== undefined && entity.id !== undefined ? encodePublicId(prefix, entity.id) : null,
+				id:
+					prefix !== undefined && entity.id !== undefined
+						? encodePublicId(prefix, entity.id)
+						: null,
 				name: entity.name,
 				note: entity.note ?? null,
 			}
@@ -217,6 +253,13 @@ export const setupAuditEndpoint =
 			const telemetry = yield* warehouseInputs(warehouse, request, now).pipe(
 				Effect.catchCause(() => Effect.succeed(undefined)),
 			)
-			const firstDataReceivedAt = telemetry !== undefined && telemetry.serviceUsage.length > 0 ? now - 30 * DAY : null
-			return toV2(runSetupAudit({ now, config: configInputs(request, firstDataReceivedAt), warehouse: telemetry }))
+			const firstDataReceivedAt =
+				telemetry !== undefined && telemetry.serviceUsage.length > 0 ? now - 30 * DAY : null
+			return toV2(
+				runSetupAudit({
+					now,
+					config: configInputs(request, firstDataReceivedAt),
+					warehouse: telemetry,
+				}),
+			)
 		})

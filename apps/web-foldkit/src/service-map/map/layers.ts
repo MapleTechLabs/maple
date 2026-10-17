@@ -17,7 +17,12 @@ import { Message, type Positions, positionOf } from "./service-map"
 type Measured = Readonly<Record<string, MeasuredNode>>
 type ColorMode = "service" | "health" | "platform"
 
-const nodeData = (graph: EffectiveGraph, node: FlowNode, selectedId: Option.Option<string>, colorMode: ColorMode) => ({
+const nodeData = (
+	graph: EffectiveGraph,
+	node: FlowNode,
+	selectedId: Option.Option<string>,
+	colorMode: ColorMode,
+) => ({
 	...node.data,
 	selected: Option.contains(selectedId, node.id),
 	colorMode,
@@ -56,9 +61,15 @@ const drawableEdges = (graph: EffectiveGraph, positions: Positions, measured: Me
 		const sourceHandle = sourceMeasured?.handles.find((handle) => handle.type === "source")
 		const targetHandle = targetMeasured?.handles.find((handle) => handle.type === "target")
 		if (sourceHandle === undefined || targetHandle === undefined) return []
-		const at = (id: string, m: MeasuredNode) => ({ id, position: positions[id] ?? { x: 0, y: 0 }, measured: m })
+		const at = (id: string, m: MeasuredNode) => ({
+			id,
+			position: positions[id] ?? { x: 0, y: 0 },
+			measured: m,
+		})
 		const data =
-			edge.data && graph.declutter.dimmedEdgeIds.has(edge.id) ? { ...edge.data, dimmed: true } : edge.data
+			edge.data && graph.declutter.dimmedEdgeIds.has(edge.id)
+				? { ...edge.data, dimmed: true }
+				: edge.data
 		return [
 			{
 				edge: { ...edge, data },
@@ -69,7 +80,12 @@ const drawableEdges = (graph: EffectiveGraph, positions: Positions, measured: Me
 		]
 	})
 
-export const renderEdges = <M>(h: HtmlBuilder<M>, graph: EffectiveGraph, positions: Positions, measured: Measured): Html =>
+export const renderEdges = <M>(
+	h: HtmlBuilder<M>,
+	graph: EffectiveGraph,
+	positions: Positions,
+	measured: Measured,
+): Html =>
 	edgesLayer(
 		h,
 		drawableEdges(graph, positions, measured).map(({ edge, index, source, target }) =>
@@ -133,4 +149,7 @@ export const particleLayer = <M>(
 	positions: Positions,
 	measured: Measured,
 	toMessage: (message: Message) => M,
-): Html => particleCanvas(h, particleTracks(graph, positions, measured), () => toMessage(Message.CompletedMountParticles()))
+): Html =>
+	particleCanvas(h, particleTracks(graph, positions, measured), () =>
+		toMessage(Message.CompletedMountParticles()),
+	)

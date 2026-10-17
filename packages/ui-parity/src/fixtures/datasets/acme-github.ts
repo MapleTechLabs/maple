@@ -10,7 +10,9 @@ const REPO = "acme-shop/shop"
 
 const commitOf = (release: (typeof ACME_RELEASES)[number]) => {
 	// Rollouts land at their deploy time; base versions shipped long before the window.
-	const committedAt = FROZEN_NOW_MS - (release.minutesBeforeNow === undefined ? 9 * DAY : release.minutesBeforeNow * MINUTE + 20 * MINUTE)
+	const committedAt =
+		FROZEN_NOW_MS -
+		(release.minutesBeforeNow === undefined ? 9 * DAY : release.minutesBeforeNow * MINUTE + 20 * MINUTE)
 	return {
 		provider: "github",
 		sha: release.sha,
@@ -60,9 +62,12 @@ export const acmeGithubEndpoints = {
 	"integrations.githubStatus": status,
 	"integrations.vcsCommitDetails": ({ query }) => {
 		const shas = field(query, "shas").split(",")
-		return Effect.succeed({ commits: ACME_RELEASES.filter((release) => shas.includes(release.sha)).map(commitOf) })
+		return Effect.succeed({
+			commits: ACME_RELEASES.filter((release) => shas.includes(release.sha)).map(commitOf),
+		})
 	},
-	"integrations.vcsPullRequests": ({ query }) => Effect.succeed({ repository: field(query, "repository"), pullRequests: [] }),
+	"integrations.vcsPullRequests": ({ query }) =>
+		Effect.succeed({ repository: field(query, "repository"), pullRequests: [] }),
 	"integrations.vcsCommitDetail": ({ params }) => {
 		const sha = field(params, "sha")
 		const release = ACME_RELEASES.find((candidate) => candidate.sha === sha)

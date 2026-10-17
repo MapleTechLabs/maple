@@ -44,7 +44,9 @@ export const loadBuild = (name: string, authMode: AuthMode = "self_hosted"): Sta
 	const stamp: unknown = existsSync(stampFile) ? JSON.parse(readFileSync(stampFile, "utf8")) : undefined
 	if (!isStamp(stamp)) throw new Error(`Build "${name}" has no valid ${BUILD_STAMP_FILE}; rebuild it.`)
 	if (stamp.portBase !== PORT_BASE)
-		throw new Error(`Build "${name}" targets PARITY_PORT_BASE=${stamp.portBase}, not ${PORT_BASE}. Rebuild it.`)
+		throw new Error(
+			`Build "${name}" targets PARITY_PORT_BASE=${stamp.portBase}, not ${PORT_BASE}. Rebuild it.`,
+		)
 	return { name, authMode, dir, stamp, indexHtml: readFileSync(join(dir, "index.html"), "utf8") }
 }
 
@@ -59,7 +61,10 @@ export const resolveStatic = (build: StaticBuild, pathname: string, headScript =
 	if (pathname === "/sw.js" || pathname.startsWith("/workbox-")) return { kind: "not-found" }
 	const filePath = normalize(join(build.dir, decodeURIComponent(pathname)))
 	const isAsset =
-		pathname !== "/" && filePath.startsWith(build.dir) && existsSync(filePath) && statSync(filePath).isFile()
+		pathname !== "/" &&
+		filePath.startsWith(build.dir) &&
+		existsSync(filePath) &&
+		statSync(filePath).isFile()
 	if (isAsset && !filePath.endsWith("index.html")) return { kind: "file", path: filePath }
 	// A missing hashed asset is a 404, not index.html, so a stale chunk fails loudly.
 	if (pathname.startsWith("/assets/")) return { kind: "not-found" }
@@ -74,7 +79,9 @@ export const serveStatic = (build: StaticBuild, port: number, headScript: string
 			const resolved = resolveStatic(build, new URL(request.url).pathname, headScript)
 			if (resolved.kind === "file") return new Response(Bun.file(resolved.path))
 			if (resolved.kind === "html")
-				return new Response(resolved.body, { headers: { "content-type": "text/html; charset=utf-8" } })
+				return new Response(resolved.body, {
+					headers: { "content-type": "text/html; charset=utf-8" },
+				})
 			return new Response("", { status: 404 })
 		},
 	})

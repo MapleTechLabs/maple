@@ -1,16 +1,23 @@
 import { readJwtExpMs } from "@maple/web/lib/services/common/auth-headers"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { Clock, Context, Duration, Effect, Layer, Option, Semaphore } from "effect"
-import { announceSessionTokenChanged, clearSessionToken, MapleAuthApi, readSessionToken, saveSessionToken } from "./auth-api"
+import {
+	announceSessionTokenChanged,
+	clearSessionToken,
+	MapleAuthApi,
+	readSessionToken,
+	saveSessionToken,
+} from "./auth-api"
 import { clerkSessionToken } from "./clerk"
 
 /** Renew this far ahead of expiry, like apps/web (`RENEW_WHEN_REMAINING_MS`). */
 const RENEW_AHEAD = Duration.minutes(5)
 
 /** The bearer token API requests carry: the self-hosted session or Clerk's session JWT. */
-export class SessionBearer extends Context.Service<SessionBearer, { readonly token: Effect.Effect<Option.Option<string>> }>()(
-	"@maple/web-foldkit/SessionBearer",
-) {
+export class SessionBearer extends Context.Service<
+	SessionBearer,
+	{ readonly token: Effect.Effect<Option.Option<string>> }
+>()("@maple/web-foldkit/SessionBearer") {
 	static readonly layer = Layer.effect(
 		this,
 		isClerkAuthEnabled ? Effect.succeed({ token: clerkSessionToken }) : makeSelfHosted(),
@@ -29,7 +36,10 @@ function makeSelfHosted() {
 				Effect.map((renewed) => Option.some(renewed.token)),
 				Effect.catchTag("@maple/web-foldkit/SessionCheckError", (error) =>
 					error.reason === "Rejected"
-						? Effect.as(Effect.andThen(clearSessionToken, announceSessionTokenChanged), Option.none())
+						? Effect.as(
+								Effect.andThen(clearSessionToken, announceSessionTokenChanged),
+								Option.none(),
+							)
 						: Effect.succeed(Option.some(token)),
 				),
 			)

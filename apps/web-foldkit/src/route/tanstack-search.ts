@@ -5,8 +5,7 @@ const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json)
 // TanStack Router's default search format: each value is JSON when it parses as JSON, raw
 // otherwise, and a string that would parse as JSON is written quoted. Same URLs both ways.
 
-const parseValue = (raw: string): Schema.Json =>
-	Option.getOrElse(decodeJson(raw), () => raw)
+const parseValue = (raw: string): Schema.Json => Option.getOrElse(decodeJson(raw), () => raw)
 
 const isJson = (raw: string): boolean => Option.isSome(decodeJson(raw))
 

@@ -39,7 +39,11 @@ export const fixtureSession = (dataset: Dataset): FixtureSession | undefined => 
 			exp: Math.floor(expiresAt / 1000),
 		}),
 	)
-	return { token: `${header}.${claims}.parity-fixture`, expiresAt, sessionExpiresAt: nowMs + SESSION_LIFETIME_MS }
+	return {
+		token: `${header}.${claims}.parity-fixture`,
+		expiresAt,
+		sessionExpiresAt: nowMs + SESSION_LIFETIME_MS,
+	}
 }
 
 /**

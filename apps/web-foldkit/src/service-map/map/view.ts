@@ -35,16 +35,33 @@ const panelGroup = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =
 			h.Class("flex h-full w-full aria-[orientation=vertical]:flex-col flex-1 min-h-0"),
 			h.DataAttribute("group", "true"),
 			h.DataAttribute("slot", "resizable-panel-group"),
-			h.Style({ height: "100%", width: "100%", overflow: "hidden", display: "flex", "flex-flow": "row", "touch-action": "pan-y" }),
+			h.Style({
+				height: "100%",
+				width: "100%",
+				overflow: "hidden",
+				display: "flex",
+				"flex-flow": "row",
+				"touch-action": "pan-y",
+			}),
 		],
 		[
 			h.div(
-				[h.DataAttribute("panel", "true"), h.DataAttribute("slot", "resizable-panel"), h.Style(PANEL_STYLE)],
+				[
+					h.DataAttribute("panel", "true"),
+					h.DataAttribute("slot", "resizable-panel"),
+					h.Style(PANEL_STYLE),
+				],
 				[
 					h.div(
 						[
 							h.Class("min-w-0"),
-							h.Style({ "max-height": "100%", "max-width": "100%", "flex-grow": "1", overflow: "auto", "touch-action": "pan-y" }),
+							h.Style({
+								"max-height": "100%",
+								"max-width": "100%",
+								"flex-grow": "1",
+								overflow: "auto",
+								"touch-action": "pan-y",
+							}),
 						],
 						[h.div([h.Class("flex flex-col h-full")], children)],
 					),
@@ -72,21 +89,44 @@ export const view = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message: Me
 						flowCanvas(h, {
 							model: model.canvas,
 							toMessage: toCanvas,
-							edges: edgesSlot(renderEdges, [h, graph, positions, measured]) ?? edgesLayer(h, []),
+							edges:
+								edgesSlot(renderEdges, [h, graph, positions, measured]) ?? edgesLayer(h, []),
 							nodes:
-								nodesSlot(renderNodes, [h, graph, positions, measured, selectedId, colorMode, toMessage]) ??
-								nodesLayer(h, []),
+								nodesSlot(renderNodes, [
+									h,
+									graph,
+									positions,
+									measured,
+									selectedId,
+									colorMode,
+									toMessage,
+								]) ?? nodesLayer(h, []),
 							onPaneClick: toMessage(Message.ClickedPane()),
 							panels: [
 								...(model.reducedMotion
 									? []
-									: [particlesSlot(particleLayer, [h, graph, positions, measured, toMessage]) ?? h.canvas([])]),
+									: [
+											particlesSlot(particleLayer, [
+												h,
+												graph,
+												positions,
+												measured,
+												toMessage,
+											]) ?? h.canvas([]),
+										]),
 								serviceMapControls(h, model.canvas, toCanvas),
 								serviceMapMiniMap(
 									h,
 									model.canvas,
 									minimapNodes,
-									rectsSlot(miniMapRectsLayer, [h, graph, positions, measured, selectedId, colorMode]) ?? h.g([], []),
+									rectsSlot(miniMapRectsLayer, [
+										h,
+										graph,
+										positions,
+										measured,
+										selectedId,
+										colorMode,
+									]) ?? h.g([], []),
 								),
 								serviceMapBackground(h, model.canvas),
 							],

@@ -72,8 +72,15 @@ const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => ({
 })
 
 export const serviceEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => ({
-	"queryEngine.serviceOverview": warehouseEndpoint(warehouse, ServiceOverviewRequest, ServiceOverviewResponse, (payload, { runQuery }) =>
-		Effect.map(runQuery(Queries.serviceOverview, payload), (rows) => new ServiceOverviewResponse({ data: rows })),
+	"queryEngine.serviceOverview": warehouseEndpoint(
+		warehouse,
+		ServiceOverviewRequest,
+		ServiceOverviewResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(Queries.serviceOverview, payload),
+				(rows) => new ServiceOverviewResponse({ data: rows }),
+			),
 	),
 	"queryEngine.serviceHealthSnapshot": warehouseEndpoint(
 		warehouse,
@@ -113,23 +120,34 @@ export const serviceEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<s
 					}),
 			),
 	),
-	"queryEngine.serviceApdex": warehouseEndpoint(warehouse, ServiceApdexRequest, ServiceApdexResponse, (payload, { runQuery }) =>
-		Effect.map(
-			runQuery(Queries.serviceApdex, payload),
-			(rows) =>
-				new ServiceApdexResponse({
-					data: rows.map((row) => ({
-						bucket: DateTime.formatIso(row.bucket),
-						totalCount: row.totalCount,
-						satisfiedCount: row.satisfiedCount,
-						toleratingCount: row.toleratingCount,
-						apdexScore: row.apdexScore,
-					})),
-				}),
-		),
+	"queryEngine.serviceApdex": warehouseEndpoint(
+		warehouse,
+		ServiceApdexRequest,
+		ServiceApdexResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(Queries.serviceApdex, payload),
+				(rows) =>
+					new ServiceApdexResponse({
+						data: rows.map((row) => ({
+							bucket: DateTime.formatIso(row.bucket),
+							totalCount: row.totalCount,
+							satisfiedCount: row.satisfiedCount,
+							toleratingCount: row.toleratingCount,
+							apdexScore: row.apdexScore,
+						})),
+					}),
+			),
 	),
-	"queryEngine.serviceUsage": warehouseEndpoint(warehouse, ServiceUsageRequest, ServiceUsageResponse, (payload, { runQuery }) =>
-		Effect.map(runQuery(Queries.serviceUsage, payload), (rows) => new ServiceUsageResponse({ data: rows })),
+	"queryEngine.serviceUsage": warehouseEndpoint(
+		warehouse,
+		ServiceUsageRequest,
+		ServiceUsageResponse,
+		(payload, { runQuery }) =>
+			Effect.map(
+				runQuery(Queries.serviceUsage, payload),
+				(rows) => new ServiceUsageResponse({ data: rows }),
+			),
 	),
 	"queryEngine.serviceDetailOverview": warehouseEndpoint(
 		warehouse,
@@ -189,36 +207,40 @@ export const serviceEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<s
 					}),
 			),
 	),
-	"queryEngine.serviceMapBundle": warehouseEndpoint(warehouse, ServiceMapBundleRequest, ServiceMapBundleResponse, (payload, { runQuery }) =>
-		Effect.gen(function* () {
-			const [dependencyRows, overviewRows, dbEdgeRows, platformRows] = yield* Effect.all([
-				runQuery(Queries.serviceDependencies, payload),
-				runQuery(Queries.serviceOverview, payload),
-				runQuery(Queries.serviceDbEdges, payload),
-				runQuery(Queries.servicePlatforms, payload),
-			])
-			const services = new Set([
-				...dependencyRows.flatMap((row) => [row.sourceService, row.targetService]),
-				...overviewRows.map((row) => row.serviceName),
-			])
-			services.delete("")
-			const workloadRows =
-				services.size === 0
-					? []
-					: yield* runQuery(Queries.serviceWorkloads, {
-							startTime: payload.startTime,
-							endTime: payload.endTime,
-							services: Array.from(services)
-								.sort()
-								.map((name) => decodeServiceName(name)),
-						})
-			return new ServiceMapBundleResponse({
-				dependencies: dependencyRows.map((row) => ({ ...row })),
-				dbEdges: dbEdgeRows.map((row) => ({ ...row })),
-				overview: overviewRows.map((row) => ({ ...row })),
-				platforms: platformRows.map(toServicePlatformRow),
-				workloads: workloadRows.map(toServiceWorkloadRow),
-			})
-		}),
+	"queryEngine.serviceMapBundle": warehouseEndpoint(
+		warehouse,
+		ServiceMapBundleRequest,
+		ServiceMapBundleResponse,
+		(payload, { runQuery }) =>
+			Effect.gen(function* () {
+				const [dependencyRows, overviewRows, dbEdgeRows, platformRows] = yield* Effect.all([
+					runQuery(Queries.serviceDependencies, payload),
+					runQuery(Queries.serviceOverview, payload),
+					runQuery(Queries.serviceDbEdges, payload),
+					runQuery(Queries.servicePlatforms, payload),
+				])
+				const services = new Set([
+					...dependencyRows.flatMap((row) => [row.sourceService, row.targetService]),
+					...overviewRows.map((row) => row.serviceName),
+				])
+				services.delete("")
+				const workloadRows =
+					services.size === 0
+						? []
+						: yield* runQuery(Queries.serviceWorkloads, {
+								startTime: payload.startTime,
+								endTime: payload.endTime,
+								services: Array.from(services)
+									.sort()
+									.map((name) => decodeServiceName(name)),
+							})
+				return new ServiceMapBundleResponse({
+					dependencies: dependencyRows.map((row) => ({ ...row })),
+					dbEdges: dbEdgeRows.map((row) => ({ ...row })),
+					overview: overviewRows.map((row) => ({ ...row })),
+					platforms: platformRows.map(toServicePlatformRow),
+					workloads: workloadRows.map(toServiceWorkloadRow),
+				})
+			}),
 	),
 })

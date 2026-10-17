@@ -33,12 +33,21 @@ const issueRows = (warehouse: FixtureWarehouse, dataset: Dataset) =>
 	Effect.gen(function* () {
 		const tenant = warehouse.tenantOf(parityOrgId(dataset.identity?.orgId ?? "org_parity_signed_out"))
 		const window = windowOf(dataset)
-		const rows = yield* runQueryDefinition(warehouse.executor, Queries.errorsByType, tenant, new ErrorsByTypeRequest(window))
+		const rows = yield* runQueryDefinition(
+			warehouse.executor,
+			Queries.errorsByType,
+			tenant,
+			new ErrorsByTypeRequest(window),
+		)
 		return yield* Effect.forEach(rows, (row, index) =>
 			Effect.gen(function* () {
 				const sample = yield* warehouse.executor.compiledQuery(
 					tenant,
-					CH.compile(CH.errorIssueSampleTracesQuery({ limit: 1 }), { orgId: tenant.orgId, fingerprintHash: row.fingerprintHash, ...window }),
+					CH.compile(CH.errorIssueSampleTracesQuery({ limit: 1 }), {
+						orgId: tenant.orgId,
+						fingerprintHash: row.fingerprintHash,
+						...window,
+					}),
 					{ profile: "list", context: "errorIssueSampleTraces" },
 				)
 				const state = WORKFLOW[Math.min(index, WORKFLOW.length - 1)] ?? "todo"
@@ -116,7 +125,9 @@ const ranked = (issues: ReadonlyArray<SeededIssue>, query: unknown) => {
 
 const list = (data: ReadonlyArray<unknown>) => ({ object: "list", data, has_more: false, next_cursor: null })
 
-export const errorIssueEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => {
+export const errorIssueEndpoints = (
+	warehouse: FixtureWarehouse,
+): Readonly<Record<string, EndpointHandler>> => {
 	// Seeded once per dataset, like the Postgres rows they stand in for.
 	const seeded = new Map<string, Effect.Effect<ReadonlyArray<SeededIssue>, unknown>>()
 	const issuesOf = (dataset: Dataset) => {
@@ -131,7 +142,10 @@ export const errorIssueEndpoints = (warehouse: FixtureWarehouse): Readonly<Recor
 			const id = str(params, "id") ?? str(params, "issueId")
 			const issue = (yield* issuesOf(dataset)).find((candidate) => candidate.id === id)
 			if (issue === undefined || id === undefined)
-				return yield* new ErrorIssueNotFoundError({ message: "Issue not found", issueId: decodeIssueId(id ?? fixtureUuid(4, 0)) })
+				return yield* new ErrorIssueNotFoundError({
+					message: "Issue not found",
+					issueId: decodeIssueId(id ?? fixtureUuid(4, 0)),
+				})
 			return issue
 		})
 	return {
@@ -144,13 +158,20 @@ export const errorIssueEndpoints = (warehouse: FixtureWarehouse): Readonly<Recor
 			Effect.map(issuesOf(dataset), (issues) => {
 				const open = issues.filter((issue) => OPEN_STATES.includes(issue.workflow_state))
 				const services = [...new Set(open.map((issue) => issue.service_name))].sort()
-				return list(services.map((name) => ({ service_name: name, open_count: open.filter((issue) => issue.service_name === name).length })))
+				return list(
+					services.map((name) => ({
+						service_name: name,
+						open_count: open.filter((issue) => issue.service_name === name).length,
+					})),
+				)
 			}),
 		"errorIssues.retrieve": ({ dataset, params, query }) =>
 			Effect.gen(function* () {
 				const issue = yield* find(dataset, params)
 				const fallback = windowOf(dataset)
-				const tenant = warehouse.tenantOf(parityOrgId(dataset.identity?.orgId ?? "org_parity_signed_out"))
+				const tenant = warehouse.tenantOf(
+					parityOrgId(dataset.identity?.orgId ?? "org_parity_signed_out"),
+				)
 				const bucket = str(query, "bucket_seconds")
 				const params_ = {
 					orgId: tenant.orgId,
@@ -163,15 +184,29 @@ export const errorIssueEndpoints = (warehouse: FixtureWarehouse): Readonly<Recor
 				const [timeseries, samples, environments] = yield* Effect.all([
 					warehouse.executor.compiledQuery(
 						tenant,
-						CH.compile(CH.errorIssueTimeseriesQuery(), { ...params_, bucketSeconds: Number(bucket ?? "3600") }),
+						CH.compile(CH.errorIssueTimeseriesQuery(), {
+							...params_,
+							bucketSeconds: Number(bucket ?? "3600"),
+						}),
 						options("errorIssueTimeseries"),
 					),
-					warehouse.executor.compiledQuery(tenant, CH.compile(CH.errorIssueSampleTracesQuery({ limit }), params_), options("errorIssueSampleTraces")),
-					warehouse.executor.compiledQuery(tenant, CH.compile(CH.errorIssueEnvironmentsQuery(), params_), options("errorIssueEnvironments")),
+					warehouse.executor.compiledQuery(
+						tenant,
+						CH.compile(CH.errorIssueSampleTracesQuery({ limit }), params_),
+						options("errorIssueSampleTraces"),
+					),
+					warehouse.executor.compiledQuery(
+						tenant,
+						CH.compile(CH.errorIssueEnvironmentsQuery(), params_),
+						options("errorIssueEnvironments"),
+					),
 				])
 				return yield* encodeDetail({
 					...issue,
-					timeseries: timeseries.map((row) => ({ bucket: DateTime.formatIso(row.bucket), count: row.count })),
+					timeseries: timeseries.map((row) => ({
+						bucket: DateTime.formatIso(row.bucket),
+						count: row.count,
+					})),
 					sample_traces: samples.map((row) => ({
 						trace_id: row.traceId,
 						span_id: row.spanId,

@@ -21,10 +21,7 @@ export const truncatedId = <M>(h: HtmlBuilder<M>, options: TruncatedIdOptions<M>
 	const kind = options.kind ?? "generic"
 	const copy = options.copy
 	const text = h.span(
-		[
-			h.Class(cn(truncatedIdStyles, copy === undefined && options.className)),
-			h.Title(options.value),
-		],
+		[h.Class(cn(truncatedIdStyles, copy === undefined && options.className)), h.Title(options.value)],
 		[shortId(options.value, kind, { length: options.length, ellipsis: options.ellipsis })],
 	)
 	if (copy === undefined) return text

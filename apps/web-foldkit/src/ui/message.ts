@@ -13,8 +13,13 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 
 type Children = ReadonlyArray<Html | string>
 
-const slotDiv = <M>(h: HtmlBuilder<M>, slot: string, styles: string, children: Children, className?: string) =>
-	h.div([h.DataAttribute("slot", slot), h.Class(cn(styles, className))], children)
+const slotDiv = <M>(
+	h: HtmlBuilder<M>,
+	slot: string,
+	styles: string,
+	children: Children,
+	className?: string,
+) => h.div([h.DataAttribute("slot", slot), h.Class(cn(styles, className))], children)
 
 export const messageGroup = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	slotDiv(h, "message-group", messageGroupStyles, children, className)

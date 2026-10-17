@@ -50,7 +50,8 @@ const authenticate = (datasetOf: DatasetOf, credential: Redacted.Redacted<string
 
 const unauthorized = () => new UnauthorizedError({ message: "Invalid or missing credentials." })
 
-const schemaErrorMessage = (kind: string, message: string) => `Invalid request ${kind.toLowerCase()}: ${message}`
+const schemaErrorMessage = (kind: string, message: string) =>
+	`Invalid request ${kind.toLowerCase()}: ${message}`
 
 const UNEXPECTED_MESSAGE = "An unexpected error occurred on our end."
 
@@ -96,8 +97,10 @@ export const middlewareContext = (datasetOf: DatasetOf, reportInvalid: ReportInv
 			Effect.sync(() => reportInvalid(request, `invalid-fixture:${group}.${endpoint}: ${message}`)),
 		)
 	const sessionBearer = {
-		bearer: <A, E, R>(effect: Effect.Effect<A, E, R>, { credential }: { readonly credential: Redacted.Redacted<string> }) =>
-			withTenant(datasetOf, effect, credential, unauthorized),
+		bearer: <A, E, R>(
+			effect: Effect.Effect<A, E, R>,
+			{ credential }: { readonly credential: Redacted.Redacted<string> },
+		) => withTenant(datasetOf, effect, credential, unauthorized),
 	}
 	return Context.make(CurrentTenant.Authorization, CurrentTenant.Authorization.of(sessionBearer)).pipe(
 		Context.add(CurrentTenant.SessionAuthorization, CurrentTenant.SessionAuthorization.of(sessionBearer)),
@@ -112,7 +115,9 @@ export const middlewareContext = (datasetOf: DatasetOf, reportInvalid: ReportInv
 					Effect.gen(function* () {
 						const tenant = yield* authenticate(datasetOf, credential)
 						if (tenant === undefined) return yield* Effect.fail(unauthorized())
-						return yield* Effect.provideService(effect, CurrentTenant.CurrentUser, { userId: tenant.userId })
+						return yield* Effect.provideService(effect, CurrentTenant.CurrentUser, {
+							userId: tenant.userId,
+						})
 					}),
 			}),
 		),
@@ -130,7 +135,10 @@ export const middlewareContext = (datasetOf: DatasetOf, reportInvalid: ReportInv
 					effect,
 					report(group.identifier, endpoint.identifier),
 					(kind, message) =>
-						new ApiRequestValidationError({ message: schemaErrorMessage(kind, message), details: [message] }),
+						new ApiRequestValidationError({
+							message: schemaErrorMessage(kind, message),
+							details: [message],
+						}),
 					() => new ApiUnexpectedError({ message: UNEXPECTED_MESSAGE }),
 				),
 			),
@@ -138,7 +146,9 @@ export const middlewareContext = (datasetOf: DatasetOf, reportInvalid: ReportInv
 		Context.add(
 			ApiUnexpectedErrors,
 			ApiUnexpectedErrors.of((effect) =>
-				Effect.catchDefect(effect, () => Effect.fail(new ApiUnexpectedError({ message: UNEXPECTED_MESSAGE }))),
+				Effect.catchDefect(effect, () =>
+					Effect.fail(new ApiUnexpectedError({ message: UNEXPECTED_MESSAGE })),
+				),
 			),
 		),
 		Context.add(
@@ -154,7 +164,9 @@ export const middlewareContext = (datasetOf: DatasetOf, reportInvalid: ReportInv
 		),
 		Context.add(
 			V2UnexpectedErrors,
-			V2UnexpectedErrors.of((effect) => Effect.catchDefect(effect, () => Effect.fail(V2UnexpectedFailure.make()))),
+			V2UnexpectedErrors.of((effect) =>
+				Effect.catchDefect(effect, () => Effect.fail(V2UnexpectedFailure.make())),
+			),
 		),
 	)
 }

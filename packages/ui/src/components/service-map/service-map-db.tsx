@@ -27,12 +27,7 @@ import {
 	resolvePlanetScaleDbStyle,
 } from "./service-map-db-style"
 
-export {
-	CLOUDFLARE_COLOR,
-	getDbNodeColor,
-	PLANETSCALE_COLOR,
-	withAlpha,
-} from "./service-map-db-style"
+export { CLOUDFLARE_COLOR, getDbNodeColor, PLANETSCALE_COLOR, withAlpha } from "./service-map-db-style"
 
 // The colors, labels and categories live in `service-map-db-style.ts`; this module
 // resolves their icon keys to React icon components and 3D mark artwork.
@@ -70,7 +65,9 @@ export interface DbDescriptor extends Omit<DbStyle, "icon"> {
 export function getDbDescriptor(system: string | undefined): DbDescriptor {
 	const { icon, ...style } = getDbStyle(system)
 	const markPath = MARK_PATHS.get(icon)
-	return markPath === undefined ? { ...style, Icon: ICONS[icon] } : { ...style, Icon: ICONS[icon], markPath }
+	return markPath === undefined
+		? { ...style, Icon: ICONS[icon] }
+		: { ...style, Icon: ICONS[icon], markPath }
 }
 
 /** Everything a DB node / detail-panel header needs to render, brand included. */

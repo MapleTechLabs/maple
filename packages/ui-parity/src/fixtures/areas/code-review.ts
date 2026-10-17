@@ -30,7 +30,8 @@ const str = (value: unknown, key: string): string | undefined => {
 	return typeof raw === "string" ? raw : undefined
 }
 
-const isOurs = (request: { readonly dataset: Dataset }) => request.dataset.identity?.orgId === CODE_REVIEW_ORG_ID
+const isOurs = (request: { readonly dataset: Dataset }) =>
+	request.dataset.identity?.orgId === CODE_REVIEW_ORG_ID
 
 interface Filter {
 	readonly start: number
@@ -55,7 +56,8 @@ const reviewIn = (filter: Filter) => (review: CodeReviewItem) =>
 	(filter.repositoryId === undefined || review.repositoryId === filter.repositoryId) &&
 	(filter.author === undefined || review.authorLogin === filter.author)
 
-const reviewOf = (finding: CodeReviewFindingItem) => CODE_REVIEWS.find((review) => review.id === finding.reviewId)
+const reviewOf = (finding: CodeReviewFindingItem) =>
+	CODE_REVIEWS.find((review) => review.id === finding.reviewId)
 const findingIn = (filter: Filter) => (finding: CodeReviewFindingItem) =>
 	filter.ours &&
 	finding.createdAt >= filter.start &&
@@ -63,7 +65,8 @@ const findingIn = (filter: Filter) => (finding: CodeReviewFindingItem) =>
 	(filter.repositoryId === undefined || finding.repositoryId === filter.repositoryId) &&
 	(filter.author === undefined || reviewOf(finding)?.authorLogin === filter.author)
 
-const distinctPrs = (reviews: ReadonlyArray<CodeReviewItem>) => new Set(reviews.map((r) => `${r.repositoryId}#${r.number}`)).size
+const distinctPrs = (reviews: ReadonlyArray<CodeReviewItem>) =>
+	new Set(reviews.map((r) => `${r.repositoryId}#${r.number}`)).size
 const average = (values: ReadonlyArray<number>) =>
 	values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0) / values.length
 
@@ -84,9 +87,15 @@ const totalsOf = (filter: Filter) => {
 		dismissedFindings: findings.filter((finding) => finding.status === "dismissed").length,
 		repositoriesWithFindings: new Set(findings.map((finding) => finding.repositoryId)).size,
 		mergedPullRequests: distinctPrs(merged),
-		avgReviewSeconds: average(completed.map((review) => ((review.finishedAt ?? review.createdAt) - review.createdAt) / 1000)),
-		avgMergeSeconds: average(merged.map((review) => ((review.mergedAt ?? review.createdAt) - review.createdAt) / 1000)),
-		avgConfidence: average(completed.flatMap((review) => (review.confidence === null ? [] : [review.confidence]))),
+		avgReviewSeconds: average(
+			completed.map((review) => ((review.finishedAt ?? review.createdAt) - review.createdAt) / 1000),
+		),
+		avgMergeSeconds: average(
+			merged.map((review) => ((review.mergedAt ?? review.createdAt) - review.createdAt) / 1000),
+		),
+		avgConfidence: average(
+			completed.flatMap((review) => (review.confidence === null ? [] : [review.confidence])),
+		),
 		avgScore: average(completed.flatMap((review) => (review.score === null ? [] : [review.score]))),
 		inputTokens: completed.length * 48_200,
 		outputTokens: completed.length * 3_150,
@@ -94,7 +103,8 @@ const totalsOf = (filter: Filter) => {
 }
 
 /** `codeReviewBucketSeconds`: hourly to two days, daily to 120, weekly beyond. */
-const bucketSecondsOf = (spanMs: number) => (spanMs <= 2 * DAY ? 3_600 : spanMs <= 120 * DAY ? 86_400 : 7 * 86_400)
+const bucketSecondsOf = (spanMs: number) =>
+	spanMs <= 2 * DAY ? 3_600 : spanMs <= 120 * DAY ? 86_400 : 7 * 86_400
 
 /** `PrReviewAnalyticsService.analytics` over the fixture rows, same windows and buckets. */
 const analytics: EndpointHandler = (request) => {
@@ -112,20 +122,42 @@ const analytics: EndpointHandler = (request) => {
 		const inBucket = (at: number) => at >= bucket && at < bucket + bucketMs
 		const bucketReviews = reviews.filter((review) => inBucket(review.createdAt))
 		const bucketFindings = findings.filter((finding) => inBucket(finding.createdAt))
-		const severity = (level: string) => bucketFindings.filter((finding) => finding.severity === level).length
-		return { bucket, reviews: bucketReviews.length, pullRequests: distinctPrs(bucketReviews), critical: severity("critical"), warn: severity("warn"), info: severity("info") }
+		const severity = (level: string) =>
+			bucketFindings.filter((finding) => finding.severity === level).length
+		return {
+			bucket,
+			reviews: bucketReviews.length,
+			pullRequests: distinctPrs(bucketReviews),
+			critical: severity("critical"),
+			warn: severity("warn"),
+			info: severity("info"),
+		}
 	})
 	const categories = [...new Set(findings.map((finding) => finding.category))]
-		.map((category) => ({ category, findings: findings.filter((finding) => finding.category === category).length }))
+		.map((category) => ({
+			category,
+			findings: findings.filter((finding) => finding.category === category).length,
+		}))
 		.sort((a, b) => b.findings - a.findings || a.category.localeCompare(b.category))
 	const completed = reviews.filter((review) => review.status === "completed")
 	const verdict = (value: string) => completed.filter((review) => review.verdict === value).length
 	const repositories = CODE_REVIEW_REPOS.flatMap((repo) => {
 		const repoReviews = reviews.filter((review) => review.repositoryId === repo.id).length
 		const repoFindings = findings.filter((finding) => finding.repositoryId === repo.id).length
-		return repoReviews + repoFindings === 0 ? [] : [{ repositoryId: repo.id, fullName: repo.fullName, reviews: repoReviews, findings: repoFindings }]
+		return repoReviews + repoFindings === 0
+			? []
+			: [
+					{
+						repositoryId: repo.id,
+						fullName: repo.fullName,
+						reviews: repoReviews,
+						findings: repoFindings,
+					},
+				]
 	})
-	const authors = [...new Set(reviews.flatMap((review) => (review.authorLogin === null ? [] : [review.authorLogin])))]
+	const authors = [
+		...new Set(reviews.flatMap((review) => (review.authorLogin === null ? [] : [review.authorLogin]))),
+	]
 		.map((author) => ({
 			author,
 			pullRequests: distinctPrs(reviews.filter((review) => review.authorLogin === author)),
@@ -138,7 +170,11 @@ const analytics: EndpointHandler = (request) => {
 		previous: totalsOf({ ...filter, start: start - spanMs, end: start }),
 		series,
 		categories,
-		verdicts: { clean: verdict("clean"), issues: verdict("issues"), notApplicable: verdict("not_applicable") },
+		verdicts: {
+			clean: verdict("clean"),
+			issues: verdict("issues"),
+			notApplicable: verdict("not_applicable"),
+		},
 		repositories,
 		authors,
 	})
@@ -150,7 +186,11 @@ const listReviews: EndpointHandler = (request) => {
 	const verdict = str(request.query, "verdict")
 	const limit = num(request.query, "limit") ?? 50
 	const reviews = CODE_REVIEWS.filter(reviewIn(filter))
-		.filter((review) => (status === undefined || review.status === status) && (verdict === undefined || review.verdict === verdict))
+		.filter(
+			(review) =>
+				(status === undefined || review.status === status) &&
+				(verdict === undefined || review.verdict === verdict),
+		)
 		.sort((a, b) => b.createdAt - a.createdAt)
 	return Effect.succeed({ reviews: reviews.slice(0, limit), nextCursor: null })
 }
@@ -179,7 +219,8 @@ const getReview: EndpointHandler = (request) => {
 		return Effect.flatMap(Schema.decodeUnknownEffect(PrReviewId)(id), (reviewId) =>
 			Effect.fail(new PrReviewNotFoundError({ message: `Review ${id} not found`, reviewId })),
 		)
-	const samePr = (other: CodeReviewItem) => other.repositoryId === review.repositoryId && other.number === review.number
+	const samePr = (other: CodeReviewItem) =>
+		other.repositoryId === review.repositoryId && other.number === review.number
 	const report = reportOf(review)
 	return Effect.succeed({
 		review,
@@ -190,7 +231,9 @@ const getReview: EndpointHandler = (request) => {
 		outputTokens: report === null ? null : 3_150,
 		startedAt: review.status === "skipped" ? null : review.createdAt + 20_000,
 		history: CODE_REVIEWS.filter(samePr).sort((a, b) => b.createdAt - a.createdAt),
-		findings: CODE_REVIEW_FINDINGS.filter((finding) => CODE_REVIEWS.some((other) => samePr(other) && other.id === finding.reviewId)),
+		findings: CODE_REVIEW_FINDINGS.filter((finding) =>
+			CODE_REVIEWS.some((other) => samePr(other) && other.id === finding.reviewId),
+		),
 	})
 }
 
@@ -214,7 +257,11 @@ const prReviewConfig: EndpointHandler = (request) =>
 	Effect.succeed({
 		config:
 			isOurs(request) && str(request.params, "repositoryId") === CODE_REVIEW_REPOS[1].id
-				? { instructions: "Money moves through the ledger only. Flag direct balance updates.", categories: ["correctness", "security", "observability"], automaticReviewLimit: 5 }
+				? {
+						instructions: "Money moves through the ledger only. Flag direct balance updates.",
+						categories: ["correctness", "security", "observability"],
+						automaticReviewLimit: 5,
+					}
 				: {},
 	})
 

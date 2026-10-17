@@ -25,9 +25,24 @@ const CHECKOUT: ServiceSpec = { name: "checkout-api", language: "nodejs", versio
 export const ACME_SERVICES: ReadonlyArray<ServiceSpec> = [
 	STOREFRONT,
 	CHECKOUT,
-	{ name: "cart-svc", language: "go", version: "1.22.1", deploy: { version: "1.23.0", minutesBeforeNow: 330 } },
-	{ name: "catalog-api", language: "python", version: "2.14.0", deploy: { version: "2.15.0", minutesBeforeNow: 1140 } },
-	{ name: "payment-svc", language: "nodejs", version: "3.4.1", deploy: { version: "3.5.0", minutesBeforeNow: 120 } },
+	{
+		name: "cart-svc",
+		language: "go",
+		version: "1.22.1",
+		deploy: { version: "1.23.0", minutesBeforeNow: 330 },
+	},
+	{
+		name: "catalog-api",
+		language: "python",
+		version: "2.14.0",
+		deploy: { version: "2.15.0", minutesBeforeNow: 1140 },
+	},
+	{
+		name: "payment-svc",
+		language: "nodejs",
+		version: "3.4.1",
+		deploy: { version: "3.5.0", minutesBeforeNow: 120 },
+	},
 	{ name: "auth-svc", language: "go", version: "2.0.3" },
 ]
 
@@ -188,7 +203,9 @@ const paymentQuery = (ctx: Context, op: string, normalMs: number): Call =>
 const session = (ctx: Context, caller: string): Call =>
 	hop(
 		caller,
-		server("auth-svc", "GET", "/session", "/session", 2, [redis("auth-svc", "GET", `session:${ctx.rng.hex(8)}`, 1)]),
+		server("auth-svc", "GET", "/session", "/session", 2, [
+			redis("auth-svc", "GET", `session:${ctx.rng.hex(8)}`, 1),
+		]),
 	)
 
 const productId = (ctx: Context) => String(ctx.rng.int(10000, 99999))
@@ -220,7 +237,9 @@ const home = (ctx: Context): Call =>
 				redis("catalog-api", "GET", "catalog:featured", 1),
 				postgres("catalog-api", "SELECT", "products", 6),
 				// The N+1: one variants query per featured product.
-				...Array.from({ length: ctx.rng.int(12, 16) }, () => postgres("catalog-api", "SELECT", "variants", 2)),
+				...Array.from({ length: ctx.rng.int(12, 16) }, () =>
+					postgres("catalog-api", "SELECT", "variants", 2),
+				),
 			]),
 		),
 	])
@@ -260,7 +279,9 @@ const cartView = (ctx: Context): Call => {
 		session(ctx, "storefront"),
 		hop(
 			"storefront",
-			server("cart-svc", "GET", "/carts/{id}", `/carts/${cart}`, 2, [redis("cart-svc", "HGETALL", `cart:${cart}`, 1)]),
+			server("cart-svc", "GET", "/carts/{id}", `/carts/${cart}`, 2, [
+				redis("cart-svc", "HGETALL", `cart:${cart}`, 1),
+			]),
 		),
 	])
 }
@@ -296,7 +317,12 @@ const orderView = (ctx: Context): Call => {
 	const id = productId(ctx)
 	return server("storefront", "GET", "/order/[id]", `/order/ord_${ctx.rng.hex(8)}`, 14, [
 		session(ctx, "storefront"),
-		hop("storefront", server("payment-svc", "GET", "/charges/{id}", `/charges/${id}`, 2, [paymentQuery(ctx, "SELECT", 3)])),
+		hop(
+			"storefront",
+			server("payment-svc", "GET", "/charges/{id}", `/charges/${id}`, 2, [
+				paymentQuery(ctx, "SELECT", 3),
+			]),
+		),
 	])
 }
 
@@ -453,7 +479,13 @@ const recordHttp = (sink: Sink, call: Call, startMicros: number, durationMs: num
 	sink.http.set(key, entry)
 }
 
-const emit = (sink: Sink, call: Call, traceId: string, parentSpanId: string, startMicros: number): Emitted => {
+const emit = (
+	sink: Sink,
+	call: Call,
+	traceId: string,
+	parentSpanId: string,
+	startMicros: number,
+): Emitted => {
 	const { rng } = sink
 	const spanId = rng.hex(16)
 	const half = (call.selfMs * 1000 * rng.spread(0.3)) / 2
@@ -525,27 +557,52 @@ const emit = (sink: Sink, call: Call, traceId: string, parentSpanId: string, sta
 		const route = { "http.route": call.http.route }
 		const ms = String(Math.round(durationMs))
 		if (failure !== undefined && failure.type !== "UpstreamError")
-			pushLog(sink, resource, endMicros, "ERROR", `${failure.type}: ${failure.message}`, {
-				...route,
-				"exception.type": failure.type,
-				"exception.message": failure.message,
-			}, trace)
+			pushLog(
+				sink,
+				resource,
+				endMicros,
+				"ERROR",
+				`${failure.type}: ${failure.message}`,
+				{
+					...route,
+					"exception.type": failure.type,
+					"exception.message": failure.message,
+				},
+				trace,
+			)
 		else if (durationMs > 2000)
-			pushLog(sink, resource, endMicros, "WARN", `slow request ${call.http.method} ${call.http.path} took ${ms}ms`, {
-				...route,
-				duration_ms: ms,
-			}, trace)
+			pushLog(
+				sink,
+				resource,
+				endMicros,
+				"WARN",
+				`slow request ${call.http.method} ${call.http.path} took ${ms}ms`,
+				{
+					...route,
+					duration_ms: ms,
+				},
+				trace,
+			)
 		else if (rng.chance(0.55))
-			pushLog(sink, resource, endMicros, "INFO", `${call.http.method} ${call.http.path} ${status} ${ms}ms`, {
-				...route,
-				"http.response.status_code": status,
-				duration_ms: ms,
-			}, trace)
+			pushLog(
+				sink,
+				resource,
+				endMicros,
+				"INFO",
+				`${call.http.method} ${call.http.path} ${status} ${ms}ms`,
+				{
+					...route,
+					"http.response.status_code": status,
+					duration_ms: ms,
+				},
+				trace,
+			)
 	}
 	return {
 		endMicros,
 		failure: propagated,
-		failedService: call.kind === "Server" && propagated !== undefined ? call.service : childFailure?.failedService,
+		failedService:
+			call.kind === "Server" && propagated !== undefined ? call.service : childFailure?.failedService,
 	}
 }
 
@@ -569,7 +626,8 @@ export const acmeShopTelemetry = (options: AcmeShopOptions): TelemetryRows => {
 	const resourceAt = (name: string, micros: number): Resource => {
 		const service = byName.get(name) ?? STOREFRONT
 		const deployed =
-			service.deploy !== undefined && micros >= nowMicros - service.deploy.minutesBeforeNow * MINUTE_MICROS
+			service.deploy !== undefined &&
+			micros >= nowMicros - service.deploy.minutesBeforeNow * MINUTE_MICROS
 		return resourceFor(service, rng.int(0, PODS_PER_SERVICE - 1), deployed)
 	}
 	const sink: Sink = { orgId: options.orgId, rng, resourceAt, traces: [], logs: [], http: new Map() }
@@ -585,9 +643,14 @@ export const acmeShopTelemetry = (options: AcmeShopOptions): TelemetryRows => {
 				emit(sink, entry(ctx), rng.hex(32), "", minuteStart + rng.int(0, MINUTE_MICROS - 1))
 			})
 			if (ctx.incident)
-				pushLog(sink, resourceAt("payment-svc", minuteStart), minuteStart + 15_000_000, "WARN",
+				pushLog(
+					sink,
+					resourceAt("payment-svc", minuteStart),
+					minuteStart + 15_000_000,
+					"WARN",
 					`pool exhausted: 20/20 connections in use, ${rng.int(24, 48)} waiting`,
-					{ "db.client.connection.pool.name": "payments" })
+					{ "db.client.connection.pool.name": "payments" },
+				)
 		},
 	)
 	return {
@@ -622,10 +685,18 @@ const metricBase = (orgId: string, resource: Resource, name: string, unit: strin
 })
 
 /** Per pod every five minutes: CPU and memory gauges, the payments pool, orders created, request durations. */
-const metricRows = (options: AcmeShopOptions, rng: Prng, http: ReadonlyMap<string, HttpBucket>, incidentStart: number) => {
+const metricRows = (
+	options: AcmeShopOptions,
+	rng: Prng,
+	http: ReadonlyMap<string, HttpBucket>,
+	incidentStart: number,
+) => {
 	const nowMicros = options.now.getTime() * 1000
 	const slots = (options.hours * 60) / 5
-	const times = Array.from({ length: slots }, (_, index) => nowMicros - (slots - 1 - index) * FIVE_MINUTES_MICROS)
+	const times = Array.from(
+		{ length: slots },
+		(_, index) => nowMicros - (slots - 1 - index) * FIVE_MINUTES_MICROS,
+	)
 	const pods = ACME_SERVICES.flatMap((service) =>
 		Array.from({ length: PODS_PER_SERVICE }, (_, pod) => ({ service, pod })),
 	)
@@ -635,7 +706,12 @@ const metricRows = (options: AcmeShopOptions, rng: Prng, http: ReadonlyMap<strin
 		pods.flatMap(({ service, pod }) => {
 			const resource = resourceFor(service, pod, deployedAt(service, micros))
 			const load = rng.next()
-			const point = (name: string, unit: string, value: number, attributes: Record<string, string> = {}) => ({
+			const point = (
+				name: string,
+				unit: string,
+				value: number,
+				attributes: Record<string, string> = {},
+			) => ({
 				...metricBase(options.orgId, resource, name, unit, micros),
 				Attributes: attributes,
 				Value: value,
@@ -644,21 +720,36 @@ const metricRows = (options: AcmeShopOptions, rng: Prng, http: ReadonlyMap<strin
 			const pool =
 				service.name === "payment-svc"
 					? [
-							point("db.client.connection.count", "{connection}", micros >= incidentStart ? 20 : rng.int(2, 8), {
-								"db.client.connection.pool.name": "payments",
-								"db.client.connection.state": "used",
-							}),
+							point(
+								"db.client.connection.count",
+								"{connection}",
+								micros >= incidentStart ? 20 : rng.int(2, 8),
+								{
+									"db.client.connection.pool.name": "payments",
+									"db.client.connection.state": "used",
+								},
+							),
 						]
 					: []
 			return [
 				point("process.cpu.utilization", "1", Math.min(0.95, 0.04 + load * 0.3)),
-				point("process.memory.usage", "By", (MEMORY_BASE_MB[service.language] + load * 40) * 1024 * 1024),
+				point(
+					"process.memory.usage",
+					"By",
+					(MEMORY_BASE_MB[service.language] + load * 40) * 1024 * 1024,
+				),
 				...pool,
 			]
 		}),
 	)
 	const sum = times.map((micros) => ({
-		...metricBase(options.orgId, resourceFor(CHECKOUT, 0, false), "shop.orders.created", "{order}", micros),
+		...metricBase(
+			options.orgId,
+			resourceFor(CHECKOUT, 0, false),
+			"shop.orders.created",
+			"{order}",
+			micros,
+		),
 		Attributes: {},
 		Value: rng.int(4, 30),
 		Flags: 0,
@@ -670,8 +761,18 @@ const metricRows = (options: AcmeShopOptions, rng: Prng, http: ReadonlyMap<strin
 		const spec = ACME_SERVICES.find((candidate) => candidate.name === service) ?? STOREFRONT
 		const micros = Number(bucket) + FIVE_MINUTES_MICROS
 		return {
-			...metricBase(options.orgId, resourceFor(spec, 0, deployedAt(spec, micros)), "http.server.request.duration", "s", micros),
-			Attributes: { "http.request.method": method, "http.route": route, "http.response.status_code": status },
+			...metricBase(
+				options.orgId,
+				resourceFor(spec, 0, deployedAt(spec, micros)),
+				"http.server.request.duration",
+				"s",
+				micros,
+			),
+			Attributes: {
+				"http.request.method": method,
+				"http.route": route,
+				"http.response.status_code": status,
+			},
 			Count: entry.count,
 			Sum: entry.sum,
 			BucketCounts: entry.buckets,
@@ -682,7 +783,11 @@ const metricRows = (options: AcmeShopOptions, rng: Prng, http: ReadonlyMap<strin
 			AggregationTemporality: 1,
 		}
 	})
-	return { metrics_gauge: [...gauge, ...hostGauges(options, times)], metrics_sum: sum, metrics_histogram: histogram }
+	return {
+		metrics_gauge: [...gauge, ...hostGauges(options, times)],
+		metrics_sum: sum,
+		metrics_histogram: histogram,
+	}
 }
 
 /**
@@ -694,11 +799,23 @@ const hostGauges = (options: AcmeShopOptions, times: ReadonlyArray<number>) => {
 	return times.flatMap((micros) =>
 		NODES.flatMap((node, index) => {
 			const busy = 0.2 + index * 0.12 + rng.next() * 0.1
-			const point = (name: string, unit: string, value: number, attributes: Record<string, string>) => ({
+			const point = (
+				name: string,
+				unit: string,
+				value: number,
+				attributes: Record<string, string>,
+			) => ({
 				OrgId: options.orgId,
-				ResourceAttributes: { "host.name": node, "os.type": "linux", "host.arch": "amd64", "cloud.provider": "aws", "cloud.region": "us-east-1" },
+				ResourceAttributes: {
+					"host.name": node,
+					"os.type": "linux",
+					"host.arch": "amd64",
+					"cloud.provider": "aws",
+					"cloud.region": "us-east-1",
+				},
 				ResourceSchemaUrl: "",
-				ScopeName: "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/hostmetricsreceiver",
+				ScopeName:
+					"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/hostmetricsreceiver",
 				ScopeVersion: "0.120.0",
 				ScopeAttributes: {},
 				ScopeSchemaUrl: "",
@@ -719,8 +836,15 @@ const hostGauges = (options: AcmeShopOptions, times: ReadonlyArray<number>) => {
 			})
 			return [
 				point("system.cpu.utilization", "1", 1 - busy, { state: "idle", cpu: "cpu0" }),
-				point("system.memory.utilization", "1", 0.45 + index * 0.08 + rng.next() * 0.05, { state: "used" }),
-				point("system.filesystem.utilization", "1", 0.31 + index * 0.11, { state: "used", type: "ext4", device: "/dev/nvme0n1p1", mountpoint: "/" }),
+				point("system.memory.utilization", "1", 0.45 + index * 0.08 + rng.next() * 0.05, {
+					state: "used",
+				}),
+				point("system.filesystem.utilization", "1", 0.31 + index * 0.11, {
+					state: "used",
+					type: "ext4",
+					device: "/dev/nvme0n1p1",
+					mountpoint: "/",
+				}),
 				point("system.cpu.load_average.15m", "{thread}", 0.6 + index * 0.5 + rng.next() * 0.2, {}),
 			]
 		}),

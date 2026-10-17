@@ -1,6 +1,10 @@
 import type { DeclutterResult, DeclutterState } from "@maple/ui/components/service-map/service-map-declutter"
 import { applyDeclutter } from "@maple/ui/components/service-map/service-map-declutter"
-import type { BuildFlowElementsInput, ServiceEdgeData, ServiceNodeData } from "@maple/ui/components/service-map/service-map-utils"
+import type {
+	BuildFlowElementsInput,
+	ServiceEdgeData,
+	ServiceNodeData,
+} from "@maple/ui/components/service-map/service-map-utils"
 import {
 	buildFlowElements,
 	DB_NODE_PREFIX,
@@ -28,7 +32,9 @@ export const SourceGraphSchema = Schema.instanceOf(SourceGraph)
 
 export const buildSourceGraph = (input: BuildFlowElementsInput): SourceGraph => {
 	const { nodes, edges } = buildFlowElements(input)
-	const services = Array.from(new Set(nodes.filter((n) => !n.id.startsWith(DB_NODE_PREFIX)).map((n) => n.id))).toSorted()
+	const services = Array.from(
+		new Set(nodes.filter((n) => !n.id.startsWith(DB_NODE_PREFIX)).map((n) => n.id)),
+	).toSorted()
 	return new SourceGraph(nodes, edges, services)
 }
 

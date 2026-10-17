@@ -87,11 +87,24 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 				}
 			: null
 		const memberships = organization
-			? [{ id: "orgmem_parity", organization, role: id.role, permissions: [], publicMetadata: {}, createdAt }]
+			? [
+					{
+						id: "orgmem_parity",
+						organization,
+						role: id.role,
+						permissions: [],
+						publicMetadata: {},
+						createdAt,
+					},
+				]
 			: []
 		// `useOrganizationList({ userMemberships })` pages through `user.getOrganizationMemberships`.
 		const membershipPage = async () => ({ data: memberships, total_count: memberships.length })
-		const primaryEmail = { id: "idn_parity_primary", emailAddress: id.email, verification: { status: "verified" } }
+		const primaryEmail = {
+			id: "idn_parity_primary",
+			emailAddress: id.email,
+			verification: { status: "verified" },
+		}
 		const user = {
 			id: id.clerkUserId,
 			firstName: id.firstName,

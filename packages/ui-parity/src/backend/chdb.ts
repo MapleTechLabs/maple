@@ -8,10 +8,13 @@ import { existsSync, mkdtempSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 
-export class ParityChdbError extends Schema.TaggedError<ParityChdbError>()("@maple/ui-parity/ParityChdbError", {
-	message: Schema.String,
-	sql: Schema.optionalKey(Schema.String),
-}) {}
+export class ParityChdbError extends Schema.TaggedError<ParityChdbError>()(
+	"@maple/ui-parity/ParityChdbError",
+	{
+		message: Schema.String,
+		sql: Schema.optionalKey(Schema.String),
+	},
+) {}
 
 const libchdbPath = (): string | undefined =>
 	[
@@ -52,12 +55,14 @@ const runWith =
 	(sql: string, format = "CSV"): Effect.Effect<string, ParityChdbError> =>
 		Effect.suspend(() => {
 			const result = symbols.chdb_query(conn, ptr(cstr(sql)), ptr(cstr(format)))
-			if (result === null) return Effect.fail(new ParityChdbError({ message: "chdb_query returned NULL", sql }))
+			if (result === null)
+				return Effect.fail(new ParityChdbError({ message: "chdb_query returned NULL", sql }))
 			const errorPtr = symbols.chdb_result_error(result)
 			const failure = errorPtr === null ? "" : new CString(errorPtr).toString()
 			const length = Number(symbols.chdb_result_length(result))
 			const buffer = failure.length > 0 || length === 0 ? null : symbols.chdb_result_buffer(result)
-			const text = buffer === null ? "" : decoder.decode(new Uint8Array(toArrayBuffer(buffer, 0, length)))
+			const text =
+				buffer === null ? "" : decoder.decode(new Uint8Array(toArrayBuffer(buffer, 0, length)))
 			symbols.chdb_destroy_query_result(result)
 			return failure.length > 0
 				? Effect.fail(new ParityChdbError({ message: failure, sql }))
@@ -71,7 +76,11 @@ const decodeRow = Schema.decodeUnknownEffect(Row)
  * `apps/cli`'s session settings (UTC instants, room for large inline INSERTs), plus one thread:
  * parallel UNION ALL branches otherwise return rows in a different order run to run.
  */
-const SESSION_SETTINGS = ["SET session_timezone = 'UTC'", "SET max_query_size = 67108864", "SET max_threads = 1"]
+const SESSION_SETTINGS = [
+	"SET session_timezone = 'UTC'",
+	"SET max_query_size = 67108864",
+	"SET max_threads = 1",
+]
 
 /**
  * Open the process's chDB connection in a fresh temp dir. The server timezone is pinned to UTC
@@ -104,7 +113,9 @@ const open = Effect.gen(function* () {
 	// A query on a closed connection is a use-after-free in libchdb, so it fails instead.
 	const run = (sql: string, format?: string) =>
 		Effect.flatMap(Ref.get(isOpen), (stillOpen) =>
-			stillOpen ? runOpen(sql, format) : Effect.fail(new ParityChdbError({ message: "chDB is closed", sql })),
+			stillOpen
+				? runOpen(sql, format)
+				: Effect.fail(new ParityChdbError({ message: "chDB is closed", sql })),
 		)
 	yield* Effect.forEach(SESSION_SETTINGS, (sql) => run(sql), { discard: true })
 	const rows = (sql: string) =>

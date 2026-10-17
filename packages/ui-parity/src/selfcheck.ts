@@ -15,7 +15,14 @@ export const selfcheck = async (input: {
 }) => {
 	const browser = await chromium.launch(BROWSER_LAUNCH_OPTIONS)
 	const capture = (label: string) =>
-		captureTarget({ build: input.build, label, run: input.run, variants: input.variants, backend: input.backend, browser })
+		captureTarget({
+			build: input.build,
+			label,
+			run: input.run,
+			variants: input.variants,
+			backend: input.backend,
+			browser,
+		})
 	const first = await capture(`${input.build}-1`)
 	const second = await capture(`${input.build}-2`)
 	await browser.close()
@@ -39,7 +46,9 @@ export const selfcheck = async (input: {
 			: `\nAll ${summary.variants.length} variants deterministic.`,
 	)
 	if (behaviorFlaky.length)
-		console.log(`call logs differ between runs: ${behaviorFlaky.map((entry) => entry.variant.id).join(", ")}`)
+		console.log(
+			`call logs differ between runs: ${behaviorFlaky.map((entry) => entry.variant.id).join(", ")}`,
+		)
 	for (const result of unhealthy)
 		console.log(
 			`unhealthy ${result.variantId}: ${[
@@ -50,5 +59,8 @@ export const selfcheck = async (input: {
 				.filter(Boolean)
 				.join(" | ")}`,
 		)
-	return { deterministic: flaky.length === 0 && behaviorFlaky.length === 0, healthy: unhealthy.length === 0 }
+	return {
+		deterministic: flaky.length === 0 && behaviorFlaky.length === 0,
+		healthy: unhealthy.length === 0,
+	}
 }

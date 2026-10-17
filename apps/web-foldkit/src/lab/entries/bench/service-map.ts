@@ -102,15 +102,15 @@ const PushBenchGroups = Command.define("PushBenchGroups", {
 			const search = new URLSearchParams(location.search)
 			search.set("groups", String(groups))
 			return `${location.pathname}?${search}`
-		}).pipe(
-			Effect.flatMap(pushUrl),
-			Effect.as(Message.CompletedPushBenchUrl()),
-		),
+		}).pipe(Effect.flatMap(pushUrl), Effect.as(Message.CompletedPushBenchUrl())),
 })
 
 const init = (params: BenchParams): Update.Return<Model, Message> => {
 	const map = initMap(params)
-	return { model: { params, map: map.model, toasts: initLabToasts() }, commands: Command.mapMessages(map.commands, toMap) }
+	return {
+		model: { params, map: map.model, toasts: initLabToasts() },
+		commands: Command.mapMessages(map.commands, toMap),
+	}
 }
 
 const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMessage({ message }))
@@ -119,7 +119,10 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 	Message.match(message, {
 		GotMapMessage: ({ message: mapMessage }) => {
 			const next = ServiceMap.update(model.map, mapMessage)
-			return { model: { ...model, map: next.model }, commands: Command.mapMessages(next.commands, toMap) }
+			return {
+				model: { ...model, map: next.model },
+				commands: Command.mapMessages(next.commands, toMap),
+			}
 		},
 		// The legacy route keys the bench on its params, so a new grouping starts a fresh map.
 		ClickedNamespaceGroups: ({ groups }) => {
@@ -138,7 +141,9 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 				toMap(
 					HarnessMessage.match(harness, {
 						RequestedCamera: ({ viewport }) =>
-							ServiceMap.Message.GotCanvasMessage({ message: Canvas.Message.ChangedViewport({ viewport }) }),
+							ServiceMap.Message.GotCanvasMessage({
+								message: Canvas.Message.ChangedViewport({ viewport }),
+							}),
 						RequestedFit: () => ServiceMap.Message.ClickedResort(),
 					}),
 				),
@@ -160,7 +165,8 @@ const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 						Effect.acquireRelease(
 							Effect.sync(() => {
 								const query = reducedMotionQuery()
-								const listener = (event: MediaQueryListEvent) => Queue.offerUnsafe(queue, event.matches)
+								const listener = (event: MediaQueryListEvent) =>
+									Queue.offerUnsafe(queue, event.matches)
 								query.addEventListener("change", listener)
 								return () => query.removeEventListener("change", listener)
 							}),
@@ -192,7 +198,9 @@ const groupSwitch = (h: HtmlBuilder<Message>, groups: number): Html =>
 						h.Class(
 							cn(
 								"rounded px-1.5 py-0.5 font-mono text-2xs transition-colors",
-								option === groups ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+								option === groups
+									? "bg-primary text-primary-foreground"
+									: "text-muted-foreground hover:text-foreground",
 							),
 						),
 					],
@@ -214,7 +222,11 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 				[
 					h.Class("h-screen w-screen bg-background"),
 					h.DataAttribute("testid", "service-map-bench"),
-					h.OnMount(Mount.mapMessage(AttachBenchHarness(), (message) => Message.GotHarnessMessage({ message }))),
+					h.OnMount(
+						Mount.mapMessage(AttachBenchHarness(), (message) =>
+							Message.GotHarnessMessage({ message }),
+						),
+					),
 				],
 				[serviceMapView(h, model.map, toMap)],
 			),

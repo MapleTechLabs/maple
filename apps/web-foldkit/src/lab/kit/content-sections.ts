@@ -39,7 +39,10 @@ const pageLayoutSection = <M>(h: HtmlBuilder<M>): Html =>
 				pageLayoutRoot(h, [
 					pageHeader(
 						h,
-						{ title: "Services", description: "Every service that sent spans in the selected window." },
+						{
+							title: "Services",
+							description: "Every service that sent spans in the selected window.",
+						},
 						[pageHeaderActions(h, [button(h, { variant: "outline", size: "sm" }, ["Export"])])],
 					),
 				]),

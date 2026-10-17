@@ -29,7 +29,10 @@ const traversalDuration = (callsPerSecond: number): number => {
 }
 
 /** Global particle budget by call rate, largest-remainder rounding. */
-export const allocateParticleBudget = (specs: ReadonlyArray<EdgeParticleSpec>, maxTotal = MAX_TOTAL_PARTICLES) => {
+export const allocateParticleBudget = (
+	specs: ReadonlyArray<EdgeParticleSpec>,
+	maxTotal = MAX_TOTAL_PARTICLES,
+) => {
 	const desired = specs.map((spec) => [spec.id, desiredParticles(spec.callsPerSecond)] as const)
 	const totalDesired = desired.reduce((sum, [, d]) => sum + d, 0)
 	const result = new Map<string, number>()

@@ -24,15 +24,15 @@ not bundled (react-db is `sideEffects: false`), but see "Outside scope".
 
 ## Design (`apps/web-foldkit/src/data/`)
 
-| File | Role |
-| --- | --- |
-| `execute-batcher.ts` | Legacy `makeExecuteBatcher` as an Effect: `Ref` state, timer fibers forked in the resource scope, same 15 ms window (`EXECUTE_BATCH_WINDOW_MS` imported), cap 4, early flush, overflow into a fresh window, positional per-item outcomes |
-| `warehouse.ts` | `WarehouseExecutor` resource over `MapleInternalApiClient.queryEngine.executeBatch`; one instance per runtime, so Commands on separate fibers share batches like atoms do |
-| `request-key.ts`, `time-range.ts` | `encodeOrgScopedKey` and `resolveEffectiveTimeRange` + the 15 s key snap; the snapped window is what is sent (legacy decodes its key back into the request) |
-| `keyed.ts` | `Keyed<A, E>` = `{ key, data: AsyncData }`; `request(slot, key, "Load" \| "Refresh")` and `accept(slot, key, result)` |
-| `live-query.ts` | Hazel's `liveQueryStream` over TanStack DB `createLiveQueryCollection` |
-| `collections/` | `OrgCollections` resource: one set per org (`<shape>:<org>` ids, `org=` param, bearer `fetchClient`), superseded set cleaned up when its live queries drain |
-| `warehouse-error.ts` | `WarehouseQueryError` (tagged, in the Effect channel) and `WarehouseFailure` (plain data for Messages) |
+| File                              | Role                                                                                                                                                                                                                                     |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `execute-batcher.ts`              | Legacy `makeExecuteBatcher` as an Effect: `Ref` state, timer fibers forked in the resource scope, same 15 ms window (`EXECUTE_BATCH_WINDOW_MS` imported), cap 4, early flush, overflow into a fresh window, positional per-item outcomes |
+| `warehouse.ts`                    | `WarehouseExecutor` resource over `MapleInternalApiClient.queryEngine.executeBatch`; one instance per runtime, so Commands on separate fibers share batches like atoms do                                                                |
+| `request-key.ts`, `time-range.ts` | `encodeOrgScopedKey` and `resolveEffectiveTimeRange` + the 15 s key snap; the snapped window is what is sent (legacy decodes its key back into the request)                                                                              |
+| `keyed.ts`                        | `Keyed<A, E>` = `{ key, data: AsyncData }`; `request(slot, key, "Load" \| "Refresh")` and `accept(slot, key, result)`                                                                                                                    |
+| `live-query.ts`                   | Hazel's `liveQueryStream` over TanStack DB `createLiveQueryCollection`                                                                                                                                                                   |
+| `collections/`                    | `OrgCollections` resource: one set per org (`<shape>:<org>` ids, `org=` param, bearer `fetchClient`), superseded set cleaned up when its live queries drain                                                                              |
+| `warehouse-error.ts`              | `WarehouseQueryError` (tagged, in the Effect channel) and `WarehouseFailure` (plain data for Messages)                                                                                                                                   |
 
 Rules: a fetch Command carries its request key in its result Message; `update` drops a result
 whose key is not the slot's current key (`Keyed.accept`). A liveQuery Message carries the org it
@@ -41,15 +41,15 @@ its batch and the warehouse runs it anyway.
 
 ## Reuse by import
 
-| Legacy | Importable? |
-| --- | --- |
-| `api/warehouse/execute-batcher.ts` | Yes (only `@maple/query-engine`); constants imported, logic re-expressed in Effect |
+| Legacy                                                                                                 | Importable?                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api/warehouse/execute-batcher.ts`                                                                     | Yes (only `@maple/query-engine`); constants imported, logic re-expressed in Effect                                                                                                    |
 | `api/warehouse/effect-utils.ts` and the 29 query modules on it or on the atom clients (30 of 33 files) | **No**: `effect-utils` imports `lib/registry` (atom registry, React, OTel layer, runs `mapleRuntime` at load) and `internal-atom-client` (`AtomHttpApi` from `effect-atom.ts`, React) |
-| `timeseries-utils.ts`, `service-external-edges.ts` | React-free, but `@/` imports break foldkit's typecheck (TS `paths` are global: `@/` means foldkit's `src`) |
-| `lib/cache-key.ts`, `lib/time-utils.ts` | No: `time-utils` imports timezone atoms. Logic copied into `request-key.ts`, `time-range.ts` |
-| `lib/collections/alerts.ts` row schemas | No: same module as factories that use `shape-fetch.ts` (registry). `AlertRuleRowSchema` copied, diffed equal |
-| `lib/collections/org-collections.ts` | No (`useSyncExternalStore`, module state) |
-| `@maple/effect-db/electric`, `electric-sync-url.ts` | Yes |
+| `timeseries-utils.ts`, `service-external-edges.ts`                                                     | React-free, but `@/` imports break foldkit's typecheck (TS `paths` are global: `@/` means foldkit's `src`)                                                                            |
+| `lib/cache-key.ts`, `lib/time-utils.ts`                                                                | No: `time-utils` imports timezone atoms. Logic copied into `request-key.ts`, `time-range.ts`                                                                                          |
+| `lib/collections/alerts.ts` row schemas                                                                | No: same module as factories that use `shape-fetch.ts` (registry). `AlertRuleRowSchema` copied, diffed equal                                                                          |
+| `lib/collections/org-collections.ts`                                                                   | No (`useSyncExternalStore`, module state)                                                                                                                                             |
+| `@maple/effect-db/electric`, `electric-sync-url.ts`                                                    | Yes                                                                                                                                                                                   |
 
 Phase 1 extraction (outside this spike's scope, see "Outside scope"): split `effect-utils.ts`
 into a framework-free core whose query functions require two services, `WarehouseExecutor`
@@ -85,27 +85,27 @@ Subscription gated on the Model that dispatches the same Message.
 Census of `apps/web/src` (non-test): `useAtomValue` 281, `Result.builder` 311, `useAtomRefresh`
 108, `useAtomSet` 105, `useRefreshableAtomValue` 103.
 
-| Legacy pattern (count) | Foldkit |
-| --- | --- |
-| Warehouse family `makeQueryAtomFamily` (126 families) read via `useAtomValue` | `Keyed` slot + fetch Command over `WarehouseExecutor` (the probe's `FetchServicesFacets`) |
-| HTTP query `retainedQuery`/`V2`/`Internal` (134), bare `.query` (7) | `Keyed` slot keyed by `requestKey(org, "group.endpoint", request)` + Command on the S1 client resource |
-| Mutation `.mutation` (115) + `useAtomSet` | Message, Command, `Succeeded*`/`Failed*`; revalidate slots instead of `reactivityKeys` |
-| Writable UI state `Atom.make(value)` (29), `useAtom` (24) | Model field + Message |
-| Persisted `Atom.kvs` (14) | Model field; Flags read storage before init; a `Save*` Command writes |
-| Non-query `Atom.family` (18, per-org prefs) | Field for the live key, or `Schema.HashMap` keyed by id |
-| Derived `Atom.make((get) => ...)` (5), `Atom.map` (1), `Result.all` | Plain function of the Model in `view`; `AsyncData.all` |
-| Route preload `warmAtoms` (14 in 8 routes); `routeAtom` (0) | Route-entry handler returns the fetch Commands (`"Load"`) |
-| `useLiveQuery` (8 in 5 files) | Subscription, deps `{ orgId, ...inputs }`, rows Message carries `orgId` |
-| Org / time range / global namespace read in key builders | Root Model fields passed to the page's `load(model, scope)`; part of every key and request (pin the namespace with the `applyGlobalNamespace` rule before keying) |
-| `Result.builder(...)` (311) | `AsyncData.match` / `matchData`; `Refreshing` is legacy's `waiting` |
-| `ScopedAtom` (4 files) | Submodel state |
+| Legacy pattern (count)                                                        | Foldkit                                                                                                                                                           |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Warehouse family `makeQueryAtomFamily` (126 families) read via `useAtomValue` | `Keyed` slot + fetch Command over `WarehouseExecutor` (the probe's `FetchServicesFacets`)                                                                         |
+| HTTP query `retainedQuery`/`V2`/`Internal` (134), bare `.query` (7)           | `Keyed` slot keyed by `requestKey(org, "group.endpoint", request)` + Command on the S1 client resource                                                            |
+| Mutation `.mutation` (115) + `useAtomSet`                                     | Message, Command, `Succeeded*`/`Failed*`; revalidate slots instead of `reactivityKeys`                                                                            |
+| Writable UI state `Atom.make(value)` (29), `useAtom` (24)                     | Model field + Message                                                                                                                                             |
+| Persisted `Atom.kvs` (14)                                                     | Model field; Flags read storage before init; a `Save*` Command writes                                                                                             |
+| Non-query `Atom.family` (18, per-org prefs)                                   | Field for the live key, or `Schema.HashMap` keyed by id                                                                                                           |
+| Derived `Atom.make((get) => ...)` (5), `Atom.map` (1), `Result.all`           | Plain function of the Model in `view`; `AsyncData.all`                                                                                                            |
+| Route preload `warmAtoms` (14 in 8 routes); `routeAtom` (0)                   | Route-entry handler returns the fetch Commands (`"Load"`)                                                                                                         |
+| `useLiveQuery` (8 in 5 files)                                                 | Subscription, deps `{ orgId, ...inputs }`, rows Message carries `orgId`                                                                                           |
+| Org / time range / global namespace read in key builders                      | Root Model fields passed to the page's `load(model, scope)`; part of every key and request (pin the namespace with the `applyGlobalNamespace` rule before keying) |
+| `Result.builder(...)` (311)                                                   | `AsyncData.match` / `matchData`; `Refreshing` is legacy's `waiting`                                                                                               |
+| `ScopedAtom` (4 files)                                                        | Submodel state                                                                                                                                                    |
 
 ```ts
 // Query: `useAtomValue(getServicesFacetsResultAtom({ data: window }))`
 const key = requestKey(orgId, "getServicesFacets", { data: window })
 Option.match(Keyed.request(model.facets, key, mode), {
-  onNone: () => ({ model }),
-  onSome: (facets) => ({ model: { ...model, facets }, commands: [FetchServicesFacets({ key, window })] }),
+	onNone: () => ({ model }),
+	onSome: (facets) => ({ model: { ...model, facets }, commands: [FetchServicesFacets({ key, window })] }),
 })
 // Result: CompletedFetchServicesFacets({ key, result }) => Keyed.accept(model.facets, key, result)
 
@@ -113,20 +113,23 @@ Option.match(Keyed.request(model.facets, key, mode), {
 // handler runs the branch above with mode "Refresh" for each slot the keys used to invalidate.
 
 // useLiveQuery((q) => q.from({ rule: alertRules })) as a Subscription entry:
-entry({ orgId: Schema.NullOr(OrgId) }, {
-  modelToDependencies: (model) => ({ orgId: model.orgId }),
-  dependenciesToStream: ({ orgId }) => (orgId === null ? Stream.empty : alertRuleCounts(orgId)),
-})
+entry(
+	{ orgId: Schema.NullOr(OrgId) },
+	{
+		modelToDependencies: (model) => ({ orgId: model.orgId }),
+		dependenciesToStream: ({ orgId }) => (orgId === null ? Stream.empty : alertRuleCounts(orgId)),
+	},
+)
 ```
 
 ## Gotchas
 
-| Gotcha | Consequence |
-| --- | --- |
-| Legacy decodes the snapped atom key back into the request | Snap the window (`time-range.ts`) before keying and sending, or payloads differ |
-| Scene refuses any interaction or `Subscription.emit` while a Command is unresolved | Race tests (late answer after a newer key) go through `update` directly |
-| Foldkit interrupt never cancels on re-dispatch; it needs an explicit `Interrupt` Command | Not worth it for warehouse reads; the receipt-time key check is the guard |
-| `createEffectCollection` requires a `ManagedRuntime` | `OrgCollections` owns a scoped `ManagedRuntime.make(Layer.empty)` |
+| Gotcha                                                                                        | Consequence                                                                                                   |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Legacy decodes the snapped atom key back into the request                                     | Snap the window (`time-range.ts`) before keying and sending, or payloads differ                               |
+| Scene refuses any interaction or `Subscription.emit` while a Command is unresolved            | Race tests (late answer after a newer key) go through `update` directly                                       |
+| Foldkit interrupt never cancels on re-dispatch; it needs an explicit `Interrupt` Command      | Not worth it for warehouse reads; the receipt-time key check is the guard                                     |
+| `createEffectCollection` requires a `ManagedRuntime`                                          | `OrgCollections` owns a scoped `ManagedRuntime.make(Layer.empty)`                                             |
 | Direct query-engine endpoints (`serviceOverview`, `serviceHealthBaseline`) bypass the batcher | Port them as plain client Commands; the fixture does not serve them yet (legacy `/services` shows 2 unmocked) |
 
 ## Outside scope (needed)

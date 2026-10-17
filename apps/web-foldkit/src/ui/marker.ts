@@ -25,7 +25,11 @@ export const marker = <M>(
 
 export const markerIcon = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.span(
-		[h.DataAttribute("slot", "marker-icon"), h.AriaHidden(true), h.Class(cn(markerIconStyles, className))],
+		[
+			h.DataAttribute("slot", "marker-icon"),
+			h.AriaHidden(true),
+			h.Class(cn(markerIconStyles, className)),
+		],
 		children,
 	)
 

@@ -20,14 +20,27 @@ export const accountLayout = <Message>(h: HtmlBuilder<Message>, children: Readon
 					]),
 					h.a(
 						[h.Class("account-wordmark"), h.Href(WEBSITE_URL), h.AriaLabel("Maple home")],
-						[icon(h, "MapleMark", { size: 30, attributes: [h.AriaHidden(true)] }), h.span([], ["Maple"])],
+						[
+							icon(h, "MapleMark", { size: 30, attributes: [h.AriaHidden(true)] }),
+							h.span([], ["Maple"]),
+						],
 					),
 					h.div(
 						[h.Class("account-art-copy")],
 						[
 							h.p([h.Class("account-eyebrow")], ["Open-source observability"]),
-							h.p([h.Class("account-art-headline")], ["Understand", h.br([]), "what’s happening."]),
-							h.p([], ["Traces, logs, and metrics.", h.br([]), "One place to see the whole picture."]),
+							h.p(
+								[h.Class("account-art-headline")],
+								["Understand", h.br([]), "what’s happening."],
+							),
+							h.p(
+								[],
+								[
+									"Traces, logs, and metrics.",
+									h.br([]),
+									"One place to see the whole picture.",
+								],
+							),
 						],
 					),
 				],
@@ -39,8 +52,15 @@ export const accountLayout = <Message>(h: HtmlBuilder<Message>, children: Readon
 						[h.Class("account-header")],
 						[
 							h.a(
-								[h.Class("account-mobile-wordmark"), h.Href(WEBSITE_URL), h.AriaLabel("Maple home")],
-								[icon(h, "MapleMark", { size: 26, attributes: [h.AriaHidden(true)] }), h.span([], ["Maple"])],
+								[
+									h.Class("account-mobile-wordmark"),
+									h.Href(WEBSITE_URL),
+									h.AriaLabel("Maple home"),
+								],
+								[
+									icon(h, "MapleMark", { size: 26, attributes: [h.AriaHidden(true)] }),
+									h.span([], ["Maple"]),
+								],
 							),
 							h.a([h.Class("account-back"), h.Href(WEBSITE_URL)], ["Back to website"]),
 						],

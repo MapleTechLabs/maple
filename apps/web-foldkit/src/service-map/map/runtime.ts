@@ -12,8 +12,10 @@ export interface RuntimeGlyph {
 
 export function resolveRuntimeGlyph(rt: string): RuntimeGlyph | null {
 	const key = rt.trim().toLowerCase()
-	if (key.startsWith("openjdk") || key === "jvm" || key === "java") return { icon: "OpenjdkMonoIcon", short: "jvm", full: "JVM" }
-	if (key.startsWith(".net") || key === "dotnet" || key === "coreclr") return { icon: null, short: "dotnet", full: ".NET" }
+	if (key.startsWith("openjdk") || key === "jvm" || key === "java")
+		return { icon: "OpenjdkMonoIcon", short: "jvm", full: "JVM" }
+	if (key.startsWith(".net") || key === "dotnet" || key === "coreclr")
+		return { icon: null, short: "dotnet", full: ".NET" }
 	switch (key) {
 		case "nodejs":
 		case "node":
@@ -47,7 +49,10 @@ export function resolveRuntimeGlyph(rt: string): RuntimeGlyph | null {
 }
 
 /** The runtime the platform icon already implies is dropped rather than drawn twice. */
-export function formatRuntime(rt: string | undefined, platform: ServicePlatform | undefined): RuntimeGlyph | null {
+export function formatRuntime(
+	rt: string | undefined,
+	platform: ServicePlatform | undefined,
+): RuntimeGlyph | null {
 	if (!rt) return null
 	if (platform === "cloudflare" && rt.toLowerCase() === "workerd") return null
 	return resolveRuntimeGlyph(rt) ?? { icon: null, short: rt, full: rt }

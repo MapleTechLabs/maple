@@ -36,7 +36,11 @@ export const agentSessionsArea: AreaModule = {
 		}),
 		// The facet sidebar's scrollbar fades in under the pointer, so the filter is applied from
 		// the URL; sorting is the in-page interaction.
-		scenario("list-agent-filter", "List, filtered to the researcher agent", "/agent-sessions?agents=%5B%22researcher%22%5D"),
+		scenario(
+			"list-agent-filter",
+			"List, filtered to the researcher agent",
+			"/agent-sessions?agents=%5B%22researcher%22%5D",
+		),
 		scenario("list-sort-cost", "List, sorted by cost", "/agent-sessions", {
 			steps: (page) => page.getByRole("table").getByRole("button", { name: /^Cost/ }).click(),
 		}),
@@ -56,6 +60,8 @@ export const agentSessionsArea: AreaModule = {
 			steps: (page) => page.getByRole("button", { name: "Failing only" }).click(),
 		}),
 		scenario("tool-detail", "Tool detail: Bash", "/agent-sessions/tools/Bash"),
-		scenario("tool-detail-empty", "Tool detail (empty org)", "/agent-sessions/tools/Bash", { dataset: EMPTY }),
+		scenario("tool-detail-empty", "Tool detail (empty org)", "/agent-sessions/tools/Bash", {
+			dataset: EMPTY,
+		}),
 	],
 }

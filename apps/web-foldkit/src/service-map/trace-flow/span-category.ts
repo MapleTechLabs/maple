@@ -9,7 +9,15 @@ import { type CloudPlatformInfo, getCloudPlatform } from "./cloud-platforms"
 // copied: packages/ui/src/lib/span-category.ts with `Icon` as an icon name (the original
 // imports React icon components). Phase 1 should split it like `service-map-db-style.ts`.
 
-export type SpanCategoryId = "server" | "http" | "db" | "cache" | "messaging" | "platform" | "function" | "internal"
+export type SpanCategoryId =
+	| "server"
+	| "http"
+	| "db"
+	| "cache"
+	| "messaging"
+	| "platform"
+	| "function"
+	| "internal"
 
 export interface SpanCategoryAccent {
 	readonly rail: string
@@ -47,7 +55,9 @@ export const SPAN_CATEGORIES: ReadonlyArray<SpanCategory> = [
 	{ id: "internal", label: "Internal", icon: "CodeIcon", accent: ACCENTS.internal },
 ]
 
-export type SpanCategoryInput = Pick<Span, "spanName" | "spanKind"> & { spanAttributes?: Record<string, string> }
+export type SpanCategoryInput = Pick<Span, "spanName" | "spanKind"> & {
+	spanAttributes?: Record<string, string>
+}
 
 export interface SpanDescription {
 	readonly category: SpanCategory
@@ -65,9 +75,16 @@ const categoryOf = (
 	className: string | null,
 ): SpanCategory => {
 	const spanKind = normalizeSpanKind(span.spanKind)
-	if (cacheInfo) return { id: "cache", label: cacheInfo.system ?? "Cache", icon: "StackPerspectiveIcon", accent: ACCENTS.cache }
+	if (cacheInfo)
+		return {
+			id: "cache",
+			label: cacheInfo.system ?? "Cache",
+			icon: "StackPerspectiveIcon",
+			accent: ACCENTS.cache,
+		}
 	if (platform) {
-		if (platform.id === "database") return { id: "db", label: platform.label, icon: "DatabaseIcon", accent: ACCENTS.db }
+		if (platform.id === "database")
+			return { id: "db", label: platform.label, icon: "DatabaseIcon", accent: ACCENTS.db }
 		return { id: "platform", label: platform.kind, icon: platform.icon, accent: ACCENTS.platform }
 	}
 	if (httpInfo) {
@@ -75,7 +92,8 @@ const categoryOf = (
 			? { id: "server", label: "Server", icon: "PulseIcon", accent: ACCENTS.server }
 			: { id: "http", label: "HTTP", icon: "GlobePointerIcon", accent: ACCENTS.http }
 	}
-	if (spanKind === "SERVER") return { id: "server", label: "Server", icon: "PulseIcon", accent: ACCENTS.server }
+	if (spanKind === "SERVER")
+		return { id: "server", label: "Server", icon: "PulseIcon", accent: ACCENTS.server }
 	if (spanKind === "PRODUCER" || spanKind === "CONSUMER") {
 		const isProducer = spanKind === "PRODUCER"
 		return {
@@ -85,8 +103,11 @@ const categoryOf = (
 			accent: ACCENTS.messaging,
 		}
 	}
-	if (className) return { id: "function", label: "Function", icon: "PuzzlePieceIcon", accent: ACCENTS.function }
-	const kindLabel = spanKind ? getSpanKindLabel(spanKind) : span.spanKind.replace(/^SPAN_KIND_/, "") || "Internal"
+	if (className)
+		return { id: "function", label: "Function", icon: "PuzzlePieceIcon", accent: ACCENTS.function }
+	const kindLabel = spanKind
+		? getSpanKindLabel(spanKind)
+		: span.spanKind.replace(/^SPAN_KIND_/, "") || "Internal"
 	return { id: "internal", label: kindLabel, icon: "CodeIcon", accent: ACCENTS.internal }
 }
 
@@ -97,5 +118,11 @@ export function describeSpan(span: SpanCategoryInput): SpanDescription {
 	const platform = getCloudPlatform(attrs)
 	const httpInfo = getHttpInfo(span)
 	const className = extractClassName(span.spanName)
-	return { category: categoryOf(span, cacheInfo, platform, httpInfo, className), httpInfo, cacheInfo, platform, className }
+	return {
+		category: categoryOf(span, cacheInfo, platform, httpInfo, className),
+		httpInfo,
+		cacheInfo,
+		platform,
+		className,
+	}
 }

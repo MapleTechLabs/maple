@@ -9,7 +9,9 @@ import { DATASET_HEADER } from "../contract.ts"
 export const spawnBackend = async () => {
 	const base = 20_000 + Math.floor(Math.random() * 20_000)
 	const main = fileURLToPath(new URL("./main.ts", import.meta.url))
-	const child: ChildProcess = spawn("bun", ["run", main], { env: { ...process.env, PARITY_PORT_BASE: String(base) } })
+	const child: ChildProcess = spawn("bun", ["run", main], {
+		env: { ...process.env, PARITY_PORT_BASE: String(base) },
+	})
 	await new Promise<void>((resolve, reject) => {
 		const output: Array<string> = []
 		child.stdout?.on("data", (chunk: Buffer) => {

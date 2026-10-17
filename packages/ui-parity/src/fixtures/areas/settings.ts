@@ -1,7 +1,10 @@
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Effect, Predicate } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
-import { ONBOARDING_CHECKLIST_STEP_IDS, ONBOARDING_OPTIONAL_STEP_IDS } from "@maple/domain/onboarding-checklist"
+import {
+	ONBOARDING_CHECKLIST_STEP_IDS,
+	ONBOARDING_OPTIONAL_STEP_IDS,
+} from "@maple/domain/onboarding-checklist"
 import type { FixtureArea } from "../areas.ts"
 import type { Dataset, EndpointHandler, EndpointRequest, SyncedRow } from "../dataset.ts"
 import { defaultDataset } from "../datasets/default.ts"
@@ -17,7 +20,8 @@ import { setupAuditEndpoint } from "./settings-setup-audit.ts"
  * Acme gets populated answers, every other org the empty ones.
  */
 
-const iso = (request: EndpointRequest, agoMs: number) => new Date(parseWarehouseDateTime(request.dataset.now) - agoMs).toISOString()
+const iso = (request: EndpointRequest, agoMs: number) =>
+	new Date(parseWarehouseDateTime(request.dataset.now) - agoMs).toISOString()
 const list = (data: ReadonlyArray<unknown>) => ({ object: "list", data, has_more: false, next_cursor: null })
 
 const DESTINATION_ID = fixtureUuid(1, 1)
@@ -29,7 +33,11 @@ interface AuditFields {
 	readonly actor?: "user" | "api_key" | "agent" | "system"
 	readonly source?: "dashboard" | "api" | "mcp" | "system"
 	readonly resource?: readonly [type: string, id: string | null]
-	readonly changes?: { readonly fields: ReadonlyArray<string>; readonly before: unknown; readonly after: unknown }
+	readonly changes?: {
+		readonly fields: ReadonlyArray<string>
+		readonly before: unknown
+		readonly after: unknown
+	}
 	readonly denied?: string
 }
 
@@ -43,8 +51,22 @@ const auditEntry = (request: EndpointRequest, index: number, fields: AuditFields
 		outcome: fields.denied === undefined ? "allowed" : "denied",
 		denial_reason: fields.denied ?? null,
 		actor_type: actor,
-		actor_id: actor === "user" ? acmeAdmin.userId : actor === "api_key" ? "key_ci_deploy" : actor === "agent" ? "actor_claude_code" : null,
-		actor_name: actor === "user" ? acmeAdmin.name : actor === "api_key" ? "CI deploy" : actor === "agent" ? "Claude Code" : null,
+		actor_id:
+			actor === "user"
+				? acmeAdmin.userId
+				: actor === "api_key"
+					? "key_ci_deploy"
+					: actor === "agent"
+						? "actor_claude_code"
+						: null,
+		actor_name:
+			actor === "user"
+				? acmeAdmin.name
+				: actor === "api_key"
+					? "CI deploy"
+					: actor === "agent"
+						? "Claude Code"
+						: null,
 		actor_avatar_url: null,
 		affected_user: null,
 		source: fields.source ?? (actor === "system" ? "system" : "dashboard"),
@@ -69,7 +91,11 @@ const auditEntries = (request: EndpointRequest) => [
 		resource: ["alert_rule", rule(2)],
 		changes: { fields: ["threshold"], before: { threshold: 1200 }, after: { threshold: 800 } },
 	}),
-	auditEntry(request, 8, { action: "dashboard.created", agoMs: 2 * HOUR, resource: ["dashboard", "dash_parity_2"] }),
+	auditEntry(request, 8, {
+		action: "dashboard.created",
+		agoMs: 2 * HOUR,
+		resource: ["dashboard", "dash_parity_2"],
+	}),
 	auditEntry(request, 7, {
 		action: "api_key.created",
 		agoMs: 5 * HOUR,
@@ -91,9 +117,22 @@ const auditEntries = (request: EndpointRequest) => [
 		resource: ["alert_rule", rule(4)],
 		changes: { fields: ["enabled"], before: { enabled: true }, after: { enabled: false } },
 	}),
-	auditEntry(request, 4, { action: "scrape_target.created", agoMs: 4 * DAY, resource: ["scrape_target", null] }),
-	auditEntry(request, 3, { action: "alert_destination.tested", agoMs: 5 * DAY, resource: ["alert_destination", null] }),
-	auditEntry(request, 2, { action: "integration.connected", agoMs: 9 * DAY, actor: "system", resource: ["integration", null] }),
+	auditEntry(request, 4, {
+		action: "scrape_target.created",
+		agoMs: 4 * DAY,
+		resource: ["scrape_target", null],
+	}),
+	auditEntry(request, 3, {
+		action: "alert_destination.tested",
+		agoMs: 5 * DAY,
+		resource: ["alert_destination", null],
+	}),
+	auditEntry(request, 2, {
+		action: "integration.connected",
+		agoMs: 9 * DAY,
+		actor: "system",
+		resource: ["integration", null],
+	}),
 ]
 
 const queryField = (query: unknown, key: string): string | undefined =>
@@ -108,14 +147,22 @@ const auditLog: EndpointHandler = (request) => {
 		list(
 			entries.filter(
 				(entry) =>
-					(outcome === undefined || entry.outcome === outcome) && (actorType === undefined || entry.actor_type === actorType),
+					(outcome === undefined || entry.outcome === outcome) &&
+					(actorType === undefined || entry.actor_type === actorType),
 			),
 		),
 	)
 }
 
 const SCHEMA_VERSION = "2026-09-30.1"
-const TABLES = ["traces", "logs", "metrics_gauge", "metrics_sum", "metrics_histogram", "service_map_edges_hourly"] as const
+const TABLES = [
+	"traces",
+	"logs",
+	"metrics_gauge",
+	"metrics_sum",
+	"metrics_histogram",
+	"service_map_edges_hourly",
+] as const
 const VIEWS = ["service_usage_mv", "traces_aggregates_hourly_mv", "logs_aggregates_hourly_mv"] as const
 
 /** Acme writes to its own ClickHouse service, synced and on the current schema. */
@@ -185,7 +232,16 @@ const escalation = (request: EndpointRequest, index: 0 | 1) => ({
 	attempts: 1,
 	skipReason: index === 0 ? null : "below_min_confidence",
 	deliveries:
-		index === 0 ? [{ destinationId: DESTINATION_ID, destinationName: "On-call webhook", status: "delivered", error: null }] : [],
+		index === 0
+			? [
+					{
+						destinationId: DESTINATION_ID,
+						destinationName: "On-call webhook",
+						status: "delivered",
+						error: null,
+					},
+				]
+			: [],
 	createdAt: iso(request, index === 0 ? 100 * MINUTE : 26 * HOUR),
 	processedAt: iso(request, index === 0 ? 99 * MINUTE : 26 * HOUR),
 })
@@ -274,10 +330,29 @@ const apiKey = (index: number, fields: ApiKeyFields): SyncedRow => ({
 })
 
 const API_KEYS: ReadonlyArray<SyncedRow> = [
-	apiKey(1, { name: "Grafana read-only", kind: "standard", scopes: ["telemetry:read", "dashboards:read"], usedAgoMs: 3 * MINUTE, ageMs: 60 * DAY }),
+	apiKey(1, {
+		name: "Grafana read-only",
+		kind: "standard",
+		scopes: ["telemetry:read", "dashboards:read"],
+		usedAgoMs: 3 * MINUTE,
+		ageMs: 60 * DAY,
+	}),
 	apiKey(2, { name: "Claude Code", kind: "mcp", scopes: null, usedAgoMs: 2 * HOUR, ageMs: 21 * DAY }),
-	apiKey(3, { name: "CI deploy", kind: "standard", scopes: ["alert_rules:write", "dashboards:write"], usedAgoMs: 5 * HOUR, ageMs: 5 * HOUR }),
-	apiKey(4, { name: "Old terraform", kind: "standard", scopes: null, usedAgoMs: null, ageMs: 120 * DAY, revoked: true }),
+	apiKey(3, {
+		name: "CI deploy",
+		kind: "standard",
+		scopes: ["alert_rules:write", "dashboards:write"],
+		usedAgoMs: 5 * HOUR,
+		ageMs: 5 * HOUR,
+	}),
+	apiKey(4, {
+		name: "Old terraform",
+		kind: "standard",
+		scopes: null,
+		usedAgoMs: null,
+		ageMs: 120 * DAY,
+		revoked: true,
+	}),
 ]
 
 /** Acme in Clerk mode: the Clerk-only settings tabs and /account. Shares Acme's warehouse org. */

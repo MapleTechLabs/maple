@@ -43,7 +43,10 @@ describe("self-hosted sign-in", () => {
 			expect(signInButton).toBeDisabled(),
 			expect(signInButton).toHaveAttr("data-loading", ""),
 			expect(passwordField).toBeDisabled(),
-			Command.resolve(SignInWithRootPassword, Message.SucceededSignInWithRootPassword({ token: "session-token" })),
+			Command.resolve(
+				SignInWithRootPassword,
+				Message.SucceededSignInWithRootPassword({ token: "session-token" }),
+			),
 			expectOutMessage(OutMessage.SucceededSignIn({ token: "session-token" })),
 		)
 	})

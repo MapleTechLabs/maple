@@ -86,7 +86,9 @@ const windowOf = (startTime: number, endTime: number) => ({
 	endTime: formatWarehouseDateTime(endTime),
 })
 
-export const codeReviewCiEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => {
+export const codeReviewCiEndpoints = (
+	warehouse: FixtureWarehouse,
+): Readonly<Record<string, EndpointHandler>> => {
 	const tenantFor = (orgId: string) => warehouse.tenantOf(parityOrgId(orgId))
 	const read = <T>(tenant: ExecutionTenant, compiled: CompiledQueryInput<T>, context: string) =>
 		warehouse.executor.compiledQuery(tenant, compiled, { profile: "aggregation", context })
@@ -96,8 +98,16 @@ export const codeReviewCiEndpoints = (warehouse: FixtureWarehouse): Readonly<Rec
 			const window = windowOf(startTime, endTime)
 			const [runs, queue] = yield* Effect.all(
 				[
-					read(tenant, CH.compile(CH.ciRunTotalsQuery(scope), { orgId: tenant.orgId, ...window }), "ciRunTotals"),
-					read(tenant, CH.compile(CH.ciQueueTotalsQuery(scope), { orgId: tenant.orgId, ...window }), "ciQueueTotals"),
+					read(
+						tenant,
+						CH.compile(CH.ciRunTotalsQuery(scope), { orgId: tenant.orgId, ...window }),
+						"ciRunTotals",
+					),
+					read(
+						tenant,
+						CH.compile(CH.ciQueueTotalsQuery(scope), { orgId: tenant.orgId, ...window }),
+						"ciQueueTotals",
+					),
 				],
 				{ concurrency: "unbounded" },
 			)
@@ -129,21 +139,31 @@ export const codeReviewCiEndpoints = (warehouse: FixtureWarehouse): Readonly<Rec
 			const bucketMs = bucketSeconds * 1000
 			const first = Math.floor(startTime / bucketMs) * bucketMs
 			const fillSeries = (
-				rows: ReadonlyArray<{ readonly bucket: DateTime.Utc; readonly succeeded: number; readonly failed: number; readonly cancelled: number; readonly p50DurationMs: number | null; readonly p95DurationMs: number | null }>,
+				rows: ReadonlyArray<{
+					readonly bucket: DateTime.Utc
+					readonly succeeded: number
+					readonly failed: number
+					readonly cancelled: number
+					readonly p50DurationMs: number | null
+					readonly p95DurationMs: number | null
+				}>,
 			) => {
 				const bySlot = new Map(rows.map((row) => [DateTime.toEpochMillis(row.bucket), row]))
-				return Array.from({ length: Math.max(0, Math.ceil((endTime - first) / bucketMs)) }, (_, i) => {
-					const bucket = first + i * bucketMs
-					const row = bySlot.get(bucket)
-					return new CodeReviewCiBucket({
-						bucket,
-						succeeded: row?.succeeded ?? 0,
-						failed: row?.failed ?? 0,
-						cancelled: row?.cancelled ?? 0,
-						p50DurationMs: row === undefined ? null : finiteOrNull(row.p50DurationMs),
-						p95DurationMs: row === undefined ? null : finiteOrNull(row.p95DurationMs),
-					})
-				})
+				return Array.from(
+					{ length: Math.max(0, Math.ceil((endTime - first) / bucketMs)) },
+					(_, i) => {
+						const bucket = first + i * bucketMs
+						const row = bySlot.get(bucket)
+						return new CodeReviewCiBucket({
+							bucket,
+							succeeded: row?.succeeded ?? 0,
+							failed: row?.failed ?? 0,
+							cancelled: row?.cancelled ?? 0,
+							p50DurationMs: row === undefined ? null : finiteOrNull(row.p50DurationMs),
+							p95DurationMs: row === undefined ? null : finiteOrNull(row.p95DurationMs),
+						})
+					},
+				)
 			}
 			const scope = scopeOf(orgId, query)
 			const empty = new CodeReviewCiAnalytics({
@@ -162,20 +182,44 @@ export const codeReviewCiEndpoints = (warehouse: FixtureWarehouse): Readonly<Rec
 				[
 					totalsOf(tenant, scope, startTime, endTime),
 					totalsOf(tenant, scope, startTime - spanMs, startTime),
-					read(tenant, CH.compile(CH.ciRunSeriesQuery(scope), { orgId: tenant.orgId, ...window, bucketSeconds }), "ciRunSeries"),
-					read(tenant, CH.compile(CH.ciPipelineStatsQuery(scope), { orgId: tenant.orgId, ...window }), "ciPipelineStats"),
-					read(tenant, CH.compile(CH.ciJobStatsQuery(scope), { orgId: tenant.orgId, ...window }), "ciJobStats"),
+					read(
+						tenant,
+						CH.compile(CH.ciRunSeriesQuery(scope), {
+							orgId: tenant.orgId,
+							...window,
+							bucketSeconds,
+						}),
+						"ciRunSeries",
+					),
+					read(
+						tenant,
+						CH.compile(CH.ciPipelineStatsQuery(scope), { orgId: tenant.orgId, ...window }),
+						"ciPipelineStats",
+					),
+					read(
+						tenant,
+						CH.compile(CH.ciJobStatsQuery(scope), { orgId: tenant.orgId, ...window }),
+						"ciJobStats",
+					),
 				],
 				{ concurrency: "unbounded" },
 			)
-			const candidates = new Set(pipelineRows.filter((row) => mayBeRed(row.lastResult)).slice(0, STREAK_CANDIDATES))
+			const candidates = new Set(
+				pipelineRows.filter((row) => mayBeRed(row.lastResult)).slice(0, STREAK_CANDIDATES),
+			)
 			const pipelines = yield* Effect.forEach(pipelineRows, (row) =>
 				Effect.gen(function* () {
 					const runs = candidates.has(row)
 						? yield* read(
 								tenant,
 								CH.compile(
-									CH.ciRunsQuery({ owner: row.owner, repository: row.repository, pipeline: row.pipeline, ranOnly: true, limit: STREAK_RUNS }),
+									CH.ciRunsQuery({
+										owner: row.owner,
+										repository: row.repository,
+										pipeline: row.pipeline,
+										ranOnly: true,
+										limit: STREAK_RUNS,
+									}),
 									{ orgId: tenant.orgId, ...window },
 								),
 								"ciWorkflowRuns",
@@ -203,7 +247,10 @@ export const codeReviewCiEndpoints = (warehouse: FixtureWarehouse): Readonly<Rec
 										firstFailedRevision: streak.firstFailed.revision,
 										firstFailedTraceId: streak.firstFailed.traceId,
 										lastGreenRevision: streak.lastGreen?.revision ?? null,
-										lastGreenAt: streak.lastGreen === undefined ? null : DateTime.toEpochMillis(streak.lastGreen.startedAt),
+										lastGreenAt:
+											streak.lastGreen === undefined
+												? null
+												: DateTime.toEpochMillis(streak.lastGreen.startedAt),
 									}),
 					})
 				}),
@@ -240,12 +287,19 @@ export const codeReviewCiEndpoints = (warehouse: FixtureWarehouse): Readonly<Rec
 			const limit = query.limit ?? DEFAULT_PAGE
 			const scope = scopeOf(orgId, query)
 			const encode = Schema.encodeUnknownEffect(CodeReviewCiRunsResponse)
-			if (scope === undefined) return yield* encode(new CodeReviewCiRunsResponse({ runs: [], nextCursor: null }))
+			if (scope === undefined)
+				return yield* encode(new CodeReviewCiRunsResponse({ runs: [], nextCursor: null }))
 			// The fixture pages fit in one read, so the keyset cursor is never followed.
 			const rows = yield* read(
 				tenant,
 				CH.compile(
-					CH.ciRunsQuery({ ...scope, branch: query.branch, result: query.result, pullRequest: query.pullRequest, limit: limit + 1 }),
+					CH.ciRunsQuery({
+						...scope,
+						branch: query.branch,
+						result: query.result,
+						pullRequest: query.pullRequest,
+						limit: limit + 1,
+					}),
 					{ orgId: tenant.orgId, ...windowOf(startTime, endTime) },
 				),
 				"ciRuns",
@@ -259,10 +313,16 @@ export const codeReviewCiEndpoints = (warehouse: FixtureWarehouse): Readonly<Rec
 					? []
 					: yield* read(
 							tenant,
-							CH.compile(CH.ciFailedJobsQuery({ traceIds: failedIds, limit: failedIds.length * FAILED_JOBS_PER_RUN }), {
-								orgId: tenant.orgId,
-								...windowOf(span.startMs, span.endMs),
-							}),
+							CH.compile(
+								CH.ciFailedJobsQuery({
+									traceIds: failedIds,
+									limit: failedIds.length * FAILED_JOBS_PER_RUN,
+								}),
+								{
+									orgId: tenant.orgId,
+									...windowOf(span.startMs, span.endMs),
+								},
+							),
 							"ciFailedJobs",
 						)
 			const jobsByTrace = Arr.groupBy(failedJobs, (job) => job.traceId)
@@ -287,12 +347,19 @@ export const codeReviewCiEndpoints = (warehouse: FixtureWarehouse): Readonly<Rec
 								startedAt: DateTime.toEpochMillis(run.startedAt),
 								url: run.url,
 								failedJobs: (jobsByTrace[run.traceId] ?? []).map(
-									(job) => new CodeReviewCiFailedJob({ job: job.job, reason: job.reason, url: job.url }),
+									(job) =>
+										new CodeReviewCiFailedJob({
+											job: job.job,
+											reason: job.reason,
+											url: job.url,
+										}),
 								),
 							}),
 					),
 					nextCursor:
-						rows.length > limit && last !== undefined ? `${DateTime.toEpochMillis(last.startedAt)}_${last.traceId}` : null,
+						rows.length > limit && last !== undefined
+							? `${DateTime.toEpochMillis(last.startedAt)}_${last.traceId}`
+							: null,
 				}),
 			)
 		})

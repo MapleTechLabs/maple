@@ -37,7 +37,9 @@ export const flowNode = <M>(h: HtmlBuilder<M>, node: FlowNodeView<M>): Html =>
 	h.keyed("div")(
 		node.id,
 		[
-			h.Class(`react-flow__node react-flow__node-${node.type}${node.className ? ` ${node.className}` : ""}`),
+			h.Class(
+				`react-flow__node react-flow__node-${node.type}${node.className ? ` ${node.className}` : ""}`,
+			),
 			h.Style({
 				"z-index": String(node.zIndex ?? 0),
 				transform: `translate(${node.position.x}px,${node.position.y}px)`,
@@ -64,7 +66,9 @@ export const flowHandle = <M>(
 	className: string,
 ): Html =>
 	h.div([
-		h.Class(`react-flow__handle react-flow__handle-${side} nodrag nopan ${className} ${type} connectablestart connectableend`),
+		h.Class(
+			`react-flow__handle react-flow__handle-${side} nodrag nopan ${className} ${type} connectablestart connectableend`,
+		),
 		h.DataAttribute("handlepos", side),
 		h.DataAttribute("id", `1-${nodeId}-null-${type}`),
 		h.DataAttribute("nodeid", nodeId),
@@ -99,7 +103,13 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 			h.Class("react-flow light"),
 			h.DataAttribute("testid", "rf__wrapper"),
 			h.Role("application"),
-			h.Style({ width: "100%", height: "100%", overflow: "hidden", position: "relative", "z-index": "0" }),
+			h.Style({
+				width: "100%",
+				height: "100%",
+				overflow: "hidden",
+				position: "relative",
+				"z-index": "0",
+			}),
 		],
 		[
 			h.div(
@@ -109,7 +119,10 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 					h.Attribute(MEASURE_EPOCH_ATTRIBUTE, String(canvas.model.measureEpoch)),
 					h.OnMount(
 						Mount.mapMessage(
-							AttachFlowCanvas({ minZoom: canvas.model.minZoom, maxZoom: canvas.model.maxZoom }),
+							AttachFlowCanvas({
+								minZoom: canvas.model.minZoom,
+								maxZoom: canvas.model.maxZoom,
+							}),
 							canvas.toMessage,
 						),
 					),
@@ -133,7 +146,10 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 									canvas.nodes,
 									h.div([
 										h.Class("react-flow__viewport-portal"),
-										h.Attribute(VIEWPORT_ATTRIBUTE, viewportAttribute(canvas.model.viewport)),
+										h.Attribute(
+											VIEWPORT_ATTRIBUTE,
+											viewportAttribute(canvas.model.viewport),
+										),
 									]),
 								],
 							),
@@ -177,7 +193,9 @@ export const flowEdge = <M>(h: HtmlBuilder<M>, edge: FlowEdgeView): Html =>
 		[
 			h.g(
 				[
-					h.Class(`react-flow__edge react-flow__edge-${edge.type} nopan${edge.className ? ` ${edge.className}` : ""} inactive`),
+					h.Class(
+						`react-flow__edge react-flow__edge-${edge.type} nopan${edge.className ? ` ${edge.className}` : ""} inactive`,
+					),
 					h.DataAttribute("id", edge.id),
 					h.DataAttribute("testid", `rf__edge-${edge.id}`),
 					h.Tabindex(0),

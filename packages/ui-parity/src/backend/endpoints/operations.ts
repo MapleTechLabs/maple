@@ -26,7 +26,10 @@ const operationRows = (
 		const toNumber = (value: unknown) => Number(value ?? 0)
 		const summaryRows = yield* runQuery(summary, payload)
 		if (summaryRows.length === 0) return []
-		const toRow = (row: CH.ServiceOperationsSummaryOutput, sparkline: ReadonlyArray<{ bucket: string; count: number }>) => ({
+		const toRow = (
+			row: CH.ServiceOperationsSummaryOutput,
+			sparkline: ReadonlyArray<{ bucket: string; count: number }>,
+		) => ({
 			spanName: row.spanName,
 			spanCount: toNumber(row.spanCount),
 			estimatedSpanCount: toNumber(row.estimatedSpanCount),
@@ -44,10 +47,15 @@ const operationRows = (
 			0,
 			(parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)) / 1000,
 		)
-		const requested = ("bucketSeconds" in payload ? payload.bucketSeconds : undefined) ?? windowSeconds / 50
+		const requested =
+			("bucketSeconds" in payload ? payload.bucketSeconds : undefined) ?? windowSeconds / 50
 		const bucketSeconds = Math.max(1, Math.round(requested / 60)) * 60
 		const spanNames = summaryRows.map((row) => row.spanName)
-		const timeseriesRows = yield* runQuery(Queries.serviceOperationsTimeseries, { ...payload, spanNames, bucketSeconds })
+		const timeseriesRows = yield* runQuery(Queries.serviceOperationsTimeseries, {
+			...payload,
+			spanNames,
+			bucketSeconds,
+		})
 		const points = (spanName: string) =>
 			timeseriesRows
 				.filter((row) => row.spanName === spanName)
@@ -55,7 +63,9 @@ const operationRows = (
 		return summaryRows.map((row) => toRow(row, points(row.spanName)))
 	})
 
-export const operationEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHandler>> => ({
+export const operationEndpoints = (
+	warehouse: FixtureWarehouse,
+): Readonly<Record<string, EndpointHandler>> => ({
 	"queryEngine.serviceOperations": warehouseEndpoint(
 		warehouse,
 		ServiceOperationsRequest,
@@ -73,7 +83,10 @@ export const operationEndpoints = (warehouse: FixtureWarehouse): Readonly<Record
 		(payload, context) =>
 			Effect.map(
 				operationRows(context, payload, Queries.serviceEndpointsSummary, false),
-				(rows) => new ServiceEndpointsResponse({ data: rows.map((row) => ({ ...row, ...CH.splitEndpointName(row.spanName) })) }),
+				(rows) =>
+					new ServiceEndpointsResponse({
+						data: rows.map((row) => ({ ...row, ...CH.splitEndpointName(row.spanName) })),
+					}),
 			),
 	),
 })

@@ -279,7 +279,6 @@ export function generateBenchGraph(params: BenchParams): BenchGraph {
 	return { edges, dbEdges, overviews, workloads, platforms, runtimes }
 }
 
-
 // Exercises the instrumented-Worker overlay: svc-000 gets CF edge analytics
 // attached; the unmatched script must NOT create a node.
 export const BENCH_CLOUDFLARE_SERVICES: CloudflareService[] = [

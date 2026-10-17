@@ -39,9 +39,15 @@ export const codeReviewArea: AreaModule = {
 			steps: (page) => pick(page, "Author", "ada-l"),
 		}),
 		scenario("pull-requests", "Pull requests", "/code-review/pull-requests"),
-		scenario("pull-requests-empty", "Pull requests (no reviews)", "/code-review/pull-requests", { dataset: EMPTY }),
+		scenario("pull-requests-empty", "Pull requests (no reviews)", "/code-review/pull-requests", {
+			dataset: EMPTY,
+		}),
 		scenario("pull-requests-detail", "Pull requests: review sheet open", "/code-review/pull-requests", {
-			steps: (page) => page.getByRole("button", { name: /Retry payment capture once/ }).first().click(),
+			steps: (page) =>
+				page
+					.getByRole("button", { name: /Retry payment capture once/ })
+					.first()
+					.click(),
 		}),
 		scenario("pull-requests-failed", "Pull requests filtered to failed", "/code-review/pull-requests", {
 			steps: (page) => pick(page, "Status", "Failed"),
@@ -60,7 +66,9 @@ export const codeReviewArea: AreaModule = {
 			steps: (page) => page.getByRole("button", { name: /Index built without CONCURRENTLY/ }).click(),
 		}),
 		scenario("settings", "Settings", "/code-review/settings"),
-		scenario("settings-empty", "Settings (GitHub not connected)", "/code-review/settings", { dataset: EMPTY }),
+		scenario("settings-empty", "Settings (GitHub not connected)", "/code-review/settings", {
+			dataset: EMPTY,
+		}),
 		scenario("settings-configure", "Settings: repository rules dialog", "/code-review/settings", {
 			steps: (page) => page.getByRole("button", { name: "Configure" }).first().click(),
 		}),

@@ -27,7 +27,9 @@ export const compareRun = (input: CompareRunInput) => {
 	const diffDir = join(runDir, "diff")
 	mkdirSync(diffDir, { recursive: true })
 	const unhealthy = new Set(
-		[...input.baselineResults, ...input.candidateResults].filter(isUnhealthy).map((result) => result.variantId),
+		[...input.baselineResults, ...input.candidateResults]
+			.filter(isUnhealthy)
+			.map((result) => result.variantId),
 	)
 	const comparisons = input.variants.map((variant) => {
 		const comparison = compareVariant({
@@ -153,9 +155,12 @@ export const renderMarkdown = (summary: RunSummary, runDir: string) => {
 			[summary.candidate, candidateCapture],
 		] as const) {
 			if (capture?.error) lines.push(`- ${side} capture error: ${capture.error}`)
-			for (const line of capture?.consoleErrors.slice(0, 3) ?? []) lines.push(`- ${side} console: ${line}`)
+			for (const line of capture?.consoleErrors.slice(0, 3) ?? [])
+				lines.push(`- ${side} console: ${line}`)
 			if (capture?.unmocked.length)
-				lines.push(`- ${side} unmocked: ${capture.unmocked.slice(0, 8).join(", ")}${capture.unmocked.length > 8 ? " ..." : ""}`)
+				lines.push(
+					`- ${side} unmocked: ${capture.unmocked.slice(0, 8).join(", ")}${capture.unmocked.length > 8 ? " ..." : ""}`,
+				)
 		}
 		if (comparison.sizeMismatch) lines.push(`- page size differs`)
 		for (const line of comparison.behavior.slice(0, 10)) lines.push(`- ${line}`)

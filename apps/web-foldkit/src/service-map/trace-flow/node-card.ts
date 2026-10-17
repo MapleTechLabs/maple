@@ -38,9 +38,18 @@ const formatCombinedDuration = (isCombined: boolean, single: number, aggregated:
 }
 
 const REDIS_LAYERS = [
-	["M22.5 13.7c-.1.5-1.6 1.2-4.6 2.3-1.7.7-3.8 1.3-5.9 1.7-2.1-.4-4.2-1-5.9-1.7C3.1 14.9 1.6 14.2 1.5 13.7v2.5c0 .6 1.5 1.3 4.5 2.3 1.7.7 3.8 1.3 5.9 1.7 2.1-.4 4.2-1 5.9-1.7 3-1 4.6-1.7 4.6-2.3V13.7z", "0.4"],
-	["M22.5 9.2c-.1.5-1.6 1.2-4.6 2.3-1.7.7-3.8 1.3-5.9 1.7-2.1-.4-4.2-1-5.9-1.7C3.1 10.4 1.6 9.7 1.5 9.2v2.5c0 .6 1.5 1.3 4.5 2.3 1.7.7 3.8 1.3 5.9 1.7 2.1-.4 4.2-1 5.9-1.7 3-1 4.6-1.7 4.6-2.3V9.2z", "0.6"],
-	["M22.5 4.7c0 .6-1.5 1.3-4.6 2.3C16.2 7.7 14.1 8.3 12 8.7 9.9 8.3 7.8 7.7 6.1 7 3.1 6 1.5 5.3 1.5 4.7S3.1 3.4 6.1 2.4C7.8 1.7 9.9 1.1 12 .7c2.1.4 4.2 1 5.9 1.7 3 1 4.6 1.7 4.6 2.3z", "0.9"],
+	[
+		"M22.5 13.7c-.1.5-1.6 1.2-4.6 2.3-1.7.7-3.8 1.3-5.9 1.7-2.1-.4-4.2-1-5.9-1.7C3.1 14.9 1.6 14.2 1.5 13.7v2.5c0 .6 1.5 1.3 4.5 2.3 1.7.7 3.8 1.3 5.9 1.7 2.1-.4 4.2-1 5.9-1.7 3-1 4.6-1.7 4.6-2.3V13.7z",
+		"0.4",
+	],
+	[
+		"M22.5 9.2c-.1.5-1.6 1.2-4.6 2.3-1.7.7-3.8 1.3-5.9 1.7-2.1-.4-4.2-1-5.9-1.7C3.1 10.4 1.6 9.7 1.5 9.2v2.5c0 .6 1.5 1.3 4.5 2.3 1.7.7 3.8 1.3 5.9 1.7 2.1-.4 4.2-1 5.9-1.7 3-1 4.6-1.7 4.6-2.3V9.2z",
+		"0.6",
+	],
+	[
+		"M22.5 4.7c0 .6-1.5 1.3-4.6 2.3C16.2 7.7 14.1 8.3 12 8.7 9.9 8.3 7.8 7.7 6.1 7 3.1 6 1.5 5.3 1.5 4.7S3.1 3.4 6.1 2.4C7.8 1.7 9.9 1.1 12 .7c2.1.4 4.2 1 5.9 1.7 3 1 4.6 1.7 4.6 2.3z",
+		"0.9",
+	],
 ] as const
 
 const cacheSystemIcon = <M>(h: HtmlBuilder<M>, system: CacheInfo["system"], size: number): Html =>
@@ -54,7 +63,11 @@ const cacheSystemIcon = <M>(h: HtmlBuilder<M>, system: CacheInfo["system"], size
 					h.Class("shrink-0"),
 				],
 				REDIS_LAYERS.map(([d, opacity]) =>
-					h.path([h.Attribute("d", d), h.Attribute("fill", "currentColor"), h.Attribute("opacity", opacity)]),
+					h.path([
+						h.Attribute("d", d),
+						h.Attribute("fill", "currentColor"),
+						h.Attribute("opacity", opacity),
+					]),
 				),
 			)
 		: icon(h, "DatabaseIcon", { size, className: "shrink-0 text-current" })
@@ -66,7 +79,8 @@ const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string 
 		const name = cacheInfo.name ?? span.spanName
 		return op ? `${op} ${name}` : name
 	}
-	if ((category.id === "http" || category.id === "server") && httpInfo) return `${httpInfo.method} ${httpInfo.route ?? span.spanName}`
+	if ((category.id === "http" || category.id === "server") && httpInfo)
+		return `${httpInfo.method} ${httpInfo.route ?? span.spanName}`
 	if (category.id === "db") {
 		const operation = pickAttr(span.spanAttributes, "db.operation.name", "db.operation")
 		const table = pickAttr(span.spanAttributes, "db.collection.name")
@@ -81,11 +95,19 @@ const outcomeBadgeStyle = (bad: boolean): string =>
 		? "bg-severity-error/15 text-severity-error border-severity-error/30"
 		: "bg-severity-info/15 text-severity-info border-severity-info/30"
 
-const statusBadge = <M>(h: HtmlBuilder<M>, desc: SpanDescription, isError: boolean, statusCode: string): Html | null => {
+const statusBadge = <M>(
+	h: HtmlBuilder<M>,
+	desc: SpanDescription,
+	isError: boolean,
+	statusCode: string,
+): Html | null => {
 	const { platform, cacheInfo, httpInfo } = desc
 	const base = "shrink-0 rounded px-1.5 py-0.5 text-3xs font-semibold"
 	if (platform?.outcome?.bad) {
-		return h.span([h.Class(cn(base, outcomeBadgeStyle(true))), h.Title(`${platform.label} outcome`)], [platform.outcome.value])
+		return h.span(
+			[h.Class(cn(base, outcomeBadgeStyle(true))), h.Title(`${platform.label} outcome`)],
+			[platform.outcome.value],
+		)
 	}
 	if (cacheInfo?.result) {
 		return h.span(
@@ -113,11 +135,17 @@ const statusBadge = <M>(h: HtmlBuilder<M>, desc: SpanDescription, isError: boole
 		)
 	}
 	if (isError) return h.span([h.Class(cn(base, "bg-severity-error/15 text-severity-error"))], ["Error"])
-	if (statusCode === "Ok") return h.span([h.Class(cn(base, "bg-severity-info/15 text-severity-info"))], ["OK"])
+	if (statusCode === "Ok")
+		return h.span([h.Class(cn(base, "bg-severity-info/15 text-severity-info"))], ["OK"])
 	return null
 }
 
-const missingCard = <M>(h: HtmlBuilder<M>, nodeId: string, data: FlowNodeData, isSelected: boolean): ReadonlyArray<Html> => [
+const missingCard = <M>(
+	h: HtmlBuilder<M>,
+	nodeId: string,
+	data: FlowNodeData,
+	isSelected: boolean,
+): ReadonlyArray<Html> => [
 	flowHandle(h, nodeId, "target", "top", HANDLE_CLASSES),
 	h.div(
 		[
@@ -136,7 +164,10 @@ const missingCard = <M>(h: HtmlBuilder<M>, nodeId: string, data: FlowNodeData, i
 					h.span([h.Class("font-semibold text-muted-foreground")], ["Missing span"]),
 					h.span([h.Class("flex-1")]),
 					h.span(
-						[h.Class(cn("font-mono tabular-nums", "text-muted-foreground/60 truncate")), h.Title(data.span.spanId)],
+						[
+							h.Class(cn("font-mono tabular-nums", "text-muted-foreground/60 truncate")),
+							h.Title(data.span.spanId),
+						],
 						[shortId(data.span.spanId, "span")],
 					),
 				],
@@ -147,10 +178,16 @@ const missingCard = <M>(h: HtmlBuilder<M>, nodeId: string, data: FlowNodeData, i
 	flowHandle(h, nodeId, "source", "bottom", HANDLE_CLASSES),
 ]
 
-const spanIsError = (statusCode: string, httpError: boolean) => statusCode === "Error" || (statusCode !== "Ok" && httpError)
+const spanIsError = (statusCode: string, httpError: boolean) =>
+	statusCode === "Error" || (statusCode !== "Ok" && httpError)
 
 /** The node's children: handles around the span card. */
-export const flowSpanNode = <M>(h: HtmlBuilder<M>, nodeId: string, data: FlowNodeData, isSelected: boolean): ReadonlyArray<Html> => {
+export const flowSpanNode = <M>(
+	h: HtmlBuilder<M>,
+	nodeId: string,
+	data: FlowNodeData,
+	isSelected: boolean,
+): ReadonlyArray<Html> => {
 	const { span, count, combinedSpans, aggregatedDuration, totalDurationMs } = data
 	if (span.isMissing) return missingCard(h, nodeId, data, isSelected)
 	const isCombined = count > 1
@@ -161,7 +198,8 @@ export const flowSpanNode = <M>(h: HtmlBuilder<M>, nodeId: string, data: FlowNod
 		(isCombined && combinedSpans.some((s) => s.statusCode === "Error"))
 	const { main, tooltip } = formatCombinedDuration(isCombined, span.durationMs, aggregatedDuration)
 	const railDurationMs = isCombined ? aggregatedDuration.avg : span.durationMs
-	const costFraction = totalDurationMs > 0 ? Math.min(1, Math.max(0.02, Math.sqrt(railDurationMs / totalDurationMs))) : 0
+	const costFraction =
+		totalDurationMs > 0 ? Math.min(1, Math.max(0.02, Math.sqrt(railDurationMs / totalDurationMs))) : 0
 	const badge = statusBadge(h, desc, isError, span.statusCode)
 	const text = primaryText(span, desc)
 	return [
@@ -199,7 +237,9 @@ export const flowSpanNode = <M>(h: HtmlBuilder<M>, nodeId: string, data: FlowNod
 								h.Class(
 									cn(
 										"flex size-6 shrink-0 items-center justify-center rounded-md",
-										isError ? "bg-severity-error/15 text-severity-error" : cn(category.accent.soft, category.accent.text),
+										isError
+											? "bg-severity-error/15 text-severity-error"
+											: cn(category.accent.soft, category.accent.text),
 									),
 								),
 							],
@@ -216,14 +256,27 @@ export const flowSpanNode = <M>(h: HtmlBuilder<M>, nodeId: string, data: FlowNod
 									[h.Class("flex min-w-0 items-center gap-1.5")],
 									[
 										h.span(
-											[h.Class(cn("block min-w-0 truncate", "font-mono", "flex-1 text-2xs font-medium text-foreground")), h.Title(text)],
+											[
+												h.Class(
+													cn(
+														"block min-w-0 truncate",
+														"font-mono",
+														"flex-1 text-2xs font-medium text-foreground",
+													),
+												),
+												h.Title(text),
+											],
 											[text],
 										),
 										...(badge === null ? [] : [badge]),
 									],
 								),
 								h.div(
-									[h.Class("flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground")],
+									[
+										h.Class(
+											"flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground",
+										),
+									],
 									[
 										serviceDot(h, span.serviceName, "size-1.5"),
 										h.span([h.Class("truncate")], [span.serviceName]),
@@ -238,7 +291,11 @@ export const flowSpanNode = <M>(h: HtmlBuilder<M>, nodeId: string, data: FlowNod
 					],
 				),
 				h.div(
-					[h.Class("absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-[7px] bg-muted/40")],
+					[
+						h.Class(
+							"absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-b-[7px] bg-muted/40",
+						),
+					],
 					[
 						h.div([
 							h.Class(cn("h-full", isError ? "bg-severity-error" : category.accent.rail)),

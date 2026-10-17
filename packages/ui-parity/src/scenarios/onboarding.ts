@@ -34,7 +34,12 @@ export const onboardingArea: AreaModule = {
 	area: "onboarding",
 	scenarios: [
 		scenario("cli-login-entry", "CLI login: code entry", "/cli-login", "default"),
-		scenario("cli-login-device", "CLI login: device to approve", `/cli-login?user_code=${CLI_USER_CODE}`, "default"),
+		scenario(
+			"cli-login-device",
+			"CLI login: device to approve",
+			`/cli-login?user_code=${CLI_USER_CODE}`,
+			"default",
+		),
 		scenario(
 			"cli-login-approved",
 			"CLI login: approved",
@@ -42,15 +47,47 @@ export const onboardingArea: AreaModule = {
 			"default",
 			click("Approve"),
 		),
-		scenario("cli-login-denied", "CLI login: denied", `/cli-login?user_code=${CLI_USER_CODE}`, "default", click("Deny")),
+		scenario(
+			"cli-login-denied",
+			"CLI login: denied",
+			`/cli-login?user_code=${CLI_USER_CODE}`,
+			"default",
+			click("Deny"),
+		),
 		scenario("cli-login-invalid", "CLI login: unknown code", "/cli-login?user_code=ZZZZ-ZZZZ", "default"),
-		scenario("cli-login-clerk", "CLI login: Clerk workspace", `/cli-login?user_code=${CLI_USER_CODE}`, "clerk-acme"),
-		scenario("mcp-authorize", "MCP authorize: consent", `/mcp-authorize?request_id=${MCP_REQUEST_ID}`, "default"),
+		scenario(
+			"cli-login-clerk",
+			"CLI login: Clerk workspace",
+			`/cli-login?user_code=${CLI_USER_CODE}`,
+			"clerk-acme",
+		),
+		scenario(
+			"mcp-authorize",
+			"MCP authorize: consent",
+			`/mcp-authorize?request_id=${MCP_REQUEST_ID}`,
+			"default",
+		),
 		scenario("mcp-authorize-incomplete", "MCP authorize: incomplete link", "/mcp-authorize", "default"),
-		scenario("mcp-authorize-used", "MCP authorize: already used", `/mcp-authorize?request_id=${MCP_USED_REQUEST_ID}`, "default"),
-		scenario("mcp-authorize-clerk", "MCP authorize: Clerk workspace", `/mcp-authorize?request_id=${MCP_REQUEST_ID}`, "clerk-acme"),
+		scenario(
+			"mcp-authorize-used",
+			"MCP authorize: already used",
+			`/mcp-authorize?request_id=${MCP_USED_REQUEST_ID}`,
+			"default",
+		),
+		scenario(
+			"mcp-authorize-clerk",
+			"MCP authorize: Clerk workspace",
+			`/mcp-authorize?request_id=${MCP_REQUEST_ID}`,
+			"clerk-acme",
+		),
 		scenario("unsubscribe", "Unsubscribe: confirm", "/unsubscribe?token=digest.parity-token", "default"),
-		scenario("unsubscribe-done", "Unsubscribe: done", "/unsubscribe?token=digest.parity-token", "default", click("Unsubscribe")),
+		scenario(
+			"unsubscribe-done",
+			"Unsubscribe: done",
+			"/unsubscribe?token=digest.parity-token",
+			"default",
+			click("Unsubscribe"),
+		),
 		scenario("unsubscribe-invalid", "Unsubscribe: missing token", "/unsubscribe", "default"),
 		scenario("quick-start", "Quick start: role step", "/quick-start", "clerk"),
 		scenario("quick-start-role-picked", "Quick start: role chosen", "/quick-start", "clerk", (page) =>
@@ -61,9 +98,23 @@ export const onboardingArea: AreaModule = {
 			await page.getByRole("button", { name: /Continue/ }).click()
 		}),
 		{ ...scenario("select-plan", "Select plan: free trial", "/select-plan", "clerk"), fullPage: true },
-		{ ...scenario("select-plan-lapsed", "Select plan: lapsed subscriber", "/select-plan", "clerk-lapsed"), fullPage: true },
+		{
+			...scenario(
+				"select-plan-lapsed",
+				"Select plan: lapsed subscriber",
+				"/select-plan",
+				"clerk-lapsed",
+			),
+			fullPage: true,
+		},
 		scenario("org-required", "Organization required", "/org-required", "clerk-no-org"),
-		scenario("org-required-menu", "Organization required: switcher open", "/org-required", "clerk-no-org", click("Select or create organization")),
+		scenario(
+			"org-required-menu",
+			"Organization required: switcher open",
+			"/org-required",
+			"clerk-no-org",
+			click("Select or create organization"),
+		),
 		scenario("sign-up", "Sign up (signed out)", "/sign-up", "clerk-signed-out"),
 	],
 }

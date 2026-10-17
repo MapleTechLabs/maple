@@ -63,31 +63,47 @@ const executeBatch = async (dataset: string, capture: string) => {
 			[DATASET_HEADER]: dataset,
 			[CAPTURE_HEADER]: capture,
 		},
-		body: JSON.stringify({ requests: [Schema.encodeUnknownSync(QueryEngineExecuteRequest)(servicesFacetsRequest())] }),
+		body: JSON.stringify({
+			requests: [Schema.encodeUnknownSync(QueryEngineExecuteRequest)(servicesFacetsRequest())],
+		}),
 	})
 	return { status: response.status, text: await response.text() }
 }
 
 const takeCalls = async (capture: string) => {
 	const response = await fetch(`${api}/__parity/calls?capture=${capture}`)
-	const body: { readonly calls: ReadonlyArray<{ readonly tag: string }>; readonly unmocked: ReadonlyArray<string> } =
-		await response.json()
+	const body: {
+		readonly calls: ReadonlyArray<{ readonly tag: string }>
+		readonly unmocked: ReadonlyArray<string>
+	} = await response.json()
 	return body
 }
 
 /** Decodes with the response schema the web app's batcher uses; failures and other kinds yield `undefined`. */
 const facetRows = (text: string) => {
-	const outcome = Schema.decodeUnknownSync(Schema.fromJsonString(QueryEngineExecuteBatchResponse))(text).results[0]
-	return outcome?.outcome === "success" && outcome.result.kind === "facets" ? outcome.result.data : undefined
+	const outcome = Schema.decodeUnknownSync(Schema.fromJsonString(QueryEngineExecuteBatchResponse))(text)
+		.results[0]
+	return outcome?.outcome === "success" && outcome.result.kind === "facets"
+		? outcome.result.data
+		: undefined
 }
 
 describe("execute-batch on the fixture warehouse", () => {
 	it("answers the services facets query with the default org's seeded services", async () => {
 		const { status, text } = await executeBatch("default", "facets-default")
 		expect(status).toBe(200)
-		const services = (facetRows(text) ?? []).filter((row) => row.facetType === "service").map((row) => row.name)
+		const services = (facetRows(text) ?? [])
+			.filter((row) => row.facetType === "service")
+			.map((row) => row.name)
 		expect(services).toEqual(
-			expect.arrayContaining(["storefront", "checkout-api", "cart-svc", "catalog-api", "payment-svc", "auth-svc"]),
+			expect.arrayContaining([
+				"storefront",
+				"checkout-api",
+				"cart-svc",
+				"catalog-api",
+				"payment-svc",
+				"auth-svc",
+			]),
 		)
 	})
 

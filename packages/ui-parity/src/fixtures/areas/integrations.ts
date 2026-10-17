@@ -11,14 +11,23 @@ import { acmeAdmin, DAY, fixtureUuid, MINUTE } from "../identity.ts"
  */
 
 /** Only Acme (self-hosted `default` or Clerk `settings-clerk`) has integrations configured. */
-export const isAcme = (request: EndpointRequest): boolean => request.dataset.identity?.orgId === acmeAdmin.orgId
+export const isAcme = (request: EndpointRequest): boolean =>
+	request.dataset.identity?.orgId === acmeAdmin.orgId
 
-const iso = (request: EndpointRequest, agoMs: number) => new Date(parseWarehouseDateTime(request.dataset.now) - agoMs).toISOString()
+const iso = (request: EndpointRequest, agoMs: number) =>
+	new Date(parseWarehouseDateTime(request.dataset.now) - agoMs).toISOString()
 
 /** Acme's Slack connector carries the linked user's identity; other orgs' has none. */
 const withSlackIdentity = <A extends object>(request: EndpointRequest, connector: A) =>
 	isAcme(request)
-		? { ...connector, identity: { external_user_id: "U02ADALOVE", display_name: "ada", created_at: iso(request, 20 * DAY) } }
+		? {
+				...connector,
+				identity: {
+					external_user_id: "U02ADALOVE",
+					display_name: "ada",
+					created_at: iso(request, 20 * DAY),
+				},
+			}
 		: connector
 
 const list = (data: ReadonlyArray<unknown>) => ({ object: "list", data, has_more: false, next_cursor: null })
@@ -26,7 +35,12 @@ const list = (data: ReadonlyArray<unknown>) => ({ object: "list", data, has_more
 const scrapeTarget = (
 	request: EndpointRequest,
 	index: number,
-	fields: { readonly name: string; readonly service: string; readonly url: string; readonly error: string | null },
+	fields: {
+		readonly name: string
+		readonly service: string
+		readonly url: string
+		readonly error: string | null
+	},
 ) => ({
 	id: encodePublicId(PublicIdPrefixes.scrapeTarget, fixtureUuid(0xd4, index)),
 	object: "scrape_target",
@@ -111,7 +125,13 @@ const hazelStatus: EndpointHandler = (request) =>
 					connectedByUserId: acmeAdmin.userId,
 					scope: "openid profile email",
 				}
-			: { connected: false, externalUserId: null, externalUserEmail: null, connectedByUserId: null, scope: null },
+			: {
+					connected: false,
+					externalUserId: null,
+					externalUserEmail: null,
+					connectedByUserId: null,
+					scope: null,
+				},
 	)
 
 /** The decoded `scrp_` id is the raw UUID. */

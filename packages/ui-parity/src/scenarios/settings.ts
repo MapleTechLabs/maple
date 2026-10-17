@@ -15,12 +15,27 @@ const SELF_HOSTED_TABS = [
 ] as const
 
 /** Tabs with an empty state, on the `empty` org. */
-const EMPTY_TABS = ["audit-log", "api-keys", "setup-audit", "data-platform", "automation", "ai-provider"] as const
+const EMPTY_TABS = [
+	"audit-log",
+	"api-keys",
+	"setup-audit",
+	"data-platform",
+	"automation",
+	"ai-provider",
+] as const
 
 /** Tabs only Clerk workspaces show, on the `settings-clerk` dataset. */
 const CLERK = "settings-clerk"
 const CLERK_TABS = ["organization", "members", "billing", "notifications"] as const
-const ACCOUNT_TABS = ["profile", "emails", "password", "two-factor", "passkeys", "connections", "sessions"] as const
+const ACCOUNT_TABS = [
+	"profile",
+	"emails",
+	"password",
+	"two-factor",
+	"passkeys",
+	"connections",
+	"sessions",
+] as const
 
 const page = (
 	id: string,
@@ -44,7 +59,11 @@ export const settingsArea: AreaModule = {
 		...SELF_HOSTED_TABS.map((tab) => page(tab, `Settings: ${tab}`, `/settings?tab=${tab}`)),
 		page("mcp-page", "MCP page", "/mcp"),
 		page("developer", "Developer (redirects to API keys)", "/developer"),
-		...EMPTY_TABS.map((tab) => page(`${tab}-empty`, `Settings: ${tab} (empty org)`, `/settings?tab=${tab}`, { dataset: "empty" })),
+		...EMPTY_TABS.map((tab) =>
+			page(`${tab}-empty`, `Settings: ${tab} (empty org)`, `/settings?tab=${tab}`, {
+				dataset: "empty",
+			}),
+		),
 		page("api-keys-create", "API keys: create dialog", "/settings?tab=api-keys", {
 			steps: (page) => page.getByRole("button", { name: "Create key" }).first().click(),
 		}),
@@ -62,7 +81,11 @@ export const settingsArea: AreaModule = {
 			dataset: CLERK,
 			steps: (page) => page.getByRole("button", { name: "Invite member" }).click(),
 		}),
-		...CLERK_TABS.map((tab) => page(`clerk-${tab}`, `Settings (Clerk): ${tab}`, `/settings?tab=${tab}`, { dataset: CLERK })),
-		...ACCOUNT_TABS.map((tab) => page(`account-${tab}`, `Account: ${tab}`, `/account?tab=${tab}`, { dataset: CLERK })),
+		...CLERK_TABS.map((tab) =>
+			page(`clerk-${tab}`, `Settings (Clerk): ${tab}`, `/settings?tab=${tab}`, { dataset: CLERK }),
+		),
+		...ACCOUNT_TABS.map((tab) =>
+			page(`account-${tab}`, `Account: ${tab}`, `/account?tab=${tab}`, { dataset: CLERK }),
+		),
 	],
 }

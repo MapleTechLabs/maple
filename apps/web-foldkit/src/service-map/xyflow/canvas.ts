@@ -10,7 +10,11 @@ import { type FitOptions, fitViewport, scaleViewport } from "./viewport"
  * The parent owns the nodes; `update` takes their positions so fits can frame them.
  */
 
-export const FitRequest = Schema.Struct({ padding: Schema.Number, minZoom: Schema.Number, maxZoom: Schema.Number })
+export const FitRequest = Schema.Struct({
+	padding: Schema.Number,
+	minZoom: Schema.Number,
+	maxZoom: Schema.Number,
+})
 export type FitRequest = typeof FitRequest.Type
 
 export const Model = Schema.Struct({
@@ -69,12 +73,16 @@ export const allMeasured = (model: Model, ids: ReadonlyArray<string>): boolean =
 
 export const placed = (
 	model: Model,
-	nodes: ReadonlyArray<{ readonly id: string; readonly position: { readonly x: number; readonly y: number } }>,
+	nodes: ReadonlyArray<{
+		readonly id: string
+		readonly position: { readonly x: number; readonly y: number }
+	}>,
 ): ReadonlyArray<PlacedNode> => nodes.map((node) => ({ ...node, measured: model.measured[node.id] }))
 
 /** Runs `request` now if every node is measured and the pane has a size, else keeps it queued. */
 export const requestFit = (model: Model, nodes: ReadonlyArray<PlacedNode>, request: FitRequest): Model => {
-	const ready = model.pane.width > 0 && nodes.length > 0 && nodes.every((node) => node.measured !== undefined)
+	const ready =
+		model.pane.width > 0 && nodes.length > 0 && nodes.every((node) => node.measured !== undefined)
 	if (!ready) return modifyFields(model, { pendingFit: () => Option.some(request) })
 	const viewport = fitViewport(nodes, model.pane, request)
 	return modifyFields(model, {
@@ -85,12 +93,18 @@ export const requestFit = (model: Model, nodes: ReadonlyArray<PlacedNode>, reque
 }
 
 const resolvePendingFit = (model: Model, nodes: ReadonlyArray<PlacedNode>): Model =>
-	Option.match(model.pendingFit, { onNone: () => model, onSome: (request) => requestFit(model, nodes, request) })
+	Option.match(model.pendingFit, {
+		onNone: () => model,
+		onSome: (request) => requestFit(model, nodes, request),
+	})
 
 /** React Flow's `zoomIn` / `zoomOut` step. */
 const ZOOM_STEP = 1.2
 
-type NodePositions = ReadonlyArray<{ readonly id: string; readonly position: { readonly x: number; readonly y: number } }>
+type NodePositions = ReadonlyArray<{
+	readonly id: string
+	readonly position: { readonly x: number; readonly y: number }
+}>
 
 export const update = (model: Model, message: Message, nodes: NodePositions): Model =>
 	Message.match(message, {
@@ -107,11 +121,19 @@ export const update = (model: Model, message: Message, nodes: NodePositions): Mo
 			return resolvePendingFit(next, placed(next, nodes))
 		},
 		ClickedZoomIn: () =>
-			modifyFields(model, { viewport: () => scaleViewport(model.viewport, ZOOM_STEP, model.pane, model) }),
+			modifyFields(model, {
+				viewport: () => scaleViewport(model.viewport, ZOOM_STEP, model.pane, model),
+			}),
 		ClickedZoomOut: () =>
-			modifyFields(model, { viewport: () => scaleViewport(model.viewport, 1 / ZOOM_STEP, model.pane, model) }),
+			modifyFields(model, {
+				viewport: () => scaleViewport(model.viewport, 1 / ZOOM_STEP, model.pane, model),
+			}),
 		ClickedFitView: () =>
-			requestFit(model, placed(model, nodes), { padding: 0.1, minZoom: model.minZoom, maxZoom: model.maxZoom }),
+			requestFit(model, placed(model, nodes), {
+				padding: 0.1,
+				minZoom: model.minZoom,
+				maxZoom: model.maxZoom,
+			}),
 	})
 
 export type { FitOptions }

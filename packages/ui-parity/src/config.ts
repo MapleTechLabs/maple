@@ -26,7 +26,9 @@ export const PORT_BASE = (() => {
 	const base = Number(raw)
 	if (!Number.isInteger(base) || base < 1024 || base > 65000)
 		throw new Error(`ui-parity: PARITY_PORT_BASE must be an integer port base, got "${raw}"`)
-	const unsafe = PORT_OFFSETS.map((offset) => base + offset).filter((port) => CHROMIUM_UNSAFE_PORTS.has(port))
+	const unsafe = PORT_OFFSETS.map((offset) => base + offset).filter((port) =>
+		CHROMIUM_UNSAFE_PORTS.has(port),
+	)
 	if (unsafe.length)
 		throw new Error(`ui-parity: PARITY_PORT_BASE=${base} reaches blocked port ${unsafe.join(", ")}`)
 	return base

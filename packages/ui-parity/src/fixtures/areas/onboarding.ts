@@ -23,7 +23,12 @@ const expiresAt = new Date(FROZEN_NOW_MS + 10 * MINUTE).toISOString()
 const cliDeviceInspect: EndpointHandler = ({ params }) => {
 	const userCode = field(params, "userCode")
 	return userCode === CLI_USER_CODE
-		? Effect.succeed({ userCode, deviceName: "Maple CLI on ada-macbook-pro", expiresAt, status: "pending" })
+		? Effect.succeed({
+				userCode,
+				deviceName: "Maple CLI on ada-macbook-pro",
+				expiresAt,
+				status: "pending",
+			})
 		: Effect.fail(new CliDeviceNotFoundError({ message: "This CLI login code is invalid or expired." }))
 }
 
@@ -31,7 +36,9 @@ const mcpInspect: EndpointHandler = ({ params }) => {
 	const requestId = field(params, "requestId")
 	if (requestId !== MCP_REQUEST_ID && requestId !== MCP_USED_REQUEST_ID)
 		return Effect.fail(
-			new McpOAuthAuthorizationNotFoundError({ message: "This MCP authorization request is invalid or expired." }),
+			new McpOAuthAuthorizationNotFoundError({
+				message: "This MCP authorization request is invalid or expired.",
+			}),
 		)
 	return Effect.succeed({
 		clientName: "Claude",
@@ -57,9 +64,24 @@ const plans = (trialAvailable: boolean) => ({
 				{ featureId: "logs", included: 100, price: usagePrice(0.3), feature: { name: "Logs" } },
 				{ featureId: "metrics", included: 100, price: usagePrice(0.3), feature: { name: "Metrics" } },
 				{ featureId: "traces", included: 100, price: usagePrice(0.3), feature: { name: "Traces" } },
-				{ featureId: "browser_sessions", included: 5000, price: usagePrice(0.002), feature: { name: "Browser Sessions" } },
-				{ featureId: "product_events", included: 1_000_000, price: usagePrice(0.005, 1000), feature: { name: "Product Events" } },
-				{ featureId: "ai_credits", included: 10, price: usagePrice(1), feature: { name: "AI Credits" } },
+				{
+					featureId: "browser_sessions",
+					included: 5000,
+					price: usagePrice(0.002),
+					feature: { name: "Browser Sessions" },
+				},
+				{
+					featureId: "product_events",
+					included: 1_000_000,
+					price: usagePrice(0.005, 1000),
+					feature: { name: "Product Events" },
+				},
+				{
+					featureId: "ai_credits",
+					included: 10,
+					price: usagePrice(1),
+					feature: { name: "AI Credits" },
+				},
 			],
 			customerEligibility: { status: null, attachAction: "activate", trialAvailable },
 			freeTrial: { durationLength: 14 },
@@ -74,22 +96,26 @@ const plans = (trialAvailable: boolean) => ({
 	],
 })
 
-const newCustomer = (identity: DatasetIdentity): EndpointHandler => () =>
-	Effect.succeed({ id: identity.orgId, subscriptions: [] })
+const newCustomer =
+	(identity: DatasetIdentity): EndpointHandler =>
+	() =>
+		Effect.succeed({ id: identity.orgId, subscriptions: [] })
 
 /** A Startup subscription that expired a week ago: the reactivation framing. */
-const lapsedCustomer = (identity: DatasetIdentity): EndpointHandler => () =>
-	Effect.succeed({
-		id: identity.orgId,
-		subscriptions: [
-			{
-				planId: "startup",
-				status: "expired",
-				currentPeriodStart: FROZEN_NOW_MS - 37 * DAY,
-				currentPeriodEnd: FROZEN_NOW_MS - 7 * DAY,
-			},
-		],
-	})
+const lapsedCustomer =
+	(identity: DatasetIdentity): EndpointHandler =>
+	() =>
+		Effect.succeed({
+			id: identity.orgId,
+			subscriptions: [
+				{
+					planId: "startup",
+					status: "expired",
+					currentPeriodStart: FROZEN_NOW_MS - 37 * DAY,
+					currentPeriodEnd: FROZEN_NOW_MS - 7 * DAY,
+				},
+			],
+		})
 
 /** A Clerk sign-up whose organization has no plan yet: the onboarding wizard and plan picker. */
 const orbitAdmin: DatasetIdentity = {
@@ -127,7 +153,9 @@ export const fixtureArea: FixtureArea = {
 		"auth.cliDeviceDeny": () => Effect.succeed({ status: "denied" }),
 		"auth.mcpOAuthAuthorizationInspect": mcpInspect,
 		"emailPublic.unsubscribe": ({ query }) =>
-			Effect.succeed({ kind: field(query, "token").startsWith("web-analytics.") ? "web-analytics" : "digest" }),
+			Effect.succeed({
+				kind: field(query, "token").startsWith("web-analytics.") ? "web-analytics" : "digest",
+			}),
 	}),
 	datasets: [
 		clerkDataset("clerk", orbitAdmin, {

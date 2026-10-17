@@ -37,7 +37,9 @@ const serve = (dir: string, port: number) =>
 		fetch: (request) => {
 			const path = join(dir, decodeURIComponent(new URL(request.url).pathname))
 			const file = existsSync(path) && statSync(path).isFile() ? path : join(dir, "index.html")
-			return new Response(readFileSync(file), { headers: { "content-type": TYPES.get(extname(file)) ?? "application/octet-stream" } })
+			return new Response(readFileSync(file), {
+				headers: { "content-type": TYPES.get(extname(file)) ?? "application/octet-stream" },
+			})
 		},
 	})
 
@@ -59,8 +61,10 @@ const recordMilestones = () => {
 	const marks: Milestones = {}
 	window.__s5Marks = marks
 	new MutationObserver(() => {
-		if (marks.firstMap === undefined && document.querySelector(".react-flow__edge")) marks.firstMap = performance.now()
-		if (marks.elkReady === undefined && document.querySelector('[data-elk-status="ready"]')) marks.elkReady = performance.now()
+		if (marks.firstMap === undefined && document.querySelector(".react-flow__edge"))
+			marks.firstMap = performance.now()
+		if (marks.elkReady === undefined && document.querySelector('[data-elk-status="ready"]'))
+			marks.elkReady = performance.now()
 	}).observe(document, { subtree: true, childList: true, attributes: true })
 }
 
@@ -79,7 +83,7 @@ const measure = async (page: Page, url: string) => {
 	const fitAll = await page.evaluate(async () => {
 		window.__smBench?.fitCamera()
 		await new Promise((done) => setTimeout(done, 300))
-		return (await window.__smBench?.run({ durationMs: 2000, pan: false }))
+		return await window.__smBench?.run({ durationMs: 2000, pan: false })
 	})
 	return { readyMs, firstMapMs, idle, pan, fitAll }
 }
@@ -95,20 +99,23 @@ const summarize = (samples: ReadonlyArray<Sample>) => {
 	const rows = {
 		"first map ms": samples.map((s) => s.firstMapMs),
 		"ELK ready ms": samples.map((s) => s.readyMs),
-		"idle fps": samples.map((s) => (s.idle?.fps ?? Number.NaN)),
-		"idle frame p50": samples.map((s) => (s.idle?.frameP50 ?? Number.NaN)),
-		"idle frame p95": samples.map((s) => (s.idle?.frameP95 ?? Number.NaN)),
-		"idle TBT ms": samples.map((s) => (s.idle?.totalBlockingMs ?? Number.NaN)),
-		"pan fps": samples.map((s) => (s.pan?.fps ?? Number.NaN)),
-		"pan frame p50": samples.map((s) => (s.pan?.frameP50 ?? Number.NaN)),
-		"pan frame p95": samples.map((s) => (s.pan?.frameP95 ?? Number.NaN)),
-		"pan TBT ms": samples.map((s) => (s.pan?.totalBlockingMs ?? Number.NaN)),
-		"pan long tasks": samples.map((s) => (s.pan?.longTasks ?? Number.NaN)),
-		"fit-all fps": samples.map((s) => (s.fitAll?.fps ?? Number.NaN)),
-		"fit-all frame p95": samples.map((s) => (s.fitAll?.frameP95 ?? Number.NaN)),
+		"idle fps": samples.map((s) => s.idle?.fps ?? Number.NaN),
+		"idle frame p50": samples.map((s) => s.idle?.frameP50 ?? Number.NaN),
+		"idle frame p95": samples.map((s) => s.idle?.frameP95 ?? Number.NaN),
+		"idle TBT ms": samples.map((s) => s.idle?.totalBlockingMs ?? Number.NaN),
+		"pan fps": samples.map((s) => s.pan?.fps ?? Number.NaN),
+		"pan frame p50": samples.map((s) => s.pan?.frameP50 ?? Number.NaN),
+		"pan frame p95": samples.map((s) => s.pan?.frameP95 ?? Number.NaN),
+		"pan TBT ms": samples.map((s) => s.pan?.totalBlockingMs ?? Number.NaN),
+		"pan long tasks": samples.map((s) => s.pan?.longTasks ?? Number.NaN),
+		"fit-all fps": samples.map((s) => s.fitAll?.fps ?? Number.NaN),
+		"fit-all frame p95": samples.map((s) => s.fitAll?.frameP95 ?? Number.NaN),
 	}
 	return Object.fromEntries(
-		Object.entries(rows).map(([key, values]) => [key, { p50: +pct(values, 50).toFixed(1), p95: +pct(values, 95).toFixed(1) }]),
+		Object.entries(rows).map(([key, values]) => [
+			key,
+			{ p50: +pct(values, 50).toFixed(1), p95: +pct(values, 95).toFixed(1) },
+		]),
 	)
 }
 
@@ -119,7 +126,11 @@ for (const [label, build] of Object.entries(builds)) {
 	const server = serve(join(root, `packages/ui-parity/.parity/builds-${BASE}/${build}`), port)
 	const samples: Sample[] = []
 	for (let run = 0; run < RUNS; run++) {
-		const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, reducedMotion: "no-preference" })
+		const context = await browser.newContext({
+			viewport: { width: 1440, height: 900 },
+			deviceScaleFactor: 1,
+			reducedMotion: "no-preference",
+		})
 		const page = await context.newPage()
 		samples.push(await measure(page, `http://127.0.0.1:${port}${BENCH}`))
 		await context.close()

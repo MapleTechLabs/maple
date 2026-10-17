@@ -121,32 +121,36 @@ export const traceEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<str
 				})
 			}),
 	),
-	"queryEngine.spanDetail": warehouseEndpoint(warehouse, SpanDetailRequest, SpanDetailResponse, (payload, { runQueryFirst }) =>
-		Effect.gen(function* () {
-			const row = yield* runQueryFirst(spanDetail, payload)
-			if (row === null) return new SpanDetailResponse({ data: null })
-			const startMs = DateTime.toEpochMillis(row.startTime)
-			const events = yield* runQueryFirst(spanEvents, {
-				traceId: row.traceId,
-				spanId: row.spanId,
-				serviceName: row.serviceName,
-				spanName: row.rawSpanName,
-				startTime: formatWarehouseDateTime(startMs),
-				endTime: formatWarehouseDateTime(startMs + 1000),
-			}).pipe(
-				Effect.map((raw) => (raw ? parseSpanEvents(raw) : [])),
-				Effect.orElseSucceed(() => []),
-			)
-			return new SpanDetailResponse({
-				data: {
-					traceId: decodeTraceId(row.traceId),
-					spanId: decodeSpanId(row.spanId),
-					spanAttributes: row.spanAttributes,
-					resourceAttributes: row.resourceAttributes,
-					events,
-				},
-			})
-		}),
+	"queryEngine.spanDetail": warehouseEndpoint(
+		warehouse,
+		SpanDetailRequest,
+		SpanDetailResponse,
+		(payload, { runQueryFirst }) =>
+			Effect.gen(function* () {
+				const row = yield* runQueryFirst(spanDetail, payload)
+				if (row === null) return new SpanDetailResponse({ data: null })
+				const startMs = DateTime.toEpochMillis(row.startTime)
+				const events = yield* runQueryFirst(spanEvents, {
+					traceId: row.traceId,
+					spanId: row.spanId,
+					serviceName: row.serviceName,
+					spanName: row.rawSpanName,
+					startTime: formatWarehouseDateTime(startMs),
+					endTime: formatWarehouseDateTime(startMs + 1000),
+				}).pipe(
+					Effect.map((raw) => (raw ? parseSpanEvents(raw) : [])),
+					Effect.orElseSucceed(() => []),
+				)
+				return new SpanDetailResponse({
+					data: {
+						traceId: decodeTraceId(row.traceId),
+						spanId: decodeSpanId(row.spanId),
+						spanAttributes: row.spanAttributes,
+						resourceAttributes: row.resourceAttributes,
+						events,
+					},
+				})
+			}),
 	),
 	"queryEngine.traceSpanEvents": warehouseEndpoint(
 		warehouse,
@@ -158,7 +162,10 @@ export const traceEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<str
 				(rows) =>
 					new TraceSpanEventsResponse({
 						data: rows.flatMap((row) => {
-							const events = parseSpanEvents(row).map(({ name, offsetMs }) => ({ name, offsetMs }))
+							const events = parseSpanEvents(row).map(({ name, offsetMs }) => ({
+								name,
+								offsetMs,
+							}))
 							return events.length === 0 ? [] : [{ spanId: decodeSpanId(row.spanId), events }]
 						}),
 					}),

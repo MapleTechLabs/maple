@@ -17,20 +17,38 @@ type Pane = Canvas.Model["pane"]
 
 const visible = (node: PlacedNode, viewport: Viewport, pane: Pane): boolean =>
 	node.measured === undefined ||
-	isRectVisible({ ...node.position, width: node.measured.width, height: node.measured.height }, viewport, pane)
+	isRectVisible(
+		{ ...node.position, width: node.measured.width, height: node.measured.height },
+		viewport,
+		pane,
+	)
 
 const edgeVisible = (source: PlacedNode, target: PlacedNode, viewport: Viewport, pane: Pane): boolean => {
 	if (source.measured === undefined || target.measured === undefined) return false
 	const x = Math.min(source.position.x, target.position.x)
 	const y = Math.min(source.position.y, target.position.y)
 	const x2 = Math.max(source.position.x + source.measured.width, target.position.x + target.measured.width)
-	const y2 = Math.max(source.position.y + source.measured.height, target.position.y + target.measured.height)
-	return isRectVisible({ x, y, width: x2 === x ? 1 : x2 - x, height: y2 === y ? 1 : y2 - y }, viewport, pane)
+	const y2 = Math.max(
+		source.position.y + source.measured.height,
+		target.position.y + target.measured.height,
+	)
+	return isRectVisible(
+		{ x, y, width: x2 === x ? 1 : x2 - x, height: y2 === y ? 1 : y2 - y },
+		viewport,
+		pane,
+	)
 }
 
 /** `onlyRenderVisibleElements`: nodes overlapping the pane, plus any still unmeasured. */
-const renderNodes = <M>(h: HtmlBuilder<M>, graph: FlowGraph, model: Model, toMessage: (message: Message) => M): Html => {
-	const placed = new Map(graph.nodes.map((node) => [node.id, { ...node, measured: model.canvas.measured[node.id] }]))
+const renderNodes = <M>(
+	h: HtmlBuilder<M>,
+	graph: FlowGraph,
+	model: Model,
+	toMessage: (message: Message) => M,
+): Html => {
+	const placed = new Map(
+		graph.nodes.map((node) => [node.id, { ...node, measured: model.canvas.measured[node.id] }]),
+	)
 	return nodesLayer(
 		h,
 		graph.nodes.flatMap((node) => {
@@ -50,8 +68,15 @@ const renderNodes = <M>(h: HtmlBuilder<M>, graph: FlowGraph, model: Model, toMes
 	)
 }
 
-const renderEdges = <M>(h: HtmlBuilder<M>, graph: FlowGraph, model: Model, toMessage: (message: Message) => M): Html => {
-	const placed = new Map(graph.nodes.map((node) => [node.id, { ...node, measured: model.canvas.measured[node.id] }]))
+const renderEdges = <M>(
+	h: HtmlBuilder<M>,
+	graph: FlowGraph,
+	model: Model,
+	toMessage: (message: Message) => M,
+): Html => {
+	const placed = new Map(
+		graph.nodes.map((node) => [node.id, { ...node, measured: model.canvas.measured[node.id] }]),
+	)
 	return edgesLayer(
 		h,
 		graph.edges.flatMap((edge) => {
@@ -103,15 +128,26 @@ const header = <M>(h: HtmlBuilder<M>, onFit: M): Html =>
 		[h.Class("flex items-center justify-between border-b bg-muted/30 px-3 py-2 shrink-0")],
 		[
 			h.span([h.Class("text-xs font-medium text-muted-foreground")], ["Flow View"]),
-			button(h, { variant: "ghost", size: "sm", className: "h-6 gap-1 text-xs", attributes: [h.OnClick(onFit)] }, [
-				icon(h, "EyeIcon"),
-				"Fit view",
-			]),
+			button(
+				h,
+				{
+					variant: "ghost",
+					size: "sm",
+					className: "h-6 gap-1 text-xs",
+					attributes: [h.OnClick(onFit)],
+				},
+				[icon(h, "EyeIcon"), "Fit view"],
+			),
 		],
 	)
 
 /** `TraceFlowView` for a trace that fits the flow view. */
-export const view = <M>(h: HtmlBuilder<M>, graph: FlowGraph, model: Model, toMessage: (message: Message) => M): Html => {
+export const view = <M>(
+	h: HtmlBuilder<M>,
+	graph: FlowGraph,
+	model: Model,
+	toMessage: (message: Message) => M,
+): Html => {
 	if (graph.nodeCount > MAX_FLOW_NODES) {
 		return h.div(
 			[h.Class("border p-8 text-center")],

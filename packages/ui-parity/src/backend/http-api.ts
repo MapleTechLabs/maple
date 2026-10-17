@@ -63,7 +63,11 @@ const builderGroup = HttpApiBuilder.group as unknown as (
 // SAFETY: same runtime function; the group services it reads are provided by `builderGroup` layers below.
 const builderLayer = HttpApiBuilder.layer as unknown as (
 	api: FixtureApi,
-) => Layer.Layer<never, never, HttpRouter.HttpRouter | Etag.Generator | FileSystem.FileSystem | HttpPlatform.HttpPlatform | Path.Path>
+) => Layer.Layer<
+	never,
+	never,
+	HttpRouter.HttpRouter | Etag.Generator | FileSystem.FileSystem | HttpPlatform.HttpPlatform | Path.Path
+>
 
 export const FIXTURE_APIS: ReadonlyArray<ReflectedApi> = APIS.map(reflect)
 
@@ -120,7 +124,9 @@ const successDecoder = (endpoint: ReflectedEndpoint) => {
 	const schema = only !== undefined && rest.length === 0 ? only : Schema.Union(schemas)
 	// SAFETY: @maple/domain success schemas need no decoding services; `Top` only widens R to unknown.
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- the decoder's input is the fixture's wire JSON by definition
-	return Schema.decodeUnknownEffect(schema) as (input: unknown) => Effect.Effect<unknown, Schema.SchemaError>
+	return Schema.decodeUnknownEffect(schema) as (
+		input: unknown,
+	) => Effect.Effect<unknown, Schema.SchemaError>
 }
 
 const genericHandler = (options: ApiServerOptions, group: ReflectedGroup, endpoint: ReflectedEndpoint) => {
@@ -169,7 +175,8 @@ const apiLayer = (reflected: ReflectedApi, options: ApiServerOptions) =>
 				...reflected.groups.map((group) =>
 					builderGroup(reflected.api, group.identifier, (handlers) =>
 						Object.values(group.endpoints).reduce(
-							(acc, endpoint) => acc.handle(endpoint.identifier, genericHandler(options, group, endpoint)),
+							(acc, endpoint) =>
+								acc.handle(endpoint.identifier, genericHandler(options, group, endpoint)),
 							handlers,
 						),
 					),
@@ -189,7 +196,10 @@ export const makeApiWebHandler = (options: ApiServerOptions) => {
 		Effect.gen(function* () {
 			const request = yield* HttpServerRequest.HttpServerRequest
 			const path = new URL(request.url, "http://parity.local").pathname
-			options.calls.recordUnmocked(options.captureOf(request), `${request.method} ${path} (no such route)`)
+			options.calls.recordUnmocked(
+				options.captureOf(request),
+				`${request.method} ${path} (no such route)`,
+			)
 			return unmockedResponse(`${request.method} ${path}`)
 		}),
 	)
@@ -203,5 +213,7 @@ export const makeApiWebHandler = (options: ApiServerOptions) => {
 /** Every `"<group>.<endpoint>"` the four APIs declare, for coverage reports and tests. */
 export const allEndpointTags = (): ReadonlyArray<string> =>
 	FIXTURE_APIS.flatMap((api) =>
-		api.groups.flatMap((group) => Object.values(group.endpoints).map((endpoint) => endpointTag(group, endpoint))),
+		api.groups.flatMap((group) =>
+			Object.values(group.endpoints).map((endpoint) => endpointTag(group, endpoint)),
+		),
 	)

@@ -6,14 +6,24 @@ import { measuredBounds } from "./viewport"
 // React Flow's stock `<Controls>`, `<MiniMap>` and `<Background variant="dots">`.
 
 const svgPath = <M>(h: HtmlBuilder<M>, viewBox: string, d: string): Html =>
-	h.svg([h.Attribute("xmlns", "http://www.w3.org/2000/svg"), h.Attribute("viewBox", viewBox)], [h.path([h.Attribute("d", d)])])
+	h.svg(
+		[h.Attribute("xmlns", "http://www.w3.org/2000/svg"), h.Attribute("viewBox", viewBox)],
+		[h.path([h.Attribute("d", d)])],
+	)
 
 const PLUS = "M32 18.133H18.133V32h-4.266V18.133H0v-4.266h13.867V0h4.266v13.867H32z"
 const MINUS = "M0 0h32v4.2H0z"
 const FIT =
 	"M3.692 4.63c0-.53.4-.938.939-.938h5.215V0H4.708C2.13 0 0 2.054 0 4.63v5.216h3.692V4.631zM27.354 0h-5.2v3.692h5.17c.53 0 .984.4.984.939v5.215H32V4.631A4.624 4.624 0 0027.354 0zm.954 24.83c0 .532-.4.94-.939.94h-5.215v3.768h5.215c2.577 0 4.631-2.13 4.631-4.707v-5.139h-3.692v5.139zm-23.677.94c-.531 0-.939-.4-.939-.94v-5.138H0v5.139c0 2.577 2.13 4.707 4.708 4.707h5.138V25.77H4.631z"
 
-const controlButton = <M>(h: HtmlBuilder<M>, kind: string, label: string, disabled: boolean, onClick: M, icon: Html) =>
+const controlButton = <M>(
+	h: HtmlBuilder<M>,
+	kind: string,
+	label: string,
+	disabled: boolean,
+	onClick: M,
+	icon: Html,
+) =>
 	h.button(
 		[
 			h.Type("button"),
@@ -35,14 +45,36 @@ export const controls = <M>(h: HtmlBuilder<M>, model: Model, toMessage: (message
 			h.AriaLabel("Control Panel"),
 		],
 		[
-			controlButton(h, "zoomin", "Zoom In", model.viewport.zoom >= model.maxZoom, toMessage(Message.ClickedZoomIn()), svgPath(h, "0 0 32 32", PLUS)),
-			controlButton(h, "zoomout", "Zoom Out", model.viewport.zoom <= model.minZoom, toMessage(Message.ClickedZoomOut()), svgPath(h, "0 0 32 5", MINUS)),
-			controlButton(h, "fitview", "Fit View", false, toMessage(Message.ClickedFitView()), svgPath(h, "0 0 32 30", FIT)),
+			controlButton(
+				h,
+				"zoomin",
+				"Zoom In",
+				model.viewport.zoom >= model.maxZoom,
+				toMessage(Message.ClickedZoomIn()),
+				svgPath(h, "0 0 32 32", PLUS),
+			),
+			controlButton(
+				h,
+				"zoomout",
+				"Zoom Out",
+				model.viewport.zoom <= model.minZoom,
+				toMessage(Message.ClickedZoomOut()),
+				svgPath(h, "0 0 32 5", MINUS),
+			),
+			controlButton(
+				h,
+				"fitview",
+				"Fit View",
+				false,
+				toMessage(Message.ClickedFitView()),
+				svgPath(h, "0 0 32 30", FIT),
+			),
 		],
 	)
 
 /** Read once: React Flow picks the minimap's shape rendering from the browser. */
-const MINIMAP_NODE_RENDERING = typeof window !== "undefined" && "chrome" in window ? "crispEdges" : "geometricPrecision"
+const MINIMAP_NODE_RENDERING =
+	typeof window !== "undefined" && "chrome" in window ? "crispEdges" : "geometricPrecision"
 
 const MINIMAP_WIDTH = 200
 const MINIMAP_HEIGHT = 150
@@ -53,7 +85,11 @@ export const miniMap = <M>(
 	h: HtmlBuilder<M>,
 	model: Model,
 	nodes: ReadonlyArray<PlacedNode>,
-	options: { readonly className: string; readonly maskColor: string; readonly nodeColor: (id: string) => string },
+	options: {
+		readonly className: string
+		readonly maskColor: string
+		readonly nodeColor: (id: string) => string
+	},
 ): Html => {
 	const { viewport, pane } = model
 	const view = {
@@ -69,8 +105,12 @@ export const miniMap = <M>(
 			: {
 					x: Math.min(nodeBounds.x, view.x),
 					y: Math.min(nodeBounds.y, view.y),
-					width: Math.max(nodeBounds.x + nodeBounds.width, view.x + view.width) - Math.min(nodeBounds.x, view.x),
-					height: Math.max(nodeBounds.y + nodeBounds.height, view.y + view.height) - Math.min(nodeBounds.y, view.y),
+					width:
+						Math.max(nodeBounds.x + nodeBounds.width, view.x + view.width) -
+						Math.min(nodeBounds.x, view.x),
+					height:
+						Math.max(nodeBounds.y + nodeBounds.height, view.y + view.height) -
+						Math.min(nodeBounds.y, view.y),
 				}
 	const scale = Math.max(bounds.width / MINIMAP_WIDTH, bounds.height / MINIMAP_HEIGHT)
 	const viewWidth = scale * MINIMAP_WIDTH

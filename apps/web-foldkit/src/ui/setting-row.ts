@@ -69,7 +69,9 @@ export const settingRow = <M>(
 					h.div(
 						[h.Class(settingRowLeadStyles)],
 						[
-							...(options.icon === undefined ? [] : [h.div([h.Class(settingRowIconStyles)], [options.icon])]),
+							...(options.icon === undefined
+								? []
+								: [h.div([h.Class(settingRowIconStyles)], [options.icon])]),
 							h.div(
 								[h.Class(settingRowTextStyles)],
 								[
@@ -86,7 +88,11 @@ export const settingRow = <M>(
 										? []
 										: [
 												h.p(
-													[h.Class(settingRowDescriptionStyles), ...fieldState, h.Id(options.ids.description)],
+													[
+														h.Class(settingRowDescriptionStyles),
+														...fieldState,
+														h.Id(options.ids.description),
+													],
 													[options.description],
 												),
 											]),

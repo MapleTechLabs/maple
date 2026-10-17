@@ -50,7 +50,10 @@ export const UTILIZATION_TEXT = {
 	ok: undefined,
 } satisfies Record<UtilizationLevel, string | undefined>
 
-export const HEALTH_TONE = { crit: "crit", warn: "warn", neutral: "ok" } satisfies Record<ErrorRateLevel, Tone>
+export const HEALTH_TONE = { crit: "crit", warn: "warn", neutral: "ok" } satisfies Record<
+	ErrorRateLevel,
+	Tone
+>
 
 const SELECTED_BORDER_CLASS = {
 	crit: "border-severity-error ring-[3px] ring-severity-error/15",
@@ -58,7 +61,8 @@ const SELECTED_BORDER_CLASS = {
 	neutral: "border-border-active ring-[3px] ring-foreground/15",
 } satisfies Record<ErrorRateLevel, string>
 
-export const selectedBorderClass = (errorRate: number): string => SELECTED_BORDER_CLASS[errorRateLevel(errorRate)]
+export const selectedBorderClass = (errorRate: number): string =>
+	SELECTED_BORDER_CLASS[errorRateLevel(errorRate)]
 
 export const errorRateClass = (errorRate: number): string => {
 	const level = errorRateLevel(errorRate)
@@ -68,17 +72,33 @@ export const errorRateClass = (errorRate: number): string => {
 /** Base UI `<TooltipTrigger>`: a bare button around the trigger content (the popup is not ported). */
 export const tooltipTrigger = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.button(
-		[h.Attribute("data-base-ui-tooltip-trigger", ""), h.DataAttribute("slot", "tooltip-trigger"), h.Type("button")],
+		[
+			h.Attribute("data-base-ui-tooltip-trigger", ""),
+			h.DataAttribute("slot", "tooltip-trigger"),
+			h.Type("button"),
+		],
 		children,
 	)
 
-export const metricCell = <M>(h: HtmlBuilder<M>, label: string, value: string, valueClassName?: string): Html =>
+export const metricCell = <M>(
+	h: HtmlBuilder<M>,
+	label: string,
+	value: string,
+	valueClassName?: string,
+): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-px")],
 		[
 			eyebrow(h, { className: "text-4xs text-muted-foreground/60" }, [label]),
 			h.span(
-				[h.Class(cn("text-2xs font-medium font-mono tabular-nums text-secondary-foreground", valueClassName))],
+				[
+					h.Class(
+						cn(
+							"text-2xs font-medium font-mono tabular-nums text-secondary-foreground",
+							valueClassName,
+						),
+					),
+				],
 				[value],
 			),
 		],

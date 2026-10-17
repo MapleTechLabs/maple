@@ -87,15 +87,26 @@ const gradient = <M>(h: HtmlBuilder<M>, id: string, source: XY, target: XY, from
 		],
 	)
 
-const tubePath = <M>(h: HtmlBuilder<M>, d: string, attributes: ReadonlyArray<readonly [string, string]>): Html =>
-	h.path([h.Attribute("d", d), h.Attribute("fill", "none"), ...attributes.map(([name, value]) => h.Attribute(name, value))])
+const tubePath = <M>(
+	h: HtmlBuilder<M>,
+	d: string,
+	attributes: ReadonlyArray<readonly [string, string]>,
+): Html =>
+	h.path([
+		h.Attribute("d", d),
+		h.Attribute("fill", "none"),
+		...attributes.map(([name, value]) => h.Attribute(name, value)),
+	])
 
 const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: number, y: number): Html => {
 	const callCount = data?.callCount ?? 0
 	const hasSampling = data?.hasSampling ?? false
 	const errorRate = data?.errorRate ?? 0
 	const estimated = hasSampling
-		? Math.round((data?.estimatedCallsPerSecond ?? 0) * (callCount / Math.max(data?.callsPerSecond ?? 1, 0.001)))
+		? Math.round(
+				(data?.estimatedCallsPerSecond ?? 0) *
+					(callCount / Math.max(data?.callsPerSecond ?? 1, 0.001)),
+			)
 		: callCount
 	return h.foreignObject(
 		[
@@ -109,7 +120,13 @@ const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: n
 			h.div(
 				[
 					h.Class("flex items-center justify-center"),
-					...(hasSampling ? [h.Title("Based on traced requests — actual rate may be higher with sampling enabled")] : []),
+					...(hasSampling
+						? [
+								h.Title(
+									"Based on traced requests — actual rate may be higher with sampling enabled",
+								),
+							]
+						: []),
 				],
 				[
 					h.span(
@@ -122,7 +139,12 @@ const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: n
 							...(hasSampling ? ["~"] : []),
 							formatNumber(hasSampling ? estimated : callCount),
 							...(errorRate > 0
-								? [h.span([h.Class(errorRateClass(errorRate, { neutral: "" }))], [" ", formatErrorRate(errorRate)])]
+								? [
+										h.span(
+											[h.Class(errorRateClass(errorRate, { neutral: "" }))],
+											[" ", formatErrorRate(errorRate)],
+										),
+									]
 								: []),
 						],
 					),
@@ -135,7 +157,12 @@ const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: n
 /** The edge's `<g>` children; `index` keeps gradient ids unique (React used `useId`). */
 export const serviceMapEdge = <M>(
 	h: HtmlBuilder<M>,
-	edge: { readonly id: string; readonly source: string; readonly target: string; readonly data: ServiceEdgeData | undefined },
+	edge: {
+		readonly id: string
+		readonly source: string
+		readonly target: string
+		readonly data: ServiceEdgeData | undefined
+	},
 	source: XY,
 	target: XY,
 	index: number,
@@ -191,6 +218,8 @@ export const serviceMapEdge = <M>(
 			["stroke-width", String(Math.max(1, sw * 0.4))],
 			["stroke-opacity", String((0.15 + i * 0.25) * dim)],
 		]),
-		...(dimmed ? [] : [edgeLabel(h, data, geometry.labelX, geometry.labelY + (target.y > source.y ? -16 : 4) - 12)]),
+		...(dimmed
+			? []
+			: [edgeLabel(h, data, geometry.labelX, geometry.labelY + (target.y > source.y ? -16 : 4) - 12)]),
 	]
 }

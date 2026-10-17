@@ -20,10 +20,13 @@ declare global {
 	}
 }
 
-export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()("@maple/web-foldkit/ClerkLoadError", {
-	message: Schema.String,
-	cause: Schema.Defect(),
-}) {}
+export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()(
+	"@maple/web-foldkit/ClerkLoadError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /** What the app reads from a Clerk session (`useAuth()` in apps/web). */
 export const ClerkSnapshot = Schema.Struct({
@@ -61,7 +64,8 @@ const injectClerkJs = Effect.callback<void, ClerkLoadError>((resume) => {
 
 const currentClerk = Effect.suspend(() =>
 	Option.match(Option.fromNullishOr(window.Clerk), {
-		onNone: () => Effect.fail(new ClerkLoadError({ message: "window.Clerk is missing", cause: undefined })),
+		onNone: () =>
+			Effect.fail(new ClerkLoadError({ message: "window.Clerk is missing", cause: undefined })),
 		onSome: Effect.succeed,
 	}),
 )
@@ -74,7 +78,13 @@ export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.ge
 	}
 	const clerk = yield* currentClerk
 	yield* Effect.tryPromise({
-		try: () => clerk.load({ signInUrl, signUpUrl, signUpFallbackRedirectUrl: "/quick-start", afterSignOutUrl: signInUrl }),
+		try: () =>
+			clerk.load({
+				signInUrl,
+				signUpUrl,
+				signUpFallbackRedirectUrl: "/quick-start",
+				afterSignOutUrl: signInUrl,
+			}),
 		catch: (cause) => new ClerkLoadError({ message: "Clerk failed to load", cause }),
 	})
 	return toSnapshot(clerk)
@@ -86,7 +96,9 @@ export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<Cler
 		onNone: () => Effect.void,
 		onSome: (clerk) =>
 			Effect.acquireRelease(
-				Effect.sync(() => clerk.addListener((resources) => Queue.offerUnsafe(queue, toSnapshot(resources)))),
+				Effect.sync(() =>
+					clerk.addListener((resources) => Queue.offerUnsafe(queue, toSnapshot(resources))),
+				),
 				(unsubscribe) => Effect.sync(unsubscribe),
 			),
 	}),
@@ -95,7 +107,4 @@ export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<Cler
 /** The session JWT for API calls (`getToken()` in apps/web's ClerkAuthBridge). */
 export const clerkSessionToken: Effect.Effect<Option.Option<string>> = Effect.tryPromise(
 	() => window.Clerk?.session?.getToken() ?? Promise.resolve(null),
-).pipe(
-	Effect.map(Option.fromNullishOr),
-	Effect.orElseSucceed(Option.none),
-)
+).pipe(Effect.map(Option.fromNullishOr), Effect.orElseSucceed(Option.none))

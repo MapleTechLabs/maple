@@ -81,7 +81,13 @@ export function getDbStyle(system: string | undefined): DbStyle {
 	switch (s) {
 		case "postgresql":
 		case "postgres":
-			return { category: "database", icon: "postgres", label: "PostgreSQL", color: "oklch(0.6 0.12 255)", branded: true }
+			return {
+				category: "database",
+				icon: "postgres",
+				label: "PostgreSQL",
+				color: "oklch(0.6 0.12 255)",
+				branded: true,
+			}
 		case "mysql":
 		case "mariadb":
 			return {
@@ -92,17 +98,41 @@ export function getDbStyle(system: string | undefined): DbStyle {
 				branded: true,
 			}
 		case "clickhouse":
-			return { category: "database", icon: "clickhouse", label: "ClickHouse", color: "oklch(0.8 0.16 95)", branded: true }
+			return {
+				category: "database",
+				icon: "clickhouse",
+				label: "ClickHouse",
+				color: "oklch(0.8 0.16 95)",
+				branded: true,
+			}
 		case "mongodb":
-			return { category: "database", icon: "mongodb", label: "MongoDB", color: "oklch(0.66 0.16 150)", branded: true }
+			return {
+				category: "database",
+				icon: "mongodb",
+				label: "MongoDB",
+				color: "oklch(0.66 0.16 150)",
+				branded: true,
+			}
 		case "redis":
-			return { category: "cache", icon: "redis", label: "Redis", color: "oklch(0.58 0.2 25)", branded: true }
+			return {
+				category: "cache",
+				icon: "redis",
+				label: "Redis",
+				color: "oklch(0.58 0.2 25)",
+				branded: true,
+			}
 		case "tinybird":
 			// No Nucleo/brand icon for Tinybird yet, so the generic database glyph
 			// carries the brand color rather than shipping an invented mark. The
 			// case still earns its keep: without it the node renders the raw
 			// lowercase `tinybird` in the default database blue.
-			return { category: "database", icon: "database", label: "Tinybird", color: "oklch(0.82 0.19 155)", branded: false }
+			return {
+				category: "database",
+				icon: "database",
+				label: "Tinybird",
+				color: "oklch(0.82 0.19 155)",
+				branded: false,
+			}
 	}
 
 	const category = categoryOf(s)
@@ -134,7 +164,10 @@ export interface DbNodeStyle {
  * `HYPERDRIVE_DB_NAMESPACE` sentinel (every Hyperdrive config collapses to it)
  * brands the node as Hyperdrive with the underlying system kept in the badge.
  */
-export function resolveDbNodeStyle(dbSystem: string | undefined, dbNamespace: string | undefined): DbNodeStyle {
+export function resolveDbNodeStyle(
+	dbSystem: string | undefined,
+	dbNamespace: string | undefined,
+): DbNodeStyle {
 	const ns = dbNamespace ?? ""
 	const sys = getDbStyle(dbSystem)
 	if (ns === HYPERDRIVE_DB_NAMESPACE) {

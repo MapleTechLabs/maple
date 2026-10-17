@@ -1,5 +1,12 @@
-import { resolveDbNodeStyle, resolvePlanetScaleDbStyle, withAlpha } from "@maple/ui/components/service-map/service-map-db-style"
-import { getServiceMapNodeColor, type ServiceNodeData } from "@maple/ui/components/service-map/service-map-utils"
+import {
+	resolveDbNodeStyle,
+	resolvePlanetScaleDbStyle,
+	withAlpha,
+} from "@maple/ui/components/service-map/service-map-db-style"
+import {
+	getServiceMapNodeColor,
+	type ServiceNodeData,
+} from "@maple/ui/components/service-map/service-map-utils"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatRate } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
@@ -43,7 +50,7 @@ const tintedCard = (color: string, tint: number, border: number, selected: boole
 	return selected ? { ...base, "box-shadow": `0 0 0 3px ${withAlpha(color, 0.16)}` } : base
 }
 
-const podsCell =<M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
+const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 	h.div(
 		[h.Class("ml-auto flex flex-col items-end gap-px")],
 		[
@@ -51,18 +58,41 @@ const podsCell =<M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 			data.infra
 				? tooltipTrigger(h, [
 						h.span(
-							[h.Class("flex items-center gap-1 font-mono text-2xs font-medium tabular-nums text-secondary-foreground")],
-							[icon(h, "CubeIcon", { size: 10, className: "text-muted-foreground/70" }), String(data.infra.podCount)],
+							[
+								h.Class(
+									"flex items-center gap-1 font-mono text-2xs font-medium tabular-nums text-secondary-foreground",
+								),
+							],
+							[
+								icon(h, "CubeIcon", { size: 10, className: "text-muted-foreground/70" }),
+								String(data.infra.podCount),
+							],
 						),
 					])
-				: h.span([h.Class("font-mono text-2xs tabular-nums text-muted-foreground/30")], [EMPTY_VALUE]),
+				: h.span(
+						[h.Class("font-mono text-2xs tabular-nums text-muted-foreground/30")],
+						[EMPTY_VALUE],
+					),
 		],
 	)
 
 const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): ReadonlyArray<Html> => {
-	const { label, throughput, hasSampling, errorRate, avgLatencyMs, selected, platform, runtime, colorMode } = data
+	const {
+		label,
+		throughput,
+		hasSampling,
+		errorRate,
+		avgLatencyMs,
+		selected,
+		platform,
+		runtime,
+		colorMode,
+	} = data
 	const runtimeInfo = formatRuntime(runtime, platform)
-	const accentColor = getServiceMapNodeColor({ label, kind: "service", errorRate, platform }, colorMode ?? "service")
+	const accentColor = getServiceMapNodeColor(
+		{ label, kind: "service", errorRate, platform },
+		colorMode ?? "service",
+	)
 	const platformIcon = PLATFORM_ICON[platform ?? "none"]
 	return [
 		...handles(h, id),
@@ -71,7 +101,9 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 				h.Class(
 					cn(
 						"flex w-[220px] cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
-						selected ? selectedBorderClass(errorRate) : "border-border hover:border-border-active",
+						selected
+							? selectedBorderClass(errorRate)
+							: "border-border hover:border-border-active",
 					),
 				),
 			],
@@ -87,17 +119,34 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 								tooltipTrigger(h, [
 									icon(h, platformIcon.icon, {
 										size: 12,
-										className: cn("shrink-0", !platformIcon.branded && "text-muted-foreground/80"),
+										className: cn(
+											"shrink-0",
+											!platformIcon.branded && "text-muted-foreground/80",
+										),
 									}),
 								]),
-								middleTruncate(h, { text: label, tail: 12, className: "text-xs font-medium text-foreground" }),
+								middleTruncate(h, {
+									text: label,
+									tail: 12,
+									className: "text-xs font-medium text-foreground",
+								}),
 								...(runtimeInfo === null
 									? []
 									: [
 											runtimeInfo.icon === null
-												? eyebrow(h, { className: "shrink-0 text-4xs text-muted-foreground/60" }, [runtimeInfo.short])
+												? eyebrow(
+														h,
+														{
+															className:
+																"shrink-0 text-4xs text-muted-foreground/60",
+														},
+														[runtimeInfo.short],
+													)
 												: tooltipTrigger(h, [
-														icon(h, runtimeInfo.icon, { size: 12, className: "shrink-0 text-muted-foreground/70" }),
+														icon(h, runtimeInfo.icon, {
+															size: 12,
+															className: "shrink-0 text-muted-foreground/70",
+														}),
 													]),
 										]),
 							],
@@ -105,7 +154,9 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 						h.div(
 							[h.Class("flex gap-4")],
 							[
-								tooltipTrigger(h, [metricCell(h, "req/s", rateText(throughput, hasSampling))]),
+								tooltipTrigger(h, [
+									metricCell(h, "req/s", rateText(throughput, hasSampling)),
+								]),
 								errCell(h, errorRate),
 								avgCell(h, avgLatencyMs),
 								podsCell(h, data),
@@ -118,25 +169,49 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 	]
 }
 
-const formatLag = (seconds: number): string => (seconds >= 1 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds * 1000)}ms`)
+const formatLag = (seconds: number): string =>
+	seconds >= 1 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds * 1000)}ms`
 
-const planetscaleRow = <M>(h: HtmlBuilder<M>, stats: NonNullable<NonNullable<ServiceNodeData["planetscale"]>["stats"]>): Html =>
+const planetscaleRow = <M>(
+	h: HtmlBuilder<M>,
+	stats: NonNullable<NonNullable<ServiceNodeData["planetscale"]>["stats"]>,
+): Html =>
 	h.div(
 		[h.Class("flex gap-4")],
 		[
 			metricCell(h, "conns", formatRate(stats.connectionsAvg)),
-			metricCell(h, "cpu", `${stats.cpuMaxPercent.toFixed(0)}%`, UTILIZATION_TEXT[utilizationLevel(stats.cpuMaxPercent / 100)]),
+			metricCell(
+				h,
+				"cpu",
+				`${stats.cpuMaxPercent.toFixed(0)}%`,
+				UTILIZATION_TEXT[utilizationLevel(stats.cpuMaxPercent / 100)],
+			),
 			metricCell(
 				h,
 				"lag",
 				formatLag(stats.replicaLagMaxSeconds),
-				stats.replicaLagMaxSeconds > 10 ? "text-severity-error" : stats.replicaLagMaxSeconds > 1 ? "text-severity-warn" : undefined,
+				stats.replicaLagMaxSeconds > 10
+					? "text-severity-error"
+					: stats.replicaLagMaxSeconds > 1
+						? "text-severity-warn"
+						: undefined,
 			),
 		],
 	)
 
 const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): ReadonlyArray<Html> => {
-	const { throughput, hasSampling, errorRate, avgLatencyMs, maxLatencyMs, p95LatencyMs, dbSystem, dbNamespace, selected, planetscale } = data
+	const {
+		throughput,
+		hasSampling,
+		errorRate,
+		avgLatencyMs,
+		maxLatencyMs,
+		p95LatencyMs,
+		dbSystem,
+		dbNamespace,
+		selected,
+		planetscale,
+	} = data
 	const style = planetscale
 		? resolvePlanetScaleDbStyle(dbSystem, dbNamespace, planetscale.kind)
 		: resolveDbNodeStyle(dbSystem, dbNamespace)
@@ -167,9 +242,17 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 										style: branded ? undefined : { color },
 									}),
 								]),
-								h.span([h.Class("truncate text-xs font-medium text-foreground"), h.Title(title)], [title]),
 								h.span(
-									[h.Class("ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"), h.Style({ color })],
+									[h.Class("truncate text-xs font-medium text-foreground"), h.Title(title)],
+									[title],
+								),
+								h.span(
+									[
+										h.Class(
+											"ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide",
+										),
+										h.Style({ color }),
+									],
 									[badge],
 								),
 							],
@@ -180,7 +263,12 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 								metricCell(h, "calls/s", rateText(throughput, hasSampling)),
 								errCell(h, errorRate),
 								avgCell(h, avgLatencyMs),
-								metricCell(h, p95LatencyMs === undefined ? "max" : "p95", formatLatency(tail), latencyToneClass(tail, "p95")),
+								metricCell(
+									h,
+									p95LatencyMs === undefined ? "max" : "p95",
+									formatLatency(tail),
+									latencyToneClass(tail, "p95"),
+								),
 							],
 						),
 						...(planetscale?.stats ? [planetscaleRow(h, planetscale.stats)] : []),
@@ -191,7 +279,11 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 	]
 }
 
-const namespaceAggregateNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): ReadonlyArray<Html> => {
+const namespaceAggregateNode = <M>(
+	h: HtmlBuilder<M>,
+	id: string,
+	data: ServiceNodeData,
+): ReadonlyArray<Html> => {
 	const { label, throughput, errorRate, avgLatencyMs, selected, nsMemberCount, colorMode } = data
 	const color = getServiceMapNodeColor(data, colorMode ?? "service")
 	return [
@@ -213,16 +305,32 @@ const namespaceAggregateNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceN
 							[h.Class("flex items-center gap-1.5")],
 							[
 								statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
-								h.span([h.Class("truncate text-xs font-semibold uppercase tracking-wider text-foreground")], [label]),
 								h.span(
-									[h.Class("ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide"), h.Style({ color })],
+									[
+										h.Class(
+											"truncate text-xs font-semibold uppercase tracking-wider text-foreground",
+										),
+									],
+									[label],
+								),
+								h.span(
+									[
+										h.Class(
+											"ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide",
+										),
+										h.Style({ color }),
+									],
 									[String(nsMemberCount ?? 0), " services"],
 								),
 							],
 						),
 						h.div(
 							[h.Class("flex gap-4")],
-							[metricCell(h, "req/s", formatRate(throughput)), errCell(h, errorRate), avgCell(h, avgLatencyMs)],
+							[
+								metricCell(h, "req/s", formatRate(throughput)),
+								errCell(h, errorRate),
+								avgCell(h, avgLatencyMs),
+							],
 						),
 					],
 				),

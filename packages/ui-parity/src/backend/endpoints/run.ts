@@ -17,7 +17,10 @@ export interface WarehouseContext {
 	readonly nowMs: number
 	readonly warehouse: FixtureWarehouse
 	// The warehouse error union stays a runtime value: the endpoint's declared errors encode it.
-	readonly runQuery: <P, R>(def: QueryDefinition<P, R>, payload: P) => Effect.Effect<ReadonlyArray<R>, unknown>
+	readonly runQuery: <P, R>(
+		def: QueryDefinition<P, R>,
+		payload: P,
+	) => Effect.Effect<ReadonlyArray<R>, unknown>
 	readonly runQueryFirst: <P, R>(def: QueryDefinition<P, R>, payload: P) => Effect.Effect<R | null, unknown>
 }
 
@@ -40,7 +43,9 @@ export const warehouseEndpoint =
 	({ dataset, payload }) =>
 		Effect.gen(function* () {
 			if (!Schema.is(request)(payload))
-				return yield* new ParityEndpointPayloadError({ message: "payload does not match the request schema" })
+				return yield* new ParityEndpointPayloadError({
+					message: "payload does not match the request schema",
+				})
 			const tenant = warehouse.tenantOf(parityOrgId(dataset.identity?.orgId ?? "org_parity_signed_out"))
 			const executor = warehouse.executor
 			const context: WarehouseContext = {
@@ -62,5 +67,8 @@ export const coerceStatusCode = (value: string): StatusCode =>
 /** `partitionWindowAround` from `@maple/backend/queries/query-helpers`: one hour either side. */
 export const partitionWindowAround = (timestamp: string) => {
 	const ms = parseWarehouseDateTime(timestamp)
-	return { startTime: formatWarehouseDateTime(ms - 3_600_000), endTime: formatWarehouseDateTime(ms + 3_600_000) }
+	return {
+		startTime: formatWarehouseDateTime(ms - 3_600_000),
+		endTime: formatWarehouseDateTime(ms + 3_600_000),
+	}
 }

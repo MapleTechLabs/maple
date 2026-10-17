@@ -16,7 +16,8 @@ const GIB = 1024 * 1024 * 1024
 export const INFRA_NODES = ["ip-10-0-12-84", "ip-10-0-13-201", "ip-10-0-21-17", "ip-10-0-22-140"] as const
 const PODS_PER_SERVICE = 2
 
-const nodeFor = (name: string, pod: number) => INFRA_NODES[(name.length + pod) % INFRA_NODES.length] ?? INFRA_NODES[0]
+const nodeFor = (name: string, pod: number) =>
+	INFRA_NODES[(name.length + pod) % INFRA_NODES.length] ?? INFRA_NODES[0]
 
 const hashHex = (text: string, length: number) =>
 	Array.from({ length: Math.ceil(length / 8) }, (_, round) =>
@@ -35,7 +36,14 @@ const uidOf = (text: string) => {
 
 type Attributes = Readonly<Record<string, string>>
 
-const base = (orgId: string, resource: Attributes, scope: string, name: string, unit: string, micros: number) => ({
+const base = (
+	orgId: string,
+	resource: Attributes,
+	scope: string,
+	name: string,
+	unit: string,
+	micros: number,
+) => ({
 	OrgId: orgId,
 	ResourceAttributes: resource,
 	ResourceSchemaUrl: "",
@@ -63,10 +71,32 @@ interface Sink {
 	readonly sum: Array<WarehouseRow>
 }
 
-const gauge = (sink: Sink, resource: Attributes, scope: string, name: string, unit: string, micros: number, value: number, attributes: Attributes = {}) =>
-	sink.gauge.push({ ...base(sink.orgId, resource, scope, name, unit, micros), Attributes: attributes, Value: value })
+const gauge = (
+	sink: Sink,
+	resource: Attributes,
+	scope: string,
+	name: string,
+	unit: string,
+	micros: number,
+	value: number,
+	attributes: Attributes = {},
+) =>
+	sink.gauge.push({
+		...base(sink.orgId, resource, scope, name, unit, micros),
+		Attributes: attributes,
+		Value: value,
+	})
 
-const sum = (sink: Sink, resource: Attributes, name: string, unit: string, micros: number, value: number, monotonic: boolean, attributes: Attributes = {}) =>
+const sum = (
+	sink: Sink,
+	resource: Attributes,
+	name: string,
+	unit: string,
+	micros: number,
+	value: number,
+	monotonic: boolean,
+	attributes: Attributes = {},
+) =>
 	sink.sum.push({
 		...base(sink.orgId, resource, "dockerstatsreceiver", name, unit, micros),
 		Attributes: attributes,
@@ -93,10 +123,15 @@ interface PodSpec {
 
 const deploymentPods = (nowMicros: number, startMicros: number): ReadonlyArray<PodSpec> =>
 	ACME_SERVICES.flatMap((service, serviceIndex) => {
-		const deployAt = service.deploy === undefined ? undefined : nowMicros - service.deploy.minutesBeforeNow * MINUTE_MICROS
+		const deployAt =
+			service.deploy === undefined
+				? undefined
+				: nowMicros - service.deploy.minutesBeforeNow * MINUTE_MICROS
 		const phases = [
 			{ version: service.version, from: startMicros, to: deployAt ?? nowMicros },
-			...(service.deploy === undefined || deployAt === undefined ? [] : [{ version: service.deploy.version, from: deployAt, to: nowMicros }]),
+			...(service.deploy === undefined || deployAt === undefined
+				? []
+				: [{ version: service.deploy.version, from: deployAt, to: nowMicros }]),
 		].filter((phase) => phase.to > startMicros)
 		const isPayment = service.name === "payment-svc"
 		const isCatalog = service.name === "catalog-api"
@@ -107,7 +142,10 @@ const deploymentPods = (nowMicros: number, startMicros: number): ReadonlyArray<P
 				name: `${service.name}-${sha.slice(0, 9)}-p${pod}`,
 				namespace: "shop",
 				node: nodeFor(service.name, pod),
-				owner: { "k8s.deployment.name": service.name, "k8s.replicaset.name": `${service.name}-${sha.slice(0, 9)}` },
+				owner: {
+					"k8s.deployment.name": service.name,
+					"k8s.replicaset.name": `${service.name}-${sha.slice(0, 9)}`,
+				},
 				service: service.name,
 				fromMicros: Math.max(phase.from, startMicros),
 				toMicros: phase.to,
@@ -115,7 +153,11 @@ const deploymentPods = (nowMicros: number, startMicros: number): ReadonlyArray<P
 				// catalog-api runs without limits, so it lands in the "unbounded" scope.
 				cpuLimit: isCatalog ? undefined : 1,
 				memoryLimitShare: (rng, micros) =>
-					isCatalog ? undefined : incident ? Math.min(0.99, 0.82 + ((micros - phase.from) / (120 * MINUTE_MICROS)) * 0.16) : 0.32 + serviceIndex * 0.05 + rng.next() * 0.04,
+					isCatalog
+						? undefined
+						: incident
+							? Math.min(0.99, 0.82 + ((micros - phase.from) / (120 * MINUTE_MICROS)) * 0.16)
+							: 0.32 + serviceIndex * 0.05 + rng.next() * 0.04,
 				restartEveryMinutes: incident && pod === 1 ? 30 : undefined,
 				qos: isCatalog ? "BestEffort" : "Burstable",
 			}))
@@ -187,17 +229,34 @@ const emitPod = (sink: Sink, rng: Prng, pod: PodSpec, micros: number) => {
 	const cores = pod.cpuCores * diurnal * rng.spread(0.2)
 	const scope = "kubeletstatsreceiver"
 	gauge(sink, resource, scope, "k8s.pod.cpu.usage", "{cpu}", micros, cores)
-	gauge(sink, resource, scope, "k8s.pod.cpu_request_utilization", "1", micros, cores / Math.max(0.05, (pod.cpuLimit ?? 0.4) / 2))
+	gauge(
+		sink,
+		resource,
+		scope,
+		"k8s.pod.cpu_request_utilization",
+		"1",
+		micros,
+		cores / Math.max(0.05, (pod.cpuLimit ?? 0.4) / 2),
+	)
 	gauge(sink, resource, scope, "k8s.pod.memory_request_utilization", "1", micros, 0.5 + rng.next() * 0.3)
-	if (pod.cpuLimit !== undefined) gauge(sink, resource, scope, "k8s.pod.cpu_limit_utilization", "1", micros, cores / pod.cpuLimit)
+	if (pod.cpuLimit !== undefined)
+		gauge(sink, resource, scope, "k8s.pod.cpu_limit_utilization", "1", micros, cores / pod.cpuLimit)
 	const memory = pod.memoryLimitShare(rng, micros)
-	if (memory !== undefined) gauge(sink, resource, scope, "k8s.pod.memory_limit_utilization", "1", micros, memory)
-	const restarts = pod.restartEveryMinutes === undefined ? 0 : Math.floor((micros - pod.fromMicros) / (pod.restartEveryMinutes * MINUTE_MICROS))
+	if (memory !== undefined)
+		gauge(sink, resource, scope, "k8s.pod.memory_limit_utilization", "1", micros, memory)
+	const restarts =
+		pod.restartEveryMinutes === undefined
+			? 0
+			: Math.floor((micros - pod.fromMicros) / (pod.restartEveryMinutes * MINUTE_MICROS))
 	const containerName = Object.values(pod.owner)[0] ?? pod.name
 	gauge(
 		sink,
 		restarts > 0
-			? { ...resource, "k8s.container.name": containerName, "k8s.container.status.last_terminated_reason": "OOMKilled" }
+			? {
+					...resource,
+					"k8s.container.name": containerName,
+					"k8s.container.status.last_terminated_reason": "OOMKilled",
+				}
 			: { ...resource, "k8s.container.name": containerName },
 		"k8sclusterreceiver",
 		"k8s.container.restarts",
@@ -221,7 +280,15 @@ const emitReplicas = (sink: Sink, nowMicros: number, micros: number) => {
 		const resource = ownerResource("shop", { "k8s.deployment.name": service.name })
 		const short = service.name === "payment-svc" && micros >= nowMicros - 40 * MINUTE_MICROS
 		gauge(sink, resource, scope, "k8s.deployment.desired", "{pod}", micros, PODS_PER_SERVICE)
-		gauge(sink, resource, scope, "k8s.deployment.available", "{pod}", micros, short ? PODS_PER_SERVICE - 1 : PODS_PER_SERVICE)
+		gauge(
+			sink,
+			resource,
+			scope,
+			"k8s.deployment.available",
+			"{pod}",
+			micros,
+			short ? PODS_PER_SERVICE - 1 : PODS_PER_SERVICE,
+		)
 	})
 	const postgres = ownerResource("data", { "k8s.statefulset.name": "postgres" })
 	gauge(sink, postgres, scope, "k8s.statefulset.desired_pods", "{pod}", micros, 1)
@@ -233,7 +300,15 @@ const emitReplicas = (sink: Sink, nowMicros: number, micros: number) => {
 	if (micros >= jobStart) {
 		const job = ownerResource("shop", { "k8s.job.name": "nightly-report-29312400" })
 		gauge(sink, job, scope, "k8s.job.desired_successful_pods", "{pod}", micros, 1)
-		gauge(sink, job, scope, "k8s.job.successful_pods", "{pod}", micros, micros >= jobStart + 25 * MINUTE_MICROS ? 1 : 0)
+		gauge(
+			sink,
+			job,
+			scope,
+			"k8s.job.successful_pods",
+			"{pod}",
+			micros,
+			micros >= jobStart + 25 * MINUTE_MICROS ? 1 : 0,
+		)
 		gauge(sink, job, scope, "k8s.job.failed_pods", "{pod}", micros, 0)
 	}
 }
@@ -252,18 +327,49 @@ const emitNodes = (sink: Sink, rng: Prng, pods: ReadonlyArray<PodSpec>, nowMicro
 			.filter((pod) => pod.node === node && micros >= pod.fromMicros && micros <= pod.toMicros)
 			.reduce((total, pod) => total + pod.cpuCores, 0)
 		const scope = "kubeletstatsreceiver"
-		gauge(sink, resource, scope, "k8s.node.cpu.usage", "{cpu}", micros, (0.3 + podCores) * rng.spread(0.1))
-		gauge(sink, resource, scope, "k8s.node.memory.working_set", "By", micros, (5.5 + index * 1.6 + rng.next() * 0.4) * GIB)
+		gauge(
+			sink,
+			resource,
+			scope,
+			"k8s.node.cpu.usage",
+			"{cpu}",
+			micros,
+			(0.3 + podCores) * rng.spread(0.1),
+		)
+		gauge(
+			sink,
+			resource,
+			scope,
+			"k8s.node.memory.working_set",
+			"By",
+			micros,
+			(5.5 + index * 1.6 + rng.next() * 0.4) * GIB,
+		)
 		gauge(sink, resource, "k8sclusterreceiver", "k8s.node.allocatable_cpu", "{cpu}", micros, 4)
 		gauge(sink, resource, "k8sclusterreceiver", "k8s.node.allocatable_memory", "By", micros, 15.3 * GIB)
-		gauge(sink, resource, scope, "k8s.node.uptime", "s", micros, (9 + index * 3) * 86_400 + (micros - (nowMicros - HOURS * 60 * MINUTE_MICROS)) / 1_000_000)
+		gauge(
+			sink,
+			resource,
+			scope,
+			"k8s.node.uptime",
+			"s",
+			micros,
+			(9 + index * 3) * 86_400 + (micros - (nowMicros - HOURS * 60 * MINUTE_MICROS)) / 1_000_000,
+		)
 	})
 
 const CONTAINERS = [
 	{ service: "postgres", image: "postgres:16.4", cpu: 18, memory: 41, limit: 2, pids: 34 },
 	{ service: "redis", image: "redis:7.4-alpine", cpu: 4, memory: 12, limit: 0.5, pids: 6 },
 	{ service: "grafana", image: "grafana/grafana:11.3.0", cpu: 7, memory: 28, limit: 1, pids: 21 },
-	{ service: "ci-worker", image: "ghcr.io/acme-shop/ci-worker:2026.9.3", cpu: 63, memory: 88, limit: 4, pids: 112 },
+	{
+		service: "ci-worker",
+		image: "ghcr.io/acme-shop/ci-worker:2026.9.3",
+		cpu: 63,
+		memory: 88,
+		limit: 4,
+		pids: 112,
+	},
 ] as const
 
 /** A Docker Compose host outside the cluster; ci-worker runs hot and restarted twice. */
@@ -286,18 +392,82 @@ const emitContainers = (sink: Sink, rng: Prng, startMicros: number, micros: numb
 		gauge(sink, resource, scope, "container.cpu.utilization", "%", micros, cpu)
 		gauge(sink, resource, scope, "container.memory.percent", "%", micros, memoryPct)
 		gauge(sink, resource, scope, "container.cpu.limit", "{cpus}", micros, container.limit)
-		gauge(sink, resource, scope, "container.uptime", "s", micros, (3 + index) * 86_400 + (micros - startMicros) / 1_000_000)
-		sum(sink, resource, "container.memory.usage.total", "By", micros, (limitBytes * memoryPct) / 100, false)
+		gauge(
+			sink,
+			resource,
+			scope,
+			"container.uptime",
+			"s",
+			micros,
+			(3 + index) * 86_400 + (micros - startMicros) / 1_000_000,
+		)
+		sum(
+			sink,
+			resource,
+			"container.memory.usage.total",
+			"By",
+			micros,
+			(limitBytes * memoryPct) / 100,
+			false,
+		)
 		sum(sink, resource, "container.memory.usage.limit", "By", micros, limitBytes, false)
-		sum(sink, resource, "container.restarts", "{restart}", micros, container.service === "ci-worker" ? Math.min(2, Math.floor((micros - startMicros) / (300 * MINUTE_MICROS))) : 0, true)
+		sum(
+			sink,
+			resource,
+			"container.restarts",
+			"{restart}",
+			micros,
+			container.service === "ci-worker"
+				? Math.min(2, Math.floor((micros - startMicros) / (300 * MINUTE_MICROS)))
+				: 0,
+			true,
+		)
 		sum(sink, resource, "container.pids.count", "{pid}", micros, container.pids + rng.int(0, 4), false)
-		sum(sink, resource, "container.network.io.usage.rx_bytes", "By", micros, (index + 1) * 4_200_000 * rng.spread(0.3), true)
-		sum(sink, resource, "container.network.io.usage.tx_bytes", "By", micros, (index + 1) * 1_900_000 * rng.spread(0.3), true)
-		sum(sink, resource, "container.blockio.io_service_bytes_recursive", "By", micros, (index + 1) * 800_000 * rng.spread(0.4), true, { operation: "read" })
-		sum(sink, resource, "container.blockio.io_service_bytes_recursive", "By", micros, (index + 1) * 1_300_000 * rng.spread(0.4), true, { operation: "write" })
+		sum(
+			sink,
+			resource,
+			"container.network.io.usage.rx_bytes",
+			"By",
+			micros,
+			(index + 1) * 4_200_000 * rng.spread(0.3),
+			true,
+		)
+		sum(
+			sink,
+			resource,
+			"container.network.io.usage.tx_bytes",
+			"By",
+			micros,
+			(index + 1) * 1_900_000 * rng.spread(0.3),
+			true,
+		)
+		sum(
+			sink,
+			resource,
+			"container.blockio.io_service_bytes_recursive",
+			"By",
+			micros,
+			(index + 1) * 800_000 * rng.spread(0.4),
+			true,
+			{ operation: "read" },
+		)
+		sum(
+			sink,
+			resource,
+			"container.blockio.io_service_bytes_recursive",
+			"By",
+			micros,
+			(index + 1) * 1_300_000 * rng.spread(0.4),
+			true,
+			{ operation: "write" },
+		)
 	})
 
-export const infraK8sMetrics = (options: { readonly orgId: string; readonly now: Date; readonly seed: number }) => {
+export const infraK8sMetrics = (options: {
+	readonly orgId: string
+	readonly now: Date
+	readonly seed: number
+}) => {
 	const rng = makePrng(options.seed)
 	const nowMicros = options.now.getTime() * 1000
 	const slots = (HOURS * 60) / 5
@@ -305,7 +475,9 @@ export const infraK8sMetrics = (options: { readonly orgId: string; readonly now:
 	const pods = [...deploymentPods(nowMicros, startMicros), ...platformPods(nowMicros, startMicros)]
 	const sink: Sink = { orgId: options.orgId, gauge: [], sum: [] }
 	Array.from({ length: slots }, (_, index) => startMicros + index * SLOT_MICROS).forEach((micros) => {
-		pods.filter((pod) => micros >= pod.fromMicros && micros <= pod.toMicros).forEach((pod) => emitPod(sink, rng, pod, micros))
+		pods.filter((pod) => micros >= pod.fromMicros && micros <= pod.toMicros).forEach((pod) =>
+			emitPod(sink, rng, pod, micros),
+		)
 		emitReplicas(sink, nowMicros, micros)
 		emitNodes(sink, rng, pods, nowMicros, micros)
 		emitContainers(sink, rng, startMicros, micros)

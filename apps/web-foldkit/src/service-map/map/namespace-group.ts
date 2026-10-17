@@ -1,4 +1,9 @@
-import { DB_NODE_PREFIX, NS_LABEL_HEIGHT, NS_PADDING_X, NS_PADDING_Y } from "@maple/ui/components/service-map/service-map-utils"
+import {
+	DB_NODE_PREFIX,
+	NS_LABEL_HEIGHT,
+	NS_PADDING_X,
+	NS_PADDING_Y,
+} from "@maple/ui/components/service-map/service-map-utils"
 import { getValueHue } from "@maple/ui/lib/colors"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
@@ -19,7 +24,10 @@ const box = <M>(h: HtmlBuilder<M>, label: string, hue: number): Html =>
 	h.div(
 		[
 			h.Class("pointer-events-none h-full w-full rounded-xl border-[1.5px] border-dashed"),
-			h.Style({ "border-color": `oklch(0.66 0.12 ${hue} / 0.7)`, "background-color": `oklch(0.62 0.11 ${hue} / 0.05)` }),
+			h.Style({
+				"border-color": `oklch(0.66 0.12 ${hue} / 0.7)`,
+				"background-color": `oklch(0.62 0.11 ${hue} / 0.05)`,
+			}),
 		],
 		[
 			h.span(

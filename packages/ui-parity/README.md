@@ -19,11 +19,11 @@ parity run                    # capture legacy and foldkit, diff, write the repo
 
 ## Targets and builds
 
-| Target        | Source                                                                    | `serve` port |
-| ------------- | ------------------------------------------------------------------------- | ------------ |
-| `legacy`      | `apps/web` at `LEGACY_BASELINE_REF`, detached worktree in `~/.cache/maple-ui-parity/worktrees` | base + 1 |
-| `foldkit`     | `apps/web-foldkit` (working tree)                                         | base + 2     |
-| `legacy-head` | `apps/web` (working tree)                                                 | base + 4     |
+| Target        | Source                                                                                         | `serve` port |
+| ------------- | ---------------------------------------------------------------------------------------------- | ------------ |
+| `legacy`      | `apps/web` at `LEGACY_BASELINE_REF`, detached worktree in `~/.cache/maple-ui-parity/worktrees` | base + 1     |
+| `foldkit`     | `apps/web-foldkit` (working tree)                                                              | base + 2     |
+| `legacy-head` | `apps/web` (working tree)                                                                      | base + 4     |
 
 - The pinned worktree is created on first use: `git worktree add --detach`, `bun install --frozen-lockfile`,
   `bun run --cwd packages/effect-sdk build`. A `.parity-setup-done` marker makes a half-done setup retry.
