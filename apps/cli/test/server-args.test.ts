@@ -93,6 +93,8 @@ describe("buildDetachedChildArgs", () => {
 				onDirtyStore: policy,
 				minimumRawTelemetryRetentionDays: 120,
 				checkpointInterval: "30m",
+				projectorModules: ["/tmp/module #1.mjs", "/tmp/second.mjs"],
+				reset: true,
 			})
 			deepStrictEqual(args, [
 				"/repo/apps/cli/src/bin.ts",
@@ -113,7 +115,12 @@ describe("buildDetachedChildArgs", () => {
 				"/tmp/backup config.xml",
 				"--minimum-raw-telemetry-retention-days",
 				"120",
+				"--reset",
 				"--offline",
+				"--projector-module",
+				"/tmp/module #1.mjs",
+				"--projector-module",
+				"/tmp/second.mjs",
 			])
 			strictEqual(args.filter((arg) => arg === "--on-dirty-store").length, 1)
 			strictEqual(args.includes("--background"), false)
@@ -246,7 +253,10 @@ describe("checkpoint refresh skip", () => {
 	it("also refreshes after a scoped delete, so restore points drop the deleted rows", () => {
 		const status = { service: "maple-local", pid: 1, version: "x", url: "", dataDir: "" } as const
 		strictEqual(storeChangedSince({ ...status, lastIngestAtMs: null }, 1_000), false)
-		strictEqual(storeChangedSince({ ...status, lastIngestAtMs: null, lastDeleteAtMs: 1_000 }, 1_000), true)
+		strictEqual(
+			storeChangedSince({ ...status, lastIngestAtMs: null, lastDeleteAtMs: 1_000 }, 1_000),
+			true,
+		)
 		strictEqual(storeChangedSince({ ...status, lastIngestAtMs: 999, lastDeleteAtMs: 999 }, 1_000), false)
 		strictEqual(storeChangedSince(undefined, 1_000), true)
 	})

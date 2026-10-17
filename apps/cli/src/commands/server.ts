@@ -17,6 +17,7 @@ import {
 } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { ServerBindError, startServer } from "../server/serve"
+import { loadProjectorModules, resolveProjectorModulePaths } from "../server/eventing/projector-modules"
 import { CURRENT_LOCAL_SCHEMA } from "../server/schema-identity"
 import {
 	adoptLegacySidecars,
@@ -547,6 +548,13 @@ const dataDirFlag = Flag.optional(
 	),
 )
 
+const projectorModuleFlag = Flag.String("projector-module").pipe(
+	Flag.withDescription(
+		"Load a trusted local projector .mjs module (repeatable; executes with Maple's permissions)",
+	),
+	Flag.atLeast(0),
+)
+
 const chdbConfigFileFlag = Flag.optional(
 	Flag.String("chdb-config-file").pipe(
 		Flag.withDescription(
@@ -968,6 +976,8 @@ const childFailureLine = (logPath: string, fromByte: number): string =>
 	)
 
 interface DetachedStart {
+	readonly reset: boolean
+	readonly projectorModules: readonly string[]
 	readonly bindHost: string
 	readonly advertiseHost: string
 	readonly port: number
@@ -986,8 +996,9 @@ type ChildReadiness = { readonly kind: "ready" } | { readonly kind: "exited" } |
 /**
  * Re-exec `maple start` detached, dropping `--background`/`-d` so the child runs
  * the normal foreground path. Called with this process holding the PID claim
- * and every destructive step already done; the child inherits the claim via
- * `PID_HANDOVER_ENV`, so the store is never unclaimed in between. Ready means
+ * before any store recovery or reset; the child inherits the claim via
+ * `PID_HANDOVER_ENV`, validates its modules, then performs those operations, so
+ * the store is never unclaimed in between. Ready means
  * `/local/status` answers with the CHILD's pid: a `/health` 200 could come from
  * another server already on the port.
  */
@@ -1001,6 +1012,8 @@ const startDetached = (options: DetachedStart) =>
 		// not be forwarded. In dev (`bun run src/bin.ts`) argv[1] is the real
 		// script and Bun needs it; in the compiled binary execPath alone suffices.
 		const childArgs = buildDetachedChildArgs({
+			reset: options.reset,
+			projectorModules: options.projectorModules,
 			entry: process.argv[1],
 			host: options.bindHost,
 			advertiseHost: options.advertiseHost,
@@ -1159,6 +1172,7 @@ export const start = Command.make("start", {
 	port,
 	dataDir: dataDirFlag,
 	chdbConfigFile: chdbConfigFileFlag,
+	projectorModules: projectorModuleFlag,
 	minimumRawTelemetryRetentionDays: minimumRawTelemetryRetentionDaysFlag,
 	background: backgroundFlag,
 	offline: offlineFlag,
@@ -1170,6 +1184,7 @@ export const start = Command.make("start", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const fs = yield* FileSystem
+			const projectorModules = yield* resolveProjectorModulePaths(a.projectorModules)
 			const dataDir = resolve(Option.getOrUndefined(a.dataDir) ?? defaultDataDir())
 			const bindHost = yield* validatedHost("--host / MAPLE_LOCAL_BIND_HOST", a.host)
 			// Rejected up front, before anything is opened: a typo that quietly fell
@@ -1238,6 +1253,33 @@ export const start = Command.make("start", {
 					// A taken port fails here, before anything touches the store, rather
 					// than after a reset or wipe (or, detached, only in the child's log).
 					yield* ensurePortFree(bindHost, a.port)
+
+					// The detached child owns initialization and recovery under the handed-over
+					// PID claim. The parent must not reset a store before that child validates
+					// its modules (which can behave differently in a fresh process).
+					if (a.background) {
+						return yield* startDetached({
+							projectorModules,
+							reset: a.reset,
+							bindHost,
+							advertiseHost,
+							port: a.port,
+							dataDir,
+							offline: a.offline,
+							hostedUiUrl,
+							chdbConfigFile: Option.getOrUndefined(a.chdbConfigFile),
+							onDirtyStore: a.onDirtyStore,
+							minimumRawTelemetryRetentionDays: Option.getOrUndefined(
+								a.minimumRawTelemetryRetentionDays,
+							),
+							checkpointInterval: a.checkpointInterval,
+							scope,
+						})
+					}
+
+					// Validate executable modules under the PID claim, before reconciliation,
+					// migration abandonment, reset or dirty-store recovery can change data.
+					const projectors = yield* loadProjectorModules(projectorModules)
 
 					// A restore transaction lives beside dataDir and must be reconciled
 					// before reset, compatibility, dirty-store, or directory creation logic.
@@ -1410,22 +1452,6 @@ export const start = Command.make("start", {
 						Option.getOrUndefined(a.chdbConfigFile),
 					)
 
-					if (a.background) {
-						return yield* startDetached({
-							bindHost,
-							advertiseHost,
-							port: a.port,
-							dataDir,
-							offline: a.offline,
-							hostedUiUrl,
-							chdbConfigFile,
-							onDirtyStore: a.onDirtyStore,
-							minimumRawTelemetryRetentionDays: requestedRetentionDays,
-							checkpointInterval: a.checkpointInterval,
-							scope,
-						})
-					}
-
 					yield* Effect.sync(() =>
 						process.stderr.write(
 							dim(`◌ opening chDB at ${prettyPath(dataDir)} (bootstrapping schema)…\n`),
@@ -1433,24 +1459,27 @@ export const start = Command.make("start", {
 					)
 					const assets = yield* resolveUiAssets()
 
-					const { port: boundPort } = yield* startServer({
-						hostname: bindHost,
-						browserHosts: Array.from(
-							new Set(
-								[bindHost, connectionHostForBindHost(bindHost), advertiseHost].map(
-									canonicalUrlHostname,
+					const { port: boundPort } = yield* startServer(
+						{
+							hostname: bindHost,
+							browserHosts: Array.from(
+								new Set(
+									[bindHost, connectionHostForBindHost(bindHost), advertiseHost].map(
+										canonicalUrlHostname,
+									),
 								),
 							),
-						),
-						// None when offline: only the same-origin bundled UI is trusted.
-						corsOrigin: hostedUiUrl === undefined ? undefined : hostedUiOrigin(hostedUiUrl),
-						advertiseHost,
-						port: a.port,
-						dataDir,
-						configFile: chdbConfigFile,
-						minimumRawTelemetryRetentionDays: requestedRetentionDays,
-						assets,
-					})
+							// None when offline: only the same-origin bundled UI is trusted.
+							corsOrigin: hostedUiUrl === undefined ? undefined : hostedUiOrigin(hostedUiUrl),
+							advertiseHost,
+							port: a.port,
+							dataDir,
+							configFile: chdbConfigFile,
+							minimumRawTelemetryRetentionDays: requestedRetentionDays,
+							assets,
+						},
+						projectors,
+					)
 					started = true
 					yield* clearStartFailures(dataDir)
 
