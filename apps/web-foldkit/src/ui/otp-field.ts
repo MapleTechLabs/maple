@@ -1,12 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import { otpFieldInputStyles, otpFieldSeparatorStyles, otpFieldStyles } from "@maple/ui/styles/ui/otp-field"
-import { separatorStyles } from "@maple/ui/styles/ui/separator"
 import { Effect, Option, Schema } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { VISUALLY_HIDDEN_STYLE } from "./choice"
+import { separator } from "./display"
 
 /**
  * Base UI `OTPField`: one digit per slot. Typing fills from the slot and moves focus on,
@@ -174,16 +174,6 @@ export const otpFieldInput = <ParentMessage>(
 	])
 }
 
-// TODO(separator): the app-shell port owns Separator; same composition as packages/ui/src/components/ui/separator.tsx.
-const separatorPlaceholder = <M>(h: HtmlBuilder<M>, className: string): Html =>
-	h.div([
-		h.AriaOrientation("horizontal"),
-		h.Class(cn(separatorStyles, className)),
-		h.DataAttribute("orientation", "horizontal"),
-		h.DataAttribute("slot", "separator"),
-		h.Role("separator"),
-	])
-
 /** `<OTPFieldSeparator>`: a short horizontal rule between slot groups. */
 export const otpFieldSeparator = <M>(h: HtmlBuilder<M>, className?: string): Html =>
-	separatorPlaceholder(h, cn(otpFieldSeparatorStyles, className))
+	separator(h, "horizontal", cn(otpFieldSeparatorStyles, className))

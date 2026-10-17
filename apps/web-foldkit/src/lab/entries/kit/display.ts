@@ -6,7 +6,7 @@ import * as CopyButton from "../../../ui/copy-button"
 import * as Tabs from "../../../ui/tabs"
 import * as TabsView from "../../../ui/tabs-view"
 import { defineLab } from "../../define"
-import { separatorPlaceholder } from "../../kit/display-placeholders"
+import { separator } from "../../../ui/display"
 import { alertSection, cardAndPanelSection, emptySection, itemSection } from "../../kit/display-sections"
 import {
 	keyValueSection,
@@ -114,11 +114,11 @@ const underlineTabs = (model: Model, h: HtmlBuilder<Message>): Html =>
 const tabsSection = (model: Model, h: HtmlBuilder<Message>): Html =>
 	kitSection(h, "Tabs and separator", [
 		defaultTabs(model, h),
-		separatorPlaceholder(h, "horizontal"),
+		separator(h, "horizontal", undefined),
 		underlineTabs(model, h),
 		h.div(
 			[h.Class("flex h-6 items-center gap-3 text-sm")],
-			["Left ", separatorPlaceholder(h, "vertical"), " Right"],
+			["Left ", separator(h, "vertical", undefined), " Right"],
 		),
 	])
 

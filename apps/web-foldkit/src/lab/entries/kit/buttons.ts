@@ -1,7 +1,3 @@
-import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { kbdGroupStyles, kbdStyles } from "@maple/ui/styles/ui/kbd"
-import type { VariantProps } from "class-variance-authority"
 import { Option, Schema } from "effect"
 import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -9,6 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { button } from "../../../ui/button"
 import * as CopyButton from "../../../ui/copy-button"
+import { badge, kbd, kbdGroup } from "../../../ui/display"
 import { filterChip } from "../../../ui/filter-chip"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
@@ -123,20 +120,6 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 	})
 
 // VIEW
-
-// TODO(kbd): the app-shell port owns Kbd; same composition as packages/ui/src/components/ui/kbd.tsx.
-const kbdPlaceholder = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.kbd([h.Class(cn(kbdStyles)), h.DataAttribute("slot", "kbd")], [text])
-
-const kbdGroupPlaceholder = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.kbd([h.Class(cn(kbdGroupStyles)), h.DataAttribute("slot", "kbd-group")], children)
-
-// TODO(badge): the app-shell port owns Badge; same composition as packages/ui/src/components/ui/badge.tsx.
-const badgePlaceholder = <M>(
-	h: HtmlBuilder<M>,
-	options: VariantProps<typeof badgeVariants>,
-	text: string,
-): Html => h.span([h.Class(cn(badgeVariants(options))), h.DataAttribute("slot", "badge")], [text])
 
 const buttonVariantRows = (h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	VARIANTS.map((variant) =>
@@ -337,12 +320,12 @@ const badges = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 	kitRow(
 		h,
 		"variants",
-		BADGE_VARIANTS.map((variant) => badgePlaceholder(h, { variant }, variant)),
+		BADGE_VARIANTS.map((variant) => badge(h, { variant }, [variant])),
 	),
 	kitRow(h, "sizes, pill, mono", [
-		...BADGE_SIZES.map((size) => badgePlaceholder(h, { size, variant: "secondary" }, size)),
-		badgePlaceholder(h, { pill: true, variant: "muted" }, "pill"),
-		badgePlaceholder(h, { mono: true, variant: "outline" }, "12,480"),
+		...BADGE_SIZES.map((size) => badge(h, { size, variant: "secondary" }, [size])),
+		badge(h, { pill: true, variant: "muted" }, ["pill"]),
+		badge(h, { mono: true, variant: "outline" }, ["12,480"]),
 	]),
 ]
 
@@ -357,11 +340,11 @@ const statusDots = (h: HtmlBuilder<Message>): Html =>
 
 const kbdAndInlineCode = (h: HtmlBuilder<Message>): Html =>
 	kitRow(h, undefined, [
-		kbdPlaceholder(h, "K"),
-		kbdGroupPlaceholder(h, [
-			kbdPlaceholder(h, "Cmd"),
-			kbdPlaceholder(h, "Shift"),
-			kbdPlaceholder(h, "P"),
+		kbd(h, undefined, ["K"]),
+		kbdGroup(h, undefined, [
+			kbd(h, undefined, ["Cmd"]),
+			kbd(h, undefined, ["Shift"]),
+			kbd(h, undefined, ["P"]),
 		]),
 		h.span(
 			[h.Class("text-sm")],

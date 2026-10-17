@@ -15,7 +15,7 @@ import { pageHeader, pageHeaderActions, pageLayoutRoot } from "../../ui/page-lay
 import { spinner } from "../../ui/spinner"
 import { icon } from "../../ui/icon"
 import { marker, markerContent, markerIcon } from "../../ui/marker"
-import { avatarPlaceholder } from "./content-placeholders"
+import { avatarFallback } from "../../ui/display"
 import { kitRow, kitSection } from "./kit-layout"
 import {
 	conversationSection,
@@ -67,8 +67,8 @@ const breadcrumbSection = <M>(h: HtmlBuilder<M>): Html =>
 const markerSection = <M>(h: HtmlBuilder<M>): Html =>
 	kitSection(h, "Avatar, spinner, marker", [
 		kitRow(h, undefined, [
-			avatarPlaceholder(h, "DM"),
-			avatarPlaceholder(h, "AB", "size-6"),
+			avatarFallback(h, {}, "DM"),
+			avatarFallback(h, { className: "size-6" }, "AB"),
 			spinner(h),
 			spinner(h, "size-6"),
 		]),

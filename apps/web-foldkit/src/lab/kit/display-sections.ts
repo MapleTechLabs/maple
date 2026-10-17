@@ -17,7 +17,7 @@ import { listRow } from "../../ui/list-row"
 import { panel, panelBody, panelHeader } from "../../ui/panel"
 import { statFigure } from "../../ui/stat-figure"
 import { icon } from "../../ui/icon"
-import { badgePlaceholder } from "./display-placeholders"
+import { badge } from "../../ui/display"
 import { kitSection } from "./kit-layout"
 
 // The first half of apps/web/src/lab/kit/display.tsx: surfaces, alerts, empty states and rows.
@@ -43,7 +43,7 @@ const servicesPanel = <M>(h: HtmlBuilder<M>): Html =>
 	panel(h, {}, [
 		panelHeader(h, {
 			title: "Top services",
-			scope: badgePlaceholder(h, "meta", ["production"]),
+			scope: badge(h, { variant: "meta" }, ["production"]),
 			action: button(h, { variant: "ghost", size: "xs" }, ["All"]),
 		}),
 		panelBody(

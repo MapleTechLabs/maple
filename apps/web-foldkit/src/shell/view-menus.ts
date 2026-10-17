@@ -77,6 +77,7 @@ const themeToggle = (h: HtmlBuilder<Message>, model: Model): Html =>
 					kbd(h, undefined, ["T"]),
 					...switchControl(h, {
 						id: "shell-theme-switch",
+						inputId: "shell-theme-switch-input",
 						isChecked: model.theme === "dark",
 						ariaLabel: "Toggle dark mode",
 						onToggle: Message.ClickedThemeSwitch(),

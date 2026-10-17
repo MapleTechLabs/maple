@@ -29,43 +29,51 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 
 // VIEW
 
-export type SwitchViewConfig<ParentMessage> = Readonly<{
-	model: Model
-	toParentMessage: (message: Message) => ParentMessage
+export type SwitchControlOptions<Message> = Readonly<{
 	/** Base UI's `useId` for the root; the hidden input takes the next one. */
 	id: string
 	inputId: string
+	isChecked: boolean
 	isDisabled?: boolean
+	ariaLabel?: string
+	labelledBy?: string
+	describedBy?: string
+	/** The enclosing Base UI field's `data-filled`. */
+	isFilled?: boolean
 	className?: string
+	/** Omitted for a switch that only shows a state. */
+	onToggle?: Message
 }>
 
-export const labelId = labelIdOf
-
 /** `<Switch>`: the `role="switch"` span, its thumb, and the hidden native checkbox. */
-export const view = <ParentMessage>(
-	h: HtmlBuilder<ParentMessage>,
-	config: SwitchViewConfig<ParentMessage>,
+export const switchControl = <Message>(
+	h: HtmlBuilder<Message>,
+	options: SwitchControlOptions<Message>,
 ): ReadonlyArray<Html> => {
-	const isDisabled = config.isDisabled ?? false
-	const { isChecked } = config.model
+	const isDisabled = options.isDisabled ?? false
+	const { isChecked } = options
+	const toggled = isDisabled ? undefined : options.onToggle
 	const stateAttributes = [
-		...(isChecked ? [h.DataAttribute("checked", "")] : [h.DataAttribute("unchecked", "")]),
+		h.DataAttribute(isChecked ? "checked" : "unchecked", ""),
 		...(isDisabled ? [h.DataAttribute("disabled", "")] : []),
+		...((options.isFilled ?? false) ? [h.DataAttribute("filled", "")] : []),
 	]
-	const toggled = config.toParentMessage(Message.ToggledSwitch())
+	const describedBy = options.describedBy === undefined ? [] : [h.AriaDescribedBy(options.describedBy)]
 	return [
 		h.span(
 			[
-				h.Id(config.id),
+				h.Id(options.id),
 				h.Role("switch"),
 				h.AriaChecked(isChecked),
-				h.AriaLabelledBy(labelIdOf(config.inputId)),
+				...(options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]),
+				...(options.labelledBy === undefined ? [] : [h.AriaLabelledBy(options.labelledBy)]),
+				...describedBy,
 				...(isDisabled ? [h.AriaDisabled(true)] : []),
-				h.Class(cn(switchStyles, config.className)),
+				h.Class(cn(switchStyles, options.className)),
 				...stateAttributes,
 				h.DataAttribute("slot", "switch"),
 				h.Tabindex(isDisabled ? -1 : 0),
-				...(isDisabled
+				...(toggled === undefined
 					? []
 					: [
 							h.OnClick(toggled, { defaultAction: "Prevent" }),
@@ -81,58 +89,38 @@ export const view = <ParentMessage>(
 			],
 		),
 		hiddenInput(h, {
-			id: config.inputId,
+			id: options.inputId,
 			type: "checkbox",
 			isChecked,
 			isDisabled,
-			onActivate: Option.some(toggled),
+			onActivate: Option.fromUndefinedOr(toggled),
+			attributes: describedBy,
 		}),
 	]
 }
 
-/** Base UI's visually hidden form input that follows every Switch root. */
-const HIDDEN_INPUT_STYLE = {
-	"clip-path": "inset(50%)",
-	overflow: "hidden",
-	"white-space": "nowrap",
-	border: "0px",
-	padding: "0px",
-	width: "1px",
-	height: "1px",
-	margin: "-1px",
-	position: "fixed",
-	top: "0px",
-	left: "0px",
-}
+export type SwitchViewConfig<ParentMessage> = Readonly<{
+	model: Model
+	toParentMessage: (message: Message) => ParentMessage
+	id: string
+	inputId: string
+	isDisabled?: boolean
+	className?: string
+}>
 
-/** `<Switch checked onCheckedChange aria-label>`: Base UI's span root, thumb and hidden checkbox. */
-export const switchControl = <Message>(
-	h: HtmlBuilder<Message>,
-	options: Readonly<{ id: string; isChecked: boolean; ariaLabel: string; onToggle: Message }>,
-): ReadonlyArray<Html> => {
-	const state = h.DataAttribute(options.isChecked ? "checked" : "unchecked", "")
-	return [
-		h.span(
-			[
-				h.AriaChecked(options.isChecked),
-				h.AriaLabel(options.ariaLabel),
-				h.Class(cn(switchStyles)),
-				h.DataAttribute("slot", "switch"),
-				state,
-				h.Id(options.id),
-				h.Role("switch"),
-				h.Tabindex(0),
-				h.OnClick(options.onToggle),
-			],
-			[h.span([h.Class(cn(switchThumbStyles)), h.DataAttribute("slot", "switch-thumb"), state], [])],
-		),
-		h.input([
-			h.AriaHidden(true),
-			h.Id(`${options.id}-input`),
-			h.Style(HIDDEN_INPUT_STYLE),
-			h.Tabindex(-1),
-			h.Type("checkbox"),
-			h.Checked(options.isChecked),
-		]),
-	]
-}
+export const labelId = labelIdOf
+
+/** The Submodel's `<Switch>`, labelled by the wrapping `<Label>`. */
+export const view = <ParentMessage>(
+	h: HtmlBuilder<ParentMessage>,
+	config: SwitchViewConfig<ParentMessage>,
+): ReadonlyArray<Html> =>
+	switchControl(h, {
+		id: config.id,
+		inputId: config.inputId,
+		isChecked: config.model.isChecked,
+		isDisabled: config.isDisabled,
+		labelledBy: labelIdOf(config.inputId),
+		className: config.className,
+		onToggle: config.toParentMessage(Message.ToggledSwitch()),
+	})

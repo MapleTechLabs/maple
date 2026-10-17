@@ -8,7 +8,9 @@ import { icon } from "../../ui/icon"
 import { trace, traceDescription, traceIcon, traceLine, traceTitle } from "../../ui/trace"
 import { truncatedId } from "../../ui/truncated-id"
 import { truncatedText } from "../../ui/truncated-text"
-import { avatarPlaceholder, scrollAreaPlaceholder, switchPlaceholder } from "./content-placeholders"
+import { avatarFallback } from "../../ui/display"
+import { scrollArea } from "../../ui/scroll-area"
+import { switchControl } from "../../ui/switch"
 import { kitRow, kitSection } from "./kit-layout"
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
@@ -30,7 +32,7 @@ const SCROLL_ROWS = Array.from(
 
 const assistantMessage = <M>(h: HtmlBuilder<M>): Html =>
 	message(h, {}, [
-		messageAvatar(h, [avatarPlaceholder(h, "M", "size-6")]),
+		messageAvatar(h, [avatarFallback(h, { className: "size-6" }, "M")]),
 		messageContent(h, [
 			messageHeader(h, ["Maple"]),
 			bubbleGroup(h, [
@@ -111,13 +113,13 @@ export const settingRowSection = <M>(h: HtmlBuilder<M>): Html =>
 					label: "Weekly digest",
 					description: "A summary of incidents every Monday.",
 					filled: true,
-					control: switchPlaceholder(h, {
+					control: switchControl(h, {
 						id: baseUiId("3"),
 						inputId: baseUiId("0"),
 						labelledBy: baseUiId("1"),
 						describedBy: baseUiId("2"),
-						checked: true,
-						filled: true,
+						isChecked: true,
+						isFilled: true,
 					}),
 				}),
 				settingRow(h, {
@@ -126,22 +128,24 @@ export const settingRowSection = <M>(h: HtmlBuilder<M>): Html =>
 					description: "Framed setting row.",
 					framed: true,
 					active: true,
-					control: switchPlaceholder(h, {
+					control: switchControl(h, {
 						id: baseUiId("9"),
 						inputId: baseUiId("6"),
 						labelledBy: baseUiId("7"),
 						describedBy: baseUiId("8"),
+						isChecked: false,
 					}),
 				}),
 				settingRow(h, {
 					ids: { control: baseUiId("c"), label: baseUiId("d"), description: baseUiId("f") },
 					label: "Disabled",
 					disabled: true,
-					control: switchPlaceholder(h, {
+					control: switchControl(h, {
 						id: baseUiId("e"),
 						inputId: baseUiId("c"),
 						labelledBy: baseUiId("d"),
-						disabled: true,
+						isChecked: false,
+						isDisabled: true,
 					}),
 				}),
 			],
@@ -150,10 +154,18 @@ export const settingRowSection = <M>(h: HtmlBuilder<M>): Html =>
 
 export const scrollAreaSection = <M>(h: HtmlBuilder<M>): Html =>
 	kitSection(h, "Scroll area", [
-		scrollAreaPlaceholder(h, { id: baseUiId("h"), className: "h-40 max-w-md rounded-md border" }, [
-			h.div(
-				[h.Class("flex flex-col p-2 font-mono text-xs")],
-				SCROLL_ROWS.map((row) => h.span([h.Class("py-1")], [row])),
-			),
-		]),
+		scrollArea(
+			h,
+			{
+				idPrefix: baseUiId("h"),
+				className: "h-40 max-w-md rounded-md border",
+				overflowY: { endPx: 146, thumbHeightPx: 77.96052631578948 },
+			},
+			[
+				h.div(
+					[h.Class("flex flex-col p-2 font-mono text-xs")],
+					SCROLL_ROWS.map((row) => h.span([h.Class("py-1")], [row])),
+				),
+			],
+		),
 	])
