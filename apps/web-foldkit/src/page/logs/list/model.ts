@@ -1,4 +1,3 @@
-import { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
 import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
@@ -14,25 +13,15 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // The `/logs` stream (apps/web/src/routes/logs/index.tsx and components/logs/).
 
-/** `LogRow` (`@maple/query-engine` route-rows): one log as the list renders it. */
-export const LogRowSchema = Schema.Struct({
-	timestamp: Schema.String,
-	exactTimestamp: Schema.String,
-	recordIdentity: Schema.optionalKey(Schema.UndefinedOr(Schema.String)),
-	severityText: Schema.String,
-	severityNumber: Schema.Number,
-	serviceName: Schema.String,
-	body: Schema.String,
-	traceId: Schema.UndefinedOr(TraceId),
-	spanId: Schema.UndefinedOr(SpanId),
-	logAttributes: Schema.Record(Schema.String, Schema.String),
-	resourceAttributes: Schema.Record(Schema.String, Schema.String),
-})
-export type LogRowSchema = typeof LogRowSchema.Type
+import { LogRecord } from "../../../ui/logs/log-row-view"
+
+/** `LogRow` (`@maple/query-engine` route-rows), shared with the stream (`ui/logs`). */
+export const LogRowSchema = LogRecord
+export type LogRowSchema = LogRecord
 
 /** `LogsResponse`: one page and the cursor of the next (`null` when the page was short). */
 export const LogsPage = Schema.Struct({
-	logs: Schema.Array(LogRowSchema),
+	logs: Schema.Array(LogRecord),
 	cursor: Schema.NullOr(Schema.String),
 })
 export type LogsPage = typeof LogsPage.Type
