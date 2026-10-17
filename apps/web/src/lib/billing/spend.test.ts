@@ -7,7 +7,7 @@ import type {
 	CatalogPlan,
 	DailySpendResponse,
 } from "@maple/domain/http"
-import { buildCumulativeSeries, buildSpendModel, featureUnit, formatRateLabel } from "./spend"
+import { buildCumulativeSeries, buildSpendModel, costBreakdown, featureUnit, formatRateLabel } from "./spend"
 
 // Mock builders construct only the consumed subset of each domain schema, the
 // same approach cost-estimate.test.ts takes.
@@ -249,6 +249,72 @@ describe("buildSpendModel", () => {
 		})
 		expect(result?.cycle.startMs).toBe(Date.UTC(2026, 6, 1))
 		expect(result?.baseCents).toBe(0)
+	})
+})
+
+describe("costBreakdown", () => {
+	const byoc = {
+		id: "bringyourowncloud",
+		name: "Bring Your Own Cloud",
+		addOn: true,
+		price: { amount: 99, interval: "month" },
+		items: [],
+	} as CatalogPlan
+	const withAddOn = (addOn: Partial<BillingSubscription>) =>
+		buildSpendModel({
+			customer: buildCustomer({
+				subscriptions: [
+					{
+						planId: "startup",
+						status: "active",
+						addOn: false,
+						currentPeriodStart: CYCLE_START,
+						currentPeriodEnd: CYCLE_END,
+					},
+					{ planId: "bringyourowncloud", status: "active", addOn: true, ...addOn },
+				],
+			}),
+			plans: [startupPlan, byoc],
+			usage,
+			nowMs: NOW,
+		})
+
+	it("lists plan, add-on and one overage line that sum to the spend figure", () => {
+		const result = withAddOn({})
+		if (result === null) throw new Error("expected a model")
+		const lines = costBreakdown(result)
+
+		expect(lines.map((line) => [line.label, line.cents])).toEqual([
+			["Startup plan", 3_900],
+			["Bring your own cloud add-on", 9_900],
+			["Usage overage", result.overageCents],
+		])
+		expect(lines.reduce((sum, line) => sum + (line.cents ?? 0), 0)).toBe(result.spendCents)
+		expect(lines[2]?.detail).toBe(
+			"Logs, traces, metrics and browser sessions past what's included, per feature in Usage",
+		)
+	})
+
+	it("multiplies an add-on by its quantity in both the breakdown and the spend", () => {
+		const result = withAddOn({ quantity: 2 })
+		if (result === null) throw new Error("expected a model")
+
+		expect(result.baseCents).toBe(3_900 + 2 * 9_900)
+		expect(costBreakdown(result)[1]?.cents).toBe(2 * 9_900)
+	})
+
+	it("does not itemize fixed fees for a plan it cannot price", () => {
+		const result = buildSpendModel({
+			customer: buildCustomer({
+				subscriptions: [{ planId: "legacy_pro", status: "active", addOn: false }],
+			}),
+			plans: [startupPlan],
+			usage,
+			nowMs: NOW,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		expect(costBreakdown(result).map((line) => line.cents)).toEqual([null, result.overageCents])
 	})
 })
 
