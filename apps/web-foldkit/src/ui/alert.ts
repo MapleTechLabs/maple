@@ -8,12 +8,13 @@ import {
 import type { VariantProps } from "class-variance-authority"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
+// Port of packages/ui/src/components/ui/alert.tsx.
+
 type Children = ReadonlyArray<Html | string>
 
-export type AlertOptions = VariantProps<typeof alertVariants> & Readonly<{ className?: string }>
+export type AlertOptions = VariantProps<typeof alertVariants> & { readonly className?: string }
 
-/** `<Alert>`: `role="alert"` with the same `alertVariants` composition. */
-export const alert = <Message>(h: HtmlBuilder<Message>, options: AlertOptions, children: Children): Html =>
+export const alert = <M>(h: HtmlBuilder<M>, options: AlertOptions, children: Children): Html =>
 	h.div(
 		[
 			h.Class(cn(alertVariants({ size: options.size, variant: options.variant }), options.className)),
@@ -23,11 +24,11 @@ export const alert = <Message>(h: HtmlBuilder<Message>, options: AlertOptions, c
 		children,
 	)
 
-export const alertTitle = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
-	h.div([h.Class(cn(alertTitleStyles)), h.DataAttribute("slot", "alert-title")], children)
+const part =
+	(styles: string, slot: string) =>
+	<M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
+		h.div([h.Class(cn(styles, className)), h.DataAttribute("slot", slot)], children)
 
-export const alertDescription = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
-	h.div([h.Class(cn(alertDescriptionStyles)), h.DataAttribute("slot", "alert-description")], children)
-
-export const alertAction = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
-	h.div([h.Class(cn(alertActionStyles)), h.DataAttribute("slot", "alert-action")], children)
+export const alertTitle = part(alertTitleStyles, "alert-title")
+export const alertDescription = part(alertDescriptionStyles, "alert-description")
+export const alertAction = part(alertActionStyles, "alert-action")

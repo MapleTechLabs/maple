@@ -1,18 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
-import { cva, type VariantProps } from "class-variance-authority"
+import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import type { VariantProps } from "class-variance-authority"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
-// styles: packages/ui/src/components/ui/eyebrow.tsx (copied verbatim; that module imports React)
-export const eyebrowVariants = cva("font-medium uppercase text-muted-foreground", {
-	defaultVariants: { variant: "overline" },
-	variants: {
-		variant: {
-			overline: "text-3xs tracking-[0.12em]",
-			label: "text-2xs tracking-[0.08em]",
-			mono: "font-mono text-3xs tracking-[0.12em] text-muted-foreground/70",
-		},
-	},
-})
+export { eyebrowVariants }
 
 export interface EyebrowOptions<Message> {
 	readonly variant?: VariantProps<typeof eyebrowVariants>["variant"]
