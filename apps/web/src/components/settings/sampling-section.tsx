@@ -46,7 +46,7 @@ export function useSamplingSettings() {
 
 	const [save, saving] = useAsyncAction(async () => {
 		if (!validation.ok) return
-		const submitted = form.draft
+		const submitted = form.submit()
 		// Unsent fields keep their saved value, so the parsed draft is still what the server holds.
 		const sent = samplingDraftFromPolicy(validation.payload)
 		const patch = samplingPatch(validation.payload, saved)
@@ -55,7 +55,7 @@ export function useSamplingSettings() {
 		if (toastExit(exit, { success: "Sampling saved", error: "Failed to save sampling" })) {
 			form.commit({ submitted, sent })
 			refresh()
-		}
+		} else form.abort()
 	})
 
 	// Switches save on their own; the draft only covers the typed fields.
