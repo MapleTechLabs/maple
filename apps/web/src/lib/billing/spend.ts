@@ -146,7 +146,7 @@ export interface BaseCharge {
 	readonly key: string
 	readonly kind: "plan" | "addOn"
 	readonly name: string
-	/** Price times quantity, in dollars; null when the plan carries no price. */
+	/** Price times quantity, in dollars; null when the charge cannot be priced. */
 	readonly dollars: number | null
 	readonly interval: string | null
 }
@@ -160,11 +160,13 @@ const chargeOf = (
 ): BaseCharge => {
 	const amount = plan?.price?.amount
 	const quantity = sub.quantity != null && sub.quantity > 1 ? sub.quantity : 1
+	// An add-on priced by usage alone owes no fixed fee; null stays "unknown".
+	const fixed = amount ?? (kind === "addOn" && isPricedPlan(plan) ? 0 : null)
 	return {
 		key: `${kind}:${plan?.id ?? sub.planId}`,
 		kind,
 		name: plan?.name ?? sub.plan?.name ?? sub.planId,
-		dollars: amount == null ? null : amount * quantity,
+		dollars: fixed === null ? null : fixed * quantity,
 		interval: plan?.price?.interval ?? null,
 	}
 }
@@ -204,13 +206,11 @@ export function buildSpendModel({
 	// The customer's own plan wins over the catalog — see `resolveSubscriptionPlan`.
 	// This is what makes usage-based pricing correct on a custom plan.
 	const basePlan = activeSub ? resolveSubscriptionPlan(activeSub, catalog) : null
+	// An add-on we cannot resolve stays a charge (unpriced) so the spend reads as partial.
 	const addOnSubs = customer.subscriptions
 		.filter((sub) => sub.addOn === true && sub.status === "active")
-		.flatMap((sub) => {
-			const plan = resolveSubscriptionPlan(sub, catalog)
-			return plan === null ? [] : [{ sub, plan }]
-		})
-	const addOns = addOnSubs.map(({ plan }) => plan)
+		.map((sub) => ({ sub, plan: resolveSubscriptionPlan(sub, catalog) }))
+	const addOns = addOnSubs.flatMap(({ plan }) => (plan === null ? [] : [plan]))
 	const charges: BaseCharge[] =
 		activeSub === undefined
 			? []
@@ -250,6 +250,7 @@ export function buildSpendModel({
 	}
 
 	const spend = cycleSpend({ baseDollars, features: pricing })
+	const unpricedAddOn = charges.some((charge) => charge.kind === "addOn" && charge.dollars === null)
 
 	const features: FeatureSpend[] = SPEND_FEATURES.map((featureId) => {
 		const entry = pricing[featureId]
@@ -291,7 +292,7 @@ export function buildSpendModel({
 			elapsedMs,
 			totalMs: cycle.endMs - cycle.startMs,
 		}),
-		partial: spend.partial,
+		partial: spend.partial || unpricedAddOn,
 		features,
 		topDriver,
 		cycle: { ...cycle, nowMs },
@@ -340,7 +341,7 @@ export function costBreakdown(model: SpendModel): ReadonlyArray<CostLine> {
 			key: charge.key,
 			label: `${sentenceCasePlanName(charge.name)} add-on`,
 			detail: detailOf(charge),
-			cents: baseKnown ? Math.round((charge.dollars ?? 0) * 100) : null,
+			cents: baseKnown && charge.dollars !== null ? Math.round(charge.dollars * 100) : null,
 		}))
 	const plan = model.charges.find((charge) => charge.kind === "plan")
 	const planLine =

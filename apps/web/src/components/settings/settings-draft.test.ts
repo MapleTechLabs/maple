@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { isSameDraft } from "./settings-draft"
+import { commitEdits, isSameDraft } from "./settings-draft"
 
 describe("isSameDraft", () => {
 	it("compares nested plain data by value, ignoring key order", () => {
@@ -24,5 +24,30 @@ describe("isSameDraft", () => {
 
 	it("treats NaN as equal to itself so an untouched numeric field is clean", () => {
 		expect(isSameDraft({ n: Number.NaN }, { n: Number.NaN })).toBe(true)
+	})
+})
+
+describe("commitEdits", () => {
+	it("settles the edits the save submitted, recording what it sent", () => {
+		expect(
+			commitEdits(
+				{ value: { rate: 25.5 } },
+				{ submitted: { rate: 25.5 }, sent: { rate: 25 } },
+				{ rate: 10 },
+				isSameDraft,
+			),
+		).toEqual({ value: { rate: 25.5 }, committedOver: { saved: { rate: 10 }, sent: { rate: 25 } } })
+	})
+
+	it("leaves an edit made after the save started uncommitted", () => {
+		expect(
+			commitEdits({ value: { rate: 60 } }, { submitted: { rate: 50 } }, { rate: 10 }, isSameDraft),
+		).toEqual({
+			value: { rate: 60 },
+		})
+	})
+
+	it("has nothing to settle when the edits were already dropped", () => {
+		expect(commitEdits(null, { submitted: { rate: 50 } }, { rate: 10 }, isSameDraft)).toBeNull()
 	})
 })
