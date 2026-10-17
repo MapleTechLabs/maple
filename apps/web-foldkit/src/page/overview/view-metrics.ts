@@ -185,8 +185,10 @@ export const gridItems = <M>(
 			footer: !showSummary
 				? undefined
 				: Option.match(footerError, {
+						// Two text runs, as JSX's `Total{" "}` renders.
 						onNone: () => [
-							"Total ",
+							"Total",
+							" ",
 							h.span(
 								[h.Class("font-medium text-foreground tabular-nums")],
 								[formatNumber(totalVolume)],

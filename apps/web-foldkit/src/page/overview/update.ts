@@ -100,10 +100,13 @@ const keyed = <A, E>(
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Command.Command<Message, never, Resources>,
 ): Step =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => NONE,
-		onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
-	})
+	// `sync` runs after every answer, so a failed key is not loaded again until a retry or Reload.
+	mode === "Load" && slot.key === key && AsyncData.isFailure(slot.data)
+		? NONE
+		: Option.match(Keyed.request(slot, key, mode), {
+				onNone: () => NONE,
+				onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
+			})
 
 /** Steps run in order, each against the Model the previous ones patched. */
 const runSteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>, prior?: Return): Return =>
