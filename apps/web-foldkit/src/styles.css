@@ -1,0 +1,8 @@
+/* The same stylesheets as apps/web, imported in place so class strings render identically. */
+@import "../../web/src/styles.css";
+@import "../../web/src/components/layout/account-layout.css";
+
+/* apps/web's utilities come from scanning its own sources; scan them too so both builds emit the
+   same rules, plus this app's views. */
+@source "../../web/src";
+@source "./";
