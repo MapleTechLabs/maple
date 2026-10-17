@@ -70,12 +70,11 @@ export class MapleAiClient extends Context.Service<MapleAiClient, Effect.Success
 	static readonly layer = Layer.effect(this, makeAiApi).pipe(Layer.provide(MapleHttpClientLive))
 }
 
-/** The runtime's `resources`: built once, shared by every Command and Subscription. */
-export const ResourcesLive = Layer.mergeAll(
+/** Every HTTP client; `resources.ts` adds the data layer's resources on top. */
+export const ApiClientsLive = Layer.mergeAll(
 	MapleAuthApi.layer,
 	MapleApiClient.layer,
 	MapleInternalApiClient.layer,
 	MapleApiV2Client.layer,
 	MapleAiClient.layer,
 )
-export type Resources = Layer.Success<typeof ResourcesLive>

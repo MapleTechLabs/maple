@@ -3,7 +3,7 @@ import "./styles.css"
 import { Runtime } from "foldkit"
 import { labEnabled, labPathOf, startLab } from "./lab/boot"
 import { Flags, flags, init, Message, Model, subscriptions, update, view } from "./main"
-import { ResourcesLive } from "./platform/api-clients"
+import { ResourcesLive } from "./platform/resources"
 
 const container = document.getElementById("app") ?? document.body
 

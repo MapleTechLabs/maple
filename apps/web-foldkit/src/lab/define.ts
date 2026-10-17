@@ -1,5 +1,5 @@
 import { Runtime } from "foldkit"
-import { type Resources, ResourcesLive } from "../platform/api-clients"
+import { type Resources, ResourcesLive } from "../platform/resources"
 
 /**
  * A lab entry is a self-contained Foldkit program booted on `/lab/<path>` instead of the app,
