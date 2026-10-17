@@ -193,8 +193,17 @@ interface PreparedIncidentDelivery {
 	readonly scheduledAt: number
 }
 
-/** One rule's state rows that need no other write this tick, keyed by group. */
-type RuleStateWrites = Ref.Ref<HashMap.HashMap<string, AlertRuleStateRow>>
+/**
+ * One rule's state rows that need no other write this tick, keyed by group,
+ * and the check rows reporting them, held back until those rows commit.
+ */
+interface RuleStateBuffer {
+	readonly rows: HashMap.HashMap<string, AlertRuleStateRow>
+	readonly checks: Chunk.Chunk<AlertChecksRow>
+}
+type RuleStateWrites = Ref.Ref<RuleStateBuffer>
+
+const emptyRuleStateBuffer: RuleStateBuffer = { rows: HashMap.empty(), checks: Chunk.empty() }
 
 // 11 bind parameters per row; keeps one statement far below Postgres' 65,535.
 const RULE_STATE_FLUSH_CHUNK_SIZE = 500
@@ -666,8 +675,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const flushRuleStates = Effect.fn("AlertsService.flushRuleStates")(function* (
 				claim: RuleClaim,
 				writes: RuleStateWrites,
+				pendingChecks: Ref.Ref<Chunk.Chunk<AlertChecksRow>>,
 			) {
-				const rows = Arr.fromIterable(HashMap.values(yield* Ref.getAndSet(writes, HashMap.empty())))
+				const buffer = yield* Ref.getAndSet(writes, emptyRuleStateBuffer)
+				const rows = Arr.fromIterable(HashMap.values(buffer.rows))
 				yield* Effect.annotateCurrentSpan("maple.alerting.state_rows", rows.length)
 				if (Arr.isReadonlyArrayEmpty(rows)) return
 				yield* writeUnderClaim(claim, (db) =>
@@ -695,16 +706,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						{ discard: true },
 					),
 				)
+				// Only now do the checks count: a failed flush must not report
+				// evaluations whose state never reached Postgres.
+				yield* Ref.update(pendingChecks, Chunk.appendAll(buffer.checks))
 			})
 
 			// Flushes after the groups even when one fails, so a later group's error
 			// cannot discard the evaluations that already completed.
 			const withRuleStateFlush =
-				(claim: RuleClaim, writes: RuleStateWrites) =>
+				(
+					claim: RuleClaim,
+					writes: RuleStateWrites,
+					pendingChecks: Ref.Ref<Chunk.Chunk<AlertChecksRow>>,
+				) =>
 				<A, E, R>(groups: Effect.Effect<A, E, R>) =>
 					Effect.gen(function* () {
 						const exit = yield* Effect.exit(groups)
-						const flush = flushRuleStates(claim, writes)
+						const flush = flushRuleStates(claim, writes, pendingChecks)
 						yield* Exit.isSuccess(exit)
 							? flush
 							: flush.pipe(
@@ -2575,7 +2593,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							lastError: null,
 							updatedAt: timestamp,
 						}
-						if (deferred) return Ref.update(stateWrites, HashMap.set(groupKey, stateRow))
+						if (deferred)
+							return Ref.update(stateWrites, (buffer) => ({
+								...buffer,
+								rows: HashMap.set(buffer.rows, groupKey, stateRow),
+							}))
 						return writeUnderClaim(claim, (db) =>
 							db.run(
 								PG.insertInto(AlertRuleStates)
@@ -3101,7 +3123,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Buffer instead of POSTing per-evaluation; the scheduler tick flushes
 				// all rows once at the end (one POST per orgId). Awaited flush keeps
 				// the Cloudflare Worker isolate alive across the batch write.
-				yield* Ref.update(pendingChecks, Chunk.append(checkRow))
+				// A group whose state row is still buffered reports its check only once
+				// `flushRuleStates` commits that row.
+				const staged = yield* Ref.modify(stateWrites, (buffer) =>
+					HashMap.has(buffer.rows, groupKey)
+						? [true, { ...buffer, checks: Chunk.append(buffer.checks, checkRow) }]
+						: [false, buffer],
+				)
+				if (!staged) yield* Ref.update(pendingChecks, Chunk.append(checkRow))
 			})
 
 			/* -------------------------------------------------------------------------- */
@@ -4118,12 +4147,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						}
 						const ruleStart = yield* now
 						const normalized = yield* normalizeRuleRow(row)
-						const stateWrites: RuleStateWrites = yield* Ref.make(
-							HashMap.empty<string, AlertRuleStateRow>(),
-						)
+						const stateWrites: RuleStateWrites = yield* Ref.make(emptyRuleStateBuffer)
 						const flushingStates = withRuleStateFlush(
 							{ ruleId: row.id, claimedAt: timestamp, ruleUpdatedAt: row.updatedAt },
 							stateWrites,
+							pendingChecks,
 						)
 
 						if (normalized.serviceNames.length > 1) {

@@ -6543,4 +6543,88 @@ describe("AlertsService post-evaluation writes", () => {
 			assert.deepStrictEqual(stored, { groups: GROUPS, healthy: GROUPS })
 		}).pipe(Effect.provide(makeLayer(slowDb(testDb), stub, { fetch: okFetch })))
 	})
+
+	it.effect("a rule edited before its flush keeps neither the buffered states nor their checks", () => {
+		const testDb = createTestDb(trackedDbs)
+		const services = ["svc-a", "svc-b", "svc-c"]
+		const base = makeWarehouseStub({
+			tracesAggregateRows: services.map((groupName) =>
+				tracesRow({ groupName, count: 200, errorRate: 0.5, estimatedSpanCount: 200 }),
+			),
+		})
+		const ingested: Array<Record<string, unknown>> = []
+		// The rule to disable on the next warehouse query: set once the rule
+		// exists, cleared by the edit so it runs once.
+		const pendingEdit = Ref.makeUnsafe<string | null>(null)
+		// An admin disables the rule while its evaluation is in flight, after the
+		// tick loaded the rule and before the groups' state rows are flushed.
+		const disableRule = Ref.getAndSet(pendingEdit, null).pipe(
+			Effect.flatMap((ruleId) =>
+				ruleId === null
+					? Effect.void
+					: Effect.promise(() =>
+							queryFirstRow(
+								testDb,
+								`update alert_rules set enabled = false, updated_at = updated_at + interval '1 second'
+								  where id = $1 returning id`,
+								[ruleId],
+							),
+						),
+			),
+		)
+		const stub: WarehouseQueryServiceApi = {
+			...base,
+			compiledQuery: (tenant, compiled) =>
+				disableRule.pipe(Effect.andThen(base.compiledQuery(tenant, compiled))),
+			compiledQueryWithCapabilities: (tenant, compile) =>
+				disableRule.pipe(Effect.andThen(base.compiledQueryWithCapabilities(tenant, compile))),
+			ingest: (_tenant, _datasource, rows) =>
+				Effect.sync(() => {
+					ingested.push(...(rows as Array<Record<string, unknown>>))
+				}),
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_state_batch_edit")
+			const userId = asUserId("user_state_batch_edit")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Grouped error rate",
+					severity: "warning",
+					enabled: true,
+					groupBy: ["service.name"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					destinationIds: [destination.id],
+				}),
+			)
+			yield* Ref.set(pendingEdit, rule.id)
+
+			yield* alerts.runSchedulerTick()
+
+			assert.isNull(yield* Ref.get(pendingEdit), "the edit ran during the tick")
+			const stored = yield* Effect.promise(() =>
+				queryFirstRow<{ healthy: number }>(
+					testDb,
+					`select count(*) filter (where last_status = 'healthy')::int as "healthy"
+					   from alert_rule_states where rule_id = $1`,
+					[rule.id],
+				),
+			)
+			assert.deepStrictEqual(stored, { healthy: 0 })
+			assert.deepStrictEqual(
+				ingested.filter((row) => row.RuleId === rule.id && row.Status === "healthy"),
+				[],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
+	})
 })
