@@ -172,7 +172,7 @@ function ConnectionPanel({
 		if (!toastExit(result, { success: "Connection saved and tested", error: "Connection test failed" }))
 			return
 		setPassword("")
-		commit()
+		commit({ url: draft.url.trim(), user: draft.user.trim(), database: draft.database.trim() })
 		onChanged()
 	})
 
