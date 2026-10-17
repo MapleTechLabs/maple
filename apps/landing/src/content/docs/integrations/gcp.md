@@ -1,6 +1,6 @@
 ---
 title: "Google Cloud"
-description: "Connect a Google Cloud organization, folder or project by running one script in Cloud Shell. Maple receives Cloud Logging entries through Pub/Sub and reads Cloud Monitoring metrics every 5 minutes."
+description: "Connect a Google Cloud organization, folder or project with a script in Cloud Shell, by hand in the console, or with Terraform or Alchemy. Maple receives Cloud Logging entries through Pub/Sub and reads Cloud Monitoring metrics every 5 minutes."
 group: "Integrations"
 order: 7
 ---
@@ -12,7 +12,13 @@ The Google Cloud integration connects an organization, a folder or a single proj
 | **Log forwarding**        | A Log Router sink sends Cloud Logging entries through Pub/Sub to Maple. They appear in [Logs](/docs/explore/logs) under the service that wrote them.                                                                                                                           |
 | **Metrics and resources** | Maple reads Cloud Monitoring metrics for Cloud Run, Cloud Functions, GKE, Compute Engine, Cloud SQL, Pub/Sub and HTTP(S) load balancers every 5 minutes, and lists the resources behind them every hour. The metrics are named `gcp.*` and work in dashboards and alert rules. |
 
-There is no OAuth step and no service account key. You run a generated `gcloud` script in Cloud Shell, and Maple gets no write access to Google Cloud.
+There is no OAuth step and no service account key, and Maple gets no write access to Google Cloud. You set the connection up in one of three ways, chosen in the dialog's **Method** step. Each creates the same resources under the same names:
+
+| Method                     | What you do                                                                                                                                                 |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cloud Shell script**     | Paste a generated `gcloud` script into Cloud Shell. About a minute. This page covers it.                                                                    |
+| **Manual setup**           | Create each resource in the Google Cloud console from a step list in the dialog. About 15 minutes. See [Manual setup](/docs/integrations/gcp-manual-setup). |
+| **Infrastructure as code** | Copy a generated Terraform or Alchemy file into your own repo and apply it. See [Terraform and Alchemy](/docs/integrations/gcp-infrastructure-as-code).     |
 
 If your workloads also send telemetry over OpenTelemetry, read [Google Cloud with OpenTelemetry](/docs/integrations/gcp-opentelemetry): it covers which telemetry to send over OpenTelemetry and which to collect here, and why GKE container logs are left out by default.
 
@@ -47,7 +53,7 @@ The host project holds Maple's Pub/Sub topic, subscription and read-only service
 2. Under **What to connect**, choose **Organization**, **Folder** or **Project** and enter its ID. An organization or folder covers every project in it, including new ones.
 3. For an organization or folder, enter the **Host project ID**.
 4. Under **Collect**, leave **Log forwarding** and **Metrics and resources** ticked, or untick one. To change which logs are forwarded, choose a [log filter](#log-filter) under **Log filter**.
-5. Click **Create and continue**. Maple creates the connection and the dialog moves to its second stage, **Apply in Google Cloud**. Nothing changes in Google Cloud until you run the script.
+5. Click **Create and continue**. Maple creates the connection and the dialog moves to **Method**. Leave **Cloud Shell script** selected and click **Continue**. For the other methods, follow [Manual setup](/docs/integrations/gcp-manual-setup) or [Terraform and Alchemy](/docs/integrations/gcp-infrastructure-as-code) from here. Nothing changes in Google Cloud until you run the script.
 6. In step 1, click **Open Cloud Shell** and sign in with the roles above. Click **Authorize** if Cloud Shell asks.
 7. In step 2, click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute. **Read the script** shows it in the dialog.
 8. Return to Maple. Step 3, **Maple is waiting for the run**, updates on its own. Within a minute of the script ending, usually in seconds, the dialog shows **Google Cloud matches this configuration**. Click **Done**.

@@ -34,6 +34,8 @@ export const DOCS = {
 	cloudflare: "/docs/integrations/cloudflare",
 	gcp: "/docs/integrations/gcp",
 	gcpOpenTelemetry: "/docs/integrations/gcp-opentelemetry",
+	gcpManualSetup: "/docs/integrations/gcp-manual-setup",
+	gcpInfrastructureAsCode: "/docs/integrations/gcp-infrastructure-as-code",
 	planetscale: "/docs/integrations/planetscale",
 	prometheus: "/docs/integrations/prometheus",
 	warpstream: "/docs/integrations/warpstream",
