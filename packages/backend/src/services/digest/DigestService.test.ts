@@ -329,6 +329,42 @@ describe("DigestService.runDigestTick", () => {
 			assert.strictEqual(second.errorCount, 0)
 		}).pipe(Effect.provide(layer))
 	})
+
+	it.effect("one local send window gets one attempt even when it crosses UTC midnight", () => {
+		const { sends, layer } = makeHarness()
+		return Effect.gen(function* () {
+			// Monday 15:00 in Los Angeles is 22:00 UTC; the local Monday runs on past UTC midnight.
+			const firstTickMs = Date.UTC(2026, 6, 6, 22, 0, 0)
+			yield* TestClock.setTime(firstTickMs)
+			const id = yield* seedSub({
+				email: "la@example.com",
+				timezone: "America/Los_Angeles",
+				sendHour: 15,
+			})
+
+			const digest = yield* DigestService
+			yield* digest.runDigestTick()
+			assert.deepStrictEqual(sends, ["la@example.com"])
+
+			// The email went out but the lastSentAt write was lost.
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(DigestSubscriptions)
+						.set({ lastSentAt: null })
+						.where(($) => [$.id.eq(id)]),
+				),
+			)
+
+			// Tuesday 00:15 UTC is still Monday 17:15 in Los Angeles.
+			yield* TestClock.setTime(Date.UTC(2026, 6, 7, 0, 15, 0))
+			const second = yield* digest.runDigestTick()
+
+			assert.deepStrictEqual(sends, ["la@example.com"])
+			assert.strictEqual(second.sentCount, 0)
+			assert.strictEqual((yield* getSub(id)).lastAttemptedAt, firstTickMs)
+		}).pipe(Effect.provide(layer))
+	})
 })
 
 describe("DigestService.unsubscribeByToken", () => {

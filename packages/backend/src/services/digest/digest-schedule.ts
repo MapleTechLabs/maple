@@ -22,15 +22,33 @@ const resolveZone = (timezone: string): DateTime.TimeZone =>
 	Option.getOrElse(DateTime.zoneMakeNamed(timezone), () => DateTime.zoneMakeOffset(0))
 
 /**
- * Whether a weekly digest should go out at `nowMs`: it is the subscriber's chosen weekday in
- * their zone, the local clock has reached their send hour, and nothing went out in the last
- * six days. The digest tick runs every 15 minutes, so this window is hit on the first tick at
- * or after the send hour, and `lastSentAt` keeps every later tick that day idempotent.
+ * Latest instant a previous send or claimed attempt may sit at for a new one to be allowed.
+ * The tick filter and the claim both guard on it, so one local-day window gets one attempt
+ * even when it straddles UTC midnight.
  */
-export function isDigestDue(schedule: DigestSchedule, lastSentAt: number | null, nowMs: number): boolean {
+export const digestResendCutoffMs = (nowMs: number): number => nowMs - MIN_RESEND_GAP_MS
+
+/** The later of the last send and the last claimed attempt, the activity the gap is measured from. */
+export const lastDigestActivity = (
+	lastSentAt: number | null,
+	lastAttemptedAt: number | null,
+): number | null =>
+	lastSentAt === null
+		? lastAttemptedAt
+		: lastAttemptedAt === null
+			? lastSentAt
+			: Math.max(lastSentAt, lastAttemptedAt)
+
+/**
+ * Whether a weekly digest should go out at `nowMs`: it is the subscriber's chosen weekday in
+ * their zone, the local clock has reached their send hour, and nothing was sent or attempted in
+ * the last six days. The digest tick runs every 15 minutes, so this window is hit on the first
+ * tick at or after the send hour, and `lastActivityAt` keeps every later tick that day idempotent.
+ */
+export function isDigestDue(schedule: DigestSchedule, lastActivityAt: number | null, nowMs: number): boolean {
 	const local = DateTime.toParts(
 		DateTime.makeZonedUnsafe(nowMs, { timeZone: resolveZone(schedule.timezone) }),
 	)
 	if (local.weekDay !== schedule.dayOfWeek || local.hour < schedule.sendHour) return false
-	return lastSentAt === null || lastSentAt <= nowMs - MIN_RESEND_GAP_MS
+	return lastActivityAt === null || lastActivityAt <= digestResendCutoffMs(nowMs)
 }

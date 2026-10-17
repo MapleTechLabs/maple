@@ -53,7 +53,7 @@ import {
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import * as CH from "@maple/query-engine/ch"
-import { isDigestDue } from "./digest-schedule"
+import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -1039,7 +1039,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			)
 
 			const now = yield* Clock.currentTimeMillis
-			const todayStartMs = now - (now % 86_400_000)
+			const resendCutoffMs = digestResendCutoffMs(now)
 
 			const subs = yield* dbExecute((db) =>
 				db.run(
@@ -1049,7 +1049,9 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				),
 			)
 
-			const dueSubs = subs.filter((s) => isDigestDue(s, s.lastSentAt, now))
+			const dueSubs = subs.filter((s) =>
+				isDigestDue(s, lastDigestActivity(s.lastSentAt, s.lastAttemptedAt), now),
+			)
 
 			if (dueSubs.length === 0) {
 				return { sentCount: 0, errorCount: 0, skipped: false }
@@ -1083,7 +1085,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 						// Orgs whose warehouse rejected queries with an auth/config-class
 						// error are parked (see warehouse-org-quarantine.ts). Checked before
-						// the claim so a parked org isn't marked attempted for the day.
+						// the claim so a parked org isn't marked attempted for the window.
 						if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) {
 							yield* Effect.logInfo("Skipping digest for org with quarantined warehouse").pipe(
 								Effect.annotateLogs({ orgId: rawOrgId }),
@@ -1097,14 +1099,17 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 									.set({ lastAttemptedAt: now })
 									.where(($) => [
 										PG.inList($.id, orgSubIds),
-										PG.or($.lastAttemptedAt.isNull(), $.lastAttemptedAt.lt(todayStartMs)),
+										PG.or(
+											$.lastAttemptedAt.isNull(),
+											$.lastAttemptedAt.lte(resendCutoffMs),
+										),
 									])
 									.returning("id"),
 							),
 						)
 
 						if (claim.length === 0) {
-							yield* Effect.logInfo("Skipping digest org already attempted today").pipe(
+							yield* Effect.logInfo("Skipping digest org already attempted this window").pipe(
 								Effect.annotateLogs({
 									orgId: rawOrgId,
 									subscriptionCount: orgSubs.length,
@@ -1118,7 +1123,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 						if (claimedSubs.length < orgSubs.length) {
 							yield* Effect.logInfo(
-								"Skipping digest subscriptions already attempted today",
+								"Skipping digest subscriptions already attempted this window",
 							).pipe(
 								Effect.annotateLogs({
 									orgId: rawOrgId,

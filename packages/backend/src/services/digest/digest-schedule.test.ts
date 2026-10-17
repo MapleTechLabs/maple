@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { isDigestDue } from "./digest-schedule"
+import { isDigestDue, lastDigestActivity } from "./digest-schedule"
 
 const at = (iso: string) => Date.parse(iso)
 const MONDAY = 1
@@ -69,5 +69,14 @@ describe("isDigestDue", () => {
 		const unknown = { dayOfWeek: MONDAY, sendHour: 9, timezone: "Mars/Olympus_Mons" }
 		expect(isDigestDue(unknown, null, at("2026-07-06T08:59:00Z"))).toBe(false)
 		expect(isDigestDue(unknown, null, at("2026-07-06T09:00:00Z"))).toBe(true)
+	})
+
+	it("counts an attempt whose send was never recorded, across UTC midnight", () => {
+		const losAngeles = { dayOfWeek: MONDAY, sendHour: 15, timezone: "America/Los_Angeles" }
+		const attemptedAt = at("2026-07-06T22:00:00Z")
+		const afterUtcMidnight = at("2026-07-07T00:15:00Z")
+		expect(isDigestDue(losAngeles, null, afterUtcMidnight)).toBe(true)
+		expect(isDigestDue(losAngeles, lastDigestActivity(null, attemptedAt), afterUtcMidnight)).toBe(false)
+		expect(lastDigestActivity(attemptedAt - 1000, attemptedAt)).toBe(attemptedAt)
 	})
 })

@@ -43,7 +43,7 @@ import {
 	isOrgWarehouseQuarantined,
 	quarantineOnConfigClassCause,
 } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
-import { isDigestDue } from "./digest-schedule"
+import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks } from "./unsubscribe-token"
 
@@ -450,13 +450,13 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 			/**
 			 * Runs on the ops digest's 15-minute tick, after it, so the Clerk member
 			 * sweep has already seeded any new subscriber rows. Same schedule and
-			 * once-a-day claim as the ops digest, on this email's own columns.
+			 * once-a-window claim as the ops digest, on this email's own columns.
 			 */
 			const runTick = Effect.fn("WebAnalyticsDigestService.runTick")(function* () {
 				if (!email.isConfigured) return { sentCount: 0, errorCount: 0, skipped: true }
 
 				const now = yield* Clock.currentTimeMillis
-				const todayStartMs = now - (now % DAY_MS)
+				const resendCutoffMs = digestResendCutoffMs(now)
 
 				const subs = yield* dbExecute((db) =>
 					db.run(
@@ -466,7 +466,13 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					),
 				)
 
-				const due = subs.filter((s) => isDigestDue(s, s.webAnalyticsLastSentAt, now))
+				const due = subs.filter((s) =>
+					isDigestDue(
+						s,
+						lastDigestActivity(s.webAnalyticsLastSentAt, s.webAnalyticsLastAttemptedAt),
+						now,
+					),
+				)
 				if (due.length === 0) return { sentCount: 0, errorCount: 0, skipped: false }
 
 				const byOrg = Arr.groupBy(due, (s) => s.orgId)
@@ -489,7 +495,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 											),
 											PG.or(
 												$.webAnalyticsLastAttemptedAt.isNull(),
-												$.webAnalyticsLastAttemptedAt.lt(todayStartMs),
+												$.webAnalyticsLastAttemptedAt.lte(resendCutoffMs),
 											),
 										])
 										.returning("id"),
