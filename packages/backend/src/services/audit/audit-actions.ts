@@ -73,6 +73,8 @@ export const AuditResources = {
 	 * `metadata`; a tool that also mutates a resource records that action too.
 	 */
 	mcp_tool: { verbs: ["called"] },
+	/** An MCP client's OAuth grant; the client and the member who approved it are in `metadata`. */
+	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["revoked"] },
 	investigation: {
 		prefix: PublicIdPrefixes.investigation,
 		verbs: ["created", "restarted", "status_changed"],
