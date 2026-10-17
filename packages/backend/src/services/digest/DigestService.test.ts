@@ -36,11 +36,11 @@ const testConfig = () =>
 		}),
 	)
 
-// Monday 2026-07-06 08:00 UTC — getUTCDay() === 1, matching the default
-// subscription dayOfWeek. All seeded timestamps derive from this epoch so
+// Monday 2026-07-06 09:00 UTC, when the default schedule (Monday, 09:00, UTC) is due.
+// All seeded timestamps derive from this epoch so
 // rows and the service (which reads Clock.currentTimeMillis) share one
 // time base.
-const TICK_MS = Date.UTC(2026, 6, 6, 8, 0, 0)
+const TICK_MS = Date.UTC(2026, 6, 6, 9, 0, 0)
 
 interface StubOverviewRow {
 	serviceName: string
@@ -233,6 +233,22 @@ describe("DigestService.runDigestTick", () => {
 				assert.strictEqual(row.lastSentAt, TICK_MS)
 				assert.strictEqual(row.lastAttemptedAt, TICK_MS)
 			}
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("sends only to subscribers whose own day, hour and zone have come round", () => {
+		const { sends, layer } = makeHarness()
+		return Effect.gen(function* () {
+			// 09:00 UTC Monday is 11:00 in Berlin, 02:00 in Los Angeles and 18:00 Monday in Tokyo.
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedSub({ email: "berlin@example.com", timezone: "Europe/Berlin", sendHour: 10 })
+			yield* seedSub({ email: "la@example.com", timezone: "America/Los_Angeles", sendHour: 9 })
+			yield* seedSub({ email: "tokyo@example.com", timezone: "Asia/Tokyo", dayOfWeek: 2, sendHour: 0 })
+
+			const digest = yield* DigestService
+			yield* digest.runDigestTick()
+
+			assert.deepStrictEqual(sends, ["berlin@example.com"])
 		}).pipe(Effect.provide(layer))
 	})
 

@@ -53,6 +53,7 @@ import {
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import * as CH from "@maple/query-engine/ch"
+import { isDigestDue } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -320,6 +321,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				email: string
 				enabled?: boolean
 				dayOfWeek?: number
+				sendHour?: number
 				timezone?: string
 				namespaces?: ReadonlyArray<string>
 				environments?: ReadonlyArray<string>
@@ -343,6 +345,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							enabled: input.enabled !== false,
 							optedOutAt: input.enabled === false ? now : null,
 							dayOfWeek: input.dayOfWeek ?? 1,
+							...(input.sendHour != null ? { sendHour: input.sendHour } : undefined),
 							timezone: input.timezone ?? "UTC",
 							namespacesJson: JSON.stringify(input.namespaces ?? []),
 							environmentsJson: JSON.stringify(input.environments ?? []),
@@ -361,6 +364,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 								// can tell an opt-out from a member it disabled itself.
 								optedOutAt: input.enabled === false ? now : null,
 								...(input.dayOfWeek != null ? { dayOfWeek: input.dayOfWeek } : undefined),
+								...(input.sendHour != null ? { sendHour: input.sendHour } : undefined),
 								...(input.timezone != null ? { timezone: input.timezone } : undefined),
 								...(input.namespaces != null
 									? { namespacesJson: JSON.stringify(input.namespaces) }
@@ -1035,9 +1039,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			)
 
 			const now = yield* Clock.currentTimeMillis
-			const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
 			const todayStartMs = now - (now % 86_400_000)
-			const currentDayOfWeek = new Date(now).getUTCDay()
 
 			const subs = yield* dbExecute((db) =>
 				db.run(
@@ -1047,10 +1049,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				),
 			)
 
-			const dueSubs = subs.filter(
-				(s) =>
-					s.dayOfWeek === currentDayOfWeek && (s.lastSentAt == null || s.lastSentAt < sevenDaysAgo),
-			)
+			const dueSubs = subs.filter((s) => isDigestDue(s, s.lastSentAt, now))
 
 			if (dueSubs.length === 0) {
 				return { sentCount: 0, errorCount: 0, skipped: false }
@@ -1265,6 +1264,7 @@ function rowToResponse(row: DigestSubscriptionRow): DigestSubscriptionResponse {
 		email: row.email,
 		enabled: row.enabled,
 		dayOfWeek: row.dayOfWeek,
+		sendHour: row.sendHour,
 		timezone: row.timezone,
 		namespaces: parseScopeColumn(row.namespacesJson),
 		environments: parseScopeColumn(row.environmentsJson),
