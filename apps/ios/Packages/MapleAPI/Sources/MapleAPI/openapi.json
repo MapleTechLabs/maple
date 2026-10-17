@@ -7770,6 +7770,10 @@
       "name": "Ingest Keys"
     },
     {
+      "description": "The organization's trace sampling policy, applied by the ingest gateway: a keep ratio plus rules that always keep error and slow spans.",
+      "name": "Trace Sampling"
+    },
+    {
       "description": "Link a chat workspace to your organization through a configured connector, and manage or remove the links that already exist. Where a connector's platform can say who acted, each member may also link their own chat account to their Maple user.",
       "name": "Chat Integrations"
     },
