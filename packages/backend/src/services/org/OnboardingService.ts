@@ -158,11 +158,29 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				return rowToResponse(row)
 			})
 
-			/** Stamp first-data time only if not already set. Returns true when newly stamped. */
+			/**
+			 * Stamp first-data time only if not already set. Returns true when newly stamped.
+			 * Creates the row when the org has none, so an org that never ran onboarding still gets stamped.
+			 */
 			const recordFirstDataReceived = Effect.fn("OnboardingService.recordFirstDataReceived")(function* (
 				orgId: OrgId,
 			) {
 				const now = yield* Clock.currentTimeMillis
+				const inserted = yield* dbExecute((db) =>
+					db.run(
+						PG.insertInto(OrgOnboardingState)
+							.values({
+								orgId,
+								demoDataRequested: false,
+								firstDataReceivedAt: now,
+								createdAt: now,
+								updatedAt: now,
+							})
+							.onConflictDoNothing()
+							.returning(($) => ({ id: $.orgId })),
+					),
+				)
+				if (inserted.length > 0) return true
 				const result = yield* dbExecute((db) =>
 					db.run(
 						PG.update(OrgOnboardingState)

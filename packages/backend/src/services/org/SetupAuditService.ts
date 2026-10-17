@@ -33,6 +33,8 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
+import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
+import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import * as Integrations from "@maple/query-engine-integrations"
 
 /** Telemetry lookback for the warehouse-backed checks — matches the recommendations reconcile. */
@@ -52,13 +54,20 @@ export interface SetupAuditServiceApi {
 	readonly run: (tenant: TenantContext) => Effect.Effect<SetupAuditReport, SetupAuditUnavailableError>
 }
 
-type SetupAuditServiceRequirements = Database | WarehouseQueryService | IntegrationInventoryService
+type SetupAuditServiceRequirements =
+	| Database
+	| WarehouseQueryService
+	| IntegrationInventoryService
+	| OnboardingService
+	| SignalPresenceService
 
 const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirements> = Effect.gen(
 	function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
 		const inventory = yield* IntegrationInventoryService
+		const onboarding = yield* OnboardingService
+		const signals = yield* SignalPresenceService
 
 		const dbExecute = makeDbExecute(
 			database,
@@ -488,8 +497,51 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			return inputs
 		})
 
+		/**
+		 * `firstDataReceivedAt` has no ingest-side writer, so an unstamped org is checked against the
+		 * warehouse (same predicate as the onboarding checklist) and stamped here. Returns the stamp
+		 * to audit with, or null when the org genuinely has no traces, logs, or metrics.
+		 */
+		const resolveFirstDataReceivedAt = Effect.fn("SetupAuditService.resolveFirstDataReceivedAt")(
+			function* (tenant: TenantContext, recorded: number | null) {
+				if (recorded !== null) return recorded
+				const report = yield* signals.read(tenant)
+				const hasTelemetry = report.signals.some(
+					(signal) =>
+						signal.status === "present" &&
+						(signal.signal === "traces" ||
+							signal.signal === "logs" ||
+							signal.signal === "metrics"),
+				)
+				yield* Effect.annotateCurrentSpan({
+					orgId: tenant.orgId,
+					"maple.audit.first_data_probe": report.warehouseAvailable
+						? hasTelemetry
+							? "present"
+							: "absent"
+						: "unavailable",
+				})
+				if (!hasTelemetry) return null
+
+				const now = yield* Clock.currentTimeMillis
+				// A failed write must not hide the audit from an org that has data; the next run retries.
+				const stamped = yield* onboarding.recordFirstDataReceived(tenant.orgId).pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning("Setup audit could not stamp first data received", error.message),
+					),
+					Effect.orElseSucceed(() => false),
+				)
+				yield* Effect.annotateCurrentSpan({ "maple.audit.first_data_stamped": stamped })
+				return now
+			},
+		)
+
 		const run = Effect.fn("SetupAuditService.run")(function* (tenant: TenantContext) {
-			const config = yield* fetchConfigInputs(tenant.orgId)
+			const recorded = yield* fetchConfigInputs(tenant.orgId)
+			const config: ConfigAuditInputs = {
+				...recorded,
+				firstDataReceivedAt: yield* resolveFirstDataReceivedAt(tenant, recorded.firstDataReceivedAt),
+			}
 
 			// A warehouse outage must not take the whole audit down — the configuration half is the
 			// part that most often explains "why didn't anything page me", and it is always readable.
@@ -529,6 +581,13 @@ export class SetupAuditService extends Context.Service<SetupAuditService, SetupA
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, IntegrationInventoryService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				IntegrationInventoryService.layer,
+				OnboardingService.layer,
+				SignalPresenceService.layer,
+			),
+		),
 	)
 }

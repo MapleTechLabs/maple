@@ -17,6 +17,7 @@ import { IngestAttributeMappingService } from "@maple/backend/services/org/Inges
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
@@ -123,7 +124,16 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi) => {
 			Layer.provide(planetScaleStubs),
 		),
 		Layer.effect(SetupAuditService, SetupAuditService.make).pipe(
-			Layer.provide(Layer.mergeAll(warehouseLive, IntegrationInventoryService.layer)),
+			Layer.provide(
+				Layer.mergeAll(
+					warehouseLive,
+					IntegrationInventoryService.layer,
+					OnboardingService.layer,
+					Layer.effect(SignalPresenceService, SignalPresenceService.make).pipe(
+						Layer.provide(warehouseLive),
+					),
+				),
+			),
 		),
 		Layer.effect(SignalPresenceService, SignalPresenceService.make).pipe(Layer.provide(warehouseLive)),
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
