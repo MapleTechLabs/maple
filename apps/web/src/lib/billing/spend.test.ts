@@ -9,8 +9,7 @@ import type {
 } from "@maple/domain/http"
 import { buildCumulativeSeries, buildSpendModel, costBreakdown, featureUnit, formatRateLabel } from "./spend"
 
-// Mock builders construct only the consumed subset of each domain schema, the
-// same approach cost-estimate.test.ts takes.
+// Mock builders construct only the consumed subset of each domain schema.
 const CYCLE_START = Date.UTC(2026, 6, 1)
 const CYCLE_END = Date.UTC(2026, 7, 1)
 const NOW = Date.UTC(2026, 6, 29, 12)
