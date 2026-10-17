@@ -13,7 +13,8 @@ import {
 	throughputPlot,
 	TRACED_KEY,
 } from "../fixed-metric-series"
-import { timeseriesXAxis, timeseriesYAxis } from "../timeseries"
+import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
+import { timeseriesYAxis } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"
 import { roundCapDasharray, verticalGradient } from "./fixed-metric-axes"

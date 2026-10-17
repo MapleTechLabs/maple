@@ -1,18 +1,13 @@
-// The row and axis-context types of packages/ui's plot/timeseries.tsx, React- and chart-library-free
-// so views can read them; the axes that use them live in `timeseries.ts`.
+// The row type and helpers of packages/ui's plot/timeseries.tsx, chart-library-free so views can
+// read them. The axis context and x axis are @maple/ui's framework-free `plot/timeseries-axis`.
+
+export type { TimeseriesAxisContext } from "@maple/ui/components/plot/timeseries-axis"
 
 /** One normalised row: the bucket, its parsed date, and every series value by key. */
 export interface TimeseriesRow extends Record<string, unknown> {
 	bucket: string
 	date: Date
 	partial?: boolean
-}
-
-export interface TimeseriesAxisContext {
-	readonly rangeMs: number
-	readonly bucketSeconds: number | undefined
-	readonly domainMs?: readonly [number, number]
-	readonly timeZone?: string
 }
 
 export const asFiniteNumber = (value: unknown): number => {

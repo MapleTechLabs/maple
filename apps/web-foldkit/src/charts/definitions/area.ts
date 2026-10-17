@@ -15,10 +15,10 @@ import {
 	normaliseRows,
 	scaleRates,
 	seriesDefinitionsOf,
-	timeseriesXAxis,
 	timeseriesYAxis,
 } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
+import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 

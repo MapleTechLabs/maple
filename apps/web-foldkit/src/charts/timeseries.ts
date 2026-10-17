@@ -1,10 +1,4 @@
-import {
-	formatBucketLabel,
-	formatValueByUnit,
-	inferBucketSeconds,
-	inferRangeMs,
-	parseBucketMs,
-} from "@maple/ui/lib/format"
+import { formatValueByUnit, inferBucketSeconds, inferRangeMs, parseBucketMs } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { DEFAULT_TOKEN_FALLBACK } from "@maple/ui/lib/colors"
 import { hasOnlyIntegerValues } from "@maple/ui/components/charts/_shared/sparse-series"
@@ -14,7 +8,6 @@ import {
 	linearYDomain,
 	NICE_TICK_COUNT,
 	niceLinearDomain,
-	zonedTimeScale,
 } from "@maple/ui/components/plot/plot-scales"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import {
@@ -110,43 +103,6 @@ export const axisContextOf = (
 })
 
 export const bucketSecondsOf = (rows: ReadonlyArray<TimeseriesRow>) => inferBucketSeconds(rows)
-
-const NOMINAL_PLOT_WIDTH = 600
-const HALF_CHAR_PX = 2.8
-const MAX_EDGE_FRACTION = 0.2
-
-/** `edgeTickAnchor`: keeps the end tick labels inside the plot instead of overhanging it. */
-const edgeTickAnchor = (axisContext: TimeseriesAxisContext) => {
-	const domain = axisContext.domainMs
-	if (!domain) return undefined
-	const spanMs = domain[1] - domain[0]
-	if (spanMs <= 0) return undefined
-	return ({ value }: { value: Date }): "start" | "middle" | "end" => {
-		const at = value.getTime()
-		if (!Number.isFinite(at)) return "middle"
-		const label = formatBucketLabel(value.toISOString(), axisContext, "tick")
-		const fraction = Math.min(MAX_EDGE_FRACTION, (label.length * HALF_CHAR_PX) / NOMINAL_PLOT_WIDTH)
-		const slackMs = spanMs * fraction
-		if (at >= domain[1] - slackMs) return "end"
-		if (at <= domain[0] + slackMs) return "start"
-		return "middle"
-	}
-}
-
-/** `timeseriesXAxis`: a zoned time scale over `row.date`, round clock ticks 104px apart. */
-export const timeseriesXAxis = (axisContext: TimeseriesAxisContext) => ({
-	scale: zonedTimeScale(axisContext.timeZone),
-	axis: {
-		line: false,
-		ticks: {
-			size: 0,
-			padding: 8,
-			spacing: 104,
-			format: (value: Date) => formatBucketLabel(value.toISOString(), axisContext, "tick"),
-		},
-		tickLabels: { thin: { minGap: 12 }, anchor: edgeTickAnchor(axisContext) },
-	},
-})
 
 export interface YAxisOptions {
 	readonly rows: ReadonlyArray<Record<string, unknown>>
