@@ -33,6 +33,14 @@ function priceLabel(model: SpendModel): { price: string; suffix: string } {
 	return { price: `$${plan.dollars}`, suffix: billsUsage ? `${interval} + usage` : interval }
 }
 
+/** "Bring your own cloud ($99/month)": an add-on the plan could take, as plain text. */
+const addOnLabel = (addOn: CatalogPlan): string => {
+	const name = sentenceCasePlanName(addOn.name)
+	return addOn.price?.amount == null
+		? name
+		: `${name} ($${addOn.price.amount}/${addOn.price.interval ?? "month"})`
+}
+
 function PlanRow({ model, plans }: { model: SpendModel; plans: ReadonlyArray<CatalogPlan> }) {
 	if (model.planName === null) {
 		return (
@@ -66,13 +74,11 @@ function PlanRow({ model, plans }: { model: SpendModel; plans: ReadonlyArray<Cat
 							{sentenceCasePlanName(addOn.name ?? "Add-on")}
 						</Badge>
 					))}
-					{available.map((addOn) => (
-						<Badge key={addOn.id} size="sm" pill variant="meta">
-							Add {sentenceCasePlanName(addOn.name)}
-							{addOn.price?.amount != null &&
-								`, $${addOn.price.amount}/${addOn.price.interval ?? "month"}`}
-						</Badge>
-					))}
+					{available.length > 0 && (
+						<span className="text-2xs text-muted-foreground">
+							Available add-ons: {available.map(addOnLabel).join(", ")}
+						</span>
+					)}
 				</div>
 			)}
 		</Panel>

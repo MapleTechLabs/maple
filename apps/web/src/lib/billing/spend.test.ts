@@ -7,7 +7,14 @@ import type {
 	CatalogPlan,
 	DailySpendResponse,
 } from "@maple/domain/http"
-import { buildCumulativeSeries, buildSpendModel, costBreakdown, featureUnit, formatRateLabel } from "./spend"
+import {
+	buildCumulativeSeries,
+	buildSpendModel,
+	costBreakdown,
+	featureUnit,
+	formatRateLabel,
+	rateCaption,
+} from "./spend"
 
 // Mock builders construct only the consumed subset of each domain schema.
 const CYCLE_START = Date.UTC(2026, 6, 1)
@@ -219,6 +226,34 @@ describe("buildSpendModel", () => {
 		expect(events.ratePerUnit).toBeCloseTo(0.000005, 12)
 		expect(events.billingUnits).toBe(1_000)
 		expect(result.topDriver?.featureId).toBe("product_events")
+	})
+
+	it("captions a feature with no rate in words, never a bare dash", () => {
+		const customer = buildCustomer({
+			balances: {
+				logs: { granted: 100, overageAllowed: false },
+				traces: { granted: 100 },
+				metrics: { granted: 100 },
+				browser_sessions: { granted: 5_000 },
+				product_events: { unlimited: true },
+			},
+		})
+		const plan = {
+			...startupPlan,
+			items: startupPlan.items.filter((item) => item.featureId !== "metrics"),
+		}
+		const result = buildSpendModel({ customer, plans: [plan], usage, nowMs: NOW })
+		if (result === null) throw new Error("expected a model")
+		const captions = Object.fromEntries(
+			result.features.map((feature) => [feature.featureId, rateCaption(feature)]),
+		)
+		expect(captions).toEqual({
+			logs: "No overage",
+			traces: "$0.30/GB",
+			metrics: "Rate unavailable",
+			browser_sessions: "$0.002/session",
+			product_events: "Included",
+		})
 	})
 
 	it("labels rates the way the price list quotes them", () => {

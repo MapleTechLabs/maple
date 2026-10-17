@@ -62,6 +62,10 @@ export interface AuditLogFilters {
 const isIsoTimestamp = (value: string | undefined): value is string =>
 	value !== undefined && /^\d{4}-\d{2}-\d{2}T.+Z$/.test(value) && !Number.isNaN(Date.parse(value))
 
+// Actor ids the app writes: Clerk `user_…`, public `key_…` and `actor_…` ids (base58 bodies).
+const isActorId = (value: string | undefined): value is string =>
+	value !== undefined && /^(?:user|key|actor)_[A-Za-z0-9]+$/.test(value)
+
 /** Narrow the raw search params to filters the API accepts, dropping anything malformed. */
 export function parseAuditLogSearch(search: AuditLogSearch): AuditLogFilters {
 	const preset = AUDIT_RANGE_PRESETS.find((option) => option.value === search.range)
@@ -75,7 +79,7 @@ export function parseAuditLogSearch(search: AuditLogSearch): AuditLogFilters {
 				: { kind: "all" }
 	return {
 		range,
-		actorId: search.actor !== undefined && search.actor !== "" ? search.actor : undefined,
+		actorId: isActorId(search.actor) ? search.actor : undefined,
 		actorType: ACTOR_TYPES.find((type) => type === search.actor_type),
 		outcome: OUTCOMES.find((value) => value === search.outcome),
 	}

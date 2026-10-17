@@ -5,9 +5,6 @@ import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 
 export const AUDIT_LOG_PAGE_LIMIT = 50
 
-const ACTOR_TYPES: ReadonlyArray<AuditActorType> = ["user", "api_key", "agent", "system"]
-const OUTCOMES: ReadonlyArray<AuditOutcome> = ["allowed", "denied"]
-
 export interface AuditLogPageInput {
 	readonly cursor?: string
 	readonly actorType?: AuditActorType
@@ -23,43 +20,42 @@ export interface AuditLogPageInput {
 	readonly until?: string
 }
 
-// None of the filter values contain "|" (actor types, outcomes, `user_…`/`key_…` ids, ISO
-// timestamps), and the cursor is the trailing segment, so splitting on the first five
-// separators stays unambiguous even for exotic cursors.
-const family = Atom.family((key: string) => {
-	const parts = key.split("|", 5)
-	const [actorRaw = "", outcomeRaw = "", actorId = "", since = "", until = ""] = parts
-	const cursor = key.slice(parts.reduce((length, part) => length + part.length + 1, 0))
-	const actorType = ACTOR_TYPES.find((type) => type === actorRaw)
-	const outcome = OUTCOMES.find((value) => value === outcomeRaw)
+// Keyed by a plain struct (Effect's structural equality), so no value can bleed into another field.
+interface AuditLogPageKey {
+	readonly cursor: string | undefined
+	readonly actorType: AuditActorType | undefined
+	readonly actorId: string | undefined
+	readonly outcome: AuditOutcome | undefined
+	readonly since: string | undefined
+	readonly until: string | undefined
+}
 
-	return MapleApiV2AtomClient.runtime.atom(
+const family = Atom.family(({ cursor, actorType, actorId, outcome, since, until }: AuditLogPageKey) =>
+	MapleApiV2AtomClient.runtime.atom(
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2AtomClient
 			return yield* client.auditLog.list({
 				query: {
 					limit: AUDIT_LOG_PAGE_LIMIT,
-					...(cursor !== "" ? { cursor } : undefined),
+					...(cursor !== undefined ? { cursor } : undefined),
 					...(actorType !== undefined ? { actor_type: actorType } : undefined),
-					...(actorId !== "" ? { actor_id: actorId } : undefined),
+					...(actorId !== undefined ? { actor_id: actorId } : undefined),
 					...(outcome !== undefined ? { outcome } : undefined),
-					...(since !== "" ? { since } : undefined),
-					...(until !== "" ? { until } : undefined),
+					...(since !== undefined ? { since } : undefined),
+					...(until !== undefined ? { until } : undefined),
 				},
 			})
 		}),
-	)
-})
+	),
+)
 
 /** One page of the org's audit log, keyed by cursor + filters + the pinned ceiling. */
 export const auditLogPageAtom = (input: AuditLogPageInput) =>
-	family(
-		[
-			input.actorType ?? "",
-			input.outcome ?? "",
-			input.actorId ?? "",
-			input.since ?? "",
-			input.until ?? "",
-			input.cursor ?? "",
-		].join("|"),
-	)
+	family({
+		cursor: input.cursor,
+		actorType: input.actorType,
+		actorId: input.actorId,
+		outcome: input.outcome,
+		since: input.since,
+		until: input.until,
+	})

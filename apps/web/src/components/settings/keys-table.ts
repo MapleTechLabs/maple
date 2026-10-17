@@ -187,3 +187,15 @@ export function keyAccessSummary(row: KeyRow): string {
 		.filter((part) => part !== null)
 		.join(" · ")
 }
+
+/**
+ * How an API/MCP key load failure shows. Admins always get the ingest pair, so a failed list must
+ * not hide behind those rows: it replaces the table only when nothing else could render.
+ */
+export function apiKeysFailureDisplay(input: {
+	readonly apiKeysFailed: boolean
+	readonly rows: ReadonlyArray<KeyRow>
+}): "none" | "inline" | "replace" {
+	if (!input.apiKeysFailed) return "none"
+	return input.rows.length === 0 ? "replace" : "inline"
+}

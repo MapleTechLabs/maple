@@ -124,6 +124,7 @@ export function SamplingSection({ sampling }: { sampling: SamplingSettings }) {
 
 	return (
 		<SettingsSection
+			anchorId="sampling"
 			title="Sampling"
 			description="Maple keeps a share of traces at the ingest gateway. Error and slow spans can always be kept."
 			padded={false}
