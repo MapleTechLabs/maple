@@ -373,6 +373,7 @@
         "@maple/query-model": "workspace:*",
         "@maple/widgets": "workspace:*",
         "@tanstack/db": "0.11.3",
+        "@xyflow/system": "0.0.83",
         "class-variance-authority": "catalog:ui",
         "clsx": "catalog:ui",
         "effect": "catalog:effect",
