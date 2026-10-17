@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Schema } from "effect"
 
-import { V2GcpConnector } from "@maple/domain/http/v2"
+import { V2GcpConnector, V2GcpManualSetup } from "@maple/domain/http/v2"
 import { Button } from "@maple/ui/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 
@@ -9,9 +9,15 @@ import {
 	GcpApplyView,
 	GcpConfigure,
 	GcpConfigureFrame,
+	GcpMethodApplyView,
+	GcpMethodStage,
 	type ApplyOpened,
 	type GcpApplyViewProps,
+	type GcpMethodApplyViewProps,
 } from "@/components/integrations/gcp-configure"
+import type { GcpSetupMethod } from "@/components/integrations/gcp-setup-steps"
+
+import { GCP_SETUP_FIXTURES } from "./gcp-setup-fixtures"
 
 /** The lab's clock: the fixtures are minutes old against the page's load. */
 const NOW = Date.now()
@@ -78,6 +84,33 @@ const noop = () => {}
 
 type ApplyFixture = Omit<GcpApplyViewProps, "onBack" | "onClose" | "nowMs">
 
+/** The renderers' own output for each lab connection, decoded as the dialog receives it. */
+const setup = (fixture: (typeof GCP_SETUP_FIXTURES)[keyof typeof GCP_SETUP_FIXTURES]) => ({
+	manual: Schema.decodeUnknownSync(V2GcpManualSetup)(fixture.manual),
+	terraform: fixture.terraform,
+	alchemy: fixture.alchemy,
+})
+const PROJECT_SETUP = setup(GCP_SETUP_FIXTURES.project)
+const ORGANIZATION_SETUP = setup(GCP_SETUP_FIXTURES.organization)
+const ORGANIZATION_METRICS_SETUP = setup(GCP_SETUP_FIXTURES.organizationMetrics)
+
+const NO_CHECK: GcpMethodApplyViewProps["check"] = {
+	failedStep: null,
+	failure: null,
+	checking: false,
+	onCheck: noop,
+}
+
+const REMOVING_LOGS = connector({
+	...ORGANIZATION,
+	logs_enabled: false,
+	applied_logs_enabled: true,
+	applied_metrics_enabled: true,
+	setup_reported_at: ago(60 * 24),
+	last_metrics_received_at: ago(3),
+	discovered_project_count: 14,
+})
+
 const STATES = {
 	new: {
 		label: "New connection",
@@ -91,8 +124,46 @@ const STATES = {
 	failed: { label: "Run · script failed", note: "The script couldn't be loaded." },
 	connected: { label: "Connected", note: "First run confirmed, data not in yet." },
 	applied: { label: "Applied", note: "A reconfigured organization, receiving." },
+	method: { label: "Method", note: "The Method step, on the script." },
+	"method-code": { label: "Method · code", note: "Infrastructure as code picked, Terraform." },
+	"method-no-alchemy": {
+		label: "Method · no Alchemy",
+		note: "An organization with metrics: Alchemy can't grant its roles.",
+	},
+	"manual-project": {
+		label: "Manual · project",
+		note: "A project with logs and metrics, nothing confirmed.",
+	},
+	"manual-org": { label: "Manual · org logs", note: "An organization forwarding logs only." },
+	"manual-failed": {
+		label: "Manual · check failed",
+		note: "Logs arrive; Check access found a role missing and opened its step.",
+	},
+	"manual-removal": { label: "Manual · removal", note: "Log forwarding switched off: what to delete." },
+	terraform: { label: "Terraform", note: "Click Copy prompt for coding agent for the prompt." },
+	"terraform-removal": {
+		label: "Terraform · removal",
+		note: "The regenerated file without log forwarding.",
+	},
+	alchemy: { label: "Alchemy", note: "The same project as an Alchemy stack." },
+	"method-confirmed": { label: "Manual · confirmed", note: "Both confirmed without a script." },
 } as const
 type LabState = keyof typeof STATES
+type MethodState = "method" | "method-code" | "method-no-alchemy"
+type MethodApplyState =
+	| "manual-project"
+	| "manual-org"
+	| "manual-failed"
+	| "manual-removal"
+	| "terraform"
+	| "terraform-removal"
+	| "alchemy"
+	| "method-confirmed"
+type ScriptState = Exclude<LabState, "new" | "configure" | MethodState | MethodApplyState>
+
+// Called while rendering, after the fixtures below are defined.
+const isMethodState = (state: LabState): state is MethodState => state in METHOD_STEP
+const isMethodApplyState = (state: LabState): state is MethodApplyState => state in METHOD_APPLY
 
 const APPLY = {
 	waiting: {
@@ -179,7 +250,134 @@ const APPLY = {
 		failure: null,
 		opened: { at: NOW - 8 * 60_000, rerun: true, seen: ago(60 * 24) },
 	},
-} satisfies { readonly [State in Exclude<LabState, "new" | "configure">]: ApplyFixture }
+} satisfies { readonly [State in ScriptState]: ApplyFixture }
+
+type MethodFixture = Omit<GcpMethodApplyViewProps, "onBack" | "onClose" | "nowMs">
+
+const METHOD_APPLY = {
+	"manual-project": {
+		title: "Connect Google Cloud",
+		connector: connector(),
+		created: true,
+		method: "manual",
+		logFilter: "Platform logs",
+		setup: PROJECT_SETUP,
+		failure: null,
+		check: NO_CHECK,
+	},
+	"manual-org": {
+		title: "Connect Google Cloud",
+		connector: connector({ ...ORGANIZATION, created_at: ago(2), metrics_enabled: false }),
+		created: true,
+		method: "manual",
+		logFilter: "Platform logs",
+		setup: ORGANIZATION_SETUP,
+		failure: null,
+		check: NO_CHECK,
+	},
+	"manual-failed": {
+		title: "Connect Google Cloud",
+		connector: connector({
+			applied_logs_enabled: true,
+			last_log_received_at: ago(0.2),
+			setup_reported_at: ago(0.2),
+		}),
+		created: true,
+		method: "manual",
+		logFilter: "Platform logs",
+		setup: PROJECT_SETUP,
+		failure: null,
+		check: {
+			...NO_CHECK,
+			failedStep: "reader_roles",
+			failure:
+				"Google denied the read of project acme-prod as maple-018f2b3c4d5e6f708192a3b4@acme-prod.iam.gserviceaccount.com. It needs roles/monitoring.viewer and roles/cloudasset.viewer on the project, and roles/serviceusage.serviceUsageConsumer on the project acme-prod. A new grant can take a few minutes. (Cloud Asset Inventory returned 403 PERMISSION_DENIED)",
+		},
+	},
+	"manual-removal": {
+		title: "Organization 123456789012",
+		connector: REMOVING_LOGS,
+		created: false,
+		method: "manual",
+		logFilter: "Current filter",
+		setup: ORGANIZATION_METRICS_SETUP,
+		failure: null,
+		check: NO_CHECK,
+	},
+	terraform: {
+		title: "Connect Google Cloud",
+		connector: connector(),
+		created: true,
+		method: "terraform",
+		logFilter: "Platform logs",
+		setup: PROJECT_SETUP,
+		failure: null,
+		check: NO_CHECK,
+	},
+	"terraform-removal": {
+		title: "Organization 123456789012",
+		connector: REMOVING_LOGS,
+		created: false,
+		method: "terraform",
+		logFilter: "Current filter",
+		setup: ORGANIZATION_METRICS_SETUP,
+		failure: null,
+		check: NO_CHECK,
+	},
+	alchemy: {
+		title: "Connect Google Cloud",
+		connector: connector(),
+		created: true,
+		method: "alchemy",
+		logFilter: "Platform logs",
+		setup: PROJECT_SETUP,
+		failure: null,
+		check: NO_CHECK,
+	},
+	"method-confirmed": {
+		title: "Connect Google Cloud",
+		connector: connector({
+			applied_logs_enabled: true,
+			applied_metrics_enabled: true,
+			setup_reported_at: ago(0.5),
+			last_log_received_at: ago(0.3),
+		}),
+		created: true,
+		method: "manual",
+		logFilter: "Platform logs",
+		setup: PROJECT_SETUP,
+		failure: null,
+		check: NO_CHECK,
+	},
+} satisfies { readonly [State in MethodApplyState]: MethodFixture }
+
+const METHOD_STEP = {
+	method: { connector: connector(), method: "script" },
+	"method-code": { connector: connector(), method: "terraform" },
+	"method-no-alchemy": {
+		connector: connector({ ...ORGANIZATION, created_at: ago(1) }),
+		method: "terraform",
+	},
+} satisfies {
+	readonly [State in MethodState]: { readonly connector: V2GcpConnector; readonly method: GcpSetupMethod }
+}
+
+/** The Method step over plain state, so its choice can be clicked through. */
+function MethodLab({ state, onClose }: { state: MethodState; onClose: () => void }) {
+	const [method, setMethod] = useState<GcpSetupMethod>(METHOD_STEP[state].method)
+	const { connector: shown } = METHOD_STEP[state]
+	return (
+		<GcpMethodStage
+			title="Connect Google Cloud"
+			connector={shown}
+			logFilter="Platform logs"
+			method={method}
+			onMethod={setMethod}
+			onBack={noop}
+			onContinue={onClose}
+		/>
+	)
+}
 
 const CONFIGURED = connector({
 	...ORGANIZATION,
@@ -254,6 +452,14 @@ export function GcpConnectLab() {
 					onCreated={noop}
 					onClose={close}
 				/>
+			) : isMethodState(state) ? (
+				<GcpConfigureFrame key={opening} onClose={close}>
+					<MethodLab state={state} onClose={close} />
+				</GcpConfigureFrame>
+			) : isMethodApplyState(state) ? (
+				<GcpConfigureFrame key={opening} onClose={close}>
+					<GcpMethodApplyView {...METHOD_APPLY[state]} nowMs={NOW} onBack={noop} onClose={close} />
+				</GcpConfigureFrame>
 			) : (
 				<GcpConfigureFrame key={opening} onClose={close}>
 					<GcpApplyView {...APPLY[state]} nowMs={NOW} onBack={noop} onClose={close} />
