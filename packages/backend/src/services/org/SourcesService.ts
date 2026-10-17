@@ -5,6 +5,7 @@ import {
 	IsoDateTimeString,
 	type OrgId,
 	Source,
+	SourceHealth,
 	SOURCE_LIMITS,
 	SourceNotFoundError,
 	SourcePersistenceError,
@@ -20,9 +21,12 @@ import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Sources, type SourceRow } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Redacted, Schema } from "effect"
+import { pushSourceHealth, type SourceHealthResult } from "@maple/domain/source-health"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
+import { type IntegrationLink, readIntegrationLinks } from "./integration-sources"
 
 const SOURCE_TOKEN_PREFIX = "maple_src_"
 const {
@@ -58,7 +62,15 @@ const statusOf = (row: SourceRow, now: number): SourceTokenStatus => {
 
 const isoOrNull = (epochMs: number | null) => (epochMs === null ? null : toIso(epochMs))
 
-const rowToSource = (row: SourceRow, now: number): Source => {
+const toSourceHealth = (health: SourceHealthResult) =>
+	new SourceHealth({
+		status: health.status,
+		lastDataAt: isoOrNull(health.lastDataAt),
+		problem: health.problem,
+	})
+
+// Pull sources pass the integration's health; everything else reads the gateway's last_used_at.
+const rowToSource = (row: SourceRow, now: number, pullHealth?: SourceHealthResult): Source => {
 	const status = statusOf(row, now)
 	return new Source({
 		id: row.id,
@@ -79,6 +91,7 @@ const rowToSource = (row: SourceRow, now: number): Source => {
 		rolledAt: isoOrNull(row.rolledAt),
 		createdAt: toIso(row.createdAt),
 		updatedAt: toIso(row.updatedAt),
+		health: toSourceHealth(pullHealth ?? pushSourceHealth({ status, lastUsedAt: row.lastUsedAt }, now)),
 	})
 }
 
@@ -171,6 +184,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "SourcesService", toPersistenceError)
+		const integrations = yield* IntegrationInventoryService
 		const env = yield* Env
 		const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
@@ -241,11 +255,8 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			)
 		})
 
-		const list = Effect.fn("SourcesService.list")(function* (orgId: OrgId) {
-			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			const now = yield* Clock.currentTimeMillis
-			yield* ensureDefault(orgId, now)
-			const rows = yield* dbExecute((db) =>
+		const selectAll = (orgId: OrgId) =>
+			dbExecute((db) =>
 				db.run(
 					PG.from(Sources)
 						.select()
@@ -257,13 +268,125 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 						]),
 				),
 			)
-			return Arr.map(rows, (row) => rowToSource(row, now))
+
+		const linkKey = (platform: string, integrationId: string | null) => `${platform}:${integrationId}`
+
+		// One source per connected integration: create the missing ones, drop the ones whose row is gone.
+		const reconcileIntegrations = Effect.fnUntraced(function* (
+			orgId: OrgId,
+			links: ReadonlyArray<IntegrationLink>,
+			rows: ReadonlyArray<SourceRow>,
+			now: number,
+		) {
+			const existing = new Set(rows.map((row) => linkKey(row.platform, row.integrationId)))
+			const wanted = new Set(links.map((link) => linkKey(link.platform, link.integrationId)))
+			const missing = links.filter((link) => !existing.has(linkKey(link.platform, link.integrationId)))
+			const gone = rows.filter(
+				(row) => row.integrationId !== null && !wanted.has(linkKey(row.platform, row.integrationId)),
+			)
+			if (missing.length === 0 && gone.length === 0) return false
+			yield* Effect.annotateCurrentSpan({
+				"maple.sources.created": missing.length,
+				"maple.sources.removed": gone.length,
+			})
+			yield* dbExecute((db) =>
+				Effect.gen(function* () {
+					if (missing.length > 0) {
+						yield* db.run(
+							PG.insertInto(Sources)
+								.values(
+									missing.map((link) => ({
+										id: decodeSourceIdSync(randomUUID()),
+										orgId,
+										name: link.name,
+										description: null,
+										platform: link.platform,
+										isDefault: false,
+										integrationId: link.integrationId,
+										keyHash: null,
+										keyPrefix: null,
+										allowedSignals: null,
+										rateLimitRps: null,
+										resourceAttributes: [],
+										expiresAt: null,
+										rolledAt: null,
+										createdAt: now,
+										updatedAt: now,
+										createdBy: null,
+										updatedBy: null,
+									})),
+								)
+								.onConflictDoNothing(),
+						)
+					}
+					if (gone.length > 0) {
+						yield* db.run(
+							PG.deleteFrom(Sources).where(($) => [
+								$.orgId.eq(orgId),
+								PG.inList(
+									$.id,
+									gone.map((row) => row.id),
+								),
+							]),
+						)
+					}
+				}),
+			)
+			return true
+		})
+
+		const integrationHealth = Effect.fnUntraced(function* (
+			orgId: OrgId,
+			links: ReadonlyArray<IntegrationLink>,
+			now: number,
+		) {
+			if (links.length === 0) return new Map<string, SourceHealthResult>()
+			const inventory = yield* integrations
+				.list(orgId)
+				.pipe(Effect.mapError((error) => new SourcePersistenceError({ message: error.message })))
+			return new Map(
+				links.map((link) => [
+					linkKey(link.platform, link.integrationId),
+					link.health(inventory, now),
+				]),
+			)
+		})
+
+		const toSources = (
+			rows: ReadonlyArray<SourceRow>,
+			health: Map<string, SourceHealthResult>,
+			now: number,
+		) =>
+			Arr.map(rows, (row) =>
+				rowToSource(
+					row,
+					now,
+					row.integrationId === null
+						? undefined
+						: health.get(linkKey(row.platform, row.integrationId)),
+				),
+			)
+
+		const list = Effect.fn("SourcesService.list")(function* (orgId: OrgId) {
+			yield* Effect.annotateCurrentSpan("orgId", orgId)
+			const now = yield* Clock.currentTimeMillis
+			yield* ensureDefault(orgId, now)
+			const links = yield* dbExecute((db) => readIntegrationLinks(db, orgId))
+			const before = yield* selectAll(orgId)
+			const changed = yield* reconcileIntegrations(orgId, links, before, now)
+			const rows = changed ? yield* selectAll(orgId) : before
+			return toSources(rows, yield* integrationHealth(orgId, links, now), now)
 		})
 
 		const get = Effect.fn("SourcesService.get")(function* (orgId: OrgId, sourceId: SourceId) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
 			const row = yield* requireRow(orgId, sourceId)
-			return rowToSource(row, yield* Clock.currentTimeMillis)
+			const now = yield* Clock.currentTimeMillis
+			if (row.integrationId === null) return rowToSource(row, now)
+			const links = yield* dbExecute((db) => readIntegrationLinks(db, orgId))
+			return (
+				toSources([row], yield* integrationHealth(orgId, links, now), now)[0] ?? rowToSource(row, now)
+			)
 		})
 
 		const create = Effect.fn("SourcesService.create")(function* (
@@ -449,5 +572,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 		return { list, get, create, update, pause, resume, roll, delete: remove }
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(IntegrationInventoryService.layer),
+	)
 }

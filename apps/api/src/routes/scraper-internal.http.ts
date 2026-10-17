@@ -54,6 +54,8 @@ export interface ScrapeTargetRowLike {
 	readonly targetType: string
 	readonly scrapeIntervalSeconds: number
 	readonly labelsJson: unknown
+	/** Public `src_` id of the target's pull source, stamped as `maple_source_id`. */
+	readonly sourceId?: string
 }
 
 export interface SubTargetOverride {
@@ -109,6 +111,7 @@ export const toInternalScrapeTarget = (
 					scrapeIntervalSeconds: decodeScrapeIntervalSecondsSync(row.scrapeIntervalSeconds),
 					labels,
 					ingestKey,
+					...(row.sourceId === undefined ? undefined : { sourceId: row.sourceId }),
 				}),
 			catch: (cause) =>
 				new InvalidScrapeTargetRow({
@@ -160,7 +163,7 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 		// Expand the logical target into its discovered per-branch endpoints.
 		// Discovery failure with no cache skips the row this round; the scheduler
 		// re-fetches the list every reconcile.
-		const planetScaleTargets = (row: EnabledScrapeTarget, ingestKey: string) =>
+		const planetScaleTargets = (row: EnabledScrapeTarget, ingestKey: string, sourceId?: string) =>
 			discovery.discover(row).pipe(
 				Effect.catch((error) =>
 					logSkip("Skipping PlanetScale target (discovery failed)", row, {
@@ -169,7 +172,12 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 				),
 				Effect.flatMap((subTargets) =>
 					Effect.forEach(subTargets, (subTarget) =>
-						toInternalScrapeTarget(row, ingestKey, NO_AUTH_HEADERS, subTarget).pipe(
+						toInternalScrapeTarget(
+							{ ...row, sourceId },
+							ingestKey,
+							NO_AUTH_HEADERS,
+							subTarget,
+						).pipe(
 							Effect.tap(
 								warnIfNone(() =>
 									logSkip("Skipping scrape sub-target (invalid row)", row, {
@@ -186,9 +194,11 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 		// A credential that no longer decrypts (rotated master key, corrupt row)
 		// skips this target for the round rather than failing the whole list; the
 		// target's own `lastScrapeError` already tells the org.
-		const directTargets = (row: EnabledScrapeTarget, ingestKey: string) =>
+		const directTargets = (row: EnabledScrapeTarget, ingestKey: string, sourceId?: string) =>
 			service.authHeaders(row).pipe(
-				Effect.flatMap((authHeaders) => toInternalScrapeTarget(row, ingestKey, authHeaders)),
+				Effect.flatMap((authHeaders) =>
+					toInternalScrapeTarget({ ...row, sourceId }, ingestKey, authHeaders),
+				),
 				Effect.tap(warnIfNone(() => logSkip("Skipping scrape target (invalid row)", row))),
 				Effect.map(Option.toArray),
 				Effect.catch((error) =>
@@ -198,10 +208,10 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 				),
 			)
 
-		const resolveRowTargets = (row: EnabledScrapeTarget, ingestKey: string) =>
+		const resolveRowTargets = (row: EnabledScrapeTarget, ingestKey: string, sourceId?: string) =>
 			row.targetType === "planetscale"
-				? planetScaleTargets(row, ingestKey)
-				: directTargets(row, ingestKey)
+				? planetScaleTargets(row, ingestKey, sourceId)
+				: directTargets(row, ingestKey, sourceId)
 
 		const listTargets = Effect.fn("ScraperInternal.listTargets")(
 			function* (req: HttpServerRequest.HttpServerRequest) {
@@ -218,6 +228,8 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 					rows.map((row) => row.orgId),
 					SCRAPER_SYSTEM_USER,
 				)
+				// The pull source each target reports as (`maple_source_id`); missing ids send without.
+				const sourceIds = yield* service.sourceIds(rows)
 
 				// Rows are independent; most of the cost is one PlanetScale discovery
 				// GET per uncached row, so run them side by side, bounded.
@@ -229,7 +241,7 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 								logSkip("Skipping scrape target (no ingest key)", row).pipe(
 									Effect.as(NO_TARGETS),
 								),
-							onSome: (keys) => resolveRowTargets(row, keys.publicKey),
+							onSome: (keys) => resolveRowTargets(row, keys.publicKey, sourceIds.get(row.id)),
 						}),
 					{ concurrency: ROW_CONCURRENCY },
 				)
