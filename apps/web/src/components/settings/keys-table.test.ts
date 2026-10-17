@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 import type { V2ApiKey, V2IngestKeys } from "@maple/domain/http/v2"
-import { buildKeyRows, filterKeyRows, keyAccessSummary, type KeyRow } from "./keys-table"
+import {
+	apiKeysFailureDisplay,
+	buildKeyRows,
+	filterKeyRows,
+	keyAccessSummary,
+	type KeyRow,
+} from "./keys-table"
 
 const NOW = Date.parse("2026-10-17T12:00:00Z")
 const inDays = (days: number) => new Date(NOW + days * 86_400_000).toISOString()
@@ -132,5 +138,22 @@ describe("keyAccessSummary", () => {
 	it("says ingest keys send telemetry", () => {
 		const [ingest] = buildKeyRows({ apiKeys: [], ingestKeys, now: NOW })
 		expect(keyAccessSummary(ingest!)).toBe("Send telemetry")
+	})
+})
+
+describe("apiKeysFailureDisplay", () => {
+	it("keeps an admin's ingest rows and flags the API key failure inline", () => {
+		const rows = buildKeyRows({ apiKeys: [], ingestKeys, now: NOW })
+		expect(apiKeysFailureDisplay({ apiKeysFailed: true, rows })).toBe("inline")
+	})
+
+	it("replaces the table when a member's API key list fails and nothing else can render", () => {
+		const rows = buildKeyRows({ apiKeys: [], ingestKeys: null, now: NOW })
+		expect(apiKeysFailureDisplay({ apiKeysFailed: true, rows })).toBe("replace")
+	})
+
+	it("shows nothing when the API key list loaded", () => {
+		const rows = buildKeyRows({ apiKeys: [], ingestKeys, now: NOW })
+		expect(apiKeysFailureDisplay({ apiKeysFailed: false, rows })).toBe("none")
 	})
 })

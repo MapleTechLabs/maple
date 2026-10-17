@@ -34,6 +34,7 @@ function dayOf(datum: SpendDatum): CumulativePoint {
 const numberOrNull = (value: unknown): number | null => (typeof value === "number" ? value : null)
 import { ChartEmpty, ChartLoading } from "@maple/ui/components/charts"
 
+import { ErrorState } from "@/components/common/error-state"
 import { SeriesLegend } from "@/components/common/series-legend"
 
 import { formatCurrency } from "@maple/domain/format"
@@ -87,6 +88,20 @@ const BANDS = ["base", ...SPEND_FEATURES] as const
 
 export function SpendChartSkeleton() {
 	return <ChartLoading variant="area" height={SPEND_CHART_HEIGHT} />
+}
+
+/** The daily spend read failed: say so instead of showing an empty cycle. */
+export function SpendChartError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+	return (
+		<div style={{ height: SPEND_CHART_HEIGHT }}>
+			<ErrorState
+				error={error}
+				title="Couldn't load daily spend"
+				onRetry={onRetry}
+				className="border-0"
+			/>
+		</div>
+	)
 }
 
 /** Spend days are UTC calendar days: label them on that clock whatever the viewer's zone. */
