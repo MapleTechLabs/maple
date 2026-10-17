@@ -72,6 +72,24 @@ export const ChartSpec = defineTaggedUnion({
 		/** `PlotSparkline`'s `curve`; absent is linear. */
 		curve: Schema.optionalKey(Schema.Literals(["linear", "monotone"])),
 	},
+	/**
+	 * `QueryBuilderAreaChart` (unstacked, linear): the query's rows as returned, the resolved colour
+	 * per series key (`s1..sN`), and the clock that decides the in-flight tail.
+	 */
+	QueryBuilderArea: {
+		data: Schema.Array(
+			Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
+		),
+		colors: Schema.Record(Schema.String, Schema.String),
+		fallbackColor: Schema.String,
+		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
+		unit: Nullable(Schema.String),
+		timeZone: Nullable(Schema.String),
+		nowMs: Schema.Number,
+		containerWidth: Schema.Number,
+		gradientPrefix: Schema.String,
+		showTooltip: Schema.Boolean,
+	},
 	/** `HistogramSpike` (binX over raw observations) in apps/web/src/lab/charts/histogram-spike.tsx. */
 	BinnedHistogram: {
 		values: Schema.Array(Schema.Number),
@@ -97,6 +115,13 @@ export const ChartTooltip = defineTaggedUnion({
 	},
 	NumericBin: { x1: Schema.Number, x2: Schema.Number, value: Schema.Number },
 	CategoricalBin: { name: Schema.String, value: Schema.Number },
+	/** A time-series bucket: its heading and one formatted row per visible series. */
+	TimeseriesBucket: {
+		heading: Schema.String,
+		rows: Schema.Array(
+			Schema.Struct({ label: Schema.String, color: Schema.String, value: Schema.String }),
+		),
+	},
 })
 export type ChartTooltip = typeof ChartTooltip.Type
 

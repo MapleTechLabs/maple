@@ -363,10 +363,13 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 
 export type SingleViewInputs = Readonly<{
 	items: ReadonlyArray<string>
-	ariaLabel: string
+	/** Omitted when the legacy input has no `aria-label`. */
+	ariaLabel?: string
 	placeholder: string
 	emptyText: string
 	startAddon?: Html
+	/** `<ComboboxInput className>`: lands on the input-control span. */
+	className?: string
 	/** Wraps the input group (`<div className="w-64">`) and places it with the hidden input and portal. */
 	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html
 }>
@@ -401,6 +404,7 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 							inputControlLayoutStyles,
 							inputControlChromeStyles,
 							`${C.comboboxInputControlStyles} ${cn(hasAddon && C.comboboxInputStartAddonStyles, C.comboboxInputDefaultStyles)}`,
+							inputs.className,
 						),
 					),
 					h.DataAttribute("size", "default"),
