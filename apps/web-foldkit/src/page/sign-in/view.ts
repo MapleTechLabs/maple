@@ -36,7 +36,11 @@ const passwordField = (model: Model, h: HtmlBuilder<Message>): Html => {
 		isTouched: model.isPasswordTouched,
 	}
 	return field(h, { className: "items-stretch", state }, [
-		fieldLabel(h, { ids: PASSWORD_FIELD, className: "font-mono text-xs sm:text-xs tracking-[0.02em]", state }, "Root password"),
+		fieldLabel(
+			h,
+			{ ids: PASSWORD_FIELD, className: "font-mono text-xs sm:text-xs tracking-[0.02em]", state },
+			"Root password",
+		),
 		input(h, {
 			ids: PASSWORD_FIELD,
 			state,
@@ -53,7 +57,13 @@ const passwordField = (model: Model, h: HtmlBuilder<Message>): Html => {
 		}),
 		...Option.match(maybeFailure, {
 			onNone: () => [],
-			onSome: (failure) => [fieldError(h, { ids: PASSWORD_FIELD, className: "font-mono", state }, failureMessage(failure))],
+			onSome: (failure) => [
+				fieldError(
+					h,
+					{ ids: PASSWORD_FIELD, className: "font-mono", state, attributes: [h.Role("alert")] },
+					failureMessage(failure),
+				),
+			],
 		}),
 	])
 }
@@ -81,9 +91,15 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 					[h.Class("space-y-6"), h.OnSubmit(Message.SubmittedSignIn())],
 					[
 						passwordField(model, h),
-						button(h, { type: "submit", className: "w-full", isLoading: model.submission._tag === "Submitting" }, [
-							"Sign in",
-						]),
+						button(
+							h,
+							{
+								type: "submit",
+								className: "w-full",
+								isLoading: model.submission._tag === "Submitting",
+							},
+							["Sign in"],
+						),
 					],
 				),
 			],
