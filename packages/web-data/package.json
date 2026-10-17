@@ -6,6 +6,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./collections": "./src/collections/index.ts",
+		"./collections/*": "./src/collections/*.ts",
 		"./lib/*": "./src/lib/*.ts",
 		"./warehouse/*": "./src/warehouse/*.ts"
 	},

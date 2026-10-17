@@ -36,14 +36,6 @@ export const mapleSyncFetch: typeof globalThis.fetch = async (input, init) => {
 	return tracedFetch("electric-sync", input, { ...init, headers })
 }
 
-/**
- * Every timestamptz column arrives from Electric as a raw Postgres string; this
- * parser normalizes it to ISO so the row-schema String fields decode straight to
- * the domain Document's branded `IsoDateTimeString`. Shared by every
- * timestamptz-bearing shape (alerts, errors).
- */
-export const timestamptzParser = { timestamptz: (v: string) => new Date(v).toISOString() }
-
 // Service requirement (R) of the shared app runtime — collection write handlers
 // yield `MapleApiAtomClient`, which this runtime provides.
 type MapleRuntimeR = typeof mapleRuntime extends ManagedRuntime.ManagedRuntime<infer R, any> ? R : never

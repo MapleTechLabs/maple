@@ -1,5 +1,5 @@
 import type { AlertDeliveryEventDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import { countLabel } from "@maple/ui/lib/format"
 
 /**

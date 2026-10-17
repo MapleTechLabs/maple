@@ -29,7 +29,7 @@ import {
 	buildRuleStatesByRuleId,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
-} from "@/lib/collections/alerts"
+} from "@maple/web-data/collections/alerts"
 import { getOrgCollections } from "@/lib/collections/org-collections"
 import {
 	collectionFailureMessage,

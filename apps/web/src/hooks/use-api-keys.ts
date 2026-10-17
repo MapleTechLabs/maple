@@ -3,7 +3,7 @@ import type { V2ApiKey } from "@maple/domain/http/v2"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Effect } from "effect"
 import { useCallback, useMemo } from "react"
-import { rowToV2ApiKey } from "@/lib/collections/api-keys"
+import { rowToV2ApiKey } from "@maple/web-data/collections/api-keys"
 import { useCollectionLoadFailed } from "@/lib/collections/collection-load"
 import {
 	getOrgCollections,

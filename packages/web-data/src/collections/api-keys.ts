@@ -1,7 +1,6 @@
 import { ApiKeyId, ApiKeyKind, UserId } from "@maple/domain/http"
 import type { V2ApiKey } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { createSyncedCollection, timestamptzParser } from "./shape-fetch"
 
 /**
  * Safe browser projection of `api_keys`. This mirrors the pinned column list in
@@ -48,14 +47,3 @@ export const rowToV2ApiKey = (row: ApiKeyRow): V2ApiKey => ({
 	created_by: asUserId(row.created_by),
 	created_by_email: row.created_by_email,
 })
-
-export const createApiKeysCollection = (orgId: string) =>
-	createSyncedCollection({
-		shape: "api_keys",
-		orgId,
-		schema: ApiKeyRowSchema,
-		getKey: (row) => row.id,
-		parser: timestamptzParser,
-	})
-
-export type ApiKeysCollection = ReturnType<typeof createApiKeysCollection>

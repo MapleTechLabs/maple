@@ -27,7 +27,6 @@ import {
 	InvestigationSubjectSnapshot,
 } from "@maple/domain/http"
 import { Option, Schema } from "effect"
-import { createSyncedCollection, timestamptzParser } from "./shape-fetch"
 
 const decodeSubject = Schema.decodeUnknownOption(InvestigationSubject)
 const decodeSnapshot = Schema.decodeUnknownOption(InvestigationSubjectSnapshot)
@@ -212,17 +211,3 @@ export const rowsToInvestigation = (row: InvestigationRow): V2Investigation | nu
 	}
 	return Option.getOrNull(decodeInvestigation(candidate))
 }
-
-// Collections (read-only — the page writes through the v2 API, not the shape)
-
-export const createInvestigationCollection = (orgId: string, investigationId: string) =>
-	createSyncedCollection({
-		shape: "investigation_v2",
-		scope: investigationId,
-		orgId,
-		schema: InvestigationRowSchema,
-		parser: timestamptzParser,
-		getKey: (row) => row.id,
-	})
-
-export type InvestigationCollection = ReturnType<typeof createInvestigationCollection>

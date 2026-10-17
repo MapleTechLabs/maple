@@ -1,6 +1,6 @@
 import { UNGROUPED_GROUP_KEY, type AlertIncidentDocument, type AlertRuleDocument } from "@maple/domain/http"
 
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 
 /** How close one enabled rule's nearest group sits to firing, from its last recorded check. */
 export interface RuleHeadroom {

@@ -22,7 +22,6 @@ import {
 } from "@maple/domain/http"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "@maple/domain/query-engine"
 import { Option, Schema } from "effect"
-import { createSyncedCollection, timestamptzParser } from "./shape-fetch"
 
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
 const asAlertRuleId = Schema.decodeUnknownSync(AlertRuleId)
@@ -258,36 +257,6 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
 		errorIssueId: row.error_issue_id != null ? asErrorIssueId(row.error_issue_id) : null,
 	})
 
-// Collections (read-only — no write handlers)
-
-export const createAlertRulesCollection = (orgId: string) =>
-	createSyncedCollection({
-		shape: "alert_rules",
-		orgId,
-		schema: AlertRuleRowSchema,
-		parser: timestamptzParser,
-		getKey: (row) => row.id,
-	})
-
-export const createAlertRuleStatesCollection = (orgId: string) =>
-	createSyncedCollection({
-		shape: "alert_rule_states",
-		orgId,
-		schema: AlertRuleStateRowSchema,
-		parser: timestamptzParser,
-		// Composite key (org_id, rule_id, group_key) → a stable derived string.
-		getKey: (row) => `${row.rule_id}:${row.group_key}`,
-	})
-
-export const createAlertIncidentsCollection = (orgId: string) =>
-	createSyncedCollection({
-		shape: "alert_incidents",
-		orgId,
-		schema: AlertIncidentRowSchema,
-		parser: timestamptzParser,
-		getKey: (row) => row.id,
-	})
-
 // alert_destinations
 
 /**
@@ -365,17 +334,3 @@ export const rowToAlertDestinationDocument = (row: AlertDestinationRow): AlertDe
 		updatedAt: decodeIso(row.updated_at),
 	})
 }
-
-export const createAlertDestinationsCollection = (orgId: string) =>
-	createSyncedCollection({
-		shape: "alert_destinations_v2",
-		orgId,
-		schema: AlertDestinationRowSchema,
-		parser: timestamptzParser,
-		getKey: (row) => row.id,
-	})
-
-export type AlertRulesCollection = ReturnType<typeof createAlertRulesCollection>
-export type AlertRuleStatesCollection = ReturnType<typeof createAlertRuleStatesCollection>
-export type AlertIncidentsCollection = ReturnType<typeof createAlertIncidentsCollection>
-export type AlertDestinationsCollection = ReturnType<typeof createAlertDestinationsCollection>
