@@ -14,6 +14,15 @@ export interface FixtureArea {
 	readonly defaultSynced?: Partial<Record<SyncedTableName, ReadonlyArray<SyncedRow>>>
 	/** Extra datasets this area's scenarios use (names must be unique). */
 	readonly datasets?: ReadonlyArray<Dataset>
+	/** Routes outside the HttpApis (raw `HttpRouter` routes such as chat SSE), matched before them. */
+	readonly rawRoutes?: ReadonlyArray<RawRoute>
+}
+
+/** A raw API route: `answer` returns `undefined` when the request is not this route's. */
+export interface RawRoute {
+	/** Call-log tag for a matched request. */
+	readonly tag: string
+	readonly answer: (request: { readonly dataset: Dataset; readonly url: URL; readonly method: string }) => Response | undefined
 }
 
 const isFixtureArea = (value: unknown): value is FixtureArea =>
@@ -69,6 +78,8 @@ export const withFixtureAreas = (datasets: ReadonlyArray<Dataset>): ReadonlyArra
 	),
 	...fixtureAreas.flatMap((area) => area.datasets ?? []),
 ]
+
+export const fixtureAreaRawRoutes: ReadonlyArray<RawRoute> = fixtureAreas.flatMap((area) => area.rawRoutes ?? [])
 
 /** Two areas answering one endpoint would silently depend on file order, so that is an error. */
 export const fixtureAreaEndpoints = (warehouse: FixtureWarehouse): ReadonlyMap<string, EndpointHandler> => {

@@ -237,5 +237,5 @@ export const alertEndpoints = {
 	"alertRules.checks": checks,
 	"alertRules.checksSummary": checksSummary,
 	"alertRules.preview": preview,
-	"chatIntegration.connectors": () => Effect.succeed({ object: "chat_connector_list", data: [] }),
+	// `chatIntegration.connectors` is answered by the integrations area.
 } satisfies Readonly<Record<string, EndpointHandler>>

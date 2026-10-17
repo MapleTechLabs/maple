@@ -12,6 +12,8 @@
 		"@maple/backend": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
+		"@maple/query-engine-integrations": "workspace:*",
+		"@maple/widgets": "workspace:*",
 		"effect": "catalog:effect",
 		"parse5": "^8.0.1",
 		"pixelmatch": "^8.0.0",

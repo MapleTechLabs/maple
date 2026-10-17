@@ -8,20 +8,6 @@ import { iso, list, str } from "./synthetic.ts"
 /** Postgres-backed reads with no warehouse side: canned in wire form. */
 
 /** Triage on, well inside today's budget. */
-const aiTriageSettings: EndpointHandler = () =>
-	Effect.succeed({
-		enabled: true,
-		maxRunsPerDay: 50,
-		maxPassesPerDay: 300,
-		usage: { runs: 2, passes: 9 },
-		ordinaryPaused: false,
-		priorityPaused: false,
-		pausedDimension: null,
-		resumesAt: null,
-		updatedAt: iso(FROZEN_NOW_MS - 6 * DAY),
-		updatedBy: null,
-	})
-
 /** Every `base..head` range resolves to its head commit, the release the swimlane names. */
 const vcsCommitRanges: EndpointHandler = (request) =>
 	Effect.gen(function* () {
@@ -87,7 +73,7 @@ export const RECOMMENDATIONS = [
 ]
 
 export const miscEndpoints = {
-	"aiTriage.getSettings": aiTriageSettings,
+	// `aiTriage.getSettings` is answered by the settings area.
 	"integrations.vcsCommitRanges": vcsCommitRanges,
 } satisfies Readonly<Record<string, EndpointHandler>>
 

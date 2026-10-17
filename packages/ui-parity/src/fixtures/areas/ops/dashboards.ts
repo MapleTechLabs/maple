@@ -27,7 +27,7 @@ import { DashboardTemplateId, OrgId } from "@maple/domain/primitives"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { makeQueryEngineEvaluate, makeQueryEngineEvaluateSeries } from "@maple/query-engine/runtime"
 // Not a declared dependency of ui-parity; the file imports only its own package's siblings.
-import { redactForShare } from "../../../../../widgets/src/dashboard/redact.ts"
+import { redactForShare } from "@maple/widgets/dashboard"
 import type { FixtureWarehouse } from "../../../backend/warehouse.ts"
 import type { Dataset, EndpointHandler, SyncedRow } from "../../dataset.ts"
 import { acmeAdmin, DAY, HOUR, isoBefore } from "../../identity.ts"

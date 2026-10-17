@@ -7,7 +7,7 @@ import {
 import { createHash } from "node:crypto"
 import { CAPTURE_HEADER, DATASET_HEADER, type DatasetSummary, type StartBackend } from "../contract.ts"
 import type { Dataset, EndpointHandler } from "../fixtures/dataset.ts"
-import { fixtureAreaEndpoints, withFixtureAreas } from "../fixtures/areas.ts"
+import { fixtureAreaEndpoints, fixtureAreaRawRoutes, withFixtureAreas } from "../fixtures/areas.ts"
 import { DATASETS, DEFAULT_DATASET } from "../fixtures/datasets/index.ts"
 import { defaultDataset } from "../fixtures/datasets/default.ts"
 import { acceptsBearer } from "./auth.ts"
@@ -122,6 +122,18 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 		handlerFor: (dataset, tag) => dataset.endpoints[tag] ?? builtIn.get(tag),
 		selfLogging: new Set(["queryEngine.executeBatch"]),
 	})
+	// Raw routes answer only a signed-in bearer, like the API's own auth on them.
+	const rawRouteAnswer = (request: Request, url: URL, dataset: Dataset): Response | undefined => {
+		const capture = request.headers.get(CAPTURE_HEADER)
+		for (const route of fixtureAreaRawRoutes) {
+			const answer = route.answer({ dataset, url, method: request.method })
+			if (answer === undefined) continue
+			if (!acceptsBearer(dataset, bearerOf(request))) return Response.json({ message: "Unauthorized" }, { status: 401 })
+			calls.record(capture, route.tag, { path: url.pathname, ...(url.search ? { query: Object.fromEntries(url.searchParams) } : {}) })
+			return answer
+		}
+		return undefined
+	}
 	const unknownDataset = (request: Request, name: string | null) =>
 		Response.json(
 			{ _tag: "@maple/ui-parity/UnknownDataset", message: `ui-parity: unknown dataset "${name}"` },
@@ -137,7 +149,10 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 			// Out-of-process access to `takeCalls` (the vitest suite runs the backend as a Bun child).
 			if (url.pathname === CALL_LOG_PATH) return Response.json(calls.take(url.searchParams.get("capture") ?? ""))
 			const name = request.headers.get(DATASET_HEADER)
-			if (datasetNamed(name) === undefined) return unknownDataset(request, name)
+			const dataset = datasetNamed(name)
+			if (dataset === undefined) return unknownDataset(request, name)
+			const raw = rawRouteAnswer(request, url, dataset)
+			if (raw !== undefined) return withCors(request, raw)
 			return withCors(request, await api.handler(request))
 		},
 	})
