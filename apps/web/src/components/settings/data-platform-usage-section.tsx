@@ -67,7 +67,7 @@ export function DataPlatformUsageSection() {
 	return (
 		<SettingsSection
 			title="Stored data"
-			description="Totals from Maple's warehouse, all time."
+			description="Totals from your organization's warehouse, all time."
 			framed={false}
 		>
 			<StatRail>
