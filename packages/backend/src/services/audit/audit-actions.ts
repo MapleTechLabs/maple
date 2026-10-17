@@ -111,6 +111,8 @@ export const AuditResources = {
 	 * against the warehouse (`sql_executed`, with the statement in `metadata`).
 	 */
 	telemetry: { verbs: ["read", "sql_executed"] },
+	/** Org-singleton ingest trace sampling policy; `changes` holds the fields that moved. */
+	trace_sampling: { verbs: ["updated"] },
 	/** Org-singleton BYO-ClickHouse connection; holds warehouse credentials. */
 	warehouse_settings: { verbs: ["updated", "deleted", "schema_applied"] },
 	/** Short-lived device credentials for the mobile widget; keyed by installation. */
