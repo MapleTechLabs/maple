@@ -1,0 +1,49 @@
+import type { Locator, Page } from "playwright"
+
+/**
+ * A scenario is one screen state, captured identically in every target.
+ *
+ * Steps drive the page with accessible locators (`getByRole`, `getByText`), never CSS selectors
+ * or test ids, so the same script runs against the React app and the Foldkit app. If a step cannot
+ * find its element in one app, that is itself a parity failure (wrong role, missing label).
+ */
+export interface Scenario {
+	readonly id: string
+	readonly title: string
+	readonly path: string
+	/**
+	 * Fixture dataset served for this scenario (`FixtureBackend.datasets`). Omitted: no dataset,
+	 * signed out, clock frozen at `NO_DATASET_NOW`, for screens that render from fixtures (`/lab`).
+	 */
+	readonly dataset?: string
+	readonly viewports?: ReadonlyArray<ViewportName>
+	readonly themes?: ReadonlyArray<ThemeName>
+	readonly steps?: (page: Page) => Promise<void>
+	/** Elements whose pixels are excluded from the diff (e.g. a live clock). Accessible locators only. */
+	readonly mask?: (page: Page) => ReadonlyArray<Locator>
+	/** Capture the full scroll height instead of the viewport. */
+	readonly fullPage?: boolean
+	/** Tag for grouping in the report and for `--filter`. */
+	readonly area: string
+}
+
+/** Frozen wall clock for scenarios without a dataset. */
+export const NO_DATASET_NOW = "2026-10-01T12:00:00.000Z"
+
+export const viewports = {
+	desktop: { width: 1440, height: 900 },
+	laptop: { width: 1280, height: 800 },
+	mobile: { width: 390, height: 844 },
+} as const
+export type ViewportName = keyof typeof viewports
+
+export type ThemeName = "light" | "dark"
+
+/**
+ * One file per area (`src/scenarios/<area>.ts`), aggregated by `src/scenarios.ts`, so parallel
+ * work on different areas never edits the same file. Datasets belong to the fixture backend.
+ */
+export interface AreaModule {
+	readonly area: string
+	readonly scenarios: ReadonlyArray<Scenario>
+}
