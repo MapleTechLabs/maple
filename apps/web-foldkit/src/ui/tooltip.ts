@@ -84,8 +84,6 @@ const transition = makeTransition<Model, Message>(
 	(message) => Message.GotAnimationMessage({ message }),
 	"WaitForTooltipExit",
 )
-export const WaitForTooltipExit = transition.WaitForExit
-
 type UpdateReturn = Update.Return<Model, Message>
 
 const cancelled = (model: Model): Model => ({

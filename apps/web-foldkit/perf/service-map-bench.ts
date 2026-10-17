@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs"
 import { extname, join, resolve } from "node:path"
-import { chromium, type Page } from "../../../packages/ui-parity/node_modules/playwright"
+import { chromium, type Page } from "playwright"
 
 /**
  * The measurements of apps/web/perf/service-map.perf.spec.ts (readiness, idle, pan and fit-all

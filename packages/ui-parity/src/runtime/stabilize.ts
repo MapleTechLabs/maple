@@ -1,5 +1,3 @@
-import type { Page } from "playwright"
-
 /**
  * Browser-side determinism, installed with `page.addInitScript` before any app code.
  * Serialized via `toString`, so it must be self-contained.
@@ -10,20 +8,8 @@ import type { Page } from "playwright"
  * - intervals run at most once per frame: a `setInterval(fn)` (0 ms) keep-alive would otherwise run
  *   back to back under the frozen clock, starving every other timer
  */
-declare global {
-	interface Window {
-		/** Set by `installDeterminism`, called by `reseedRandom`. */
-		__parityReseed?: (next: number) => void
-	}
-}
-
 export const installDeterminism = (seed: number) => {
 	let state = seed >>> 0
-	// Steps call this (via `reseedRandom`) right before an action whose output is random, so the
-	// result depends on that action alone, not on how many incidental draws (span ids...) came first.
-	window.__parityReseed = (next) => {
-		state = next >>> 0
-	}
 	Math.random = () => {
 		// mulberry32
 		state = (state + 0x6d2b79f5) >>> 0
@@ -161,9 +147,3 @@ export const waitForVisualQuiet = async ({ quietMs, timeoutMs }: { quietMs: numb
 		if ((first === second && second === layoutSignature()) || performance.now() > deadline) return
 	}
 }
-
-/** Restart the seeded `Math.random` sequence. Use right before a step whose visible output is random. */
-export const reseedRandom = (page: Pick<Page, "evaluate">, seed = 0x5eed): Promise<void> =>
-	page.evaluate((next) => {
-		window.__parityReseed?.(next)
-	}, seed)

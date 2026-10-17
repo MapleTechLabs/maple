@@ -98,22 +98,5 @@ export const htmlToFoldkit = (html: string, options: CodegenOptions = {}) => {
 	return `${constants ? `${constants}\n\n` : ""}export const ${options.name ?? "view"} = <Message>(h: HtmlBuilder<Message>): Html =>\n${body?.trimStart()}\n`
 }
 
-/** Translates every child of the first element (e.g. an `<svg>`'s contents) into Foldkit expressions. */
-export const htmlChildrenToFoldkit = (
-	html: string,
-	depth = 1,
-): {
-	readonly rootAttributes: ReadonlyArray<{ name: string; value: string }>
-	readonly children: ReadonlyArray<string>
-} => {
-	const fragment = parseFragment(html)
-	const root = fragment.childNodes.find((node) => "tagName" in node) as Element | undefined
-	if (!root) throw new Error("codegen: no root element")
-	const children = (root.childNodes as Node[])
-		.map((child) => renderNode(child, depth, new Map()))
-		.filter((child): child is string => child !== undefined)
-	return { rootAttributes: root.attrs, children }
-}
-
 export const codegenFile = (path: string, options: CodegenOptions) =>
 	htmlToFoldkit(readFileSync(path, "utf8"), options)

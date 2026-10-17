@@ -1,17 +1,14 @@
 import { cn } from "@maple/ui/lib/utils"
 import {
 	tableBodyStyles,
-	tableCaptionStyles,
 	tableCellStyles,
 	tableContainerScrollStyles,
 	tableContainerStyles,
-	tableFooterStyles,
 	tableHeadStyles,
 	tableHeaderStickyStyles,
 	tableHeaderStyles,
 	tableRowStyles,
 	tableStyles,
-	truncatedCellStyles,
 } from "@maple/ui/styles/ui/table"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
@@ -70,9 +67,6 @@ export const tableHeader = <M>(
 export const tableBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
 	h.tbody([h.Class(cn(tableBodyStyles, className)), h.DataAttribute("slot", "table-body")], children)
 
-export const tableFooter = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
-	h.tfoot([h.Class(cn(tableFooterStyles, className)), h.DataAttribute("slot", "table-footer")], children)
-
 export const tableRow = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
 	h.tr(
 		[h.Attribute("class", cn(tableRowStyles, className)), h.DataAttribute("slot", "table-row")],
@@ -97,15 +91,5 @@ export const tableHead = <M>(
 export const tableCell = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.td(
 		[h.Attribute("class", cn(tableCellStyles, className)), h.DataAttribute("slot", "table-cell")],
-		children,
-	)
-
-/** A cell whose text truncates instead of widening the table. */
-export const truncatedCell = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
-	tableCell(h, children, cn(truncatedCellStyles, className))
-
-export const tableCaption = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
-	h.caption(
-		[h.Class(cn(tableCaptionStyles, className)), h.DataAttribute("slot", "table-caption")],
 		children,
 	)

@@ -18,7 +18,7 @@ export const ruleCounts = (
 		(rows) => Message.UpdatedAlertRules({ orgId, count: rows.length }),
 	)
 
-export const alertRuleCounts = (orgId: OrgId): Stream.Stream<Message, never, OrgCollections> =>
+const alertRuleCounts = (orgId: OrgId): Stream.Stream<Message, never, OrgCollections> =>
 	Stream.unwrap(
 		Effect.gen(function* () {
 			const collections = yield* OrgCollections

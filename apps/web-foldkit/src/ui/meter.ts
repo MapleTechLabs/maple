@@ -1,9 +1,6 @@
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import {
-	backdropBarLeftStyles,
-	backdropBarRightStyles,
-	backdropBarStyles,
 	meterFillStyles,
 	meterFillUntonedStyles,
 	meterStyles,
@@ -12,7 +9,7 @@ import {
 } from "@maple/ui/styles/ui/meter"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/meter.tsx: Meter, SegmentedBar and BackdropBar.
+// Port of packages/ui/src/components/ui/meter.tsx: Meter and SegmentedBar.
 
 /** Width for a fraction: clamped to 0..1, and a non-zero value is never thinner than `minVisible`%. */
 const widthPercent = (fraction: number, minVisible: number): number =>
@@ -108,31 +105,4 @@ export const segmentedBar = <M>(
 					.map((segment) => segmentView(h, segment, sum, options.minVisible ?? 0))
 			: [],
 	)
-}
-
-/** Share-of-max bar painted behind a row's own text; the parent must be `relative`. */
-export const backdropBar = <M>(
-	h: HtmlBuilder<M>,
-	options: {
-		readonly value: number
-		readonly max?: number
-		readonly align?: "left" | "right"
-		readonly className?: string
-	},
-): Html | null => {
-	const max = options.max ?? 1
-	const width = widthPercent(max > 0 ? options.value / max : 0, 0)
-	if (width === 0) return null
-	return h.div([
-		h.AriaHidden(true),
-		h.DataAttribute("slot", "backdrop-bar"),
-		h.Class(
-			cn(
-				backdropBarStyles,
-				(options.align ?? "left") === "left" ? backdropBarLeftStyles : backdropBarRightStyles,
-				options.className,
-			),
-		),
-		h.Style({ width: `calc(${width}% - 0.5rem)` }),
-	])
 }

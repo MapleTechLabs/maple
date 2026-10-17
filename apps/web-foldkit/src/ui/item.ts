@@ -3,9 +3,7 @@ import {
 	itemActionsStyles,
 	itemContentStyles,
 	itemDescriptionStyles,
-	itemFooterStyles,
 	itemGroupStyles,
-	itemHeaderStyles,
 	itemMediaVariants,
 	itemTitleStyles,
 	itemVariants,
@@ -68,8 +66,6 @@ const part =
 export const itemContent = part(itemContentStyles, "item-content")
 export const itemTitle = part(itemTitleStyles, "item-title")
 export const itemActions = part(itemActionsStyles, "item-actions")
-export const itemHeader = part(itemHeaderStyles, "item-header")
-export const itemFooter = part(itemFooterStyles, "item-footer")
 
 export const itemDescription = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.p(

@@ -12,7 +12,7 @@ const search = <A, I>(schema: Schema.Codec<A, I>) => query(tanstackSearch(schema
 const WorkloadKind = Search.InfraKubernetesWorkloadParams.fields.kind
 
 /** One biparser per route tag: parses URLs and prints them back (`hrefOf`). */
-export const routers = {
+const routers = {
 	Home: pipe(Route.root, search(Search.HomeSearch), Route.mapTo(AppRoute.Home)),
 	Account: pipe(path("account"), search(Search.AccountSearch), Route.mapTo(AppRoute.Account)),
 	Chat: pipe(path("chat"), search(Search.ChatSearch), Route.mapTo(AppRoute.Chat)),

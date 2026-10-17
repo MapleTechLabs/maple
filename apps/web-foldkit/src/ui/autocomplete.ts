@@ -17,7 +17,7 @@ import { isMounted } from "./overlay/transition"
  * Base UI `Autocomplete` (`@maple/ui/autocomplete`) on the Combobox Submodel in "autocomplete"
  * mode: `AutocompleteInput` (input group, start addon, `Input` control) and its popup.
  */
-export { init, Message, type Model, OutMessage, update } from "./combobox"
+export { Message, type Model } from "./combobox"
 
 export type FieldOptions = Readonly<{
 	items: ReadonlyArray<string>

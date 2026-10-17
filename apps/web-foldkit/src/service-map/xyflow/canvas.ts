@@ -2,7 +2,7 @@ import { Option, Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { INITIAL_VIEWPORT, MeasuredNode, type PlacedNode, Viewport } from "./geometry"
-import { type FitOptions, fitViewport, scaleViewport } from "./viewport"
+import { fitViewport, scaleViewport } from "./viewport"
 
 /**
  * The state `<ReactFlow>` keeps in its store, as a Foldkit Submodel: the camera, the pane size,
@@ -66,10 +66,6 @@ export const Message = defineMessageUnion({
 	ClickedFitView: {},
 })
 export type Message = typeof Message.Type
-
-/** Every node has a measurement (React Flow's `nodesInitialized`). */
-export const allMeasured = (model: Model, ids: ReadonlyArray<string>): boolean =>
-	ids.length > 0 && ids.every((id) => model.measured[id] !== undefined)
 
 export const placed = (
 	model: Model,
@@ -135,5 +131,3 @@ export const update = (model: Model, message: Message, nodes: NodePositions): Mo
 				maxZoom: model.maxZoom,
 			}),
 	})
-
-export type { FitOptions }

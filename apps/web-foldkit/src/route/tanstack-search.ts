@@ -39,6 +39,3 @@ export const tanstackSearch = <A, I>(schema: Schema.Codec<A, I>) =>
 		}),
 		Schema.decodeTo(Schema.Struct({ search: schema })),
 	)
-
-/** A route with no `validateSearch` drops whatever query it was given, like TanStack's empty search. */
-export const noSearch = Schema.Struct({})

@@ -1,6 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
 import {
-	cardActionStyles,
 	cardDescriptionStyles,
 	cardFooterStyles,
 	cardHeaderStyles,
@@ -23,6 +22,5 @@ export const card = part(cardStyles, "card")
 export const cardHeader = part(cardHeaderStyles, "card-header")
 export const cardTitle = part(cardTitleStyles, "card-title")
 export const cardDescription = part(cardDescriptionStyles, "card-description")
-export const cardAction = part(cardActionStyles, "card-action")
 export const cardPanel = part(cardPanelStyles, "card-panel")
 export const cardFooter = part(cardFooterStyles, "card-footer")

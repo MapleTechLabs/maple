@@ -69,6 +69,23 @@
 		"apps/local-ui": {
 			"entry": ["src/worker.ts"]
 		},
+		// Run by path: the icon generator and the service-map bench script.
+		// tailwindcss is @tailwindcss/vite's peer; the fonts and tw-animate-css are reached through
+		// src/styles.css importing apps/web's stylesheet, which knip does not follow.
+		"apps/web-foldkit": {
+			"entry": ["scripts/generate-icons.tsx", "perf/service-map-bench.ts"],
+			"ignoreDependencies": [
+				"tailwindcss",
+				"tw-animate-css",
+				"@fontsource-variable/geist",
+				"@fontsource-variable/geist-mono"
+			]
+		},
+		// Scenario and fixture area modules are loaded with readdirSync + import() (src/scenarios.ts,
+		// src/fixtures/areas.ts); the bench is run by path.
+		"packages/ui-parity": {
+			"entry": ["src/scenarios/*.ts", "src/fixtures/areas/*.ts", "src/bench/*.ts"]
+		},
 		"apps/cli": {
 			"entry": [
 				"test/probes/*.ts",

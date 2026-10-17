@@ -34,7 +34,9 @@ export const PORT_BASE = (() => {
 	return base
 })()
 
-export const FIXTURE_BACKEND_PORT = PORT_BASE
+/** Offsets from the base: backend +0, legacy +1, foldkit +2, Electric +3, legacy-head +4. */
+const BACKEND_OFFSET = 0
+export const FIXTURE_BACKEND_PORT = PORT_BASE + BACKEND_OFFSET
 /** Electric gets its own origin so shape polling never competes with API calls for connections. */
 export const FIXTURE_ELECTRIC_PORT = PORT_BASE + 3
 export const fixtureBackendOrigin = `http://localhost:${FIXTURE_BACKEND_PORT}`

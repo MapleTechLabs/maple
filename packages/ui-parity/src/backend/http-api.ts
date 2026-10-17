@@ -123,8 +123,8 @@ const successDecoder = (endpoint: ReflectedEndpoint) => {
 	const [only, ...rest] = schemas
 	const schema = only !== undefined && rest.length === 0 ? only : Schema.Union(schemas)
 	// SAFETY: @maple/domain success schemas need no decoding services; `Top` only widens R to unknown.
-	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- the decoder's input is the fixture's wire JSON by definition
 	return Schema.decodeUnknownEffect(schema) as (
+		// oxlint-disable-next-line anti-slop/no-unknown-parameters -- the decoder's input is the fixture's wire JSON by definition
 		input: unknown,
 	) => Effect.Effect<unknown, Schema.SchemaError>
 }
@@ -209,11 +209,3 @@ export const makeApiWebHandler = (options: ApiServerOptions) => {
 	)
 	return HttpRouter.toWebHandler(app, { disableLogger: true })
 }
-
-/** Every `"<group>.<endpoint>"` the four APIs declare, for coverage reports and tests. */
-export const allEndpointTags = (): ReadonlyArray<string> =>
-	FIXTURE_APIS.flatMap((api) =>
-		api.groups.flatMap((group) =>
-			Object.values(group.endpoints).map((endpoint) => endpointTag(group, endpoint)),
-		),
-	)

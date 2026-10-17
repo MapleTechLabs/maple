@@ -82,8 +82,6 @@ const transition = makeTransition<Model, Message>(
 	(message) => Message.GotAnimationMessage({ message }),
 	"WaitForNavigationMenuExit",
 )
-export const WaitForNavigationMenuExit = transition.WaitForExit
-
 type UpdateReturn = Update.Return<Model, Message>
 
 const bumped = (model: Model): Model => ({

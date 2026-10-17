@@ -60,15 +60,6 @@ export const scaleViewport = (
 export const viewportTransform = (viewport: Viewport): string =>
 	`translate(${viewport.x}px,${viewport.y}px) scale(${viewport.zoom})`
 
-/** Inverse of {@link viewportTransform}, for syncing d3-zoom with the rendered camera. */
-export const parseViewportTransform = (transform: string): Viewport | undefined => {
-	const match = transform.match(
-		/translate\(\s*(-?[\d.e+-]+)px,\s*(-?[\d.e+-]+)px\)\s*scale\((-?[\d.e+-]+)\)/,
-	)
-	if (match === null) return undefined
-	return { x: Number(match[1]), y: Number(match[2]), zoom: Number(match[3]) }
-}
-
 /** Whether a flow-space rect intersects the visible pane (`onlyRenderVisibleElements`). */
 export const isRectVisible = (
 	rect: Rect,

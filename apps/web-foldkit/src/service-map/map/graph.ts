@@ -1,10 +1,6 @@
 import type { DeclutterResult, DeclutterState } from "@maple/ui/components/service-map/service-map-declutter"
 import { applyDeclutter } from "@maple/ui/components/service-map/service-map-declutter"
-import type {
-	BuildFlowElementsInput,
-	ServiceEdgeData,
-	ServiceNodeData,
-} from "@maple/ui/components/service-map/service-map-utils"
+import type { BuildFlowElementsInput } from "@maple/ui/components/service-map/service-map-utils"
 import {
 	buildFlowElements,
 	DB_NODE_PREFIX,
@@ -68,4 +64,4 @@ export const declutterGraph = (
 	return new EffectiveGraph(declutter, signature)
 }
 
-export type { FlowEdge, FlowNode, ServiceEdgeData, ServiceNodeData }
+export type { FlowEdge, FlowNode }

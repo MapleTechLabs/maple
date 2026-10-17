@@ -560,6 +560,3 @@ export const agentSessionsTelemetry = (options: {
 	})
 	return { ...emptyTelemetry, traces: sink.traces }
 }
-
-/** For scenarios: the newest session, and a tool every session page links to. */
-export const NEWEST_AGENT_SESSION_ID = SESSIONS[0]?.sessionId ?? ""
