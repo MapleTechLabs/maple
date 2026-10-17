@@ -32,7 +32,11 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { ensureIntegrationSource, publicSourceId } from "@maple/backend/services/org/integration-sources"
+import {
+	ensureIntegrationSource,
+	integrationSourceName,
+	stampableSourceId,
+} from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
 import { mapRailwayMetrics } from "./railway/mapping"
@@ -517,24 +521,20 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				workspaceNames: string | null,
 				now: number,
 			) =>
-				dbExecute((db) =>
-					ensureIntegrationSource(db, {
-						orgId,
-						platform: "railway",
-						integrationId: connectionId,
-						name: workspaceNames ?? "Railway",
-						now,
-					}),
-				).pipe(
-					Effect.map((id) => (id === undefined ? undefined : publicSourceId(id))),
-					Effect.tap((id) =>
-						id === undefined ? Effect.void : Effect.annotateCurrentSpan("maple.source.id", id),
-					),
-					Effect.catch((error) =>
-						Effect.logWarning("railway source unavailable", { orgId, error: error.message }).pipe(
-							Effect.as(undefined),
+				stampableSourceId(
+					dbExecute((db) =>
+						ensureIntegrationSource(
+							db,
+							orgId,
+							{
+								platform: "railway",
+								integrationId: connectionId,
+								name: integrationSourceName.railway({ workspaceNames }),
+							},
+							now,
 						),
 					),
+					{ orgId, platform: "railway" },
 				)
 
 			const pollOrg = Effect.fn("RailwayMetricsService.pollOrg")(function* (orgId: OrgId) {
