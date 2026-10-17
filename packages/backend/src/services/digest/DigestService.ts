@@ -800,7 +800,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				ingestion: { ...curUsage, approximate: isScoped },
 				baseUrl: env.MAPLE_APP_BASE_URL,
 				dashboardUrl: env.MAPLE_APP_BASE_URL,
-				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
+				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/account?tab=email-preferences`,
 			}
 
 			yield* Effect.annotateCurrentSpan("maple.digest.total_requests", totalRequests)

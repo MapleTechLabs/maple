@@ -710,7 +710,7 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 		title: "Bring-your-own ClickHouse is reachable",
 		severity: "critical",
 		fixHint:
-			"Settings → Data Platform: re-test the connection. Credentials, network policy and cluster health are the usual causes.",
+			"Settings → Data platform: re-test the connection. Credentials, network policy and cluster health are the usual causes.",
 		evaluate: ({ config }) => {
 			const clickhouse = config.clickhouse
 			if (clickhouse === null || clickhouse.syncStatus !== "error") return PASS
@@ -725,7 +725,7 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 		title: "Bring-your-own ClickHouse schema is up to date",
 		severity: "warn",
 		fixHint:
-			"Settings → Data Platform → Apply schema. Newer Maple features query tables the older schema doesn't have.",
+			"Settings → Data platform → Apply schema. Newer Maple features query tables the older schema doesn't have.",
 		evaluate: ({ config }) => {
 			const clickhouse = config.clickhouse
 			if (clickhouse === null) return PASS

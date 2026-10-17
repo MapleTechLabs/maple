@@ -37,7 +37,7 @@ Individual spans, log lines and data points cannot be read once they pass these 
 | Data                                                         | Kept for             |
 | ------------------------------------------------------------ | -------------------- |
 | Alert rule checks (each evaluation, with its observed value) | 365 days             |
-| Organization audit log (**Settings → Audit Log**)            | 6 years (2,190 days) |
+| Organization audit log (**Settings → Audit log**)            | 6 years (2,190 days) |
 
 ## Maple Local
 

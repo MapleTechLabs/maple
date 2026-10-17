@@ -412,7 +412,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					baseUrl: env.MAPLE_APP_BASE_URL,
 					analyticsUrl,
 					aiUrl: `${analyticsUrl}&tab=ai`,
-					unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
+					unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/account?tab=email-preferences`,
 				}
 
 				yield* Effect.annotateCurrentSpan({
