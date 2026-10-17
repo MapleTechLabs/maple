@@ -1,13 +1,7 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"ignoreWorkspaces": ["apps/ingest", "apps/ios", "examples/*"],
-	"ignore": [
-		".deepsec/**",
-		"**/*.type-test.ts",
-		// Shared settings pieces first used by the General tab in the next layer of the stack.
-		"apps/web/src/components/settings/settings-save-bar.tsx",
-		"apps/web/src/components/settings/admin-only-notice.tsx"
-	],
+	"ignore": [".deepsec/**", "**/*.type-test.ts"],
 	"ignoreExportsUsedInFile": true,
 	"workspaces": {
 		".": {
