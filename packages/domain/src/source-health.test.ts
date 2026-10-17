@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { gcpSourceHealth, integrationSourceHealth, pushSourceHealth } from "./source-health"
+import {
+	gcpSourceHealth,
+	githubInstallationHealth,
+	integrationSourceHealth,
+	pushSourceHealth,
+} from "./source-health"
 
 const HOUR = 3_600_000
 const now = 100 * HOUR
@@ -89,5 +94,51 @@ describe("gcpSourceHealth", () => {
 		const fresh = { ...connector, lastReceivedAt: null, lastMetricsReceivedAt: null }
 		expect(gcpSourceHealth(fresh, now).status).toBe("pending")
 		expect(gcpSourceHealth({ ...connector, lastMetricsReceivedAt: now - HOUR }, now).status).toBe("stale")
+	})
+})
+
+describe("githubInstallationHealth", () => {
+	const repo = (
+		name: string,
+		status: "healthy" | "failing" | "pending",
+		lastError: string | null = null,
+	) => ({
+		kind: "repository",
+		name,
+		status,
+		lastSuccessAt: status === "healthy" ? now - HOUR : null,
+		lastError,
+		note: null,
+	})
+	const entry = {
+		provider: "github" as const,
+		status: "failing" as const,
+		account: "acme, globex",
+		connectedAt: null,
+		problem: "1 of 3 failing",
+		feeds: [],
+		resources: [
+			repo("acme/api", "healthy"),
+			repo("Globex/web", "failing", "sync denied"),
+			repo("acme/app", "healthy"),
+		],
+	}
+
+	it("scores each installation by its own repositories", () => {
+		expect(githubInstallationHealth(entry, "acme")).toEqual({
+			status: "healthy",
+			lastDataAt: now - HOUR,
+			problem: null,
+		})
+		expect(githubInstallationHealth(entry, "globex")).toEqual({
+			status: "failing",
+			lastDataAt: null,
+			problem: "Globex/web: sync denied",
+		})
+	})
+
+	it("is pending before any repository synced and disconnected once GitHub is gone", () => {
+		expect(githubInstallationHealth(entry, "initech").status).toBe("pending")
+		expect(githubInstallationHealth(undefined, "acme").status).toBe("disconnected")
 	})
 })
