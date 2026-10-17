@@ -157,8 +157,11 @@ export interface AuditAttributeMapping {
 }
 
 export interface ConfigAuditInputs {
-	/** Null when the org has never received telemetry — gates the whole report. */
-	readonly firstDataReceivedAt: number | null
+	/**
+	 * Whether the org has ever received telemetry; gates the whole report. `absent` short-circuits to
+	 * `no_data`; `unavailable` (the warehouse could not answer) runs the config checks only.
+	 */
+	readonly telemetry: "present" | "absent" | "unavailable"
 	readonly alertRules: ReadonlyArray<AuditAlertRule>
 	readonly alertRuleStates: ReadonlyArray<AuditAlertRuleState>
 	readonly alertDestinations: ReadonlyArray<AuditAlertDestination>
@@ -1655,7 +1658,7 @@ const emptySummary: SetupAuditSummary = { critical: 0, warn: 0, info: 0, pass: 0
 export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 	const warehouseAvailable = inputs.warehouse !== undefined
 
-	if (inputs.config.firstDataReceivedAt === null) {
+	if (inputs.config.telemetry === "absent") {
 		return {
 			generatedAt: inputs.now,
 			dataStatus: "no_data",
