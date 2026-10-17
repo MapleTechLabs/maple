@@ -5,9 +5,11 @@ import * as Combobox from "../../../ui/combobox"
 import * as ContextMenu from "../../../ui/context-menu"
 import * as Dialog from "../../../ui/dialog"
 import * as HoverCard from "../../../ui/hover-card"
+import * as Menu from "../../../ui/menu"
 import * as Popover from "../../../ui/popover"
 import * as Select from "../../../ui/select"
 import * as Toast from "../../../ui/toast"
+import * as Tooltip from "../../../ui/tooltip"
 
 export const OverlayItem = Schema.Literals(OVERLAY_ITEMS)
 export type OverlayItem = typeof OverlayItem.Type
@@ -30,6 +32,14 @@ export const Model = Schema.Struct({
 	autocomplete: Combobox.Model,
 	commandList: Combobox.Model,
 	toasts: Toast.Model,
+	tooltip: Tooltip.Model,
+	dropdownMenu: Menu.Model,
+	/** `KitDropdownMenu`'s checkbox and radio items (`defaultChecked`, `defaultValue`). */
+	menuSettings: Schema.Struct({
+		showAttributes: Schema.Boolean,
+		wrapLines: Schema.Boolean,
+		density: Schema.Literals(["compact", "comfortable"]),
+	}),
 })
 export type Model = typeof Model.Type
 
@@ -46,6 +56,8 @@ export const Message = defineMessageUnion({
 	GotAutocompleteMessage: { message: Combobox.Message },
 	GotCommandListMessage: { message: Combobox.Message },
 	GotToastMessage: { message: Toast.Message },
+	GotTooltipMessage: { message: Tooltip.Message },
+	GotDropdownMenuMessage: { message: Menu.Message },
 })
 export type Message = typeof Message.Type
 

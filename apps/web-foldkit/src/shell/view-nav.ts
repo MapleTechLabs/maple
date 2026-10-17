@@ -28,7 +28,7 @@ import {
 	navGroups,
 	partitionSubItems,
 } from "./nav"
-import { ACTIVE_RAIL, GROUP_LABEL, navBadge, triggerFor } from "./view-sidebar"
+import { ACTIVE_RAIL, GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } from "./view-sidebar"
 
 /** Self-hosted turns every rollout on; Clerk orgs read flags from metadata (not ported yet). */
 export const shellNavGroups = (): ReadonlyArray<NavGroup> => navGroups({ releases: !isClerkAuthEnabled })
@@ -123,7 +123,13 @@ const subList = (h: HtmlBuilder<Message>, subItems: ReadonlyArray<NavSubItem>, c
 }
 
 /** `NavRow`: a link, a section with its children while active, or on the collapsed rail a menu. */
-const navRow = (h: HtmlBuilder<Message>, model: Model, item: NavItem, currentPath: string): Html => {
+const navRow = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	item: NavItem,
+	currentPath: string,
+	tip: RailTip,
+): Html => {
 	const isActive = isNavItemActive(currentPath, item)
 	const isCollapsed = !model.isSidebarOpen && !model.isMobile
 	const subItems =
@@ -142,6 +148,7 @@ const navRow = (h: HtmlBuilder<Message>, model: Model, item: NavItem, currentPat
 				isActive,
 				link: { href: item.href, currentPath },
 				hasTooltip: true,
+				attributes: tip(item.title),
 			},
 			[
 				icon(h, item.icon, { size: 18 }),
@@ -249,6 +256,7 @@ export const navGroupSections = (
 	h: HtmlBuilder<Message>,
 	model: Model,
 	currentPath: string,
+	tip: RailTip = NO_TIP,
 ): ReadonlyArray<Html> =>
 	shellNavGroups().map((group) =>
 		sidebarGroup(h, undefined, [
@@ -257,7 +265,7 @@ export const navGroupSections = (
 				sidebarMenu(
 					h,
 					undefined,
-					group.items.map((item) => navRow(h, model, item, currentPath)),
+					group.items.map((item) => navRow(h, model, item, currentPath, tip)),
 				),
 			]),
 		]),

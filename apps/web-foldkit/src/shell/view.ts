@@ -13,24 +13,65 @@ import { menuPopup } from "../ui/dropdown-menu"
 import { icon } from "../ui/icon"
 import { leftSheet } from "../ui/sheet"
 import { sidebarContent, sidebarDesktop, sidebarInset, sidebarWrapper } from "../ui/sidebar"
+import * as Tooltip from "../ui/tooltip"
 import { placementOf, popupIdOf, triggerIdOf } from "./menus"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { PositionMenu } from "./mounts"
 import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
-import { navGroupSections, pinnedGroup } from "./view-nav"
-import { shellSidebarFooter, shellSidebarHeader, userAvatar } from "./view-sidebar"
+import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
+import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader, userAvatar } from "./view-sidebar"
 import { type BreadcrumbEntry, topbar } from "./view-topbar"
 
 export type { BreadcrumbEntry } from "./view-topbar"
 
 /** `AppSidebar`'s three regions, shared by the desktop rail and the mobile sheet. */
-const sidebarRegions = (h: HtmlBuilder<Message>, model: Model, currentPath: string): ReadonlyArray<Html> => [
-	shellSidebarHeader(h, model),
-	sidebarContent(h, [...navGroupSections(h, model, currentPath), ...pinnedGroup(h, model, currentPath)]),
-	shellSidebarFooter(h, model, currentPath, userAvatar(h, "RT")),
+const sidebarRegions = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	currentPath: string,
+	tip: RailTip = NO_TIP,
+): ReadonlyArray<Html> => [
+	shellSidebarHeader(h, model, tip),
+	sidebarContent(h, [
+		...navGroupSections(h, model, currentPath, tip),
+		...pinnedGroup(h, model, currentPath),
+	]),
+	shellSidebarFooter(h, model, currentPath, userAvatar(h, "RT"), tip),
 ]
+
+const RAIL_TIP_PREFIX = "shell-rail-tip-"
+
+/** Every row that can carry a rail tooltip: the nav items, Search and the footer links. */
+const RAIL_TIP_TITLES = [
+	"Search",
+	...shellNavGroups().flatMap((group) => group.items.map((item) => item.title)),
+	"Integrations",
+	"Settings",
+]
+
+/** The desktop rail; collapsed, its rows share one Tooltip naming the row (`tooltip={title}`). */
+const desktopSidebar = (h: HtmlBuilder<Message>, model: Model, currentPath: string): Html => {
+	if (model.isSidebarOpen) return sidebarDesktop(h, "expanded", sidebarRegions(h, model, currentPath))
+	return h.submodel({
+		slotId: "shell-rail-tooltip",
+		model: model.railTooltip,
+		view: Tooltip.view,
+		viewInputs: {
+			toView: ({ trigger, portal }) =>
+				sidebarDesktop(h, "collapsed", [
+					...sidebarRegions(h, model, currentPath, (title) =>
+						trigger(`${RAIL_TIP_PREFIX}${title}`),
+					),
+					...(portal === null ? [] : [portal]),
+				]),
+			toContent: (triggerId) => [triggerId.slice(RAIL_TIP_PREFIX.length)],
+			triggerIds: RAIL_TIP_TITLES.map((title) => `${RAIL_TIP_PREFIX}${title}`),
+		},
+		toParentMessage: (message) => Message.GotRailTooltipMessage({ message }),
+	})
+}
 
 export type FrameInputs = Readonly<{
 	currentPath: string
@@ -60,15 +101,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 	sidebarWrapper(
 		h,
 		[
-			...(model.isMobile
-				? []
-				: [
-						sidebarDesktop(
-							h,
-							model.isSidebarOpen ? "expanded" : "collapsed",
-							sidebarRegions(h, model, inputs.currentPath),
-						),
-					]),
+			...(model.isMobile ? [] : [desktopSidebar(h, model, inputs.currentPath)]),
 			sidebarInset(h, [
 				h.a(
 					[

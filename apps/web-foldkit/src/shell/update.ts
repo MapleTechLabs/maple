@@ -1,6 +1,7 @@
 import { Option, Record } from "effect"
-import { AsyncData, type Update } from "foldkit"
+import { AsyncData, Command, type Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
+import * as Tooltip from "../ui/tooltip"
 import type { Resources } from "../platform/resources"
 import {
 	FocusElement,
@@ -23,7 +24,14 @@ import {
 import { isSameMenu, popupIdOf, triggerIdOf } from "./menus"
 import { BUILT_COMMIT, CheckDeployedCommit, ReloadPage } from "./version"
 import { Menu, Message, OutMessage } from "./message"
-import { DashboardsData, InfraPresenceData, type Model, NamespacesData, TenantData } from "./model"
+import {
+	DashboardsData,
+	InfraPresenceData,
+	initRailTooltip,
+	type Model,
+	NamespacesData,
+	TenantData,
+} from "./model"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
@@ -69,7 +77,11 @@ const toggleSidebar = (model: Model): UpdateReturn =>
 	model.isMobile
 		? { model: modifyFields(model, { isMobileNavOpen: (isOpen) => !isOpen }) }
 		: {
-				model: modifyFields(model, { isSidebarOpen: (isOpen) => !isOpen }),
+				// A tooltip left open on the rail would reappear on the next collapse.
+				model: modifyFields(model, {
+					isSidebarOpen: (isOpen) => !isOpen,
+					railTooltip: () => initRailTooltip(),
+				}),
 				commands: [SaveSidebarState({ isOpen: !model.isSidebarOpen })],
 			}
 
@@ -216,6 +228,15 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		SucceededLoadNamespaces: ({ namespaces }) => ({
 			model: modifyFields(model, { namespaces: () => NamespacesData.Success({ data: namespaces }) }),
 		}),
+		GotRailTooltipMessage: ({ message: child }) => {
+			const next = Tooltip.update(model.railTooltip, child)
+			return {
+				model: { ...model, railTooltip: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotRailTooltipMessage({ message }),
+				),
+			}
+		},
 		FailedLoadNamespaces: () => ({
 			model: modifyFields(model, { namespaces: () => NamespacesData.Failure({ error: "Failed" }) }),
 		}),

@@ -4,9 +4,11 @@ import * as Combobox from "../../../ui/combobox"
 import * as ContextMenu from "../../../ui/context-menu"
 import * as Dialog from "../../../ui/dialog"
 import * as HoverCard from "../../../ui/hover-card"
+import * as Menu from "../../../ui/menu"
 import * as Popover from "../../../ui/popover"
 import * as Select from "../../../ui/select"
 import * as Toast from "../../../ui/toast"
+import * as Tooltip from "../../../ui/tooltip"
 import { initKitAutocomplete, initKitComboboxChips, initKitSelect } from "../pickers"
 import {
 	decodeItem,
@@ -59,6 +61,9 @@ export const init = (flags: Flags): Update.Return<Model, Message> => {
 		autocomplete: initKitAutocomplete("kit-autocomplete", isItem(item, "autocomplete")),
 		commandList: Combobox.init("kit-command-list", "autocomplete", { isOpen: true, autoHighlight: true }),
 		toasts: Toast.init("kit-toast"),
+		tooltip: Tooltip.init("kit-tooltip", { isOpen: isItem(item, "tooltip") }),
+		dropdownMenu: Menu.init("kit-dropdown-menu", { isOpen: isItem(item, "dropdown-menu") }),
+		menuSettings: { showAttributes: true, wrapLines: false, density: "comfortable" },
 	}
 	return Option.match(toastItemType(item), {
 		onNone: () => ({ model }),
@@ -82,6 +87,31 @@ const fieldFold = <Field extends keyof Model, ChildMessage>(
 	})
 
 /** The gallery shows the menu only: a picked item needs no reaction. */
+/** Checkbox and radio items update the settings they show; other picks need no reaction. */
+const applyMenuPick = (settings: Model["menuSettings"], outMessage: Menu.OutMessage): Model["menuSettings"] =>
+	Menu.OutMessage.match(outMessage, {
+		ToggledCheckbox: ({ value }): Model["menuSettings"] =>
+			value === "show-attributes"
+				? { ...settings, showAttributes: !settings.showAttributes }
+				: value === "wrap-lines"
+					? { ...settings, wrapLines: !settings.wrapLines }
+					: settings,
+		SelectedRadio: ({ value }): Model["menuSettings"] =>
+			value === "compact" || value === "comfortable" ? { ...settings, density: value } : settings,
+		SelectedItem: () => settings,
+		SelectedSubmenuItem: () => settings,
+	})
+
+const foldDropdownMenu = Update.foldChild({
+	update: Menu.update,
+	read: (model: Model) => Option.some(model.dropdownMenu),
+	write: (model: Model, dropdownMenu: Menu.Model): Model => ({ ...model, dropdownMenu }),
+	toParentMessage: (message: Menu.Message) => Message.GotDropdownMenuMessage({ message }),
+	foldOutMessage: (outMessage: Menu.OutMessage) => (model: Model) => ({
+		model: { ...model, menuSettings: applyMenuPick(model.menuSettings, outMessage) },
+	}),
+})
+
 const foldContextMenu = Update.foldChild({
 	update: ContextMenu.update,
 	read: (model: Model) => Option.some(model.contextMenu),
@@ -117,6 +147,7 @@ const foldSelect = Update.foldChild({
 	foldOutMessage: (_outMessage: Select.OutMessage) => (model: Model) => ({ model }),
 })
 
+const foldTooltip = fieldFold("tooltip", Tooltip.update, (message) => Message.GotTooltipMessage({ message }))
 const foldPopover = fieldFold("popover", Popover.update, (message) => Message.GotPopoverMessage({ message }))
 const foldHoverCard = fieldFold("hoverCard", HoverCard.update, (message) =>
 	Message.GotHoverCardMessage({ message }),
@@ -155,4 +186,6 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		GotAutocompleteMessage: ({ message: child }) => foldAutocomplete(model, child),
 		GotCommandListMessage: ({ message: child }) => foldCommandList(model, child),
 		GotToastMessage: ({ message: child }) => foldToast(model, child),
+		GotTooltipMessage: ({ message: child }) => foldTooltip(model, child),
+		GotDropdownMenuMessage: ({ message: child }) => foldDropdownMenu(model, child),
 	})

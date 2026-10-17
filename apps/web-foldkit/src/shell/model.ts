@@ -3,6 +3,7 @@ import { OrgId } from "@maple/domain"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { PopupPosition } from "../ui/anchor"
+import * as Tooltip from "../ui/tooltip"
 import { PinnedDashboardRow } from "./dashboards-shape"
 import { Menu, Theme } from "./message"
 
@@ -44,10 +45,16 @@ export const Model = Schema.Struct({
 	integrations: Integrations,
 	dashboards: DashboardsData.schema,
 	namespaces: NamespacesData.schema,
+	/** The collapsed rail's tooltips: one Tooltip shared by every rail button. */
+	railTooltip: Tooltip.Model,
 	/** The server serves a newer build than this tab (`AppUpdateBanner`). */
 	isAppOutdated: Schema.Boolean,
 })
 export type Model = typeof Model.Type
+
+/** `<TooltipPopup side="right" align="center">` of `SidebarMenuButton`. */
+export const initRailTooltip = (): Tooltip.Model =>
+	Tooltip.init("shell-rail-tooltip", { side: "right", align: "center" })
 
 /** Persisted shell state, read before the first render (see `main.ts` flags). */
 export type ShellFlags = Readonly<{
@@ -72,4 +79,5 @@ export const init = (flags: ShellFlags): Model => ({
 	dashboards: DashboardsData.Idle(),
 	namespaces: NamespacesData.Idle(),
 	isAppOutdated: false,
+	railTooltip: initRailTooltip(),
 })
