@@ -42,7 +42,7 @@ Everything goes in the host project except two steps, which you do on the folder
 
 A manual setup sends Maple no report. Maple confirms each part by its first data:
 
-- **Log forwarding** by the first push Maple receives. The optional test message in the dialog confirms it in seconds; otherwise the first log does, usually within a few minutes.
+- **Log forwarding** by the first push Maple receives. The optional test message in the dialog confirms it in seconds, but it proves only the topic, subscription and push: the sink is proven by the first real log, usually within a few minutes.
 - **Read-only access** by the first metrics read, within 5 minutes. If it fails, the connection says what is missing.
 
 ## Removing

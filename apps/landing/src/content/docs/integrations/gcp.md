@@ -49,11 +49,11 @@ The host project holds Maple's Pub/Sub topic, subscription and read-only service
 
 ## Connect
 
-1. Open **Integrations → Google Cloud** in Maple and click **Connect Google Cloud**. When the page already has a connection, click **Add connection** above the list. The dialog **Connect Google Cloud** opens on its first stage, **Connect**.
+1. Open **Integrations → Google Cloud** in Maple and click **Connect Google Cloud**. When the page already has a connection, click **Add connection** above the list. The dialog **Connect Google Cloud** opens on its first step, **Scope**.
 2. Under **What to connect**, choose **Organization**, **Folder** or **Project** and enter its ID. An organization or folder covers every project in it, including new ones.
 3. For an organization or folder, enter the **Host project ID**.
 4. Under **Collect**, leave **Log forwarding** and **Metrics and resources** ticked, or untick one. To change which logs are forwarded, choose a [log filter](#log-filter) under **Log filter**.
-5. Click **Create and continue**. Maple creates the connection and the dialog moves to **Method**. Leave **Cloud Shell script** selected and click **Continue**. For the other methods, follow [Manual setup](/docs/integrations/gcp-manual-setup) or [Terraform and Alchemy](/docs/integrations/gcp-infrastructure-as-code) from here. Nothing changes in Google Cloud until you run the script.
+5. On **Data**, click **Continue**. Maple creates the connection and the dialog moves to **Method**. Leave **Cloud Shell script** selected and click **Continue**. For the other methods, follow [Manual setup](/docs/integrations/gcp-manual-setup) or [Terraform and Alchemy](/docs/integrations/gcp-infrastructure-as-code) from here. Nothing changes in Google Cloud until you run the script.
 6. In step 1, click **Open Cloud Shell** and sign in with the roles above. Click **Authorize** if Cloud Shell asks.
 7. In step 2, click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute. **Read the script** shows it in the dialog.
 8. Return to Maple. Step 3, **Maple is waiting for the run**, updates on its own. Within a minute of the script ending, usually in seconds, the dialog shows **Google Cloud matches this configuration**. Click **Done**.
@@ -123,10 +123,10 @@ A project, folder or organization can be connected once per Maple organization. 
 
 ### Change what a connection collects
 
-1. On the connection's row, click **Configure**. The dialog opens on its first stage, **Configure**.
+1. On the connection's row, click **Configure**. The dialog opens on its **Data** step.
 2. Under **Collect**, tick or untick **Log forwarding** or **Metrics and resources**. The line beside a changed checkbox says what saving it does.
-3. Click **Save and continue**. For a change that takes effect in Maple at once, Maple asks first, in a dialog titled for example "Turn log forwarding off for Project acme-prod?". The dialog says what happens **In Maple** and what goes on **In Google Cloud**. Click **Turn off and continue**, or **Turn on** when you turn something back on that still exists in Google Cloud. Then the button of the first stage reads **Save**, and there is nothing to run.
-4. The dialog moves to **Apply in Google Cloud**. Its recap says what is saved and what this run does. Copy the script and run it in Cloud Shell again.
+3. Click **Save and continue**. For a change that takes effect in Maple at once, Maple asks first, in a dialog titled for example "Turn log forwarding off for Project acme-prod?". The dialog says what happens **In Maple** and what goes on **In Google Cloud**. Click **Turn off and continue**, or **Turn on** when you turn something back on that still exists in Google Cloud. Then the button reads **Save**, and there is nothing to run.
+4. The dialog moves to **Method**. Leave **Cloud Shell script** selected and click **Continue**. **Set up** recaps what is saved and what this run does. Copy the script and run it in Cloud Shell again.
 5. When the run reports, the dialog shows **Google Cloud matches this configuration**. Click **Done**.
 
 A change takes effect in Maple and in Google Cloud at different times:
@@ -142,13 +142,13 @@ Until the script has run, the connection's row shows **Changes not applied in Go
 
 A run that removes the log sink takes one to two minutes: after it deletes the sink it waits a minute for Google to stop routing to the topic, so your project logs no sink error.
 
-When nothing is changed, the button in the first stage reads **Continue to the script**. The setup script exists only in the second stage of this dialog, so this is how you get it again, for example to change the [log filter](#log-filter) or to repair something. **Back** returns to the first stage.
+When nothing is changed, the button reads **Continue**. The setup script exists only in the dialog's **Set up** step, so this is how you get it again, for example to change the [log filter](#log-filter) or to repair something. **Back** returns to the step before.
 
 A connection collects at least one of the two: the last one that is on can't be unticked. To stop collecting, [disconnect](#disconnect).
 
 ### Log filter
 
-**Log filter** decides which filter the script writes onto the sink. It is in the first stage of **Connect Google Cloud** and of **Configure**, below **Collect**, while **Log forwarding** is ticked.
+**Log filter** decides which filter the script writes onto the sink. It is in the **Data** step of **Connect Google Cloud** and of **Configure**, below **Collect**, while **Log forwarding** is ticked.
 
 Platform, request and audit logs are always forwarded. Application output, what the code of a runtime writes to stdout and stderr, is not: send it with your [OpenTelemetry setup](/docs/integrations/gcp-opentelemetry), where each line links to its trace.
 
@@ -163,7 +163,7 @@ For workloads that can't send logs over OpenTelemetry, click **Can't forward via
 
 Don't tick a runtime whose workloads already send their logs to Maple over OpenTelemetry. Otherwise each line is stored twice: see [Application output](/docs/integrations/gcp-opentelemetry#application-output). Maple does not check which workloads do.
 
-On a connection that already has a sink, the choice starts on **Keep current filter**: the script leaves the sink's filter as it is. Maple can't see that filter, so **Current filter in Log Router** opens it in the console. To change it, click **Configure**, choose **Replace filter**, set the runtimes, click **Continue to the script** and run the script again.
+On a connection that already has a sink, the choice starts on **Keep current filter**: the script leaves the sink's filter as it is. Maple can't see that filter, so **Current filter in Log Router** opens it in the console. To change it, click **Configure**, choose **Replace filter**, set the runtimes, click **Continue** through **Method** and run the script again.
 
 For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep current filter** leave your filter in place, while **Replace filter** replaces it.
 
@@ -205,7 +205,7 @@ Under **Connections**, each connection is a row, the worst state first, with a s
 
 The page header and the Integrations list show the connection's worst status: **Needs attention**, **Setup pending**, **Changes pending**, **Waiting for data** or **Healthy**.
 
-A connection that needs the setup script shows a band with one button. The button opens **Configure** at its second stage, **Apply in Google Cloud**.
+A connection that needs the setup script shows a band with one button. The button opens **Configure** at its **Method** step.
 
 | Band                                    | Button                   | Shown when                                                                                                             |
 | --------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
@@ -497,7 +497,7 @@ Cloud Asset Inventory searches are free of charge. See [Cloud Asset Inventory pr
 
 ## Troubleshooting
 
-To run the setup script again, click **Configure** on the connection's row, then **Continue to the script**. When a failure asks for another run, its band has the button **Run the script again**.
+To run the setup script again, click **Configure** on the connection's row, then **Continue** through **Method**. When a failure asks for another run, its band has the button **Run the script again**.
 
 ### In Cloud Shell
 
