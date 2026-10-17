@@ -29,7 +29,8 @@ import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 
 /**
  * What deleting an organization does, checked against `OrganizationService.delete`: the purged
- * tables, telemetry left to its retention, and the audit log and billing records kept.
+ * tables, telemetry left to its retention, and what it keeps (the audit log, billing records and
+ * UNPURGED_ORG_SCOPED_TABLES).
  */
 const DELETION_FACTS = [
 	{
@@ -38,7 +39,11 @@ const DELETION_FACTS = [
 		destructive: true,
 	},
 	{ key: "Ages out", value: "Telemetry already sent, under its retention.", destructive: false },
-	{ key: "Kept", value: "The audit log and billing records.", destructive: false },
+	{
+		key: "Kept",
+		value: "The audit log, billing records, and some history and settings: investigations, anomaly history, AI triage and escalation settings, attribute mappings and sampling.",
+		destructive: false,
+	},
 ] as const
 
 function DeletionFacts() {

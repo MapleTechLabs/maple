@@ -14,7 +14,7 @@ const HOUR = 60 * 60_000
 
 /** A fully healthy org — every check passes. Each test perturbs exactly one field. */
 const healthyConfig: ConfigAuditInputs = {
-	firstDataReceivedAt: NOW - 30 * 24 * HOUR,
+	telemetry: "present",
 	alertRules: [
 		{
 			id: "rule-1",
@@ -314,10 +314,19 @@ describe("runSetupAudit — baseline", () => {
 
 	it("short-circuits to no_data before any check runs when telemetry never arrived", () => {
 		// Deliberately also broken elsewhere: the gate must win over every other finding.
-		const report = runSetupAudit(inputs({ firstDataReceivedAt: null, alertDestinations: [] }))
+		const report = runSetupAudit(inputs({ telemetry: "absent", alertDestinations: [] }))
 		expect(report.dataStatus).toBe("no_data")
 		expect(report.checks).toEqual([])
 		expect(report.summary).toEqual({ critical: 0, warn: 0, info: 0, pass: 0, skip: 0 })
+	})
+
+	it("runs the config checks when whether telemetry ever arrived is unknown", () => {
+		const report = runSetupAudit(
+			inputsWith(undefined, { telemetry: "unavailable", alertDestinations: [] }),
+		)
+		expect(report.dataStatus).toBe("ok")
+		expect(check(report, "CFG-ALERT-01").status).toBe("fail")
+		expect(check(report, "CFG-MAP-01").status).toBe("skip")
 	})
 
 	it("skips warehouse checks instead of failing them when the warehouse is unavailable", () => {

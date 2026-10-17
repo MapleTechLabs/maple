@@ -246,7 +246,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			)
 
 			const config: ConfigAuditInputs = {
-				firstDataReceivedAt: rows.onboarding[0]?.firstDataReceivedAt ?? null,
+				telemetry: (rows.onboarding[0]?.firstDataReceivedAt ?? null) === null ? "absent" : "present",
 				alertRules: rows.rules.map((rule) => ({
 					id: rule.id,
 					name: rule.name,
@@ -503,67 +503,63 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 
 		/**
 		 * `firstDataReceivedAt` has no ingest-side writer, so an unstamped org is checked against the
-		 * warehouse (same predicate as the onboarding checklist) and stamped here. Returns the stamp
-		 * to audit with, or null when the org genuinely has no traces, logs, or metrics.
+		 * warehouse (same predicate as the onboarding checklist) and stamped here. `unavailable`
+		 * leaves the row unstamped so the next run probes again.
 		 */
-		const resolveFirstDataReceivedAt = Effect.fn("SetupAuditService.resolveFirstDataReceivedAt")(
-			function* (tenant: TenantContext, recorded: number | null) {
-				if (recorded !== null) return recorded
-				const report = yield* signals.read(tenant)
-				const hasTelemetry = report.signals.some(
-					(signal) =>
-						signal.status === "present" &&
-						(signal.signal === "traces" ||
-							signal.signal === "logs" ||
-							signal.signal === "metrics"),
-				)
-				yield* Effect.annotateCurrentSpan({
-					orgId: tenant.orgId,
-					"maple.audit.first_data_probe": report.warehouseAvailable
-						? hasTelemetry
-							? "present"
-							: "absent"
-						: "unavailable",
-				})
-				if (!hasTelemetry) return null
+		const resolveTelemetry = Effect.fn("SetupAuditService.resolveTelemetry")(function* (
+			tenant: TenantContext,
+			recorded: ConfigAuditInputs["telemetry"],
+		) {
+			if (recorded === "present") return recorded
+			const report = yield* signals.read(tenant)
+			const hasTelemetry = report.signals.some(
+				(signal) =>
+					signal.status === "present" &&
+					(signal.signal === "traces" || signal.signal === "logs" || signal.signal === "metrics"),
+			)
+			const probe: ConfigAuditInputs["telemetry"] = report.warehouseAvailable
+				? hasTelemetry
+					? "present"
+					: "absent"
+				: "unavailable"
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.audit.first_data_probe": probe })
+			if (probe !== "present") return probe
 
-				const now = yield* Clock.currentTimeMillis
-				// A failed write must not hide the audit from an org that has data; the next run retries.
-				const stamped = yield* onboarding
-					.recordFirstDataReceived(tenant.orgId, readOrgCreatedAt(organizations, tenant.orgId))
-					.pipe(
-						Effect.tapError((error) =>
-							Effect.logWarning(
-								"Setup audit could not stamp first data received",
-								error.message,
-							),
-						),
-						Effect.orElseSucceed(() => false),
-					)
-				yield* Effect.annotateCurrentSpan({ "maple.audit.first_data_stamped": stamped })
-				return now
-			},
-		)
+			// A failed write must not hide the audit from an org that has data; the next run retries.
+			const stamped = yield* onboarding
+				.recordFirstDataReceived(tenant.orgId, readOrgCreatedAt(organizations, tenant.orgId))
+				.pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning("Setup audit could not stamp first data received", error.message),
+					),
+					Effect.orElseSucceed(() => false),
+				)
+			yield* Effect.annotateCurrentSpan({ "maple.audit.first_data_stamped": stamped })
+			return probe
+		})
 
 		const run = Effect.fn("SetupAuditService.run")(function* (tenant: TenantContext) {
 			const recorded = yield* fetchConfigInputs(tenant.orgId)
 			const config: ConfigAuditInputs = {
 				...recorded,
-				firstDataReceivedAt: yield* resolveFirstDataReceivedAt(tenant, recorded.firstDataReceivedAt),
+				telemetry: yield* resolveTelemetry(tenant, recorded.telemetry),
 			}
 
 			// A warehouse outage must not take the whole audit down — the configuration half is the
 			// part that most often explains "why didn't anything page me", and it is always readable.
 			// `catchCause` rather than `Effect.option` deliberately: a driver-level defect should
 			// degrade this diagnostic endpoint to skipped checks, not 500 it.
-			const warehouseInputs = yield* fetchWarehouseInputs(tenant).pipe(
-				Effect.catchCause((cause) =>
-					Effect.logWarning("Setup audit telemetry checks skipped — warehouse unavailable").pipe(
-						Effect.annotateLogs({ cause }),
-						Effect.as(undefined),
-					),
-				),
-			)
+			// The presence probe already found the warehouse unreachable: skip the telemetry checks.
+			const warehouseInputs =
+				config.telemetry === "unavailable"
+					? undefined
+					: yield* fetchWarehouseInputs(tenant).pipe(
+							Effect.catchCause((cause) =>
+								Effect.logWarning(
+									"Setup audit telemetry checks skipped: warehouse unavailable",
+								).pipe(Effect.annotateLogs({ cause }), Effect.as(undefined)),
+							),
+						)
 
 			const now = yield* Clock.currentTimeMillis
 			const report = runSetupAudit({ now, config, warehouse: warehouseInputs })

@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
+import { SETUP_AUDIT_CHECKS } from "@maple/domain/setup-audit"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import {
 	cleanupTestDbs,
@@ -25,17 +26,31 @@ const ORG = Schema.decodeUnknownSync(OrgId)("org_setup_audit")
 const USER = Schema.decodeUnknownSync(UserId)("user_setup_audit")
 const tenant: TenantContext = { orgId: ORG, userId: USER, roles: ["org:admin"], authMode: "self_hosted" }
 
-const signalPresence = (tracesStatus: "present" | "absent") =>
+type Probe = "present" | "absent" | "unavailable"
+
+const signalPresence = (probe: Probe) =>
 	Layer.succeed(SignalPresenceService, {
 		read: () =>
 			Effect.succeed({
 				generatedAt: 0,
 				windowStart: 0,
 				windowEnd: 0,
-				warehouseAvailable: true,
+				warehouseAvailable: probe !== "unavailable",
 				signals: [
-					{ signal: "traces", status: tracesStatus, count: 1, firstSeen: null, lastSeen: null },
-					{ signal: "sessions", status: "present", count: 1, firstSeen: null, lastSeen: null },
+					{
+						signal: "traces",
+						status: probe === "unavailable" ? "unknown" : probe,
+						count: probe === "present" ? 1 : 0,
+						firstSeen: null,
+						lastSeen: null,
+					},
+					{
+						signal: "sessions",
+						status: probe === "unavailable" ? "unknown" : "present",
+						count: 1,
+						firstSeen: null,
+						lastSeen: null,
+					},
 				],
 			}),
 	})
@@ -54,12 +69,12 @@ const organizations = Layer.succeed(OrganizationService, {
 		Effect.succeed({ id: orgId, name: null, slug: null, imageUrl: null, createdAtMs: ORG_CREATED_AT }),
 })
 
-const makeLayer = (testDb: TestDb, tracesStatus: "present" | "absent") =>
+const makeLayer = (testDb: TestDb, probe: Probe) =>
 	Layer.effect(SetupAuditService, SetupAuditService.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
 				warehouse,
-				signalPresence(tracesStatus),
+				signalPresence(probe),
 				OnboardingService.layer,
 				organizations,
 				IntegrationInventoryService.layer,
@@ -122,4 +137,26 @@ describe("SetupAuditService first-data stamping", () => {
 			assert.isNull(row?.first_data_received_at ?? null)
 		}).pipe(Effect.provide(makeLayer(testDb, "absent")))
 	})
+
+	it.effect(
+		"runs the config checks, skips telemetry checks, and leaves the row unstamped when the probe cannot read the warehouse",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* seedUnstampedRow(testDb)
+				const report = yield* SetupAuditService.use((audit) => audit.run(tenant))
+				assert.strictEqual(report.dataStatus, "ok")
+				assert.isFalse(report.warehouseAvailable)
+				const skipped = report.checks.filter((row) => row.status === "skip").map((row) => row.id)
+				const needsWarehouse = SETUP_AUDIT_CHECKS.filter((row) => row.needsWarehouse === true)
+				assert.deepStrictEqual(
+					skipped,
+					needsWarehouse.map((row) => row.id),
+				)
+				assert.isAbove(report.checks.length, skipped.length)
+				const row = yield* firstDataInDb(testDb)
+				assert.isNull(row?.first_data_received_at ?? null)
+			}).pipe(Effect.provide(makeLayer(testDb, "unavailable")))
+		},
+	)
 })
