@@ -287,11 +287,12 @@ export type ChipsViewInputs = Readonly<{
 	toView: (parts: ReadonlyArray<Html>) => Html
 }>
 
-const chip = (h: H, value: string): Html =>
+/** Base UI hides the chips from assistive tech while the list is open. */
+const chip = (h: H, value: string, isOpen: boolean): Html =>
 	h.div(
 		[
 			h.Key(`chip-${value}`),
-			h.AriaHidden(true),
+			...(isOpen ? [h.AriaHidden(true)] : []),
 			h.Class(cn(C.comboboxChipStyles)),
 			h.DataAttribute("slot", "combobox-chip"),
 			h.Tabindex(-1),
@@ -316,6 +317,7 @@ const chip = (h: H, value: string): Html =>
 /** `<Combobox multiple>` with `ComboboxChips`: chips for the selection, then the chips input. */
 export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((model, inputs, h) => {
 	const chipsSelector = `[data-slot=combobox-chips]:has(> #${inputId(model.id)})`
+	const isOpen = isMounted(model.isOpen, model.animation)
 	const chips = h.div(
 		[
 			h.Key("chips"),
@@ -324,8 +326,8 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 			h.Role("toolbar"),
 		],
 		[
-			...model.selected.map((value) => chip(h, value)),
-			dismissButton(h),
+			...model.selected.map((value) => chip(h, value, isOpen)),
+			...(isOpen ? [dismissButton(h)] : []),
 			h.input([
 				h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputDefaultStyles)),
 				h.DataAttribute("size", "default"),
@@ -346,7 +348,7 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 	return inputs.toView([
 		chips,
 		hiddenInput(h, model),
-		...(isMounted(model.isOpen, model.animation)
+		...(isOpen
 			? [
 					listPopup(h, model, {
 						slot: "combobox",

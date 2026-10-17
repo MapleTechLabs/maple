@@ -95,9 +95,11 @@ const content = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 const body = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Id("app")],
+		// The regions go first: their Mount moves them to <body>, and a later sibling as the
+		// insertion point of a page's new nodes would no longer be a child of #app.
 		[
-			...content(model, h),
 			...ToastView.regions(h, model.toasts, (message) => Message.GotToastMessage({ message })),
+			...content(model, h),
 		],
 	)
 

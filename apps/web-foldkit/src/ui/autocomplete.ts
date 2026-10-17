@@ -66,7 +66,9 @@ export const autocompleteField = <M>(
 				],
 				[icon(h, "MagnifierIcon")],
 			),
-			...(options.isInline === true ? [] : [dismissButton(h)]),
+			...(options.isInline !== true && isMounted(model.isOpen, model.animation)
+				? [dismissButton(h)]
+				: []),
 			h.span(
 				[
 					h.Class(
