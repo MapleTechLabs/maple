@@ -25,11 +25,15 @@ export const Model = Schema.Struct({
 	label: Schema.String,
 	isMultiple: Schema.Boolean,
 	values: Schema.Array(Schema.String),
-	highlightedIndex: Schema.Number,
+	highlightedIndex: Schema.Finite,
 })
 export type Model = typeof Model.Type
 
-export const init = (config: { label: string; isMultiple?: boolean; values: ReadonlyArray<string> }): Model => ({
+export const init = (config: {
+	label: string
+	isMultiple?: boolean
+	values: ReadonlyArray<string>
+}): Model => ({
 	label: config.label,
 	isMultiple: config.isMultiple ?? false,
 	values: config.values,
@@ -39,8 +43,8 @@ export const init = (config: { label: string; isMultiple?: boolean; values: Read
 // MESSAGE
 
 export const Message = defineMessageUnion({
-	ClickedItem: { value: Schema.String, index: Schema.Number },
-	PressedArrowKey: { index: Schema.Number },
+	ClickedItem: { value: Schema.String, index: Schema.Finite },
+	PressedArrowKey: { index: Schema.Finite },
 	CompletedFocusItem: {},
 })
 export type Message = typeof Message.Type
@@ -61,14 +65,18 @@ export const FocusItem = Command.define("FocusToggleGroupItem", {
 
 const toggled = (model: Model, value: string): ReadonlyArray<string> => {
 	const isPressed = model.values.includes(value)
-	if (model.isMultiple) return isPressed ? model.values.filter((v) => v !== value) : [...model.values, value]
+	if (model.isMultiple)
+		return isPressed ? model.values.filter((v) => v !== value) : [...model.values, value]
 	return isPressed ? [] : [value]
 }
 
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
 		ClickedItem: ({ value, index }) => ({
-			model: modifyFields(model, { values: () => toggled(model, value), highlightedIndex: () => index }),
+			model: modifyFields(model, {
+				values: () => toggled(model, value),
+				highlightedIndex: () => index,
+			}),
 		}),
 		PressedArrowKey: ({ index }) => ({
 			model: modifyFields(model, { highlightedIndex: () => index }),

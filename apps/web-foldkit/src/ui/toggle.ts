@@ -50,7 +50,9 @@ export const togglePrimitive = <Message>(
 			h.AriaPressed(String(options.isPressed)),
 			h.Class(options.className),
 			...(options.isPressed ? [h.DataAttribute("pressed", "")] : []),
-			...(isDisabled ? [h.DataAttribute("disabled", ""), h.Disabled(true)] : [h.OnClick(options.onClick)]),
+			...(isDisabled
+				? [h.DataAttribute("disabled", ""), h.Disabled(true)]
+				: [h.OnClick(options.onClick)]),
 			h.DataAttribute("slot", options.slot),
 			h.Tabindex(options.tabIndex ?? 0),
 			...(options.attributes ?? []),
@@ -79,7 +81,11 @@ export const toggle = <Message>(
 		{
 			...options,
 			className: cn(
-				toggleVariants({ className: options.className, size: options.size, variant: options.variant }),
+				toggleVariants({
+					className: options.className,
+					size: options.size,
+					variant: options.variant,
+				}),
 			),
 			slot: "toggle",
 		},

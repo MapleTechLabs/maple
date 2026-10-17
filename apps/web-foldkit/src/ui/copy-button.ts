@@ -34,7 +34,7 @@ const COPY_TIMEOUT = Duration.millis(2000)
 
 // MODEL
 
-export const Model = Schema.Struct({ status: CopyStatus, generation: Schema.Number })
+export const Model = Schema.Struct({ status: CopyStatus, generation: Schema.Finite })
 export type Model = typeof Model.Type
 
 export const init = (): Model => ({ status: "idle", generation: 0 })
@@ -43,26 +43,26 @@ export const init = (): Model => ({ status: "idle", generation: 0 })
 
 export const Message = defineMessageUnion({
 	ClickedCopy: { text: Schema.String },
-	SucceededCopy: { generation: Schema.Number },
-	FailedCopy: { generation: Schema.Number },
-	ElapsedCopyStatus: { generation: Schema.Number },
+	SucceededCopy: { generation: Schema.Finite },
+	FailedCopy: { generation: Schema.Finite },
+	ElapsedCopyStatus: { generation: Schema.Finite },
 })
 export type Message = typeof Message.Type
 
 // COMMAND
 
 export const WriteClipboard = Command.define("WriteClipboard", {
-	args: { text: Schema.String, generation: Schema.Number },
+	args: { text: Schema.String, generation: Schema.Finite },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
 	execute: ({ text, generation }) =>
 		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
 			Effect.as(Message.SucceededCopy({ generation })),
-			Effect.catch(() => Effect.succeed(Message.FailedCopy({ generation }))),
+			Effect.orElseSucceed(() => Message.FailedCopy({ generation })),
 		),
 })
 
 export const WaitCopyStatus = Command.define("WaitCopyStatus", {
-	args: { generation: Schema.Number },
+	args: { generation: Schema.Finite },
 	messages: [Message.ElapsedCopyStatus],
 	execute: ({ generation }) =>
 		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyStatus({ generation }))),
@@ -89,7 +89,9 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		SucceededCopy: ({ generation }) => settled(model, generation, "copied"),
 		FailedCopy: ({ generation }) => settled(model, generation, "error"),
 		ElapsedCopyStatus: ({ generation }) =>
-			generation === model.generation ? { model: modifyFields(model, { status: () => "idle" }) } : { model },
+			generation === model.generation
+				? { model: modifyFields(model, { status: () => "idle" }) }
+				: { model },
 	})
 
 // VIEW
@@ -130,11 +132,20 @@ export const copyIndicator = <M>(h: HtmlBuilder<M>, status: CopyStatus, iconSize
 			h.Style({ height: `${iconSize}px`, width: `${iconSize}px` }),
 		],
 		[
-			h.span([h.Class(cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.idle))], [
-				copyIcon(h, { size: iconSize }),
-			]),
 			h.span(
-				[h.Class(cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.copied, copyIndicatorCopiedStyles))],
+				[h.Class(cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.idle))],
+				[copyIcon(h, { size: iconSize })],
+			),
+			h.span(
+				[
+					h.Class(
+						cn(
+							copyIndicatorLayerStyles,
+							copyIndicatorLayerActiveStyles.copied,
+							copyIndicatorCopiedStyles,
+						),
+					),
+				],
 				[
 					glyphSvg(h, size, [
 						strokePath(h, CHECK_PATH, [
@@ -145,7 +156,15 @@ export const copyIndicator = <M>(h: HtmlBuilder<M>, status: CopyStatus, iconSize
 				],
 			),
 			h.span(
-				[h.Class(cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.error, copyIndicatorErrorStyles))],
+				[
+					h.Class(
+						cn(
+							copyIndicatorLayerStyles,
+							copyIndicatorLayerActiveStyles.error,
+							copyIndicatorErrorStyles,
+						),
+					),
+				],
 				[glyphSvg(h, size, [strokePath(h, "M6 6L18 18"), strokePath(h, "M18 6L6 18")])],
 			),
 		],
@@ -168,7 +187,10 @@ export type CopyButtonViewConfig<ParentMessage> = Readonly<{
 }>
 
 /** `<CopyButton>` from @maple/ui (no tooltip). */
-export const view = <ParentMessage>(h: HtmlBuilder<ParentMessage>, config: CopyButtonViewConfig<ParentMessage>): Html => {
+export const view = <ParentMessage>(
+	h: HtmlBuilder<ParentMessage>,
+	config: CopyButtonViewConfig<ParentMessage>,
+): Html => {
 	const { status } = config.model
 	const copiedLabel = config.copiedLabel ?? "Copied"
 	const errorText = config.errorLabel ?? "Failed to copy"
@@ -200,7 +222,10 @@ export const view = <ParentMessage>(h: HtmlBuilder<ParentMessage>, config: CopyB
 						h.span(
 							[h.AriaHidden(true), h.Class(copyLabelStyles)],
 							labels.map(([key, text]) =>
-								h.span([h.Class(cn(copyLabelLayerStyles, copyLabelActiveStyles[key]))], [text]),
+								h.span(
+									[h.Class(cn(copyLabelLayerStyles, copyLabelActiveStyles[key]))],
+									[text],
+								),
 							),
 						),
 					]),

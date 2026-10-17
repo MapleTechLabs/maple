@@ -22,7 +22,15 @@ import { kitPage, kitRow, kitSection } from "../../kit/kit-layout"
 
 // Port of `/lab/kit/buttons` (apps/web/src/lab/kit/buttons.tsx).
 
-const VARIANTS = ["default", "secondary", "outline", "ghost", "destructive", "destructive-outline", "link"] as const
+const VARIANTS = [
+	"default",
+	"secondary",
+	"outline",
+	"ghost",
+	"destructive",
+	"destructive-outline",
+	"link",
+] as const
 const TEXT_SIZES = ["xs", "sm", "default", "lg", "xl"] as const
 const ICON_SIZES = ["icon-2xs", "icon-xs", "icon-sm", "icon", "icon-lg", "icon-xl"] as const
 const BADGE_VARIANTS = [
@@ -124,8 +132,11 @@ const kbdGroupPlaceholder = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>
 	h.kbd([h.Class(cn(kbdGroupStyles)), h.DataAttribute("slot", "kbd-group")], children)
 
 // TODO(badge): the app-shell port owns Badge; same composition as packages/ui/src/components/ui/badge.tsx.
-const badgePlaceholder = <M>(h: HtmlBuilder<M>, options: VariantProps<typeof badgeVariants>, text: string): Html =>
-	h.span([h.Class(cn(badgeVariants(options))), h.DataAttribute("slot", "badge")], [text])
+const badgePlaceholder = <M>(
+	h: HtmlBuilder<M>,
+	options: VariantProps<typeof badgeVariants>,
+	text: string,
+): Html => h.span([h.Class(cn(badgeVariants(options))), h.DataAttribute("slot", "badge")], [text])
 
 const buttonVariantRows = (h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	VARIANTS.map((variant) =>
@@ -151,9 +162,13 @@ const buttonStates = (h: HtmlBuilder<Message>): Html =>
 const iconButtons = (h: HtmlBuilder<Message>): Html =>
 	kitRow(h, undefined, [
 		iconButton(h, { label: "Add widget", triggerId: "base-ui-_r_1_" }, [plusIcon(h)]),
-		iconButton(h, { label: "Delete row", variant: "outline", triggerId: "base-ui-_r_3_" }, [trashIcon(h)]),
+		iconButton(h, { label: "Delete row", variant: "outline", triggerId: "base-ui-_r_3_" }, [
+			trashIcon(h),
+		]),
 		iconButton(h, { label: "Notifications", size: "icon", triggerId: "base-ui-_r_5_" }, [bellIcon(h)]),
-		iconButton(h, { label: "Filters disabled", isDisabled: true, triggerId: "base-ui-_r_7_" }, [filterIcon(h)]),
+		iconButton(h, { label: "Filters disabled", isDisabled: true, triggerId: "base-ui-_r_7_" }, [
+			filterIcon(h),
+		]),
 	])
 
 const toggleOf = (
@@ -177,7 +192,13 @@ const toggles = (model: Model, h: HtmlBuilder<Message>): Html =>
 	kitRow(h, undefined, [
 		toggleOf(model, h, "wrap", { attributes: [h.AriaLabel("Wrap lines")] }, "Wrap"),
 		toggleOf(model, h, "wrap-pressed", { attributes: [h.AriaLabel("Wrap lines pressed")] }, "Wrap"),
-		toggleOf(model, h, "follow", { variant: "outline", attributes: [h.AriaLabel("Follow tail")] }, "Follow"),
+		toggleOf(
+			model,
+			h,
+			"follow",
+			{ variant: "outline", attributes: [h.AriaLabel("Follow tail")] },
+			"Follow",
+		),
 		toggleOf(
 			model,
 			h,
@@ -220,7 +241,11 @@ const toggleGroups = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html
 			items: items(["15m", "15m"], ["1h", "1h"], ["24h", "24h"], ["7d", "7d"]),
 		}),
 	),
-	kitRow(h, "default", toggleGroupOf(model, h, "layout", { items: items(["list", "List"], ["grid", "Grid"]) })),
+	kitRow(
+		h,
+		"default",
+		toggleGroupOf(model, h, "layout", { items: items(["list", "List"], ["grid", "Grid"]) }),
+	),
 	kitRow(
 		h,
 		"standalone, sm",
@@ -252,7 +277,10 @@ const copyButtonOf = (
 
 const copyAndRefresh = (model: Model, h: HtmlBuilder<Message>): Html =>
 	kitRow(h, undefined, [
-		...copyButtonOf(model, h, "trace-id", { value: "4bf92f3577b34da6a3ce929d0e0e4736", label: "trace id" }),
+		...copyButtonOf(model, h, "trace-id", {
+			value: "4bf92f3577b34da6a3ce929d0e0e4736",
+			label: "trace id",
+		}),
 		...copyButtonOf(model, h, "ingest-key", {
 			value: "maple_ingest_key",
 			label: "ingest key",
@@ -273,15 +301,31 @@ const filterChips = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const isPressed = (key: (typeof FILTER_CHIPS)[number]) => model.filterChips[key] ?? false
 	const onClick = (key: (typeof FILTER_CHIPS)[number]) => Message.ClickedFilterChip({ key })
 	return kitRow(h, undefined, [
-		filterChip(h, { isPressed: isPressed("errors"), onClick: onClick("errors"), tone: "crit", hasDot: true, count: "12" }, [
-			"Errors",
-		]),
 		filterChip(
 			h,
-			{ isPressed: isPressed("warnings"), onClick: onClick("warnings"), tone: "warn", hasDot: true, count: "4" },
+			{
+				isPressed: isPressed("errors"),
+				onClick: onClick("errors"),
+				tone: "crit",
+				hasDot: true,
+				count: "12",
+			},
+			["Errors"],
+		),
+		filterChip(
+			h,
+			{
+				isPressed: isPressed("warnings"),
+				onClick: onClick("warnings"),
+				tone: "warn",
+				hasDot: true,
+				count: "4",
+			},
 			["Warnings"],
 		),
-		filterChip(h, { isPressed: isPressed("ok"), onClick: onClick("ok"), tone: "ok", size: "xs" }, ["Healthy"]),
+		filterChip(h, { isPressed: isPressed("ok"), onClick: onClick("ok"), tone: "ok", size: "xs" }, [
+			"Healthy",
+		]),
 	])
 }
 
@@ -300,7 +344,9 @@ const badges = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 
 const statusDots = (h: HtmlBuilder<Message>): Html =>
 	kitRow(h, undefined, [
-		...TONES.map((tone) => h.span([h.Class("flex items-center gap-1.5 text-xs")], [statusDot(h, { tone }), ` ${tone}`])),
+		...TONES.map((tone) =>
+			h.span([h.Class("flex items-center gap-1.5 text-xs")], [statusDot(h, { tone }), ` ${tone}`]),
+		),
 		statusDot(h, { tone: "crit", size: "sm" }),
 		statusDot(h, { tone: "crit", size: "lg" }),
 	])
@@ -308,7 +354,11 @@ const statusDots = (h: HtmlBuilder<Message>): Html =>
 const kbdAndInlineCode = (h: HtmlBuilder<Message>): Html =>
 	kitRow(h, undefined, [
 		kbdPlaceholder(h, "K"),
-		kbdGroupPlaceholder(h, [kbdPlaceholder(h, "Cmd"), kbdPlaceholder(h, "Shift"), kbdPlaceholder(h, "P")]),
+		kbdGroupPlaceholder(h, [
+			kbdPlaceholder(h, "Cmd"),
+			kbdPlaceholder(h, "Shift"),
+			kbdPlaceholder(h, "P"),
+		]),
 		h.span(
 			[h.Class("text-sm")],
 			[
@@ -322,17 +372,24 @@ const kbdAndInlineCode = (h: HtmlBuilder<Message>): Html =>
 	])
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	kitPage(h, { title: "Kit: buttons", description: "Buttons, toggles, chips, badges and inline marks from @maple/ui." }, [
-		kitSection(h, "Button variants x sizes", buttonVariantRows(h)),
-		kitSection(h, "Button states", [buttonStates(h)]),
-		kitSection(h, "Icon button", [iconButtons(h)]),
-		kitSection(h, "Toggle", [toggles(model, h)]),
-		kitSection(h, "Toggle group", toggleGroups(model, h)),
-		kitSection(h, "Copy and refresh buttons", [copyAndRefresh(model, h)]),
-		kitSection(h, "Filter chip", [filterChips(model, h)]),
-		kitSection(h, "Badge", badges(h)),
-		kitSection(h, "Status dot", [statusDots(h)]),
-		kitSection(h, "Kbd and inline code", [kbdAndInlineCode(h)]),
-	])
+	kitPage(
+		h,
+		{
+			title: "Kit: buttons",
+			description: "Buttons, toggles, chips, badges and inline marks from @maple/ui.",
+		},
+		[
+			kitSection(h, "Button variants x sizes", buttonVariantRows(h)),
+			kitSection(h, "Button states", [buttonStates(h)]),
+			kitSection(h, "Icon button", [iconButtons(h)]),
+			kitSection(h, "Toggle", [toggles(model, h)]),
+			kitSection(h, "Toggle group", toggleGroups(model, h)),
+			kitSection(h, "Copy and refresh buttons", [copyAndRefresh(model, h)]),
+			kitSection(h, "Filter chip", [filterChips(model, h)]),
+			kitSection(h, "Badge", badges(h)),
+			kitSection(h, "Status dot", [statusDots(h)]),
+			kitSection(h, "Kbd and inline code", [kbdAndInlineCode(h)]),
+		],
+	)
 
 export const lab = defineLab("Kit: buttons", { Model, init, update, view })

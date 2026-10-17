@@ -45,7 +45,9 @@ export const filterChip = <Message>(
 				? [statusDot(h, { tone, className: options.isPressed ? undefined : filterChipDotOffStyles })]
 				: []),
 			...children,
-			...(options.count === undefined ? [] : [h.span([h.Class(filterChipCountStyles)], [options.count])]),
+			...(options.count === undefined
+				? []
+				: [h.span([h.Class(filterChipCountStyles)], [options.count])]),
 		],
 	)
 }

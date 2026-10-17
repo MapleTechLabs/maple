@@ -22,7 +22,11 @@ export const kitPage = <Message>(
 		],
 	)
 
-export const kitSection = <Message>(h: HtmlBuilder<Message>, title: string, children: ReadonlyArray<Html>): Html =>
+export const kitSection = <Message>(
+	h: HtmlBuilder<Message>,
+	title: string,
+	children: ReadonlyArray<Html>,
+): Html =>
 	h.section(
 		[h.AriaLabel(title), h.Class("flex flex-col gap-3")],
 		[eyebrow(h, { variant: "label", as: "h2" }, [title]), ...children],

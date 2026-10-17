@@ -20,17 +20,17 @@ export type RefreshButtonOptions<Message> = Readonly<{
  * `<RefreshButton>`: the icon spins while pending and the button disables.
  * TODO(tooltip): the icon-only form renders the tooltip trigger only; the popup is the overlay port's.
  */
-export const refreshButton = <Message>(h: HtmlBuilder<Message>, options: RefreshButtonOptions<Message>): Html => {
+export const refreshButton = <Message>(
+	h: HtmlBuilder<Message>,
+	options: RefreshButtonOptions<Message>,
+): Html => {
 	const isPending = options.isPending ?? false
 	const label = options.label ?? "Refresh"
 	const size = options.size ?? "sm"
 	const icon = arrowRotateAnticlockwiseIcon(h, {
 		className: cn(refreshButtonIconStyles, isPending && refreshButtonIconPendingStyles),
 	})
-	const common = [
-		...(isPending ? [h.AriaBusy(true)] : []),
-		h.OnClick(options.onRefresh),
-	]
+	const common = [...(isPending ? [h.AriaBusy(true)] : []), h.OnClick(options.onRefresh)]
 	const isDisabled = (options.isDisabled ?? false) || isPending
 	if (options.isIconOnly === true) {
 		return button(
@@ -51,9 +51,8 @@ export const refreshButton = <Message>(h: HtmlBuilder<Message>, options: Refresh
 			[icon],
 		)
 	}
-	return button(
-		h,
-		{ size, variant: options.variant ?? "outline", isDisabled, attributes: common },
-		[icon, h.span([], [label])],
-	)
+	return button(h, { size, variant: options.variant ?? "outline", isDisabled, attributes: common }, [
+		icon,
+		h.span([], [label]),
+	])
 }
