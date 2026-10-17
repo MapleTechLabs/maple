@@ -98,6 +98,33 @@ const NULL_BACKEND_CONSOLE_ERRORS = /^\[Live Query Error\] Source collection '[\
  * Settles the page, starting over if a client-side redirect (`navigate({ replace: true })` on mount)
  * swaps the document mid-wait.
  */
+/** Tallest viewport a full-page capture grows to, so a 10k-row list cannot make a 1 GB PNG. */
+const MAX_FULL_PAGE_HEIGHT = 12_000
+
+/**
+ * App pages scroll an inner container (`h-screen` layouts), which `fullPage` cannot see. Grow the
+ * viewport until no page-sized scroller overflows, so content below the fold is compared too.
+ */
+const growToContent = async (page: Page, settleAfter: () => Promise<void>) => {
+	for (let round = 0; round < 4; round++) {
+		const size = page.viewportSize()
+		if (size === null) return
+		const overflow = await page.evaluate((viewportHeight) => {
+			let most = 0
+			for (const element of document.querySelectorAll<HTMLElement>("*")) {
+				const overflowY = getComputedStyle(element).overflowY
+				if (overflowY !== "auto" && overflowY !== "scroll") continue
+				if (element.clientHeight < viewportHeight / 2) continue
+				most = Math.max(most, element.scrollHeight - element.clientHeight)
+			}
+			return most
+		}, size.height)
+		if (overflow <= 1 || size.height >= MAX_FULL_PAGE_HEIGHT) return
+		await page.setViewportSize({ width: size.width, height: Math.min(size.height + overflow, MAX_FULL_PAGE_HEIGHT) })
+		await settleAfter()
+	}
+}
+
 const settle = async (page: Page, options: { quietMs: number; timeoutMs: number }) => {
 	for (let attempt = 0; ; attempt++) {
 		const outcome = await page.evaluate(waitForVisualQuiet, options).then(
@@ -270,9 +297,10 @@ const captureVariant = async (browser: Browser, options: CaptureOptions, dir: st
 			await variant.scenario.steps(page)
 			await settle(page, { quietMs: 300, timeoutMs: 5000 })
 		}
+		if (variant.scenario.fullPage ?? true) await growToContent(page, () => settle(page, { quietMs: 300, timeoutMs: 5000 }))
 		const screenshot = await stableScreenshot(() =>
 			page.screenshot({
-				fullPage: variant.scenario.fullPage ?? false,
+				fullPage: variant.scenario.fullPage ?? true,
 				mask: variant.scenario.mask ? [...variant.scenario.mask(page)] : undefined,
 				animations: "disabled",
 				caret: "hide",

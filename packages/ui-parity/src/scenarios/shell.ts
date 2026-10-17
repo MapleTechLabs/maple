@@ -53,6 +53,8 @@ const shell = (
 	path: "/",
 	dataset: "default",
 	viewports: options.viewports ?? ["desktop"],
+	// The chrome only: page bodies are hidden placeholders whose heights differ.
+	fullPage: false,
 	themes: options.themes ?? ["light", "dark"],
 	steps: async (page) => {
 		await hidePage(page)

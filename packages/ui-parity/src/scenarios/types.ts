@@ -26,7 +26,7 @@ export interface Scenario {
 	 * left out of the behavior diff while the page is a placeholder. Shell calls still count.
 	 */
 	readonly pageCalls?: ReadonlyArray<string>
-	/** Capture the full scroll height instead of the viewport. */
+	/** Default true: the whole page, including inner scrollers grown to their content. */
 	readonly fullPage?: boolean
 	/** Tag for grouping in the report and for `--filter`. */
 	readonly area: string

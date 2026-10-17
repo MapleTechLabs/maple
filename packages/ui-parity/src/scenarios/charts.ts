@@ -15,6 +15,8 @@ const hover = (
 	title: `Lab: TanStack charts, ${title}`,
 	path: "/lab/charts",
 	viewports: ["desktop"],
+	// The hovered chart only; `lab-charts` covers the whole page.
+	fullPage: false,
 	themes: ["light", "dark"],
 	area: "charts",
 	steps: async (page) => {
