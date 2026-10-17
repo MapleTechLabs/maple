@@ -1,0 +1,66 @@
+import { InfraSurfaceLiteral } from "@maple/domain/http"
+import { OrgId } from "@maple/domain"
+import { Schema } from "effect"
+import { defineMessageUnion } from "foldkit/message"
+import { defineTaggedUnion } from "foldkit/schema"
+import { PopupPosition } from "../ui/anchor"
+import { PinnedDashboardRow } from "./dashboards-shape"
+
+/** The shell's dropdown menus; a collapsed-rail section menu is keyed by its section title. */
+export const Menu = defineTaggedUnion({
+	Org: {},
+	User: {},
+	Support: {},
+	NavSection: { title: Schema.String },
+})
+export type Menu = typeof Menu.Type
+
+export const Integration = Schema.Literals(["cloudflare", "railway", "planetscale", "gcp"])
+export type Integration = typeof Integration.Type
+
+export const Theme = Schema.Literals(["light", "dark"])
+export type Theme = typeof Theme.Type
+
+export const Message = defineMessageUnion({
+	ClickedSidebarTrigger: {},
+	PressedSidebarShortcut: {},
+	ChangedViewport: { isMobile: Schema.Boolean },
+	DismissedMobileNav: {},
+	ClickedMenuTrigger: { menu: Menu },
+	DismissedMenu: {},
+	MeasuredMenuPopup: { menu: Menu, position: PopupPosition },
+	PressedMenuKey: { key: Schema.String },
+	HoveredMenuItem: { itemId: Schema.String },
+	ClickedMenuAction: {},
+	ClickedThemeSwitch: {},
+	ClickedNamespace: { maybeNamespace: Schema.Option(Schema.String) },
+	ClickedLogOut: {},
+	CompletedFocusElement: {},
+	CompletedSaveTheme: {},
+	CompletedSaveNamespace: {},
+	CompletedSaveSidebarState: {},
+	CompletedLogOut: {},
+	ElapsedVersionPollInterval: {},
+	BecameTabVisible: {},
+	CheckedDeployedCommit: { maybeCommit: Schema.Option(Schema.String) },
+	ClickedReload: {},
+	CompletedReloadPage: {},
+	SucceededLoadTenant: { orgId: OrgId },
+	FailedLoadTenant: {},
+	SucceededLoadInfraPresence: { surfaces: Schema.Array(InfraSurfaceLiteral) },
+	FailedLoadInfraPresence: {},
+	SucceededLoadIntegration: { integration: Integration, isConnected: Schema.Boolean },
+	FailedLoadIntegration: { integration: Integration },
+	SucceededLoadDashboards: { orgId: Schema.String, dashboards: Schema.Array(PinnedDashboardRow) },
+	FailedLoadDashboards: { orgId: Schema.String },
+	SucceededLoadNamespaces: { namespaces: Schema.Array(Schema.String) },
+	FailedLoadNamespaces: {},
+})
+export type Message = typeof Message.Type
+
+/** Facts the shell reports to the root. */
+export const OutMessage = defineMessageUnion({
+	/** The org-global namespace pin changed: pages rebuild their queries under the new scope. */
+	ChangedGlobalNamespace: { maybeNamespace: Schema.Option(Schema.String) },
+})
+export type OutMessage = typeof OutMessage.Type

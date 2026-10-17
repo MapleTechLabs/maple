@@ -70,9 +70,37 @@ export class MapleAiClient extends Context.Service<MapleAiClient, Effect.Success
 	static readonly layer = Layer.effect(this, makeAiApi).pipe(Layer.provide(MapleHttpClientLive))
 }
 
+/**
+ * `mapleSyncFetch`: requests to the Electric shape proxy (`apps/electric-sync`) carry the session
+ * bearer so the proxy resolves the tenant. No request timeout: live shape requests long-poll.
+ */
+export class MapleSyncHttpClient extends Context.Service<MapleSyncHttpClient, HttpClient.HttpClient>()(
+	"@maple/web-foldkit/MapleSyncHttpClient",
+) {
+	static readonly layer = Layer.effect(
+		this,
+		Effect.gen(function* () {
+			const client = yield* HttpClient.HttpClient
+			const bearer = yield* SessionBearer
+			return HttpClient.mapRequestEffect(client, (request) =>
+				Effect.map(
+					bearer.token,
+					Option.match({
+						onNone: () => request,
+						onSome: (token) => HttpClientRequest.bearerToken(request, token),
+					}),
+				),
+			)
+		}),
+	).pipe(Layer.provide([FetchHttpClient.layer, SessionBearer.layer]))
+}
+
 /** The runtime's `resources`: built once, shared by every Command and Subscription. */
 export const ResourcesLive = Layer.mergeAll(
 	MapleAuthApi.layer,
+	// Plain same-origin requests (`/version.json`).
+	FetchHttpClient.layer,
+	MapleSyncHttpClient.layer,
 	MapleApiClient.layer,
 	MapleInternalApiClient.layer,
 	MapleApiV2Client.layer,

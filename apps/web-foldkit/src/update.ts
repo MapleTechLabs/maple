@@ -17,11 +17,12 @@ import {
 } from "./command"
 import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
-import * as Home from "./page/home"
+import { rendersShell } from "./page/chrome"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/api-clients"
 import type { ClerkSnapshot } from "./platform/clerk"
 import { AppRoute, hrefOf, isPublicRoute, type Redirect, routeRedirect, urlToAppRoute } from "./route"
+import * as Shell from "./shell"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 type Step = Update.Step<Model, Message, Resources>
@@ -45,19 +46,21 @@ const foldSignIn = Update.foldChild({
 	foldOutMessage: foldSignInOutMessage,
 })
 
-const foldHome = Update.foldChild({
-	update: Home.update,
-	read: (model: Model) => Option.some(model.home),
-	write: (model, nextHome) => modifyFields(model, { home: () => nextHome }),
-	toParentMessage: (message: Home.Message) => Message.GotHomeMessage({ message }),
-})
+const shellFoldConfig = {
+	read: (model: Model) => Option.some(model.shell),
+	write: (model: Model, nextShell: Shell.Model) => modifyFields(model, { shell: () => nextShell }),
+	toParentMessage: (message: Shell.Message) => Message.GotShellMessage({ message }),
+	// Pages are placeholders, so nothing rebuilds under a new namespace pin yet.
+	foldOutMessage: Shell.OutMessage.match<Step>({ ChangedGlobalNamespace: () => (model) => ({ model }) }),
+}
 
-const foldHomeLoad = Update.foldChildStep({
-	update: Home.load,
-	read: (model: Model) => Option.some(model.home),
-	write: (model, nextHome) => modifyFields(model, { home: () => nextHome }),
-	toParentMessage: (message: Home.Message) => Message.GotHomeMessage({ message }),
-})
+const foldShell = Update.foldChild({ update: Shell.update, ...shellFoldConfig })
+
+const foldShellStep = (
+	step: (
+		shell: Shell.Model,
+	) => Update.ReturnWithOutMessage<Shell.Model, Shell.Message, Shell.OutMessage, Resources>,
+) => Update.foldChildStep({ update: step, ...shellFoldConfig })
 
 // ROUTING
 
@@ -119,9 +122,16 @@ const followRedirects: Step = (model) => {
 	})
 }
 
-/** Route-driven loads, shared by the cold load and every navigation. */
+/** Route-driven loads, shared by the cold load and every navigation: the shell boots on its first route. */
 const loadRoute: Step = (model) =>
-	model.route._tag === "Home" && model.session._tag === "SignedIn" ? foldHomeLoad(model) : { model }
+	Session.match(model.session, {
+		Resolving: () => ({ model }),
+		SignedOut: () => ({ model }),
+		SignedIn: ({ maybeOrgId }) =>
+			Option.isSome(maybeOrgId) && rendersShell(model.route)
+				? foldShellStep(Shell.enter(maybeOrgId.value))(model)
+				: { model },
+	})
 
 /** Everything that reads the route or the session. */
 export const settle: Step = Update.combine([followRedirects, loadRoute])
@@ -162,12 +172,11 @@ export const update = (model: Model, message: Message) =>
 		ChangedUrl: ({ url }) => {
 			const nextRoute = urlToAppRoute(url)
 			const isEnteringSignIn = Transition.isEntering(Transition.make(model.route, nextRoute), "SignIn")
-			return settle(
-				modifyFields(model, {
-					route: () => nextRoute,
-					signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
-				}),
-			)
+			const routed = modifyFields(model, {
+				route: () => nextRoute,
+				signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
+			})
+			return Update.combine([foldShellStep(Shell.routeChanged), settle])(routed)
 		},
 		CompletedNavigateInternal: () => ({ model }),
 		CompletedReplaceUrl: () => ({ model }),
@@ -184,5 +193,5 @@ export const update = (model: Model, message: Message) =>
 		CompletedMountClerkSignIn: () => ({ model }),
 		FailedMountClerkSignIn: () => ({ model }),
 		GotSignInMessage: ({ message }) => foldSignIn(model, message),
-		GotHomeMessage: ({ message }) => foldHome(model, message),
+		GotShellMessage: ({ message }) => foldShell(model, message),
 	})
