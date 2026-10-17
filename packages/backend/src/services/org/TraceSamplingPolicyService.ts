@@ -41,6 +41,14 @@ const toDocument = (row: Option.Option<OrgIngestSamplingPolicyRow>) =>
 			}),
 	})
 
+/** The columns a PATCH writes: only the fields it names, plus the timestamp. */
+interface SamplingPolicyChange {
+	traceSampleRatio?: number
+	alwaysKeepErrorSpans?: boolean
+	alwaysKeepSlowSpansMs?: number | null
+	updatedAt: number
+}
+
 export interface TraceSamplingPolicyUpdate {
 	readonly before: TraceSamplingPolicyDocument
 	readonly after: TraceSamplingPolicyDocument
@@ -64,45 +72,58 @@ export class TraceSamplingPolicyService extends Context.Service<
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "TraceSamplingPolicyService", toPersistenceError)
 
+		const selectRow = (orgId: OrgId) =>
+			PG.from(OrgIngestSamplingPolicies)
+				.select()
+				.where(($) => [$.orgId.eq(orgId)])
+				.limit(1)
+
 		const loadRow = (orgId: OrgId) =>
-			dbExecute((db) =>
-				db.run(
-					PG.from(OrgIngestSamplingPolicies)
-						.select()
-						.where(($) => [$.orgId.eq(orgId)])
-						.limit(1),
-				),
-			).pipe(Effect.map((rows) => Option.fromUndefinedOr(rows[0])))
+			dbExecute((db) => db.run(selectRow(orgId))).pipe(
+				Effect.map((rows) => Option.fromUndefinedOr(rows[0])),
+			)
 
 		const get = Effect.fn("TraceSamplingPolicyService.get")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			return toDocument(yield* loadRow(orgId))
 		})
 
+		// The row is locked for the read-write, and the conflict branch sets only the requested
+		// fields, so concurrent PATCHes with disjoint fields both stick and the audit diff is exact.
 		const update = Effect.fn("TraceSamplingPolicyService.update")(function* (
 			orgId: OrgId,
 			request: TraceSamplingPolicyUpdateRequest,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const before = toDocument(yield* loadRow(orgId))
 			const now = yield* Clock.currentTimeMillis
-			const next = {
-				traceSampleRatio: request.traceSampleRatio ?? before.traceSampleRatio,
-				alwaysKeepErrorSpans: request.alwaysKeepErrorSpans ?? before.alwaysKeepErrorSpans,
-				alwaysKeepSlowSpansMs:
-					request.alwaysKeepSlowSpansMs === undefined
-						? before.alwaysKeepSlowSpansMs
-						: request.alwaysKeepSlowSpansMs,
-				updatedAt: now,
-			}
-			yield* dbExecute((db) =>
-				db.run(
-					PG.insertInto(OrgIngestSamplingPolicies)
-						.values({ orgId, createdAt: now, ...next })
-						.onConflictDoUpdate({ target: ["orgId"], set: next }),
+			const changed: SamplingPolicyChange = { updatedAt: now }
+			if (request.traceSampleRatio !== undefined) changed.traceSampleRatio = request.traceSampleRatio
+			if (request.alwaysKeepErrorSpans !== undefined)
+				changed.alwaysKeepErrorSpans = request.alwaysKeepErrorSpans
+			if (request.alwaysKeepSlowSpansMs !== undefined)
+				changed.alwaysKeepSlowSpansMs = request.alwaysKeepSlowSpansMs
+			return yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const locked = yield* db.run(selectRow(orgId).forUpdate())
+						const before = toDocument(Option.fromUndefinedOr(locked[0]))
+						yield* db.run(
+							PG.insertInto(OrgIngestSamplingPolicies)
+								.values({
+									orgId,
+									createdAt: now,
+									traceSampleRatio: before.traceSampleRatio,
+									alwaysKeepErrorSpans: before.alwaysKeepErrorSpans,
+									alwaysKeepSlowSpansMs: before.alwaysKeepSlowSpansMs,
+									...changed,
+								})
+								.onConflictDoUpdate({ target: ["orgId"], set: changed }),
+						)
+						const after = yield* db.run(selectRow(orgId))
+						return { before, after: toDocument(Option.fromUndefinedOr(after[0])) }
+					}),
 				),
 			)
-			return { before, after: toDocument(yield* loadRow(orgId)) }
 		})
 
 		return { get, update } satisfies TraceSamplingPolicyServiceApi
