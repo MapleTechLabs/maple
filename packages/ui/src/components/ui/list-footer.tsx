@@ -2,6 +2,13 @@ import type * as React from "react"
 import { cn } from "../../lib/utils"
 import { Button, type ButtonProps } from "./button"
 import { Spinner } from "./spinner"
+import {
+	listFooterCenterStyles,
+	listFooterStartStyles,
+	listFooterStyles,
+	loadingMoreRowSpinnerStyles,
+	loadingMoreRowStyles,
+} from "./list-footer.styles"
 
 /** "Load more" with a spinner while the next page is in flight. */
 export function LoadMoreButton({
@@ -82,8 +89,8 @@ export function ListFooter({
 	return (
 		<div
 			className={cn(
-				"flex flex-wrap items-center gap-3 px-4 py-3 text-xs text-muted-foreground tabular-nums",
-				align === "center" ? "justify-center" : "justify-between",
+				listFooterStyles,
+				align === "center" ? listFooterCenterStyles : listFooterStartStyles,
 				className,
 			)}
 			data-slot="list-footer"
@@ -104,14 +111,8 @@ export function LoadingMoreRow({
 	className?: string
 }) {
 	return (
-		<div
-			className={cn(
-				"flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground",
-				className,
-			)}
-			role="status"
-		>
-			<Spinner className="size-3.5" />
+		<div className={cn(loadingMoreRowStyles, className)} role="status">
+			<Spinner className={loadingMoreRowSpinnerStyles} />
 			{label}
 		</div>
 	)
