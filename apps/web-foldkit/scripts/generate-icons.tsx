@@ -21,7 +21,10 @@ type Icon = ComponentType<{ size?: string; className?: string }>
 const NAMES = [
 	"AlertWarningIcon",
 	"ArrowRotateAnticlockwiseIcon",
+	"ArrowRightIcon",
 	"ArrowRotateClockwiseIcon",
+	"ArrowTrendDownIcon",
+	"ArrowTrendUpIcon",
 	"ArrowUpIcon",
 	"AwsLambdaIcon",
 	"BellIcon",

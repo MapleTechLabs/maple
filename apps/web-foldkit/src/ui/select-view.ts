@@ -34,7 +34,10 @@ export type ViewInputs = Readonly<{
 	/** Places the trigger and, while open, its guards, hidden input and portal (siblings in Base UI). */
 	toView: (parts: ReadonlyArray<Html>) => Html
 	entries: ReadonlyArray<SelectEntry>
-	ariaLabel: string
+	/** Omit when the trigger is named by its value alone, as a bare `<SelectTrigger>` is. */
+	ariaLabel?: string
+	/** `<SelectTrigger size>`. */
+	size?: "sm" | "default" | "lg"
 	className?: string
 }>
 
@@ -217,8 +220,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			...(isVisible ? [h.AriaControls(listId(model.id))] : []),
 			h.AriaExpanded(model.isOpen),
 			h.AriaHasPopup("listbox"),
-			h.AriaLabel(inputs.ariaLabel),
-			h.Class(cn(selectTriggerVariants({ size: "default" }), inputs.className)),
+			...(inputs.ariaLabel === undefined ? [] : [h.AriaLabel(inputs.ariaLabel)]),
+			h.Class(cn(selectTriggerVariants({ size: inputs.size ?? "default" }), inputs.className)),
 			...(model.isOpen ? [h.DataAttribute("popup-open", "")] : []),
 			h.DataAttribute("popup-side", model.side),
 			...(model.isOpen ? [h.DataAttribute("pressed", "")] : []),

@@ -98,6 +98,8 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	/** `onClearFilters`: the Message the "Clear filters" button sends. */
 	onClearFilters?: M
 	onWidenRange?: M
+	/** Overrides the signal's guide page (`guideDocs`). */
+	guideDocs?: DocsPage
 	className?: string
 }>
 
@@ -187,7 +189,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 										["Widen time range"],
 									),
 								]),
-						docsLink(h, copy.guideDocs),
+						docsLink(h, options.guideDocs ?? copy.guideDocs),
 					]),
 				]),
 			],
@@ -198,7 +200,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 		h,
 		[
 			emptyHeader(h, [emptyTitle(h, ["No ", subject, " found"]), emptyDescription(h, [copy.purpose])]),
-			emptyContent(h, [docsLink(h, copy.guideDocs)]),
+			emptyContent(h, [docsLink(h, options.guideDocs ?? copy.guideDocs)]),
 		],
 		options.className,
 	)

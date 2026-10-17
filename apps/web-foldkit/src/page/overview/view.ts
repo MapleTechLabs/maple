@@ -1,0 +1,154 @@
+import { AsyncData, Submodel } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { Option } from "effect"
+import { isChartRuntimeReady } from "../../charts/chart-runtime"
+import { ResolveThemeColors } from "../../charts/theme-colors"
+import { errorState } from "../../ui/error-state"
+import * as Select from "../../ui/select"
+import * as SelectView from "../../ui/select-view"
+import type { PageViewInputs } from "../contract"
+import { dashboardPage } from "../kit/dashboard-page"
+import { signalEmptyState } from "../kit/signal-empty-state"
+import { presenceOf } from "../kit/signal-presence"
+import { timeControls } from "../kit/time-controls"
+import * as TimeRangePicker from "../kit/time-range-picker"
+import { MountEmptyState } from "./command"
+import {
+	defaultPreset,
+	environmentFilter,
+	environmentItems,
+	selectedEnvironment,
+	timePresetOf,
+} from "./derive"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { healthList, healthOverview, type SliceSearch } from "./view-health"
+import { gridItems, metricsGrid, THEME_TOKENS } from "./view-metrics"
+import { usageCards } from "./view-usage"
+
+// `HomePage` / `DashboardContent` (apps/web/src/routes/index.tsx).
+// TODO(setup-checklist): `SetupChecklist` renders in Clerk mode only; not ported.
+
+type H = HtmlBuilder<Message>
+
+const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
+const toSelect = (message: Select.Message) => Message.GotEnvironmentSelectMessage({ message })
+
+/** The header: the environment `Select`, then `TimeRangeHeaderControls`, in one row. */
+const headerActions = (h: H, model: Model): Html => {
+	const preset = defaultPreset(model)
+	const controls = timeControls(h, {
+		search: model.search,
+		defaultPreset: preset,
+		window: model.window,
+		onReset: Message.ClickedResetTimeRange(),
+		onReload: Message.ClickedReload(),
+		isReloading: model.isReloading,
+		trigger: (label) =>
+			h.submodel({
+				slotId: "time-range-picker",
+				model: model.timePicker,
+				view: TimeRangePicker.view,
+				toParentMessage: toTimePicker,
+				viewInputs: {
+					label,
+					selectedPreset:
+						model.search.timePreset ??
+						(model.search.startTime === undefined ? preset : undefined),
+					presets: TimeRangePicker.PRESET_VALUES,
+				},
+			}),
+	})
+	return h.submodel({
+		slotId: "environment-select",
+		// The value follows the URL and facets (`selectedEnvironment`), not the trigger's last pick.
+		model: { ...model.environmentSelect, value: selectedEnvironment(model) },
+		view: SelectView.view,
+		toParentMessage: toSelect,
+		viewInputs: {
+			entries: environmentItems(model).map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
+			size: "sm",
+			toView: (parts) => h.div([h.Class("flex items-center gap-2")], [...parts, controls]),
+		},
+	})
+}
+
+/** `ServiceHealthList`'s empty state; its presence request is sent once it painted. */
+const servicesEmptyState = (h: H, model: Model): Html =>
+	h.div(
+		[h.Class("contents"), h.OnMount(MountEmptyState())],
+		[
+			signalEmptyState(h, {
+				signal: "traces",
+				noun: "services",
+				guideDocs: "services",
+				presence: presenceOf(model.presence, "traces"),
+				nowMs: model.nowMs ?? 0,
+				className: "py-8",
+			}),
+		],
+	)
+
+/** The facets failure: the charts still load, so the dropdown says why it is empty. */
+const facetsError = (h: H, model: Model): ReadonlyArray<Html> =>
+	AsyncData.isFailure(model.facets.data)
+		? Option.toArray(
+				Option.map(AsyncData.getError(model.facets.data), (failure) =>
+					errorState(h, {
+						failure,
+						variant: "inline",
+						title: "Failed to load environments",
+						onRetry: Message.ClickedRetry({ target: "Facets" }),
+					}),
+				),
+			)
+		: []
+
+/** The exact-volume refinement failed: a footer note instead of the total. */
+const refinementError = (h: H, model: Model): Option.Option<Html> =>
+	Option.map(AsyncData.getError(model.refinement.data), (failure) =>
+		errorState(h, {
+			failure,
+			variant: "inline",
+			title: "Exact request volume unavailable",
+			onRetry: Message.ClickedRetry({ target: "Refinement" }),
+			className: "py-0",
+		}),
+	)
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const slice: SliceSearch = {
+		startTime: model.window?.startTime,
+		endTime: model.window?.endTime,
+		timePreset: timePresetOf(model),
+		environments: environmentFilter(model),
+	}
+	const nowMs = model.nowMs ?? 0
+	const environments = environmentFilter(model)
+	const items = gridItems(
+		h,
+		model,
+		{
+			colors: model.themeColors ?? {},
+			isChartReady: model.themeColors !== null && isChartRuntimeReady(model.chartRuntime),
+			timeZone: inputs.context.timeZone,
+			nowMs,
+			useRefinement: environments === undefined,
+		},
+		environments === undefined ? refinementError(h, model) : Option.none(),
+	)
+	const isWaiting =
+		AsyncData.isRefreshing(model.overviewSeries.data) || AsyncData.isRefreshing(model.logSeries.data)
+	return h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
+		[
+			dashboardPage(h, { actions: headerActions(h, model) }, [
+				...facetsError(h, model),
+				healthOverview(h, { model, slice, nowMs }),
+				usageCards(h, model),
+				metricsGrid(h, model, items, isWaiting),
+				healthList(h, { model, slice, nowMs, emptyState: servicesEmptyState(h, model) }),
+			]),
+		],
+	)
+})

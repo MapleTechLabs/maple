@@ -2,7 +2,11 @@ import { createEffectCollection } from "@maple/effect-db/electric"
 import { electricSyncBaseUrl } from "@maple/web/lib/services/common/electric-sync-url"
 import { Context, Duration, Effect, Layer, ManagedRuntime, Option, type Scope, SynchronizedRef } from "effect"
 import { SessionBearer } from "../../platform/session-bearer"
-import { AlertIncidentRowSchema, AlertRuleRowSchema } from "@maple/web-data/collections/alerts"
+import {
+	AlertIncidentRowSchema,
+	AlertRuleRowSchema,
+	AlertRuleStateRowSchema,
+} from "@maple/web-data/collections/alerts"
 import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
 
 /** `getOrgCollections`'s 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
@@ -48,6 +52,19 @@ const makeSet = (
 			parser: timestamptzParser,
 		},
 	}),
+	alertRuleStates: createEffectCollection({
+		id: `alert_rule_states:${orgId}`,
+		runtime,
+		schema: AlertRuleStateRowSchema,
+		// Composite key (org_id, rule_id, group_key), as `createAlertRuleStatesCollection`.
+		getKey: (row) => `${row.rule_id}:${row.group_key}`,
+		shapeOptions: {
+			url: syncProxyUrl,
+			params: { shape: "alert_rule_states", org: orgId },
+			fetchClient,
+			parser: timestamptzParser,
+		},
+	}),
 	alertIncidents: createEffectCollection({
 		id: `alert_incidents:${orgId}`,
 		runtime,
@@ -62,7 +79,10 @@ const makeSet = (
 	}),
 })
 export type OrgCollectionSet = ReturnType<typeof makeSet>
-type SyncedCollection = OrgCollectionSet["alertRules"] | OrgCollectionSet["alertIncidents"]
+type SyncedCollection =
+	| OrgCollectionSet["alertRules"]
+	| OrgCollectionSet["alertRuleStates"]
+	| OrgCollectionSet["alertIncidents"]
 
 /** `cleanupCollectionWhenIdle`: wait for the last live query to let go, then clean up. */
 const cleanupWhenIdle = (collection: SyncedCollection): Effect.Effect<void> =>
@@ -103,7 +123,11 @@ function makeOrgCollections(): Effect.Effect<OrgCollections["Service"], never, S
 		const retire = (set: OrgCollectionSet) =>
 			Effect.asVoid(
 				Effect.forkIn(
-					Effect.all([cleanupWhenIdle(set.alertRules), cleanupWhenIdle(set.alertIncidents)]),
+					Effect.all([
+						cleanupWhenIdle(set.alertRules),
+						cleanupWhenIdle(set.alertRuleStates),
+						cleanupWhenIdle(set.alertIncidents),
+					]),
 					scope,
 				),
 			)
