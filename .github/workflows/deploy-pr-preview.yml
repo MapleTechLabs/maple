@@ -146,6 +146,7 @@ jobs:
                   name: e2e-results
                   path: apps/web/e2e/.e2e/
                   if-no-files-found: warn
+                  include-hidden-files: true
                   retention-days: 7
 
             - name: Destroy PR preview stack with Alchemy
