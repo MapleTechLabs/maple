@@ -44,7 +44,7 @@ export const Model = Schema.Struct({
 	catalog: KeyedSchema(Catalog, LoadFailure),
 	/** `GridPage`s mounted so far (`visiblePages`). */
 	visiblePages: Schema.Number,
-	/** One `getMetricSparklines` slot per grid page and metric type, by `<page>|<type>`. */
+	/** `getMetricSparklines` answers by request key (one query per grid page and metric type). */
 	sparklines: Schema.Record(Schema.String, SparklineSlot),
 	/** `MetricsTable`'s list and its `limit` (Load more adds a page). */
 	table: KeyedSchema(Catalog, LoadFailure),

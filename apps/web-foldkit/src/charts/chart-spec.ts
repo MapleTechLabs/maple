@@ -81,6 +81,8 @@ export const ChartSpec = defineTaggedUnion({
 			Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
 		),
 		colors: Schema.Record(Schema.String, Schema.String),
+		/** Series keys the legend hid: not painted, and not on the y axis. */
+		hidden: Schema.Array(Schema.String),
 		fallbackColor: Schema.String,
 		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
 		unit: Nullable(Schema.String),

@@ -67,17 +67,20 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 	const keys = definitions.map((definition) => definition.chartKey)
 	const normalised = normaliseRows(spec.data, definitions)
 	const rows = scaleRates(normalised, keys, unit, bucketSecondsOf(normalised))
-	const visible: ReadonlyArray<Series> = definitions.map((definition) => ({
-		key: definition.chartKey,
-		label: definition.rawKey,
-		color: spec.colors[definition.chartKey] ?? spec.fallbackColor,
-	}))
+	const visible: ReadonlyArray<Series> = definitions
+		.filter((definition) => !spec.hidden.includes(definition.chartKey))
+		.map((definition) => ({
+			key: definition.chartKey,
+			label: definition.rawKey,
+			color: spec.colors[definition.chartKey] ?? spec.fallbackColor,
+		}))
+	const visibleKeys = visible.map((entry) => entry.key)
 	const axisContext = axisContextOf(rows, spec.timeZone ?? undefined)
 	const chrome = spec.chrome
 
 	const first = findFirstPartialIndex(rows, { now: spec.nowMs })
-	const plotRows = first === -1 ? rows : trimEmptyTrailingBuckets(rows, keys, first)
-	const yAxis = timeseriesYAxis({ rows: plotRows, visibleKeys: keys, unit })
+	const plotRows = first === -1 ? rows : trimEmptyTrailingBuckets(rows, visibleKeys, first)
+	const yAxis = timeseriesYAxis({ rows: plotRows, visibleKeys, unit })
 	const yDomainFloor = yAxis.domain[0]
 	const baseOf = () => Math.max(yDomainFloor, 0)
 	const topOf = (row: TimeseriesRow, key: string) => Math.max(yDomainFloor, asFiniteNumber(row[key]))
@@ -86,10 +89,10 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 		spec.containerWidth,
 		plotRows.length,
 	)
-		? new Map(keys.map((key) => [key, new Set(plotRows.map((_, index) => index))]))
-		: isolatedPointIndexes(plotRows, keys)
+		? new Map(visibleKeys.map((key) => [key, new Set(plotRows.map((_, index) => index))]))
+		: isolatedPointIndexes(plotRows, visibleKeys)
 
-	const { solid, dashed } = splitAtFirstPartial(plotRows, keys, { now: spec.nowMs })
+	const { solid, dashed } = splitAtFirstPartial(plotRows, visibleKeys, { now: spec.nowMs })
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
 	const gradientIdFor = (key: string, partial: boolean) =>
 		`${spec.gradientPrefix}-${key}${partial ? "-partial" : ""}`

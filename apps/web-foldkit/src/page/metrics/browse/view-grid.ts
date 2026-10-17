@@ -16,7 +16,7 @@ import {
 	namesOfType,
 	PAGE_SIZE,
 	type PreviewEntry,
-	sparklineSlotKey,
+	sparklineRequest,
 	sparklineValues,
 	toEntries,
 } from "./derive"
@@ -43,9 +43,22 @@ type PageSparklines = Readonly<{
 }>
 
 /** `usePageSparklines`: one query per metric type on the page, folded into points by metric. */
-const pageSparklines = (model: Model, entries: ReadonlyArray<PreviewEntry>, page: number): PageSparklines => {
+const pageSparklines = (
+	model: Model,
+	orgId: string,
+	entries: ReadonlyArray<PreviewEntry>,
+): PageSparklines => {
+	const { window } = model
 	const types = SPARKLINE_METRIC_TYPES.filter((type) => namesOfType(entries, type).length > 0)
-	const slots = types.map((type) => [type, model.sparklines[sparklineSlotKey(page, type)]] as const)
+	const slots = types.map(
+		(type) =>
+			[
+				type,
+				window === null
+					? undefined
+					: model.sparklines[sparklineRequest(orgId, window, type, namesOfType(entries, type)).key],
+			] as const,
+	)
 	return {
 		pointsByMetric: new Map(
 			slots.flatMap(([type, slot]) =>
@@ -181,6 +194,7 @@ const previewCard = (h: H, theme: ThemeColors, entry: PreviewEntry, sparklines: 
 export const previewGrid = (
 	h: H,
 	model: Model,
+	orgId: string,
 	theme: ThemeColors,
 	rows: Parameters<typeof toEntries>[0],
 ): Html => {
@@ -192,8 +206,8 @@ export const previewGrid = (
 		[
 			h.div(
 				[h.Class(GRID_CLASS)],
-				pages.flatMap((page, index) => {
-					const sparklines = pageSparklines(model, page, index)
+				pages.flatMap((page) => {
+					const sparklines = pageSparklines(model, orgId, page)
 					return page.map((entry) => previewCard(h, theme, entry, sparklines))
 				}),
 			),

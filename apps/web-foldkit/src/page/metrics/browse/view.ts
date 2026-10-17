@@ -188,7 +188,7 @@ const emptyState = (h: H, model: Model): Html =>
 		],
 	)
 
-const gridArea = (h: H, model: Model): Html =>
+const gridArea = (h: H, model: Model, orgId: string): Html =>
 	AsyncData.matchData(model.catalog.data, {
 		onEmpty: () => loadingGrid(h),
 		onFailure: (failure) => errorState(h, { failure }),
@@ -197,7 +197,7 @@ const gridArea = (h: H, model: Model): Html =>
 				? emptyState(h, model)
 				: model.themeColors === null || !isChartRuntimeReady(model.chartRuntime)
 					? loadingGrid(h)
-					: previewGrid(h, model, model.themeColors, rows),
+					: previewGrid(h, model, orgId, model.themeColors, rows),
 	})
 
 const tableArea = (h: H, model: Model, timeZone: string): Html =>
@@ -216,7 +216,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		[
 			dashboardPage(h, { titleContent: filters(h, model), actions: actions(h, model) }, [
 				(model.search.view ?? "grid") === "grid"
-					? gridArea(h, model)
+					? gridArea(h, model, inputs.context.orgId)
 					: tableArea(h, model, inputs.context.timeZone),
 			]),
 		],

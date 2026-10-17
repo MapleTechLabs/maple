@@ -39,7 +39,7 @@ type H = HtmlBuilder<Message>
 const toChart = (message: Chart.Message) => Message.GotChartMessage({ message })
 const toBreakdownKey = (message: Combobox.Message) => Message.GotBreakdownComboboxMessage({ message })
 
-const chartBody = (h: H, model: Model, unit: string, timeZone: string): Html =>
+const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, timeZone: string): Html =>
 	AsyncData.matchData(model.timeseries.data, {
 		onEmpty: () => chartSkeleton(h, "area"),
 		onFailure: (failure) => errorState(h, { failure, title: "Failed to load metric data" }),
@@ -64,6 +64,7 @@ const chartBody = (h: H, model: Model, unit: string, timeZone: string): Html =>
 								nowMs: model.nowMs,
 								className: "h-full w-full aspect-auto",
 								showTooltip: true,
+								legend: draft.groupBy.length > 0 ? "visible" : "hidden",
 							},
 						}),
 	})
@@ -101,7 +102,7 @@ export const metricChart = (
 			divided: false,
 			className: "px-3 pt-2.5",
 		}),
-		h.div([h.Class("h-80 p-3")], [chartBody(h, model, unit, timeZone)]),
+		h.div([h.Class("h-80 p-3")], [chartBody(h, model, draft, unit, timeZone)]),
 	])
 }
 

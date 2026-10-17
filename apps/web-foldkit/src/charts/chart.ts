@@ -21,6 +21,8 @@ export const Model = Schema.Struct({
 	tooltip: Schema.Option(ChartTooltip),
 	/** `useContainerSize(containerRef).width`, rounded; 0 before the first measurement. */
 	containerWidth: Schema.Number,
+	/** `useSeriesVisibility`: series keys a time-series legend has hidden. */
+	hiddenKeys: Schema.Array(Schema.String),
 })
 export type Model = typeof Model.Type
 
@@ -29,6 +31,7 @@ export const init = (): Model => ({
 	highlightedKey: Option.none(),
 	tooltip: Option.none(),
 	containerWidth: 0,
+	hiddenKeys: [],
 })
 
 // MESSAGE
@@ -43,10 +46,23 @@ export const Message = defineMessageUnion({
 	EnteredLegendItem: { key: Schema.String },
 	LeftLegend: {},
 	ClickedLegendItem: { key: Schema.String },
+	/** A hiding legend's row: `keys` are every series, so the last visible one cannot be hidden. */
+	ToggledLegendSeries: { key: Schema.String, keys: Schema.Array(Schema.String) },
 })
 export type Message = typeof Message.Type
 
 // UPDATE
+
+/** `useSeriesVisibility`'s toggle: unhide, or hide unless it is the last series left. */
+const toggledHidden = (
+	hidden: ReadonlyArray<string>,
+	key: string,
+	keys: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+	if (hidden.includes(key)) return hidden.filter((candidate) => candidate !== key)
+	const remaining = keys.filter((candidate) => candidate !== key && !hidden.includes(candidate)).length
+	return remaining === 0 ? hidden : [...hidden, key]
+}
 
 const toggled = (current: Option.Option<string>, key: string): Option.Option<string> =>
 	Option.isSome(current) && current.value === key ? Option.none() : Option.some(key)
@@ -69,5 +85,8 @@ export const update = (model: Model, message: Message) =>
 		LeftLegend: () => ({ model: modifyFields(model, { activeKey: () => Option.none() }) }),
 		ClickedLegendItem: ({ key }) => ({
 			model: modifyFields(model, { highlightedKey: (current) => toggled(current, key) }),
+		}),
+		ToggledLegendSeries: ({ key, keys }) => ({
+			model: modifyFields(model, { hiddenKeys: (current) => toggledHidden(current, key, keys) }),
 		}),
 	})

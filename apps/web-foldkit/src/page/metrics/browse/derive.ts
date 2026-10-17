@@ -1,4 +1,6 @@
-import type { MetricRow } from "../shared"
+import { requestKey } from "../../../data/request-key"
+import type { TimeWindow } from "../../../data/time-range"
+import type { MetricRow, SparklineMetricType } from "../shared"
 import type { SparklinePoint } from "./model"
 
 // Pure parts of metric-preview-grid.tsx and metric-preview-card.tsx.
@@ -66,4 +68,16 @@ export const sparklineValues = (
 ): ReadonlyArray<number> =>
 	points.map((point) => (metricType === "sum" ? point.dataPointCount : point.avgValue))
 
-export const sparklineSlotKey = (page: number, metricType: string): string => `${page}|${metricType}`
+/**
+ * One page's `getMetricSparklines` query for a metric type. Slots are stored by this key, so a
+ * remounted grid reuses an answer it already has (the atom family's cache).
+ */
+export const sparklineRequest = (
+	orgId: string,
+	window: TimeWindow,
+	metricType: SparklineMetricType,
+	metricNames: ReadonlyArray<string>,
+) => {
+	const input = { metricType, metricNames, startTime: window.startTime, endTime: window.endTime }
+	return { key: requestKey(orgId, "getMetricSparklines", { data: input }), input }
+}

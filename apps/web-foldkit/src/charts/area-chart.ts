@@ -1,17 +1,26 @@
+import { findFirstPartialIndex } from "@maple/ui/components/plot/partial-buckets"
+import { computeSeriesStats, sortZeroSeriesLast } from "@maple/ui/components/plot/series-stats"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import type { Message, Model } from "./chart"
+import { Message, type Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import { ChartSpec, ChartTooltip } from "./chart-spec"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
-import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
+import {
+	bucketSecondsOf,
+	normaliseRows,
+	scaleRates,
+	SERIES_FALLBACK_COLOR,
+	seriesColorTokens,
+	seriesDefinitionsOf,
+} from "./timeseries"
 
 // Port of `QueryBuilderAreaChart` + `Timeseries.Frame` (packages/ui/src/components/charts/area/,
-// plot/timeseries.tsx) for an unstacked chart whose legend is hidden or absent.
-// TODO(legend): `legend="visible"|"right"` (`QueryBuilderLegend`, series toggles, stats) is not ported.
+// plot/timeseries.tsx) for an unstacked chart with a hidden or compact bottom legend.
+// TODO(legend): `legend="right"` and the `seriesStats` table variant are not ported.
 
 /** The tokens a chart's series and chrome can resolve to; a page reads them with `ResolveThemeColors`. */
 export const AREA_CHART_TOKENS = [
@@ -37,6 +46,49 @@ export interface AreaChartInputs {
 	readonly nowMs: number
 	readonly className?: string
 	readonly showTooltip?: boolean
+	/** `legend="visible"`: the compact strip under the plot; otherwise the legend hoists (nothing here). */
+	readonly legend?: "hidden" | "visible"
+}
+
+interface LegendSeries {
+	readonly key: string
+	readonly label: string
+	readonly color: string
+}
+
+/** `QueryBuilderLegend variant="compact" layout="bottom"`: a row per series, click to hide it. */
+const compactLegend = (
+	h: HtmlBuilder<Message>,
+	series: ReadonlyArray<LegendSeries>,
+	hidden: ReadonlyArray<string>,
+): Html => {
+	const keys = series.map((entry) => entry.key)
+	return h.div(
+		[h.Class("h-full overflow-auto text-xs flex flex-wrap gap-x-3 gap-y-0.5 pt-2")],
+		series.map((entry) =>
+			h.button(
+				[
+					h.Key(entry.key),
+					h.Type("button"),
+					h.Class(
+						cn(
+							"hover:bg-muted/50 flex min-w-0 max-w-full items-center gap-1.5 rounded px-1 py-0.5 select-none",
+							hidden.includes(entry.key) && "opacity-40",
+						),
+					),
+					h.Title(entry.label),
+					h.OnClick(Message.ToggledLegendSeries({ key: entry.key, keys })),
+				],
+				[
+					h.span([
+						h.Class("size-2 shrink-0 rounded-xs"),
+						h.Style({ "background-color": entry.color }),
+					]),
+					h.span([h.Class("truncate")], [entry.label]),
+				],
+			),
+		),
+	)
 }
 
 /** `PlotTooltipBody` for one bucket: the heading, then a swatch, label and value per series. */
@@ -118,6 +170,21 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 			),
 		]),
 	)
+	const series = definitions.map((definition) => ({
+		key: definition.chartKey,
+		label: definition.rawKey,
+		color: colors[definition.chartKey] ?? SERIES_FALLBACK_COLOR,
+	}))
+	const legend = (() => {
+		if (inputs.legend !== "visible" || series.length === 0) return h.empty
+		// Stats over the closed buckets only, so all-zero series sink to the bottom (`TimeseriesLegend`).
+		const keys = series.map((entry) => entry.key)
+		const normalised = normaliseRows(inputs.data, definitions)
+		const rows = scaleRates(normalised, keys, inputs.unit, bucketSecondsOf(normalised))
+		const first = findFirstPartialIndex(rows, { now: inputs.nowMs })
+		const stats = computeSeriesStats(first <= 0 ? rows : rows.slice(0, first), keys)
+		return compactLegend(h, sortZeroSeriesLast(series, stats), model.hiddenKeys)
+	})()
 	return h.div(
 		[h.Class(cn("h-full w-full", inputs.className)), h.OnMount(MeasureChartContainer())],
 		[
@@ -128,6 +195,7 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 				spec: ChartSpec.QueryBuilderArea({
 					data: inputs.data,
 					colors,
+					hidden: model.hiddenKeys,
 					fallbackColor: SERIES_FALLBACK_COLOR,
 					chrome: {
 						border: resolveColor(inputs.theme, "--border"),
@@ -140,8 +208,8 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 					gradientPrefix: `qbArea-${inputs.chartId}`,
 					showTooltip: inputs.showTooltip ?? true,
 				}),
-				// `TimeseriesLegend` in its hoisting mode renders nothing, but `PlotFrame` still gets an element.
-				legend: h.empty,
+				// A hoisting `TimeseriesLegend` renders nothing, but `PlotFrame` still gets an element.
+				legend,
 				tooltipBody: (portal) =>
 					Option.flatMap(model.tooltip, (tooltip) => tooltipBody(h, tooltip, portal)),
 			}),

@@ -28,7 +28,7 @@ import {
 	CATALOG_LIMIT,
 	gridPages,
 	namesOfType,
-	sparklineSlotKey,
+	sparklineRequest,
 	TABLE_MAX_LIMIT,
 	TABLE_PAGE_SIZE,
 	toEntries,
@@ -81,17 +81,13 @@ const requestSparklines = (model: Model, context: PageContext, mode: RequestMode
 	}
 	const { window } = model
 	const pages = gridPages(toEntries(catalog.value), model.visiblePages)
-	const steps = pages.flatMap((entries, page) =>
+	const steps = pages.flatMap((entries) =>
 		SPARKLINE_METRIC_TYPES.flatMap((metricType) => {
 			const metricNames = namesOfType(entries, metricType)
 			if (metricNames.length === 0) return []
-			const input = { metricType, metricNames, startTime: window.startTime, endTime: window.endTime }
-			const slotKey = sparklineSlotKey(page, metricType)
-			const step = keyed(
-				model.sparklines[slotKey] ?? Keyed.idle(),
-				requestKey(context.orgId, "getMetricSparklines", { data: input }),
-				mode,
-				(key) => FetchSparklines({ slot: slotKey, key, input }),
+			const { key: slotKey, input } = sparklineRequest(context.orgId, window, metricType, metricNames)
+			const step = keyed(model.sparklines[slotKey] ?? Keyed.idle(), slotKey, mode, (key) =>
+				FetchSparklines({ slot: slotKey, key, input }),
 			)
 			return [{ slotKey, ...step }]
 		}),
@@ -145,7 +141,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 const remounted = (model: Model, isNewQuery: boolean): Model => {
 	const reset = { ...model, visiblePages: 1, tableLimit: TABLE_PAGE_SIZE }
 	// A new window keeps the previous rows on screen while it loads (`withRetention`).
-	return isNewQuery ? { ...reset, catalog: Keyed.idle(), table: Keyed.idle(), sparklines: {} } : reset
+	return isNewQuery ? { ...reset, catalog: Keyed.idle(), table: Keyed.idle() } : reset
 }
 
 // NAVIGATION
