@@ -252,7 +252,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 		 * every hour per connected client. The grant behind them is managed as a
 		 * connection (`McpConnectionsService`).
 		 */
-		const list =Effect.fn("ApiKeysService.list")(function* (orgId: OrgId) {
+		const list = Effect.fn("ApiKeysService.list")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const rows = yield* dbExecute((db) =>
 				db.run(
