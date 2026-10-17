@@ -1,13 +1,6 @@
-import { gcpConnectorResourceNames } from "@maple/domain/gcp"
+import { GCP_READER_PROJECT_ROLE, GCP_READER_SCOPE_ROLES, gcpConnectorResourceNames } from "@maple/domain/gcp"
 import type { GcpConnectorId, GcpLogRuntime, GcpProjectId } from "@maple/domain/primitives"
-import {
-	GCP_READER_PROJECT_ROLE,
-	GCP_READER_SCOPE_ROLES,
-	gcpLogFilter,
-	LOG_APIS,
-	METRIC_APIS,
-	type GcpScriptTarget,
-} from "./setup-scripts"
+import { gcpLogFilter, LOG_APIS, METRIC_APIS, type GcpScriptTarget } from "./setup-scripts"
 
 /** How the push subscription delivers: the setup script's flags, in numbers. */
 export const GCP_PUSH_SUBSCRIPTION = {

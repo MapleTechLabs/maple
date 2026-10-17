@@ -156,7 +156,12 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly)
 					const checked = yield* gcp.checkAccess(tenant.orgId, params.id)
-					return { object: "gcp_connector.access_check" as const, ...checked }
+					return {
+						object: "gcp_connector.access_check" as const,
+						ok: checked.ok,
+						message: checked.message,
+						failed_step: checked.failedStep,
+					}
 				}),
 			)
 			.handle("deleteConnector", ({ params }) =>

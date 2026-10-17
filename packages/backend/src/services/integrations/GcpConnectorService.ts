@@ -22,6 +22,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
+import type { V2GcpSetupStep } from "@maple/domain/http/v2"
 import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -133,16 +134,20 @@ export interface GcpConnectorServiceApi {
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
 	/**
-	 * Reads one project of the scope as the read-only account. Success records the account as in
-	 * place, as a script's report does: a setup without the script sends none.
+	 * Checks a setup or change made without the script, which sends no report: the read-only
+	 * account reads the scope while metrics are on, and is gone once they are off. What passed is
+	 * recorded as a script's report would be.
 	 */
 	readonly checkAccess: (
 		orgId: OrgId,
 		connectorId: GcpConnectorId,
 	) => Effect.Effect<
-		{ readonly ok: boolean; readonly message: string | null },
+		{
+			readonly ok: boolean
+			readonly message: string | null
+			readonly failedStep: V2GcpSetupStep | null
+		},
 		| IntegrationsNotFoundError
-		| IntegrationsValidationError
 		| GcpMetricsUnavailableError
 		| IntegrationsUpstreamError
 		| IntegrationsPersistenceError
@@ -191,22 +196,51 @@ const toConnector = (row: GcpConnectorRow, discoveredProjectCount = 0): GcpConne
 
 const notFound = () => new IntegrationsNotFoundError({ message: "No such Google Cloud connector." })
 
-/** Why the access check failed and what to do about it, however the setup was made. */
-const explainAccessError = (error: GcpApiError, row: GcpConnectorRow, reader: GcpReaderPlan) => {
+/** A check that failed: what to do about it, and the console step it points at. */
+interface AccessFailure {
+	readonly message: string
+	readonly step: V2GcpSetupStep | null
+}
+
+const signInRefused = (error: GcpApiError) =>
+	error.api === "IAM Credentials" && (error.kind === "denied" || error.kind === "not_found")
+
+/** Why the read-only account can't read the scope, however the setup was made. */
+const explainAccessError = (
+	error: GcpApiError,
+	row: GcpConnectorRow,
+	reader: GcpReaderPlan,
+): AccessFailure => {
 	const host = `${row.scopeType === "project" ? "project" : "host project"} ${row.projectId}`
-	if (error.api === "IAM Credentials" && (error.kind === "denied" || error.kind === "not_found")) {
-		return `Maple can't sign in as ${reader.serviceAccountEmail}: the account does not exist, or ${reader.mapleServiceAccountEmail} lacks Service Account Token Creator on it. Google can take a few minutes to accept a new grant.`
+	const explained = (message: string, step: V2GcpSetupStep | null) => ({
+		message: `${message} (${error.message})`,
+		step,
+	})
+	if (signInRefused(error)) {
+		return explained(
+			`Maple can't sign in as ${reader.serviceAccountEmail}: the account does not exist, or ${reader.mapleServiceAccountEmail} lacks Service Account Token Creator on it. Google can take a few minutes to accept a new grant.`,
+			"reader_token_creator",
+		)
 	}
 	if (error.reason === "BILLING_DISABLED") {
-		return `The ${host} has no active billing account. Link one: https://console.cloud.google.com/billing/linkedaccount?project=${row.projectId}`
+		return explained(
+			`The ${host} has no active billing account. Link one: https://console.cloud.google.com/billing/linkedaccount?project=${row.projectId}`,
+			"apis",
+		)
 	}
 	if (error.reason === "SERVICE_DISABLED") {
-		return `The ${error.api} API is switched off in the ${host}. Switch it on and check again.`
+		return explained(
+			`The ${error.api} API is switched off in the ${host}. Switch it on and check again.`,
+			"apis",
+		)
 	}
 	if (error.kind === "denied" || error.kind === "not_found") {
-		return `Google denied the read of ${row.scopeType} ${row.scopeId} as ${reader.serviceAccountEmail}. It needs ${reader.scopeRoles.join(" and ")} on the ${row.scopeType}, and ${reader.projectRoles.join(" and ")} on the ${host}. A new grant can take a few minutes.`
+		return explained(
+			`Google denied the read of ${row.scopeType} ${row.scopeId} as ${reader.serviceAccountEmail}. It needs ${reader.scopeRoles.join(" and ")} on the ${row.scopeType}, and ${reader.projectRoles.join(" and ")} on the ${host}. A new grant can take a few minutes.`,
+			"reader_roles",
+		)
 	}
-	return `Google's ${error.api} API did not answer. Try again in a minute.`
+	return explained(`Google's ${error.api} API did not answer. Try again in a minute.`, null)
 }
 
 export class GcpConnectorService extends Context.Service<GcpConnectorService, GcpConnectorServiceApi>()(
@@ -546,18 +580,11 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				}
 			})
 
-			const checkAccess = Effect.fn("GcpConnectorService.checkAccess")(function* (
-				orgId: OrgId,
-				connectorId: GcpConnectorId,
-			) {
-				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
-				const row = yield* selectRow(orgId, connectorId)
-				if (!row.metricsEnabled) {
-					return yield* new IntegrationsValidationError({
-						message:
-							"Metrics and resources are off for this connection, so it has no read-only account to check.",
-					})
-				}
+			/**
+			 * Whether Maple can still sign in as the connection's read-only account and, while it
+			 * should exist, read the scope. Null when Google answered as it should.
+			 */
+			const checkReader = Effect.fnUntraced(function* (row: GcpConnectorRow, now: number) {
 				const key = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_KEY)
 				if (mapleServiceAccountEmail === undefined || key === undefined) {
 					return yield* new GcpMetricsUnavailableError({
@@ -565,7 +592,6 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					})
 				}
 				const reader = gcpReaderPlan(row.id, row.projectId, mapleServiceAccountEmail)
-				const now = yield* Clock.currentTimeMillis
 				// Maple's own sign-in failing is no fault of the connection.
 				const mapleToken = yield* importServiceAccountKey(key).pipe(
 					Effect.flatMap((signer) => fetchMapleAccessToken(httpClient, signer, now)),
@@ -581,22 +607,58 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				)
 				// The id is validated when the connector is created; encoding keeps it inside the path.
 				const scope = `${row.scopeType}s/${encodeURIComponent(row.scopeId)}`
-				const failure = yield* impersonateReader(httpClient, mapleToken, row).pipe(
-					Effect.flatMap((signedIn) => searchOneProject(httpClient, signedIn, scope)),
+				const refused = yield* impersonateReader(httpClient, mapleToken, row).pipe(
+					Effect.flatMap((signedIn) =>
+						row.metricsEnabled ? searchOneProject(httpClient, signedIn, scope) : Effect.void,
+					),
 					Effect.as(null),
-					Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
-						Effect.succeed(`${explainAccessError(error, row, reader)} (${error.message})`),
-					),
+					Effect.catchTag("@maple/api/integrations/GcpApiError", Effect.succeed),
 				)
-				if (failure !== null) return { ok: false, message: failure }
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(GcpConnectors)
-							.set({ appliedMetricsEnabled: true, setupReportedAt: now, updatedAt: now })
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)]),
-					),
-				)
-				return { ok: true, message: null }
+				if (row.metricsEnabled)
+					return refused === null ? null : explainAccessError(refused, row, reader)
+				if (refused !== null && signInRefused(refused)) return null
+				return refused === null
+					? {
+							message: `Maple can still sign in as ${reader.serviceAccountEmail}. Delete the service account, then check again.`,
+							step: "reader_account" as const,
+						}
+					: explainAccessError(refused, row, reader)
+			})
+
+			const checkAccess = Effect.fn("GcpConnectorService.checkAccess")(function* (
+				orgId: OrgId,
+				connectorId: GcpConnectorId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
+				const row = yield* selectRow(orgId, connectorId)
+				const now = yield* Clock.currentTimeMillis
+				// The account is checked while it should exist, and while a removal is unconfirmed.
+				const failure =
+					row.metricsEnabled || row.appliedMetricsEnabled === true
+						? yield* checkReader(row, now)
+						: null
+				const applied = {
+					// Nothing can tell a removed log sink from one that is quiet, so the caller's word
+					// stands for it. It only drives what Maple shows about the connection.
+					...(!row.logsEnabled && row.appliedLogsEnabled === true
+						? { appliedLogsEnabled: false }
+						: {}),
+					...(failure === null && (row.metricsEnabled || row.appliedMetricsEnabled === true)
+						? { appliedMetricsEnabled: row.metricsEnabled }
+						: {}),
+				}
+				if (Object.keys(applied).length > 0) {
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(GcpConnectors)
+								.set({ ...applied, setupReportedAt: now, updatedAt: now })
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)]),
+						),
+					)
+				}
+				return failure === null
+					? { ok: true, message: null, failedStep: null }
+					: { ok: false, message: failure.message, failedStep: failure.step }
 			})
 
 			const deleteConnector = Effect.fn("GcpConnectorService.delete")(function* (

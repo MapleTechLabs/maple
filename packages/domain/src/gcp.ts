@@ -1,5 +1,9 @@
 import type { GcpConnectorId } from "./primitives"
 
+/** The read-only account's roles: on the scope, and on the host project its reads are billed to. */
+export const GCP_READER_SCOPE_ROLES = ["roles/monitoring.viewer", "roles/cloudasset.viewer"]
+export const GCP_READER_PROJECT_ROLE = "roles/serviceusage.serviceUsageConsumer"
+
 /**
  * Names of what a connector's setup creates in the customer's Google Cloud project.
  * Derived from the connector id alone, so a caller can never pick them: one connector's metrics

@@ -1,4 +1,4 @@
-import { gcpConnectorResourceNames } from "@maple/domain/gcp"
+import { GCP_READER_PROJECT_ROLE, GCP_READER_SCOPE_ROLES, gcpConnectorResourceNames } from "@maple/domain/gcp"
 import { IntegrationsPersistenceError } from "@maple/domain/http"
 import {
 	type GcpConnectorId,
@@ -625,10 +625,6 @@ fi
 ${notifies ? `notify "Maple notified" '"logs":false'\n` : ""}`
 
 const serviceAccountMember = '--member="serviceAccount:$SERVICE_ACCOUNT_EMAIL"'
-
-/** The read-only account's roles: on the scope, and on the host project its reads are billed to. */
-export const GCP_READER_SCOPE_ROLES = ["roles/monitoring.viewer", "roles/cloudasset.viewer"]
-export const GCP_READER_PROJECT_ROLE = "roles/serviceusage.serviceUsageConsumer"
 
 const metricsSetup = (scopeType: GcpScopeType): string => `
 # ---- Metrics and resources: on ----

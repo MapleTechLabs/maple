@@ -3,7 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { hashIngestKey } from "@maple/db"
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
-import { GcpProjectId, GcpResourceNumber, OrgId, UserId } from "@maple/domain/primitives"
+import { type GcpConnectorId, GcpProjectId, GcpResourceNumber, OrgId, UserId } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -12,7 +12,11 @@ import {
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
-import { GcpConnectorService, type CreateGcpConnectorInput } from "./GcpConnectorService"
+import {
+	GcpConnectorService,
+	type CreateGcpConnectorInput,
+	type GcpConnectorServiceApi,
+} from "./GcpConnectorService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -592,7 +596,11 @@ describe("GcpConnectorService", () => {
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
 			const connector = yield* gcp.create(orgId, userId, organizationScope)
-			assert.deepStrictEqual(yield* gcp.checkAccess(orgId, connector.id), { ok: true, message: null })
+			assert.deepStrictEqual(yield* gcp.checkAccess(orgId, connector.id), {
+				ok: true,
+				message: null,
+				failedStep: null,
+			})
 			assert.deepStrictEqual(
 				google.reads.map(({ url, quotaProject }) => [url.pathname, quotaProject]),
 				[["/v1/organizations/123456789012:searchAllResources", "acme-host"]],
@@ -622,9 +630,11 @@ describe("GcpConnectorService", () => {
 			const signIn = yield* check({ signIn: 403, read: 200 })
 			assert.isFalse(signIn.ok)
 			assert.include(signIn.message, `Maple can't sign in as ${reader}`)
+			assert.strictEqual(signIn.failedStep, "reader_token_creator")
 
 			const read = yield* check({ signIn: 200, read: 403 })
 			assert.isFalse(read.ok)
+			assert.strictEqual(read.failedStep, "reader_roles")
 			assert.include(
 				read.message,
 				"roles/monitoring.viewer and roles/cloudasset.viewer on the organization",
@@ -638,16 +648,61 @@ describe("GcpConnectorService", () => {
 		})
 	})
 
-	it.effect("refuses the access check without metrics, or without Maple's own key", () => {
+	it.effect("confirms a removal: the log sink on the caller's word, the reader once it is gone", () => {
+		const testDb = createTestDb(trackedDbs)
+		const deployment = (signIn: number) =>
+			makeLayer(testDb, MAPLE_ACCOUNT, {
+				key: encodedKey,
+				fetch: fakeGoogle({ signIn, read: 200 }).fetch,
+			})
+		const run = <A, E>(signIn: number, use: (gcp: GcpConnectorServiceApi) => Effect.Effect<A, E>) =>
+			GcpConnectorService.use(use).pipe(Effect.provide(deployment(signIn)))
+		const applied = (id: GcpConnectorId) =>
+			run(200, (gcp) => gcp.status(orgId)).pipe(
+				Effect.map(({ connectors }) => {
+					const found = connectors.find((connector) => connector.id === id)
+					return [found?.appliedLogsEnabled, found?.appliedMetricsEnabled]
+				}),
+			)
+		return Effect.gen(function* () {
+			const connector = yield* run(200, (gcp) => gcp.create(orgId, userId, organizationScope))
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE gcp_connectors SET applied_logs_enabled = true, applied_metrics_enabled = true WHERE id = $1",
+					[connector.id],
+				),
+			)
+
+			// Log forwarding off: nothing in Google Cloud tells, so the check records it.
+			yield* run(200, (gcp) => gcp.update(orgId, connector.id, { logsEnabled: false }))
+			const logsOff = yield* run(200, (gcp) => gcp.checkAccess(orgId, connector.id))
+			assert.isTrue(logsOff.ok)
+			assert.deepStrictEqual(yield* applied(connector.id), [false, true])
+
+			// Metrics off while Maple can still sign in: the account is still there.
+			yield* run(200, (gcp) =>
+				gcp.update(orgId, connector.id, { logsEnabled: true, metricsEnabled: false }),
+			)
+			const stillThere = yield* run(200, (gcp) => gcp.checkAccess(orgId, connector.id))
+			assert.isFalse(stillThere.ok)
+			assert.strictEqual(stillThere.failedStep, "reader_account")
+			assert.deepStrictEqual(yield* applied(connector.id), [false, true])
+
+			// Google refuses the sign-in: the account is gone.
+			const gone = yield* run(404, (gcp) => gcp.checkAccess(orgId, connector.id))
+			assert.isTrue(gone.ok)
+			assert.deepStrictEqual(yield* applied(connector.id), [false, false])
+		})
+	})
+
+	it.effect("refuses the access check without Maple's own key", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const gcp = yield* GcpConnectorService
 			const connector = yield* gcp.create(orgId, userId, organizationScope)
 			const noKey = yield* Effect.flip(gcp.checkAccess(orgId, connector.id))
 			assert.strictEqual(noKey._tag, "@maple/http/errors/GcpMetricsUnavailableError")
-			yield* gcp.update(orgId, connector.id, { metricsEnabled: false })
-			const metricsOff = yield* Effect.flip(gcp.checkAccess(orgId, connector.id))
-			assert.strictEqual(metricsOff._tag, "@maple/http/errors/IntegrationsValidationError")
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
 

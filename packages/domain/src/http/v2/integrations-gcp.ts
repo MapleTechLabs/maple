@@ -387,22 +387,44 @@ export const V2GcpSetupScripts = Schema.Struct({
 })
 export type V2GcpSetupScripts = Schema.Schema.Type<typeof V2GcpSetupScripts>
 
+/** The steps of a setup without the script, in the order they are done. */
+export const V2GcpSetupStep = Schema.Literals([
+	"apis",
+	"topic",
+	"push_account",
+	"subscription",
+	"sink",
+	"sink_grants",
+	"test_message",
+	"reader_account",
+	"reader_roles",
+	"reader_token_creator",
+]).annotate({
+	description: "A step of setting a connection up in the Google Cloud console, or of removing it.",
+})
+export type V2GcpSetupStep = Schema.Schema.Type<typeof V2GcpSetupStep>
+
 export const V2GcpAccessCheck = Schema.Struct({
 	object: Schema.Literal("gcp_connector.access_check").annotate({
 		description: 'The object type — always `"gcp_connector.access_check"`.',
 	}),
 	ok: Schema.Boolean.annotate({
 		description:
-			"Whether Maple could read the scope as the connector's read-only account. `true` records the account as in place, as a setup script's report would.",
+			"Whether Google Cloud matches the connector: its read-only account works while `metrics_enabled` is `true`, and is gone once it is `false`. What passed is recorded as a setup script's report would be.",
 	}),
 	message: Schema.NullOr(Schema.String).annotate({
 		description: "Why the check failed and what to do about it. `null` when `ok` is `true`.",
 	}),
+	failed_step: Schema.NullOr(V2GcpSetupStep).annotate({
+		description: "The step of a console setup or removal that the failure points at, or `null`.",
+	}),
 }).annotate({
 	identifier: "GcpAccessCheck",
 	title: "Google Cloud access check",
-	description: "The outcome of Maple reading a connector's scope as its read-only account.",
-	examples: [wireExample({ object: "gcp_connector.access_check", ok: true, message: null })],
+	description: "The outcome of Maple checking a connector set up or changed without the script.",
+	examples: [
+		wireExample({ object: "gcp_connector.access_check", ok: true, message: null, failed_step: null }),
+	],
 })
 export type V2GcpAccessCheck = Schema.Schema.Type<typeof V2GcpAccessCheck>
 
@@ -528,16 +550,15 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				V2InsufficientPermissions.schema,
 				connectorNotFound,
 				metricsUnavailable,
-				validation,
 				integrationUpstream,
 				integrationPersistence,
 			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "checkGcpConnectorAccess",
-				summary: "Check a connector's read-only access",
+				summary: "Check a connector set up without the script",
 				description:
-					"Signs in as the connector's read-only service account and lists one page of the scope's projects. On success Maple records the account as in place. Use it after a setup in the console or as code, which sends Maple no report. Rejected while `metrics_enabled` is `false`. Requires an org-admin role and the `integrations:write` scope.",
+					"For a setup in the console or as code, which sends Maple no report. While `metrics_enabled` is `true`, signs in as the connector's read-only service account and lists one page of the scope's projects; once it is `false`, confirms that Maple can no longer sign in as that account. A pass is recorded in `applied_metrics_enabled`. With `logs_enabled` off, records the log sink as removed, as reported by the caller. Requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)
