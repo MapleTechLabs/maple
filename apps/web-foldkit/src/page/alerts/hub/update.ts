@@ -20,12 +20,13 @@ import {
 	DeleteDestination,
 	FetchHubDeliveries,
 	FetchHubSession,
+	FetchRoutingDeliveries,
 	ReadHubClock,
 	TestDestination,
 	ToggleRule,
 	UpdateDestination,
 } from "./command"
-import { resolveStatus } from "./derive"
+import { resolveStatus, resolveTab } from "./derive"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
 
@@ -60,6 +61,27 @@ const requestDeliveries = (model: Model, context: PageContext, mode: Keyed.Reque
 	})
 }
 
+/** The Routing tab mounts its own deliveries read; the overview's stays mounted with the tab counts. */
+const requestRoutingDeliveries = (model: Model, context: PageContext, mode: Keyed.RequestMode) => {
+	const key = deliveriesKey(context)
+	return resolveTab(model.search.tab) !== "routing"
+		? { model, commands: [] as Commands }
+		: Option.match(Keyed.request(model.routingDeliveries, key, mode), {
+				onNone: () => ({ model, commands: [] as Commands }),
+				onSome: (routingDeliveries) => ({
+					model: { ...model, routingDeliveries },
+					commands: [FetchRoutingDeliveries({ key })] as Commands,
+				}),
+			})
+}
+
+/** `reactivityKeys: ["alertDeliveryEvents"]`: both reads revalidate. */
+const refreshDeliveries = (model: Model, context: PageContext) => {
+	const overview = requestDeliveries(model, context, "Refresh")
+	const routing = requestRoutingDeliveries(overview.model, context, "Refresh")
+	return { model: routing.model, commands: [...overview.commands, ...routing.commands] }
+}
+
 export const init = (route: HubRoute, context: PageContext): Return => {
 	const model: Model = {
 		search: route.search,
@@ -69,6 +91,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		incidents: null,
 		destinations: null,
 		deliveries: Keyed.idle(),
+		routingDeliveries: Keyed.idle(),
 		isAdmin: false,
 		rulesQuery: "",
 		isShowingAllRules: false,
@@ -82,15 +105,20 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		menus: {},
 	}
 	const deliveries = requestDeliveries(model, context, "Load")
+	const routing = requestRoutingDeliveries(deliveries.model, context, "Load")
 	return {
-		model: deliveries.model,
-		commands: [ReadHubClock(), FetchHubSession({ orgId: context.orgId }), ...deliveries.commands],
+		model: routing.model,
+		commands: [
+			ReadHubClock(),
+			FetchHubSession({ orgId: context.orgId }),
+			...deliveries.commands,
+			...routing.commands,
+		],
 	}
 }
 
-export const routeChanged = (model: Model, route: HubRoute): Return => ({
-	model: { ...model, search: route.search },
-})
+export const routeChanged = (model: Model, route: HubRoute, context: PageContext): Return =>
+	requestRoutingDeliveries({ ...model, search: route.search }, context, "Load")
 
 const navigate = (search: Model["search"]): PageOutMessage =>
 	PageOutMessage.RequestedNavigation({ url: alertsHref(search), isReplace: false })
@@ -234,6 +262,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchDeliveries: ({ key, result }) => ({
 			model: { ...model, deliveries: Keyed.accept(model.deliveries, key, result) },
 		}),
+		CompletedFetchRoutingDeliveries: ({ key, result }) => ({
+			model: { ...model, routingDeliveries: Keyed.accept(model.routingDeliveries, key, result) },
+		}),
 		CompletedFetchSession: ({ orgId, isAdmin }) =>
 			orgId === context.orgId ? { model: { ...model, isAdmin } } : { model },
 		ChangedRulesQuery: ({ value }) => ({ model: { ...model, rulesQuery: value } }),
@@ -257,7 +288,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedTestDestination: ({ destinationId, result }) => {
 			const settled = { ...model, testingDestinationIds: withoutId(model.testingDestinationIds, destinationId) }
 			// The test lands in the delivery log: `reactivityKeys: ["alertDeliveryEvents"]`.
-			const refreshed = requestDeliveries(settled, context, "Refresh")
+			const refreshed = refreshDeliveries(settled, context)
 			return {
 				model: refreshed.model,
 				commands: refreshed.commands,

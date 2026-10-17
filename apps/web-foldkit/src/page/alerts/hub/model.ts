@@ -29,6 +29,8 @@ export const Model = Schema.Struct({
 	destinations: Rows(AlertDestinationRowSchema),
 	/** `alertDeliveries.list({ limit: 100 })`, newest first. */
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
+	/** The Routing tab's own `retainedQueryV2("alertDeliveries", "list")`, a second read in apps/web. */
+	routingDeliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	/** `session.roles` has root or org:admin; `false` until the session answers, as legacy's `orElse`. */
 	isAdmin: Schema.Boolean,
 	/** Rules tab: the search box and "Show all". */

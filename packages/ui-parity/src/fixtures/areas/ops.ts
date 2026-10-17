@@ -5,6 +5,7 @@ import type { Dataset, EndpointHandler } from "../dataset.ts"
 import { defaultDataset } from "../datasets/default.ts"
 import { acmeAdmin, FROZEN_NOW } from "../identity.ts"
 import { emptyTelemetry } from "../telemetry/rows.ts"
+import { alertWriteEndpoints } from "./ops/alert-writes.ts"
 import { alertEndpoints } from "./ops/alerts.ts"
 import { anomalyDatasetEndpoints } from "./ops/anomalies.ts"
 import { dashboardEndpoints, opsDashboards } from "./ops/dashboards.ts"
@@ -75,6 +76,7 @@ export const fixtureArea: FixtureArea = {
 		Effect.runSync(seedWebSessions)
 		return {
 			...alertEndpoints,
+			...alertWriteEndpoints,
 			...webAnalyticsEndpoints(warehouse),
 			...replayEndpoints(warehouse),
 			...dashboardEndpoints(warehouse),

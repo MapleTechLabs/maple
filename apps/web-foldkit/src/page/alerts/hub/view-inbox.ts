@@ -73,7 +73,7 @@ export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html 
 							isQuiet ? "Nothing firing" : `${firing} firing`,
 							...(isQuiet ? [quietStreak(h, incidents, now)] : []),
 							...(held > 0
-								? [h.span([h.Class("text-muted-foreground font-normal")], [` · ${held} waiting on data`])]
+								? [h.span([h.Class("text-muted-foreground font-normal")], [" · ", String(held), " waiting on data"])]
 								: []),
 						],
 					),
@@ -238,8 +238,13 @@ const fireStrip = <M>(
 					h.span(
 						[h.Class("font-mono text-xs text-muted-foreground")],
 						[
-							`${countLabel(inWindow.length, "incident")} · MTTR ${mttr} · `,
-							`${countLabel(lanes.length, "rule")} fired`,
+							countLabel(inWindow.length, "incident"),
+							" · MTTR ",
+							mttr,
+							" ·",
+							" ",
+							countLabel(lanes.length, "rule"),
+							" fired",
 						],
 					),
 				],
@@ -254,8 +259,8 @@ const fireStrip = <M>(
 					h.div(
 						[h.Class("flex justify-between")],
 						[
-							h.span([], [`${Math.round(span / HOUR_MS)}h ago`]),
-							h.span([], [`${Math.round(span / HOUR_MS / 2)}h ago`]),
+							h.span([], [String(Math.round(span / HOUR_MS)), "h ago"]),
+							h.span([], [String(Math.round(span / HOUR_MS / 2)), "h ago"]),
 							h.span([], ["Now"]),
 						],
 					),
@@ -398,7 +403,7 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 					)
 				: h.ul([h.Class("divide-y border-y")], shown.map((row) => headroomRow(h, row, now))),
 			...(hidden > 0
-				? [h.p([h.Class("font-mono text-2xs text-muted-foreground")], [`+ ${countLabel(hidden, "more rule")}`])]
+				? [h.p([h.Class("font-mono text-2xs text-muted-foreground")], ["+ ", countLabel(hidden, "more rule")])]
 				: []),
 		],
 	)

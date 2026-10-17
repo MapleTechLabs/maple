@@ -52,7 +52,7 @@ const sectionHeading = (h: H, title: string): Html =>
 	h.div([h.Class("flex items-baseline gap-2.5")], [h.h2([h.Class("text-sm font-medium text-foreground")], [title])])
 
 export const routingTab = (h: H, model: Model, inputs: RoutingInputs): Html => {
-	const deliveries = AsyncData.getData(model.deliveries.data)
+	const deliveries = AsyncData.getData(model.routingDeliveries.data)
 	const events = deliveries._tag === "Some" ? deliveries.value : []
 	return h.div(
 		[h.Class("space-y-8")],
@@ -67,7 +67,8 @@ export const routingTab = (h: H, model: Model, inputs: RoutingInputs): Html => {
 							h.p(
 								[h.Class("text-muted-foreground text-sm")],
 								[
-									"Where rules send incidents. Health is read from each destination's last ",
+									"Where rules send incidents. Health is read from each destination's last",
+									" ",
 									String(HEALTH_WINDOW),
 									" delivery attempts.",
 								],
@@ -145,7 +146,7 @@ const destinationsSection = (
 						[
 							h.span([], ["Destination"]),
 							h.span([], ["Type"]),
-							h.span([], [`Last ${HEALTH_WINDOW} attempts`]),
+							h.span([], ["Last ", String(HEALTH_WINDOW), " attempts"]),
 							h.span([h.Class("text-right")], ["Last delivered"]),
 							h.span([], []),
 						],
@@ -337,7 +338,7 @@ const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, 
 // DELIVERY LOG
 
 const deliveryLog = (h: H, model: Model, inputs: RoutingInputs): Html =>
-	AsyncData.match(model.deliveries.data, {
+	AsyncData.match(model.routingDeliveries.data, {
 		onIdle: () => logSkeleton(h),
 		onLoading: () => logSkeleton(h),
 		onFailure: (failure) => errorState(h, { failure, title: "Failed to load delivery history" }),
@@ -402,7 +403,7 @@ const logTable = (
 								group.label,
 								h.span(
 									[h.Class("tracking-normal normal-case text-muted-foreground/60 tabular-nums")],
-									[`${group.events.length} ${pluralize(group.events.length, "attempt")}`],
+									[String(group.events.length), " ", pluralize(group.events.length, "attempt")],
 								),
 							]),
 						],
@@ -430,7 +431,7 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 										h.Class("text-severity-warn tabular-nums text-2xs"),
 										h.Title(`Attempt ${event.attemptNumber}`),
 									],
-									[`↻${event.attemptNumber}`],
+									["↻", String(event.attemptNumber)],
 								),
 							]
 						: []),

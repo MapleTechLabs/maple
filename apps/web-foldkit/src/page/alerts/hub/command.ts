@@ -27,6 +27,16 @@ export const FetchHubDeliveries = Command.define("FetchAlertsHubDeliveries", {
 		),
 })
 
+export const FetchRoutingDeliveries = Command.define("FetchAlertsRoutingDeliveries", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchRoutingDeliveries],
+	execute: ({ key }) =>
+		listDeliveries().pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchRoutingDeliveries({ key, result })),
+		),
+})
+
 export const FetchHubSession = Command.define("FetchAlertsHubSession", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchSession],
