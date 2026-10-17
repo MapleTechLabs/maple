@@ -45,7 +45,7 @@ export function sourceUsageQuery(): CHUnionQuery<SourceUsageOutput> {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
-			$.Timestamp.lte(utcSecondsParam("endTime")),
+			$.Timestamp.lt(utcSecondsParam("endTime")),
 			CH.has(CH.mapValues($.ResourceAttributes), sourceId),
 			$.ResourceAttributes.get(SOURCE_ID_ATTRIBUTE).eq(sourceId),
 		])
@@ -60,7 +60,7 @@ export function sourceUsageQuery(): CHUnionQuery<SourceUsageOutput> {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.TimestampTime.gte(utcSecondsParam("startTime")),
-			$.TimestampTime.lte(utcSecondsParam("endTime")),
+			$.TimestampTime.lt(utcSecondsParam("endTime")),
 			CH.has(CH.mapValues($.ResourceAttributes), sourceId),
 			$.ResourceAttributes.get(SOURCE_ID_ATTRIBUTE).eq(sourceId),
 		])
