@@ -11,9 +11,13 @@
         "@changesets/cli": "3.0.3",
         "@cloudflare/workers-types": "catalog:alchemy",
         "@effect/platform-node": "catalog:effect",
+        "@effect/sql-pg": "4.0.4",
         "@effect/tsgo": "0.48.1",
         "@effect/vitest": "catalog:effect",
+        "@maple-dev/effect-orm": "0.5.0",
         "@maple/alchemy-portless": "workspace:*",
+        "@maple/db": "workspace:*",
+        "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
         "@oxlint/plugins": "1.86.0",
         "@types/node": "catalog:tooling",
@@ -124,7 +128,7 @@
     },
     "apps/cli": {
       "name": "@maple/cli",
-      "version": "0.0.26",
+      "version": "0.0.27",
       "bin": {
         "maple": "./src/bin.ts",
       },
@@ -373,7 +377,7 @@
     },
     "examples/effect-todo": {
       "name": "@maple-examples/effect-todo",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@effect/atom-react": "catalog:effect",
         "@effect/platform-bun": "catalog:effect",
@@ -549,7 +553,7 @@
     },
     "packages/alchemy-maple": {
       "name": "@maple-dev/alchemy",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "@maple-dev/effect-sdk": "workspace:*",
       },
@@ -640,7 +644,7 @@
     },
     "packages/browser": {
       "name": "@maple-dev/browser",
-      "version": "0.10.1",
+      "version": "0.11.0",
       "dependencies": {
         "@opentelemetry/api": "^1.9.0",
         "@opentelemetry/instrumentation": "^0.222.0",
@@ -757,7 +761,7 @@
     },
     "packages/effect-sdk": {
       "name": "@maple-dev/effect-sdk",
-      "version": "0.10.0",
+      "version": "0.10.1",
       "dependencies": {
         "std-env": "^4.0.0",
       },
