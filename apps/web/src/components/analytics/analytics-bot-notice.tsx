@@ -2,7 +2,7 @@ import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { Panel } from "@maple/ui/components/ui/panel"
 
 import { FaceRobotIcon } from "@/components/icons"
-import type { WebAnalyticsSummary } from "@/api/warehouse/web-analytics"
+import type { WebAnalyticsSummary } from "@maple/web-data/warehouse/web-analytics"
 import type { AnalyticsFilters } from "@/components/analytics/filters"
 
 /**

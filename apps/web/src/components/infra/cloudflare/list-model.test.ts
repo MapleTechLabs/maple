@@ -4,7 +4,7 @@ import type {
 	CloudflareDurableObjectRow,
 	CloudflareWorkerRow,
 	CloudflareZoneRow,
-} from "@/api/warehouse/cloudflare-infra"
+} from "@maple/web-data/warehouse/cloudflare-infra"
 import { mergeWorkerRows, sortWorkersByAttention, workerHealth, zoneHealth } from "./list-model"
 
 const zone = (requests: number, errorRate: number, clientErrorRate: number): CloudflareZoneRow => ({

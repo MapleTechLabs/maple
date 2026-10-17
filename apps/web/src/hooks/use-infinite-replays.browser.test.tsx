@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { Result } from "@/lib/effect-atom"
 import { Schema, type Effect } from "effect"
-import type { listReplays } from "@/api/warehouse/replays"
+import type { listReplays } from "@maple/web-data/warehouse/replays"
 import { SessionId } from "@maple/domain/http"
 type ReplaysPage = Effect.Success<ReturnType<typeof listReplays>>
 import { useInfiniteReplays } from "./use-infinite-replays"
@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/registry", () => ({ mapleRuntime: { runPromise: mocks.runPromise } }))
 vi.mock("@/lib/services/common/telemetry", () => ({ logClientError: mocks.logClientError }))
-vi.mock("@/api/warehouse/replays", () => ({ listReplays: (input: unknown) => input }))
+vi.mock("@maple/web-data/warehouse/replays", () => ({ listReplays: (input: unknown) => input }))
 vi.mock("@/lib/services/atoms/warehouse-query-atoms", () => ({
 	listReplaysResultAtom: (input: unknown) => input,
 }))

@@ -1,6 +1,6 @@
 import * as React from "react"
 import { Result } from "@/lib/effect-atom"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { PulseIcon, XmarkIcon, PlusIcon, MagnifierIcon } from "@/components/icons"
 
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
@@ -36,7 +36,7 @@ import {
 	listMetricsResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { type FormulaDraft, type TimeseriesPoint } from "@/components/query-builder/formula-results"
-import { type QueryBuilderTimeseriesInput } from "@/api/warehouse/query-builder-timeseries"
+import { type QueryBuilderTimeseriesInput } from "@maple/web-data/warehouse/query-builder-timeseries"
 import { type TimeseriesQuerySetDiagnostics } from "@maple/query-engine/query-set"
 import {
 	AGGREGATIONS_BY_SOURCE,
@@ -259,9 +259,7 @@ function QueryBuilderAtomResults({ input }: { input: QueryBuilderTimeseriesInput
 								</Badge>
 								<Badge variant="secondary">success</Badge>
 								<span className="text-2xs text-muted-foreground">query_engine</span>
-								<span className="text-2xs text-muted-foreground">
-									{data.length} buckets
-								</span>
+								<span className="text-2xs text-muted-foreground">{data.length} buckets</span>
 							</div>
 
 							{warnings.length > 0 && (
@@ -524,9 +522,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 											-
 										</Badge>
 										<Badge variant="destructive">error</Badge>
-										<span className="text-2xs text-muted-foreground">
-											query_engine
-										</span>
+										<span className="text-2xs text-muted-foreground">query_engine</span>
 									</div>
 									<p className="text-2xs text-destructive">{noQueriesError}</p>
 								</div>

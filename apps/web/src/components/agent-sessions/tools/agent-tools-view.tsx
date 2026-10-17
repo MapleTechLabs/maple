@@ -10,7 +10,7 @@ import {
 	type ToolBreakdownRow,
 	type ToolSeriesPoint,
 	type ToolTotals,
-} from "@/lib/agent-sessions/tool-analytics"
+} from "@maple/web-data/lib/tool-analytics"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 import { selectedMetric, selectedPercentile, toolDetailLinkSearch } from "@/lib/agent-sessions/tool-search"

@@ -25,7 +25,10 @@ import {
 	UnorderedListIcon,
 	type IconComponent,
 } from "@/components/icons"
-import type { WebAnalyticsAiCrawler, WebAnalyticsAiCrawlerFormat } from "@/api/warehouse/web-analytics"
+import type {
+	WebAnalyticsAiCrawler,
+	WebAnalyticsAiCrawlerFormat,
+} from "@maple/web-data/warehouse/web-analytics"
 import { AiProductIcon } from "./ai-product-icon"
 import { StatFigure } from "@maple/ui/components/ui/stat-figure"
 import { RelativeTime } from "@/components/common/relative-time"

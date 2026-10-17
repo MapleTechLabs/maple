@@ -2,7 +2,7 @@ import { Result } from "@/lib/effect-atom"
 
 import { Separator } from "@maple/ui/components/ui/separator"
 
-import type { WebAnalyticsBreakdowns, WebAnalyticsEvent } from "@/api/warehouse/web-analytics"
+import type { WebAnalyticsBreakdowns, WebAnalyticsEvent } from "@maple/web-data/warehouse/web-analytics"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	FilterSection,

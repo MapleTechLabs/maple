@@ -1,5 +1,16 @@
 import { Atom, scheduleTask } from "@/lib/effect-atom"
-import { Layer } from "effect"
+import { QueryEngineExecuteBatchRequest } from "@maple/query-engine"
+import { isBlipping, originOf } from "@maple/web-data/lib/peer-reachability"
+import { makeExecuteBatcher } from "@maple/web-data/warehouse/execute-batcher"
+import {
+	ApiReachability,
+	MapleApiV2Http,
+	MapleInternalHttp,
+	WarehouseExecutor,
+	type WarehouseServices,
+} from "@maple/web-data/warehouse/warehouse-services"
+import { Effect, Layer } from "effect"
+import { apiBaseUrl } from "./services/common/api-base-url"
 import { AtomRegistry } from "effect/reactivity"
 import { MapleApiAtomClient } from "./services/common/atom-client"
 import { MapleFetchHttpClientLive } from "./services/common/http-client"
@@ -46,6 +57,42 @@ export const mapleAiClientLayer: Layer.Layer<MapleAiAtomClient> = appRegistry.ge
 	MapleAiAtomClient.runtime.layer,
 )
 
+// One process-wide batcher: coalescing only helps if every caller shares it.
+const executeBatcher = makeExecuteBatcher((requests) =>
+	mapleRuntime.runPromise(
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			const response = yield* client.queryEngine.executeBatch({
+				payload: new QueryEngineExecuteBatchRequest({ requests }),
+			})
+			return response.results
+		}).pipe(
+			Effect.withSpan("QueryEngine.executeBatch", {
+				attributes: { "query.batch_size": requests.length },
+			}),
+		),
+	),
+)
+
+/**
+ * The `@maple/web-data` warehouse services over this app's clients: the batcher above, the
+ * atom clients' plain HttpApiClients (memoized here), and the API origin's reachability clock.
+ * `mapleRuntime` carries them; warehouse atoms and widget fetches provide them.
+ */
+export const warehouseServicesLayer: Layer.Layer<WarehouseServices> = Layer.mergeAll(
+	Layer.succeed(WarehouseExecutor, {
+		enqueue: (payload) =>
+			Effect.tryPromise({ try: () => executeBatcher.enqueue(payload), catch: (cause) => cause }),
+	}),
+	Layer.effect(MapleInternalHttp, Effect.service(MapleInternalAtomClient)).pipe(
+		Layer.provide(mapleInternalClientLayer),
+	),
+	Layer.effect(MapleApiV2Http, Effect.service(MapleApiV2AtomClient)).pipe(
+		Layer.provide(mapleApiV2ClientLayer),
+	),
+	Layer.succeed(ApiReachability, { isBlipping: (nowMs) => isBlipping(originOf(apiBaseUrl), nowMs) }),
+)
+
 // One persistent ManagedRuntime built from both typed API layers, shared by every
 // imperative (non-React) Effect run, including `runMapleApiV2` collection writes.
 // Building it once avoids rebuilding the client layers on every call and gives the
@@ -53,8 +100,11 @@ export const mapleAiClientLayer: Layer.Layer<MapleAiAtomClient> = appRegistry.ge
 // Sharing the registry memo map is load-bearing: nested `Effect.provide` calls
 // reuse the atom-owned client and tracer instances instead of rebuilding them.
 export const mapleRuntime = makeAppRuntime(
-	Layer.mergeAll(mapleApiClientLayer, mapleApiV2ClientLayer, mapleInternalClientLayer).pipe(
-		Layer.provideMerge(mapleOtelLayer),
-	),
+	Layer.mergeAll(
+		mapleApiClientLayer,
+		mapleApiV2ClientLayer,
+		mapleInternalClientLayer,
+		warehouseServicesLayer,
+	).pipe(Layer.provideMerge(mapleOtelLayer)),
 	appMemoMap,
 )

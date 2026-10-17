@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetFooter, SheetPanel } from "@maple/ui/componen
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { formatPercent } from "@maple/ui/lib/format"
 
-import type { PodInfraMetric } from "@/api/warehouse/infra"
+import type { PodInfraMetric } from "@maple/web-data/warehouse/infra"
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
 import { bucketSecondsForRange } from "@/components/infra/constants"

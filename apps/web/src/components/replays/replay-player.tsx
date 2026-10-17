@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui
 import { Panel } from "@maple/ui/components/ui/panel"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { DocsLink } from "@/components/common/docs-link"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { type DisplayMarker, type IdleBand, useReplayPlayer } from "./replay-player-context"

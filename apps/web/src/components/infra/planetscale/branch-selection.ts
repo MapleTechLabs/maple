@@ -15,7 +15,7 @@
 
 import { matchesGlob } from "@maple/domain/glob"
 import type { V2PlanetScaleBranch } from "@maple/domain/http/v2"
-import type { PlanetScaleBranchStat } from "@/api/warehouse/service-map"
+import type { PlanetScaleBranchStat } from "@maple/web-data/warehouse/service-map"
 
 export { matchesGlob }
 

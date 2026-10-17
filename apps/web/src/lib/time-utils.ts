@@ -207,18 +207,3 @@ export const QUICK_SELECT_OPTIONS: QuickSelectOption[] = [
 	{ label: "2mo", value: "2mo" },
 	{ label: "today", value: "today" },
 ]
-
-const CACHE_SNAP_INTERVAL_S = 15
-
-/**
- * Snap a Tinybird-format datetime string ("YYYY-MM-DD HH:mm:ss") to the
- * nearest floor of CACHE_SNAP_INTERVAL_S seconds for cache key deduplication.
- * Returns the original string unchanged if it doesn't match the format.
- */
-export function snapTimestamp(value: string): string {
-	if (value.length !== 19 || value[4] !== "-" || value[10] !== " ") return value
-	const seconds = parseInt(value.slice(17, 19), 10)
-	if (Number.isNaN(seconds)) return value
-	const snapped = seconds - (seconds % CACHE_SNAP_INTERVAL_S)
-	return value.slice(0, 17) + snapped.toString().padStart(2, "0")
-}

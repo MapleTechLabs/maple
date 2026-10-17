@@ -16,7 +16,7 @@ import type {
 	HostInfraMetric,
 	NodeInfraMetric,
 	PodInfraMetric,
-} from "@/api/warehouse/infra"
+} from "@maple/web-data/warehouse/infra"
 
 interface InfraCorrelationBase {
 	/** Display heading for the group ("Container" | "Pod" | "Node" | "Host"). */

@@ -6,10 +6,10 @@ import {
 	getAiSessionSpans,
 	type AiSessionSpansInput,
 	type AiSessionSpansPage,
-} from "@/api/warehouse/ai-sessions"
+} from "@maple/web-data/warehouse/ai-sessions"
 import type { SessionWindow } from "@maple/agent-sessions"
 import { Result, useAtomValue, type Atom } from "@/lib/effect-atom"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { mapleRuntime } from "@/lib/registry"
 import { logClientError } from "@/lib/services/common/telemetry"
 import { aiSessionSpansResultAtom, type QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"

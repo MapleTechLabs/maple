@@ -2,7 +2,7 @@
 import { act, cleanup, renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { Result } from "@/lib/effect-atom"
-import type { LogsResponse } from "@/api/warehouse/logs"
+import type { LogsResponse } from "@maple/web-data/warehouse/logs"
 import { useInfiniteLogs } from "./use-infinite-logs"
 
 const mocks = vi.hoisted(() => ({
@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/registry", () => ({ mapleRuntime: { runPromise: mocks.runPromise } }))
 vi.mock("@/lib/services/common/telemetry", () => ({ logClientError: mocks.logClientError }))
-vi.mock("@/api/warehouse/logs", () => ({ listLogs: (input: unknown) => input }))
+vi.mock("@maple/web-data/warehouse/logs", () => ({ listLogs: (input: unknown) => input }))
 vi.mock("@/lib/services/atoms/warehouse-query-atoms", () => ({
 	listLogsResultAtom: (input: unknown) => input,
 }))

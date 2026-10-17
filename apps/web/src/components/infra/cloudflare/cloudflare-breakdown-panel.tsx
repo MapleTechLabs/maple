@@ -30,7 +30,7 @@ import type {
 	CloudflareBreakdownDimension,
 	CloudflareBreakdownTotal,
 	CloudflareZoneBreakdown,
-} from "@/api/warehouse/cloudflare-infra"
+} from "@maple/web-data/warehouse/cloudflare-infra"
 import {
 	cloudflareTopTrafficResultAtom,
 	cloudflareZoneBreakdownResultAtom,

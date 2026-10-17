@@ -1,8 +1,8 @@
 import { useMemo } from "react"
 import { useOptionalPageRefreshContext } from "@/components/time-range-picker/page-refresh-context"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { isCalendarAlignedShorthand } from "@maple/query-engine"
-import { relativeToAbsolute, snapRangeForCache } from "@/lib/time-utils"
+import { getEffectiveTimezone } from "@/atoms/timezone-preference-atoms"
+import { resolveTimeRangeAt } from "@maple/web-data/lib/time-range"
 
 interface TimeRange {
 	startTime: string
@@ -41,14 +41,10 @@ export function resolveEffectiveTimeRange(
 	defaultRange: string = "12h",
 	options?: ResolveEffectiveTimeRangeOptions,
 ): TimeRange {
-	if (startTime && endTime) {
-		return { startTime, endTime }
-	}
-	const resolved =
-		relativeToAbsolute(defaultRange, options?.timeZone) ?? relativeToAbsolute("12h", options?.timeZone)!
-	return options?.snap === false
-		? resolved
-		: snapRangeForCache(resolved, { anchoredStart: isCalendarAlignedShorthand(defaultRange) })
+	return resolveTimeRangeAt(Date.now(), startTime, endTime, defaultRange, {
+		timeZone: options?.timeZone ?? getEffectiveTimezone(),
+		snap: options?.snap,
+	})
 }
 
 /**

@@ -1,36 +1,44 @@
 import { Effect } from "effect"
 import type { DataSourceEndpoint } from "@/components/dashboard-builder/types"
-import type { BackendError, WarehouseApiError } from "@/api/warehouse/effect-utils"
+import type { BackendError, WarehouseApiError } from "@maple/web-data/warehouse/effect-utils"
+import type { WarehouseServices } from "@maple/web-data/warehouse/warehouse-services"
 
-import { getServiceUsage } from "@/api/warehouse/service-usage"
-import { getServiceOverview, getServiceApdexTimeSeries, getServicesFacets } from "@/api/warehouse/services"
-import { listTraces, getTracesFacets, getTracesDurationStats } from "@/api/warehouse/traces"
-import { listLogs, getLogsCount, getLogsFacets } from "@/api/warehouse/logs"
+import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
+import {
+	getServiceOverview,
+	getServiceApdexTimeSeries,
+	getServicesFacets,
+} from "@maple/web-data/warehouse/services"
+import { listTraces, getTracesFacets, getTracesDurationStats } from "@maple/web-data/warehouse/traces"
+import { listLogs, getLogsCount, getLogsFacets } from "@maple/web-data/warehouse/logs"
 import {
 	getErrorsByType,
 	getErrorsFacets,
 	getErrorsSummary,
 	getErrorDetailTraces,
-} from "@/api/warehouse/errors"
-import { getErrorRateByService } from "@/api/warehouse/error-rates"
-import { listMetrics, getMetricsSummary } from "@/api/warehouse/metrics"
+} from "@maple/web-data/warehouse/errors"
+import { getErrorRateByService } from "@maple/web-data/warehouse/error-rates"
+import { listMetrics, getMetricsSummary } from "@maple/web-data/warehouse/metrics"
 import {
 	getCustomChartTimeSeries,
 	getCustomChartBreakdown,
 	getCustomChartServiceSparklines,
-} from "@/api/warehouse/custom-charts"
-import { getQueryBuilderTimeseries } from "@/api/warehouse/query-builder-timeseries"
-import { getQueryBuilderBreakdown } from "@/api/warehouse/query-builder-breakdown"
-import { getQueryBuilderList } from "@/api/warehouse/query-builder-list"
-import { getRawSqlChart } from "@/api/warehouse/raw-sql-chart"
-import { getProductEventsFunnelWidget, getProductEventsPathsWidget } from "@/api/warehouse/product-events"
+} from "@maple/web-data/warehouse/custom-charts"
+import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
+import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
+import { getQueryBuilderList } from "@maple/web-data/warehouse/query-builder-list"
+import { getRawSqlChart } from "@maple/web-data/warehouse/raw-sql-chart"
+import {
+	getProductEventsFunnelWidget,
+	getProductEventsPathsWidget,
+} from "@maple/web-data/warehouse/product-events"
 
 /**
  * Error channel shared by every warehouse server function. They fail with the
  * `WarehouseApiError` union (decode / query / transform / invalid-input) or a
- * tagged `@maple/http/errors/*` backend error surfaced by the API client. The
- * requirement channel is `never` — each function self-provides its layers via
- * `runWarehouseQuery` / `executeQueryEngine`.
+ * tagged `@maple/http/errors/*` backend error surfaced by the API client. They
+ * require the `@maple/web-data` warehouse services; `use-widget-data` provides
+ * them from `warehouseServicesLayer`.
  */
 type ServerFunctionError = WarehouseApiError | BackendError
 
@@ -38,7 +46,7 @@ type ServerFunctionError = WarehouseApiError | BackendError
 // shape, and the registry is consumed through a single structural `{ data }`
 // accessor that does not depend on the concrete success type.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ServerFunction = (opts: { data: any }) => Effect.Effect<any, ServerFunctionError, never>
+type ServerFunction = (opts: { data: any }) => Effect.Effect<any, ServerFunctionError, WarehouseServices>
 
 const markdownStaticServerFn: ServerFunction = () => Effect.succeed({ data: null })
 

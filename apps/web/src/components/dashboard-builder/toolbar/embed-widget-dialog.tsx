@@ -39,7 +39,7 @@ import {
 } from "@/components/icons"
 import type { DashboardVariable } from "@/components/dashboard-builder/types"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { REFRESH_INTERVAL_OPTIONS } from "@/lib/dashboard-controls/search-params"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"

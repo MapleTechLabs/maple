@@ -1,6 +1,6 @@
 import type { RailwayEnvironmentStatus } from "@maple/domain/http"
 
-import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
+import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 
 /** Where a group's poller stands, read off the integration status for its environment. */
 export type RailwaySync =

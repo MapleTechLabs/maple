@@ -11,7 +11,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
 import { useDebouncedValue } from "@maple/ui/hooks/use-debounced-value"
 
-import type { PodSortKey, SortDirection } from "@/api/warehouse/infra"
+import type { PodSortKey, SortDirection } from "@maple/web-data/warehouse/infra"
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { ErrorState } from "@/components/common/error-state"
 import { FolderIcon, MagnifierIcon } from "@/components/icons"

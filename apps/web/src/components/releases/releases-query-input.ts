@@ -1,5 +1,5 @@
 import { resolveEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import type { GetReleasesInput } from "@/api/warehouse/releases"
+import type { GetReleasesInput } from "@maple/web-data/warehouse/releases"
 
 export const RELEASES_DEFAULT_PRESET = "7d"
 

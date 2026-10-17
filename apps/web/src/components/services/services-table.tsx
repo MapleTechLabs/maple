@@ -49,7 +49,7 @@ import {
 	type CommitBreakdown,
 	type ServiceOverview,
 	type ServiceTimeSeriesPoint,
-} from "@/api/warehouse/services"
+} from "@maple/web-data/warehouse/services"
 import {
 	getCustomChartServiceSparklinesResultAtom,
 	getServiceHealthBaselineResultAtom,

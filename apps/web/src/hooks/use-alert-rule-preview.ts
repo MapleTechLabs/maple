@@ -11,7 +11,7 @@ import {
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
 import { mapBuilderChartFailure } from "@/lib/alerts/preview-failure"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 const emptyPreviewAtom = Atom.make(Result.initial())

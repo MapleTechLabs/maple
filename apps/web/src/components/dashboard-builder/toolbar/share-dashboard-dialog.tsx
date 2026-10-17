@@ -38,7 +38,7 @@ import { RadioGroup, RadioGroupItem } from "@maple/ui/components/ui/radio-group"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { SHAREABLE_WIDGET_KINDS, unsupportedShareWidgets } from "./share-support"
 import {

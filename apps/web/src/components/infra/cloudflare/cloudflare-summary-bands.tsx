@@ -1,6 +1,6 @@
 import { TONE_FILL } from "@maple/ui/lib/tone"
 
-import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
+import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
 import { FleetBand, FleetBandLoading } from "../primitives/fleet-band"
 import {
 	CPU_HEAVY_P99_MS,

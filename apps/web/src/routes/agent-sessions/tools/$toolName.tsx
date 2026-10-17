@@ -23,13 +23,13 @@ import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { Atom, Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import type { AiToolErrorSamplesInput } from "@/api/warehouse/ai-session-tools"
+import type { AiToolErrorSamplesInput } from "@maple/web-data/warehouse/ai-session-tools"
 import {
 	TOOL_ANALYTICS_DEFAULT_PRESET,
 	ToolAnalyticsSearchFields,
 	type ToolAnalyticsSearch,
 } from "@/lib/agent-sessions/tool-search"
-import { fillSeriesBuckets, type ToolErrorRow } from "@/lib/agent-sessions/tool-analytics"
+import { fillSeriesBuckets, type ToolErrorRow } from "@maple/web-data/lib/tool-analytics"
 import { errorTrendBucket } from "@/lib/agent-sessions/tool-error-display"
 import { toolAnalyticsSelection } from "@/lib/agent-sessions/use-tool-analytics"
 import {

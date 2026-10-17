@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Result } from "@/lib/effect-atom"
 
-import { listReplays } from "@/api/warehouse/replays"
+import { listReplays } from "@maple/web-data/warehouse/replays"
 import { listReplaysResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { Effect } from "effect"

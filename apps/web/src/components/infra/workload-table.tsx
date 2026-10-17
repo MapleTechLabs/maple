@@ -6,7 +6,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
 import type { ListWorkloadsResponse } from "@maple/domain/http"
-import type { WorkloadKind } from "@/api/warehouse/infra"
+import type { WorkloadKind } from "@maple/web-data/warehouse/infra"
 
 import { HostStatusBadge } from "./status-badge"
 import { MeterRows } from "./primitives/meter-rows"

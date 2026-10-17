@@ -13,7 +13,7 @@ import {
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { EMPTY_VALUE, formatPercent, formatUptime } from "@maple/ui/lib/format"
 
-import type { NodeInfraMetric } from "@/api/warehouse/infra"
+import type { NodeInfraMetric } from "@maple/web-data/warehouse/infra"
 import { ServerIcon } from "@/components/icons"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { NodeDetailChart } from "@/components/infra/k8s-detail-chart"

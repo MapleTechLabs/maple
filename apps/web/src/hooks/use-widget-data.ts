@@ -7,6 +7,7 @@ import { useDashboardTimeRange } from "@/components/dashboard-builder/dashboard-
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
 import { useWidgetTimeRangeOverride } from "@/components/dashboard-builder/widgets/widget-time-range-context"
 import { getServerFunction, toWidgetRequest } from "@/components/dashboard-builder/data-source-registry"
+import { warehouseServicesLayer } from "@/lib/registry"
 import { hasUnresolvedVariableRefs, planWidgetRequest } from "@maple/query-engine"
 import type { DashboardWidget, TimeRange, WidgetDataSource } from "@/components/dashboard-builder/types"
 
@@ -24,12 +25,21 @@ export type WidgetDataSourceLike = WidgetDataSource
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import type { WidgetDataState } from "@/components/dashboard-builder/types"
-import { encodeKey, encodeOrgScopedKey, identityFromKey, orgScopedKeyPayload } from "@/lib/cache-key"
+import {
+	encodeKey,
+	encodeOrgScopedKey,
+	identityFromKey,
+	orgScopedKeyPayload,
+} from "@maple/web-data/lib/cache-key"
 import { nextRetentionNamespace, withRetention } from "@/lib/services/atoms/retained-atom"
 import { getActiveOrgId } from "@/lib/services/common/auth-headers"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { Cause, Option } from "effect"
-import { WarehouseDecodeError, type BackendError, type WarehouseApiError } from "@/api/warehouse/effect-utils"
+import {
+	WarehouseDecodeError,
+	type BackendError,
+	type WarehouseApiError,
+} from "@maple/web-data/warehouse/effect-utils"
 import { QueryEngineValidationError } from "@maple/domain/http"
 import {
 	MAX_LIST_RANGE_SECONDS,
@@ -356,7 +366,9 @@ const fetchWidgetData = Effect.fnUntraced(
 			})
 		}
 
-		return yield* serverFn({ data: parsed.params })
+		// A widget fetch is this app's warehouse entrypoint and owns its service layer.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		return yield* serverFn({ data: parsed.params }).pipe(Effect.provide(warehouseServicesLayer))
 	},
 	Effect.retry({
 		times: 2,
