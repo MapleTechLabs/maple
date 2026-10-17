@@ -22,6 +22,7 @@ const overrideKeys = [
 	"VITE_MAPLE_REPLAY",
 	"VITE_MAPLE_CAPTURE",
 	"VITE_MAPLE_COOKIE_DOMAIN",
+	"VITE_MAPLE_LAB",
 ] as const
 
 export default defineConfig(({ mode, command }) => {

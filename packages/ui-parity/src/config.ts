@@ -90,6 +90,8 @@ export const buildEnv = (authMode: AuthMode): Readonly<Record<string, string>> =
 	VITE_CLERK_PUBLISHABLE_KEY: FAKE_CLERK_PUBLISHABLE_KEY,
 	VITE_MAPLE_INGEST_KEY: "parity-ingest-key",
 	VITE_MAPLE_REGION: "us",
+	// Foldkit boots `/lab/*` programs only in dev or with this flag (legacy uses the lab-gate plugin).
+	VITE_MAPLE_LAB: "on",
 })
 
 /** Env a build must never inherit from the shell (stack URLs, deploy stamps). */
