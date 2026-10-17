@@ -107,6 +107,7 @@ const NAMES = [
 	"StackPerspectiveIcon",
 	"SunIcon",
 	"TrashIcon",
+	"UiLayersIcon",
 	"UserIcon",
 	"XmarkIcon",
 ] as const
@@ -116,6 +117,9 @@ const SOURCE_OF = new Map<string, "ui" | "web">([
 	["CloudflareIcon", "ui"],
 	["LayersIcon", "web"],
 ])
+
+/** Names for an icon the other set shadows: `UiLayersIcon` is @maple/ui's `LayersIcon` (the kit gallery). */
+const ALIASES = new Map<string, readonly ["ui" | "web", string]>([["UiLayersIcon", ["ui", "LayersIcon"]]])
 
 const uiIcons = new Map<string, Icon>(Object.entries(UiIcons))
 const webIcons = new Map<string, Icon>(Object.entries(WebIcons))
@@ -178,6 +182,12 @@ const render = (component: Icon, props: { size?: string; className?: string }) =
 }
 
 const pick = (name: string): Icon => {
+	const alias = ALIASES.get(name)
+	if (alias !== undefined) {
+		const aliased = (alias[0] === "ui" ? uiIcons : webIcons).get(alias[1])
+		if (aliased === undefined) throw new Error(`${name}: ${alias[1]} is not an icon in ${alias[0]}`)
+		return aliased
+	}
 	const ui = uiIcons.get(name)
 	const web = webIcons.get(name)
 	const choice = SOURCE_OF.get(name)

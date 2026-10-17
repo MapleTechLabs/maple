@@ -146,13 +146,18 @@ export const manageFocus = (
 	popup: HTMLElement,
 	options: Readonly<{
 		returnFocusId: Option.Option<string>
-		initialFocus: "first-tabbable" | "popup" | "none"
+		initialFocus: "first-tabbable" | "popup" | "highlighted" | "none"
 	}>,
 ): Effect.Effect<void, never, Scope.Scope> =>
 	Effect.acquireRelease(
 		Effect.sync(() => {
 			const previous = document.activeElement
-			const target = options.initialFocus === "first-tabbable" ? (tabbables(popup)[0] ?? popup) : popup
+			const target =
+				options.initialFocus === "first-tabbable"
+					? (tabbables(popup)[0] ?? popup)
+					: options.initialFocus === "highlighted"
+						? (popup.querySelector<HTMLElement>("[data-highlighted]") ?? popup)
+						: popup
 			if (options.initialFocus !== "none") target.focus({ preventScroll: true })
 			return previous
 		}),

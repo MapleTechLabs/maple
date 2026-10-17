@@ -1,15 +1,22 @@
 import { cn } from "@maple/ui/lib/utils"
 import {
+	dropdownMenuCheckboxItemIndicatorStyles,
+	dropdownMenuCheckboxItemStyles,
 	dropdownMenuContentStyles,
 	dropdownMenuItemStyles,
 	dropdownMenuLabelStyles,
 	dropdownMenuPositionerStyles,
+	dropdownMenuRadioItemIndicatorStyles,
+	dropdownMenuRadioItemStyles,
 	dropdownMenuSeparatorStyles,
 	dropdownMenuShortcutStyles,
+	dropdownMenuSubTriggerIconStyles,
+	dropdownMenuSubTriggerStyles,
 } from "@maple/ui/styles/ui/dropdown-menu"
 import { Option } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Align, PopupPosition, Side } from "./anchor"
+import { icon } from "./icon"
 
 // The Foldkit side of packages/ui/src/components/ui/dropdown-menu.tsx over Base UI's Menu DOM.
 
@@ -182,6 +189,9 @@ export type MenuItemOptions<Message> = Readonly<{
 	onSelect?: Message
 	/** Base UI moves focus to the hovered item; the parent turns this into a focus Command. */
 	onHighlight: Message
+	variant?: "default" | "destructive"
+	/** Base UI's `data-highlighted`, for a Model that tracks the highlight (`menu.ts`). */
+	isHighlighted?: boolean
 }>
 
 /** `<DropdownMenuItem>`: a `menuitem` focused on hover, so `focus:` styles mark the highlight. */
@@ -193,10 +203,11 @@ export const menuItem = <Message>(
 	const attributes: Array<Attribute<Message>> = [
 		h.Class(cn(dropdownMenuItemStyles, options.className)),
 		h.DataAttribute("slot", "dropdown-menu-item"),
-		h.DataAttribute("variant", "default"),
+		...(options.isHighlighted === true ? [h.DataAttribute("highlighted", "")] : []),
+		h.DataAttribute("variant", options.variant ?? "default"),
 		h.Id(options.id),
 		h.Role("menuitem"),
-		h.Tabindex(-1),
+		h.Tabindex(options.isHighlighted === true ? 0 : -1),
 		h.OnMouseEnter(options.onHighlight),
 		...(options.onSelect === undefined ? [] : [h.OnClick(options.onSelect)]),
 		...(options.attributes ?? []),
@@ -222,4 +233,96 @@ export const menuShortcut = <Message>(h: HtmlBuilder<Message>, children: Childre
 	h.span(
 		[h.Class(cn(dropdownMenuShortcutStyles)), h.DataAttribute("slot", "dropdown-menu-shortcut")],
 		children,
+	)
+// CHECKABLE AND SUBMENU ITEMS
+
+/** What a highlightable item needs beyond its content: id, highlight and its two handlers. */
+export type MenuRowOptions<Message> = Readonly<{
+	id: string
+	isHighlighted: boolean
+	onHighlight: Message
+	onSelect: Message
+}>
+
+const rowAttributes = <Message>(
+	h: HtmlBuilder<Message>,
+	options: MenuRowOptions<Message>,
+): ReadonlyArray<Attribute<Message>> => [
+	...(options.isHighlighted ? [h.DataAttribute("highlighted", "")] : []),
+	h.Id(options.id),
+	h.Tabindex(options.isHighlighted ? 0 : -1),
+	h.OnMouseEnter(options.onHighlight),
+	h.OnClick(options.onSelect),
+]
+
+/** `<CheckIcon strokeWidth={2} />` inside Base UI's item indicator, rendered only while checked. */
+const checkIndicator = <Message>(h: HtmlBuilder<Message>, slot: string, styles: string, isChecked: boolean) =>
+	h.span(
+		[h.Class(styles), h.DataAttribute("slot", slot)],
+		isChecked
+			? [
+					h.span(
+						[h.AriaHidden(true), h.DataAttribute("checked", "")],
+						[icon(h, "CheckIcon", { attributes: [h.Attribute("stroke-width", "2")] })],
+					),
+				]
+			: [],
+	)
+
+/** `<DropdownMenuCheckboxItem>` (and, with `kind: "radio"`, `<DropdownMenuRadioItem>`). */
+export const menuCheckableItem = <Message>(
+	h: HtmlBuilder<Message>,
+	options: MenuRowOptions<Message> & Readonly<{ kind: "checkbox" | "radio"; isChecked: boolean }>,
+	children: Children,
+): Html => {
+	const isCheckbox = options.kind === "checkbox"
+	const slot = isCheckbox ? "dropdown-menu-checkbox-item" : "dropdown-menu-radio-item"
+	return h.div(
+		[
+			h.AriaChecked(options.isChecked),
+			h.Class(cn(isCheckbox ? dropdownMenuCheckboxItemStyles : dropdownMenuRadioItemStyles)),
+			h.DataAttribute(options.isChecked ? "checked" : "unchecked", ""),
+			h.DataAttribute("slot", slot),
+			h.Role(isCheckbox ? "menuitemcheckbox" : "menuitemradio"),
+			...rowAttributes(h, options),
+		],
+		[
+			checkIndicator(
+				h,
+				`${slot}-indicator`,
+				isCheckbox ? dropdownMenuCheckboxItemIndicatorStyles : dropdownMenuRadioItemIndicatorStyles,
+				options.isChecked,
+			),
+			...children,
+		],
+	)
+}
+
+/** `<DropdownMenuRadioGroup>`. */
+export const menuRadioGroup = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
+	h.div([h.DataAttribute("slot", "dropdown-menu-radio-group"), h.Role("group")], children)
+
+/** `<DropdownMenuSubTrigger>`: a `menuitem` that owns a submenu, with a trailing chevron. */
+export const menuSubTrigger = <Message>(
+	h: HtmlBuilder<Message>,
+	options: MenuRowOptions<Message> & Readonly<{ isSubmenuOpen: boolean }>,
+	children: Children,
+): Html =>
+	h.div(
+		[
+			h.AriaExpanded(options.isSubmenuOpen),
+			h.AriaHasPopup("menu"),
+			h.Class(cn(dropdownMenuSubTriggerStyles)),
+			...(options.isSubmenuOpen ? [h.DataAttribute("popup-open", "")] : []),
+			h.DataAttribute("slot", "dropdown-menu-sub-trigger"),
+			h.Role("menuitem"),
+			...rowAttributes(h, options),
+		],
+		[
+			...children,
+			icon(h, "ChevronRightIcon", {
+				className: dropdownMenuSubTriggerIconStyles,
+				attributes: [h.Attribute("stroke-width", "2")],
+			}),
+		],
 	)

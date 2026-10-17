@@ -195,7 +195,7 @@ const applyCoordinates = (floating: HTMLElement, config: PositionConfig, x: numb
 export const anchorPosition = (
 	floating: HTMLElement,
 	config: PositionConfig,
-	afterPlace: (floating: HTMLElement) => void = () => undefined,
+	afterPlace: (floating: HTMLElement, side: Side) => void = () => undefined,
 	/** Places the popup itself instead (Select aligned with its trigger); true skips the coordinates. */
 	placeInstead: (floating: HTMLElement) => boolean = () => false,
 ): Stream.Stream<Placed> =>
@@ -222,8 +222,8 @@ export const anchorPosition = (
 						if (!state.isActive) return
 						const isPlacedInstead = placeInstead(floating)
 						if (!isPlacedInstead) applyCoordinates(floating, config, x, y)
-						afterPlace(floating)
 						const side = sideOf(placement)
+						afterPlace(floating, side)
 						const align = alignOf(placement)
 						const isSame =
 							side === state.side &&
