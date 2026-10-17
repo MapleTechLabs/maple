@@ -633,11 +633,21 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					yield* updateConnector(connector.id, {
 						metricsWatermarkAt: window.endMs,
 						lastMetricsReceivedAt: tick.now,
-						// A read proves the read-only account is set up, however it was: a setup in the
-						// console or as code sends no report.
-						appliedMetricsEnabled: true,
 						lastMetricsError: notes.length === 0 ? null : notes.join(" "),
 					})
+					// A read proves the read-only account is set up, however it was: a setup in the console
+					// or as code sends no report. Not after a switch-off or a removal made during the read.
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(GcpConnectors)
+								.set({ appliedMetricsEnabled: true })
+								.where(($) => [
+									$.id.eq(connector.id),
+									$.metricsEnabled.eq(true),
+									$.appliedMetricsEnabled.isNull(),
+								]),
+						),
+					)
 					yield* Effect.annotateCurrentSpan({
 						"maple.gcp.rows_ingested": rowsIngested,
 						"maple.gcp.metric_queries_failed": failed,

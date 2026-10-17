@@ -132,7 +132,7 @@ export const renderGcpAlchemy = (plan: GcpSetupPlan, existing: GcpExisting): str
 // Alchemy does not wait for an API to be switched on, so switch them on first:
 //   gcloud services enable ${plan.apis.join(" ")} --project=${plan.projectId}
 // Then deploy as an account allowed to create these resources, in the project it signs in to,
-// which must be ${plan.projectId}${takeOver ? ". --adopt takes over what the setup script created" : ""}:
+// which must be ${plan.projectId}. --adopt takes over what an earlier setup ${takeOver ? "created" : "may have left in place: add it then"}:
 //   GOOGLE_ACCESS_TOKEN="$(gcloud auth print-access-token)" GOOGLE_PROJECT_ID=${plan.projectId} bunx alchemy deploy maple.ts --stage maple${takeOver ? " --adopt" : ""}${
 		logs === null
 			? ""

@@ -539,27 +539,34 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				connectorId: GcpConnectorId,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
-				const row = yield* selectRow(orgId, connectorId)
-				const removed = {
-					...(!row.logsEnabled && row.appliedLogsEnabled === true
-						? { appliedLogsEnabled: false }
-						: undefined),
-					...(!row.metricsEnabled && row.appliedMetricsEnabled === true
-						? { appliedMetricsEnabled: false }
-						: undefined),
-				}
-				if (Object.keys(removed).length > 0) {
-					const updatedAt = yield* Clock.currentTimeMillis
-					yield* dbExecute((db) =>
+				const updatedAt = yield* Clock.currentTimeMillis
+				// Each write checks its own switch, so an update racing this one can't be undone by it.
+				yield* dbExecute((db) =>
+					Effect.all([
 						db.run(
 							PG.update(GcpConnectors)
-								.set({ ...removed, updatedAt })
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)]),
+								.set({ appliedLogsEnabled: false, updatedAt })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(connectorId),
+									$.logsEnabled.eq(false),
+									$.appliedLogsEnabled.eq(true),
+								]),
 						),
-					)
-				}
-				const updated = { ...row, ...removed }
-				return toConnector(updated, (yield* projectCounts([row.id])).get(row.id))
+						db.run(
+							PG.update(GcpConnectors)
+								.set({ appliedMetricsEnabled: false, updatedAt })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(connectorId),
+									$.metricsEnabled.eq(false),
+									$.appliedMetricsEnabled.eq(true),
+								]),
+						),
+					]),
+				)
+				const row = yield* selectRow(orgId, connectorId)
+				return toConnector(row, (yield* projectCounts([row.id])).get(row.id))
 			})
 
 			const deleteConnector = Effect.fn("GcpConnectorService.delete")(function* (

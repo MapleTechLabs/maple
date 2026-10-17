@@ -66,7 +66,8 @@ describe("renderGcpTerraform", () => {
 		expect(rendered).toContain(
 			'to = google_service_account.maple_reader\n  id = "projects/acme-host/serviceAccounts/maple-018f2b3c4d5e4f708192a3b4@acme-host.iam.gserviceaccount.com"',
 		)
-		expect(renderGcpTerraform(plan(), NEW)).not.toContain("import {")
+		// Only commented: a resource only some earlier setups created is taken over by uncommenting.
+		expect(renderGcpTerraform(plan(), NEW)).not.toMatch(/^import \{/m)
 	})
 
 	it("leaves out what is off", () => {
@@ -108,6 +109,6 @@ describe("renderGcpAlchemy", () => {
 
 	it("adopts what a setup script created", () => {
 		expect(renderGcpAlchemy(project(), { logs: true, reader: false })).toContain("--stage maple --adopt")
-		expect(renderGcpAlchemy(project(), NEW)).not.toContain("--adopt")
+		expect(renderGcpAlchemy(project(), NEW)).not.toContain("--stage maple --adopt")
 	})
 })

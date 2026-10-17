@@ -5,7 +5,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -120,6 +120,7 @@ const makeHarness = (options: { readonly metricsAvailable: boolean } = { metrics
 		request,
 		adminKey,
 		memberKey,
+		testDb,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -300,6 +301,29 @@ describe("v2 gcp integration over HTTP", () => {
 		const turnOff = await harness.request("PATCH", path, admin.secret, { logs_enabled: false })
 		expect(turnOff.status).toBe(400)
 		expect(turnOff.body.error.code).toBe("integration_request_invalid")
+		await harness.dispose()
+	})
+
+	it("records a removal made without the script, for what is off and still set up", async () => {
+		const harness = makeHarness()
+		const admin = await harness.adminKey()
+		const created = await harness.request("POST", CONNECTORS, admin.secret, organizationConnector)
+		const path = `${CONNECTORS}/${created.body.id}`
+		// What a setup run reported: both in place.
+		await executeSql(
+			harness.testDb,
+			"UPDATE gcp_connectors SET applied_logs_enabled = true, applied_metrics_enabled = true",
+		)
+		await harness.request("PATCH", path, admin.secret, { logs_enabled: false })
+
+		const confirmed = await harness.request("POST", `${path}/confirm_removal`, admin.secret)
+		expect(confirmed.status).toBe(200)
+		expect(confirmed.body).toMatchObject({
+			id: created.body.id,
+			logs_enabled: false,
+			applied_logs_enabled: false,
+			applied_metrics_enabled: true,
+		})
 		await harness.dispose()
 	})
 

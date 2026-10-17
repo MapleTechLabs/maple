@@ -50,14 +50,13 @@ const SCOPES = {
 	],
 } as const
 
-const importBlock = (to: string, id: string) => `
-import {
-  to = ${to}
-  id = ${hcl(id)}
+// `commented`: for a resource only some earlier setups created, to take over by uncommenting.
+const importBlock = (to: string, id: string, commented = false) => {
+	const block = [`import {`, `  to = ${to}`, `  id = ${hcl(id)}`, `}`]
+	return `\n${block.map((line) => (commented ? `# ${line}` : line)).join("\n")}\n`
 }
-`
 
-/** What a setup script already created: Terraform imports it rather than failing on a duplicate. */
+/** What Maple has recorded as set up: Terraform imports it rather than failing on a duplicate. */
 export interface GcpExisting {
 	readonly logs: boolean
 	readonly reader: boolean
@@ -70,8 +69,10 @@ const logsSection = (plan: GcpSetupPlan, logs: NonNullable<GcpSetupPlan["logs"]>
 # ---- Log forwarding ----
 ${
 	existing
-		? `# The setup script created the topic, subscription and sink: Terraform takes them over.
+		? `# An earlier setup created the topic, subscription and sink: Terraform takes them over.
 ${importBlock("google_pubsub_topic.maple", `projects/${host}/topics/${logs.topic}`)}${importBlock("google_pubsub_subscription.maple", `projects/${host}/subscriptions/${logs.subscription}`)}${importBlock(`${sink}.maple`, `${sinkPrefix}/${plan.scopeId}/sinks/${logs.sink}`)}
+# A setup in the console also created the push service account: uncomment to take it over.
+${importBlock("google_service_account.maple_push", `projects/${host}/serviceAccounts/${logs.pushServiceAccountEmail}`, true)}
 `
 		: ""
 }resource "google_pubsub_topic" "maple" {
@@ -178,12 +179,11 @@ const readerSection = (
 # A read-only account Maple reads as through short-lived tokens. No key is created.
 ${
 	existing
-		? `${importBlock(
-				"google_service_account.maple_reader",
-				`projects/${plan.projectId}/serviceAccounts/${reader.serviceAccountEmail}`,
-			)}
+		? `${importBlock("google_service_account.maple_reader", `projects/${plan.projectId}/serviceAccounts/${reader.serviceAccountEmail}`)}
 `
-		: ""
+		: `# If an earlier setup left the read-only account in place, uncomment to take it over.
+${importBlock("google_service_account.maple_reader", `projects/${plan.projectId}/serviceAccounts/${reader.serviceAccountEmail}`, true)}
+`
 }resource "google_service_account" "maple_reader" {
   project      = local.project_id
   account_id   = ${hcl(reader.serviceAccountId)}
@@ -237,7 +237,8 @@ export const renderGcpTerraform = (plan: GcpSetupPlan, existing: GcpExisting): s
 	return `# Maple connection for Google Cloud ${plan.scopeType} ${plan.scopeId}
 #   Log forwarding:        ${logs === null ? "off" : "on"}
 #   Metrics and resources: ${reader === null ? "off" : "on"}
-# This configuration carries no secret${logs === null ? "." : `: Pub/Sub signs each push as ${logs.pushServiceAccountId},\n# and Maple checks the signature.`} Names follow the connection: one connection per module.
+# This configuration carries no secret${logs === null ? "." : `: Pub/Sub signs each push as ${logs.pushServiceAccountId},\n# and Maple checks the signature.`} Put it in a root module of its own: names follow the
+# connection, and imports only work in a root module.
 # Details: https://maple.dev/docs/integrations/gcp-infrastructure-as-code
 
 terraform {

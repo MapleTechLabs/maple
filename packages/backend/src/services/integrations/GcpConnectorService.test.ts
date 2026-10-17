@@ -510,7 +510,7 @@ describe("GcpConnectorService", () => {
 			assert.strictEqual(scripts.logFilter, /^LOG_FILTER='(.*)'$/m.exec(scripts.setupScript)?.[1])
 			assert.strictEqual(scripts.mapleServiceAccountEmail, MAPLE_ACCOUNT)
 			assert.match(scripts.terraform, new RegExp(`^  push_endpoint += "${pushEndpoint}"$`, "m"))
-			assert.notMatch(scripts.terraform, /maple_gcp_|secret=|to = /)
+			assert.notMatch(scripts.terraform, /maple_gcp_|secret=|^ {2}to = /m)
 			// Alchemy can't grant roles on an organization.
 			assert.isNull(scripts.alchemy)
 
@@ -522,7 +522,7 @@ describe("GcpConnectorService", () => {
 			)
 			const taken = yield* gcp.scripts(orgId, connector.id, scriptOptions)
 			assert.include(taken.terraform, "to = google_logging_organization_sink.maple")
-			assert.notInclude(taken.terraform, "to = google_service_account.maple_reader")
+			assert.include(taken.terraform, "# import {\n#   to = google_service_account.maple_reader")
 		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
 	})
 
