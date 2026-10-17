@@ -161,18 +161,18 @@ function ConnectionPanel({
 	})
 
 	const [handleSave, isSaving] = useAsyncAction(async () => {
+		const submitted = draft
+		const sent = { url: draft.url.trim(), user: draft.user.trim(), database: draft.database.trim() }
 		const result = await upsertMutation({
 			payload: new OrgClickHouseSettingsUpsertRequest({
-				url: draft.url.trim(),
-				user: draft.user.trim(),
-				database: draft.database.trim(),
+				...sent,
 				...(password !== "" ? { password } : undefined),
 			}),
 		})
 		if (!toastExit(result, { success: "Connection saved and tested", error: "Connection test failed" }))
 			return
 		setPassword("")
-		commit({ url: draft.url.trim(), user: draft.user.trim(), database: draft.database.trim() })
+		commit({ submitted, sent })
 		onChanged()
 	})
 

@@ -158,3 +158,15 @@ export function healthSegments(
 		({ count }) => count > 0,
 	)
 }
+
+/** Checks that did not fail, with a header that counts passed and skipped apart like the summary. */
+export function resolvedChecks<C extends Pick<V2SetupAuditCheck, "status">>(
+	checks: ReadonlyArray<C>,
+): { readonly checks: ReadonlyArray<C>; readonly label: string } {
+	const resolved = checks.filter((check) => check.status !== "fail")
+	const skipped = resolved.filter((check) => check.status === "skip").length
+	const passed = resolved.length - skipped
+	if (skipped === 0) return { checks: resolved, label: `Passing (${passed})` }
+	if (passed === 0) return { checks: resolved, label: `Skipped (${skipped})` }
+	return { checks: resolved, label: `Passing (${passed}) and skipped (${skipped})` }
+}

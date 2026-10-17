@@ -106,7 +106,7 @@ describe("BillingUsageTable", () => {
 		render(<Harness canEdit />)
 
 		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
-		fireEvent.change(screen.getByRole("spinbutton", { name: "Traces paid overage cap" }), {
+		fireEvent.change(screen.getByRole("textbox", { name: "Traces paid overage cap" }), {
 			target: { value: "150" },
 		})
 		expect(screen.getByText("Paid overage. Stops at 250.00 GB")).toBeTruthy()
@@ -130,7 +130,7 @@ describe("BillingUsageTable", () => {
 		render(<Harness canEdit />)
 
 		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
-		const input = screen.getByRole("spinbutton", { name: "Traces paid overage cap" })
+		const input = screen.getByRole("textbox", { name: "Traces paid overage cap" })
 		fireEvent.change(input, { target: { value: "150" } })
 		fireEvent.click(screen.getByRole("button", { name: "Save" }))
 		await waitFor(() =>
@@ -138,7 +138,7 @@ describe("BillingUsageTable", () => {
 		)
 		fireEvent.keyDown(input, { key: "Escape" })
 
-		expect(screen.getByRole("spinbutton", { name: "Traces paid overage cap" })).toBeTruthy()
+		expect(screen.getByRole("textbox", { name: "Traces paid overage cap" })).toBeTruthy()
 	})
 
 	it("locks the other rows' Edit buttons while a save is in flight, then frees them", async () => {
@@ -147,7 +147,7 @@ describe("BillingUsageTable", () => {
 		render(<Harness canEdit />)
 
 		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
-		fireEvent.change(screen.getByRole("spinbutton", { name: "Traces paid overage cap" }), {
+		fireEvent.change(screen.getByRole("textbox", { name: "Traces paid overage cap" }), {
 			target: { value: "150" },
 		})
 		fireEvent.click(screen.getByRole("button", { name: "Save" }))
@@ -169,7 +169,7 @@ describe("BillingUsageTable", () => {
 		render(<Harness canEdit />)
 
 		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
-		fireEvent.change(screen.getByRole("spinbutton", { name: "Traces paid overage cap" }), {
+		fireEvent.change(screen.getByRole("textbox", { name: "Traces paid overage cap" }), {
 			target: { value: "150" },
 		})
 		fireEvent.click(screen.getByRole("button", { name: "Save" }))
@@ -182,7 +182,7 @@ describe("BillingUsageTable", () => {
 				false,
 			),
 		)
-		expect(screen.getByRole("spinbutton", { name: "Logs paid overage cap" })).toBeTruthy()
+		expect(screen.getByRole("textbox", { name: "Logs paid overage cap" })).toBeTruthy()
 	})
 
 	it("sends one save when Enter is pressed again mid-save", async () => {
@@ -190,7 +190,7 @@ describe("BillingUsageTable", () => {
 		render(<Harness canEdit />)
 
 		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
-		const input = screen.getByRole("spinbutton", { name: "Traces paid overage cap" })
+		const input = screen.getByRole("textbox", { name: "Traces paid overage cap" })
 		fireEvent.change(input, { target: { value: "150" } })
 		fireEvent.keyDown(input, { key: "Enter" })
 		await waitFor(() =>
@@ -205,22 +205,35 @@ describe("BillingUsageTable", () => {
 		render(<Harness canEdit />)
 
 		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
-		fireEvent.keyDown(screen.getByRole("spinbutton", { name: "Traces paid overage cap" }), {
+		fireEvent.keyDown(screen.getByRole("textbox", { name: "Traces paid overage cap" }), {
 			key: "Escape",
 		})
 
-		expect(screen.queryByRole("spinbutton", { name: "Traces paid overage cap" })).toBeNull()
+		expect(screen.queryByRole("textbox", { name: "Traces paid overage cap" })).toBeNull()
 	})
 
 	it("refuses a negative cap without calling the API", () => {
 		render(<Harness canEdit />)
 
 		fireEvent.click(screen.getByRole("button", { name: "Edit Logs cap" }))
-		fireEvent.change(screen.getByRole("spinbutton", { name: "Logs paid overage cap" }), {
+		fireEvent.change(screen.getByRole("textbox", { name: "Logs paid overage cap" }), {
 			target: { value: "-5" },
 		})
 
 		expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true)
+		expect(saveCaps).not.toHaveBeenCalled()
+	})
+
+	it("refuses half-typed text instead of saving it as no cap", () => {
+		render(<Harness canEdit />)
+
+		fireEvent.click(screen.getByRole("button", { name: "Edit Logs cap" }))
+		const input = screen.getByRole("textbox", { name: "Logs paid overage cap" })
+		fireEvent.change(input, { target: { value: "1e" } })
+		fireEvent.keyDown(input, { key: "Enter" })
+
+		expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true)
+		expect(screen.getByText("Enter zero or more, or leave empty for no cap.")).toBeTruthy()
 		expect(saveCaps).not.toHaveBeenCalled()
 	})
 

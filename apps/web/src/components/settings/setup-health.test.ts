@@ -2,7 +2,7 @@ import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { SETUP_AUDIT_CHECKS } from "@maple/domain/setup-audit"
 import { describe, expect, it } from "vitest"
 
-import { healthSegments, orderFindings, setupHealthAction } from "./setup-health"
+import { healthSegments, orderFindings, resolvedChecks, setupHealthAction } from "./setup-health"
 
 const RULE_ID = "3f1b7c02-9a44-4d1e-8b2f-0c5d6e7a8b91"
 
@@ -81,5 +81,22 @@ describe("healthSegments", () => {
 			{ segment: "info", count: 1 },
 			{ segment: "pass", count: 40 },
 		])
+	})
+})
+
+describe("resolvedChecks", () => {
+	const checks = (statuses: ReadonlyArray<"pass" | "skip" | "fail">) =>
+		statuses.map((status, index) => ({ id: `C-${index}`, status }))
+
+	it("counts passed and skipped checks apart and leaves failures out", () => {
+		const result = resolvedChecks(checks(["pass", "skip", "fail", "pass", "skip", "skip"]))
+		expect(result.label).toBe("Passing (2) and skipped (3)")
+		expect(result.checks.map((check) => check.id)).toEqual(["C-0", "C-1", "C-3", "C-4", "C-5"])
+	})
+
+	it("names only the group that has checks", () => {
+		expect(resolvedChecks(checks(["pass", "fail"])).label).toBe("Passing (1)")
+		expect(resolvedChecks(checks(["skip", "skip"])).label).toBe("Skipped (2)")
+		expect(resolvedChecks(checks(["fail"])).checks).toEqual([])
 	})
 })

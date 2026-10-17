@@ -34,6 +34,7 @@ import {
 	type HealthSegment,
 	healthSegments,
 	orderFindings,
+	resolvedChecks,
 	type SetupHealthAction,
 	setupHealthAction,
 } from "./setup-health"
@@ -133,8 +134,16 @@ function FindingRow({ check }: { check: V2SetupAuditCheck }) {
 					<p className="text-muted-foreground/80 text-xs leading-relaxed">{check.fix_hint}</p>
 					{check.affected.length > 0 && (
 						<div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-							{check.affected.map((entity) => (
-								<AffectedChip key={`${entity.kind}:${entity.name}`} entity={entity} />
+							{check.affected.map((entity, index) => (
+								// Names repeat (two rules can share one), so key by id, else position.
+								<AffectedChip
+									key={
+										entity.id === null
+											? `index:${index}`
+											: `id:${entity.kind}:${entity.id}`
+									}
+									entity={entity}
+								/>
 							))}
 							{check.affected_count > check.affected.length && (
 								<span className="text-muted-foreground/70 text-2xs">
@@ -198,7 +207,7 @@ function SummaryPanel({ audit, refreshing }: { audit: V2SetupAudit; refreshing: 
 }
 
 function PassingDisclosure({ checks }: { checks: ReadonlyArray<V2SetupAuditCheck> }) {
-	const passing = checks.filter((check) => check.status !== "fail")
+	const { checks: passing, label } = resolvedChecks(checks)
 	if (passing.length === 0) return null
 	return (
 		<Collapsible>
@@ -209,7 +218,7 @@ function PassingDisclosure({ checks }: { checks: ReadonlyArray<V2SetupAuditCheck
 						className="text-muted-foreground shrink-0 transition-transform group-data-panel-open:rotate-90"
 					/>
 					<CircleCheckIcon size={16} className={cn("shrink-0", TONE_TEXT.info)} />
-					<span className="text-sm font-medium">Passing ({passing.length})</span>
+					<span className="text-sm font-medium">{label}</span>
 					<span className="text-muted-foreground min-w-0 flex-1 text-xs">
 						Checks are skipped only when telemetry could not be read
 					</span>

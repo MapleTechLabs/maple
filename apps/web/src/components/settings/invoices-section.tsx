@@ -17,7 +17,7 @@ import { billingInvoicesAtom, billingPlansAtom } from "@/lib/services/atoms/bill
 import { formatCurrency } from "@maple/domain/format"
 import { SettingsSection } from "./settings-section"
 
-/** The compact list's length; the rest live behind "View all". */
+/** The compact list's length for admins; the rest live behind "View all" (the portal). */
 const RECENT_INVOICES = 4
 
 // Stripe invoice statuses → badge treatment. Unknown statuses fall through to a
@@ -110,9 +110,9 @@ function InvoicesSkeleton() {
 }
 
 /**
- * The most recent invoices from Autumn/Stripe: date, plan, status, amount, and
- * a link to the Stripe-hosted invoice. "View all" opens the billing portal, which
- * also stays the way in when the list fails to load.
+ * Invoices from Autumn/Stripe: date, plan, status, amount, and a link to the
+ * Stripe-hosted invoice. Admins see the most recent few and "View all" opens the
+ * billing portal; members, who cannot open the portal, see every invoice.
  */
 export function InvoicesSection({
 	canManageBilling,
@@ -131,6 +131,9 @@ export function InvoicesSection({
 		if (!Result.isSuccess(invoicesResult)) return []
 		return [...invoicesResult.value.invoices].sort((a, b) => b.createdAt - a.createdAt)
 	}, [invoicesResult])
+
+	// The portal is admin-only, so members get the full list in place of "View all".
+	const visible = canManageBilling ? invoices.slice(0, RECENT_INVOICES) : invoices
 
 	const viewAll =
 		canManageBilling && invoices.length > 0 ? (
@@ -175,7 +178,7 @@ export function InvoicesSection({
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{invoices.slice(0, RECENT_INVOICES).map((invoice, index) => (
+							{visible.map((invoice, index) => (
 								<InvoiceRow
 									key={invoice.stripeId ?? `${invoice.createdAt}:${index}`}
 									invoice={invoice}
