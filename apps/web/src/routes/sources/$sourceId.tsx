@@ -9,12 +9,12 @@ import { DashboardPage } from "@/components/layout/dashboard-page"
 import { fromPublicSourceId, type RevealedToken, useSource } from "@/components/sources/shared"
 import {
 	RolledTokenBanner,
-	SOURCE_TABS,
 	SourceHeader,
 	SourceSetupTab,
 	SourceTabs,
 } from "@/components/sources/source-detail"
 import { SourceOverview } from "@/components/sources/source-overview"
+import { SOURCE_TABS } from "@/components/sources/source-tabs"
 import { SourceSettings } from "@/components/sources/source-settings"
 import type { SourceId } from "@maple/domain/primitives"
 

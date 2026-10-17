@@ -11,9 +11,8 @@ import { isPushSourcePlatform } from "@maple/domain/primitives"
 import { SourceActions } from "./source-actions"
 import { SourceSetup } from "./source-setup"
 import { SourceStatusBadge, sourceStatus } from "./source-status"
+import { SOURCE_TABS, type SourceTab } from "./source-tabs"
 
-export const SOURCE_TABS = ["overview", "setup", "settings"] as const
-export type SourceTab = (typeof SOURCE_TABS)[number]
 const TAB_LABELS = { overview: "Overview", setup: "Setup", settings: "Settings" } satisfies Record<
 	SourceTab,
 	string
