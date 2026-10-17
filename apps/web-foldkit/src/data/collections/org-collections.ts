@@ -3,6 +3,7 @@ import { electricSyncBaseUrl } from "@maple/web/lib/services/common/electric-syn
 import { Context, Duration, Effect, Layer, ManagedRuntime, Option, type Scope, SynchronizedRef } from "effect"
 import { SessionBearer } from "../../platform/session-bearer"
 import {
+	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
 	AlertRuleRowSchema,
 	AlertRuleStateRowSchema,
@@ -77,12 +78,25 @@ const makeSet = (
 			parser: timestamptzParser,
 		},
 	}),
+	alertDestinations: createEffectCollection({
+		id: `alert_destinations_v2:${orgId}`,
+		runtime,
+		schema: AlertDestinationRowSchema,
+		getKey: (row) => row.id,
+		shapeOptions: {
+			url: syncProxyUrl,
+			params: { shape: "alert_destinations_v2", org: orgId },
+			fetchClient,
+			parser: timestamptzParser,
+		},
+	}),
 })
 export type OrgCollectionSet = ReturnType<typeof makeSet>
 type SyncedCollection =
 	| OrgCollectionSet["alertRules"]
 	| OrgCollectionSet["alertRuleStates"]
 	| OrgCollectionSet["alertIncidents"]
+	| OrgCollectionSet["alertDestinations"]
 
 /** `cleanupCollectionWhenIdle`: wait for the last live query to let go, then clean up. */
 const cleanupWhenIdle = (collection: SyncedCollection): Effect.Effect<void> =>
@@ -127,6 +141,7 @@ function makeOrgCollections(): Effect.Effect<OrgCollections["Service"], never, S
 						cleanupWhenIdle(set.alertRules),
 						cleanupWhenIdle(set.alertRuleStates),
 						cleanupWhenIdle(set.alertIncidents),
+						cleanupWhenIdle(set.alertDestinations),
 					]),
 					scope,
 				),

@@ -1,0 +1,58 @@
+import { V2ErrorIssueServiceCount, V2Investigation } from "@maple/domain/http/v2"
+import { Schema } from "effect"
+import { defineMessageUnion } from "foldkit/message"
+import { LoadFailure } from "../../../data/load-failure"
+import { TimeWindow } from "../../../data/time-range"
+import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as Select from "../../../ui/select"
+import * as Tabs from "../../../ui/tabs"
+import { SignalPresences } from "../../kit/signal-presence"
+import { ErrorsSummary, IssuePage, SparkSeries, VolumeRow } from "./model"
+
+/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
+export const RequestMode = Schema.Literals(["Load", "Refresh"])
+export type RequestMode = typeof RequestMode.Type
+
+/** The sidebar's single-select params. */
+export const FilterParam = Schema.Literals(["service", "env", "kind", "regressed"])
+export type FilterParam = typeof FilterParam.Type
+
+const result = <A extends Schema.Top>(schema: A) => ({
+	key: Schema.String,
+	result: Schema.Result(schema, LoadFailure),
+})
+
+export const Message = defineMessageUnion({
+	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedFetchSummary: result(Schema.NullOr(ErrorsSummary)),
+	CompletedFetchServiceCounts: result(Schema.Array(V2ErrorIssueServiceCount)),
+	CompletedFetchEnvironments: result(Schema.Array(Schema.String)),
+	CompletedFetchRanking: result(Schema.Array(Schema.String)),
+	CompletedFetchPage: result(IssuePage),
+	CompletedFetchVolume: result(Schema.Array(VolumeRow)),
+	CompletedFetchSpark: result(Schema.Array(SparkSeries)),
+	CompletedFetchInvestigations: result(Schema.Array(V2Investigation)),
+	PaintedEmptyList: {},
+	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
+	ClickedReload: {},
+	CompletedReloadSpin: { version: Schema.Number },
+	ClickedRetry: {},
+	ClickedLoadMore: {},
+	ToggledFilterOption: { param: FilterParam, name: Schema.String },
+	ClickedClearFilters: {},
+	RemovedFilterChip: { param: FilterParam },
+	ChangedSearchDraft: { value: Schema.String },
+	ElapsedSearchDebounce: { generation: Schema.Number },
+	ClickedViewAll: {},
+	ClickedClearSearch: {},
+	ClickedShowAllSeverities: {},
+	ToggledRow: { id: Schema.String },
+	ToggledAllRows: {},
+	HoveredRow: { id: Schema.String },
+	ClickedInvestigation: { id: Schema.String },
+	GotTabsMessage: { message: Tabs.Message },
+	GotSortSelectMessage: { message: Select.Message },
+	GotSeveritySelectMessage: { message: Select.Message },
+	GotFilterSectionsMessage: { message: FilterSections.Message },
+})
+export type Message = typeof Message.Type

@@ -1,0 +1,101 @@
+import type { IssueKind } from "@maple/domain/http"
+import { getServiceColor } from "@maple/ui/lib/colors"
+import { AsyncData } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import * as FilterSections from "../../../ui/filters/filter-sections"
+import { filterSection, singleCheckboxFilter } from "../../../ui/filters/filter-section"
+import {
+	filterSidebarBody,
+	filterSidebarEmpty,
+	filterSidebarFrame,
+	filterSidebarHeader,
+	filterSidebarLoading,
+} from "../../../ui/filters/filter-sidebar"
+import { SOURCE_COLOR, SOURCE_DESCRIPTION, SOURCES } from "../kit/source"
+import { hasErrorFilters, KIND_LABEL } from "./derive"
+import { type FilterParam, Message } from "./message"
+import type { Model } from "./model"
+
+// `ErrorsFilterSidebar` (apps/web/src/components/errors/errors-filter-sidebar.tsx).
+
+type H = HtmlBuilder<Message>
+
+const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
+
+const isIssueKind = (value: string): value is IssueKind => SOURCES.some((kind) => kind === value)
+
+const section = (
+	h: H,
+	model: Model,
+	title: string,
+	param: FilterParam,
+	options: ReadonlyArray<{ name: string; count: number }>,
+	selected: string | undefined,
+	extra: Partial<Parameters<typeof filterSection<Message>>[1]> = {},
+) =>
+	filterSection(h, {
+		title,
+		options,
+		selected: selected === undefined ? [] : [selected],
+		sections: model.filterSections,
+		toSectionsMessage: toSections,
+		onToggle: (name) => Message.ToggledFilterOption({ param, name }),
+		...extra,
+	})
+
+/** The service counts are what the sidebar is mostly made of: it waits for them. */
+export const filtersRail = (h: H, model: Model): Html => {
+	const { search } = model
+	const counts = model.serviceCounts.data
+	if (!AsyncData.hasData(counts) && !AsyncData.isFailure(counts)) return filterSidebarLoading(h, 3)
+	const services = AsyncData.getOrElse(counts, () => []).map((row) => ({
+		name: row.service_name,
+		count: row.open_count,
+	}))
+	if (AsyncData.hasData(counts) && services.length === 0 && !hasErrorFilters(search))
+		return filterSidebarEmpty(h)
+	const environments = AsyncData.getOrElse(model.environments.data, () => []).map((name) => ({
+		name,
+		count: 0,
+	}))
+	const hasFilters = hasErrorFilters(search)
+	return filterSidebarFrame(h, { isWaiting: false }, [
+		filterSidebarHeader(h, hasFilters ? { onClear: Message.ClickedClearFilters() } : {}),
+		...filterSidebarBody(
+			h,
+			"errors-filters",
+			present([
+				singleCheckboxFilter(h, {
+					title: "Regressed only",
+					isChecked: search.regressed === true,
+					onToggle: Message.ToggledFilterOption({ param: "regressed", name: "regressed" }),
+				}),
+				section(h, model, "Service", "service", services, search.service, {
+					colorMap: Object.fromEntries(
+						services.map((option) => [option.name, getServiceColor(option.name)]),
+					),
+				}),
+				section(h, model, "Environment", "env", environments, search.env, { showCounts: false }),
+				section(
+					h,
+					model,
+					"Source",
+					"kind",
+					SOURCES.map((name) => ({ name, count: 0 })),
+					search.kind,
+					{
+						hasDescription: true,
+						colorMap: SOURCE_COLOR,
+						getOptionDescription: (name) =>
+							isIssueKind(name) ? SOURCE_DESCRIPTION[name] : undefined,
+						getOptionLabel: (name) => (isIssueKind(name) ? KIND_LABEL[name] : name),
+						showCounts: false,
+					},
+				),
+			]),
+		),
+	])
+}
+
+const present = (nodes: ReadonlyArray<Html | null>): ReadonlyArray<Html> =>
+	nodes.filter((node): node is Html => node !== null)

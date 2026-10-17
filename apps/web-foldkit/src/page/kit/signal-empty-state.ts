@@ -94,12 +94,13 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	presence: SignalPresence
 	nowMs: number
 	noun?: string
+	/** The page's own sentence in place of the signal's, and its guide. */
+	purpose?: string
+	guideDocs?: DocsPage
 	isFiltered?: boolean
 	/** `onClearFilters`: the Message the "Clear filters" button sends. */
 	onClearFilters?: M
 	onWidenRange?: M
-	/** Overrides the signal's guide page (`guideDocs`). */
-	guideDocs?: DocsPage
 	className?: string
 }>
 
@@ -146,7 +147,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 					iconMedia(h, copy.icon),
 					// Split where the JSX interpolates, so text runs shape the same.
 					emptyTitle(h, ["No ", subject, " yet"]),
-					emptyDescription(h, [copy.purpose, " ", copy.source]),
+					emptyDescription(h, [options.purpose ?? copy.purpose, " ", copy.source]),
 				]),
 				emptyContent(h, [
 					emptyActions(h, [
@@ -199,7 +200,10 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 	return empty(
 		h,
 		[
-			emptyHeader(h, [emptyTitle(h, ["No ", subject, " found"]), emptyDescription(h, [copy.purpose])]),
+			emptyHeader(h, [
+				emptyTitle(h, ["No ", subject, " found"]),
+				emptyDescription(h, [options.purpose ?? copy.purpose]),
+			]),
 			emptyContent(h, [docsLink(h, options.guideDocs ?? copy.guideDocs)]),
 		],
 		options.className,

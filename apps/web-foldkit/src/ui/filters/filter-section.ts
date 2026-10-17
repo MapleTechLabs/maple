@@ -71,6 +71,14 @@ export type FilterSectionConfig<M> = Readonly<{
 	onToggle: (name: string) => M
 	onOnly?: (name: string) => M
 	onExclude?: (name: string) => M
+	/** Option name to swatch colour, drawn before the label. */
+	colorMap?: Readonly<Record<string, string>>
+	getOptionLabel?: (name: string) => string
+	/** The label's `title` when it is more than the label. */
+	getOptionDescription?: (name: string) => string | undefined
+	showCounts?: boolean
+	/** The info mark beside the title (`FilterDescription`'s closed trigger). */
+	hasDescription?: boolean
 }>
 
 /** `FilterRowAction`: the `tag` badge as a button, transparent until the row is hovered. */
@@ -106,11 +114,42 @@ const rowAction = <M>(
 		[text],
 	)
 
+const countText = <M>(h: HtmlBuilder<M>, option: FilterOption, isTriState: boolean): Html =>
+	h.span(
+		[
+			h.Class(
+				cn(
+					"text-xs text-muted-foreground tabular-nums transition-opacity",
+					isTriState &&
+						"group-hover/option:opacity-0 group-focus-within/option:opacity-0 pointer-coarse:opacity-0",
+				),
+			),
+			h.Title(option.count.toLocaleString("en-US")),
+		],
+		[formatNumber(option.count)],
+	)
+
+/** `FilterDescription`'s closed trigger: the info mark (TODO(tooltip): the popup is not ported). */
+export const filterDescriptionMark = <M>(h: HtmlBuilder<M>, title: string): Html =>
+	h.span(
+		[
+			h.AriaLabel(`About ${title}`),
+			h.Class("inline-flex shrink-0 text-muted-foreground/50 hover:text-muted-foreground"),
+			h.DataAttribute("base-ui-tooltip-trigger", ""),
+			h.DataAttribute("slot", "tooltip-trigger"),
+			h.Tabindex(0),
+		],
+		[icon(h, "CircleInfoIcon", { className: "size-3" })],
+	)
+
 const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option: FilterOption): Html => {
 	const excluded = config.excluded ?? []
 	const isExcluded = excluded.includes(option.name)
 	const inputId = `${config.title}-${option.name}`
-	const optionLabel = isExcluded ? `${option.name} (excluded)` : option.name
+	const text = config.getOptionLabel?.(option.name) ?? option.name
+	const optionLabel = isExcluded ? `${text} (excluded)` : text
+	const title = isExcluded ? optionLabel : (config.getOptionDescription?.(option.name) ?? text)
+	const swatch = config.colorMap?.[option.name]
 	const isTriState = config.onExclude !== undefined
 	return h.div(
 		[
@@ -139,26 +178,29 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 							? "text-muted-foreground/70 line-through decoration-1 decoration-muted-foreground/50"
 							: "text-foreground",
 					),
-					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(optionLabel)],
+					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(title)],
 				},
-				[h.span([h.Class("truncate")], [option.name])],
+				[
+					...(swatch === undefined
+						? []
+						: [
+								h.span([
+									h.Class(
+										cn(
+											"size-2.5 rounded-[35%] [corner-shape:squircle] shrink-0",
+											isExcluded && "opacity-40",
+										),
+									),
+									h.Style({ "background-color": swatch }),
+								]),
+							]),
+					h.span([h.Class("truncate")], [text]),
+				],
 			),
 			h.span(
 				[h.Class("relative flex shrink-0 items-center justify-end")],
 				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									"text-xs text-muted-foreground tabular-nums transition-opacity",
-									isTriState &&
-										"group-hover/option:opacity-0 group-focus-within/option:opacity-0 pointer-coarse:opacity-0",
-								),
-							),
-							h.Title(option.count.toLocaleString("en-US")),
-						],
-						[formatNumber(option.count)],
-					),
+					...(config.showCounts === false ? [] : [countText(h, option, isTriState)]),
 					...(config.onExclude === undefined
 						? []
 						: [
@@ -175,7 +217,7 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 													rowAction(
 														h,
 														"Only",
-														`Show only ${option.name}`,
+														`Show only ${text}`,
 														config.onOnly(option.name),
 														undefined,
 													),
@@ -183,9 +225,7 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 										rowAction(
 											h,
 											"Exclude",
-											isExcluded
-												? `Stop excluding ${option.name}`
-												: `Exclude ${option.name}`,
+											isExcluded ? `Stop excluding ${text}` : `Exclude ${text}`,
 											config.onExclude(option.name),
 											isExcluded,
 										),
@@ -256,7 +296,12 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 				[
 					h.span(
 						[h.Class("flex min-w-0 items-center gap-1.5")],
-						[h.span([h.Class("truncate")], [config.title])],
+						[
+							h.span([h.Class("truncate")], [config.title]),
+							...(config.hasDescription === true
+								? [filterDescriptionMark(h, config.title)]
+								: []),
+						],
 					),
 					h.span(
 						[h.Class("flex items-center gap-1.5")],
@@ -396,3 +441,39 @@ const searchInput = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, searc
 					]),
 				]),
 	])
+
+/** `SingleCheckboxFilter`: one checkbox with its label (and count). */
+export const singleCheckboxFilter = <M>(
+	h: HtmlBuilder<M>,
+	config: Readonly<{ title: string; isChecked: boolean; onToggle: M; count?: number }>,
+): Html => {
+	const inputId = `filter-${config.title}`
+	return h.div(
+		[h.Class("flex items-center gap-2 py-1.5")],
+		[
+			...Checkbox.view(h, {
+				model: { isChecked: config.isChecked },
+				toParentMessage: () => config.onToggle,
+				id: `${inputId}-checkbox`,
+				inputId,
+			}),
+			label(
+				h,
+				{
+					className:
+						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal",
+					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(config.title)],
+				},
+				[h.span([h.Class("truncate")], [config.title])],
+			),
+			...(config.count === undefined
+				? []
+				: [
+						h.span(
+							[h.Class("text-xs text-muted-foreground tabular-nums")],
+							[formatNumber(config.count)],
+						),
+					]),
+		],
+	)
+}

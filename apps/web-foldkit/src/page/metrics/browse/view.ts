@@ -9,7 +9,7 @@ import { icon } from "../../../ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import type * as Select from "../../../ui/select"
-import { type SelectEntry, view as selectView } from "../../../ui/select-view"
+import { type SelectEntry, type SelectOption, view as selectView } from "../../../ui/select-view"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { presenceOf } from "../../kit/signal-presence"
@@ -40,43 +40,42 @@ const TYPE_ITEMS = [
 	{ value: "exponential_histogram", label: "Exp histogram" },
 ] as const
 
-/** `MetricsTypeFilter`'s items: the counts live in the menu (decoration; a failed summary hides them). */
-const typeEntries = (h: H, summary: Option.Option<ReadonlyArray<SummaryRow>>): ReadonlyArray<SelectEntry> =>
-	TYPE_ITEMS.map((item) => {
+const TYPE_ENTRIES: ReadonlyArray<SelectEntry> = TYPE_ITEMS.map((item) => ({
+	_tag: "Item",
+	item: { value: item.value, label: item.label },
+}))
+
+/** `MetricsTypeFilter`'s menu rows: the counts live in the menu (decoration; a failed summary hides them). */
+const typeItem =
+	(h: H, summary: Option.Option<ReadonlyArray<SummaryRow>>) =>
+	(option: SelectOption): ReadonlyArray<Html | string> => {
 		const rows = Option.getOrUndefined(summary)
-		const row = rows?.find((candidate) => candidate.metricType === item.value)
+		const row = rows?.find((candidate) => candidate.metricType === option.value)
 		const count =
 			rows === undefined
 				? undefined
-				: item.value === "all"
+				: option.value === "all"
 					? rows.reduce((total, next) => total + next.metricCount, 0)
 					: (row?.metricCount ?? 0)
 		const dataPoints =
-			item.value === "all"
+			option.value === "all"
 				? rows?.reduce((total, next) => total + next.dataPointCount, 0)
 				: row?.dataPointCount
-		return {
-			_tag: "Item",
-			item: {
-				value: item.value,
-				label: item.label,
-				content: h.span(
-					[
-						h.Class("flex w-full items-center justify-between gap-6"),
-						...(dataPoints === undefined
-							? []
-							: [h.Title(`${formatNumber(dataPoints)} data points`)]),
-					],
-					[
-						item.label,
-						...(count === undefined
-							? []
-							: [h.span([h.Class("text-muted-foreground tabular-nums")], [String(count)])]),
-					],
-				),
-			},
-		}
-	})
+		return [
+			h.span(
+				[
+					h.Class("flex w-full items-center justify-between gap-6"),
+					...(dataPoints === undefined ? [] : [h.Title(`${formatNumber(dataPoints)} data points`)]),
+				],
+				[
+					option.label,
+					...(count === undefined
+						? []
+						: [h.span([h.Class("text-muted-foreground tabular-nums")], [String(count)])]),
+				],
+			),
+		]
+	}
 
 /** `ToolbarSearch` (debounced) over `SearchInput`. */
 const toolbarSearch = (h: H, model: Model): Html =>
@@ -118,7 +117,8 @@ const filters = (h: H, model: Model): Html =>
 		view: selectView,
 		toParentMessage: toTypeSelect,
 		viewInputs: {
-			entries: typeEntries(h, AsyncData.getData(model.summary.data)),
+			entries: TYPE_ENTRIES,
+			renderItem: typeItem(h, AsyncData.getData(model.summary.data)),
 			ariaLabel: "Metric type",
 			className: "w-auto min-w-0",
 			toView: (parts) =>
