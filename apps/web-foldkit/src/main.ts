@@ -9,6 +9,7 @@ import * as Home from "./page/home"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { readSessionToken } from "./platform/auth-api"
+import * as Toast from "./ui/toast"
 import { urlToAppRoute } from "./route"
 import { settle } from "./update"
 
@@ -32,7 +33,7 @@ export const flags: Effect.Effect<Flags> = Effect.map(readSessionToken, (maybeTo
 
 export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resources> = (flags, url: Url) => {
 	const route = urlToAppRoute(url)
-	const base = { route, signIn: SignIn.init(), home: Home.init() }
+	const base = { route, signIn: SignIn.init(), home: Home.init(), toasts: Toast.init("toasts") }
 
 	if (isClerkAuthEnabled) {
 		return {

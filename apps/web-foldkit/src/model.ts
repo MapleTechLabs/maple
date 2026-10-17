@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
 import * as Home from "./page/home"
 import * as SignIn from "./page/sign-in"
+import * as Toast from "./ui/toast"
 import { AppRoute } from "./route"
 
 /** The router's `auth` context in apps/web: unknown until resolved (`<BootSplash>`), then settled. */
@@ -28,5 +29,7 @@ export const Model = Schema.Struct({
 	clerk: ClerkPhase,
 	signIn: SignIn.Model,
 	home: Home.Model,
+	/** The app-wide toasts (`ToastProvider` at the root in apps/web). */
+	toasts: Toast.Model,
 })
 export type Model = typeof Model.Type

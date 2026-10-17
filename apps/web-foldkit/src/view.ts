@@ -9,6 +9,7 @@ import * as ClerkSignIn from "./page/clerk-sign-in"
 import * as Home from "./page/home"
 import * as SignIn from "./page/sign-in"
 import { AppRoute, isPublicRoute } from "./route"
+import * as ToastView from "./ui/toast-view"
 
 /** Placeholder for a route that is not ported yet: its tag and the session's org. */
 const placeholder = (model: Model, h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
@@ -22,7 +23,8 @@ const placeholder = (model: Model, h: HtmlBuilder<Message>, children: ReadonlyAr
 					Session.match(model.session, {
 						Resolving: () => "Session resolving",
 						SignedOut: () => "Signed out",
-						SignedIn: ({ maybeOrgId }) => `Signed in to ${Option.getOrElse(maybeOrgId, () => "no organization")}`,
+						SignedIn: ({ maybeOrgId }) =>
+							`Signed in to ${Option.getOrElse(maybeOrgId, () => "no organization")}`,
 					}),
 				],
 			),
@@ -66,7 +68,14 @@ const content = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 		SignedIn: () => [routeView(model, h)],
 	})
 
-const body = (model: Model, h: HtmlBuilder<Message>): Html => h.div([h.Id("app")], content(model, h))
+const body = (model: Model, h: HtmlBuilder<Message>): Html =>
+	h.div(
+		[h.Id("app")],
+		[
+			...content(model, h),
+			...ToastView.regions(h, model.toasts, (message) => Message.GotToastMessage({ message })),
+		],
+	)
 
 // NOTE: Foldkit's first render replaces the container, so the view root is `div#app` itself.
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({

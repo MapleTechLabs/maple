@@ -6,6 +6,7 @@ import { Url } from "foldkit/url"
 import * as Home from "./page/home"
 import * as SignIn from "./page/sign-in"
 import { ClerkSnapshot } from "./platform/clerk"
+import * as Toast from "./ui/toast"
 
 /** Why the stored self-hosted session did not resolve to a signed-in tenant. */
 export const SessionCheckFailure = Schema.Literals(["NoToken", "Rejected", "Unreachable"])
@@ -29,5 +30,6 @@ export const Message = defineMessageUnion({
 	FailedMountClerkSignIn: { message: Schema.String },
 	GotSignInMessage: { message: SignIn.Message },
 	GotHomeMessage: { message: Home.Message },
+	GotToastMessage: { message: Toast.Message },
 })
 export type Message = typeof Message.Type
