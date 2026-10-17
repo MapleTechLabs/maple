@@ -20,6 +20,8 @@ export interface SkeletonListOptions {
 	/** Accessible name for the loading region. */
 	readonly label?: string
 	readonly className?: string
+	/** A custom row skeleton (`renderRow`), given the row index. */
+	readonly renderRow?: (index: number) => Html
 }
 
 /** A stack of identical skeleton rows: the loading state of a list or panel body. */
@@ -31,7 +33,9 @@ export const skeletonList = <M>(h: HtmlBuilder<M>, options: SkeletonListOptions 
 			h.Class(cn(skeletonListStyles, skeletonListGapStyles[options.gap ?? "px"], options.className)),
 			h.DataAttribute("slot", "skeleton-list"),
 		],
-		Array.from({ length: options.rows ?? 4 }, () =>
-			skeleton(h, cn(skeletonListRowStyles, options.rowClassName ?? skeletonListRowDefaultStyles)),
+		Array.from({ length: options.rows ?? 4 }, (_, index) =>
+			options.renderRow === undefined
+				? skeleton(h, cn(skeletonListRowStyles, options.rowClassName ?? skeletonListRowDefaultStyles))
+				: options.renderRow(index),
 		),
 	)

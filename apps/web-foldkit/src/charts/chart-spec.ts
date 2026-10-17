@@ -70,6 +70,19 @@ export const ChartSpec = defineTaggedUnion({
 		/** Bumped when the data arrives again: React rebuilds the definition on every new result. */
 		revision: Schema.Number,
 	},
+	/** `LogsVolumePlot`: the /logs severity histogram, stacked per bucket, with its drag selection. */
+	LogsVolume: {
+		buckets: Schema.Array(
+			Schema.Struct({ bucket: Schema.String, counts: Schema.Record(Schema.String, Schema.Number) }),
+		),
+		seriesKeys: Schema.Array(Schema.String),
+		/** Each series' resolved colour, by key. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		border: Schema.String,
+		selection: Nullable(Schema.Struct({ left: Schema.String, right: Schema.String })),
+		isSelecting: Schema.Boolean,
+		timeZone: Schema.String,
+	},
 	/** `HistogramSpike` (binX over raw observations) in apps/web/src/lab/charts/histogram-spike.tsx. */
 	BinnedHistogram: {
 		values: Schema.Array(Schema.Number),
@@ -95,6 +108,13 @@ export const ChartTooltip = defineTaggedUnion({
 	},
 	NumericBin: { x1: Schema.Number, x2: Schema.Number, value: Schema.Number },
 	CategoricalBin: { name: Schema.String, value: Schema.Number },
+	/** A volume bucket: its heading and every severity at that bucket. */
+	VolumeBucket: {
+		heading: Schema.String,
+		rows: Schema.Array(
+			Schema.Struct({ label: Schema.String, color: Schema.String, value: Schema.Number }),
+		),
+	},
 })
 export type ChartTooltip = typeof ChartTooltip.Type
 

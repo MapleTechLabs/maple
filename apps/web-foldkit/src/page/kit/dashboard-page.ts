@@ -2,12 +2,14 @@ import { cn } from "@maple/ui/lib/utils"
 import {
 	pageBodyStyles,
 	pageContentStyles,
+	pageFillStyles,
 	pageFilterSidebarStyles,
 	pageFilterSidebarWidthStyles,
 	pageHeaderActionsStyles,
 	pageHeaderStyles,
 	pageHeaderTextStyles,
 	pageScrollAreaStyles,
+	pageStickyAreaScrolledStyles,
 	pageStickyAreaStyles,
 } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,6 +27,12 @@ export type DashboardPageOptions = Readonly<{
 	/** The header's right side: `headerActions` and the time controls, already composed. */
 	actions?: Html
 	scrollClassName?: string
+	/** `sticky`: pinned under the header (a chart, a toolbar). */
+	sticky?: Html
+	/** The body owns its scrolling (a virtualized list): `Fill` instead of `Scroll`. */
+	fill?: boolean
+	/** A scroller below has left the top: the sticky area raises its shadow. */
+	isScrolled?: boolean
 }>
 
 /** `PageLayout.Body`. */
@@ -68,9 +76,19 @@ const pageHeader = <M>(h: HtmlBuilder<M>, titleContent: Html | undefined, action
 		],
 	)
 
-/** `PageLayout.StickyArea` (the scrolled shadow is not modelled yet). */
-const stickyArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.div([h.DataAttribute("slot", "page-sticky-area"), h.Class(pageStickyAreaStyles)], children)
+/** `PageLayout.StickyArea`; the page reports the scrolled shadow. */
+const stickyArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, isScrolled = false): Html =>
+	h.div(
+		[
+			h.DataAttribute("slot", "page-sticky-area"),
+			h.Class(cn(pageStickyAreaStyles, isScrolled && pageStickyAreaScrolledStyles)),
+		],
+		children,
+	)
+
+/** `PageLayout.Fill`. */
+const fillArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+	h.div([h.DataAttribute("slot", "page-fill"), h.Class(pageFillStyles)], children)
 
 /** `PageLayout.ScrollArea` (`DashboardLayout.Scroll` with the default width and gap). */
 const scrollArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
@@ -86,11 +104,15 @@ export const dashboardPage = <M>(
 	children: ReadonlyArray<Html>,
 ): Html => {
 	const hasHeader = options.titleContent !== undefined || options.actions !== undefined
+	const sticky = [
+		...(hasHeader ? [pageHeader(h, options.titleContent, options.actions)] : []),
+		...(options.sticky === undefined ? [] : [options.sticky]),
+	]
 	return pageBody(h, [
 		...(options.filters === undefined ? [] : [filterRail(h, options.filters, options.filtersWidth)]),
 		pageContent(h, [
-			...(hasHeader ? [stickyArea(h, [pageHeader(h, options.titleContent, options.actions)])] : []),
-			scrollArea(h, children, options.scrollClassName),
+			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled)] : []),
+			options.fill === true ? fillArea(h, children) : scrollArea(h, children, options.scrollClassName),
 		]),
 	])
 }

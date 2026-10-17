@@ -23,6 +23,11 @@ export interface ViewInputs {
 	readonly footerText: string
 	/** Adds "Filter in" / "Filter out" to the attribute card. */
 	readonly canFilter: boolean
+	/**
+	 * The parent renders the stream's box (with its toolbar before the stream, as apps/web's
+	 * `LogsTableView` does on /logs); the stream's own root is then `display: contents`.
+	 */
+	readonly isBare?: boolean
 }
 
 const PINNED_COL_WIDTH = "150px"
@@ -119,15 +124,17 @@ export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 				]
 	})
 	return h.div(
-		[
-			h.Class(
-				cn(
-					"flex min-h-0 flex-1 flex-col",
-					inputs.isWaiting ? "opacity-60 transition-opacity" : "transition-opacity",
-				),
-			),
-			...(inputs.isWaiting ? [h.AriaBusy(true)] : []),
-		],
+		inputs.isBare === true
+			? [h.Class("contents")]
+			: [
+					h.Class(
+						cn(
+							"flex min-h-0 flex-1 flex-col",
+							inputs.isWaiting ? "opacity-60 transition-opacity" : "transition-opacity",
+						),
+					),
+					...(inputs.isWaiting ? [h.AriaBusy(true)] : []),
+				],
 		[
 			h.div(
 				[

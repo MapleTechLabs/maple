@@ -14,13 +14,14 @@ import type {
 	PageStep,
 	PageViewInputs,
 } from "./contract"
+import * as LogsList from "./logs/list"
 import * as ServicesList from "./services/list"
 
 /**
  * Every ported page, registered once. Adding a page: import its module and append `X.page` below;
  * that is the only shared file a page touches. Shell routes without a page render the placeholder.
  */
-export const pages = [ServicesList.page]
+export const pages = [ServicesList.page, LogsList.page]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))
 export type PageSlot = typeof PageSlot.Type

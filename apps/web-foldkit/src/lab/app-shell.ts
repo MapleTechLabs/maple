@@ -64,9 +64,19 @@ export const labShellView = <Message>(
 	h: HtmlBuilder<Message>,
 	shell: Shell.Model,
 	toParentMessage: (message: Shell.Message) => Message,
-	frame: Readonly<{ currentPath: string; breadcrumbs: ReadonlyArray<Shell.BreadcrumbEntry>; page: () => Html }>,
+	frame: Readonly<{
+		currentPath: string
+		breadcrumbs: ReadonlyArray<Shell.BreadcrumbEntry>
+		page: () => Html
+	}>,
 ): ReadonlyArray<Html> => [
-	h.submodel({ slotId: "shell-frame", model: shell, view: Shell.frameView, toParentMessage, viewInputs: frame }),
+	h.submodel({
+		slotId: "shell-frame",
+		model: shell,
+		view: Shell.frameView,
+		toParentMessage,
+		viewInputs: frame,
+	}),
 	h.submodel({
 		slotId: "shell-sheet",
 		model: shell,

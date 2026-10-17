@@ -77,7 +77,9 @@ export const init = (flags: ViewerFlags & LabShellFlags): Return => {
 			stream: () => LogsStream.init("logs-lab", rows),
 			footerText: () => footerOf(base, rows.length),
 		}),
-		commands: (shell.commands ?? []).map(Command.mapMessage((message) => Message.GotShellMessage({ message }))),
+		commands: (shell.commands ?? []).map(
+			Command.mapMessage((message) => Message.GotShellMessage({ message })),
+		),
 	}
 }
 

@@ -11,6 +11,7 @@ import {
 	buildCategoricalHistogram,
 	buildNumericHistogram,
 } from "./definitions/histogram"
+import { buildLogsVolume } from "./definitions/logs-volume"
 import { buildPie, buildPieSpike } from "./definitions/pie"
 import { buildSparkline } from "./definitions/sparkline"
 
@@ -128,6 +129,8 @@ export const createChartHost = (
 			),
 		Sparkline: (sparkline) =>
 			hostFor(container, sparkline, height, variant("Sparkline"), buildSparkline, options),
+		LogsVolume: (volume) =>
+			hostFor(container, volume, height, variant("LogsVolume"), buildLogsVolume, options),
 		BinnedHistogram: (histogram) =>
 			hostFor(container, histogram, height, variant("BinnedHistogram"), buildBinnedHistogram, options),
 	})

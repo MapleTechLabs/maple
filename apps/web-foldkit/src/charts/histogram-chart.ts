@@ -129,6 +129,7 @@ const histogramTooltipBody = (
 			),
 		CategoricalBin: (bin) => Option.some(countTooltipBody(h, bin.name, bin.value, color, portal)),
 		PieSlice: () => Option.none(),
+		VolumeBucket: () => Option.none(),
 	})
 
 export const view = Submodel.defineView<Model, Message, HistogramChartInputs>((model, inputs, h) => {

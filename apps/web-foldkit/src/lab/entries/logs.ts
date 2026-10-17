@@ -64,7 +64,10 @@ const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 export const lab = defineLabWithFlags("Logs stream", {
 	Model,
 	Flags: Schema.Struct({ ...ViewerFlags.fields, ...LabShellFlags.fields }),
-	flags: Effect.map(Effect.all([viewerFlags, labShellFlags]), ([viewer, shell]) => ({ ...viewer, ...shell })),
+	flags: Effect.map(Effect.all([viewerFlags, labShellFlags]), ([viewer, shell]) => ({
+		...viewer,
+		...shell,
+	})),
 	init,
 	update,
 	view,

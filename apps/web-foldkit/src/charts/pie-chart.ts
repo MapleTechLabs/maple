@@ -131,6 +131,7 @@ const tooltipBody = (
 			),
 		NumericBin: () => Option.none(),
 		CategoricalBin: () => Option.none(),
+		VolumeBucket: () => Option.none(),
 	})
 
 export const view = Submodel.defineView<Model, Message, PieChartInputs>((model, inputs, h) => {

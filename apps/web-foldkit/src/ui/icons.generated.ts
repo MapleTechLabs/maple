@@ -6307,6 +6307,75 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	LineHeightIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M3 5h18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 19h18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 9l3-3 3 3"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 15l3 3 3-3"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 6v12"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+		],
+	],
 	MagnifierIcon: [
 		"svg",
 		[
@@ -8904,6 +8973,111 @@ export const ICON_TREES = {
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
+	TextWrapIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M3 6h18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 12h13a3 3 0 1 1 0 6h-4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 18h6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M11 16l-2 2 2 2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+		],
+	],
+	ThumbtackIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M7 4h10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 4l-1 7-2 2v2h12v-2l-2-2-1-7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 15v5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "round"],
+					["stroke-linejoin", "round"],
 				],
 				[],
 			],

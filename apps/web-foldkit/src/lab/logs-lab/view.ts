@@ -1,12 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
 import * as LogsStreamView from "../../ui/logs/logs-stream-view"
 import { eyebrow } from "../../ui/eyebrow"
 import * as ToastView from "../../ui/toast-view"
+import { liveControls } from "../../page/logs/live-controls"
 import { labShellView } from "../app-shell"
 import { Message, type Model, PIN_OPTIONS, type Toggle } from "./model"
 
@@ -36,109 +35,6 @@ const toggles = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> => 
 	]
 }
 
-/** `formatRefreshInterval`: 0 is the off sentinel. */
-const refreshLabel = (seconds: number) =>
-	seconds === 0 ? "Off" : seconds < 60 ? `${seconds}s` : `${seconds / 60}m`
-
-/** `LogsLiveControls`: why the tail holds still, then `RefreshControls`' split button. */
-const liveControls = (h: HtmlBuilder<Message>, model: Model): Html => {
-	const isOn = model.refreshInterval > 0
-	const isPaused = isOn && model.isInspecting
-	return h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			h.output(
-				[h.Class("flex items-center gap-2")],
-				[
-					...(isPaused
-						? [
-								h.span(
-									[h.Class("flex items-center gap-1.5 text-muted-foreground text-xs")],
-									[icon(h, "MediaPauseIcon", { size: 10 }), "Paused while you inspect"],
-								),
-							]
-						: []),
-					...(isPaused && model.isScrolledAway
-						? [
-								button(
-									h,
-									{
-										variant: "ghost",
-										size: "xs",
-										attributes: [h.OnClick(Message.ClickedJumpToLatest())],
-									},
-									[icon(h, "ArrowUpIcon", { size: 24 }), "Jump to latest"],
-								),
-							]
-						: []),
-				],
-			),
-			h.div(
-				[h.Class("flex items-center")],
-				[
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
-							isDisabled: model.isReloading,
-							attributes: [
-								...(model.isReloading ? [h.AriaBusy(true)] : []),
-								h.OnClick(Message.ClickedReload()),
-							],
-						},
-						[
-							icon(h, "ArrowRotateAnticlockwiseIcon", {
-								size: 24,
-								className: cn("size-3.5", model.isReloading && "animate-spin"),
-							}),
-							h.span([], ["Reload"]),
-						],
-					),
-					// The interval menu (Base UI DropdownMenu) is not ported; the trigger renders closed.
-					h.button(
-						[
-							h.Type("button"),
-							h.Class(
-								cn(
-									buttonVariants({
-										className:
-											"relative -ml-px rounded-l-none before:rounded-l-none focus-visible:z-10",
-										size: "sm",
-										variant: "outline",
-									}),
-								),
-							),
-							h.DataAttribute("slot", "dropdown-menu-trigger"),
-							h.Title(
-								isOn
-									? `Reloading every ${refreshLabel(model.refreshInterval)}`
-									: "Auto-refresh is off",
-							),
-							h.AriaLabel(
-								isOn
-									? `Auto-refresh every ${refreshLabel(model.refreshInterval)}`
-									: "Auto-refresh off",
-							),
-							h.AriaExpanded(false),
-							h.AriaHasPopup("menu"),
-							h.Tabindex(0),
-						],
-						[
-							h.span(
-								[h.Class(cn("tabular-nums", !isOn && "text-muted-foreground"))],
-								[refreshLabel(model.refreshInterval)],
-							),
-							icon(h, "ChevronDownIcon", { size: 24, className: "size-3 opacity-60" }),
-						],
-					),
-				],
-			),
-		],
-	)
-}
-
 const pageHeader = (h: HtmlBuilder<Message>, model: Model): Html =>
 	h.div(
 		[
@@ -159,7 +55,13 @@ const pageHeader = (h: HtmlBuilder<Message>, model: Model): Html =>
 			),
 			h.div(
 				[h.Class("min-w-0 @2xl/page:shrink-0"), h.DataAttribute("slot", "page-header-actions")],
-				[liveControls(h, model)],
+				[
+					liveControls(h, {
+						...model,
+						onReload: Message.ClickedReload(),
+						onJumpToLatest: Message.ClickedJumpToLatest(),
+					}),
+				],
 			),
 		],
 	)

@@ -1,0 +1,174 @@
+import { getServiceColor } from "@maple/ui/lib/colors"
+import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
+import { AsyncData } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { kbd } from "../../../ui/display"
+import { eyebrow } from "../../../ui/eyebrow"
+import * as FilterSections from "../../../ui/filters/filter-sections"
+import { type FilterOption, filterSection } from "../../../ui/filters/filter-section"
+import {
+	filterSidebarBody,
+	filterSidebarEmpty,
+	filterSidebarError,
+	filterSidebarFrame,
+	filterSidebarHeader,
+	filterSidebarLoading,
+} from "../../../ui/filters/filter-sidebar"
+import { icon } from "../../../ui/icon"
+import { inputGroup, inputGroupAddon, inputGroupInput } from "../../../ui/input-group"
+import { button } from "../../../ui/button"
+import { pinnedNamespaceNotice } from "../../kit/pinned-namespace-notice"
+import type { Search } from "./derive"
+import { type Facet, Message } from "./message"
+import type { LogsFacets, Model } from "./model"
+
+// `LogsFilterSidebar` (apps/web/src/components/logs/logs-filter-sidebar.tsx).
+
+const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
+
+const EXCLUDED_OF = {
+	severities: "excludedSeverities",
+	deploymentEnvs: "excludedDeploymentEnvs",
+	namespaces: "excludedNamespaces",
+	services: "excludedServices",
+} as const satisfies Record<Facet, string>
+
+const facetSection = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	title: string,
+	facet: Facet,
+	options: ReadonlyArray<FilterOption>,
+	extra: Readonly<{ isSearchable?: boolean; colorMap?: Readonly<Record<string, string>> }> = {},
+) =>
+	filterSection(h, {
+		title,
+		options,
+		selected: model.search[facet] ?? [],
+		excluded: model.search[EXCLUDED_OF[facet]] ?? [],
+		sections: model.filterSections,
+		toSectionsMessage: toSections,
+		onToggle: (name) => Message.ToggledFacetOption({ facet, name }),
+		onOnly: (name) => Message.ClickedOnlyFacetOption({ facet, name }),
+		onExclude: (name) => Message.ClickedExcludeFacetOption({ facet, name }),
+		...extra,
+	})
+
+/** Any filter narrowing the stream, the search and trace scope included. */
+export const hasActiveFilters = (search: Search): boolean =>
+	[
+		search.services,
+		search.severities,
+		search.deploymentEnvs,
+		search.namespaces,
+		search.excludedServices,
+		search.excludedSeverities,
+		search.excludedDeploymentEnvs,
+		search.excludedNamespaces,
+		search.attrs,
+	].some((values) => (values?.length ?? 0) > 0) ||
+	!!search.search ||
+	!!search.traceId
+
+// TODO(search-help): `LogSearchHelp`'s hover popover (the lookups table); the trigger renders closed.
+const searchHelpTrigger = (h: HtmlBuilder<Message>): Html =>
+	h.button(
+		[
+			h.AriaExpanded(false),
+			h.AriaHasPopup("dialog"),
+			h.AriaLabel("What you can search for"),
+			h.Class(
+				"cursor-pointer rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:text-foreground",
+			),
+			h.DataAttribute("base-ui-click-trigger", ""),
+			h.DataAttribute("slot", "popover-trigger"),
+			h.Id("logs-search-help-trigger"),
+			h.Tabindex(0),
+			h.Type("button"),
+		],
+		[icon(h, "CircleInfoIcon", { size: 12 })],
+	)
+
+/** `LogSearchInput`: one box for text and trace ids (`parseLogSearch`), `/` focuses it. */
+const logSearchInput = (h: HtmlBuilder<Message>, value: string): Html =>
+	h.div(
+		[h.Class("pb-3")],
+		[
+			h.div(
+				[h.Class("flex items-center gap-1")],
+				[eyebrow(h, { variant: "label" }, ["Search"]), searchHelpTrigger(h)],
+			),
+			inputGroup(h, { className: "mt-2" }, [
+				inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
+				inputGroupInput(h, {
+					id: "logs-search-input",
+					size: "sm",
+					attributes: [
+						h.Type("text"),
+						h.Placeholder("Text or trace id"),
+						h.DataAttribute("shortcut-focus", "search"),
+						h.Value(value),
+						h.OnInput((text) => Message.ChangedSearchText({ text })),
+					],
+				}),
+				inputGroupAddon(h, { align: "inline-end" }, [
+					value === ""
+						? kbd(h, undefined, ["/"])
+						: button(
+								h,
+								{
+									size: "xs",
+									variant: "ghost",
+									slot: "input-group-button",
+									attributes: [
+										h.AriaLabel("Clear search"),
+										h.OnClick(Message.ChangedSearchText({ text: "" })),
+									],
+								},
+								[icon(h, "XmarkIcon")],
+							),
+				]),
+			]),
+		],
+	)
+
+const loadedRail = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	facets: LogsFacets,
+	pinnedNamespace: string | null,
+) => {
+	const isFiltered = hasActiveFilters(model.search)
+	const hasFacets =
+		facets.services.length > 0 ||
+		facets.severities.length > 0 ||
+		facets.deploymentEnvs.length > 0 ||
+		facets.namespaces.length > 0
+	if (!hasFacets && !isFiltered) return filterSidebarEmpty(h)
+	return filterSidebarFrame(h, { isWaiting: AsyncData.isRefreshing(model.facets.data) }, [
+		filterSidebarHeader(h, isFiltered ? { onClear: Message.ClickedClearAllFilters() } : {}),
+		...filterSidebarBody(h, "logs-filters", [
+			logSearchInput(h, model.searchText),
+			facetSection(h, model, "Severity", "severities", facets.severities, {
+				colorMap: SEVERITY_COLORS,
+			}),
+			facetSection(h, model, "Environment", "deploymentEnvs", facets.deploymentEnvs),
+			pinnedNamespace !== null
+				? pinnedNamespaceNotice(h, pinnedNamespace, Message.ClickedClearNamespacePin())
+				: facetSection(h, model, "Namespace", "namespaces", facets.namespaces, {
+						isSearchable: true,
+					}),
+			facetSection(h, model, "Service", "services", facets.services, {
+				isSearchable: true,
+				colorMap: Object.fromEntries(facets.services.map((o) => [o.name, getServiceColor(o.name)])),
+			}),
+		]),
+	])
+}
+
+export const filtersRail = (h: HtmlBuilder<Message>, model: Model, pinnedNamespace: string | null): Html =>
+	AsyncData.matchData(model.facets.data, {
+		onEmpty: () => filterSidebarLoading(h, 3),
+		onFailure: (failure) => filterSidebarError(h, failure, Message.ClickedRetryFacets()),
+		onData: (facets) => loadedRail(h, model, facets, pinnedNamespace),
+	})
