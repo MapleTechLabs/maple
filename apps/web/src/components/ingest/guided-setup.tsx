@@ -110,6 +110,18 @@ export function GuidedSetup({ apiKey, apiKeyStatus, showCredentials = false }: G
 	)
 }
 
+/** Every supported stack's icon, for a collapsed "add another service" row. */
+export function FrameworkIconStrip({ className }: { className?: string }) {
+	return (
+		<span className={cn("text-muted-foreground flex shrink-0 items-center gap-2", className)} aria-hidden>
+			{sdkSnippets.map((snippet) => {
+				const Icon = frameworkIconMap[snippet.language]
+				return <Icon key={snippet.language} size={14} />
+			})}
+		</span>
+	)
+}
+
 export function FrameworkPicker({
 	selected,
 	onSelect,

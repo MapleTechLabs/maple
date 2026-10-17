@@ -330,6 +330,7 @@ struct FixtureAPI: MapleAPI {
 			signalType: signal,
 			tags: [],
 			threshold: threshold,
+			thresholds: [.init(destinationIds: ["dest_chat_oncall"], severity: severity, value: threshold)],
 			updatedAt: stamp(-2 * 86_400),
 			updatedBy: "user_fixture",
 			windowMinutes: window

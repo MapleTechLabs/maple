@@ -1,4 +1,5 @@
 import {
+	BellIcon,
 	ComputerIcon,
 	EnvelopeIcon,
 	FingerprintIcon,
@@ -17,22 +18,24 @@ export const accountTabValues = [
 	"passkeys",
 	"connections",
 	"sessions",
+	"email-preferences",
 ] as const
 export type AccountTab = (typeof accountTabValues)[number]
 
 export const accountTabLabels: Record<AccountTab, string> = {
 	profile: "Profile",
-	emails: "Email Addresses",
+	emails: "Email addresses",
 	password: "Password",
-	"two-factor": "Two-Factor Auth",
+	"two-factor": "Two-factor auth",
 	passkeys: "Passkeys",
-	connections: "Connected Accounts",
-	sessions: "Active Sessions",
+	connections: "Connected accounts",
+	sessions: "Active sessions",
+	"email-preferences": "Email preferences",
 } satisfies Record<AccountTab, string>
 
 /**
  * Landing tab when `/account` is opened with no `?tab=`. Unlike `/settings`, every account tab is
- * visible to any signed-in user, so this is a single value rather than a preference order — there
+ * visible to any signed-in user, so this is a single value rather than a preference order: there
  * is no permission filtering that could make it unavailable.
  */
 export const DEFAULT_ACCOUNT_TAB: AccountTab = "profile"
@@ -62,6 +65,11 @@ export const accountNavSections: ReadonlyArray<NavShellSection<AccountTab>> = [
 			{ id: "connections", label: accountTabLabels.connections, icon: LinkIcon },
 			{ id: "sessions", label: accountTabLabels.sessions, icon: ComputerIcon },
 		],
+	},
+	{
+		id: "notifications",
+		title: "Notifications",
+		items: [{ id: "email-preferences", label: accountTabLabels["email-preferences"], icon: BellIcon }],
 	},
 ]
 

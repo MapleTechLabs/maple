@@ -17,7 +17,6 @@ import { SeverityBadge } from "@/components/errors/severity-badge"
 import { ErrorState } from "@/components/common/error-state"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { SeveritySelect } from "@/components/errors/severity-select"
-import { AiTriageSettingsSection } from "./ai-triage-settings-section"
 import { EscalationPolicySection } from "./escalation-policy-section"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { MapleInternalAtomClient, retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
@@ -28,13 +27,7 @@ import { toastExit } from "@/lib/error-toast"
 
 const CONFIDENCES: ReadonlyArray<EscalationConfidence> = ["high", "medium", "low"]
 
-export function AutomationSection({
-	isAdmin,
-	hasEntitlement,
-}: {
-	isAdmin: boolean
-	hasEntitlement: boolean
-}) {
+export function AutomationSection({ isAdmin }: { isAdmin: boolean }) {
 	// The evaluate endpoint only reads the stored policy, so unsaved edits are invisible to it.
 	// `revision` bumps on every edit, so a decision computed before it is never shown after a save.
 	const [policy, setPolicy] = useState({ dirty: false, revision: 0 })
@@ -42,9 +35,6 @@ export function AutomationSection({
 		setPolicy((current) => ({ dirty, revision: dirty ? current.revision + 1 : current.revision }))
 	return (
 		<SettingsSections>
-			<SettingsSection title="Automatic investigations" framed={false}>
-				<AiTriageSettingsSection isAdmin={isAdmin} hasEntitlement={hasEntitlement} />
-			</SettingsSection>
 			<SettingsSection
 				title="Severity and confidence routing"
 				description="Confidence gates apply only to AI decisions. A manual severity change is explicit human intent and bypasses the confidence threshold."

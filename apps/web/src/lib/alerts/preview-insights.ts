@@ -9,10 +9,12 @@ import {
 import {
 	buildRuleCreateParamsV2,
 	comparatorLabels,
+	comparatorSupportsTiers,
 	displaySignalType,
 	formThresholdToDomain,
 	formatSignalValue,
 	isRangeComparator,
+	optionalFormThreshold,
 	RAW_QUERY_REDUCER_LABELS,
 	signalLabels,
 	type RuleFormState,
@@ -144,6 +146,8 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 	const b = buildRuleCreateParamsV2(draft)
 	const threshold = (form: RuleFormState, value: number | null | undefined) =>
 		value == null ? "none" : formatSignalValue(displaySignalType(form), value)
+	// The escalation tier only: a one-tier critical rule reports through the plain threshold rows.
+	const critical = (params: typeof a) => params.thresholds?.[1]
 	const list = (values: readonly string[] | null | undefined) =>
 		values == null || values.length === 0 ? "all" : values.join(", ")
 	const query = (form: RuleFormState) =>
@@ -200,6 +204,24 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			same: a.threshold === b.threshold,
 		},
 		{
+			field: "Critical threshold",
+			before: threshold(saved, critical(a)?.value),
+			after: threshold(draft, critical(b)?.value),
+			same: critical(a)?.value === critical(b)?.value,
+		},
+		{
+			field: "Recovery",
+			before: threshold(saved, a.thresholds?.[0]?.recovery_value),
+			after: threshold(draft, b.thresholds?.[0]?.recovery_value),
+			same: a.thresholds?.[0]?.recovery_value === b.thresholds?.[0]?.recovery_value,
+		},
+		{
+			field: "Critical recovery",
+			before: threshold(saved, critical(a)?.recovery_value),
+			after: threshold(draft, critical(b)?.recovery_value),
+			same: critical(a)?.recovery_value === critical(b)?.recovery_value,
+		},
+		{
 			field: "Upper threshold",
 			before: threshold(saved, a.threshold_upper),
 			after: threshold(draft, b.threshold_upper),
@@ -218,6 +240,12 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			before: String(a.consecutive_breaches_required),
 			after: String(b.consecutive_breaches_required),
 			same: a.consecutive_breaches_required === b.consecutive_breaches_required,
+		},
+		{
+			field: "Out of last",
+			before: a.breaches_out_of == null ? "in a row" : `${a.breaches_out_of} checks`,
+			after: b.breaches_out_of == null ? "in a row" : `${b.breaches_out_of} checks`,
+			same: a.breaches_out_of === b.breaches_out_of,
 		},
 		{
 			field: "Checks to resolve",
@@ -243,7 +271,12 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 			after: `${b.apdex_threshold_ms ?? "none"}`,
 			same: a.apdex_threshold_ms === b.apdex_threshold_ms,
 		},
-		{ field: "Severity", before: a.severity, after: b.severity, same: a.severity === b.severity },
+		{
+			field: "Severity",
+			before: a.severity ?? "",
+			after: b.severity ?? "",
+			same: a.severity === b.severity,
+		},
 		{
 			field: "Renotify",
 			before: `${a.renotify_interval_minutes}m`,
@@ -252,9 +285,18 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 		},
 		{
 			field: "Destinations",
-			before: String(a.destination_ids.length),
-			after: String(b.destination_ids.length),
-			same: [...a.destination_ids].sort().join() === [...b.destination_ids].sort().join(),
+			before: String(a.destination_ids?.length ?? 0),
+			after: String(b.destination_ids?.length ?? 0),
+			same:
+				[...(a.destination_ids ?? [])].sort().join() === [...(b.destination_ids ?? [])].sort().join(),
+		},
+		{
+			field: "Critical destinations",
+			before: String(critical(a)?.destination_ids.length ?? 0),
+			after: String(critical(b)?.destination_ids.length ?? 0),
+			same:
+				[...(critical(a)?.destination_ids ?? [])].sort().join() ===
+				[...(critical(b)?.destination_ids ?? [])].sort().join(),
 		},
 		{ field: "Name", before: a.name, after: b.name, same: a.name === b.name },
 		{
@@ -286,11 +328,17 @@ export function diffRuleForms(saved: RuleFormState, draft: RuleFormState): RuleF
 }
 
 /** The draft's threshold as a domain value, for the chart and the verdict. */
-export function draftThresholds(form: RuleFormState): { threshold: number; upper: number | null } {
+export function draftThresholds(form: RuleFormState): {
+	threshold: number
+	upper: number | null
+	critical: number | null
+} {
 	const threshold = formThresholdToDomain(form, form.threshold)
 	const upper =
 		form.thresholdUpper.trim().length > 0 && Number.isFinite(Number(form.thresholdUpper))
 			? formThresholdToDomain(form, form.thresholdUpper)
 			: null
-	return { threshold: Number.isFinite(threshold) ? threshold : 0, upper }
+	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
+	const critical = escalation === null ? null : optionalFormThreshold(form, escalation.threshold)
+	return { threshold: Number.isFinite(threshold) ? threshold : 0, upper, critical }
 }

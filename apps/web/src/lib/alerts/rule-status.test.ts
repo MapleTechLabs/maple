@@ -29,6 +29,10 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		windowMinutes: 5,
 		minimumSampleCount: 0,
 		consecutiveBreachesRequired: 2,
+		breachesOutOf: null,
+		thresholds: [
+			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
+		],
 		consecutiveHealthyRequired: 2,
 		renotifyIntervalMinutes: 30,
 		apdexThresholdMs: null,

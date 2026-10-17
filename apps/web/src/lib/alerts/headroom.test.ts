@@ -33,6 +33,10 @@ function rule(id: string, overrides: Record<string, unknown> = {}): AlertRuleDoc
 		minimumSampleCount: 0,
 		noDataBehavior: "skip",
 		consecutiveBreachesRequired: 2,
+		breachesOutOf: null,
+		thresholds: [
+			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
+		],
 		consecutiveHealthyRequired: 2,
 		renotifyIntervalMinutes: 30,
 		apdexThresholdMs: null,
@@ -110,6 +114,7 @@ describe("quietForMs", () => {
 			comparator: "gt",
 			threshold: 0.05,
 			thresholdUpper: null,
+			peakSeverity: null,
 			firstTriggeredAt: "2026-10-15T20:00:00.000Z",
 			lastTriggeredAt: "2026-10-15T20:10:00.000Z",
 			resolvedAt,

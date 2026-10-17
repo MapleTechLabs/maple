@@ -41,6 +41,9 @@ const previewOf = (
 		windowMinutes: 5,
 		threshold: 0.05,
 		thresholdUpper: null,
+		thresholds: [
+			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
+		],
 		comparator: "gt",
 		truncatedToStart:
 			options?.truncatedToStart != null ? IsoDateTimeString.make(options.truncatedToStart) : null,

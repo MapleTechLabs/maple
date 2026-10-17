@@ -30,6 +30,7 @@ import schemaV28Sql from "./schema/local-schema-v28.sql" with { type: "text" }
 import schemaV29Sql from "./schema/local-schema-v29.sql" with { type: "text" }
 import schemaV30Sql from "./schema/local-schema-v30.sql" with { type: "text" }
 import schemaV31Sql from "./schema/local-schema-v31.sql" with { type: "text" }
+import schemaV32Sql from "./schema/local-schema-v32.sql" with { type: "text" }
 import { schemaDigest as digestSchema, schemaFingerprint as fingerprintSchema } from "./store-version"
 import { buildLocalSchemaManifest, type LocalSchemaManifest } from "./schema-manifest"
 import { LOCAL_SCHEMA_VERSION } from "./local-schema-version"
@@ -105,6 +106,7 @@ const SNAPSHOT_SQL: ReadonlyArray<string> = [
 	schemaV29Sql,
 	schemaV30Sql,
 	schemaV31Sql,
+	schemaV32Sql,
 ]
 
 export interface LocalSchemaSnapshot {
@@ -193,6 +195,7 @@ export const LOCAL_SCHEMA_V28 = localSchemaIdentity(28)
 export const LOCAL_SCHEMA_V29 = localSchemaIdentity(29)
 export const LOCAL_SCHEMA_V30 = localSchemaIdentity(30)
 export const LOCAL_SCHEMA_V31 = localSchemaIdentity(31)
+export const LOCAL_SCHEMA_V32 = localSchemaIdentity(32)
 
 export const CURRENT_LOCAL_SCHEMA: LocalSchemaIdentity = Object.freeze({
 	version: LOCAL_SCHEMA_VERSION,

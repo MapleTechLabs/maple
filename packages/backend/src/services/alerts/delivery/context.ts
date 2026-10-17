@@ -38,6 +38,19 @@ export interface DispatchContext {
 	 */
 	readonly signalDisplay?: SignalDisplay | null
 	readonly severity: AlertSeverity
+	/**
+	 * The rule's tier severities. A rule with both a warning and a critical tier
+	 * pages critical under its own PagerDuty dedup key. Absent on the
+	 * escalation/error paths, which dispatch without an alert rule.
+	 */
+	readonly ruleSeverities?: ReadonlyArray<AlertSeverity>
+	/**
+	 * The open incident's severity at dispatch, which can differ from the
+	 * queued event's `severity`; absent when no incident is open.
+	 */
+	readonly incidentSeverity?: AlertSeverity
+	/** Highest severity the incident reached; absent when the delivery has no incident. */
+	readonly incidentPeakSeverity?: AlertSeverity
 	readonly comparator: AlertComparator
 	readonly threshold: number
 	readonly thresholdUpper: number | null

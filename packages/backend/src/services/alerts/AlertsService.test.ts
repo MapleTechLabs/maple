@@ -1212,6 +1212,526 @@ describe("AlertsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
+	describe("severity tiers", () => {
+		const errorRateRows = (errorRate: number) => [
+			tracesRow({
+				count: 200,
+				avgDuration: 40,
+				p50Duration: 20,
+				p95Duration: 120,
+				p99Duration: 240,
+				errorRate,
+				satisfiedCount: 180,
+				toleratingCount: 10,
+				apdexScore: 0.925,
+			}),
+		]
+
+		const createTieredSetup = (alerts: AlertsServiceApi, orgId: OrgId, userId: UserId) =>
+			Effect.gen(function* () {
+				const warnHook = yield* alerts.createDestination(orgId, userId, adminRoles, {
+					type: "webhook",
+					name: "Team channel",
+					enabled: true,
+					url: "https://example.com/warn",
+					signingSecret: "warn-secret",
+				})
+				const pageHook = yield* alerts.createDestination(orgId, userId, adminRoles, {
+					type: "webhook",
+					name: "Pager",
+					enabled: true,
+					url: "https://example.com/page",
+					signingSecret: "page-secret",
+				})
+				const rule = yield* alerts.createRule(
+					orgId,
+					userId,
+					adminRoles,
+					new AlertRuleUpsertRequest({
+						name: "Checkout error rate tiers",
+						enabled: true,
+						serviceNames: ["checkout"],
+						signalType: "error_rate",
+						comparator: "gt",
+						thresholds: [
+							{
+								severity: "critical",
+								value: 20,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [pageHook.id],
+							},
+							{
+								severity: "warning",
+								value: 5,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [warnHook.id],
+							},
+						],
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 2,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+					}),
+				)
+				return { warnHook, pageHook, rule }
+			})
+
+		it.effect("opens at warning, pages on escalation, and resolves to everyone it notified", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<{ url: string; eventType: string | null }> = []
+			const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+				requests.push({
+					url: String(input),
+					eventType: new Headers(init?.headers).get("x-maple-event-type"),
+				})
+				return new Response("ok", { status: 200 })
+			}) as typeof fetch
+
+			const tick = (alerts: AlertsServiceApi) =>
+				Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+				})
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers")
+				const userId = asUserId("user_tiers")
+				const { rule } = yield* createTieredSetup(alerts, orgId, userId)
+
+				// Stored lowest tier first; the single-threshold fields mirror it.
+				assert.deepStrictEqual(
+					rule.thresholds.map((tier) => tier.severity),
+					["warning", "critical"],
+				)
+				assert.strictEqual(rule.severity, "critical")
+				assert.strictEqual(rule.threshold, 5)
+
+				yield* alerts.runSchedulerTick()
+				yield* tick(alerts)
+				const opened = (yield* alerts.listIncidents(orgId)).incidents[0]
+				assert.strictEqual(opened?.severity, "warning")
+				assert.deepStrictEqual(requests, [{ url: "https://example.com/warn", eventType: "trigger" }])
+
+				state.tracesAggregateRows = errorRateRows(30)
+				yield* tick(alerts)
+				yield* tick(alerts)
+				const escalated = (yield* alerts.listIncidents(orgId)).incidents[0]
+				assert.strictEqual(escalated?.id, opened?.id)
+				assert.strictEqual(escalated?.severity, "critical")
+				assert.strictEqual(escalated?.peakSeverity, "critical")
+				assert.strictEqual(escalated?.threshold, 20)
+				// The linked issue follows the escalation while the detector owns its severity.
+				const issues = yield* Effect.promise(() =>
+					testDb.pglite.query<{ severity: string }>(
+						"select severity from error_issues where org_id = $1 and kind = 'alert'",
+						[orgId],
+					),
+				)
+				assert.deepStrictEqual(
+					issues.rows.map((issue) => issue.severity),
+					["critical"],
+				)
+				assert.sameMembers(
+					requests.slice(1).map((request) => `${request.eventType} ${request.url}`),
+					["trigger https://example.com/warn", "trigger https://example.com/page"],
+				)
+
+				state.tracesAggregateRows = errorRateRows(0.5)
+				yield* tick(alerts)
+				yield* tick(alerts)
+				const resolved = (yield* alerts.listIncidents(orgId)).incidents[0]
+				assert.strictEqual(resolved?.status, "resolved")
+				assert.sameMembers(
+					requests.slice(3).map((request) => `${request.eventType} ${request.url}`),
+					["resolve https://example.com/warn", "resolve https://example.com/page"],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
+		})
+
+		const recordingFetch = (requests: Array<string>) =>
+			(async (input: RequestInfo | URL, init?: RequestInit) => {
+				requests.push(`${new Headers(init?.headers).get("x-maple-event-type")} ${String(input)}`)
+				return new Response("ok", { status: 200 })
+			}) as typeof fetch
+
+		it.effect("reminds only the current tier after a de-escalation", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+			const tick = (alerts: AlertsServiceApi, minutes = 1) =>
+				Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(minutes))
+					yield* alerts.runSchedulerTick()
+				})
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_remind")
+				yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_remind"))
+
+				yield* alerts.runSchedulerTick()
+				yield* tick(alerts)
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.severity, "critical")
+
+				state.tracesAggregateRows = errorRateRows(10)
+				yield* tick(alerts)
+				yield* tick(alerts)
+				const deescalated = (yield* alerts.listIncidents(orgId)).incidents[0]
+				assert.strictEqual(deescalated?.severity, "warning")
+				assert.strictEqual(deescalated?.peakSeverity, "critical")
+				// The pager that heard the critical hears it calm down.
+				assert.sameMembers(requests.slice(2), [
+					"renotify https://example.com/warn",
+					"renotify https://example.com/page",
+				])
+
+				yield* tick(alerts, 31)
+				assert.deepStrictEqual(requests.slice(4), ["renotify https://example.com/warn"])
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
+		it.effect("resolves a warning incident ended by a rule edit without paging", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_edit")
+				const userId = asUserId("user_tiers_edit")
+				const { rule } = yield* createTieredSetup(alerts, orgId, userId)
+
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(requests, ["trigger https://example.com/warn"])
+
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						enabled: false,
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: rule.thresholds,
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
+				assert.deepStrictEqual(requests.slice(1), ["resolve https://example.com/warn"])
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
+		it.effect("resolves to the remaining tier after the incident's tier is removed", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_removed")
+				const userId = asUserId("user_tiers_removed")
+				const { rule, pageHook } = yield* createTieredSetup(alerts, orgId, userId)
+				const tick = Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+				})
+
+				yield* alerts.runSchedulerTick()
+				yield* tick
+				assert.deepStrictEqual(requests, ["trigger https://example.com/warn"])
+
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: [
+							{
+								severity: "critical",
+								value: 20,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [pageHook.id],
+							},
+						],
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+				state.tracesAggregateRows = errorRateRows(0.5)
+				yield* tick
+				yield* tick
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
+				// The remaining tier's pager, and the webhook that heard the trigger.
+				assert.sameMembers(requests.slice(1), [
+					"resolve https://example.com/page",
+					"resolve https://example.com/warn",
+				])
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
+		it.effect("resolves to a destination an edit removed after it was paged", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_removed_dest")
+				const userId = asUserId("user_tiers_removed_dest")
+				const { rule, warnHook } = yield* createTieredSetup(alerts, orgId, userId)
+
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.sameMembers(requests, [
+					"trigger https://example.com/warn",
+					"trigger https://example.com/page",
+				])
+
+				// Same condition, but the critical tier no longer pages the pager.
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						enabled: true,
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: [
+							rule.thresholds[0],
+							{ ...rule.thresholds[1]!, destinationIds: [warnHook.id] },
+						],
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+
+				state.tracesAggregateRows = errorRateRows(0.5)
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
+				assert.include(requests, "resolve https://example.com/page")
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
+		it.effect("keeps counting ticks across an edit that leaves the condition alone", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_rename")
+				const userId = asUserId("user_tiers_rename")
+				const { rule } = yield* createTieredSetup(alerts, orgId, userId)
+
+				yield* alerts.runSchedulerTick()
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: "Renamed",
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: rule.thresholds,
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				// The breach before the rename still counts: two in a row open the incident.
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.severity, "warning")
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+		})
+
+		it.effect("does not count ticks judged against an edited threshold", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_edit_history")
+				const userId = asUserId("user_tiers_edit_history")
+				const destination = yield* createWebhookDestination(alerts, orgId, userId)
+				const request = (value: number) =>
+					new AlertRuleUpsertRequest({
+						name: "Two of five",
+						serviceNames: ["checkout"],
+						signalType: "error_rate",
+						comparator: "gt",
+						thresholds: [
+							{
+								severity: "warning",
+								value,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [destination.id],
+							},
+						],
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 2,
+						breachesOutOf: 5,
+					})
+				const rule = yield* alerts.createRule(orgId, userId, adminRoles, request(5))
+				const tick = Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+				})
+
+				// One breach, then a healthy tick, both against the old threshold of 5.
+				yield* alerts.runSchedulerTick()
+				state.tracesAggregateRows = errorRateRows(1)
+				yield* tick
+				yield* alerts.updateRule(orgId, userId, adminRoles, rule.id, request(15))
+
+				// A single breach of the new threshold is one of five, not two.
+				state.tracesAggregateRows = errorRateRows(30)
+				yield* tick
+				assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 0)
+				yield* tick
+				assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 1)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+		})
+
+		it.effect(
+			"records the critical tier's threshold on the issue of an incident that opens at critical",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const state = {
+					tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>>,
+				}
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+					const alerts = yield* AlertsService
+					const orgId = asOrgId("org_tiers_issue")
+					yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_issue"))
+
+					yield* alerts.runSchedulerTick()
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+
+					const incident = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(incident?.severity, "critical")
+					assert.strictEqual(incident?.threshold, 20)
+					const issue = yield* Effect.promise(() =>
+						queryFirstRow<{ exception_message: string }>(
+							testDb,
+							"select exception_message from error_issues where org_id = $1 and kind = 'alert'",
+							[orgId],
+						),
+					)
+					assert.include(issue?.exception_message ?? "", "gt 20")
+				}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+			},
+		)
+
+		it.effect("rejects a critical threshold that is not worse than the warning one", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_invalid")
+				const userId = asUserId("user_tiers_invalid")
+				const destination = yield* createWebhookDestination(alerts, orgId, userId)
+				const exit = yield* alerts
+					.createRule(
+						orgId,
+						userId,
+						adminRoles,
+						new AlertRuleUpsertRequest({
+							name: "Inverted tiers",
+							signalType: "error_rate",
+							comparator: "gt",
+							thresholds: [
+								{
+									severity: "warning",
+									value: 20,
+									upper: null,
+									recoveryValue: 25,
+									destinationIds: [destination.id],
+								},
+								{
+									severity: "critical",
+									value: 5,
+									upper: null,
+									recoveryValue: null,
+									destinationIds: [destination.id],
+								},
+							],
+							windowMinutes: 5,
+						}),
+					)
+					.pipe(Effect.exit)
+				assert.isTrue(Exit.isFailure(exit))
+				const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+				assert.instanceOf(error, AlertValidationError)
+				assert.includeMembers(error instanceof AlertValidationError ? [...error.details] : [], [
+					"the critical threshold must be worse than the warning threshold",
+					"thresholds[0].recoveryValue must be on the healthy side of thresholds[0].value",
+				])
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: [] }))))
+		})
+	})
+
 	it.effect("suppresses trigger and resolve notifications while an incident flaps", () => {
 		const testDb = createTestDb(trackedDbs)
 		const breachedRows = [

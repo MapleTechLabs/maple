@@ -9,7 +9,7 @@ import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesServ
 import { toMcpHttpError } from "../lib/map-http-error"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { formatCondition, ruleNotFound } from "../lib/alert-rules"
+import { formatCondition, invalidRuleInput, ruleNotFound } from "../lib/alert-rules"
 import { minSampleCountWarning } from "../lib/alert-rule-evaluation"
 import { truncate } from "../lib/format"
 import * as P from "../lib/params"
@@ -135,7 +135,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					.pipe(Effect.mapError(toMcpHttpError("preview_alert_rule")))
 				const current = list.rules.find((r) => r.id === params.rule_id)
 				if (!current) return yield* ruleNotFound(params.rule_id)
-				rule = buildUpdatedRequest(current, { ...params, rule_id: current.id })
+				rule = yield* buildUpdatedRequest(current, { ...params, rule_id: current.id })
 			} else {
 				rule = yield* buildAlertRuleRequest({ ...params, name: "Preview", destination_ids: [] })
 			}
@@ -154,13 +154,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 			const preview = yield* alerts.previewRule(tenant.orgId, tenant.roles, request).pipe(
 				Effect.catchTags({
 					"@maple/http/errors/AlertValidationError": (error) =>
-						Effect.fail(
-							new McpInvalidInputError({
-								message: [`Invalid alert rule: ${error.message}`, ...error.details].join(
-									"\n",
-								),
-							}),
-						),
+						Effect.fail(invalidRuleInput(error)),
 					"@maple/http/errors/AlertForbiddenError": (error) =>
 						Effect.fail(toMcpHttpError("preview_alert_rule")(error)),
 					"@maple/http/errors/QueryEngineValidationError": (error) =>

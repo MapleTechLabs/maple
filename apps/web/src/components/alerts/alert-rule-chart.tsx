@@ -57,11 +57,13 @@ const SIGNAL_TOKEN = "--chart-1"
 const PAINT_KEYS = {
 	signal: "__signal",
 	destructive: "__destructive",
+	warn: "__warn",
 	muted: "__muted",
 } as const
 const PAINT_COLORS = [
 	{ key: PAINT_KEYS.signal, color: SIGNAL_TOKEN },
 	{ key: PAINT_KEYS.destructive, color: "--destructive" },
+	{ key: PAINT_KEYS.warn, color: "--severity-warn" },
 	{ key: PAINT_KEYS.muted, color: "--muted-foreground" },
 ]
 
@@ -85,6 +87,8 @@ interface AlertRuleChartProps {
 	showWouldFire?: boolean
 	threshold: number
 	thresholdUpper?: number | null
+	/** A two-tier rule's critical value: drawn as its own line, and `threshold` reads as warning. */
+	criticalThreshold?: number | null
 	comparator: AlertComparator
 	signalType: AlertSignalType
 	/** Page time window in epoch ms — the shared domain for the axis, bands, and rail. */
@@ -144,6 +148,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 	showWouldFire = false,
 	threshold,
 	thresholdUpper,
+	criticalThreshold = null,
 	comparator,
 	signalType,
 	window: requestedDomain,
@@ -249,6 +254,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 	const yDomain = React.useMemo<[number, number]>(() => {
 		let maxVal = threshold
 		if (thresholdUpper != null) maxVal = Math.max(maxVal, thresholdUpper)
+		if (criticalThreshold != null) maxVal = Math.max(maxVal, criticalThreshold)
 		for (const point of chartData) {
 			for (const key of seriesKeys) maxVal = Math.max(maxVal, num(point[key]))
 			// The ghost shares the axis — clipping it would misrepresent the gap.
@@ -256,7 +262,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 		}
 		const upper = Math.max(maxVal * 1.15, threshold * 1.3)
 		return [0, upper > 0 ? upper : 1]
-	}, [chartData, seriesKeys, threshold, thresholdUpper])
+	}, [chartData, seriesKeys, threshold, thresholdUpper, criticalThreshold])
 
 	// The breach region — the part of the fill that turns red — is the side of the
 	// threshold the comparator flags. Range comparators have two bounds, so they
@@ -448,6 +454,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 		() => ({
 			signal: plot.color(PAINT_KEYS.signal),
 			destructive: plot.color(PAINT_KEYS.destructive),
+			warn: plot.color(PAINT_KEYS.warn),
 			muted: plot.color(PAINT_KEYS.muted),
 		}),
 		[plot],
@@ -545,12 +552,23 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 						: [{ value: threshold }],
 					{
 						y: (entry: { value: number }) => entry.value,
-						stroke: palette.destructive,
+						stroke: criticalThreshold != null ? palette.warn : palette.destructive,
 						strokeOpacity: 1,
 						strokeWidth: 1.5,
 						strokeDasharray: "6 4",
 					},
 				),
+				...(criticalThreshold != null
+					? [
+							ruleY([{ value: criticalThreshold }], {
+								y: (entry: { value: number }) => entry.value,
+								stroke: palette.destructive,
+								strokeOpacity: 1,
+								strokeWidth: 1.5,
+								strokeDasharray: "6 4",
+							}),
+						]
+					: []),
 				// The unselected source, behind the primary: same shape, dashed and
 				// muted, so "the query says one thing, the evaluator recorded another"
 				// is visible instead of inferred.
@@ -646,6 +664,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 		wouldFireBands,
 		threshold,
 		thresholdUpper,
+		criticalThreshold,
 		hasGhost,
 		isMultiSeries,
 		seriesKeys,
@@ -717,24 +736,48 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 			{chartArea}
 
 			{hasSignal && (
-				<div className="flex items-center gap-2 text-2xs text-muted-foreground">
-					<span
-						aria-hidden
-						className="inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-destructive"
-					/>
-					<span>
-						{thresholdUpper != null
-							? "Threshold range "
-							: breachBelow
-								? "Breach below "
-								: "Breach above "}
-						<span className="font-mono font-medium text-foreground">
-							{formatSignalValue(signalType, threshold)}
+				<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-muted-foreground">
+					<span className="flex items-center gap-2">
+						<span
+							aria-hidden
+							className={cn(
+								"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed",
+								criticalThreshold != null ? "border-severity-warn" : "border-destructive",
+							)}
+						/>
+						<span>
+							{criticalThreshold != null ? "Warning " : ""}
 							{thresholdUpper != null
-								? ` – ${formatSignalValue(signalType, thresholdUpper)}`
-								: ""}
+								? "Threshold range "
+								: breachBelow
+									? criticalThreshold != null
+										? "below "
+										: "Breach below "
+									: criticalThreshold != null
+										? "above "
+										: "Breach above "}
+							<span className="font-mono font-medium text-foreground">
+								{formatSignalValue(signalType, threshold)}
+								{thresholdUpper != null
+									? ` – ${formatSignalValue(signalType, thresholdUpper)}`
+									: ""}
+							</span>
 						</span>
 					</span>
+					{criticalThreshold != null && (
+						<span className="flex items-center gap-2">
+							<span
+								aria-hidden
+								className="inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-destructive"
+							/>
+							<span>
+								Critical {breachBelow ? "below " : "above "}
+								<span className="font-mono font-medium text-foreground">
+									{formatSignalValue(signalType, criticalThreshold)}
+								</span>
+							</span>
+						</span>
+					)}
 				</div>
 			)}
 

@@ -350,7 +350,7 @@ maple use remote                                   # optional: stop auto-detecti
 maple services --since 1h
 ```
 
-`maple auth login` opens your browser, and you approve the CLI for one organization. The CLI then holds an [API key](/docs/reference/authentication#api-keys) with full access that expires after 90 days. It appears under **Settings → API Keys** with the description "Created by maple auth login". Run `maple auth login` again when it expires, and `maple auth logout` to revoke it.
+`maple auth login` opens your browser, and you approve the CLI for one organization. The CLI then holds an [API key](/docs/reference/authentication#api-keys) with full access that expires after 90 days. It appears under **Settings → Keys** with the description "Created by maple auth login". Run `maple auth login` again when it expires, and `maple auth logout` to revoke it.
 
 Every command except `maple query` works in remote mode. The server commands (`start`, `stop`, `reset`, `checkpoint`, `restore`, `archive`, `schema`) always act on the local store. Which region your organization is in is on [Regions](/docs/reference/regions).
 

@@ -50,7 +50,7 @@ POST   /v2/traces/search         complex reads are POST .../search
 
 Every v2 object has a prefixed public ID (`key_4CzLmR…`, `dash_…`, `alrt_…`). Public IDs are opaque; internally they are a reversible base58 encoding of the internal ID, computed at the API boundary in `packages/domain/src/http/v2/public-id.ts`, which also holds the prefix registry (`PublicIdPrefixes`, the source of truth). No database migration: rows keep their raw UUIDs / internal strings.
 
-Prefixes: `key` (API key), `ingk` (ingest key), `dash` (dashboard), `dbv` (dashboard version), `dshr` (dashboard share), `dtpl` (dashboard template), `alrt` (alert rule), `dest` (alert destination), `inc` (alert incident), `evt` (alert delivery event), `actor` (actor), `alog` (audit log entry), `einc` (error incident), `iss` (error issue), `inv` (investigation), `anom` (anomaly incident), `scrp` (scrape target), `rec` (recommendation), `amap` (attribute mapping), `srep` (session replay), `mdev` (mobile device), `chatw` (chat workspace), `afb` (agent feedback), `gcpc` (Google Cloud connector), and `log` (synthetic log identity); `we` is reserved for webhooks.
+Prefixes: `key` (API key), `ingk` (ingest key), `dash` (dashboard), `dbv` (dashboard version), `dshr` (dashboard share), `dtpl` (dashboard template), `alrt` (alert rule), `dest` (alert destination), `inc` (alert incident), `evt` (alert delivery event), `actor` (actor), `alog` (audit log entry), `einc` (error incident), `iss` (error issue), `inv` (investigation), `anom` (anomaly incident), `scrp` (scrape target), `rec` (recommendation), `amap` (attribute mapping), `srep` (session replay), `mdev` (mobile device), `chatw` (chat workspace), `afb` (agent feedback), `gcpc` (Google Cloud connector), `mcpc` (MCP OAuth connection), and `log` (synthetic log identity); `we` is reserved for webhooks.
 
 Exception: Clerk-issued `org_…` / `user_…` IDs are already prefixed public IDs and pass through unchanged.
 
@@ -183,7 +183,7 @@ Implemented in phases; the pilot (`api_keys`) ships first and proves every conve
 | `services` ✅                        | `GET /v2/services`, `GET /v2/services/{name}`, `GET /v2/services/{name}/overview` (summary + all-signal series + operations, one round-trip)      | `queryEngine`                                                                   |
 | `service_map` ✅                     | `GET /v2/service_map`                                                                                                                             | `queryEngine`                                                                   |
 
-Also mounted, outside this table: `audit_log` (list), `environments`, `instrumentation/signals` (retrieve), `widget_credentials` (mint/revoke), `widget_summary` (retrieve), and `share` (share-link reads). The contracts are in `packages/domain/src/http/v2/`.
+Also mounted, outside this table: `audit_log` (list), `environments`, `mcp_connections` (list, revoke; members see and revoke their own, admins everyone's), `instrumentation/signals` (retrieve), `widget_credentials` (mint/revoke), `widget_summary` (retrieve), and `share` (share-link reads). The contracts are in `packages/domain/src/http/v2/`.
 
 The long tail of ~40 query-engine endpoints (facets, infra hosts/pods/nodes/workloads, Cloudflare infra, the PlanetScale infra timeseries) lives in the internal tier at `/internal/query-engine`, session-only and undocumented, and is promoted into `/v2` individually as shapes stabilize.
 

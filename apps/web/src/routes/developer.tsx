@@ -1,8 +1,8 @@
 import { createFileRoute, redirect } from "@tanstack/react-router"
 
 /**
- * Legacy path: the Developer page duplicated the Ingestion and API Keys settings tabs.
- * `?tab=ingestion` keeps its meaning; everything else lands on API Keys.
+ * Legacy path: the Developer page duplicated the Ingestion and Keys settings tabs.
+ * `?tab=ingestion` keeps its meaning; everything else lands on Keys.
  */
 export const Route = createFileRoute("/developer")({
 	validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
@@ -11,7 +11,7 @@ export const Route = createFileRoute("/developer")({
 	beforeLoad: ({ search }) => {
 		throw redirect({
 			to: "/settings",
-			search: { tab: search.tab === "ingestion" ? "ingestion" : "api-keys" },
+			search: { tab: search.tab === "ingestion" ? "ingestion" : "keys" },
 			replace: true,
 		})
 	},

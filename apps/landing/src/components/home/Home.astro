@@ -17,6 +17,7 @@ import KubernetesSection from "./KubernetesSection.astro";
 import WebAnalyticsSection from "./WebAnalyticsSection.astro";
 import ProductEventsSection from "./ProductEventsSection.astro";
 import AgentSection from "./AgentSection.astro";
+import GitHubSection from "./GitHubSection.astro";
 import BillComparison from "../BillComparison.astro";
 import PricingTable from "../PricingTable.astro";
 import SdkBand from "./SdkBand.astro";
@@ -96,6 +97,10 @@ const homeFaqs = [
 
         <!-- 09: the same investigation as 02, run by an agent instead of a human. -->
         <AgentSection />
+
+        <!-- 10: the same telemetry pointed at code before it ships: the PR review,
+             CI runs as traces, and the check-in after the deploy. -->
+        <GitHubSection />
 
         <!-- 10 + 11: the money chapter: one deep floor, two beats, one internal
              hairline. The bill runs first because Maple's pricing only reads as

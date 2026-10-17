@@ -45,7 +45,7 @@ const stringList = (row: SyncedRow, key: string): ReadonlyArray<string> => {
 const configInputs = (request: EndpointRequest, firstDataReceivedAt: number | null): ConfigAuditInputs => {
 	const synced = request.dataset.synced
 	return {
-		firstDataReceivedAt,
+		telemetry: firstDataReceivedAt === null ? "absent" : "present",
 		alertRules: (synced.alert_rules ?? []).map((row) => ({
 			id: text(row, "id"),
 			name: text(row, "name"),

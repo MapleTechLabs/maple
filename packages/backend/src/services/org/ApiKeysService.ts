@@ -247,6 +247,10 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 		 * nobody created by hand in front of an admin looking for the two they
 		 * did — and inviting them to revoke one just breaks a Home Screen until
 		 * the app next mints again.
+		 *
+		 * MCP OAuth access keys are left out for the same reason: one is minted
+		 * every hour per connected client. The grant behind them is managed as a
+		 * connection (`McpConnectionsService`).
 		 */
 		const list = Effect.fn("ApiKeysService.list")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
@@ -254,7 +258,14 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 				db.run(
 					PG.from(ApiKeys)
 						.select()
-						.where(($) => [$.orgId.eq(orgId), $.kind.neq("device")])
+						.where(($) => {
+							const source = PG.jsonText($.metadataJson, "source")
+							return [
+								$.orgId.eq(orgId),
+								$.kind.neq("device"),
+								PG.or(source.isNull(), source.neq("maple_mcp_oauth")),
+							]
+						})
 						.orderBy(["createdAt", "desc"]),
 				),
 			)

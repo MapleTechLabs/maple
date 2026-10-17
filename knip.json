@@ -22,7 +22,10 @@
 				"src/worker-entry.ts",
 				"src/components/ai-elements/**",
 				"src/components/icons/**",
-				"src/lib/effect-atom.ts"
+				"src/lib/effect-atom.ts",
+				// The browser e2e suite, loaded by path by `e2e run` (`test:e2e`).
+				"e2e/e2e.config.ts",
+				"e2e/tests/**/*.e2e.ts"
 			]
 		},
 		"apps/landing": {

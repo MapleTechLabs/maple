@@ -23,6 +23,7 @@ export const HttpDigestLive = HttpApiBuilder.group(MapleInternalApi, "digest", (
 						email: payload.email,
 						enabled: payload.enabled,
 						dayOfWeek: payload.dayOfWeek,
+						sendHour: payload.sendHour,
 						timezone: payload.timezone,
 						namespaces: payload.namespaces,
 						environments: payload.environments,

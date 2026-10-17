@@ -7,6 +7,7 @@ import type { V2AlertRulePreviewParams } from "@maple/domain/http/v2"
 import {
 	buildRuleCreateParamsV2,
 	deriveRuleQueryIssues,
+	isFilledNumber,
 	v2PreviewToResponse,
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
@@ -55,6 +56,11 @@ export const toPreviewForm = (form: RuleFormState): RuleFormState => ({
 	notes: "",
 	tags: [],
 	destinationIds: [],
+	// A critical tier still being typed would fail the whole preview; chart the warning tier until then.
+	escalation:
+		form.escalation === null || !isFilledNumber(form.escalation.threshold)
+			? null
+			: { ...form.escalation, destinationIds: [] },
 	notificationTitle: "",
 	notificationBody: "",
 })

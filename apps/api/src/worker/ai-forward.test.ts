@@ -19,6 +19,7 @@ describe("forwardsToAi", () => {
 			"/api/chat/sessions/org:tab/messages",
 			"/api/chat/sessions/org:tab/abort",
 			"/internal/chat/apply",
+			"/internal/mcp/tools",
 		]) {
 			assert.isTrue(forwardsToAi(path), path)
 		}
@@ -35,6 +36,8 @@ describe("forwardsToAi", () => {
 			"/api/chatter",
 			"/api/chat",
 			"/internal/chatty",
+			"/internal/mcp",
+			"/internal/mcpx",
 			"/internal/ai-sessions",
 			"/v2/errors",
 		]) {
