@@ -868,7 +868,7 @@
             "type": "array"
           },
           "recovery_value": {
-            "description": "The value the signal must cross back over before this tier clears, or `null` to clear as soon as it stops breaching. Must sit on the healthy side of `value`.",
+            "description": "The value the signal must cross back over before this tier clears, or `null` (the default) to clear as soon as it stops breaching. Must sit on the healthy side of `value`.",
             "examples": [
               0.03
             ],
@@ -878,7 +878,7 @@
             "$ref": "#/components/schemas/_maple_AlertSeverity"
           },
           "upper": {
-            "description": "Upper bound for range comparators (`between` / `not_between`), otherwise `null`.",
+            "description": "Upper bound for range comparators (`between` / `not_between`), otherwise `null`. Defaults to `null`.",
             "type": "number"
           },
           "value": {

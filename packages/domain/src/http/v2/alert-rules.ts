@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, Effect, Schema } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../../query-engine"
 import { PostgresTransactionId, UserId } from "../../primitives"
 import {
@@ -50,14 +50,20 @@ export const V2AlertThreshold = Schema.Struct({
 		description: "The value that breaches this tier, compared with the rule's `comparator`.",
 		examples: [0.05],
 	}),
-	upper: Schema.NullOr(Schema.Number).annotate({
-		description: "Upper bound for range comparators (`between` / `not_between`), otherwise `null`.",
-	}),
-	recovery_value: Schema.NullOr(Schema.Number).annotate({
-		description:
-			"The value the signal must cross back over before this tier clears, or `null` to clear as soon as it stops breaching. Must sit on the healthy side of `value`.",
-		examples: [0.03],
-	}),
+	// Both may be omitted on input and read as `null`; responses always carry them.
+	upper: Schema.NullOr(Schema.Number)
+		.annotate({
+			description:
+				"Upper bound for range comparators (`between` / `not_between`), otherwise `null`. Defaults to `null`.",
+		})
+		.pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
+	recovery_value: Schema.NullOr(Schema.Number)
+		.annotate({
+			description:
+				"The value the signal must cross back over before this tier clears, or `null` (the default) to clear as soon as it stops breaching. Must sit on the healthy side of `value`.",
+			examples: [0.03],
+		})
+		.pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
 	destination_ids: Schema.Array(AlertDestinationPublicId).annotate({
 		description:
 			"Destinations (`dest_…`) this severity notifies. A `critical` incident also notifies every `warning` destination.",

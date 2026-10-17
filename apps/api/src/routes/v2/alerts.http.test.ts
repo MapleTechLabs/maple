@@ -635,6 +635,45 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("reads omitted tier bounds as null and names what an invalid rule got wrong", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const destination = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Ops hook",
+			url: "https://example.com/hooks/maple",
+		})
+		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Bare tier",
+			signal_type: "error_rate",
+			comparator: "gt",
+			window_minutes: 5,
+			thresholds: [{ severity: "warning", value: 0.02, destination_ids: [destination.body.id] }],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body.thresholds).toEqual([
+			{
+				severity: "warning",
+				value: 0.02,
+				upper: null,
+				recovery_value: null,
+				destination_ids: [destination.body.id],
+			},
+		])
+
+		const missingUpper = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Open range",
+			signal_type: "error_rate",
+			comparator: "between",
+			window_minutes: 5,
+			thresholds: [{ severity: "warning", value: 0.02, destination_ids: [destination.body.id] }],
+		})
+		expect(missingUpper.status).toBe(400)
+		expect(missingUpper.body.error.message).toContain("is required for between / not_between comparators")
+
+		await harness.dispose()
+	})
+
 	it("reports malformed stored rules as a redacted storage failure", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])

@@ -192,6 +192,10 @@ export const makeAlertValidationError = (
 		...(!(cause === undefined) ? { cause } : undefined),
 	})
 
+// The details ride in the message too: public HTTP errors expose `message`, not `details`.
+const invalidRuleError = (details: ReadonlyArray<string>) =>
+	makeAlertValidationError(`Invalid alert rule: ${details.join("; ")}`, details)
+
 const normalizeTags = (tags: ReadonlyArray<string> | undefined): ReadonlyArray<string> => {
 	if (!tags || tags.length === 0) return []
 	return Arr.dedupe(
@@ -849,7 +853,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		}
 		// A null tier list always left a detail behind; the check is for the narrowing.
 		if (details.length > 0 || requestedThresholds === null) {
-			return yield* Effect.fail(makeAlertValidationError("Invalid alert rule", details))
+			return yield* Effect.fail(invalidRuleError(details))
 		}
 		const thresholds = sortAlertThresholds(requestedThresholds)
 		if (request.signalType === "raw_query") {
@@ -907,7 +911,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		// liveness check; an empty result would breach under no real group.
 		if (normalizedBase.alertOnNoData && planGroupingTokens(compiledPlan) != null) {
 			return yield* Effect.fail(
-				makeAlertValidationError("Invalid alert rule", [
+				invalidRuleError([
 					"alertOnNoData is not supported on grouped rules: a group that stops reporting is already held open by its incident's telemetry check",
 				]),
 			)
