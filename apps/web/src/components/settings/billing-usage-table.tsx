@@ -12,7 +12,6 @@ import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { formatCurrency } from "@maple/domain/format"
@@ -21,7 +20,7 @@ import { capApplies, parseCapInput, spendLimitFor, updateFeatureControls } from 
 import {
 	FEATURE_COLORS,
 	featureUnit,
-	formatRateLabel,
+	rateCaption,
 	SPEND_FEATURES,
 	type FeatureSpend,
 	type SpendFeatureId,
@@ -255,7 +254,7 @@ export function BillingUsageTable({
 												: formatCurrency(feature.overageCents / 100, model.currency)}
 										</span>
 										<span className="font-mono text-2xs tabular-nums text-muted-foreground">
-											{formatRateLabel(feature) ?? EMPTY_VALUE}
+											{rateCaption(feature)}
 										</span>
 									</div>
 								</TableCell>
