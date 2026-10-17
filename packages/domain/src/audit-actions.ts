@@ -111,8 +111,6 @@ export const AuditResources = {
 	 * against the warehouse (`sql_executed`, with the statement in `metadata`).
 	 */
 	telemetry: { verbs: ["read", "sql_executed"] },
-	/** Org-singleton ingest trace sampling policy; `changes` holds the fields that moved. */
-	trace_sampling: { verbs: ["updated"] },
 	/** Org-singleton BYO-ClickHouse connection; holds warehouse credentials. */
 	warehouse_settings: { verbs: ["updated", "deleted", "schema_applied"] },
 	/** Short-lived device credentials for the mobile widget; keyed by installation. */
@@ -159,7 +157,6 @@ export const AuditResourceLabels = {
 	session_replay: "Session replay",
 	support_channel: "Support channel",
 	telemetry: "Telemetry",
-	trace_sampling: "Trace sampling",
 	warehouse_settings: "Warehouse connection",
 	widget_credential: "Widget credential",
 } as const satisfies Record<AuditResourceType, string>
@@ -243,7 +240,6 @@ export const AuditActionLabels = {
 	"support_channel.invite_sent": "Sent support channel invite",
 	"telemetry.read": "Read telemetry",
 	"telemetry.sql_executed": "Ran SQL query",
-	"trace_sampling.updated": "Updated trace sampling",
 	"warehouse_settings.updated": "Updated warehouse connection",
 	"warehouse_settings.deleted": "Disconnected warehouse",
 	"warehouse_settings.schema_applied": "Applied warehouse schema",

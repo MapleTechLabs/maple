@@ -27,11 +27,6 @@ const SCOPE_FAMILY_ROWS = [
 		label: "Scrape targets",
 		description: "Prometheus/PlanetScale scrape targets, probes, and checks",
 	},
-	{
-		id: "trace_sampling",
-		label: "Trace sampling",
-		description: "Read and change the ingest trace sampling policy",
-	},
 	{ id: "instrumentation", label: "Recommendations", description: "Instrumentation recommendations" },
 	{
 		id: "investigations",
