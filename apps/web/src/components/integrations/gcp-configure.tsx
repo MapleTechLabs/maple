@@ -1,7 +1,7 @@
 import { Fragment, useId, useState } from "react"
 import type React from "react"
 import { Exit, Option } from "effect"
-import type { V2GcpConnector } from "@maple/domain/http/v2"
+import type { V2GcpConnector, V2GcpSetupScripts, V2GcpSetupStep } from "@maple/domain/http/v2"
 import type { GcpLogRuntime, GcpScopeType } from "@maple/domain/primitives"
 import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
@@ -20,7 +20,6 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@maple/ui/components/ui/field"
-import { InlineCode } from "@maple/ui/components/ui/inline-code"
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -76,6 +75,23 @@ import {
 	type GcpFlags,
 	type GcpLogFilterDraft,
 } from "./gcp-connector-state"
+import {
+	GCP_LINK,
+	GCP_SMALL as SMALL,
+	GCP_TITLE,
+	GcpCommand,
+	GcpExternalLink,
+	GcpMono as Mono,
+} from "./gcp-primitives"
+import { GcpCodeCard, GcpManualSteps, GcpMethodChoice, GcpSetupChecks } from "./gcp-setup-methods"
+import {
+	gcpAgentPrompt,
+	gcpAlchemyUnavailable,
+	gcpPendingSetupSteps,
+	gcpRemovalSteps,
+	gcpSetupChecks,
+	type GcpSetupMethod,
+} from "./gcp-setup-steps"
 import { gcpStatusQuery } from "./integration-catalog"
 
 export const GCP_REACTIVITY_KEYS = ["gcpIntegration"]
@@ -87,6 +103,8 @@ export const GCP_SETTLING_REFRESH_MS = 10_000
 
 const DOCS = docsUrl("gcp")
 const OTEL_DOCS = docsUrl("gcpOpenTelemetry")
+const MANUAL_DOCS = docsUrl("gcpManualSetup")
+const IAC_DOCS = docsUrl("gcpInfrastructureAsCode")
 
 const PROJECT_ID_RULE =
 	"A project ID is 6 to 30 lowercase letters, digits and hyphens. It starts with a letter and can't end with a hyphen. The project name and number don't work."
@@ -182,59 +200,8 @@ const CAPABILITIES = {
 }
 const CAPABILITY_IDS: ReadonlyArray<GcpCapability> = ["logs", "metrics"]
 
-/** The page's one link style, the other integrations' (Railway's token link). */
-export const GCP_LINK = "underline underline-offset-2 hover:no-underline"
 /** The name over a group of controls. */
 const LABEL = "text-xs font-medium text-muted-foreground"
-/** Small print: one size, one colour, short lines. */
-const SMALL = "text-xs/5 text-pretty text-muted-foreground"
-/** A section's or a step's name. On a phone it grows with the controls. */
-export const GCP_TITLE = "text-base/6 font-medium sm:text-sm/5"
-
-/** A named link stays on one line. A bare address may break. */
-export function GcpExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
-	return (
-		<a
-			href={href}
-			target="_blank"
-			rel="noreferrer"
-			className={cn(GCP_LINK, children !== href && "whitespace-nowrap")}
-		>
-			{children}
-			{/* A word joiner in a no-wrap span: the icon never wraps away from the last word. */}
-			<span className="whitespace-nowrap">
-				{"⁠"}
-				<ExternalLinkIcon size={12} className="ml-1 inline align-[-1px]" />
-			</span>
-		</a>
-	)
-}
-
-/** An identifier inside a sentence: mono without a chip, so punctuation sits tight against it. */
-function Mono({ children }: { children: React.ReactNode }) {
-	return <span className="font-mono whitespace-nowrap text-foreground">{children}</span>
-}
-
-/**
- * A shell command to copy: a code chip with its copy button, on one line where the width allows.
- * Too long for its line, it breaks between its words and never inside one: a flag or a name split
- * at a hyphen reads as another.
- */
-export function GcpCommand({ children }: { children: string }) {
-	return (
-		<span className="inline-flex max-w-full items-start gap-0.5 align-top">
-			<InlineCode className="min-w-0">
-				{children.split(" ").map((word, index) => (
-					<Fragment key={index}>
-						{index === 0 ? null : " "}
-						<span className="whitespace-nowrap">{word}</span>
-					</Fragment>
-				))}
-			</InlineCode>
-			<CopyButton value={children} label="command" toast={false} iconSize={12} className="size-5" />
-		</span>
-	)
-}
 
 /** Filled where opening Cloud Shell is a step of its own, outlined next to a copy button. */
 export function GcpOpenCloudShellButton({
@@ -451,9 +418,9 @@ const FILTER_MODES = [
 	{ value: "set", label: "Replace filter", hint: "Sets the filter below" },
 ] as const
 
-const STEPS = ["Scope", "Data", "Run setup"] as const
+const STEPS = ["Scope", "Data", "Method", "Set up"] as const
 /** The step the flow is on. */
-type StepIndex = 0 | 1 | 2
+type StepIndex = 0 | 1 | 2 | 3
 
 /** Where the flow is: done steps are checked, the current one is filled, later ones are outlined. */
 function Stepper({ current }: { current: StepIndex }) {
@@ -1286,22 +1253,26 @@ function RunSummary({
 	connector,
 	logFilter,
 	onEdit,
+	byScript = true,
 }: {
 	connector: V2GcpConnector
 	/** The log filter in a few words. */
 	logFilter: string
 	onEdit: () => void
+	/** False when the Set up step is not the script, or not chosen yet. */
+	byScript?: boolean
 }) {
+	const removed = byScript ? "removed by this run" : "to remove"
 	const capabilities = [
 		connector.logs_enabled
 			? `Logs · ${logFilter}`
 			: connector.applied_logs_enabled === true
-				? "Logs · removed by this run"
+				? `Logs · ${removed}`
 				: null,
 		connector.metrics_enabled
 			? "Metrics"
 			: connector.applied_metrics_enabled === true
-				? "Metrics · removed by this run"
+				? `Metrics · ${removed}`
 				: null,
 	].filter((label) => label !== null)
 	return (
@@ -1521,10 +1492,12 @@ function RunStatus({
 function Applied({
 	connector,
 	created,
+	byScript,
 	nowMs,
 }: {
 	connector: V2GcpConnector
 	created: boolean
+	byScript: boolean
 	nowMs: number
 }) {
 	const log = gcpLogState(connector, nowMs)
@@ -1561,7 +1534,10 @@ function Applied({
 						"Google Cloud matches this configuration"
 					)}
 				</h3>
-				<p className={SMALL}>The script finished. Data shows up in Maple on its own.</p>
+				<p className={SMALL}>
+					{byScript ? "The script finished." : "Google Cloud is set up."} Data shows up in Maple on
+					its own.
+				</p>
 			</div>
 			<ul className="w-full divide-y divide-border/60 rounded-lg border text-left">
 				{rows.map((row) => (
@@ -1650,7 +1626,7 @@ export function GcpApplyView({
 			<>
 				<ConfigureHeader title={title} />
 				<DialogPanel>
-					<Applied connector={connector} created={created} nowMs={nowMs} />
+					<Applied connector={connector} created={created} byScript nowMs={nowMs} />
 				</DialogPanel>
 				<DialogFooter>
 					{reportedAt === null ? null : (
@@ -1666,7 +1642,7 @@ export function GcpApplyView({
 
 	return (
 		<>
-			<ConfigureHeader title={title} step={2} />
+			<ConfigureHeader title={title} step={3} />
 			<DialogPanel className="flex flex-col gap-5">
 				<RunSummary connector={connector} logFilter={logFilter} onEdit={onBack} />
 				<section className="flex flex-col gap-3">
@@ -1703,6 +1679,325 @@ export function GcpApplyView({
 				</Button>
 			</DialogFooter>
 		</>
+	)
+}
+
+/** The Method step: how Google Cloud is set up. UI only: nothing is saved. Exported for the lab. */
+export function GcpMethodStage({
+	title,
+	connector,
+	logFilter,
+	method,
+	onMethod,
+	onBack,
+	onContinue,
+}: {
+	title: React.ReactNode
+	connector: V2GcpConnector
+	logFilter: string
+	method: GcpSetupMethod
+	onMethod: (method: GcpSetupMethod) => void
+	onBack: () => void
+	onContinue: () => void
+}) {
+	return (
+		<>
+			<ConfigureHeader title={title} step={2} />
+			<DialogPanel className="flex flex-col gap-5">
+				<RunSummary connector={connector} logFilter={logFilter} onEdit={onBack} byScript={false} />
+				<GcpMethodChoice
+					method={method}
+					onMethod={onMethod}
+					alchemyUnavailable={gcpAlchemyUnavailable(connector)}
+				/>
+			</DialogPanel>
+			<DialogFooter>
+				<FooterNote>Each method creates the same resources.</FooterNote>
+				<Button variant="outline" onClick={onBack}>
+					Back
+				</Button>
+				<Button onClick={onContinue}>Continue</Button>
+			</DialogFooter>
+		</>
+	)
+}
+
+/** Where to find a check: its outcome, and the means to run it again. */
+export interface GcpCheckState {
+	readonly failedStep: V2GcpSetupStep | null
+	readonly failure: string | null
+	readonly checking: boolean
+	readonly onCheck: () => void
+}
+
+export interface GcpMethodApplyViewProps {
+	title: React.ReactNode
+	connector: V2GcpConnector
+	created: boolean
+	method: Exclude<GcpSetupMethod, "script">
+	/** The log filter in a few words. */
+	logFilter: string
+	setup: Pick<V2GcpSetupScripts, "manual" | "terraform" | "alchemy"> | null
+	failure: ScriptFailure | null
+	check: GcpCheckState
+	nowMs: number
+	onBack: () => void
+	onClose: () => void
+}
+
+const LOAD_FAILURE = (failure: ScriptFailure) => (
+	<div className="flex flex-wrap items-center gap-2">
+		<p className="text-xs text-severity-error" role="alert">
+			{failure.message}
+		</p>
+		<Button size="sm" variant="outline" onClick={failure.retry} loading={failure.retrying}>
+			Try again
+		</Button>
+	</div>
+)
+
+/** What applying or deploying the file removes, in words, for a connection that switched something off. */
+const removedWords = (connector: V2GcpConnector) =>
+	[
+		!connector.logs_enabled && connector.applied_logs_enabled === true
+			? "the log sink, topic, subscription and push service account"
+			: null,
+		!connector.metrics_enabled && connector.applied_metrics_enabled === true
+			? "the read-only service account"
+			: null,
+	]
+		.filter((part) => part !== null)
+		.join(" and ")
+
+/**
+ * The Set up step without the script: the console steps or the generated file, then what Maple
+ * has confirmed. Exported for the lab.
+ */
+export function GcpMethodApplyView({
+	title,
+	connector,
+	created,
+	method,
+	logFilter,
+	setup,
+	failure,
+	check,
+	nowMs,
+	onBack,
+	onClose,
+}: GcpMethodApplyViewProps) {
+	const checks = gcpSetupChecks(connector, method)
+	if (checks.every((row) => row.done)) {
+		return (
+			<>
+				<ConfigureHeader title={title} />
+				<DialogPanel>
+					<Applied connector={connector} created={created} byScript={false} nowMs={nowMs} />
+				</DialogPanel>
+				<DialogFooter>
+					<Button onClick={onClose}>Done</Button>
+				</DialogFooter>
+			</>
+		)
+	}
+	const host = connector.project_id
+	const scopeRoles = gcpScopeRoles(connector.scope_type, connector)
+	const removing = removedWords(connector)
+	const owner = (
+		<>
+			as an Owner of <Mono>{host}</Mono>
+			{scopeRoles.length === 0
+				? null
+				: ` with ${scopeRoles.join(" and ")} on the ${connector.scope_type}`}
+			.
+		</>
+	)
+	return (
+		<>
+			<ConfigureHeader title={title} step={3} />
+			<DialogPanel className="flex flex-col gap-5">
+				<RunSummary connector={connector} logFilter={logFilter} onEdit={onBack} byScript={false} />
+				{method === "manual" ? (
+					<ManualSections
+						connector={connector}
+						setup={setup}
+						failure={failure}
+						failedStep={check.failedStep}
+					/>
+				) : (
+					<section className="flex flex-col gap-3">
+						<div className="flex flex-col gap-0.5">
+							<h3 className={GCP_TITLE}>
+								{method === "terraform"
+									? "Add this to your Terraform configuration"
+									: "Add this to your Alchemy app"}
+							</h3>
+							<p className={SMALL}>
+								{removing === ""
+									? `Same resources as the script. Nothing changes in Google Cloud until you ${method === "terraform" ? "apply" : "deploy"}.`
+									: `Replace your earlier maple.${method === "terraform" ? "tf" : "ts"} with this version: it no longer has ${removing}, so the next ${method === "terraform" ? "apply" : "deploy"} removes them.`}
+							</p>
+						</div>
+						<GcpCodeCard
+							flavour={method}
+							config={
+								setup === null
+									? null
+									: method === "terraform"
+										? setup.terraform
+										: setup.alchemy
+							}
+							prompt={
+								setup === null
+									? null
+									: gcpAgentPrompt({
+											flavour: method,
+											config:
+												method === "terraform"
+													? setup.terraform
+													: (setup.alchemy ?? ""),
+											manual: setup.manual,
+											connector,
+										})
+							}
+							failure={failure === null ? null : LOAD_FAILURE(failure)}
+						/>
+						<div className="flex flex-col gap-1">
+							<p className={SMALL}>
+								{method === "terraform" ? (
+									<>
+										Apply with <Mono>terraform apply</Mono> {owner}
+									</>
+								) : (
+									<>
+										Deploy with <Mono>bunx alchemy deploy maple.ts --stage maple</Mono>{" "}
+										{owner}
+										{connector.logs_enabled
+											? " Fill in PROJECT_NUMBER at the top first."
+											: null}
+									</>
+								)}
+							</p>
+							{setup === null || setup.manual.logs === null ? null : (
+								<p className={SMALL}>
+									Pub/Sub signs each push as{" "}
+									<Mono>{setup.manual.logs.push_service_account_id}</Mono>, so the endpoint
+									carries no secret.{" "}
+									<GcpExternalLink href={IAC_DOCS}>Details</GcpExternalLink>
+								</p>
+							)}
+						</div>
+					</section>
+				)}
+			</DialogPanel>
+			<GcpSetupChecks
+				checks={checks}
+				onCheck={check.onCheck}
+				checking={check.checking}
+				failure={check.failure}
+			/>
+			<DialogFooter>
+				<FooterNote>Saved. Close this any time and come back to it.</FooterNote>
+				<Button variant="outline" onClick={onClose}>
+					Close
+				</Button>
+			</DialogFooter>
+		</>
+	)
+}
+
+/** The console steps: what to remove first, then what to create. */
+function ManualSections({
+	connector,
+	setup,
+	failure,
+	failedStep,
+}: {
+	connector: V2GcpConnector
+	setup: Pick<V2GcpSetupScripts, "manual"> | null
+	failure: ScriptFailure | null
+	failedStep: V2GcpSetupStep | null
+}) {
+	const removal = gcpRemovalSteps(connector)
+	const pending = setup === null ? null : gcpPendingSetupSteps(setup.manual, connector)
+	const onScope = [
+		connector.logs_enabled ? "the sink" : null,
+		connector.metrics_enabled ? "the read-only roles" : null,
+	]
+		.filter((part) => part !== null)
+		.join(" and ")
+	return (
+		<>
+			{removal.length === 0 ? null : (
+				<GcpManualSteps
+					heading="Remove these in the Google Cloud console"
+					detail={`${countLabel(removal.length, "step")}. Maple can't change Google Cloud itself.`}
+					steps={removal}
+					failedStep={failedStep}
+					docsHref={`${MANUAL_DOCS}#removing`}
+				/>
+			)}
+			{failure !== null ? (
+				LOAD_FAILURE(failure)
+			) : pending === null ? (
+				<Skeleton className="h-60 w-full" />
+			) : pending.length === 0 ? null : (
+				<GcpManualSteps
+					heading="Create these in the Google Cloud console"
+					detail={
+						connector.scope_type === "project"
+							? `${countLabel(pending.length, "step")} in ${connector.project_id}. Names are generated for this connection.`
+							: `${countLabel(pending.length, "step")}. Resources go in ${connector.project_id}, ${onScope} on the ${connector.scope_type}.`
+					}
+					steps={pending}
+					failedStep={failedStep}
+					docsHref={MANUAL_DOCS}
+				/>
+			)}
+		</>
+	)
+}
+
+/** The Set up step without the script: loads the setup, polls, and runs Check access. */
+function MethodApplyStage({
+	filter,
+	...view
+}: Omit<GcpMethodApplyViewProps, "logFilter" | "setup" | "failure" | "check"> & { filter: FilterState }) {
+	const { connector, method, nowMs } = view
+	const choice = gcpLogFilterChoice(filter, connector.applied_logs_enabled === true)
+	const { scripts, failure } = useGcpScripts(connector, choice.applicationLogs)
+	const checkAccess = useAtomSet(MapleApiV2AtomClient.mutation("gcpIntegration", "checkAccess"), {
+		mode: "promiseExit",
+	})
+	const [outcome, setOutcome] = useState<{
+		readonly failedStep: V2GcpSetupStep | null
+		readonly failure: string | null
+	}>({ failedStep: null, failure: null })
+	const [check, checking] = useAsyncAction(async () => {
+		const result = await checkAccess({
+			params: { id: connector.id },
+			reactivityKeys: GCP_REACTIVITY_KEYS,
+		})
+		if (Exit.isFailure(result)) {
+			setOutcome({ failedStep: null, failure: errorMessage(result, "Couldn't check. Try again.") })
+			return
+		}
+		setOutcome({ failedStep: result.value.failed_step, failure: result.value.message })
+	})
+	const refresh = useAtomRefresh(gcpStatusQuery())
+	useIntervalRefresh(refresh, {
+		intervalMs: GCP_SETTLING_REFRESH_MS,
+		enabled: !gcpSetupChecks(connector, method).every((row) => row.done),
+	})
+	return (
+		<GcpMethodApplyView
+			{...view}
+			logFilter={filterShort(choice)}
+			setup={scripts}
+			failure={failure}
+			check={{ ...outcome, checking, onCheck: () => void check() }}
+			nowMs={nowMs}
+		/>
 	)
 }
 
@@ -1752,15 +2047,50 @@ function ConnectionStages({
 		rerun,
 		seen: saved.setup_reported_at,
 	})
-	// Found waiting on a first run, the status times it from the connection's creation. Found
-	// any other way, nobody has said a run is under way.
-	const [opened, setOpened] = useState<ApplyOpened | null>(() =>
-		initialStage === "apply"
-			? open(!created && gcpScriptNeeded(saved, Date.now()) !== "setup-pending")
-			: null,
+	// How Google Cloud is set up: asked before every Set up step, kept while the dialog is open.
+	const [picked, setMethod] = useState<GcpSetupMethod>("script")
+	// Alchemy can't grant roles on a folder or organization: switching metrics on there since it was
+	// picked leaves Terraform.
+	const method = picked === "alchemy" && gcpAlchemyUnavailable(connector) !== null ? "terraform" : picked
+	// Whether a run was asked for when the Method step was left: found waiting on a first run, the
+	// status times it from the connection's creation; found any other way, nobody has said one is under way.
+	const [rerun, setRerun] = useState<boolean | null>(() =>
+		initialStage === "apply" ? !created && gcpScriptNeeded(saved, Date.now()) !== "setup-pending" : null,
 	)
+	const [stage, setStage] = useState<"choose" | "method">(initialStage === "apply" ? "method" : "choose")
+	const [opened, setOpened] = useState<ApplyOpened | null>(null)
+	const choice = gcpLogFilterChoice(filter, connector.applied_logs_enabled === true)
 
-	return opened === null ? (
+	if (opened !== null) {
+		const back = () => {
+			setOpened(null)
+			setStage("method")
+		}
+		return method === "script" ? (
+			<ApplyStage
+				title={title}
+				connector={connector}
+				created={created}
+				filter={filter}
+				nowMs={nowMs}
+				opened={opened}
+				onBack={back}
+				onClose={onClose}
+			/>
+		) : (
+			<MethodApplyStage
+				title={title}
+				connector={connector}
+				created={created}
+				method={method}
+				filter={filter}
+				nowMs={nowMs}
+				onBack={back}
+				onClose={onClose}
+			/>
+		)
+	}
+	return stage === "choose" ? (
 		<ChooseStage
 			title={title}
 			connector={connector}
@@ -1769,19 +2099,19 @@ function ConnectionStages({
 			onFilter={onFilter}
 			onApply={(flags) => {
 				if (flags !== null) setAsked({ of: saved, flags })
-				setOpened(open(flags === null))
+				setRerun(flags === null)
+				setStage("method")
 			}}
 		/>
 	) : (
-		<ApplyStage
+		<GcpMethodStage
 			title={title}
 			connector={connector}
-			created={created}
-			filter={filter}
-			nowMs={nowMs}
-			opened={opened}
-			onBack={() => setOpened(null)}
-			onClose={onClose}
+			logFilter={filterShort(choice)}
+			method={method}
+			onMethod={setMethod}
+			onBack={() => setStage("choose")}
+			onContinue={() => setOpened(open(rerun ?? true))}
 		/>
 	)
 }
