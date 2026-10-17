@@ -6,10 +6,8 @@ import { shortId } from "@maple/ui/lib/ids"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { copyableBadgeStyles } from "@maple/ui/styles/ui/copyable-badge"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
+import { traceIdBadge } from "../../../ui/trace-badges"
 import { statFigure } from "../../../ui/stat-figure"
 import { statusDot } from "../../../ui/status-dot"
 import { serviceDot } from "../../../ui/values"
@@ -56,28 +54,6 @@ const startedAt = (
 		],
 	)
 }
-
-/** `TraceIdBadge` (`CopyableBadge` + id glyph). TODO(copy): the click does not copy yet. */
-const traceIdBadge = (h: HtmlBuilder<Message>, traceId: string): Html =>
-	h.button(
-		[
-			h.AriaLabel("Copy trace ID"),
-			h.Class(
-				cn(
-					badgeVariants({ variant: "outline", size: "default" }),
-					copyableBadgeStyles,
-					cn("gap-1.5 font-mono", "text-xs max-w-[10rem]"),
-				),
-			),
-			h.DataAttribute("base-ui-tooltip-trigger", ""),
-			h.DataAttribute("slot", "tooltip-trigger"),
-			h.Type("button"),
-		],
-		[
-			icon(h, "IdBadgeIcon", { className: "text-muted-foreground" }),
-			h.span([h.Class("min-w-0 truncate")], [traceId]),
-		],
-	)
 
 const spectrumBar = (h: HtmlBuilder<Message>, shares: ReadonlyArray<ServiceShare>): Html | null =>
 	shares.length === 0
@@ -190,7 +166,10 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 										],
 										[shortId(commitSha, "sha")],
 									),
-							traceIdBadge(h, trace.data.traceId),
+							traceIdBadge(h, trace.data.traceId, {
+								size: "default",
+								className: "text-xs max-w-[10rem]",
+							}),
 						],
 					),
 				],

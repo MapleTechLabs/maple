@@ -1,10 +1,14 @@
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
+import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { copyableBadgeStyles } from "@maple/ui/styles/ui/copyable-badge"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "./display"
+import { icon } from "./icon"
 import { serviceDot } from "./values"
 
-// Ports of `TraceStatusBadge` (packages/ui/src/components/traces/trace-status-badge.tsx) and
+// Ports of `TraceIdBadge`, `TraceStatusBadge` (packages/ui/src/components/traces/trace-status-badge.tsx) and
 // `ServicePills` (packages/ui/src/components/service-pills.tsx).
 // TODO(tooltip): the pills' tooltip listing every service is not ported; the trigger markup is.
 
@@ -65,3 +69,29 @@ export const servicePills = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<strin
 						: []),
 				],
 			)
+
+/** `TraceIdBadge` (`CopyableBadge` + id glyph). TODO(copy): the click does not copy yet. */
+export const traceIdBadge = <M>(
+	h: HtmlBuilder<M>,
+	traceId: string,
+	options: Readonly<{ size?: "default" | "lg"; className?: string }> = {},
+): Html =>
+	h.button(
+		[
+			h.AriaLabel("Copy trace ID"),
+			h.Class(
+				cn(
+					badgeVariants({ variant: "outline", size: options.size ?? "lg" }),
+					copyableBadgeStyles,
+					cn("gap-1.5 font-mono", options.className),
+				),
+			),
+			h.DataAttribute("base-ui-tooltip-trigger", ""),
+			h.DataAttribute("slot", "tooltip-trigger"),
+			h.Type("button"),
+		],
+		[
+			icon(h, "IdBadgeIcon", { className: "text-muted-foreground" }),
+			h.span([h.Class("min-w-0 truncate")], [traceId]),
+		],
+	)

@@ -1,6 +1,5 @@
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { skeletonListGapStyles, skeletonListStyles } from "@maple/ui/styles/ui/skeleton"
 import {
 	tabsIndicatorStyles,
@@ -136,19 +135,15 @@ export const tabList = (h: H, model: Model, values: ReadonlyArray<TabValue>): Ht
 const severityBadge = (h: H, severityText: string): Html => {
 	const label = severityText.trim() === "" ? "UNSET" : severityText
 	const color = getSeverityColor(label)
-	return h.span(
-		[
-			h.Class(
-				cn(
-					badgeVariants({
-						variant: "secondary",
-						className: cn("font-mono text-3xs uppercase", "h-4 px-1"),
-					}),
-				),
-			),
-			h.DataAttribute("slot", "badge"),
-			h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` }),
-		],
+	return badge(
+		h,
+		{
+			variant: "secondary",
+			className: cn("font-mono text-3xs uppercase", "h-4 px-1"),
+			attributes: [
+				h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` }),
+			],
+		},
 		[label],
 	)
 }

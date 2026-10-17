@@ -6,7 +6,6 @@ import { getSpanKindLabel, getSpanStatusBadgeClass } from "@maple/ui/lib/span-ki
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../../ui/display"
@@ -298,22 +297,16 @@ const rightSection = (
 			...Option.match(outcome, {
 				onNone: () => [],
 				onSome: (bad) => [
-					h.span(
-						[
-							h.Class(
-								cn(
-									badgeVariants({
-										variant: "outline",
-										className: cn(
-											"text-3xs justify-center font-medium px-1.5 shrink-0",
-											BAD_OUTCOME_STYLE,
-										),
-									}),
-								),
+					badge(
+						h,
+						{
+							variant: "outline",
+							className: cn(
+								"text-3xs justify-center font-medium px-1.5 shrink-0",
+								BAD_OUTCOME_STYLE,
 							),
-							h.DataAttribute("slot", "badge"),
-							h.Title(`${platform?.label ?? ""} outcome`),
-						],
+							attributes: [h.Title(`${platform?.label ?? ""} outcome`)],
+						},
 						[bad.value],
 					),
 				],
