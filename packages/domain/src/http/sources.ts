@@ -1,0 +1,133 @@
+import { Schema } from "effect"
+import {
+	IsoDateTimeString,
+	PushSourcePlatform,
+	SourceId,
+	SourcePlatform,
+	SourceResourceAttribute,
+	SourceSignal,
+} from "../primitives"
+import { HttpTaggedError } from "./error-policy"
+
+/** Resource attribute the ingest gateway stamps with the `src_` id of the source that sent the data. */
+export const SOURCE_ID_ATTRIBUTE = "maple_source_id"
+
+/** Shared by the API's validation and the sources form. */
+export const SOURCE_LIMITS = {
+	maxSourcesPerOrg: 100,
+	maxResourceAttributes: 20,
+	maxRateLimitRps: 100_000,
+} as const
+
+/** `paused` sources are accepted but their data is dropped; `expired` tokens are rejected. */
+export const SourceTokenStatus = Schema.Literals(["active", "paused", "expired"])
+export type SourceTokenStatus = Schema.Schema.Type<typeof SourceTokenStatus>
+
+export class Source extends Schema.Class<Source>("Source")({
+	id: SourceId,
+	name: Schema.String,
+	description: Schema.NullOr(Schema.String),
+	platform: SourcePlatform,
+	isDefault: Schema.Boolean,
+	/** Null for the default source (it uses the org's public/private pair) and pull sources. */
+	keyPrefix: Schema.NullOr(Schema.String),
+	status: SourceTokenStatus,
+	allowedSignals: Schema.NullOr(Schema.Array(SourceSignal)),
+	rateLimitRps: Schema.NullOr(Schema.Int),
+	resourceAttributes: Schema.Array(SourceResourceAttribute),
+	expiresAt: Schema.NullOr(IsoDateTimeString),
+	pausedAt: Schema.NullOr(IsoDateTimeString),
+	pausedUntil: Schema.NullOr(IsoDateTimeString),
+	lastUsedAt: Schema.NullOr(IsoDateTimeString),
+	rolledAt: Schema.NullOr(IsoDateTimeString),
+	createdAt: IsoDateTimeString,
+	updatedAt: IsoDateTimeString,
+}) {}
+
+/** Returned only by create and roll: the one time the raw token is visible. */
+export class SourceWithSecret extends Schema.Class<SourceWithSecret>("SourceWithSecret")({
+	source: Source,
+	secret: Schema.String,
+}) {}
+
+export class CreateSourceRequest extends Schema.Class<CreateSourceRequest>("CreateSourceRequest")({
+	name: Schema.String,
+	platform: PushSourcePlatform,
+	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	allowedSignals: Schema.optionalKey(Schema.NullOr(Schema.Array(SourceSignal))),
+	rateLimitRps: Schema.optionalKey(Schema.NullOr(Schema.Int)),
+	resourceAttributes: Schema.optionalKey(Schema.Array(SourceResourceAttribute)),
+	expiresAtMs: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+}) {}
+
+/** Omitted fields are unchanged; `null` clears a nullable field. */
+export class UpdateSourceRequest extends Schema.Class<UpdateSourceRequest>("UpdateSourceRequest")({
+	name: Schema.optionalKey(Schema.String),
+	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	allowedSignals: Schema.optionalKey(Schema.NullOr(Schema.Array(SourceSignal))),
+	rateLimitRps: Schema.optionalKey(Schema.NullOr(Schema.Int)),
+	resourceAttributes: Schema.optionalKey(Schema.Array(SourceResourceAttribute)),
+	expiresAtMs: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+}) {}
+
+/** Hourly counts for one source; `hour` is the bucket start in epoch ms. */
+export class SourceUsageBucket extends Schema.Class<SourceUsageBucket>("SourceUsageBucket")({
+	hour: Schema.Number,
+	spans: Schema.Number,
+	logs: Schema.Number,
+}) {}
+
+export class SourceUsage extends Schema.Class<SourceUsage>("SourceUsage")({
+	windowStart: Schema.Number,
+	windowEnd: Schema.Number,
+	buckets: Schema.Array(SourceUsageBucket),
+}) {}
+
+export class SourceNotFoundError extends HttpTaggedError<SourceNotFoundError>()(
+	"@maple/http/errors/SourceNotFoundError",
+	{
+		sourceId: SourceId,
+		message: Schema.String,
+	},
+	{
+		status: 404,
+		code: "source_not_found",
+		title: "Source not found",
+		message: "No such source.",
+		param: "id",
+		retry: "never",
+		recovery: "none",
+		exposure: "redacted",
+	},
+) {}
+
+export class SourceValidationError extends HttpTaggedError<SourceValidationError>()(
+	"@maple/http/errors/SourceValidationError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 400,
+		code: "source_invalid",
+		title: "Invalid source settings",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+export class SourcePersistenceError extends HttpTaggedError<SourcePersistenceError>()(
+	"@maple/http/errors/SourcePersistenceError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 503,
+		code: "source_persistence_failed",
+		title: "Sources are temporarily unavailable",
+		message: "Sources are temporarily unavailable. Retry in a few seconds.",
+		retry: "backoff",
+		recovery: "retry",
+		exposure: "redacted",
+	},
+) {}
