@@ -41,3 +41,26 @@ export function schemaApplyPlan(entries: ReadonlyArray<ClickHouseTableDiffEntry>
 	})
 	return { create, addColumns, unresolved }
 }
+
+export type SchemaDiffStatus = ClickHouseTableDiffEntry["status"]
+
+/** How many tables and views are in each diff state; every state is present, zero or not. */
+export function schemaDiffCounts(
+	entries: ReadonlyArray<ClickHouseTableDiffEntry>,
+): Record<SchemaDiffStatus, number> {
+	const count = (status: SchemaDiffStatus) => entries.filter((entry) => entry.status === status).length
+	return {
+		up_to_date: count("up_to_date"),
+		missing: count("missing"),
+		drifted: count("drifted"),
+		wrong_kind: count("wrong_kind"),
+	}
+}
+
+/** Whether Apply fixes a column drift: only a missing column on a table is added. */
+export function columnDriftResolvedByApply(
+	kind: ClickHouseTableDiffEntry["kind"],
+	drift: ClickHouseColumnDrift,
+): boolean {
+	return kind === "table" && drift.kind === "missing"
+}
