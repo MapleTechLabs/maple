@@ -71,7 +71,7 @@ export const RunElkLayout = Command.define("RunElkLayout", {
 			),
 		).pipe(
 			Effect.map((result) => Message.SucceededElkLayout({ signature, positions: Object.fromEntries(result.positions) })),
-			Effect.catch(() => Effect.succeed(Message.FailedElkLayout({ signature }))),
+			Effect.orElseSucceed(() => Message.FailedElkLayout({ signature })),
 		),
 })
 

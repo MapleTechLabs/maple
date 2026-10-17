@@ -81,7 +81,7 @@ export const SignInWithRootPassword = Command.define("SignInWithRootPassword", {
 						}),
 					),
 			}),
-			Effect.catch(() => Effect.succeed(Message.FailedSignInWithRootPassword({ failure: SignInFailure.Unexpected() }))),
+			Effect.orElseSucceed(() => Message.FailedSignInWithRootPassword({ failure: SignInFailure.Unexpected() })),
 		),
 })
 

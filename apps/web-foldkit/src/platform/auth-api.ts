@@ -11,6 +11,8 @@ const SELF_HOSTED_TOKEN_STORAGE_KEY = "maple.self_hosted.token"
 /** Dispatched when the stored token changes outside `update` (a rejected renewal). */
 export const SELF_HOSTED_AUTH_EVENT = "maple:self-hosted-auth-changed"
 
+// Each storage call is its own boundary: sessionStorage is per tab and needs no shared scope.
+// oxlint-disable-next-line effecttsgo/strict-effect-provide
 const withSessionStorage = Effect.provide(BrowserKeyValueStore.layerSessionStorage)
 
 export const readSessionToken: Effect.Effect<Option.Option<string>> = Effect.gen(function* () {
