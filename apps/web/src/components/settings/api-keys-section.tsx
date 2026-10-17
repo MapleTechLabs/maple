@@ -5,7 +5,7 @@ import type { ApiKeyKind } from "@maple/domain/http"
 import type { V2ApiKey, V2IngestKeys } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
+import { Alert, AlertAction, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
@@ -51,6 +51,7 @@ import { ApiReference } from "./api-reference"
 import { CreateApiKeyDialog } from "./create-api-key-dialog"
 import { IngestKeyValue } from "./ingest-key-value"
 import {
+	apiKeysFailureDisplay,
 	buildKeyRows,
 	filterKeyRows,
 	hasPendingStatusBoundary,
@@ -182,6 +183,7 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 	})
 
 	const ingestLoading = ingest !== null && ingest.keys === null && !ingest.failed
+	const apiKeysFailure = apiKeysFailureDisplay({ apiKeysFailed: isError, rows })
 	const showSkeleton = isLoading || (ingestLoading && keys.length === 0)
 	const needle = search.trim()
 
@@ -231,6 +233,20 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 					/>
 				</div>
 
+				{apiKeysFailure === "inline" ? (
+					<Alert size="sm" variant="crit">
+						<AlertDescription>
+							Couldn't load the API and MCP keys. Your keys are unaffected; this is a read
+							problem.
+						</AlertDescription>
+						<AlertAction>
+							<Button size="sm" variant="outline" onClick={retryOrgCollections}>
+								Retry
+							</Button>
+						</AlertAction>
+					</Alert>
+				) : null}
+
 				{ingest?.failed ? (
 					<Alert size="sm" variant="crit">
 						<AlertDescription>
@@ -242,7 +258,7 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 				<Panel>
 					{showSkeleton ? (
 						<SkeletonList rows={3} rowClassName="h-[52px]" gap="2" className="p-4" />
-					) : isError && rows.length === 0 ? (
+					) : apiKeysFailure === "replace" ? (
 						<SyncUnavailable
 							title="Couldn't load keys"
 							description="The key list couldn't be synced. Your keys are unaffected; this is a read problem."
