@@ -1,7 +1,9 @@
 import { createEffectCollection } from "@maple/effect-db/electric"
 import { electricSyncBaseUrl } from "@maple/web/lib/services/common/electric-sync-url"
 import { Context, Duration, Effect, Layer, ManagedRuntime, Option, type Scope, SynchronizedRef } from "effect"
+import { MapleApiV2Client } from "../../platform/api-clients"
 import { SessionBearer } from "../../platform/session-bearer"
+import { makeDashboardsCollection } from "./dashboards"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -38,8 +40,11 @@ const makeSet = (
 	orgId: string,
 	runtime: ManagedRuntime.ManagedRuntime<never, never>,
 	fetchClient: typeof globalThis.fetch,
+	client: MapleApiV2Client["Service"],
 ) => ({
 	orgId,
+	// `createDashboardsCollection`: writes PATCH/DELETE through the v2 API.
+	dashboards: makeDashboardsCollection({ orgId, url: syncProxyUrl, runtime, fetchClient, client }),
 	// `createSyncedCollection`'s shape: id `<shape>:<org>`, `org=` param for URL cache keying only.
 	alertRules: createEffectCollection({
 		id: `alert_rules:${orgId}`,
@@ -93,6 +98,7 @@ const makeSet = (
 })
 export type OrgCollectionSet = ReturnType<typeof makeSet>
 type SyncedCollection =
+	| OrgCollectionSet["dashboards"]
 	| OrgCollectionSet["alertRules"]
 	| OrgCollectionSet["alertRuleStates"]
 	| OrgCollectionSet["alertIncidents"]
@@ -121,13 +127,20 @@ export class OrgCollections extends Context.Service<
 	OrgCollections,
 	{ readonly forOrg: (orgId: string) => Effect.Effect<OrgCollectionSet> }
 >()("@maple/web-foldkit/OrgCollections") {
-	static readonly layer = Layer.effect(this, makeOrgCollections()).pipe(Layer.provide(SessionBearer.layer))
+	static readonly layer = Layer.effect(this, makeOrgCollections()).pipe(
+		Layer.provide([SessionBearer.layer, MapleApiV2Client.layer]),
+	)
 }
 
-function makeOrgCollections(): Effect.Effect<OrgCollections["Service"], never, SessionBearer | Scope.Scope> {
+function makeOrgCollections(): Effect.Effect<
+	OrgCollections["Service"],
+	never,
+	SessionBearer | MapleApiV2Client | Scope.Scope
+> {
 	return Effect.gen(function* () {
 		const scope = yield* Effect.scope
 		const fetchClient = makeSyncFetch(yield* Effect.context<SessionBearer>())
+		const client = yield* MapleApiV2Client
 		// Collection handlers and backoff logs run here; none of Maple's collections need services.
 		const runtime = yield* Effect.acquireRelease(
 			Effect.sync(() => ManagedRuntime.make(Layer.empty)),
@@ -138,6 +151,7 @@ function makeOrgCollections(): Effect.Effect<OrgCollections["Service"], never, S
 			Effect.asVoid(
 				Effect.forkIn(
 					Effect.all([
+						cleanupWhenIdle(set.dashboards),
 						cleanupWhenIdle(set.alertRules),
 						cleanupWhenIdle(set.alertRuleStates),
 						cleanupWhenIdle(set.alertIncidents),
@@ -158,7 +172,7 @@ function makeOrgCollections(): Effect.Effect<OrgCollections["Service"], never, S
 				if (Option.isSome(existing) && existing.value.orgId === orgId) {
 					return Effect.succeed([existing.value, existing] as const)
 				}
-				const next = makeSet(orgId, runtime, fetchClient)
+				const next = makeSet(orgId, runtime, fetchClient, client)
 				return Effect.as(Option.match(existing, { onNone: () => Effect.void, onSome: retire }), [
 					next,
 					Option.some(next),

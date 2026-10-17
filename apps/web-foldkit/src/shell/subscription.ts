@@ -1,5 +1,6 @@
 import { Option, Stream } from "effect"
 import { Dom } from "foldkit"
+import { DASHBOARD_FAVORITES_EVENT, readDashboardFavorites } from "./favorites"
 import { Message } from "./message"
 
 /** `useIsMobile` (`max-md`): below 768px the sidebar is a sheet. */
@@ -19,4 +20,13 @@ export const sidebarShortcut: Stream.Stream<Message> = Dom.streamFromEventFilter
 		event.preventDefault()
 		return Option.some(Message.PressedSidebarShortcut())
 	},
+})
+
+const favoritesTarget: Dom.TypedEventTarget<{ [DASHBOARD_FAVORITES_EVENT]: Event }> = window
+
+/** `dashboardFavoritesAtom`'s subscribers: the list starred or unstarred a dashboard. */
+export const favoritesChanges: Stream.Stream<Message> = Dom.streamFromEvent({
+	target: favoritesTarget,
+	type: DASHBOARD_FAVORITES_EVENT,
+	mapEvent: () => Message.ChangedDashboardFavorites({ favorites: readDashboardFavorites() }),
 })

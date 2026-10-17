@@ -50,6 +50,8 @@ export type MenuEntry =
 	| Readonly<{ _tag: "Checkbox"; value: string; label: string; isChecked: boolean }>
 	| Readonly<{
 			_tag: "RadioGroup"
+			/** `<DropdownMenuLabel>` inside the radio group (`Menu.GroupLabel`). */
+			label?: string
 			items: ReadonlyArray<Readonly<{ value: string; label: string; isChecked: boolean }>>
 	  }>
 	| Readonly<{ _tag: "Separator" }>
@@ -150,21 +152,29 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 				},
 				[entry.label],
 			)
-		case "RadioGroup":
+		case "RadioGroup": {
+			const labelId = entry.label === undefined ? undefined : `${model.id}-group-${index}`
 			return menuRadioGroup(
 				h,
-				entry.items.map((item, offset) =>
-					menuCheckableItem(
-						h,
-						{
-							...row(model, index + offset, { kind: "Radio", value: item.value }),
-							kind: "radio",
-							isChecked: item.isChecked,
-						},
-						[item.label],
+				[
+					...(entry.label === undefined || labelId === undefined
+						? []
+						: [menuLabel(h, labelId, [entry.label])]),
+					...entry.items.map((item, offset) =>
+						menuCheckableItem(
+							h,
+							{
+								...row(model, index + offset, { kind: "Radio", value: item.value }),
+								kind: "radio",
+								isChecked: item.isChecked,
+							},
+							[item.label],
+						),
 					),
-				),
+				],
+				labelId,
 			)
+		}
 		case "Separator":
 			return menuSeparator(h)
 	}

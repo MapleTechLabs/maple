@@ -31,6 +31,8 @@ export type DashboardPageOptions = Readonly<{
 	header?: Html
 	/** `DashboardLayout.Tabs`: page tabs pinned under the header. */
 	tabs?: Html
+	/** `DashboardPage`'s `sticky`: content pinned under the header and tabs (a banner). */
+	sticky?: Html
 	/** `DashboardLayout.RightPanel` as the inline rail (lg and up). TODO(lg): the sheet below lg. */
 	rightPanel?: Html
 	rightPanelWidth?: string
@@ -102,6 +104,7 @@ export const dashboardPage = <M>(
 		...(options.tabs === undefined
 			? []
 			: [h.div([h.DataAttribute("slot", "page-tabs"), h.Class("min-w-0")], [options.tabs])]),
+		...(options.sticky === undefined || options.sticky === null ? [] : [options.sticky]),
 	]
 	return pageBody(h, [
 		...(options.filters === undefined ? [] : [filterRail(h, options.filters, options.filtersWidth)]),

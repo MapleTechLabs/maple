@@ -1,13 +1,11 @@
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema } from "effect"
+import { readDashboardFavorites } from "./favorites"
 import { NAMESPACE_STORAGE_PREFIX, THEME_STORAGE_KEY } from "./command"
 import { Theme } from "./message"
 import type { ShellFlags } from "./model"
 import { MOBILE_QUERY } from "./subscription"
 
-/** `dashboardFavoritesAtom`: an effect-atom KVS entry, JSON-encoded. */
-const FAVORITES_KEY = "maple.dashboards.favorites"
-const decodeFavorites = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
 const decodeTheme = Schema.decodeUnknownOption(Theme)
 
 /** The `<html>` class the pre-paint script set, else storage, else dark (`use-theme`'s order). */
@@ -41,9 +39,6 @@ export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* ()
 		isMobile: window.matchMedia(MOBILE_QUERY).matches,
 		theme: readTheme(),
 		pinnedNamespaces,
-		dashboardFavorites: Option.getOrElse(
-			Option.flatMap(readLocalStorage(FAVORITES_KEY), decodeFavorites),
-			() => [],
-		),
+		dashboardFavorites: readDashboardFavorites(),
 	}
 })
