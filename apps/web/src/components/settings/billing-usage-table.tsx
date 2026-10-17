@@ -106,7 +106,8 @@ function CapEditor({
 						onChange={(event) => setRaw(event.target.value)}
 						onKeyDown={(event) => {
 							if (event.key === "Enter") submit()
-							if (event.key === "Escape") onDone()
+							// Cancel is disabled mid-save, so Escape must not close the editor either.
+							if (event.key === "Escape" && !saving) onDone()
 						}}
 						controlClassName="font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 					/>
