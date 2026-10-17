@@ -6,10 +6,27 @@
  * - CSS animations/transitions are frozen at their end state, carets hidden
  * - scrollbars hidden (their rendering differs between headless runs)
  * - intervals run at most once per frame: a `setInterval(fn)` (0 ms) keep-alive would otherwise run
- *   back to back under the frozen clock, starving every other timer
+ *   back to back, starving every other timer
+ * - `Date` is frozen at `now`. Only `Date`: Playwright's `page.clock` also fakes timers and
+ *   requestAnimationFrame, whose callbacks then run off rendering steps and race ResizeObserver
+ *   under load (lab-worst-case's virtualized waterfall settled at two scroll offsets).
  */
-export const installDeterminism = (seed: number) => {
-	let state = seed >>> 0
+export const installDeterminism = (options: { readonly seed: number; readonly now: string }) => {
+	let state = options.seed >>> 0
+	const frozenMs = new Date(options.now).getTime()
+	const RealDate = Date
+	class FrozenDate extends RealDate {
+		constructor(...args: ReadonlyArray<number | string | Date>) {
+			const [first, monthIndex, ...rest] = args
+			if (first === undefined) super(frozenMs)
+			else if (monthIndex === undefined) super(first)
+			else super(Number(first), Number(monthIndex), ...rest.map(Number))
+		}
+		static override now() {
+			return frozenMs
+		}
+	}
+	Reflect.set(window, "Date", FrozenDate)
 	Math.random = () => {
 		// mulberry32
 		state = (state + 0x6d2b79f5) >>> 0

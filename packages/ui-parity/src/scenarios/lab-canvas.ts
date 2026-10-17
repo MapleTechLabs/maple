@@ -8,10 +8,17 @@ import type { AreaModule, Scenario } from "./types.ts"
  */
 const SMALL_MAP = "/lab/bench/service-map?services=8&edges=12&rps=med&seed=3"
 
-const variant = (id: string, title: string, path: string, steps: (page: Page) => Promise<void>): Scenario => ({
+const variant = (
+	id: string,
+	title: string,
+	path: string,
+	steps: (page: Page) => Promise<void>,
+): Scenario => ({
 	id,
 	title,
 	path,
+	// Signed in like the rest of the lab area: the lab shell boots the app's session checks.
+	dataset: "default",
 	viewports: ["desktop"],
 	themes: ["light", "dark"],
 	area: "lab",
@@ -28,9 +35,13 @@ const wheelZoom = (deltaY: number) => async (page: Page) => {
 
 /** ELK runs in a worker; the canvas reports `data-elk-status="ready"` once its final layout landed. */
 const waitForMap = async (page: Page) => {
-	await page.waitForFunction(() => document.querySelector('[data-elk-status="ready"]') !== null, undefined, {
-		timeout: 30_000,
-	})
+	await page.waitForFunction(
+		() => document.querySelector('[data-elk-status="ready"]') !== null,
+		undefined,
+		{
+			timeout: 30_000,
+		},
+	)
 }
 
 export const labCanvasArea: AreaModule = {
@@ -44,12 +55,23 @@ export const labCanvasArea: AreaModule = {
 		}),
 		variant("lab-flow-wheel-zoom", "Lab: Trace flow, wheel zoom", "/lab/flow", wheelZoom(-400)),
 		variant("lab-bench-service-map-small", "Lab: Service map, small graph", SMALL_MAP, waitForMap),
-		variant("lab-bench-service-map-hover-node", "Lab: Service map, node hovered", SMALL_MAP, async (page) => {
-			await waitForMap(page)
-			await page.getByText("svc-005").hover()
-		}),
-		variant("lab-bench-service-map-wheel-zoom", "Lab: Service map, wheel zoom", SMALL_MAP, async (page) => {
-			await waitForMap(page)
-			await wheelZoom(300)(page)
-		}),	],
+		variant(
+			"lab-bench-service-map-hover-node",
+			"Lab: Service map, node hovered",
+			SMALL_MAP,
+			async (page) => {
+				await waitForMap(page)
+				await page.getByText("svc-005").hover()
+			},
+		),
+		variant(
+			"lab-bench-service-map-wheel-zoom",
+			"Lab: Service map, wheel zoom",
+			SMALL_MAP,
+			async (page) => {
+				await waitForMap(page)
+				await wheelZoom(300)(page)
+			},
+		),
+	],
 }

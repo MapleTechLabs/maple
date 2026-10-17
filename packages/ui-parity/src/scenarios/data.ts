@@ -2,7 +2,7 @@ import type { AreaModule } from "./types.ts"
 
 /**
  * S6 data layer probe (`apps/web-foldkit/src/lab/entries/data-probe.ts`). Foldkit only: it has
- * no legacy twin, so capture it with `parity capture foldkit --filter data-probe` and read the
+ * no legacy twin (so `targets` skips it elsewhere): `parity capture foldkit --filter data-probe`, then read the
  * call log in the variant JSON (one execute-batch item, one `alert_rules` shape, 0 unmocked).
  */
 export const dataArea: AreaModule = {
@@ -13,6 +13,7 @@ export const dataArea: AreaModule = {
 			title: "Lab: S6 data probe (Foldkit only)",
 			path: "/lab/data-probe",
 			dataset: "default",
+			targets: ["foldkit"],
 			viewports: ["desktop"],
 			themes: ["light"],
 			area: "data",

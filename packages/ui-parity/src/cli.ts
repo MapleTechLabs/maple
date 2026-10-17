@@ -6,6 +6,7 @@ import { buildTarget } from "./build.ts"
 import {
 	BROWSER_LAUNCH_OPTIONS,
 	type CaptureResult,
+	type CaptureVariant,
 	captureDir,
 	captureTarget,
 	expandVariants,
@@ -13,6 +14,7 @@ import {
 import { codegenFile } from "./codegen.ts"
 import { type AuthMode, isTargetName, PORT_BASE, targets, type TargetName } from "./config.ts"
 import { routeCoverage } from "./coverage.ts"
+import type { FixtureBackend } from "./contract.ts"
 import { compareRun } from "./report.ts"
 import { clerkIdentityFor, installClerkStub } from "./runtime/clerk-stub.ts"
 import { installSelfHostedSession, selfHostedTokenFor } from "./runtime/session.ts"
@@ -80,6 +82,46 @@ const requireBuild = (name: string) => {
 	return name
 }
 
+/** Drops variants whose `Scenario.targets` leave out a build this command captures. */
+const forBuilds = (variants: ReadonlyArray<CaptureVariant>, builds: ReadonlyArray<string>) => {
+	const captured = [...new Set(builds.map((name) => loadBuild(name).stamp.target))]
+	const kept = variants.filter(({ scenario }) => {
+		const only = scenario.targets
+		return only === undefined || captured.every((target) => only.includes(target))
+	})
+	if (kept.length < variants.length)
+		console.log(
+			`[parity] skipping ${variants.length - kept.length} variants not built for ${captured.join(", ")} (Scenario.targets)`,
+		)
+	return kept
+}
+
+/**
+ * Clerk datasets capture the `--auth clerk` flavor of a build. A missing flavor is built here from
+ * the self-hosted build's stamp (same target, same pinned ref; working-tree targets from the tree as it is now).
+ */
+const ensureAuthFlavors = async (
+	builds: ReadonlyArray<string>,
+	variants: ReadonlyArray<CaptureVariant>,
+	backend: FixtureBackend | null,
+) => {
+	const clerkDatasets = new Set(backend?.datasets.filter((d) => d.auth === "clerk").map((d) => d.name))
+	if (
+		!variants.some(
+			({ scenario }) => scenario.dataset !== undefined && clerkDatasets.has(scenario.dataset),
+		)
+	)
+		return
+	for (const name of new Set(builds)) {
+		if (buildExists(name, "clerk")) continue
+		const { stamp } = loadBuild(name)
+		console.log(
+			`[parity] "${name}" has no clerk flavor; building it (bun run parity build ${stamp.target} --auth clerk)`,
+		)
+		await buildTarget(stamp.target, { authMode: "clerk", out: name, ref: stamp.ref ?? undefined })
+	}
+}
+
 const exitWith = (summary: ReturnType<typeof compareRun>) => {
 	process.exitCode = summary.totals.fail + summary.totals.missing > 0 ? 1 : 0
 }
@@ -126,7 +168,9 @@ switch (command) {
 		const build = requireBuild(positionals[1] ?? "legacy")
 		const run = values.run ?? `${timestamp()}-capture-${build}`
 		const backend = await startBackendIfPresent()
-		const results = await captureTarget({ build, run, variants: expandVariants(values.filter), backend })
+		const variants = forBuilds(expandVariants(values.filter), [build])
+		await ensureAuthFlavors([build], variants, backend)
+		const results = await captureTarget({ build, run, variants, backend })
 		await backend?.close()
 		console.log(
 			`\n${results.filter((result) => result.ok).length}/${results.length} captured -> ${captureDir(run, build)}`,
@@ -138,8 +182,9 @@ switch (command) {
 		const baseline = requireBuild(values.baseline)
 		const candidate = requireBuild(values.candidate)
 		const run = values.run ?? `${timestamp()}-${candidate}-vs-${baseline}`
-		const variants = expandVariants(values.filter)
+		const variants = forBuilds(expandVariants(values.filter), [baseline, candidate])
 		const backend = await startBackendIfPresent()
+		await ensureAuthFlavors([baseline, candidate], variants, backend)
 		const browser = await chromium.launch(BROWSER_LAUNCH_OPTIONS)
 		// Same-build comparisons (legacy vs legacy) need distinct folders.
 		const candidateLabel = baseline === candidate ? `${candidate}-b` : candidate
@@ -196,8 +241,10 @@ switch (command) {
 	case "selfcheck": {
 		const build = requireBuild(values.target)
 		const run = values.run ?? `${timestamp()}-selfcheck-${build}`
+		const variants = forBuilds(expandVariants(values.filter), [build])
 		const backend = await startBackendIfPresent()
-		const result = await selfcheck({ build, run, variants: expandVariants(values.filter), backend })
+		await ensureAuthFlavors([build], variants, backend)
+		const result = await selfcheck({ build, run, variants, backend })
 		await backend?.close()
 		process.exitCode = result.deterministic && result.healthy ? 0 : 1
 		break
