@@ -65,7 +65,7 @@ function AutoTriageForm({ current }: { current: AiTriageSettingsDocument }) {
 		maxRunsPerDay: String(current.maxRunsPerDay),
 		maxPassesPerDay: String(current.maxPassesPerDay),
 	}
-	const { draft, isDirty, updateDraft, discard } = useSettingsDraft(saved)
+	const { draft, isDirty, updateDraft, discard, commit } = useSettingsDraft(saved)
 
 	const send = async (request: AiTriageSettingsUpdateRequest, success: string) =>
 		toastExit(await updateMutation({ payload: request, reactivityKeys: SETTINGS_REACTIVITY_KEYS }), {
@@ -87,7 +87,7 @@ function AutoTriageForm({ current }: { current: AiTriageSettingsDocument }) {
 			...(update.maxRunsPerDay === null ? undefined : { maxRunsPerDay: update.maxRunsPerDay }),
 			...(update.maxPassesPerDay === null ? undefined : { maxPassesPerDay: update.maxPassesPerDay }),
 		})
-		if (await send(request, "Auto-triage limits saved")) discard()
+		if (await send(request, "Auto-triage limits saved")) commit()
 	})
 
 	const runsError = parseDailyLimit(draft.maxRunsPerDay, RUNS_PER_DAY_LIMITS)
