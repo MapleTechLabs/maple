@@ -134,8 +134,16 @@ function FindingRow({ check }: { check: V2SetupAuditCheck }) {
 					<p className="text-muted-foreground/80 text-xs leading-relaxed">{check.fix_hint}</p>
 					{check.affected.length > 0 && (
 						<div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-							{check.affected.map((entity) => (
-								<AffectedChip key={`${entity.kind}:${entity.name}`} entity={entity} />
+							{check.affected.map((entity, index) => (
+								// Names repeat (two rules can share one), so key by id, else position.
+								<AffectedChip
+									key={
+										entity.id === null
+											? `index:${index}`
+											: `id:${entity.kind}:${entity.id}`
+									}
+									entity={entity}
+								/>
 							))}
 							{check.affected_count > check.affected.length && (
 								<span className="text-muted-foreground/70 text-2xs">
