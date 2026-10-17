@@ -352,7 +352,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 		HttpApiEndpoint.post("resume", "/:id/resume", {
 			params: { id: SourcePublicId },
 			success: V2Source,
-			error: [V2InsufficientPermissions.schema, sourceNotFound, ...sourceErrors],
+			error: [V2InsufficientPermissions.schema, sourceNotFound, sourceInvalid, ...sourceErrors],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "resumeSource",
