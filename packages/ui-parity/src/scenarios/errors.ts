@@ -1,8 +1,11 @@
-import { EMPTY, OPS, opsScenarios } from "./ops-kit.ts"
+import { EMPTY, OPS, opsScenarios, SEEDED } from "./ops-kit.ts"
 import type { AreaModule, Scenario } from "./types.ts"
 
 /** The error issues list (`/errors/issues`); the hub and one issue live in the routes area. */
 const errors = opsScenarios("errors", "Errors")
+
+/** The pool-timeout issue, seeded on every dataset of the `default` org. */
+const ISSUE_PATH = `/errors/issues/${SEEDED.triageIssue}`
 
 /** Held far past any capture, so the screenshot is the loading state. */
 const HELD_MS = 60_000
@@ -43,6 +46,14 @@ export const errorsArea: AreaModule = {
 			"held",
 		),
 		timed("hub-error", "list failing", "/errors", listFailure("errorIssues.list"), "quiet"),
+		timed(
+			"issue-loading",
+			"issue loading (detail held)",
+			ISSUE_PATH,
+			{ delays: { "errorIssues.retrieve": HELD_MS } },
+			"held",
+		),
+		timed("issue-error", "issue failing", ISSUE_PATH, listFailure("errorIssues.retrieve"), "quiet"),
 		errors("hub-closed", "Closed tab", "/errors", {
 			steps: async (page) => {
 				await page.getByRole("tab", { name: "Closed" }).click()
