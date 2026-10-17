@@ -31,7 +31,8 @@ export const clerkIdentityFor = (dataset: DatasetSummary): ClerkStubIdentity | n
 		firstName,
 		lastName: rest.join(" "),
 		imageUrl: "",
-		clerkOrgId: identity.orgId,
+		// An empty slug marks a signed-in user with no active organization (`/org-required`).
+		clerkOrgId: identity.orgSlug === "" ? null : identity.orgId,
 		orgName: identity.orgName,
 		orgSlug: identity.orgSlug,
 		role: identity.role === "admin" ? "org:admin" : "org:member",
@@ -56,6 +57,26 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 					createdAt,
 					updatedAt: createdAt,
 					membersCount: 1,
+					// `useOrganization({ memberships, invitations })` pages through these: the signed-in user only.
+					getMemberships: async () => ({
+						data: [
+							{
+								id: "orgmem_parity",
+								role: id.role,
+								createdAt,
+								publicUserData: {
+									userId: id.clerkUserId,
+									firstName: id.firstName,
+									lastName: id.lastName,
+									identifier: id.email,
+									imageUrl: id.imageUrl,
+									hasImage: false,
+								},
+							},
+						],
+						total_count: 1,
+					}),
+					getInvitations: async () => ({ data: [], total_count: 0 }),
 				}
 			: null
 		const memberships = organization
@@ -63,6 +84,7 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 			: []
 		// `useOrganizationList({ userMemberships })` pages through `user.getOrganizationMemberships`.
 		const membershipPage = async () => ({ data: memberships, total_count: memberships.length })
+		const primaryEmail = { id: "idn_parity_primary", emailAddress: id.email, verification: { status: "verified" } }
 		const user = {
 			id: id.clerkUserId,
 			firstName: id.firstName,
@@ -70,9 +92,34 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 			fullName: `${id.firstName} ${id.lastName}`,
 			imageUrl: id.imageUrl,
 			hasImage: false,
-			primaryEmailAddress: { emailAddress: id.email },
-			emailAddresses: [{ emailAddress: id.email }],
+			primaryEmailAddress: primaryEmail,
+			primaryEmailAddressId: primaryEmail.id,
+			emailAddresses: [primaryEmail],
 			externalAccounts: [],
+			// What the /account tabs read: one passkey, a password, no TOTP, this one session.
+			passkeys: [{ id: "pk_parity", name: "MacBook Touch ID", createdAt, lastUsedAt: createdAt }],
+			passwordEnabled: true,
+			totpEnabled: false,
+			backupCodeEnabled: false,
+			twoFactorEnabled: false,
+			deleteSelfEnabled: true,
+			getSessions: async () => [
+				{
+					id: "sess_parity",
+					status: "active",
+					lastActiveAt: createdAt,
+					latestActivity: {
+						browserName: "Chrome",
+						browserVersion: "141.0.0.0",
+						deviceType: "Macintosh",
+						isMobile: false,
+						city: "London",
+						country: "GB",
+						ipAddress: "203.0.113.24",
+					},
+					revoke: asyncNoop,
+				},
+			],
 			organizationMemberships: memberships,
 			getOrganizationMemberships: membershipPage,
 			getOrganizationInvitations: async () => ({ data: [], total_count: 0 }),
@@ -143,7 +190,11 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 			if (!options?.skipInitialEmit) listener(resources)
 			return () => listeners.delete(listener)
 		},
-		on: noop,
+		// clerk-react re-registers its status listeners here with `notify`; without a "ready" reply
+		// `useAuth().isLoaded` never turns true and the app stays on its boot splash.
+		on: (event: string, listener: (status: string) => void, options?: { notify?: boolean }) => {
+			if (event === "status" && options?.notify) listener("ready")
+		},
 		off: noop,
 		__internal_updateProps: noop,
 		__internal_setStatus: noop,
