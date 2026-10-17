@@ -790,15 +790,33 @@ struct IngestKeyResolver {
     // here instead of amplifying into a Postgres lookup per request.
     negative_cache: Cache<String, ()>,
     routing: Arc<OrgRoutingResolver>,
-    /// Source ids whose `last_used_at` was written within `SOURCE_USE_WRITE_INTERVAL`.
-    recent_key_uses: Cache<String, ()>,
-    /// (org id, source uuid) to whether that source is the org's, for `maple_source_id`
-    /// values sent with the default keys.
+    /// Source ids whose `last_used_at` was written recently, each held for its write interval.
+    recent_key_uses: Cache<String, Duration>,
+    /// (org id, claim as received) to whether it names one of the org's pull sources,
+    /// for `maple_source_id` values sent with the default keys.
     source_claims: Cache<(String, String), bool>,
 }
 
-/// How often one source's `last_used_at` is rewritten per gateway instance.
+/// How often one token source's `last_used_at` is rewritten per gateway instance.
 const SOURCE_USE_WRITE_INTERVAL: Duration = Duration::from_mins(1);
+/// The same for a default source, which every public/private key request touches.
+const DEFAULT_SOURCE_USE_WRITE_INTERVAL: Duration = Duration::from_mins(5);
+/// Distinct `maple_source_id` claims checked per request; the rest stay unverified.
+const MAX_SOURCE_CLAIMS: usize = 8;
+
+/// Expires each recent-use entry after the interval stored as its value.
+struct SourceUseExpiry;
+
+impl moka::Expiry<String, Duration> for SourceUseExpiry {
+    fn expire_after_create(
+        &self,
+        _key: &String,
+        interval: &Duration,
+        _created_at: Instant,
+    ) -> Option<Duration> {
+        Some(*interval)
+    }
+}
 
 fn source_claims_cache(ttl: Duration) -> Cache<(String, String), bool> {
     Cache::builder()
@@ -807,9 +825,9 @@ fn source_claims_cache(ttl: Duration) -> Cache<(String, String), bool> {
         .build()
 }
 
-fn recent_key_uses_cache() -> Cache<String, ()> {
+fn recent_key_uses_cache() -> Cache<String, Duration> {
     Cache::builder()
-        .time_to_live(SOURCE_USE_WRITE_INTERVAL)
+        .expire_after(SourceUseExpiry)
         .max_capacity(50_000)
         .build()
 }
@@ -919,11 +937,12 @@ impl ClickHouseTargetResolver {
 /// rows). Both back the same operations.
 #[async_trait::async_trait]
 trait KeyStore: Send + Sync {
+    /// A public/private key by hash, with its org's default source in the same row.
     async fn fetch_ingest_key(
         &self,
         key_hash: &str,
         hash_column: &'static str,
-    ) -> Result<Option<KeyRow>, String>;
+    ) -> Result<Option<OrgKeyRow>, String>;
 
     /// A `maple_src_` key by hash, paused or not; unknown keys are `None`.
     async fn fetch_source_by_token_hash(&self, key_hash: &str)
@@ -931,9 +950,6 @@ trait KeyStore: Send + Sync {
 
     /// Stamps `last_used_at` on a source whose data the gateway just accepted.
     async fn record_source_used(&self, key_id: &str, now_ms: i64) -> Result<(), String>;
-
-    /// The org's default source (its public/private keys); `None` if it has none.
-    async fn fetch_default_source_id(&self, org_id: &str) -> Result<Option<String>, String>;
 
     /// The source created for one integration; `None` until the API creates it.
     async fn fetch_integration_source_id(
@@ -943,8 +959,13 @@ trait KeyStore: Send + Sync {
         integration_id: &str,
     ) -> Result<Option<String>, String>;
 
-    /// Whether `source_id` (a uuid) is one of the org's sources.
-    async fn source_belongs_to_org(&self, org_id: &str, source_id: &str) -> Result<bool, String>;
+    /// The subset of `source_ids` (uuids) that are the org's integration ("pull")
+    /// sources, the only ones a default-key sender may claim. One round trip.
+    async fn claimable_source_ids(
+        &self,
+        org_id: &str,
+        source_ids: &[String],
+    ) -> Result<Vec<String>, String>;
 
     async fn fetch_connector(
         &self,
@@ -1011,6 +1032,13 @@ struct KeyRow {
     org_id: String,
     self_managed: bool,
     clickhouse_ready: bool,
+}
+
+#[derive(Clone, Debug)]
+struct OrgKeyRow {
+    key: KeyRow,
+    /// `sources.id` of the org's default source; `None` if it has none.
+    default_source_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -2980,6 +3008,9 @@ fn grpc_router(state: Arc<AppState>) -> Router {
     .layer(axum::middleware::from_fn_with_state(state, grpc_admission))
 }
 
+/// A gRPC frame holding one zero-length (all-default) message, uncompressed.
+const EMPTY_GRPC_MESSAGE: &[u8] = &[0, 0, 0, 0, 0];
+
 /// Authenticate and entitlement-gate an OTLP/gRPC export on its headers alone.
 ///
 /// tonic reads and decodes the whole message before a service method runs, so a
@@ -3002,6 +3033,15 @@ async fn grpc_admission(
         let admitted = admit_grpc_export(&state, request.headers(), signal).await;
         match admitted {
             Ok((resolved, admission)) => {
+                if admission == KeyAdmission::Drop {
+                    // Paused: hand tonic one empty message instead of the upload, so
+                    // nothing is read or decoded and the client still gets an OK reply.
+                    *request.body_mut() = axum::body::Body::from(EMPTY_GRPC_MESSAGE);
+                    request.headers_mut().remove("grpc-encoding");
+                    request
+                        .headers_mut()
+                        .remove(axum::http::header::CONTENT_LENGTH);
+                }
                 request.extensions_mut().insert(resolved);
                 request.extensions_mut().insert(admission);
                 next.run(request).await
@@ -3105,7 +3145,9 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
         // `decoded_payload.len()`.
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Traces(inner);
-        verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
+        // A paused source's export reaches here empty (see `grpc_admission`).
+        let kept_claim = admission == KeyAdmission::Ingest
+            && verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Traces,
@@ -3113,6 +3155,7 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
             &resolved,
             admission,
             decoded_bytes,
+            kept_claim,
         )
         .await?;
         Ok(tonic::Response::new(
@@ -3138,7 +3181,9 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
         let inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Logs(inner);
-        verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
+        // A paused source's export reaches here empty (see `grpc_admission`).
+        let kept_claim = admission == KeyAdmission::Ingest
+            && verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Logs,
@@ -3146,6 +3191,7 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
             &resolved,
             admission,
             decoded_bytes,
+            kept_claim,
         )
         .await?;
         Ok(tonic::Response::new(
@@ -3173,7 +3219,9 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
         let inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Metrics(inner);
-        verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
+        // A paused source's export reaches here empty (see `grpc_admission`).
+        let kept_claim = admission == KeyAdmission::Ingest
+            && verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Metrics,
@@ -3181,6 +3229,7 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
             &resolved,
             admission,
             decoded_bytes,
+            kept_claim,
         )
         .await?;
         Ok(tonic::Response::new(
@@ -3200,6 +3249,7 @@ async fn accept_grpc_decoded(
     resolved: &ResolvedIngestKey,
     admission: KeyAdmission,
     decoded_bytes: usize,
+    kept_claim: bool,
 ) -> Result<(), tonic::Status> {
     // The sentinel token is a PUBLIC constant, so anything it carries is
     // attacker-authored and must never be stored. Discarded here for the same
@@ -3234,7 +3284,7 @@ async fn accept_grpc_decoded(
 
     match result {
         Ok(_) => {
-            state.resolver.note_source_use(resolved);
+            state.resolver.note_source_use(resolved, kept_claim);
             if resolved.org_id != SENTINEL_ORG_ID {
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(
@@ -3836,7 +3886,7 @@ async fn handle_replay_meta_inner(
     )
     .await?;
 
-    state.resolver.note_source_use(&resolved_key);
+    state.resolver.note_source_use(&resolved_key, false);
     Ok(count)
 }
 
@@ -4049,7 +4099,7 @@ async fn handle_session_events_inner(
         },
     )
     .await?;
-    state.resolver.note_source_use(&resolved_key);
+    state.resolver.note_source_use(&resolved_key, false);
     Ok(count)
 }
 
@@ -4226,7 +4276,7 @@ async fn handle_product_events_inner(
         },
     )
     .await?;
-    state.resolver.note_source_use(&resolved_key);
+    state.resolver.note_source_use(&resolved_key, false);
     Ok(count)
 }
 
@@ -4543,7 +4593,7 @@ async fn handle_replay_blob_inner(
             warn!(org_id = %org_id, error = %e, "session replay blob enqueue rejected");
             api_error_from_pipeline(&e)
         })?;
-    state.resolver.note_source_use(&resolved_key);
+    state.resolver.note_source_use(&resolved_key, false);
     Ok(())
 }
 
@@ -4936,7 +4986,7 @@ async fn handle_signal_inner(
         parse_span.record("maple.ingest.item_count", decoded.item_count());
         decoded
     };
-    verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
+    let kept_claim = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
     let item_count = decoded.item_count();
 
     Span::current().record("maple.ingest.item_count", item_count);
@@ -4957,7 +5007,7 @@ async fn handle_signal_inner(
 
     let response = response_result.map_err(|error| (error, "forward"))?;
     if response.status().is_success() {
-        state.resolver.note_source_use(&resolved_key);
+        state.resolver.note_source_use(&resolved_key, kept_claim);
     }
 
     Ok((
@@ -5493,7 +5543,7 @@ async fn handle_gcp_logpush_inner(
         }
     };
     state.gcp_resolver.record_health(connector_id, None).await;
-    state.resolver.note_source_use(&resolved.key);
+    state.resolver.note_source_use(&resolved.key, false);
 
     if let Some(usage) = &state.usage_metrics {
         usage.record(org_id, Signal::Logs.path(), body.len() as u64, 1);
@@ -5948,11 +5998,12 @@ fn decode_otlp_payload(
 }
 
 /// Checks the sender's own `maple_source_id` values against the org, then enriches.
+/// True when a resource kept a verified claim of its own.
 async fn verify_claims_and_enrich(
     state: &AppState,
     decoded: &mut DecodedPayload,
     resolved_key: &ResolvedIngestKey,
-) {
+) -> bool {
     let claims = claimed_source_ids(decoded, resolved_key);
     let verified_claims = if claims.is_empty() {
         Vec::new()
@@ -5963,6 +6014,7 @@ async fn verify_claims_and_enrich(
             .await
     };
     enrich_decoded_payload(decoded, resolved_key, &verified_claims);
+    !verified_claims.is_empty()
 }
 
 /// Stamps the tenant and source onto a decoded payload. `verified_claims` are the
@@ -6099,8 +6151,8 @@ fn source_id_claim(attributes: &[KeyValue]) -> Option<&str> {
     }
 }
 
-/// Distinct `maple_source_id` values a default-key sender put on its resources
-/// (Maple's integration pollers name their own source). Empty for other keys.
+/// The first `MAX_SOURCE_CLAIMS` distinct `maple_source_id` values a default-key
+/// sender put on its resources (Maple's pollers name their own source). Empty for other keys.
 fn claimed_source_ids(decoded: &DecodedPayload, resolved_key: &ResolvedIngestKey) -> Vec<String> {
     if !resolved_key.accepts_source_claims() {
         return Vec::new();
@@ -6130,6 +6182,10 @@ fn claimed_source_ids(decoded: &DecodedPayload, resolved_key: &ResolvedIngestKey
     {
         if !claims.iter().any(|seen| seen == claim) {
             claims.push(claim.to_owned());
+            // Claims past the cap are never looked up, so they stay unverified.
+            if claims.len() == MAX_SOURCE_CLAIMS {
+                break;
+            }
         }
     }
     claims
@@ -6542,44 +6598,72 @@ impl OrgRoutingResolver {
 }
 
 impl IngestKeyResolver {
-    /// The claimed `src_` ids that name one of the org's sources. Positive and
-    /// negative answers are cached; a store error leaves the claim unverified.
+    /// The claimed `src_` ids that name one of the org's pull sources. Only the
+    /// first `MAX_SOURCE_CLAIMS` distinct claims count; uncached ones are checked in
+    /// one query. Answers are cached; a store error leaves the rest unverified.
     async fn verify_source_claims(&self, org_id: &str, claims: Vec<String>) -> Vec<String> {
         let mut verified = Vec::new();
+        // (claim as received, its uuid) for claims the cache has no answer for.
+        let mut unknown: Vec<(String, String)> = Vec::new();
+        let mut seen: Vec<String> = Vec::new();
         for claim in claims {
-            let Some(uuid) = sources::source_uuid_from_public_id(&claim) else {
-                continue;
-            };
-            let cache_key = (org_id.to_owned(), uuid);
-            let belongs = if let Some(cached) = self.source_claims.get(&cache_key).await {
-                cached
-            } else {
-                match self.store.source_belongs_to_org(org_id, &cache_key.1).await {
-                    Ok(belongs) => {
-                        self.source_claims.insert(cache_key, belongs).await;
-                        belongs
-                    }
-                    Err(error) => {
-                        warn!(
-                            org_id,
-                            error, "Source claim lookup failed; replacing the claim"
-                        );
-                        false
-                    }
-                }
-            };
-            if belongs {
-                verified.push(claim);
+            if seen.len() == MAX_SOURCE_CLAIMS {
+                break;
             }
+            if seen.contains(&claim) {
+                continue;
+            }
+            seen.push(claim.clone());
+            let cache_key = (org_id.to_owned(), claim);
+            match self.source_claims.get(&cache_key).await {
+                Some(true) => verified.push(cache_key.1),
+                Some(false) => {}
+                None => match sources::source_uuid_from_public_id(&cache_key.1) {
+                    Some(uuid) => unknown.push((cache_key.1, uuid)),
+                    None => self.source_claims.insert(cache_key, false).await,
+                },
+            }
+        }
+        if unknown.is_empty() {
+            return verified;
+        }
+        let uuids: Vec<String> = unknown.iter().map(|(_, uuid)| uuid.clone()).collect();
+        let found = match self.store.claimable_source_ids(org_id, &uuids).await {
+            Ok(found) => found,
+            Err(error) => {
+                warn!(
+                    org_id,
+                    error, "Source claim lookup failed; replacing the claims"
+                );
+                return verified;
+            }
+        };
+        for (claim, uuid) in unknown {
+            let claimable = found.contains(&uuid);
+            if claimable {
+                verified.push(claim.clone());
+            }
+            self.source_claims
+                .insert((org_id.to_owned(), claim), claimable)
+                .await;
         }
         verified
     }
 
     /// Stamps `last_used_at` for the source whose data was accepted (token or
-    /// default), at most once per `SOURCE_USE_WRITE_INTERVAL` and off the request path.
-    fn note_source_use(&self, resolved: &ResolvedIngestKey) {
+    /// default), at most once per write interval and off the request path. A batch
+    /// that kept a verified claim (a poller) does not count as default-source use.
+    fn note_source_use(&self, resolved: &ResolvedIngestKey, kept_claim: bool) {
+        if kept_claim {
+            return;
+        }
         let Some(source_id) = resolved.source_row_id() else {
             return;
+        };
+        let interval = if resolved.accepts_source_claims() {
+            DEFAULT_SOURCE_USE_WRITE_INTERVAL
+        } else {
+            SOURCE_USE_WRITE_INTERVAL
         };
         // Most requests land inside the window; skip them without spawning.
         if self.recent_key_uses.contains_key(source_id) {
@@ -6593,7 +6677,12 @@ impl IngestKeyResolver {
         span.follows_from(Span::current().id());
         tokio::spawn(
             async move {
-                if !recent.entry(key_id.clone()).or_insert(()).await.is_fresh() {
+                if !recent
+                    .entry(key_id.clone())
+                    .or_insert(interval)
+                    .await
+                    .is_fresh()
+                {
                     return;
                 }
                 if let Err(error) = store
@@ -6643,16 +6732,16 @@ impl IngestKeyResolver {
                 self.store
                     .fetch_ingest_key(&key_hash, hash_column)
                     .await?
-                    .map(|row| (row, None))
+                    .map(|row| (row.key, None, row.default_source_id))
             }
             IngestKeyType::Source => self
                 .store
                 .fetch_source_by_token_hash(&key_hash)
                 .await?
-                .map(|row| (row.key, row.config)),
+                .map(|row| (row.key, row.config, None)),
             IngestKeyType::Connector => return Ok(None),
         };
-        let Some((row, source_config_row)) = found else {
+        let Some((row, source_config_row, default_source_id)) = found else {
             // Only a genuine "no row" is cached — store errors surface above and
             // must stay retryable.
             self.negative_cache.insert(raw_key.to_owned(), ()).await;
@@ -6660,15 +6749,8 @@ impl IngestKeyResolver {
         };
 
         let routing = OrgRouting::from_key_row(&row);
-        // Resolved with the key and cached with it; a missing row stamps nothing.
-        let default_source = match key_type {
-            IngestKeyType::Public | IngestKeyType::Private => self
-                .store
-                .fetch_default_source_id(&row.org_id)
-                .await?
-                .and_then(SourceRef::from_id),
-            IngestKeyType::Source | IngestKeyType::Connector => None,
-        };
+        // Read with the key and cached with it; a missing row stamps nothing.
+        let default_source = default_source_id.and_then(SourceRef::from_id);
         let identity = IngestKeyIdentity {
             org_id: row.org_id.clone(),
             key_type,
@@ -6795,21 +6877,26 @@ impl GcpConnectorResolver {
         }
     }
 
-    /// Whether this connector may write another setup report in this window.
     /// The connector's integration source, cached with the connector identity.
-    /// `None` until the API creates it; the gateway never creates source rows.
-    async fn integration_source(
-        &self,
-        org_id: &str,
-        connector_id: &str,
-    ) -> Result<Option<SourceRef>, String> {
-        Ok(self
+    /// `None` until the API creates it, or if the lookup fails: that never fails auth.
+    async fn integration_source(&self, org_id: &str, connector_id: &str) -> Option<SourceRef> {
+        match self
             .store
             .fetch_integration_source_id(org_id, GCP_SOURCE_PLATFORM, connector_id)
-            .await?
-            .and_then(SourceRef::from_id))
+            .await
+        {
+            Ok(id) => id.and_then(SourceRef::from_id),
+            Err(error) => {
+                warn!(
+                    org_id,
+                    connector_id, error, "Integration source lookup failed; stamping none"
+                );
+                None
+            }
+        }
     }
 
+    /// Whether this connector may write another setup report in this window.
     async fn take_setup_report_slot(&self, connector_id: &str) -> bool {
         let count = self
             .recent_setup_reports
@@ -6846,7 +6933,7 @@ impl GcpConnectorResolver {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
         };
-        let source = self.integration_source(&row.org_id, connector_id).await?;
+        let source = self.integration_source(&row.org_id, connector_id).await;
         let identity = GcpConnectorIdentity {
             org_id: row.org_id,
             secret_key_id: cache_key.1.chars().take(16).collect(),
@@ -6908,7 +6995,7 @@ impl GcpConnectorResolver {
             return Ok(None);
         };
 
-        let source = self.integration_source(&row.org_id, connector_id).await?;
+        let source = self.integration_source(&row.org_id, connector_id).await;
         let routing = OrgRouting {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
@@ -7374,16 +7461,18 @@ impl KeyStore for PostgresKeyStore {
         &self,
         key_hash: &str,
         hash_column: &'static str,
-    ) -> Result<Option<KeyRow>, String> {
+    ) -> Result<Option<OrgKeyRow>, String> {
         // hash_column is a compile-time constant chosen by the resolver, never
-        // user input — safe to interpolate.
+        // user input, so safe to interpolate. The default source rides the same row.
         let revision = required_schema_revision();
         let sql = format!(
             "SELECT k.org_id, \
                     COALESCE(s.sync_status = 'connected', false) AS self_managed, \
-                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
+                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
+                    ds.id AS default_source_id \
              FROM org_ingest_keys k \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
+             LEFT JOIN sources ds ON ds.org_id = k.org_id AND ds.is_default \
              WHERE k.{hash_column} = $2 LIMIT 1"
         );
         let client = self.client().await?;
@@ -7402,10 +7491,13 @@ impl KeyStore for PostgresKeyStore {
         let Some(row) = rows.into_iter().next() else {
             return Ok(None);
         };
-        Ok(Some(KeyRow {
-            org_id: row.get("org_id"),
-            self_managed: row.get("self_managed"),
-            clickhouse_ready: row.get("clickhouse_ready"),
+        Ok(Some(OrgKeyRow {
+            key: KeyRow {
+                org_id: row.get("org_id"),
+                self_managed: row.get("self_managed"),
+                clickhouse_ready: row.get("clickhouse_ready"),
+            },
+            default_source_id: row.get("default_source_id"),
         }))
     }
 
@@ -7709,24 +7801,6 @@ impl KeyStore for PostgresKeyStore {
             .map_err(|error| format!("postgres record_source_used failed: {error}"))
     }
 
-    async fn fetch_default_source_id(&self, org_id: &str) -> Result<Option<String>, String> {
-        let client = self.client().await?;
-        let rows = client
-            .query(
-                "SELECT id FROM sources WHERE org_id = $1 AND is_default LIMIT 1",
-                &[&org_id],
-            )
-            .instrument(postgres_client_span(
-                "fetch_default_source_id",
-                "SELECT",
-                "sources",
-                &self.target,
-            ))
-            .await
-            .map_err(|error| format!("postgres fetch_default_source_id failed: {error}"))?;
-        Ok(rows.first().map(|row| row.get("id")))
-    }
-
     async fn fetch_integration_source_id(
         &self,
         org_id: &str,
@@ -7751,22 +7825,27 @@ impl KeyStore for PostgresKeyStore {
         Ok(rows.first().map(|row| row.get("id")))
     }
 
-    async fn source_belongs_to_org(&self, org_id: &str, source_id: &str) -> Result<bool, String> {
+    async fn claimable_source_ids(
+        &self,
+        org_id: &str,
+        source_ids: &[String],
+    ) -> Result<Vec<String>, String> {
         let client = self.client().await?;
         let rows = client
             .query(
-                "SELECT 1 FROM sources WHERE org_id = $1 AND id = $2 LIMIT 1",
-                &[&org_id, &source_id],
+                "SELECT id FROM sources \
+                 WHERE org_id = $1 AND id = ANY($2) AND integration_id IS NOT NULL",
+                &[&org_id, &source_ids],
             )
             .instrument(postgres_client_span(
-                "source_belongs_to_org",
+                "claimable_source_ids",
                 "SELECT",
                 "sources",
                 &self.target,
             ))
             .await
-            .map_err(|error| format!("postgres source_belongs_to_org failed: {error}"))?;
-        Ok(!rows.is_empty())
+            .map_err(|error| format!("postgres claimable_source_ids failed: {error}"))?;
+        Ok(rows.iter().map(|row| row.get("id")).collect())
     }
 
     async fn record_connector_success(
@@ -7871,11 +7950,14 @@ impl KeyStore for StaticKeyStore {
         &self,
         _key_hash: &str,
         _hash_column: &'static str,
-    ) -> Result<Option<KeyRow>, String> {
-        Ok(Some(KeyRow {
-            org_id: self.org_id.clone(),
-            self_managed: false,
-            clickhouse_ready: false,
+    ) -> Result<Option<OrgKeyRow>, String> {
+        Ok(Some(OrgKeyRow {
+            key: KeyRow {
+                org_id: self.org_id.clone(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+            default_source_id: None,
         }))
     }
 
@@ -7945,10 +8027,6 @@ impl KeyStore for StaticKeyStore {
         Ok(())
     }
 
-    async fn fetch_default_source_id(&self, _org_id: &str) -> Result<Option<String>, String> {
-        Ok(None)
-    }
-
     async fn fetch_integration_source_id(
         &self,
         _org_id: &str,
@@ -7958,8 +8036,12 @@ impl KeyStore for StaticKeyStore {
         Ok(None)
     }
 
-    async fn source_belongs_to_org(&self, _org_id: &str, _source_id: &str) -> Result<bool, String> {
-        Ok(false)
+    async fn claimable_source_ids(
+        &self,
+        _org_id: &str,
+        _source_ids: &[String],
+    ) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
     }
 
     async fn record_connector_success(
@@ -9104,6 +9186,10 @@ mod tests {
         /// `sources` rows that are not token sources: (org id, id, is_default, integration).
         source_rows: std::sync::Mutex<Vec<(String, String, bool, Option<(&'static str, String)>)>>,
         source_row_fetches: AtomicU64,
+        /// The source ids each `claimable_source_ids` call asked about.
+        claim_lookups: std::sync::Mutex<Vec<Vec<String>>>,
+        /// Fails the source lookups (claims, integration sources).
+        source_errors: AtomicBool,
         connectors: std::sync::Mutex<std::collections::HashMap<(String, String), ConnectorRow>>,
         gcp_connectors:
             std::sync::Mutex<std::collections::HashMap<(String, String), GcpConnectorRow>>,
@@ -9191,14 +9277,27 @@ mod tests {
             &self,
             key_hash: &str,
             hash_column: &'static str,
-        ) -> Result<Option<KeyRow>, String> {
+        ) -> Result<Option<OrgKeyRow>, String> {
             self.ingest_key_fetches.fetch_add(1, Ordering::Relaxed);
-            Ok(self
+            let key = self
                 .keys
                 .lock()
                 .unwrap()
                 .get(&(key_hash.to_owned(), hash_column))
-                .cloned())
+                .cloned();
+            Ok(key.map(|key| {
+                let default_source_id = self
+                    .source_rows
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find(|row| row.0 == key.org_id && row.2)
+                    .map(|row| row.1.clone());
+                OrgKeyRow {
+                    key,
+                    default_source_id,
+                }
+            }))
         }
         async fn fetch_source_by_token_hash(
             &self,
@@ -9211,16 +9310,6 @@ mod tests {
             self.source_uses.lock().unwrap().push(key_id.to_owned());
             Ok(())
         }
-        async fn fetch_default_source_id(&self, org_id: &str) -> Result<Option<String>, String> {
-            self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
-            Ok(self
-                .source_rows
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|row| row.0 == org_id && row.2)
-                .map(|row| row.1.clone()))
-        }
         async fn fetch_integration_source_id(
             &self,
             org_id: &str,
@@ -9228,6 +9317,9 @@ mod tests {
             integration_id: &str,
         ) -> Result<Option<String>, String> {
             self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
+            if self.source_errors.load(Ordering::Relaxed) {
+                return Err("source lookup failed".to_owned());
+            }
             Ok(self
                 .source_rows
                 .lock()
@@ -9242,18 +9334,24 @@ mod tests {
                 })
                 .map(|row| row.1.clone()))
         }
-        async fn source_belongs_to_org(
+        async fn claimable_source_ids(
             &self,
             org_id: &str,
-            source_id: &str,
-        ) -> Result<bool, String> {
+            source_ids: &[String],
+        ) -> Result<Vec<String>, String> {
             self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
+            self.claim_lookups.lock().unwrap().push(source_ids.to_vec());
+            if self.source_errors.load(Ordering::Relaxed) {
+                return Err("source lookup failed".to_owned());
+            }
             Ok(self
                 .source_rows
                 .lock()
                 .unwrap()
                 .iter()
-                .any(|row| row.0 == org_id && row.1 == source_id))
+                .filter(|row| row.0 == org_id && row.3.is_some() && source_ids.contains(&row.1))
+                .map(|row| row.1.clone())
+                .collect())
         }
         async fn fetch_connector(
             &self,
@@ -11338,6 +11436,7 @@ mod tests {
             &sentinel,
             KeyAdmission::Ingest,
             decoded_bytes,
+            false,
         )
         .await
         .expect("a sentinel export must look successful to the client");
@@ -11366,6 +11465,7 @@ mod tests {
             &resolved,
             KeyAdmission::Ingest,
             real_bytes,
+            false,
         )
         .await
         .expect("a real export is accepted");
@@ -11720,6 +11820,46 @@ mod tests {
             .expect("an admitted export is forwarded")
             .expect("forward channel should stay open");
         assert!(forwarded.body_len > 0);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn grpc_paused_sources_get_an_empty_ok_without_decoding() {
+        use tonic::codegen::Service as _;
+
+        let queue_dir = unique_main_test_dir("grpc-paused");
+        let store = Arc::new(FakeKeyStore::default());
+        let paused = "maple_src_grpc_paused_key_000000000000000000";
+        let mut config = source_config(None, None, "[]");
+        config.paused_at_ms = Some(current_time_millis() - 1_000);
+        store.insert_source(paused, source_row("org_custom", config));
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        let mut router = grpc_router(Arc::new(state));
+
+        // Undecodable and claiming gzip: decoding it would have failed the call.
+        let mut request = grpc_export_request(paused, UNDECODABLE_BODY.to_vec());
+        request
+            .headers_mut()
+            .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+        let response = router.call(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(grpc_header_status(&response), None, "the export succeeded");
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(
+            body.as_ref(),
+            EMPTY_GRPC_MESSAGE,
+            "one empty export response"
+        );
+        assert!(store.source_uses.lock().unwrap().is_empty());
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -12619,7 +12759,7 @@ mod tests {
             .expect("the key resolves");
 
         for _ in 0..3 {
-            resolver.note_source_use(&resolved);
+            resolver.note_source_use(&resolved, false);
         }
         // The writes run on spawned tasks; give them a moment to land.
         for _ in 0..50 {
@@ -12886,8 +13026,9 @@ mod tests {
             );
             assert_eq!(resolved.source_row_id(), Some(DEFAULT_SOURCE_UUID));
         }
-        // Cached with the key: one lookup for three requests.
-        assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 1);
+        // Read in the key's own query and cached with it: one lookup for three requests.
+        assert_eq!(store.ingest_key_fetches.load(Ordering::Relaxed), 1);
+        assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 0);
 
         let without = resolver
             .resolve_ingest_key("maple_sk_without_default")
@@ -12899,7 +13040,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn source_claims_verify_against_the_org_and_cache_both_answers() {
+    async fn source_claims_verify_pull_sources_of_the_org_and_cache_both_answers() {
         let store = Arc::new(FakeKeyStore::default());
         store.insert_source_row(
             "org_a",
@@ -12907,13 +13048,15 @@ mod tests {
             false,
             Some(("railway", "rw_1")),
         );
-        store.insert_source_row("org_b", SOURCE_UUID, false, None);
+        // A push (token) source of the org itself is not claimable.
+        store.insert_source_row("org_a", SOURCE_UUID, false, None);
+        store.insert_source_row("org_b", DEFAULT_SOURCE_UUID, false, Some(("gcp", "g_1")));
         let resolver = make_resolver(Arc::clone(&store));
         let own = public_id(INTEGRATION_SOURCE_UUID);
-        let foreign = public_id(SOURCE_UUID);
         let claims = vec![
             own.clone(),
-            foreign.clone(),
+            public_id(SOURCE_UUID),
+            public_id(DEFAULT_SOURCE_UUID),
             "src_garbage!".to_owned(),
             "not-a-source".to_owned(),
         ];
@@ -12924,14 +13067,77 @@ mod tests {
                 vec![own.clone()]
             );
         }
-        // Two decodable claims looked up once each; undecodable ones never reach the store.
-        assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 2);
+        // One query for the three decodable claims; the second pass is all cache.
+        assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 1);
+        assert_eq!(store.claim_lookups.lock().unwrap()[0].len(), 3);
         assert_eq!(
             resolver
-                .verify_source_claims("org_b", vec![foreign.clone()])
+                .verify_source_claims("org_b", vec![public_id(DEFAULT_SOURCE_UUID)])
                 .await,
-            vec![foreign]
+            vec![public_id(DEFAULT_SOURCE_UUID)]
         );
+    }
+
+    #[tokio::test]
+    async fn source_claims_are_deduped_and_capped_in_one_lookup() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_source_row(
+            "org_a",
+            INTEGRATION_SOURCE_UUID,
+            false,
+            Some(("railway", "r")),
+        );
+        let resolver = make_resolver(Arc::clone(&store));
+        let own = public_id(INTEGRATION_SOURCE_UUID);
+        let mut claims = vec![own.clone(), own.clone()];
+        claims.extend((0..2_000).map(|_| public_id(&uuid::Uuid::new_v4().to_string())));
+
+        assert_eq!(
+            resolver.verify_source_claims("org_a", claims.clone()).await,
+            vec![own.clone()]
+        );
+        let lookups = store.claim_lookups.lock().unwrap().clone();
+        assert_eq!(lookups.len(), 1, "one query per request");
+        assert_eq!(lookups[0].len(), MAX_SOURCE_CLAIMS);
+        assert_eq!(lookups[0][0], INTEGRATION_SOURCE_UUID);
+
+        // A real claim past the cap is never looked up, so it stays unverified.
+        // Seven claims answered above plus one undecodable: none reach the store.
+        let mut late = claims[2..1 + MAX_SOURCE_CLAIMS].to_vec();
+        late.push("src_garbage!".to_owned());
+        late.push(own);
+        assert!(resolver
+            .verify_source_claims("org_a", late)
+            .await
+            .is_empty());
+        assert_eq!(store.claim_lookups.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn source_claim_lookup_errors_leave_claims_unverified_and_uncached() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_source_row(
+            "org_a",
+            INTEGRATION_SOURCE_UUID,
+            false,
+            Some(("railway", "r")),
+        );
+        let resolver = make_resolver(Arc::clone(&store));
+        let own = public_id(INTEGRATION_SOURCE_UUID);
+
+        store.source_errors.store(true, Ordering::Relaxed);
+        assert!(resolver
+            .verify_source_claims("org_a", vec![own.clone()])
+            .await
+            .is_empty());
+        store.source_errors.store(false, Ordering::Relaxed);
+        assert_eq!(
+            resolver
+                .verify_source_claims("org_a", vec![own.clone()])
+                .await,
+            vec![own]
+        );
+        assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 2);
     }
 
     #[tokio::test]
@@ -12981,7 +13187,72 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn default_key_end_to_end_keeps_verified_claims_and_records_default_use() {
+    async fn a_failed_integration_source_lookup_does_not_fail_gcp_auth() {
+        let (state, store, queue_dir) =
+            gcp_logpush_state("gcp-integration-source-error", "http://127.0.0.1:1").await;
+        store.insert_source_row(
+            "org_gcp",
+            INTEGRATION_SOURCE_UUID,
+            false,
+            Some(("gcp", "gcp_conn_1")),
+        );
+        store.source_errors.store(true, Ordering::Relaxed);
+
+        let resolved = state
+            .gcp_resolver
+            .resolve_connector("gcp_conn_1", "gcp-secret")
+            .await
+            .expect("a source lookup error is not an auth error")
+            .expect("connector resolves");
+        assert_eq!(resolved.key.source_public_id(), None);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn default_source_use_is_held_longer_and_skipped_for_claimed_batches() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            "maple_sk_default_use",
+            KeyRow {
+                org_id: "org_default_use".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        store.insert_source_row("org_default_use", DEFAULT_SOURCE_UUID, true, None);
+        let resolver = make_resolver(Arc::clone(&store));
+        let resolved = resolver
+            .resolve_ingest_key("maple_sk_default_use")
+            .await
+            .unwrap()
+            .expect("key resolves");
+
+        // A poller's batch (it kept a verified claim) is not default-source use.
+        resolver.note_source_use(&resolved, true);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(store.source_uses.lock().unwrap().is_empty());
+
+        resolver.note_source_use(&resolved, false);
+        for _ in 0..50 {
+            if !store.source_uses.lock().unwrap().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            *store.source_uses.lock().unwrap(),
+            vec![DEFAULT_SOURCE_UUID.to_owned()]
+        );
+        assert_eq!(
+            resolver.recent_key_uses.get(DEFAULT_SOURCE_UUID).await,
+            Some(DEFAULT_SOURCE_USE_WRITE_INTERVAL),
+            "the default source is rewritten at most every five minutes"
+        );
+    }
+
+    #[tokio::test]
+    async fn default_key_end_to_end_keeps_verified_claims_and_records_unclaimed_default_use() {
         let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
         let queue_dir = unique_main_test_dir("default-source-e2e");
         let store = Arc::new(FakeKeyStore::default());
@@ -13061,6 +13332,18 @@ mod tests {
                 default_id,
             ]
         );
+        // The batch kept a poller's claim, so it does not keep the default source fresh.
+        assert!(recorded_key_uses(&store).await.is_empty());
+
+        let (response, ..) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            Bytes::from(test_log_request("no claims").encode_to_vec()),
+            Signal::Logs,
+        )
+        .await
+        .expect("default key traffic is accepted");
+        assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             recorded_key_uses(&store).await,
             vec![DEFAULT_SOURCE_UUID.to_owned()]

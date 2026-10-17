@@ -16,7 +16,8 @@ import {
 	type ResolvedIngestKey,
 } from "@maple/db"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgIngestKeys, type OrgIngestKeyRow } from "@maple/db/tables"
+import { OrgIngestKeys, type OrgIngestKeyRow, Sources } from "@maple/db/tables"
+import { defaultSourceRow } from "./source-rows"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import {
 	decryptAes256Gcm,
@@ -172,25 +173,36 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
 
 				yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(OrgIngestKeys)
-							.values({
-								orgId,
-								publicKey,
-								publicKeyHash,
-								privateKeyCiphertext: encryptedPrivate.ciphertext,
-								privateKeyIv: encryptedPrivate.iv,
-								privateKeyTag: encryptedPrivate.tag,
-								privateKeyHash,
-								publicRotatedAt: now,
-								privateRotatedAt: now,
-								createdAt: now,
-								updatedAt: now,
-								createdBy: userId,
-								updatedBy: userId,
-							})
-							.onConflictDoNothing(),
-					),
+					db
+						.run(
+							PG.insertInto(OrgIngestKeys)
+								.values({
+									orgId,
+									publicKey,
+									publicKeyHash,
+									privateKeyCiphertext: encryptedPrivate.ciphertext,
+									privateKeyIv: encryptedPrivate.iv,
+									privateKeyTag: encryptedPrivate.tag,
+									privateKeyHash,
+									publicRotatedAt: now,
+									privateRotatedAt: now,
+									createdAt: now,
+									updatedAt: now,
+									createdBy: userId,
+									updatedBy: userId,
+								})
+								.onConflictDoNothing(),
+						)
+						.pipe(
+							// The gateway stamps the default source on everything these keys send.
+							Effect.andThen(
+								db.run(
+									PG.insertInto(Sources)
+										.values(defaultSourceRow(orgId, now))
+										.onConflictDoNothing(),
+								),
+							),
+						),
 				)
 
 				const row = yield* selectRow(orgId)

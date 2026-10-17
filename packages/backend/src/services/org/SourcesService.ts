@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto"
+import { randomBytes } from "node:crypto"
 import {
 	type CreateSourceRequest,
 	IngestKeyEncryptionError,
@@ -21,12 +21,18 @@ import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Sources, type SourceRow } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Redacted, Schema } from "effect"
-import { pushSourceHealth, type SourceHealthResult } from "@maple/domain/source-health"
+import {
+	integrationSourceHealth,
+	pushSourceHealth,
+	type SourceHealthResult,
+} from "@maple/domain/source-health"
+import type { IntegrationInventory } from "@maple/domain/integration-inventory"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { type IntegrationLink, readIntegrationLinks } from "./integration-sources"
+import { defaultSourceRow, newSourceId, pullSourceKey, pullSourceRow } from "./source-rows"
 
 const SOURCE_TOKEN_PREFIX = "maple_src_"
 const {
@@ -34,7 +40,6 @@ const {
 	maxResourceAttributes: MAX_RESOURCE_ATTRIBUTES,
 	maxRateLimitRps: MAX_RATE_LIMIT_RPS,
 } = SOURCE_LIMITS
-const DEFAULT_SOURCE_NAME = "Default"
 const MAX_NAME_LENGTH = 100
 const MAX_DESCRIPTION_LENGTH = 500
 const MAX_ATTRIBUTE_KEY_LENGTH = 255
@@ -46,7 +51,6 @@ const RESERVED_ATTRIBUTE_PREFIX = "maple_"
 const toPersistenceError = (error: DatabaseError) => new SourcePersistenceError({ message: error.message })
 const invalid = (message: string) => new SourceValidationError({ message })
 
-const decodeSourceIdSync = Schema.decodeUnknownSync(SourceId)
 const decodeIsoSync = Schema.decodeUnknownSync(IsoDateTimeString)
 const toIso = (epochMs: number) => decodeIsoSync(new Date(epochMs).toISOString())
 
@@ -172,6 +176,8 @@ const normalizeExpiry = Effect.fnUntraced(function* (
 	return expiresAtMs
 })
 
+const EMPTY_INVENTORY: IntegrationInventory = { integrations: [], available: [] }
+
 // Rules are enforced by the gateway on a source's own token, so only token sources take them.
 const RULE_FIELDS = ["allowedSignals", "rateLimitRps", "resourceAttributes", "expiresAtMs"] as const
 
@@ -226,34 +232,11 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			return row
 		})
 
-		// Every org has one default source standing for its public/private ingest key pair.
-		const ensureDefault = Effect.fnUntraced(function* (orgId: OrgId, now: number) {
-			yield* dbExecute((db) =>
-				db.run(
-					PG.insertInto(Sources)
-						.values({
-							id: decodeSourceIdSync(randomUUID()),
-							orgId,
-							name: DEFAULT_SOURCE_NAME,
-							description: null,
-							platform: "opentelemetry",
-							isDefault: true,
-							keyHash: null,
-							keyPrefix: null,
-							allowedSignals: null,
-							rateLimitRps: null,
-							resourceAttributes: [],
-							expiresAt: null,
-							rolledAt: null,
-							createdAt: now,
-							updatedAt: now,
-							createdBy: null,
-							updatedBy: null,
-						})
-						.onConflictDoNothing(),
-				),
+		// Orgs created before sources existed get their default source on first list.
+		const ensureDefault = (orgId: OrgId, now: number) =>
+			dbExecute((db) =>
+				db.run(PG.insertInto(Sources).values(defaultSourceRow(orgId, now)).onConflictDoNothing()),
 			)
-		})
 
 		const selectAll = (orgId: OrgId) =>
 			dbExecute((db) =>
@@ -269,8 +252,6 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				),
 			)
 
-		const linkKey = (platform: string, integrationId: string | null) => `${platform}:${integrationId}`
-
 		// One source per connected integration: create the missing ones, drop the ones whose row is gone.
 		const reconcileIntegrations = Effect.fnUntraced(function* (
 			orgId: OrgId,
@@ -278,11 +259,14 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			rows: ReadonlyArray<SourceRow>,
 			now: number,
 		) {
-			const existing = new Set(rows.map((row) => linkKey(row.platform, row.integrationId)))
-			const wanted = new Set(links.map((link) => linkKey(link.platform, link.integrationId)))
-			const missing = links.filter((link) => !existing.has(linkKey(link.platform, link.integrationId)))
+			const existing = new Set(rows.map((row) => pullSourceKey(row.platform, row.integrationId)))
+			const wanted = new Set(links.map((link) => pullSourceKey(link.platform, link.integrationId)))
+			const missing = links.filter(
+				(link) => !existing.has(pullSourceKey(link.platform, link.integrationId)),
+			)
 			const gone = rows.filter(
-				(row) => row.integrationId !== null && !wanted.has(linkKey(row.platform, row.integrationId)),
+				(row) =>
+					row.integrationId !== null && !wanted.has(pullSourceKey(row.platform, row.integrationId)),
 			)
 			if (missing.length === 0 && gone.length === 0) return false
 			yield* Effect.annotateCurrentSpan({
@@ -294,28 +278,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 					if (missing.length > 0) {
 						yield* db.run(
 							PG.insertInto(Sources)
-								.values(
-									missing.map((link) => ({
-										id: decodeSourceIdSync(randomUUID()),
-										orgId,
-										name: link.name,
-										description: null,
-										platform: link.platform,
-										isDefault: false,
-										integrationId: link.integrationId,
-										keyHash: null,
-										keyPrefix: null,
-										allowedSignals: null,
-										rateLimitRps: null,
-										resourceAttributes: [],
-										expiresAt: null,
-										rolledAt: null,
-										createdAt: now,
-										updatedAt: now,
-										createdBy: null,
-										updatedBy: null,
-									})),
-								)
+								.values(missing.map((link) => pullSourceRow(orgId, link, now)))
 								.onConflictDoNothing(),
 						)
 					}
@@ -341,12 +304,20 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			now: number,
 		) {
 			if (links.length === 0) return new Map<string, SourceHealthResult>()
+			// Without the inventory, provider-wide integrations read as disconnected rather than failing the list.
 			const inventory = yield* integrations
 				.list(orgId)
-				.pipe(Effect.mapError((error) => new SourcePersistenceError({ message: error.message })))
+				.pipe(
+					Effect.catchTag("@maple/backend/services/IntegrationInventoryUnavailableError", (error) =>
+						Effect.logWarning("Integration inventory unavailable for source health").pipe(
+							Effect.annotateLogs({ orgId, error: error.message }),
+							Effect.as(EMPTY_INVENTORY),
+						),
+					),
+				)
 			return new Map(
 				links.map((link) => [
-					linkKey(link.platform, link.integrationId),
+					pullSourceKey(link.platform, link.integrationId),
 					link.health(inventory, now),
 				]),
 			)
@@ -363,18 +334,20 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 					now,
 					row.integrationId === null
 						? undefined
-						: health.get(linkKey(row.platform, row.integrationId)),
+						: health.get(pullSourceKey(row.platform, row.integrationId)),
 				),
 			)
 
 		const list = Effect.fn("SourcesService.list")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const now = yield* Clock.currentTimeMillis
-			yield* ensureDefault(orgId, now)
-			const links = yield* dbExecute((db) => readIntegrationLinks(db, orgId))
+			// Sources first: a source a poller creates after this read is never seen as gone.
 			const before = yield* selectAll(orgId)
+			const links = yield* dbExecute((db) => readIntegrationLinks(db, orgId))
+			const missingDefault = !before.some((row) => row.isDefault)
+			if (missingDefault) yield* ensureDefault(orgId, now)
 			const changed = yield* reconcileIntegrations(orgId, links, before, now)
-			const rows = changed ? yield* selectAll(orgId) : before
+			const rows = changed || missingDefault ? yield* selectAll(orgId) : before
 			return toSources(rows, yield* integrationHealth(orgId, links, now), now)
 		})
 
@@ -384,8 +357,12 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			const now = yield* Clock.currentTimeMillis
 			if (row.integrationId === null) return rowToSource(row, now)
 			const links = yield* dbExecute((db) => readIntegrationLinks(db, orgId))
-			return (
-				toSources([row], yield* integrationHealth(orgId, links, now), now)[0] ?? rowToSource(row, now)
+			const health = yield* integrationHealth(orgId, links, now)
+			return rowToSource(
+				row,
+				now,
+				health.get(pullSourceKey(row.platform, row.integrationId)) ??
+					integrationSourceHealth(undefined),
 			)
 		})
 
@@ -403,7 +380,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			const resourceAttributes = yield* normalizeAttributes(request.resourceAttributes ?? [])
 			const expiresAt = yield* normalizeExpiry(request.expiresAtMs ?? null, now)
 
-			const id = decodeSourceIdSync(randomUUID())
+			const id = newSourceId()
 			const secret = generateSecret()
 			yield* Effect.annotateCurrentSpan("maple.source.id", id)
 			// The per-org lock makes the source cap hold under concurrent creates.
@@ -416,7 +393,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 						const existing = yield* db.run(
 							PG.from(Sources)
 								.select(($) => ({ id: $.id }))
-								.where(($) => [$.orgId.eq(orgId), $.isDefault.eq(false)])
+								.where(($) => [$.orgId.eq(orgId), $.keyHash.isNotNull()])
 								.limit(MAX_SOURCES_PER_ORG),
 						)
 						if (existing.length >= MAX_SOURCES_PER_ORG) return null
@@ -523,6 +500,8 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			sourceId: SourceId,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
+			const existing = yield* requireRow(orgId, sourceId)
+			if (existing.keyHash === null) return yield* tokenSourceOnly(existing, "be resumed")
 			const now = yield* Clock.currentTimeMillis
 			const row = yield* updateRow(orgId, sourceId, {
 				pausedAt: null,

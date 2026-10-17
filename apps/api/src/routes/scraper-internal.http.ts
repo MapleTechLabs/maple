@@ -58,6 +58,9 @@ export interface ScrapeTargetRowLike {
 	readonly sourceId?: string
 }
 
+/** A listed row with the public id of the pull source it reports as. */
+type SourcedScrapeTarget = EnabledScrapeTarget & { readonly sourceId?: string }
+
 export interface SubTargetOverride {
 	/** Discovered per-branch scrape URL replacing the row's SD endpoint url. */
 	readonly url: string
@@ -163,7 +166,7 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 		// Expand the logical target into its discovered per-branch endpoints.
 		// Discovery failure with no cache skips the row this round; the scheduler
 		// re-fetches the list every reconcile.
-		const planetScaleTargets = (row: EnabledScrapeTarget, ingestKey: string, sourceId?: string) =>
+		const planetScaleTargets = (row: SourcedScrapeTarget, ingestKey: string) =>
 			discovery.discover(row).pipe(
 				Effect.catch((error) =>
 					logSkip("Skipping PlanetScale target (discovery failed)", row, {
@@ -172,12 +175,7 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 				),
 				Effect.flatMap((subTargets) =>
 					Effect.forEach(subTargets, (subTarget) =>
-						toInternalScrapeTarget(
-							{ ...row, sourceId },
-							ingestKey,
-							NO_AUTH_HEADERS,
-							subTarget,
-						).pipe(
+						toInternalScrapeTarget(row, ingestKey, NO_AUTH_HEADERS, subTarget).pipe(
 							Effect.tap(
 								warnIfNone(() =>
 									logSkip("Skipping scrape sub-target (invalid row)", row, {
@@ -194,11 +192,9 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 		// A credential that no longer decrypts (rotated master key, corrupt row)
 		// skips this target for the round rather than failing the whole list; the
 		// target's own `lastScrapeError` already tells the org.
-		const directTargets = (row: EnabledScrapeTarget, ingestKey: string, sourceId?: string) =>
+		const directTargets = (row: SourcedScrapeTarget, ingestKey: string) =>
 			service.authHeaders(row).pipe(
-				Effect.flatMap((authHeaders) =>
-					toInternalScrapeTarget({ ...row, sourceId }, ingestKey, authHeaders),
-				),
+				Effect.flatMap((authHeaders) => toInternalScrapeTarget(row, ingestKey, authHeaders)),
 				Effect.tap(warnIfNone(() => logSkip("Skipping scrape target (invalid row)", row))),
 				Effect.map(Option.toArray),
 				Effect.catch((error) =>
@@ -208,10 +204,10 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 				),
 			)
 
-		const resolveRowTargets = (row: EnabledScrapeTarget, ingestKey: string, sourceId?: string) =>
+		const resolveRowTargets = (row: SourcedScrapeTarget, ingestKey: string) =>
 			row.targetType === "planetscale"
-				? planetScaleTargets(row, ingestKey, sourceId)
-				: directTargets(row, ingestKey, sourceId)
+				? planetScaleTargets(row, ingestKey)
+				: directTargets(row, ingestKey)
 
 		const listTargets = Effect.fn("ScraperInternal.listTargets")(
 			function* (req: HttpServerRequest.HttpServerRequest) {
@@ -241,7 +237,11 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 								logSkip("Skipping scrape target (no ingest key)", row).pipe(
 									Effect.as(NO_TARGETS),
 								),
-							onSome: (keys) => resolveRowTargets(row, keys.publicKey, sourceIds.get(row.id)),
+							onSome: (keys) =>
+								resolveRowTargets(
+									{ ...row, sourceId: sourceIds.get(row.id) },
+									keys.publicKey,
+								),
 						}),
 					{ concurrency: ROW_CONCURRENCY },
 				)

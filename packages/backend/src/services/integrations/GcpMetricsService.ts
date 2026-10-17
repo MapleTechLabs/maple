@@ -23,7 +23,11 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { ensureIntegrationSource, publicSourceId } from "@maple/backend/services/org/integration-sources"
+import {
+	ensureIntegrationSource,
+	integrationSourceName,
+	stampableSourceId,
+} from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import {
 	fetchMapleAccessToken,
@@ -450,31 +454,25 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					}),
 				)
 
-			/** One connector: its inventory sync when due, then its metrics window. */
 			// The connector's pull source as its `src_` id; a failed lookup sends without it.
 			const resolveSourceId = (connector: GcpConnectorRow, now: number) =>
-				dbExecute((db) =>
-					ensureIntegrationSource(db, {
-						orgId: connector.orgId,
-						platform: "gcp",
-						integrationId: connector.id,
-						name: `Google Cloud ${connector.scopeId}`,
-						now,
-					}),
-				).pipe(
-					Effect.map((id) => (id === undefined ? undefined : publicSourceId(id))),
-					Effect.tap((id) =>
-						id === undefined ? Effect.void : Effect.annotateCurrentSpan("maple.source.id", id),
+				stampableSourceId(
+					dbExecute((db) =>
+						ensureIntegrationSource(
+							db,
+							connector.orgId,
+							{
+								platform: "gcp",
+								integrationId: connector.id,
+								name: integrationSourceName.gcp(connector),
+							},
+							now,
+						),
 					),
-					Effect.catch((error) =>
-						Effect.logWarning("gcp source unavailable", {
-							orgId: connector.orgId,
-							connectorId: connector.id,
-							error: error.message,
-						}).pipe(Effect.as(undefined)),
-					),
+					{ orgId: connector.orgId, platform: "gcp" },
 				)
 
+			/** One connector: its inventory sync when due, then its metrics window. */
 			const pollConnector = Effect.fn("GcpMetricsService.pollConnector")(
 				function* (connector: GcpConnectorRow, tick: Tick) {
 					// The id is validated when the connector is created; encoding keeps it inside the path.
