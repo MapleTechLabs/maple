@@ -26,7 +26,7 @@ import {
 	type SpendFeatureId,
 	type SpendModel,
 } from "@/lib/billing/spend"
-import { formatCount } from "@/lib/billing/usage"
+import { formatCount, formatUsageAgainst } from "@/lib/billing/usage"
 import { BILLING_CUSTOMER_KEY, updateBillingControlsMutation } from "@/lib/services/atoms/billing-atoms"
 import { formatFeatureUsage } from "./format-feature-usage"
 
@@ -45,7 +45,7 @@ function usageLine(feature: FeatureSpend): string {
 		return feature.ratePerUnit === null ? `${used}, not on your plan` : `${used}, no allotment`
 	}
 	return featureUnit(feature.featureId) === "GB"
-		? `${used} of ${formatFeatureUsage(feature.featureId, feature.included)}`
+		? formatUsageAgainst(feature.used, feature.included)
 		: `${formatCount(feature.used)} of ${withUnit(feature.featureId, feature.included)}`
 }
 

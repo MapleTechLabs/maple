@@ -101,6 +101,13 @@ describe("BillingUsageTable", () => {
 		expect(screen.getByText("Stops at 300.00 GB")).toBeTruthy()
 	})
 
+	it("reads an idle GB feature in the same unit as its allotment", () => {
+		render(<Harness canEdit />)
+
+		expect(screen.getByText("164.00 GB of 100.00 GB")).toBeTruthy()
+		expect(screen.getByText("0.00 GB of 100.00 GB")).toBeTruthy()
+	})
+
 	it("saves a cap typed inline as a single-feature update, then closes the editor", async () => {
 		saveCaps.mockResolvedValue(Exit.succeed(new BillingControls({})))
 		render(<Harness canEdit />)
