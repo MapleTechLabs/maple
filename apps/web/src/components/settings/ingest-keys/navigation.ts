@@ -3,9 +3,9 @@ import { Schema } from "effect"
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
 import { customIngestKeysListAtom } from "@/lib/services/atoms/ingestion-atoms"
 import { toPublicKeyId } from "./shared"
+import { ingestionViews, type IngestionView } from "./views"
 
-export const ingestionViews = ["setup", "keys", "mappings"] as const
-export type IngestionView = (typeof ingestionViews)[number]
+export { ingestionViews, type IngestionView } from "./views"
 export const isIngestionView = Schema.is(Schema.Literals(ingestionViews))
 
 /** `/settings?tab=ingestion&view=keys&key=<ingk_…|new>&keyView=configure` */
