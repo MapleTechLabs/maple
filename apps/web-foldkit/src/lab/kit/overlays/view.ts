@@ -1,0 +1,81 @@
+import { OVERLAY_ITEMS } from "@maple/web/lab/kit/overlay-items"
+import { Option } from "effect"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { kitPage, kitSection } from "../layout"
+import * as ToastView from "../../../ui/toast-view"
+import { kitHoverCard, kitPopover } from "./cards"
+import { kitAlertDialog, kitDialog, kitSheet } from "./dialogs"
+import { Message, type Model, type OverlayItem, toastTypeOf } from "./model"
+
+type H = HtmlBuilder<Message>
+
+const renderItem = (h: H, model: Model, item: OverlayItem): Html => {
+	switch (item) {
+		case "dialog":
+			return kitDialog(h, model.dialog)
+		case "alert-dialog":
+			return kitAlertDialog(h, model.alertDialog)
+		case "popover":
+			return kitPopover(h, model.popover)
+		case "hover-card":
+			return kitHoverCard(h, model.hoverCard)
+		case "sheet":
+			return kitSheet(h, model.sheet)
+		default:
+			return h.div(
+				[h.Class("flex min-h-48 items-start")],
+				Option.toArray(Option.map(toastTypeOf(item), (type) => kitToastNote(h, type))),
+			)
+	}
+}
+
+/** `KitToast`'s note; the toast itself is in the bottom-right region. Three text nodes, as React
+ *  renders `{type}` between literals: one merged node shapes differently at the joins. */
+const kitToastNote = (h: H, type: string): Html =>
+	h.p(
+		[h.Class("text-muted-foreground text-sm")],
+		["Toast type: ", type, ", shown in the bottom right corner."],
+	)
+
+/** TanStack `<Link>`: the active one also gets `active`, `aria-current` and `data-status`. */
+const itemLink = (h: H, name: OverlayItem, isActive: boolean): Html =>
+	h.a(
+		[
+			...(isActive ? [h.AriaCurrent("page")] : []),
+			h.Class(
+				isActive
+					? "font-medium text-foreground active"
+					: "text-muted-foreground hover:text-foreground",
+			),
+			...(isActive ? [h.DataAttribute("status", "active")] : []),
+			h.Href(`/lab/kit/overlays?item=${name}`),
+		],
+		[name],
+	)
+
+// apps/web/src/lab/kit/overlays.tsx `KitOverlaysLab`
+export const view = (model: Model, h: H): Html =>
+	h.div(
+		[h.Id("app")],
+		[
+			kitPage(
+				h,
+				{
+					title: "Kit: overlays",
+					description: "One overlay from @maple/ui per ?item=, rendered open on mount.",
+				},
+				[
+					kitSection(h, "Items", [
+						h.nav(
+							[h.AriaLabel("Overlay items"), h.Class("flex flex-wrap gap-x-3 gap-y-1 text-sm")],
+							OVERLAY_ITEMS.map((name) => itemLink(h, name, Option.contains(model.item, name))),
+						),
+					]),
+					...Option.toArray(
+						Option.map(model.item, (item) => kitSection(h, item, [renderItem(h, model, item)])),
+					),
+				],
+			),
+			...ToastView.regions(h, model.toasts, (message) => Message.GotToastMessage({ message })),
+		],
+	)

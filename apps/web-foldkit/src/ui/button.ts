@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { buttonLoadingIndicatorStyles, buttonVariants } from "@maple/ui/styles/ui/button"
 import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
 import type { VariantProps } from "class-variance-authority"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { loaderIcon } from "./icons"
 
 export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
@@ -11,7 +11,7 @@ export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
 		type?: "button" | "submit"
 		isLoading?: boolean
 		isDisabled?: boolean
-		attributes?: ReadonlyArray<Attribute<Message>>
+		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 	}>
 
 /** `<Button>`: the same class composition, attributes and loading spinner as @maple/ui. */

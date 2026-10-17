@@ -1,0 +1,56 @@
+import { OVERLAY_ITEMS } from "@maple/web/lab/kit/overlay-items"
+import { Option, Schema } from "effect"
+import { defineMessageUnion } from "foldkit/message"
+import * as Dialog from "../../../ui/dialog"
+import * as HoverCard from "../../../ui/hover-card"
+import * as Popover from "../../../ui/popover"
+import * as Toast from "../../../ui/toast"
+
+export const OverlayItem = Schema.Literals(OVERLAY_ITEMS)
+export type OverlayItem = typeof OverlayItem.Type
+
+/** `?item=`, read before init: the one overlay rendered open (overlays cannot share a page). */
+export const Flags = Schema.Struct({ item: Schema.NullOr(Schema.String) })
+export type Flags = typeof Flags.Type
+
+export const Model = Schema.Struct({
+	item: Schema.Option(OverlayItem),
+	dialog: Dialog.Model,
+	alertDialog: Dialog.Model,
+	sheet: Dialog.Model,
+	command: Dialog.Model,
+	popover: Popover.Model,
+	hoverCard: HoverCard.Model,
+	toasts: Toast.Model,
+})
+export type Model = typeof Model.Type
+
+export const Message = defineMessageUnion({
+	GotDialogMessage: { message: Dialog.Message },
+	GotAlertDialogMessage: { message: Dialog.Message },
+	GotSheetMessage: { message: Dialog.Message },
+	GotCommandMessage: { message: Dialog.Message },
+	GotPopoverMessage: { message: Popover.Message },
+	GotHoverCardMessage: { message: HoverCard.Message },
+	GotToastMessage: { message: Toast.Message },
+})
+export type Message = typeof Message.Type
+
+export const decodeItem = (raw: string | null): Option.Option<OverlayItem> =>
+	Schema.decodeUnknownOption(OverlayItem)(raw)
+
+/** The `toast-<type>` items' toast type. */
+export const toastTypeOf = (item: OverlayItem): Option.Option<Toast.ToastType> =>
+	item.startsWith("toast-")
+		? Schema.decodeUnknownOption(Toast.ToastType)(item.slice("toast-".length))
+		: Option.none()
+
+// apps/web/src/lab/kit/overlays-menus.tsx `TOAST_COPY`
+export const TOAST_COPY = {
+	default: { title: "Dashboard saved", description: "Checkout latency is up to date." },
+	success: { title: "Schema applied", description: "All 14 tables are on the latest version." },
+	error: { title: "Failed to delete rule", description: "The alert rule is referenced by a policy." },
+	info: { title: "New version available", description: "Reload to get the latest Maple." },
+	warning: { title: "Approaching ingest quota", description: "82% of this month's spans are used." },
+	loading: { title: "Exporting logs", description: "Preparing 12,480 rows." },
+} satisfies Record<Toast.ToastType, { title: string; description: string }>
