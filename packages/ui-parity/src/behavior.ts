@@ -14,7 +14,10 @@ import type { CallLogEntry } from "./contract.ts"
  * Both start empty: add an entry only with a reason next to it.
  */
 export const IGNORED_CALLS: ReadonlyArray<string> = []
-export const PRESENCE_ONLY_CALLS: ReadonlyArray<string> = []
+export const PRESENCE_ONLY_CALLS: ReadonlyArray<string> = [
+	// Session check and renewal: the app root sends them at boot and on token expiry, not per action.
+	"auth.session",
+]
 
 const matches = (list: ReadonlyArray<string>, key: string) => list.some((prefix) => key.startsWith(prefix))
 
