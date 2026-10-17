@@ -6,7 +6,8 @@ import type { AreaModule, Scenario } from "./types.ts"
  * scrolled, a hovered row, a resting chip's attribute card, keyboard focus, and the lab's toggles.
  * The pointer stays over the time column so no chip card opens by accident.
  */
-const desktop = { viewports: ["desktop"], themes: ["light", "dark"], area: "logs-table" } as const
+// Signed in like the lab area: lab pages render inside the app root, which calls the API.
+const desktop = { viewports: ["desktop"], themes: ["light", "dark"], area: "logs-table", dataset: "default" } as const
 
 /** Wheel inside the stream; the virtualizer swaps rows in, the sticky area raises its shadow. */
 const scrollStream = (deltaY: number) => async (page: Page) => {
