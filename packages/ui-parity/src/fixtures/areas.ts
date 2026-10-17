@@ -70,5 +70,18 @@ export const withFixtureAreas = (datasets: ReadonlyArray<Dataset>): ReadonlyArra
 	...fixtureAreas.flatMap((area) => area.datasets ?? []),
 ]
 
-export const fixtureAreaEndpoints = (warehouse: FixtureWarehouse): ReadonlyMap<string, EndpointHandler> =>
-	new Map(fixtureAreas.flatMap((area) => Object.entries(area.endpoints?.(warehouse) ?? {})))
+/** Two areas answering one endpoint would silently depend on file order, so that is an error. */
+export const fixtureAreaEndpoints = (warehouse: FixtureWarehouse): ReadonlyMap<string, EndpointHandler> => {
+	const owners = new Map<string, string>()
+	const handlers = new Map<string, EndpointHandler>()
+	for (const area of fixtureAreas) {
+		for (const [tag, handler] of Object.entries(area.endpoints?.(warehouse) ?? {})) {
+			const owner = owners.get(tag)
+			if (owner !== undefined)
+				throw new Error(`ui-parity: fixture areas "${owner}" and "${area.area}" both answer ${tag}`)
+			owners.set(tag, area.area)
+			handlers.set(tag, handler)
+		}
+	}
+	return handlers
+}
