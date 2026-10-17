@@ -1,0 +1,63 @@
+import { act, cleanup, renderHook } from "@testing-library/react"
+import { afterEach, describe, expect, it } from "vitest"
+import { useSettingsDraft } from "./settings-draft"
+
+interface Form {
+	readonly rate: number
+}
+
+const renderDraft = (initial: Form) =>
+	renderHook(({ saved }: { saved: Form }) => useSettingsDraft(saved), {
+		initialProps: { saved: initial },
+	})
+
+describe("useSettingsDraft commit", () => {
+	afterEach(cleanup)
+
+	it("keeps showing the saved edits until the refetch returns them", () => {
+		const { result, rerender } = renderDraft({ rate: 10 })
+		act(() => result.current.setDraft({ rate: 50 }))
+		expect(result.current.isDirty).toBe(true)
+
+		act(() => result.current.commit())
+		expect(result.current.draft).toEqual({ rate: 50 })
+		expect(result.current.isDirty).toBe(false)
+
+		rerender({ saved: { rate: 10 } })
+		expect(result.current.draft).toEqual({ rate: 50 })
+
+		rerender({ saved: { rate: 50 } })
+		expect(result.current.draft).toEqual({ rate: 50 })
+		expect(result.current.isDirty).toBe(false)
+
+		rerender({ saved: { rate: 70 } })
+		expect(result.current.draft).toEqual({ rate: 70 })
+	})
+
+	it("follows a server value that differs from the edits once it changes", () => {
+		const { result, rerender } = renderDraft({ rate: 10 })
+		act(() => result.current.setDraft({ rate: 55 }))
+		act(() => result.current.commit())
+
+		rerender({ saved: { rate: 50 } })
+		expect(result.current.draft).toEqual({ rate: 50 })
+		expect(result.current.isDirty).toBe(false)
+	})
+
+	it("treats an edit after commit as a fresh dirty draft", () => {
+		const { result } = renderDraft({ rate: 10 })
+		act(() => result.current.setDraft({ rate: 50 }))
+		act(() => result.current.commit())
+		act(() => result.current.updateDraft((current) => ({ rate: current.rate + 1 })))
+		expect(result.current.draft).toEqual({ rate: 51 })
+		expect(result.current.isDirty).toBe(true)
+	})
+
+	it("discard still drops the edits immediately", () => {
+		const { result } = renderDraft({ rate: 10 })
+		act(() => result.current.setDraft({ rate: 50 }))
+		act(() => result.current.discard())
+		expect(result.current.draft).toEqual({ rate: 10 })
+		expect(result.current.isDirty).toBe(false)
+	})
+})
