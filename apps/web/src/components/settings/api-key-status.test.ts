@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { V2ApiKey } from "@maple/domain/http/v2"
-import { apiKeyStatus } from "./api-keys-section"
+import { apiKeyStatus } from "./keys-table"
 
 const NOW = Date.parse("2026-09-11T12:00:00Z")
 const inDays = (days: number) => new Date(NOW + days * 86_400_000).toISOString()

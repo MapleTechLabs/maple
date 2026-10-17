@@ -44,6 +44,7 @@ import { PlanetScaleDiscoveryService } from "@maple/backend/services/integration
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
+import { TraceSamplingPolicyService } from "@maple/backend/services/org/TraceSamplingPolicyService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
@@ -121,6 +122,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	RailwayMetricsService.layer,
 	GcpConnectorService.layer,
 	OrgOpenRouterKeyService.layer,
+	TraceSamplingPolicyService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,

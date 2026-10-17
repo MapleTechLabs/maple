@@ -9,7 +9,7 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
-import { ArrowRotateAnticlockwiseIcon, BoltIcon, CheckIcon, CodeIcon, XmarkIcon } from "@/components/icons"
+import { ArrowRotateAnticlockwiseIcon, CheckIcon, CodeIcon } from "@/components/icons"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import {
 	ingestAttributeMappingsListAtom,
@@ -18,13 +18,11 @@ import {
 import { formatNumber } from "@maple/ui/lib/format"
 import { DocsLink } from "@/components/common/docs-link"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-import { AdminOnlyNote, SettingsSection } from "@/components/settings/settings-section"
+import { SettingsSection } from "@/components/settings/settings-section"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 import { SegmentedSelect } from "@/components/common/segmented-select"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 type IssueKind = V2Recommendation["kind"]
 type IssueStatus = V2Recommendation["status"]
@@ -42,21 +40,6 @@ const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "ok" | "done" 
 	applied: { label: "Applied", variant: "ok" },
 	resolved: { label: "Resolved", variant: "done" },
 } satisfies Record<IssueStatus, { label: string; variant: "ok" | "done" | "secondary" }>
-
-const MODE = {
-	auto: {
-		label: "Auto-apply",
-		icon: BoltIcon,
-		className: "border-primary/30 text-primary",
-		title: "Maple can apply this for you: Apply creates the ingest mapping.",
-	},
-	manual: {
-		label: "Manual fix",
-		icon: CodeIcon,
-		className: "text-muted-foreground",
-		title: "Fix this in your SDK; an ingest mapping can't resolve it.",
-	},
-} as const
 
 function recSentence(issue: V2Recommendation) {
 	if (issue.kind === "double-emission") {
@@ -85,13 +68,6 @@ function recSentence(issue: V2Recommendation) {
 			<InlineCode variant="plain">{issue.canonical_key}</InlineCode>
 		</>
 	)
-}
-
-function recPlainText(issue: V2Recommendation): string {
-	if (issue.kind === "double-emission")
-		return `Standardize on ${issue.canonical_key}; spans also emit ${issue.source_key}`
-	if (issue.kind === "naming") return `Rename non-conforming key ${issue.source_key}`
-	return `Rename ${issue.source_key} → ${issue.canonical_key}`
 }
 
 export function RecommendedMappingsSection() {
@@ -171,15 +147,8 @@ export function RecommendedMappingsSection() {
 	return (
 		<SettingsSection
 			title="Recommendations"
-			description="Deprecated or non-conforming OpenTelemetry attribute keys detected on your spans."
+			description="Deprecated or non-conforming attribute keys found on your spans in the last 24 hours."
 			padded={false}
-			footer={
-				isAdmin || openIssues.every((issue) => issue.kind !== "rename") ? null : (
-					<AdminOnlyNote>
-						Only org admins can apply fixes, since a fix adds an attribute mapping.
-					</AdminOnlyNote>
-				)
-			}
 			actions={
 				<SegmentedSelect
 					size="sm"
@@ -206,79 +175,74 @@ export function RecommendedMappingsSection() {
 				<div className="divide-y">
 					{rows.map((issue) => {
 						const kindTag = KIND_TAG[issue.kind]
-						const mode = issue.kind === "rename" ? MODE.auto : MODE.manual
 						const status = STATUS_BADGE[issue.status]
 						const isApplying = apply.isPending(issue.id)
 						const isBusy = triage.isPending(issue.id)
+						const fixedAtIngest = issue.kind === "rename"
 
 						return (
 							<div
 								key={issue.id}
-								className="group hover:bg-muted/20 flex items-center gap-3 px-4 py-2.5 transition-colors"
+								className="hover:bg-muted/20 flex items-start gap-3 px-4 py-3 transition-colors"
 							>
-								<Eyebrow variant="mono" className={cn("w-20 shrink-0", kindTag.className)}>
+								<Eyebrow
+									variant="mono"
+									className={cn("w-20 shrink-0 pt-0.5", kindTag.className)}
+								>
 									{kindTag.label}
 								</Eyebrow>
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<Link
-												to="/recommendations/$recommendationKey"
-												params={{ recommendationKey: issue.id }}
-												className="group/link min-w-0 flex-1 truncate text-sm"
-											/>
-										}
+								<div className="min-w-0 flex-1 space-y-1">
+									<Link
+										to="/recommendations/$recommendationKey"
+										params={{ recommendationKey: issue.id }}
+										className="block text-sm break-words underline-offset-4 decoration-muted-foreground/40 hover:underline"
 									>
-										<span className="underline-offset-4 decoration-muted-foreground/40 group-hover/link:underline">
-											{recSentence(issue)}
-										</span>
-										<span className="text-muted-foreground">
-											{" "}
-											· {formatNumber(issue.usage_count)} spans/24h
-										</span>
-									</TooltipTrigger>
-									<TooltipContent>
-										{`${recPlainText(issue)} · ${formatNumber(issue.usage_count)} spans in 24h · opened ${formatRelativeTime(issue.opened_at)}`}
-									</TooltipContent>
-								</Tooltip>
+										{recSentence(issue)}
+									</Link>
+									<p className="text-muted-foreground text-2xs">
+										{formatNumber(issue.usage_count)} spans in 24h ·{" "}
+										{fixedAtIngest
+											? "fixed at ingest, no code change"
+											: "needs a code change"}
+									</p>
+								</div>
 
 								<div className="flex shrink-0 items-center gap-1.5">
 									{issue.status === "open" ? (
 										<>
-											{issue.kind === "rename" ? (
-												<Button
-													size="sm"
-													onClick={() => void apply.run(issue.id, issue)}
-													loading={isApplying}
-													disabled={!isAdmin}
-												>
-													<CheckIcon />
-													Apply fix
-												</Button>
-											) : (
-												<Tooltip>
-													<TooltipTrigger
-														render={
-															<Badge
-																variant="outline"
-																className={cn("gap-1", mode.className)}
-															/>
-														}
+											{fixedAtIngest ? (
+												isAdmin ? (
+													<Button
+														size="sm"
+														onClick={() => void apply.run(issue.id, issue)}
+														loading={isApplying}
 													>
-														<mode.icon size={11} />
-														{mode.label}
-													</TooltipTrigger>
-													<TooltipContent>{mode.title}</TooltipContent>
-												</Tooltip>
+														<CheckIcon />
+														Apply fix
+													</Button>
+												) : null
+											) : (
+												<Button
+													variant="outline"
+													size="sm"
+													render={
+														<Link
+															to="/recommendations/$recommendationKey"
+															params={{ recommendationKey: issue.id }}
+														/>
+													}
+												>
+													<CodeIcon />
+													How to fix
+												</Button>
 											)}
 											<Button
-												variant="outline"
+												variant="ghost"
 												size="sm"
 												className="text-muted-foreground hover:text-foreground"
 												onClick={() => void triage.run(issue.id, "dismiss")}
 												loading={isBusy}
 											>
-												<XmarkIcon />
 												Dismiss
 											</Button>
 										</>
