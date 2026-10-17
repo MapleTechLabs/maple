@@ -281,8 +281,12 @@ unbind() {
 
 // APIs in the host project. Cloud Resource Manager is what gcloud reads projects and grants
 // roles through.
-const LOG_APIS = ["pubsub.googleapis.com", "logging.googleapis.com", "cloudresourcemanager.googleapis.com"]
-const METRIC_APIS = [
+export const LOG_APIS = [
+	"pubsub.googleapis.com",
+	"logging.googleapis.com",
+	"cloudresourcemanager.googleapis.com",
+]
+export const METRIC_APIS = [
 	"monitoring.googleapis.com",
 	"cloudasset.googleapis.com",
 	"iam.googleapis.com",
@@ -622,6 +626,10 @@ ${notifies ? `notify "Maple notified" '"logs":false'\n` : ""}`
 
 const serviceAccountMember = '--member="serviceAccount:$SERVICE_ACCOUNT_EMAIL"'
 
+/** The read-only account's roles: on the scope, and on the host project its reads are billed to. */
+export const GCP_READER_SCOPE_ROLES = ["roles/monitoring.viewer", "roles/cloudasset.viewer"]
+export const GCP_READER_PROJECT_ROLE = "roles/serviceusage.serviceUsageConsumer"
+
 const metricsSetup = (scopeType: GcpScopeType): string => `
 # ---- Metrics and resources: on ----
 section "Metrics and resources"
@@ -652,7 +660,7 @@ fi
 #   roles/cloudasset.viewer  list resources (cloudasset.assets.searchAllResources)
 # These are the narrowest predefined roles for the two calls. Both are read-only, and broader
 # than the calls: Cloud Asset Viewer can also read resource metadata and IAM policies.
-for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
+for ROLE in ${GCP_READER_SCOPE_ROLES.join(" ")}; do
   grant "Couldn't grant the read-only roles." "$IAM_ROLE" \\
     ${SCOPES[scopeType].gcloud} add-iam-policy-binding "$SCOPE_ID" \\
     ${serviceAccountMember} --role="$ROLE" --condition=None
@@ -661,7 +669,7 @@ done
 # serviceusage.services.use on it.
 grant "Couldn't grant the read-only roles." "$OWNER" \\
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
-  ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None
+  ${serviceAccountMember} --role=${GCP_READER_PROJECT_ROLE} --condition=None
 ok "Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)"
 
 # Maple's own account may mint short-lived tokens for this one service account, nothing else.
@@ -692,12 +700,12 @@ account_remains() {
 if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
   --filter="email=$SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
   # Role bindings first: once the account is deleted they can no longer be removed by name.
-  for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
+  for ROLE in ${GCP_READER_SCOPE_ROLES.join(" ")}; do
     unbind "$IAM_ROLE" ${SCOPES[scopeType].gcloud} remove-iam-policy-binding "$SCOPE_ID" \\
       ${serviceAccountMember} --role="$ROLE" --all
   done
   unbind "$OWNER" gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
-    ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --all
+    ${serviceAccountMember} --role=${GCP_READER_PROJECT_ROLE} --all
   ok "Read-only roles removed"
   remove "Read-only service account deleted" "Couldn't delete the service account." "$OWNER" \\
     gcloud iam service-accounts delete "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
