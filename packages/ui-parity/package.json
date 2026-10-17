@@ -1,0 +1,27 @@
+{
+	"name": "@maple/ui-parity",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"parity": "bun run src/cli.ts",
+		"test": "vitest run --passWithNoTests",
+		"typecheck": "tsrs --noEmit"
+	},
+	"dependencies": {
+		"@maple/domain": "workspace:*",
+		"@maple/query-engine": "workspace:*",
+		"effect": "catalog:effect",
+		"parse5": "^8.0.1",
+		"pixelmatch": "^8.0.0",
+		"playwright": "catalog:",
+		"pngjs": "^7.0.0"
+	},
+	"devDependencies": {
+		"@effect/language-service": "catalog:effect",
+		"@types/bun": "^1.4.2",
+		"@types/node": "catalog:tooling",
+		"@types/pngjs": "^6.0.5",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}
