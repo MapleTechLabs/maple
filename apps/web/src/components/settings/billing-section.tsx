@@ -17,7 +17,10 @@ import { maximumInvoiceCents, uncappedFeatures } from "@/lib/billing/controls"
 import { BillingCyclePanel, BillingCyclePanelSkeleton } from "./billing-cycle-panel"
 import { BillingUsageTable, BillingUsageTableSkeleton } from "./billing-usage-table"
 import { SpendChart, SpendChartSkeleton } from "./spend-chart"
-import { PlanOffer } from "./plan-offer"
+import { BillingPlanSection } from "./billing-plan-section"
+import { AdminOnlyNotice } from "./admin-only-notice"
+import { CheckoutConfirmingPanel, CheckoutTimedOutNotice } from "./checkout-return-panel"
+import { useCheckoutReturn } from "@/hooks/use-checkout-return"
 import { InvoicesSection } from "./invoices-section"
 import { BillingDetailsSection } from "./billing-details-section"
 import { ErrorState } from "@/components/common/error-state"
@@ -36,6 +39,7 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 	const { openCustomerPortal } = useBillingActions()
 	const [editingCap, setEditingCap] = useState<SpendFeatureId | null>(null)
 	const usageRef = useRef<HTMLDivElement>(null)
+	const checkoutReturn = useCheckoutReturn()
 
 	const customer = Result.isSuccess(customerResult) ? customerResult.value : undefined
 	const plans = Result.isSuccess(plansResult) ? plansResult.value.plans : undefined
@@ -79,6 +83,7 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 	if (Result.isFailure(customerResult)) {
 		return (
 			<SettingsSections>
+				<AdminOnlyNotice subject="billing" />
 				<ErrorState
 					variant="row"
 					error={customerResult.cause}
@@ -93,6 +98,10 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 
 	return (
 		<SettingsSections>
+			{checkoutReturn === "confirming" && <CheckoutConfirmingPanel layout="row" />}
+			{checkoutReturn === "timed_out" && <CheckoutTimedOutNotice pickPlan="use Compare plans under Plan" />}
+			<AdminOnlyNotice subject="billing" />
+
 			<SettingsSection
 				title="This cycle"
 				description="Estimated spend for the current billing period."
@@ -146,17 +155,17 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 				</SettingsSection>
 			</div>
 
-			{billingDetails}
+			<BillingPlanSection
+				model={isLoading ? null : model}
+				plans={Result.isFailure(plansResult) ? [] : plans}
+				isLegacy={isLegacy}
+				// Back from Stripe with the plan not yet synced: never re-offer the plan just bought.
+				canManage={isAdmin && checkoutReturn !== "confirming"}
+			/>
 
 			{invoices}
 
-			<SettingsSection
-				title="Plans"
-				description="Need higher volume or custom retention?"
-				framed={false}
-			>
-				<PlanOffer model={model} canManage={isAdmin} onManageBilling={manageBilling} />
-			</SettingsSection>
+			{billingDetails}
 		</SettingsSections>
 	)
 }
