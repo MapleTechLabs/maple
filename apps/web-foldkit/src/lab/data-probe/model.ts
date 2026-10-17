@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as Toast from "../../ui/toast"
 import { KeyedSchema } from "../../data/keyed"
 
 import { TimeWindow } from "../../data/time-range"
@@ -33,6 +34,7 @@ export const Model = Schema.Struct({
 	orgId: Schema.NullOr(OrgId),
 	facets: KeyedSchema(ServicesFacets, WarehouseFailure),
 	alertRuleCount: Schema.NullOr(Schema.Number),
+	toasts: Toast.Model,
 })
 export type Model = typeof Model.Type
 
@@ -48,5 +50,6 @@ export const Message = defineMessageUnion({
 	},
 	UpdatedAlertRules: { orgId: OrgId, count: Schema.Number },
 	ClickedRefresh: {},
+	GotToastMessage: { message: Toast.Message },
 })
 export type Message = typeof Message.Type

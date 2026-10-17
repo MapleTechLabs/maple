@@ -9,6 +9,8 @@ import * as LogsStream from "../../../ui/logs/logs-stream"
 import * as LogsStreamView from "../../../ui/logs/logs-stream-view"
 import { listFooterText, ViewerFlags, viewerFlags } from "../../../ui/logs/viewer"
 import { defineLabWithFlags } from "../../define"
+import { foldLabToasts, initLabToasts, labRoot } from "../../toasts"
+import * as Toast from "../../../ui/toast"
 import { installLogsBench } from "../../bench/logs-harness"
 
 /**
@@ -23,6 +25,7 @@ const Model = Schema.Struct({
 	stream: LogsStream.Model,
 	timeZone: Schema.String,
 	footerText: Schema.String,
+	toasts: Toast.Model,
 })
 type Model = typeof Model.Type
 
@@ -31,6 +34,7 @@ type Model = typeof Model.Type
 const Message = defineMessageUnion({
 	GotStreamMessage: { message: LogsStream.Message },
 	CompletedBenchInstall: {},
+	GotToastMessage: { message: Toast.Message },
 })
 type Message = typeof Message.Type
 
@@ -56,6 +60,7 @@ const init = (flags: ViewerFlags): Update.Return<Model, Message> => {
 				LOGS_TABLE_BENCH_ROWS.map((log) => toLogRowView(log, PINNED_COLUMNS, time)),
 			),
 			timeZone: flags.timeZone,
+			toasts: initLabToasts(),
 			footerText: listFooterText(flags.locale, {
 				shown: LOGS_TABLE_BENCH_ROWS.length,
 				noun: "logs",
@@ -83,15 +88,21 @@ const foldStream = Update.foldChild({
 	}),
 })
 
+const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMessage({ message }))
+
 const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
 		GotStreamMessage: ({ message: streamMessage }) => foldStream(model, streamMessage),
 		CompletedBenchInstall: () => ({ model }),
+		GotToastMessage: ({ message }) => foldToasts(model, message),
 	})
 
 // VIEW
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
+	labRoot(h, model.toasts, (message) => Message.GotToastMessage({ message }), page(model, h))
+
+const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[
 			h.DataAttribute("logs-bench", "true"),

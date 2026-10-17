@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as LogsStream from "../../ui/logs/logs-stream"
+import * as Toast from "../../ui/toast"
 
 /** The lab's header toggles (apps/web's `LogsLabPage`), pins aside. */
 export const Toggle = Schema.Literals(["Wrap", "Comfortable", "Search", "Empty"])
@@ -27,6 +28,7 @@ export const Model = Schema.Struct({
 	pinned: Schema.Array(Schema.String),
 	isEmpty: Schema.Boolean,
 	attrs: Schema.Array(Schema.String),
+	toasts: Toast.Model,
 })
 export type Model = typeof Model.Type
 
@@ -40,5 +42,6 @@ export const Message = defineMessageUnion({
 	ClickedJumpToLatest: {},
 	TickedAutoRefresh: {},
 	ElapsedReloadSpin: { version: Schema.Number },
+	GotToastMessage: { message: Toast.Message },
 })
 export type Message = typeof Message.Type

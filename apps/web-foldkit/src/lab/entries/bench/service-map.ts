@@ -20,6 +20,8 @@ import { view as serviceMapView } from "../../../service-map/map/view"
 import * as Canvas from "../../../service-map/xyflow/canvas"
 import { eyebrow } from "../../../ui/eyebrow"
 import { defineLabWithFlags } from "../../define"
+import { foldLabToasts, initLabToasts, labRoot } from "../../toasts"
+import * as Toast from "../../../ui/toast"
 
 // `/lab/bench/service-map` (apps/web `routes/lab/bench/service-map.tsx` + `lab/bench/service-map-bench.tsx`):
 // the synthetic topology at `?services=&edges=&rps=&seed=&groups=&minTraffic=&focus=`, with the
@@ -55,7 +57,7 @@ const readParams = Effect.sync((): BenchParams => {
 	}
 })
 
-const Model = Schema.Struct({ params: BenchParams, map: ServiceMap.Model })
+const Model = Schema.Struct({ params: BenchParams, map: ServiceMap.Model, toasts: Toast.Model })
 type Model = typeof Model.Type
 
 const Message = defineMessageUnion({
@@ -63,6 +65,7 @@ const Message = defineMessageUnion({
 	ClickedNamespaceGroups: { groups: Schema.Number },
 	CompletedPushBenchUrl: {},
 	GotHarnessMessage: { message: HarnessMessage },
+	GotToastMessage: { message: Toast.Message },
 })
 type Message = typeof Message.Type
 
@@ -107,8 +110,10 @@ const PushBenchGroups = Command.define("PushBenchGroups", {
 
 const init = (params: BenchParams): Update.Return<Model, Message> => {
 	const map = initMap(params)
-	return { model: { params, map: map.model }, commands: Command.mapMessages(map.commands, toMap) }
+	return { model: { params, map: map.model, toasts: initLabToasts() }, commands: Command.mapMessages(map.commands, toMap) }
 }
+
+const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMessage({ message }))
 
 const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match(message, {
@@ -119,9 +124,13 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 		// The legacy route keys the bench on its params, so a new grouping starts a fresh map.
 		ClickedNamespaceGroups: ({ groups }) => {
 			const fresh = init({ ...model.params, groups })
-			return { model: fresh.model, commands: [...(fresh.commands ?? []), PushBenchGroups({ groups })] }
+			return {
+				model: { ...fresh.model, toasts: model.toasts },
+				commands: [...(fresh.commands ?? []), PushBenchGroups({ groups })],
+			}
 		},
 		CompletedPushBenchUrl: () => ({ model }),
+		GotToastMessage: ({ message }) => foldToasts(model, message),
 		// The perf harness pins and frames the camera the way a user gesture would.
 		GotHarnessMessage: ({ message: harness }) =>
 			update(
@@ -194,6 +203,9 @@ const groupSwitch = (h: HtmlBuilder<Message>, groups: number): Html =>
 	)
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
+	labRoot(h, model.toasts, (message) => Message.GotToastMessage({ message }), page(model, h))
+
+const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Class("relative h-screen w-screen")],
 		[

@@ -1,8 +1,9 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
-import { click, Command, expect, given, role, Subscription, scene, text } from "foldkit/scene"
+import { click, Command, expect, given, Mount, role, Subscription, scene, text } from "foldkit/scene"
 import { expect as assert, describe, test } from "vitest"
 import { requestKey } from "../../data/request-key"
+import { Message as ToastMessage, PortalToasts } from "../../ui/toast"
 import { CheckProbeSession, FetchServicesFacets, init, Message, ResolveWindow, update, view } from "./index"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -19,6 +20,12 @@ const facets = (services: number) => ({
 	commitShas: [],
 	services: Array.from({ length: services }, (_, index) => ({ name: `svc-${index}`, count: 1 })),
 })
+
+/** The page's two Notifications regions portal themselves out of `#app`. */
+const portalsMounted = () => [
+	Mount.resolve(PortalToasts, ToastMessage.CompletedPortalToasts()),
+	Mount.resolve(PortalToasts, ToastMessage.CompletedPortalToasts()),
+]
 
 const first = windowOf("12")
 const second = windowOf("13")
@@ -49,6 +56,7 @@ describe("data probe", () => {
 		scene(
 			{ update, view },
 			given(entered()),
+			...portalsMounted(),
 			expect(text("Services: 6")).toExist(),
 			expect(text("Environments: 1")).toExist(),
 		)
@@ -59,6 +67,7 @@ describe("data probe", () => {
 		scene(
 			{ update, view },
 			given(entered()),
+			...portalsMounted(),
 			Subscription.emit(Message.UpdatedAlertRules({ orgId: otherOrg, count: 9 })),
 			expect(text("Alert rules: loading")).toExist(),
 			Subscription.emit(Message.UpdatedAlertRules({ orgId, count: 4 })),
@@ -70,6 +79,7 @@ describe("data probe", () => {
 		scene(
 			{ update, view },
 			given(entered()),
+			...portalsMounted(),
 			click(refresh),
 			Command.resolve(
 				ResolveWindow({ mode: "Refresh" }),
@@ -102,6 +112,11 @@ describe("data probe", () => {
 			Message.CompletedFetchServicesFacets({ key: keyOf(second), result: Result.succeed(facets(1)) }),
 		)
 		assert(late.model).toEqual(superseded)
-		scene({ update, view }, given(late.model), expect(text("Services: 6 (refreshing)")).toExist())
+		scene(
+			{ update, view },
+			given(late.model),
+			...portalsMounted(),
+			expect(text("Services: 6 (refreshing)")).toExist(),
+		)
 	})
 })

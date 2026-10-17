@@ -11,6 +11,7 @@ import { modifyFields } from "foldkit/struct"
 import { logTimeFormat, toLogRowView } from "../../ui/logs/log-row-view"
 import * as LogsStream from "../../ui/logs/logs-stream"
 import { listFooterText, type ViewerFlags } from "../../ui/logs/viewer"
+import { foldLabToasts, initLabToasts } from "../toasts"
 import { Message, type Model, type Toggle } from "./model"
 
 const ANCHOR_MS = Date.UTC(2026, 9, 8, 14, 32, 10, 482)
@@ -64,6 +65,7 @@ export const init = (flags: ViewerFlags): Return => {
 		pinned: [],
 		isEmpty: false,
 		attrs: [],
+		toasts: initLabToasts(),
 	}
 	const rows = rowsOf(base)
 	return {
@@ -161,6 +163,8 @@ const toggle = (model: Model, which: Toggle): Return => {
 	}
 }
 
+const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMessage({ message }))
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotStreamMessage: ({ message: streamMessage }) => foldStream(model, streamMessage),
@@ -179,4 +183,5 @@ export const update = (model: Model, message: Message): Return =>
 			version === model.refreshVersion
 				? { model: modifyFields(model, { isReloading: () => false }) }
 				: { model },
+		GotToastMessage: ({ message }) => foldToasts(model, message),
 	})

@@ -2,6 +2,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 import type { WarehouseFailure } from "../../data/warehouse-error"
+import { labRoot } from "../toasts"
 import { Message, type Model, type ServicesFacets } from "./model"
 
 const facetCount = (
@@ -20,6 +21,9 @@ const facetCount = (
 const line = (h: HtmlBuilder<Message>, label: string, value: string): Html => h.li([], [`${label}: ${value}`])
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
+	labRoot(h, model.toasts, (message) => Message.GotToastMessage({ message }), page(model, h))
+
+const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.main(
 		[h.Class("flex flex-col gap-4 p-6 text-sm")],
 		[

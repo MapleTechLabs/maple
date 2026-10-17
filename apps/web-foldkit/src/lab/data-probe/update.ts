@@ -6,12 +6,19 @@ import { requestKey } from "../../data/request-key"
 import type { TimeWindow } from "../../data/time-range"
 import type { Resources } from "../../platform/resources"
 import { CheckProbeSession, FetchServicesFacets, ResolveWindow } from "./command"
+import { foldLabToasts, initLabToasts } from "../toasts"
 import { Message, type Model } from "./model"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 
 export const init = (): UpdateReturn => ({
-	model: { session: "Checking", orgId: null, facets: Keyed.idle(), alertRuleCount: null },
+	model: {
+		session: "Checking",
+		orgId: null,
+		facets: Keyed.idle(),
+		alertRuleCount: null,
+		toasts: initLabToasts(),
+	},
 	commands: [CheckProbeSession()],
 })
 
@@ -32,6 +39,8 @@ const requestFacets = (
 	})
 }
 
+const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMessage({ message }))
+
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		SucceededCheckProbeSession: ({ orgId }) => ({
@@ -48,4 +57,5 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		UpdatedAlertRules: ({ orgId, count }) =>
 			orgId === model.orgId ? { model: { ...model, alertRuleCount: count } } : { model },
 		ClickedRefresh: () => ({ model, commands: [ResolveWindow({ mode: "Refresh" })] }),
+		GotToastMessage: ({ message }) => foldToasts(model, message),
 	})

@@ -20,6 +20,8 @@ import { inlineCode } from "../../ui/inline-code"
 import { ARM_TITLES, type ChartsLabArm, SECTIONS } from "../charts/arms"
 import { histogramSpikeValues, histogramSpikeView, pieSpikeView, SPIKE_TOKENS } from "../charts/spikes"
 import { defineLab } from "../define"
+import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
+import * as Toast from "../../ui/toast"
 
 // Port of `/lab/charts` (apps/web/src/lab/charts/charts-lab.tsx): the gallery, canvas renderer.
 
@@ -59,6 +61,7 @@ const Model = Schema.Struct({
 	maybeTheme: Schema.Option(ThemeColors),
 	chartRuntime: ChartRuntime,
 	charts: Schema.Record(Schema.String, Chart.Model),
+	toasts: Toast.Model,
 })
 type Model = typeof Model.Type
 
@@ -74,6 +77,7 @@ const init = (): Update.Return<Model, Message> => ({
 					.map((arm) => [slotOf(sectionIndex, arm), Chart.init()]),
 			),
 		),
+		toasts: initLabToasts(),
 	},
 	commands: Command.mapMessages([LoadChartRuntime()], (message) =>
 		Message.GotChartRuntimeMessage({ message }),
@@ -86,6 +90,7 @@ const Message = defineMessageUnion({
 	ResolvedThemeColors: { colors: ThemeColors },
 	GotChartRuntimeMessage: { message: ChartRuntimeMessage },
 	GotChartMessage: { slot: Schema.String, message: Chart.Message },
+	GotToastMessage: { message: Toast.Message },
 })
 type Message = typeof Message.Type
 
@@ -98,6 +103,8 @@ const foldChart = Update.foldChildAt({
 		modifyFields(model, { charts: (charts) => ({ ...charts, [slot]: nextChart }) }),
 	toParentMessage: (slot, message) => Message.GotChartMessage({ slot, message }),
 })
+
+const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMessage({ message }))
 
 const update = (model: Model, message: Message) =>
 	Message.match<Update.Return<Model, Message>>(message, {
@@ -114,6 +121,7 @@ const update = (model: Model, message: Message) =>
 			}),
 		}),
 		GotChartMessage: ({ slot, message }) => foldChart(model, slot, message),
+		GotToastMessage: ({ message }) => foldToasts(model, message),
 	})
 
 // VIEW
@@ -217,6 +225,9 @@ const section = (h: HtmlBuilder<Message>, title: string, children: ReadonlyArray
 	)
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
+	labRoot(h, model.toasts, (message) => Message.GotToastMessage({ message }), page(model, h))
+
+const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[
 			h.DataAttribute("testid", "charts-lab"),

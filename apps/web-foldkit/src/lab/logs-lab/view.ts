@@ -7,6 +7,7 @@ import { icon } from "../../ui/icon"
 import * as LogsStreamView from "../../ui/logs/logs-stream-view"
 import { eyebrow } from "../../ui/eyebrow"
 import { labSidebar, labTopbar } from "../shell"
+import { labRoot } from "../toasts"
 import { Message, type Model, PIN_OPTIONS, type Toggle } from "./model"
 
 // apps/web/src/lab/logs-lab.tsx `Toggle`
@@ -220,6 +221,9 @@ const pageBody = (h: HtmlBuilder<Message>, model: Model): Html =>
 
 /** apps/web's `DashboardLayout` around the lab page, with the generated shell (see ../shell.ts). */
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
+	labRoot(h, model.toasts, (message) => Message.GotToastMessage({ message }), page(model, h))
+
+const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[
 			h.Class("group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar"),
