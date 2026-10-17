@@ -15,6 +15,24 @@ const typeInto = (role: "textbox" | "searchbox", text: string) => (page: Page) =
 const waitForText = (text: string | RegExp) => (page: Page) =>
 	page.getByText(text).first().waitFor({ state: "visible" })
 
+/** Held far past any capture, so the screenshot is the loading state. */
+const HELD_MS = 60_000
+const held = (tag: string) => ({ faults: { delays: { [tag]: HELD_MS } }, settle: "held" as const })
+const failing = (tag: string) => ({
+	faults: {
+		failures: {
+			[tag]: {
+				status: 500,
+				body: {
+					_tag: "@maple/http/errors/AlertPersistenceError",
+					message: "ui-parity: injected alerts failure",
+				},
+			},
+		},
+	},
+})
+const incident = `/alerts/incidents/${SEEDED.alertIncident}`
+
 const RULES = "/alerts?tab=rules"
 const ROUTING = "/alerts?tab=routing"
 
@@ -28,7 +46,13 @@ export const alertsArea: AreaModule = {
 			steps: act(clickButton(/^Slow P95 latency/)),
 		}),
 		alert("edit", "Edit the payment p95 rule", `/alerts/create?ruleId=${SEEDED.paymentRule}`),
-		alert("incident", "Open payment p95 incident", `/alerts/incidents/${SEEDED.alertIncident}`),
+		alert("incident", "Open payment p95 incident", incident),
+		alert("incident-preview-loading", "Incident, signal preview held", incident, held("alertRules.preview")),
+		alert("incident-preview-error", "Incident, signal preview failing", incident, failing("alertRules.preview")),
+		alert("incident-deliveries-error", "Incident, delivery history failing", incident, failing("alertDeliveries.list")),
+		alert("rule-checks-loading", "Rule, checks held", rule, held("alertRules.checks")),
+		alert("rule-checks-error", "Rule, checks failing", rule, failing("alertRules.checks")),
+		alert("rule-preview-error", "Rule, signal preview failing", rule, failing("alertRules.preview")),
 		alert("list-empty", "Alerts (empty org)", "/alerts", { dataset: EMPTY }),
 		// The hub's tabs and every control on them.
 		alert("hub-tab-rules", "Hub, Rules tab from the tab strip", "/alerts", { steps: act(clickLink(/^Rules/)) }),
@@ -44,6 +68,8 @@ export const alertsArea: AreaModule = {
 			steps: act(clickButton("Actions for Payment p95 latency"), clickMenuItem("Disable rule")),
 		}),
 		alert("hub-routing", "Hub, Routing tab", ROUTING),
+		alert("hub-routing-loading", "Hub, Routing with deliveries held", ROUTING, held("alertDeliveries.list")),
+		alert("hub-routing-error", "Hub, Routing with deliveries failing", ROUTING, failing("alertDeliveries.list")),
 		alert("hub-destination-toggle", "Hub, disable a destination", ROUTING, {
 			steps: act(clickSwitch("Disable destination")),
 		}),

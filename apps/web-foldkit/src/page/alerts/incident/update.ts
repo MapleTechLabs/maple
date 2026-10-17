@@ -51,6 +51,9 @@ export const init = (route: IncidentRoute, _context: PageContext): Return => ({
 	],
 })
 
+/** An atom never refetches a failed read on its own: a same-key `Load` leaves the slot alone. */
+const sameKey = <A, E>(slot: Keyed.Keyed<A, E>, key: string) => slot.key === key
+
 /**
  * The reads `IncidentDetail` sends once it mounts: deliveries and the investigation for the
  * incident, and the preview once the rule is known. Idempotent (`Load` keeps a same-key slot).
@@ -68,13 +71,15 @@ const followData = (model: Model, context: PageContext): Return =>
 			})
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
 				...Option.toArray(
-					Option.map(Keyed.request(model.deliveries, deliveriesKey, "Load"), (deliveries) => ({
+					Option.map(sameKey(model.deliveries, deliveriesKey) ? Option.none() : Keyed.request(model.deliveries, deliveriesKey, "Load"), (deliveries) => ({
 						patch: { deliveries },
 						commands: [FetchIncidentDeliveries({ key: deliveriesKey, incidentId })],
 					})),
 				),
 				...Option.toArray(
-					Option.map(Keyed.request(model.investigation, investigationKey, "Load"), (investigation) => ({
+					Option.map(sameKey(model.investigation, investigationKey)
+						? Option.none()
+						: Keyed.request(model.investigation, investigationKey, "Load"), (investigation) => ({
 						patch: { investigation },
 						commands: [FetchIncidentInvestigation({ key: investigationKey, incidentId })],
 					})),
@@ -82,7 +87,7 @@ const followData = (model: Model, context: PageContext): Return =>
 				...Option.toArray(
 					Option.flatMap(view.payload, (payload) => {
 						const key = requestKey(context.orgId, "alertRules.preview", payload)
-						return Option.map(Keyed.request(model.preview, key, "Load"), (preview) => ({
+						return Option.map(sameKey(model.preview, key) ? Option.none() : Keyed.request(model.preview, key, "Load"), (preview) => ({
 							patch: { preview },
 							commands: [FetchIncidentPreview({ key, payload })],
 						}))

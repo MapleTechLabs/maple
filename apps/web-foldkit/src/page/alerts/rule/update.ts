@@ -53,7 +53,10 @@ const keyed = <A, E>(
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Command.Command<Message, never, Resources>,
 ): ReadonlyArray<Step> =>
-	Option.match(Keyed.request(slot, key, mode), {
+	// An atom never refetches a failed read on its own: a same-key `Load` leaves the slot alone.
+	mode === "Load" && slot.key === key
+		? []
+		: Option.match(Keyed.request(slot, key, mode), {
 		onNone: () => [],
 		onSome: (next) => [{ patch: write(next), commands: [fetch(key)] }],
 	})

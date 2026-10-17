@@ -9,14 +9,17 @@ import { MapleApiV2Client } from "../../../platform/api-clients"
 // The alert reads and writes the hub, rule and incident pages share, as Effects their Commands wrap.
 
 /** `alertDeliveries.list({ limit: 100 })` (optionally one incident's), as documents. */
-export const listDeliveries = (incidentId?: AlertIncidentId) =>
+export const listDeliveriesRaw = (incidentId?: AlertIncidentId) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		const response = yield* client.alertDeliveries.list({
 			query: incidentId === undefined ? { limit: 100 } : { incident_id: incidentId, limit: 100 },
 		})
 		return response.data.map(v2DeliveryToDocument)
-	}).pipe(Effect.mapError(toLoadFailure))
+	})
+
+export const listDeliveries = (incidentId?: AlertIncidentId) =>
+	listDeliveriesRaw(incidentId).pipe(Effect.mapError(toLoadFailure))
 
 /** The session's roles allow org administration (`root` or `org:admin`). */
 export const readIsAdmin = Effect.gen(function* () {

@@ -1,10 +1,12 @@
 import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
 import { V2AlertDestinationUpdateParams } from "@maple/domain/http/v2"
-import { Clock, Effect, Schema } from "effect"
+import { Cause, Clock, Effect, Schema } from "effect"
+import { toLoadFailure } from "../../../data/load-failure"
 import { Command } from "foldkit"
 import {
 	deleteDestination,
 	listDeliveries,
+	listDeliveriesRaw,
 	readIsAdmin,
 	setRuleEnabled,
 	testDestination,
@@ -27,11 +29,16 @@ export const FetchHubDeliveries = Command.define("FetchAlertsHubDeliveries", {
 		),
 })
 
+/**
+ * The Routing tab renders `deliveryEventsResult.cause`; in apps/web that Cause carries no typed failure
+ * (observed: "An unexpected error occurred" for a 500), so the slot keeps the unexpected body too.
+ */
 export const FetchRoutingDeliveries = Command.define("FetchAlertsRoutingDeliveries", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchRoutingDeliveries],
 	execute: ({ key }) =>
-		listDeliveries().pipe(
+		listDeliveriesRaw().pipe(
+			Effect.mapError((error) => toLoadFailure(Cause.die(error))),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchRoutingDeliveries({ key, result })),
 		),
