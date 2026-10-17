@@ -5,6 +5,7 @@ import { renderChartSvg } from "@tanstack/charts/svg"
 import { createSvgChartRenderer } from "@tanstack/charts/svg/renderer"
 import { Option } from "effect"
 import { ChartSpec, type ChartTooltip } from "./chart-spec"
+import { buildAlertRule } from "./definitions/alert-rule"
 import { buildQueryBuilderArea } from "./definitions/area"
 import type { BuiltChart } from "./definitions/built-chart"
 import {
@@ -136,4 +137,5 @@ export const createChartHost = (
 			hostFor(container, histogram, height, variant("BinnedHistogram"), buildBinnedHistogram, options),
 		FixedMetric: (metric) =>
 			hostFor(container, metric, height, variant("FixedMetric"), buildFixedMetric, options),
+		AlertRule: (rule) => hostFor(container, rule, height, variant("AlertRule"), buildAlertRule, options),
 	})

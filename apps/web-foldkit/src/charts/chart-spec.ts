@@ -118,6 +118,47 @@ export const ChartSpec = defineTaggedUnion({
 		gradientPrefix: Schema.String,
 		showTooltip: Schema.Boolean,
 	},
+	/**
+	 * `AlertRuleChart` (apps/web/src/components/alerts/alert-rule-chart.tsx): the rule's signal, the
+	 * threshold rules and the shaded bands, already decided by `@maple/web-data/alerts/chart-series`.
+	 */
+	AlertRule: {
+		rows: Schema.Array(Schema.Record(Schema.String, Schema.NullOr(Schema.Number))),
+		seriesKeys: Schema.Array(Schema.String),
+		/** Tooltip labels by series key (`Query`, `Evaluated`, or the group). */
+		labels: Schema.Record(Schema.String, Schema.String),
+		isMultiSeries: Schema.Boolean,
+		hasGhost: Schema.Boolean,
+		/** Resolved colours: `signal`, `destructive`, `warn`, `muted`, `border`, `background`, series keys. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		domainMin: Schema.Number,
+		domainMax: Schema.Number,
+		yMax: Schema.Number,
+		threshold: Schema.Number,
+		thresholdUpper: Nullable(Schema.Number),
+		criticalThreshold: Nullable(Schema.Number),
+		comparator: Schema.String,
+		signalType: Schema.String,
+		bands: Schema.Struct({
+			noData: Schema.Array(Schema.Struct({ x1: Schema.Number, x2: Schema.Number })),
+			incidentOpen: Schema.Array(Schema.Struct({ x1: Schema.Number, x2: Schema.Number })),
+			incidentClosed: Schema.Array(Schema.Struct({ x1: Schema.Number, x2: Schema.Number })),
+			held: Schema.Array(Schema.Struct({ x1: Schema.Number, x2: Schema.Number })),
+			wouldFire: Schema.Array(Schema.Struct({ x1: Schema.Number, x2: Schema.Number })),
+		}),
+		/** The tooltip heading's per-bucket facts (`bucketMeta`). */
+		meta: Schema.Array(
+			Schema.Struct({
+				t: Schema.Number,
+				sampleCount: Schema.Number,
+				status: Schema.String,
+				provisional: Schema.Boolean,
+			}),
+		),
+		timeZone: Schema.String,
+		bucketSeconds: Nullable(Schema.Number),
+		gradientId: Schema.String,
+	},
 })
 export type ChartSpec = typeof ChartSpec.Type
 
