@@ -97,7 +97,7 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use sha2::Sha256;
 use sources::{
     OverrideMode, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef, SourceSignal,
-    SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
+    MAX_PUBLIC_ID_LEN, SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
 };
 use tower_http::cors::{Any, CorsLayer};
 use tracing::Instrument;
@@ -6179,6 +6179,8 @@ fn claimed_source_ids(decoded: &DecodedPayload, resolved_key: &ResolvedIngestKey
         .into_iter()
         .flatten()
         .filter_map(|resource| source_id_claim(&resource.attributes))
+        // Longer than any valid id: never decoded or cached, so it stays unverified.
+        .filter(|claim| claim.len() <= MAX_PUBLIC_ID_LEN)
     {
         if !claims.iter().any(|seen| seen == claim) {
             claims.push(claim.to_owned());
