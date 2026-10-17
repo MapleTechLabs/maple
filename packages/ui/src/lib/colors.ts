@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react"
+
 /**
  * Chart color Tailwind classes for depth-based coloring in visualizations.
  * Maps to Tailwind classes: bg-chart-1 through bg-chart-5
@@ -131,7 +133,7 @@ export function getServiceColor(serviceName: string): string {
  * - Each class within a service gets a lightness/saturation variation
  * - Returns inline style object with background color and appropriate text color
  */
-export function getSpanColorStyle(spanName: string, serviceName: string): React.CSSProperties {
+export function getSpanColorStyle(spanName: string, serviceName: string): CSSProperties {
 	const baseHue = getServiceHueFromName(serviceName)
 
 	const className = extractClassName(spanName)

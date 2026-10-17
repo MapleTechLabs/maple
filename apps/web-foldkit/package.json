@@ -23,6 +23,7 @@
 		"@tanstack/db": "0.11.3",
 		"@tanstack/virtual-core": "3.17.11",
 		"d3-scale": "^4.0.2",
+		"@xyflow/system": "0.0.83",
 		"effect": "catalog:effect",
 		"foldkit": "0.168.0",
 		"class-variance-authority": "catalog:ui",

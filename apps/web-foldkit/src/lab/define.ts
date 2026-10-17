@@ -45,3 +45,4 @@ export const defineLabWithFlags = <Model, Message extends { _tag: string }, Flag
 		)
 	},
 })
+

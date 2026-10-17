@@ -1,0 +1,86 @@
+import { DB_NODE_PREFIX, NS_LABEL_HEIGHT, NS_PADDING_X, NS_PADDING_Y } from "@maple/ui/components/service-map/service-map-utils"
+import { getValueHue } from "@maple/ui/lib/colors"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { nucleoIcon } from "../../ui/nucleo-icon"
+import type { MeasuredNode } from "../xyflow/geometry"
+import { flowNode } from "../xyflow/view"
+import type { EffectiveGraph } from "./graph"
+import type { Positions } from "./service-map"
+
+// The dotted namespace boxes `ServiceMapFlowCanvas` derives from node extents, and
+// `NamespaceGroupNode` (packages/ui `service-map/service-map-namespace-group.tsx`).
+
+const FALLBACK_NODE_WIDTH = 220
+const FALLBACK_NODE_HEIGHT = 70
+
+const nsGroupId = (namespace: string) => `nsgroup:${encodeURIComponent(namespace)}`
+
+const box = <M>(h: HtmlBuilder<M>, label: string, hue: number): Html =>
+	h.div(
+		[
+			h.Class("pointer-events-none h-full w-full rounded-xl border-[1.5px] border-dashed"),
+			h.Style({ "border-color": `oklch(0.66 0.12 ${hue} / 0.7)`, "background-color": `oklch(0.62 0.11 ${hue} / 0.05)` }),
+		],
+		[
+			h.span(
+				[
+					h.Class(
+						"pointer-events-auto absolute left-2.5 top-2 flex max-w-[calc(100%-1.25rem)] items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-widest",
+					),
+					h.Style({
+						color: `oklch(0.82 0.12 ${hue})`,
+						"background-color": `oklch(0.24 0.04 ${hue} / 0.92)`,
+						"border-color": `oklch(0.66 0.12 ${hue} / 0.4)`,
+					}),
+				],
+				[
+					h.span([h.Class("truncate")], [label]),
+					h.button(
+						[
+							h.Type("button"),
+							h.Title(`Collapse ${label} into one node`),
+							h.Class("shrink-0 opacity-60 transition-opacity hover:opacity-100"),
+						],
+						[nucleoIcon(h, "MinimizeIcon", { size: 10 })],
+					),
+				],
+			),
+		],
+	)
+
+/** One box per namespace around its measured service nodes, painted behind them. */
+export const namespaceBoxes = <M>(
+	h: HtmlBuilder<M>,
+	graph: EffectiveGraph,
+	positions: Positions,
+	measured: Readonly<Record<string, MeasuredNode>>,
+): ReadonlyArray<Html> => {
+	const extents = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
+	for (const node of graph.nodes) {
+		const ns = node.data.namespace
+		if (node.id.startsWith(DB_NODE_PREFIX) || !ns) continue
+		const w = measured[node.id]?.width ?? FALLBACK_NODE_WIDTH
+		const hgt = measured[node.id]?.height ?? FALLBACK_NODE_HEIGHT
+		const { x, y } = positions[node.id] ?? node.position
+		const ext = extents.get(ns)
+		if (ext) {
+			ext.minX = Math.min(ext.minX, x)
+			ext.minY = Math.min(ext.minY, y)
+			ext.maxX = Math.max(ext.maxX, x + w)
+			ext.maxY = Math.max(ext.maxY, y + hgt)
+		} else extents.set(ns, { minX: x, minY: y, maxX: x + w, maxY: y + hgt })
+	}
+	return [...extents].map(([ns, ext]) => {
+		const width = ext.maxX - ext.minX + NS_PADDING_X * 2
+		const height = ext.maxY - ext.minY + NS_LABEL_HEIGHT + NS_PADDING_Y * 2
+		return flowNode(h, {
+			id: nsGroupId(ns),
+			type: "namespaceGroup",
+			position: { x: ext.minX - NS_PADDING_X, y: ext.minY - (NS_LABEL_HEIGHT + NS_PADDING_Y) },
+			measured: true,
+			focusable: false,
+			style: { width: `${width}px`, height: `${height}px`, "pointer-events": "none" },
+			children: [box(h, ns, getValueHue(ns) ?? 0)],
+		})
+	})
+}
