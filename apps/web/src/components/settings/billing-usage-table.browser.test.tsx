@@ -107,6 +107,33 @@ describe("BillingUsageTable", () => {
 		)
 	})
 
+	it("keeps the editor open on Escape while a save is in flight", async () => {
+		saveCaps.mockReturnValue(new Promise(() => {}))
+		render(<Harness canEdit />)
+
+		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
+		const input = screen.getByRole("spinbutton", { name: "Traces paid overage cap" })
+		fireEvent.change(input, { target: { value: "150" } })
+		fireEvent.click(screen.getByRole("button", { name: "Save" }))
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true),
+		)
+		fireEvent.keyDown(input, { key: "Escape" })
+
+		expect(screen.getByRole("spinbutton", { name: "Traces paid overage cap" })).toBeTruthy()
+	})
+
+	it("closes the editor on Escape when idle", () => {
+		render(<Harness canEdit />)
+
+		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
+		fireEvent.keyDown(screen.getByRole("spinbutton", { name: "Traces paid overage cap" }), {
+			key: "Escape",
+		})
+
+		expect(screen.queryByRole("spinbutton", { name: "Traces paid overage cap" })).toBeNull()
+	})
+
 	it("refuses a negative cap without calling the API", () => {
 		render(<Harness canEdit />)
 

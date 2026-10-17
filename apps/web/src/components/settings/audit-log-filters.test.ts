@@ -41,6 +41,25 @@ describe("parseAuditLogSearch", () => {
 		expect(hasAuditLogFilters(filters)).toBe(false)
 	})
 
+	it("keeps user, API key and agent actor ids", () => {
+		for (const actor of ["user_2fj3K9dLqWm8xYbT", "key_aXwpxqBkqtYwtBtmsGbR41", "actor_4CzLmR1pTx"]) {
+			expect(parseAuditLogSearch({ actor }).actorId).toBe(actor)
+		}
+	})
+
+	it("drops actor ids the app never writes", () => {
+		for (const actor of [
+			"user_abc|2026-01-01T00:00:00Z",
+			"dash_abc",
+			"user_",
+			"bob",
+			"key_abc def",
+			"user_abc/../x",
+		]) {
+			expect(parseAuditLogSearch({ actor }).actorId).toBeUndefined()
+		}
+	})
+
 	it("treats a since/until pair as a fixed range", () => {
 		expect(
 			parseAuditLogSearch({ since: "2026-10-01T00:00:00.000Z", until: "2026-10-02T00:00:00.000Z" })

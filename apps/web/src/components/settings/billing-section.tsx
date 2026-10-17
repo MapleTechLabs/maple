@@ -16,7 +16,7 @@ import { buildSpendModel, type SpendFeatureId } from "@/lib/billing/spend"
 import { maximumInvoiceCents, uncappedFeatures } from "@/lib/billing/controls"
 import { BillingCyclePanel, BillingCyclePanelSkeleton } from "./billing-cycle-panel"
 import { BillingUsageTable, BillingUsageTableSkeleton } from "./billing-usage-table"
-import { SpendChart, SpendChartSkeleton } from "./spend-chart"
+import { SpendChart, SpendChartError, SpendChartSkeleton } from "./spend-chart"
 import { BillingPlanSection } from "./billing-plan-section"
 import { AdminOnlyNotice } from "./admin-only-notice"
 import { CheckoutConfirmingPanel, CheckoutTimedOutNotice } from "./checkout-return-panel"
@@ -36,6 +36,7 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 	const plansResult = useAtomValue(billingPlansAtom)
 	const usageResult = useAtomValue(billingUsageAtom)
 	const dailySpendResult = useAtomValue(billingDailySpendAtom)
+	const refreshDailySpend = useAtomRefresh(billingDailySpendAtom)
 	const { openCustomerPortal } = useBillingActions()
 	const [editingCap, setEditingCap] = useState<SpendFeatureId | null>(null)
 	const usageRef = useRef<HTMLDivElement>(null)
@@ -121,6 +122,8 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 						chart={
 							Result.isInitial(dailySpendResult) ? (
 								<SpendChartSkeleton />
+							) : Result.isFailure(dailySpendResult) ? (
+								<SpendChartError error={dailySpendResult.cause} onRetry={refreshDailySpend} />
 							) : (
 								<SpendChart model={model} daily={daily} />
 							)
@@ -132,7 +135,7 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 			<div ref={usageRef} className="scroll-mt-6">
 				<SettingsSection
 					title="Usage"
-					description="Included usage resets each cycle. A cap limits paid overage for one feature; data past the cap is still recorded."
+					description="Included usage resets each cycle. A cap limits paid overage for one feature; once it is reached, new data for that feature is rejected until the cycle resets or the cap is raised."
 					framed={false}
 				>
 					{isLoading || model === null || customer === undefined ? (

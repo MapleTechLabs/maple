@@ -12,7 +12,6 @@ import { SegmentedBar } from "@maple/ui/components/ui/meter"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { formatCurrency } from "@maple/domain/format"
@@ -21,7 +20,7 @@ import { capApplies, parseCapInput, spendLimitFor, updateFeatureControls } from 
 import {
 	FEATURE_COLORS,
 	featureUnit,
-	formatRateLabel,
+	rateCaption,
 	SPEND_FEATURES,
 	type FeatureSpend,
 	type SpendFeatureId,
@@ -106,7 +105,8 @@ function CapEditor({
 						onChange={(event) => setRaw(event.target.value)}
 						onKeyDown={(event) => {
 							if (event.key === "Enter") submit()
-							if (event.key === "Escape") onDone()
+							// Cancel is disabled mid-save, so Escape must not close the editor either.
+							if (event.key === "Escape" && !saving) onDone()
 						}}
 						controlClassName="font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 					/>
@@ -153,7 +153,7 @@ function CapSummary({ feature, cap }: { readonly feature: FeatureSpend; readonly
 			</span>
 			<span className={cn("text-2xs", reached ? "text-severity-error" : "text-muted-foreground")}>
 				{reached
-					? "Cap reached, usage rejected"
+					? "Cap reached, new data rejected"
 					: feature.included === null
 						? "Paid overage"
 						: `Stops at ${withUnit(feature.featureId, feature.included + cap)}`}
@@ -254,7 +254,7 @@ export function BillingUsageTable({
 												: formatCurrency(feature.overageCents / 100, model.currency)}
 										</span>
 										<span className="font-mono text-2xs tabular-nums text-muted-foreground">
-											{formatRateLabel(feature) ?? EMPTY_VALUE}
+											{rateCaption(feature)}
 										</span>
 									</div>
 								</TableCell>
