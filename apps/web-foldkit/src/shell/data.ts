@@ -1,12 +1,8 @@
 import { InfraPresenceRequest } from "@maple/domain/http"
-import {
-	formatWarehouseDateTime,
-	QueryEngineExecuteBatchRequest,
-	QueryEngineExecuteRequest,
-	snapRangeForCache,
-} from "@maple/query-engine"
+import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { ServicesFacetsProbe } from "../data/services-facets-probe"
 import { MapleApiClient, MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
 import { fetchDashboardRows } from "./dashboards-shape"
 import { Message } from "./message"
@@ -104,7 +100,10 @@ export const LoadDashboards = Command.define("LoadDashboards", {
 		),
 })
 
-/** `NamespaceScopeList`: the same snapped 24 h services facets probe the overview runs. */
+/**
+ * `NamespaceScopeList`: the same snapped 24 h services facets probe the overview runs, read through
+ * the shared probe so an answer the Overview page already has is not requested again.
+ */
 export const LoadNamespaces = Command.define("LoadNamespaces", {
 	messages: [Message.SucceededLoadNamespaces, Message.FailedLoadNamespaces],
 	execute: Effect.gen(function* () {
@@ -113,19 +112,8 @@ export const LoadNamespaces = Command.define("LoadNamespaces", {
 			startTime: formatWarehouseDateTime(now - 24 * 60 * 60 * 1000),
 			endTime: formatWarehouseDateTime(now),
 		})
-		const request = new QueryEngineExecuteRequest({
-			...range,
-			query: { kind: "facets", source: "services" },
-		})
-		const response = yield* (yield* MapleInternalApiClient).queryEngine.executeBatch({
-			payload: new QueryEngineExecuteBatchRequest({ requests: [request] }),
-		})
-		const [outcome] = response.results
-		const rows =
-			outcome?.outcome === "success" && outcome.result.kind === "facets" ? outcome.result.data : []
-		const namespaces = rows
-			.filter((row) => row.facetType === "namespace" && row.name !== "")
-			.map((row) => row.name)
+		const response = yield* (yield* ServicesFacetsProbe).load(range)
+		const namespaces = response.data.namespaces.map((facet) => facet.name).filter((name) => name !== "")
 		return Message.SucceededLoadNamespaces({ namespaces })
 	}).pipe(failed(Message.FailedLoadNamespaces())),
 })

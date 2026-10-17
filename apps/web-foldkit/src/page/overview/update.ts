@@ -153,7 +153,7 @@ const alwaysSteps = (
 				requestKey(context.orgId, "getServicesFacets", { data: facetsWindow }),
 				mode,
 				(facets) => ({ facets }),
-				(key) => FetchFacets({ key, window: facetsWindow }),
+				(key) => FetchFacets({ key, window: facetsWindow, refresh: mode === "Refresh" }),
 			),
 		(model) =>
 			keyed(
@@ -332,8 +332,22 @@ const RETRY_SLOT = {
 	Refinement: "refinement",
 } as const satisfies Record<RetryTarget, keyof Model>
 
-const retry = (model: Model, context: PageContext, target: RetryTarget): Return =>
-	sync({ ...model, [RETRY_SLOT[target]]: Keyed.idle() }, context, "Load")
+const retry = (model: Model, context: PageContext, target: RetryTarget): Return => {
+	const { facetsWindow } = model
+	// Facets are shared with the shell through the probe, which keeps a failure until refreshed.
+	return target === "Facets" && facetsWindow !== null && model.facets.key !== null
+		? runSteps(model, [
+				(current) =>
+					keyed(
+						current.facets,
+						current.facets.key ?? "",
+						"Refresh",
+						(facets) => ({ facets }),
+						(key) => FetchFacets({ key, window: facetsWindow, refresh: true }),
+					),
+			])
+		: sync({ ...model, [RETRY_SLOT[target]]: Keyed.idle() }, context, "Load")
+}
 
 const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
 	const next = TimeRangePicker.update(model.timePicker, message)

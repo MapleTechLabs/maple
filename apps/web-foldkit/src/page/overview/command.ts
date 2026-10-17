@@ -5,10 +5,11 @@ import {
 	getOverviewTimeSeries,
 } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
-import { getServiceHealthSnapshot, getServicesFacets } from "@maple/web-data/warehouse/services"
+import { getServiceHealthSnapshot } from "@maple/web-data/warehouse/services"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../data/load-failure"
+import { ServicesFacetsProbe } from "../../data/services-facets-probe"
 import { TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { loadSignalPresences } from "../kit/signal-presence"
@@ -93,11 +94,15 @@ export type RefinementInput = typeof RefinementInput.Type
 
 // Fetches carry their request key back so `update` drops a superseded answer (S6).
 
+/** Through the shared probe: the shell's namespace list reads the same answer (`ServicesFacetsProbe`). */
 export const FetchFacets = Command.define("FetchOverviewFacets", {
-	args: { key: Schema.String, window: TimeWindow },
+	args: { key: Schema.String, window: TimeWindow, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
-	execute: ({ key, window }) =>
-		getServicesFacets({ data: window }).pipe(
+	execute: ({ key, window, refresh }) =>
+		Effect.gen(function* () {
+			const probe = yield* ServicesFacetsProbe
+			return yield* probe.load(window, { refresh })
+		}).pipe(
 			Effect.map(({ data }) => ({
 				environments: data.environments.map((facet) => facet.name),
 				services: data.services.map((facet) => facet.name),

@@ -45,6 +45,9 @@ export const positionerStyle = (maybePosition: Option.Option<PopupPosition>): Re
 			"--available-width": "100vw",
 			"--available-height": "100vh",
 			opacity: "0",
+			// Unmeasured and invisible at the origin: it must not catch the resting pointer either, or
+			// Chromium's after-layout mouse events highlight whichever item sits under it.
+			"pointer-events": "none",
 		}),
 		onSome: (position) => ({
 			position: "absolute",
