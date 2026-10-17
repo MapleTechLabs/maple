@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { FixedMetricSeries } from "../../charts/fixed-metric-series"
 import { card, cardHeader, cardPanel } from "../../ui/card"
 import { eyebrow } from "../../ui/eyebrow"
+import { icon } from "../../ui/icon"
 
 // `ReadonlyWidgetShell` (apps/web/src/components/dashboard-builder/widgets/widget-shell.tsx) in view
 // mode with no widget actions: title, hoisted legend chips, headline value, content and footer.
@@ -69,7 +70,36 @@ export type WidgetShellOptions = Readonly<{
 	legend: ReadonlyArray<FixedMetricSeries>
 	headerValue?: Html
 	footer?: ReadonlyArray<Html | string>
+	/** `titleHint`: the info icon after the title, a docs link when it has an `href`. */
+	titleHint?: Readonly<{ text: string; href?: string }>
+	/** `contentClassName`: replaces the panel's `flex-1 min-h-0 p-2` (an overlay opts out of the clip). */
+	contentClassName?: string
 }>
+
+// TODO(title-hint-tooltip): the hint's hover tooltip (`TooltipContent` with the text) is not ported.
+const titleHint = <M>(h: HtmlBuilder<M>, title: string, hint: Readonly<{ text: string; href?: string }>): Html =>
+	hint.href === undefined
+		? h.span(
+				[
+					h.AriaLabel(`About ${title}`),
+					h.Class("shrink-0 text-muted-foreground/60"),
+					h.DataAttribute("base-ui-tooltip-trigger", ""),
+					h.DataAttribute("slot", "tooltip-trigger"),
+				],
+				[icon(h, "CircleInfoIcon", { size: 12 })],
+			)
+		: h.a(
+				[
+					h.AriaLabel(`About ${title}`),
+					h.Class("shrink-0 text-muted-foreground/60 hover:text-foreground"),
+					h.DataAttribute("base-ui-tooltip-trigger", ""),
+					h.DataAttribute("slot", "tooltip-trigger"),
+					h.Href(hint.href),
+					h.Attribute("rel", "noreferrer"),
+					h.Attribute("target", "_blank"),
+				],
+				[icon(h, "CircleInfoIcon", { size: 12 })],
+			)
 
 export const widgetShell = <M>(h: HtmlBuilder<M>, options: WidgetShellOptions, content: Html): Html =>
 	card(
@@ -91,6 +121,7 @@ export const widgetShell = <M>(h: HtmlBuilder<M>, options: WidgetShellOptions, c
 								},
 								[options.title],
 							),
+							...(options.titleHint === undefined ? [] : [titleHint(h, options.title, options.titleHint)]),
 							...headerLegend(h, options.legend),
 							...(options.headerValue === undefined
 								? []
@@ -109,7 +140,7 @@ export const widgetShell = <M>(h: HtmlBuilder<M>, options: WidgetShellOptions, c
 				],
 				"py-2.5",
 			),
-			cardPanel(h, [content], cn("overflow-hidden", "flex-1 min-h-0 p-2")),
+			cardPanel(h, [content], cn("overflow-hidden", options.contentClassName ?? "flex-1 min-h-0 p-2")),
 			...(options.footer === undefined
 				? []
 				: [h.div([h.Class("shrink-0 px-3 pb-2.5 text-2xs text-muted-foreground")], options.footer)]),

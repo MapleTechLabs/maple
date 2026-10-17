@@ -24,6 +24,8 @@ export type DashboardPageOptions = Readonly<{
 	titleContent?: Html
 	/** The header's right side: `headerActions` and the time controls, already composed. */
 	actions?: Html
+	/** `DashboardLayout.Tabs`'s children: page tabs pinned under the header. */
+	tabs?: Html
 	scrollClassName?: string
 }>
 
@@ -86,10 +88,16 @@ export const dashboardPage = <M>(
 	children: ReadonlyArray<Html>,
 ): Html => {
 	const hasHeader = options.titleContent !== undefined || options.actions !== undefined
+	const sticky = [
+		...(hasHeader ? [pageHeader(h, options.titleContent, options.actions)] : []),
+		...(options.tabs === undefined
+			? []
+			: [h.div([h.DataAttribute("slot", "page-tabs"), h.Class("min-w-0")], [options.tabs])]),
+	]
 	return pageBody(h, [
 		...(options.filters === undefined ? [] : [filterRail(h, options.filters, options.filtersWidth)]),
 		pageContent(h, [
-			...(hasHeader ? [stickyArea(h, [pageHeader(h, options.titleContent, options.actions)])] : []),
+			...(sticky.length > 0 ? [stickyArea(h, sticky)] : []),
 			scrollArea(h, children, options.scrollClassName),
 		]),
 	])

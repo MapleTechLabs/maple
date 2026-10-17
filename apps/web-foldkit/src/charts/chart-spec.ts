@@ -105,9 +105,11 @@ export const ChartSpec = defineTaggedUnion({
 		color: Schema.String,
 		logScaleY: Schema.Boolean,
 	},
-	/** `ThroughputAreaChart`, `ErrorRateAreaChart`, `LatencyLineChart` (charts/area, charts/line). */
+	/** `ThroughputAreaChart`, `ErrorRateAreaChart`, `ApdexAreaChart`, `LatencyLineChart` (charts/area, charts/line). */
 	FixedMetric: {
-		chart: Schema.Literals(["Throughput", "ErrorRate", "Latency"]),
+		chart: Schema.Literals(["Throughput", "ErrorRate", "Latency", "Apdex"]),
+		/** `yAxisWidth`: a left-margin lock that aligns plot rects across a grid. */
+		marginLeft: Schema.optionalKey(Schema.Number),
 		rows: Schema.Array(FixedMetricRow),
 		/** Resolved series colours by series key; `border`/`background` are the chrome. */
 		colors: Schema.Record(Schema.String, Schema.String),

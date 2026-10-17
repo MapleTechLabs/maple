@@ -26,12 +26,18 @@ export const itemGroup = <M>(h: HtmlBuilder<M>, children: Children, className?: 
 /** `Item`; Base UI's `useRender` state writes `data-slot`, `data-variant` and `data-size`. */
 export const item = <M>(
 	h: HtmlBuilder<M>,
-	options: { readonly variant?: ItemVariant; readonly size?: ItemSize; readonly className?: string },
+	options: {
+		readonly variant?: ItemVariant
+		readonly size?: ItemSize
+		readonly className?: string
+		/** `render={<li />}`. */
+		readonly tag?: "div" | "li"
+	},
 	children: Children,
 ): Html => {
 	const variant = options.variant ?? "default"
 	const size = options.size ?? "default"
-	return h.div(
+	return h[options.tag ?? "div"](
 		[
 			h.Class(cn(itemVariants({ variant, size, className: options.className }))),
 			h.DataAttribute("slot", "item"),

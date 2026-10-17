@@ -20,6 +20,8 @@ export interface PlotFrameInputs {
 	readonly legendPlacement?: "bottom" | "right"
 	readonly footer?: Html
 	readonly overlay?: Html
+	/** The chart reports its plot geometry (`Message.RenderedPlot`) so the page can draw `overlay`. */
+	readonly reportPlot?: boolean
 	/**
 	 * `renderTooltipBody(...)` for the current tooltip datum, `None` while the tooltip is hidden. The
 	 * body's root carries `portal`, the Mount that moves it into the library's tooltip shell.
@@ -47,7 +49,14 @@ const plotBox = (
 			h.Class(cn("relative min-h-0 flex-1", sideLegend && "min-w-0")),
 			h.Attribute(PLOT_BOX_ATTRIBUTE, ""),
 			h.Attribute(CHART_SPEC_ATTRIBUTE, encodeChartSpec(inputs.spec)),
-			h.OnMount(MountChart({ chartId: inputs.chartId, ariaLabel: inputs.ariaLabel, renderer })),
+			h.OnMount(
+				MountChart({
+					chartId: inputs.chartId,
+					ariaLabel: inputs.ariaLabel,
+					renderer,
+					reportPlot: inputs.reportPlot ?? false,
+				}),
+			),
 		],
 		[
 			h.div(

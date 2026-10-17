@@ -44,6 +44,9 @@ const read = (key: string) => (row: TimeseriesRow) => {
 }
 
 const colorOf = (spec: FixedMetricSpec, key: string): string => spec.colors[key] ?? ""
+/** `margin: yAxisWidth == null ? undefined : { left: yAxisWidth }`. */
+const marginOf = (spec: FixedMetricSpec) =>
+	spec.marginLeft === undefined ? undefined : { left: spec.marginLeft }
 const chromeOf = (spec: FixedMetricSpec) => ({
 	border: colorOf(spec, "border"),
 	background: colorOf(spec, "background"),
@@ -127,6 +130,7 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 	})
 
 	const definition = defineChart({
+		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, throughputColor),
 			...(hasDashed ? [verticalGradient(fadedGradientId, throughputColor, 0.15, 0)] : []),
@@ -237,6 +241,7 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 		})
 	const hasDashed = dashed.length > 0
 	const definition = defineChart({
+		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, color),
 			...(hasDashed ? [verticalGradient(fadedGradientId, color, 0.15, 0)] : []),
@@ -285,6 +290,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 			strokeDasharray: dash ? partialDash : undefined,
 		})
 	const definition = defineChart({
+		margin: marginOf(spec),
 		marks: [
 			...series.map((entry) => line(solid, entry, false)),
 			...(dashed.length > 0 ? series.map((entry) => line(dashed, entry, true)) : []),
@@ -312,8 +318,68 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	}
 }
 
+/** `ApdexAreaChart`: the band and its top edge on a `[0, 1]` axis, the in-flight tail dashed. */
+const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
+	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
+	const { plotRows } = model
+	const color = colorOf(spec, "apdexScore")
+	const chrome = chromeOf(spec)
+	const { solid, dashed } = splitAtFirstPartial(plotRows, ["apdexScore"], model.trimOptions)
+	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
+	const gradientId = `${spec.gradientPrefix}-fill`
+	const fadedGradientId = `${spec.gradientPrefix}-fill-partial`
+	const value = valueOf("apdexScore")
+	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: string) =>
+		areaY(slice, {
+			id: fill === gradientId ? "apdex-area" : "apdex-area-partial",
+			x: at,
+			y: value,
+			y1: () => 0,
+			fill: `url(#${fill})`,
+			fillOpacity: FILL_OPACITY,
+			stroke: "none",
+		})
+	const edge = (slice: ReadonlyArray<TimeseriesRow>, partial: boolean) =>
+		lineY(slice, {
+			id: partial ? "apdex-partial" : "apdex",
+			x: at,
+			y: value,
+			stroke: color,
+			strokeWidth: STROKE_WIDTH,
+			strokeDasharray: partial ? partialDash : undefined,
+		})
+	const hasDashed = dashed.length > 0
+	const definition = defineChart({
+		margin: marginOf(spec),
+		gradients: [
+			verticalGradient(gradientId, color),
+			...(hasDashed ? [verticalGradient(fadedGradientId, color, 0.15, 0)] : []),
+		],
+		marks: [
+			band(solid, gradientId),
+			...(hasDashed ? [band(dashed, fadedGradientId)] : []),
+			edge(solid, false),
+			...(hasDashed ? [edge(dashed, true)] : []),
+			focusDot(plotRows, at, value, color, chrome),
+			focusCrosshair(chrome),
+		],
+		scales: {
+			x: timeseriesXAxis(model.axisContext),
+			y: timeseriesYAxis({ rows: plotRows, visibleKeys: ["apdexScore"], softMin: 0, softMax: 1 }).y,
+		},
+		focus: "group-x",
+		focusRing: false,
+		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>("pointer") : false,
+	})
+	const format = (score: number) => score.toFixed(2)
+	const series = [{ label: "Apdex", color, value: read("apdexScore"), format }]
+	return { definition, focusKeyOf: (point) => point.datum.bucket, tooltipOf: bucketTooltip(model, series) }
+}
+
 export const buildFixedMetric = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	switch (spec.chart) {
+		case "Apdex":
+			return apdexChart(spec)
 		case "Throughput":
 			return throughputChart(spec)
 		case "ErrorRate":

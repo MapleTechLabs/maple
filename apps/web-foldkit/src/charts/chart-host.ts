@@ -1,4 +1,4 @@
-import type { ChartBounds, ChartValue } from "@tanstack/charts"
+import type { ChartBounds, ChartValue, ResolvedScale } from "@tanstack/charts"
 import { createChartRendererAdapter } from "@tanstack/charts/adapter/renderer"
 import { canvasChartRenderer } from "@tanstack/charts/canvas"
 import { renderChartSvg } from "@tanstack/charts/svg"
@@ -24,10 +24,31 @@ import { buildSparkline } from "./definitions/sparkline"
 
 export type ChartRendererKind = "canvas" | "svg"
 
+/** A time x scale reduced to its affine map: the domain ends in epoch ms and their pixels. */
+export interface TimeAxis {
+	readonly domainStartMs: number
+	readonly domainEndMs: number
+	readonly rangeStart: number
+	readonly rangeEnd: number
+}
+
+const timeAxisOf = (scale: ResolvedScale | undefined): Option.Option<TimeAxis> => {
+	const start = scale?.domain[0]
+	const end = scale?.domain[scale.domain.length - 1]
+	return scale !== undefined && start instanceof Date && end instanceof Date
+		? Option.some({
+				domainStartMs: start.getTime(),
+				domainEndMs: end.getTime(),
+				rangeStart: scale.map(start),
+				rangeEnd: scale.map(end),
+			})
+		: Option.none()
+}
+
 export interface ChartHostCallbacks {
 	readonly onFocusChange: (maybeKey: Option.Option<string>) => void
 	readonly onTooltipChange: (maybeTooltip: Option.Option<ChartTooltip>) => void
-	readonly onRender: (bounds: ChartBounds) => void
+	readonly onRender: (bounds: ChartBounds, timeAxis: Option.Option<TimeAxis>) => void
 }
 
 export interface ChartHostOptions {
@@ -61,8 +82,9 @@ const hostFor = <S extends ChartSpec, TDatum, X extends ChartValue, Y extends Ch
 	const onTooltipBodyChange = (
 		target: { readonly points: Parameters<BuiltChart<TDatum, X, Y>["tooltipOf"]>[0] } | null,
 	) => callbacks.onTooltipChange(target === null ? Option.none() : current.built.tooltipOf(target.points))
-	const onRender = (context: { readonly scene: { readonly chart: ChartBounds } }) =>
-		callbacks.onRender(context.scene.chart)
+	const onRender = (context: {
+		readonly scene: { readonly chart: ChartBounds; readonly scales: Readonly<Record<string, ResolvedScale>> }
+	}) => callbacks.onRender(context.scene.chart, timeAxisOf(context.scene.scales.x))
 	const optionsFor = (height: number) => ({
 		renderer: chartRenderer,
 		definition: current.built.definition,
