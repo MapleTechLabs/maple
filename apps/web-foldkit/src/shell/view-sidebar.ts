@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { Option, Record } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { avatarFallback, badge, kbd } from "../ui/display"
 import { menuTriggerAttributes } from "../ui/dropdown-menu"
 import { icon } from "../ui/icon"
@@ -27,6 +27,12 @@ export const GROUP_LABEL = "h-6 text-muted-foreground"
 const COLLAPSED_AVATAR_ROW = "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-1!"
 
 const OPEN_STATE = "data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+
+/** The collapsed rail's tooltip trigger for a row titled `title` (`SidebarMenuButton tooltip`). */
+export type RailTip = (title: string) => ReadonlyArray<ChildAttribute>
+
+/** The expanded rail and the mobile sheet hide the tooltips. */
+export const NO_TIP: RailTip = () => []
 
 export const isMenuOpen = (model: Model, menu: Menu): boolean =>
 	Option.exists(model.openMenu, (open) => isSameMenu(open.menu, menu))
@@ -85,7 +91,7 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 	])
 
 /** `SearchRow`: the ⌘K entry (the palette itself is not ported yet). */
-const searchRow = (h: HtmlBuilder<Message>): Html =>
+const searchRow = (h: HtmlBuilder<Message>, tip: RailTip): Html =>
 	sidebarMenu(h, undefined, [
 		sidebarMenuItem(h, undefined, [
 			sidebarMenuButton(
@@ -94,6 +100,7 @@ const searchRow = (h: HtmlBuilder<Message>): Html =>
 					className:
 						"border border-sidebar-border bg-background text-muted-foreground hover:bg-background hover:text-foreground",
 					hasTooltip: true,
+					attributes: tip("Search"),
 				},
 				[
 					icon(h, "MagnifierIcon", { size: 16 }),
@@ -104,14 +111,15 @@ const searchRow = (h: HtmlBuilder<Message>): Html =>
 		]),
 	])
 
-export const shellSidebarHeader = (h: HtmlBuilder<Message>, model: Model): Html =>
-	sidebarHeader(h, [orgSwitcher(h, model), searchRow(h)])
+export const shellSidebarHeader = (h: HtmlBuilder<Message>, model: Model, tip: RailTip = NO_TIP): Html =>
+	sidebarHeader(h, [orgSwitcher(h, model), searchRow(h, tip)])
 // FOOTER
 
 const footerNavRow = (
 	h: HtmlBuilder<Message>,
 	currentPath: string,
 	options: Readonly<{ href: string; title: string; icon: "GridIcon" | "GearIcon" }>,
+	tip: RailTip,
 ): Html =>
 	sidebarMenuItem(h, undefined, [
 		sidebarMenuButton(
@@ -121,6 +129,7 @@ const footerNavRow = (
 				isActive: currentPath === options.href || currentPath.startsWith(`${options.href}/`),
 				link: { href: options.href, currentPath },
 				hasTooltip: true,
+				attributes: tip(options.title),
 			},
 			[icon(h, options.icon, { size: 18 }), h.span([], [options.title])],
 		),
@@ -184,11 +193,17 @@ export const shellSidebarFooter = (
 	model: Model,
 	currentPath: string,
 	avatar: Html,
+	tip: RailTip = NO_TIP,
 ): Html =>
 	sidebarFooter(h, [
 		sidebarMenu(h, undefined, [
-			footerNavRow(h, currentPath, { href: "/integrations", title: "Integrations", icon: "GridIcon" }),
-			footerNavRow(h, currentPath, { href: "/settings", title: "Settings", icon: "GearIcon" }),
+			footerNavRow(
+				h,
+				currentPath,
+				{ href: "/integrations", title: "Integrations", icon: "GridIcon" },
+				tip,
+			),
+			footerNavRow(h, currentPath, { href: "/settings", title: "Settings", icon: "GearIcon" }, tip),
 		]),
 		h.div([h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")], [footerCluster(h, model, avatar)]),
 	])

@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
 import { PopupPosition } from "../ui/anchor"
+import * as Tooltip from "../ui/tooltip"
 import { PinnedDashboardRow } from "./dashboards-shape"
 
 /** The shell's dropdown menus; a collapsed-rail section menu is keyed by its section title. */
@@ -55,6 +56,7 @@ export const Message = defineMessageUnion({
 	FailedLoadDashboards: { orgId: Schema.String },
 	SucceededLoadNamespaces: { namespaces: Schema.Array(Schema.String) },
 	FailedLoadNamespaces: {},
+	GotRailTooltipMessage: { message: Tooltip.Message },
 })
 export type Message = typeof Message.Type
 

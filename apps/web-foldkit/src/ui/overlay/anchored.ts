@@ -1,5 +1,5 @@
 import { Array, Effect, Option, Queue, Stream } from "effect"
-import { anchorPosition, type Placed, type PositionConfig } from "./position"
+import { anchorPosition, type Placed, type PositionConfig, type Side } from "./position"
 import { lockBodyScroll, manageFocus, markOutside, portalToBody } from "./portal"
 
 /**
@@ -21,10 +21,13 @@ export type AnchoredOptions = Readonly<{
 	markOutside: Option.Option<Readonly<{ mark: boolean; ariaHidden: boolean; keep?: ReadonlyArray<string> }>>
 	lockScroll: boolean
 	focus: Option.Option<
-		Readonly<{ returnFocusId: Option.Option<string>; initialFocus: "first-tabbable" | "popup" | "none" }>
+		Readonly<{
+			returnFocusId: Option.Option<string>
+			initialFocus: "first-tabbable" | "popup" | "highlighted" | "none"
+		}>
 	>
 	/** Run after each placement: variables a component's positioner adds (Popover's size). */
-	afterPlace?: (positioner: HTMLElement, popup: HTMLElement) => void
+	afterPlace?: (positioner: HTMLElement, popup: HTMLElement, side: Side) => void
 	/** Places the popup itself (Select aligned with its trigger); true skips the anchored coordinates. */
 	placeInstead?: (positioner: HTMLElement, popup: HTMLElement) => boolean
 }>
@@ -72,7 +75,7 @@ export const anchoredPopup = (root: Element, options: AnchoredOptions): Stream.S
 			const placements = anchorPosition(
 				positioner,
 				options.config,
-				(placed) => afterPlace?.(placed, popup),
+				(placed, side) => afterPlace?.(placed, popup, side),
 				(placed) => placeInstead?.(placed, popup) ?? false,
 			).pipe(Stream.map((placed): AnchoredEvent => ({ _tag: "Placed", placed })))
 			return Stream.concat(

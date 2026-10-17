@@ -3,10 +3,10 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kitPage, kitSection } from "../kit-layout"
 import * as ToastView from "../../../ui/toast-view"
-import { kitHoverCard, kitPopover } from "./cards"
+import { kitHoverCard, kitPopover, kitTooltip } from "./cards"
 import { kitAlertDialog, kitDialog, kitSheet } from "./dialogs"
 import { kitCommand } from "./command"
-import { kitContextMenu } from "./menus"
+import { kitContextMenu, kitDropdownMenu } from "./menus"
 import { kitAutocomplete, kitComboboxChips, kitSelect } from "../pickers"
 import { Message, type Model, type OverlayItem, toastTypeOf } from "./model"
 
@@ -23,8 +23,12 @@ const renderItem = (h: H, model: Model, item: OverlayItem): Html => {
 			return kitAlertDialog(h, model.alertDialog)
 		case "popover":
 			return kitPopover(h, model.popover)
+		case "tooltip":
+			return kitTooltip(h, model.tooltip)
 		case "hover-card":
 			return kitHoverCard(h, model.hoverCard)
+		case "dropdown-menu":
+			return kitDropdownMenu(h, model)
 		case "context-menu":
 			return kitContextMenu(h, model.contextMenu)
 		case "select":

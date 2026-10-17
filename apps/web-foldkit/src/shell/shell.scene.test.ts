@@ -1,3 +1,4 @@
+import * as Animation from "@foldkit/ui/animation"
 import { Option } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import {
@@ -8,6 +9,7 @@ import {
 	expectHandled,
 	expectOutMessage,
 	given,
+	hover,
 	keydown,
 	Mount,
 	role,
@@ -23,6 +25,7 @@ import { Menu, Message, OutMessage } from "./message"
 import { init, type Model } from "./model"
 import { PositionMenu } from "./mounts"
 import { update } from "./update"
+import * as Tooltip from "../ui/tooltip"
 import { CheckDeployedCommit, ReloadPage } from "./version"
 import { frameView, menuLayerView, sheetLayerView } from "./view"
 
@@ -86,6 +89,27 @@ describe("sidebar collapse", () => {
 			click(toggle),
 			Command.resolve(SaveSidebarState, Message.CompletedSaveSidebarState()),
 			expect(sidebar).toHaveAttr("data-state", "expanded"),
+		)
+	})
+
+	test("on the collapsed rail a row shows its title as a tooltip after the open delay", () => {
+		const settings = role("link", { name: "Settings" })
+		scene(
+			{ update, view },
+			given(signedIn({ isSidebarOpen: false })),
+			hover(settings),
+			Command.resolve(Tooltip.WaitOpenDelay, Tooltip.Message.ElapsedOpenDelay({ generation: 1 })),
+			Mount.resolve(Tooltip.MountTooltip, Tooltip.Message.CompletedMountTooltip()),
+			Command.resolve(
+				Animation.WaitForPaint,
+				Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+			),
+			Command.resolve(
+				Animation.WaitForAnimationSettled,
+				Animation.Message.EndedAnimation({ generation: 1 }),
+			),
+			expect(settings).toHaveAttr("data-popup-open", ""),
+			expect(selector('[data-slot="tooltip-popup"]')).toHaveText("Settings"),
 		)
 	})
 

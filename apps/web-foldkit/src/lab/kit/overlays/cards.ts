@@ -2,6 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import * as HoverCard from "../../../ui/hover-card"
 import * as Popover from "../../../ui/popover"
+import * as Tooltip from "../../../ui/tooltip"
 import { Message } from "./model"
 
 // apps/web/src/lab/kit/overlays-dialogs.tsx `KitPopover` and `KitHoverCard`.
@@ -33,6 +34,25 @@ export const kitHoverCard = (h: H, model: HoverCard.Model): Html =>
 			],
 		},
 		toParentMessage: (message) => Message.GotHoverCardMessage({ message }),
+	})
+
+// `KitTooltip`: `<Tooltip defaultOpen>` on an outline button.
+export const kitTooltip = (h: H, model: Tooltip.Model): Html =>
+	h.submodel({
+		slotId: "tooltip",
+		model,
+		view: Tooltip.view,
+		viewInputs: {
+			toView: ({ trigger, portal }) =>
+				itemRow(h, [
+					button(h, { variant: "outline", slot: "tooltip-trigger", attributes: trigger() }, [
+						"Hover target",
+					]),
+					...(portal === null ? [] : [portal]),
+				]),
+			toContent: () => ["Last refreshed 2 minutes ago"],
+		},
+		toParentMessage: (message) => Message.GotTooltipMessage({ message }),
 	})
 
 export const kitPopover = (h: H, model: Popover.Model): Html =>

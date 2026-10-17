@@ -9,6 +9,7 @@ import {
 	sidebarFooterStyles,
 	sidebarGapDefaultStyles,
 	sidebarGapStyles,
+	sidebarGroupActionStyles,
 	sidebarGroupContentStyles,
 	sidebarGroupLabelStyles,
 	sidebarGroupStyles,
@@ -24,11 +25,13 @@ import {
 	sidebarMenuSubButtonStyles,
 	sidebarMenuSubItemStyles,
 	sidebarMenuSubStyles,
+	sidebarSeparatorStyles,
 	sidebarTriggerLabelStyles,
 	sidebarTriggerStyles,
 	sidebarWrapperStyles,
 } from "@maple/ui/styles/ui/sidebar"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { separatorStyles } from "@maple/ui/styles/ui/separator"
+import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"
 import { scrollArea } from "./scroll-area"
@@ -38,7 +41,7 @@ import { scrollArea } from "./scroll-area"
 export type SidebarState = "expanded" | "collapsed"
 
 type Children = ReadonlyArray<Html | string>
-type Attributes<Message> = ReadonlyArray<Attribute<Message>>
+type Attributes<Message> = ReadonlyArray<Attribute<Message> | ChildAttribute>
 
 const slot = <Message>(h: HtmlBuilder<Message>, name: string): ReadonlyArray<Attribute<Message>> => [
 	h.DataAttribute("sidebar", name),
@@ -50,10 +53,11 @@ export const sidebarWrapper = <Message>(
 	h: HtmlBuilder<Message>,
 	children: Children,
 	attributes: Attributes<Message> = [],
+	className?: string,
 ): Html =>
 	h.div(
 		[
-			h.Class(cn(sidebarWrapperStyles)),
+			h.Class(cn(sidebarWrapperStyles, className)),
 			h.DataAttribute("slot", "sidebar-wrapper"),
 			h.Style({ "--sidebar-width": "16rem", "--sidebar-width-icon": "3rem" }),
 			...attributes,
@@ -76,6 +80,8 @@ export const sidebarDesktop = <Message>(
 	h: HtmlBuilder<Message>,
 	state: SidebarState,
 	children: Children,
+	/** `<Sidebar className>`: lands on the fixed container. */
+	className?: string,
 ): Html =>
 	h.div(
 		[
@@ -97,7 +103,12 @@ export const sidebarDesktop = <Message>(
 			h.div(
 				[
 					h.Class(
-						cn(sidebarContainerStyles, sidebarContainerLeftStyles, sidebarContainerDefaultStyles),
+						cn(
+							sidebarContainerStyles,
+							sidebarContainerLeftStyles,
+							sidebarContainerDefaultStyles,
+							className,
+						),
 					),
 					h.DataAttribute("slot", "sidebar-container"),
 				],
@@ -149,6 +160,38 @@ export const sidebarGroupContent = <Message>(h: HtmlBuilder<Message>, children: 
 			h.DataAttribute("slot", "sidebar-group-content"),
 		],
 		children,
+	)
+
+/** `<SidebarGroupAction aria-label>`: the icon button in a group label's corner. */
+export const sidebarGroupAction = <Message>(
+	h: HtmlBuilder<Message>,
+	options: Readonly<{ ariaLabel: string; attributes?: Attributes<Message> }>,
+	children: Children,
+): Html =>
+	h.button(
+		[
+			h.AriaLabel(options.ariaLabel),
+			h.Class(cn(...sidebarGroupActionStyles)),
+			h.DataAttribute("sidebar", "group-action"),
+			h.DataAttribute("slot", "sidebar-group-action"),
+			h.Type("button"),
+			...(options.attributes ?? []),
+		],
+		children,
+	)
+
+/** `<SidebarSeparator>`: Base UI's horizontal Separator in the sidebar's border colour. */
+export const sidebarSeparator = <Message>(h: HtmlBuilder<Message>): Html =>
+	h.div(
+		[
+			h.AriaOrientation("horizontal"),
+			h.Class(cn(separatorStyles, sidebarSeparatorStyles)),
+			h.DataAttribute("orientation", "horizontal"),
+			h.DataAttribute("sidebar", "separator"),
+			h.DataAttribute("slot", "sidebar-separator"),
+			h.Role("separator"),
+		],
+		[],
 	)
 
 export const sidebarMenu = <Message>(
@@ -239,7 +282,7 @@ export const sidebarMenuButton = <Message>(
 	const size = options.size ?? "default"
 	const linkActive = options.link !== undefined && isLinkActive(options.link.currentPath, options.link.href)
 	const className = cn(sidebarMenuButtonVariants({ size, variant: "default" }), options.className)
-	const attributes: Array<Attribute<Message>> = [
+	const attributes: Array<Attribute<Message> | ChildAttribute> = [
 		h.Class(linkActive ? `${className} active` : className),
 		h.DataAttribute("active", String(options.isActive ?? false)),
 		...(options.hasTooltip === true ? [h.DataAttribute("base-ui-tooltip-trigger", "")] : []),
@@ -263,10 +306,11 @@ export const sidebarMenuButton = <Message>(
 /** `<SidebarMenuSubButton size="md" render={<Link />}>`. */
 export const sidebarMenuSubButton = <Message>(
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ className?: string; isActive: boolean; link: LinkTarget }>,
+	/** `link` is a router link (active by path); `href` a plain anchor (`<SidebarMenuSubButton href>`). */
+	options: Readonly<{ className?: string; isActive: boolean; link?: LinkTarget; href?: string }>,
 	children: Children,
 ): Html => {
-	const linkActive = isLinkActive(options.link.currentPath, options.link.href)
+	const linkActive = options.link !== undefined && isLinkActive(options.link.currentPath, options.link.href)
 	const className = cn(
 		...sidebarMenuSubButtonStyles,
 		sidebarMenuSubButtonMdStyles,
@@ -275,7 +319,7 @@ export const sidebarMenuSubButton = <Message>(
 	)
 	return h.a(
 		[
-			h.Href(options.link.href),
+			h.Href(options.link?.href ?? options.href ?? ""),
 			...(linkActive ? [h.AriaCurrent("page"), h.DataAttribute("status", "active")] : []),
 			h.Class(linkActive ? `${className} active` : className),
 			h.DataAttribute("active", String(options.isActive)),
@@ -288,8 +332,15 @@ export const sidebarMenuSubButton = <Message>(
 }
 
 /** `<SidebarInset>`: the page column beside the sidebar. */
-export const sidebarInset = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
-	h.main([h.Class(cn(...sidebarInsetStyles)), h.DataAttribute("slot", "sidebar-inset")], children)
+export const sidebarInset = <Message>(
+	h: HtmlBuilder<Message>,
+	children: Children,
+	className?: string,
+): Html =>
+	h.main(
+		[h.Class(cn(...sidebarInsetStyles, className)), h.DataAttribute("slot", "sidebar-inset")],
+		children,
+	)
 
 /** `<SidebarTrigger className="-ml-1">`: a ghost icon button showing which way the rail moves. */
 export const sidebarTrigger = <Message>(
