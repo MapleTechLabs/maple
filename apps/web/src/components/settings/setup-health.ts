@@ -105,11 +105,7 @@ export function setupHealthAction(check: Check): SetupHealthAction | null {
 		case "CFG-DASH-01":
 			return link("Browse templates", { to: "/dashboards/templates" })
 		case "CFG-SAMP-01":
-			return link("Review sampling", {
-				to: "/settings",
-				search: { tab: "ingestion" },
-				hash: "sampling",
-			})
+			return { kind: "docs", label: "Read sampling guide", href: docsUrl("samplingThroughput") }
 		case "CFG-ATTR-01":
 		case "CFG-MAP-01":
 		case "CFG-MAP-02":
