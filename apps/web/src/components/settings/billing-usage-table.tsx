@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, type Dispatch, type SetStateAction } from "react"
 
 import type { BillingCustomer } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
@@ -68,25 +68,31 @@ function CapEditor({
 	feature,
 	existing,
 	onDone,
+	onSaved,
+	onSavingChange,
 }: {
 	readonly feature: FeatureSpend
 	readonly existing: number | undefined
 	readonly onDone: () => void
+	/** Runs after a successful save; may fire after the user moved on to another row. */
+	readonly onSaved: () => void
+	readonly onSavingChange: (saving: boolean) => void
 }) {
 	const [raw, setRaw] = useState(existing === undefined ? "" : String(existing))
 	const [save, saving] = useMutationAction(updateBillingControlsMutation, {
 		success: `${feature.label} cap saved`,
 		error: "The overage cap could not be saved.",
-		onSuccess: onDone,
+		onSuccess: onSaved,
 	})
 	const parsed = parseCapInput(raw)
 
 	const submit = () => {
-		if (!parsed.valid) return
+		if (!parsed.valid || saving) return
+		onSavingChange(true)
 		void save({
 			payload: updateFeatureControls({ featureId: feature.featureId, overageLimit: parsed.cap }),
 			reactivityKeys: [BILLING_CUSTOMER_KEY],
-		})
+		}).finally(() => onSavingChange(false))
 	}
 
 	return (
@@ -173,12 +179,17 @@ export function BillingUsageTable({
 	canEdit,
 	editing,
 	onEditingChange,
+	saving,
+	onSavingChange,
 }: {
 	readonly model: SpendModel
 	readonly customer: BillingCustomer
 	readonly canEdit: boolean
 	readonly editing: SpendFeatureId | null
-	readonly onEditingChange: (featureId: SpendFeatureId | null) => void
+	readonly onEditingChange: Dispatch<SetStateAction<SpendFeatureId | null>>
+	/** A cap save is in flight; other rows cannot open their editor until it settles. */
+	readonly saving: boolean
+	readonly onSavingChange: (saving: boolean) => void
 }) {
 	return (
 		<Panel>
@@ -264,6 +275,12 @@ export function BillingUsageTable({
 											feature={feature}
 											existing={cap}
 											onDone={() => onEditingChange(null)}
+											onSaved={() =>
+												onEditingChange((current) =>
+													current === feature.featureId ? null : current,
+												)
+											}
+											onSavingChange={onSavingChange}
 										/>
 									) : (
 										<div className="flex items-center justify-between gap-2">
@@ -273,6 +290,7 @@ export function BillingUsageTable({
 													size="sm"
 													variant="ghost"
 													aria-label={`Edit ${feature.label} cap`}
+													disabled={saving}
 													onClick={() => onEditingChange(feature.featureId)}
 												>
 													Edit

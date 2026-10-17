@@ -53,6 +53,29 @@ describe("useSettingsDraft commit", () => {
 		expect(result.current.isDirty).toBe(true)
 	})
 
+	it("releases the edits when the save normalized them to the stored value", () => {
+		const { result, rerender } = renderDraft({ rate: 50 })
+		act(() => result.current.setDraft({ rate: 50.0001 }))
+		expect(result.current.isDirty).toBe(true)
+
+		act(() => result.current.commit({ rate: 50 }))
+		rerender({ saved: { rate: 50 } })
+		expect(result.current.draft).toEqual({ rate: 50 })
+		expect(result.current.isDirty).toBe(false)
+
+		rerender({ saved: { rate: 60 } })
+		expect(result.current.draft).toEqual({ rate: 60 })
+	})
+
+	it("keeps the edits while the stored value matches neither the edits nor the sent value", () => {
+		const { result, rerender } = renderDraft({ rate: 10 })
+		act(() => result.current.setDraft({ rate: 25.5 }))
+		act(() => result.current.commit({ rate: 25 }))
+		rerender({ saved: { rate: 10 } })
+		expect(result.current.draft).toEqual({ rate: 25.5 })
+		expect(result.current.isDirty).toBe(false)
+	})
+
 	it("discard still drops the edits immediately", () => {
 		const { result } = renderDraft({ rate: 10 })
 		act(() => result.current.setDraft({ rate: 50 }))

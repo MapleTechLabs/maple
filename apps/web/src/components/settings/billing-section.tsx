@@ -39,6 +39,7 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 	const refreshDailySpend = useAtomRefresh(billingDailySpendAtom)
 	const { openCustomerPortal } = useBillingActions()
 	const [editingCap, setEditingCap] = useState<SpendFeatureId | null>(null)
+	const [savingCap, setSavingCap] = useState(false)
 	const usageRef = useRef<HTMLDivElement>(null)
 	const checkoutReturn = useCheckoutReturn()
 
@@ -64,6 +65,7 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 	const manageBilling = () => openCustomerPortal({ returnUrl: window.location.href })
 
 	const setCaps = () => {
+		if (savingCap) return
 		setEditingCap(uncapped[0]?.featureId ?? null)
 		usageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
 	}
@@ -119,6 +121,7 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 						maximumInvoiceCents={maximumInvoice}
 						uncappedCount={uncapped.length}
 						onSetCaps={isAdmin ? setCaps : undefined}
+						setCapsDisabled={savingCap}
 						chart={
 							Result.isInitial(dailySpendResult) ? (
 								<SpendChartSkeleton />
@@ -147,6 +150,8 @@ export function BillingSection({ isAdmin }: { isAdmin: boolean }) {
 							canEdit={isAdmin}
 							editing={editingCap}
 							onEditingChange={setEditingCap}
+							saving={savingCap}
+							onSavingChange={setSavingCap}
 						/>
 					)}
 				</SettingsSection>
