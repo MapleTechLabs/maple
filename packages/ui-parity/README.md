@@ -37,7 +37,10 @@ parity run                    # capture legacy and foldkit, diff, write the repo
   `VITE_MAPLE_REGION_APP_URLS` are stripped from the environment.
 - **Auth flavors.** `--auth self_hosted` (default) or `--auth clerk` builds with that
   `VITE_MAPLE_AUTH_MODE`; the Clerk flavor lands in `<build>--clerk/`. A capture picks the flavor from
-  its dataset's `auth`.
+  its dataset's `auth`. Scenarios on a Clerk dataset need that flavor: `run`, `selfcheck` and
+  `capture` build a missing one first from the self-hosted build's stamp (same target, same pinned
+  ref; working-tree targets from the tree as it is then). An existing Clerk flavor is not rebuilt,
+  so after changing the app run `parity build <target> --auth clerk` yourself.
 - **Custom outputs.** `--out <name>` builds into `.parity/builds/<name>/`, and every command that takes
   a build (`run --baseline/--candidate`, `selfcheck --target`, `capture`) accepts that name. Use it to
   compare a working-tree change against a clean build of the same target.
@@ -76,20 +79,26 @@ lab dials panel and the service map's layout debug overlay. No `apps/web` source
   that the stub lacks are recorded per capture as `clerkUnknown`.
 - **Theme.** localStorage `maple-theme` = `light` | `dark` (the pre-paint script in `apps/web/index.html`
   and `@maple/ui/hooks/use-theme`), plus Playwright's `colorScheme`.
-- **Determinism** (`src/runtime/stabilize.ts`). Frozen clock (`dataset.now`, or `NO_DATASET_NOW` without
-  a dataset), UTC, en-US, `deviceScaleFactor: 1`, `reducedMotion`, seeded `Math.random`, intervals
+- **Determinism** (`src/runtime/stabilize.ts`). Frozen `Date` (`dataset.now`, or `NO_DATASET_NOW`
+  without a dataset), set by `installDeterminism` itself. Timers and `requestAnimationFrame` stay
+  native: Playwright's `page.clock` fakes rAF as a 16 ms timer that runs outside rendering steps, which
+  made virtualized lists race ResizeObserver under load. UTC, en-US, `deviceScaleFactor: 1`, `reducedMotion`, seeded `Math.random`, intervals
   clamped to one per frame, CSS animations and transitions frozen at their end state, infinite Web
   Animations paused after their first iteration, SMIL at t=0, carets and scrollbars hidden, service
   workers blocked. A capture waits for fonts and every image to decode, then 400ms without DOM
   mutations, then two consecutive frames in which no scroll offset, scroll extent, image or **canvas
   pixel hash** changes (charts draw on `<canvas>`). Then the screenshot is retaken until two in a row
-  are byte-identical. WebGL canvases without `preserveDrawingBuffer` read back blank, so only their
+  are byte-identical. Full-page captures (`fullPage`, default true) first grow the viewport until no
+  page-sized inner scroller overflows (`h-screen` layouts scroll a container, not the document), up
+  to 12,000 px, settling after each step. WebGL canvases without `preserveDrawingBuffer` read back blank, so only their
   layout counts.
 - **Healthy captures only.** A capture that crashes, fails a step, logs console errors, or (with a real
   backend) hits an unmocked endpoint fails its variant even when the pixels match.
 - **Behavior.** The call log as of the screenshot (`FixtureBackend.takeCalls`) is stored in
   `<variant>.json` as `calls` and diffed as a multiset per tag (`src/behavior.ts`): order ignored, keys
-  sorted, v4 UUIDs replaced by `<random-uuid>`. Any difference fails the variant.
+  sorted, v4 UUIDs replaced by `<random-uuid>`. Any difference fails the variant. `Scenario.pageCalls`
+  lists tag prefixes (`warehouse:`, `shape:alert_`) left out of the diff while a shell scenario's page
+  is still a placeholder; the shell's own calls still count.
 - **Accessibility.** `body` ARIA snapshots are diffed as multisets of lines and reported in an
   "a11y deltas" section. Report-only unless `--strict-a11y`.
 - **Two kinds of diff** (`src/compare.ts`). Pixels: strict (any channel) and perceptual (pixelmatch,
@@ -121,8 +130,9 @@ parity build foldkit && parity run --filter lab-infra
 3. Open `index.html` in the same run folder for swipe, onion skin, blink, side-by-side and diff
    (keys `1`-`5`, `j`/`k` to step). Click a red region to highlight the elements responsible.
 
-`parity compare --run <run>` re-diffs captures without capturing again. `--filter` matches an area
-exactly (`lab`, `routes`) or a variant id substring (`lab-infra--desktop--dark`). The exit code is
+`parity compare --run <run>` re-diffs captures without capturing again. `--filter` takes
+comma-separated terms; a variant matches when any term equals its area (`lab`, `routes`) or is a
+substring of its id (`lab-infra--desktop--dark`): `--filter route,lab,kit`. The exit code is
 non-zero on any `fail` or `missing`.
 
 ### Check that the harness sees a change
@@ -159,10 +169,45 @@ Add it to the area file `src/scenarios/<area>.ts` (an `AreaModule`) and list a n
 drives both apps; a step that works in one app and not the other is a parity bug. Datasets belong to
 the fixture backend (`src/fixtures/`); a scenario names one by `dataset`.
 
+Scenario options beyond `path`, `dataset` and `steps` (`src/scenarios/types.ts`):
+
+- `targets`: the targets the screen exists in. `run`, `selfcheck` and `capture` skip the scenario
+  unless every build they capture is one of them (`data-probe` is `["foldkit"]`).
+- `faults` and `settle`: timed and error states, below.
+- `pageCalls`, `fullPage`, `mask`, `viewports`, `themes`.
+
+Two areas are generated rather than listed:
+
 - `lab`: every `session: "none"` entry of `apps/web/src/lab/registry.ts` plus `/lab`, parsed from the
-  registry source so new lab pages are picked up, desktop, light and dark. No dataset, no backend.
+  registry source so new lab pages are picked up, desktop, light and dark, signed in on dataset
+  `default` (the root shell calls the API on lab pages too). `lab-canvas.ts` adds interaction states.
 - `routes`: core app routes on dataset `default`, `/sign-in` on `signed-out`, and the session-only
   `/lab/query-builder`. They pass once the fixture backend serves those datasets.
+
+### Fixture areas
+
+Each product area's fixtures live in `src/fixtures/areas/<area>.ts` exporting `fixtureArea`
+(`src/fixtures/areas.ts`), discovered at startup like the scenario areas, so parallel work never edits
+a shared file: built-in endpoint answers for every dataset (a dataset's own `endpoints` still win),
+rows appended to the `default` dataset's Electric tables, extra datasets, and raw routes outside the
+HttpApis (chat SSE). Two areas answering one endpoint is a startup error.
+
+### Timed and error states
+
+`Faults` (`src/contract.ts`) delay or fail HttpApi endpoints by tag prefix, the longest prefix
+winning: `delays: { "queryEngine.executeBatch": 60_000 }` holds matching requests (after logging
+them), `failures: { "queryEngine.executeBatch": { status: 502, body: { _tag, message } } }` answers
+with that encoded error, which the app decodes when the endpoint declares it. A dataset's `faults`
+apply to every scenario on it; `Scenario.faults` travel in the `x-parity-faults` header and override
+them per prefix. Electric shapes and raw routes are not covered.
+
+- `settle: "held"` captures a loading state: before each settle point the capture waits until every
+  request in flight to the API is one the backend is holding (`FixtureBackend.held`), then settles
+  visually as usual. The default `"quiet"` would also work most of the time, but could screenshot
+  while an unheld request is still arriving.
+- Chromium's `Failed to load resource ... status of <n>` console line is expected for a status the
+  scenario injects and does not fail the variant (scenario-level `failures` only).
+- Examples: `services-loading` and `services-error` in `src/scenarios/services-page.ts`.
 
 ## Output
 
@@ -178,4 +223,6 @@ the fixture backend (`src/fixtures/`); a scenario names one by `dataset`.
 - Chromium only, and font rendering differs across OSes: compare captures made on the same machine.
 - The `routes` area and the Clerk flavor need the fixture backend; the Clerk stub no-ops Clerk's
   prebuilt components (`mountSignIn` and friends), so those containers capture empty.
+- `lab-bench-service-map-small` can capture an unfitted camera: `service-map-canvas.tsx` marks the
+  fit done before its rAF runs, and a re-render in between cancels the rAF. An app race, seen once.
 - `perf` from `docs/foldkit-migration.md` §3 is not ported yet.

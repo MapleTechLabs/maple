@@ -5,7 +5,8 @@ Status: **passed** · 2026-10-17 · Phase 1b, from `fk/parity-harness`
 `/lab/kit/overlays` and every `?item=` page (`apps/web-foldkit/src/lab/entries/kit/overlays.ts`)
 against legacy-head, light and dark: **34/34 identical**, 0 strict px, 0 behavior and 0 a11y deltas
 (index, dialog, alert-dialog, sheet, popover, hover-card, context-menu, select, combobox,
-autocomplete, command, six toast types). Tooltip and dropdown-menu are the app-shell agent's.
+autocomplete, command, six toast types). Tooltip and dropdown-menu came later with the app shell
+(`3c61850617`) on the same positioning and portal code: see below.
 Scene tests for each overlay (46 tests); a Playwright smoke of the built page (focus trap and
 return, Escape, outside press, fast arrow keys, typing) passes with no console errors.
 
@@ -32,6 +33,15 @@ return, Escape, outside press, fast arrow keys, typing) passes with no console e
 - Keys go to `update` with the entries (`PressedMenuKey`, `PressedListKey`, `PressedInputKey`);
   `update` picks the next index from the current Model and a focus Command follows.
 
+## Tooltip and dropdown menu (app shell)
+
+- **Tooltip** (`ui/tooltip.ts`): Base UI's open delay and shared triggers, anchored through
+  `overlay/position.ts`; scene tests in `tooltip.scene.test.ts`.
+- **Dropdown menu** (`ui/menu.ts`, `ui/menu-view.ts`, parts in `ui/dropdown-menu.ts`): one Base UI
+  Menu Submodel with checkbox and radio items and a keyboard submenu; `menu.scene.test.ts`. The
+  shell's org, user and help menus (`src/shell/menus.ts`) run on it.
+- Navigation menu and resizable panel groups landed in the same commit, on the same primitives.
+
 ## Gotchas
 
 | Gotcha                                                                                                                                  | Fix                                                                            |
@@ -51,7 +61,6 @@ return, Escape, outside press, fast arrow keys, typing) passes with no console e
 
 ## Deferred
 
-- Tooltip, dropdown-menu (app-shell agent).
 - ScrollArea overflow: variables stay 0 and scrollbars are not rendered (static content fits).
 - Nested dialogs (`--nested-dialogs` is 0), modal Popover, popover arrows, anchored toasts (the
   region exists, no positioner), toast swipe and limit animation, Select scroll arrows and
