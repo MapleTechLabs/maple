@@ -23,9 +23,51 @@ const services = (
 
 const servicesTable = (page: Page) => page.getByRole("table", { name: "Services" })
 
+/** Held far past any capture, so the screenshot is the loading state. */
+const HELD_MS = 60_000
+
+const timed = (
+	id: string,
+	title: string,
+	faults: Scenario["faults"],
+	settle: Scenario["settle"],
+): Scenario => ({
+	id: `services-${id}`,
+	title: `Services: ${title}`,
+	path: "/services",
+	dataset: "default",
+	viewports: ["desktop"],
+	themes: ["light", "dark"],
+	faults,
+	settle,
+	area: "services",
+})
+
 export const servicesPageArea: AreaModule = {
 	area: "services",
 	scenarios: [
+		timed(
+			"loading",
+			"loading (execute-batch held)",
+			{ delays: { "queryEngine.executeBatch": HELD_MS } },
+			"held",
+		),
+		timed(
+			"error",
+			"execute-batch failing",
+			{
+				failures: {
+					"queryEngine.executeBatch": {
+						status: 502,
+						body: {
+							_tag: "@maple/http/errors/QueryEngineExecutionError",
+							message: "ui-parity: injected execute-batch failure",
+						},
+					},
+				},
+			},
+			"quiet",
+		),
 		services("group-by-environment", "grouped by environment", async (page) => {
 			await page
 				.getByRole("group", { name: "Group services by" })

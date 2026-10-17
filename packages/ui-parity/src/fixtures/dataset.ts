@@ -1,5 +1,5 @@
 import type { Effect } from "effect"
-import type { DatasetIdentity, DatasetSummary } from "../contract.ts"
+import type { DatasetIdentity, DatasetSummary, Faults } from "../contract.ts"
 import type { TelemetryRows } from "./telemetry/rows.ts"
 
 /** What a fixture endpoint handler sees: the wire-decoded request parts and its dataset. */
@@ -46,4 +46,6 @@ export interface Dataset extends DatasetSummary {
 	readonly synced: Partial<Record<SyncedTableName, ReadonlyArray<SyncedRow>>>
 	/** Raw warehouse rows, all stamped with `identity.orgId` (or none for an empty org). */
 	readonly telemetry: TelemetryRows
+	/** Deliberate delays and failures for every scenario on this dataset (scenarios add their own). */
+	readonly faults?: Faults
 }

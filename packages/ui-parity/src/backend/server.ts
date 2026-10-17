@@ -5,13 +5,20 @@ import {
 	QueryEngineExecuteRequest,
 } from "@maple/query-engine"
 import { createHash } from "node:crypto"
-import { CAPTURE_HEADER, DATASET_HEADER, type DatasetSummary, type StartBackend } from "../contract.ts"
+import {
+	CAPTURE_HEADER,
+	DATASET_HEADER,
+	type DatasetSummary,
+	FAULTS_HEADER,
+	type StartBackend,
+} from "../contract.ts"
 import type { Dataset, EndpointHandler } from "../fixtures/dataset.ts"
 import { fixtureAreaEndpoints, fixtureAreaRawRoutes, withFixtureAreas } from "../fixtures/areas.ts"
 import { DATASETS, DEFAULT_DATASET } from "../fixtures/datasets/index.ts"
 import { defaultDataset } from "../fixtures/datasets/default.ts"
 import { acceptsBearer } from "./auth.ts"
 import { makeCallLog, normalizePayload } from "./call-log.ts"
+import { makeHolds, mergeFaults } from "./faults.ts"
 import { defaultHandlers } from "./defaults.ts"
 import { warehouseEndpoints } from "./endpoints/index.ts"
 import { telemetrySignalsEndpoint } from "./endpoints/signal-presence.ts"
@@ -114,6 +121,7 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 	)
 	const warehouse = makeFixtureWarehouse(chdb)
 	const calls = makeCallLog()
+	const holds = makeHolds()
 	const builtIn = new Map([
 		...defaultHandlers,
 		...warehouseEndpoints(warehouse),
@@ -128,6 +136,8 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 		calls,
 		handlerFor: (dataset, tag) => dataset.endpoints[tag] ?? builtIn.get(tag),
 		selfLogging: new Set(["queryEngine.executeBatch"]),
+		faultsOf: (request, dataset) => mergeFaults(dataset.faults, request.headers[FAULTS_HEADER]),
+		holds,
 	})
 	// Raw routes answer only a signed-in bearer, like the API's own auth on them.
 	const rawRouteAnswer = (request: Request, url: URL, dataset: Dataset): Response | undefined => {
@@ -197,6 +207,7 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 		electricOrigin: `http://localhost:${electricServer.port}`,
 		datasets: datasets.map(summary),
 		takeCalls: calls.take,
+		held: holds.held,
 		close: async () => {
 			await Promise.all([apiServer.stop(true), electricServer.stop(true)])
 			await api.dispose()

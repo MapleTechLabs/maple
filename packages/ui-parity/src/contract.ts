@@ -10,6 +10,26 @@ export const DATASET_HEADER = "x-parity-dataset"
 /** Capture id, so the backend can attribute each call to one variant's call log. */
 export const CAPTURE_HEADER = "x-parity-capture"
 
+/** Scenario-level `Faults` as JSON, merged over the dataset's own (the scenario wins per prefix). */
+export const FAULTS_HEADER = "x-parity-faults"
+
+/**
+ * Deliberate slowness and failures, keyed by endpoint tag prefix (`queryEngine.executeBatch`,
+ * `alerts.`); the longest matching prefix wins. HttpApi endpoints only, not Electric or raw routes.
+ */
+export interface Faults {
+	/** Milliseconds the backend holds a matching request (after logging it) before answering. */
+	readonly delays?: Readonly<Record<string, number>>
+	/** Matching requests are answered with this status and encoded error body instead. */
+	readonly failures?: Readonly<Record<string, FaultFailure>>
+}
+
+/** An encoded error the endpoint declares, e.g. `{ _tag: "@maple/http/errors/...", message }`, at its status. */
+export interface FaultFailure {
+	readonly status: number
+	readonly body: Schema.JsonObject
+}
+
 /** One request the app made, as the backend saw it. */
 export interface CallLogEntry {
 	/** `"<group>.<endpoint>"` for HttpApi endpoints, `"warehouse:<query fingerprint>"` for each query inside an execute-batch, `"shape:<table>"` for Electric. */
@@ -49,6 +69,8 @@ export interface FixtureBackend {
 		/** Requests no handler answered: each one fails the variant. */
 		readonly unmocked: ReadonlyArray<string>
 	}
+	/** Requests of one capture the backend is holding right now (`Faults.delays`). */
+	readonly held: (captureId: string) => number
 	readonly close: () => Promise<void>
 }
 

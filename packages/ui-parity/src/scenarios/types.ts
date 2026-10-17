@@ -1,5 +1,6 @@
 import type { Locator, Page } from "playwright"
 import type { TargetName } from "../config.ts"
+import type { Faults } from "../contract.ts"
 
 /**
  * A scenario is one screen state, captured identically in every target.
@@ -32,6 +33,13 @@ export interface Scenario {
 	 * build it captures is one of these, e.g. `["foldkit"]` for a Foldkit-only lab probe.
 	 */
 	readonly targets?: ReadonlyArray<TargetName>
+	/** Delays and failures on top of the dataset's (`contract.ts`), e.g. a held or failing execute-batch. */
+	readonly faults?: Faults
+	/**
+	 * `"quiet"` (default): visual quiet after every settle point. `"held"`: first wait until every
+	 * API request still in flight is one `faults.delays` holds, to capture a loading state.
+	 */
+	readonly settle?: "quiet" | "held"
 	/** Default true: the whole page, including inner scrollers grown to their content. */
 	readonly fullPage?: boolean
 	/** Tag for grouping in the report and for `--filter`. */

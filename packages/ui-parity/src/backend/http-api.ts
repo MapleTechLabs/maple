@@ -6,7 +6,9 @@ import type { FileSystem, Path } from "effect"
 import { MapleAiApi, MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import type { Dataset, EndpointHandler } from "../fixtures/dataset.ts"
+import { FAULTS_HEADER, type Faults } from "../contract.ts"
 import type { CallLog } from "./call-log.ts"
+import { type Holds, resolveFault } from "./faults.ts"
 import { middlewareContext, type DatasetOf } from "./middleware.ts"
 
 /**
@@ -83,6 +85,12 @@ export interface ApiServerOptions {
 	readonly handlerFor: (dataset: Dataset, tag: string) => EndpointHandler | undefined
 	/** Endpoints whose call-log entries the handler writes itself (execute-batch logs each query). */
 	readonly selfLogging: ReadonlySet<string>
+	/** The dataset's and the request's `Faults`; `None` when the faults header does not decode. */
+	readonly faultsOf: (
+		request: HttpServerRequest.HttpServerRequest,
+		dataset: Dataset,
+	) => Option.Option<Faults>
+	readonly holds: Holds
 }
 
 const Json = Schema.fromJsonString(Schema.Unknown)
@@ -144,6 +152,15 @@ const genericHandler = (options: ApiServerOptions, group: ReflectedGroup, endpoi
 				return unmockedResponse(tag)
 			}
 			if (logged) options.calls.record(capture, tag, yield* wireRequest)
+			const faults = options.faultsOf(http, dataset)
+			if (Option.isNone(faults)) {
+				options.calls.recordUnmocked(capture, `invalid ${FAULTS_HEADER} header`)
+				return unmockedResponse(tag)
+			}
+			const fault = resolveFault(faults.value, tag)
+			if (fault.delayMs > 0) yield* options.holds.hold(capture, fault.delayMs)
+			if (fault.failure !== undefined)
+				return HttpServerResponse.jsonUnsafe(fault.failure.body, { status: fault.failure.status })
 			const parts = Option.getOrElse(decodeHandlerRequest(request), () => NO_PARTS)
 			const answer = respond({
 				dataset,

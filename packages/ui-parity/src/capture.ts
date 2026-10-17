@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { type Browser, chromium, type Page, type Route } from "playwright"
+import { type Browser, chromium, type Page, type Request, type Route } from "playwright"
 import {
 	CANONICAL_ORIGIN,
 	type AuthMode,
@@ -12,6 +12,7 @@ import {
 	CAPTURE_HEADER,
 	type CallLogEntry,
 	DATASET_HEADER,
+	FAULTS_HEADER,
 	type DatasetSummary,
 	type FixtureBackend,
 } from "./contract.ts"
@@ -181,6 +182,8 @@ interface RouteContext {
 	readonly backend: FixtureBackend | null
 	readonly dataset: DatasetSummary | undefined
 	readonly captureKey: string
+	/** `Scenario.faults` as JSON for `FAULTS_HEADER`. */
+	readonly faults: string | undefined
 	readonly blocked: string[]
 	readonly localUnmocked: string[]
 }
@@ -235,14 +238,45 @@ const handleRoute = (context: RouteContext) => async (route: Route) => {
 	return route.continue({
 		headers: {
 			...request.headers(),
-			...datasetHeader(context.dataset),
-			[CAPTURE_HEADER]: context.captureKey,
+			...fixtureHeaders(context),
 		},
 	})
 }
 
-const datasetHeader = (dataset: DatasetSummary | undefined): Record<string, string> =>
-	dataset === undefined ? {} : { [DATASET_HEADER]: dataset.name }
+const fixtureHeaders = (context: RouteContext): Record<string, string> =>
+	Object.fromEntries(
+		[
+			[CAPTURE_HEADER, context.captureKey],
+			[DATASET_HEADER, context.dataset?.name],
+			[FAULTS_HEADER, context.faults],
+		].filter((entry): entry is [string, string] => entry[1] !== undefined),
+	)
+
+/** Chromium logs every non-2xx response; the ones a scenario injects on purpose are expected. */
+const failedResourcePrefix = (status: number) =>
+	`Failed to load resource: the server responded with a status of ${status} (`
+const injectedFailureStatuses = (scenario: Scenario) =>
+	Object.values(scenario.faults?.failures ?? {}).map((failure) => failure.status)
+
+const HELD_TIMEOUT_MS = 15_000
+
+/**
+ * `settle: "held"`: wait until every request in flight to the API is one the backend is holding
+ * (`Faults.delays`), so the page shows its loading state with nothing else still arriving.
+ */
+const waitForHeld = async (
+	backend: FixtureBackend | null,
+	captureKey: string,
+	inFlight: ReadonlySet<Request>,
+	deadline = performance.now() + HELD_TIMEOUT_MS,
+): Promise<void> => {
+	const held = backend?.held(captureKey) ?? 0
+	if (held > 0 && inFlight.size === held) return
+	if (performance.now() > deadline)
+		throw new Error(`settle "held": ${inFlight.size} API requests in flight, ${held} held by the backend`)
+	await new Promise((resolve) => setTimeout(resolve, 50))
+	return waitForHeld(backend, captureKey, inFlight, deadline)
+}
 
 const installSession = async (
 	page: Page,
@@ -339,20 +373,39 @@ const captureVariant = async (
 	await installSession(page, variant.theme, authMode, dataset)
 	await page.route(
 		"**/*",
-		handleRoute({ build, backend: options.backend, dataset, captureKey, blocked, localUnmocked }),
+		handleRoute({
+			build,
+			backend: options.backend,
+			dataset,
+			captureKey,
+			faults:
+				variant.scenario.faults === undefined ? undefined : JSON.stringify(variant.scenario.faults),
+			blocked,
+			localUnmocked,
+		}),
 	)
+	const inFlight = new Set<Request>()
+	page.on("request", (request) => {
+		if (new URL(request.url()).origin === fixtureBackendOrigin) inFlight.add(request)
+	})
+	page.on("requestfinished", (request) => inFlight.delete(request))
+	page.on("requestfailed", (request) => inFlight.delete(request))
+	const settlePage = async (options_: { quietMs: number; timeoutMs: number }) => {
+		if (variant.scenario.settle === "held") await waitForHeld(options.backend, captureKey, inFlight)
+		await settle(page, options_)
+	}
 
 	let clerkUnknown: ReadonlyArray<string> = []
 	const backendUnmocked: string[] = []
 	const capture = async () => {
 		await page.goto(`${CANONICAL_ORIGIN}${variant.scenario.path}`, { waitUntil: "load" })
-		await settle(page, { quietMs: 400, timeoutMs: 8000 })
+		await settlePage({ quietMs: 400, timeoutMs: 8000 })
 		if (variant.scenario.steps) {
 			await variant.scenario.steps(page)
-			await settle(page, { quietMs: 300, timeoutMs: 5000 })
+			await settlePage({ quietMs: 300, timeoutMs: 5000 })
 		}
 		if (variant.scenario.fullPage ?? true)
-			await growToContent(page, () => settle(page, { quietMs: 300, timeoutMs: 5000 }))
+			await growToContent(page, () => settlePage({ quietMs: 300, timeoutMs: 5000 }))
 		const screenshot = await stableScreenshot(() =>
 			page.screenshot({
 				fullPage: variant.scenario.fullPage ?? true,
@@ -399,7 +452,10 @@ const captureVariant = async (
 		consoleErrors: consoleErrors.filter(
 			(line) =>
 				!IGNORED_CONSOLE_ERRORS.test(line) &&
-				!(options.backend === null && NULL_BACKEND_CONSOLE_ERRORS.test(line)),
+				!(options.backend === null && NULL_BACKEND_CONSOLE_ERRORS.test(line)) &&
+				!injectedFailureStatuses(variant.scenario).some((status) =>
+					line.startsWith(failedResourcePrefix(status)),
+				),
 		),
 		blockedRequests: [...new Set(blocked)],
 		unmocked: [...new Set(unmocked)],
