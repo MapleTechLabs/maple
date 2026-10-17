@@ -120,6 +120,7 @@ export function EscalationPolicySection({
 		}
 	})
 
+	// Controls lock while a save is in flight, so the saved draft is always the visible one.
 	const editEnabled = (next: boolean) => {
 		setEnabled(next)
 		onDirtyChange?.(true)
@@ -156,7 +157,13 @@ export function EscalationPolicySection({
 				<SettingRow
 					label="Severity escalation"
 					description="Route issues to destinations when AI triage or a teammate sets their severity. Fires once per issue and severity level, upward only."
-					control={<Switch checked={enabled} onCheckedChange={editEnabled} disabled={!isAdmin} />}
+					control={
+						<Switch
+							checked={enabled}
+							onCheckedChange={editEnabled}
+							disabled={!isAdmin || isSaving}
+						/>
+					}
 				/>
 
 				{Result.builder(destinationsResult)
@@ -211,7 +218,7 @@ export function EscalationPolicySection({
 												</span>
 												<Select
 													value={rules[severity].minConfidence}
-													disabled={!isAdmin}
+													disabled={!isAdmin || isSaving}
 													onValueChange={(value) => {
 														const minConfidence = CONFIDENCE_CHOICES.find(
 															(c) => c === value,
@@ -238,7 +245,7 @@ export function EscalationPolicySection({
 											onChange={(destinationIds) =>
 												editRule(severity, { destinationIds })
 											}
-											disabled={!isAdmin}
+											disabled={!isAdmin || isSaving}
 											aria-label={`Destinations for ${severity} severity`}
 											size="sm"
 										/>

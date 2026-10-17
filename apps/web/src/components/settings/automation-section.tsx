@@ -36,7 +36,10 @@ export function AutomationSection({
 	hasEntitlement: boolean
 }) {
 	// The evaluate endpoint only reads the stored policy, so unsaved edits are invisible to it.
-	const [policyDirty, setPolicyDirty] = useState(false)
+	// `revision` bumps on every edit, so a decision computed before it is never shown after a save.
+	const [policy, setPolicy] = useState({ dirty: false, revision: 0 })
+	const onDirtyChange = (dirty: boolean) =>
+		setPolicy((current) => ({ dirty, revision: dirty ? current.revision + 1 : current.revision }))
 	return (
 		<SettingsSections>
 			<SettingsSection title="Automatic investigations" framed={false}>
@@ -47,23 +50,25 @@ export function AutomationSection({
 				description="Confidence gates apply only to AI decisions. A manual severity change is explicit human intent and bypasses the confidence threshold."
 				framed={false}
 			>
-				<EscalationPolicySection isAdmin={isAdmin} onDirtyChange={setPolicyDirty} />
+				<EscalationPolicySection isAdmin={isAdmin} onDirtyChange={onDirtyChange} />
 			</SettingsSection>
-			<PolicySimulator policyDirty={policyDirty} />
+			<PolicySimulator policyDirty={policy.dirty} policyRevision={policy.revision} />
 			<RecentDeliveries />
 		</SettingsSections>
 	)
 }
 
-function PolicySimulator({ policyDirty }: { policyDirty: boolean }) {
+function PolicySimulator({ policyDirty, policyRevision }: { policyDirty: boolean; policyRevision: number }) {
 	const [severity, setSeverity] = useState<IssueSeverity>("high")
 	const [source, setSource] = useState<"ai" | "manual">("ai")
 	const [confidence, setConfidence] = useState<EscalationConfidence>("high")
-	const [decision, setDecision] = useState<{
+	const [evaluated, setEvaluated] = useState<{
+		revision: number
 		outcome: "route" | "skip"
 		destinationIds: ReadonlyArray<string>
 		skipReason: string | null
 	} | null>(null)
+	const decision = evaluated?.revision === policyRevision ? evaluated : null
 	const evaluate = useAtomSet(MapleInternalAtomClient.mutation("errors", "evaluateEscalationPolicy"), {
 		mode: "promiseExit",
 	})
@@ -73,7 +78,7 @@ function PolicySimulator({ policyDirty }: { policyDirty: boolean }) {
 		.orElse(() => [])
 
 	const [run, busy] = useAsyncAction(async () => {
-		setDecision(null)
+		setEvaluated(null)
 		const result = await evaluate({
 			payload: new EscalationPolicyEvaluationRequest({
 				severity,
@@ -82,7 +87,7 @@ function PolicySimulator({ policyDirty }: { policyDirty: boolean }) {
 			}),
 		})
 		if (toastExit(result, { error: "Policy evaluation failed" }) && Exit.isSuccess(result)) {
-			setDecision(result.value)
+			setEvaluated({ ...result.value, revision: policyRevision })
 		}
 	})
 
