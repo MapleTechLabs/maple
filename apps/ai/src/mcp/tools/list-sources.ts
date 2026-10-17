@@ -4,11 +4,11 @@ import { Clock, Effect, Schema } from "effect"
 import { ListSourcesOutput } from "@maple/domain/mcp-outputs"
 import { isPushSourcePlatform, SourcePlatform } from "@maple/domain/primitives"
 import { SOURCE_HEALTH_STATUSES } from "@maple/domain/source-health"
-import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
 
 const TOOL = "list_sources"
 
@@ -44,7 +44,7 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 			const rows = sources
 				.filter((source) => platform === undefined || source.platform === platform)
 				.map((source) => ({
-					id: encodePublicId(PublicIdPrefixes.source, source.id),
+					id: publicSourceId(source.id),
 					name: source.name,
 					platform: source.platform,
 					delivery: isPushSourcePlatform(source.platform) ? ("push" as const) : ("pull" as const),

@@ -85,7 +85,11 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { ensureIntegrationSource, publicSourceId } from "@maple/backend/services/org/integration-sources"
+import {
+	ensureIntegrationSource,
+	integrationSourceName,
+	stampableSourceId,
+} from "@maple/backend/services/org/integration-sources"
 import {
 	mapDnsGroups,
 	mapDurableObjectsGroups,
@@ -2612,6 +2616,36 @@ export class CloudflareAnalyticsService extends Context.Service<
 			)
 		})
 
+		// The grant's pull source as its `src_` id; a failed lookup sends without it.
+		const resolveSourceId = (orgId: OrgId) =>
+			stampableSourceId(
+				Effect.gen(function* () {
+					const now = yield* Clock.currentTimeMillis
+					return yield* dbExecute((db) =>
+						Effect.gen(function* () {
+							const [connection] = yield* db.run(
+								PG.from(OAuthConnections)
+									.select("id", "externalAccountName")
+									.where(($) => [$.orgId.eq(orgId), $.provider.eq("cloudflare")])
+									.limit(1),
+							)
+							if (connection === undefined) return undefined
+							return yield* ensureIntegrationSource(
+								db,
+								orgId,
+								{
+									platform: "cloudflare",
+									integrationId: connection.id,
+									name: integrationSourceName.cloudflare(connection),
+								},
+								now,
+							)
+						}),
+					)
+				}),
+				{ orgId, platform: "cloudflare" },
+			)
+
 		/**
 		 * Poll every connected account of one org, sequentially, sharing ONE call budget —
 		 * Cloudflare meters the grant's holder, not the individual accounts, so a per-account
@@ -2620,41 +2654,6 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 * scope-incapable connections are skipped without touching their state rows
 		 * (the status endpoint already surfaces both conditions per account).
 		 */
-		// The grant's pull source as its `src_` id; a failed lookup sends without it.
-		const resolveSourceId = (orgId: OrgId) =>
-			Effect.gen(function* () {
-				const now = yield* Clock.currentTimeMillis
-				const id = yield* dbExecute((db) =>
-					Effect.gen(function* () {
-						const [connection] = yield* db.run(
-							PG.from(OAuthConnections)
-								.select("id", "externalAccountName")
-								.where(($) => [$.orgId.eq(orgId), $.provider.eq("cloudflare")])
-								.limit(1),
-						)
-						if (connection === undefined) return undefined
-						return yield* ensureIntegrationSource(db, {
-							orgId,
-							platform: "cloudflare",
-							integrationId: connection.id,
-							name: connection.externalAccountName ?? "Cloudflare",
-							now,
-						})
-					}),
-				)
-				if (id === undefined) return undefined
-				const sourceId = publicSourceId(id)
-				yield* Effect.annotateCurrentSpan("maple.source.id", sourceId)
-				return sourceId
-			}).pipe(
-				Effect.catch((error) =>
-					Effect.logWarning("Cloudflare source unavailable").pipe(
-						Effect.annotateLogs({ orgId, error: error.message }),
-						Effect.as(undefined),
-					),
-				),
-			)
-
 		const pollOrg = Effect.fn("CloudflareAnalyticsService.pollOrg")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const status = yield* oauth.getStatus(orgId)

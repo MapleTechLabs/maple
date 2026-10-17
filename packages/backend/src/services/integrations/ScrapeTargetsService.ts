@@ -57,7 +57,12 @@ import {
 	type PlanetScaleAccessTokenError,
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { ensureIntegrationSource, publicSourceId } from "@maple/backend/services/org/integration-sources"
+import {
+	ensureIntegrationSource,
+	integrationSourceName,
+	publicSourceId,
+} from "@maple/backend/services/org/integration-sources"
+import { type PullSourceRef, pullSourceKey } from "@maple/backend/services/org/source-rows"
 
 type ScrapeTargetSet = PG.UpdateSetOf<typeof ScrapeTargets>
 type MutableScrapeTargetSet = { -readonly [K in keyof ScrapeTargetSet]: ScrapeTargetSet[K] }
@@ -353,19 +358,17 @@ export type EnabledScrapeTarget = Omit<ScrapeTargetRow, "labelsJson"> & { readon
 const PLANETSCALE_MANAGED_PREFIX = "planetscale:"
 
 /** The pull source a scrape target reports as: its PlanetScale connection, or itself. */
-export const scrapeTargetSourceRef = (row: EnabledScrapeTarget) => {
+export const scrapeTargetSourceRef = (row: EnabledScrapeTarget): PullSourceRef => {
 	if (row.managedBy !== null && row.managedBy.startsWith(PLANETSCALE_MANAGED_PREFIX)) {
 		const organization = decodeDiscoveryConfig(row.discoveryConfigJson)?.organization
 		return {
-			platform: "planetscale" as const,
+			platform: "planetscale",
 			integrationId: row.managedBy.slice(PLANETSCALE_MANAGED_PREFIX.length),
-			name: organization === undefined ? "PlanetScale" : `PlanetScale ${organization}`,
+			name: integrationSourceName.planetscale(organization),
 		}
 	}
-	return { platform: "prometheus" as const, integrationId: row.id, name: row.name }
+	return { platform: "prometheus", integrationId: row.id, name: integrationSourceName.prometheus(row) }
 }
-
-const sourceKey = (platform: string, integrationId: string) => `${platform}\u0000${integrationId}`
 
 /** What resolving a target's credential reads: everything but its labels. */
 type ScrapeTargetCredentials = Omit<ScrapeTargetRow, "labelsJson">
@@ -1153,29 +1156,29 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						)
 						const known = new Map(
 							existing.map((source) => [
-								sourceKey(source.platform, source.integrationId ?? ""),
+								pullSourceKey(source.platform, source.integrationId),
 								source.id,
 							]),
 						)
 						const refs = Arr.dedupeWith(
 							rows.map(scrapeTargetSourceRef),
 							(a, b) =>
-								sourceKey(a.platform, a.integrationId) ===
-								sourceKey(b.platform, b.integrationId),
+								pullSourceKey(a.platform, a.integrationId) ===
+								pullSourceKey(b.platform, b.integrationId),
 						)
 						const created = yield* Effect.forEach(
-							refs.filter((ref) => !known.has(sourceKey(ref.platform, ref.integrationId))),
+							refs.filter((ref) => !known.has(pullSourceKey(ref.platform, ref.integrationId))),
 							(ref) =>
-								ensureIntegrationSource(db, { orgId, now, ...ref }).pipe(
+								ensureIntegrationSource(db, orgId, ref, now).pipe(
 									Effect.map(
-										(id) => [sourceKey(ref.platform, ref.integrationId), id] as const,
+										(id) => [pullSourceKey(ref.platform, ref.integrationId), id] as const,
 									),
 								),
 						)
 						const ids = new Map([...known, ...created])
 						return rows.flatMap((row) => {
 							const ref = scrapeTargetSourceRef(row)
-							const id = ids.get(sourceKey(ref.platform, ref.integrationId))
+							const id = ids.get(pullSourceKey(ref.platform, ref.integrationId))
 							return id === undefined ? [] : [[row.id, publicSourceId(id)] as const]
 						})
 					}),
@@ -1194,8 +1197,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const now = yield* Clock.currentTimeMillis
 				const byOrg = Arr.groupBy(rows, (row) => row.orgId)
 				const perOrg = yield* Effect.forEach(
-					Object.entries(byOrg),
-					([, orgRows]) => orgSourceIds(orgRows[0].orgId, orgRows, now),
+					Object.values(byOrg),
+					(orgRows) => orgSourceIds(orgRows[0].orgId, orgRows, now),
 					{ concurrency: 2 },
 				)
 				return new Map(perOrg.flat())

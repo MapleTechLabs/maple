@@ -445,6 +445,8 @@ describe("SourcesService", () => {
 					"9d1e2f3a-0000-4000-8000-000000000002",
 				]),
 			)
+			// Removed but not yet reconciled: the source reads as disconnected.
+			assert.strictEqual((yield* keys.get(orgA, broken.id)).health.status, "disconnected")
 			assert.deepStrictEqual(
 				(yield* ownSources(keys, orgA)).map((source) => source.name),
 				["node"],

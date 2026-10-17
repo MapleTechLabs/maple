@@ -18,7 +18,11 @@ import {
 	type WorkflowEventSinkApi,
 } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { ensureIntegrationSource, publicSourceId } from "@maple/backend/services/org/integration-sources"
+import {
+	ensureIntegrationSource,
+	integrationSourceName,
+	stampableSourceId,
+} from "@maple/backend/services/org/integration-sources"
 import { isIngestRefusal, summarizeUpstreamBody } from "../upstream-body"
 import { jobLogRecords, type OtlpLogsPayload, workflowJobLogsToOtlp } from "./logs"
 import { type OtlpTracesPayload, workflowJobToOtlp, workflowRunToOtlp } from "./otlp"
@@ -86,42 +90,37 @@ const make = Effect.gen(function* () {
 		orgId: OrgId,
 		job: { readonly provider: string; readonly externalInstallationId: string },
 	) =>
-		Effect.gen(function* () {
-			if (job.provider !== "github") return undefined
-			const now = yield* Clock.currentTimeMillis
-			const id = yield* database.execute((db) =>
-				Effect.gen(function* () {
-					const [installation] = yield* db.run(
-						PG.from(VcsInstallations)
-							.select("id", "accountLogin")
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.provider.eq("github"),
-								$.externalInstallationId.eq(job.externalInstallationId),
-							])
-							.limit(1),
-					)
-					if (installation === undefined) return undefined
-					return yield* ensureIntegrationSource(db, {
-						orgId,
-						platform: "github",
-						integrationId: installation.id,
-						name: `GitHub ${installation.accountLogin}`,
-						now,
-					})
-				}),
-			)
-			if (id === undefined) return undefined
-			const sourceId = publicSourceId(id)
-			yield* Effect.annotateCurrentSpan("maple.source.id", sourceId)
-			return sourceId
-		}).pipe(
-			Effect.catchCause((cause) =>
-				Effect.logWarning("[CI traces] source unavailable").pipe(
-					Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
-					Effect.as(undefined),
-				),
-			),
+		stampableSourceId(
+			Effect.gen(function* () {
+				if (job.provider !== "github") return undefined
+				const now = yield* Clock.currentTimeMillis
+				return yield* database.execute((db) =>
+					Effect.gen(function* () {
+						const [installation] = yield* db.run(
+							PG.from(VcsInstallations)
+								.select("id", "accountLogin")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.provider.eq("github"),
+									$.externalInstallationId.eq(job.externalInstallationId),
+								])
+								.limit(1),
+						)
+						if (installation === undefined) return undefined
+						return yield* ensureIntegrationSource(
+							db,
+							orgId,
+							{
+								platform: "github",
+								integrationId: installation.id,
+								name: integrationSourceName.github(installation),
+							},
+							now,
+						)
+					}),
+				)
+			}),
+			{ orgId, platform: "github" },
 		)
 
 	// Total by contract: a lost CI span is logged, never a failed webhook job. The failure is
