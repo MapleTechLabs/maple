@@ -16,6 +16,7 @@ import {
 	mcpClientConfig,
 	type McpClient,
 } from "@/components/settings/mcp-client-config"
+import { McpConnectedClientsSection } from "@/components/settings/mcp-connected-clients"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { mcpUrl } from "@/lib/services/common/mcp-url"
 
@@ -168,6 +169,7 @@ export function McpSection() {
 	return (
 		<SettingsSections>
 			<ConnectClientSection />
+			<McpConnectedClientsSection />
 			<McpToolsList />
 		</SettingsSections>
 	)
