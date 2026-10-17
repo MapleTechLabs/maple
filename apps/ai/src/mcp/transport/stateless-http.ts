@@ -238,11 +238,18 @@ export const layerStatelessMcpHttp = (options: {
 						return HttpServerResponse.empty({ status: 400 })
 					}
 
-					if (
-						messages.some(isToolMessage) &&
-						Exit.isFailure(yield* Effect.exit(options.registerTools))
-					) {
-						return HttpServerResponse.text("MCP tools are unavailable", { status: 503 })
+					if (messages.some(isToolMessage)) {
+						const registered = yield* Effect.exit(options.registerTools)
+						if (Exit.isFailure(registered)) {
+							yield* Effect.logError("MCP tool registration failed", registered.cause)
+							return HttpServerResponse.jsonUnsafe(
+								{
+									error: "service_unavailable",
+									message: "MCP tools are temporarily unavailable; retry with backoff.",
+								},
+								{ status: 503, headers: { "cache-control": "no-store" } },
+							)
+						}
 					}
 
 					// The handshake the client did not send, so the server has a negotiated

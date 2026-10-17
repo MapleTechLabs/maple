@@ -46,7 +46,6 @@ export class McpToolExecutorLoader extends Context.Service<
 					return Context.get(services, McpToolExecutor)
 				}).pipe(
 					Effect.provideContext(isolate),
-					Effect.tapCause((cause) => Effect.logError("MCP tool executor failed to build", cause)),
 					Effect.mapError(
 						(cause) =>
 							new McpToolsUnavailableError({

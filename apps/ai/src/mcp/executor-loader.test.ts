@@ -28,28 +28,27 @@ const testConfig = ConfigProvider.layer(
 )
 
 /**
- * A stand-in tool graph that counts its imports and builds. With `failFirstBuild`, the first
- * build fails on a missing config key, the way a misconfigured deploy fails it.
+ * A stand-in tool graph that counts its imports and builds. Every import returns the same
+ * layer, as the real module's `McpServicesLive` constant does, so memoization matches
+ * production. With `failFirstBuild`, the first build fails on a missing config key, the way a
+ * misconfigured deploy fails it.
  */
 const countingGraph = (options: { readonly failFirstBuild: boolean }) => {
 	const imports = Ref.makeUnsafe(0)
 	const builds = Ref.makeUnsafe(0)
-	const importGraph = Ref.update(imports, (n) => n + 1).pipe(
-		Effect.as(
-			Layer.effect(
-				McpToolExecutor,
-				Effect.gen(function* () {
-					const build = yield* Ref.updateAndGet(builds, (n) => n + 1)
-					if (options.failFirstBuild && build === 1) yield* Config.string("MAPLE_TEST_UNSET_KEY")
-					return {
-						execute: () => Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
-						prepareRepository: () => Effect.void,
-						prepareConnectedRepositories: () => Effect.void,
-					}
-				}),
-			),
-		),
+	const graph = Layer.effect(
+		McpToolExecutor,
+		Effect.gen(function* () {
+			const build = yield* Ref.updateAndGet(builds, (n) => n + 1)
+			if (options.failFirstBuild && build === 1) yield* Config.string("MAPLE_TEST_UNSET_KEY")
+			return {
+				execute: () => Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
+				prepareRepository: () => Effect.void,
+				prepareConnectedRepositories: () => Effect.void,
+			}
+		}),
 	)
+	const importGraph = Ref.update(imports, (n) => n + 1).pipe(Effect.as(graph))
 	const counts = () => Effect.runSync(Effect.all({ imports: Ref.get(imports), builds: Ref.get(builds) }))
 	return { counts, loader: McpToolExecutorLoader.layerFrom(importGraph) }
 }
@@ -135,13 +134,23 @@ describe("McpToolExecutorLoader", () => {
 		const { send, dispose } = await mcpClient(loader)
 		try {
 			const failed = await send("tools/list", { authorized: true })
+			const failedBody = await failed.json()
 			const retried = await send("tools/list", { authorized: true })
 			const listed = await retried.json()
 			expect({
 				statuses: [failed.status, retried.status],
+				failedError: failedBody.error,
+				cacheControl: failed.headers.get("cache-control"),
 				hasTools: listed.result.tools.length > 0,
 				...counts(),
-			}).toEqual({ statuses: [503, 200], hasTools: true, imports: 2, builds: 2 })
+			}).toEqual({
+				statuses: [503, 200],
+				failedError: "service_unavailable",
+				cacheControl: "no-store",
+				hasTools: true,
+				imports: 2,
+				builds: 2,
+			})
 		} finally {
 			await dispose()
 		}
