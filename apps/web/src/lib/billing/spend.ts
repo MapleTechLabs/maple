@@ -87,6 +87,15 @@ export const formatRateLabel = (feature: FeatureSpend): string | null => {
 	return `$${feature.ratePerUnit}/${unit}`
 }
 
+/** The rate cell's caption: the quoted rate, or in words why there is none. */
+export const rateCaption = (feature: FeatureSpend): string => {
+	if (feature.unlimited) return "Included"
+	if (feature.overageAllowed === false) return "No overage"
+	const rate = formatRateLabel(feature)
+	if (rate !== null) return rate
+	return feature.included === null ? "Not on plan" : "Rate unavailable"
+}
+
 export interface FeatureSpend extends FeatureUsagePricing {
 	readonly featureId: SpendFeatureId
 	readonly label: string
