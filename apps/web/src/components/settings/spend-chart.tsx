@@ -216,15 +216,20 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 				// lands, dashed because it has not happened.
 				...(hasFuture
 					? [
-							lineY(data, {
-								id: "projected",
-								x: at,
-								y: (point: CumulativePoint) =>
-									typeof point.projected === "number" ? point.projected : null,
-								stroke: primary,
-								strokeWidth: 1.5,
-								strokeDasharray: "4 4",
-							}),
+							// Only today and the last day carry a value; the nulls between would
+							// break the line into gaps, so draw the two-point segment directly.
+							lineY(
+								data.filter((point) => typeof point.projected === "number"),
+								{
+									id: "projected",
+									x: at,
+									y: (point: CumulativePoint) =>
+										typeof point.projected === "number" ? point.projected : null,
+									stroke: primary,
+									strokeWidth: 1.5,
+									strokeDasharray: "4 4",
+								},
+							),
 						]
 					: []),
 				// The endpoint. `decorative` so it takes no focus from the bands and does
