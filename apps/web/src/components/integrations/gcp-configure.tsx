@@ -1334,7 +1334,9 @@ function FileCard({
 }) {
 	const [expanded, setExpanded] = useState(false)
 	const [promptShown, setPromptShown] = useState(false)
-	const { copy, status } = useCopy({ label: "prompt", toast: false })
+	const { copy } = useCopy({ label: "prompt", toast: false })
+	// Kept, unlike the copy status, which resets: the footer says whether this copy worked.
+	const [copied, setCopied] = useState<boolean | null>(null)
 	const shown = promptShown ? (prompt?.trimEnd() ?? null) : (text?.trimEnd() ?? null)
 	const link = "h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground"
 	return (
@@ -1354,11 +1356,12 @@ function FileCard({
 							disabled={prompt === null}
 							onClick={() => {
 								setPromptShown(true)
-								void copy(prompt)
+								setCopied(null)
+								void copy(prompt).then(setCopied)
 							}}
 						>
-							{promptShown && status === "copied" ? <CheckIcon size={12} aria-hidden /> : null}
-							{promptShown && status === "copied"
+							{promptShown && copied === true ? <CheckIcon size={12} aria-hidden /> : null}
+							{promptShown && copied === true
 								? "Prompt copied"
 								: "Copy prompt for coding agent"}
 						</Button>
@@ -1395,6 +1398,8 @@ function FileCard({
 						aria-label={promptShown ? "The prompt for a coding agent" : name}
 						className={cn(
 							"overflow-x-auto p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+							// The prompt is prose; code keeps its lines.
+							promptShown && "whitespace-pre-wrap",
 							expanded ? "max-h-80 overflow-y-auto" : "max-h-32 overflow-y-hidden",
 							secret && REPLAY_BLOCK_CLASS,
 						)}
@@ -1413,7 +1418,7 @@ function FileCard({
 				<span className="flex min-w-0 flex-1 items-center gap-1.5 text-pretty">
 					<LockIcon size={12} className="shrink-0" aria-hidden />
 					{promptShown
-						? `${status === "error" ? "Couldn't copy: select the prompt and copy it." : "Copied."} It ends with the full ${name}.`
+						? `${copied === false ? "Couldn't copy: select the prompt and copy it." : copied === true ? "Copied." : "Copying."} It ends with the full ${name}.`
 						: secret
 							? "Holds this connection's secret. Don't share or commit it."
 							: "No secrets in this file. Safe to commit."}
@@ -1473,11 +1478,11 @@ function RunRowMarker({ state }: { state: RunRowState }) {
 /** How a setup without the script is confirmed: by the first data, as no run reports it. */
 const CONFIRMED_BY = {
 	logs: {
-		done: "Maple receives this connection's logs",
+		done: "Confirmed: logs arrive",
 		waiting: "Confirmed by the first log Maple receives",
 	},
 	metrics: {
-		done: "Maple reads this connection's metrics",
+		done: "Confirmed: metrics are read",
 		waiting: "Confirmed by the first metrics read, within 5 minutes",
 	},
 } as const
@@ -1513,14 +1518,18 @@ function RunStatus({
 		const confirmed = applied === wanted
 		const state: RunRowState =
 			confirmed && (reported || !byScript) ? "done" : running || !byScript ? "running" : "pending"
-		// The poller's failure is what a setup without the script can be told.
-		const error = !byScript && capability === "metrics" && wanted ? connector.last_metrics_error : null
+		// The poller's failure, once past the grant's grace: what a setup without the script can be told.
+		const metricsState = gcpMetricsState(connector, nowMs)
+		const error =
+			!byScript && capability === "metrics" && metricsState.kind === "failing"
+				? metricsState.error
+				: null
 		const detail = byScript
 			? wanted
 				? run.on
 				: run.off
 			: !wanted
-				? "Waiting for I've removed them"
+				? "Waiting for you to confirm the removal"
 				: (error ?? CONFIRMED_BY[capability][confirmed ? "done" : "waiting"])
 		return [{ capability, title, detail, state, error }]
 	})
@@ -1546,7 +1555,7 @@ function RunStatus({
 				<p className={cn("text-sm font-medium", overdue && byScript && "text-severity-warn")}>
 					{!byScript
 						? done === rows.length
-							? "Google Cloud matches this configuration"
+							? "Confirmed by the first data"
 							: "Waiting for Google Cloud"
 						: overdue
 							? "No report from the script yet"
@@ -1882,19 +1891,42 @@ export function GcpMethodApplyView({
 	const flavour = method === "alchemy" ? "alchemy" : "terraform"
 	const iac = method === "manual" ? null : method === "terraform" ? "tf" : "ts"
 	const config = setup === null ? null : method === "alchemy" ? setup.alchemy : setup.terraform
-	const confirm = (
-		<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-			<p className={SMALL}>Maple can&apos;t see a removal. Tell it once it is done.</p>
-			<Button
-				size="sm"
-				variant="outline"
-				loading={confirmRemoval.confirming}
-				onClick={confirmRemoval.onConfirm}
-			>
-				I&apos;ve removed them
-			</Button>
-		</div>
-	)
+	// A file removes only what it created: what a script or the console made is deleted by hand.
+	const removalSection =
+		removal.length === 0 ? null : (
+			<section className="flex flex-col gap-3">
+				<div className="flex flex-col gap-0.5">
+					<h3 className={GCP_TITLE}>
+						{iac === null
+							? "Delete these in the Google Cloud console"
+							: "If your file didn't create these, delete them in the console"}
+					</h3>
+					<p className={SMALL}>
+						In this order: Google keeps routing to the topic for a while.{" "}
+						<GcpExternalLink href={`${MANUAL_DOCS}#removing`}>Details</GcpExternalLink>
+					</p>
+				</div>
+				<ol className="flex list-decimal flex-col gap-2 pl-5 text-xs/5">
+					{removal.map((item) => (
+						<li key={item.what}>
+							<span className="text-muted-foreground">{item.what}</span>{" "}
+							<GcpValue value={item.name} />
+						</li>
+					))}
+				</ol>
+				<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+					<p className={SMALL}>Maple can&apos;t see a removal. Tell it once it is done.</p>
+					<Button
+						size="sm"
+						variant="outline"
+						loading={confirmRemoval.confirming}
+						onClick={confirmRemoval.onConfirm}
+					>
+						I&apos;ve removed them
+					</Button>
+				</div>
+			</section>
+		)
 	return (
 		<>
 			<ConfigureHeader title={title} step={3} />
@@ -1908,28 +1940,7 @@ export function GcpMethodApplyView({
 				) : null}
 				{iac === null ? (
 					<>
-						{removal.length === 0 ? null : (
-							<section className="flex flex-col gap-3">
-								<div className="flex flex-col gap-0.5">
-									<h3 className={GCP_TITLE}>Delete these in the Google Cloud console</h3>
-									<p className={SMALL}>
-										In this order: Google keeps routing to the topic for a while.{" "}
-										<GcpExternalLink href={`${MANUAL_DOCS}#removing`}>
-											Details
-										</GcpExternalLink>
-									</p>
-								</div>
-								<ol className="flex list-decimal flex-col gap-2 pl-5 text-xs/5">
-									{removal.map((item) => (
-										<li key={item.what}>
-											<span className="text-muted-foreground">{item.what}</span>{" "}
-											<GcpValue value={item.name} />
-										</li>
-									))}
-								</ol>
-								{confirm}
-							</section>
-						)}
+						{removalSection}
 						{failure !== null ? (
 							<LoadFailure failure={failure} />
 						) : plan === null ? (
@@ -1988,7 +1999,7 @@ export function GcpMethodApplyView({
 							)}{" "}
 							<GcpExternalLink href={IAC_DOCS}>Details</GcpExternalLink>
 						</p>
-						{removal.length === 0 ? null : confirm}
+						{removalSection}
 					</section>
 				)}
 			</DialogPanel>
@@ -2033,7 +2044,8 @@ function MethodApplyStage({
 	return (
 		<GcpMethodApplyView
 			{...view}
-			logFilter={filterShort(choice)}
+			// Without the script there is no filter to keep.
+			logFilter={choice.keep ? "Recommended filter, replaces the current one" : filterShort(choice)}
 			keepFilter={choice.keep}
 			setup={scripts}
 			failure={failure}

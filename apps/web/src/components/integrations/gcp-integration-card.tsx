@@ -127,7 +127,7 @@ export function GcpMessage({ text }: { text: string }) {
 	)
 }
 
-const ASK_ADMIN = "Ask a Maple organization admin to run the setup script."
+const ASK_ADMIN = "Ask a Maple organization admin to finish the setup in Google Cloud."
 
 /** The card's one filled button, which runs the script; for everyone but admins, the sentence asking for it. */
 function RunScript({ label, onRun }: { label: string; onRun: (() => void) | null }) {
@@ -219,8 +219,8 @@ function connectionIssues({
 			needed === "setup-pending"
 				? [
 						connector.setup_reported_at === null
-							? "Google Cloud has nothing of Maple's yet. Running the setup script takes about a minute."
-							: "The last run stopped part of the way. Run the script again: it continues where it stopped.",
+							? "Google Cloud has nothing of Maple's yet. The setup script takes about a minute."
+							: "Part of the setup isn't confirmed yet. A script run continues where it stopped; a setup in the console or as code is confirmed by its first data.",
 					]
 				: gcpPendingChanges(connector, nowMs)
 		issues.push({
@@ -295,8 +295,8 @@ function connectionIssues({
 			{
 				key: "running",
 				tone: "live",
-				title: "The setup script is still running",
-				body: "Logs and metrics start once it has finished.",
+				title: "Setup in progress",
+				body: "Logs and metrics start once it is complete.",
 			},
 		]
 	}

@@ -45,6 +45,7 @@ const connector = (over: Partial<Parameters<typeof gcpConnectionState>[0]> = {})
 	last_metrics_error: null as string | null,
 	discovered_project_count: 1,
 	last_resources_error: null as string | null,
+	created_at: ago(120),
 	...over,
 })
 /** As created: nothing reported, nothing arrived. */
@@ -145,9 +146,15 @@ describe("gcpMetricsState", () => {
 		})
 	})
 
-	it("is setup pending until a run reports, and hides the poller's sign-in error", () => {
-		expect(metrics({ ...fresh, ...NEVER, last_metrics_error: SIGN_IN })).toEqual({
+	it("is setup pending until a run reports, and hides the poller's sign-in error for a new grant's grace", () => {
+		expect(metrics({ ...fresh, ...NEVER, last_metrics_error: SIGN_IN, created_at: ago(5) })).toEqual({
 			kind: "setup-pending",
+		})
+		// A setup without the script never reports: past the grace, the poller says what is missing.
+		expect(metrics({ ...fresh, ...NEVER, last_metrics_error: SIGN_IN, created_at: ago(20) })).toEqual({
+			kind: "failing",
+			error: SIGN_IN,
+			lastMetricsReceivedAt: null,
 		})
 	})
 

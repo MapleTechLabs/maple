@@ -171,7 +171,10 @@ describe("gcpAgentPrompt", () => {
 			connector: removing,
 		})
 		expect(prompt).toContain("deploys with --adopt to take them over")
-		expect(prompt).toContain("applying it removes what that version created")
+		expect(prompt).toContain("Applying it removes what an earlier version of this file created")
+		// What a script or the console made, no file removes: the prompt names it to delete by hand.
+		expect(prompt).toContain("I delete by hand: Log Router sink on the organization")
+		expect(prompt).toContain("keep that one and ask me")
 		expect(prompt).toContain("to click I've removed them")
 		expect(prompt).not.toContain("PROJECT_NUMBER")
 	})

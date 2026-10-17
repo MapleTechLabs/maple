@@ -122,7 +122,7 @@ const STATES = {
 	"manual-org": { label: "Manual · org logs", note: "An organization forwarding logs only." },
 	"manual-failed": {
 		label: "Manual · metrics failing",
-		note: "Logs arrive; the poller's first read was denied.",
+		note: "Logs arrive; past the grant's grace, the poller's read is still denied.",
 	},
 	"manual-removal": { label: "Manual · removal", note: "Log forwarding switched off: what to delete." },
 	terraform: { label: "Terraform", note: "Click Copy prompt for coding agent for the prompt." },
@@ -264,7 +264,7 @@ const METHOD_APPLY = {
 	"manual-failed": {
 		title: "Connect Google Cloud",
 		connector: connector({
-			created_at: ago(8),
+			created_at: ago(20),
 			applied_logs_enabled: true,
 			last_log_received_at: ago(0.2),
 			last_metrics_error:

@@ -180,7 +180,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			{
 				title: "Send a test message",
 				summary: "Optional",
-				intro: "In the topic's Messages tab, publish this message. Maple confirms log forwarding as soon as it arrives.",
+				intro: "In the topic's Messages tab, publish this message. It proves the topic, subscription and push reach Maple, which confirms log forwarding; the sink is proven by the first real log.",
 				consoleUrl: hostPage("cloudpubsub/topic/list", plan),
 				fields: [
 					field(
@@ -306,12 +306,13 @@ export function gcpAgentPrompt({
 }): string {
 	const host = plan.projectId
 	const file = flavour === "terraform" ? "maple.tf" : "maple.ts"
-	const removing = gcpRemovalList(connector).length > 0
+	const removal = gcpRemovalList(connector)
+	const removing = removal.length > 0
 	const takesOver = connector.applied_logs_enabled === true || connector.applied_metrics_enabled === true
 	const scopeRoles = gcpScopeRoles(plan.scopeType, connector)
 	const place =
 		flavour === "terraform"
-			? `Add the file below as ${file} in a directory or module of its own, next to the configuration that manages ${host}. Reuse the google provider credentials this repo already uses, and drop the file's terraform block if the providers are declared already.`
+			? `Add the file below as ${file} in a root module of its own (its import blocks only work there), next to the configuration that manages ${host}. Reuse the google provider credentials this repo already uses, and drop the file's terraform block if the providers are declared already.`
 			: `Add the file below as ${file} and install what its header's bun add names.${plan.logs === null ? "" : ` Fill in PROJECT_NUMBER: gcloud projects describe ${host} --format='value(projectNumber)'.`} Switch the APIs on first: gcloud services enable ${plan.apis.join(" ")} --project=${host}`
 	const apply =
 		flavour === "terraform"
@@ -336,11 +337,15 @@ export function gcpAgentPrompt({
 		removing ? "to click I've removed them in Maple's Google Cloud dialog" : null,
 	].filter((part) => part !== null)
 	const steps = [
-		`${place} Keep every name, the endpoint URL and the log filter exactly as given.${
+		`${place} Keep every name and the endpoint URL exactly as given. If the repo already has a Maple log_filter, keep that one and ask me.${
 			takesOver
-				? ` The setup script created some of these resources: the file ${flavour === "terraform" ? "imports them" : "deploys with --adopt to take them over"}.`
+				? ` An earlier setup created some of these resources: the file ${flavour === "terraform" ? "imports them" : "deploys with --adopt to take them over"}.`
 				: ""
-		}${removing ? " It replaces an earlier version of the file: applying it removes what that version created and this one no longer has." : ""}`,
+		}${
+			removing
+				? ` Applying it removes what an earlier version of this file created and this one no longer has. Whatever the file didn't create (a setup by script or in the console) I delete by hand: ${removal.map((item) => `${item.what}: ${item.name}`).join("; ")}.`
+				: ""
+		}`,
 		`${apply} The account that applies it needs Owner on ${host}${scopeRoles.length === 0 ? "" : ` and ${scopeRoles.join(" and ")} on the ${plan.scopeType} ${plan.scopeId}`}.`,
 		...(verify.length === 0
 			? []
