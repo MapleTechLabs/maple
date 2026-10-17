@@ -88,8 +88,9 @@ export class TraceSamplingPolicyService extends Context.Service<
 			return toDocument(yield* loadRow(orgId))
 		})
 
-		// The row is locked for the read-write, and the conflict branch sets only the requested
-		// fields, so concurrent PATCHes with disjoint fields both stick and the audit diff is exact.
+		// The row is locked for the read-write, and the update sets only the requested fields, so
+		// concurrent PATCHes with disjoint fields both stick and the audit diff is exact. With no row
+		// there is nothing to lock: a first insert that loses the race re-reads the winner's row.
 		const update = Effect.fn("TraceSamplingPolicyService.update")(function* (
 			orgId: OrgId,
 			request: TraceSamplingPolicyUpdateRequest,
@@ -102,28 +103,36 @@ export class TraceSamplingPolicyService extends Context.Service<
 				changed.alwaysKeepErrorSpans = request.alwaysKeepErrorSpans
 			if (request.alwaysKeepSlowSpansMs !== undefined)
 				changed.alwaysKeepSlowSpansMs = request.alwaysKeepSlowSpansMs
-			return yield* dbExecute((db) =>
-				db.transaction(
+			return yield* dbExecute((db) => {
+				const lockRow = db
+					.run(selectRow(orgId).forUpdate())
+					.pipe(Effect.map((rows) => Option.fromUndefinedOr(rows[0])))
+				const readAfter = db
+					.run(selectRow(orgId))
+					.pipe(Effect.map((rows) => toDocument(Option.fromUndefinedOr(rows[0]))))
+				return db.transaction(
 					Effect.gen(function* () {
-						const locked = yield* db.run(selectRow(orgId).forUpdate())
-						const before = toDocument(Option.fromUndefinedOr(locked[0]))
+						const locked = yield* lockRow
+						if (Option.isNone(locked)) {
+							const created = yield* db.run(
+								PG.insertInto(OrgIngestSamplingPolicies)
+									.values({ orgId, createdAt: now, ...DEFAULT_TRACE_SAMPLING_POLICY, ...changed })
+									.onConflictDoNothing()
+									.returning("orgId"),
+							)
+							if (created.length > 0) return { before: toDocument(locked), after: yield* readAfter }
+						}
+						// A lost insert race waited for the winner to commit, so its row is visible now.
+						const before = toDocument(Option.isSome(locked) ? locked : yield* lockRow)
 						yield* db.run(
-							PG.insertInto(OrgIngestSamplingPolicies)
-								.values({
-									orgId,
-									createdAt: now,
-									traceSampleRatio: before.traceSampleRatio,
-									alwaysKeepErrorSpans: before.alwaysKeepErrorSpans,
-									alwaysKeepSlowSpansMs: before.alwaysKeepSlowSpansMs,
-									...changed,
-								})
-								.onConflictDoUpdate({ target: ["orgId"], set: changed }),
+							PG.update(OrgIngestSamplingPolicies)
+								.set(changed)
+								.where(($) => [$.orgId.eq(orgId)]),
 						)
-						const after = yield* db.run(selectRow(orgId))
-						return { before, after: toDocument(Option.fromUndefinedOr(after[0])) }
+						return { before, after: yield* readAfter }
 					}),
-				),
-			)
+				)
+			})
 		})
 
 		return { get, update } satisfies TraceSamplingPolicyServiceApi
