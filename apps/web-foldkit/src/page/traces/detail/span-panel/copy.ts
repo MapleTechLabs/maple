@@ -1,18 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	copyButtonStatusStyles,
-	copyButtonStyles,
-	copyIndicatorCheckDrawStyles,
-	copyIndicatorCopiedStyles,
-	copyIndicatorErrorStyles,
-	copyIndicatorFullStrengthStyles,
-	copyIndicatorLayerActiveStyles,
-	copyIndicatorLayerStyles,
-	copyIndicatorStyles,
-} from "@maple/ui/styles/ui/copy-button"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { icon, type IconName } from "../../../../ui/icon"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { copyButton as sharedCopyButton } from "../../../../ui/copy-button"
+import type { IconName } from "../../../../ui/icon"
 import { Message } from "./message"
 import type { CopyStatus, Model } from "./model"
 
@@ -23,78 +12,6 @@ import type { CopyStatus, Model } from "./model"
 type H = HtmlBuilder<Message>
 
 export const statusOf = (model: Model, id: string): CopyStatus => model.copies[id]?.status ?? "idle"
-
-const glyph = (h: H, size: string, paths: ReadonlyArray<Html>): Html =>
-	h.svg(
-		[
-			h.Attribute("aria-hidden", "true"),
-			h.Attribute("class", copyIndicatorFullStrengthStyles),
-			h.Attribute("fill", "none"),
-			h.Attribute("height", size),
-			h.Attribute("viewBox", "0 0 24 24"),
-			h.Attribute("width", size),
-			h.Attribute("xmlns", "http://www.w3.org/2000/svg"),
-		],
-		paths,
-	)
-
-const stroke = (h: H, d: string, extra: ReadonlyArray<Attribute<Message>> = []) =>
-	h.path([
-		...extra,
-		h.Attribute("d", d),
-		h.Attribute("stroke", "currentColor"),
-		h.Attribute("stroke-linecap", "square"),
-		h.Attribute("stroke-width", "2"),
-	])
-
-const indicator = (h: H, status: CopyStatus, iconSize: number, idleIcon: IconName): Html => {
-	const size = String(iconSize)
-	return h.span(
-		[
-			h.AriaHidden(true),
-			h.DataAttribute("copy-status", status),
-			h.Class(copyIndicatorStyles),
-			h.Style({ height: `${iconSize}px`, width: `${iconSize}px` }),
-		],
-		[
-			h.span(
-				[h.Class(cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.idle))],
-				[icon(h, idleIcon, { size: iconSize })],
-			),
-			h.span(
-				[
-					h.Class(
-						cn(
-							copyIndicatorLayerStyles,
-							copyIndicatorLayerActiveStyles.copied,
-							copyIndicatorCopiedStyles,
-						),
-					),
-				],
-				[
-					glyph(h, size, [
-						stroke(h, "M4.5 12.5L9.5 17.5L19.5 6.5", [
-							h.Attribute("class", copyIndicatorCheckDrawStyles),
-							h.Attribute("pathLength", "1"),
-						]),
-					]),
-				],
-			),
-			h.span(
-				[
-					h.Class(
-						cn(
-							copyIndicatorLayerStyles,
-							copyIndicatorLayerActiveStyles.error,
-							copyIndicatorErrorStyles,
-						),
-					),
-				],
-				[glyph(h, size, [stroke(h, "M6 6L18 18"), stroke(h, "M18 6L6 18")])],
-			),
-		],
-	)
-}
 
 export type CopyButtonOptions = Readonly<{
 	/** Copy target id: the key its status is kept under. */
@@ -109,35 +26,21 @@ export type CopyButtonOptions = Readonly<{
 }>
 
 /** `<CopyButton>` (ghost, icon-xs) whose click copies `value`. */
-export const copyButton = (h: H, model: Model, options: CopyButtonOptions): Html => {
-	const status = statusOf(model, options.id)
-	return button(
-		h,
-		{
-			variant: "ghost",
-			size: "icon-xs",
-			className: cn(copyButtonStyles, options.className),
-			slot: options.tooltipId === undefined ? undefined : "tooltip-trigger",
-			attributes: [
-				h.AriaLabel(`Copy ${options.label}`),
-				...(options.tooltipId === undefined
-					? []
-					: [h.DataAttribute("base-ui-tooltip-trigger", ""), h.Id(options.tooltipId)]),
-				h.DataAttribute("copy-status", status),
-				h.OnClick(Message.ClickedCopy({ id: options.id, text: options.value }), {
-					propagation: "Stop",
-				}),
-			],
-		},
-		[
-			indicator(h, status, options.iconSize ?? 14, options.idleIcon ?? "CopyIcon"),
-			h.span(
-				[h.Role("status"), h.AriaLive("polite"), h.Class(copyButtonStatusStyles)],
-				[status === "copied" ? "Copied" : status === "error" ? "Failed to copy" : ""],
-			),
+export const copyButton = (h: H, model: Model, options: CopyButtonOptions): Html =>
+	sharedCopyButton(h, {
+		status: statusOf(model, options.id),
+		label: options.label,
+		iconSize: options.iconSize ?? 14,
+		idleIcon: options.idleIcon,
+		className: options.className,
+		slot: options.tooltipId === undefined ? undefined : "tooltip-trigger",
+		attributes: [
+			...(options.tooltipId === undefined
+				? []
+				: [h.DataAttribute("base-ui-tooltip-trigger", ""), h.Id(options.tooltipId)]),
+			h.OnClick(Message.ClickedCopy({ id: options.id, text: options.value }), { propagation: "Stop" }),
 		],
-	)
-}
+	})
 
 /** `CopyableValue`: inline text that copies itself on click. */
 export const copyableValue = (

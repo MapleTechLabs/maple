@@ -3,9 +3,9 @@ import { cn } from "@maple/ui/lib/utils"
 import { tableBodyStyles } from "@maple/ui/styles/ui/table"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
+import { excludedEmptyHint } from "../../../ui/filters/excluded-empty-hint"
 import { listFooter, loadingMoreRow } from "../../../ui/list-footer"
 import { table, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { tableSkeleton } from "../../../ui/table-skeleton"
@@ -215,36 +215,6 @@ const loadedTable = (h: HtmlBuilder<Message>, model: Model, timeZone: string, is
 	)
 }
 
-/** `ExcludedEmptyHint` (packages/ui/src/components/filters/excluded-empty-hint.tsx). */
-const excludedHint = (h: HtmlBuilder<Message>, excluded: ReadonlyArray<string>): Html | null => {
-	if (excluded.length === 0) return null
-	const named = excluded.slice(0, 4).join(", ")
-	const rest = excluded.length - 4
-	return h.div(
-		[
-			h.Class(
-				"mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-md border border-dashed border-destructive/40 bg-destructive/5 px-3 py-2 text-xs mx-auto max-w-lg",
-			),
-		],
-		[
-			h.span(
-				[h.Class("text-muted-foreground")],
-				[
-					excluded.length === 1 ? "1 value is" : `${excluded.length} values are`,
-					" being excluded:",
-					" ",
-					h.span([h.Class("text-destructive")], [rest > 0 ? `${named} +${rest} more` : named]),
-				],
-			),
-			button(
-				h,
-				{ variant: "link", size: "xs", attributes: [h.OnClick(Message.ClickedClearExclusions())] },
-				["Remove exclusions"],
-			),
-		],
-	)
-}
-
 const emptyTable = (h: HtmlBuilder<Message>, model: Model): Html => {
 	const excluded = traceFilterChips(model.search)
 		.filter((chip) => chip.negated)
@@ -264,7 +234,11 @@ const emptyTable = (h: HtmlBuilder<Message>, model: Model): Html => {
 						onWidenRange: canWidenTimeRange(model.search, DEFAULT_PRESET)
 							? Message.ClickedWidenRange()
 							: undefined,
-						detail: excludedHint(h, excluded),
+						detail: excludedEmptyHint(h, {
+							excluded,
+							onClear: Message.ClickedClearExclusions(),
+							className: "mx-auto max-w-lg",
+						}),
 					}),
 				],
 			),

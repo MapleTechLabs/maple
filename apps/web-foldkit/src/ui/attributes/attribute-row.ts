@@ -169,12 +169,15 @@ const commitShaValue = (h: H, id: string, value: string): Html =>
 	)
 
 /** The per-row hover verb (`AttributeFilterAction`): the `tag` badge as a button. */
-const filterAction = (h: H, label: string, onClick: Message, text: string): Html =>
+export const attributeFilterAction = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ label: string; text: string; onClick: M; stopPropagation?: boolean }>,
+): Html =>
 	h.button(
 		[
 			h.Type("button"),
-			h.AriaLabel(label),
-			h.Title(label),
+			h.AriaLabel(options.label),
+			h.Title(options.label),
 			h.Class(
 				cn(
 					badgeVariants({
@@ -184,10 +187,13 @@ const filterAction = (h: H, label: string, onClick: Message, text: string): Html
 				),
 			),
 			h.DataAttribute("slot", "badge"),
-			h.OnClick(onClick, stop),
+			options.stopPropagation === true ? h.OnClick(options.onClick, stop) : h.OnClick(options.onClick),
 		],
-		[text],
+		[options.text],
 	)
+
+const filterAction = (h: H, label: string, onClick: Message, text: string): Html =>
+	attributeFilterAction(h, { label, onClick, text, stopPropagation: true })
 
 export type RowContext = Readonly<{
 	model: Model

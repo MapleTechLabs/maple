@@ -1,9 +1,8 @@
 import { splitGenAiAttributes, type GenAiGroup } from "@maple/ui/lib/gen-ai"
-import { trySync } from "@maple/ui/lib/try-sync"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { attributeFilterAction, tryParseJson } from "../../../../ui/attributes/attribute-row"
 import { icon } from "../../../../ui/icon"
 import { copyableValue, copyButton, selectableValue } from "./copy"
 import { type AttributeScope, Message } from "./message"
@@ -18,34 +17,8 @@ type Entries = ReadonlyArray<readonly [string, string]>
 
 const FULL_SHA = /^[0-9a-f]{40}$/i
 
-// copied: `tryParseJson` (attributes-table.tsx, a React module).
-const tryParseJson = (value: string): Option.Option<unknown> => {
-	const trimmed = value.trimStart()
-	return trimmed[0] !== "{" && trimmed[0] !== "["
-		? Option.none()
-		: trySync<unknown>(() => JSON.parse(value))
-}
-
-/** `AttributeFilterAction`: the row's hover verb, a tag Badge rendered as a button. */
 const filterAction = (h: H, label: string, onClick: Message, text: string): Html =>
-	h.button(
-		[
-			h.AriaLabel(label),
-			h.Class(
-				cn(
-					badgeVariants({
-						variant: "tag",
-						className: "bg-transparent font-sans transition-colors",
-					}),
-				),
-			),
-			h.DataAttribute("slot", "badge"),
-			h.Title(label),
-			h.Type("button"),
-			h.OnClick(onClick),
-		],
-		[text],
-	)
+	attributeFilterAction(h, { label, onClick, text })
 
 /** `CommitShaAttributeValue`: the hover-card trigger (the card itself is not ported). */
 const commitShaValue = (h: H, id: string, value: string): Html => {

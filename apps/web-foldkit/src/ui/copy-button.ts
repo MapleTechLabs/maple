@@ -190,6 +190,8 @@ export type CopyButtonOptions<M> = Readonly<{
 	variant?: "default" | "secondary" | "outline" | "ghost"
 	size?: "xs" | "sm" | "default" | "icon-xs" | "icon-sm" | "icon"
 	className?: string
+	/** `data-slot` when a wrapper renders through it (`tooltip-trigger`). */
+	slot?: string
 	/** Props spread onto the button after its own. */
 	attributes?: ReadonlyArray<Attribute<M>>
 }>
@@ -213,6 +215,7 @@ export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>):
 			variant: options.variant ?? "ghost",
 			size: options.size ?? (options.idleLabel === undefined ? "icon-xs" : "sm"),
 			className: cn(copyButtonStyles, options.className),
+			slot: options.slot,
 			attributes: [
 				h.AriaLabel(`Copy ${options.label}`),
 				h.DataAttribute("copy-status", status),
