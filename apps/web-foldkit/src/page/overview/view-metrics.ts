@@ -6,7 +6,7 @@ import { Option } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../charts/chart"
-import { chartSkeleton, type ChartSkeletonVariant } from "../../charts/chart-skeleton"
+import { chartSkeleton, type ChartSkeletonVariant } from "../../ui/chart-skeleton"
 import * as FixedMetricChart from "../../charts/fixed-metric-chart"
 import type { FixedMetricChartInputs } from "../../charts/fixed-metric-chart"
 import {

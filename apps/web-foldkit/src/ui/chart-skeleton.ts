@@ -2,10 +2,10 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // Port of `ChartSkeleton` (packages/ui/src/components/charts/_shared/chart-skeleton.tsx) and
-// `ChartLoading` (chart-state.tsx), the line and area variants.
-// TODO(variants): bar, histogram, heatmap, hbar, funnel, paths, pie, gauge and stat ghosts.
+// `ChartLoading` (chart-state.tsx): the line, area, bar and histogram variants.
+// TODO(variants): heatmap, hbar, funnel, paths, pie, gauge and stat ghosts.
 
-export type ChartSkeletonVariant = "line" | "area"
+export type ChartSkeletonVariant = "line" | "area" | "bar" | "histogram"
 
 const STROKE = "var(--muted-foreground)"
 const TREND = "M 2 72 L 20 52 L 38 64 L 56 30 L 74 46 L 98 16"
@@ -45,6 +45,59 @@ const trendLine = <M>(h: HtmlBuilder<M>): Html =>
 		]),
 	)
 
+/** The line and area ghosts: grid lines, the trend, and the area fill under it. */
+const trendGhost = <M>(h: HtmlBuilder<M>, variant: "line" | "area"): Html =>
+	h.svg(
+		attrs(h, [
+			["viewBox", "0 0 100 100"],
+			["preserveAspectRatio", "none"],
+			["class", "h-full w-full p-1"],
+		]),
+		[
+			...gridLines(h),
+			...(variant === "area"
+				? [
+						h.path(
+							attrs(h, [
+								["d", `${TREND} L 98 100 L 2 100 Z`],
+								["fill", STROKE],
+								["fill-opacity", "0.1"],
+							]),
+						),
+					]
+				: []),
+			trendLine(h),
+		],
+	)
+
+const BAR_HEIGHTS = [46, 70, 34, 86, 56, 96, 62]
+const HISTOGRAM_HEIGHTS = [14, 28, 46, 68, 86, 96, 84, 64, 42, 26, 13]
+
+/** `Bars`: ghost columns with staggered pulse delays. */
+const bars = <M>(h: HtmlBuilder<M>, heights: ReadonlyArray<number>, delay: (index: number) => number) =>
+	heights.map((height, index) =>
+		h.div([
+			h.Class("flex-1 rounded-xs bg-foreground/10 skeleton-bar"),
+			h.Style({ height: `${height}%`, "animation-delay": `${delay(index)}s` }),
+		]),
+	)
+
+const barGhost = <M>(h: HtmlBuilder<M>, variant: "bar" | "histogram"): Html =>
+	variant === "bar"
+		? h.div(
+				[h.Class("flex h-full w-full items-end gap-1.5 p-3")],
+				bars(h, BAR_HEIGHTS, (index) => -index * 0.13),
+			)
+		: h.div(
+				[h.Class("flex h-full w-full items-end gap-[3px] p-3")],
+				bars(
+					h,
+					HISTOGRAM_HEIGHTS,
+					(index) => -Math.abs(index - (HISTOGRAM_HEIGHTS.length - 1) / 2) * 0.11,
+				),
+			)
+
+/** `ChartSkeleton`: the ghost shape matching what will replace it. */
 export const chartSkeleton = <M>(
 	h: HtmlBuilder<M>,
 	variant: ChartSkeletonVariant,
@@ -56,30 +109,7 @@ export const chartSkeleton = <M>(
 			h.DataAttribute("slot", "chart-skeleton"),
 			h.AriaHidden(true),
 		],
-		[
-			h.svg(
-				attrs(h, [
-					["viewBox", "0 0 100 100"],
-					["preserveAspectRatio", "none"],
-					["class", "h-full w-full p-1"],
-				]),
-				[
-					...gridLines(h),
-					...(variant === "area"
-						? [
-								h.path(
-									attrs(h, [
-										["d", `${TREND} L 98 100 L 2 100 Z`],
-										["fill", STROKE],
-										["fill-opacity", "0.1"],
-									]),
-								),
-							]
-						: []),
-					trendLine(h),
-				],
-			),
-		],
+		[variant === "line" || variant === "area" ? trendGhost(h, variant) : barGhost(h, variant)],
 	)
 
 /** `ChartLoading` outside a `ChartPlotArea`: an explicit height, else the parent owns it. */
