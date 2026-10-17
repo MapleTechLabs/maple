@@ -19,7 +19,7 @@ import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import * as Home from "./page/home"
 import * as SignIn from "./page/sign-in"
-import type { Resources } from "./platform/api-clients"
+import type { Resources } from "./platform/resources"
 import type { ClerkSnapshot } from "./platform/clerk"
 import { AppRoute, hrefOf, isPublicRoute, type Redirect, routeRedirect, urlToAppRoute } from "./route"
 
