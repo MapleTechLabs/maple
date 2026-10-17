@@ -265,7 +265,7 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 			focusRing: false,
 			tooltip: plot.tooltip,
 		})
-	}, [data, hasFuture, lastPoint, todayPoint, projected, yMax, primary, plot, axis, model.currency])
+	}, [data, hasFuture, lastPoint, todayPoint, projected, yMax, primary, plot, axis])
 
 	if (data.length === 0) {
 		return <ChartEmpty height={SPEND_CHART_HEIGHT}>No ingest recorded this cycle yet</ChartEmpty>
