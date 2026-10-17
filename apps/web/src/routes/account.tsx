@@ -17,7 +17,7 @@ import { TwoFactorSection } from "@/components/account/two-factor-section"
 import { PasskeysSection } from "@/components/account/passkeys-section"
 import { ConnectedAccountsSection } from "@/components/account/connected-accounts-section"
 import { ActiveSessionsSection } from "@/components/account/active-sessions-section"
-import { NotificationsSection } from "@/components/settings/notifications-section"
+import { EmailPreferencesSection } from "@/components/account/email-preferences-section"
 
 const AccountSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals(accountTabValues)),
@@ -56,7 +56,7 @@ function AccountPage() {
 			{activeTab === "passkeys" && <PasskeysSection />}
 			{activeTab === "connections" && <ConnectedAccountsSection />}
 			{activeTab === "sessions" && <ActiveSessionsSection />}
-			{activeTab === "email-preferences" && <NotificationsSection />}
+			{activeTab === "email-preferences" && <EmailPreferencesSection />}
 		</DashboardPage>
 	)
 }
