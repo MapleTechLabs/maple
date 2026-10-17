@@ -33,7 +33,9 @@ export const subscriptions = Subscription.make<Input, Message>()((entry) => ({
 		{
 			modelToDependencies: ({ model }) => ({
 				intervalSeconds:
-					model.isInspecting || searchPreset(model.search, DEFAULT_PRESET) === undefined
+					model.isInspecting ||
+					model.selectedIndex !== null ||
+					searchPreset(model.search, DEFAULT_PRESET) === undefined
 						? 0
 						: resolveRefreshIntervalSeconds(model.search.refresh, undefined),
 			}),

@@ -19,6 +19,7 @@ import * as Tooltip from "../../../ui/tooltip"
 import { listFooterText } from "../../../ui/logs/viewer"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import * as LogDetail from "../detail"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -115,7 +116,7 @@ const streamSlot = {
 const replaceStreamRows = (model: Model, context: PageContext): Return => {
 	const result = LogsStream.replaceRows(model.stream, rowsOf(model, context))
 	return {
-		model: { ...model, stream: result.model, ...inspectOf(result.outMessage) },
+		model: { ...model, stream: result.model, selectedIndex: null, ...inspectOf(result.outMessage) },
 		commands: Command.mapMessages(result.commands ?? [], streamSlot.toParentMessage),
 	}
 }
@@ -329,6 +330,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		toolbarTooltip: Tooltip.init("logs-toolbar-tooltip", { openDelayMs: 250 }),
 		columnsPopover: Popover.init("logs-columns-popover", { align: "end" }),
 		searchHelp: initSearchHelp(),
+		detail: LogDetail.init("logs-detail"),
+		selectedIndex: null,
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		refreshVersion: 0,
@@ -373,8 +376,14 @@ export const contextChanged = (model: Model, context: PageContext): Return =>
 
 const foldStreamOut = (model: Model, out: LogsStream.OutMessage): Return =>
 	LogsStream.OutMessage.match<Return>(out, {
-		// TODO(detail-sheet): `LogDetailSheet` opens here in apps/web.
-		OpenedLog: () => ({ model }),
+		OpenedLog: ({ index }) => {
+			const row = model.stream.rows[index]
+			if (row === undefined) return { model }
+			const opened = LogDetail.open(model.detail, row.log)
+			return liftChild({ ...model, detail: opened.model, selectedIndex: index }, opened.commands, (m) =>
+				Message.GotDetailMessage({ message: m }),
+			)
+		},
 		ChangedInspecting: ({ isInspecting, isScrolledAway }) => ({
 			model: { ...model, isInspecting, isScrolledAway },
 		}),
@@ -589,6 +598,27 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return liftChild({ ...model, columnsPopover: next.model }, next.commands, (m) =>
 				Message.GotColumnsPopoverMessage({ message: m }),
 			)
+		},
+		GotDetailMessage: ({ message: inner }) => {
+			const next = LogDetail.update(model.detail, inner)
+			const lifted = liftChild({ ...model, detail: next.model }, next.commands, (m) =>
+				Message.GotDetailMessage({ message: m }),
+			)
+			const out = next.outMessage
+			if (out === undefined) return lifted
+			if (out._tag === "Closed") return { ...lifted, model: { ...lifted.model, selectedIndex: null } }
+			return {
+				...navigate(lifted.model, {
+					...model.search,
+					attrs: addLogAttributeFilter(model.search.attrs, {
+						source: out.source,
+						key: out.key,
+						value: out.value,
+						negated: out.negated,
+					}),
+				}),
+				commands: lifted.commands,
+			}
 		},
 		GotSearchHelpMessage: ({ message: inner }) => {
 			const next = Popover.update(model.searchHelp, inner)

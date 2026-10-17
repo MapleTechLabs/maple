@@ -14,6 +14,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { searchPreset, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import * as LogDetail from "../detail"
 import { liveControls } from "../live-controls"
 import { chipId, logFilterChips } from "./derive"
 import { Message } from "./message"
@@ -79,6 +80,7 @@ const streamArea = (
 					footerText: footerText(model),
 					canFilter: true,
 					isBare: true,
+					selectedIndex: model.selectedIndex ?? undefined,
 				},
 			}),
 		],
@@ -128,7 +130,7 @@ const headerActions = (h: HtmlBuilder<Message>, model: Model): Html => {
 			? undefined
 			: liveControls(h, {
 					refreshInterval: resolveRefreshIntervalSeconds(model.search.refresh, undefined),
-					isInspecting: model.isInspecting,
+					isInspecting: model.isInspecting || model.selectedIndex !== null,
 					isScrolledAway: model.isScrolledAway,
 					isReloading: model.isReloading,
 					onReload: Message.ClickedReload(),
@@ -177,6 +179,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					),
 				],
 			),
+			h.submodel({
+				slotId: "logs-detail",
+				model: model.detail,
+				view: LogDetail.view,
+				viewInputs: { timeZone: inputs.context.timeZone },
+				toParentMessage: (message) => Message.GotDetailMessage({ message }),
+			}),
 		],
 	),
 )

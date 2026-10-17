@@ -30,6 +30,8 @@ export interface ViewInputs {
 	 * `LogsTableView` does on /logs); the stream's own root is then `display: contents`.
 	 */
 	readonly isBare?: boolean
+	/** The row the detail sheet shows (`rowSelectedClass`). */
+	readonly selectedIndex?: number
 }
 
 const PINNED_COL_WIDTH = "150px"
@@ -95,11 +97,12 @@ const rowView = (
 	panel: AttributesPanel.Model | undefined,
 	jsonStatus: CopyStatus,
 	canFilter: boolean,
+	isSelected: boolean,
 ): Html =>
 	logRow(h, ROW_EVENTS, row, index, start, {
 		isFocused,
 		isExpanded,
-		isSelected: false,
+		isSelected,
 		wrap,
 		density,
 		highlight,
@@ -134,6 +137,7 @@ export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 						model.panels[String(index)],
 						model.jsonCopy.id === String(index) ? model.jsonCopy.status : "idle",
 						inputs.canFilter,
+						index === inputs.selectedIndex,
 					]),
 				]
 	})

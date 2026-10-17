@@ -9,6 +9,7 @@ import * as LogsStream from "../../../ui/logs/logs-stream"
 import * as Menu from "../../../ui/menu"
 import * as Popover from "../../../ui/popover"
 import * as Tooltip from "../../../ui/tooltip"
+import * as LogDetail from "../detail"
 import { SignalPresences } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { AttributeKey, Density, LogsFacets, LogsPage, VolumeBucket } from "./model"
@@ -67,6 +68,7 @@ export const Message = defineMessageUnion({
 	GotToolbarTooltipMessage: { message: Tooltip.Message },
 	GotColumnsPopoverMessage: { message: Popover.Message },
 	GotSearchHelpMessage: { message: Popover.Message },
+	GotDetailMessage: { message: LogDetail.Message },
 	ToggledColumn: { key: Schema.String },
 	GotVolumeChartMessage: { message: Chart.Message },
 })
