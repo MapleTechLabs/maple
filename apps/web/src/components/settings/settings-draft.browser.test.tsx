@@ -101,6 +101,50 @@ describe("useSettingsDraft commit", () => {
 		expect(result.current.isDirty).toBe(true)
 	})
 
+	it("keeps a revert to the saved value dirty while the save that stores the edit is in flight", () => {
+		const { result, rerender } = renderDraft({ rate: 10 })
+		act(() => result.current.setDraft({ rate: 50 }))
+		let submitted = result.current.draft
+		act(() => {
+			submitted = result.current.submit()
+		})
+		expect(submitted).toEqual({ rate: 50 })
+		act(() => result.current.setDraft({ rate: 10 }))
+		expect(result.current.isDirty).toBe(true)
+
+		act(() => result.current.commit({ submitted }))
+		expect(result.current.isDirty).toBe(true)
+
+		rerender({ saved: { rate: 50 } })
+		expect(result.current.draft).toEqual({ rate: 10 })
+		expect(result.current.isDirty).toBe(true)
+	})
+
+	it("abort keeps a reverted edit clean when the save failed", () => {
+		const { result } = renderDraft({ rate: 10 })
+		act(() => result.current.setDraft({ rate: 50 }))
+		act(() => {
+			result.current.submit()
+		})
+		act(() => result.current.setDraft({ rate: 10 }))
+		expect(result.current.isDirty).toBe(true)
+
+		act(() => result.current.abort())
+		expect(result.current.draft).toEqual({ rate: 10 })
+		expect(result.current.isDirty).toBe(false)
+	})
+
+	it("abort keeps an unsaved edit dirty", () => {
+		const { result } = renderDraft({ rate: 10 })
+		act(() => result.current.setDraft({ rate: 50 }))
+		act(() => {
+			result.current.submit()
+		})
+		act(() => result.current.abort())
+		expect(result.current.draft).toEqual({ rate: 50 })
+		expect(result.current.isDirty).toBe(true)
+	})
+
 	it("discard still drops the edits immediately", () => {
 		const { result } = renderDraft({ rate: 10 })
 		act(() => result.current.setDraft({ rate: 50 }))
