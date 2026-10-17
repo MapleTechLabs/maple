@@ -58,16 +58,34 @@ const model = buildSpendModel({
 
 function Harness({ canEdit }: { canEdit: boolean }) {
 	const [editing, setEditing] = useState<SpendFeatureId | null>(null)
+	const [saving, setSaving] = useState(false)
 	if (model === null) return null
 	return (
-		<BillingUsageTable
-			model={model}
-			customer={customer}
-			canEdit={canEdit}
-			editing={editing}
-			onEditingChange={setEditing}
-		/>
+		<>
+			{/* Stands in for any path outside the table that opens a row, like "Set caps". */}
+			<button type="button" onClick={() => setEditing("logs")}>
+				Open logs from outside
+			</button>
+			<BillingUsageTable
+				model={model}
+				customer={customer}
+				canEdit={canEdit}
+				editing={editing}
+				onEditingChange={setEditing}
+				saving={saving}
+				onSavingChange={setSaving}
+			/>
+		</>
 	)
+}
+
+/** A save the test settles by hand. */
+function deferredSave() {
+	let resolve: (exit: Exit.Exit<BillingControls, never>) => void = () => {}
+	const promise = new Promise<Exit.Exit<BillingControls, never>>((settle) => {
+		resolve = settle
+	})
+	return { promise, resolve: (exit: Exit.Exit<BillingControls, never>) => resolve(exit) }
 }
 
 afterEach(() => {
@@ -121,6 +139,62 @@ describe("BillingUsageTable", () => {
 		fireEvent.keyDown(input, { key: "Escape" })
 
 		expect(screen.getByRole("spinbutton", { name: "Traces paid overage cap" })).toBeTruthy()
+	})
+
+	it("locks the other rows' Edit buttons while a save is in flight, then frees them", async () => {
+		const pending = deferredSave()
+		saveCaps.mockReturnValue(pending.promise)
+		render(<Harness canEdit />)
+
+		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
+		fireEvent.change(screen.getByRole("spinbutton", { name: "Traces paid overage cap" }), {
+			target: { value: "150" },
+		})
+		fireEvent.click(screen.getByRole("button", { name: "Save" }))
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Edit Logs cap" }).hasAttribute("disabled")).toBe(true),
+		)
+
+		pending.resolve(Exit.succeed(new BillingControls({})))
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Edit Logs cap" }).hasAttribute("disabled")).toBe(false),
+		)
+	})
+
+	it("does not close another row's editor when an earlier save lands", async () => {
+		const pending = deferredSave()
+		saveCaps.mockReturnValue(pending.promise)
+		render(<Harness canEdit />)
+
+		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
+		fireEvent.change(screen.getByRole("spinbutton", { name: "Traces paid overage cap" }), {
+			target: { value: "150" },
+		})
+		fireEvent.click(screen.getByRole("button", { name: "Save" }))
+		fireEvent.click(screen.getByRole("button", { name: "Open logs from outside" }))
+		pending.resolve(Exit.succeed(new BillingControls({})))
+
+		// The save has settled once the other rows unlock.
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Edit Traces cap" }).hasAttribute("disabled")).toBe(false),
+		)
+		expect(screen.getByRole("spinbutton", { name: "Logs paid overage cap" })).toBeTruthy()
+	})
+
+	it("sends one save when Enter is pressed again mid-save", async () => {
+		saveCaps.mockReturnValue(new Promise(() => {}))
+		render(<Harness canEdit />)
+
+		fireEvent.click(screen.getByRole("button", { name: "Edit Traces cap" }))
+		const input = screen.getByRole("spinbutton", { name: "Traces paid overage cap" })
+		fireEvent.change(input, { target: { value: "150" } })
+		fireEvent.keyDown(input, { key: "Enter" })
+		await waitFor(() =>
+			expect(screen.getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true),
+		)
+		fireEvent.keyDown(input, { key: "Enter" })
+
+		expect(saveCaps).toHaveBeenCalledTimes(1)
 	})
 
 	it("closes the editor on Escape when idle", () => {
