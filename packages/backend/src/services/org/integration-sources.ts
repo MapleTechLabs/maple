@@ -11,6 +11,7 @@ import {
 import type { IntegrationInventory, IntegrationProvider } from "@maple/domain/integration-inventory"
 import {
 	gcpSourceHealth,
+	githubInstallationHealth,
 	integrationSourceHealth,
 	scrapeTargetSourceHealth,
 	type SourceHealthResult,
@@ -205,13 +206,18 @@ export const readIntegrationLinks = Effect.fnUntraced(function* (db: MapleDb, or
 			name: integrationSourceName.github(installation),
 			// Installations come and go one by one; a suspended or removed one is its own problem.
 			health: (inventory: IntegrationInventory | null) =>
-				installation.status === "active"
-					? providerHealth("github")(inventory)
-					: {
+				installation.status !== "active"
+					? {
 							status: "disconnected" as const,
 							lastDataAt: null,
 							problem: `The GitHub installation is ${installation.status}`,
-						},
+						}
+					: inventory === null
+						? HEALTH_UNAVAILABLE
+						: githubInstallationHealth(
+								inventory.integrations.find((entry) => entry.provider === "github"),
+								installation.accountLogin,
+							),
 		})),
 	]
 	return links

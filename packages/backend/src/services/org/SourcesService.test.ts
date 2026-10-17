@@ -466,4 +466,36 @@ describe("SourcesService", () => {
 			assert.strictEqual(fetched.health.status, "healthy")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
+
+	it("gives each GitHub installation its own source and health", () => {
+		const testDb = createTestDb(trackedDbs)
+		const insertInstallation = (id: string, login: string, status: string) =>
+			Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login, account_type, external_account_id, status, installed_by_user_id, created_at, updated_at)
+					 VALUES ($1, $2, 'github', $3, $4, 'Organization', $3, $5, 'user_a', now(), now())`,
+					[id, orgA, `ext-${login}`, login, status],
+				),
+			)
+
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000001", "acme", "active")
+			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000002", "globex", "suspended")
+
+			const sources = yield* ownSources(keys, orgA)
+			assert.deepStrictEqual(
+				sources.map((source) => [source.name, source.platform, source.health.status]).sort(),
+				[
+					["GitHub acme", "github", "pending"],
+					["GitHub globex", "github", "disconnected"],
+				],
+			)
+			assert.strictEqual(
+				sources.find((source) => source.name === "GitHub globex")?.health.problem,
+				"The GitHub installation is suspended",
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
 })
