@@ -27,6 +27,7 @@
 		"@xyflow/system": "0.0.83",
 		"class-variance-authority": "catalog:ui",
 		"d3-scale": "^4.0.2",
+		"d3-shape": "^3.2.0",
 		"effect": "catalog:effect",
 		"foldkit": "0.168.0"
 	},
@@ -35,6 +36,7 @@
 		"@foldkit/vite-plugin": "0.27.1",
 		"@tailwindcss/vite": "catalog:tailwind",
 		"@types/d3-scale": "^4.0.9",
+		"@types/d3-shape": "^3.2.0",
 		"@types/node": "catalog:tooling",
 		"playwright": "catalog:",
 		"tailwindcss": "catalog:tailwind",

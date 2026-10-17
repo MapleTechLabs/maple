@@ -22,7 +22,8 @@ export const kbdGroup = <Message>(
 	children: Children,
 ): Html => h.kbd([h.Class(cn(kbdGroupStyles, className)), h.DataAttribute("slot", "kbd-group")], children)
 
-export type BadgeOptions = VariantProps<typeof badgeVariants> & Readonly<{ className?: string }>
+export type BadgeOptions = VariantProps<typeof badgeVariants> &
+	Readonly<{ className?: string; title?: string }>
 
 /** `<Badge>`: the same `badgeVariants` call, className folded in by cva. */
 export const badge = <Message>(h: HtmlBuilder<Message>, options: BadgeOptions, children: Children): Html =>
@@ -40,6 +41,7 @@ export const badge = <Message>(h: HtmlBuilder<Message>, options: BadgeOptions, c
 				),
 			),
 			h.DataAttribute("slot", "badge"),
+			...(options.title === undefined ? [] : [h.Title(options.title)]),
 		],
 		children,
 	)

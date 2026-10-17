@@ -1,11 +1,11 @@
-import { areaY, defineChart, lineY, type ChartLinearGradient } from "@tanstack/charts"
+import { areaY, d3Curve, defineChart, lineY, type ChartLinearGradient } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
+import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
 import type { ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 
 // Port of `PlotSparkline` (packages/ui/src/components/plot/sparkline.tsx), definition half.
-// TODO(monotone): `curve="monotone"` (the stat widget) needs d3-shape as a dependency.
 
 type SparklineSpec = Extract<ChartSpec, { readonly _tag: "Sparkline" }>
 
@@ -38,6 +38,7 @@ export const buildSparkline = (spec: SparklineSpec): BuiltChart<SparkPoint, numb
 	const points: ReadonlyArray<SparkPoint> = spec.values.map((value, index) => ({ index, value }))
 	const at = (point: SparkPoint) => point.index
 	const value = (point: SparkPoint) => point.value
+	const interpolation = spec.curve === "monotone" ? d3Curve(curveMonotoneX) : undefined
 	const definition = defineChart({
 		gradients: [verticalGradient(spec.gradientId, spec.color, spec.fillStart, spec.fillEnd)],
 		marks: [
@@ -47,8 +48,15 @@ export const buildSparkline = (spec: SparklineSpec): BuiltChart<SparkPoint, numb
 				y1: () => 0,
 				fill: `url(#${spec.gradientId})`,
 				stroke: "none",
+				curve: interpolation,
 			}),
-			lineY(points, { x: at, y: value, stroke: spec.color, strokeWidth: STROKE_WIDTH }),
+			lineY(points, {
+				x: at,
+				y: value,
+				stroke: spec.color,
+				strokeWidth: STROKE_WIDTH,
+				curve: interpolation,
+			}),
 		],
 		scales: {
 			x: { scale: scaleLinear, axis: false },

@@ -69,6 +69,8 @@ export const ChartSpec = defineTaggedUnion({
 		fillEnd: Schema.Number,
 		/** Bumped when the data arrives again: React rebuilds the definition on every new result. */
 		revision: Schema.Number,
+		/** `PlotSparkline`'s `curve`; absent is linear. */
+		curve: Schema.optionalKey(Schema.Literals(["linear", "monotone"])),
 	},
 	/** `HistogramSpike` (binX over raw observations) in apps/web/src/lab/charts/histogram-spike.tsx. */
 	BinnedHistogram: {

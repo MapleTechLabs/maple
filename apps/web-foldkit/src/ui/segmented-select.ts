@@ -12,7 +12,13 @@ import { togglePrimitive } from "./toggle"
 // ToggleGroup track with one raised pill. Stateless: the value is the caller's (often the URL).
 // TODO(motion): legacy slides the pill between items (motion `layoutId`); here it jumps.
 
-export type SegmentedOption<T extends string> = Readonly<{ value: T; label: string }>
+/** An icon-only option passes `label: ""`, its `icon` and an `ariaLabel`. */
+export type SegmentedOption<T extends string> = Readonly<{
+	value: T
+	label: string
+	icon?: Html
+	ariaLabel?: string
+}>
 
 export type SegmentedSelectConfig<T extends string, M> = Readonly<{
 	options: ReadonlyArray<SegmentedOption<T>>
@@ -65,7 +71,7 @@ export const segmentedSelect = <T extends string, M>(
 					tabIndex: isSelected ? 0 : -1,
 					attributes: [
 						h.AriaDisabled(false),
-						h.AriaLabel(option.label),
+						h.AriaLabel(option.ariaLabel ?? option.label),
 						h.DataAttribute("size", groupSize),
 						h.DataAttribute("variant", "segment"),
 					],
@@ -85,7 +91,8 @@ export const segmentedSelect = <T extends string, M>(
 								),
 							]
 						: []),
-					option.label,
+					...(option.icon === undefined ? [] : [option.icon]),
+					...(option.label === "" ? [] : [option.label]),
 				],
 			)
 		}),

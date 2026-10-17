@@ -22,7 +22,8 @@ import { portalId, triggerId } from "./overlay/popup-state"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { itemId, listId, Message, type Model, MountSelect } from "./select"
 
-export type SelectOption = Readonly<{ value: string; label: string }>
+/** `content` replaces the label inside the list item (`<SelectItem>` children); the trigger shows `label`. */
+export type SelectOption = Readonly<{ value: string; label: string; content?: Html }>
 
 /** What the list shows: groups with a label, separators and loose items, in order. */
 export type SelectEntry =
@@ -34,7 +35,10 @@ export type ViewInputs = Readonly<{
 	/** Places the trigger and, while open, its guards, hidden input and portal (siblings in Base UI). */
 	toView: (parts: ReadonlyArray<Html>) => Html
 	entries: ReadonlyArray<SelectEntry>
-	ariaLabel: string
+	/** Omitted when the legacy trigger has no `aria-label`. */
+	ariaLabel?: string
+	/** `<SelectTrigger size>`. */
+	size?: "sm" | "default" | "lg"
 	className?: string
 }>
 
@@ -78,7 +82,7 @@ const option = (h: H, model: Model, item: SelectOption, index: number): Html => 
 						),
 					]
 				: []),
-			h.div([h.Class(selectItemTextStyles)], [item.label]),
+			h.div([h.Class(selectItemTextStyles)], [item.content ?? item.label]),
 		],
 	)
 }
@@ -217,8 +221,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			...(isVisible ? [h.AriaControls(listId(model.id))] : []),
 			h.AriaExpanded(model.isOpen),
 			h.AriaHasPopup("listbox"),
-			h.AriaLabel(inputs.ariaLabel),
-			h.Class(cn(selectTriggerVariants({ size: "default" }), inputs.className)),
+			...(inputs.ariaLabel === undefined ? [] : [h.AriaLabel(inputs.ariaLabel)]),
+			h.Class(cn(selectTriggerVariants({ size: inputs.size ?? "default" }), inputs.className)),
 			...(model.isOpen ? [h.DataAttribute("popup-open", "")] : []),
 			h.DataAttribute("popup-side", model.side),
 			...(model.isOpen ? [h.DataAttribute("pressed", "")] : []),
