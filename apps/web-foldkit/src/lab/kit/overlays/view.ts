@@ -5,6 +5,9 @@ import { kitPage, kitSection } from "../layout"
 import * as ToastView from "../../../ui/toast-view"
 import { kitHoverCard, kitPopover } from "./cards"
 import { kitAlertDialog, kitDialog, kitSheet } from "./dialogs"
+import { kitCommand } from "./command"
+import { kitContextMenu } from "./menus"
+import { kitAutocomplete, kitComboboxChips, kitSelect } from "./pickers"
 import { Message, type Model, type OverlayItem, toastTypeOf } from "./model"
 
 type H = HtmlBuilder<Message>
@@ -19,6 +22,16 @@ const renderItem = (h: H, model: Model, item: OverlayItem): Html => {
 			return kitPopover(h, model.popover)
 		case "hover-card":
 			return kitHoverCard(h, model.hoverCard)
+		case "context-menu":
+			return kitContextMenu(h, model.contextMenu)
+		case "select":
+			return kitSelect(h, model.select)
+		case "combobox":
+			return kitComboboxChips(h, model.combobox)
+		case "autocomplete":
+			return kitAutocomplete(h, model.autocomplete)
+		case "command":
+			return kitCommand(h, model.command, model.commandList)
 		case "sheet":
 			return kitSheet(h, model.sheet)
 		default:

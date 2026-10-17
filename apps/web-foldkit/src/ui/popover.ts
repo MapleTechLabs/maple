@@ -85,8 +85,8 @@ export const MountPopover = Mount.defineStream("MountPopover", {
 				sideOffset: 4,
 				adaptiveOrigin: true,
 			},
-			insideIds: [triggerId(id)],
-			markOutside: Option.some({ ariaHidden: false }),
+			insideSelectors: [`#${CSS.escape(triggerId(id))}`],
+			markOutside: Option.some({ mark: true, ariaHidden: false }),
 			lockScroll: false,
 			focus: Option.some({ returnFocusId: Option.some(triggerId(id)), initialFocus: "popup" }),
 			afterPlace: (positioner, popup) => {
@@ -99,7 +99,10 @@ export const MountPopover = Mount.defineStream("MountPopover", {
 					case "Mounted":
 						return Message.CompletedMountPopover()
 					case "Placed":
-						return Message.ChangedPlacement(event.placed)
+						return Message.ChangedPlacement({
+							side: event.placed.side,
+							align: event.placed.align,
+						})
 					case "PressedOutside":
 						return Message.PressedOutside()
 				}

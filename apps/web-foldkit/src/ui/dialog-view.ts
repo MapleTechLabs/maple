@@ -163,11 +163,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				[
 					h.div([
 						h.AriaHidden(true),
+						h.DataAttribute("base-ui-inert", ""),
 						h.Role("presentation"),
 						h.Style({ position: "fixed", inset: "0px", userSelect: "none" }),
 					]),
 					h.div([
 						h.AriaHidden(true),
+						h.DataAttribute("base-ui-inert", ""),
 						h.Class(parts.backdrop),
 						...state,
 						h.DataAttribute("slot", `${slot}-backdrop`),
@@ -187,7 +189,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							),
 						],
 						[
-							focusGuard(h, "inside"),
+							focusGuard(h, "inside", [h.DataAttribute("base-ui-inert", "")]),
 							h.div(
 								[
 									...(parts.isLabelled
@@ -207,7 +209,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								],
 								[...inputs.toContent(close), ...Option.toArray(closeButton)],
 							),
-							focusGuard(h, "inside"),
+							focusGuard(h, "inside", [h.DataAttribute("base-ui-inert", "")]),
 						],
 					),
 				],

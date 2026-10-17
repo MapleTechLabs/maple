@@ -112,7 +112,7 @@ export const MountHoverCard = Mount.defineStream("MountHoverCard", {
 				sideOffset: 4,
 				alignOffset: 4,
 			},
-			insideIds: [],
+			insideSelectors: [],
 			markOutside: Option.none(),
 			lockScroll: false,
 			focus: Option.none(),
@@ -120,7 +120,7 @@ export const MountHoverCard = Mount.defineStream("MountHoverCard", {
 			Stream.filter((event) => event._tag !== "PressedOutside"),
 			Stream.map((event) =>
 				event._tag === "Placed"
-					? Message.ChangedPlacement(event.placed)
+					? Message.ChangedPlacement({ side: event.placed.side, align: event.placed.align })
 					: Message.CompletedMountHoverCard(),
 			),
 		),

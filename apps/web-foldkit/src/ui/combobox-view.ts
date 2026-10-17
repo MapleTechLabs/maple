@@ -1,0 +1,343 @@
+import { cn } from "@maple/ui/lib/utils"
+import * as A from "@maple/ui/styles/ui/autocomplete"
+import * as C from "@maple/ui/styles/ui/combobox"
+import { Array, Option } from "effect"
+import { Submodel } from "foldkit"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { filterItems, inputId, itemId, listId, Message, type Model, MountCombobox } from "./combobox"
+import { comboboxCheckIcon, xmarkIcon } from "./overlay/icons"
+import { portalId } from "./overlay/popup-state"
+import { isRovingKey, nextIndex } from "./overlay/roving"
+import { isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
+import { scrollArea } from "./scroll-area"
+
+type H = HtmlBuilder<Message>
+type Slot = "combobox" | "autocomplete"
+
+/** Base UI's visually hidden "Dismiss" button for screen readers, beside the input and the list. */
+export const dismissButton = <M>(h: HtmlBuilder<M>): Html =>
+	h.span([
+		h.AriaLabel("Dismiss"),
+		h.Role("button"),
+		h.Style({
+			clipPath: "inset(50%)",
+			overflow: "hidden",
+			whiteSpace: "nowrap",
+			border: "0px",
+			padding: "0px",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			position: "absolute",
+		}),
+	])
+
+/** The input's combobox attributes, state and keys: arrows move the highlight, Enter picks it.
+ *  Generic over the Message so the command palette renders its inline list from its parent. */
+export const inputAttributes = <M>(
+	h: HtmlBuilder<M>,
+	model: Model,
+	options: Readonly<{
+		slot: string
+		ariaLabel?: string
+		placeholder?: string
+		items: ReadonlyArray<string>
+		/** An inline list (the command palette) has no popup side. */
+		isInline?: boolean
+	}>,
+	toMessage: (message: Message) => M,
+): ReadonlyArray<Attribute<M>> => {
+	const isVisible = isMounted(model.isOpen, model.animation)
+	return [
+		...(model.highlighted === null ? [] : [h.AriaActiveDescendant(itemId(model.id, model.highlighted))]),
+		h.AriaAutocomplete("list"),
+		...(isVisible ? [h.AriaControls(listId(model.id))] : []),
+		h.AriaExpanded(model.isOpen),
+		h.AriaHasPopup("listbox"),
+		...(options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]),
+		h.Autocapitalize("none"),
+		h.Autocomplete("off"),
+		h.Autocorrect("off"),
+		...(model.isOpen
+			? [
+					h.DataAttribute("popup-open", ""),
+					...(options.isInline === true ? [] : [h.DataAttribute("popup-side", model.side)]),
+					h.DataAttribute("pressed", ""),
+				]
+			: []),
+		h.DataAttribute("slot", options.slot),
+		h.Id(inputId(model.id)),
+		...(options.placeholder === undefined ? [] : [h.Placeholder(options.placeholder)]),
+		h.Role("combobox"),
+		h.Spellcheck(false),
+		h.Value(model.inputValue),
+		h.OnInput((value) => toMessage(Message.ChangedInput({ value }))),
+		h.OnClick(toMessage(Message.ClickedInput())),
+		h.OnKeyDownPreventDefault((key) => {
+			const filtered = filterItems(options.items, model.inputValue)
+			if (isRovingKey(key)) {
+				return Option.map(
+					nextIndex(
+						filtered.map(() => true),
+						model.highlighted,
+						key,
+					),
+					(index) => toMessage(Message.HighlightedItem({ index })),
+				)
+			}
+			if (key === "Escape") return Option.some(toMessage(Message.PressedEscape()))
+			if (key === "Enter" && model.highlighted !== null) {
+				return Option.map(Array.get(filtered, model.highlighted), (value) =>
+					toMessage(Message.ClickedItem({ value })),
+				)
+			}
+			return Option.none()
+		}),
+	]
+}
+
+/** `<input aria-hidden>` Base UI keeps for form submission, after the field. */
+export const hiddenInput = <M>(h: HtmlBuilder<M>, model: Model): Html =>
+	h.input([
+		h.Key("hidden-input"),
+		h.AriaHidden(true),
+		h.Id(`${inputId(model.id)}-hidden-input`),
+		h.Style(SR_ONLY_STYLE),
+		h.Tabindex(-1),
+		h.Value(model.mode === "multiple" ? "" : model.inputValue),
+	])
+
+const comboboxItem = (h: H, model: Model, value: string, index: number): Html => {
+	const isSelected = model.selected.includes(value)
+	return h.div(
+		[
+			h.AriaSelected(isSelected),
+			h.Class(cn(C.comboboxItemStyles)),
+			...(model.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
+			...(isSelected ? [h.DataAttribute("selected", "")] : []),
+			h.DataAttribute("slot", "combobox-item"),
+			h.Id(itemId(model.id, index)),
+			h.Role("option"),
+			h.OnMouseMove(Message.HighlightedItem({ index })),
+			h.OnClick(Message.ClickedItem({ value })),
+		],
+		[
+			...(isSelected
+				? [
+						h.span(
+							[
+								h.AriaHidden(true),
+								h.Class(C.comboboxItemIndicatorStyles),
+								h.DataAttribute("selected", ""),
+							],
+							[comboboxCheckIcon(h)],
+						),
+					]
+				: []),
+			h.div([h.Class(C.comboboxItemTextStyles)], [value]),
+		],
+	)
+}
+
+const autocompleteItem = (h: H, model: Model, value: string, index: number): Html =>
+	h.div(
+		[
+			h.Class(cn(A.autocompleteItemStyles)),
+			...(model.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
+			h.DataAttribute("slot", "autocomplete-item"),
+			h.Id(itemId(model.id, index)),
+			h.Role("option"),
+			h.OnMouseMove(Message.HighlightedItem({ index })),
+			h.OnClick(Message.ClickedItem({ value })),
+		],
+		[value],
+	)
+
+const SLOT_STYLES = {
+	combobox: {
+		positioner: C.comboboxPositionerStyles,
+		frame: C.comboboxPopupFrameStyles,
+		popup: C.comboboxPopupStyles,
+		empty: C.comboboxEmptyStyles,
+		list: C.comboboxListStyles,
+	},
+	autocomplete: {
+		positioner: A.autocompletePositionerStyles,
+		frame: A.autocompletePopupSurfaceStyles,
+		popup: A.autocompletePopupStyles,
+		empty: A.autocompleteEmptyStyles,
+		list: A.autocompleteListStyles,
+	},
+} as const
+
+export type PopupOptions = Readonly<{
+	slot: Slot
+	items: ReadonlyArray<string>
+	emptyText: string
+	anchorSelector: string
+	className?: string
+}>
+
+/** `ComboboxPopup` / `AutocompletePopup` with `Empty` and `List` (in a ScrollArea) inside. */
+export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
+	const styles = SLOT_STYLES[options.slot]
+	const state = stateAttributes(h, model.isOpen, model.animation)
+	const placement = [h.DataAttribute("align", model.align), ...state, h.DataAttribute("side", model.side)]
+	const filtered = filterItems(options.items, model.inputValue)
+	return h.div(
+		[
+			h.Key(portalId(model.id)),
+			h.DataAttribute("base-ui-portal", ""),
+			h.Id(portalId(model.id)),
+			h.OnMount(MountCombobox({ slot: options.slot, anchorSelector: options.anchorSelector })),
+		],
+		[
+			h.div(
+				[
+					h.Class(styles.positioner),
+					...placement,
+					h.DataAttribute("slot", `${options.slot}-positioner`),
+					h.Role("presentation"),
+				],
+				[
+					h.span(
+						[h.Class(cn(styles.frame, options.className))],
+						[
+							h.div(
+								[
+									h.Class(styles.popup),
+									h.DataAttribute("align", model.align),
+									h.DataAttribute("base-ui-focusable", ""),
+									...state,
+									h.DataAttribute("side", model.side),
+									h.DataAttribute("slot", `${options.slot}-popup`),
+									h.Id(`${model.id}-popup`),
+									h.Role("presentation"),
+									h.Tabindex(-1),
+								],
+								[
+									h.div(
+										[
+											h.AriaAtomic(true),
+											h.AriaLive("polite"),
+											h.Class(styles.empty),
+											h.DataAttribute("slot", `${options.slot}-empty`),
+											h.Role("status"),
+										],
+										filtered.length === 0 ? [options.emptyText] : [],
+									),
+									scrollArea(
+										h,
+										{ id: `${model.id}-scroll`, scrollFade: true, scrollbarGutter: true },
+										[
+											h.div(
+												[
+													...(model.mode === "multiple"
+														? [h.AriaMultiSelectable(true)]
+														: []),
+													h.Class(styles.list),
+													h.DataAttribute("slot", `${options.slot}-list`),
+													h.Id(listId(model.id)),
+													h.Role("listbox"),
+													h.Tabindex(-1),
+												],
+												filtered.map((value, index) =>
+													options.slot === "combobox"
+														? comboboxItem(h, model, value, index)
+														: autocompleteItem(h, model, value, index),
+												),
+											),
+										],
+									),
+								],
+							),
+						],
+					),
+					dismissButton(h),
+				],
+			),
+		],
+	)
+}
+
+export type ChipsViewInputs = Readonly<{
+	items: ReadonlyArray<string>
+	ariaLabel: string
+	placeholder: string
+	emptyText: string
+	className?: string
+	/** Places the chips field and, while open, the hidden input and the portal. */
+	toView: (parts: ReadonlyArray<Html>) => Html
+}>
+
+const chip = (h: H, value: string): Html =>
+	h.div(
+		[
+			h.Key(`chip-${value}`),
+			h.AriaHidden(true),
+			h.Class(cn(C.comboboxChipStyles)),
+			h.DataAttribute("slot", "combobox-chip"),
+			h.Tabindex(-1),
+		],
+		[
+			h.span([h.Class(C.comboboxChipTextStyles), h.Title(value)], [value]),
+			h.button(
+				[
+					h.AriaDisabled(false),
+					h.AriaLabel("Remove"),
+					h.Class(C.comboboxChipRemoveStyles),
+					h.DataAttribute("slot", "combobox-chip-remove"),
+					h.Tabindex(-1),
+					h.Type("button"),
+					h.OnClick(Message.RemovedChip({ value })),
+				],
+				[xmarkIcon(h)],
+			),
+		],
+	)
+
+/** `<Combobox multiple>` with `ComboboxChips`: chips for the selection, then the chips input. */
+export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((model, inputs, h) => {
+	const chipsSelector = `[data-slot=combobox-chips]:has(> #${CSS.escape(inputId(model.id))})`
+	const chips = h.div(
+		[
+			h.Key("chips"),
+			h.Class(cn(C.comboboxChipsStyles, inputs.className)),
+			h.DataAttribute("slot", "combobox-chips"),
+			h.Role("toolbar"),
+		],
+		[
+			...model.selected.map((value) => chip(h, value)),
+			dismissButton(h),
+			h.input([
+				h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputDefaultStyles)),
+				h.DataAttribute("size", "default"),
+				...inputAttributes(
+					h,
+					model,
+					{
+						slot: "combobox-chips-input",
+						ariaLabel: inputs.ariaLabel,
+						placeholder: inputs.placeholder,
+						items: inputs.items,
+					},
+					(message) => message,
+				),
+			]),
+		],
+	)
+	return inputs.toView([
+		chips,
+		hiddenInput(h, model),
+		...(isMounted(model.isOpen, model.animation)
+			? [
+					listPopup(h, model, {
+						slot: "combobox",
+						items: inputs.items,
+						emptyText: inputs.emptyText,
+						anchorSelector: chipsSelector,
+					}),
+				]
+			: []),
+	])
+})

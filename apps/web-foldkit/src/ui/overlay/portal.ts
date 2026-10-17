@@ -14,47 +14,62 @@ export const portalToBody = (element: Element): Effect.Effect<void, never, Scope
 
 const INERT_MARKER = "data-base-ui-inert"
 
-/** A live region, ignoring ones in a portal that has not left this element for `<body>` yet. */
-const isLiveRegion = (element: Element) =>
-	element.hasAttribute("aria-live") ||
-	Array.some(Array.fromIterable(element.querySelectorAll("[aria-live]")), (live) => {
-		const portal = live.closest("[data-base-ui-portal]")
-		return portal === null || portal === element
+/** Every element on the way from `<body>` down to the kept ones (`buildKeepSet`). */
+const ancestry = (node: Node | null): ReadonlyArray<Node> =>
+	node === null ? [] : [node, ...ancestry(node.parentNode)]
+
+const keepSet = (targets: ReadonlyArray<Element>): ReadonlySet<Node> => new Set(targets.flatMap(ancestry))
+
+/** `collectOutsideElements`: the siblings along those paths, not descending into kept elements. */
+const outsideOf = (targets: ReadonlyArray<Element>): ReadonlyArray<Element> => {
+	const keep = keepSet(targets)
+	const stop = new Set<Node>(targets)
+	const walk = (parent: Element): ReadonlyArray<Element> =>
+		stop.has(parent)
+			? []
+			: Array.fromIterable(parent.children).flatMap((child) =>
+					child.tagName === "SCRIPT" ? [] : keep.has(child) ? walk(child) : [child],
+				)
+	return walk(document.body)
+}
+
+const setUntil = (elements: ReadonlyArray<Element>, name: string, value: string) =>
+	Array.filter(elements, (element) => !element.hasAttribute(name)).map((element) => {
+		element.setAttribute(name, value)
+		return { element, name }
 	})
 
 /**
- * `markOthers`: every other child of `<body>` gets Base UI's inert marker, and with `ariaHidden`
- * (modal dialogs, context menus) also `aria-hidden`, except live regions such as the toasts.
+ * Base UI's `markOthers` (floating-ui-react/utils/markOthers.mjs): what lies outside the popup
+ * gets the inert marker; with `ariaHidden`, what lies outside the popup, the `keep` elements
+ * (a combobox field) and the live regions also gets `aria-hidden`.
  */
 export const markOutside = (
 	element: Element,
-	options: Readonly<{ ariaHidden: boolean }>,
+	options: Readonly<{ mark: boolean; ariaHidden: boolean; keep?: ReadonlyArray<string> }>,
 ): Effect.Effect<void, never, Scope.Scope> =>
 	Effect.acquireRelease(
-		// Yield first: portals mounted in the same render (the toast regions) reach <body> before this runs.
+		// Wait a task: portals mounted in the same render (the toast regions) reach <body> first.
 		Effect.andThen(
-			Effect.yieldNow,
-			Effect.sync(() =>
-				Array.filter(
-					Array.fromIterable(document.body.children),
-					(other) =>
-						other !== element && other.tagName !== "SCRIPT" && !other.hasAttribute(INERT_MARKER),
-				).map((other) => {
-					const hides =
-						options.ariaHidden && !isLiveRegion(other) && !other.hasAttribute("aria-hidden")
-					other.setAttribute(INERT_MARKER, "")
-					if (hides) other.setAttribute("aria-hidden", "true")
-					return { other, hides }
-				}),
-			),
+			Effect.sleep(0),
+			Effect.sync(() => {
+				const kept = [
+					element,
+					...Array.getSomes(
+						(options.keep ?? []).map((s) => Option.fromNullishOr(document.querySelector(s))),
+					),
+				]
+				const live = Array.fromIterable(document.body.querySelectorAll("[aria-live]"))
+				return [
+					...(options.ariaHidden
+						? setUntil(outsideOf([...kept, ...live]), "aria-hidden", "true")
+						: []),
+					...(options.mark ? setUntil(outsideOf([element]), INERT_MARKER, "") : []),
+				]
+			}),
 		),
-		(marked) =>
-			Effect.sync(() =>
-				marked.forEach(({ other, hides }) => {
-					other.removeAttribute(INERT_MARKER)
-					if (hides) other.removeAttribute("aria-hidden")
-				}),
-			),
+		(changed) =>
+			Effect.sync(() => changed.forEach(({ element: other, name }) => other.removeAttribute(name))),
 	).pipe(Effect.asVoid)
 
 /** Base UI's scroll lock for a page without a scrollbar: `overflow: hidden` on `<body>`. */

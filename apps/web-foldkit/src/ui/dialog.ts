@@ -126,7 +126,7 @@ export const MountDialog = Mount.define("MountDialog", {
 	execute: ({ element, id, hasTrigger }) =>
 		Effect.gen(function* () {
 			yield* portalToBody(element)
-			yield* markOutside(element, { ariaHidden: true })
+			yield* markOutside(element, { mark: true, ariaHidden: true })
 			yield* lockBodyScroll
 			const popup = element.querySelector(`#${CSS.escape(popupId(id))}`)
 			if (element instanceof HTMLElement && popup instanceof HTMLElement) {

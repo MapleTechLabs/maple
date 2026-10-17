@@ -1,9 +1,12 @@
 import { OVERLAY_ITEMS } from "@maple/web/lab/kit/overlay-items"
 import { Option, Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as Combobox from "../../../ui/combobox"
+import * as ContextMenu from "../../../ui/context-menu"
 import * as Dialog from "../../../ui/dialog"
 import * as HoverCard from "../../../ui/hover-card"
 import * as Popover from "../../../ui/popover"
+import * as Select from "../../../ui/select"
 import * as Toast from "../../../ui/toast"
 
 export const OverlayItem = Schema.Literals(OVERLAY_ITEMS)
@@ -21,6 +24,11 @@ export const Model = Schema.Struct({
 	command: Dialog.Model,
 	popover: Popover.Model,
 	hoverCard: HoverCard.Model,
+	contextMenu: ContextMenu.Model,
+	select: Select.Model,
+	combobox: Combobox.Model,
+	autocomplete: Combobox.Model,
+	commandList: Combobox.Model,
 	toasts: Toast.Model,
 })
 export type Model = typeof Model.Type
@@ -32,6 +40,11 @@ export const Message = defineMessageUnion({
 	GotCommandMessage: { message: Dialog.Message },
 	GotPopoverMessage: { message: Popover.Message },
 	GotHoverCardMessage: { message: HoverCard.Message },
+	GotContextMenuMessage: { message: ContextMenu.Message },
+	GotSelectMessage: { message: Select.Message },
+	GotComboboxMessage: { message: Combobox.Message },
+	GotAutocompleteMessage: { message: Combobox.Message },
+	GotCommandListMessage: { message: Combobox.Message },
 	GotToastMessage: { message: Toast.Message },
 })
 export type Message = typeof Message.Type

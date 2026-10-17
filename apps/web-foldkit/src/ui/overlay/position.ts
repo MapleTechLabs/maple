@@ -24,6 +24,7 @@ export type Align = typeof Align.Type
 /** What the popup is placed against: a trigger element by id, or a point (a context menu). */
 export const Anchor = Schema.Union([
 	Schema.TaggedStruct("Element", { id: Schema.String }),
+	Schema.TaggedStruct("Selector", { selector: Schema.String }),
 	Schema.TaggedStruct("Point", { x: Schema.Number, y: Schema.Number }),
 ])
 export type Anchor = typeof Anchor.Type
@@ -40,6 +41,8 @@ export const PositionConfig = Schema.Struct({
 	fallbackAxisSide: Schema.Literals(["end", "none"]),
 	/** Popover's viewport turns this on: `top`/`left` instead of a `translate`. */
 	adaptiveOrigin: Schema.Boolean,
+	/** A context menu shifts along the cross axis instead of flipping (`shift.crossAxis`). */
+	shiftCrossAxis: Schema.Boolean,
 })
 export type PositionConfig = typeof PositionConfig.Type
 
@@ -50,9 +53,11 @@ export const positionDefaults = {
 	positionMethod: "absolute",
 	fallbackAxisSide: "end",
 	adaptiveOrigin: false,
+	shiftCrossAxis: false,
 } as const satisfies Partial<PositionConfig>
 
-export type Placed = Readonly<{ side: Side; align: Align }>
+/** Where the popup rendered; `isPlacedInstead` when a `placeInstead` hook placed it. */
+export type Placed = Readonly<{ side: Side; align: Align; isPlacedInstead: boolean }>
 
 const SIDES: ReadonlyArray<Side> = ["top", "right", "bottom", "left"]
 const sideOf = (placement: Placement): Side => SIDES.find((side) => placement.startsWith(side)) ?? "bottom"
@@ -62,6 +67,7 @@ const placementOf = (side: Side, align: Align): Placement => (align === "center"
 
 const resolveAnchor = (element: HTMLElement, anchor: Anchor): Element | VirtualElement | null => {
 	if (anchor._tag === "Element") return element.ownerDocument.getElementById(anchor.id)
+	if (anchor._tag === "Selector") return element.ownerDocument.querySelector(anchor.selector)
 	const rect = { x: anchor.x, y: anchor.y, width: 0, height: 0 }
 	return {
 		getBoundingClientRect: () => ({
@@ -130,11 +136,16 @@ const middlewareFor = (floating: HTMLElement, config: PositionConfig): Array<Mid
 			bottom: pad + 1 + (config.side === "top" ? 1 : 0),
 			left: pad + 1 + (config.side === "right" ? 1 : 0),
 		},
-		mainAxis: true,
+		mainAxis: !config.shiftCrossAxis,
 		crossAxis: "alignment",
 		fallbackAxisSideDirection: config.fallbackAxisSide,
 	})
-	const shiftMiddleware = shift({ padding, mainAxis: true, crossAxis: false, limiter: limitShift() })
+	const shiftMiddleware = shift({
+		padding,
+		mainAxis: true,
+		crossAxis: config.shiftCrossAxis,
+		limiter: config.shiftCrossAxis ? undefined : limitShift(),
+	})
 	return [
 		offset({
 			mainAxis: config.sideOffset,
@@ -185,13 +196,20 @@ export const anchorPosition = (
 	floating: HTMLElement,
 	config: PositionConfig,
 	afterPlace: (floating: HTMLElement) => void = () => undefined,
+	/** Places the popup itself instead (Select aligned with its trigger); true skips the coordinates. */
+	placeInstead: (floating: HTMLElement) => boolean = () => false,
 ): Stream.Stream<Placed> =>
 	Stream.callback<Placed>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() => {
 				const reference = resolveAnchor(floating, config.anchor)
 				if (reference === null) return () => undefined
-				const state = { isActive: true, side: config.side, align: config.align }
+				const state = {
+					isActive: true,
+					side: config.side,
+					align: config.align,
+					isPlacedInstead: false,
+				}
 				floating.style.position = config.positionMethod
 				floating.style.top = "0px"
 				floating.style.left = "0px"
@@ -202,14 +220,20 @@ export const anchorPosition = (
 						middleware: middlewareFor(floating, config),
 					}).then(({ x, y, placement }) => {
 						if (!state.isActive) return
-						applyCoordinates(floating, config, x, y)
+						const isPlacedInstead = placeInstead(floating)
+						if (!isPlacedInstead) applyCoordinates(floating, config, x, y)
 						afterPlace(floating)
 						const side = sideOf(placement)
 						const align = alignOf(placement)
-						if (side === state.side && align === state.align) return
+						const isSame =
+							side === state.side &&
+							align === state.align &&
+							isPlacedInstead === state.isPlacedInstead
+						if (isSame) return
 						state.side = side
 						state.align = align
-						Queue.offerUnsafe(queue, { side, align })
+						state.isPlacedInstead = isPlacedInstead
+						Queue.offerUnsafe(queue, { side, align, isPlacedInstead })
 					})
 				}
 				const stop = autoUpdate(reference, floating, update)

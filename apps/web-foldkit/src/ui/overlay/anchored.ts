@@ -16,20 +16,25 @@ export type AnchoredOptions = Readonly<{
 	positionerSelector: string
 	popupSelector: string
 	config: PositionConfig
-	/** Elements whose presses do not count as outside (the trigger, an input group). */
-	insideIds: ReadonlyArray<string>
-	markOutside: Option.Option<Readonly<{ ariaHidden: boolean }>>
+	/** Selectors of elements whose presses do not count as outside (the trigger, an input group). */
+	insideSelectors: ReadonlyArray<string>
+	markOutside: Option.Option<Readonly<{ mark: boolean; ariaHidden: boolean; keep?: ReadonlyArray<string> }>>
 	lockScroll: boolean
 	focus: Option.Option<
 		Readonly<{ returnFocusId: Option.Option<string>; initialFocus: "first-tabbable" | "popup" | "none" }>
 	>
 	/** Run after each placement: variables a component's positioner adds (Popover's size). */
 	afterPlace?: (positioner: HTMLElement, popup: HTMLElement) => void
+	/** Places the popup itself (Select aligned with its trigger); true skips the anchored coordinates. */
+	placeInstead?: (positioner: HTMLElement, popup: HTMLElement) => boolean
 }>
 
 const MOUNTED: AnchoredEvent = { _tag: "Mounted" }
 
-const outsidePresses = (root: Element, insideIds: ReadonlyArray<string>): Stream.Stream<AnchoredEvent> =>
+const outsidePresses = (
+	root: Element,
+	insideSelectors: ReadonlyArray<string>,
+): Stream.Stream<AnchoredEvent> =>
 	Stream.callback<AnchoredEvent>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() => {
@@ -37,8 +42,8 @@ const outsidePresses = (root: Element, insideIds: ReadonlyArray<string>): Stream
 					const target = event.target
 					if (!(target instanceof Node) || root.contains(target)) return
 					const isInside = Array.some(
-						insideIds,
-						(id) => document.getElementById(id)?.contains(target) ?? false,
+						insideSelectors,
+						(selector) => document.querySelector(selector)?.contains(target) ?? false,
 					)
 					if (!isInside) Queue.offerUnsafe(queue, { _tag: "PressedOutside" })
 				}
@@ -62,13 +67,16 @@ export const anchoredPopup = (root: Element, options: AnchoredOptions): Stream.S
 				return Stream.make(MOUNTED)
 			}
 			if (Option.isSome(options.focus)) yield* manageFocus(popup, options.focus.value)
-			const afterPlace = options.afterPlace
-			const placements = anchorPosition(positioner, options.config, (placed) =>
-				afterPlace?.(placed, popup),
+			const { afterPlace, placeInstead } = options
+			const placements = anchorPosition(
+				positioner,
+				options.config,
+				(placed) => afterPlace?.(placed, popup),
+				(placed) => placeInstead?.(placed, popup) ?? false,
 			).pipe(Stream.map((placed): AnchoredEvent => ({ _tag: "Placed", placed })))
 			return Stream.concat(
 				Stream.make(MOUNTED),
-				Stream.merge(placements, outsidePresses(root, options.insideIds)),
+				Stream.merge(placements, outsidePresses(root, options.insideSelectors)),
 			)
 		}),
 	)
