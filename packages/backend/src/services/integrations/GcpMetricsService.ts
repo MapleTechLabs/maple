@@ -635,7 +635,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						lastMetricsReceivedAt: tick.now,
 						// A read proves the read-only account is set up, however it was: a setup in the
 						// console or as code sends no report.
-						...(connector.appliedMetricsEnabled === true ? {} : { appliedMetricsEnabled: true }),
+						appliedMetricsEnabled: true,
 						lastMetricsError: notes.length === 0 ? null : notes.join(" "),
 					})
 					yield* Effect.annotateCurrentSpan({

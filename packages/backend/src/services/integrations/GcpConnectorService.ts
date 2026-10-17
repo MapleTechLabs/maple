@@ -453,7 +453,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 											lastError: null,
 											...(current.appliedLogsEnabled === false
 												? { appliedLogsEnabled: null }
-												: {}),
+												: undefined),
 										}
 									: undefined),
 								// Only what the card shows: the poller's watermark and lease stay.
@@ -463,7 +463,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 											lastMetricsError: null,
 											...(current.appliedMetricsEnabled === false
 												? { appliedMetricsEnabled: null }
-												: {}),
+												: undefined),
 										}
 									: undefined),
 							}
@@ -543,10 +543,10 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				const removed = {
 					...(!row.logsEnabled && row.appliedLogsEnabled === true
 						? { appliedLogsEnabled: false }
-						: {}),
+						: undefined),
 					...(!row.metricsEnabled && row.appliedMetricsEnabled === true
 						? { appliedMetricsEnabled: false }
-						: {}),
+						: undefined),
 				}
 				if (Object.keys(removed).length > 0) {
 					const updatedAt = yield* Clock.currentTimeMillis
