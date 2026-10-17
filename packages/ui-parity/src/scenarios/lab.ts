@@ -45,6 +45,8 @@ const scenario = (path: string, title: string): Scenario => ({
 	area: "lab",
 	// Signed in: the root shell still calls the API on lab pages, and some pages need a session.
 	dataset: "default",
+	// Whole page: a lab page ported only above the fold must not read as identical.
+	fullPage: true,
 })
 
 export const labArea: AreaModule = {
