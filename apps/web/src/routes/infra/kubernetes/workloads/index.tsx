@@ -9,7 +9,7 @@ import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
-import type { WorkloadKind } from "@/api/warehouse/infra"
+import type { WorkloadKind } from "@maple/web-data/warehouse/infra"
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { ErrorState } from "@/components/common/error-state"
 import { GridIcon, MagnifierIcon } from "@/components/icons"

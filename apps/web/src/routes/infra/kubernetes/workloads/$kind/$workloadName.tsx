@@ -13,7 +13,7 @@ import {
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { EMPTY_VALUE, countLabel, formatPercent } from "@maple/ui/lib/format"
 
-import type { WorkloadInfraMetric, WorkloadKind } from "@/api/warehouse/infra"
+import type { WorkloadInfraMetric, WorkloadKind } from "@maple/web-data/warehouse/infra"
 import { ErrorState } from "@/components/common/error-state"
 import { GridIcon } from "@/components/icons"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"

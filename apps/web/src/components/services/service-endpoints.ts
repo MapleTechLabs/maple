@@ -1,4 +1,4 @@
-import type { GetServiceEndpointsInput } from "@/api/warehouse/service-endpoints"
+import type { GetServiceEndpointsInput } from "@maple/web-data/warehouse/service-endpoints"
 
 /**
  * The list is capped server-side by traffic, BEFORE the browser classifies

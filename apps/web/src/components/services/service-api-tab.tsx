@@ -16,7 +16,7 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceEndpointsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
-import type { ServiceEndpoint } from "@/api/warehouse/service-endpoints"
+import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
 import {
 	BarCell,
 	MobileListRow,

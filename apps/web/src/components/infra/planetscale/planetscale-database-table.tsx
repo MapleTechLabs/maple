@@ -6,7 +6,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
 import type { V2PlanetScaleDatabase } from "@maple/domain/http/v2"
-import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
+import type { PlanetScaleDatabaseStat } from "@maple/web-data/warehouse/service-map"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { formatWholePercent } from "../format"
 import { ColumnHead, DataTable, MetaChip, ROW_LINK_CLASS, useTableSort } from "@/components/common/data-table"

@@ -1,5 +1,6 @@
 import type * as React from "react"
 import { cn } from "../../lib/utils"
+import { miniBarsStyles } from "./mini-bars.styles"
 
 const finite = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0)
 
@@ -48,7 +49,7 @@ export function MiniBars({
 		<svg
 			viewBox="0 0 100 100"
 			preserveAspectRatio="none"
-			className={cn("block", className)}
+			className={cn(miniBarsStyles, className)}
 			style={style}
 			role={label ? "img" : undefined}
 			aria-label={label}

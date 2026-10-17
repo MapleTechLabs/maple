@@ -5,6 +5,7 @@ import { cn } from "../../lib/utils"
 import { ArrowRotateAnticlockwiseIcon } from "../icons"
 import { Button, type ButtonProps } from "./button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip"
+import { refreshButtonIconPendingStyles, refreshButtonIconStyles } from "./refresh-button.styles"
 
 export interface RefreshButtonProps extends Omit<ButtonProps, "onClick" | "size" | "loading" | "children"> {
 	onRefresh: () => void
@@ -30,7 +31,11 @@ export function RefreshButton({
 	disabled,
 	...props
 }: RefreshButtonProps): React.ReactElement {
-	const icon = <ArrowRotateAnticlockwiseIcon className={cn("size-3.5", pending && "animate-spin")} />
+	const icon = (
+		<ArrowRotateAnticlockwiseIcon
+			className={cn(refreshButtonIconStyles, pending && refreshButtonIconPendingStyles)}
+		/>
+	)
 	if (iconOnly) {
 		return (
 			<Tooltip>

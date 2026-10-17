@@ -2,7 +2,7 @@ import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
 import { Clock, Duration, Effect, Layer } from "effect"
 import { apiBaseUrl } from "./api-base-url"
 import { getMapleAuthHeaders } from "./auth-headers"
-import { noteReachable, noteUnreachable, originOf } from "./peer-reachability"
+import { noteReachable, noteUnreachable, originOf } from "@maple/web-data/lib/peer-reachability"
 
 const CLIENT_TIMEOUT = Duration.seconds(45)
 

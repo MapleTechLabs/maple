@@ -18,7 +18,7 @@ import { LogContextPanel } from "@/components/logs/log-context-panel"
 import { getLogResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { decodeLogKey, encodeLogKey, type LogKey } from "@/lib/log-key"
-import type { GetLogInput, GetLogResult, Log } from "@/api/warehouse/logs"
+import type { GetLogInput, GetLogResult, Log } from "@maple/web-data/warehouse/logs"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 // Breadcrumb root shared by every state of this page.

@@ -1,6 +1,6 @@
 import { AtomHttpApi } from "@/lib/effect-atom"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { encodeOrgScopedKey, identityFromKey } from "@/lib/cache-key"
+import { encodeOrgScopedKey, identityFromKey } from "@maple/web-data/lib/cache-key"
 import { withRetention } from "@/lib/services/atoms/retained-atom"
 import { DEFAULT_QUERY_TTL } from "./atom-client"
 import { apiBaseUrl } from "./api-base-url"

@@ -1,6 +1,6 @@
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Exit } from "effect"
-import { displayError, isUnexpectedError } from "./error-messages"
+import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 
 interface ShowErrorToastOptions {
 	readonly title?: string

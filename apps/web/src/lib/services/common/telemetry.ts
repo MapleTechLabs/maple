@@ -1,5 +1,5 @@
 import { Clock, Effect, Schema } from "effect"
-import { noteReachable, noteUnreachable, PEER_OUTAGE_GRACE_MS } from "./peer-reachability"
+import { noteReachable, noteUnreachable, PEER_OUTAGE_GRACE_MS } from "@maple/web-data/lib/peer-reachability"
 import { mapleRuntime } from "@/lib/registry"
 
 const requestUrl = (input: RequestInfo | URL): string =>

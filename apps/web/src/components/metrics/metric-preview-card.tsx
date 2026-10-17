@@ -3,7 +3,7 @@ import * as React from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkline"
 import { MetricTypeBadge } from "./metric-type-badge"
-import type { MetricSparklinePoint } from "@/api/warehouse/metrics"
+import type { MetricSparklinePoint } from "@maple/web-data/warehouse/metrics"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 
 export interface MetricPreviewEntry {

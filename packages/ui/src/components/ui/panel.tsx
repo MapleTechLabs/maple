@@ -2,19 +2,20 @@ import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import type * as React from "react"
 import { cn } from "../../lib/utils"
+import {
+	panelBodyStyles,
+	panelHeaderActionStyles,
+	panelHeaderDividedStyles,
+	panelHeaderStyles,
+	panelHeaderTitleRowStyles,
+	panelHeaderUndividedStyles,
+	panelPaddingStyles,
+	panelStyles,
+	panelTitleStyles,
+	panelToneStyles,
+} from "./panel.styles"
 
-const PANEL_TONE = {
-	default: "bg-card",
-	muted: "bg-muted/40",
-	background: "bg-background",
-} as const
-
-const PANEL_PADDING = {
-	sm: "p-3",
-	md: "p-4",
-} as const
-
-export type PanelTone = keyof typeof PANEL_TONE
+export type PanelTone = keyof typeof panelToneStyles
 
 /**
  * Flat bordered section frame (charts, side lists, detail sections). `Card` is
@@ -35,9 +36,9 @@ export function Panel({
 }): React.ReactElement {
 	const defaultProps = {
 		className: cn(
-			"flex min-w-0 flex-col overflow-hidden rounded-md border",
-			PANEL_TONE[tone],
-			padded === "sm" ? PANEL_PADDING.sm : padded ? PANEL_PADDING.md : null,
+			panelStyles,
+			panelToneStyles[tone],
+			padded === "sm" ? panelPaddingStyles.sm : padded ? panelPaddingStyles.md : null,
 			className,
 		),
 		"data-slot": "panel",
@@ -66,33 +67,27 @@ export function PanelHeader({
 	return (
 		<header
 			className={cn(
-				"flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5",
-				divided ? "border-b" : "pb-0",
+				panelHeaderStyles,
+				divided ? panelHeaderDividedStyles : panelHeaderUndividedStyles,
 				className,
 			)}
 			data-slot="panel-header"
 		>
 			{children ?? (
-				<div className="flex min-w-0 flex-wrap items-center gap-2">
+				<div className={panelHeaderTitleRowStyles}>
 					<PanelTitle>{title}</PanelTitle>
 					{scope}
 				</div>
 			)}
-			{action ? <div className="flex flex-wrap items-center gap-x-3 gap-y-1">{action}</div> : null}
+			{action ? <div className={panelHeaderActionStyles}>{action}</div> : null}
 		</header>
 	)
 }
 
 export function PanelTitle({ className, ...props }: React.ComponentProps<"h3">): React.ReactElement {
-	return (
-		<h3
-			className={cn("truncate text-2xs font-medium text-muted-foreground", className)}
-			data-slot="panel-title"
-			{...props}
-		/>
-	)
+	return <h3 className={cn(panelTitleStyles, className)} data-slot="panel-title" {...props} />
 }
 
 export function PanelBody({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
-	return <div className={cn("min-h-0 flex-1", className)} data-slot="panel-body" {...props} />
+	return <div className={cn(panelBodyStyles, className)} data-slot="panel-body" {...props} />
 }

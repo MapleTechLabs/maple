@@ -2,7 +2,7 @@ import { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import { quietForMs, ruleHeadroom } from "./headroom"
 
 const decodeRule = Schema.decodeUnknownSync(AlertRuleDocument)

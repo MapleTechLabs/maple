@@ -19,9 +19,9 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import type { AiToolsSelection } from "@/api/warehouse/ai-session-tools"
+import type { AiToolsSelection } from "@maple/web-data/warehouse/ai-session-tools"
 
-import type { ToolBreakdownRow, ToolSeriesPoint, ToolTotals } from "./tool-analytics"
+import type { ToolBreakdownRow, ToolSeriesPoint, ToolTotals } from "@maple/web-data/lib/tool-analytics"
 import type { ToolAnalyticsSearch } from "./tool-search"
 
 export interface ToolAnalyticsResults {

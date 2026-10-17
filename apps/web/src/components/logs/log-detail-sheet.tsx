@@ -9,7 +9,7 @@ import {
 import { Sheet, SheetContent, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
-import type { Log } from "@/api/warehouse/logs"
+import type { Log } from "@maple/web-data/warehouse/logs"
 import type { LogAttributeFilter } from "@/lib/logs/log-attribute-filters"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { getActiveInfraCorrelations } from "@/components/infra/infra-correlations"

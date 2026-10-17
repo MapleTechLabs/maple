@@ -11,7 +11,7 @@ import { Schema } from "effect"
 
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { BooleanFromStringParam } from "@/lib/search-params"
-import { TOOL_METRICS, TOOL_PERCENTILES } from "./tool-analytics"
+import { TOOL_METRICS, TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
 
 const ToolMetricParam = Schema.optional(Schema.Literals(TOOL_METRICS))
 const ToolPercentileParam = Schema.optional(Schema.Literals(TOOL_PERCENTILES))

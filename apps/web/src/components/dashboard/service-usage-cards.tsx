@@ -6,7 +6,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import type { ServiceUsageResponse, ServiceUsageTotals } from "@/api/warehouse/service-usage"
+import type { ServiceUsageResponse, ServiceUsageTotals } from "@maple/web-data/warehouse/service-usage"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"

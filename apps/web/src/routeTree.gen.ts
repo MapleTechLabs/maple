@@ -118,6 +118,12 @@ import { Route as LabBenchOverviewRouteImport } from './routes/lab/bench/overvie
 import { Route as LabBenchServiceDetailRouteImport } from './routes/lab/bench/service-detail'
 import { Route as LabBenchServiceMapRouteImport } from './routes/lab/bench/service-map'
 import { Route as LabBenchTanstackRouteImport } from './routes/lab/bench/tanstack'
+import { Route as LabKitButtonsRouteImport } from './routes/lab/kit/buttons'
+import { Route as LabKitContentRouteImport } from './routes/lab/kit/content'
+import { Route as LabKitDisplayRouteImport } from './routes/lab/kit/display'
+import { Route as LabKitFormsRouteImport } from './routes/lab/kit/forms'
+import { Route as LabKitNavigationRouteImport } from './routes/lab/kit/navigation'
+import { Route as LabKitOverlaysRouteImport } from './routes/lab/kit/overlays'
 import { Route as DashboardsDashboardIdWidgetsWidgetIdRouteImport } from './routes/dashboards/$dashboardId_.widgets.$widgetId'
 import { Route as InfraCloudflareWorkersScriptNameRouteImport } from './routes/infra/cloudflare/workers/$scriptName'
 import { Route as InfraGcpServiceNameRouteImport } from './routes/infra/gcp/$service/$name'
@@ -679,6 +685,36 @@ const LabBenchTanstackRoute = LabBenchTanstackRouteImport.update({
   path: '/bench/tanstack',
   getParentRoute: () => LabRouteRoute,
 } as any)
+const LabKitButtonsRoute = LabKitButtonsRouteImport.update({
+  id: '/kit/buttons',
+  path: '/kit/buttons',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabKitContentRoute = LabKitContentRouteImport.update({
+  id: '/kit/content',
+  path: '/kit/content',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabKitDisplayRoute = LabKitDisplayRouteImport.update({
+  id: '/kit/display',
+  path: '/kit/display',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabKitFormsRoute = LabKitFormsRouteImport.update({
+  id: '/kit/forms',
+  path: '/kit/forms',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabKitNavigationRoute = LabKitNavigationRouteImport.update({
+  id: '/kit/navigation',
+  path: '/kit/navigation',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabKitOverlaysRoute = LabKitOverlaysRouteImport.update({
+  id: '/kit/overlays',
+  path: '/kit/overlays',
+  getParentRoute: () => LabRouteRoute,
+} as any)
 const DashboardsDashboardIdWidgetsWidgetIdRoute =
   DashboardsDashboardIdWidgetsWidgetIdRouteImport.update({
     id: '/dashboards/$dashboardId_/widgets/$widgetId',
@@ -846,6 +882,12 @@ export interface FileRoutesByFullPath {
   '/lab/bench/service-detail': typeof LabBenchServiceDetailRoute
   '/lab/bench/service-map': typeof LabBenchServiceMapRoute
   '/lab/bench/tanstack': typeof LabBenchTanstackRoute
+  '/lab/kit/buttons': typeof LabKitButtonsRoute
+  '/lab/kit/content': typeof LabKitContentRoute
+  '/lab/kit/display': typeof LabKitDisplayRoute
+  '/lab/kit/forms': typeof LabKitFormsRoute
+  '/lab/kit/navigation': typeof LabKitNavigationRoute
+  '/lab/kit/overlays': typeof LabKitOverlaysRoute
   '/agent-sessions/tools/': typeof AgentSessionsToolsIndexRoute
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare/': typeof InfraCloudflareIndexRoute
@@ -967,6 +1009,12 @@ export interface FileRoutesByTo {
   '/lab/bench/service-detail': typeof LabBenchServiceDetailRoute
   '/lab/bench/service-map': typeof LabBenchServiceMapRoute
   '/lab/bench/tanstack': typeof LabBenchTanstackRoute
+  '/lab/kit/buttons': typeof LabKitButtonsRoute
+  '/lab/kit/content': typeof LabKitContentRoute
+  '/lab/kit/display': typeof LabKitDisplayRoute
+  '/lab/kit/forms': typeof LabKitFormsRoute
+  '/lab/kit/navigation': typeof LabKitNavigationRoute
+  '/lab/kit/overlays': typeof LabKitOverlaysRoute
   '/agent-sessions/tools': typeof AgentSessionsToolsIndexRoute
   '/errors/issues': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare': typeof InfraCloudflareIndexRoute
@@ -1090,6 +1138,12 @@ export interface FileRoutesById {
   '/lab/bench/service-detail': typeof LabBenchServiceDetailRoute
   '/lab/bench/service-map': typeof LabBenchServiceMapRoute
   '/lab/bench/tanstack': typeof LabBenchTanstackRoute
+  '/lab/kit/buttons': typeof LabKitButtonsRoute
+  '/lab/kit/content': typeof LabKitContentRoute
+  '/lab/kit/display': typeof LabKitDisplayRoute
+  '/lab/kit/forms': typeof LabKitFormsRoute
+  '/lab/kit/navigation': typeof LabKitNavigationRoute
+  '/lab/kit/overlays': typeof LabKitOverlaysRoute
   '/agent-sessions/tools/': typeof AgentSessionsToolsIndexRoute
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare/': typeof InfraCloudflareIndexRoute
@@ -1214,6 +1268,12 @@ export interface FileRouteTypes {
     | '/lab/bench/service-detail'
     | '/lab/bench/service-map'
     | '/lab/bench/tanstack'
+    | '/lab/kit/buttons'
+    | '/lab/kit/content'
+    | '/lab/kit/display'
+    | '/lab/kit/forms'
+    | '/lab/kit/navigation'
+    | '/lab/kit/overlays'
     | '/agent-sessions/tools/'
     | '/errors/issues/'
     | '/infra/cloudflare/'
@@ -1335,6 +1395,12 @@ export interface FileRouteTypes {
     | '/lab/bench/service-detail'
     | '/lab/bench/service-map'
     | '/lab/bench/tanstack'
+    | '/lab/kit/buttons'
+    | '/lab/kit/content'
+    | '/lab/kit/display'
+    | '/lab/kit/forms'
+    | '/lab/kit/navigation'
+    | '/lab/kit/overlays'
     | '/agent-sessions/tools'
     | '/errors/issues'
     | '/infra/cloudflare'
@@ -1457,6 +1523,12 @@ export interface FileRouteTypes {
     | '/lab/bench/service-detail'
     | '/lab/bench/service-map'
     | '/lab/bench/tanstack'
+    | '/lab/kit/buttons'
+    | '/lab/kit/content'
+    | '/lab/kit/display'
+    | '/lab/kit/forms'
+    | '/lab/kit/navigation'
+    | '/lab/kit/overlays'
     | '/agent-sessions/tools/'
     | '/errors/issues/'
     | '/infra/cloudflare/'
@@ -2329,6 +2401,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabBenchTanstackRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/kit/buttons': {
+      id: '/lab/kit/buttons'
+      path: '/kit/buttons'
+      fullPath: '/lab/kit/buttons'
+      preLoaderRoute: typeof LabKitButtonsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/kit/content': {
+      id: '/lab/kit/content'
+      path: '/kit/content'
+      fullPath: '/lab/kit/content'
+      preLoaderRoute: typeof LabKitContentRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/kit/display': {
+      id: '/lab/kit/display'
+      path: '/kit/display'
+      fullPath: '/lab/kit/display'
+      preLoaderRoute: typeof LabKitDisplayRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/kit/forms': {
+      id: '/lab/kit/forms'
+      path: '/kit/forms'
+      fullPath: '/lab/kit/forms'
+      preLoaderRoute: typeof LabKitFormsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/kit/navigation': {
+      id: '/lab/kit/navigation'
+      path: '/kit/navigation'
+      fullPath: '/lab/kit/navigation'
+      preLoaderRoute: typeof LabKitNavigationRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/kit/overlays': {
+      id: '/lab/kit/overlays'
+      path: '/kit/overlays'
+      fullPath: '/lab/kit/overlays'
+      preLoaderRoute: typeof LabKitOverlaysRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/dashboards/$dashboardId_/widgets/$widgetId': {
       id: '/dashboards/$dashboardId_/widgets/$widgetId'
       path: '/dashboards/$dashboardId/widgets/$widgetId'
@@ -2448,6 +2562,12 @@ interface LabRouteRouteChildren {
   LabBenchServiceDetailRoute: typeof LabBenchServiceDetailRoute
   LabBenchServiceMapRoute: typeof LabBenchServiceMapRoute
   LabBenchTanstackRoute: typeof LabBenchTanstackRoute
+  LabKitButtonsRoute: typeof LabKitButtonsRoute
+  LabKitContentRoute: typeof LabKitContentRoute
+  LabKitDisplayRoute: typeof LabKitDisplayRoute
+  LabKitFormsRoute: typeof LabKitFormsRoute
+  LabKitNavigationRoute: typeof LabKitNavigationRoute
+  LabKitOverlaysRoute: typeof LabKitOverlaysRoute
 }
 
 const LabRouteRouteChildren: LabRouteRouteChildren = {
@@ -2489,6 +2609,12 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabBenchServiceDetailRoute: LabBenchServiceDetailRoute,
   LabBenchServiceMapRoute: LabBenchServiceMapRoute,
   LabBenchTanstackRoute: LabBenchTanstackRoute,
+  LabKitButtonsRoute: LabKitButtonsRoute,
+  LabKitContentRoute: LabKitContentRoute,
+  LabKitDisplayRoute: LabKitDisplayRoute,
+  LabKitFormsRoute: LabKitFormsRoute,
+  LabKitNavigationRoute: LabKitNavigationRoute,
+  LabKitOverlaysRoute: LabKitOverlaysRoute,
 }
 
 const LabRouteRouteWithChildren = LabRouteRoute._addFileChildren(

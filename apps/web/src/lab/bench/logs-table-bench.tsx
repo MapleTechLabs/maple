@@ -1,8 +1,9 @@
 import { Profiler, useMemo, type ProfilerOnRenderCallback } from "react"
 
-import type { Log } from "@/api/warehouse/logs"
+import type { Log } from "@maple/web-data/warehouse/logs"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { LogsTableView } from "@/components/logs/logs-table"
+import { LOGS_TABLE_BENCH_ROWS } from "./logs-table-bench-fixture"
 
 interface LogsBenchMetrics {
 	frames: number
@@ -24,32 +25,7 @@ declare global {
 	}
 }
 
-const ROW_COUNT = 2_000
-const ATTRIBUTE_VALUE = "wide-value-".repeat(12)
-
-const LOGS: Log[] = Array.from({ length: ROW_COUNT }, (_, index) => ({
-	timestamp: new Date(Date.UTC(2026, 6, 17, 18, 30) - index * 1_000).toISOString(),
-	exactTimestamp: new Date(Date.UTC(2026, 6, 17, 18, 30) - index * 1_000)
-		.toISOString()
-		.replace("T", " ")
-		.replace("Z", ""),
-	severityText: index % 17 === 0 ? "ERROR" : index % 5 === 0 ? "WARN" : "INFO",
-	severityNumber: index % 17 === 0 ? 17 : index % 5 === 0 ? 13 : 9,
-	serviceName: `checkout-worker-${index % 24}`,
-	body: `Synthetic wide log row ${index}: ${"request processing details ".repeat(10)}`,
-	traceId: index.toString(16).padStart(32, "0") as Log["traceId"],
-	spanId: index.toString(16).padStart(16, "0") as Log["spanId"],
-	logAttributes: Object.fromEntries(
-		Array.from({ length: 10 }, (_, attributeIndex) => [
-			`attribute.${attributeIndex}`,
-			`${ATTRIBUTE_VALUE}${index}-${attributeIndex}`,
-		]),
-	),
-	resourceAttributes: {
-		"deployment.environment.name": "production",
-		"cloud.region": "eu-central-1",
-	},
-}))
+const LOGS: Log[] = LOGS_TABLE_BENCH_ROWS
 
 function percentile(values: number[], percentileValue: number): number {
 	if (values.length === 0) return 0

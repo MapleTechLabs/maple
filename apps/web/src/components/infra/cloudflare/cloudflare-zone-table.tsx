@@ -14,7 +14,7 @@ import {
 	formatPercent,
 } from "@maple/ui/lib/format"
 
-import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
+import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
 import {
 	ColumnHead,
 	DataTable,

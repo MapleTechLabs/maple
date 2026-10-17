@@ -6,7 +6,7 @@ import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { ErrorState } from "@/components/common/error-state"
 import { MetricPreviewCard, type MetricPreviewEntry } from "./metric-preview-card"
-import type { ListMetricsInput, Metric, MetricSparklinePoint } from "@/api/warehouse/metrics"
+import type { ListMetricsInput, Metric, MetricSparklinePoint } from "@maple/web-data/warehouse/metrics"
 import {
 	getMetricSparklinesResultAtom,
 	listMetricsResultAtom,

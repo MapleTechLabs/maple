@@ -12,8 +12,9 @@ import {
 	type AlertIncidentsCollection,
 	type AlertRulesCollection,
 	type AlertRuleStatesCollection,
-} from "./alerts"
-import { createApiKeysCollection, type ApiKeysCollection } from "./api-keys"
+	createApiKeysCollection,
+	type ApiKeysCollection,
+} from "./synced-collections"
 import { createDashboardsCollection, type DashboardsCollection } from "./dashboards"
 
 /**

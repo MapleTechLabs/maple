@@ -1,6 +1,16 @@
 import type * as React from "react"
 import { TONE_FILL, type Tone } from "../../lib/tone"
 import { cn } from "../../lib/utils"
+import {
+	backdropBarLeftStyles,
+	backdropBarRightStyles,
+	backdropBarStyles,
+	meterFillStyles,
+	meterFillUntonedStyles,
+	meterStyles,
+	segmentedBarSegmentStyles,
+	segmentedBarStyles,
+} from "./meter.styles"
 
 /** Width for a fraction: clamped to 0..1, and a non-zero value is never thinner than `minVisible`%. */
 function widthPercent(fraction: number, minVisible: number): number {
@@ -35,7 +45,7 @@ export function Meter({
 	const fraction = max > 0 ? value / max : 0
 	return (
 		<div
-			className={cn("relative h-1 min-w-0 overflow-hidden rounded-full bg-muted/60", className)}
+			className={cn(meterStyles, className)}
 			data-slot="meter"
 			role={label ? "meter" : undefined}
 			aria-label={label}
@@ -46,8 +56,8 @@ export function Meter({
 		>
 			<div
 				className={cn(
-					"absolute inset-y-0 left-0 rounded-[inherit] transition-[width] duration-500",
-					tone ? TONE_FILL[tone] : "bg-primary/60",
+					meterFillStyles,
+					tone ? TONE_FILL[tone] : meterFillUntonedStyles,
 					fillClassName,
 				)}
 				style={{ width: `${widthPercent(fraction, minVisible)}%` }}
@@ -87,7 +97,7 @@ export function SegmentedBar({
 	const sum = total ?? segments.reduce((acc, s) => acc + Math.max(0, s.value), 0)
 	return (
 		<div
-			className={cn("flex h-1.5 min-w-0 overflow-hidden rounded-full bg-muted/60", className)}
+			className={cn(segmentedBarStyles, className)}
 			data-slot="segmented-bar"
 			role={label ? "img" : undefined}
 			aria-label={label}
@@ -99,7 +109,7 @@ export function SegmentedBar({
 							<div
 								key={segment.key}
 								title={segment.title}
-								className={cn("h-full transition-[width] duration-500", segment.className)}
+								className={cn(segmentedBarSegmentStyles, segment.className)}
 								style={{
 									width: `${Math.max((segment.value / sum) * 100, minVisible)}%`,
 									backgroundColor: segment.color,
@@ -136,8 +146,8 @@ export function BackdropBar({
 			aria-hidden
 			data-slot="backdrop-bar"
 			className={cn(
-				"pointer-events-none absolute inset-y-1.5 rounded-sm",
-				align === "left" ? "left-2" : "right-2",
+				backdropBarStyles,
+				align === "left" ? backdropBarLeftStyles : backdropBarRightStyles,
 				className,
 			)}
 			style={{ width: `calc(${width}% - 0.5rem)` }}

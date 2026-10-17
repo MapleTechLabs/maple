@@ -9,7 +9,7 @@ import { Schema } from "effect"
 import { resolveActorIdentity, type ActorIdentity } from "@/components/errors/actor-chip"
 import type { ActorDirectory, DirectoryPerson } from "@/hooks/use-actor-directory"
 import type { DerivedRuleStatus } from "@/lib/alerts/rule-status"
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import type { ErrorSignal } from "@/lib/models/error-signal"
 import { VERDICT_LAB_CASES } from "@/lab/verdict-fixture"
 import { LONG_SERVICE, LONG_URL, type WorstCaseMode } from "@/lab/worst-case-fixture"
@@ -157,7 +157,13 @@ export function rulesFixture(mode: WorstCaseMode): RulesFixture {
 			consecutiveBreachesRequired: 1,
 			breachesOutOf: null,
 			thresholds: [
-				{ severity: "critical", value: threshold, upper: null, recoveryValue: null, destinationIds: [] },
+				{
+					severity: "critical",
+					value: threshold,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: [],
+				},
 			],
 			consecutiveHealthyRequired: 1,
 			renotifyIntervalMinutes: 60,

@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
-import type { Metric } from "@/api/warehouse/metrics"
+import type { Metric } from "@maple/web-data/warehouse/metrics"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { listMetricsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 

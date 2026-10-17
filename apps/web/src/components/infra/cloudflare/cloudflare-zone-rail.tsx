@@ -6,7 +6,7 @@ import type { IconComponent } from "@maple/ui/components/icons"
 
 import { ArrowUpDownIcon, TagIcon } from "@/components/icons"
 
-import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
+import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
 
 export interface ZoneRailDns {
 	queries: number

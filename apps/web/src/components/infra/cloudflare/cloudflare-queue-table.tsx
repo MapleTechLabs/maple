@@ -1,4 +1,4 @@
-import type { CloudflareQueueRow } from "@/api/warehouse/cloudflare-infra"
+import type { CloudflareQueueRow } from "@maple/web-data/warehouse/cloudflare-infra"
 import { ColumnHead, DataTable, useTableSort } from "@/components/common/data-table"
 import { formatBytes, formatNumber } from "@maple/ui/lib/format"
 

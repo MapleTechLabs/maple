@@ -1,0 +1,398 @@
+import { formatNumber } from "@maple/domain/format"
+import { countLabel } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
+import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
+import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../button"
+import * as Checkbox from "../checkbox"
+import { badge } from "../display"
+import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { emptyMessage } from "../empty"
+import { icon } from "../icon"
+import { inputGroup, inputGroupAddon, inputGroupInput } from "../input-group"
+import { label } from "../label"
+import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
+
+// Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
+// TODO(alt-click): legacy's Alt+click on a label toggles the exclusion; Foldkit's OnClick has no modifiers.
+
+export type FilterOption = Readonly<{ name: string; count: number }>
+
+/** Matches rendered while searching; past this the answer is a longer search term. */
+const MAX_SEARCH_RESULTS = 50
+
+// copied: `visibleFilterOptions` (the React module also holds the components).
+const visibleFilterOptions = (input: {
+	readonly options: ReadonlyArray<FilterOption>
+	readonly selected: ReadonlyArray<string>
+	readonly excluded: ReadonlyArray<string>
+	readonly search: string
+	readonly isShowingAll: boolean
+	readonly maxVisible: number
+}) => {
+	const chosen = new Set([...input.selected, ...input.excluded])
+	const present = new Set(input.options.map((option) => option.name))
+	const missing = [...chosen].filter((name) => !present.has(name)).map((name) => ({ name, count: 0 }))
+	const ordered =
+		chosen.size === 0
+			? input.options
+			: [...input.options, ...missing].toSorted(
+					(a, b) => Number(chosen.has(b.name)) - Number(chosen.has(a.name)),
+				)
+	if (input.search === "") {
+		return {
+			visible: input.isShowingAll ? ordered : ordered.slice(0, input.maxVisible),
+			hasMore: Math.max(0, ordered.length - input.maxVisible),
+			overflowingMatches: 0,
+		}
+	}
+	const needle = input.search.toLowerCase()
+	const matches = ordered.filter((option) => option.name.toLowerCase().includes(needle))
+	return {
+		visible: matches.slice(0, MAX_SEARCH_RESULTS),
+		hasMore: 0,
+		overflowingMatches: Math.max(0, matches.length - MAX_SEARCH_RESULTS),
+	}
+}
+
+export type FilterSectionConfig<M> = Readonly<{
+	title: string
+	options: ReadonlyArray<FilterOption>
+	selected: ReadonlyArray<string>
+	/** Values filtered out; with `onExclude` the section is tri-state and rows get Only / Exclude. */
+	excluded?: ReadonlyArray<string>
+	isSearchable?: boolean
+	maxVisible?: number
+	defaultOpen?: boolean
+	sections: SectionsModel
+	toSectionsMessage: (message: SectionsMessage) => M
+	/** The checkbox was toggled: include it, or drop it from both lists. */
+	onToggle: (name: string) => M
+	onOnly?: (name: string) => M
+	onExclude?: (name: string) => M
+}>
+
+/** `FilterRowAction`: the `tag` badge as a button, transparent until the row is hovered. */
+const rowAction = <M>(
+	h: HtmlBuilder<M>,
+	text: string,
+	labelText: string,
+	onClick: M,
+	isPressed: boolean | undefined,
+): Html =>
+	h.button(
+		[
+			h.AriaLabel(labelText),
+			...(isPressed === undefined ? [] : [h.AriaPressed(String(isPressed))]),
+			h.Class(
+				cn(
+					badgeVariants({
+						variant: "tag",
+						className: cn(
+							"transition-colors",
+							isPressed === true
+								? "bg-destructive/12 text-destructive [button&]:hover:bg-destructive/20 [button&]:hover:text-destructive"
+								: "bg-transparent",
+						),
+					}),
+				),
+			),
+			h.DataAttribute("slot", "badge"),
+			h.Title(labelText),
+			h.Type("button"),
+			h.OnClick(onClick),
+		],
+		[text],
+	)
+
+const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option: FilterOption): Html => {
+	const excluded = config.excluded ?? []
+	const isExcluded = excluded.includes(option.name)
+	const inputId = `${config.title}-${option.name}`
+	const optionLabel = isExcluded ? `${option.name} (excluded)` : option.name
+	const isTriState = config.onExclude !== undefined
+	return h.div(
+		[
+			h.Class("group/option flex items-center gap-2"),
+			...(isExcluded ? [h.DataAttribute("excluded", "")] : []),
+		],
+		[
+			...Checkbox.view(h, {
+				model: { isChecked: config.selected.includes(option.name) || isExcluded },
+				toParentMessage: () => config.onToggle(option.name),
+				id: `${inputId}-checkbox`,
+				inputId,
+				isIndeterminate: isExcluded,
+				ariaLabel: optionLabel,
+				className: cn(
+					isExcluded &&
+						"border-destructive/40 [&_[data-slot=checkbox-indicator]]:bg-destructive/12 [&_[data-slot=checkbox-indicator]]:text-destructive",
+				),
+			}),
+			label(
+				h,
+				{
+					className: cn(
+						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs font-normal",
+						isExcluded
+							? "text-muted-foreground/70 line-through decoration-1 decoration-muted-foreground/50"
+							: "text-foreground",
+					),
+					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(optionLabel)],
+				},
+				[h.span([h.Class("truncate")], [option.name])],
+			),
+			h.span(
+				[h.Class("relative flex shrink-0 items-center justify-end")],
+				[
+					h.span(
+						[
+							h.Class(
+								cn(
+									"text-xs text-muted-foreground tabular-nums transition-opacity",
+									isTriState &&
+										"group-hover/option:opacity-0 group-focus-within/option:opacity-0 pointer-coarse:opacity-0",
+								),
+							),
+							h.Title(option.count.toLocaleString("en-US")),
+						],
+						[formatNumber(option.count)],
+					),
+					...(config.onExclude === undefined
+						? []
+						: [
+								h.span(
+									[
+										h.Class(
+											"pointer-events-none absolute inset-y-0 right-0 flex items-center gap-1 bg-background opacity-0 transition-opacity before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-6 before:bg-gradient-to-r before:from-transparent before:to-background group-hover/option:pointer-events-auto group-hover/option:opacity-100 group-focus-within/option:pointer-events-auto group-focus-within/option:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100",
+										),
+									],
+									[
+										...(config.onOnly === undefined
+											? []
+											: [
+													rowAction(
+														h,
+														"Only",
+														`Show only ${option.name}`,
+														config.onOnly(option.name),
+														undefined,
+													),
+												]),
+										rowAction(
+											h,
+											"Exclude",
+											isExcluded
+												? `Stop excluding ${option.name}`
+												: `Exclude ${option.name}`,
+											config.onExclude(option.name),
+											isExcluded,
+										),
+									],
+								),
+							]),
+				],
+			),
+		],
+	)
+}
+
+/** The collapsed trigger's badges: how many are included, and (in red) excluded. */
+const collapsedBadges = <M>(h: HtmlBuilder<M>, selected: number, excluded: number): Html[] => [
+	...(selected > 0
+		? [
+				badge(h, { variant: "muted", size: "xs", mono: true, className: "tracking-normal" }, [
+					String(selected),
+				]),
+			]
+		: []),
+	...(excluded > 0
+		? [
+				badge(h, { variant: "crit", size: "xs", mono: true, className: "tracking-normal" }, [
+					`−${excluded}`,
+				]),
+			]
+		: []),
+]
+
+/** One facet section: a collapsible list of checkbox rows, optionally searchable. */
+export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>): Html | null => {
+	const excluded = config.excluded ?? []
+	if (config.options.length === 0 && excluded.length === 0 && config.selected.length === 0) return null
+	const defaultOpen = config.defaultOpen ?? true
+	const state = sectionOf(config.sections, config.title, defaultOpen)
+	const isSearchable = config.isSearchable ?? false
+	const { visible, hasMore, overflowingMatches } = visibleFilterOptions({
+		options: config.options,
+		selected: config.selected,
+		excluded,
+		search: isSearchable ? state.search : "",
+		isShowingAll: state.isShowingAll,
+		maxVisible: config.maxVisible ?? 5,
+	})
+	const panelId = `filter-section-${config.title}-panel`
+	const toSections = config.toSectionsMessage
+	return h.div(
+		[h.DataAttribute(state.isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
+		[
+			h.button(
+				[
+					...(state.isOpen ? [h.AriaControls(panelId)] : []),
+					h.AriaDisabled(false),
+					h.AriaExpanded(state.isOpen),
+					h.Class(
+						cn(
+							"group flex w-full items-center justify-between gap-2 py-2 hover:text-foreground text-muted-foreground transition-colors",
+							eyebrowVariants({ variant: "label" }),
+						),
+					),
+					...(state.isOpen ? [h.DataAttribute("panel-open", "")] : []),
+					h.DataAttribute("slot", "collapsible-trigger"),
+					h.Tabindex(0),
+					h.Type("button"),
+					h.OnClick(toSections(SectionsMessage.ToggledSection({ key: config.title, defaultOpen }))),
+				],
+				[
+					h.span(
+						[h.Class("flex min-w-0 items-center gap-1.5")],
+						[h.span([h.Class("truncate")], [config.title])],
+					),
+					h.span(
+						[h.Class("flex items-center gap-1.5")],
+						[
+							...(state.isOpen
+								? []
+								: collapsedBadges(h, config.selected.length, excluded.length)),
+							icon(h, "ChevronDownIcon", {
+								className: cn(
+									"size-3.5 shrink-0 text-muted-foreground/40 transition-[transform,color] duration-200 ease-out group-hover:text-muted-foreground",
+									state.isOpen && "rotate-180",
+								),
+							}),
+						],
+					),
+				],
+			),
+			...(state.isOpen
+				? [
+						h.div(
+							[
+								h.Class(collapsiblePanelStyles),
+								h.DataAttribute("open", ""),
+								h.DataAttribute("slot", "collapsible-panel"),
+								h.Id(panelId),
+								h.Style({
+									"--collapsible-panel-height": "auto",
+									"--collapsible-panel-width": "auto",
+									"animation-name": "none",
+								}),
+							],
+							[
+								h.div(
+									[h.Class("pb-3")],
+									[
+										...(isSearchable ? [searchInput(h, config, state.search)] : []),
+										h.div(
+											[h.Class("space-y-2")],
+											[
+												...(visible.length === 0
+													? [
+															emptyMessage(h, { className: "py-2" }, [
+																"No matches found",
+															]),
+														]
+													: visible.map((option) => optionRow(h, config, option))),
+												...(overflowingMatches > 0
+													? [
+															h.p(
+																[
+																	h.Class(
+																		"text-xs text-muted-foreground py-1",
+																	),
+																],
+																[
+																	`${countLabel(overflowingMatches, "more match", "more matches")}, keep typing to narrow`,
+																],
+															),
+														]
+													: []),
+												...(hasMore > 0
+													? [
+															button(
+																h,
+																{
+																	variant: "link",
+																	size: "xs",
+																	className:
+																		"px-0 text-muted-foreground hover:text-foreground",
+																	attributes: [
+																		h.OnClick(
+																			toSections(
+																				SectionsMessage.ClickedShowMore(
+																					{ key: config.title },
+																				),
+																			),
+																		),
+																	],
+																},
+																[
+																	state.isShowingAll
+																		? "Show less"
+																		: `Show ${hasMore} more`,
+																],
+															),
+														]
+													: []),
+											],
+										),
+									],
+								),
+							],
+						),
+					]
+				: []),
+		],
+	)
+}
+
+const searchInput = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, search: string): Html =>
+	inputGroup(h, { className: "mb-2" }, [
+		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
+		inputGroupInput(h, {
+			id: `filter-section-${config.title}-search`,
+			size: "sm",
+			attributes: [
+				h.Placeholder(`Search ${config.title.toLowerCase()}...`),
+				h.Value(search),
+				h.OnInput((value) =>
+					config.toSectionsMessage(
+						SectionsMessage.ChangedSearch({ key: config.title, search: value }),
+					),
+				),
+			],
+		}),
+		...(search === ""
+			? []
+			: [
+					inputGroupAddon(h, { align: "inline-end" }, [
+						button(
+							h,
+							{
+								size: "xs",
+								variant: "ghost",
+								slot: "input-group-button",
+								attributes: [
+									h.AriaLabel("Clear search"),
+									h.OnClick(
+										config.toSectionsMessage(
+											SectionsMessage.ChangedSearch({ key: config.title, search: "" }),
+										),
+									),
+								],
+							},
+							[icon(h, "XmarkIcon")],
+						),
+					]),
+				]),
+	])

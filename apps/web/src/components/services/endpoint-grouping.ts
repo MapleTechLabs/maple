@@ -21,7 +21,7 @@
 // A service whose routes share no stem (`/healthz`, `/graphql`, `/metrics`)
 // therefore produces no headers at all and degrades into a plain sorted list.
 
-import type { ServiceEndpoint } from "@/api/warehouse/service-endpoints"
+import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
 import type { SortDir } from "@/hooks/use-table-sort"
 
 export type EndpointGroupKind = "stem" | "ungrouped" | "unrouted" | "probes"

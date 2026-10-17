@@ -1,7 +1,7 @@
 import type { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2"
 import { Effect } from "effect"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { collectV2Pages } from "@/lib/services/common/v2-pagination"
+import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 
 // Module-level singletons. Every consumer must import these exact atoms to share
 // one fetch (and so a refresh from one surface invalidates the data everywhere

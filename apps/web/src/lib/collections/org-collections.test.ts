@@ -35,13 +35,13 @@ type CollectionStub = ReturnType<typeof collectionStub>
 // The mocked factories return stubs behind the real collection types; this
 // reaches the stub's spy + test hooks.
 const asStub = (collection: unknown) => collection as CollectionStub
-vi.mock("./alerts", () => ({
+vi.mock("./synced-collections", () => ({
 	createAlertRulesCollection: collectionStub,
 	createAlertRuleStatesCollection: collectionStub,
 	createAlertIncidentsCollection: collectionStub,
 	createAlertDestinationsCollection: collectionStub,
+	createApiKeysCollection: collectionStub,
 }))
-vi.mock("./api-keys", () => ({ createApiKeysCollection: collectionStub }))
 vi.mock("./dashboards", () => ({ createDashboardsCollection: collectionStub }))
 
 // Each test wants isolated module state (generation counter + heal budget), so

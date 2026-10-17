@@ -26,7 +26,7 @@ import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceOperationsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { ErrorState } from "@/components/common/error-state"
-import type { ServiceOperation } from "@/api/warehouse/service-operations"
+import type { ServiceOperation } from "@maple/web-data/warehouse/service-operations"
 import {
 	callsPerSecond,
 	operationTraceSearch,

@@ -136,6 +136,7 @@
 		{
 			"files": [
 				"apps/web/**",
+				"packages/web-data/**",
 				"apps/cli/**",
 				"packages/ui/**",
 				"packages/domain/**",
@@ -170,7 +171,14 @@
 		// ~460 `try`/`catch` blocks and ~500 non-null assertions between them.
 		// Drop entries from this list as each is converted rather than widening it.
 		{
-			"files": ["apps/**", "scripts/**", "**/scripts/**", "examples/**", "alchemy.run.ts"],
+			"files": [
+				"apps/**",
+				"packages/web-data/**",
+				"scripts/**",
+				"**/scripts/**",
+				"examples/**",
+				"alchemy.run.ts"
+			],
 			"rules": {
 				"maple/no-try-catch": "off",
 				"typescript/no-non-null-assertion": "off"

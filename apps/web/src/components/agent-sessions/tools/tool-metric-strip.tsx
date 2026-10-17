@@ -18,7 +18,7 @@ import {
 	type ToolPercentile,
 	type ToolSeriesPoint,
 	type ToolTotals,
-} from "@/lib/agent-sessions/tool-analytics"
+} from "@maple/web-data/lib/tool-analytics"
 
 /** Bars per spark; the last N buckets of the window. */
 const SPARK_WINDOW = 24

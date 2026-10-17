@@ -12,12 +12,12 @@ import type {
 	NodeInfraMetric,
 	WorkloadInfraMetric,
 	WorkloadKind,
-} from "@/api/warehouse/infra"
+} from "@maple/web-data/warehouse/infra"
 import { formatValueWithUnit } from "./chart-utils"
 import { ChartCard } from "@/components/common/chart-card"
 import { SeriesLegend } from "@/components/common/series-legend"
 import { InfraMetricChart, type InfraSeriesInfo } from "./primitives/infra-metric-chart"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { ResultView } from "@/components/common/result-view"
 
 /**
