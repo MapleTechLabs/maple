@@ -26,6 +26,10 @@ interface ImageDropzoneProps {
 	/** Label of the upload button, e.g. "Change picture". */
 	changeLabel: string
 	hint?: ReactNode
+	/** Row layout: the title and hint sit beside the target and the actions move to the right. */
+	title?: ReactNode
+	/** Shows the image only: no drop target, picker or actions. */
+	readOnly?: boolean
 }
 
 /** Square click-or-drop image target with upload/remove actions, shared by avatar and logo settings. */
@@ -40,10 +44,12 @@ export function ImageDropzone({
 	targetLabel,
 	changeLabel,
 	hint = "Drop an image or click to upload. PNG, JPG, WEBP or GIF, up to 10 MB.",
+	title,
+	readOnly = false,
 }: ImageDropzoneProps) {
 	const [isDragging, setIsDragging] = useState(false)
 	const fileInputRef = useRef<HTMLInputElement>(null)
-	const interactive = !disabled && !uploading
+	const interactive = !disabled && !uploading && !readOnly
 
 	function selectFile(file: File | undefined | null) {
 		if (!interactive || !file) return
@@ -79,13 +85,33 @@ export function ImageDropzone({
 		selectFile(e.dataTransfer.files?.[0])
 	}
 
+	const actions = (
+		<div className="flex shrink-0 items-center gap-2">
+			<Button
+				variant="outline"
+				size="sm"
+				onClick={openFilePicker}
+				loading={uploading}
+				disabled={disabled}
+			>
+				<UploadIcon className="mr-1.5" />
+				{changeLabel}
+			</Button>
+			{onRemove && (
+				<Button variant="ghost" size="sm" onClick={onRemove} disabled={!interactive}>
+					Remove
+				</Button>
+			)}
+		</div>
+	)
+
 	return (
 		<div className="flex items-center gap-4">
 			<div
-				role="button"
+				role={readOnly ? undefined : "button"}
 				tabIndex={interactive ? 0 : -1}
-				aria-label={targetLabel}
-				aria-disabled={!interactive}
+				aria-label={readOnly ? undefined : targetLabel}
+				aria-disabled={readOnly ? undefined : !interactive}
 				onClick={openFilePicker}
 				onKeyDown={handleKeyDown}
 				onDragOver={(e) => {
@@ -96,9 +122,11 @@ export function ImageDropzone({
 				onDrop={handleDrop}
 				className={cn(
 					"relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed p-1 outline-none transition-colors",
-					interactive
-						? "cursor-pointer hover:border-primary focus-visible:ring-2 focus-visible:ring-ring"
-						: "cursor-not-allowed opacity-60",
+					readOnly
+						? null
+						: interactive
+							? "cursor-pointer hover:border-primary focus-visible:ring-2 focus-visible:ring-ring"
+							: "cursor-not-allowed opacity-60",
 					isDragging ? "border-primary ring-2 ring-primary" : "border-border",
 				)}
 			>
@@ -109,26 +137,20 @@ export function ImageDropzone({
 					</div>
 				)}
 			</div>
-			<div className="space-y-1.5">
-				<div className="flex items-center gap-2">
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={openFilePicker}
-						loading={uploading}
-						disabled={disabled}
-					>
-						<UploadIcon className="mr-1.5" />
-						{changeLabel}
-					</Button>
-					{onRemove && (
-						<Button variant="ghost" size="sm" onClick={onRemove} disabled={!interactive}>
-							Remove
-						</Button>
-					)}
+			{title !== undefined ? (
+				<>
+					<div className="min-w-0 flex-1 space-y-1">
+						<div className="text-sm font-medium text-foreground">{title}</div>
+						{hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+					</div>
+					{readOnly ? null : actions}
+				</>
+			) : (
+				<div className="space-y-1.5">
+					{readOnly ? null : actions}
+					{hint && <p className="text-xs text-muted-foreground">{hint}</p>}
 				</div>
-				{hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-			</div>
+			)}
 			<input
 				ref={fileInputRef}
 				type="file"
