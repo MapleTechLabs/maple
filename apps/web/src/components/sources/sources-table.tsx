@@ -52,10 +52,12 @@ function SourceRow({ source, now }: { source: V2Source; now: number }) {
 			<TableCell>
 				<SourceStatusBadge value={sourceStatus(source)} now={now} showTime={false} />
 			</TableCell>
-			<TableCell className="text-muted-foreground">
-				{source.last_used_at === null ? "Never" : formatRelativeTime(source.last_used_at, now)}
+			<TableCell className="text-muted-foreground hidden sm:table-cell">
+				{source.health.last_data_at === null
+					? "Never"
+					: formatRelativeTime(source.health.last_data_at, now)}
 			</TableCell>
-			<TableCell className="text-muted-foreground truncate font-mono text-xs">
+			<TableCell className="text-muted-foreground hidden truncate font-mono text-xs sm:table-cell">
 				{source.key_prefix === null
 					? source.is_default
 						? "Org ingest keys"
@@ -89,9 +91,9 @@ export function SourcesTable() {
 				<TableHeader>
 					<TableRow>
 						<TableHead>Source</TableHead>
-						<TableHead className="w-48">Status</TableHead>
-						<TableHead className="w-28">Last data</TableHead>
-						<TableHead className="w-44">Token</TableHead>
+						<TableHead className="w-36 sm:w-48">Status</TableHead>
+						<TableHead className="hidden w-28 sm:table-cell">Last data</TableHead>
+						<TableHead className="hidden w-44 sm:table-cell">Token</TableHead>
 						<TableHead className="w-10" />
 					</TableRow>
 				</TableHeader>
