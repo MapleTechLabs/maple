@@ -6,7 +6,10 @@ import { defineConfig, devices } from "@playwright/test"
 // /lab/bench/service-map route is a sessionless lab (see src/lab/registry.ts), so beforeLoad lets it through.
 const PORT = 4330
 const HOST = "127.0.0.1"
-const baseURL = `http://${HOST}:${PORT}`
+// PERF_BASE_URL runs the specs against an already-served build instead (e.g. a ui-parity static build,
+// `bun run --cwd packages/ui-parity src/bench/logs.ts --serve`), so both frontends can be measured.
+const servedBaseURL = process.env.PERF_BASE_URL
+const baseURL = servedBaseURL ?? `http://${HOST}:${PORT}`
 
 export default defineConfig({
 	testDir: "./perf",
@@ -46,22 +49,24 @@ export default defineConfig({
 			use: { ...devices["Desktop Safari"], viewport: { width: 1440, height: 900 } },
 		},
 	],
-	webServer: {
-		command: "bun run dev",
-		url: baseURL,
-		timeout: 180_000,
-		reuseExistingServer: !process.env.CI,
-		env: {
-			PORT: String(PORT),
-			HOST,
-			VITE_MAPLE_AUTH_MODE: "self_hosted",
-			// Frame counts must measure UI work, not rrweb capture. Also keeps a
-			// local bench run (where VITE_MAPLE_INGEST_KEY resolves from .env.local)
-			// from posting bench sessions into real ingest. The @cross-browser spec
-			// asserts zero blob and session-event uploads, which guards this staying true.
-			VITE_MAPLE_REPLAY: "off",
-			// Page views and clicks post session events on every load, replay or not.
-			VITE_MAPLE_CAPTURE: "off",
-		},
-	},
+	webServer: servedBaseURL
+		? undefined
+		: {
+				command: "bun run dev",
+				url: baseURL,
+				timeout: 180_000,
+				reuseExistingServer: !process.env.CI,
+				env: {
+					PORT: String(PORT),
+					HOST,
+					VITE_MAPLE_AUTH_MODE: "self_hosted",
+					// Frame counts must measure UI work, not rrweb capture. Also keeps a
+					// local bench run (where VITE_MAPLE_INGEST_KEY resolves from .env.local)
+					// from posting bench sessions into real ingest. The @cross-browser spec
+					// asserts zero blob and session-event uploads, which guards this staying true.
+					VITE_MAPLE_REPLAY: "off",
+					// Page views and clicks post session events on every load, replay or not.
+					VITE_MAPLE_CAPTURE: "off",
+				},
+			},
 })
