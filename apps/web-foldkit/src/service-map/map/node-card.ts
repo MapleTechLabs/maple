@@ -7,7 +7,7 @@ import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { type UtilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { NucleoIconName } from "../../ui/nucleo-icon"
+import type { IconName } from "../../ui/icon"
 import { eyebrow } from "../../ui/status"
 
 // Shared pieces of `ServiceMapNode` (packages/ui `service-map/service-map-node.tsx`).
@@ -15,7 +15,7 @@ import { eyebrow } from "../../ui/status"
 export const HANDLE_CLASSES = "!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0"
 
 interface PlatformGlyph {
-	readonly icon: NucleoIconName
+	readonly icon: IconName
 	readonly label: string
 	readonly branded: boolean
 }
@@ -42,7 +42,7 @@ export const DB_ICON = {
 	magnifier: "MagnifierIcon",
 	cloudflare: "CloudflareBrandIcon",
 	planetscale: "PlanetScaleIcon",
-} satisfies Record<DbIconKey, NucleoIconName>
+} satisfies Record<DbIconKey, IconName>
 
 export const UTILIZATION_TEXT = {
 	crit: TONE_TEXT.crit,

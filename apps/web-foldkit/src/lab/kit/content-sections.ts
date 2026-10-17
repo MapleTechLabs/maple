@@ -13,10 +13,9 @@ import type { CopyStatus } from "../../ui/copy-button"
 import { eyebrow } from "../../ui/eyebrow"
 import { pageHeader, pageHeaderActions, pageLayoutRoot } from "../../ui/page-layout"
 import { spinner } from "../../ui/spinner"
-import { strokeIcon } from "../../ui/stroke-icons"
+import { icon } from "../../ui/icon"
 import { marker, markerContent, markerIcon } from "../../ui/marker"
 import { avatarPlaceholder } from "./content-placeholders"
-import { BELL_PATHS } from "./content-icons"
 import { kitRow, kitSection } from "./kit-layout"
 import {
 	conversationSection,
@@ -77,7 +76,7 @@ const markerSection = <M>(h: HtmlBuilder<M>): Html =>
 			[h.Class("flex max-w-md flex-col gap-3")],
 			[
 				marker(h, {}, [
-					markerIcon(h, [strokeIcon(h, BELL_PATHS)]),
+					markerIcon(h, [icon(h, "BellIcon")]),
 					markerContent(h, ["Alert fired at 12:00 UTC"]),
 				]),
 				marker(h, { variant: "separator" }, [markerContent(h, ["Yesterday"])]),

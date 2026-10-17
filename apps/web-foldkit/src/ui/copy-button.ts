@@ -19,7 +19,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { button } from "./button"
-import { copyIcon } from "./icon"
+import { icon } from "./icon"
 
 /**
  * `useCopy` + `<CopyButton>`: copy writes the clipboard, holds `copied`/`error` for the timeout,
@@ -138,7 +138,7 @@ export const copyIndicator = <M>(
 		[
 			h.span(
 				[h.Class(cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.idle))],
-				[copyIcon(h, { size: iconSize })],
+				[icon(h, "CopyIcon", { size: iconSize })],
 			),
 			h.span(
 				[
@@ -188,6 +188,8 @@ export type CopyButtonOptions<M> = Readonly<{
 	variant?: "default" | "secondary" | "outline" | "ghost"
 	size?: "xs" | "sm" | "default" | "icon-xs" | "icon-sm" | "icon"
 	className?: string
+	/** Props spread onto the button after its own. */
+	attributes?: ReadonlyArray<Attribute<M>>
 }>
 
 /** `<CopyButton>` from @maple/ui (no tooltip), for a parent that owns the copy status. */
@@ -213,6 +215,7 @@ export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>):
 				h.AriaLabel(`Copy ${options.label}`),
 				h.DataAttribute("copy-status", status),
 				...(options.onClick === undefined ? [] : [h.OnClick(options.onClick)]),
+				...(options.attributes ?? []),
 			],
 		},
 		[

@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { nucleoIcon } from "../../ui/nucleo-icon"
+import { icon } from "../../ui/icon"
 import { serviceDot } from "./node-card"
 import type { SpanCategory } from "./span-category"
 
@@ -56,7 +56,7 @@ export const flowLegend = <M>(
 													),
 												),
 											],
-											[nucleoIcon(h, category.icon, { size: 9 })],
+											[icon(h, category.icon, { size: 9 })],
 										),
 										h.span([h.Class("font-medium")], [category.label]),
 									],

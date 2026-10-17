@@ -7,7 +7,7 @@ import * as Autocomplete from "../../../ui/autocomplete"
 import * as Checkbox from "../../../ui/checkbox"
 import * as Combobox from "../../../ui/combobox"
 import * as Field from "../../../ui/field"
-import { magnifierIcon, xmarkIcon } from "../../../ui/icon"
+import { icon } from "../../../ui/icon"
 import { input } from "../../../ui/input"
 import {
 	inputGroup,
@@ -236,7 +236,7 @@ const textareas = (h: HtmlBuilder<Message>): Html =>
 const inputGroups = (h: HtmlBuilder<Message>): Html =>
 	kitRow(h, undefined, [
 		inputGroup(h, { className: "w-72" }, [
-			inputGroupAddon(h, {}, [magnifierIcon(h)]),
+			inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
 			inputGroupInput(h, {
 				id: "base-ui-_r_9_",
 				attributes: [h.AriaLabel("Search spans"), h.Placeholder("Search spans")],
@@ -248,7 +248,7 @@ const inputGroups = (h: HtmlBuilder<Message>): Html =>
 						size: "icon-xs",
 						attributes: [h.AriaLabel("Clear search"), h.OnClick(Message.ClickedClearSearch())],
 					},
-					[xmarkIcon(h)],
+					[icon(h, "XmarkIcon")],
 				),
 			]),
 		]),
@@ -425,7 +425,7 @@ const pickers = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => 
 					label: "Service",
 					placeholder: "Pick a service",
 					emptyText: "No services found.",
-					startAddon: magnifierIcon(h),
+					startAddon: icon(h, "MagnifierIcon"),
 					wrap: w64(h),
 				}),
 		}),
@@ -438,7 +438,7 @@ const pickers = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => 
 					label: "Search services",
 					placeholder: "Search services",
 					emptyText: "No matches.",
-					startAddon: magnifierIcon(h),
+					startAddon: icon(h, "MagnifierIcon"),
 					wrap: w64(h),
 				}),
 		}),

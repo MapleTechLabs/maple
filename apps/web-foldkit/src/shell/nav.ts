@@ -66,7 +66,12 @@ const infrastructureItem: NavItem = {
 			surfaces: ["k8sPods", "k8sNodes", "k8sWorkloads"],
 			views: KUBERNETES_VIEWS,
 		},
-		{ title: "Cloudflare", href: "/infra/cloudflare", icon: "CloudflareIcon", surfaces: ["cloudflare"] },
+		{
+			title: "Cloudflare",
+			href: "/infra/cloudflare",
+			icon: "CloudflareBrandIcon",
+			surfaces: ["cloudflare"],
+		},
 		{
 			title: "PlanetScale",
 			href: "/infra/planetscale",

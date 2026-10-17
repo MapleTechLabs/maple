@@ -5,7 +5,7 @@ import {
 	nativeSelectWrapperStyles,
 } from "@maple/ui/styles/ui/native-select"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { chevronExpandYIcon } from "./icon"
+import { icon } from "./icon"
 
 export type NativeSelectOption = Readonly<{ value: string; label: string }>
 export type NativeSelectEntry =
@@ -76,7 +76,7 @@ export const nativeSelect = <Message>(
 							),
 				),
 			),
-			chevronExpandYIcon(h, {
+			icon(h, "ChevronExpandYIcon", {
 				className: nativeSelectIconStyles,
 				attributes: [h.Attribute("stroke-width", "2"), h.DataAttribute("slot", "native-select-icon")],
 			}),

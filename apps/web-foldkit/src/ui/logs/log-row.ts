@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
-import { chevronRightIcon, copyIcon, externalLinkIcon, linkIcon, pulseIcon } from "./icons"
+import { icon } from "../icon"
 import type { LogChip, LogRowView, PinnedCell } from "./log-row-view"
 import { highlightedText } from "./highlight"
 import { badgeVariants, CHIP_CLASS, CHIP_TONE_CLASSES, rowClass, rowSelectedClass } from "./styles"
@@ -186,11 +186,10 @@ export const logRow = <Message>(
 							rowClass(h, EXPAND_BUTTON_CLASS),
 						],
 						[
-							chevronRightIcon(
-								h,
-								12,
-								cn("transition-transform", state.isExpanded && "rotate-90"),
-							),
+							icon(h, "ChevronRightIcon", {
+								size: 12,
+								className: cn("transition-transform", state.isExpanded && "rotate-90"),
+							}),
 						],
 					),
 					h.span(
@@ -237,8 +236,18 @@ export const logRow = <Message>(
 					h.span(
 						[rowClass(h, ACTIONS_CLASS)],
 						[
-							iconButton(h, "Copy message", events.clickedCopyMessage(index), copyIcon(h, 13)),
-							iconButton(h, "Copy link to log", events.clickedCopyLink(index), linkIcon(h, 13)),
+							iconButton(
+								h,
+								"Copy message",
+								events.clickedCopyMessage(index),
+								icon(h, "CopyIcon", { size: 13 }),
+							),
+							iconButton(
+								h,
+								"Copy link to log",
+								events.clickedCopyLink(index),
+								icon(h, "LinkIcon", { size: 13 }),
+							),
 							...(row.traceId === ""
 								? []
 								: [
@@ -249,10 +258,15 @@ export const logRow = <Message>(
 												h.Title("Open trace"),
 												rowClass(h, ROW_ACTION_CLASS),
 											],
-											[pulseIcon(h, 13)],
+											[icon(h, "PulseIcon", { size: 13 })],
 										),
 									]),
-							iconButton(h, "Open details", events.clickedRow(index), externalLinkIcon(h, 12)),
+							iconButton(
+								h,
+								"Open details",
+								events.clickedRow(index),
+								icon(h, "ExternalLinkIcon", { size: 12 }),
+							),
 						],
 					),
 				],

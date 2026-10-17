@@ -5,8 +5,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kbd } from "../ui/display"
 import { menuGroup, menuItem, menuLabel, menuSeparator, menuShortcut } from "../ui/dropdown-menu"
-import { icon } from "../ui/icon"
-import { loaderIcon } from "../ui/icons"
+import { icon, iconColor } from "../ui/icon"
 import { switchControl } from "../ui/switch"
 import { popupIdOf } from "./menus"
 import { Menu, Message } from "./message"
@@ -157,7 +156,10 @@ const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): Reado
 			h.div(
 				[h.Class("flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground")],
 				[
-					loaderIcon(h, cn(spinnerStyles, "size-3.5"), [h.AriaLabel("Loading"), h.Role("status")]),
+					icon(h, "LoaderIcon", {
+						className: cn(spinnerStyles, "size-3.5"),
+						attributes: [h.AriaLabel("Loading"), h.Role("status")],
+					}),
 					" Loading namespaces…",
 				],
 			),
@@ -210,7 +212,7 @@ const navSectionMenu = (
 	const { shown, hidden } = partitionSubItems(item.subItems, surfacesOf(model), currentPath)
 	const toItem = (sub: (typeof shown)[number]): Item => ({
 		content: [
-			...(sub.icon === undefined ? [] : [icon(h, sub.icon, { size: 16, color: sub.iconColor })]),
+			...(sub.icon === undefined ? [] : [icon(h, sub.icon, { size: 16, ...iconColor(sub.iconColor) })]),
 			sub.title,
 		],
 		href: sub.href,

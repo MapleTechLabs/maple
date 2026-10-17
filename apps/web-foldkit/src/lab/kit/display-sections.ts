@@ -16,8 +16,7 @@ import {
 import { listRow } from "../../ui/list-row"
 import { panel, panelBody, panelHeader } from "../../ui/panel"
 import { statFigure } from "../../ui/stat-figure"
-import { strokeIcon } from "../../ui/stroke-icons"
-import { CIRCLE_INFO_PATHS, DATABASE_PATHS, SERVER_PATHS } from "./display-icons"
+import { icon } from "../../ui/icon"
 import { badgePlaceholder } from "./display-placeholders"
 import { kitSection } from "./kit-layout"
 
@@ -72,13 +71,13 @@ export const alertSection = <M>(h: HtmlBuilder<M>): Html =>
 			[
 				...ALERT_VARIANTS.map((variant) =>
 					alert(h, { variant }, [
-						strokeIcon(h, CIRCLE_INFO_PATHS),
+						icon(h, "CircleInfoIcon"),
 						alertTitle(h, ["Alert ", variant]),
 						alertDescription(h, ["The ingest key was rotated 3 days ago."]),
 					]),
 				),
 				alert(h, { size: "sm", variant: "warn" }, [
-					strokeIcon(h, CIRCLE_INFO_PATHS),
+					icon(h, "CircleInfoIcon"),
 					alertDescription(h, ["Small alert, one line."]),
 				]),
 			],
@@ -92,7 +91,7 @@ export const emptySection = <M>(h: HtmlBuilder<M>): Html =>
 			[
 				empty(h, [
 					emptyHeader(h, [
-						emptyMedia(h, { variant: "icon" }, [strokeIcon(h, DATABASE_PATHS)]),
+						emptyMedia(h, { variant: "icon" }, [icon(h, "DatabaseIcon")]),
 						emptyTitle(h, ["No traces yet"]),
 						emptyDescription(h, ["Send spans from any OpenTelemetry SDK to see them here."]),
 					]),
@@ -108,7 +107,7 @@ export const itemSection = <M>(h: HtmlBuilder<M>): Html =>
 			h,
 			[
 				item(h, { variant: "outline" }, [
-					itemMedia(h, { variant: "icon" }, [strokeIcon(h, SERVER_PATHS)]),
+					itemMedia(h, { variant: "icon" }, [icon(h, "ServerIcon")]),
 					itemContent(h, [
 						itemTitle(h, ["api-gateway"]),
 						itemDescription(h, ["3 instances, us-east-1"]),

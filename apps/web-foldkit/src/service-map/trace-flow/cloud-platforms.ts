@@ -1,4 +1,4 @@
-import type { NucleoIconName } from "../../ui/nucleo-icon"
+import type { IconName } from "../../ui/icon"
 
 // copied: packages/ui/src/lib/cloud-platforms/{cloudflare,database,index}.ts, the fields the
 // flow card reads, with `Icon` as an icon name. The adapters import React icon components,
@@ -8,7 +8,7 @@ export interface CloudPlatformInfo {
 	readonly id: string
 	readonly label: string
 	readonly kind: string
-	readonly icon: NucleoIconName
+	readonly icon: IconName
 	readonly edge: string | null
 	readonly outcome: { readonly value: string; readonly bad: boolean } | null
 }

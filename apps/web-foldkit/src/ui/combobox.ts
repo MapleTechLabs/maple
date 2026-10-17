@@ -29,7 +29,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { hiddenInput } from "./choice"
-import { chevronExpandYIcon, xmarkIcon } from "./icon"
+import { icon } from "./icon"
 import { inputControlClassName } from "./input"
 
 /**
@@ -378,7 +378,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: ComboboxViewConfig<P>): Reado
 				[
 					h.span(
 						[h.AriaHidden(true), h.DataAttribute("slot", "combobox-icon")],
-						[chevronExpandYIcon(h)],
+						[icon(h, "ChevronExpandYIcon")],
 					),
 				],
 			),
@@ -424,7 +424,7 @@ export const chipsView = <P>(
 									h.Type("button"),
 									h.OnClick(toParentMessage(Message.ClickedChipRemove({ value: item }))),
 								],
-								[xmarkIcon(h)],
+								[icon(h, "XmarkIcon")],
 							),
 						],
 					),

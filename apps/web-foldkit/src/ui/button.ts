@@ -3,7 +3,7 @@ import { buttonLoadingIndicatorStyles, buttonVariants } from "@maple/ui/styles/u
 import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { loaderIcon } from "./icons"
+import { icon } from "./icon"
 
 export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
 	Readonly<{
@@ -44,12 +44,15 @@ export const button = <Message>(
 			...children,
 			...(isLoading
 				? [
-						loaderIcon(h, cn(spinnerStyles, buttonLoadingIndicatorStyles), [
-							h.AriaHidden(true),
-							h.AriaLabel("Loading"),
-							h.Role("status"),
-							h.DataAttribute("slot", "button-loading-indicator"),
-						]),
+						icon(h, "LoaderIcon", {
+							className: cn(spinnerStyles, buttonLoadingIndicatorStyles),
+							attributes: [
+								h.AriaHidden(true),
+								h.AriaLabel("Loading"),
+								h.Role("status"),
+								h.DataAttribute("slot", "button-loading-indicator"),
+							],
+						}),
 					]
 				: []),
 		],

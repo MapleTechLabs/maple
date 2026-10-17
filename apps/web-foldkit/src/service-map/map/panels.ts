@@ -1,5 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { nucleoIcon } from "../../ui/nucleo-icon"
+import { icon } from "../../ui/icon"
 import { Message, type Model } from "../xyflow/canvas"
 import type { Rect } from "../xyflow/geometry"
 
@@ -26,9 +26,9 @@ export const serviceMapControls = <M>(h: HtmlBuilder<M>, model: Model, toMessage
 			h.AriaLabel("Control panel"),
 		],
 		[
-			controlButton(h, "zoomin", "Zoom in", model.viewport.zoom >= model.maxZoom, toMessage(Message.ClickedZoomIn()), nucleoIcon(h, "PlusIcon", { className: "size-3" })),
-			controlButton(h, "zoomout", "Zoom out", model.viewport.zoom <= model.minZoom, toMessage(Message.ClickedZoomOut()), nucleoIcon(h, "MinusIcon", { className: "size-3" })),
-			controlButton(h, "fitview", "Fit view", false, toMessage(Message.ClickedFitView()), nucleoIcon(h, "MaximizeIcon", { className: "size-3" })),
+			controlButton(h, "zoomin", "Zoom in", model.viewport.zoom >= model.maxZoom, toMessage(Message.ClickedZoomIn()), icon(h, "PlusIcon", { className: "size-3" })),
+			controlButton(h, "zoomout", "Zoom out", model.viewport.zoom <= model.minZoom, toMessage(Message.ClickedZoomOut()), icon(h, "MinusIcon", { className: "size-3" })),
+			controlButton(h, "fitview", "Fit view", false, toMessage(Message.ClickedFitView()), icon(h, "MaximizeIcon", { className: "size-3" })),
 		],
 	)
 

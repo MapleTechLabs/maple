@@ -9,58 +9,118 @@ import { resolve } from "node:path"
 import { createElement, type ComponentType } from "../../web/node_modules/react/index.js"
 import { renderToStaticMarkup } from "../../web/node_modules/react-dom/server.node.js"
 import * as UiIcons from "../../../packages/ui/src/components/icons/index.ts"
+import { MAPLE_MARK_PATH } from "../../../packages/ui/src/components/icons/maple-mark.tsx"
 import * as WebIcons from "../../web/src/components/icons/index.ts"
 
-/** The icons the Foldkit app renders, from `apps/web/src/components/icons` (or `@maple/ui`'s). */
-const ICONS = {
-	ArrowRotateClockwiseIcon: WebIcons.ArrowRotateClockwiseIcon,
-	BellIcon: WebIcons.BellIcon,
-	ChartBarHorizontalIcon: WebIcons.ChartBarHorizontalIcon,
-	ChartLineIcon: WebIcons.ChartLineIcon,
-	ChatBubbleSparkleIcon: WebIcons.ChatBubbleSparkleIcon,
-	CheckIcon: WebIcons.CheckIcon,
-	ChevronExpandYIcon: WebIcons.ChevronExpandYIcon,
-	ChevronRightIcon: WebIcons.ChevronRightIcon,
-	CircleQuestionIcon: WebIcons.CircleQuestionIcon,
-	CircleWarningIcon: WebIcons.CircleWarningIcon,
-	CloudflareIcon: WebIcons.CloudflareIcon,
-	CodeIcon: WebIcons.CodeIcon,
-	ComputerIcon: WebIcons.ComputerIcon,
-	ConnectionIcon: WebIcons.ConnectionIcon,
-	DiscordIcon: WebIcons.DiscordIcon,
-	EnvelopeIcon: WebIcons.EnvelopeIcon,
-	FileIcon: WebIcons.FileIcon,
-	GearIcon: WebIcons.GearIcon,
-	GoogleCloudIcon: WebIcons.GoogleCloudIcon,
-	GridIcon: WebIcons.GridIcon,
-	GridSquareCirclePlusIcon: WebIcons.GridSquareCirclePlusIcon,
-	HouseIcon: WebIcons.HouseIcon,
-	KeyboardIcon: WebIcons.KeyboardIcon,
-	KubernetesIcon: WebIcons.KubernetesIcon,
-	LayersIcon: WebIcons.LayersIcon,
-	LayoutMoveToLeftIcon: UiIcons.LayoutMoveToLeftIcon,
-	LayoutMoveToRightIcon: UiIcons.LayoutMoveToRightIcon,
-	LogoutIcon: WebIcons.LogoutIcon,
-	MagnifierIcon: WebIcons.MagnifierIcon,
-	MoonIcon: WebIcons.MoonIcon,
-	NetworkNodesIcon: WebIcons.NetworkNodesIcon,
-	PlanetScaleIcon: WebIcons.PlanetScaleIcon,
-	PlayRotateClockwiseIcon: WebIcons.PlayRotateClockwiseIcon,
-	PlusIcon: WebIcons.PlusIcon,
-	PulseIcon: WebIcons.PulseIcon,
-	RailwayIcon: WebIcons.RailwayIcon,
-	RocketIcon: WebIcons.RocketIcon,
-	ServerIcon: WebIcons.ServerIcon,
-	SlackIcon: WebIcons.SlackIcon,
-	SquareSparkleIcon: WebIcons.SquareSparkleIcon,
-	SunIcon: WebIcons.SunIcon,
-	UserIcon: WebIcons.UserIcon,
-	XmarkIcon: WebIcons.XmarkIcon,
-} satisfies Record<string, ComponentType<{ size?: string; className?: string }>>
+type Icon = ComponentType<{ size?: string; className?: string }>
+
+/**
+ * The icons the Foldkit app renders, by their `@maple/ui` name, else their apps/web name. apps/web
+ * re-exports `CloudflareBrandIcon as CloudflareIcon`; here `CloudflareIcon` is @maple/ui's mono one.
+ */
+const NAMES = [
+	"ArrowRotateAnticlockwiseIcon",
+	"ArrowRotateClockwiseIcon",
+	"ArrowUpIcon",
+	"AwsLambdaIcon",
+	"BellIcon",
+	"BoxArchiveIcon",
+	"BunIcon",
+	"ChartBarHorizontalIcon",
+	"ChartLineIcon",
+	"ChatBubbleSparkleIcon",
+	"CheckIcon",
+	"ChevronDownIcon",
+	"ChevronExpandYIcon",
+	"ChevronLeftIcon",
+	"ChevronRightIcon",
+	"CircleInfoIcon",
+	"CircleQuestionIcon",
+	"CircleWarningIcon",
+	"ClickhouseIcon",
+	"CloudflareBrandIcon",
+	"CloudflareIcon",
+	"CloudflareMonoIcon",
+	"CodeIcon",
+	"ComputerIcon",
+	"ConnectionIcon",
+	"CopyIcon",
+	"CubeIcon",
+	"DatabaseIcon",
+	"DenoIcon",
+	"DiscordIcon",
+	"DotsIcon",
+	"EnvelopeIcon",
+	"ExternalLinkIcon",
+	"EyeIcon",
+	"FileIcon",
+	"FilterIcon",
+	"FireIcon",
+	"GearIcon",
+	"GlobeIcon",
+	"GlobePointerIcon",
+	"GoogleCloudIcon",
+	"GridIcon",
+	"GridSquareCirclePlusIcon",
+	"HouseIcon",
+	"IndustryIcon",
+	"KeyboardIcon",
+	"KubernetesIcon",
+	"LayersIcon",
+	"LayoutMoveToLeftIcon",
+	"LayoutMoveToRightIcon",
+	"LinkIcon",
+	"LoaderIcon",
+	"LogoutIcon",
+	"MagnifierIcon",
+	"MapleMark",
+	"MaximizeIcon",
+	"MediaPauseIcon",
+	"MessagesIcon",
+	"MinimizeIcon",
+	"MinusIcon",
+	"MongodbIcon",
+	"MoonIcon",
+	"MysqlIcon",
+	"NetworkNodesIcon",
+	"NodejsMonoIcon",
+	"OpenjdkMonoIcon",
+	"PaperPlaneIcon",
+	"PlanetScaleIcon",
+	"PlayRotateClockwiseIcon",
+	"PlusIcon",
+	"PostgresIcon",
+	"PulseIcon",
+	"PuzzlePieceIcon",
+	"PythonIcon",
+	"RailwayIcon",
+	"RedisIcon",
+	"RocketIcon",
+	"RubyIcon",
+	"RustIcon",
+	"ServerIcon",
+	"SlackIcon",
+	"SquareSparkleIcon",
+	"StackPerspectiveIcon",
+	"SunIcon",
+	"TrashIcon",
+	"UserIcon",
+	"XmarkIcon",
+] as const
+
+/** Names both icon sets export with different markup: which one the Foldkit callers mean. */
+const SOURCE_OF = new Map<string, "ui" | "web">([
+	["CloudflareIcon", "ui"],
+	["LayersIcon", "web"],
+])
+
+const uiIcons = new Map<string, Icon>(Object.entries(UiIcons))
+const webIcons = new Map<string, Icon>(Object.entries(WebIcons))
 
 /** Placeholders the template fills per call: React writes `size` to width/height. */
 const SIZE = "7777"
 const CLASS = "__icon_class__"
+const TAGS = ["svg", "path", "g", "line", "circle", "rect", "polyline", "polygon", "ellipse"] as const
 
 type Node = readonly [
 	tag: string,
@@ -81,56 +141,97 @@ const parse = (markup: string): Node => {
 	const token = /<(\/?)([a-zA-Z][\w:-]*)((?:\s+[\w:-]+="[^"]*")*)\s*(\/?)>/g
 	const stack: Array<{ tag: string; attributes: Array<readonly [string, string]>; children: Node[] }> = []
 	let root: Node | undefined
+	const attach = (node: Node) => {
+		const parent = stack.at(-1)
+		if (parent) parent.children.push(node)
+		else root = node
+	}
 	for (const match of markup.matchAll(token)) {
 		const [, closing, tag = "", rawAttributes = "", selfClosing] = match
 		if (closing) {
 			const done = stack.pop()
 			if (!done) throw new Error(`unbalanced </${tag}>`)
-			const node: Node = [done.tag, done.attributes, done.children]
-			const parent = stack.at(-1)
-			if (parent) parent.children.push(node)
-			else root = node
+			attach([done.tag, done.attributes, done.children])
 			continue
 		}
 		const attributes = [...rawAttributes.matchAll(/([\w:-]+)="([^"]*)"/g)].map(
 			([, name = "", value = ""]) => [name, decode(value)] as const,
 		)
-		const entry = { tag, attributes, children: [] as Node[] }
-		if (selfClosing) {
-			const parent = stack.at(-1)
-			const node: Node = [tag, attributes, []]
-			if (parent) parent.children.push(node)
-			else root = node
-		} else stack.push(entry)
+		if (selfClosing) attach([tag, attributes, []])
+		else stack.push({ tag, attributes, children: [] })
 	}
 	if (!root) throw new Error("no root element")
 	return root
 }
 
-const entries = Object.entries(ICONS).map(([name, component]) => {
-	const markup = renderToStaticMarkup(createElement(component, { size: SIZE, className: CLASS }))
-	if (/ id="/.test(markup)) throw new Error(`${name} renders an id; give the generator an id scheme first`)
-	if (/<(?!\/?(svg|path)[\s>])/.test(markup))
-		throw new Error(`${name} uses a tag other than svg/path; extend IconNode first`)
-	return `\t${name}: ${JSON.stringify(parse(markup))},`
+const render = (component: Icon, props: { size?: string; className?: string }) => {
+	const markup = renderToStaticMarkup(createElement(component, props))
+	if (/ id="/.test(markup)) throw new Error(`renders an id; give the generator an id scheme first`)
+	if (/>[^<]/.test(markup)) throw new Error(`renders text; extend IconNode first`)
+	const tags = [...markup.matchAll(/<\/?([a-zA-Z]+)/g)].map(([, tag]) => tag)
+	const unknown = tags.find((tag) => !TAGS.some((known) => known === tag))
+	if (unknown !== undefined) throw new Error(`uses <${unknown}>; add it to TAGS first`)
+	return markup
+}
+
+const pick = (name: string): Icon => {
+	const ui = uiIcons.get(name)
+	const web = webIcons.get(name)
+	const choice = SOURCE_OF.get(name)
+	const component = choice === "web" ? web : choice === "ui" ? ui : (ui ?? web)
+	if (component === undefined) throw new Error(`${name} is not an icon in @maple/ui or apps/web`)
+	if (choice === undefined && ui !== undefined && web !== undefined && render(ui, {}) !== render(web, {}))
+		throw new Error(`${name} differs between @maple/ui and apps/web; add it to SOURCE_OF`)
+	return component
+}
+
+/** The default `size` an icon writes where the template has the size mark. */
+const defaultSize = (template: Node, plain: Node): string | undefined => {
+	const own = template[1].findIndex(([, value]) => value === SIZE)
+	if (own !== -1) return plain[1].find(([name]) => name === template[1][own]?.[0])?.[1]
+	return template[2]
+		.map((child, index) => defaultSize(child, plain[2][index] ?? child))
+		.find((v) => v !== undefined)
+}
+
+const entries = NAMES.map((name) => {
+	const component = pick(name)
+	const template = parse(render(component, { size: SIZE, className: CLASS }))
+	const classes = JSON.stringify(template).match(/"class","([^"]*)"/g) ?? []
+	if (classes.some((entry) => entry !== `"class","${CLASS}"`))
+		throw new Error(`${name} composes its className; extend the class mark first`)
+	const size = defaultSize(template, parse(render(component, {})))
+	return { name, tree: JSON.stringify(template), size }
 })
+
+const sizes = entries.filter((entry) => entry.size !== undefined && entry.size !== "24")
 
 const out = resolve(import.meta.dir, "../src/ui/icons.generated.ts")
 writeFileSync(
 	out,
-	`// Generated by scripts/generate-icons.tsx from apps/web/src/components/icons. Do not edit.
+	`// Generated by scripts/generate-icons.tsx from packages/ui and apps/web icons. Do not edit.
 // Each icon is [tag, attributes, children]; "${SIZE}" marks \`size\` and "${CLASS}" the className.
 
 export const ICON_SIZE_MARK = "${SIZE}"
 export const ICON_CLASS_MARK = "${CLASS}"
 
-export type IconNode = readonly ["svg" | "path", ReadonlyArray<readonly [string, string]>, ReadonlyArray<IconNode>]
+export type IconTag = ${TAGS.map((tag) => JSON.stringify(tag)).join(" | ")}
+
+export type IconNode = readonly [IconTag, ReadonlyArray<readonly [string, string]>, ReadonlyArray<IconNode>]
 
 export const ICON_TREES = {
-${entries.join("\n")}
+${entries.map((entry) => `\t${entry.name}: ${entry.tree},`).join("\n")}
 } as const satisfies Record<string, IconNode>
 
 export type IconName = keyof typeof ICON_TREES
+
+/** \`size\` defaults other than 24. */
+export const ICON_DEFAULT_SIZES: Partial<Record<IconName, string>> = {
+${sizes.map((entry) => `\t${entry.name}: ${JSON.stringify(entry.size)},`).join("\n")}
+}
+
+/** \`MAPLE_MARK_PATH\` from packages/ui/src/components/icons/maple-mark.tsx (the boot splash draws it). */
+export const MAPLE_MARK_PATH = ${JSON.stringify(MAPLE_MARK_PATH)}
 `,
 )
 console.log(`wrote ${entries.length} icons to ${out}`)

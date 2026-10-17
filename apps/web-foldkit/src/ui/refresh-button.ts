@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { refreshButtonIconPendingStyles, refreshButtonIconStyles } from "@maple/ui/styles/ui/refresh-button"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
-import { arrowRotateAnticlockwiseIcon } from "./icon"
+import { icon } from "./icon"
 
 export type RefreshButtonOptions<Message> = Readonly<{
 	onRefresh: Message
@@ -27,7 +27,7 @@ export const refreshButton = <Message>(
 	const isPending = options.isPending ?? false
 	const label = options.label ?? "Refresh"
 	const size = options.size ?? "sm"
-	const icon = arrowRotateAnticlockwiseIcon(h, {
+	const glyph = icon(h, "ArrowRotateAnticlockwiseIcon", {
 		className: cn(refreshButtonIconStyles, isPending && refreshButtonIconPendingStyles),
 	})
 	const common = [...(isPending ? [h.AriaBusy(true)] : []), h.OnClick(options.onRefresh)]
@@ -48,11 +48,11 @@ export const refreshButton = <Message>(
 					...(options.triggerId === undefined ? [] : [h.Id(options.triggerId)]),
 				],
 			},
-			[icon],
+			[glyph],
 		)
 	}
 	return button(h, { size, variant: options.variant ?? "outline", isDisabled, attributes: common }, [
-		icon,
+		glyph,
 		h.span([], [label]),
 	])
 }

@@ -2,7 +2,7 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { Option } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
-import { nucleoIcon } from "../../ui/nucleo-icon"
+import { icon } from "../../ui/icon"
 import type * as Canvas from "../xyflow/canvas"
 import { handlePoint, type PlacedNode, type Viewport } from "../xyflow/geometry"
 import { controls, dotBackground, miniMap } from "../xyflow/panels"
@@ -104,7 +104,7 @@ const header = <M>(h: HtmlBuilder<M>, onFit: M): Html =>
 		[
 			h.span([h.Class("text-xs font-medium text-muted-foreground")], ["Flow View"]),
 			button(h, { variant: "ghost", size: "sm", className: "h-6 gap-1 text-xs", attributes: [h.OnClick(onFit)] }, [
-				nucleoIcon(h, "EyeIcon"),
+				icon(h, "EyeIcon"),
 				"Fit view",
 			]),
 		],

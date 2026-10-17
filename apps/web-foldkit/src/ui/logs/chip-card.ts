@@ -2,8 +2,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { Array, Effect, Option, Schema } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
-import { copyIcon, minusIcon, plusIcon } from "./icons"
+import { copyButton } from "../copy-button"
+import { icon } from "../icon"
 import type { LogChip } from "./log-row-view"
 import type { Model } from "./logs-stream"
 import { Message } from "./logs-stream-message"
@@ -83,118 +83,16 @@ export const PlaceChipCard = Mount.define("PlaceChipCard", {
 		).pipe(Effect.as(Message.PlacedChipCard())),
 })
 
-// styles: packages/ui/src/components/ui/copy-button.tsx (CopyIndicator layers)
-const EASE = "ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none"
-const LAYER = cn(
-	"col-start-1 row-start-1 flex items-center justify-center",
-	"scale-[0.92] opacity-0 transition-[opacity,scale] duration-[240ms]",
-	EASE,
-)
-const CHECK_DRAW = cn(
-	"[stroke-dasharray:1] [stroke-dashoffset:1] transition-[stroke-dashoffset] duration-[260ms]",
-	"group-data-[copy-status=copied]/copy:[stroke-dashoffset:0]",
-	EASE,
-)
-
-const statusIcon = (
-	h: HtmlBuilder<Message>,
-	paths: ReadonlyArray<string>,
-	size: number,
-	pathClass?: string,
-): Html =>
-	h.svg(
-		[
-			h.Attribute("xmlns", "http://www.w3.org/2000/svg"),
-			h.Attribute("viewBox", "0 0 24 24"),
-			h.Attribute("width", String(size)),
-			h.Attribute("height", String(size)),
-			h.Attribute("fill", "none"),
-			h.Attribute("aria-hidden", "true"),
-			h.Attribute("class", "opacity-100"),
-		],
-		paths.map((d) =>
-			h.path([
-				h.Attribute("d", d),
-				...(pathClass === undefined ? [] : [h.Attribute("pathLength", "1")]),
-				h.Attribute("stroke", "currentColor"),
-				h.Attribute("stroke-width", "2"),
-				h.Attribute("stroke-linecap", "square"),
-				...(pathClass === undefined ? [] : [h.Attribute("class", pathClass)]),
-			]),
-		),
-	)
-
 /** `<CopyButton iconSize={10}>` in its idle state, as `SelectableValue` renders it. */
-const copyButton = (h: HtmlBuilder<Message>, label: string, onClick: Message): Html =>
-	h.button(
-		[
-			h.Type("button"),
-			h.Class(
-				cn(
-					buttonVariants({
-						className: cn(
-							"group/copy text-muted-foreground hover:text-foreground",
-							"-my-1 ml-1 size-5 shrink-0 align-middle opacity-0 transition-opacity group-hover/sel:opacity-100 group-hover/attr:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 sm:size-5",
-						),
-						size: "icon-xs",
-						variant: "ghost",
-					}),
-				),
-			),
-			h.DataAttribute("slot", "button"),
-			h.AriaLabel(`Copy ${label}`),
-			h.DataAttribute("copy-status", "idle"),
-			h.OnClick(onClick, { propagation: "Stop" }),
-		],
-		[
-			h.span(
-				[
-					h.AriaHidden(true),
-					h.DataAttribute("copy-status", "idle"),
-					h.Class("group/copy grid shrink-0"),
-					h.Style({ height: "10px", width: "10px" }),
-				],
-				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									LAYER,
-									"group-data-[copy-status=idle]/copy:scale-100 group-data-[copy-status=idle]/copy:opacity-100",
-								),
-							),
-						],
-						[copyIcon(h, 10)],
-					),
-					h.span(
-						[
-							h.Class(
-								cn(
-									LAYER,
-									"group-data-[copy-status=copied]/copy:scale-100 group-data-[copy-status=copied]/copy:opacity-100",
-									"text-severity-info",
-								),
-							),
-						],
-						[statusIcon(h, ["M4.5 12.5L9.5 17.5L19.5 6.5"], 10, CHECK_DRAW)],
-					),
-					h.span(
-						[
-							h.Class(
-								cn(
-									LAYER,
-									"group-data-[copy-status=error]/copy:scale-100 group-data-[copy-status=error]/copy:opacity-100",
-									"text-destructive-foreground",
-								),
-							),
-						],
-						[statusIcon(h, ["M6 6L18 18", "M18 6L6 18"], 10)],
-					),
-				],
-			),
-			h.span([h.Role("status"), h.AriaLive("polite"), h.Class("sr-only")]),
-		],
-	)
+const valueCopyButton = (h: HtmlBuilder<Message>, label: string, onClick: Message): Html =>
+	copyButton(h, {
+		label,
+		status: "idle",
+		iconSize: 10,
+		className:
+			"-my-1 ml-1 size-5 shrink-0 align-middle opacity-0 transition-opacity group-hover/sel:opacity-100 group-hover/attr:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 sm:size-5",
+		attributes: [h.OnClick(onClick, { propagation: "Stop" })],
+	})
 
 const eyebrow = (h: HtmlBuilder<Message>, text: string): Html =>
 	h.div(
@@ -283,7 +181,7 @@ const cardView = (h: HtmlBuilder<Message>, index: number, chip: LogChip, canFilt
 												[h.Class("group/sel")],
 												[
 													h.span([h.Class("select-text")], [chip.value]),
-													copyButton(
+													valueCopyButton(
 														h,
 														chip.key,
 														Message.ClickedCardCopy({ part: "value" }),
@@ -303,14 +201,14 @@ const cardView = (h: HtmlBuilder<Message>, index: number, chip: LogChip, canFilt
 													h,
 													`Filter in ${chip.key} = ${chip.value}`,
 													false,
-													plusIcon(h, 10),
+													icon(h, "PlusIcon", { size: 10 }),
 													"Filter in",
 												),
 												filterAction(
 													h,
 													`Filter out ${chip.key} = ${chip.value}`,
 													true,
-													minusIcon(h, 10),
+													icon(h, "MinusIcon", { size: 10 }),
 													"Filter out",
 												),
 											],

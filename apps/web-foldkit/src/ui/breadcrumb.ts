@@ -10,7 +10,6 @@ import {
 } from "@maple/ui/styles/ui/breadcrumb"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
-import { DOTS_PATHS, strokeIcon } from "./stroke-icons"
 
 type Children = ReadonlyArray<Html | string>
 
@@ -98,7 +97,7 @@ export const breadcrumbEllipsis = <Message>(h: HtmlBuilder<Message>, className?:
 			h.Role("presentation"),
 		],
 		[
-			strokeIcon(h, DOTS_PATHS, { className: breadcrumbEllipsisIconStyles, strokeWidth: "3" }),
+			icon(h, "DotsIcon", { className: breadcrumbEllipsisIconStyles }),
 			h.span([h.Class(breadcrumbEllipsisLabelStyles)], ["More"]),
 		],
 	)

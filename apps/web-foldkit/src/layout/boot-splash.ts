@@ -1,5 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { MAPLE_MARK_PATH } from "../ui/icons"
+import { MAPLE_MARK_PATH } from "../ui/icons.generated"
 
 const TRACKS = [1, 2, 3, 4, 5]
 

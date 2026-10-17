@@ -10,7 +10,7 @@ import { modifyFields } from "foldkit/struct"
 import { button } from "../../../ui/button"
 import * as CopyButton from "../../../ui/copy-button"
 import { filterChip } from "../../../ui/filter-chip"
-import { bellIcon, filterIcon, plusIcon, trashIcon } from "../../../ui/icon"
+import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
 import { refreshButton } from "../../../ui/refresh-button"
@@ -143,7 +143,9 @@ const buttonVariantRows = (h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 		kitRow(h, variant, [
 			...TEXT_SIZES.map((size) => button(h, { variant, size }, [size])),
 			...ICON_SIZES.map((size) =>
-				button(h, { variant, size, attributes: [h.AriaLabel(`${variant} ${size}`)] }, [plusIcon(h)]),
+				button(h, { variant, size, attributes: [h.AriaLabel(`${variant} ${size}`)] }, [
+					icon(h, "PlusIcon"),
+				]),
 			),
 		]),
 	)
@@ -156,18 +158,20 @@ const buttonStates = (h: HtmlBuilder<Message>): Html =>
 		button(h, { variant: "outline", isDisabled: true }, ["Disabled outline"]),
 		button(h, { isLoading: true }, ["Loading"]),
 		button(h, { variant: "outline", isLoading: true }, ["Loading outline"]),
-		button(h, { variant: "outline" }, [plusIcon(h), " With icon"]),
+		button(h, { variant: "outline" }, [icon(h, "PlusIcon"), " With icon"]),
 	])
 
 const iconButtons = (h: HtmlBuilder<Message>): Html =>
 	kitRow(h, undefined, [
-		iconButton(h, { label: "Add widget", triggerId: "base-ui-_r_1_" }, [plusIcon(h)]),
+		iconButton(h, { label: "Add widget", triggerId: "base-ui-_r_1_" }, [icon(h, "PlusIcon")]),
 		iconButton(h, { label: "Delete row", variant: "outline", triggerId: "base-ui-_r_3_" }, [
-			trashIcon(h),
+			icon(h, "TrashIcon"),
 		]),
-		iconButton(h, { label: "Notifications", size: "icon", triggerId: "base-ui-_r_5_" }, [bellIcon(h)]),
+		iconButton(h, { label: "Notifications", size: "icon", triggerId: "base-ui-_r_5_" }, [
+			icon(h, "BellIcon"),
+		]),
 		iconButton(h, { label: "Filters disabled", isDisabled: true, triggerId: "base-ui-_r_7_" }, [
-			filterIcon(h),
+			icon(h, "FilterIcon"),
 		]),
 	])
 

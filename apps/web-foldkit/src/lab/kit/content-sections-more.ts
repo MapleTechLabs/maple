@@ -4,11 +4,10 @@ import type { CopyStatus } from "../../ui/copy-button"
 import { message, messageAvatar, messageContent, messageGroup, messageHeader } from "../../ui/message"
 import { middleTruncate } from "../../ui/middle-truncate"
 import { settingRow } from "../../ui/setting-row"
-import { strokeIcon } from "../../ui/stroke-icons"
+import { icon } from "../../ui/icon"
 import { trace, traceDescription, traceIcon, traceLine, traceTitle } from "../../ui/trace"
 import { truncatedId } from "../../ui/truncated-id"
 import { truncatedText } from "../../ui/truncated-text"
-import { CHECK_PATHS, MAGNIFIER_PATHS } from "./content-icons"
 import { avatarPlaceholder, scrollAreaPlaceholder, switchPlaceholder } from "./content-placeholders"
 import { kitRow, kitSection } from "./kit-layout"
 
@@ -63,12 +62,12 @@ export const traceSection = <M>(h: HtmlBuilder<M>): Html =>
 			h,
 			[
 				traceLine(h, {}, [
-					traceIcon(h, [strokeIcon(h, CHECK_PATHS)]),
+					traceIcon(h, [icon(h, "CheckIcon")]),
 					traceTitle(h, ["Searched traces"]),
 					traceDescription(h, ["service.name = payment-svc"]),
 				]),
 				traceLine(h, { status: "error" }, [
-					traceIcon(h, [strokeIcon(h, MAGNIFIER_PATHS)]),
+					traceIcon(h, [icon(h, "MagnifierIcon")]),
 					traceTitle(h, ["Read logs"]),
 					traceDescription(h, ["query timed out"]),
 				]),

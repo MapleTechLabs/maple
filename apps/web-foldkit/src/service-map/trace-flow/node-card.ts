@@ -6,7 +6,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { nucleoIcon } from "../../ui/nucleo-icon"
+import { icon } from "../../ui/icon"
 import { flowHandle } from "../xyflow/view"
 import { pickAttr } from "./cloud-platforms"
 import type { AggregatedDuration, FlowNodeData } from "./flow-graph"
@@ -57,7 +57,7 @@ const cacheSystemIcon = <M>(h: HtmlBuilder<M>, system: CacheInfo["system"], size
 					h.path([h.Attribute("d", d), h.Attribute("fill", "currentColor"), h.Attribute("opacity", opacity)]),
 				),
 			)
-		: nucleoIcon(h, "DatabaseIcon", { size, className: "shrink-0 text-current" })
+		: icon(h, "DatabaseIcon", { size, className: "shrink-0 text-current" })
 
 const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string => {
 	const { httpInfo, cacheInfo, category } = desc
@@ -206,7 +206,7 @@ export const flowSpanNode = <M>(h: HtmlBuilder<M>, nodeId: string, data: FlowNod
 							[
 								category.id === "cache" && cacheInfo?.system
 									? cacheSystemIcon(h, cacheInfo.system, 13)
-									: nucleoIcon(h, category.icon, { size: 13 }),
+									: icon(h, category.icon, { size: 13 }),
 							],
 						),
 						h.div(

@@ -1,7 +1,7 @@
 import { DB_NODE_PREFIX, NS_LABEL_HEIGHT, NS_PADDING_X, NS_PADDING_Y } from "@maple/ui/components/service-map/service-map-utils"
 import { getValueHue } from "@maple/ui/lib/colors"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { nucleoIcon } from "../../ui/nucleo-icon"
+import { icon } from "../../ui/icon"
 import type { MeasuredNode } from "../xyflow/geometry"
 import { flowNode } from "../xyflow/view"
 import type { EffectiveGraph } from "./graph"
@@ -41,7 +41,7 @@ const box = <M>(h: HtmlBuilder<M>, label: string, hue: number): Html =>
 							h.Title(`Collapse ${label} into one node`),
 							h.Class("shrink-0 opacity-60 transition-opacity hover:opacity-100"),
 						],
-						[nucleoIcon(h, "MinimizeIcon", { size: 10 })],
+						[icon(h, "MinimizeIcon", { size: 10 })],
 					),
 				],
 			),

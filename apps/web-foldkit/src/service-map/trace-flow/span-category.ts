@@ -3,7 +3,7 @@ import { extractClassName } from "@maple/ui/lib/colors"
 import { getHttpInfo, type HttpInfo } from "@maple/ui/lib/http"
 import { getSpanKindLabel, normalizeSpanKind, SPAN_KIND_LABELS } from "@maple/ui/lib/span-kind"
 import type { Span } from "@maple/ui/lib/types"
-import type { NucleoIconName } from "../../ui/nucleo-icon"
+import type { IconName } from "../../ui/icon"
 import { type CloudPlatformInfo, getCloudPlatform } from "./cloud-platforms"
 
 // copied: packages/ui/src/lib/span-category.ts with `Icon` as an icon name (the original
@@ -20,7 +20,7 @@ export interface SpanCategoryAccent {
 export interface SpanCategory {
 	readonly id: SpanCategoryId
 	readonly label: string
-	readonly icon: NucleoIconName
+	readonly icon: IconName
 	readonly accent: SpanCategoryAccent
 }
 

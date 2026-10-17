@@ -1,5 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { mapleMark } from "../ui/icons"
+import { icon } from "../ui/icon"
 
 const WEBSITE_URL = "https://maple.dev"
 const DOCS_URL = "https://maple.dev/docs"
@@ -20,7 +20,7 @@ export const accountLayout = <Message>(h: HtmlBuilder<Message>, children: Readon
 					]),
 					h.a(
 						[h.Class("account-wordmark"), h.Href(WEBSITE_URL), h.AriaLabel("Maple home")],
-						[mapleMark(h, 30), h.span([], ["Maple"])],
+						[icon(h, "MapleMark", { size: 30, attributes: [h.AriaHidden(true)] }), h.span([], ["Maple"])],
 					),
 					h.div(
 						[h.Class("account-art-copy")],
@@ -40,7 +40,7 @@ export const accountLayout = <Message>(h: HtmlBuilder<Message>, children: Readon
 						[
 							h.a(
 								[h.Class("account-mobile-wordmark"), h.Href(WEBSITE_URL), h.AriaLabel("Maple home")],
-								[mapleMark(h, 26), h.span([], ["Maple"])],
+								[icon(h, "MapleMark", { size: 26, attributes: [h.AriaHidden(true)] }), h.span([], ["Maple"])],
 							),
 							h.a([h.Class("account-back"), h.Href(WEBSITE_URL)], ["Back to website"]),
 						],

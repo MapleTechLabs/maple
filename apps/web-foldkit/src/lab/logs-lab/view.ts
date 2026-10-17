@@ -3,12 +3,7 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { button } from "../../ui/button"
-import {
-	arrowRotateAnticlockwiseIcon,
-	arrowUpIcon,
-	chevronDownIcon,
-	mediaPauseIcon,
-} from "../../ui/logs/icons"
+import { icon } from "../../ui/icon"
 import * as LogsStreamView from "../../ui/logs/logs-stream-view"
 import { eyebrowVariants } from "../../ui/logs/styles"
 import { labSidebar, labTopbar } from "../shell"
@@ -58,7 +53,7 @@ const liveControls = (h: HtmlBuilder<Message>, model: Model): Html => {
 						? [
 								h.span(
 									[h.Class("flex items-center gap-1.5 text-muted-foreground text-xs")],
-									[mediaPauseIcon(h, 10), "Paused while you inspect"],
+									[icon(h, "MediaPauseIcon", { size: 10 }), "Paused while you inspect"],
 								),
 							]
 						: []),
@@ -71,7 +66,7 @@ const liveControls = (h: HtmlBuilder<Message>, model: Model): Html => {
 										size: "xs",
 										attributes: [h.OnClick(Message.ClickedJumpToLatest())],
 									},
-									[arrowUpIcon(h, 24), "Jump to latest"],
+									[icon(h, "ArrowUpIcon", { size: 24 }), "Jump to latest"],
 								),
 							]
 						: []),
@@ -93,11 +88,10 @@ const liveControls = (h: HtmlBuilder<Message>, model: Model): Html => {
 							],
 						},
 						[
-							arrowRotateAnticlockwiseIcon(
-								h,
-								24,
-								cn("size-3.5", model.isReloading && "animate-spin"),
-							),
+							icon(h, "ArrowRotateAnticlockwiseIcon", {
+								size: 24,
+								className: cn("size-3.5", model.isReloading && "animate-spin"),
+							}),
 							h.span([], ["Reload"]),
 						],
 					),
@@ -135,7 +129,7 @@ const liveControls = (h: HtmlBuilder<Message>, model: Model): Html => {
 								[h.Class(cn("tabular-nums", !isOn && "text-muted-foreground"))],
 								[refreshLabel(model.refreshInterval)],
 							),
-							chevronDownIcon(h, 24, "size-3 opacity-60"),
+							icon(h, "ChevronDownIcon", { size: 24, className: "size-3 opacity-60" }),
 						],
 					),
 				],

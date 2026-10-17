@@ -7,7 +7,7 @@ import { formatLatency } from "@maple/ui/lib/format"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { nucleoIcon } from "../../ui/nucleo-icon"
+import { icon } from "../../ui/icon"
 import { eyebrow, middleTruncate, statusDot } from "../../ui/status"
 import { flowHandle } from "../xyflow/view"
 import {
@@ -50,7 +50,7 @@ const podsCell =<M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 				? tooltipTrigger(h, [
 						h.span(
 							[h.Class("flex items-center gap-1 font-mono text-2xs font-medium tabular-nums text-secondary-foreground")],
-							[nucleoIcon(h, "CubeIcon", { size: 10, className: "text-muted-foreground/70" }), String(data.infra.podCount)],
+							[icon(h, "CubeIcon", { size: 10, className: "text-muted-foreground/70" }), String(data.infra.podCount)],
 						),
 					])
 				: h.span([h.Class("font-mono text-2xs tabular-nums text-muted-foreground/30")], [EMPTY_VALUE]),
@@ -83,7 +83,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 							[
 								statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
 								tooltipTrigger(h, [
-									nucleoIcon(h, platformIcon.icon, {
+									icon(h, platformIcon.icon, {
 										size: 12,
 										className: cn("shrink-0", !platformIcon.branded && "text-muted-foreground/80"),
 									}),
@@ -95,7 +95,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 											runtimeInfo.icon === null
 												? eyebrow(h, "shrink-0 text-4xs text-muted-foreground/60", [runtimeInfo.short])
 												: tooltipTrigger(h, [
-														nucleoIcon(h, runtimeInfo.icon, { size: 12, className: "shrink-0 text-muted-foreground/70" }),
+														icon(h, runtimeInfo.icon, { size: 12, className: "shrink-0 text-muted-foreground/70" }),
 													]),
 										]),
 							],
@@ -159,7 +159,7 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 							[
 								statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
 								tooltipTrigger(h, [
-									nucleoIcon(h, DB_ICON[style.icon], {
+									icon(h, DB_ICON[style.icon], {
 										size: 12,
 										className: "shrink-0",
 										style: branded ? undefined : { color },

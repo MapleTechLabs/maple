@@ -20,7 +20,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { hiddenInput } from "./choice"
-import { checkIcon, chevronExpandYIcon } from "./icon"
+import { icon } from "./icon"
 
 /**
  * Base UI `Select`: the selected value, whether the popup is open, and the highlighted option.
@@ -165,7 +165,7 @@ const optionView = <P>(h: HtmlBuilder<P>, config: SelectViewConfig<P>, option: S
 								h.Class(selectItemIndicatorStyles),
 								h.DataAttribute("selected", ""),
 							],
-							[checkIcon(h, { className: selectItemIndicatorIconStyles })],
+							[icon(h, "CheckIcon", { className: selectItemIndicatorIconStyles })],
 						),
 					]
 				: []),
@@ -277,7 +277,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SelectViewConfig<P>): Readonl
 				h.span([h.Class(cn(selectValueStyles)), h.DataAttribute("slot", "select-value")], [label]),
 				h.span(
 					[h.AriaHidden(true), ...openAttributes, h.DataAttribute("slot", "select-icon")],
-					[chevronExpandYIcon(h, { className: selectTriggerIconClassName })],
+					[icon(h, "ChevronExpandYIcon", { className: selectTriggerIconClassName })],
 				),
 			],
 		),

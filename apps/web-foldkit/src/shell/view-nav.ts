@@ -2,7 +2,7 @@ import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../ui/icon"
+import { icon, iconColor } from "../ui/icon"
 import {
 	sidebarGroup,
 	sidebarGroupContent,
@@ -107,7 +107,12 @@ const subList = (h: HtmlBuilder<Message>, subItems: ReadonlyArray<NavSubItem>, c
 						[
 							...(sub.icon === undefined
 								? []
-								: [icon(h, sub.icon, { className: "size-3.5", color: sub.iconColor })]),
+								: [
+										icon(h, sub.icon, {
+											className: "size-3.5",
+											...iconColor(sub.iconColor),
+										}),
+									]),
 							h.span([], [sub.title]),
 						],
 					),
@@ -153,7 +158,12 @@ const navRow = (h: HtmlBuilder<Message>, model: Model, item: NavItem, currentPat
 								preview.flatMap((sub) =>
 									sub.icon === undefined
 										? []
-										: [icon(h, sub.icon, { className: "size-3", color: sub.iconColor })],
+										: [
+												icon(h, sub.icon, {
+													className: "size-3",
+													...iconColor(sub.iconColor),
+												}),
+											],
 								),
 							),
 						]),

@@ -5,7 +5,7 @@ import * as Calendar from "foldkit/calendar"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineView } from "foldkit/submodel"
 import { type CalendarDate, DayKey, gridWeeks, isoDay, Message, type Model, tabbableDay } from "./calendar"
-import { CHEVRON_LEFT_PATHS, CHEVRON_RIGHT_PATHS, strokeIcon } from "./stroke-icons"
+import { icon } from "./icon"
 
 // react-day-picker's DOM for `<Calendar mode="single">` (en-US): rdp-* classes, Maple's
 // `calendarClassNames`, the same ARIA labels. Day cells set one `class` attribute (S4).
@@ -54,7 +54,7 @@ const navButton = (h: HtmlBuilder<Message>, direction: "Previous" | "Next"): Htm
 			h.OnClick(direction === "Previous" ? Message.ClickedPreviousMonth() : Message.ClickedNextMonth()),
 		],
 		[
-			strokeIcon(h, direction === "Previous" ? CHEVRON_LEFT_PATHS : CHEVRON_RIGHT_PATHS, {
+			icon(h, direction === "Previous" ? "ChevronLeftIcon" : "ChevronRightIcon", {
 				className: cn("rdp-chevron", calendarChevronStyles),
 			}),
 		],
