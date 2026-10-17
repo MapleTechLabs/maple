@@ -1,51 +1,38 @@
+import { QueryEngineExecuteBatchRequest } from "@maple/query-engine"
 import {
-	type FacetItem,
-	QueryEngineExecuteBatchRequest,
-	type QueryEngineExecuteRequest,
-	type QueryEngineExecuteResponse,
-} from "@maple/query-engine"
-import { Context, Effect, Layer } from "effect"
-import { MapleInternalApiClient } from "../platform/api-clients"
+	MapleApiV2Http,
+	MapleInternalHttp,
+	WarehouseExecutor,
+} from "@maple/web-data/warehouse/warehouse-services"
+import { Effect, Layer } from "effect"
+import { MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
 import { makeExecuteBatcher } from "./execute-batcher"
-import { failedWith, type WarehouseQueryError } from "./warehouse-error"
 
 /**
- * The one way a query reaches the warehouse: every Command's query joins the process-wide
- * batcher, exactly as every apps/web atom does through `executeQueryEngine` (`effect-utils.ts`).
- * A resource, so the batcher (and its window) is shared by all Commands of the runtime.
+ * `@maple/web-data`'s warehouse services over this app's clients. One instance per runtime, so
+ * Commands on separate fibers share one batch window, as every apps/web atom shares its module
+ * batcher. Query functions (`@maple/web-data/warehouse/*`) run as Commands against it.
  */
-export class WarehouseExecutor extends Context.Service<
+const WarehouseExecutorLive = Layer.effect(
 	WarehouseExecutor,
-	{
-		readonly execute: (
-			operation: string,
-			payload: QueryEngineExecuteRequest,
-		) => Effect.Effect<QueryEngineExecuteResponse, WarehouseQueryError>
-	}
->()("@maple/web-foldkit/WarehouseExecutor") {
-	static readonly layer = Layer.effect(
-		this,
-		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			const batcher = yield* makeExecuteBatcher((requests) =>
-				client.queryEngine
-					.executeBatch({ payload: new QueryEngineExecuteBatchRequest({ requests }) })
-					.pipe(
-						Effect.map((response) => response.results),
-						Effect.mapError((cause) => failedWith("QueryEngine.executeBatch", cause)),
-						Effect.withSpan("QueryEngine.executeBatch", {
-							attributes: { "query.batch_size": requests.length },
-						}),
-					),
-			)
-			return {
-				execute: (operation, payload) =>
-					batcher.execute(operation, payload).pipe(Effect.withSpan(operation)),
-			}
-		}),
-	).pipe(Layer.provide(MapleInternalApiClient.layer))
-}
+	Effect.gen(function* () {
+		const client = yield* MapleInternalApiClient
+		const batcher = yield* makeExecuteBatcher((requests) =>
+			client.queryEngine
+				.executeBatch({ payload: new QueryEngineExecuteBatchRequest({ requests }) })
+				.pipe(
+					Effect.map((response) => response.results),
+					Effect.withSpan("QueryEngine.executeBatch", {
+						attributes: { "query.batch_size": requests.length },
+					}),
+				),
+		)
+		return { enqueue: batcher.enqueue }
+	}),
+)
 
-// Typed result extractors, as `effect-utils.ts` has them.
-export const extractFacets = (response: QueryEngineExecuteResponse): ReadonlyArray<FacetItem> =>
-	response.result.kind === "facets" ? response.result.data : []
+export const WarehouseLive = Layer.mergeAll(
+	WarehouseExecutorLive,
+	Layer.effect(MapleInternalHttp, Effect.service(MapleInternalApiClient)),
+	Layer.effect(MapleApiV2Http, Effect.service(MapleApiV2Client)),
+).pipe(Layer.provide([MapleInternalApiClient.layer, MapleApiV2Client.layer]))

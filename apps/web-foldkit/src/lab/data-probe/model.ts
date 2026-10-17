@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../data/keyed"
-import { ServicesFacets } from "../../data/queries/services-facets"
+
 import { TimeWindow } from "../../data/time-range"
 import { WarehouseFailure } from "../../data/warehouse-error"
 
@@ -13,6 +13,16 @@ export type Session = typeof Session.Type
 
 /** How the window was asked for: `Load` on entry, `Refresh` from the button (no cache snap). */
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
+
+/** `getServicesFacets`' result (`ServicesFacetsResponse["data"]` in `@maple/web-data/warehouse/services`). */
+const FacetCount = Schema.Struct({ name: Schema.String, count: Schema.Number })
+export const ServicesFacets = Schema.Struct({
+	environments: Schema.Array(FacetCount),
+	namespaces: Schema.Array(FacetCount),
+	commitShas: Schema.Array(FacetCount),
+	services: Schema.Array(FacetCount),
+})
+export type ServicesFacets = typeof ServicesFacets.Type
 
 /**
  * S6 data probe: one warehouse query through the batcher (`/services`' facets) and one Electric

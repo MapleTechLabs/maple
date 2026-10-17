@@ -1,6 +1,6 @@
 import { Layer } from "effect"
 import { OrgCollections } from "../data/collections/org-collections"
-import { WarehouseExecutor } from "../data/warehouse"
+import { WarehouseLive } from "../data/warehouse"
 import { ApiClientsLive } from "./api-clients"
 
 /**
@@ -8,5 +8,5 @@ import { ApiClientsLive } from "./api-clients"
  * batcher and the org collections are here because their state (the batch window, the synced
  * rows) must be one instance for the whole app, like apps/web's module singletons.
  */
-export const ResourcesLive = Layer.mergeAll(ApiClientsLive, WarehouseExecutor.layer, OrgCollections.layer)
+export const ResourcesLive = Layer.mergeAll(ApiClientsLive, WarehouseLive, OrgCollections.layer)
 export type Resources = Layer.Success<typeof ResourcesLive>

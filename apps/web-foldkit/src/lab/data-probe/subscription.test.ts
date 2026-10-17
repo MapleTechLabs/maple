@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db"
 import { Effect, Fiber, Queue, Schema, Stream } from "effect"
 import { describe, expect, test } from "vitest"
-import type { AlertRuleRow } from "../../data/collections/alert-rule-row"
+import type { AlertRuleRow } from "@maple/web-data/collections/alerts"
 import { init, Message, ruleCounts, subscriptions, update } from "./index"
 
 const orgA = Schema.decodeSync(OrgId)("org_a")

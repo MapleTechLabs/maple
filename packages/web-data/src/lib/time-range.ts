@@ -25,8 +25,8 @@ export function snapTimestamp(value: string): string {
 }
 
 export interface ResolveTimeRangeOptions {
-	/** The zone day-aligned presets ("today", "7d") start their day in. */
-	readonly timeZone: string
+	/** The zone day-aligned presets ("today", "7d") start their day in; omitted is `resolveRelativeRangeToWarehouse`'s default. */
+	readonly timeZone?: string | undefined
 	/** Floor the endpoint to the cache-key grid. Default `true`; `false` after an explicit refresh. */
 	readonly snap?: boolean | undefined
 }

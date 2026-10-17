@@ -2,7 +2,8 @@ import { createEffectCollection } from "@maple/effect-db/electric"
 import { electricSyncBaseUrl } from "@maple/web/lib/services/common/electric-sync-url"
 import { Context, Duration, Effect, Layer, ManagedRuntime, Option, type Scope, SynchronizedRef } from "effect"
 import { SessionBearer } from "../../platform/session-bearer"
-import { AlertRuleRowSchema, timestamptzParser } from "./alert-rule-row"
+import { AlertRuleRowSchema } from "@maple/web-data/collections/alerts"
+import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
 
 /** `getOrgCollections`'s 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
 const CLEANUP_FALLBACK = Duration.seconds(30)
