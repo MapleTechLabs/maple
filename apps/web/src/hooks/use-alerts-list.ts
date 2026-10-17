@@ -11,7 +11,7 @@ import {
 	rowToAlertDestinationDocument,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
-} from "@/lib/collections/alerts"
+} from "@maple/web-data/collections/alerts"
 import { useCollectionLoadFailed } from "@/lib/collections/collection-load"
 import {
 	getOrgCollections,

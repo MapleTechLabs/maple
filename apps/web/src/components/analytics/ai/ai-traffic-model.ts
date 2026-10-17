@@ -11,7 +11,10 @@ import {
 } from "@maple/domain/ai-traffic"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 
-import type { WebAnalyticsAiCrawler, WebAnalyticsAiReferralPoint } from "@/api/warehouse/web-analytics"
+import type {
+	WebAnalyticsAiCrawler,
+	WebAnalyticsAiReferralPoint,
+} from "@maple/web-data/warehouse/web-analytics"
 
 /** Bucket widths the sparklines may use, smallest first. */
 const SPARK_STEPS = [3600, 2 * 3600, 3 * 3600, 6 * 3600, 12 * 3600, 86_400, 2 * 86_400, 7 * 86_400]

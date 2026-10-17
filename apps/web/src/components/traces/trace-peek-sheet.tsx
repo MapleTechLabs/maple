@@ -26,7 +26,7 @@ import { findSpanById } from "@maple/ui/components/traces/flow-utils"
 import { getHttpInfo } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
 
-import type { Span, SpanHierarchyResponse, SpanNode } from "@/api/warehouse/traces"
+import type { Span, SpanHierarchyResponse, SpanNode } from "@maple/web-data/warehouse/traces"
 import { ArrowDownIcon, ArrowUpIcon } from "@/components/icons"
 import { ErrorState } from "@/components/common/error-state"
 import { SheetDetailHeader } from "@/components/common/sheet-detail-header"

@@ -37,7 +37,7 @@ import {
 	type ToolErrorOccurrenceRow,
 	type ToolErrorSessionRow,
 	type ToolErrorVariantRow,
-} from "@/lib/agent-sessions/tool-analytics"
+} from "@maple/web-data/lib/tool-analytics"
 import {
 	errorTextTokens,
 	errorTrendBucket,

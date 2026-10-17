@@ -9,7 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
 import { StatRailItem } from "@/components/common/stat-rail"
 
-import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
+import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 
 import { severityLevel } from "../format"
 import {

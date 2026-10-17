@@ -3,7 +3,7 @@
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 
-import { toIsoBucket } from "@/api/warehouse/timeseries-utils"
+import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
 
 const HOUR_MS = 3_600_000
 

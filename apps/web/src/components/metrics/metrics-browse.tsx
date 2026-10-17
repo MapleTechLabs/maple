@@ -5,7 +5,7 @@ import { GridIcon, MenuIcon } from "@/components/icons"
 import { MetricsTypeFilter, type MetricType } from "./metrics-type-filter"
 import { MetricsTable } from "./metrics-table"
 import { MetricPreviewGrid } from "./metric-preview-grid"
-import type { Metric } from "@/api/warehouse/metrics"
+import type { Metric } from "@maple/web-data/warehouse/metrics"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { SegmentedSelect, type SegmentedOption } from "@/components/common/segmented-select"
 

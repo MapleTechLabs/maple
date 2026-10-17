@@ -7,7 +7,7 @@ import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-gro
 import { cn } from "@maple/ui/lib/utils"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { ErrorState } from "@/components/common/error-state"
-import type { ListLogsInput, Log } from "@/api/warehouse/logs"
+import type { ListLogsInput, Log } from "@maple/web-data/warehouse/logs"
 import { listLogsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { LogTime } from "./log-time"

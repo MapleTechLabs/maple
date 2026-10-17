@@ -13,7 +13,7 @@ import { Card } from "@maple/ui/components/ui/card"
 import { cn } from "@maple/ui/lib/utils"
 import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { CheckIcon, ChevronDownIcon, CircleWarningIcon } from "@/components/icons"
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import {
 	buildDiagnosis,
 	diagnosisVerdict,

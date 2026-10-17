@@ -5,7 +5,7 @@ import { ChartBarTrendUpIcon } from "@/components/icons"
 import { SectionHeading } from "@/components/common/section-heading"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Panel } from "@maple/ui/components/ui/panel"
-import type { TraceProductEvent } from "@/api/warehouse/product-events"
+import type { TraceProductEvent } from "@maple/web-data/warehouse/product-events"
 
 /** Same margin as `TraceLogsLink`: clock skew can stamp an annotated span just
  *  outside the root span's window, and the bound keeps the lookup partition-pruned. */

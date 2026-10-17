@@ -23,7 +23,7 @@ import {
 	type IncidentTimelineEntry,
 	signalTitle,
 } from "@/lib/alerts/incident-timeline"
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import { formatDateInTimezone, formatTimeInTimezone } from "@/lib/timezone-format"
 
 function statusLine(incident: AlertIncidentDocument, now: number, timeZone: string): string {

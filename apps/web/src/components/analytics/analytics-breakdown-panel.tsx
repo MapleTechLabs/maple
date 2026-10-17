@@ -18,7 +18,7 @@ import {
 import { ColumnHead, DataTable, useTableSort, type SortDir } from "@/components/common/data-table"
 import { shareBar } from "../infra/primitives/share-bar"
 import { MaximizeIcon } from "@/components/icons"
-import type { WebAnalyticsFacetRow } from "@/api/warehouse/web-analytics"
+import type { WebAnalyticsFacetRow } from "@maple/web-data/warehouse/web-analytics"
 import type { AnalyticsFilterKey } from "./filters"
 import { analyticsRowIcon, dimensionHasIcons } from "./row-icon"
 

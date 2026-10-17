@@ -1,7 +1,8 @@
 import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
-import { servicesFacets } from "../../data/queries/services-facets"
+import { getServicesFacets } from "@maple/web-data/warehouse/services"
 import { currentWindow, TimeWindow } from "../../data/time-range"
+import { toWarehouseFailure } from "../../data/warehouse-error"
 import { MapleAuthApi, readSessionToken } from "../../platform/auth-api"
 import { Message, RequestMode } from "./model"
 
@@ -43,8 +44,9 @@ export const FetchServicesFacets = Command.define("FetchServicesFacets", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchServicesFacets],
 	execute: ({ key, window }) =>
-		servicesFacets(window).pipe(
-			Effect.mapError((error) => error.failure),
+		getServicesFacets({ data: window }).pipe(
+			Effect.map((response) => response.data),
+			Effect.mapError(toWarehouseFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchServicesFacets({ key, result })),
 		),

@@ -4,7 +4,7 @@ import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import type { ListContainersResponse } from "@maple/domain/http"
-import type { ContainerSortKey, SortDirection } from "@/api/warehouse/infra"
+import type { ContainerSortKey, SortDirection } from "@maple/web-data/warehouse/infra"
 
 import { HostStatusBadge } from "./status-badge"
 import { ColumnHead, DataTable, ROW_LINK_CLASS, type SortControls } from "@/components/common/data-table"

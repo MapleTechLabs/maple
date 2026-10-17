@@ -301,6 +301,7 @@
         "@maple/query-model": "workspace:*",
         "@maple/ui": "workspace:*",
         "@maple/unitflow": "workspace:*",
+        "@maple/web-data": "workspace:*",
         "@maple/widgets": "workspace:*",
         "@react-three/fiber": "^9.8.1",
         "@rrweb/replay": "^2.1.7",
@@ -371,6 +372,7 @@
         "@maple/effect-db": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/query-model": "workspace:*",
+        "@maple/web-data": "workspace:*",
         "@maple/widgets": "workspace:*",
         "@tanstack/charts": "catalog:charts",
         "@tanstack/charts-scales": "catalog:charts",
@@ -488,15 +490,10 @@
         "@electric-sql/client": "1.5.28",
         "@tanstack/db": "0.11.3",
         "@tanstack/electric-db-collection": "0.5.4",
-        "@tanstack/react-db": "0.5.3",
         "effect": "catalog:effect",
       },
       "devDependencies": {
-        "@types/react": "catalog:react",
         "typescript": "catalog:tooling",
-      },
-      "peerDependencies": {
-        "react": "^19.0.0",
       },
     },
     "lib/effect-router": {
@@ -993,6 +990,23 @@
         "@types/bun": "^1.4.2",
         "@types/node": "catalog:tooling",
         "@types/pngjs": "^6.0.5",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/web-data": {
+      "name": "@maple/web-data",
+      "dependencies": {
+        "@maple/domain": "workspace:*",
+        "@maple/query-engine": "workspace:*",
+        "@maple/query-model": "workspace:*",
+        "@maple/ui": "workspace:*",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@effect/language-service": "catalog:effect",
+        "@effect/vitest": "catalog:effect",
+        "@types/node": "catalog:tooling",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
@@ -1714,6 +1728,8 @@
     "@maple/unitflow": ["@maple/unitflow@workspace:lib/unitflow"],
 
     "@maple/web": ["@maple/web@workspace:apps/web"],
+
+    "@maple/web-data": ["@maple/web-data@workspace:packages/web-data"],
 
     "@maple/web-foldkit": ["@maple/web-foldkit@workspace:apps/web-foldkit"],
 

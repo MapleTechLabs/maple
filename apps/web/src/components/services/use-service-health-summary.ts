@@ -10,7 +10,7 @@ import {
 	type ServiceHealth,
 	type ServiceHealthCause,
 } from "@/components/dashboard/service-health"
-import type { GetServiceOverviewInput } from "@/api/warehouse/services"
+import type { GetServiceOverviewInput } from "@maple/web-data/warehouse/services"
 
 export interface ServiceHealthSummary {
 	/** Keyed by {@link serviceHealthRowKey} — one entry per (service, environment) row. */

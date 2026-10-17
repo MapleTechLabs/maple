@@ -1,6 +1,6 @@
 import { Profiler, useMemo, type ProfilerOnRenderCallback } from "react"
 
-import type { Log } from "@/api/warehouse/logs"
+import type { Log } from "@maple/web-data/warehouse/logs"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { LogsTableView } from "@/components/logs/logs-table"
 import { LOGS_TABLE_BENCH_ROWS } from "./logs-table-bench-fixture"

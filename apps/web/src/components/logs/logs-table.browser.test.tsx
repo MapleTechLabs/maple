@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { createRef, type ReactNode, type Ref } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { Log } from "@/api/warehouse/logs"
+import type { Log } from "@maple/web-data/warehouse/logs"
 import { buildLogsLabFixture } from "@/lab/logs-fixture"
 
 import { LogsTableView, type LogsInspectState, type LogsStreamHandle } from "./logs-table"

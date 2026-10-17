@@ -1,8 +1,8 @@
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { ServicesFacets } from "../../data/queries/services-facets"
+
 import type { WarehouseFailure } from "../../data/warehouse-error"
-import { Message, type Model } from "./model"
+import { Message, type Model, type ServicesFacets } from "./model"
 
 const facetCount = (
 	facets: AsyncData.AsyncData<ServicesFacets, WarehouseFailure>,

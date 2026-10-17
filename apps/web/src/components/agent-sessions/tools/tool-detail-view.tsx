@@ -14,7 +14,7 @@ import {
 	type ToolErrorRow,
 	type ToolSeriesPoint,
 	type ToolTotals,
-} from "@/lib/agent-sessions/tool-analytics"
+} from "@maple/web-data/lib/tool-analytics"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 
 import { ToolDetailCharts } from "./tool-detail-charts"

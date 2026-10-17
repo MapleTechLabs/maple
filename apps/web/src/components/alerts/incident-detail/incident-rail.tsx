@@ -5,7 +5,7 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import { formatSignalValue } from "@/lib/alerts/form-utils"
 import { conditionPhrase, incidentGroup, signalTitle } from "@/lib/alerts/incident-timeline"
 

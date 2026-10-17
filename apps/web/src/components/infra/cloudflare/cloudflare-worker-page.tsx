@@ -16,7 +16,7 @@ import {
 } from "@maple/ui/lib/format"
 import { CodeIcon, PulseIcon, ServerIcon, StopwatchIcon, UserIcon } from "@maple/ui/components/icons"
 
-import type { CloudflareWorkerDetail } from "@/api/warehouse/cloudflare-infra"
+import type { CloudflareWorkerDetail } from "@maple/web-data/warehouse/cloudflare-infra"
 import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { CorrelationStrips, type StripSeries } from "../service-lens/correlation-strips"
 import type { ChartEventMarker } from "../primitives/chart-event-markers"

@@ -19,8 +19,8 @@ import type {
 } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 
-import type { ErrorByType } from "@/api/warehouse/errors"
-import type { ErrorsSparkSeries } from "@/api/warehouse/errors"
+import type { ErrorByType } from "@maple/web-data/warehouse/errors"
+import type { ErrorsSparkSeries } from "@maple/web-data/warehouse/errors"
 
 /**
  * What a row says about where this fingerprint stands. One slot, resolved by

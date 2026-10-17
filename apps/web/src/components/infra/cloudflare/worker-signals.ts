@@ -2,7 +2,7 @@ import type {
 	CloudflareWorkerDurableObjectBucket,
 	CloudflareWorkerLatencyBucket,
 	CloudflareWorkerOutcomeBucket,
-} from "@/api/warehouse/cloudflare-infra"
+} from "@maple/web-data/warehouse/cloudflare-infra"
 import type { ChartEventMarker } from "../primitives/chart-event-markers"
 
 type StripRow = { bucket: string; attributeValue: string; value: number }

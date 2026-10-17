@@ -28,7 +28,7 @@ import {
 	resolveWindow,
 } from "@maple/agent-sessions"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { aiSessionSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 

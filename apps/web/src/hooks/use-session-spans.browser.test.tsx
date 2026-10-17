@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { AiSessionTooLargeError, type AiSessionSpan } from "@maple/domain/http"
-import type { AiSessionSpansPage } from "@/api/warehouse/ai-sessions"
+import type { AiSessionSpansPage } from "@maple/web-data/warehouse/ai-sessions"
 import { Atom, Result } from "@/lib/effect-atom"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
 import { agentSpan, llmSpan, makeSpan } from "@maple/agent-sessions/testing"

@@ -7,7 +7,7 @@ import { rowSelectedClass } from "@maple/ui/components/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
 
 import type { ListPodsResponse } from "@maple/domain/http"
-import type { PodSortKey, SortDirection } from "@/api/warehouse/infra"
+import type { PodSortKey, SortDirection } from "@maple/web-data/warehouse/infra"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 
 import { HostStatusBadge } from "./status-badge"

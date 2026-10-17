@@ -20,7 +20,7 @@ import {
 	railwayServicesResultAtom,
 	railwayServiceTimeseriesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import type { RailwayServiceTimeseriesRow } from "@/api/warehouse/railway-infra"
+import type { RailwayServiceTimeseriesRow } from "@maple/web-data/warehouse/railway-infra"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 

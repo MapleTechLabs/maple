@@ -14,7 +14,7 @@ import { AlertFiringHero } from "@/components/alerts/alert-firing-hero"
 import { anomalyAffectsServiceHealth } from "@/components/anomalies/anomaly-format"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/stat-rail"
 import { ArrowRightIcon, ArrowTrendDownIcon, ArrowTrendUpIcon } from "@/components/icons"
-import type { ServiceHealthSnapshot } from "@/api/warehouse/services"
+import type { ServiceHealthSnapshot } from "@maple/web-data/warehouse/services"
 import type { AlertIncidentDocument, AnomalySignalType } from "@maple/domain/http"
 
 import { Card } from "@maple/ui/components/ui/card"

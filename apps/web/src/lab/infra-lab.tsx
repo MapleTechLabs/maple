@@ -1,9 +1,9 @@
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { useMemo, useState } from "react"
 
-import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
-import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
-import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
+import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
+import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
+import type { PlanetScaleDatabaseStat } from "@maple/web-data/warehouse/service-map"
 import { HostSummaryBand, type HostScope, hostInScope } from "@/components/infra/host-summary-band"
 import { HostTable, type HostRow } from "@/components/infra/host-table"
 import {

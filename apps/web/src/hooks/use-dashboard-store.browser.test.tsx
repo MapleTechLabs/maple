@@ -4,7 +4,7 @@ import { act, cleanup, renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { WidgetDataSource } from "@/components/dashboard-builder/types"
-import type { DashboardRow } from "@/lib/collections/dashboards"
+import type { DashboardRow } from "@maple/web-data/collections/dashboards"
 
 // A stand-in for the Electric-synced collection. `useDashboardMutations` runs no
 // live query, so the write half only needs `get`/`update`/`delete` plus the txid

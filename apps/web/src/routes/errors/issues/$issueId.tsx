@@ -5,7 +5,7 @@ import { useMemo, useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { showErrorToast } from "@/lib/error-toast"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { ResourceNotFound } from "@/components/common/resource-not-found"
 import { WORKFLOW_LABEL } from "@/components/icons/workflow-ring"
 

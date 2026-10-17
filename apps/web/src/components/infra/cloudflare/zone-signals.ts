@@ -2,7 +2,7 @@ import type {
 	CloudflareZoneCacheBucket,
 	CloudflareZoneLatencyBucket,
 	CloudflareZoneStatusBucket,
-} from "@/api/warehouse/cloudflare-infra"
+} from "@maple/web-data/warehouse/cloudflare-infra"
 import { EDGE_SERVED_STATUSES } from "./constants"
 
 type StripRow = { bucket: string; attributeValue: string; value: number }

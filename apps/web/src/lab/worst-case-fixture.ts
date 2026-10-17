@@ -12,7 +12,7 @@ import type { HostRow } from "@/components/infra/host-table"
 import type { Finding } from "@/components/infra/overview/summaries"
 import type { PodRow } from "@/components/infra/pod-table"
 import type { ReleaseServiceImpact } from "@/components/releases/release-model"
-import type { Log } from "@/api/warehouse/logs"
+import type { Log } from "@maple/web-data/warehouse/logs"
 import { domainThresholdToForm, formatSignalValue } from "@/lib/alerts/form-utils"
 import { formatUsage } from "@/lib/billing/usage"
 
