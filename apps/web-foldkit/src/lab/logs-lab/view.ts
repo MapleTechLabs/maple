@@ -1,7 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button, buttonVariants } from "../../ui/button"
+import { buttonVariants } from "@maple/ui/styles/ui/button"
+import { button } from "../../ui/button"
 import {
 	arrowRotateAnticlockwiseIcon,
 	arrowUpIcon,

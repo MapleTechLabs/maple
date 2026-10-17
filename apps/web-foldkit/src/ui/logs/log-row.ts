@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { buttonVariants } from "../button"
+import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { chevronRightIcon, copyIcon, externalLinkIcon, linkIcon, pulseIcon } from "./icons"
 import type { LogChip, LogRowView, PinnedCell } from "./log-row-view"
 import { highlightedText } from "./highlight"
