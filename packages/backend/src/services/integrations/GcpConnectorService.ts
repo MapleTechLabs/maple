@@ -26,7 +26,10 @@ import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@ma
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
+import { gcpSetupPlan } from "@maple/domain/gcp"
+import { renderGcpAlchemy } from "./gcp/alchemy"
+import { gcpLogFilter, renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
+import { renderGcpTerraform } from "./gcp/terraform"
 
 export interface GcpConnector {
 	readonly id: GcpConnectorId
@@ -110,9 +113,27 @@ export interface GcpConnectorServiceApi {
 		connectorId: GcpConnectorId,
 		options: { readonly applicationLogs: ReadonlyArray<GcpLogRuntime> | null },
 	) => Effect.Effect<
-		{ readonly setupScript: string; readonly cleanupScript: string },
+		{
+			readonly setupScript: string
+			readonly cleanupScript: string
+			/** What a setup without the script needs beyond the connector: no secret in either. */
+			readonly pushEndpoint: string
+			readonly logFilter: string
+			/** Null on a deployment without a Google identity. */
+			readonly mapleServiceAccountEmail: string | null
+			readonly terraform: string
+			readonly alchemy: string | null
+		},
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
+	/**
+	 * Records what a setup without the script removed, on the caller's word: nothing reports it.
+	 * Only capabilities that are off and still recorded as set up change.
+	 */
+	readonly confirmRemoval: (
+		orgId: OrgId,
+		connectorId: GcpConnectorId,
+	) => Effect.Effect<GcpConnector, IntegrationsNotFoundError | IntegrationsPersistenceError>
 	/** What the latest inventory syncs of the org's connectors found. */
 	readonly resources: (
 		orgId: OrgId,
@@ -422,16 +443,28 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 								metricsEnabled: patch.metricsEnabled ?? current.metricsEnabled,
 							}
 							const invalid = capabilityError(flags, patch.metricsEnabled === true)
-							// Switched back on, a capability has nothing set up in Google Cloud until the
-							// script is re-run: what it last reported no longer describes the connection.
+							// Switched back on, a capability's last data and error no longer describe it. One
+							// reported removed is unknown again, so the first push or metrics read confirms it.
 							const changes = {
 								...flags,
 								...(flags.logsEnabled && !current.logsEnabled
-									? { lastReceivedAt: null, lastError: null }
+									? {
+											lastReceivedAt: null,
+											lastError: null,
+											...(current.appliedLogsEnabled === false
+												? { appliedLogsEnabled: null }
+												: undefined),
+										}
 									: undefined),
 								// Only what the card shows: the poller's watermark and lease stay.
 								...(flags.metricsEnabled && !current.metricsEnabled
-									? { lastMetricsReceivedAt: null, lastMetricsError: null }
+									? {
+											lastMetricsReceivedAt: null,
+											lastMetricsError: null,
+											...(current.appliedMetricsEnabled === false
+												? { appliedMetricsEnabled: null }
+												: undefined),
+										}
 									: undefined),
 							}
 							if (invalid === undefined) {
@@ -467,24 +500,73 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 						}),
 					secretAad(row.id),
 				)
+				const pushEndpoint = `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}`
 				const target = {
 					connectorId,
 					scopeType: row.scopeType,
 					scopeId: row.scopeId,
 					projectId: row.projectId,
 					mapleUrl,
-					pushEndpoint: `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}?secret=${secret}`,
+					pushEndpoint: `${pushEndpoint}?secret=${secret}`,
+				}
+				const flags = {
+					mapleServiceAccountEmail,
+					logsEnabled: row.logsEnabled,
+					metricsEnabled: row.metricsEnabled,
+					applicationLogs: options.applicationLogs,
+				}
+				// Without the script there is no filter to keep: a setup as code sets the recommended one.
+				const logFilter = gcpLogFilter(options.applicationLogs ?? [])
+				// Without the script Pub/Sub signs each push instead, so the endpoint carries no secret.
+				const plan = gcpSetupPlan({ ...target, ...flags, pushEndpoint, logFilter })
+				const existing = {
+					logs: row.appliedLogsEnabled === true,
+					reader: row.appliedMetricsEnabled === true,
 				}
 				return {
-					setupScript: yield* renderGcpSetupScript({
-						...target,
-						mapleServiceAccountEmail,
-						logsEnabled: row.logsEnabled,
-						metricsEnabled: row.metricsEnabled,
-						applicationLogs: options.applicationLogs,
-					}),
+					setupScript: yield* renderGcpSetupScript({ ...target, ...flags }),
 					cleanupScript: yield* renderGcpCleanupScript(target),
+					pushEndpoint,
+					logFilter,
+					mapleServiceAccountEmail: mapleServiceAccountEmail ?? null,
+					terraform: renderGcpTerraform(plan, existing),
+					alchemy: renderGcpAlchemy(plan, existing),
 				}
+			})
+
+			const confirmRemoval = Effect.fn("GcpConnectorService.confirmRemoval")(function* (
+				orgId: OrgId,
+				connectorId: GcpConnectorId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
+				const updatedAt = yield* Clock.currentTimeMillis
+				// Each write checks its own switch, so an update racing this one can't be undone by it.
+				yield* dbExecute((db) =>
+					Effect.all([
+						db.run(
+							PG.update(GcpConnectors)
+								.set({ appliedLogsEnabled: false, updatedAt })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(connectorId),
+									$.logsEnabled.eq(false),
+									$.appliedLogsEnabled.eq(true),
+								]),
+						),
+						db.run(
+							PG.update(GcpConnectors)
+								.set({ appliedMetricsEnabled: false, updatedAt })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.id.eq(connectorId),
+									$.metricsEnabled.eq(false),
+									$.appliedMetricsEnabled.eq(true),
+								]),
+						),
+					]),
+				)
+				const row = yield* selectRow(orgId, connectorId)
+				return toConnector(row, (yield* projectCounts([row.id])).get(row.id))
 			})
 
 			const deleteConnector = Effect.fn("GcpConnectorService.delete")(function* (
@@ -520,6 +602,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				create,
 				update,
 				scripts,
+				confirmRemoval,
 				delete: deleteConnector,
 			} satisfies GcpConnectorServiceApi
 		}),

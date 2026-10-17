@@ -508,7 +508,7 @@ interface ConnectedOverview {
 	readonly stat: string | null
 	/** "synced 2m ago" — null when the integration has no sync concept (Hazel). */
 	readonly lastSyncLabel: string | null
-	/** Chip ("1 zone erroring", "Run setup script"): a warning, or an outline while `pending`. */
+	/** Chip ("1 zone erroring", "Finish setup"): a warning, or an outline while `pending`. */
 	readonly issue: string | null
 }
 
@@ -619,7 +619,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 					worst === "attention"
 						? `${countLabel(count("attention"), "connection")} failing`
 						: worst === "setup-pending" || worst === "changes-pending"
-							? "Run setup script"
+							? "Finish setup"
 							: null,
 			}
 		})

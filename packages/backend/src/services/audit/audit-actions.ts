@@ -64,7 +64,10 @@ export const AuditResources = {
 	/** Verbs mirror the issue event types — `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
 	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
-	gcp_connector: { prefix: PublicIdPrefixes.gcpConnector, verbs: ["created", "updated", "deleted"] },
+	gcp_connector: {
+		prefix: PublicIdPrefixes.gcpConnector,
+		verbs: ["created", "updated", "removal_confirmed", "deleted"],
+	},
 	/** Org-singleton public/private pair; which one rolled is in `metadata`. */
 	ingest_key: { verbs: ["rolled"] },
 	/**

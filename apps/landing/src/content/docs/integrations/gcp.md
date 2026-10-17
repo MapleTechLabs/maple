@@ -1,6 +1,6 @@
 ---
 title: "Google Cloud"
-description: "Connect a Google Cloud organization, folder or project by running one script in Cloud Shell. Maple receives Cloud Logging entries through Pub/Sub and reads Cloud Monitoring metrics every 5 minutes."
+description: "Connect a Google Cloud organization, folder or project with a script in Cloud Shell, by hand in the console, or with Terraform or Alchemy. Maple receives Cloud Logging entries through Pub/Sub and reads Cloud Monitoring metrics every 5 minutes."
 group: "Integrations"
 order: 7
 ---
@@ -12,7 +12,13 @@ The Google Cloud integration connects an organization, a folder or a single proj
 | **Log forwarding**        | A Log Router sink sends Cloud Logging entries through Pub/Sub to Maple. They appear in [Logs](/docs/explore/logs) under the service that wrote them.                                                                                                                           |
 | **Metrics and resources** | Maple reads Cloud Monitoring metrics for Cloud Run, Cloud Functions, GKE, Compute Engine, Cloud SQL, Pub/Sub and HTTP(S) load balancers every 5 minutes, and lists the resources behind them every hour. The metrics are named `gcp.*` and work in dashboards and alert rules. |
 
-There is no OAuth step and no service account key. You run a generated `gcloud` script in Cloud Shell, and Maple gets no write access to Google Cloud.
+There is no OAuth step and no service account key, and Maple gets no write access to Google Cloud. You set the connection up in one of three ways, chosen in the dialog's **Method** step. Each creates the same resources under the same names:
+
+| Method                     | What you do                                                                                                                                                 |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cloud Shell script**     | Paste a generated `gcloud` script into Cloud Shell. About a minute. This page covers it.                                                                    |
+| **Manual setup**           | Create each resource in the Google Cloud console from a step list in the dialog. About 15 minutes. See [Manual setup](/docs/integrations/gcp-manual-setup). |
+| **Infrastructure as code** | Copy a generated Terraform or Alchemy file into your own repo and apply it. See [Terraform and Alchemy](/docs/integrations/gcp-infrastructure-as-code).     |
 
 If your workloads also send telemetry over OpenTelemetry, read [Google Cloud with OpenTelemetry](/docs/integrations/gcp-opentelemetry): it covers which telemetry to send over OpenTelemetry and which to collect here, and why GKE container logs are left out by default.
 
@@ -43,16 +49,16 @@ The host project holds Maple's Pub/Sub topic, subscription and read-only service
 
 ## Connect
 
-1. Open **Integrations → Google Cloud** in Maple and click **Connect Google Cloud**. When the page already has a connection, click **Add connection** above the list. The dialog **Connect Google Cloud** opens on its first stage, **Connect**.
+1. Open **Integrations → Google Cloud** in Maple and click **Connect Google Cloud**. When the page already has a connection, click **Add connection** above the list. The dialog **Connect Google Cloud** opens on its first step, **Scope**.
 2. Under **What to connect**, choose **Organization**, **Folder** or **Project** and enter its ID. An organization or folder covers every project in it, including new ones.
 3. For an organization or folder, enter the **Host project ID**.
 4. Under **Collect**, leave **Log forwarding** and **Metrics and resources** ticked, or untick one. To change which logs are forwarded, choose a [log filter](#log-filter) under **Log filter**.
-5. Click **Create and continue**. Maple creates the connection and the dialog moves to its second stage, **Apply in Google Cloud**. Nothing changes in Google Cloud until you run the script.
-6. In step 1, click **Open Cloud Shell** and sign in with the roles above. Click **Authorize** if Cloud Shell asks.
-7. In step 2, click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute. **Read the script** shows it in the dialog.
-8. Return to Maple. Step 3, **Maple is waiting for the run**, updates on its own. Within a minute of the script ending, usually in seconds, the dialog shows **Google Cloud matches this configuration**. Click **Done**.
+5. On **Data**, click **Continue**. Maple creates the connection and the dialog moves to **Method**. Leave **Cloud Shell script** selected and click **Continue**. For the other methods, follow [Manual setup](/docs/integrations/gcp-manual-setup) or [Terraform and Alchemy](/docs/integrations/gcp-infrastructure-as-code) from here. Nothing changes in Google Cloud until you run the script.
+6. On **Set up**, click **Open Cloud Shell** and sign in with the roles above. Click **Authorize** if Cloud Shell asks.
+7. Click **Copy script**, paste it into Cloud Shell and press Enter. The script takes about a minute. **Show all** shows the whole script in the dialog.
+8. Return to Maple. The status under the script, **Waiting for the script to report back**, updates on its own. Within a minute of the script ending, usually in seconds, the dialog shows **Google Cloud matches this configuration**. Click **Done**.
 
-If you close the dialog before the script has run, the connection's row shows **Setup pending**. Click **Finish setup** to open the dialog at the script. After five minutes without a report from the script, step 3 reads **Maple has no confirmation yet** and lists what to check.
+If you close the dialog before the script has run, the connection's row shows **Setup pending**. Click **Finish setup** to open the dialog at the script. After five minutes without a report from the script, the status reads **No report from the script yet** and lists what to check.
 
 A first run for a project prints:
 
@@ -117,10 +123,10 @@ A project, folder or organization can be connected once per Maple organization. 
 
 ### Change what a connection collects
 
-1. On the connection's row, click **Configure**. The dialog opens on its first stage, **Configure**.
+1. On the connection's row, click **Configure**. The dialog opens on its **Data** step.
 2. Under **Collect**, tick or untick **Log forwarding** or **Metrics and resources**. The line beside a changed checkbox says what saving it does.
-3. Click **Save and continue**. For a change that takes effect in Maple at once, Maple asks first, in a dialog titled for example "Turn log forwarding off for Project acme-prod?". The dialog says what happens **In Maple** and what goes on **In Google Cloud**. Click **Turn off and continue**, or **Turn on** when you turn something back on that still exists in Google Cloud. Then the button of the first stage reads **Save**, and there is nothing to run.
-4. The dialog moves to **Apply in Google Cloud**. Its recap says what is saved and what this run does. Copy the script and run it in Cloud Shell again.
+3. Click **Save and continue**. For a change that takes effect in Maple at once, Maple asks first, in a dialog titled for example "Turn log forwarding off for Project acme-prod?". The dialog says what happens **In Maple** and what goes on **In Google Cloud**. Click **Turn off and continue**, or **Turn on** when you turn something back on that still exists in Google Cloud. Then the button reads **Save**, and there is nothing to run.
+4. The dialog moves to **Method**. Leave **Cloud Shell script** selected and click **Continue**. **Set up** recaps what is saved and what this run does. Copy the script and run it in Cloud Shell again.
 5. When the run reports, the dialog shows **Google Cloud matches this configuration**. Click **Done**.
 
 A change takes effect in Maple and in Google Cloud at different times:
@@ -136,13 +142,13 @@ Until the script has run, the connection's row shows **Changes not applied in Go
 
 A run that removes the log sink takes one to two minutes: after it deletes the sink it waits a minute for Google to stop routing to the topic, so your project logs no sink error.
 
-When nothing is changed, the button in the first stage reads **Continue to the script**. The setup script exists only in the second stage of this dialog, so this is how you get it again, for example to change the [log filter](#log-filter) or to repair something. **Back** returns to the first stage.
+When nothing is changed, the button reads **Continue**. The setup script exists only in the dialog's **Set up** step, so this is how you get it again, for example to change the [log filter](#log-filter) or to repair something. **Back** returns to the step before.
 
 A connection collects at least one of the two: the last one that is on can't be unticked. To stop collecting, [disconnect](#disconnect).
 
 ### Log filter
 
-**Log filter** decides which filter the script writes onto the sink. It is in the first stage of **Connect Google Cloud** and of **Configure**, below **Collect**, while **Log forwarding** is ticked.
+**Log filter** decides which filter the script writes onto the sink. It is in the **Data** step of **Connect Google Cloud** and of **Configure**, below **Collect**, while **Log forwarding** is ticked.
 
 Platform, request and audit logs are always forwarded. Application output, what the code of a runtime writes to stdout and stderr, is not: send it with your [OpenTelemetry setup](/docs/integrations/gcp-opentelemetry), where each line links to its trace.
 
@@ -157,7 +163,7 @@ For workloads that can't send logs over OpenTelemetry, click **Can't forward via
 
 Don't tick a runtime whose workloads already send their logs to Maple over OpenTelemetry. Otherwise each line is stored twice: see [Application output](/docs/integrations/gcp-opentelemetry#application-output). Maple does not check which workloads do.
 
-On a connection that already has a sink, the choice starts on **Keep current filter**: the script leaves the sink's filter as it is. Maple can't see that filter, so **Current filter in Log Router** opens it in the console. To change it, click **Configure**, choose **Replace filter**, set the runtimes, click **Continue to the script** and run the script again.
+On a connection that already has a sink, the choice starts on **Keep current filter**: the script leaves the sink's filter as it is. Maple can't see that filter, so **Current filter in Log Router** opens it in the console. To change it, click **Configure**, choose **Replace filter**, set the runtimes, click **Continue** through **Method** and run the script again.
 
 For any other filter, paste the script into an editor first, edit `LOG_FILTER` near its top and set `LOG_FILTER_MODE` to `set`. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language). The script checks the filter with Google before it creates anything. Later runs with **Keep current filter** leave your filter in place, while **Replace filter** replaces it.
 
@@ -199,7 +205,7 @@ Under **Connections**, each connection is a row, the worst state first, with a s
 
 The page header and the Integrations list show the connection's worst status: **Needs attention**, **Setup pending**, **Changes pending**, **Waiting for data** or **Healthy**.
 
-A connection that needs the setup script shows a band with one button. The button opens **Configure** at its second stage, **Apply in Google Cloud**.
+A connection that needs the setup script shows a band with one button. The button opens **Configure** at its **Method** step.
 
 | Band                                    | Button                   | Shown when                                                                                                             |
 | --------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
@@ -491,7 +497,7 @@ Cloud Asset Inventory searches are free of charge. See [Cloud Asset Inventory pr
 
 ## Troubleshooting
 
-To run the setup script again, click **Configure** on the connection's row, then **Continue to the script**. When a failure asks for another run, its band has the button **Run the script again**.
+To run the setup script again, click **Configure** on the connection's row, then **Continue** through **Method**. When a failure asks for another run, its band has the button **Run the script again**.
 
 ### In Cloud Shell
 
@@ -530,23 +536,23 @@ When you create a connection in Maple, "The Google Cloud project acme-prod is al
 
 **Can't be read** and **Incomplete** come with one of the messages below. The first means no read has succeeded in the last 10 minutes. The second means the last read is under 10 minutes old and something is missing. The messages about the resource list show under **Receiving, resource list incomplete**. Where a project's message says "the project", a folder's or organization's says "the host project".
 
-| The connection shows                                                                | Cause and fix                                                                                                                                                                                                                                                                                      |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Stalled**                                                                         | No read for 30 minutes and no error. Maple retries on its own. If it stays for more than an hour, write to support.                                                                                                                                                                                |
-| "Maple can't sign in as this connection's read-only service account yet."           | Shown from 10 minutes after a setup run, on a connection Maple has never read. The account does not exist, or the grant to Maple is missing or blocked by an organization policy. Run the setup script again and read its last lines. See [Domain restricted sharing](#domain-restricted-sharing). |
-| "Maple can no longer sign in as this connection's read-only service account."       | Maple has read this connection before. The account was deleted, or the grant to Maple was removed or is blocked by an organization policy. Run the setup script again: it restores both, or says what blocks it.                                                                                   |
-| "The project acme-prod has no active billing account"                               | Link a billing account to the host project. The message carries the link. Maple retries every 5 minutes.                                                                                                                                                                                           |
-| "The Cloud Monitoring API is switched off in the project acme-prod."                | Run the setup script again: it switches the API on.                                                                                                                                                                                                                                                |
-| "Google denied Maple's read of project acme-prod: the read-only roles are missing." | Run the setup script again: it grants them. A new grant can take a few minutes to work.                                                                                                                                                                                                            |
-| "Google rate-limited the Cloud Monitoring API for the project acme-prod."           | Maple keeps what it read and retries in 5 minutes. If it repeats, raise that API's quota on the host project.                                                                                                                                                                                      |
-| "3 of 46 metric queries failed, first ..."                                          | The rest were stored. The failed metrics miss those minutes, and Maple retries in 5 minutes.                                                                                                                                                                                                       |
-| "3 of 46 metric queries were not read in full"                                      | The project, folder or organization holds more series than one read takes. Connect the folders or projects of a folder or organization as separate connections. For a single project, write to support.                                                                                            |
-| "Reading the metrics took longer than two minutes."                                 | Maple reads the same minutes again, which can store part of them twice. If it repeats, connect the folders or projects of a folder or organization separately. For a single project, write to support.                                                                                             |
-| "Metrics are paused: this Maple organization is over its plan limit."               | Raise the plan limit under **Settings → Billing**. Maple tries again in an hour.                                                                                                                                                                                                                   |
-| "Maple could not store the metrics it read just now."                               | Nothing to do. Maple reads the same minutes again.                                                                                                                                                                                                                                                 |
-| "Google denied the resource listing for project acme-prod."                         | Run the setup script again: it grants Cloud Asset Viewer. Metrics are unaffected.                                                                                                                                                                                                                  |
-| "The project holds more than 10,000 resources, so the resource list is incomplete." | Metrics are unaffected. For a full list, connect the folders or projects of a folder or organization separately. For a single project, write to support.                                                                                                                                           |
-| "The resource listing ran out of time and is incomplete."                           | Nothing to do. Maple retries within the hour.                                                                                                                                                                                                                                                      |
+| The connection shows                                                                | Cause and fix                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Stalled**                                                                         | No read for 30 minutes and no error. Maple retries on its own. If it stays for more than an hour, write to support.                                                                                                                                                                                                                     |
+| "Maple can't sign in as this connection's read-only service account yet."           | Shown from 10 minutes after the connection was created, or after a setup run, on a connection Maple has never read. The account does not exist, or the grant to Maple is missing or blocked by an organization policy. Run the setup script again and read its last lines. See [Domain restricted sharing](#domain-restricted-sharing). |
+| "Maple can no longer sign in as this connection's read-only service account."       | Maple has read this connection before. The account was deleted, or the grant to Maple was removed or is blocked by an organization policy. Run the setup script again: it restores both, or says what blocks it.                                                                                                                        |
+| "The project acme-prod has no active billing account"                               | Link a billing account to the host project. The message carries the link. Maple retries every 5 minutes.                                                                                                                                                                                                                                |
+| "The Cloud Monitoring API is switched off in the project acme-prod."                | Run the setup script again: it switches the API on.                                                                                                                                                                                                                                                                                     |
+| "Google denied Maple's read of project acme-prod: the read-only roles are missing." | Run the setup script again: it grants them. A new grant can take a few minutes to work.                                                                                                                                                                                                                                                 |
+| "Google rate-limited the Cloud Monitoring API for the project acme-prod."           | Maple keeps what it read and retries in 5 minutes. If it repeats, raise that API's quota on the host project.                                                                                                                                                                                                                           |
+| "3 of 46 metric queries failed, first ..."                                          | The rest were stored. The failed metrics miss those minutes, and Maple retries in 5 minutes.                                                                                                                                                                                                                                            |
+| "3 of 46 metric queries were not read in full"                                      | The project, folder or organization holds more series than one read takes. Connect the folders or projects of a folder or organization as separate connections. For a single project, write to support.                                                                                                                                 |
+| "Reading the metrics took longer than two minutes."                                 | Maple reads the same minutes again, which can store part of them twice. If it repeats, connect the folders or projects of a folder or organization separately. For a single project, write to support.                                                                                                                                  |
+| "Metrics are paused: this Maple organization is over its plan limit."               | Raise the plan limit under **Settings → Billing**. Maple tries again in an hour.                                                                                                                                                                                                                                                        |
+| "Maple could not store the metrics it read just now."                               | Nothing to do. Maple reads the same minutes again.                                                                                                                                                                                                                                                                                      |
+| "Google denied the resource listing for project acme-prod."                         | Run the setup script again: it grants Cloud Asset Viewer. Metrics are unaffected.                                                                                                                                                                                                                                                       |
+| "The project holds more than 10,000 resources, so the resource list is incomplete." | Metrics are unaffected. For a full list, connect the folders or projects of a folder or organization separately. For a single project, write to support.                                                                                                                                                                                |
+| "The resource listing ran out of time and is incomplete."                           | Nothing to do. Maple retries within the hour.                                                                                                                                                                                                                                                                                           |
 
 A message that ends in parentheses, such as "(Cloud Monitoring returned 403, BILLING_DISABLED)", quotes Google's answer. Include it when you write to support.
 

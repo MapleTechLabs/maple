@@ -109,7 +109,24 @@ export const HttpV2GcpIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "gcpIn
 						object: "gcp_connector.setup_scripts" as const,
 						setup_script: scripts.setupScript,
 						cleanup_script: scripts.cleanupScript,
+						push_endpoint: scripts.pushEndpoint,
+						log_filter: scripts.logFilter,
+						maple_service_account_email: scripts.mapleServiceAccountEmail,
+						terraform: scripts.terraform,
+						alchemy: scripts.alchemy,
 					}
+				}),
+			)
+			.handle("confirmRemoval", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* requireAdmin(tenant.roles, adminOnly)
+					const connector = yield* gcp.confirmRemoval(tenant.orgId, params.id)
+					yield* recordHttpAudit("gcp_connector.removal_confirmed", {
+						resourceId: connector.id,
+						metadata: auditMetadata(connector),
+					})
+					return toV2Connector(connector)
 				}),
 			)
 			.handle("deleteConnector", ({ params }) =>

@@ -499,6 +499,7 @@ describe("projects", () => {
 			last_resources_error: null,
 			applied_metrics_enabled: true,
 			setup_reported_at: "2026-10-01T00:00:00.000Z",
+			created_at: "2026-10-01T00:00:00.000Z",
 		})
 		const health = gcpProjectHealth(
 			[

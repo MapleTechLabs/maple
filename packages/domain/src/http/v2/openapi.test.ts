@@ -189,6 +189,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/integrations/chat_connectors/{connector}/identity/link",
 			"POST /v2/integrations/chat_connectors/{connector}/install",
 			"POST /v2/integrations/gcp/connectors",
+			"POST /v2/integrations/gcp/connectors/{id}/confirm_removal",
 			"POST /v2/integrations/gcp/connectors/{id}/setup_scripts",
 			"POST /v2/integrations/planetscale/connect",
 			"POST /v2/integrations/planetscale/events",
