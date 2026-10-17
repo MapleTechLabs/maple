@@ -102,10 +102,9 @@ function CapEditor({
 					<InputGroupInput
 						autoFocus
 						aria-label={`${feature.label} paid overage cap`}
-						type="number"
+						// Text, not number: a number input reports unparseable text as "", which reads as "no cap".
+						type="text"
 						inputMode="decimal"
-						min={0}
-						step="any"
 						value={raw}
 						placeholder="No cap"
 						onChange={(event) => setRaw(event.target.value)}
@@ -114,7 +113,7 @@ function CapEditor({
 							// Cancel is disabled mid-save, so Escape must not close the editor either.
 							if (event.key === "Escape" && !saving) onDone()
 						}}
-						controlClassName="font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+						controlClassName="font-mono tabular-nums"
 					/>
 					<InputGroupAddon align="inline-end">
 						<InputGroupText>{featureUnit(feature.featureId)}</InputGroupText>
