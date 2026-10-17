@@ -6,8 +6,8 @@ import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import * as LogsStreamView from "../../ui/logs/logs-stream-view"
 import { eyebrow } from "../../ui/eyebrow"
-import { labSidebar, labTopbar } from "../shell"
-import { labRoot } from "../toasts"
+import * as ToastView from "../../ui/toast-view"
+import { labShellView } from "../app-shell"
 import { Message, type Model, PIN_OPTIONS, type Toggle } from "./model"
 
 // apps/web/src/lab/logs-lab.tsx `Toggle`
@@ -219,41 +219,16 @@ const pageBody = (h: HtmlBuilder<Message>, model: Model): Html =>
 		],
 	)
 
-/** apps/web's `DashboardLayout` around the lab page, with the generated shell (see ../shell.ts). */
+/** apps/web's `DashboardLayout` around the lab page: the real shell, then the toast regions. */
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	labRoot(h, model.toasts, (message) => Message.GotToastMessage({ message }), page(model, h))
-
-const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
+		[h.Id("app")],
 		[
-			h.Class("group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar"),
-			h.DataAttribute("slot", "sidebar-wrapper"),
-			h.Style({ "--sidebar-width": "16rem", "--sidebar-width-icon": "3rem" }),
-		],
-		[
-			labSidebar(h),
-			h.main(
-				[
-					h.Class(
-						"relative flex h-svh w-full min-h-0 min-w-0 flex-1 flex-col bg-background md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-2 md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ms-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm/5",
-					),
-					h.DataAttribute("slot", "sidebar-inset"),
-				],
-				[
-					h.a(
-						[
-							h.Class(
-								"sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-background focus:text-foreground",
-							),
-							h.Href("#main-content"),
-						],
-						["Skip to main content"],
-					),
-					h.div(
-						[h.Class("flex min-h-0 flex-1 flex-col"), h.DataAttribute("slot", "page-layout")],
-						[labTopbar(h), pageBody(h, model)],
-					),
-				],
-			),
+			...labShellView(h, model.shell, (message) => Message.GotShellMessage({ message }), {
+				currentPath: "/lab/logs",
+				breadcrumbs: [{ label: "Lab" }, { label: "Logs" }],
+				page: () => pageBody(h, model),
+			}),
+			...ToastView.regions(h, model.toasts, (message) => Message.GotToastMessage({ message })),
 		],
 	)
