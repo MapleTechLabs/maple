@@ -7,7 +7,6 @@ import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-fl
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import {
-	BellIcon,
 	ChatBubbleSparkleIcon,
 	CircleCheckIcon,
 	CreditCardIcon,
@@ -25,35 +24,74 @@ import {
 import { SettingsNavShell } from "@/components/settings/settings-nav-shell"
 
 export const settingsTabValues = [
-	"organization",
+	"general",
 	"members",
 	"billing",
 	"audit-log",
+	"keys",
+	"mcp",
+	"ai",
 	"ingestion",
 	"data-platform",
-	"setup-audit",
-	"notifications",
+	"setup-health",
 	"automation",
-	"api-keys",
-	"mcp",
-	"ai-provider",
 ] as const
 export type SettingsTab = (typeof settingsTabValues)[number]
 
 export const settingsTabLabels: Record<SettingsTab, string> = {
-	organization: "Organization",
+	general: "General",
 	members: "Members",
-	billing: "Billing",
-	"audit-log": "Audit Log",
-	ingestion: "Ingestion",
-	"data-platform": "Data Platform",
-	"setup-audit": "Setup Audit",
-	notifications: "Notifications",
-	automation: "Automation",
-	"api-keys": "API Keys",
+	billing: "Billing & usage",
+	"audit-log": "Audit log",
+	keys: "Keys",
 	mcp: "MCP",
-	"ai-provider": "AI Provider",
+	ai: "AI",
+	ingestion: "Ingestion",
+	"data-platform": "Data platform",
+	"setup-health": "Setup health",
+	automation: "Automation",
 } satisfies Record<SettingsTab, string>
+
+/**
+ * Retired `?tab=` values and where each one lives now, so old deep links (emails, docs, bookmarks)
+ * keep working. A redirect is either another settings tab or a different page entirely.
+ */
+export type LegacySettingsRedirect =
+	| { readonly kind: "tab"; readonly tab: SettingsTab }
+	| { readonly kind: "integrations" }
+	| { readonly kind: "account"; readonly tab: "email-preferences" }
+
+export const legacySettingsTabValues = [
+	"organization",
+	"api-keys",
+	"ai-provider",
+	"setup-audit",
+	"notifications",
+	"connectors",
+	"integrations",
+	"escalations",
+	"developer",
+] as const
+export type LegacySettingsTab = (typeof legacySettingsTabValues)[number]
+
+export const legacySettingsTabRedirects = {
+	organization: { kind: "tab", tab: "general" },
+	"api-keys": { kind: "tab", tab: "keys" },
+	"ai-provider": { kind: "tab", tab: "ai" },
+	"setup-audit": { kind: "tab", tab: "setup-health" },
+	notifications: { kind: "account", tab: "email-preferences" },
+	connectors: { kind: "integrations" },
+	integrations: { kind: "integrations" },
+	escalations: { kind: "tab", tab: "automation" },
+	// "API reference" became the reference block at the foot of the Keys tab.
+	developer: { kind: "tab", tab: "keys" },
+} satisfies Record<LegacySettingsTab, LegacySettingsRedirect>
+
+/** Where a retired `?tab=` value now lives, or undefined for a current (or unknown) value. */
+export function resolveLegacySettingsTab(tab: string | undefined): LegacySettingsRedirect | undefined {
+	const legacy = legacySettingsTabValues.find((value) => value === tab)
+	return legacy === undefined ? undefined : legacySettingsTabRedirects[legacy]
+}
 
 interface NavItem {
 	id: SettingsTab
@@ -63,17 +101,17 @@ interface NavItem {
 
 /**
  * Preference order for the landing tab when `/settings` is opened with no `?tab=`, most-preferred
- * first. `organization` is the Clerk-workspace landing tab; `ingestion` is the self-hosted one, where
- * `organization` is filtered out.
+ * first. `general` is the Clerk-workspace landing tab; `ingestion` is the self-hosted one, where
+ * `general` is filtered out.
  *
  * This is declared rather than inferred from nav position on purpose: a positional default silently
- * moves whenever an item is added. `setup-audit` is deliberately not Clerk-gated, so in self-hosted
- * mode it is the only surviving Workspace item — as the first visible item it would have become the
- * landing tab and run the audit's dozen warehouse reads on every visit to Settings.
+ * moves whenever an item is added. `setup-health` is deliberately not Clerk-gated, so in self-hosted
+ * mode a positional default could land on it and run the audit's dozen warehouse reads on every
+ * visit to Settings.
  *
  * Never list a tab here whose section does expensive work on mount.
  */
-export const DEFAULT_SETTINGS_TAB_ORDER: ReadonlyArray<SettingsTab> = ["organization", "ingestion"]
+export const DEFAULT_SETTINGS_TAB_ORDER: ReadonlyArray<SettingsTab> = ["general", "ingestion"]
 
 /**
  * Which tab `/settings` should render: the requested one when it is actually visible, else the first
@@ -98,15 +136,15 @@ interface NavLinkItem {
 }
 
 export interface SettingsNavSection {
-	id: "workspace" | "connections" | "data" | "alerting"
+	id: "workspace" | "access" | "data" | "alerting"
 	title: string
-	/** Tabs and sibling-page links in one ordered list — nav position is declared, not derived. */
+	/** Tabs and sibling-page links in one ordered list: nav position is declared, not derived. */
 	items: Array<NavItem | NavLinkItem>
 }
 
 /**
- * Four groups, each earning its header: who can use the workspace and what it costs; what talks to
- * Maple from outside; where telemetry comes from and where it lands; and what Maple does when
+ * Four groups, each earning its header: who can use the workspace and what it costs; what can reach
+ * Maple from outside (integrations, keys, agents); where telemetry comes from and where it lands; and what Maple does when
  * something breaks.
  *
  * Group order does not decide the landing tab; `DEFAULT_SETTINGS_TAB_ORDER` does, on purpose.
@@ -118,47 +156,47 @@ const navSections: SettingsNavSection[] = [
 		id: "workspace",
 		title: "Workspace",
 		items: [
-			{ id: "organization", label: "Organization", icon: GearIcon },
-			{ id: "members", label: "Members", icon: UserIcon },
-			{ id: "billing", label: "Billing", icon: CreditCardIcon },
-			{ id: "audit-log", label: "Audit Log", icon: HistoryIcon },
+			{ id: "general", label: settingsTabLabels.general, icon: GearIcon },
+			{ id: "members", label: settingsTabLabels.members, icon: UserIcon },
+			{ id: "billing", label: settingsTabLabels.billing, icon: CreditCardIcon },
+			{ id: "audit-log", label: settingsTabLabels["audit-log"], icon: HistoryIcon },
 		],
 	},
 	{
-		id: "connections",
-		title: "Connections",
+		id: "access",
+		title: "Access",
 		items: [
 			// A sibling page rather than a tab, and the most-visited row in the nav, so it leads its
 			// group. Nothing about it being a route should push it down the list.
 			{ id: "integrations", label: "Integrations", icon: GridIcon, to: "/integrations" },
-			{ id: "api-keys", label: "API Keys", icon: KeyIcon },
-			{ id: "mcp", label: "MCP", icon: SquareTerminalIcon },
-			{ id: "ai-provider", label: "AI Provider", icon: ChatBubbleSparkleIcon },
+			{ id: "keys", label: settingsTabLabels.keys, icon: KeyIcon },
+			{ id: "mcp", label: settingsTabLabels.mcp, icon: SquareTerminalIcon },
+			{ id: "ai", label: settingsTabLabels.ai, icon: ChatBubbleSparkleIcon },
 		],
 	},
 	{
 		id: "data",
 		title: "Data",
 		items: [
-			{ id: "ingestion", label: "Ingestion", icon: ServerIcon },
-			{ id: "data-platform", label: "Data Platform", icon: DatabaseIcon },
+			{ id: "ingestion", label: settingsTabLabels.ingestion, icon: ServerIcon },
+			{ id: "data-platform", label: settingsTabLabels["data-platform"], icon: DatabaseIcon },
 			// A diagnostic over everything that feeds Maple, so it closes the group it reports on.
-			{ id: "setup-audit", label: "Setup Audit", icon: CircleCheckIcon },
+			{ id: "setup-health", label: settingsTabLabels["setup-health"], icon: CircleCheckIcon },
 		],
 	},
 	{
 		id: "alerting",
 		title: "Alerting",
 		items: [
-			{ id: "notifications", label: "Notifications", icon: BellIcon },
-			{ id: "automation", label: "Automation", icon: ShieldIcon },
+			// Temporary home for escalation and AI triage until the alerts routing redesign ships.
+			{ id: "automation", label: settingsTabLabels.automation, icon: ShieldIcon },
 		],
 	},
 ]
 
 /**
  * The tab rows of a section list, dropping sibling-page links. `visibleItems` feeds tab resolution,
- * and `/integrations` is a route rather than a tab — it must never surface as a fallback tab id.
+ * and `/integrations` is a route rather than a tab: it must never surface as a fallback tab id.
  */
 const tabItems = (sections: ReadonlyArray<SettingsNavSection>): ReadonlyArray<NavItem> =>
 	sections.flatMap((section) => section.items.filter((row): row is NavItem => !("to" in row)))
@@ -184,12 +222,7 @@ export function useVisibleSettingsSections() {
 		.map((section) => ({
 			...section,
 			items: section.items.filter((item) => {
-				if (
-					item.id === "organization" ||
-					item.id === "members" ||
-					item.id === "billing" ||
-					item.id === "notifications"
-				) {
+				if (item.id === "general" || item.id === "members" || item.id === "billing") {
 					return isClerkAuthEnabled
 				}
 				return true
@@ -221,7 +254,7 @@ export function useVisibleSettingsSections() {
 				// member open it into a 403.
 				if (item.id === "audit-log") return isAdmin
 				// Only admins can attach the add-on or manage the key.
-				if (item.id === "ai-provider") return isAdmin
+				if (item.id === "ai") return isAdmin
 				return true
 			}),
 		}))
@@ -234,10 +267,10 @@ export function useVisibleSettingsSections() {
 		canAccessDataPlatform,
 		canAccessAi,
 		isCustomerLoading,
-		// The shell only waits on the (fast) session query. The billing customer —
-		// dominated by an upstream Autumn round-trip — keeps loading in the
+		// The shell only waits on the (fast) session query. The billing customer -
+		// dominated by an upstream Autumn round-trip: keeps loading in the
 		// background; `canAccessDataPlatform` stays false until it resolves, so the
-		// "Data Platform" nav item just appears when ready (same as /integrations),
+		// "Data platform" nav item just appears when ready (same as /integrations),
 		// instead of blocking the whole page behind it.
 		isLoading: Result.isInitial(sessionResult),
 	}

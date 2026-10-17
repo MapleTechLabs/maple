@@ -140,10 +140,10 @@ export function McpSection() {
 						or manage existing keys in{" "}
 						<Link
 							to="/settings"
-							search={{ tab: "api-keys" }}
+							search={{ tab: "keys" }}
 							className="text-foreground underline underline-offset-2 hover:no-underline"
 						>
-							API Keys
+							Keys
 						</Link>
 						.
 					</p>

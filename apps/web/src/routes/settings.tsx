@@ -12,13 +12,14 @@ import { ApiKeysSection } from "@/components/settings/api-keys-section"
 import { AuditLogSection } from "@/components/settings/audit-log-section"
 import { McpSection } from "@/components/settings/mcp-section"
 import { AiProviderSection } from "@/components/settings/ai-provider-section"
-import { NotificationsSection } from "@/components/settings/notifications-section"
 import { AutomationSection } from "@/components/settings/automation-section"
 import { OrgClickHouseSettingsSection } from "@/components/settings/org-clickhouse-settings-section"
 import { OrganizationSection } from "@/components/settings/organization-section"
 import { SetupAuditSection } from "@/components/settings/setup-audit-section"
 import {
+	legacySettingsTabValues,
 	resolveActiveSettingsTab,
+	resolveLegacySettingsTab,
 	SettingsNav,
 	settingsTabLabels,
 	settingsTabValues,
@@ -26,11 +27,8 @@ import {
 	type SettingsTab,
 } from "@/components/settings/settings-nav"
 
-/** Retired tabs — kept decodable so old deep links redirect instead of landing on a blank page. */
-const legacyTabValues = ["connectors", "integrations", "escalations", "ai", "developer"] as const
-
 const SettingsSearch = Schema.Struct({
-	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacyTabValues])),
+	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacySettingsTabValues])),
 	// Stripe Checkout return marker — see `lib/billing/checkout-return.ts`.
 	checkout: Schema.optional(Schema.Literal("complete")),
 })
@@ -53,16 +51,12 @@ function SettingsPage() {
 		isLoading,
 	} = useVisibleSettingsSections()
 
-	// Pre-hub deep links: these tabs moved to the Integrations hub.
-	if (search.tab === "connectors" || search.tab === "integrations") {
-		return <Navigate to="/integrations" replace />
-	}
-	if (search.tab === "escalations" || search.tab === "ai") {
-		return <Navigate to="/settings" search={{ tab: "automation" }} replace />
-	}
-	// "API Reference" is now the reference block at the foot of the API Keys page.
-	if (search.tab === "developer") {
-		return <Navigate to="/settings" search={{ tab: "api-keys" }} replace />
+	// Retired tab ids keep old deep links (emails, docs, bookmarks) working.
+	const legacy = resolveLegacySettingsTab(search.tab)
+	if (legacy?.kind === "integrations") return <Navigate to="/integrations" replace />
+	if (legacy?.kind === "account") return <Navigate to="/account" search={{ tab: legacy.tab }} replace />
+	if (legacy?.kind === "tab") {
+		return <Navigate to="/settings" search={{ tab: legacy.tab }} replace />
 	}
 
 	const activeTab = resolveActiveSettingsTab(search.tab, visibleItems)
@@ -107,15 +101,14 @@ function SettingsPage() {
 				<EmptyMessage>No settings are available for the current account.</EmptyMessage>
 			) : (
 				<>
-					{activeTab === "organization" && <OrganizationSection />}
+					{activeTab === "general" && <OrganizationSection />}
 					{activeTab === "members" && <MembersSection />}
 					{activeTab === "audit-log" && <AuditLogSection />}
-					{activeTab === "setup-audit" && <SetupAuditSection />}
+					{activeTab === "setup-health" && <SetupAuditSection />}
 					{activeTab === "ingestion" && <IngestionSection />}
-					{activeTab === "api-keys" && <ApiKeysSection />}
+					{activeTab === "keys" && <ApiKeysSection />}
 					{activeTab === "mcp" && <McpSection />}
-					{activeTab === "ai-provider" && <AiProviderSection />}
-					{activeTab === "notifications" && <NotificationsSection />}
+					{activeTab === "ai" && <AiProviderSection />}
 					{activeTab === "automation" && (
 						<AutomationSection isAdmin={isAdmin} hasEntitlement={canAccessAi} />
 					)}
