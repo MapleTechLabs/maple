@@ -1,7 +1,9 @@
-import { Array, Duration, Effect, Option, Schema, Stream } from "effect"
+import { Array, Duration, Effect, Option, Record, Schema, Stream } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
+import * as AttributesPanel from "../attributes/attributes-panel"
+import { buildLogJsonPayload } from "./log-row-expanded"
 import { LogRowView } from "./log-row-view"
 import { Message, type NavigationKey, VirtualRow } from "./logs-stream-message"
 import { CopyLogLink, CopyText, ScrollStreamToIndex, ScrollStreamToTop } from "./virtualize"
@@ -33,6 +35,10 @@ export const Model = Schema.Struct({
 	pendingOpen: Schema.Option(Schema.Struct({ chip: ChipRef, generation: Schema.Number })),
 	pendingClose: Schema.Option(Schema.Number),
 	chipGeneration: Schema.Number,
+	/** Each expanded row's attribute panel, by row index. */
+	panels: Schema.Record(Schema.String, AttributesPanel.Model),
+	/** The expanded body's JSON copy: which row, and its status. */
+	jsonCopy: AttributesPanel.CopyState,
 })
 export type Model = typeof Model.Type
 
@@ -49,7 +55,25 @@ export const init = (id: string, rows: ReadonlyArray<LogRowView>): Model => ({
 	pendingOpen: Option.none(),
 	pendingClose: Option.none(),
 	chipGeneration: 0,
+	panels: {},
+	jsonCopy: { id: "", status: "idle", generation: 0 },
 })
+
+/** The panels follow the expanded rows: a newly expanded row gets a fresh one, a collapsed one drops it. */
+const syncPanels = (model: Model): Model => {
+	const panels = Object.fromEntries(
+		model.expandedRows.map((index) => [
+			String(index),
+			Option.getOrElse(Record.get(model.panels, String(index)), () =>
+				AttributesPanel.init(`${model.id}-row-${index}-attributes`),
+			),
+		]),
+	)
+	const isSame =
+		Object.keys(panels).length === Object.keys(model.panels).length &&
+		Object.entries(panels).every(([key, panel]) => model.panels[key] === panel)
+	return isSame ? model : modifyFields(model, { panels: () => panels })
+}
 
 // OUT MESSAGE
 
@@ -80,6 +104,25 @@ export const WaitChipDelay = Command.define("WaitChipDelay", {
 	messages: [Message.ElapsedChipDelay],
 	execute: ({ generation, millis }) =>
 		Effect.sleep(Duration.millis(millis)).pipe(Effect.as(Message.ElapsedChipDelay({ generation }))),
+})
+
+const COPY_TIMEOUT = Duration.millis(2000)
+
+export const WriteLogJson = Command.define("WriteLogJson", {
+	args: { text: Schema.String, generation: Schema.Number },
+	messages: [Message.SucceededCopyJson, Message.FailedCopyJson],
+	execute: ({ text, generation }) =>
+		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
+			Effect.as(Message.SucceededCopyJson({ generation })),
+			Effect.orElseSucceed(() => Message.FailedCopyJson({ generation })),
+		),
+})
+
+export const WaitLogJsonStatus = Command.define("WaitLogJsonStatus", {
+	args: { generation: Schema.Number },
+	messages: [Message.ElapsedCopyJsonStatus],
+	execute: ({ generation }) =>
+		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyJsonStatus({ generation }))),
 })
 
 // UPDATE
@@ -175,8 +218,38 @@ const navigate = (model: Model, key: NavigationKey, count: number): UpdateReturn
 	}
 }
 
-export const update = (model: Model, message: Message): UpdateReturn =>
-	reportingInspect(model, handle(model, model.rows, message))
+export const update = (model: Model, message: Message): UpdateReturn => {
+	const result = handle(model, model.rows, message)
+	return reportingInspect(model, { ...result, model: syncPanels(result.model) })
+}
+
+const jsonSettled = (model: Model, generation: number, status: "copied" | "error"): UpdateReturn =>
+	generation === model.jsonCopy.generation
+		? {
+				model: modifyFields(model, { jsonCopy: (copy) => ({ ...copy, status }) }),
+				commands: [WaitLogJsonStatus({ generation })],
+			}
+		: { model }
+
+const panelMessage = (model: Model, index: number, message: AttributesPanel.Message): UpdateReturn =>
+	Option.match(Record.get(model.panels, String(index)), {
+		onNone: () => ({ model }),
+		onSome: (panel) => {
+			const result = AttributesPanel.update(panel, message)
+			return {
+				model: modifyFields(model, {
+					panels: (panels) => Record.set(panels, String(index), result.model),
+				}),
+				commands: Command.mapMessages(result.commands ?? [], (inner) =>
+					Message.GotPanelMessage({ index, message: inner }),
+				),
+				outMessage:
+					result.outMessage === undefined
+						? undefined
+						: OutMessage.ChoseAttributeFilter(result.outMessage),
+			}
+		},
+	})
 
 const handle = (model: Model, rows: ReadonlyArray<LogRowView>, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
@@ -278,6 +351,31 @@ const handle = (model: Model, rows: ReadonlyArray<LogRowView>, message: Message)
 			),
 		PlacedChipCard: () => ({ model }),
 		CompletedCopy: () => ({ model }),
+		ClickedDetails: ({ index }) => ({ model, outMessage: OutMessage.OpenedLog({ index }) }),
+		ClickedCopyJson: ({ index }) =>
+			Option.match(Array.get(rows, index), {
+				onNone: () => ({ model }),
+				onSome: (row) => {
+					const generation = model.jsonCopy.generation + 1
+					return {
+						model: modifyFields(model, {
+							jsonCopy: () => ({ id: String(index), status: "idle" as const, generation }),
+						}),
+						commands: [WriteLogJson({ text: buildLogJsonPayload(row.log), generation })],
+					}
+				},
+			}),
+		SucceededCopyJson: ({ generation }) => jsonSettled(model, generation, "copied"),
+		FailedCopyJson: ({ generation }) => jsonSettled(model, generation, "error"),
+		ElapsedCopyJsonStatus: ({ generation }) =>
+			generation === model.jsonCopy.generation
+				? {
+						model: modifyFields(model, {
+							jsonCopy: (copy) => ({ ...copy, status: "idle" as const }),
+						}),
+					}
+				: { model },
+		GotPanelMessage: ({ index, message: inner }) => panelMessage(model, index, inner),
 		CompletedScroll: () => ({ model }),
 	})
 
@@ -308,12 +406,18 @@ export const setRows = (model: Model, rows: ReadonlyArray<LogRowView>): UpdateRe
 
 /** New data (a reload that prepends rows, a filter): expansion was made on the old rows, so it goes. */
 export const replaceRows = (model: Model, rows: ReadonlyArray<LogRowView>): UpdateReturn =>
-	reportingInspect(model, { model: modifyFields(model, { rows: () => rows, expandedRows: () => [] }) })
+	reportingInspect(model, {
+		model: modifyFields(model, { rows: () => rows, expandedRows: () => [], panels: () => ({}) }),
+	})
 
 /** "Jump to latest": back to the newest rows, every row collapsed. */
 export const jumpToLatest = (model: Model): UpdateReturn =>
 	reportingInspect(model, {
-		model: modifyFields(model, { expandedRows: () => [], isScrolledAway: () => false }),
+		model: modifyFields(model, {
+			expandedRows: () => [],
+			panels: () => ({}),
+			isScrolledAway: () => false,
+		}),
 		commands: [ScrollStreamToTop({ streamId: model.id })],
 	})
 
