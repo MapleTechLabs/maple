@@ -69,7 +69,16 @@ export const expandVariants = (filter?: string): CaptureVariant[] =>
 				})),
 			),
 		)
-		.filter((variant) => !filter || variant.id.includes(filter) || variant.scenario.area === filter)
+		.filter((variant) => filterMatches(filter, variant))
+
+/** `--filter a,b`: a variant matches when its id contains, or its area equals, any of the terms. */
+const filterMatches = (filter: string | undefined, variant: CaptureVariant) =>
+	!filter ||
+	filter
+		.split(",")
+		.map((term) => term.trim())
+		.filter((term) => term !== "")
+		.some((term) => variant.id.includes(term) || variant.scenario.area === term)
 
 export const captureDir = (run: string, label: string) => join(outDir, "runs", run, label)
 
