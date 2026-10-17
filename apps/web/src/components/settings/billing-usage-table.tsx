@@ -25,6 +25,7 @@ import {
 	type FeatureSpend,
 	type SpendFeatureId,
 	type SpendModel,
+	usageMeter,
 } from "@/lib/billing/spend"
 import { formatCount, formatUsageAgainst } from "@/lib/billing/usage"
 import { BILLING_CUSTOMER_KEY, updateBillingControlsMutation } from "@/lib/services/atoms/billing-atoms"
@@ -206,14 +207,7 @@ export function BillingUsageTable({
 						const cap = spendLimitFor(customer, feature.featureId)?.overageLimit
 						const hardCapped = feature.overageAllowed === false && !feature.unlimited
 						const hasOverage = feature.overageUnits > 0 && !hardCapped
-						const includedPct =
-							feature.unlimited || feature.included === null || feature.used <= 0
-								? 100
-								: Math.min(100, (feature.included / feature.used) * 100)
-						const fillPct =
-							feature.included !== null && !feature.unlimited && feature.included > 0
-								? Math.min(100, (feature.used / feature.included) * 100)
-								: 100
+						const meter = usageMeter(feature)
 						const isEditing = editing === feature.featureId
 
 						return (
@@ -236,12 +230,12 @@ export function BillingUsageTable({
 											segments={[
 												{
 													key: "included",
-													value: hasOverage ? includedPct : fillPct,
+													value: meter.included,
 													color: FEATURE_COLORS[feature.featureId],
 												},
 												{
 													key: "overage",
-													value: hasOverage ? 100 - includedPct : 0,
+													value: meter.overage,
 													className: "bg-primary",
 												},
 											]}

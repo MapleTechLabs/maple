@@ -96,6 +96,29 @@ export const rateCaption = (feature: FeatureSpend): string => {
 	return feature.included === null ? "Not on plan" : "Rate unavailable"
 }
 
+/**
+ * The usage meter's two segments, in percent of the bar. An unlimited feature has no
+ * allotment to fill, so its bar stays empty instead of reading as maxed out.
+ */
+export const usageMeter = (
+	feature: FeatureSpend,
+): { readonly included: number; readonly overage: number } => {
+	if (feature.unlimited) return { included: 0, overage: 0 }
+	const hardCapped = feature.overageAllowed === false
+	if (feature.overageUnits > 0 && !hardCapped) {
+		const included =
+			feature.included === null || feature.used <= 0
+				? 100
+				: Math.min(100, (feature.included / feature.used) * 100)
+		return { included, overage: 100 - included }
+	}
+	const fill =
+		feature.included !== null && feature.included > 0
+			? Math.min(100, (feature.used / feature.included) * 100)
+			: 100
+	return { included: fill, overage: 0 }
+}
+
 export interface FeatureSpend extends FeatureUsagePricing {
 	readonly featureId: SpendFeatureId
 	readonly label: string
