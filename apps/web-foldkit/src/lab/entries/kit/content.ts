@@ -55,7 +55,9 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 			const next = CopyButton.update(model.traceIdCopy, message)
 			return {
 				model: { ...model, traceIdCopy: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (child) => Message.GotCopyMessage({ message: child })),
+				commands: Command.mapMessages(next.commands ?? [], (child) =>
+					Message.GotCopyMessage({ message: child }),
+				),
 			}
 		},
 	})
@@ -63,18 +65,26 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 // VIEW
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	kitPage(h, "Kit: content", "Text, identity, conversation and layout primitives from @maple/ui.", [
-		...contentSections(h, {
-			copyStatus: model.traceIdCopy.status,
-			onCopy: (value) => Message.GotCopyMessage({ message: CopyButton.Message.ClickedCopy({ value }) }),
-			calendar: h.submodel({
-				slotId: "kit-content-calendar",
-				model: model.calendar,
-				toParentMessage: (message: Calendar.Message) => Message.GotCalendarMessage({ message }),
-				view: CalendarView.view,
-				viewInputs: { className: "w-fit rounded-md border" },
+	kitPage(
+		h,
+		{
+			title: "Kit: content",
+			description: "Text, identity, conversation and layout primitives from @maple/ui.",
+		},
+		[
+			...contentSections(h, {
+				copyStatus: model.traceIdCopy.status,
+				onCopy: (value) =>
+					Message.GotCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: value }) }),
+				calendar: h.submodel({
+					slotId: "kit-content-calendar",
+					model: model.calendar,
+					toParentMessage: (message: Calendar.Message) => Message.GotCalendarMessage({ message }),
+					view: CalendarView.view,
+					viewInputs: { className: "w-fit rounded-md border" },
+				}),
 			}),
-		}),
-	])
+		],
+	)
 
 export const lab = defineLab<Model, Message>("Kit: content", { Model, init, update, view })

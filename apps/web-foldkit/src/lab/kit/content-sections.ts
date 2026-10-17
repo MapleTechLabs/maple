@@ -50,7 +50,7 @@ const pageLayoutSection = <M>(h: HtmlBuilder<M>): Html =>
 
 const breadcrumbSection = <M>(h: HtmlBuilder<M>): Html =>
 	kitSection(h, "Eyebrow and breadcrumb", [
-		kitRow(h, [
+		kitRow(h, undefined, [
 			eyebrow(h, {}, ["Default eyebrow"]),
 			eyebrow(h, { variant: "label" }, ["Label eyebrow"]),
 		]),
@@ -67,7 +67,7 @@ const breadcrumbSection = <M>(h: HtmlBuilder<M>): Html =>
 
 const markerSection = <M>(h: HtmlBuilder<M>): Html =>
 	kitSection(h, "Avatar, spinner, marker", [
-		kitRow(h, [
+		kitRow(h, undefined, [
 			avatarPlaceholder(h, "DM"),
 			avatarPlaceholder(h, "AB", "size-6"),
 			spinner(h),

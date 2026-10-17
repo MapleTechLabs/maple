@@ -52,6 +52,7 @@ export const conversationSection = <M>(h: HtmlBuilder<M>): Html =>
 		messageGroup(h, [assistantMessage(h), userMessage(h)], "max-w-xl"),
 		kitRow(
 			h,
+			undefined,
 			BUBBLE_VARIANTS.map((variant) => bubble(h, { variant }, [bubbleContent(h, [variant])])),
 		),
 	])

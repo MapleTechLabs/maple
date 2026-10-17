@@ -123,21 +123,25 @@ const tabsSection = (model: Model, h: HtmlBuilder<Message>): Html =>
 	])
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	kitPage(h, "Kit: display", "Surfaces, data display and loading states from @maple/ui.", [
-		cardAndPanelSection(h),
-		alertSection(h),
-		emptySection(h),
-		itemSection(h),
-		keyValueSection(
-			h,
-			model.traceIdCopy.status,
-			Message.GotCopyMessage({ message: CopyButton.Message.ClickedCopy({ value: TRACE_ID }) }),
-		),
-		meterSection(h),
-		statSection(h),
-		skeletonSection(h),
-		tableSection(h),
-		tabsSection(model, h),
-	])
+	kitPage(
+		h,
+		{ title: "Kit: display", description: "Surfaces, data display and loading states from @maple/ui." },
+		[
+			cardAndPanelSection(h),
+			alertSection(h),
+			emptySection(h),
+			itemSection(h),
+			keyValueSection(
+				h,
+				model.traceIdCopy.status,
+				Message.GotCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: TRACE_ID }) }),
+			),
+			meterSection(h),
+			statSection(h),
+			skeletonSection(h),
+			tableSection(h),
+			tabsSection(model, h),
+		],
+	)
 
 export const lab = defineLab<Model, Message>("Kit: display", { Model, init, update, view })

@@ -23,7 +23,7 @@ export type SheetOptions<Message> = Readonly<{
 	description: string
 	headerClassName?: string
 	/** `data-slot` when a composition renders through the popup (`sidebar`). */
-	slotName?: string
+	slot?: string
 	/** Extra popup attributes (`data-slot`, CSS variables) the caller's composition adds. */
 	popupAttributes?: ReadonlyArray<Attribute<Message>>
 	onDismiss: Message
@@ -75,7 +75,7 @@ export const leftSheet = <Message>(
 							h.Class(cn(sheetPopupStyles, sheetPopupLeftStyles, options.className)),
 							h.DataAttribute("base-ui-focusable", ""),
 							h.DataAttribute("open", ""),
-							h.DataAttribute("slot", options.slotName ?? "sheet-popup"),
+							h.DataAttribute("slot", options.slot ?? "sheet-popup"),
 							h.Id(options.id),
 							h.Role("dialog"),
 							h.Tabindex(-1),

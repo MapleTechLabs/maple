@@ -103,7 +103,7 @@ const mobileNav = (h: HtmlBuilder<Message>, model: Model, currentPath: string): 
 			title: "Sidebar",
 			description: "Displays the mobile sidebar.",
 			headerClassName: sidebarMobileHeaderStyles,
-			slotName: "sidebar",
+			slot: "sidebar",
 			popupAttributes: [
 				h.DataAttribute("mobile", "true"),
 				h.DataAttribute("sidebar", "sidebar"),

@@ -77,7 +77,7 @@ const collapsedSectionRow = (h: HtmlBuilder<Message>, model: Model, item: NavIte
 			{
 				className: ACTIVE_RAIL,
 				isActive,
-				slotName: "dropdown-menu-trigger",
+				slot: "dropdown-menu-trigger",
 				attributes: triggerFor(h, model, Menu.NavSection({ title: item.title })),
 			},
 			[icon(h, item.icon, { size: 18 }), h.span([], [item.title])],

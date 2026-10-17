@@ -51,7 +51,7 @@ export const meterSection = <M>(h: HtmlBuilder<M>): Html =>
 
 export const statSection = <M>(h: HtmlBuilder<M>): Html =>
 	kitSection(h, "Stat figure and delta", [
-		kitRow(h, [
+		kitRow(h, undefined, [
 			statFigure(h, { value: "412", unit: "req/s", size: "sm" }),
 			statFigure(h, { value: "238", unit: "ms", size: "md", mono: true }),
 			statFigure(h, { value: "99.82", unit: "%", size: "lg" }),

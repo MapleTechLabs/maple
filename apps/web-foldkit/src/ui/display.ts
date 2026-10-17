@@ -42,7 +42,7 @@ export const separator = <Message>(
 	h: HtmlBuilder<Message>,
 	orientation: "horizontal" | "vertical",
 	className: string | undefined,
-	slotName = "separator",
+	slot = "separator",
 	styles: string = separatorStyles,
 ): Html =>
 	h.div(
@@ -50,7 +50,7 @@ export const separator = <Message>(
 			h.AriaOrientation(orientation),
 			h.Class(cn(styles, className)),
 			h.DataAttribute("orientation", orientation),
-			h.DataAttribute("slot", slotName),
+			h.DataAttribute("slot", slot),
 			h.Role("separator"),
 		],
 		[],

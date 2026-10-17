@@ -51,7 +51,7 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 				{
 					size: "lg",
 					className: OPEN_STATE,
-					slotName: "dropdown-menu-trigger",
+					slot: "dropdown-menu-trigger",
 					attributes: triggerFor(h, model, Menu.Org()),
 				},
 				[
@@ -153,7 +153,7 @@ const footerCluster = (h: HtmlBuilder<Message>, model: Model, avatar: Html): Htm
 						{
 							className: `${COLLAPSED_AVATAR_ROW} ${OPEN_STATE}`,
 							hasTooltip: true,
-							slotName: "dropdown-menu-trigger",
+							slot: "dropdown-menu-trigger",
 							attributes: triggerFor(h, model, Menu.User()),
 						},
 						[
@@ -171,7 +171,7 @@ const footerCluster = (h: HtmlBuilder<Message>, model: Model, avatar: Html): Htm
 				{
 					className: "size-8 w-8 shrink-0 justify-center p-0 group-data-[collapsible=icon]:w-full",
 					hasTooltip: true,
-					slotName: "dropdown-menu-trigger",
+					slot: "dropdown-menu-trigger",
 					attributes: triggerFor(h, model, Menu.Support()),
 				},
 				[icon(h, "CircleQuestionIcon", { size: 16 }), h.span([h.Class("sr-only")], ["Support"])],

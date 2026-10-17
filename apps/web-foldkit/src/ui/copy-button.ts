@@ -9,26 +9,32 @@ import {
 	copyIndicatorLayerActiveStyles,
 	copyIndicatorLayerStyles,
 	copyIndicatorStyles,
+	copyLabelActiveStyles,
+	copyLabelLayerStyles,
+	copyLabelStyles,
 } from "@maple/ui/styles/ui/copy-button"
 import { Duration, Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { type ButtonOptions, button } from "./button"
-import { COPY_PATHS, strokeIcon } from "./stroke-icons"
+import { modifyFields } from "foldkit/struct"
+import { button } from "./button"
+import { copyIcon } from "./icon"
 
-// Port of packages/ui/src/components/ui/copy-button.tsx: `CopyIndicator`, `CopyButton` and the
-// `useCopy` state (idle, copied, error; back to idle after `COPY_FEEDBACK`). Toasts are not ported.
+/**
+ * `useCopy` + `<CopyButton>`: copy writes the clipboard, holds `copied`/`error` for the timeout,
+ * then falls back to `idle`. A newer copy bumps `generation` so an older reset is dropped.
+ * TODO(toast): legacy also toasts on copy; toasts are not ported yet.
+ */
 
 export const CopyStatus = Schema.Literals(["idle", "copied", "error"])
 export type CopyStatus = typeof CopyStatus.Type
 
-/** `useCopy`'s default `timeout`. */
-export const COPY_FEEDBACK = Duration.millis(2000)
+const COPY_TIMEOUT = Duration.millis(2000)
 
 // MODEL
 
-export const Model = Schema.Struct({ status: CopyStatus, generation: Schema.Number })
+export const Model = Schema.Struct({ status: CopyStatus, generation: Schema.Finite })
 export type Model = typeof Model.Type
 
 export const init = (): Model => ({ status: "idle", generation: 0 })
@@ -36,56 +42,63 @@ export const init = (): Model => ({ status: "idle", generation: 0 })
 // MESSAGE
 
 export const Message = defineMessageUnion({
-	ClickedCopy: { value: Schema.String },
-	SucceededCopy: { generation: Schema.Number },
-	FailedCopy: { generation: Schema.Number },
-	ElapsedCopyFeedback: { generation: Schema.Number },
+	ClickedCopy: { text: Schema.String },
+	SucceededCopy: { generation: Schema.Finite },
+	FailedCopy: { generation: Schema.Finite },
+	ElapsedCopyStatus: { generation: Schema.Finite },
 })
 export type Message = typeof Message.Type
 
 // COMMAND
 
 export const WriteClipboard = Command.define("WriteClipboard", {
-	args: { value: Schema.String, generation: Schema.Number },
+	args: { text: Schema.String, generation: Schema.Finite },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
-	execute: ({ value, generation }) =>
-		Effect.tryPromise(() => navigator.clipboard.writeText(value)).pipe(
+	execute: ({ text, generation }) =>
+		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
 			Effect.as(Message.SucceededCopy({ generation })),
-			Effect.catch(() => Effect.succeed(Message.FailedCopy({ generation }))),
+			Effect.orElseSucceed(() => Message.FailedCopy({ generation })),
 		),
 })
 
-export const WaitCopyFeedback = Command.define("WaitCopyFeedback", {
-	args: { generation: Schema.Number },
-	messages: [Message.ElapsedCopyFeedback],
+export const WaitCopyStatus = Command.define("WaitCopyStatus", {
+	args: { generation: Schema.Finite },
+	messages: [Message.ElapsedCopyStatus],
 	execute: ({ generation }) =>
-		Effect.sleep(COPY_FEEDBACK).pipe(Effect.as(Message.ElapsedCopyFeedback({ generation }))),
+		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyStatus({ generation }))),
 })
 
 // UPDATE
 
-type UpdateReturn = Update.Return<Model, Message>
+const settled = (model: Model, generation: number, status: CopyStatus): Update.Return<Model, Message> =>
+	generation === model.generation
+		? { model: modifyFields(model, { status: () => status }), commands: [WaitCopyStatus({ generation })] }
+		: { model }
 
-const settle = (model: Model, generation: number, status: CopyStatus): UpdateReturn =>
-	generation !== model.generation
-		? { model }
-		: { model: { ...model, status }, commands: [WaitCopyFeedback({ generation })] }
-
-export const update = (model: Model, message: Message): UpdateReturn =>
-	Message.match<UpdateReturn>(message, {
-		ClickedCopy: ({ value }) => {
+export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
+	Message.match<Update.Return<Model, Message>>(message, {
+		ClickedCopy: ({ text }) => {
 			const generation = model.generation + 1
-			return { model: { ...model, generation }, commands: [WriteClipboard({ value, generation })] }
+			return text === ""
+				? settled(modifyFields(model, { generation: () => generation }), generation, "error")
+				: {
+						model: modifyFields(model, { generation: () => generation }),
+						commands: [WriteClipboard({ text, generation })],
+					}
 		},
-		SucceededCopy: ({ generation }) => settle(model, generation, "copied"),
-		FailedCopy: ({ generation }) => settle(model, generation, "error"),
-		ElapsedCopyFeedback: ({ generation }) =>
-			generation === model.generation ? { model: { ...model, status: "idle" } } : { model },
+		SucceededCopy: ({ generation }) => settled(model, generation, "copied"),
+		FailedCopy: ({ generation }) => settled(model, generation, "error"),
+		ElapsedCopyStatus: ({ generation }) =>
+			generation === model.generation
+				? { model: modifyFields(model, { status: () => "idle" }) }
+				: { model },
 	})
 
 // VIEW
 
-const glyph = <M>(h: HtmlBuilder<M>, size: string, paths: ReadonlyArray<Html>): Html =>
+const CHECK_PATH = "M4.5 12.5L9.5 17.5L19.5 6.5"
+
+const glyphSvg = <M>(h: HtmlBuilder<M>, size: string, paths: ReadonlyArray<Html>): Html =>
 	h.svg(
 		[
 			h.Attribute("xmlns", "http://www.w3.org/2000/svg"),
@@ -99,19 +112,19 @@ const glyph = <M>(h: HtmlBuilder<M>, size: string, paths: ReadonlyArray<Html>): 
 		paths,
 	)
 
-const strokePath = <M>(h: HtmlBuilder<M>, d: string, extra: ReadonlyArray<Attribute<M>> = []): Html =>
+const strokePath = <M>(h: HtmlBuilder<M>, d: string, extra: ReadonlyArray<Attribute<M>> = []) =>
 	h.path([
-		h.Attribute("d", d),
 		...extra,
+		h.Attribute("d", d),
 		h.Attribute("stroke", "currentColor"),
 		h.Attribute("stroke-width", "2"),
 		h.Attribute("stroke-linecap", "square"),
 	])
 
-/** `CopyIndicator`: the idle glyph, a check that draws itself, and an X, stacked in one grid cell. */
+/** `<CopyIndicator>`: idle glyph, a self-drawing check and an X, stacked in one grid cell. */
 export const copyIndicator = <M>(
 	h: HtmlBuilder<M>,
-	options: { readonly status: CopyStatus; readonly iconSize?: number; readonly className?: string },
+	options: Readonly<{ status: CopyStatus; iconSize?: number; className?: string }>,
 ): Html => {
 	const iconSize = options.iconSize ?? 14
 	const size = String(iconSize)
@@ -125,19 +138,23 @@ export const copyIndicator = <M>(
 		[
 			h.span(
 				[h.Class(cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.idle))],
-				[strokeIcon(h, COPY_PATHS, { size: iconSize })],
+				[copyIcon(h, { size: iconSize })],
 			),
 			h.span(
 				[
 					h.Class(
-						cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.copied, copyIndicatorCopiedStyles),
+						cn(
+							copyIndicatorLayerStyles,
+							copyIndicatorLayerActiveStyles.copied,
+							copyIndicatorCopiedStyles,
+						),
 					),
 				],
 				[
-					glyph(h, size, [
-						strokePath(h, "M4.5 12.5L9.5 17.5L19.5 6.5", [
-							h.Attribute("pathLength", "1"),
+					glyphSvg(h, size, [
+						strokePath(h, CHECK_PATH, [
 							h.Attribute("class", copyIndicatorCheckDrawStyles),
+							h.Attribute("pathLength", "1"),
 						]),
 					]),
 				],
@@ -145,51 +162,99 @@ export const copyIndicator = <M>(
 			h.span(
 				[
 					h.Class(
-						cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.error, copyIndicatorErrorStyles),
+						cn(
+							copyIndicatorLayerStyles,
+							copyIndicatorLayerActiveStyles.error,
+							copyIndicatorErrorStyles,
+						),
 					),
 				],
-				[glyph(h, size, [strokePath(h, "M6 6L18 18"), strokePath(h, "M18 6L6 18")])],
+				[glyphSvg(h, size, [strokePath(h, "M6 6L18 18"), strokePath(h, "M18 6L6 18")])],
 			),
 		],
 	)
 }
 
-export type CopyButtonOptions<M> = Pick<ButtonOptions<M>, "variant" | "size" | "className"> &
-	Readonly<{
-		/** Human name for the thing being copied; drives `aria-label`. */
-		label: string
-		status: CopyStatus
-		iconSize?: number
-		copiedLabel?: string
-		errorLabel?: string
-		onClick?: M
-	}>
+export type CopyButtonOptions<M> = Readonly<{
+	status: CopyStatus
+	/** Human name for the thing copied: drives `aria-label`. */
+	label: string
+	onClick?: M
+	/** Turns the animated text label on. */
+	idleLabel?: string
+	copiedLabel?: string
+	errorLabel?: string
+	iconSize?: number
+	variant?: "default" | "secondary" | "outline" | "ghost"
+	size?: "xs" | "sm" | "default" | "icon-xs" | "icon-sm" | "icon"
+	className?: string
+}>
 
-/** `CopyButton` (glyph only): a ghost icon button whose glyph and live region follow `status`. */
-export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>): Html =>
-	button(
+/** `<CopyButton>` from @maple/ui (no tooltip), for a parent that owns the copy status. */
+export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>): Html => {
+	const { status } = options
+	const copiedLabel = options.copiedLabel ?? "Copied"
+	const errorText = options.errorLabel ?? "Failed to copy"
+	const labels: ReadonlyArray<readonly [CopyStatus, string]> =
+		options.idleLabel === undefined
+			? []
+			: [
+					["idle", options.idleLabel],
+					["copied", copiedLabel],
+					["error", options.errorLabel ?? "Failed"],
+				]
+	return button(
 		h,
 		{
 			variant: options.variant ?? "ghost",
-			size: options.size ?? "icon-xs",
+			size: options.size ?? (options.idleLabel === undefined ? "icon-xs" : "sm"),
 			className: cn(copyButtonStyles, options.className),
 			attributes: [
 				h.AriaLabel(`Copy ${options.label}`),
-				h.DataAttribute("copy-status", options.status),
+				h.DataAttribute("copy-status", status),
 				...(options.onClick === undefined ? [] : [h.OnClick(options.onClick)]),
 			],
 		},
 		[
-			copyIndicator(h, { status: options.status, iconSize: options.iconSize }),
+			copyIndicator(h, { status, iconSize: options.iconSize }),
+			...(labels.length === 0
+				? []
+				: [
+						h.span(
+							[h.AriaHidden(true), h.Class(copyLabelStyles)],
+							labels.map(([key, text]) =>
+								h.span(
+									[h.Class(cn(copyLabelLayerStyles, copyLabelActiveStyles[key]))],
+									[text],
+								),
+							),
+						),
+					]),
 			h.span(
 				[h.Role("status"), h.AriaLive("polite"), h.Class(copyButtonStatusStyles)],
-				[
-					options.status === "copied"
-						? (options.copiedLabel ?? "Copied")
-						: options.status === "error"
-							? (options.errorLabel ?? "Failed to copy")
-							: "",
-				],
+				[status === "copied" ? copiedLabel : status === "error" ? errorText : ""],
 			),
 		],
 	)
+}
+
+export type CopyButtonViewConfig<ParentMessage> = Omit<
+	CopyButtonOptions<ParentMessage>,
+	"status" | "onClick"
+> &
+	Readonly<{
+		model: Model
+		toParentMessage: (message: Message) => ParentMessage
+		value: string
+	}>
+
+/** `<CopyButton>` as a Submodel view: the click copies `value` and the Model holds the status. */
+export const view = <ParentMessage>(
+	h: HtmlBuilder<ParentMessage>,
+	config: CopyButtonViewConfig<ParentMessage>,
+): Html =>
+	copyButton(h, {
+		...config,
+		status: config.model.status,
+		onClick: config.toParentMessage(Message.ClickedCopy({ text: config.value })),
+	})

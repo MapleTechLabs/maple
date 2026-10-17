@@ -35,7 +35,7 @@ const askMapleButton = (h: HtmlBuilder<Message>): Html =>
 		{
 			size: "icon-sm",
 			variant: "outline",
-			slotName: "icon-button",
+			slot: "icon-button",
 			attributes: [h.AriaLabel("Ask Maple AI"), h.DataAttribute("base-ui-tooltip-trigger", "")],
 		},
 		[icon(h, "ChatBubbleSparkleIcon")],
@@ -49,7 +49,7 @@ const connectButton = (h: HtmlBuilder<Message>): Html =>
 			size: "sm",
 			variant: "default",
 			className: "gap-2",
-			slotName: "popover-trigger",
+			slot: "popover-trigger",
 			attributes: [
 				h.AriaExpanded(false),
 				h.AriaHasPopup("dialog"),

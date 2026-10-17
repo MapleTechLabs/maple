@@ -226,7 +226,7 @@ export type SidebarMenuButtonOptions<Message> = Readonly<{
 	/** `tooltip` was given: Base UI marks the element as a tooltip trigger. */
 	hasTooltip?: boolean
 	/** `data-slot` when the button is another primitive's trigger (`dropdown-menu-trigger`). */
-	slotName?: string
+	slot?: string
 	attributes?: Attributes<Message>
 }>
 
@@ -245,7 +245,7 @@ export const sidebarMenuButton = <Message>(
 		...(options.hasTooltip === true ? [h.DataAttribute("base-ui-tooltip-trigger", "")] : []),
 		h.DataAttribute("sidebar", "menu-button"),
 		h.DataAttribute("size", size),
-		h.DataAttribute("slot", options.slotName ?? "sidebar-menu-button"),
+		h.DataAttribute("slot", options.slot ?? "sidebar-menu-button"),
 		...(options.attributes ?? []),
 	]
 	if (options.link === undefined) return h.button([h.Type("button"), ...attributes], children)
@@ -303,7 +303,7 @@ export const sidebarTrigger = <Message>(
 			size: "icon",
 			variant: "ghost",
 			attributes: [h.DataAttribute("sidebar", "trigger"), ...(options.attributes ?? [])],
-			slotName: "sidebar-trigger",
+			slot: "sidebar-trigger",
 		},
 		[
 			icon(h, options.state === "expanded" ? "LayoutMoveToLeftIcon" : "LayoutMoveToRightIcon"),
