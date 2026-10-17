@@ -119,7 +119,10 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // settings on the inventory schema, and two lab registry entries. The pages stay in their
 // route chunks.
 // 706.5 KB with main's 1 KB from #1494, #1500, #1502 merged up the stack.
-const maxGzipBytes = 706.5 * 1024
+// 710.5 KB from the sources API (#1535, 2026-10-17): ~2.6 KB of startup measured in CI at
+// 709.1 against 706.5, the /v2/sources group and its schemas on the contract every page's
+// client carries. The Sources pages stay in their route chunks.
+const maxGzipBytes = 710.5 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
