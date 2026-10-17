@@ -151,7 +151,101 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:ci-runs:ciRunsQuery:allRuns  [76528573]
+-- builder:ci-runs:ciJobStatsQuery:allWorkflows  [6cc8534e]
+SELECT
+          traces.ResourceAttributes['vcs.owner.name'] AS owner,
+          traces.ResourceAttributes['vcs.repository.name'] AS repository,
+          traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
+          traces.SpanAttributes['cicd.pipeline.task.name'] AS job,
+          count() AS runs,
+          countIf(traces.SpanAttributes['cicd.pipeline.task.run.result'] IN ('failure', 'timeout', 'error')) AS failed,
+          countIf(traces.SpanAttributes['maple.cicd.run_attempt'] != '1') AS retried,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          sum(traces.Duration) / 1000000 AS totalDurationMs,
+          quantile(0.5)(toFloat64OrZero(traces.SpanAttributes['maple.cicd.queue_duration_ms'])) AS p50QueueMs,
+          quantile(0.95)(toFloat64OrZero(traces.SpanAttributes['maple.cicd.queue_duration_ms'])) AS p95QueueMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.SpanAttributes['cicd.pipeline.task.name'] != ''
+          AND traces.SpanAttributes['maple.cicd.step.number'] = ''
+          AND traces.SpanAttributes['cicd.pipeline.task.run.result'] != 'skip'
+          AND traces.Duration > 0
+        GROUP BY owner, repository, pipeline, job
+        ORDER BY totalDurationMs DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:ci-runs:ciPipelineStatsQuery:oneRepository  [c7557d93]
+SELECT
+          traces.ResourceAttributes['vcs.owner.name'] AS owner,
+          traces.ResourceAttributes['vcs.repository.name'] AS repository,
+          traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
+          count() AS runs,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'success') AS succeeded,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] IN ('failure', 'timeout', 'error')) AS failed,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'cancellation') AS cancelled,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          sum(traces.Duration) / 1000000 AS totalDurationMs,
+          argMax(traces.SpanAttributes['cicd.pipeline.result'], traces.Timestamp) AS lastResult,
+          max(traces.Timestamp) AS lastStartedAt
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ResourceAttributes['vcs.owner.name'] = 'acme'
+          AND traces.ResourceAttributes['vcs.repository.name'] = 'api'
+          AND traces.SpanAttributes['cicd.pipeline.name'] = 'CI'
+          AND traces.ParentSpanId = ''
+          AND traces.SpanAttributes['cicd.pipeline.result'] != 'skip'
+        GROUP BY owner, repository, pipeline
+        ORDER BY runs DESC
+        LIMIT 100
+        FORMAT JSON
+
+-- builder:ci-runs:ciQueueTotalsQuery:allWorkflows  [57f8fbf3]
+SELECT
+          count() AS jobs,
+          quantile(0.5)(toFloat64OrZero(traces.SpanAttributes['maple.cicd.queue_duration_ms'])) AS p50QueueMs,
+          quantile(0.95)(toFloat64OrZero(traces.SpanAttributes['maple.cicd.queue_duration_ms'])) AS p95QueueMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.SpanAttributes['cicd.pipeline.task.name'] != ''
+          AND traces.SpanAttributes['maple.cicd.step.number'] = ''
+          AND traces.SpanAttributes['cicd.pipeline.task.run.result'] != 'skip'
+          AND traces.Duration > 0
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunSeriesQuery:sixHourly  [ff52eea3]
+SELECT
+          toStartOfInterval(traces.Timestamp, INTERVAL 21600 SECOND) AS bucket,
+          count() AS runs,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'success') AS succeeded,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] IN ('failure', 'timeout', 'error')) AS failed,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'cancellation') AS cancelled,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          sum(traces.Duration) / 1000000 AS totalDurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ParentSpanId = ''
+          AND traces.SpanAttributes['cicd.pipeline.result'] != 'skip'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunsQuery:allRuns  [b8a0ffdd]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
@@ -163,6 +257,8 @@ SELECT
           traces.SpanAttributes['vcs.ref.head.revision'] AS revision,
           traces.SpanAttributes['maple.cicd.run_attempt'] AS attempt,
           traces.SpanAttributes['maple.cicd.trigger_event'] AS trigger,
+          traces.SpanAttributes['maple.cicd.actor'] AS actor,
+          traces.SpanAttributes['vcs.change.id'] AS pullRequest,
           traces.Duration / 1000000 AS durationMs,
           traces.Timestamp AS startedAt
         FROM traces
@@ -171,11 +267,11 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.ServiceName = 'github-actions'
           AND traces.ParentSpanId = ''
-        ORDER BY startedAt DESC
+        ORDER BY startedAt DESC, traceId DESC
         LIMIT 200
         FORMAT JSON
 
--- builder:ci-runs:ciRunsQuery:filtered  [933732bb]
+-- builder:ci-runs:ciRunsQuery:filtered  [9a080dbd]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
@@ -187,6 +283,8 @@ SELECT
           traces.SpanAttributes['vcs.ref.head.revision'] AS revision,
           traces.SpanAttributes['maple.cicd.run_attempt'] AS attempt,
           traces.SpanAttributes['maple.cicd.trigger_event'] AS trigger,
+          traces.SpanAttributes['maple.cicd.actor'] AS actor,
+          traces.SpanAttributes['vcs.change.id'] AS pullRequest,
           traces.Duration / 1000000 AS durationMs,
           traces.Timestamp AS startedAt
         FROM traces
@@ -199,8 +297,54 @@ SELECT
           AND traces.ResourceAttributes['vcs.repository.name'] = 'api'
           AND traces.SpanAttributes['vcs.ref.head.name'] = 'main'
           AND traces.SpanAttributes['cicd.pipeline.result'] = 'failure'
-        ORDER BY startedAt DESC
+        ORDER BY startedAt DESC, traceId DESC
         LIMIT 50
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunsQuery:pageAfterCursor  [d212a152]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanAttributes['cicd.pipeline.name'] AS pipeline,
+          traces.SpanAttributes['cicd.pipeline.run.id'] AS runId,
+          traces.SpanAttributes['cicd.pipeline.result'] AS result,
+          traces.SpanAttributes['cicd.pipeline.run.url.full'] AS url,
+          traces.ResourceAttributes['vcs.repository.name'] AS repository,
+          traces.SpanAttributes['vcs.ref.head.name'] AS branch,
+          traces.SpanAttributes['vcs.ref.head.revision'] AS revision,
+          traces.SpanAttributes['maple.cicd.run_attempt'] AS attempt,
+          traces.SpanAttributes['maple.cicd.trigger_event'] AS trigger,
+          traces.SpanAttributes['maple.cicd.actor'] AS actor,
+          traces.SpanAttributes['vcs.change.id'] AS pullRequest,
+          traces.Duration / 1000000 AS durationMs,
+          traces.Timestamp AS startedAt
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ParentSpanId = ''
+          AND traces.SpanAttributes['cicd.pipeline.result'] != 'skip'
+          AND (traces.Timestamp < '2026-01-01 10:30:00' OR (traces.Timestamp = '2026-01-01 10:30:00' AND traces.TraceId < 'abc123'))
+        ORDER BY startedAt DESC, traceId DESC
+        LIMIT 51
+        FORMAT JSON
+
+-- builder:ci-runs:ciRunTotalsQuery:allWorkflows  [10bab54f]
+SELECT
+          count() AS runs,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'success') AS succeeded,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] IN ('failure', 'timeout', 'error')) AS failed,
+          countIf(traces.SpanAttributes['cicd.pipeline.result'] = 'cancellation') AS cancelled,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          sum(traces.Duration) / 1000000 AS totalDurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'github-actions'
+          AND traces.ParentSpanId = ''
+          AND traces.SpanAttributes['cicd.pipeline.result'] != 'skip'
         FORMAT JSON
 
 -- builder:containers:containerCountersSummaryQuery:default  [1b4fe1f9]

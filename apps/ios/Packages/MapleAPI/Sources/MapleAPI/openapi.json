@@ -7918,6 +7918,10 @@
       "name": "Mobile Devices"
     },
     {
+      "description": "MCP clients connected to the organization through OAuth, and revoking them. Org admins manage every member's connections; other members manage their own.",
+      "name": "MCP Connections"
+    },
+    {
       "description": "Feedback about Maple from agents: bugs, missing capabilities, misleading docs.",
       "name": "Agent Feedback"
     },

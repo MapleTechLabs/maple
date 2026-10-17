@@ -371,6 +371,8 @@ export const integrationFixtureRules = (): FixtureRule[] => [
 					revision: run.revision,
 					attempt: "1",
 					trigger: "push",
+					actor: "ada",
+					pullRequest: "",
 					durationMs: run.minutes * 60_000,
 					startedAt: wire(Date.now() - run.hoursAgo * 3_600_000),
 				})),

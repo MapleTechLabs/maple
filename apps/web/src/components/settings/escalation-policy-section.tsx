@@ -28,6 +28,7 @@ import { destinationProvider, ProviderLogo } from "@/components/alerts/destinati
 import { SeverityBadge, SEVERITY_ORDER } from "@/components/errors/severity-badge"
 import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
+import { AdminOnlyNote } from "@/components/settings/settings-section"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
 
@@ -53,7 +54,14 @@ const emptyDraft = (): DraftRules => ({
  * human) sets an issue's severity, matching destinations get notified —
  * detection-time alerts keep using the alert rule's own destinations.
  */
-export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
+export function EscalationPolicySection({
+	isAdmin,
+	onDirtyChange,
+}: {
+	isAdmin: boolean
+	/** Fires when the draft diverges from, or is saved back to, the stored policy. */
+	onDirtyChange?: (dirty: boolean) => void
+}) {
 	const policyQueryAtom = retainedInternalQuery("errors", "getEscalationPolicy", {
 		reactivityKeys: ["issueEscalationPolicy"],
 	})
@@ -102,8 +110,25 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 			payload: new IssueEscalationPolicyUpsertRequest({ enabled, rules: ruleList }),
 			reactivityKeys: ["issueEscalationPolicy"],
 		})
-		toastExit(result, { success: "Escalation policy saved", error: "Failed to save escalation policy" })
+		if (
+			toastExit(result, {
+				success: "Escalation policy saved",
+				error: "Failed to save escalation policy",
+			})
+		) {
+			onDirtyChange?.(false)
+		}
 	})
+
+	// Controls lock while a save is in flight, so the saved draft is always the visible one.
+	const editEnabled = (next: boolean) => {
+		setEnabled(next)
+		onDirtyChange?.(true)
+	}
+	const editRule = (severity: IssueSeverity, patch: Partial<SeverityRuleDraft>) => {
+		setRules((current) => ({ ...current, [severity]: { ...current[severity], ...patch } }))
+		onDirtyChange?.(true)
+	}
 
 	// Never render the editable form off a failed (or pending) policy load —
 	// saving a default draft would silently overwrite the real policy.
@@ -132,7 +157,13 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 				<SettingRow
 					label="Severity escalation"
 					description="Route issues to destinations when AI triage or a teammate sets their severity. Fires once per issue and severity level, upward only."
-					control={<Switch checked={enabled} onCheckedChange={setEnabled} disabled={!isAdmin} />}
+					control={
+						<Switch
+							checked={enabled}
+							onCheckedChange={editEnabled}
+							disabled={!isAdmin || isSaving}
+						/>
+					}
 				/>
 
 				{Result.builder(destinationsResult)
@@ -187,19 +218,13 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 												</span>
 												<Select
 													value={rules[severity].minConfidence}
-													disabled={!isAdmin}
+													disabled={!isAdmin || isSaving}
 													onValueChange={(value) => {
 														const minConfidence = CONFIDENCE_CHOICES.find(
 															(c) => c === value,
 														)
 														if (!minConfidence) return
-														setRules((current) => ({
-															...current,
-															[severity]: {
-																...current[severity],
-																minConfidence,
-															},
-														}))
+														editRule(severity, { minConfidence })
 													}}
 												>
 													<SelectTrigger size="sm" className="w-[100px]">
@@ -217,15 +242,10 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 										<MultiSegmentedSelect<string>
 											options={destinationOptions}
 											value={rules[severity].destinationIds}
-											onChange={(values) =>
-												setRules((current) => ({
-													...current,
-													[severity]: {
-														...current[severity],
-														destinationIds: values,
-													},
-												}))
+											onChange={(destinationIds) =>
+												editRule(severity, { destinationIds })
 											}
+											disabled={!isAdmin || isSaving}
 											aria-label={`Destinations for ${severity} severity`}
 											size="sm"
 										/>
@@ -243,9 +263,7 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 				</div>
 			</Panel>
 			{!isAdmin ? (
-				<p className="text-muted-foreground text-xs">
-					Only org admins can change the escalation policy.
-				</p>
+				<AdminOnlyNote>Only org admins can change the escalation policy.</AdminOnlyNote>
 			) : null}
 		</div>
 	)

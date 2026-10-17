@@ -16,27 +16,22 @@ import { showErrorToast } from "@/lib/error-toast"
 import { formatCount } from "@/lib/billing/usage"
 import { getTrialStatus } from "@/lib/billing/plan-gating"
 import { buildCheckoutSuccessUrl } from "@/lib/billing/checkout-return"
-import { useCheckoutReturn } from "@/hooks/use-checkout-return"
-import { CheckoutConfirmingPanel, CheckoutTimedOutNotice } from "@/components/settings/checkout-return-panel"
 import { getPlanFeatures, TRIAL_DURATION_DAYS } from "@/lib/billing/plans"
 import { featureUnit, type SpendModel } from "@/lib/billing/spend"
 import { ErrorState } from "@/components/common/error-state"
 
 /**
- * The plans section: one offer, not a tier ladder.
+ * The plan picker behind "Compare plans": one offer, not a tier ladder.
  *
  * `apps/api/autumn.config.ts` sells exactly one self-serve plan, so a card-per-
  * tier grid manufactured a choice that doesn't exist: the same conclusion
  * `apps/landing/src/components/PricingTable.astro` reached for marketing. This is
- * the in-app version of that layout: a plate for the offer, and Enterprise as a
- * one-line rail beneath it rather than a peer card that competes with it.
+ * the in-app version of that layout: a plate for the offer. Enterprise is
+ * one muted line on the billing tab, not a peer card that competes with it.
  *
  * If a second self-serve plan is ever added, the plate lists them stacked and
  * this comment is the signal to revisit the layout.
  */
-
-const ENTERPRISE_CALL_URL = "https://cal.com/david-granzin/30min?overlayCalendar=true"
-const ENTERPRISE_FROM_PRICE = "From $2,000"
 
 const includedRun = (plan: CatalogPlan): string =>
 	plan.items
@@ -63,7 +58,9 @@ export function PlanOfferSkeleton() {
  * plan. Their plan is not for sale, so it can never come from the catalog; the
  * numbers here are their own, from the expanded subscription plus balances.
  */
-function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onManageBilling: () => void }) {
+const CURRENT_PLAN_CAPTION = "Change or cancel it in Manage billing"
+
+function CustomPlanPlate({ model }: { model: SpendModel }) {
 	const price = model.basePlan?.price?.amount
 	const interval = model.basePlan?.price?.interval ?? "month"
 	// A hard-capped plan bills nothing past its allotments, so "+ usage" would be
@@ -121,38 +118,29 @@ function CustomPlanPlate({ model, onManageBilling }: { model: SpendModel; onMana
 				</p>
 			</div>
 
-			<div className="flex w-full shrink-0 flex-col gap-2 lg:w-44">
-				<Button variant="outline" size="sm" onClick={onManageBilling}>
-					Manage plan
-				</Button>
-				<p className="text-center text-2xs text-muted-foreground">Invoices and payment method</p>
-			</div>
+			<p className="w-full shrink-0 text-2xs text-muted-foreground lg:w-44 lg:text-center">
+				{CURRENT_PLAN_CAPTION}
+			</p>
 		</Panel>
 	)
 }
 
 export function PlanOffer({
 	model,
-	onManageBilling,
 }: {
 	/** Needed to render a custom plan, whose terms exist only on the customer. */
 	model: SpendModel | null
-	onManageBilling: () => void
 }) {
 	const plansResult = useAtomValue(billingPlansAtom)
 	const customerResult = useAtomValue(billingCustomerAtom)
 	const { attach } = useBillingActions()
 	const refreshCustomer = useAtomRefresh(billingCustomerAtom)
 	const [attaching, setAttaching] = useState<string | null>(null)
-	const checkoutReturn = useCheckoutReturn()
 
 	const { isTrialing, daysRemaining } = getTrialStatus(
 		Result.isSuccess(customerResult) ? customerResult.value : undefined,
 	)
 
-	// Back from Stripe with the plan not yet synced: wait it out rather than
-	// re-offering the plan the buyer just bought.
-	if (checkoutReturn === "confirming") return <CheckoutConfirmingPanel />
 	if (Result.isInitial(plansResult)) return <PlanOfferSkeleton />
 	if (!Result.isSuccess(plansResult)) {
 		return <ErrorState error={plansResult.cause} title="Unable to load pricing plans" variant="row" />
@@ -190,8 +178,7 @@ export function PlanOffer({
 
 	return (
 		<div className="space-y-3">
-			{checkoutReturn === "timed_out" && <CheckoutTimedOutNotice />}
-			{showCustomPlate && model && <CustomPlanPlate model={model} onManageBilling={onManageBilling} />}
+			{showCustomPlate && model && <CustomPlanPlate model={model} />}
 			{offers.map((plan) => {
 				const isActive = !showCustomPlate && plan.customerEligibility?.status === "active"
 				const trialAvailable = plan.customerEligibility?.trialAvailable === true
@@ -262,55 +249,29 @@ export function PlanOffer({
 
 						<div className="flex w-full shrink-0 flex-col gap-2 lg:w-44">
 							{isActive ? (
-								<Button variant="outline" size="sm" onClick={onManageBilling}>
-									Manage plan
-								</Button>
+								<p className="text-2xs text-muted-foreground lg:text-center">
+									{CURRENT_PLAN_CAPTION}
+								</p>
 							) : (
-								<Button
-									size="sm"
-									loading={attaching === plan.id}
-									onClick={() => handleSubscribe(plan.id)}
-								>
-									{trialAvailable
-										? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
-										: "Subscribe"}
-								</Button>
+								<>
+									<Button
+										size="sm"
+										loading={attaching === plan.id}
+										onClick={() => handleSubscribe(plan.id)}
+									>
+										{trialAvailable
+											? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
+											: "Subscribe"}
+									</Button>
+									<p className="text-center text-2xs text-muted-foreground">
+										$0 due today · cancel anytime
+									</p>
+								</>
 							)}
-							<p className="text-center text-2xs text-muted-foreground">
-								{isActive ? "Invoices and payment method" : "$0 due today · cancel anytime"}
-							</p>
 						</div>
 					</Panel>
 				)
 			})}
-
-			{/* Enterprise is a rail, not a peer: it keeps the "From $2,000" anchor
-			    that makes the self-serve price read as small, without spending a
-			    full card of attention on a call-us flow. */}
-			<Panel
-				padded
-				className="gap-4 border-primary/25 bg-primary/[0.04] sm:flex-row sm:items-center sm:justify-between"
-			>
-				<div>
-					<Eyebrow className="text-primary">Enterprise</Eyebrow>
-					<p className="mt-1.5 max-w-[48ch] text-2xs leading-relaxed text-foreground/85">
-						Higher volume, custom retention, priority support.
-					</p>
-				</div>
-				<div className="flex shrink-0 items-center justify-between gap-5 sm:justify-end">
-					<span className="whitespace-nowrap font-mono text-sm tabular-nums text-primary">
-						{ENTERPRISE_FROM_PRICE}
-					</span>
-					<Button
-						variant="outline"
-						size="sm"
-						className="border-primary/40 text-primary hover:bg-primary/10"
-						onClick={() => window.open(ENTERPRISE_CALL_URL, "_blank", "noopener,noreferrer")}
-					>
-						Talk to the founder →
-					</Button>
-				</div>
-			</Panel>
 		</div>
 	)
 }

@@ -14,6 +14,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
 
@@ -75,6 +76,7 @@ import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngin
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalyticsService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
 /** Services consumed by HTTP routes; each service owns its implementation dependencies. */
@@ -89,6 +91,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	ApiKeysService.layer,
 	CliDeviceAuthService.layer,
 	McpOAuthService.layer,
+	McpConnectionsService.layer,
 	PreviewSignInService.layer,
 	CloudflareOAuthService.layer,
 	DashboardPersistenceService.layer,
@@ -148,6 +151,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	DemoService.layer,
 	GithubConnectService.layer,
 	PrReviewAnalyticsService.layer,
+	CiAnalyticsService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,

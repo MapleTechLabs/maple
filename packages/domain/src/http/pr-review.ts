@@ -565,8 +565,15 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 		? raw.category
 		: checkId === undefined
 			? "correctness"
-			: "observability"
+			: checkId.startsWith("PII-")
+				? "security"
+				: "observability"
 	if (category === "observability" && checkId === undefined) return undefined
+	// Observability findings carry their audit id; a security finding keeps only a privacy one.
+	const keptCheckId =
+		category === "observability" || (category === "security" && checkId?.startsWith("PII-") === true)
+			? checkId
+			: undefined
 	const startLine = Math.floor(line)
 	const endLine =
 		rawEndLine !== undefined && Math.floor(rawEndLine) > startLine ? Math.floor(rawEndLine) : undefined
@@ -575,7 +582,7 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 		line: startLine,
 		...(endLine === undefined ? undefined : { endLine }),
 		category,
-		...(category === "observability" && checkId !== undefined ? { checkId } : undefined),
+		...(keptCheckId === undefined ? undefined : { checkId: keptCheckId }),
 		severity: isSeverity(raw.severity) ? raw.severity : "warn",
 		title: clip(raw.title?.trim() || "Review finding", 200),
 		body: clip(raw.body?.trim() || ""),

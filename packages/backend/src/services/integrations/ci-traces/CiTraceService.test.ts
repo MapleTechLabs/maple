@@ -524,6 +524,77 @@ describe("CiTraceService", () => {
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
 	})
 
+	it.live("places lines on the step that printed them when steps share a second", () => {
+		const testDb = createTestDb(trackedDbs)
+		const logCalls: Array<OtlpLogsRequest> = []
+		// The step layout of a real Maple CI job: the API gives whole seconds, skipped steps take the
+		// next step's start, and the post steps all start and end in one second.
+		const at = (seconds: number) => job.startedAtMs + seconds * 1000
+		const step = (number: number, name: string, start: number, end: number, conclusion = "success") => ({
+			number,
+			name,
+			conclusion,
+			startedAtMs: at(start),
+			completedAtMs: at(end),
+		})
+		const tied: WorkflowJobJob = {
+			...job,
+			steps: [
+				step(2, "Run actions/checkout", 0, 0),
+				step(3, "Run ./.github/actions/setup", 0, 20),
+				step(4, "Read Playwright version", 20, 20, "skipped"),
+				step(5, "Cache Chromium", 20, 20, "skipped"),
+				step(7, "Run bounded test lane", 20, 151),
+				// Named "Post …" but not a post step: only a step's own header opens it.
+				step(8, "Post the PR comment", 151, 152),
+				step(13, "Post Run ./.github/actions/setup", 152, 152),
+				step(14, "Post Run actions/checkout", 152, 152),
+				step(15, "Complete job", 152, 152),
+			],
+		}
+		const lines = [
+			stamped(10, "##[group]Run actions/checkout@v5"),
+			stamped(100, "##[group]Run ./.github/actions/setup"),
+			stamped(20_348, "Cache restored"),
+			stamped(20_359, "##[group]Run bun run test"),
+			stamped(90_000, "RUN v4 /home/runner/work/maple"),
+			stamped(151_010, "Test Files  12 passed (12)"),
+			stamped(151_900, "##[group]Run actions/github-script@v8"),
+			stamped(152_010, "Comment updated"),
+			stamped(152_059, "Post job cleanup."),
+			stamped(152_282, "Cache hit for: turbogha"),
+			stamped(152_470, "Post job cleanup."),
+			stamped(152_520, "[command]/usr/bin/git version"),
+			stamped(152_760, "Cleaning up orphan processes"),
+		]
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowJobLog(orgId, tied, Stream.fromIterable(lines))
+
+			assert.deepStrictEqual(
+				recordsOf(logCalls).map((record) => [
+					record.body.stringValue,
+					attr(record.attributes, "cicd.pipeline.task.name"),
+				]),
+				[
+					["Run actions/checkout@v5", "Run actions/checkout"],
+					["Run ./.github/actions/setup", "Run ./.github/actions/setup"],
+					["Cache restored", "Run ./.github/actions/setup"],
+					["Run bun run test", "Run bounded test lane"],
+					["RUN v4 /home/runner/work/maple", "Run bounded test lane"],
+					["Test Files  12 passed (12)", "Run bounded test lane"],
+					["Run actions/github-script@v8", "Post the PR comment"],
+					["Comment updated", "Post the PR comment"],
+					["Post job cleanup.", "Post Run ./.github/actions/setup"],
+					["Cache hit for: turbogha", "Post Run ./.github/actions/setup"],
+					["Post job cleanup.", "Post Run actions/checkout"],
+					["[command]/usr/bin/git version", "Post Run actions/checkout"],
+					["Cleaning up orphan processes", "Complete job"],
+				],
+			)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch([], [200], logCalls))))
+	})
+
 	it.live("stops reading a long log at the cap and says where the rest is", () => {
 		const testDb = createTestDb(trackedDbs)
 		const logCalls: Array<OtlpLogsRequest> = []

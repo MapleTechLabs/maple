@@ -1,6 +1,6 @@
 import { DateTime, Effect, Schema } from "effect"
 import { CiRunsOutput } from "@maple/domain/mcp-outputs"
-import { CH } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
@@ -13,8 +13,6 @@ import { doc, type NextCall } from "../lib/tool-doc"
 const TOOL = "ci_runs"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_DISCOVERY_MAX_HOURS })
 const RESULTS = ["success", "failure", "timeout", "cancellation", "skip", "error"] as const
-/** Results that mean the run broke, as opposed to being cancelled or skipped. */
-const FAILED: ReadonlySet<string> = new Set(["failure", "timeout", "error"])
 /** Failed jobs read per failed run: a matrix workflow can fail dozens of jobs at once. */
 const FAILED_JOBS_PER_RUN = 50
 /** Runs read for the per-workflow summary; the listed runs are the newest `limit` of these. */
@@ -43,24 +41,19 @@ const summarize = (runs: ReadonlyArray<CH.CiRunsOutput>): Output["pipelines"] =>
 			const latest = group[0]
 			if (latest === undefined) return []
 			const durations = group.map((run) => run.durationMs).sort((a, b) => a - b)
-			// Cancelled and skipped runs carry no verdict, so they neither extend nor end a red streak.
-			const judged = group.filter((run) => run.result === "success" || FAILED.has(run.result))
-			const greenAt = judged.findIndex((run) => run.result === "success")
-			const streak = greenAt === -1 ? judged : judged.slice(0, greenAt)
-			const firstFailed = streak[streak.length - 1]
-			const lastGreen = greenAt === -1 ? undefined : judged[greenAt]
+			const streak = CH.ciRedStreak(group)
 			const red =
-				firstFailed === undefined
+				streak === undefined
 					? undefined
 					: {
-							failedRuns: streak.length,
-							since: DateTime.formatIso(firstFailed.startedAt),
-							firstFailedRevision: firstFailed.revision,
-							...(lastGreen === undefined
+							failedRuns: streak.failedRuns,
+							since: DateTime.formatIso(streak.firstFailed.startedAt),
+							firstFailedRevision: streak.firstFailed.revision,
+							...(streak.lastGreen === undefined
 								? undefined
 								: {
-										lastGreenRevision: lastGreen.revision,
-										lastGreenAt: DateTime.formatIso(lastGreen.startedAt),
+										lastGreenRevision: streak.lastGreen.revision,
+										lastGreenAt: DateTime.formatIso(streak.lastGreen.startedAt),
 									}),
 						}
 			return [
@@ -68,7 +61,7 @@ const summarize = (runs: ReadonlyArray<CH.CiRunsOutput>): Output["pipelines"] =>
 					pipeline: latest.pipeline,
 					repository: latest.repository,
 					runs: group.length,
-					failed: group.filter((run) => FAILED.has(run.result)).length,
+					failed: group.filter((run) => CH.isCiFailedResult(run.result)).length,
 					p50DurationMs: quantile(durations, 0.5),
 					p95DurationMs: quantile(durations, 0.95),
 					lastResult: latest.result,
@@ -124,9 +117,12 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 						(run) => params.result === undefined || run.result === params.result,
 					)
 					const listed = matched.slice(0, params.limit)
-					const failedIds = listed.filter((run) => FAILED.has(run.result)).map((run) => run.traceId)
+					const failed = listed.filter((run) => CH.isCiFailedResult(run.result))
+					const failedIds = failed.map((run) => run.traceId)
+					// Jobs can be queued after the window ends: read them over the failed runs' own span.
+					const span = CH.ciRunsSpanMs(failed)
 					const failedJobs =
-						failedIds.length === 0
+						span === undefined
 							? []
 							: yield* executor.compiledQuery(
 									CH.compile(
@@ -134,7 +130,11 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 											traceIds: failedIds,
 											limit: failedIds.length * FAILED_JOBS_PER_RUN,
 										}),
-										window,
+										{
+											orgId: executor.orgId,
+											startTime: formatWarehouseDateTime(span.startMs),
+											endTime: formatWarehouseDateTime(span.endMs),
+										},
 									),
 									{ profile: "list", context: "ciFailedJobs" },
 								)
@@ -214,7 +214,7 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 			const redPipelines = output.pipelines.flatMap((p) =>
 				p.red === undefined ? [] : [{ ...p, red: p.red }],
 			)
-			const firstFailed = output.runs.find((run) => FAILED.has(run.result))
+			const firstFailed = output.runs.find((run) => CH.isCiFailedResult(run.result))
 			const next: Array<NextCall> = [
 				...redPipelines.flatMap((p) =>
 					p.red.lastGreenRevision === undefined ||

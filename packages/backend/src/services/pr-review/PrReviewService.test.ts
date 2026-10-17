@@ -2048,6 +2048,66 @@ describe("PrReviewService before-merge checklist", () => {
 	})
 })
 
+describe("PrReviewService privacy scan", () => {
+	const leaky: PullRequestFile = {
+		path: "apps/api/src/auth.ts",
+		previousPath: null,
+		status: "modified",
+		additions: 2,
+		deletions: 0,
+		patch: [
+			"@@ -1,1 +1,3 @@",
+			" export const login = (user: User) => {",
+			'+\tspan.setAttribute("user.email", user.email)',
+			'+\tlogger.warn("bad login", { password })',
+		].join("\n"),
+	}
+
+	it.effect("files what the diff writes to telemetry, unless the reviewer filed it on those lines", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						new PrReviewFinding({
+							path: "apps/api/src/auth.ts",
+							line: 3,
+							category: "security",
+							checkId: "PII-01",
+							severity: "critical",
+							title: "`password` from the login form is logged in clear",
+							body: "Every failed login writes the submitted password to the log.",
+						}),
+					]),
+				}),
+			)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.deepStrictEqual(
+				stored.report?.findings.map((finding) => [
+					finding.line,
+					finding.severity,
+					finding.checkId,
+					finding.title,
+				]),
+				[
+					[3, "critical", "PII-01", "`password` from the login form is logged in clear"],
+					[2, "warn", "PII-01", "Personal data `user.email` written to a span attribute"],
+				],
+			)
+			assert.include(
+				published[0]!.comments.map((comment) => comment.body).join("\n"),
+				"security · PII-01",
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { published, prFiles: [leaky] })))
+	})
+})
+
 describe("PrReviewService before-merge steps across pushes", () => {
 	const secretFile = (name: string): PullRequestFile => ({
 		path: "apps/api/src/env.ts",

@@ -7,6 +7,7 @@ export const DOCS = {
 	instrumentation: "/docs/instrumentation",
 	quickstart: "/docs/getting-started/quickstart",
 	otelConventions: "/docs/concepts/otel-conventions",
+	samplingThroughput: "/docs/concepts/sampling-throughput",
 	retention: "/docs/reference/retention",
 	traces: "/docs/explore/traces",
 	logs: "/docs/explore/logs",
@@ -45,6 +46,7 @@ export type DocsPage = keyof typeof DOCS
 
 const DOCS_ORIGIN = "https://maple.dev"
 
-export function docsUrl(page: DocsPage): string {
-	return `${DOCS_ORIGIN}${DOCS[page]}`
+/** `anchor` is a heading slug on that page, e.g. `trace-correlation`. */
+export function docsUrl(page: DocsPage, anchor?: string): string {
+	return `${DOCS_ORIGIN}${DOCS[page]}${anchor === undefined ? "" : `#${anchor}`}`
 }

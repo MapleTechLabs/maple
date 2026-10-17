@@ -1,0 +1,97 @@
+---
+/**
+ * 10 · GitHub — one pull request's life in three columns: the review before merge,
+ * the CI run as a trace, the check-in after the deploy.
+ *
+ * The step numbers mark a real sequence. The CI column crops the CI tab capture to
+ * its stat cards and runs chart: at a third of the shell the full frame is unreadable.
+ * Surface is `bg-bg` because every card is `--bg-deep`.
+ */
+import { getRelativeLocaleUrl } from "astro:i18n";
+import * as m from "../../paraglide/messages.js";
+import BrandMarkIcon from "../BrandMarkIcon.astro";
+import PostMergeComment from "../github/PostMergeComment.astro";
+import PrReviewComment from "../github/PrReviewComment.astro";
+
+const locale = Astro.currentLocale ?? "en";
+const featurePath = getRelativeLocaleUrl(locale, "/features/github");
+
+const steps = [
+	{ title: m.home_github_step_1_title(), body: m.home_github_step_1_body() },
+	{ title: m.home_github_step_2_title(), body: m.home_github_step_2_body() },
+	{ title: m.home_github_step_3_title(), body: m.home_github_step_3_body() },
+];
+---
+
+<section id="github" class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-32">
+		<div class="grid gap-6 lg:grid-cols-2 lg:items-end lg:gap-20">
+			<div>
+				<p class="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">
+					<BrandMarkIcon id="github" class="h-3 w-3" />
+					{m.home_github_eyebrow()}
+				</p>
+				<h2
+					class="mt-4 max-w-[20ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+				>
+					{m.home_github_title()}
+				</h2>
+			</div>
+			<div>
+				<p class="max-w-[58ch] text-sm leading-relaxed text-fg-muted">{m.home_github_lede()}</p>
+				<a href={featurePath} class="mt-5 inline-flex items-center gap-1.5 text-[13px] text-fg transition-colors hover:text-primary">
+					{m.home_github_link()}
+					<span class="text-primary" aria-hidden="true">→</span>
+				</a>
+			</div>
+		</div>
+
+		<ol class="mt-12 grid gap-10 md:mt-16 lg:grid-cols-3 lg:gap-6">
+			{
+				steps.map((step, index) => (
+					<li class="flex min-w-0 flex-col">
+						<div class="flex items-baseline gap-3 border-b border-border pb-3.5">
+							<span class="font-mono text-[11px] text-primary">{String(index + 1).padStart(2, "0")}</span>
+							<h3 class="text-base font-medium tracking-[-0.01em] text-fg">{step.title}</h3>
+						</div>
+						<p class="mt-3.5 text-[13px] leading-relaxed text-fg-muted lg:min-h-[4.5rem]">{step.body}</p>
+						<div class="mt-5">
+							{index === 0 && <PrReviewComment variant="compact" />}
+							{index === 1 && (
+								<div class="overflow-hidden rounded-xl border border-border bg-bg-deep">
+									<div class="ci-crop">
+										<img
+											src="/screenshots/surface-ci.webp"
+											alt="The CI tab's run count, success rate and p50 run time over a chart of runs by result per day"
+											width="2880"
+											height="1620"
+											loading="lazy"
+											decoding="async"
+										/>
+									</div>
+								</div>
+							)}
+							{index === 2 && <PostMergeComment variant="compact" />}
+						</div>
+					</li>
+				))
+			}
+		</ol>
+	</div>
+</section>
+
+<style>
+	/* The 1140 × 885 region of the 2880 × 1620 capture at (545, 385): stat cards and the runs chart. */
+	.ci-crop {
+		aspect-ratio: 1140 / 885;
+		overflow: hidden;
+	}
+	.ci-crop img {
+		display: block;
+		max-width: none;
+		width: calc(2880 / 1140 * 100%);
+		height: auto;
+		margin-left: calc(-545 / 1140 * 100%);
+		margin-top: calc(-385 / 1140 * 100%);
+	}
+</style>

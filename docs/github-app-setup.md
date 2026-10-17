@@ -110,8 +110,9 @@ On repositories where a Maple admin has switched on the pull request review, Map
 | **Pull requests**     | **Read and write** (reads the diff; posts the review as a comment, never an approval or block)                                          |
 | **Checks**            | **Read and write** (posts the `Maple / observability` check run on the head commit; without it the review is still posted as a comment) |
 | **Metadata**          | **Read-only** (GitHub pre-selects this and it is mandatory)                                                                             |
+| **Actions**           | **Read-only** (downloads each finished job's log for CI logs; without it CI traces still arrive but carry no logs)                      |
 
-> **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the review's row keeps a publish error and nothing appears on the pull request. To fix it, accept the permission request on GitHub (Settings → Applications → the App → Review request).
+> **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the review's row keeps a publish error and nothing appears on the pull request. CI logs behave the same way: until the installation accepts **Actions: Read**, GitHub refuses every job log download with `403 Resource not accessible by integration` and those repositories get traces without logs. To fix it, accept the permission request on GitHub (Settings → Applications → the App → Review request).
 
 3. Leave **Organization permissions** and **Account permissions** entirely at **No access**.
 
@@ -130,6 +131,8 @@ On repositories where a Maple admin has switched on the pull request review, Map
 | **Pull request**                | Link pull requests to error issues, and start the observability review on repositories that opted in. |
 | **Issue comment**               | Answer `@maple` mentions in a pull request's conversation.                                            |
 | **Pull request review comment** | Answer `@maple` mentions in a pull request's review threads.                                          |
+| **Workflow run**                | Write one trace per GitHub Actions run attempt (CI traces).                                           |
+| **Workflow job**                | Add each job and its steps to the run's trace, then download the job's log (CI logs).                 |
 
 > You do **not** need to (and cannot) subscribe to `installation` or `installation_repositories` here. GitHub always delivers those lifecycle events once the app is installed, and Maple handles them. The `ping` event GitHub sends on setup, and any other event, is accepted as a no-op.
 
@@ -255,10 +258,11 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 | Repository → Pull requests | Read and write                                   |
 | Repository → Checks        | Read and write                                   |
 | Repository → Metadata      | Read-only (mandatory)                            |
+| Repository → Actions       | Read-only (CI job logs)                          |
 
 ### Subscribed webhook events
 
-`Create`, `Delete`, `Push`, `Pull request`, `Issue comment`, `Pull request review comment`. (`installation` and `installation_repositories` are delivered automatically and need no subscription.)
+`Create`, `Delete`, `Push`, `Pull request`, `Issue comment`, `Pull request review comment`, `Workflow run`, `Workflow job`. (`installation` and `installation_repositories` are delivered automatically and need no subscription.)
 
 ---
 
@@ -269,6 +273,7 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 - **Webhook deliveries return `401` or signature errors.** The webhook secret in GitHub does not match `GITHUB_APP_WEBHOOK_SECRET`. Regenerate it, paste it into both places, and restart the API.
 - **Webhook deliveries return `404`.** The Webhook URL is wrong, or your Maple API isn't publicly reachable at `https://YOUR_MAPLE_DOMAIN`.
 - **`Connect GitHub` opens a GitHub 404.** `GITHUB_APP_SLUG` does not match the app's real slug (the last path segment of `https://github.com/settings/apps/<slug>`).
+- **CI traces arrive but have no logs.** The App lacks **Actions: Read**, or an installation has not accepted it yet. GitHub still delivers `workflow_job` webhooks without it, but answers every job log download with `403 Resource not accessible by integration`. Add the permission (Step 5) and have each installation accept the request.
 - **Private key errors when minting tokens.** The PEM was truncated or had its newlines stripped. Re-paste the full key, including the BEGIN/END lines, preserving line breaks.
 
 For the end-user description of what the integration does once configured, see [the GitHub integration doc](../apps/landing/src/content/docs/integrations/github.md).

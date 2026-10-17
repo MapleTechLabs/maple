@@ -24,7 +24,7 @@ Use the endpoint of your organization's [region](/docs/reference/regions). The e
 
 Any MCP client that speaks Streamable HTTP can connect. **Settings → MCP** in the dashboard shows the endpoint for your region and ready-made configuration for common clients. There are two ways to authenticate. Both are described in more detail on [Authentication](/docs/reference/authentication).
 
-**API key.** Create a key under **Settings → MCP** or **Settings → API Keys** and pass it as a Bearer token:
+**API key.** Create a key under **Settings → MCP** or **Settings → Keys** and pass it as a Bearer token:
 
 ```json
 {

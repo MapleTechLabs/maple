@@ -99,6 +99,7 @@ import {
 import { FindingEmbedder } from "./FindingEmbedder"
 import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
 import { POST_MERGE_FIRST_LOOK } from "./telemetry/post-merge"
+import { privacyFindings, withoutReviewerOverlap } from "./telemetry/privacy"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import {
 	buildChecklist,
@@ -125,6 +126,7 @@ import {
 	renderFollowUp,
 	renderIgnoredPaths,
 	resolvedByHandle,
+	SEVERITY_RANK,
 	threadForFinding,
 	type TrackedFinding,
 	withoutRepeats,
@@ -411,8 +413,6 @@ const renderConfigRules = (config: PrReviewRepositoryConfig | undefined): Readon
 		lines.push(`File findings only in these categories: ${config.categories.join(", ")}.`, "")
 	return lines
 }
-
-const SEVERITY_RANK = { info: 0, warn: 1, critical: 2 } as const satisfies Record<PrReviewSeverity, number>
 
 const severityLevel = (severity: PrReviewFinding["severity"]): PullRequestCheckAnnotation["level"] => {
 	switch (severity) {
@@ -1296,12 +1296,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 
 			/**
-			 * The reads behind the "before merge" checklist, at submit: the diff's candidates, and a
-			 * verdict for each name from a search of the default branch (5 hits, so a whole-word match
-			 * can be found among token matches). A failed search leaves the name unverified.
-			 * `undefined` when the files cannot be read; the review posts without diff steps.
+			 * The diff's reads at submit: the "before merge" candidates with a verdict for each name
+			 * from a search of the default branch (5 hits, so a whole-word match can be found among
+			 * token matches; a failed search leaves the name unverified), and the privacy scan.
+			 * `undefined` when the files cannot be read; the review posts without either.
 			 */
-			const mergeStepsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
+			const diffFactsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
 				Effect.gen(function* () {
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
@@ -1317,10 +1317,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							),
 						{ concurrency: 2 },
 					)
-					return { detected, verdicts: new Map<string, NameVerdict>(verdicts.flat()) }
+					return {
+						detected,
+						verdicts: new Map<string, NameVerdict>(verdicts.flat()),
+						privacy: privacyFindings(files),
+					}
 				}).pipe(
 					Effect.timeout("15 seconds"),
-					Effect.withSpan("PrReviewService.mergeStepsFor"),
+					Effect.withSpan("PrReviewService.diffFactsFor"),
 					Effect.catchCause((cause) =>
 						Effect.logWarning(
 							"[PrReview] could not read the diff for the before-merge steps",
@@ -2388,7 +2392,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						),
 						Option.isNone(repository)
 							? Effect.succeed(undefined)
-							: mergeStepsFor(orgId, repository.value, review.number),
+							: diffFactsFor(orgId, repository.value, review.number),
 					],
 					{ concurrency: "unbounded" },
 				)
@@ -2427,10 +2431,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const stillOpen = open.filter((finding) => !resolved.includes(finding))
 				// The model's findings weighed by production traffic, and the facts the service files
 				// itself. The repository's settings are enforced here, not only stated in the kickoff.
-				const allowed = [
+				const scanned = withoutReviewerOverlap(read?.privacy ?? [], request.report.findings)
+				const proposed = [
 					...weighByTraffic(request.report.findings, telemetry),
 					...telemetryFindings(telemetry),
-				].filter(
+					...scanned,
+				]
+				const allowed = proposed.filter(
 					(finding) =>
 						!pathIgnored(finding.path, config.ignorePaths) &&
 						(config.categories === undefined ||
@@ -2507,7 +2514,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.findings": report.findings.length,
 					"maple.pr_review.repeated": repeated,
 					"maple.pr_review.suppressed": feedback.suppressed.length,
-					"maple.pr_review.ignored": request.report.findings.length - allowed.length,
+					"maple.pr_review.ignored": proposed.length - allowed.length,
+					"maple.pr_review.privacy.scanned": read?.privacy.length ?? 0,
+					"maple.pr_review.privacy.filed": scanned.length,
 					"maple.pr_review.resolved": resolved.length,
 					"maple.pr_review.carried_open": stillOpen.length,
 					"maple.pr_review.coverage": report.coverage.length,

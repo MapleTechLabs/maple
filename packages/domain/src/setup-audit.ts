@@ -157,8 +157,11 @@ export interface AuditAttributeMapping {
 }
 
 export interface ConfigAuditInputs {
-	/** Null when the org has never received telemetry — gates the whole report. */
-	readonly firstDataReceivedAt: number | null
+	/**
+	 * Whether the org has ever received telemetry; gates the whole report. `absent` short-circuits to
+	 * `no_data`; `unavailable` (the warehouse could not answer) runs the config checks only.
+	 */
+	readonly telemetry: "present" | "absent" | "unavailable"
 	readonly alertRules: ReadonlyArray<AuditAlertRule>
 	readonly alertRuleStates: ReadonlyArray<AuditAlertRuleState>
 	readonly alertDestinations: ReadonlyArray<AuditAlertDestination>
@@ -395,7 +398,7 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 		category: "alerting",
 		title: "At least one notification destination is enabled",
 		severity: "critical",
-		fixHint: "Add a destination in Alerts → Destinations (Slack, PagerDuty, webhook, email, …).",
+		fixHint: "Add a destination in Alerts → Routing (Slack, PagerDuty, webhook, email, …).",
 		evaluate: ({ config }) =>
 			config.alertDestinations.some((destination) => destination.enabled)
 				? PASS
@@ -467,7 +470,7 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 		title: "Notification destinations delivered successfully on their last test",
 		severity: "warn",
 		fixHint:
-			"Re-test the destination in Alerts → Destinations; a stale webhook URL or revoked token is the usual cause.",
+			"Re-test the destination in Alerts → Routing; a stale webhook URL or revoked token is the usual cause.",
 		evaluate: ({ config }) => {
 			const failing = config.alertDestinations
 				.filter((destination) => destination.enabled && destination.lastTestError !== null)
@@ -555,7 +558,8 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		category: "notifications",
 		title: "New errors notify someone",
 		severity: "warn",
-		fixHint: "Settings → Notifications: enable error notifications and select at least one destination.",
+		fixHint:
+			"Error notifications have no settings screen yet. Ask the Maple MCP to run `update_error_notification_policy` with `enabled: true` and at least one enabled destination from Alerts → Routing.",
 		evaluate: ({ config }) => {
 			// A missing row means Maple's defaults apply: enabled, but with an empty destination list —
 			// which still routes nowhere, so the second arm below catches it.
@@ -580,7 +584,7 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		title: "Anomaly detection is enabled",
 		severity: "info",
 		fixHint:
-			"Settings → Automation: re-enable anomaly detection to get baseline-relative alerts without authoring rules.",
+			'Anomaly detection has no settings screen yet. Re-enable it with `PATCH /v2/anomalies/settings` and `{"enabled": true}` (org admin, `anomalies:write` scope) to get baseline-relative alerts without authoring rules.',
 		evaluate: ({ config }) =>
 			// Only an explicit opt-out counts; a missing row means the zero-config default (enabled).
 			config.anomalyDetector !== null && !config.anomalyDetector.enabled
@@ -709,7 +713,7 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 		title: "Bring-your-own ClickHouse is reachable",
 		severity: "critical",
 		fixHint:
-			"Settings → Data Platform: re-test the connection. Credentials, network policy and cluster health are the usual causes.",
+			"Settings → Data platform: re-test the connection. Credentials, network policy and cluster health are the usual causes.",
 		evaluate: ({ config }) => {
 			const clickhouse = config.clickhouse
 			if (clickhouse === null || clickhouse.syncStatus !== "error") return PASS
@@ -724,7 +728,7 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 		title: "Bring-your-own ClickHouse schema is up to date",
 		severity: "warn",
 		fixHint:
-			"Settings → Data Platform → Apply schema. Newer Maple features query tables the older schema doesn't have.",
+			"Settings → Data platform → Apply schema. Newer Maple features query tables the older schema doesn't have.",
 		evaluate: ({ config }) => {
 			const clickhouse = config.clickhouse
 			if (clickhouse === null) return PASS
@@ -1654,7 +1658,7 @@ const emptySummary: SetupAuditSummary = { critical: 0, warn: 0, info: 0, pass: 0
 export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 	const warehouseAvailable = inputs.warehouse !== undefined
 
-	if (inputs.config.firstDataReceivedAt === null) {
+	if (inputs.config.telemetry === "absent") {
 		return {
 			generatedAt: inputs.now,
 			dataStatus: "no_data",

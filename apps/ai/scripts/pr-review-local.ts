@@ -52,6 +52,7 @@ import {
 	detectMergeSteps,
 	type NameVerdict,
 } from "@maple/backend/services/pr-review/merge-checklist"
+import { privacyFindings, withoutReviewerOverlap } from "@maple/backend/services/pr-review/telemetry/privacy"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ConfigProvider, Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
@@ -1143,8 +1144,13 @@ export const reviewLocally = async (
 		reviewer: reviewerSteps ?? [],
 		isIgnored: () => false,
 	})
+	// The privacy scan the service files at submit, so a local run posts what production would.
 	const report = new PrReviewReport({
 		...submittedReport,
+		findings: [
+			...submittedReport.findings,
+			...withoutReviewerOverlap(privacyFindings(files), submittedReport.findings),
+		],
 		...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
 	})
 	const publication = buildPublication({

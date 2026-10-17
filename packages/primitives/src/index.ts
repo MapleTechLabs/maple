@@ -145,6 +145,10 @@ export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventI
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
 
+/** One MCP OAuth grant: the refresh-token family a connected client rotates through. */
+export const McpConnectionId = MapleUuidId("@maple/McpConnectionId", "MCP Connection ID")
+export type McpConnectionId = Schema.Schema.Type<typeof McpConnectionId>
+
 export const AgentFeedbackId = MapleUuidId("@maple/AgentFeedbackId", "Agent Feedback ID")
 export type AgentFeedbackId = Schema.Schema.Type<typeof AgentFeedbackId>
 
