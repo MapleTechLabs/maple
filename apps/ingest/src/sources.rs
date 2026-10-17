@@ -220,7 +220,14 @@ impl SourceRef {
 }
 
 /// The `sources.id` uuid behind a `src_` public id; `None` when it is not one.
+/// 17 bytes encode to at most 24 base58 characters, so no valid id is longer than this.
+pub(crate) const MAX_PUBLIC_ID_LEN: usize = PUBLIC_ID_PREFIX.len() + 24;
+
 pub(crate) fn source_uuid_from_public_id(public_id: &str) -> Option<String> {
+    // `base58_decode` is quadratic, so oversized sender input must never reach it.
+    if public_id.len() > MAX_PUBLIC_ID_LEN {
+        return None;
+    }
     let encoded = public_id.strip_prefix(PUBLIC_ID_PREFIX)?;
     let bytes = base58_decode(encoded)?;
     let (&version, uuid) = bytes.split_first()?;
@@ -423,6 +430,15 @@ mod tests {
             Some(&b"hello world"[..])
         );
         assert_eq!(base58_decode("112").as_deref(), Some(&[0, 0, 1][..]));
+    }
+
+    #[test]
+    fn oversized_public_ids_are_rejected_before_decoding() {
+        let long = format!("{PUBLIC_ID_PREFIX}{}", "z".repeat(10_000));
+        assert_eq!(source_uuid_from_public_id(&long), None);
+        let valid = public_source_id("0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b").unwrap();
+        assert!(valid.len() <= MAX_PUBLIC_ID_LEN);
+        assert!(source_uuid_from_public_id(&valid).is_some());
     }
 
     #[test]
