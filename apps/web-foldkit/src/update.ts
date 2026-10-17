@@ -106,7 +106,22 @@ const applyPage =
 		Option.match(
 			Option.filter(transition.outMessage, (out) => out._tag === "RequestedNamespacePin"),
 			{
-				onNone: () => writePage(transition)(model),
+				onNone: () =>
+					Option.match(
+						Option.filter(transition.outMessage, (out) => out._tag === "RequestedToast"),
+						{
+							onNone: () => writePage(transition)(model),
+							onSome: (out) =>
+								Update.combine([
+									writePage(transition),
+									addToast(
+										out._tag === "RequestedToast"
+											? { type: out.type, title: out.title, description: out.description }
+											: { title: "", description: "" },
+									),
+								])(model),
+						},
+					),
 				onSome: (out) =>
 					Update.combine([
 						writePage(transition),
@@ -137,10 +152,24 @@ const writePage =
 						isReplace ? ReplaceUrl({ url }) : NavigateInternal({ url }),
 					],
 					RequestedNamespacePin: () => [],
+					RequestedToast: () => [],
 				}),
 			}),
 		],
 	})
+
+/** A page's `RequestedToast`: `Toast.add` on the root's list. */
+const addToast =
+	(options: Toast.AddOptions): Step =>
+	(model) => {
+		const added = Toast.add(model.toasts, options)
+		return {
+			model: modifyFields(model, { toasts: () => added.model }),
+			commands: (added.commands ?? []).map(
+				Command.mapMessage((message: Toast.Message) => Message.GotToastMessage({ message })),
+			),
+		}
+	}
 
 /** Route entry or leave: the route's page is built, kept (same key) or dropped. */
 const loadPage: Step = (model) =>

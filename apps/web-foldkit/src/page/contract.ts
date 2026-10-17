@@ -35,6 +35,12 @@ export const PageOutMessage = defineMessageUnion({
 	RequestedNavigation: { url: Schema.String, isReplace: Schema.Boolean },
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
+	/** `toastManager.add`: the root owns the app-wide toast list. */
+	RequestedToast: {
+		type: Schema.Literals(["default", "success", "error", "info", "warning"]),
+		title: Schema.String,
+		description: Schema.String,
+	},
 })
 export type PageOutMessage = typeof PageOutMessage.Type
 

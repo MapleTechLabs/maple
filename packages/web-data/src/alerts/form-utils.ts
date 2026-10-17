@@ -1036,9 +1036,9 @@ const startOfDay = (ms: number, timeZone: string | undefined): number => {
 }
 
 /** Day-bucket heading: `Today` / `Yesterday` / `Jun 4, 2026`. */
-function formatAlertDayHeading(value: string, timeZone: string | undefined): string {
+function formatAlertDayHeading(value: string, timeZone: string | undefined, nowMs: number): string {
 	const date = new Date(value)
-	const today = startOfDay(Date.now(), timeZone)
+	const today = startOfDay(nowMs, timeZone)
 	const target = startOfDay(date.getTime(), timeZone)
 	if (target === today) return "Today"
 	// Any instant inside the previous day, so a 23- or 25-hour day still counts.
@@ -1088,6 +1088,8 @@ export interface DeliveryEventDayGroup {
 export function groupDeliveryEventsByDay(
 	events: ReadonlyArray<AlertDeliveryEventDocument>,
 	timeZone?: string,
+	/** "Today" is relative to this; callers with a pure view pass their clock. */
+	nowMs: number = Date.now(),
 ): DeliveryEventDayGroup[] {
 	const groups: DeliveryEventDayGroup[] = []
 	for (const event of events) {
@@ -1096,7 +1098,7 @@ export function groupDeliveryEventsByDay(
 		if (last && last.key === key) {
 			last.events.push(event)
 		} else {
-			groups.push({ key, label: formatAlertDayHeading(event.scheduledAt, timeZone), events: [event] })
+			groups.push({ key, label: formatAlertDayHeading(event.scheduledAt, timeZone, nowMs), events: [event] })
 		}
 	}
 	return groups

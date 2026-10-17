@@ -1,6 +1,7 @@
 import { Layer } from "effect"
 import { OrgCollections } from "../data/collections/org-collections"
 import { ServicesFacetsProbe } from "../data/services-facets-probe"
+import { SessionTenant } from "../data/session-tenant"
 import { WarehouseLive } from "../data/warehouse"
 import { ApiClientsLive } from "./api-clients"
 
@@ -13,6 +14,7 @@ export const ResourcesLive = Layer.mergeAll(
 	ApiClientsLive,
 	WarehouseLive,
 	OrgCollections.layer,
+	SessionTenant.layer,
 	ServicesFacetsProbe.layer.pipe(Layer.provide(WarehouseLive)),
 )
 export type Resources = Layer.Success<typeof ResourcesLive>
