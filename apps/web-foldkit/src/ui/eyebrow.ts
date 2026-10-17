@@ -7,7 +7,7 @@ export { eyebrowVariants }
 
 export interface EyebrowOptions<Message> {
 	readonly variant?: VariantProps<typeof eyebrowVariants>["variant"]
-	readonly as?: "span" | "div" | "h2" | "h3"
+	readonly as?: "span" | "div" | "p" | "h2" | "h3"
 	readonly className?: string
 	readonly attributes?: ReadonlyArray<Attribute<Message>>
 }
@@ -30,6 +30,8 @@ export const eyebrow = <Message>(
 			return h.h3(attributes, children)
 		case "div":
 			return h.div(attributes, children)
+		case "p":
+			return h.p(attributes, children)
 		default:
 			return h.span(attributes, children)
 	}

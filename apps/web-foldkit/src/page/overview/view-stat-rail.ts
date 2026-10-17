@@ -8,15 +8,27 @@ import { statFigure } from "../../ui/stat-figure"
 // `StatRail`, `StatRailItem`, `StatRailLoading` (apps/web/src/components/common/stat-rail.tsx), the
 // read-only tile only: no sparkline, no selectable button.
 
-/** `StatRail` with the default four columns. */
-export const statRail = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, isBusy?: boolean): Html =>
+const COLUMNS_CLASS = new Map<2 | 3 | 4 | 5, string>([
+	[2, "md:grid-cols-2"],
+	[3, "md:grid-cols-3"],
+	[4, "md:grid-cols-4"],
+	[5, "md:grid-cols-5"],
+])
+
+/** `StatRail`; four columns unless `columns` says otherwise. */
+export const statRail = <M>(
+	h: HtmlBuilder<M>,
+	children: ReadonlyArray<Html>,
+	isBusy?: boolean,
+	columns: 2 | 3 | 4 | 5 = 4,
+): Html =>
 	h.div(
 		[
 			...(isBusy === true ? [h.AriaBusy(true)] : []),
 			h.Class(
 				cn(
 					"grid grid-cols-2 divide-x divide-y divide-border rounded-md border bg-card md:divide-y-0",
-					"md:grid-cols-4",
+					COLUMNS_CLASS.get(columns),
 				),
 			),
 		],
@@ -33,10 +45,13 @@ export type StatRailItemOptions = Readonly<{
 	subline?: string
 	delay?: number
 	compact?: boolean
+	/** `sm`: tighter padding, a smaller value and no reserved spark slot. */
+	size?: "md" | "sm"
 }>
 
 export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions): Html => {
 	const delay = options.delay ?? 0
+	const isSmall = options.size === "sm"
 	const corner =
 		options.action ??
 		(options.delta === undefined
@@ -47,7 +62,9 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions)
 				))
 	return h.div(
 		[
-			h.Class("relative animate-in fade-in slide-in-from-bottom-1 duration-500 px-5 py-4"),
+			h.Class(
+				cn("relative animate-in fade-in slide-in-from-bottom-1 duration-500", isSmall ? "px-4 py-3" : "px-5 py-4"),
+			),
 			...(delay > 0
 				? [h.Style({ "animation-delay": `${delay}ms`, "animation-fill-mode": "backwards" })]
 				: []),
@@ -64,15 +81,15 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions)
 				],
 			),
 			h.div(
-				[h.Class("flex items-end justify-between gap-3 mt-2")],
+				[h.Class(cn("flex items-end justify-between gap-3", isSmall ? "mt-1.5" : "mt-2"))],
 				[
 					statFigure(h, {
 						value: options.value,
-						size: "lg",
+						size: isSmall ? "sm" : "lg",
 						className: "shrink-0",
 						valueClassName: cn(VALUE_TONE[options.tone ?? "neutral"]),
 					}),
-					...(options.compact === true ? [] : [h.div([h.Class("h-7 w-24 min-w-0 shrink")])]),
+					...(options.compact === true || isSmall ? [] : [h.div([h.Class("h-7 w-24 min-w-0 shrink")])]),
 				],
 			),
 			...(options.subline === undefined

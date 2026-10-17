@@ -18,6 +18,8 @@ export type SegmentedOption<T extends string> = Readonly<{
 	label: string
 	icon?: Html
 	ariaLabel?: string
+	/** `disabled`: shown, not selectable. */
+	isDisabled?: boolean
 }>
 
 export type SegmentedSelectConfig<T extends string, M> = Readonly<{
@@ -55,6 +57,7 @@ export const segmentedSelect = <T extends string, M>(
 				h,
 				{
 					isPressed: isSelected,
+					isDisabled: option.isDisabled,
 					onClick: config.onChange(option.value),
 					className: cn(
 						toggleVariants({
@@ -70,7 +73,7 @@ export const segmentedSelect = <T extends string, M>(
 					slot: "toggle",
 					tabIndex: isSelected ? 0 : -1,
 					attributes: [
-						h.AriaDisabled(false),
+						h.AriaDisabled(option.isDisabled ?? false),
 						h.AriaLabel(option.ariaLabel ?? option.label),
 						h.DataAttribute("size", groupSize),
 						h.DataAttribute("variant", "segment"),
