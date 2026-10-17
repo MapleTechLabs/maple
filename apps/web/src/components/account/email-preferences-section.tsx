@@ -148,6 +148,7 @@ function DigestPreferences({
 		),
 	)
 	const [save, isSaving] = useAsyncAction(async () => {
+		const submitted = draft
 		const ok = await upsert(
 			{
 				dayOfWeek: draft.dayOfWeek,
@@ -159,7 +160,7 @@ function DigestPreferences({
 			{ enabled },
 			{ success: "Email preferences saved", error: "Failed to save email preferences" },
 		)
-		if (ok) commit()
+		if (ok) commit({ submitted })
 	})
 
 	const busy = isTogglingOps || isTogglingWeb || isSaving
