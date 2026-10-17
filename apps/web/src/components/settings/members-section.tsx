@@ -199,6 +199,8 @@ export function MembersSection() {
 	const memberList = memberships?.data ?? []
 	const invitationList = invitations?.data ?? []
 	const columnCount = isAdmin ? 4 : 3
+	const membersLoading =
+		memberList.length === 0 && (memberships?.isLoading === true || memberships?.isFetching === true)
 
 	const inviteButton = isAdmin ? (
 		<Button size="sm" onClick={() => setInviteOpen(true)}>
@@ -228,6 +230,27 @@ export function MembersSection() {
 						</TableRow>
 					</TableHeader>
 					<TableBody>
+						{membersLoading &&
+							Array.from({ length: 3 }, (_, index) => (
+								<TableRow key={`skeleton-${index}`}>
+									<TableCell>
+										<div className="flex items-center gap-3">
+											<Skeleton className="size-6 rounded-full" />
+											<div className="space-y-1.5">
+												<Skeleton className="h-3 w-32" />
+												<Skeleton className="h-3 w-48" />
+											</div>
+										</div>
+									</TableCell>
+									<TableCell>
+										<Skeleton className="h-3 w-16" />
+									</TableCell>
+									<TableCell>
+										<Skeleton className="h-3 w-20" />
+									</TableCell>
+									{isAdmin && <TableCell />}
+								</TableRow>
+							))}
 						{memberList.map((member) => {
 							const userData = member.publicUserData
 							const isCurrentUser = userData?.userId === userId
