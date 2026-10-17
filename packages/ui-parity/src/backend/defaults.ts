@@ -145,6 +145,33 @@ export const defaultHandlers = new Map<string, EndpointHandler>(
 		}),
 		"anomalies.serviceCounts": constant(emptyList),
 		"investigations.list": constant(emptyList),
+		"mcpConnections.list": constant(emptyList),
+		// A slice of the public catalog (`apps/ai` `publicMcpToolCatalog`); the registry is the AI app's.
+		"mcpTools.list": constant({
+			tools: [
+				{
+					name: "find_errors",
+					title: "Find errors",
+					description: "Error groups by service.",
+					readOnly: true,
+					destructive: false,
+				},
+				{
+					name: "search_traces",
+					title: "Search traces",
+					description: "Traces matching filters.",
+					readOnly: true,
+					destructive: false,
+				},
+				{
+					name: "update_dashboard",
+					title: "Update dashboard",
+					description: "Change a dashboard's widgets.",
+					readOnly: false,
+					destructive: true,
+				},
+			],
+		}),
 		"alertDeliveries.list": constant(emptyList),
 		"sessionReplays.forTrace": constant(emptyList),
 		"dashboards.listShares": constant([]),

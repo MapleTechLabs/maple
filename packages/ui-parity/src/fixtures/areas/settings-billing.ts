@@ -181,6 +181,7 @@ const digest: EndpointHandler = (request) =>
 		email: acmeAdmin.email,
 		enabled: true,
 		dayOfWeek: 1,
+		sendHour: 9,
 		timezone: "Europe/London",
 		namespaces: [],
 		environments: ["production"],

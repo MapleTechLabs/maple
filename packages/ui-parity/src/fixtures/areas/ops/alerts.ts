@@ -87,6 +87,8 @@ const check = (dataset: Dataset, rule: RuleCondition, endMs: number) => {
 		consecutive_breaches: breachRun,
 		consecutive_healthy: breached ? 0 : 40,
 		incident_id: null,
+		// One tier per rule here, so a breach is at the rule's warning tier.
+		level: breached ? "warning" : null,
 		incident_transition: !breached
 			? "none"
 			: breachRun === 2
@@ -223,13 +225,29 @@ const preview: EndpointHandler = ({ dataset, payload }) => {
 		window_minutes: rule.windowMinutes,
 		threshold: rule.threshold,
 		threshold_upper: null,
+		thresholds: [
+			{
+				severity: "warning",
+				value: rule.threshold,
+				upper: null,
+				recovery_value: null,
+				destination_ids: [],
+			},
+		],
 		comparator: rule.comparator,
 		truncated_to_start: null,
 		series: [{ group_key: GROUP, points }],
 		would_fire:
 			firstFiring === undefined || lastFiring === undefined
 				? []
-				: [{ group_key: GROUP, start: firstFiring.bucket, end: lastFiring.bucket }],
+				: [
+						{
+							group_key: GROUP,
+							start: firstFiring.bucket,
+							end: lastFiring.bucket,
+							severity: "warning",
+						},
+					],
 	})
 }
 
