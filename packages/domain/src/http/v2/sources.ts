@@ -125,7 +125,7 @@ export const V2Source = Schema.Struct({
 	}),
 	last_used_at: Schema.NullOr(Timestamp).annotate({
 		description:
-			"When the gateway last accepted data from this source, updated at most once a minute. `null` if it never sent anything.",
+			"When the gateway last accepted data from this source, updated at most once a minute (every 5 minutes for the default source). `null` if it never sent anything.",
 	}),
 	rolled_at: Schema.NullOr(Timestamp).annotate({
 		description: "When the token was last rolled (or first created). `null` for sources without a token.",
