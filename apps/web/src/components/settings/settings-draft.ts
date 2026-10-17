@@ -31,15 +31,16 @@ export interface SettingsDraft<T> {
 	readonly discard: () => void
 	/**
 	 * Call after a successful save. Keeps showing the edits until the saved value catches up
-	 * (equals them, or changes at all), so the form does not flash back while the refetch lands.
+	 * (equals them or `sent`, or changes at all), so the form does not flash back while the
+	 * refetch lands. Pass `sent` when the save normalized the edits (trimmed, parsed).
 	 */
-	readonly commit: () => void
+	readonly commit: (sent?: T) => void
 }
 
 interface Edits<T> {
 	readonly value: T
-	/** Set by `commit()`: the saved value the save started from. */
-	readonly committedOver?: { readonly saved: T }
+	/** Set by `commit()`: the saved value the save started from and the value it sent. */
+	readonly committedOver?: { readonly saved: T; readonly sent: T }
 }
 
 /**
@@ -53,7 +54,9 @@ export function useSettingsDraft<T>(
 	const [edits, setEdits] = React.useState<Edits<T> | null>(null)
 	const settled =
 		edits?.committedOver !== undefined &&
-		(isEqual(edits.value, saved) || !isEqual(edits.committedOver.saved, saved))
+		(isEqual(edits.value, saved) ||
+			isEqual(edits.committedOver.sent, saved) ||
+			!isEqual(edits.committedOver.saved, saved))
 	// Render-phase reset: once the saved value caught up, committed edits are dropped for good.
 	if (settled) setEdits(null)
 	const active = settled ? null : edits
@@ -67,9 +70,14 @@ export function useSettingsDraft<T>(
 	)
 	const discard = React.useCallback(() => setEdits(null), [])
 	const commit = React.useCallback(
-		() =>
+		(sent?: T) =>
 			setEdits((current) =>
-				current === null ? null : { value: current.value, committedOver: { saved } },
+				current === null
+					? null
+					: {
+							value: current.value,
+							committedOver: { saved, sent: sent === undefined ? current.value : sent },
+						},
 			),
 		[saved],
 	)

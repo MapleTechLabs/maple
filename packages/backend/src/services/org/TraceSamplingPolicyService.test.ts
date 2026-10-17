@@ -1,5 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Ref, Schema } from "effect"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { OrgIngestSamplingPolicies } from "@maple/db/tables"
 import { OrgId, TraceSamplingPolicyUpdateRequest } from "@maple/domain/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -21,6 +23,46 @@ const interleavingDatabase = (testDb: TestDb) =>
 		Effect.map(Database, (database) =>
 			Database.of({ execute: (fn) => Effect.yieldNow.pipe(Effect.andThen(database.execute(fn))) }),
 		),
+	).pipe(Layer.provide(testDb.layer))
+
+// PGlite runs one transaction at a time, so a racing first insert is simulated: right after the
+// update's first statement (the lock that finds no row), another writer's row lands.
+const racingFirstInsertDatabase = (testDb: TestDb) =>
+	Layer.effect(
+		Database,
+		Effect.gen(function* () {
+			const database = yield* Database
+			const raced = yield* Ref.make(false)
+			return Database.of({
+				execute: (fn) =>
+					database.execute((db) =>
+						fn({
+							...db,
+							run: (query, params) =>
+								db.run(query, params).pipe(
+									Effect.tap(() =>
+										Ref.getAndSet(raced, true).pipe(
+											Effect.flatMap((done) =>
+												done
+													? Effect.void
+													: db.run(
+															PG.insertInto(OrgIngestSamplingPolicies).values({
+																orgId: ORG,
+																createdAt: 1,
+																updatedAt: 1,
+																traceSampleRatio: 0.3,
+																alwaysKeepErrorSpans: false,
+																alwaysKeepSlowSpansMs: 900,
+															}),
+														),
+											),
+										),
+									),
+								),
+						}),
+					),
+			})
+		}),
 	).pipe(Layer.provide(testDb.layer))
 
 describe("TraceSamplingPolicyService", () => {
@@ -111,6 +153,29 @@ describe("TraceSamplingPolicyService", () => {
 				assert.strictEqual(after.traceSampleRatio, 0.5)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		},
+	)
+
+	it.effect("audits the other writer's values when a first insert loses the race", () =>
+		Effect.gen(function* () {
+			const sampling = yield* TraceSamplingPolicyService
+			const { before, after } = yield* sampling.update(
+				ORG,
+				new TraceSamplingPolicyUpdateRequest({ traceSampleRatio: 0.6 }),
+			)
+
+			assert.strictEqual(before.traceSampleRatio, 0.3)
+			assert.isFalse(before.alwaysKeepErrorSpans)
+			assert.strictEqual(before.alwaysKeepSlowSpansMs, 900)
+			assert.strictEqual(after.traceSampleRatio, 0.6)
+			assert.isFalse(after.alwaysKeepErrorSpans)
+			assert.strictEqual(after.alwaysKeepSlowSpansMs, 900)
+		}).pipe(
+			Effect.provide(
+				TraceSamplingPolicyService.layer.pipe(
+					Layer.provide(racingFirstInsertDatabase(createTestDb(trackedDbs))),
+				),
+			),
+		),
 	)
 
 	it.effect("keeps both of two concurrent updates to disjoint fields", () =>
