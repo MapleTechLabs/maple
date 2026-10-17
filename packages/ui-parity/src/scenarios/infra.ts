@@ -27,8 +27,8 @@ const scenario = (
 	dataset,
 	viewports: ["desktop"],
 	themes: ["light", "dark"],
-	...(steps === undefined ? {} : { steps }),
-	...(pageCalls === undefined ? {} : { pageCalls }),
+	steps,
+	pageCalls,
 	area: "infra",
 })
 

@@ -24,7 +24,7 @@ const scenario = (
 	dataset,
 	viewports: ["desktop"],
 	themes: ["light", "dark"],
-	...(steps === undefined ? {} : { steps }),
+	steps,
 	area: "onboarding",
 })
 

@@ -1,6 +1,6 @@
 import { DateTime, Effect } from "effect"
 import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
-import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { parityOrgId, type FixtureWarehouse } from "../../backend/warehouse.ts"
 import type { EndpointHandler, EndpointRequest } from "../dataset.ts"
@@ -15,7 +15,7 @@ const DAY_MS = 86_400_000
 const BYTES_PER_BILLED_GB = 1_000_000_000
 
 const cycleOf = (request: EndpointRequest) => {
-	const now = Date.parse(request.dataset.now)
+	const now = parseWarehouseDateTime(request.dataset.now)
 	return { startMs: now - 10 * DAY, endMs: now + 20 * DAY }
 }
 
@@ -71,7 +71,7 @@ const invoices: EndpointHandler = (request) =>
 			status: "paid",
 			total: month === 1 ? 52.8 : month === 2 ? 47.1 : 39,
 			currency: "usd",
-			createdAt: Date.parse(request.dataset.now) - (10 + (month - 1) * 30) * DAY,
+			createdAt: parseWarehouseDateTime(request.dataset.now) - (10 + (month - 1) * 30) * DAY,
 			hostedInvoiceUrl: `https://invoice.stripe.test/i/in_parity_${month}`,
 		})),
 	})
@@ -132,10 +132,10 @@ const digest: EndpointHandler = (request) =>
 		timezone: "Europe/London",
 		namespaces: [],
 		environments: ["production"],
-		lastSentAt: Date.parse(request.dataset.now) - 3 * DAY,
+		lastSentAt: parseWarehouseDateTime(request.dataset.now) - 3 * DAY,
 		webAnalyticsEnabled: false,
-		createdAt: Date.parse(request.dataset.now) - 40 * DAY,
-		updatedAt: Date.parse(request.dataset.now) - 40 * DAY,
+		createdAt: parseWarehouseDateTime(request.dataset.now) - 40 * DAY,
+		updatedAt: parseWarehouseDateTime(request.dataset.now) - 40 * DAY,
 	})
 
 /** Tags no default answers; Billing and Notifications only render in Clerk builds. */

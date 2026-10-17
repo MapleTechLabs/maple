@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { latestSnapshotStatements } from "@maple/domain/generated/clickhouse-schema"
-import { CH, type QueryEngineBatchOutcome, type QueryEngineExecuteRequest } from "@maple/query-engine"
+import { CH, parseWarehouseDateTime, type QueryEngineBatchOutcome, type QueryEngineExecuteRequest } from "@maple/query-engine"
 import {
 	makeWarehouseExecutor,
 	WarehouseDriverError,
@@ -102,7 +102,7 @@ export const seedWarehouse = (seeds: ReadonlyArray<WarehouseSeed>): Effect.Effec
 				once(
 					`org:${seed.orgId}`,
 					Effect.forEach(TELEMETRY_TABLES, (table) => insertRows(chdb, table, seed.rows[table]), { discard: true }).pipe(
-						Effect.andThen(sealServiceMap(chdb, parityOrgId(seed.orgId), Date.parse(seed.now))),
+						Effect.andThen(sealServiceMap(chdb, parityOrgId(seed.orgId), parseWarehouseDateTime(seed.now))),
 					),
 				),
 			{ discard: true },

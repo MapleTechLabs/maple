@@ -1,4 +1,6 @@
-import { Clock, Effect, Layer } from "effect"
+import { parseWarehouseDateTime } from "@maple/query-engine"
+import { Clock, Effect } from "effect"
+import { V2InvalidCredentials } from "@maple/domain/http/v2"
 import { SignalPresenceService, type SignalPresence } from "@maple/backend/services/org/SignalPresenceService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { EndpointHandler } from "../../fixtures/dataset.ts"
@@ -33,13 +35,14 @@ const toV2Signal = (presence: SignalPresence) => ({
 
 export const telemetrySignalsEndpoint = (warehouse: FixtureWarehouse): EndpointHandler => {
 	const service = Effect.runSync(
-		SignalPresenceService.make.pipe(Effect.provide(Layer.succeed(WarehouseQueryService, warehouse.executor))),
+		SignalPresenceService.make.pipe(Effect.provideService(WarehouseQueryService, warehouse.executor)),
 	)
 	return ({ dataset }) =>
 		Effect.gen(function* () {
 			const tenant = tenantFor(dataset)
-			if (tenant === undefined) return yield* Effect.die("telemetrySignals.retrieve reached without a tenant")
-			const report = yield* service.read(tenant).pipe(Effect.provideService(Clock.Clock, frozenClock(Date.parse(dataset.now))))
+			// Signed out: answer like the API's v2 auth middleware.
+			if (tenant === undefined) return yield* V2InvalidCredentials.make()
+			const report = yield* service.read(tenant).pipe(Effect.provideService(Clock.Clock, frozenClock(parseWarehouseDateTime(dataset.now))))
 			return {
 				object: "telemetry_signals",
 				generated_at: iso(report.generatedAt),

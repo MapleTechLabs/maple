@@ -1,3 +1,4 @@
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { FixtureArea, RawRoute } from "../areas.ts"
 import type { Dataset } from "../dataset.ts"
 import { defaultDataset } from "../datasets/default.ts"
@@ -66,7 +67,7 @@ const history: RawRoute = {
 	tag: "chat.history",
 	answer: ({ dataset, url, method }) => {
 		if (method !== "GET" || !HISTORY_PATH.test(url.pathname)) return undefined
-		const messages = dataset.name === CHAT_CONVERSATION_DATASET ? conversation(Date.parse(dataset.now)) : []
+		const messages = dataset.name === CHAT_CONVERSATION_DATASET ? conversation(parseWarehouseDateTime(dataset.now)) : []
 		return Response.json({ messages, cursor: messages.length === 0 ? 0 : 40, running: false })
 	},
 }

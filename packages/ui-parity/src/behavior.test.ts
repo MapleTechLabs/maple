@@ -1,8 +1,9 @@
+import type { Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { diffCallLogs } from "./behavior.ts"
 import type { CallLogEntry } from "./contract.ts"
 
-const call = (tag: string, payload: unknown = {}): CallLogEntry => ({ tag, payload })
+const call = (tag: string, payload: Schema.Json = {}): CallLogEntry => ({ tag, payload })
 
 describe("diffCallLogs ignore", () => {
 	const legacy = [call("integrations.cloudflareStatus"), call("warehouse:abc", { q: 1 }), call("shape:alert_rules")]

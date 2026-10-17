@@ -1,3 +1,4 @@
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Effect, Predicate } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import type { FixtureArea } from "../areas.ts"
@@ -12,7 +13,13 @@ import { acmeAdmin, DAY, fixtureUuid, MINUTE } from "../identity.ts"
 /** Only Acme (self-hosted `default` or Clerk `settings-clerk`) has integrations configured. */
 export const isAcme = (request: EndpointRequest): boolean => request.dataset.identity?.orgId === acmeAdmin.orgId
 
-const iso = (request: EndpointRequest, agoMs: number) => new Date(Date.parse(request.dataset.now) - agoMs).toISOString()
+const iso = (request: EndpointRequest, agoMs: number) => new Date(parseWarehouseDateTime(request.dataset.now) - agoMs).toISOString()
+
+/** Acme's Slack connector carries the linked user's identity; other orgs' has none. */
+const withSlackIdentity = <A extends object>(request: EndpointRequest, connector: A) =>
+	isAcme(request)
+		? { ...connector, identity: { external_user_id: "U02ADALOVE", display_name: "ada", created_at: iso(request, 20 * DAY) } }
+		: connector
 
 const list = (data: ReadonlyArray<unknown>) => ({ object: "list", data, has_more: false, next_cursor: null })
 
@@ -83,17 +90,14 @@ const connectors: EndpointHandler = (request) =>
 				workspaces: [],
 				supports_identity: true,
 			},
-			{
+			withSlackIdentity(request, {
 				id: "slack",
 				object: "chat_connector",
 				name: "Slack",
 				available: true,
 				workspaces: isAcme(request) ? [slackWorkspace(request)] : [],
 				supports_identity: true,
-				...(isAcme(request)
-					? { identity: { external_user_id: "U02ADALOVE", display_name: "ada", created_at: iso(request, 20 * DAY) } }
-					: {}),
-			},
+			}),
 		],
 	})
 

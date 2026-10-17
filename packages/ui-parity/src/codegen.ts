@@ -19,12 +19,12 @@ type Element = DefaultTreeAdapterMap["element"]
 const DROPPED_ATTRIBUTES = new Set<string>([])
 const isGeneratedId = (name: string, value: string) => name === "id" && /^base-ui-|^_r_|«r|^:r/.test(value)
 
-const SVG_CASE: Record<string, string> = {
-	clippath: "clipPath",
-	lineargradient: "linearGradient",
-	radialgradient: "radialGradient",
-	foreignobject: "foreignObject",
-}
+const SVG_CASE = new Map([
+	["clippath", "clipPath"],
+	["lineargradient", "linearGradient"],
+	["radialgradient", "radialGradient"],
+	["foreignobject", "foreignObject"],
+])
 
 const quote = (value: string) => JSON.stringify(value)
 
@@ -48,7 +48,7 @@ const renderNode = (node: Node, depth: number, hoisted: ReadonlyMap<string, stri
 	}
 	if (!("tagName" in node)) return undefined
 	const element = node as Element
-	const tag = SVG_CASE[element.tagName] ?? element.tagName
+	const tag = SVG_CASE.get(element.tagName) ?? element.tagName
 	const attributes = element.attrs
 		.filter((attr) => !DROPPED_ATTRIBUTES.has(attr.name) && !isGeneratedId(attr.name, attr.value))
 		.map((attr) => {

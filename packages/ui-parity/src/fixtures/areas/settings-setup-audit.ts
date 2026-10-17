@@ -8,7 +8,7 @@ import {
 	type TraceCompletenessInputs,
 	type WarehouseAuditInputs,
 } from "@maple/domain/setup-audit"
-import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { parityOrgId, type FixtureWarehouse } from "../../backend/warehouse.ts"
 import type { EndpointHandler, EndpointRequest, SyncedRow } from "../dataset.ts"
@@ -35,7 +35,7 @@ const nullableText = (row: SyncedRow, key: string): string | null => {
 }
 const epochMs = (row: SyncedRow, key: string): number | null => {
 	const value = row[key]
-	return typeof value === "string" ? Date.parse(value) : typeof value === "number" ? value : null
+	return typeof value === "string" ? parseWarehouseDateTime(value) : typeof value === "number" ? value : null
 }
 const stringList = (row: SyncedRow, key: string): ReadonlyArray<string> => {
 	const value = row[key]
@@ -170,12 +170,14 @@ const warehouseInputs = (warehouse: FixtureWarehouse, request: EndpointRequest, 
 		return inputs
 	})
 
-const PUBLIC_ID_PREFIX_BY_KIND: Partial<Record<AuditAffectedEntity["kind"], PublicIdPrefix>> = {
+const PUBLIC_ID_PREFIX_BY_KIND = new Map(
+	Object.entries({
 	alert_rule: PublicIdPrefixes.alertRule,
 	alert_destination: PublicIdPrefixes.alertDestination,
 	attribute_mapping: PublicIdPrefixes.attributeMapping,
 	scrape_target: PublicIdPrefixes.scrapeTarget,
-}
+	} satisfies Partial<Record<AuditAffectedEntity["kind"], PublicIdPrefix>>),
+)
 
 const toV2 = (report: SetupAuditReport) => ({
 	object: "setup_audit",
@@ -192,7 +194,7 @@ const toV2 = (report: SetupAuditReport) => ({
 		status: check.status,
 		detail: check.detail,
 		affected: check.affected.map((entity) => {
-			const prefix = PUBLIC_ID_PREFIX_BY_KIND[entity.kind]
+			const prefix = PUBLIC_ID_PREFIX_BY_KIND.get(entity.kind)
 			return {
 				kind: entity.kind,
 				id: prefix !== undefined && entity.id !== undefined ? encodePublicId(prefix, entity.id) : null,
@@ -211,7 +213,7 @@ export const setupAuditEndpoint =
 	(warehouse: FixtureWarehouse): EndpointHandler =>
 	(request) =>
 		Effect.gen(function* () {
-			const now = Date.parse(request.dataset.now)
+			const now = parseWarehouseDateTime(request.dataset.now)
 			const telemetry = yield* warehouseInputs(warehouse, request, now).pipe(
 				Effect.catchCause(() => Effect.succeed(undefined)),
 			)

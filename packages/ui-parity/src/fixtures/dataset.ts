@@ -9,6 +9,7 @@ export interface EndpointRequest {
 	readonly params: unknown
 	readonly query: unknown
 	/** Adds an entry to this capture's call log (execute-batch logs one per warehouse query). */
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- any decoded request part; the call log parses it to JSON
 	readonly record: (tag: string, payload: unknown) => void
 }
 

@@ -44,7 +44,7 @@ export const fixtureAreas: ReadonlyArray<FixtureArea> = await loadFixtureAreas()
 type SyncedTables = Partial<Record<SyncedTableName, ReadonlyArray<SyncedRow>>>
 
 const mergeSynced = (into: SyncedTables, extra: SyncedTables): SyncedTables => {
-	const merged: SyncedTables = { ...into }
+	const merged = { ...into } satisfies SyncedTables
 	for (const [table, rows] of entries(extra)) merged[table] = [...(into[table] ?? []), ...rows]
 	return merged
 }

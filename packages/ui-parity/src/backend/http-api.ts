@@ -1,4 +1,4 @@
-import { Effect, Layer, Option, Predicate, Schema } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import type { Etag, HttpPlatform } from "effect/http"
@@ -39,6 +39,7 @@ interface ReflectedApi {
 interface ReflectedHandlers {
 	readonly handle: (
 		identifier: string,
+		// oxlint-disable-next-line anti-slop/no-unknown-parameters -- reflected over every endpoint: the request is per-endpoint wire data, decoded by HandlerRequest
 		handler: (request: unknown) => Effect.Effect<unknown, unknown, HttpRouter.Provided>,
 	) => ReflectedHandlers
 }
@@ -97,8 +98,14 @@ const wireRequest = Effect.gen(function* () {
 	}
 })
 
-const field = (value: unknown, key: string): unknown =>
-	Predicate.hasProperty(value, key) ? value[key] : undefined
+/** The decoded parts of a handler request the fixtures read; their contents stay wire JSON. */
+const HandlerRequest = Schema.Struct({
+	payload: Schema.optionalKey(Schema.Unknown),
+	params: Schema.optionalKey(Schema.Unknown),
+	query: Schema.optionalKey(Schema.Unknown),
+})
+const decodeHandlerRequest = Schema.decodeUnknownOption(HandlerRequest)
+const NO_PARTS = Schema.decodeUnknownSync(HandlerRequest)({})
 
 const unmockedResponse = (tag: string) =>
 	HttpServerResponse.jsonUnsafe(
@@ -112,6 +119,7 @@ const successDecoder = (endpoint: ReflectedEndpoint) => {
 	const [only, ...rest] = schemas
 	const schema = only !== undefined && rest.length === 0 ? only : Schema.Union(schemas)
 	// SAFETY: @maple/domain success schemas need no decoding services; `Top` only widens R to unknown.
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- the decoder's input is the fixture's wire JSON by definition
 	return Schema.decodeUnknownEffect(schema) as (input: unknown) => Effect.Effect<unknown, Schema.SchemaError>
 }
 
@@ -130,11 +138,12 @@ const genericHandler = (options: ApiServerOptions, group: ReflectedGroup, endpoi
 				return unmockedResponse(tag)
 			}
 			if (logged) options.calls.record(capture, tag, yield* wireRequest)
+			const parts = Option.getOrElse(decodeHandlerRequest(request), () => NO_PARTS)
 			const answer = respond({
 				dataset,
-				payload: field(request, "payload"),
-				params: field(request, "params"),
-				query: field(request, "query"),
+				payload: parts.payload,
+				params: parts.params,
+				query: parts.query,
 				record: (entryTag, payload) => options.calls.record(capture, entryTag, payload),
 			})
 			return yield* decodeSuccess(yield* answer).pipe(

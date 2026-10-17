@@ -1,3 +1,5 @@
+import type { Page } from "playwright"
+
 /**
  * Browser-side determinism, installed with `page.addInitScript` before any app code.
  * Serialized via `toString`, so it must be self-contained.
@@ -8,11 +10,18 @@
  * - intervals run at most once per frame: a `setInterval(fn)` (0 ms) keep-alive would otherwise run
  *   back to back under the frozen clock, starving every other timer
  */
+declare global {
+	interface Window {
+		/** Set by `installDeterminism`, called by `reseedRandom`. */
+		__parityReseed?: (next: number) => void
+	}
+}
+
 export const installDeterminism = (seed: number) => {
 	let state = seed >>> 0
 	// Steps call this (via `reseedRandom`) right before an action whose output is random, so the
 	// result depends on that action alone, not on how many incidental draws (span ids...) came first.
-	;(window as unknown as { __parityReseed: (next: number) => void }).__parityReseed = (next) => {
+	window.__parityReseed = (next) => {
 		state = next >>> 0
 	}
 	Math.random = () => {
@@ -103,6 +112,8 @@ export const waitForVisualQuiet = async ({ quietMs, timeoutMs }: { quietMs: numb
 	const canvasHash = (canvas: HTMLCanvasElement) => {
 		if (!canvas.width || !canvas.height) return "0"
 		let data: string
+		// Serialized into the page, so no Effect runtime; toDataURL throws on a tainted canvas.
+		// oxlint-disable-next-line maple/no-try-catch
 		try {
 			data = canvas.toDataURL()
 		} catch {
@@ -152,10 +163,7 @@ export const waitForVisualQuiet = async ({ quietMs, timeoutMs }: { quietMs: numb
 }
 
 /** Restart the seeded `Math.random` sequence. Use right before a step whose visible output is random. */
-export const reseedRandom = (
-	page: { evaluate: (fn: (seed: number) => void, seed: number) => Promise<unknown> },
-	seed = 0x5eed,
-) =>
+export const reseedRandom = (page: Pick<Page, "evaluate">, seed = 0x5eed): Promise<void> =>
 	page.evaluate((next) => {
-		;(window as unknown as { __parityReseed: (value: number) => void }).__parityReseed(next)
+		window.__parityReseed?.(next)
 	}, seed)

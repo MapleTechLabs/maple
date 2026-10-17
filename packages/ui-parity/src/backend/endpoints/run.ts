@@ -45,7 +45,7 @@ export const warehouseEndpoint =
 			const executor = warehouse.executor
 			const context: WarehouseContext = {
 				tenant,
-				nowMs: Date.parse(dataset.now),
+				nowMs: parseWarehouseDateTime(dataset.now),
 				warehouse,
 				runQuery: (def, input) => runQueryDefinition(executor, def, tenant, input),
 				runQueryFirst: (def, input) =>

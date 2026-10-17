@@ -1,3 +1,4 @@
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Effect, Predicate } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ONBOARDING_CHECKLIST_STEP_IDS, ONBOARDING_OPTIONAL_STEP_IDS } from "@maple/domain/onboarding-checklist"
@@ -16,7 +17,7 @@ import { setupAuditEndpoint } from "./settings-setup-audit.ts"
  * Acme gets populated answers, every other org the empty ones.
  */
 
-const iso = (request: EndpointRequest, agoMs: number) => new Date(Date.parse(request.dataset.now) - agoMs).toISOString()
+const iso = (request: EndpointRequest, agoMs: number) => new Date(parseWarehouseDateTime(request.dataset.now) - agoMs).toISOString()
 const list = (data: ReadonlyArray<unknown>) => ({ object: "list", data, has_more: false, next_cursor: null })
 
 const DESTINATION_ID = fixtureUuid(1, 1)
@@ -142,7 +143,7 @@ const schemaDiff: EndpointHandler = () =>
 
 const applySchemaStatus: EndpointHandler = (request) => {
 	const done = isAcme(request)
-	const finishedAt = Date.parse(request.dataset.now) - 6 * DAY
+	const finishedAt = parseWarehouseDateTime(request.dataset.now) - 6 * DAY
 	return Effect.succeed({
 		status: done ? "succeeded" : "idle",
 		phase: null,
@@ -215,14 +216,14 @@ const openRouterKey: EndpointHandler = (request) =>
 		updatedBy: isAcme(request) ? acmeAdmin.userId : null,
 	})
 
-const STEP_TITLES: Readonly<Record<(typeof ONBOARDING_CHECKLIST_STEP_IDS)[number], string>> = {
+const STEP_TITLES = {
 	send_telemetry: "Send your first telemetry",
 	connect_github: "Connect GitHub",
 	create_alert_rule: "Create an alert rule",
 	connect_mcp_agent: "Connect an AI agent over MCP",
 	invite_teammate: "Invite a teammate",
 	join_slack_channel: "Join a shared Slack channel",
-}
+} as const satisfies Record<(typeof ONBOARDING_CHECKLIST_STEP_IDS)[number], string>
 
 /** An established org redeemed its onboarding credit long ago. */
 const onboardingChecklist: EndpointHandler = (request) => {

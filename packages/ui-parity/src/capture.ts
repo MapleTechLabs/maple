@@ -215,11 +215,14 @@ const handleRoute = (context: RouteContext) => async (route: Route) => {
 	return route.continue({
 		headers: {
 			...request.headers(),
-			...(context.dataset ? { [DATASET_HEADER]: context.dataset.name } : {}),
+			...datasetHeader(context.dataset),
 			[CAPTURE_HEADER]: context.captureKey,
 		},
 	})
 }
+
+const datasetHeader = (dataset: DatasetSummary | undefined): Record<string, string> =>
+	dataset === undefined ? {} : { [DATASET_HEADER]: dataset.name }
 
 const installSession = async (page: Page, theme: ThemeName, authMode: AuthMode, dataset: DatasetSummary | undefined) => {
 	await page.addInitScript(installDeterminism, SEED)
@@ -231,8 +234,8 @@ const installSession = async (page: Page, theme: ThemeName, authMode: AuthMode, 
 const readClerkUnknown = (page: Page) =>
 	page
 		.evaluate(() => {
-			const accesses: unknown = Reflect.get(window, "__parityClerkUnknown")
-			return accesses instanceof Set ? [...accesses].map(String) : []
+			const accesses = window.__parityClerkUnknown
+			return accesses === undefined ? [] : [...accesses]
 		})
 		.catch(() => [])
 
@@ -298,10 +301,9 @@ const captureVariant = async (browser: Browser, options: CaptureOptions, dir: st
 	await installSession(page, variant.theme, authMode, dataset)
 	await page.route("**/*", handleRoute({ build, backend: options.backend, dataset, captureKey, blocked, localUnmocked }))
 
-	let error: string | undefined
 	let clerkUnknown: ReadonlyArray<string> = []
 	const backendUnmocked: string[] = []
-	try {
+	const capture = async () => {
 		await page.goto(`${CANONICAL_ORIGIN}${variant.scenario.path}`, { waitUntil: "load" })
 		await settle(page, { quietMs: 400, timeoutMs: 8000 })
 		if (variant.scenario.steps) {
@@ -331,10 +333,15 @@ const captureVariant = async (browser: Browser, options: CaptureOptions, dir: st
 		writeFileSync(join(dir, `${variant.id}.json`), JSON.stringify({ ...snapshot, ...file }))
 		writeFileSync(join(dir, `${variant.id}.html`), await page.evaluate(serializeDom))
 		if (authMode === "clerk") clerkUnknown = await readClerkUnknown(page)
-	} catch (cause) {
-		error = errorMessage(cause)
-		await page.screenshot({ path: join(dir, `${variant.id}.png`) }).catch(() => undefined)
 	}
+	// A failed step still leaves a screenshot of where it stopped.
+	const error = await capture().then(
+		() => undefined,
+		async (cause: unknown) => {
+			await page.screenshot({ path: join(dir, `${variant.id}.png`) }).catch(() => undefined)
+			return errorMessage(cause)
+		},
+	)
 	await context.close()
 	// Late calls (after the screenshot) and the backend's own unmocked list, then forgotten.
 	const unmocked = [...localUnmocked, ...backendUnmocked, ...(options.backend?.takeCalls(captureKey).unmocked ?? [])]

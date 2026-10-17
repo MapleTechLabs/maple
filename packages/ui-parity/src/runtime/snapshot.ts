@@ -108,9 +108,10 @@ export const collectSnapshot = (input: {
 		let node: Element | null = element
 		while (node && node !== document.body && parts.length < 6) {
 			const parent: Element | null = node.parentElement
-			let part = node.tagName.toLowerCase()
+			const tagName = node.tagName
+			let part = tagName.toLowerCase()
 			if (parent) {
-				const siblings = [...parent.children].filter((child) => child.tagName === node!.tagName)
+				const siblings = [...parent.children].filter((child) => child.tagName === tagName)
 				if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`
 			}
 			parts.unshift(part)
@@ -228,12 +229,13 @@ export const serializeDom = (): string => {
 			.map((attr) => (attr.value === "" ? ` ${attr.name}` : ` ${attr.name}="${escape(attr.value)}"`))
 			.join("")
 		const children = [...element.childNodes]
-		const onlyText = children.length === 1 && children[0]!.nodeType === Node.TEXT_NODE
+		const [firstChild] = children
+		const onlyText = children.length === 1 && firstChild?.nodeType === Node.TEXT_NODE
 		if (VOID.has(element.tagName)) lines.push(`${indent}<${tag}${attrs}>`)
 		else if (children.length === 0) lines.push(`${indent}<${tag}${attrs}></${tag}>`)
 		else if (onlyText)
 			lines.push(
-				`${indent}<${tag}${attrs}>${escape(children[0]!.textContent?.replace(/\s+/g, " ").trim() ?? "")}</${tag}>`,
+				`${indent}<${tag}${attrs}>${escape(firstChild?.textContent?.replace(/\s+/g, " ").trim() ?? "")}</${tag}>`,
 			)
 		else {
 			lines.push(`${indent}<${tag}${attrs}>`)

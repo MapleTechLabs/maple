@@ -37,7 +37,7 @@ interface SessionPlan {
 	readonly turns: ReadonlyArray<TurnPlan>
 }
 
-const TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = {
+const TOOL_DESCRIPTIONS = new Map(Object.entries({
 	Read: "Reads a file from the local filesystem.",
 	Grep: "Searches file contents with a regular expression.",
 	Edit: "Performs exact string replacements in a file.",
@@ -49,7 +49,7 @@ const TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = {
 	apply_credit: "Applies an account credit to the next invoice.",
 	web_search: "Searches the web and returns the top results.",
 	fetch_url: "Downloads a page and returns its readable text.",
-}
+} satisfies Record<string, string>))
 
 const read = (path: string, ms = 40): ToolStep => ({ name: "Read", args: { file_path: path }, result: `(${path}: 182 lines)`, ms })
 const grep = (pattern: string, ms = 120): ToolStep => ({ name: "Grep", args: { pattern, path: "apps/checkout" }, result: "3 matches in 2 files", ms })
@@ -247,23 +247,23 @@ const SESSIONS: ReadonlyArray<SessionPlan> = [
 ]
 
 /** USD per million input / output tokens, roughly list price. */
-const PRICES: Readonly<Record<string, readonly [number, number]>> = {
+const PRICES = new Map(Object.entries({
 	"claude-opus-4-1": [15, 75],
 	"claude-sonnet-4-5": [3, 15],
 	"claude-haiku-4-5": [1, 5],
 	"gpt-5-mini": [0.25, 2],
 	"gpt-4.1": [2, 8],
 	"gemini-2.5-pro": [1.25, 10],
-}
+} satisfies Record<string, readonly [number, number]>))
 
-const PROVIDERS: Readonly<Record<string, string>> = {
+const PROVIDERS = new Map(Object.entries({
 	"claude-opus-4-1": "anthropic",
 	"claude-sonnet-4-5": "anthropic",
 	"claude-haiku-4-5": "anthropic",
 	"gpt-5-mini": "openai",
 	"gpt-4.1": "openai",
 	"gemini-2.5-pro": "gcp.gemini",
-}
+} satisfies Record<string, string>))
 
 interface Sink {
 	readonly orgId: string
@@ -333,7 +333,7 @@ const emitTurn = (sink: Sink, session: SessionPlan, turn: TurnPlan, index: numbe
 	const { rng } = sink
 	const traceId = rng.hex(32)
 	const rootId = rng.hex(16)
-	const [inPrice, outPrice] = PRICES[turn.model] ?? [1, 1]
+	const [inPrice, outPrice] = PRICES.get(turn.model) ?? [1, 1]
 	const history = session.turns.slice(0, index).flatMap((earlier) => [text("user", earlier.prompt), text("assistant", earlier.answer)])
 	const llm = (startAt: number, final: boolean): number => {
 		const durationUs = rng.int(900, 4200) * 1000
@@ -355,7 +355,7 @@ const emitTurn = (sink: Sink, session: SessionPlan, turn: TurnPlan, index: numbe
 			...(failed && turn.llmError !== undefined ? { error: turn.llmError } : undefined),
 			attributes: {
 				"gen_ai.operation.name": "chat",
-				"gen_ai.provider.name": PROVIDERS[turn.model] ?? "openai",
+				"gen_ai.provider.name": PROVIDERS.get(turn.model) ?? "openai",
 				"gen_ai.request.model": turn.model,
 				"gen_ai.response.model": turn.model,
 				"gen_ai.input.messages": JSON.stringify([text("system", `You are ${session.agent}.`), ...history, text("user", turn.prompt)]),
@@ -400,13 +400,13 @@ const emitTurn = (sink: Sink, session: SessionPlan, turn: TurnPlan, index: numbe
 				"gen_ai.tool.name": step.name,
 				"gen_ai.tool.call.id": `call_${index}_${call}`,
 				"gen_ai.tool.type": "function",
-				"gen_ai.tool.description": TOOL_DESCRIPTIONS[step.name] ?? "",
+				"gen_ai.tool.description": TOOL_DESCRIPTIONS.get(step.name) ?? "",
 				"gen_ai.tool.call.arguments": JSON.stringify(step.args),
 				"gen_ai.tool.call.result": JSON.stringify(step.error ?? step.result),
 				"maple_ai.llm_call": "0",
 				"maple_ai.tool_call": "1",
 				"maple_ai.tool.name": step.name,
-				"maple_ai.tool.description": TOOL_DESCRIPTIONS[step.name] ?? "",
+				"maple_ai.tool.description": TOOL_DESCRIPTIONS.get(step.name) ?? "",
 				...(step.error === undefined ? undefined : { "maple_ai.tool.error_result": step.error }),
 			},
 		})

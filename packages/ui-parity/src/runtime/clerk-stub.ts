@@ -40,6 +40,13 @@ export const clerkIdentityFor = (dataset: DatasetSummary): ClerkStubIdentity | n
 }
 
 /** `null` installs a signed-out Clerk: no client session, no user, no organization. */
+declare global {
+	interface Window {
+		/** Clerk members the app read that the stub lacks; `capture.ts` reports them. */
+		__parityClerkUnknown?: Set<string>
+	}
+}
+
 export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 	const noop = () => {}
 	const asyncNoop = async () => {}
@@ -168,7 +175,7 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 	const { client, session, user, organization } = resources
 	const listeners = new Set<(r: typeof resources) => void>()
 
-	const base: Record<string, unknown> = {
+	const base = {
 		loaded: true,
 		status: "ready",
 		version: "parity-stub",
@@ -221,13 +228,15 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 		/^(__internal_|mount|unmount|open|close|navigate|handle)/.test(prop)
 
 	const unknownAccesses = new Set<string>()
-	Reflect.set(window, "__parityClerkUnknown", unknownAccesses)
+	window.__parityClerkUnknown = unknownAccesses
 	const clerk = new Proxy(base, {
 		get(target, prop, receiver) {
 			if (typeof prop === "string" && prop !== "then" && !(prop in target)) {
 				if (isNoopMethod(prop)) return asyncNoop
 				unknownAccesses.add(prop)
 			}
+			// The standard Proxy forwarding idiom: the trap's `prop` is any key the app reads.
+			// oxlint-disable-next-line anti-slop/no-reflect-get
 			return Reflect.get(target, prop, receiver)
 		},
 	})

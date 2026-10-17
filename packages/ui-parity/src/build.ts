@@ -61,8 +61,10 @@ export const buildTarget = async (name: TargetName, options: BuildOptions = {}) 
 	const config = viteWrapperConfig(appDir, resolve(outDir, "empty-env"))
 	console.log(`[build] ${name}${pinned ? ` @ ${pinned.sha.slice(0, 12)}` : ""} (${authMode}) -> ${dest}`)
 
-	const env: Record<string, string | undefined> = { ...process.env, ...buildEnv(authMode), NODE_ENV: "production" }
-	for (const key of STRIPPED_ENV) delete env[key]
+	const stripped = new Set<string>(STRIPPED_ENV)
+	const env = Object.fromEntries(
+		Object.entries({ ...process.env, ...buildEnv(authMode), NODE_ENV: "production" }).filter(([key]) => !stripped.has(key)),
+	)
 	await $`${resolve(appDir, "node_modules/.bin/vite")} build --config ${config} --outDir ${dest} --emptyOutDir`
 		.cwd(appDir)
 		.env(env)

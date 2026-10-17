@@ -129,7 +129,11 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 			const answer = route.answer({ dataset, url, method: request.method })
 			if (answer === undefined) continue
 			if (!acceptsBearer(dataset, bearerOf(request))) return Response.json({ message: "Unauthorized" }, { status: 401 })
-			calls.record(capture, route.tag, { path: url.pathname, ...(url.search ? { query: Object.fromEntries(url.searchParams) } : {}) })
+			calls.record(
+				capture,
+				route.tag,
+				url.search ? { path: url.pathname, query: Object.fromEntries(url.searchParams) } : { path: url.pathname },
+			)
 			return answer
 		}
 		return undefined

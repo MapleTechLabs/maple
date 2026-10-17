@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { ariaRole } from "./behavior.ts"
@@ -91,8 +92,8 @@ export const buildSummary = (input: {
 	candidateResults: ReadonlyArray<CaptureResult>
 }): RunSummary => {
 	const totals = { identical: 0, pass: 0, fail: 0, missing: 0 }
-	const variants = input.variants.map((variant, index) => {
-		const comparison = input.comparisons[index]!
+	// compareRun builds `comparisons` from `variants` index for index, so zip loses nothing.
+	const variants = Arr.zip(input.variants, input.comparisons).map(([variant, comparison]) => {
 		totals[comparison.status]++
 		return {
 			variant: {

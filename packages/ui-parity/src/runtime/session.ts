@@ -14,7 +14,7 @@ const TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000
  */
 export const selfHostedTokenFor = (dataset: DatasetSummary): string | null => {
 	if (dataset.identity === null) return null
-	const encode = (value: object) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url")
+	const encode = (value: Readonly<Record<string, string | number>>) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url")
 	const exp = Math.floor((new Date(dataset.now).getTime() + TOKEN_LIFETIME_MS) / 1000)
 	const claims = { sub: dataset.identity.userId, org_id: dataset.identity.orgId, dataset: dataset.name, exp }
 	return `${encode({ alg: "HS256", typ: "JWT" })}.${encode(claims)}.parity-fixture`

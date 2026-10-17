@@ -301,7 +301,7 @@ const cloudflareUsage =
 	(warehouse: FixtureWarehouse, connected: boolean): EndpointHandler =>
 	({ dataset }) =>
 		Effect.gen(function* () {
-			const now = Date.parse(dataset.now)
+			const now = parseWarehouseDateTime(dataset.now)
 			const windowStart = now - USAGE_WINDOW_MS
 			const empty = { windowStart, windowEnd: now, bucketSeconds: USAGE_BUCKET_SECONDS, totalRequests: 0, previousTotalRequests: 0, firewallBlockedEvents: 0, services: [] }
 			if (!connected || dataset.identity === null) return empty
@@ -376,13 +376,13 @@ const connectedEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string
 })
 
 /** Connection state the shared defaults answer as not connected: overridden for this org only. */
-const connectionState: Readonly<Record<string, EndpointHandler>> = {
+const connectionState = {
 	"integrations.cloudflareStatus": constant(cloudflareStatus),
 	"integrations.railwayStatus": constant(railwayStatus),
 	"planetscaleIntegration.status": constant(planetscaleStatus),
 	"planetscaleIntegration.databases": constant(planetscaleDatabases),
 	"gcpIntegration.status": constant(gcpStatus),
-}
+} satisfies Readonly<Record<string, EndpointHandler>>
 
 /**
  * What every other org reads. Tags the shared backend already answers keep exactly that answer
@@ -406,12 +406,10 @@ const byDataset = (warehouse: FixtureWarehouse): Readonly<Record<string, Endpoin
 	const connected = connectedEndpoints(warehouse)
 	const other = otherOrgEndpoints(warehouse)
 	return Object.fromEntries(
-		Object.keys(other).map((tag) => {
-			const mine = connected[tag] ?? other[tag]
-			const theirs = other[tag]
+		Object.entries(other).map(([tag, theirs]) => {
+			const mine = connected[tag] ?? theirs
 			const handler: EndpointHandler = (request) =>
-				(request.dataset.name === INFRA_INTEGRATIONS_DATASET ? mine : theirs)?.(request) ??
-				Effect.die(`infra-integrations: no handler for ${tag}`)
+				(request.dataset.name === INFRA_INTEGRATIONS_DATASET ? mine : theirs)(request)
 			return [tag, handler]
 		}),
 	)

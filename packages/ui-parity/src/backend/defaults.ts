@@ -1,3 +1,4 @@
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { detectAiModel } from "@maple/ai-model-catalog"
 import { Effect, Schema } from "effect"
 import {
@@ -93,7 +94,7 @@ const disconnectedPlanetScale = {
 const billingCustomer: EndpointHandler = ({ dataset }) =>
 	Effect.succeed({
 		id: dataset.identity?.orgId ?? "org_parity_signed_out",
-		subscriptions: [{ planId: "startup", status: "active", currentPeriodStart: Date.parse(dataset.now) - 10 * DAY, currentPeriodEnd: Date.parse(dataset.now) + 20 * DAY }],
+		subscriptions: [{ planId: "startup", status: "active", currentPeriodStart: parseWarehouseDateTime(dataset.now) - 10 * DAY, currentPeriodEnd: parseWarehouseDateTime(dataset.now) + 20 * DAY }],
 	})
 
 /** Fixed fake keys: the settings page shows them masked, and they must not change run to run. */
@@ -102,8 +103,8 @@ const ingestKeys: EndpointHandler = ({ dataset }) =>
 		object: "ingest_keys",
 		public_key: `maple_pk_parity_${dataset.name}`,
 		private_key: `maple_sk_parity_${dataset.name}`,
-		public_rotated_at: new Date(Date.parse(dataset.now) - 30 * DAY).toISOString(),
-		private_rotated_at: new Date(Date.parse(dataset.now) - 30 * DAY).toISOString(),
+		public_rotated_at: new Date(parseWarehouseDateTime(dataset.now) - 30 * DAY).toISOString(),
+		private_rotated_at: new Date(parseWarehouseDateTime(dataset.now) - 30 * DAY).toISOString(),
 	})
 
 

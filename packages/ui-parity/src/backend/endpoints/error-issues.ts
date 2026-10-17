@@ -2,7 +2,7 @@ import { DateTime, Effect, Predicate, Schema } from "effect"
 import { ErrorIssueNotFoundError, ErrorsByTypeRequest } from "@maple/domain/http"
 import { V2ErrorIssue, V2ErrorIssueDetail } from "@maple/domain/http/v2"
 import { ErrorIssueId } from "@maple/domain/primitives"
-import { CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { Queries } from "@maple/query-engine/registry"
 import { runQueryDefinition } from "@maple/query-engine/runtime"
 import type { Dataset, EndpointHandler } from "../../fixtures/dataset.ts"
@@ -25,7 +25,7 @@ const WORKFLOW = ["triage", "in_progress", "todo"] as const
 const SEVERITY = ["critical", "high", "medium"] as const
 
 const windowOf = (dataset: Dataset) => {
-	const endMs = Date.parse(dataset.now)
+	const endMs = parseWarehouseDateTime(dataset.now)
 	return { startTime: formatWarehouseDateTime(endMs - DAY_MS), endTime: formatWarehouseDateTime(endMs) }
 }
 
@@ -89,7 +89,7 @@ const str = (value: unknown, key: string): string | undefined => {
 	return typeof field === "string" ? field : undefined
 }
 const toWarehouse = (iso: string | undefined, fallback: string) =>
-	iso === undefined ? fallback : formatWarehouseDateTime(Date.parse(iso))
+	iso === undefined ? fallback : formatWarehouseDateTime(parseWarehouseDateTime(iso))
 
 /** `list` filters the hub sends: fingerprint ranking, view state, service and kind. */
 const matches = (query: unknown) => (issue: SeededIssue) => {

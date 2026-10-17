@@ -1,3 +1,4 @@
+import { Array as Arr, type Schema } from "effect"
 import type { CallLogEntry } from "./contract.ts"
 
 /**
@@ -19,42 +20,42 @@ export const PRESENCE_ONLY_CALLS: ReadonlyArray<string> = [
 	"auth.session",
 ]
 
+const isJsonArray = (value: Schema.Json | undefined): value is Schema.JsonArray => Array.isArray(value)
+const isJsonObject = (value: Schema.Json | undefined): value is Schema.JsonObject =>
+	typeof value === "object" && value !== null && !Array.isArray(value)
+
 const matches = (list: ReadonlyArray<string>, key: string) => list.some((prefix) => key.startsWith(prefix))
 
 // Version-4 ids are minted by the app (`crypto.randomUUID`); fixture ids are deterministic.
 const RANDOM_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 /** Sorted keys, app-minted ids replaced by a placeholder, so equal payloads serialize equally. */
-const normalize = (value: unknown): unknown => {
+const normalize = (value: Schema.Json): Schema.Json => {
 	if (typeof value === "string") return RANDOM_UUID.test(value) ? "<random-uuid>" : value
-	if (Array.isArray(value)) return value.map(normalize)
-	if (value && typeof value === "object")
+	if (isJsonArray(value)) return value.map(normalize)
+	if (isJsonObject(value))
 		return Object.fromEntries(
-			Object.keys(value)
-				.sort()
-				.map((key) => [key, normalize(Reflect.get(value, key))]),
+			Object.entries(value)
+				.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+				.map(([key, field]) => [key, normalize(field)]),
 		)
 	return value
 }
 
 /** First path where two normalized values differ: `.content`, `.attachmentIds[1]`, `` for the root. */
-const firstDifference = (a: unknown, b: unknown, path = ""): string | undefined => {
+const firstDifference = (a: Schema.Json | undefined, b: Schema.Json | undefined, path = ""): string | undefined => {
 	if (JSON.stringify(a) === JSON.stringify(b)) return undefined
-	if (Array.isArray(a) && Array.isArray(b)) {
+	if (isJsonArray(a) && isJsonArray(b)) {
 		for (let index = 0; index < Math.max(a.length, b.length); index++) {
 			const found = firstDifference(a[index], b[index], `${path}[${index}]`)
 			if (found !== undefined) return found
 		}
 		return path
 	}
-	if (a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b)) {
+	if (isJsonObject(a) && isJsonObject(b)) {
 		const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()
 		for (const key of keys) {
-			const found = firstDifference(
-				Reflect.get(a, key),
-				Reflect.get(b, key),
-				`${path}.${key}`,
-			)
+			const found = firstDifference(a[key], b[key], `${path}.${key}`)
 			if (found !== undefined) return found
 		}
 	}
@@ -121,11 +122,8 @@ export const diffCallLogs = (
 		else {
 			const { onlyBaseline, onlyCandidate } = unmatched(a, b)
 			if (a.length !== b.length) lines.push(`${key} sent ${b.length}×, ${a.length}× in baseline`)
-			for (let index = 0; index < Math.min(onlyBaseline.length, onlyCandidate.length); index++) {
-				const path = firstDifference(
-					JSON.parse(onlyBaseline[index]!),
-					JSON.parse(onlyCandidate[index]!),
-				)
+			for (const [baselinePayload, candidatePayload] of Arr.zip(onlyBaseline, onlyCandidate)) {
+				const path = firstDifference(JSON.parse(baselinePayload), JSON.parse(candidatePayload))
 				lines.push(`${key} payload differs at ${path || "(root)"}`)
 			}
 		}

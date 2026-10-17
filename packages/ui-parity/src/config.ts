@@ -63,11 +63,11 @@ export interface Target {
 	readonly pinned: boolean
 }
 
-export const targets: Readonly<Record<TargetName, Target>> = {
+export const targets = {
 	legacy: { name: "legacy", port: PORT_BASE + 1, appDir: "apps/web", pinned: true },
 	foldkit: { name: "foldkit", port: PORT_BASE + 2, appDir: "apps/web-foldkit", pinned: false },
 	"legacy-head": { name: "legacy-head", port: PORT_BASE + 4, appDir: "apps/web", pinned: false },
-}
+} as const satisfies Readonly<Record<TargetName, Target>>
 
 export const isTargetName = (value: string): value is TargetName => Object.hasOwn(targets, value)
 

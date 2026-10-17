@@ -164,20 +164,22 @@ const platformPods = (nowMicros: number, startMicros: number): ReadonlyArray<Pod
 	},
 ]
 
-const podResource = (pod: PodSpec): Attributes => ({
-	...(pod.service === undefined ? {} : { "service.name": pod.service }),
-	"k8s.cluster.name": CLUSTER,
-	"k8s.namespace.name": pod.namespace,
-	"k8s.node.name": pod.node,
-	"k8s.pod.name": pod.name,
-	"k8s.pod.uid": uidOf(pod.name),
-	"k8s.pod.qos_class": pod.qos,
-	"k8s.pod.start_time": new Date(pod.fromMicros / 1000).toISOString(),
-	"deployment.environment.name": "production",
-	"cloud.provider": "aws",
-	"cloud.region": "us-east-1",
-	...pod.owner,
-})
+const podResource = (pod: PodSpec): Attributes => {
+	const base = {
+		"k8s.cluster.name": CLUSTER,
+		"k8s.namespace.name": pod.namespace,
+		"k8s.node.name": pod.node,
+		"k8s.pod.name": pod.name,
+		"k8s.pod.uid": uidOf(pod.name),
+		"k8s.pod.qos_class": pod.qos,
+		"k8s.pod.start_time": new Date(pod.fromMicros / 1000).toISOString(),
+		"deployment.environment.name": "production",
+		"cloud.provider": "aws",
+		"cloud.region": "us-east-1",
+		...pod.owner,
+	}
+	return pod.service === undefined ? base : { "service.name": pod.service, ...base }
+}
 
 const emitPod = (sink: Sink, rng: Prng, pod: PodSpec, micros: number) => {
 	const resource = podResource(pod)
@@ -194,7 +196,9 @@ const emitPod = (sink: Sink, rng: Prng, pod: PodSpec, micros: number) => {
 	const containerName = Object.values(pod.owner)[0] ?? pod.name
 	gauge(
 		sink,
-		{ ...resource, "k8s.container.name": containerName, ...(restarts > 0 ? { "k8s.container.status.last_terminated_reason": "OOMKilled" } : {}) },
+		restarts > 0
+			? { ...resource, "k8s.container.name": containerName, "k8s.container.status.last_terminated_reason": "OOMKilled" }
+			: { ...resource, "k8s.container.name": containerName },
 		"k8sclusterreceiver",
 		"k8s.container.restarts",
 		"{restart}",
@@ -236,14 +240,14 @@ const emitReplicas = (sink: Sink, nowMicros: number, micros: number) => {
 
 const emitNodes = (sink: Sink, rng: Prng, pods: ReadonlyArray<PodSpec>, nowMicros: number, micros: number) =>
 	INFRA_NODES.forEach((node, index) => {
-		const resource: Attributes = {
+		const resource = {
 			"k8s.cluster.name": CLUSTER,
 			"k8s.node.name": node,
 			"k8s.node.uid": uidOf(node),
 			"k8s.kubelet.version": "v1.31.4-eks-aeac579",
 			"container.runtime": "containerd",
 			"deployment.environment.name": "production",
-		}
+		} satisfies Attributes
 		const podCores = pods
 			.filter((pod) => pod.node === node && micros >= pod.fromMicros && micros <= pod.toMicros)
 			.reduce((total, pod) => total + pod.cpuCores, 0)
@@ -265,7 +269,7 @@ const CONTAINERS = [
 /** A Docker Compose host outside the cluster; ci-worker runs hot and restarted twice. */
 const emitContainers = (sink: Sink, rng: Prng, startMicros: number, micros: number) =>
 	CONTAINERS.forEach((container, index) => {
-		const resource: Attributes = {
+		const resource = {
 			"container.name": `ci-stack-${container.service}-1`,
 			"container.id": hashHex(container.service, 64),
 			"container.image.name": container.image,
@@ -274,7 +278,7 @@ const emitContainers = (sink: Sink, rng: Prng, startMicros: number, micros: numb
 			"compose.service": container.service,
 			"host.name": "build-runner-01",
 			"deployment.environment.name": "staging",
-		}
+		} satisfies Attributes
 		const cpu = Math.min(99, container.cpu * rng.spread(0.25))
 		const memoryPct = Math.min(99, container.memory * rng.spread(0.05))
 		const limitBytes = (index + 1) * 2 * GIB

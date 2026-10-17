@@ -20,15 +20,15 @@ import { spawnBackend } from "./testing.ts"
 const window = { startTime: "2026-09-30 12:00:00", endTime: "2026-10-01 12:00:00" }
 const ERROR_TRACE_ID = "6843a8853182b32339b2dd5120d423f2"
 
-const backend: { current?: Awaited<ReturnType<typeof spawnBackend>> } = {}
+const backends: Array<Awaited<ReturnType<typeof spawnBackend>>> = []
 beforeAll(async () => {
-	backend.current = await spawnBackend()
+	backends.push(await spawnBackend())
 }, 60_000)
-afterAll(() => backend.current?.stop())
+afterAll(() => Promise.all(backends.map((backend) => backend.stop())))
 
 /** Asks twice: both answers must be 200, byte-identical, and decode with the endpoint's schema. */
 const answer = async <A, I>(schema: Schema.Codec<A, I>, path: string, body?: unknown) => {
-	const request = backend.current?.request ?? (() => Promise.reject(new Error("backend not started")))
+	const request = backends[0]?.request ?? (() => Promise.reject(new Error("backend not started")))
 	const first = await request("default", path, body)
 	const second = await request("default", path, body)
 	expect(first.status).toBe(200)

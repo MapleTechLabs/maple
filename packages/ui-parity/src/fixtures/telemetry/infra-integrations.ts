@@ -227,26 +227,26 @@ const planetscaleSlot = (sink: Sink, orgId: string, slot: number, micros: number
 	)
 
 /** One value per kept metric label, as the poller would store after Cloud Monitoring's reduction. */
-const GCP_LABEL_VALUES: Readonly<Record<string, string>> = {
+const GCP_LABEL_VALUES = new Map(Object.entries({
 	response_code_class: "2xx",
 	state: "active",
 	status: "ok",
 	database: "orders",
 	source: "heap",
 	response_class: "ack",
-}
+} satisfies Record<string, string>))
 
 /** Metrics whose unit-based magnitude would read as an incident. */
-const GCP_VALUE_OVERRIDES: Readonly<Record<string, (load: number) => number>> = {
+const GCP_VALUE_OVERRIDES = new Map(Object.entries({
 	"gcp.cloud_sql.postgresql.deadlocks": () => 0,
 	"gcp.cloud_sql.disk.usage": () => 38 * GIB,
 	"gcp.cloud_sql.disk.limit": () => 100 * GIB,
 	"gcp.cloud_sql.postgresql.temp_file.io": (load) => load * 4_000_000,
-}
+} satisfies Record<string, (load: number) => number>))
 
 /** A plausible magnitude per metric unit, scaled by load. */
 const gcpValue = (name: string, unit: string, load: number, index: number) => {
-	const override = GCP_VALUE_OVERRIDES[name]
+	const override = GCP_VALUE_OVERRIDES.get(name)
 	if (override !== undefined) return override(load)
 	if (unit === "1") return 0.12 + 0.5 * load
 	if (unit === "s") return 0.04 + 0.2 * load
@@ -266,7 +266,7 @@ const gcpSlot = (sink: Sink, orgId: string, slot: number, micros: number) =>
 		const seen = new Set<string>()
 		gcpInfraMetrics(workload.source).forEach((metric, metricIndex) => {
 			const attributes = {
-				...Object.fromEntries(metric.labels.map((label) => [gcpMetricLabelAttribute(label), GCP_LABEL_VALUES[label] ?? "default"])),
+				...Object.fromEntries(metric.labels.map((label) => [gcpMetricLabelAttribute(label), GCP_LABEL_VALUES.get(label) ?? "default"])),
 				...metric.attributes,
 			}
 			const key = `${metric.name}|${JSON.stringify(attributes)}`

@@ -56,7 +56,7 @@ const status: EndpointHandler = () =>
 	})
 
 /** Unknown shas are dropped from the bulk read and 404 on the single read, as the API does. */
-export const acmeGithubEndpoints: Readonly<Record<string, EndpointHandler>> = {
+export const acmeGithubEndpoints = {
 	"integrations.githubStatus": status,
 	"integrations.vcsCommitDetails": ({ query }) => {
 		const shas = field(query, "shas").split(",")
@@ -70,4 +70,4 @@ export const acmeGithubEndpoints: Readonly<Record<string, EndpointHandler>> = {
 			? Effect.fail(new VcsCommitNotFoundError({ message: `Commit ${sha} not found`, sha }))
 			: Effect.succeed(commitOf(release))
 	},
-}
+} satisfies Readonly<Record<string, EndpointHandler>>

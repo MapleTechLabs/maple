@@ -227,7 +227,10 @@ const hostEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string, End
 	),
 	"queryEngine.hostInfraTimeseries": warehouseEndpoint(warehouse, HostInfraTimeseriesRequest, HostInfraTimeseriesResponse, (payload, { runQuery }) => {
 		const spec = hostMetricSpec(payload.metric)
-		const meta = { unit: spec.unit, ...(spec.groupByAttributeKey === undefined ? {} : { groupByAttributeKey: spec.groupByAttributeKey }) }
+		const meta =
+			spec.groupByAttributeKey === undefined
+				? { unit: spec.unit }
+				: { unit: spec.unit, groupByAttributeKey: spec.groupByAttributeKey }
 		return spec.isNetwork
 			? Effect.map(runQuery(ApiQueries.hostInfraNetworkTimeseries, payload), (rows) =>
 					new HostInfraTimeseriesResponse({

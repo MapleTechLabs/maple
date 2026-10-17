@@ -96,8 +96,7 @@ export const startBackendIfPresent = async (): Promise<FixtureBackend | null> =>
 		console.log("[backend] src/backend/index.ts not found: running with a null backend (API calls 404)")
 		return null
 	}
-	const module: unknown = await import(BACKEND_MODULE)
-	const start = typeof module === "object" && module !== null ? Reflect.get(module, "startBackend") : undefined
+	const { startBackend: start }: { readonly startBackend?: unknown } = await import(BACKEND_MODULE)
 	if (!isStartBackend(start)) throw new Error("ui-parity: src/backend/index.ts must export startBackend")
 	return start({ apiPort: FIXTURE_BACKEND_PORT, electricPort: FIXTURE_ELECTRIC_PORT })
 }

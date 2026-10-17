@@ -100,7 +100,8 @@ const findRegions = (diff: Buffer, width: number, height: number): Array<Omit<Re
 				(diff[i] === 255 && diff[i + 1] === 0 && diff[i + 2] === 0) ||
 				(diff[i] === 0 && diff[i + 1] === 200 && diff[i + 2] === 0)
 			) {
-				cells[Math.floor(y / CELL) * cols + Math.floor(x / CELL)]!++
+				const cell = Math.floor(y / CELL) * cols + Math.floor(x / CELL)
+				cells[cell] = (cells[cell] ?? 0) + 1
 			}
 		}
 	}
@@ -115,11 +116,10 @@ const findRegions = (diff: Buffer, width: number, height: number): Array<Omit<Re
 			pixels = 0
 		const stack = [start]
 		seen[start] = 1
-		while (stack.length) {
-			const cell = stack.pop()!
+		for (let cell = stack.pop(); cell !== undefined; cell = stack.pop()) {
 			const c = cell % cols
 			const r = Math.floor(cell / cols)
-			pixels += cells[cell]!
+			pixels += cells[cell] ?? 0
 			minC = Math.min(minC, c)
 			maxC = Math.max(maxC, c)
 			minR = Math.min(minR, r)
@@ -182,7 +182,7 @@ export const diffSnapshots = (baseline: DomSnapshot, candidate: DomSnapshot) => 
 			.filter((prop) => base.styles[prop] !== cand.styles[prop])
 			.map((prop) => ({
 				prop,
-				baseline: base.styles[prop]!,
+				baseline: base.styles[prop] ?? "(unset)",
 				candidate: cand.styles[prop] ?? "(unset)",
 			}))
 		const isMoved = Object.values(moved).some((value) => Math.abs(value) > POSITION_TOLERANCE)

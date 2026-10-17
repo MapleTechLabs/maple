@@ -3,6 +3,8 @@
  * backend (backend/*, fixtures/*). Both sides import only this file from each other.
  */
 
+import type { Schema } from "effect"
+
 /** Dataset chosen per request; the capture side sets it on every request it lets through. */
 export const DATASET_HEADER = "x-parity-dataset"
 /** Capture id, so the backend can attribute each call to one variant's call log. */
@@ -13,7 +15,7 @@ export interface CallLogEntry {
 	/** `"<group>.<endpoint>"` for HttpApi endpoints, `"warehouse:<query fingerprint>"` for each query inside an execute-batch, `"shape:<table>"` for Electric. */
 	readonly tag: string
 	/** Decoded payload / url params / query, normalized (sorted keys, random UUIDs replaced). */
-	readonly payload: unknown
+	readonly payload: Schema.Json
 }
 
 export interface DatasetIdentity {
