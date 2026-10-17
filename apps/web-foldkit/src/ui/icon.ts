@@ -18,6 +18,8 @@ export type IconOptions<Message> = Readonly<{
 	style?: Readonly<Record<string, string>>
 	/** Props spread onto the React `<svg>` after its defaults (`aria-label`, `role`, `data-*`). */
 	attributes?: ReadonlyArray<Attribute<Message>>
+	/** Root attributes the call site sets to `undefined` (`aria-hidden={undefined}`). */
+	removedAttributes?: ReadonlyArray<string>
 }>
 
 const renderNode = <Message>(
@@ -27,6 +29,7 @@ const renderNode = <Message>(
 	size: string,
 ): Html => {
 	const own = attributes.flatMap(([name, value]): ReadonlyArray<Attribute<Message>> => {
+		if (options.removedAttributes?.includes(name) === true) return []
 		if (value === ICON_CLASS_MARK)
 			return options.className === undefined || options.className === ""
 				? []

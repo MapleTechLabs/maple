@@ -26,6 +26,10 @@ export interface TabsViewInputs {
 	readonly labels: ReadonlyArray<string>
 	readonly className?: string
 	readonly panelClassName?: string
+	/** `<TabsTab className>` for every tab. */
+	readonly tabClassName?: string
+	/** `<TabsList aria-label>`. */
+	readonly ariaLabel?: string
 	/** Panel content for a value; values without one render no panel (Base UI unmounts it). */
 	readonly panel: (value: string) => ReadonlyArray<Html | string> | undefined
 }
@@ -52,7 +56,14 @@ const isTabKey = Schema.is(TabKey)
 const toTabKey = (key: string): Option.Option<Message> =>
 	isTabKey(key) ? Option.some(Message.PressedTabKey({ key })) : Option.none()
 
-const tab = (h: H, model: Model, index: number, label: string, hasPanel: boolean): Html => {
+const tab = (
+	h: H,
+	model: Model,
+	index: number,
+	label: string,
+	hasPanel: boolean,
+	className?: string,
+): Html => {
 	const value = model.values[index]
 	const isActive = value === model.selected
 	const isHighlighted = index === model.highlightedIndex
@@ -61,7 +72,7 @@ const tab = (h: H, model: Model, index: number, label: string, hasPanel: boolean
 			...(isActive && hasPanel ? [h.AriaControls(panelId(model))] : []),
 			h.AriaDisabled(false),
 			h.AriaSelected(isActive),
-			h.Attribute("class", tabsTabStyles),
+			h.Attribute("class", cn(tabsTabStyles, className)),
 			...stateAttributes(h, model),
 			...(isActive ? [h.DataAttribute("active", "")] : []),
 			...(isHighlighted ? [h.DataAttribute("composite-item-active", "")] : []),
@@ -98,6 +109,7 @@ const tabList = (h: H, model: Model, inputs: TabsViewInputs, panelValues: Readon
 	const variant = inputs.variant ?? "default"
 	return h.div(
 		[
+			...(inputs.ariaLabel === undefined ? [] : [h.AriaLabel(inputs.ariaLabel)]),
 			h.Class(
 				cn(
 					tabsListStyles,
@@ -112,7 +124,14 @@ const tabList = (h: H, model: Model, inputs: TabsViewInputs, panelValues: Readon
 		],
 		[
 			...model.values.map((value, index) =>
-				tab(h, model, index, inputs.labels[index] ?? value, panelValues.includes(value)),
+				tab(
+					h,
+					model,
+					index,
+					inputs.labels[index] ?? value,
+					panelValues.includes(value),
+					inputs.tabClassName,
+				),
 			),
 			indicator(h, model, variant),
 		],

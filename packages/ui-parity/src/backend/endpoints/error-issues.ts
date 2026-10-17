@@ -106,11 +106,16 @@ const matches = (query: unknown) => (issue: SeededIssue) => {
 	const service = str(query, "service_name")
 	const workflow = str(query, "workflow_state")
 	const kind = str(query, "kind")
+	const severity = str(query, "severity")
+	const search = str(query, "search")?.toLowerCase()
+	const haystack = [issue.exception_type, issue.exception_message, issue.error_label, issue.service_name]
 	return (
 		(state === undefined || OPEN_STATES.includes(issue.workflow_state) === (state === "open")) &&
 		(service === undefined || issue.service_name === service) &&
 		(workflow === undefined || issue.workflow_state === workflow) &&
-		(kind === undefined || issue.kind === kind)
+		(kind === undefined || issue.kind === kind) &&
+		(severity === undefined || (issue.severity ?? "unset") === severity) &&
+		(search === undefined || haystack.some((field) => field.toLowerCase().includes(search)))
 	)
 }
 

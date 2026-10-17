@@ -34,8 +34,15 @@ export type ViewInputs = Readonly<{
 	/** Places the trigger and, while open, its guards, hidden input and portal (siblings in Base UI). */
 	toView: (parts: ReadonlyArray<Html>) => Html
 	entries: ReadonlyArray<SelectEntry>
-	ariaLabel: string
+	/** Omitted when the trigger is named by its value, as a bare `<SelectTrigger>` is. */
+	ariaLabel?: string
 	className?: string
+	/** `<SelectTrigger size>`. */
+	size?: "default" | "sm"
+	/** `<SelectValue>`'s render function: the trigger's content for the selected option. */
+	renderValue?: (option: SelectOption) => ReadonlyArray<Html | string>
+	/** A `<SelectItem>`'s children when they are more than its label. */
+	renderItem?: (option: SelectOption) => ReadonlyArray<Html | string>
 }>
 
 type H = HtmlBuilder<Message>
@@ -49,7 +56,7 @@ export const optionsOf = (entries: ReadonlyArray<SelectEntry>): ReadonlyArray<Se
 export const selectedIndexOf = (entries: ReadonlyArray<SelectEntry>, value: string): number | null =>
 	Option.getOrNull(Array.findFirstIndex(optionsOf(entries), (option) => option.value === value))
 
-const option = (h: H, model: Model, item: SelectOption, index: number): Html => {
+const option = (h: H, model: Model, inputs: ViewInputs, item: SelectOption, index: number): Html => {
 	const isSelected = item.value === model.value
 	const isHighlighted = model.highlighted === index
 	return h.div(
@@ -78,14 +85,14 @@ const option = (h: H, model: Model, item: SelectOption, index: number): Html => 
 						),
 					]
 				: []),
-			h.div([h.Class(selectItemTextStyles)], [item.label]),
+			h.div([h.Class(selectItemTextStyles)], inputs.renderItem?.(item) ?? [item.label]),
 		],
 	)
 }
 
 /** Groups, separators and options, numbering options in list order as they render. */
-const listChildren = (h: H, model: Model, entries: ReadonlyArray<SelectEntry>): ReadonlyArray<Html> =>
-	Array.mapAccum(entries, 0, (start, entry, entryIndex): [number, Html] => {
+const listChildren = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> =>
+	Array.mapAccum(inputs.entries, 0, (start, entry, entryIndex): [number, Html] => {
 		switch (entry._tag) {
 			case "Separator":
 				return [
@@ -98,7 +105,7 @@ const listChildren = (h: H, model: Model, entries: ReadonlyArray<SelectEntry>): 
 					]),
 				]
 			case "Item":
-				return [start + 1, option(h, model, entry.item, start)]
+				return [start + 1, option(h, model, inputs, entry.item, start)]
 			case "Group": {
 				const labelId = `${model.id}-group-${entryIndex}`
 				return [
@@ -115,7 +122,9 @@ const listChildren = (h: H, model: Model, entries: ReadonlyArray<SelectEntry>): 
 								],
 								[entry.label],
 							),
-							...entry.items.map((item, offset) => option(h, model, item, start + offset)),
+							...entry.items.map((item, offset) =>
+								option(h, model, inputs, item, start + offset),
+							),
 						],
 					),
 				]
@@ -193,7 +202,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 												overflow: "hidden auto",
 											}),
 										],
-										listChildren(h, model, inputs.entries),
+										listChildren(h, model, inputs),
 									),
 								],
 							),
@@ -217,8 +226,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			...(isVisible ? [h.AriaControls(listId(model.id))] : []),
 			h.AriaExpanded(model.isOpen),
 			h.AriaHasPopup("listbox"),
-			h.AriaLabel(inputs.ariaLabel),
-			h.Class(cn(selectTriggerVariants({ size: "default" }), inputs.className)),
+			...(inputs.ariaLabel === undefined ? [] : [h.AriaLabel(inputs.ariaLabel)]),
+			h.Class(cn(selectTriggerVariants({ size: inputs.size ?? "default" }), inputs.className)),
 			...(model.isOpen ? [h.DataAttribute("popup-open", "")] : []),
 			h.DataAttribute("popup-side", model.side),
 			...(model.isOpen ? [h.DataAttribute("pressed", "")] : []),
@@ -244,7 +253,10 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		[
 			h.span(
 				[h.Class(selectValueStyles), h.DataAttribute("slot", "select-value")],
-				[Option.match(selected, { onNone: () => "", onSome: (item) => item.label })],
+				Option.match(selected, {
+					onNone: () => [""],
+					onSome: (item) => inputs.renderValue?.(item) ?? [item.label],
+				}),
 			),
 			h.span(
 				[
