@@ -11,6 +11,8 @@ export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
 		type?: "button" | "submit"
 		isLoading?: boolean
 		isDisabled?: boolean
+		/** `data-slot` when another primitive renders through the Button (`sidebar-trigger`, `icon-button`). */
+		slotName?: string
 		attributes?: ReadonlyArray<Attribute<Message>>
 	}>
 
@@ -34,7 +36,7 @@ export const button = <Message>(
 				),
 			),
 			...(isLoading ? [h.AriaDisabled(true), h.DataAttribute("loading", "")] : []),
-			h.DataAttribute("slot", "button"),
+			h.DataAttribute("slot", options.slotName ?? "button"),
 			...(isLoading || (options.isDisabled ?? false) ? [h.Disabled(true)] : []),
 			...(options.attributes ?? []),
 		],

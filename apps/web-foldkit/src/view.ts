@@ -6,9 +6,11 @@ import { bootSplash } from "./layout/boot-splash"
 import { Message } from "./message"
 import { type Model, Session } from "./model"
 import * as ClerkSignIn from "./page/clerk-sign-in"
-import * as Home from "./page/home"
+import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
 import * as SignIn from "./page/sign-in"
-import { AppRoute, isPublicRoute } from "./route"
+import { AppRoute, hrefOf, isPublicRoute } from "./route"
+import * as Shell from "./shell"
+import { toastViewports } from "./ui/toast"
 
 /** Placeholder for a route that is not ported yet: its tag and the session's org. */
 const placeholder = (model: Model, h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
@@ -40,30 +42,54 @@ const signInView = (model: Model, h: HtmlBuilder<Message>, redirectUrl: string |
 				toParentMessage: (message) => Message.GotSignInMessage({ message }),
 			})
 
-const routeView = (model: Model, h: HtmlBuilder<Message>): Html =>
-	AppRoute.matchOrElse<Html>(
+const toShellMessage = (message: Shell.Message) => Message.GotShellMessage({ message })
+
+/** A signed-in page inside the shell: the frame around the page, then the shell's overlay layers. */
+const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
+	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
+	return [
+		h.submodel({
+			slotId: "shell-frame",
+			model: model.shell,
+			view: Shell.frameView,
+			toParentMessage: toShellMessage,
+			viewInputs: {
+				currentPath,
+				breadcrumbs: breadcrumbsOf(model.route),
+				page: () => [placeholderContent(h, model.route)],
+			},
+		}),
+		...toastViewports(h),
+		h.submodel({
+			slotId: "shell-sheet",
+			model: model.shell,
+			view: Shell.sheetLayerView,
+			toParentMessage: toShellMessage,
+			viewInputs: { currentPath },
+		}),
+		h.submodel({
+			slotId: "shell-menu",
+			model: model.shell,
+			view: Shell.menuLayerView,
+			toParentMessage: toShellMessage,
+			viewInputs: { currentPath },
+		}),
+	]
+}
+
+const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
+	AppRoute.matchOrElse<ReadonlyArray<Html>>(
 		model.route,
-		{
-			SignIn: ({ search }) => signInView(model, h, search.redirect_url),
-			Home: () =>
-				placeholder(model, h, [
-					h.submodel({
-						slotId: "home",
-						model: model.home,
-						view: Home.view,
-						toParentMessage: (message) => Message.GotHomeMessage({ message }),
-					}),
-				]),
-		},
-		() => placeholder(model, h, []),
+		{ SignIn: ({ search }) => [signInView(model, h, search.redirect_url)] },
+		() => (rendersShell(model.route) ? shellRoute(model, h) : [placeholder(model, h, [])]),
 	)
 
 /** A protected route while signed out renders nothing: the redirect to `/sign-in` is in flight. */
 const content = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	Session.match(model.session, {
 		Resolving: () => [bootSplash(h)],
-		SignedOut: () => (isPublicRoute(model.route) ? [routeView(model, h)] : []),
-		SignedIn: () => [routeView(model, h)],
+		SignedOut: () => (isPublicRoute(model.route) ? routeView(model, h) : []),
+		SignedIn: () => routeView(model, h),
 	})
 
 const body = (model: Model, h: HtmlBuilder<Message>): Html => h.div([h.Id("app")], content(model, h))

@@ -213,6 +213,8 @@ export const compareVariant = (options: {
 	readonly strictA11y?: boolean
 	/** Skip app-root background calls (lab pages, see `diffCallLogs`). */
 	readonly ignoreBackgroundCalls?: boolean
+	/** Tag prefixes left out of the behavior diff (`Scenario.pageCalls`). */
+	readonly ignoreCalls?: ReadonlyArray<string>
 }): VariantComparison => {
 	const { variantId } = options
 	const baselinePng = join(options.baselineDir, `${variantId}.png`)
@@ -288,6 +290,7 @@ export const compareVariant = (options: {
 
 	const behavior = diffCallLogs(baseSnap?.calls ?? [], candSnap?.calls ?? [], {
 		ignoreBackground: options.ignoreBackgroundCalls,
+		ignore: options.ignoreCalls,
 	})
 	const a11y = diffAria(baseSnap?.aria ?? "", candSnap?.aria ?? "")
 	const a11yFails = options.strictA11y && (a11y.missing.length > 0 || a11y.extra.length > 0)

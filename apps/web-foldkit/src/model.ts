@@ -1,9 +1,9 @@
 import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
-import * as Home from "./page/home"
 import * as SignIn from "./page/sign-in"
 import { AppRoute } from "./route"
+import * as Shell from "./shell"
 
 /** The router's `auth` context in apps/web: unknown until resolved (`<BootSplash>`), then settled. */
 export const Session = defineTaggedUnion({
@@ -27,6 +27,7 @@ export const Model = Schema.Struct({
 	session: Session,
 	clerk: ClerkPhase,
 	signIn: SignIn.Model,
-	home: Home.Model,
+	/** Sidebar, menus and boot data: survives navigation like the rest of the root Model. */
+	shell: Shell.Model,
 })
 export type Model = typeof Model.Type

@@ -37,6 +37,7 @@ export const compareRun = (input: CompareRunInput) => {
 			tolerance: input.tolerance ?? 0,
 			strictA11y: input.strictA11y ?? false,
 			ignoreBackgroundCalls: variant.scenario.path.startsWith("/lab"),
+			ignoreCalls: variant.scenario.pageCalls,
 		})
 		return unhealthy.has(variant.id) && comparison.status !== "missing"
 			? { ...comparison, status: "fail" as const }
