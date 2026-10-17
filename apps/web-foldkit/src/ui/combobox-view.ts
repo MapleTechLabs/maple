@@ -80,7 +80,7 @@ export const inputAttributes = <M>(
 						toMessage(
 							Message.PressedInputKey({
 								key,
-								values: filterItems(options.items, model.inputValue),
+								items: options.items,
 							}),
 						),
 					)

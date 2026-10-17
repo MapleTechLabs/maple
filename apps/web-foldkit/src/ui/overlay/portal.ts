@@ -20,6 +20,10 @@ const ancestry = (node: Node | null): ReadonlyArray<Node> =>
 
 const keepSet = (targets: ReadonlyArray<Element>): ReadonlySet<Node> => new Set(targets.flatMap(ancestry))
 
+/** A portal still in the page, about to move to `<body>`: neither outside nor kept. */
+const isLeavingPortal = (element: Element) =>
+	element.hasAttribute("data-base-ui-portal") && element.parentElement !== document.body
+
 /** `collectOutsideElements`: the siblings along those paths, not descending into kept elements. */
 const outsideOf = (targets: ReadonlyArray<Element>): ReadonlyArray<Element> => {
 	const keep = keepSet(targets)
@@ -28,7 +32,11 @@ const outsideOf = (targets: ReadonlyArray<Element>): ReadonlyArray<Element> => {
 		stop.has(parent)
 			? []
 			: Array.fromIterable(parent.children).flatMap((child) =>
-					child.tagName === "SCRIPT" ? [] : keep.has(child) ? walk(child) : [child],
+					child.tagName === "SCRIPT" || isLeavingPortal(child)
+						? []
+						: keep.has(child)
+							? walk(child)
+							: [child],
 				)
 	return walk(document.body)
 }
@@ -59,7 +67,14 @@ export const markOutside = (
 						(options.keep ?? []).map((s) => Option.fromNullishOr(document.querySelector(s))),
 					),
 				]
-				const live = Array.fromIterable(document.body.querySelectorAll("[aria-live]"))
+				// A live region in a portal still on its way to <body> will not be under the marked page.
+				const live = Array.filter(
+					Array.fromIterable(document.body.querySelectorAll("[aria-live]")),
+					(region) => {
+						const portal = region.closest("[data-base-ui-portal]")
+						return portal === null || portal.parentElement === document.body
+					},
+				)
 				return [
 					...(options.ariaHidden
 						? setUntil(outsideOf([...kept, ...live]), "aria-hidden", "true")

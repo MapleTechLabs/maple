@@ -58,7 +58,8 @@ export const Message = defineMessageUnion({
 	ChangedInput: { value: Schema.String },
 	ClickedInput: {},
 	HighlightedItem: { index: Schema.NullOr(Schema.Number) },
-	PressedInputKey: { key: Schema.String, values: Schema.Array(Schema.String) },
+	/** `items` unfiltered: `update` filters by the current input, so a key typed in the same frame counts. */
+	PressedInputKey: { key: Schema.String, items: Schema.Array(Schema.String) },
 	ClickedItem: { value: Schema.String },
 	RemovedChip: { value: Schema.String },
 	PressedEscape: {},
@@ -109,7 +110,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			transition.open({ ...model, inputValue: value, highlighted: model.autoHighlight ? 0 : null }),
 		ClickedInput: () => transition.open(model),
 		HighlightedItem: ({ index }) => ({ model: { ...model, highlighted: index } }),
-		PressedInputKey: ({ key, values }) => {
+		PressedInputKey: ({ key, items }) => {
+			const values = filterItems(items, model.inputValue)
 			if (key === "Escape") return transition.close({ ...model, highlighted: null })
 			if (isRovingKey(key)) {
 				const next = nextIndex(
