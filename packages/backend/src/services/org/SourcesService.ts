@@ -26,7 +26,6 @@ import {
 	pushSourceHealth,
 	type SourceHealthResult,
 } from "@maple/domain/source-health"
-import type { IntegrationInventory } from "@maple/domain/integration-inventory"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -176,8 +175,6 @@ const normalizeExpiry = Effect.fnUntraced(function* (
 	return expiresAtMs
 })
 
-const EMPTY_INVENTORY: IntegrationInventory = { integrations: [], available: [] }
-
 // Rules are enforced by the gateway on a source's own token, so only token sources take them.
 const RULE_FIELDS = ["allowedSignals", "rateLimitRps", "resourceAttributes", "expiresAtMs"] as const
 
@@ -304,14 +301,14 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			now: number,
 		) {
 			if (links.length === 0) return new Map<string, SourceHealthResult>()
-			// Without the inventory, provider-wide integrations read as disconnected rather than failing the list.
+			// Without the inventory, provider-wide integrations say health is unavailable instead of failing the list.
 			const inventory = yield* integrations
 				.list(orgId)
 				.pipe(
 					Effect.catchTag("@maple/backend/services/IntegrationInventoryUnavailableError", (error) =>
 						Effect.logWarning("Integration inventory unavailable for source health").pipe(
 							Effect.annotateLogs({ orgId, error: error.message }),
-							Effect.as(EMPTY_INVENTORY),
+							Effect.as(null),
 						),
 					),
 				)

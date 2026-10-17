@@ -686,7 +686,7 @@ export {
 	type OperationTrafficOutput,
 } from "./queries/pr-review"
 
-// Queries — Source usage (hourly spans and logs per source)
+// Queries: source usage (hourly spans and logs per source)
 export {
 	SOURCE_ID_ATTRIBUTE,
 	sourceUsageQuery,
