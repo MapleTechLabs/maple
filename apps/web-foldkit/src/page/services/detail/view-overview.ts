@@ -36,7 +36,8 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 	const window = model.window
 	const isLimited =
 		window !== null &&
-		parseWarehouseDateTime(window.endTime) - parseWarehouseDateTime(window.startTime) > ISSUES_DETAIL_LIMIT_MS
+		parseWarehouseDateTime(window.endTime) - parseWarehouseDateTime(window.startTime) >
+			ISSUES_DETAIL_LIMIT_MS
 	const clock = { nowMs, timeZone: context.timeZone }
 	return h.div(
 		[h.Class("flex flex-col gap-3")],
@@ -45,7 +46,9 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 				isLoading: isDetailLoading || !isChartReady,
 				isWaiting: AsyncData.isRefreshing(overview),
 				context:
-					model.themeColors === null ? null : { theme: model.themeColors, timeZone: context.timeZone, nowMs },
+					model.themeColors === null
+						? null
+						: { theme: model.themeColors, timeZone: context.timeZone, nowMs },
 			}),
 			topOperationsPanel(h, model, model.themeColors),
 			h.div(

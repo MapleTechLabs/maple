@@ -18,7 +18,10 @@ export const markersOverlay = <M>(h: HtmlBuilder<M>, layout: MarkerLayout, plot:
 	layout.groups.length === 0
 		? null
 		: h.div(
-				[h.DataAttribute("commit-markers", ""), h.Class(cn("absolute inset-0", "pointer-events-none"))],
+				[
+					h.DataAttribute("commit-markers", ""),
+					h.Class(cn("absolute inset-0", "pointer-events-none")),
+				],
 				layout.groups.flatMap((group) => {
 					const labelTop = plot.y - LABEL_HEIGHT - LABEL_GAP
 					const dashTop = layout.labeled ? plot.y - LABEL_GAP : plot.y
@@ -88,7 +91,10 @@ export const markersOverlay = <M>(h: HtmlBuilder<M>, layout: MarkerLayout, plot:
 										h.span(
 											[
 												h.Class(
-													cn("shrink-0 rounded-[3px] px-1 text-3xs tabular-nums", "bg-muted/70 text-muted-foreground"),
+													cn(
+														"shrink-0 rounded-[3px] px-1 text-3xs tabular-nums",
+														"bg-muted/70 text-muted-foreground",
+													),
 												),
 											],
 											[`+${Math.min(badge, 99)}`],

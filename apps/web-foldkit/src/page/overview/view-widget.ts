@@ -77,7 +77,11 @@ export type WidgetShellOptions = Readonly<{
 }>
 
 // TODO(title-hint-tooltip): the hint's hover tooltip (`TooltipContent` with the text) is not ported.
-const titleHint = <M>(h: HtmlBuilder<M>, title: string, hint: Readonly<{ text: string; href?: string }>): Html =>
+const titleHint = <M>(
+	h: HtmlBuilder<M>,
+	title: string,
+	hint: Readonly<{ text: string; href?: string }>,
+): Html =>
 	hint.href === undefined
 		? h.span(
 				[
@@ -121,7 +125,9 @@ export const widgetShell = <M>(h: HtmlBuilder<M>, options: WidgetShellOptions, c
 								},
 								[options.title],
 							),
-							...(options.titleHint === undefined ? [] : [titleHint(h, options.title, options.titleHint)]),
+							...(options.titleHint === undefined
+								? []
+								: [titleHint(h, options.title, options.titleHint)]),
 							...headerLegend(h, options.legend),
 							...(options.headerValue === undefined
 								? []

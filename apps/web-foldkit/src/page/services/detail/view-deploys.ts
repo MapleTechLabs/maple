@@ -53,7 +53,9 @@ const severityBadge = (h: H, severity: string | null): Html => {
 	const known = severity === null ? undefined : SEVERITY.get(severity)
 	return known === undefined
 		? h.span([h.Class(cn("inline-flex h-5", "w-[60px] justify-center")), h.Title("Severity not set")])
-		: badge(h, { variant: "outline", className: cn(known.tone, "w-[60px] justify-center") }, [known.label])
+		: badge(h, { variant: "outline", className: cn(known.tone, "w-[60px] justify-center") }, [
+				known.label,
+			])
 }
 
 const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
@@ -83,7 +85,9 @@ const issuesFrame = (h: H, isLimited: boolean, children: ReadonlyArray<Html>): H
 			action: h.div(
 				[h.Class("flex items-center gap-3")],
 				[
-					...(isLimited ? [h.span([h.Class("text-2xs text-muted-foreground")], ["Latest 90 days"])] : []),
+					...(isLimited
+						? [h.span([h.Class("text-2xs text-muted-foreground")], ["Latest 90 days"])]
+						: []),
 					h.a([h.Class("text-xs text-primary hover:underline"), h.Href("/errors")], ["View all →"]),
 				],
 			),
@@ -155,7 +159,12 @@ const rowFrame = (h: H, avatar: Html, line1: Html, chip: Html, line2: ReadonlyAr
 		],
 	)
 
-const rowMeta = (h: H, deploy: DeployEntry, clock: Clock, prefix: ReadonlyArray<Html>): ReadonlyArray<Html> => [
+const rowMeta = (
+	h: H,
+	deploy: DeployEntry,
+	clock: Clock,
+	prefix: ReadonlyArray<Html>,
+): ReadonlyArray<Html> => [
 	...prefix,
 	h.span([h.Class("shrink-0 tabular-nums")], [formatNumber(deploy.spanCount), " spans"]),
 	relativeTime(h, deploy.firstSeen, clock, "ml-auto shrink-0 cursor-default text-muted-foreground/70"),
@@ -183,7 +192,9 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 	const first = deploys.find((deploy) => isResolvableSha(deploy.sha))
 	const commit = first === undefined ? undefined : model.commits[first.sha]
 	const isNotConnected =
-		commit !== undefined && AsyncData.isFailure(commit) && commit.error.tag.endsWith("IntegrationsNotConnectedError")
+		commit !== undefined &&
+		AsyncData.isFailure(commit) &&
+		commit.error.tag.endsWith("IntegrationsNotConnectedError")
 	return isNotConnected
 		? [
 				h.div(
@@ -192,7 +203,9 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 						h.a(
 							[
 								h.Href("/integrations"),
-								h.Class("inline-flex items-center gap-1 font-medium text-primary hover:underline"),
+								h.Class(
+									"inline-flex items-center gap-1 font-medium text-primary hover:underline",
+								),
 							],
 							["Connect a repository to resolve commits", h.span([h.AriaHidden(true)], ["→"])],
 						),
@@ -216,7 +229,10 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 			),
 		])
 	}
-	const releases = AsyncData.getOrElse(AsyncData.map(model.overview.data, (data) => data.releases), () => [])
+	const releases = AsyncData.getOrElse(
+		AsyncData.map(model.overview.data, (data) => data.releases),
+		() => [],
+	)
 	const deploys = deriveDeploys(releases)
 	const isExpanded = model.isDeploysExpanded
 	const visible = deploys.slice(0, isExpanded ? DEPLOYS_EXPANDED : DEPLOYS_RAIL)
@@ -243,8 +259,14 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 							...(isExpanded && hiddenCount > 0
 								? [
 										h.div(
-											[h.Class("px-2 py-1.5 text-center text-2xs text-muted-foreground/70")],
-											[`…and ${hiddenCount} more ${pluralize(hiddenCount, "version")} in this window`],
+											[
+												h.Class(
+													"px-2 py-1.5 text-center text-2xs text-muted-foreground/70",
+												),
+											],
+											[
+												`…and ${hiddenCount} more ${pluralize(hiddenCount, "version")} in this window`,
+											],
 										),
 									]
 								: []),
@@ -260,7 +282,8 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 											{
 												variant: "ghost",
 												size: "sm",
-												className: "w-full text-xs text-muted-foreground hover:text-foreground",
+												className:
+													"w-full text-xs text-muted-foreground hover:text-foreground",
 												attributes: [h.OnClick(Message.ClickedToggleDeploys())],
 											},
 											[
@@ -351,7 +374,12 @@ const deployRow = (h: H, model: Model, deploy: DeployEntry, clock: Clock): Html 
 const resolvedRow = (
 	h: H,
 	deploy: DeployEntry,
-	commit: Readonly<{ message: string; authorLogin: string | null; authorName: string | null; authorAvatarUrl: string | null }>,
+	commit: Readonly<{
+		message: string
+		authorLogin: string | null
+		authorName: string | null
+		authorAvatarUrl: string | null
+	}>,
 	chip: Html,
 	clock: Clock,
 ): Html => {
@@ -364,7 +392,10 @@ const resolvedRow = (
 		chip,
 		rowMeta(h, deploy, clock, [
 			h.span([h.Class("min-w-0 truncate")], [author]),
-			h.span([h.Class("font-mono tabular-nums shrink-0"), h.Title(deploy.sha)], [shortId(deploy.sha, "sha")]),
+			h.span(
+				[h.Class("font-mono tabular-nums shrink-0"), h.Title(deploy.sha)],
+				[shortId(deploy.sha, "sha")],
+			),
 		]),
 	)
 }

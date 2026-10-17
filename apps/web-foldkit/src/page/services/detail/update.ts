@@ -388,7 +388,9 @@ const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
 	const next = TimeRangePicker.update(model.timePicker, message)
 	const lifted = {
 		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands, (inner) => Message.GotTimePickerMessage({ message: inner })),
+		commands: Command.mapMessages(next.commands, (inner) =>
+			Message.GotTimePickerMessage({ message: inner }),
+		),
 	}
 	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
 	return next.outMessage === undefined
@@ -397,7 +399,12 @@ const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
 				...lifted,
 				outMessage: navigate(
 					model,
-					{ ...model.search, startTime: undefined, endTime: undefined, timePreset: next.outMessage.presetValue },
+					{
+						...model.search,
+						startTime: undefined,
+						endTime: undefined,
+						timePreset: next.outMessage.presetValue,
+					},
 					false,
 				).outMessage,
 			}
@@ -450,7 +457,11 @@ const traceWindow = (model: Model) => {
 				endTime: window.endTime,
 				timePreset: undefined,
 			}
-		: { startTime: model.search.startTime, endTime: model.search.endTime, timePreset: model.search.timePreset }
+		: {
+				startTime: model.search.startTime,
+				endTime: model.search.endTime,
+				timePreset: model.search.timePreset,
+			}
 }
 
 /** `handleRowClick` on an operation or endpoint. */
@@ -462,7 +473,7 @@ export const traceSearch = (model: Model, spanName: string) =>
 		...traceWindow(model),
 	})
 
-const settleCommit =(model: Model, sha: string, result: Result.Result<Commit, CommitFailure>): Model => ({
+const settleCommit = (model: Model, sha: string, result: Result.Result<Commit, CommitFailure>): Model => ({
 	...model,
 	commits: {
 		...model.commits,
@@ -487,7 +498,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model,
 				outMessage: PageOutMessage.RequestedNavigation({
 					url: hrefOf(
-						AppRoute.Traces({ search: { services: [model.serviceName], whereClause, ...window } }),
+						AppRoute.Traces({
+							search: { services: [model.serviceName], whereClause, ...window },
+						}),
 					),
 					isReplace: false,
 				}),
@@ -538,7 +551,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// `useAtomRefresh` on the failed overview: forget the slot, so the next sync requests it again.
 		ClickedRetry: () => sync({ ...model, overview: Keyed.idle() }, context, "Load"),
 		ClickedResetTimeRange: () =>
-			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: undefined }, false),
+			navigate(
+				model,
+				{ ...model.search, startTime: undefined, endTime: undefined, timePreset: undefined },
+				false,
+			),
 		ClickedTab: ({ tab }) => navigate(model, tabSearch(model.search, tab), true),
 		ClickedToggleDeploys: () =>
 			sync({ ...model, isDeploysExpanded: !model.isDeploysExpanded }, context, "Load"),

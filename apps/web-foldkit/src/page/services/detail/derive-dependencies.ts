@@ -96,7 +96,11 @@ export const dependencyRows = (bundle: DependencyBundle, seconds: number): Reado
 						name: edge.targetName,
 						subtitle: edge.targetSystem === "" ? undefined : edge.targetSystem,
 						p95: edge.p95DurationMs,
-						whereClause: dependencyDrillWhereClause(edge.targetType, edge.targetName, edge.targetSystem),
+						whereClause: dependencyDrillWhereClause(
+							edge.targetType,
+							edge.targetName,
+							edge.targetSystem,
+						),
 					}),
 				],
 	),
@@ -115,9 +119,13 @@ const mergeRows = (first: DependencyRow, rest: ReadonlyArray<DependencyRow>): De
 		totalCalls,
 		estimatedCalls,
 		errorRate:
-			estimatedCalls > 0 ? sum((row) => row.errorRate * row.estimatedCalls) / estimatedCalls : first.errorRate,
+			estimatedCalls > 0
+				? sum((row) => row.errorRate * row.estimatedCalls) / estimatedCalls
+				: first.errorRate,
 		avgDurationMs:
-			totalCalls > 0 ? sum((row) => row.avgDurationMs * row.totalCalls) / totalCalls : first.avgDurationMs,
+			totalCalls > 0
+				? sum((row) => row.avgDurationMs * row.totalCalls) / totalCalls
+				: first.avgDurationMs,
 		p95DurationMs: Math.max(...all.map((row) => row.p95DurationMs)),
 		hasSampling: all.some((row) => row.hasSampling),
 		samplingWeight: Math.max(...all.map((row) => row.samplingWeight)),
@@ -130,7 +138,9 @@ export const foldHostRows = (rows: ReadonlyArray<DependencyRow>): ReadonlyArray<
 		.filter((row) => row.kind === "service" && row.name.length >= 5)
 		.map((row) => ({ canonical: row.name, lower: row.name.toLowerCase() }))
 	const matchOf = (row: DependencyRow) =>
-		row.kind !== "http" ? undefined : services.find((service) => row.name.toLowerCase().includes(service.lower))
+		row.kind !== "http"
+			? undefined
+			: services.find((service) => row.name.toLowerCase().includes(service.lower))
 	const hostsFor = (name: string) => rows.filter((row) => matchOf(row)?.canonical === name)
 	if (!rows.some((row) => matchOf(row) !== undefined)) return rows
 	return rows.flatMap((row) => {

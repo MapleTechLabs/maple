@@ -70,15 +70,26 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 								[h.Class("flex min-w-0 flex-col leading-tight")],
 								[
 									h.span(
-										[h.Class("flex min-w-0 items-center gap-1.5 text-xs text-foreground")],
 										[
-											...(row.kind === "service" ? [serviceDot(h, { serviceName: row.name, size: "sm" })] : []),
+											h.Class(
+												"flex min-w-0 items-center gap-1.5 text-xs text-foreground",
+											),
+										],
+										[
+											...(row.kind === "service"
+												? [serviceDot(h, { serviceName: row.name, size: "sm" })]
+												: []),
 											h.span([h.Class("truncate"), h.Title(row.name)], [row.name]),
 										],
 									),
 									...(row.subtitle === undefined
 										? []
-										: [h.span([h.Class("truncate text-3xs text-muted-foreground/60")], [row.subtitle])]),
+										: [
+												h.span(
+													[h.Class("truncate text-3xs text-muted-foreground/60")],
+													[row.subtitle],
+												),
+											]),
 								],
 							),
 						],
@@ -92,7 +103,11 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 				{ value: row.errorRate > 0 ? row.errorRate : 0, max: 0.05, tone: "errors" },
 				errorRateValue(h, { rate: row.errorRate, className: "text-xs" }),
 			),
-			tableCell(h, [latencyValue(h, { ms: row.avgDurationMs, scale: "avg", className: "text-xs" })], "py-2 text-right align-middle"),
+			tableCell(
+				h,
+				[latencyValue(h, { ms: row.avgDurationMs, scale: "avg", className: "text-xs" })],
+				"py-2 text-right align-middle",
+			),
 			barCell(
 				h,
 				{ value: row.p95DurationMs, max: maxima.p95, tone: "latency" },
@@ -100,13 +115,20 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 			),
 		],
 		"cursor-pointer group/row border-b last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-		[h.Key(row.id), h.Attribute("tabindex", "0"), h.OnClick(Message.ClickedDependency({ whereClause: row.whereClause }))],
+		[
+			h.Key(row.id),
+			h.Attribute("tabindex", "0"),
+			h.OnClick(Message.ClickedDependency({ whereClause: row.whereClause })),
+		],
 	)
 
 const dependencyTable = (h: H, model: Model, rows: ReadonlyArray<DependencyRow>): Html => {
 	const sort = model.sorts.dependencies
 	const maxima = rows.reduce(
-		(acc, row) => ({ calls: Math.max(acc.calls, row.callsPerSec), p95: Math.max(acc.p95, row.p95DurationMs) }),
+		(acc, row) => ({
+			calls: Math.max(acc.calls, row.callsPerSec),
+			p95: Math.max(acc.p95, row.p95DurationMs),
+		}),
 		{ calls: 0, p95: 0 },
 	)
 	const sorted = sortRows(rows, sort, (row, key) =>
@@ -141,7 +163,9 @@ const dependencyTable = (h: H, model: Model, rows: ReadonlyArray<DependencyRow>)
 											"No downstream dependencies in this window.",
 											h.span(
 												[h.Class("mt-1 block text-muted-foreground/70")],
-												["Outgoing calls show up when client spans carry peer.service or server.address."],
+												[
+													"Outgoing calls show up when client spans carry peer.service or server.address.",
+												],
 											),
 										]),
 									],
@@ -156,15 +180,31 @@ const dependencyTable = (h: H, model: Model, rows: ReadonlyArray<DependencyRow>)
 	])
 }
 
-const headlineFact = (h: H, label: string, name: string, value: Html | string, valueClassName?: string): Html =>
+const headlineFact = (
+	h: H,
+	label: string,
+	name: string,
+	value: Html | string,
+	valueClassName?: string,
+): Html =>
 	h.span(
-		[h.Class("flex w-full items-baseline justify-between gap-1.5 sm:inline-flex sm:w-auto sm:justify-start")],
+		[
+			h.Class(
+				"flex w-full items-baseline justify-between gap-1.5 sm:inline-flex sm:w-auto sm:justify-start",
+			),
+		],
 		[
 			h.span(
 				[h.Class("flex min-w-0 items-baseline gap-1.5")],
-				[eyebrow(h, {}, [label]), h.span([h.Class("max-w-[60vw] truncate text-foreground sm:max-w-[140px]")], [name])],
+				[
+					eyebrow(h, {}, [label]),
+					h.span([h.Class("max-w-[60vw] truncate text-foreground sm:max-w-[140px]")], [name]),
+				],
 			),
-			h.span([h.Class(cn("shrink-0 tabular-nums font-mono", valueClassName ?? "text-foreground"))], [value]),
+			h.span(
+				[h.Class(cn("shrink-0 tabular-nums font-mono", valueClassName ?? "text-foreground"))],
+				[value],
+			),
 		],
 	)
 
@@ -228,19 +268,27 @@ export const dependenciesTab = (h: H, model: Model): Html => {
 	const endMs = window === null ? 0 : parseWarehouseDateTime(window.endTime)
 	const seconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
 	const rows = foldHostRows(
-		AsyncData.getOrElse(AsyncData.map(model.dependencies.data, (bundle) => dependencyRows(bundle, seconds)), () => []),
+		AsyncData.getOrElse(
+			AsyncData.map(model.dependencies.data, (bundle) => dependencyRows(bundle, seconds)),
+			() => [],
+		),
 	)
 	const summary = dependencySummary(rows)
 	const isWaiting = AsyncData.isRefreshing(model.dependencies.data)
 	return h.div(
-		[h.Class(cn("flex flex-col gap-3", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+		[
+			h.Class(cn("flex flex-col gap-3", refreshingClass(isWaiting))),
+			...(isWaiting ? [h.AriaBusy(true)] : []),
+		],
 		[
 			...(summary === undefined ? [] : [summaryStrip(h, rows.length, summary)]),
 			...(seconds > TRACE_DETAIL_LIMIT_SECONDS
 				? [
 						h.p(
 							[h.Class("text-xs text-muted-foreground")],
-							["Dependency summaries cover the selected range; individual trace drill-downs show the latest 30 days."],
+							[
+								"Dependency summaries cover the selected range; individual trace drill-downs show the latest 30 days.",
+							],
 						),
 					]
 				: []),

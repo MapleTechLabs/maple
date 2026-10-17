@@ -74,7 +74,11 @@ export const tableRow = <M>(
 	attributes: ReadonlyArray<Attribute<M>> = [],
 ): Html =>
 	h.tr(
-		[h.Attribute("class", cn(tableRowStyles, className)), h.DataAttribute("slot", "table-row"), ...attributes],
+		[
+			h.Attribute("class", cn(tableRowStyles, className)),
+			h.DataAttribute("slot", "table-row"),
+			...attributes,
+		],
 		children,
 	)
 
@@ -100,6 +104,10 @@ export const tableCell = <M>(
 	attributes: ReadonlyArray<Attribute<M>> = [],
 ): Html =>
 	h.td(
-		[h.Attribute("class", cn(tableCellStyles, className)), h.DataAttribute("slot", "table-cell"), ...attributes],
+		[
+			h.Attribute("class", cn(tableCellStyles, className)),
+			h.DataAttribute("slot", "table-cell"),
+			...attributes,
+		],
 		children,
 	)

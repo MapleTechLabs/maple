@@ -78,7 +78,8 @@ export const MountLinkedCursor = Mount.defineStream("MountServiceLinkedCursor", 
 					}
 					const onPointerMove = (event: PointerEvent) => {
 						const target = event.target
-						const chart = target instanceof Element ? target.closest<HTMLElement>(CHART_SELECTOR) : null
+						const chart =
+							target instanceof Element ? target.closest<HTMLElement>(CHART_SELECTOR) : null
 						const plot = chart?.querySelector<Element>(PLOT_SELECTOR)
 						const bounds = plot?.getBoundingClientRect()
 						const isInside =

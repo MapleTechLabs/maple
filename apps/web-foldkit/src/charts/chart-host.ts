@@ -83,7 +83,10 @@ const hostFor = <S extends ChartSpec, TDatum, X extends ChartValue, Y extends Ch
 		target: { readonly points: Parameters<BuiltChart<TDatum, X, Y>["tooltipOf"]>[0] } | null,
 	) => callbacks.onTooltipChange(target === null ? Option.none() : current.built.tooltipOf(target.points))
 	const onRender = (context: {
-		readonly scene: { readonly chart: ChartBounds; readonly scales: Readonly<Record<string, ResolvedScale>> }
+		readonly scene: {
+			readonly chart: ChartBounds
+			readonly scales: Readonly<Record<string, ResolvedScale>>
+		}
 	}) => callbacks.onRender(context.scene.chart, timeAxisOf(context.scene.scales.x))
 	const optionsFor = (height: number) => ({
 		renderer: chartRenderer,

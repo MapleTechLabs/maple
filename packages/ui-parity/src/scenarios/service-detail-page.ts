@@ -53,7 +53,11 @@ export const serviceDetailPageArea: AreaModule = {
 			settle: "held",
 		}),
 		detail("error", "the overview read failing", {
-			faults: { failures: { "queryEngine.serviceDetailOverview": failure("ui-parity: injected overview failure") } },
+			faults: {
+				failures: {
+					"queryEngine.serviceDetailOverview": failure("ui-parity: injected overview failure"),
+				},
+			},
 			settle: "quiet",
 		}),
 		detail("time-range", "last 24 hours from the time range picker", {
@@ -75,7 +79,10 @@ export const serviceDetailPageArea: AreaModule = {
 			steps: async (page) => {
 				await page.getByRole("combobox", { name: "Environment" }).click()
 				await page.getByRole("option", { name: "production" }).click()
-				await page.getByRole("combobox", { name: "Environment" }).filter({ hasText: "production" }).waitFor()
+				await page
+					.getByRole("combobox", { name: "Environment" })
+					.filter({ hasText: "production" })
+					.waitFor()
 			},
 		}),
 		detail("view-all-operations", "Top operations' View all opens the Operations tab", {
@@ -86,7 +93,9 @@ export const serviceDetailPageArea: AreaModule = {
 			},
 		}),
 		detail("tab-api", "API tab", { steps: (page) => openTab(page, "API", "api") }),
-		detail("tab-operations", "Operations tab", { steps: (page) => openTab(page, "Operations", "operations") }),
+		detail("tab-operations", "Operations tab", {
+			steps: (page) => openTab(page, "Operations", "operations"),
+		}),
 		detail("tab-dependencies", "Dependencies tab", {
 			steps: (page) => openTab(page, "Dependencies", "dependencies"),
 		}),
@@ -119,7 +128,10 @@ export const serviceDetailPageArea: AreaModule = {
 		detail("chart-hover", "the throughput chart hovered mid-window", {
 			fullPage: false,
 			steps: async (page) => {
-				await page.getByRole("img", { name: "Throughput" }).first().hover({ position: { x: 300, y: 100 } })
+				await page
+					.getByRole("img", { name: "Throughput" })
+					.first()
+					.hover({ position: { x: 300, y: 100 } })
 			},
 		}),
 		detail("reload", "Reload re-requests every Overview read unsnapped", {
@@ -141,7 +153,11 @@ export const serviceDetailPageArea: AreaModule = {
 		}),
 		detail("tab-operations-error", "Operations tab with the operations read failing", {
 			path: "/services/payment-svc?tab=operations",
-			faults: { failures: { "queryEngine.serviceOperations": failure("ui-parity: injected operations failure") } },
+			faults: {
+				failures: {
+					"queryEngine.serviceOperations": failure("ui-parity: injected operations failure"),
+				},
+			},
 			settle: "quiet",
 		}),
 	],

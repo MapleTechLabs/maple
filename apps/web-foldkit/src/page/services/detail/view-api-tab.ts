@@ -55,11 +55,20 @@ const loadingState = (h: H): Html =>
 					[h.Class("flex items-center gap-3 border-b px-3 py-2.5")],
 					[
 						skeleton(h, "h-2.5 flex-1"),
-						...columnWidths.map((width) => h.div([h.Class(cn(width, "flex shrink-0 justify-end"))], [skeleton(h, "h-2.5 w-8")])),
+						...columnWidths.map((width) =>
+							h.div(
+								[h.Class(cn(width, "flex shrink-0 justify-end"))],
+								[skeleton(h, "h-2.5 w-8")],
+							),
+						),
 					],
 				),
 				h.div(
-					[h.AriaBusy(true), h.Class(cn(skeletonListStyles, skeletonListGapStyles.px, "gap-0")), h.DataAttribute("slot", "skeleton-list")],
+					[
+						h.AriaBusy(true),
+						h.Class(cn(skeletonListStyles, skeletonListGapStyles.px, "gap-0")),
+						h.DataAttribute("slot", "skeleton-list"),
+					],
 					Array.from({ length: 10 }, (_, index) =>
 						h.div(
 							[
@@ -72,10 +81,23 @@ const loadingState = (h: H): Html =>
 							],
 							[
 								...(index % 4 !== 0 ? [skeleton(h, "h-2.5 w-9 shrink-0")] : []),
-								skeleton(h, cn("h-2.5", index % 3 === 0 ? "w-[220px]" : index % 3 === 1 ? "w-[150px]" : "w-[108px]")),
+								skeleton(
+									h,
+									cn(
+										"h-2.5",
+										index % 3 === 0
+											? "w-[220px]"
+											: index % 3 === 1
+												? "w-[150px]"
+												: "w-[108px]",
+									),
+								),
 								h.span([h.Class("flex-1")]),
 								...columnWidths.map((width) =>
-									h.div([h.Class(cn(width, "flex shrink-0 justify-end"))], [skeleton(h, "h-2.5 w-10")]),
+									h.div(
+										[h.Class(cn(width, "flex shrink-0 justify-end"))],
+										[skeleton(h, "h-2.5 w-10")],
+									),
 								),
 							],
 						),
@@ -89,7 +111,10 @@ const loadingState = (h: H): Html =>
 const emptyState = (h: H, serviceName: string): Html => {
 	const mono = (text: string) => h.span([h.Class("font-mono text-foreground/80")], [text])
 	return panel(h, { className: "items-center gap-3.5 px-[18px] py-11 text-center" }, [
-		h.span([h.Class("font-mono text-title font-medium text-foreground/90")], ["No HTTP endpoints in this window"]),
+		h.span(
+			[h.Class("font-mono text-title font-medium text-foreground/90")],
+			["No HTTP endpoints in this window"],
+		),
 		h.span(
 			[h.Class("max-w-[620px] text-ui leading-[21px] text-muted-foreground")],
 			[
@@ -112,7 +137,9 @@ const loaded = (h: H, model: Model, endpoints: ReadonlyArray<Endpoint>, isWaitin
 	const sort = model.sorts.endpoints
 	const seconds = model.window === null ? 0 : windowSeconds(model.window)
 	const groups = groupsOf(endpoints, sort)
-	const served = groups.filter((group) => group.kind === "stem" || group.kind === "ungrouped").flatMap((group) => group.endpoints)
+	const served = groups
+		.filter((group) => group.kind === "stem" || group.kind === "ungrouped")
+		.flatMap((group) => group.endpoints)
 	const spanCount = served.reduce((sum, endpoint) => sum + endpoint.estimatedSpanCount, 0)
 	const errorCount = served.reduce((sum, endpoint) => sum + endpoint.estimatedErrorCount, 0)
 	const worstP99 = served.reduce((worst, endpoint) => Math.max(worst, endpoint.p99DurationMs), 0)
@@ -137,7 +164,10 @@ const loaded = (h: H, model: Model, endpoints: ReadonlyArray<Endpoint>, isWaitin
 	const column = (sortKey: string, label: string, className: string, align?: "left") =>
 		sortColumnHead(h, { table: "endpoints", sortKey, label, sort, className, align })
 	return h.div(
-		[h.Class(cn("flex flex-col gap-2", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+		[
+			h.Class(cn("flex flex-col gap-2", refreshingClass(isWaiting))),
+			...(isWaiting ? [h.AriaBusy(true)] : []),
+		],
 		[
 			h.div(
 				[h.Class("flex flex-wrap items-baseline gap-x-4 gap-y-1 px-0.5 text-xs")],
@@ -168,7 +198,13 @@ const loaded = (h: H, model: Model, endpoints: ReadonlyArray<Endpoint>, isWaitin
 					tableBody(
 						h,
 						groups.flatMap((group) =>
-							groupRows(h, group, seconds, maxima, model.expandedEndpointGroups.includes(group.kind)),
+							groupRows(
+								h,
+								group,
+								seconds,
+								maxima,
+								model.expandedEndpointGroups.includes(group.kind),
+							),
 						),
 					),
 				]),

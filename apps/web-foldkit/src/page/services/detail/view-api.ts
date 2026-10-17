@@ -41,7 +41,14 @@ const methodTone = (method: string): string =>
 
 const methodLabel = (h: H, method: string): Html =>
 	h.span(
-		[h.Class(cn("w-[52px] shrink-0 font-mono text-2xs font-semibold uppercase tracking-wide", methodTone(method)))],
+		[
+			h.Class(
+				cn(
+					"w-[52px] shrink-0 font-mono text-2xs font-semibold uppercase tracking-wide",
+					methodTone(method),
+				),
+			),
+		],
 		[method],
 	)
 
@@ -52,12 +59,20 @@ const COLLAPSED_COPY = {
 	},
 	probes: {
 		label: "Scanner probes",
-		explainer: "Paths no route matched, in the shape bots scan for. Kept out of the endpoint list, not deleted.",
+		explainer:
+			"Paths no route matched, in the shape bots scan for. Kept out of the endpoint list, not deleted.",
 	},
 } as const
 
 /** `GroupHeaderRow`: the group's totals in the row columns; p95/p99 are the worst in the group. */
-const groupHeaderRow = (h: H, title: string, count: string, group: EndpointGroup, seconds: number, muted: boolean) => {
+const groupHeaderRow = (
+	h: H,
+	title: string,
+	count: string,
+	group: EndpointGroup,
+	seconds: number,
+	muted: boolean,
+) => {
 	const numeric = "py-1.5 text-right align-middle font-mono text-2xs tabular-nums text-muted-foreground/70"
 	return tableRow(
 		h,
@@ -70,7 +85,12 @@ const groupHeaderRow = (h: H, title: string, count: string, group: EndpointGroup
 						[
 							h.span(
 								[
-									h.Class(cn("truncate font-mono text-xs font-medium", muted ? "text-muted-foreground" : "text-foreground")),
+									h.Class(
+										cn(
+											"truncate font-mono text-xs font-medium",
+											muted ? "text-muted-foreground" : "text-foreground",
+										),
+									),
 									h.Title(title),
 								],
 								[title],
@@ -81,14 +101,19 @@ const groupHeaderRow = (h: H, title: string, count: string, group: EndpointGroup
 				],
 				"max-w-0 py-1.5 pl-3 align-middle",
 			),
-			tableCell(h, [formatRate(callsPerSecond(group.totals.estimatedSpanCount, seconds))], cn(numeric, "pr-1.5")),
+			tableCell(
+				h,
+				[formatRate(callsPerSecond(group.totals.estimatedSpanCount, seconds))],
+				cn(numeric, "pr-1.5"),
+			),
 			tableCell(
 				h,
 				[formatErrorRate(group.totals.errorRate)],
 				cn(
 					numeric,
 					"pr-1.5",
-					errorRateLevel(group.totals.errorRate) !== "neutral" && errorRateClass(group.totals.errorRate),
+					errorRateLevel(group.totals.errorRate) !== "neutral" &&
+						errorRateClass(group.totals.errorRate),
 				),
 			),
 			tableCell(h, [], numeric),
@@ -116,7 +141,9 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, seconds: number, ma
 						[
 							methodLabel(h, endpoint.method),
 							truncatedText(h, { text: endpoint.route, mono: true, className: "text-xs" }, [
-								...(head.length > 0 ? [h.span([h.Class("text-muted-foreground/50")], [head])] : []),
+								...(head.length > 0
+									? [h.span([h.Class("text-muted-foreground/50")], [head])]
+									: []),
 								h.span([h.Class("text-foreground")], [tail]),
 							]),
 						],
@@ -140,7 +167,11 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, seconds: number, ma
 				{ value: endpoint.errorRate > 0 ? endpoint.errorRate : 0, max: 0.05, tone: "errors" },
 				errorRateValue(h, { rate: endpoint.errorRate, className: "text-xs" }),
 			),
-			tableCell(h, [latencyValue(h, { ms: endpoint.p50DurationMs, scale: "p50", className: "text-xs" })], "py-2 text-right align-middle"),
+			tableCell(
+				h,
+				[latencyValue(h, { ms: endpoint.p50DurationMs, scale: "p50", className: "text-xs" })],
+				"py-2 text-right align-middle",
+			),
 			barCell(
 				h,
 				{ value: endpoint.p95DurationMs, max: maxima.p95, tone: "latency" },
@@ -187,10 +218,22 @@ export const groupRows = (
 									h.div(
 										[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
 										[
-											h.span([h.Class("text-xs text-muted-foreground")], [copy.explainer]),
 											h.span(
-												[h.Class("truncate font-mono text-2xs text-muted-foreground/50")],
-												[sample.join("  ·  "), remaining > 0 ? `  ·  ${formatNumber(remaining)} more` : ""],
+												[h.Class("text-xs text-muted-foreground")],
+												[copy.explainer],
+											),
+											h.span(
+												[
+													h.Class(
+														"truncate font-mono text-2xs text-muted-foreground/50",
+													),
+												],
+												[
+													sample.join("  ·  "),
+													remaining > 0
+														? `  ·  ${formatNumber(remaining)} more`
+														: "",
+												],
 											),
 										],
 									),
@@ -200,7 +243,11 @@ export const groupRows = (
 											variant: "outline",
 											size: "sm",
 											className: "shrink-0",
-											attributes: [h.OnClick(Message.ClickedToggleEndpointGroup({ kind: group.kind }))],
+											attributes: [
+												h.OnClick(
+													Message.ClickedToggleEndpointGroup({ kind: group.kind }),
+												),
+											],
 										},
 										[isExpanded ? "Hide" : "Show anyway"],
 									),
@@ -213,19 +260,33 @@ export const groupRows = (
 				],
 				"border-b hover:bg-transparent",
 			),
-			...(isExpanded ? group.endpoints.map((endpoint) => endpointRow(h, endpoint, "", seconds, maxima)) : []),
+			...(isExpanded
+				? group.endpoints.map((endpoint) => endpointRow(h, endpoint, "", seconds, maxima))
+				: []),
 		]
 	}
 	return [
 		...(group.kind === "stem"
-			? [groupHeaderRow(h, group.stem, countLabel(group.endpoints.length, "endpoint"), group, seconds, false)]
+			? [
+					groupHeaderRow(
+						h,
+						group.stem,
+						countLabel(group.endpoints.length, "endpoint"),
+						group,
+						seconds,
+						false,
+					),
+				]
 			: []),
 		...group.endpoints.map((endpoint) => endpointRow(h, endpoint, group.stem, seconds, maxima)),
 	]
 }
 
-export const groupsOf = (endpoints: ReadonlyArray<Endpoint>, sort: { key: string | null; dir: "asc" | "desc" }) =>
-	groupEndpoints(endpoints, endpointSortOf(sort.key), sort.dir)
+export const groupsOf = (
+	endpoints: ReadonlyArray<Endpoint>,
+	sort: { key: string | null; dir: "asc" | "desc" },
+) => groupEndpoints(endpoints, endpointSortOf(sort.key), sort.dir)
 
 const ENDPOINT_SORTS: ReadonlyArray<EndpointSort> = ["traffic", "path", "errorRate", "p50", "p95", "p99"]
-const endpointSortOf = (key: string | null): EndpointSort => ENDPOINT_SORTS.find((sort) => sort === key) ?? "traffic"
+const endpointSortOf = (key: string | null): EndpointSort =>
+	ENDPOINT_SORTS.find((sort) => sort === key) ?? "traffic"

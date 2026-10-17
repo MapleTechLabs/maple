@@ -1,6 +1,12 @@
 import { severityLevel } from "@maple/web/components/infra/format"
 import { BAR_FILL, BAR_VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
-import { countLabel, EMPTY_VALUE, formatNumber, formatPercent, formatStorageBytes } from "@maple/ui/lib/format"
+import {
+	countLabel,
+	EMPTY_VALUE,
+	formatNumber,
+	formatPercent,
+	formatStorageBytes,
+} from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -91,10 +97,29 @@ const meterRow = (h: H, label: string, fraction: number): Html => {
 	return h.div(
 		[h.Key(label), h.Class("flex items-center gap-2 leading-none")],
 		[
-			h.span([h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-[0.06em] text-muted-foreground/70"))], [label]),
-			meter(h, { value: clamped, className: "h-[3px] flex-1 rounded-[1px]", fillClassName: BAR_FILL[level] }),
 			h.span(
-				[h.Class(cn("w-9", "shrink-0 text-right font-mono text-2xs tabular-nums", BAR_VALUE_TONE[level]))],
+				[
+					h.Class(
+						cn("w-8", "shrink-0 font-mono text-3xs tracking-[0.06em] text-muted-foreground/70"),
+					),
+				],
+				[label],
+			),
+			meter(h, {
+				value: clamped,
+				className: "h-[3px] flex-1 rounded-[1px]",
+				fillClassName: BAR_FILL[level],
+			}),
+			h.span(
+				[
+					h.Class(
+						cn(
+							"w-9",
+							"shrink-0 text-right font-mono text-2xs tabular-nums",
+							BAR_VALUE_TONE[level],
+						),
+					),
+				],
 				[finite ? formatPercent(fraction) : EMPTY_VALUE],
 			),
 		],
@@ -117,32 +142,53 @@ export const workloadsPanel = (h: H, model: Model, envFilterActive: boolean): Ht
 				[h.Class("divide-y")],
 				workloads.map((workload) => {
 					const meters = [
-						...(workload.avgCpuLimitUtilization === null ? [] : [meterRow(h, "CPU", workload.avgCpuLimitUtilization)]),
+						...(workload.avgCpuLimitUtilization === null
+							? []
+							: [meterRow(h, "CPU", workload.avgCpuLimitUtilization)]),
 						...(workload.avgMemoryLimitUtilization === null
 							? []
 							: [meterRow(h, "MEM", workload.avgMemoryLimitUtilization)]),
 					]
-					return item(h, { tag: "li", variant: "flush", className: "gap-x-3 gap-y-1.5 px-4 py-2.5" }, [
-						itemContent(
-							h,
-							[
-								itemTitle(h, [workload.workloadName], "block truncate font-mono text-xs font-normal text-foreground"),
-								itemDescription(
-									h,
-									[
-										KIND_LABEL.get(workload.workloadKind) ?? "Workload",
-										" · ",
-										workload.namespace,
-										...(workload.clusterName ? [` · ${workload.clusterName}`] : []),
-									],
-									"truncate text-3xs text-muted-foreground/60",
-								),
-							],
-							"gap-0 leading-tight",
-						),
-						itemActions(h, [countLabel(workload.podCount, "pod")], "shrink-0 font-mono text-2xs tabular-nums text-muted-foreground"),
-						...(meters.length === 0 ? [] : [h.div([h.Class(cn("flex flex-col gap-1", "max-w-[280px] basis-full"))], meters)]),
-					])
+					return item(
+						h,
+						{ tag: "li", variant: "flush", className: "gap-x-3 gap-y-1.5 px-4 py-2.5" },
+						[
+							itemContent(
+								h,
+								[
+									itemTitle(
+										h,
+										[workload.workloadName],
+										"block truncate font-mono text-xs font-normal text-foreground",
+									),
+									itemDescription(
+										h,
+										[
+											KIND_LABEL.get(workload.workloadKind) ?? "Workload",
+											" · ",
+											workload.namespace,
+											...(workload.clusterName ? [` · ${workload.clusterName}`] : []),
+										],
+										"truncate text-3xs text-muted-foreground/60",
+									),
+								],
+								"gap-0 leading-tight",
+							),
+							itemActions(
+								h,
+								[countLabel(workload.podCount, "pod")],
+								"shrink-0 font-mono text-2xs tabular-nums text-muted-foreground",
+							),
+							...(meters.length === 0
+								? []
+								: [
+										h.div(
+											[h.Class(cn("flex flex-col gap-1", "max-w-[280px] basis-full"))],
+											meters,
+										),
+									]),
+						],
+					)
 				}),
 			),
 		],
@@ -171,8 +217,16 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 				[serviceDot(h, { serviceName: target.name }), h.span([h.Class("truncate")], [target.name])],
 			)
 		: h.button(
-				[h.Key(target.id), h.Type("button"), h.OnClick(onClick), h.Class(cn(CHIP, "text-muted-foreground"))],
-				[icon(h, KIND_ICON.get(target.kind) ?? "GlobeIcon", { size: 11 }), truncatedText(h, { text: target.name })],
+				[
+					h.Key(target.id),
+					h.Type("button"),
+					h.OnClick(onClick),
+					h.Class(cn(CHIP, "text-muted-foreground")),
+				],
+				[
+					icon(h, KIND_ICON.get(target.kind) ?? "GlobeIcon", { size: 11 }),
+					truncatedText(h, { text: target.name }),
+				],
 			)
 
 /** `ServiceDependencyStrip`: the busiest downstream targets as one row of chips; quiet while empty. */

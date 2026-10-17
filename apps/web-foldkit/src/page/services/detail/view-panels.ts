@@ -78,20 +78,31 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 									),
 								],
 								[
-									backdropBar(h, { value: op.estimatedSpanCount, max: maxCalls, className: "bg-severity-info/10" }),
+									backdropBar(h, {
+										value: op.estimatedSpanCount,
+										max: maxCalls,
+										className: "bg-severity-info/10",
+									}),
 									truncatedText(h, {
 										text: op.spanName,
 										mono: true,
 										className: "relative flex-1 text-xs text-foreground",
 									}),
 									h.span(
-										[h.Class("relative flex shrink-0 items-center gap-3 font-mono text-2xs tabular-nums")],
+										[
+											h.Class(
+												"relative flex shrink-0 items-center gap-3 font-mono text-2xs tabular-nums",
+											),
+										],
 										[
 											h.span(
 												[h.Class("text-foreground")],
 												[
 													...(op.estimatedSpanCount > op.spanCount ? ["~"] : []),
-													formatThroughput(callsPerSecond(op.estimatedSpanCount, seconds), "/s"),
+													formatThroughput(
+														callsPerSecond(op.estimatedSpanCount, seconds),
+														"/s",
+													),
 												],
 											),
 											errorRateValue(h, { rate: op.errorRate }),

@@ -32,7 +32,10 @@ const toSelect = (message: Select.Message) => Message.GotEnvironmentSelectMessag
 
 /** `ServiceEnvironmentSwitcher`: the overview's environments, the active one kept selectable. */
 const environmentItems = (model: Model): ReadonlyArray<SelectView.SelectEntry> => {
-	const loaded = AsyncData.getOrElse(AsyncData.map(model.overview.data, (data) => data.environments), () => [])
+	const loaded = AsyncData.getOrElse(
+		AsyncData.map(model.overview.data, (data) => data.environments),
+		() => [],
+	)
 	const current = environmentsOf(model.search)?.[0]
 	const options = [...new Set([...loaded, ...(current === undefined ? [] : [current])])].toSorted((a, b) =>
 		a.localeCompare(b),
@@ -88,7 +91,10 @@ const headerActions = (h: H, model: Model): Html => {
 			ariaLabel: "Environment",
 			className: "w-full sm:w-auto",
 			toView: (parts) =>
-				h.div([h.Class("flex flex-wrap items-center gap-2")], [...parts, createAlert(h, model), controls]),
+				h.div(
+					[h.Class("flex flex-wrap items-center gap-2")],
+					[...parts, createAlert(h, model), controls],
+				),
 		},
 	})
 }
@@ -152,7 +158,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		[
 			dashboardPage(
 				h,
-				{ titleContent: titleContent(h, model), actions: headerActions(h, model), tabs: tabs(h, model) },
+				{
+					titleContent: titleContent(h, model),
+					actions: headerActions(h, model),
+					tabs: tabs(h, model),
+				},
 				body(h, model, inputs),
 			),
 		],

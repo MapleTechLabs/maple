@@ -1,4 +1,7 @@
-import { getServiceDetailOverview, getServiceDetailThroughputRefinement } from "@maple/web-data/warehouse/custom-charts"
+import {
+	getServiceDetailOverview,
+	getServiceDetailThroughputRefinement,
+} from "@maple/web-data/warehouse/custom-charts"
 import { getServiceEndpoints } from "@maple/web-data/warehouse/service-endpoints"
 import { getServiceOperations } from "@maple/web-data/warehouse/service-operations"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
@@ -137,7 +140,7 @@ export const FetchEndpoints = Command.define("FetchServiceEndpoints", {
 		),
 })
 
-export const FetchUsage =Command.define("FetchServiceDetailUsage", {
+export const FetchUsage = Command.define("FetchServiceDetailUsage", {
 	args: { key: Schema.String, input: UsageInput },
 	messages: [Message.CompletedFetchUsage],
 	execute: ({ key, input }) =>
@@ -194,7 +197,8 @@ export const FetchIssues = Command.define("FetchServiceOpenIssues", {
 			const response = yield* client.errorIssues.list({ query })
 			return response.data.map((issue) => ({
 				id: issue.id,
-				title: issue.error_label || issue.exception_type || issue.exception_message || "Unknown error",
+				title:
+					issue.error_label || issue.exception_type || issue.exception_message || "Unknown error",
 				severity: issue.severity,
 				occurrenceCount: issue.occurrence_count,
 				lastSeenAt: issue.last_seen_at,

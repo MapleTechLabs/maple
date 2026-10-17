@@ -49,8 +49,22 @@ const CHARTS: ReadonlyArray<{
 	readonly gradientPrefix: string
 	readonly titleHint?: { text: string; href: string }
 }> = [
-	{ id: "latency", kind: "Latency", title: "Latency", ariaLabel: "Latency percentiles", skeleton: "line", gradientPrefix: "latency" },
-	{ id: "throughput", kind: "Throughput", title: "Throughput", ariaLabel: "Throughput", skeleton: "area", gradientPrefix: "throughput" },
+	{
+		id: "latency",
+		kind: "Latency",
+		title: "Latency",
+		ariaLabel: "Latency percentiles",
+		skeleton: "line",
+		gradientPrefix: "latency",
+	},
+	{
+		id: "throughput",
+		kind: "Throughput",
+		title: "Throughput",
+		ariaLabel: "Throughput",
+		skeleton: "area",
+		gradientPrefix: "throughput",
+	},
 	{
 		id: "apdex",
 		kind: "Apdex",
@@ -63,12 +77,22 @@ const CHARTS: ReadonlyArray<{
 			href: "https://maple.dev/docs/alerting/apdex-alerts",
 		},
 	},
-	{ id: "error-rate", kind: "ErrorRate", title: "Error Rate", ariaLabel: "Error rate", skeleton: "area", gradientPrefix: "errorRate" },
+	{
+		id: "error-rate",
+		kind: "ErrorRate",
+		title: "Error Rate",
+		ariaLabel: "Error rate",
+		skeleton: "area",
+		gradientPrefix: "errorRate",
+	},
 ]
 
 /** The overview series with the exact pre-sampling volume merged by bucket (`mergeExactThroughput`). */
 export const mergedPoints = (model: Model): ReadonlyArray<DetailPoint> => {
-	const base = AsyncData.getOrElse(AsyncData.map(model.overview.data, (data) => data.points), () => [])
+	const base = AsyncData.getOrElse(
+		AsyncData.map(model.overview.data, (data) => data.points),
+		() => [],
+	)
 	const exact = AsyncData.getOrElse(model.refinement.data, () => [])
 	return mergeExactThroughput(base, new Map(exact.map((point) => [point.bucket, point.throughput])))
 }
@@ -76,12 +100,17 @@ export const mergedPoints = (model: Model): ReadonlyArray<DetailPoint> => {
 type ChartConfig = (typeof CHARTS)[number]
 
 const colorsOf = (kind: Kind, theme: ThemeColors): Readonly<Record<string, string>> => {
-	const chrome = { border: resolveColor(theme, "--border"), background: resolveColor(theme, "--background") }
+	const chrome = {
+		border: resolveColor(theme, "--border"),
+		background: resolveColor(theme, "--background"),
+	}
 	switch (kind) {
 		case "Latency":
 			return {
 				...chrome,
-				...Object.fromEntries(LATENCY_SERIES.map((entry) => [entry.key, resolveColor(theme, entry.token)])),
+				...Object.fromEntries(
+					LATENCY_SERIES.map((entry) => [entry.key, resolveColor(theme, entry.token)]),
+				),
 			}
 		case "Throughput":
 			return {
@@ -120,8 +149,14 @@ const fixedMetricLegend = <M>(h: HtmlBuilder<M>, series: ReadonlyArray<FixedMetr
 				[h.Key(entry.key), h.Class("flex items-center gap-1.5 px-1 py-0.5")],
 				[
 					h.span([
-						h.Class(cn("size-2 shrink-0 rounded-xs", entry.dashed === true && "border border-dashed")),
-						h.Style(entry.dashed === true ? { "border-color": entry.color } : { "background-color": entry.color }),
+						h.Class(
+							cn("size-2 shrink-0 rounded-xs", entry.dashed === true && "border border-dashed"),
+						),
+						h.Style(
+							entry.dashed === true
+								? { "border-color": entry.color }
+								: { "background-color": entry.color },
+						),
 					]),
 					h.span([h.Class("truncate")], [entry.label]),
 				],
@@ -130,7 +165,11 @@ const fixedMetricLegend = <M>(h: HtmlBuilder<M>, series: ReadonlyArray<FixedMetr
 	)
 
 const latencySeries = (theme: ThemeColors): ReadonlyArray<FixedMetricSeries> =>
-	LATENCY_SERIES.map((entry) => ({ key: entry.key, label: entry.label, color: resolveColor(theme, entry.token) }))
+	LATENCY_SERIES.map((entry) => ({
+		key: entry.key,
+		label: entry.label,
+		color: resolveColor(theme, entry.token),
+	}))
 
 /** The hoisted header chips (`usePlotLegendSlot`): only the throughput card has two series. */
 const headerChips = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, context: GridContext) =>
@@ -193,11 +232,15 @@ const chartBody = (
 					ariaLabel: chart.ariaLabel,
 					spec: specOf(chart, rows, context),
 					className: "h-full w-full aspect-auto",
-					legend: chart.kind === "Latency" ? fixedMetricLegend(h, latencySeries(context.theme)) : undefined,
+					legend:
+						chart.kind === "Latency"
+							? fixedMetricLegend(h, latencySeries(context.theme))
+							: undefined,
 					overlay,
 					reportPlot: true,
 				},
-				toParentMessage: (message: Chart.Message) => Message.GotChartMessage({ chartId: chart.id, message }),
+				toParentMessage: (message: Chart.Message) =>
+					Message.GotChartMessage({ chartId: chart.id, message }),
 			}),
 			linkedCursorOverlay(h, chart.id),
 		],
@@ -210,7 +253,12 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 	const overview = AsyncData.getData(model.overview.data)
 	const markers = Option.match(overview, {
 		onNone: () => [],
-		onSome: (data) => commitMarkers(data.releases, points.map((point) => point.bucket), model.commits),
+		onSome: (data) =>
+			commitMarkers(
+				data.releases,
+				points.map((point) => point.bucket),
+				model.commits,
+			),
 	})
 	const hasOverlay = markers.length > 0
 	return h.div(
@@ -225,7 +273,11 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 			const context = state.context
 			const isChart = !state.isLoading && context !== null
 			return h.div(
-				[h.Key(chart.id), h.DataAttribute("linked-cursor-chart", chart.id), h.Class("h-[240px] md:h-[280px]")],
+				[
+					h.Key(chart.id),
+					h.DataAttribute("linked-cursor-chart", chart.id),
+					h.Class("h-[240px] md:h-[280px]"),
+				],
 				[
 					widgetShell(
 						h,
@@ -236,7 +288,9 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 							contentClassName: hasOverlay ? "flex-1 min-h-0 p-2 overflow-visible" : undefined,
 						},
 						// TODO(chart-empty): `ChartEmpty` for a loaded overview with no buckets is not ported.
-						isChart ? chartBody(h, model, chart, rows, context, markers) : chartSkeleton(h, chart.skeleton),
+						isChart
+							? chartBody(h, model, chart, rows, context, markers)
+							: chartSkeleton(h, chart.skeleton),
 					),
 				],
 			)

@@ -3,7 +3,10 @@ import type { SortDir, SortState, SortTable } from "./model-tabs"
 // `useSortState` / `useTableSort` (apps/web/src/hooks/use-table-sort.ts) and the drill-down searches.
 
 /** A table's first sorted column and the text columns that start ascending. */
-const sortConfig = (initialKey: string, stringKeys: ReadonlyArray<string> = []) => ({ initialKey, stringKeys })
+const sortConfig = (initialKey: string, stringKeys: ReadonlyArray<string> = []) => ({
+	initialKey,
+	stringKeys,
+})
 
 const SORT_CONFIG = {
 	operations: sortConfig("estimatedSpanCount"),

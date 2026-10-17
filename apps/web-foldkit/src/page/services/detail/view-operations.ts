@@ -63,7 +63,12 @@ const operationRow = (
 		[
 			tableCell(
 				h,
-				[h.span([h.Class("block truncate font-mono text-xs text-foreground"), h.Title(op.spanName)], [op.spanName])],
+				[
+					h.span(
+						[h.Class("block truncate font-mono text-xs text-foreground"), h.Title(op.spanName)],
+						[op.spanName],
+					),
+				],
 				"max-w-0 py-2 pl-3 align-middle",
 			),
 			barCell(
@@ -82,7 +87,11 @@ const operationRow = (
 				{ value: op.errorRate > 0 ? op.errorRate : 0, max: 0.05, tone: "errors" },
 				errorRateValue(h, { rate: op.errorRate, className: "text-xs" }),
 			),
-			tableCell(h, [latencyValue(h, { ms: op.p50DurationMs, scale: "p50", className: "text-xs" })], "py-2 text-right align-middle"),
+			tableCell(
+				h,
+				[latencyValue(h, { ms: op.p50DurationMs, scale: "p50", className: "text-xs" })],
+				"py-2 text-right align-middle",
+			),
 			barCell(
 				h,
 				{ value: op.p95DurationMs, max: context.maxP95, tone: "latency" },
@@ -110,10 +119,19 @@ const operationRow = (
 			),
 		],
 		"cursor-pointer group/row border-b last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-		[h.Key(op.spanName), h.Attribute("tabindex", "0"), h.OnClick(Message.ClickedOperation({ spanName: op.spanName }))],
+		[
+			h.Key(op.spanName),
+			h.Attribute("tabindex", "0"),
+			h.OnClick(Message.ClickedOperation({ spanName: op.spanName })),
+		],
 	)
 
-const operationsTable = (h: H, model: Model, operations: ReadonlyArray<Operation>, theme: ThemeColors | null) => {
+const operationsTable = (
+	h: H,
+	model: Model,
+	operations: ReadonlyArray<Operation>,
+	theme: ThemeColors | null,
+) => {
 	const sort = model.sorts.operations
 	const seconds = model.window === null ? 0 : windowSeconds(model.window)
 	const context = {
@@ -136,23 +154,30 @@ const operationsTable = (h: H, model: Model, operations: ReadonlyArray<Operation
 	return panel(h, { className: "hidden md:block" }, [
 		table(h, {}, [
 			tableHeader(h, [
-				tableRow(h, [
-					headLabel(h, ["Operation"], "pl-3"),
-					column("estimatedSpanCount", "Calls /s"),
-					column("errorRate", "Errors"),
-					column("p50DurationMs", "p50"),
-					column("p95DurationMs", "p95"),
-					headLabel(h, ["Activity"], "w-[140px] pr-3 text-right"),
-				], "border-b"),
+				tableRow(
+					h,
+					[
+						headLabel(h, ["Operation"], "pl-3"),
+						column("estimatedSpanCount", "Calls /s"),
+						column("errorRate", "Errors"),
+						column("p50DurationMs", "p50"),
+						column("p95DurationMs", "p95"),
+						headLabel(h, ["Activity"], "w-[140px] pr-3 text-right"),
+					],
+					"border-b",
+				),
 			]),
 			tableBody(
 				h,
 				sorted.length === 0
 					? [
 							tableRow(h, [
-								tableCell(h, [emptyMessage(h, {}, ["No operations recorded in this window."])], "p-0", [
-									h.Attribute("colspan", "6"),
-								]),
+								tableCell(
+									h,
+									[emptyMessage(h, {}, ["No operations recorded in this window."])],
+									"p-0",
+									[h.Attribute("colspan", "6")],
+								),
 							]),
 						]
 					: sorted.map((op) => operationRow(h, op, context)),
@@ -181,7 +206,10 @@ const operationsBody = (
 ): Html => {
 	const isLimited = model.window !== null && windowSeconds(model.window) > TRACE_DETAIL_LIMIT_SECONDS
 	return h.div(
-		[h.Class(cn("flex flex-col gap-2", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+		[
+			h.Class(cn("flex flex-col gap-2", refreshingClass(isWaiting))),
+			...(isWaiting ? [h.AriaBusy(true)] : []),
+		],
 		[
 			...(isLimited
 				? [

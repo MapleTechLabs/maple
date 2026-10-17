@@ -64,16 +64,14 @@ export const markerLayout = (markers: ReadonlyArray<CommitMarker>, plot: PlotGeo
 		.toSorted((a, b) => a.x - b.x)
 	if (!shouldRenderLabels(positioned, plotLeft, plotRight)) {
 		return {
-			groups: positioned.map(
-				(entry): LabelGroup => ({
-					key: entry.marker.bucket,
-					dashXs: [entry.x],
-					label: entry.marker.label,
-					commits: [...entry.marker.commits],
-					boxLeft: entry.x,
-					boxWidth: 0,
-				}),
-			),
+			groups: positioned.map((entry): LabelGroup => ({
+				key: entry.marker.bucket,
+				dashXs: [entry.x],
+				label: entry.marker.label,
+				commits: [...entry.marker.commits],
+				boxLeft: entry.x,
+				boxWidth: 0,
+			})),
 			labeled: false,
 		}
 	}

@@ -20,14 +20,25 @@ export const headLabel = (
 ): Html => tableHead(h, children, cn(eyebrowVariants(), "h-8", className), attributes)
 
 /** `SortableHeader`: the label and the up-down arrow, rotated for ascending. */
-const sortableHeader = (h: H, table: SortTable, sortKey: string, label: string, sort: SortState, className?: string) => {
+const sortableHeader = (
+	h: H,
+	table: SortTable,
+	sortKey: string,
+	label: string,
+	sort: SortState,
+	className?: string,
+) => {
 	const isActive = sort.key === sortKey
 	return h.button(
 		[
 			h.Type("button"),
 			h.OnClick(Message.ClickedSort({ table, key: sortKey })),
 			h.Class(
-				cn("inline-flex items-center gap-1 transition-colors", isActive ? "text-foreground" : "hover:text-foreground", className),
+				cn(
+					"inline-flex items-center gap-1 transition-colors",
+					isActive ? "text-foreground" : "hover:text-foreground",
+					className,
+				),
 			),
 		],
 		[
@@ -94,7 +105,10 @@ export const barCell = (
 				value: options.value,
 				max: options.max,
 				align: "right",
-				className: cn("opacity-50 transition-opacity group-hover/row:opacity-90", BAR_TONE[options.tone]),
+				className: cn(
+					"opacity-50 transition-opacity group-hover/row:opacity-90",
+					BAR_TONE[options.tone],
+				),
 			}),
 			h.span([h.Class("relative pr-1.5")], [child]),
 		],
