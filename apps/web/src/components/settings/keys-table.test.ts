@@ -94,7 +94,10 @@ describe("filterKeyRows", () => {
 			"ingest_public",
 			"ingest_private",
 		])
-		expect(ids(filterKeyRows(rows, { ...allFilter, type: "api" }).visible)).toEqual(["key_soon", "key_old"])
+		expect(ids(filterKeyRows(rows, { ...allFilter, type: "api" }).visible)).toEqual([
+			"key_soon",
+			"key_old",
+		])
 	})
 
 	it("searches names case-insensitively without changing the counts", () => {

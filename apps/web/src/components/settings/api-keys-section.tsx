@@ -27,7 +27,14 @@ import { SegmentedSelect } from "@/components/common/segmented-select"
 import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { RelativeTime } from "@/components/common/relative-time"
 import { SyncUnavailable } from "@/components/common/sync-unavailable"
-import { ArrowPathIcon, ArrowRightIcon, ChevronDownIcon, KeyIcon, PlusIcon, TrashIcon } from "@/components/icons"
+import {
+	ArrowPathIcon,
+	ArrowRightIcon,
+	ChevronDownIcon,
+	KeyIcon,
+	PlusIcon,
+	TrashIcon,
+} from "@/components/icons"
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
 import { useIsOrgAdmin, useSessionUserId } from "@/hooks/use-is-org-admin"
 import { useLiveClock } from "@/hooks/use-live-clock"
@@ -216,7 +223,12 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 						</SelectContent>
 					</Select>
 					<div className="flex-1" />
-					<SearchInput value={search} onValueChange={setSearch} placeholder="Search keys" className="w-64" />
+					<SearchInput
+						value={search}
+						onValueChange={setSearch}
+						placeholder="Search keys"
+						className="w-64"
+					/>
 				</div>
 
 				{ingest?.failed ? (
@@ -242,7 +254,9 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 								<EmptyMedia variant="icon">
 									<KeyIcon size={16} />
 								</EmptyMedia>
-								<EmptyTitle>{needle.length > 0 ? "No keys match" : "No keys here"}</EmptyTitle>
+								<EmptyTitle>
+									{needle.length > 0 ? "No keys match" : "No keys here"}
+								</EmptyTitle>
 								<EmptyDescription>
 									{needle.length > 0
 										? `Nothing matches "${needle}".`
@@ -286,8 +300,8 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 					revokingKey ? (
 						<>
 							<span className="text-foreground font-medium">{revokingKey.name}</span> (
-							<span className="font-mono text-xs">{revokingKey.key_prefix}</span>) will stop working
-							immediately. This action cannot be undone.
+							<span className="font-mono text-xs">{revokingKey.key_prefix}</span>) will stop
+							working immediately. This action cannot be undone.
 						</>
 					) : (
 						"Any integrations using this key will stop working immediately. This action cannot be undone."
@@ -302,10 +316,10 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 				title={`Roll ${ingestRollType === "ingest_public" ? "public" : "private"} ingest key?`}
 				description={
 					<>
-						This action cannot be undone. Everything sending telemetry with this key will be rejected
-						immediately. You will need to update your{" "}
-						{ingestRollType === "ingest_public" ? "client-side SDKs" : "server configurations"} with
-						the new key.
+						This action cannot be undone. Everything sending telemetry with this key will be
+						rejected immediately. You will need to update your{" "}
+						{ingestRollType === "ingest_public" ? "client-side SDKs" : "server configurations"}{" "}
+						with the new key.
 					</>
 				}
 				confirmLabel="Roll key"
@@ -413,7 +427,8 @@ function KeysTable({
 	)
 }
 
-const ROW_CLASS = "flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0"
+const ROW_CLASS =
+	"flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0"
 
 function TypeBadge({ type }: { type: KeyType }) {
 	return (
@@ -491,7 +506,9 @@ function ApiRow({
 			<div className="flex min-w-0 flex-1 flex-col gap-1">
 				<div className="flex min-w-0 items-baseline gap-2">
 					<TruncatedText text={key.name} className="text-foreground text-sm font-medium" />
-					<span className="text-muted-foreground shrink-0 font-mono text-2xs">{key.key_prefix}</span>
+					<span className="text-muted-foreground shrink-0 font-mono text-2xs">
+						{key.key_prefix}
+					</span>
 					{/* Type and Expires collapse below `md`, so the states that matter ride here instead. */}
 					<span className="md:hidden">
 						<TypeBadge type={row.type} />

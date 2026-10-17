@@ -185,7 +185,10 @@ export function RecommendedMappingsSection() {
 								key={issue.id}
 								className="hover:bg-muted/20 flex items-start gap-3 px-4 py-3 transition-colors"
 							>
-								<Eyebrow variant="mono" className={cn("w-20 shrink-0 pt-0.5", kindTag.className)}>
+								<Eyebrow
+									variant="mono"
+									className={cn("w-20 shrink-0 pt-0.5", kindTag.className)}
+								>
 									{kindTag.label}
 								</Eyebrow>
 								<div className="min-w-0 flex-1 space-y-1">
@@ -198,7 +201,9 @@ export function RecommendedMappingsSection() {
 									</Link>
 									<p className="text-muted-foreground text-2xs">
 										{formatNumber(issue.usage_count)} spans in 24h ·{" "}
-										{fixedAtIngest ? "fixed at ingest, no code change" : "needs a code change"}
+										{fixedAtIngest
+											? "fixed at ingest, no code change"
+											: "needs a code change"}
 									</p>
 								</div>
 

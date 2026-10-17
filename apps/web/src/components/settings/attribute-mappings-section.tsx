@@ -270,17 +270,28 @@ export function AttributeMappingsSection() {
 										!mapping.enabled && "text-muted-foreground",
 									)}
 								>
-									<TruncatedText className="w-28 shrink-0 text-sm md:w-40">{mapping.name}</TruncatedText>
+									<TruncatedText className="w-28 shrink-0 text-sm md:w-40">
+										{mapping.name}
+									</TruncatedText>
 
 									<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm">
 										<Badge variant={OPERATION_BADGE[mapping.operation].variant} size="sm">
 											{OPERATION_LABELS[mapping.operation]}
 										</Badge>
-										<InlineCode variant="plain" className="text-muted-foreground min-w-0 break-all">
+										<InlineCode
+											variant="plain"
+											className="text-muted-foreground min-w-0 break-all"
+										>
 											{mapping.source_key}
 										</InlineCode>
-										<ArrowRightIcon size={12} className="text-muted-foreground shrink-0" />
-										<InlineCode variant="plain" className="text-foreground min-w-0 break-all">
+										<ArrowRightIcon
+											size={12}
+											className="text-muted-foreground shrink-0"
+										/>
+										<InlineCode
+											variant="plain"
+											className="text-foreground min-w-0 break-all"
+										>
 											{mapping.target_key}
 										</InlineCode>
 									</div>
