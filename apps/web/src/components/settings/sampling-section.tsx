@@ -43,7 +43,7 @@ export function useSamplingSettings() {
 		if (!validation.ok) return
 		const exit = await update({ payload: validation.payload })
 		if (toastExit(exit, { success: "Sampling saved", error: "Failed to save sampling" })) {
-			form.discard()
+			form.commit()
 			refresh()
 		}
 	})
