@@ -5,6 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
 import { initPopup, makeTransition, PopupState, popupId } from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
+import { isRovingKey, nextIndex } from "./overlay/roving"
 
 /**
  * Base UI `ContextMenu` (`@maple/ui/context-menu`): a right-click on the trigger opens a menu at
@@ -26,9 +27,10 @@ export type Model = typeof Model.Type
 
 export const itemId = (id: string, index: number): string => `${id}-item-${index}`
 
-export const init = (id: string): Model => ({
-	...initPopup(id, { side: "right", align: "start" }),
-	point: { x: 0, y: 0 },
+/** Closed; `isOpen` starts it open at `point` (a restored menu, or a test). */
+export const init = (id: string, options: Readonly<{ isOpen?: boolean; point?: Point }> = {}): Model => ({
+	...initPopup(id, { isOpen: options.isOpen ?? false, side: "right", align: "start" }),
+	point: options.point ?? { x: 0, y: 0 },
 	highlighted: null,
 })
 
@@ -39,7 +41,8 @@ export const Message = defineMessageUnion({
 	OpenedContextMenu: {},
 	PressedOutside: {},
 	PressedEscape: {},
-	HighlightedItem: { index: Schema.NullOr(Schema.Number) },
+	PressedMenuKey: { key: Schema.String, enabled: Schema.Array(Schema.Boolean) },
+	LeftMenu: {},
 	HoveredItem: { index: Schema.Number },
 	ClickedItem: { index: Schema.Number },
 	CompletedFocusMenuItem: {},
@@ -66,10 +69,22 @@ const transition = makeTransition<Model, Message>(
 	(message) => Message.GotAnimationMessage({ message }),
 	"WaitForContextMenuExit",
 )
+export const WaitForContextMenuExit = transition.WaitForExit
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
 const close = (model: Model): UpdateReturn => transition.close({ ...model, highlighted: null })
+
+/** The highlight moves in `update`, from the current Model, so fast keystrokes never reuse a stale one. */
+const highlight = (model: Model, index: number): UpdateReturn => ({
+	model: { ...model, highlighted: index },
+	commands: [FocusMenuItem({ id: itemId(model.id, index) })],
+})
+
+const pick = (model: Model, index: number): UpdateReturn => ({
+	...close(model),
+	outMessage: OutMessage.SelectedItem({ index }),
+})
 
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
@@ -77,15 +92,19 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		OpenedContextMenu: () => transition.open({ ...model, highlighted: null }),
 		PressedOutside: () => close(model),
 		PressedEscape: () => close(model),
-		HighlightedItem: ({ index }) => ({ model: { ...model, highlighted: index } }),
-		HoveredItem: ({ index }) =>
-			model.highlighted === index
-				? { model }
-				: {
-						model: { ...model, highlighted: index },
-						commands: [FocusMenuItem({ id: itemId(model.id, index) })],
-					},
-		ClickedItem: ({ index }) => ({ ...close(model), outMessage: OutMessage.SelectedItem({ index }) }),
+		PressedMenuKey: ({ key, enabled }) => {
+			if (key === "Escape") return close(model)
+			if (isRovingKey(key)) {
+				return Option.match(nextIndex(enabled, model.highlighted, key), {
+					onNone: () => ({ model }),
+					onSome: (index) => highlight(model, index),
+				})
+			}
+			return model.highlighted === null ? { model } : pick(model, model.highlighted)
+		},
+		LeftMenu: () => ({ model: { ...model, highlighted: null } }),
+		HoveredItem: ({ index }) => (model.highlighted === index ? { model } : highlight(model, index)),
+		ClickedItem: ({ index }) => pick(model, index),
 		CompletedFocusMenuItem: () => ({ model }),
 		CompletedMountContextMenu: () => ({ model }),
 		ChangedPlacement: ({ side, align }) => ({ model: { ...model, side, align } }),

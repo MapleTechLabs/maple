@@ -1,8 +1,9 @@
 import * as Animation from "@foldkit/ui/animation"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Stream } from "effect"
 import { Command, Dom, Mount, Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
+import { outsidePresses } from "./overlay/anchored"
 import { lockBodyScroll, manageFocus, markOutside, portalToBody, trapFocus } from "./overlay/portal"
 
 /**
@@ -120,22 +121,27 @@ export const update = (model: Model, message: Message): UpdateReturn =>
  * On the portal root: moves it to `<body>`, hides the rest of the page from assistive tech,
  * locks scroll, traps focus and moves it in; releasing (unmount) undoes each and returns focus.
  */
-export const MountDialog = Mount.define("MountDialog", {
+export const MountDialog = Mount.defineStream("MountDialog", {
 	args: { id: Schema.String, hasTrigger: Schema.Boolean },
-	messages: [Message.CompletedMountDialog],
+	messages: [Message.CompletedMountDialog, Message.PressedOutside],
 	execute: ({ element, id, hasTrigger }) =>
-		Effect.gen(function* () {
-			yield* portalToBody(element)
-			yield* markOutside(element, { mark: true, ariaHidden: true })
-			yield* lockBodyScroll
-			const popup = element.querySelector(`#${CSS.escape(popupId(id))}`)
-			if (element instanceof HTMLElement && popup instanceof HTMLElement) {
+		Stream.unwrap(
+			Effect.gen(function* () {
+				yield* portalToBody(element)
+				yield* markOutside(element, { mark: true, ariaHidden: true })
+				yield* lockBodyScroll
+				const mounted = Stream.make(Message.CompletedMountDialog())
+				const popup = element.querySelector(`#${CSS.escape(popupId(id))}`)
+				if (!(element instanceof HTMLElement) || !(popup instanceof HTMLElement)) return mounted
 				yield* trapFocus(element, popup)
 				yield* manageFocus(popup, {
 					returnFocusId: hasTrigger ? Option.some(triggerId(id)) : Option.none(),
 					initialFocus: "first-tabbable",
 				})
-			}
-			return Message.CompletedMountDialog()
-		}),
+				return Stream.concat(
+					mounted,
+					outsidePresses(popup, []).pipe(Stream.map(() => Message.PressedOutside())),
+				)
+			}),
+		),
 })

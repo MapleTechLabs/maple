@@ -31,7 +31,8 @@ export type AnchoredOptions = Readonly<{
 
 const MOUNTED: AnchoredEvent = { _tag: "Mounted" }
 
-const outsidePresses = (
+/** Pointer presses anywhere outside `inside` and the `insideSelectors` elements (`outsidePress`). */
+export const outsidePresses = (
 	root: Element,
 	insideSelectors: ReadonlyArray<string>,
 ): Stream.Stream<AnchoredEvent> =>

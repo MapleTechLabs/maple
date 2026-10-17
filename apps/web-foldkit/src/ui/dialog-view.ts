@@ -115,10 +115,6 @@ export type ViewInputs = Readonly<{
 
 const slotPrefix = (kind: Kind) => kind
 
-/** A press on the viewport itself, outside the popup it centres. */
-const isViewportPress = (target: EventTarget | null, kind: Kind) =>
-	target instanceof Element && target.getAttribute("data-slot") === `${slotPrefix(kind)}-viewport`
-
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const parts = partsOf(model.kind, inputs.side ?? "right", inputs.className)
 	const slot = slotPrefix(model.kind)
@@ -182,11 +178,6 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							...state,
 							h.DataAttribute("slot", `${slot}-viewport`),
 							h.Role("presentation"),
-							h.OnPointerDown((_type, _button, _sx, _sy, _t, _cx, _cy, _id, target) =>
-								isViewportPress(target, model.kind)
-									? Option.some(Message.PressedOutside())
-									: Option.none(),
-							),
 						],
 						[
 							focusGuard(h, "inside", [h.DataAttribute("base-ui-inert", "")]),

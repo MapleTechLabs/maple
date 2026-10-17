@@ -1,13 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import * as A from "@maple/ui/styles/ui/autocomplete"
 import * as C from "@maple/ui/styles/ui/combobox"
-import { Array, Option } from "effect"
+import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { filterItems, inputId, itemId, listId, Message, type Model, MountCombobox } from "./combobox"
 import { comboboxCheckIcon, xmarkIcon } from "./overlay/icons"
 import { portalId } from "./overlay/popup-state"
-import { isRovingKey, nextIndex } from "./overlay/roving"
 import { isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { scrollArea } from "./scroll-area"
 
@@ -31,6 +30,8 @@ export const dismissButton = <M>(h: HtmlBuilder<M>): Html =>
 			position: "absolute",
 		}),
 	])
+
+const INPUT_KEYS = new Set(["ArrowDown", "ArrowUp", "Home", "End", "Enter", "Escape"])
 
 /** The input's combobox attributes, state and keys: arrows move the highlight, Enter picks it.
  *  Generic over the Message so the command palette renders its inline list from its parent. */
@@ -73,26 +74,18 @@ export const inputAttributes = <M>(
 		h.Value(model.inputValue),
 		h.OnInput((value) => toMessage(Message.ChangedInput({ value }))),
 		h.OnClick(toMessage(Message.ClickedInput())),
-		h.OnKeyDownPreventDefault((key) => {
-			const filtered = filterItems(options.items, model.inputValue)
-			if (isRovingKey(key)) {
-				return Option.map(
-					nextIndex(
-						filtered.map(() => true),
-						model.highlighted,
-						key,
-					),
-					(index) => toMessage(Message.HighlightedItem({ index })),
-				)
-			}
-			if (key === "Escape") return Option.some(toMessage(Message.PressedEscape()))
-			if (key === "Enter" && model.highlighted !== null) {
-				return Option.map(Array.get(filtered, model.highlighted), (value) =>
-					toMessage(Message.ClickedItem({ value })),
-				)
-			}
-			return Option.none()
-		}),
+		h.OnKeyDownPreventDefault((key) =>
+			INPUT_KEYS.has(key) && !(options.isInline === true && key === "Escape")
+				? Option.some(
+						toMessage(
+							Message.PressedInputKey({
+								key,
+								values: filterItems(options.items, model.inputValue),
+							}),
+						),
+					)
+				: Option.none(),
+		),
 	]
 }
 
@@ -298,7 +291,7 @@ const chip = (h: H, value: string): Html =>
 
 /** `<Combobox multiple>` with `ComboboxChips`: chips for the selection, then the chips input. */
 export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((model, inputs, h) => {
-	const chipsSelector = `[data-slot=combobox-chips]:has(> #${CSS.escape(inputId(model.id))})`
+	const chipsSelector = `[data-slot=combobox-chips]:has(> #${inputId(model.id)})`
 	const chips = h.div(
 		[
 			h.Key("chips"),

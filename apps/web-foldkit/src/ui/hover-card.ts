@@ -59,6 +59,7 @@ const transition = makeTransition<Model, Message>(
 	(message) => Message.GotAnimationMessage({ message }),
 	"WaitForHoverCardExit",
 )
+export const WaitForHoverCardExit = transition.WaitForExit
 
 type UpdateReturn = Update.Return<Model, Message>
 

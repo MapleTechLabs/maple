@@ -12,7 +12,6 @@ import { Submodel } from "foldkit"
 import { type Html, type HtmlBuilder } from "foldkit/html"
 import { itemId, Message, type Model, MountContextMenu } from "./context-menu"
 import { popupId, portalId } from "./overlay/popup-state"
-import { isRovingKey, nextIndex } from "./overlay/roving"
 import { focusGuard, isMounted, stateAttributes } from "./overlay/transition"
 
 /** An entry of the menu: an item (with an optional shortcut) or a separator. */
@@ -70,30 +69,17 @@ const item = (h: H, model: Model, entry: Extract<Entry, { _tag: "Item" }>, index
 	)
 }
 
-/** Arrow keys move the highlight and focus with it; Enter and Space pick; Escape closes. */
-const menuKeys = (h: H, model: Model, entries: ReadonlyArray<Entry>) =>
-	h.OnKeyDownFocus((key) => {
-		if (isRovingKey(key)) {
-			const enabled = entries.map((entry) => entry._tag === "Item")
-			return Option.map(nextIndex(enabled, model.highlighted, key), (index) => ({
-				focusSelector: `#${CSS.escape(itemId(model.id, index))}`,
-				message: Message.HighlightedItem({ index }),
-			}))
-		}
-		if (key === "Escape") {
-			return Option.some({
-				focusSelector: `#${CSS.escape(popupId(model.id))}`,
-				message: Message.PressedEscape(),
-			})
-		}
-		if ((key === "Enter" || key === " ") && model.highlighted !== null) {
-			return Option.some({
-				focusSelector: `#${CSS.escape(popupId(model.id))}`,
-				message: Message.ClickedItem({ index: model.highlighted }),
-			})
-		}
-		return Option.none()
-	})
+const MENU_KEYS = new Set(["ArrowDown", "ArrowUp", "Home", "End", "Enter", " ", "Escape"])
+
+/** Menu keys go to `update` with which entries can take the highlight (items, not separators). */
+const menuKeys = (h: H, entries: ReadonlyArray<Entry>) =>
+	h.OnKeyDownPreventDefault((key) =>
+		MENU_KEYS.has(key)
+			? Option.some(
+					Message.PressedMenuKey({ key, enabled: entries.map((entry) => entry._tag === "Item") }),
+				)
+			: Option.none(),
+	)
 
 const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const state = stateAttributes(h, model.isOpen, model.animation)
@@ -134,8 +120,8 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 							h.Id(popupId(model.id)),
 							h.Role("menu"),
 							h.Tabindex(-1),
-							menuKeys(h, model, inputs.entries),
-							h.OnMouseLeave(Message.HighlightedItem({ index: null })),
+							menuKeys(h, inputs.entries),
+							h.OnMouseLeave(Message.LeftMenu()),
 						],
 						inputs.entries.map((entry, index) =>
 							entry._tag === "Separator" ? separator(h) : item(h, model, entry, index),

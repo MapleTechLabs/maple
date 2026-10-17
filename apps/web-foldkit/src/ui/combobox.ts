@@ -5,6 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
 import { initPopup, makeTransition, PopupState } from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
+import { isRovingKey, nextIndex } from "./overlay/roving"
 
 /**
  * Base UI `Combobox` (multiple, with chips) and `Autocomplete` (`@maple/ui/combobox`,
@@ -57,6 +58,7 @@ export const Message = defineMessageUnion({
 	ChangedInput: { value: Schema.String },
 	ClickedInput: {},
 	HighlightedItem: { index: Schema.NullOr(Schema.Number) },
+	PressedInputKey: { key: Schema.String, values: Schema.Array(Schema.String) },
 	ClickedItem: { value: Schema.String },
 	RemovedChip: { value: Schema.String },
 	PressedEscape: {},
@@ -79,6 +81,7 @@ const transition = makeTransition<Model, Message>(
 	(message) => Message.GotAnimationMessage({ message }),
 	"WaitForComboboxExit",
 )
+export const WaitForComboboxExit = transition.WaitForExit
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
@@ -106,6 +109,21 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			transition.open({ ...model, inputValue: value, highlighted: model.autoHighlight ? 0 : null }),
 		ClickedInput: () => transition.open(model),
 		HighlightedItem: ({ index }) => ({ model: { ...model, highlighted: index } }),
+		PressedInputKey: ({ key, values }) => {
+			if (key === "Escape") return transition.close({ ...model, highlighted: null })
+			if (isRovingKey(key)) {
+				const next = nextIndex(
+					values.map(() => true),
+					model.highlighted,
+					key,
+				)
+				return { model: { ...model, highlighted: Option.getOrNull(next) } }
+			}
+			return Option.match(
+				Option.flatMap(Option.fromNullishOr(model.highlighted), (index) => Array.get(values, index)),
+				{ onNone: () => ({ model }), onSome: (value) => pick(model, value) },
+			)
+		},
 		ClickedItem: ({ value }) => pick(model, value),
 		RemovedChip: ({ value }) => {
 			const selected = Array.filter(model.selected, (item) => item !== value)

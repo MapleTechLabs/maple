@@ -124,7 +124,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							slot: "autocomplete",
 							items: inputs.items,
 							emptyText: inputs.emptyText,
-							anchorSelector: `[data-slot=autocomplete-input-group]:has(#${CSS.escape(inputId(model.id))})`,
+							anchorSelector: `[data-slot=autocomplete-input-group]:has(#${inputId(model.id)})`,
 						}),
 					]
 				: []),

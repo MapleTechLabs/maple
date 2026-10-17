@@ -1,10 +1,11 @@
 import * as Animation from "@foldkit/ui/animation"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Array, Effect, Option, Schema, Stream } from "effect"
 import { Command, Dom, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
 import { initPopup, makeTransition, PopupState, triggerId } from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
+import { isRovingKey, nextIndex } from "./overlay/roving"
 import { alignItemWithTrigger } from "./overlay/select-align"
 
 /**
@@ -43,7 +44,8 @@ export const Message = defineMessageUnion({
 	ClickedTrigger: { selectedIndex: Schema.NullOr(Schema.Number) },
 	PressedEscape: {},
 	PressedOutside: {},
-	HighlightedItem: { index: Schema.Number },
+	PressedTriggerKey: { key: Schema.String, selectedIndex: Schema.NullOr(Schema.Number) },
+	PressedListKey: { key: Schema.String, values: Schema.Array(Schema.String) },
 	HoveredItem: { index: Schema.Number },
 	SelectedItem: { index: Schema.Number, value: Schema.String },
 	CompletedFocusSelectItem: {},
@@ -69,8 +71,20 @@ const transition = makeTransition<Model, Message>(
 	(message) => Message.GotAnimationMessage({ message }),
 	"WaitForSelectExit",
 )
+export const WaitForSelectExit = transition.WaitForExit
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
+
+/** The highlight moves in `update`, from the current Model, with focus following it. */
+const highlight = (model: Model, index: number): UpdateReturn => ({
+	model: { ...model, highlighted: index },
+	commands: [FocusSelectItem({ id: itemId(model.id, index) })],
+})
+
+const select = (model: Model, value: string): UpdateReturn => ({
+	...transition.close({ ...model, value }),
+	outMessage: OutMessage.ChangedValue({ value }),
+})
 
 const open = (model: Model, selectedIndex: number | null): UpdateReturn =>
 	transition.open({ ...model, highlighted: selectedIndex, isAlignedWithTrigger: true })
@@ -81,18 +95,29 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model.isOpen ? transition.close(model) : open(model, selectedIndex),
 		PressedEscape: () => transition.close(model),
 		PressedOutside: () => transition.close(model),
-		HighlightedItem: ({ index }) => ({ model: { ...model, highlighted: index } }),
-		HoveredItem: ({ index }) =>
-			model.highlighted === index
-				? { model }
-				: {
-						model: { ...model, highlighted: index },
-						commands: [FocusSelectItem({ id: itemId(model.id, index) })],
-					},
-		SelectedItem: ({ value }) => ({
-			...transition.close({ ...model, value }),
-			outMessage: OutMessage.ChangedValue({ value }),
-		}),
+		PressedTriggerKey: ({ selectedIndex }) => (model.isOpen ? { model } : open(model, selectedIndex)),
+		PressedListKey: ({ key, values }) => {
+			if (key === "Escape") return transition.close(model)
+			if (isRovingKey(key)) {
+				return Option.match(
+					nextIndex(
+						values.map(() => true),
+						model.highlighted,
+						key,
+					),
+					{ onNone: () => ({ model }), onSome: (index) => highlight(model, index) },
+				)
+			}
+			return Option.match(
+				Option.flatMap(Option.fromNullishOr(model.highlighted), (index) => Array.get(values, index)),
+				{
+					onNone: () => ({ model }),
+					onSome: (value) => select(model, value),
+				},
+			)
+		},
+		HoveredItem: ({ index }) => (model.highlighted === index ? { model } : highlight(model, index)),
+		SelectedItem: ({ value }) => select(model, value),
 		CompletedFocusSelectItem: () => ({ model }),
 		CompletedMountSelect: () => ({ model }),
 		ChangedPlacement: ({ side, align, isAlignedWithTrigger }) => ({

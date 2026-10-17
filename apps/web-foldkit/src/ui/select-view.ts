@@ -19,7 +19,6 @@ import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { checkIcon, chevronExpandYIcon } from "./overlay/icons"
 import { portalId, triggerId } from "./overlay/popup-state"
-import { isRovingKey, nextIndex } from "./overlay/roving"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { itemId, listId, Message, type Model, MountSelect } from "./select"
 
@@ -124,34 +123,17 @@ const listChildren = (h: H, model: Model, entries: ReadonlyArray<SelectEntry>): 
 		}
 	})[1]
 
-/** Arrows and Home/End move the highlight with focus; Enter and Space select; Escape closes. */
-const listKeys = (h: H, model: Model, options: ReadonlyArray<SelectOption>) =>
-	h.OnKeyDownFocus((key) => {
-		const focusTrigger = `#${CSS.escape(triggerId(model.id))}`
-		if (isRovingKey(key)) {
-			return Option.map(
-				nextIndex(
-					options.map(() => true),
-					model.highlighted,
-					key,
-				),
-				(index) => ({
-					focusSelector: `#${CSS.escape(itemId(model.id, index))}`,
-					message: Message.HighlightedItem({ index }),
-				}),
-			)
-		}
-		if (key === "Escape")
-			return Option.some({ focusSelector: focusTrigger, message: Message.PressedEscape() })
-		if ((key === "Enter" || key === " ") && model.highlighted !== null) {
-			const index = model.highlighted
-			return Option.map(Array.get(options, index), (item) => ({
-				focusSelector: focusTrigger,
-				message: Message.SelectedItem({ index, value: item.value }),
-			}))
-		}
-		return Option.none()
-	})
+const LIST_KEYS = new Set(["ArrowDown", "ArrowUp", "Home", "End", "Enter", " ", "Escape"])
+
+/** List keys go to `update` with the options in order: arrows, Home/End, Enter/Space, Escape. */
+const listKeys = (h: H, options: ReadonlyArray<SelectOption>) =>
+	h.OnKeyDownPreventDefault((key) =>
+		LIST_KEYS.has(key)
+			? Option.some(Message.PressedListKey({ key, values: options.map((item) => item.value) }))
+			: Option.none(),
+	)
+
+const TRIGGER_KEYS = new Set(["ArrowDown", "ArrowUp", "Enter", " "])
 
 const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const state = stateAttributes(h, model.isOpen, model.animation)
@@ -190,10 +172,10 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 							...state,
 							h.DataAttribute("side", model.isAlignedWithTrigger ? "none" : model.side),
 							h.DataAttribute("slot", "select-popup"),
+							listKeys(h, optionsOf(inputs.entries)),
 							h.Id(`${model.id}-popup`),
 							h.Role("presentation"),
 							h.Tabindex(-1),
-							listKeys(h, model, optionsOf(inputs.entries)),
 						],
 						[
 							h.div(
@@ -247,6 +229,16 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.Type("button"),
 			h.OnClick(
 				Message.ClickedTrigger({ selectedIndex: selectedIndexOf(inputs.entries, model.value) }),
+			),
+			h.OnKeyDownPreventDefault((key) =>
+				TRIGGER_KEYS.has(key)
+					? Option.some(
+							Message.PressedTriggerKey({
+								key,
+								selectedIndex: selectedIndexOf(inputs.entries, model.value),
+							}),
+						)
+					: Option.none(),
 			),
 		],
 		[

@@ -53,6 +53,7 @@ const transition = makeTransition<Model, Message>(
 	"WaitForPopoverExit",
 )
 export const open = transition.open
+export const WaitForPopoverExit = transition.WaitForExit
 export const close = transition.close
 
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
