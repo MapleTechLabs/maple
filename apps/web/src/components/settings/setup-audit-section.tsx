@@ -34,6 +34,7 @@ import {
 	type HealthSegment,
 	healthSegments,
 	orderFindings,
+	resolvedChecks,
 	type SetupHealthAction,
 	setupHealthAction,
 } from "./setup-health"
@@ -198,7 +199,7 @@ function SummaryPanel({ audit, refreshing }: { audit: V2SetupAudit; refreshing: 
 }
 
 function PassingDisclosure({ checks }: { checks: ReadonlyArray<V2SetupAuditCheck> }) {
-	const passing = checks.filter((check) => check.status !== "fail")
+	const { checks: passing, label } = resolvedChecks(checks)
 	if (passing.length === 0) return null
 	return (
 		<Collapsible>
@@ -209,7 +210,7 @@ function PassingDisclosure({ checks }: { checks: ReadonlyArray<V2SetupAuditCheck
 						className="text-muted-foreground shrink-0 transition-transform group-data-panel-open:rotate-90"
 					/>
 					<CircleCheckIcon size={16} className={cn("shrink-0", TONE_TEXT.info)} />
-					<span className="text-sm font-medium">Passing ({passing.length})</span>
+					<span className="text-sm font-medium">{label}</span>
 					<span className="text-muted-foreground min-w-0 flex-1 text-xs">
 						Checks are skipped only when telemetry could not be read
 					</span>
