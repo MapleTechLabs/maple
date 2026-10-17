@@ -87,9 +87,11 @@ export const BROWSER_LAUNCH_OPTIONS = {
 
 /**
  * Console noise that does not indicate a broken capture: resource 404s (unmocked calls are tracked
- * on their own) and requests the harness itself blocked (listed in `blockedRequests`).
+ * on their own), requests the harness itself blocked (listed in `blockedRequests`), and Chrome's
+ * notice that rrweb's replay iframe (`sandbox="allow-same-origin"`, no scripts by design) refused one.
  */
-const IGNORED_CONSOLE_ERRORS = /Failed to load resource: the server responded with a status of 404|ERR_BLOCKED_BY_CLIENT/
+const IGNORED_CONSOLE_ERRORS =
+	/Failed to load resource: the server responded with a status of 404|ERR_BLOCKED_BY_CLIENT|^Blocked script execution in '[^']*' because the document's frame is sandboxed and the 'allow-scripts' permission is not set\.$/
 
 /** With a null backend every Electric shape 404s, and the app logs each collection it preloads. */
 const NULL_BACKEND_CONSOLE_ERRORS = /^\[Live Query Error\] Source collection '[\w:-]+' entered error state|^An error occurred while syncing collection/
