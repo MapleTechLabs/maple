@@ -143,21 +143,29 @@ const anyValue = (value: unknown): unknown => {
 	}
 }
 
+/** Plain `fetch` POST. Throws on non-2xx so {@link flushSignal} records a cooldown. */
+const send = async (
+	url: string,
+	headers: Record<string, string>,
+	body: unknown,
+	signal: AbortSignal,
+): Promise<void> => {
+	const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal })
+	if (!res.ok) {
+		throw new Error(`OTLP ${res.status} ${res.statusText}`)
+	}
+}
+
 /**
- * Plain `fetch` POST, aborted after {@link EXPORT_TIMEOUT_MS}. Rejects on
- * non-2xx or timeout so {@link flushSignal} restores the batch and cools down.
+ * {@link send}, aborted after {@link EXPORT_TIMEOUT_MS}. Rejects on non-2xx or
+ * timeout so {@link flushSignal} restores the batch and cools down.
  */
 const post = (url: string, headers: Record<string, string>, body: unknown): Promise<void> =>
 	Effect.runPromise(
 		Effect.tryPromise({
-			try: (signal) => fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal }),
+			try: (signal) => send(url, headers, body, signal),
 			catch: (cause) => cause,
-		}).pipe(
-			Effect.timeout(EXPORT_TIMEOUT_MS),
-			Effect.flatMap((res) =>
-				res.ok ? Effect.void : Effect.fail(new Error(`OTLP ${res.status} ${res.statusText}`)),
-			),
-		),
+		}).pipe(Effect.timeout(EXPORT_TIMEOUT_MS)),
 	)
 
 /** Default transport: plain `fetch` (server + Cloudflare). */
@@ -270,7 +278,8 @@ export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
 	let tail: Promise<void> = Promise.resolve()
 	return (...args) => {
 		const next = tail.then(() => run(...args))
-		tail = settledWithin(next, FLUSH_LINK_TIMEOUT_MS)
+		// The timer starts when this drain does, so queued calls stay one at a time.
+		tail = tail.then(() => settledWithin(next, FLUSH_LINK_TIMEOUT_MS))
 		return next
 	}
 }

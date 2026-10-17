@@ -210,6 +210,24 @@ describe("runFlush", () => {
 		expect(seen).toEqual([1, 2])
 	})
 
+	vitestIt("gives each stuck drain its own wait instead of releasing the queue at once", async () => {
+		vi.useFakeTimers()
+		const seen: number[] = []
+		const run = makeSerializedFlush(async (value: number) => {
+			seen.push(value)
+			await new Promise<never>(() => {})
+		})
+		void run(1)
+		void run(2)
+		void run(3)
+		await vi.advanceTimersByTimeAsync(15_000)
+		expect(seen).toEqual([1, 2])
+		await vi.advanceTimersByTimeAsync(14_999)
+		expect(seen).toEqual([1, 2])
+		await vi.advanceTimersByTimeAsync(1)
+		expect(seen).toEqual([1, 2, 3])
+	})
+
 	it.live("sends the newest items first and restores both failed requests once, in drain order", () =>
 		Effect.gen(function* () {
 			const spans = makeSpanBuffer()
