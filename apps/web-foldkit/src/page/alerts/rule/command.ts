@@ -126,9 +126,10 @@ export const LoadMoreChecks = Command.define("LoadMoreAlertRuleChecks", {
 	execute: ({ ruleId, since, until, cursor, status }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
+			const query = { since, until, limit: PAGE_LIMIT, cursor }
 			const page = yield* client.alertRules.checks({
 				params: { id: ruleId },
-				query: { since, until, limit: PAGE_LIMIT, cursor, ...(status === "all" ? {} : { status }) },
+				query: status === "all" ? query : { ...query, status },
 			})
 			return { checks: page.data.map(v2CheckToDocument), nextCursor: page.next_cursor }
 		}).pipe(
