@@ -78,10 +78,8 @@ export interface SamplingPatch {
  */
 export function samplingPatch(payload: SamplingPayload, saved: SamplingDraft): SamplingPatch {
 	const next = samplingDraftFromPolicy(payload)
-	return {
-		...(next.keepPercent === saved.keepPercent ? {} : { trace_sample_ratio: payload.trace_sample_ratio }),
-		...(next.slowMs === saved.slowMs
-			? {}
-			: { always_keep_slow_spans_ms: payload.always_keep_slow_spans_ms }),
-	}
+	const patch: { trace_sample_ratio?: number; always_keep_slow_spans_ms?: number | null } = {}
+	if (next.keepPercent !== saved.keepPercent) patch.trace_sample_ratio = payload.trace_sample_ratio
+	if (next.slowMs !== saved.slowMs) patch.always_keep_slow_spans_ms = payload.always_keep_slow_spans_ms
+	return patch
 }
