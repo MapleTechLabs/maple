@@ -253,6 +253,11 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 						<AlertDescription>
 							Couldn't load the ingest keys. API and MCP keys below are unaffected.
 						</AlertDescription>
+						<AlertAction>
+							<Button size="sm" variant="outline" onClick={ingest.refresh}>
+								Retry
+							</Button>
+						</AlertAction>
 					</Alert>
 				) : null}
 
