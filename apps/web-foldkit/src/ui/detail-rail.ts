@@ -1,9 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "./eyebrow"
+import { icon, type IconName } from "./icon"
 
 // Port of `DetailRail` (packages/ui/src/components/detail-rail.tsx): Group, Row and Field.
-// TODO(icon): `Row`'s leading icon and `MetaRow` are not ported yet.
+// TODO(icon): `Row`'s leading icon is not ported yet; `MetaRow` has no copy button or tooltip.
 
 type Children = ReadonlyArray<Html | string>
 
@@ -98,7 +99,13 @@ export const detailRailField = <M>(
 /** `DetailRail.MetaRow`: the mono, divider-separated row of infra rails; nothing for an absent value. */
 export const detailRailMetaRow = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ label: string; value: string | null | undefined; valueClassName?: string }>,
+	options: Readonly<{
+		label: string
+		value: string | null | undefined
+		valueClassName?: string
+		/** A glyph before the label; give every row in a rail one or none. */
+		icon?: IconName
+	}>,
 ): Html | null =>
 	options.value === null || options.value === undefined || options.value === ""
 		? null
@@ -116,7 +123,17 @@ export const detailRailMetaRow = <M>(
 								"flex shrink-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground",
 							),
 						],
-						[options.label],
+						[
+							...(options.icon === undefined
+								? []
+								: [
+										icon(h, options.icon, {
+											className:
+												"size-3.5 shrink-0 self-center text-muted-foreground/70",
+										}),
+									]),
+							options.label,
+						],
 					),
 					h.div(
 						[h.Class("flex min-w-0 items-center gap-1.5 text-2xs")],

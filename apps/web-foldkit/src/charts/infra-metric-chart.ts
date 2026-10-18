@@ -7,6 +7,7 @@ import { chartEmpty } from "../ui/chart-skeleton"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import type { Message, Model } from "./chart"
 import type { ChartSpec } from "./chart-spec"
+import type { ChartEventMarker } from "./event-marker-spec"
 import { hasPlottableValue } from "./infra-metric-series"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
@@ -33,6 +34,8 @@ export type InfraMetricOptions = Readonly<{
 	theme: ThemeColors
 	timeZone: string
 	gradientPrefix: string
+	/** Deploys, drawn on every strip at the same instant. */
+	markers?: ReadonlyArray<ChartEventMarker>
 }>
 
 /** The spec the Mount builds the definition from: rows plus every colour resolved to a literal. */
@@ -63,6 +66,13 @@ export const infraMetricSpec = (options: InfraMetricOptions): InfraMetricSpec =>
 		colors,
 		timeZone: options.timeZone,
 		gradientPrefix: options.gradientPrefix,
+		markers: options.markers ?? [],
+		markerColors: {
+			neutral: resolveColor(options.theme, "--muted-foreground"),
+			warn: resolveColor(options.theme, "--severity-warn"),
+			crit: resolveColor(options.theme, "--severity-error"),
+			label: resolveColor(options.theme, "--muted-foreground"),
+		},
 	}
 }
 
@@ -106,7 +116,10 @@ export const view = Submodel.defineView<Model, Message, InfraMetricChartInputs>(
 		[
 			...(inputs.header === undefined ? [] : [inputs.header]),
 			h.div(
-				[h.Class("relative"), ...(linked === undefined ? [] : [h.DataAttribute("linked-cursor-chart", linked)])],
+				[
+					h.Class("relative"),
+					...(linked === undefined ? [] : [h.DataAttribute("linked-cursor-chart", linked)]),
+				],
 				[
 					...(linked === undefined ? [] : [linkedCursorOverlay(h, linked)]),
 					h.div(

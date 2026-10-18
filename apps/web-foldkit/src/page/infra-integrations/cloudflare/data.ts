@@ -1,10 +1,12 @@
 import { CloudflareIntegrationStatus, CloudflareUsageResponse } from "@maple/domain/http"
 import {
 	getCloudflarePlatformResources,
+	getCloudflareWorkerDetail,
 	getCloudflareWorkers,
 	getCloudflareZones,
 	getCloudflareZoneTimeseries,
 } from "@maple/web-data/warehouse/cloudflare-infra"
+import { getReleases } from "@maple/web-data/warehouse/releases"
 import { Effect, Schema } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -143,6 +145,77 @@ export const loadWorkers = (data: WindowInput) =>
 export const loadPlatform = (data: WindowInput) =>
 	getCloudflarePlatformResources({ data }).pipe(
 		Effect.map((response): PlatformResources => response),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+export const WorkerDetail = Schema.Struct({
+	outcomeBuckets: Schema.Array(
+		Schema.Struct({ bucket: Schema.String, status: Schema.String, requests: Schema.Number }),
+	),
+	latencyBuckets: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			cpuP50Ms: Schema.Number,
+			cpuP99Ms: Schema.Number,
+			durationP50Ms: Schema.Number,
+			durationP99Ms: Schema.Number,
+			doWallP50Ms: Schema.Number,
+			doWallP99Ms: Schema.Number,
+		}),
+	),
+	durableObjectBuckets: Schema.Array(
+		Schema.Struct({ bucket: Schema.String, requests: Schema.Number, errors: Schema.Number }),
+	),
+})
+export type WorkerDetail = typeof WorkerDetail.Type
+
+export const WorkerDetailInput = Schema.Struct({
+	serviceName: Schema.String,
+	startTime: Schema.String,
+	endTime: Schema.String,
+	bucketSeconds: Schema.Number,
+	accountId: Schema.optional(Schema.String),
+})
+export type WorkerDetailInput = typeof WorkerDetailInput.Type
+
+/** `cloudflareWorkerDetailResultAtom`. */
+export const loadWorkerDetail = (data: WorkerDetailInput) =>
+	getCloudflareWorkerDetail({ data }).pipe(
+		Effect.map((detail): WorkerDetail => detail),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+/** The parts of a release the Worker page reads. */
+export const Release = Schema.Struct({
+	serviceName: Schema.String,
+	commitSha: Schema.String,
+	firstSeen: Schema.String,
+	spanCount: Schema.Number,
+	errorCount: Schema.Number,
+})
+export type Release = typeof Release.Type
+
+export const ReleasesInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	services: Schema.Array(Schema.String),
+})
+export type ReleasesInput = typeof ReleasesInput.Type
+
+/** `getReleasesResultAtom`. */
+export const loadReleases = (input: ReleasesInput) =>
+	getReleases({ data: { ...input, services: [...input.services] } }).pipe(
+		Effect.map((result): ReadonlyArray<Release> =>
+			result.releases.map((release) => ({
+				serviceName: release.serviceName,
+				commitSha: release.commitSha,
+				firstSeen: release.firstSeen,
+				spanCount: release.spanCount,
+				errorCount: release.errorCount,
+			})),
+		),
 		Effect.mapError(toLoadFailure),
 		Effect.result,
 	)

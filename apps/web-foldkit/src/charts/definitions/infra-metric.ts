@@ -28,10 +28,10 @@ import {
 } from "../infra-metric-series"
 import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
+import { chartEventMarkerMarks, placeMarkersInWindow } from "./event-markers"
 import { cursorTooltip } from "./plot-constants"
 
 // Port of `InfraMetricChart`'s definition (apps/web/src/components/infra/primitives/infra-metric-chart.tsx).
-// TODO(markers): `chartEventMarkerMarks` (deploy markers) are not drawn yet.
 
 type InfraMetricSpec = Extract<ChartSpec, { readonly _tag: "InfraMetric" }>
 
@@ -79,7 +79,9 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 	const { data, series } = pointsOf(spec)
 	const axis = makeBucketAxis(spec.xDomain ?? data.map((point) => point.bucket), spec.timeZone)
 	const thresholds = spec.showThreshold && spec.unit === "percent" ? [{ value: THRESHOLD_FRACTION }] : []
-	const yDomain = niceLinearDomain(linearYDomain({ rows: data, keys: series, stacked: spec.stacked, thresholds }))
+	const yDomain = niceLinearDomain(
+		linearYDomain({ rows: data, keys: series, stacked: spec.stacked, thresholds }),
+	)
 	const chrome = { border: spec.colors.border ?? "", background: spec.colors.background ?? "" }
 	const colorOf = (name: string) => spec.colors[name] ?? chrome.border
 	const at = (point: InfraPoint) => point.date
@@ -106,7 +108,14 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 				}),
 			]
 		: series.map((name) =>
-				lineY(data, { id: name, x: at, y: valueOf(name), stroke: colorOf(name), strokeWidth: STROKE_WIDTH, curve }),
+				lineY(data, {
+					id: name,
+					x: at,
+					y: valueOf(name),
+					stroke: colorOf(name),
+					strokeWidth: STROKE_WIDTH,
+					curve,
+				}),
 			)
 	const silent = (value: (point: InfraPoint) => number | null) => (point: InfraPoint | undefined) =>
 		point === undefined || value(point) === null
@@ -116,7 +125,9 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 				return dot(
 					data.filter(
 						(point, index) =>
-							value(point) !== null && silent(value)(data[index - 1]) && silent(value)(data[index + 1]),
+							value(point) !== null &&
+							silent(value)(data[index - 1]) &&
+							silent(value)(data[index + 1]),
 					),
 					{ x: at, y: value, r: STROKE_WIDTH + 1, fill: colorOf(name) },
 				)
@@ -152,9 +163,13 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 								),
 							]),
 				]
+	const placed = placeMarkersInWindow(spec.markers, spec.xDomain ?? data.map((point) => point.bucket))
 	const definition = defineChart({
-		gradients: spec.stacked ? series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04)) : [],
+		gradients: spec.stacked
+			? series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04))
+			: [],
 		marks: [
+			...chartEventMarkerMarks(placed, yDomain, spec.markerColors),
 			...thresholdMarks,
 			...bands,
 			...lone,

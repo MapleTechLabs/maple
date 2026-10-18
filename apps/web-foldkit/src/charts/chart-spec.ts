@@ -145,7 +145,9 @@ export const ChartSpec = defineTaggedUnion({
 	 * `{bucket, attributeValue, value}` rows as lines or stacked bands over a bucket time axis.
 	 */
 	InfraMetric: {
-		rows: Schema.Array(Schema.Struct({ bucket: Schema.String, attributeValue: Schema.String, value: Schema.Number })),
+		rows: Schema.Array(
+			Schema.Struct({ bucket: Schema.String, attributeValue: Schema.String, value: Schema.Number }),
+		),
 		unit: Schema.Literals([
 			"percent",
 			"cores",
@@ -167,6 +169,9 @@ export const ChartSpec = defineTaggedUnion({
 		colors: Schema.Record(Schema.String, Schema.String),
 		timeZone: Schema.String,
 		gradientPrefix: Schema.String,
+		/** Deploy markers drawn at the same instant on every strip. */
+		markers: Schema.Array(ChartEventMarker),
+		markerColors: MarkerColors,
 	},
 	/** `PlanetScaleChart` (components/infra/planetscale/planetscale-chart.tsx): one gauge, gaps kept. */
 	PlanetScaleMetric: {

@@ -10,6 +10,7 @@ const DATASET = "infra-integrations"
 const PS_DB = "/infra/planetscale/acme-prod"
 const RAILWAY_SERVICE = "/infra/railway/svc_acme_api?environmentId=env_acme_production"
 const GCP_WORKLOAD = "/infra/gcp/cloudRun/checkout-api?project=acme-shop-prod&region=us-central1"
+const CF_WORKER = "/infra/cloudflare/workers/edge-router"
 const EMPTY = "empty"
 
 const scenario = (
@@ -122,6 +123,24 @@ export const infraIntegrationsArea: AreaModule = {
 			"Cloudflare Worker: edge-router",
 			"/infra/cloudflare/workers/edge-router",
 		),
+		scenario(
+			"cloudflare-worker-loading",
+			"Cloudflare Worker: detail loading",
+			CF_WORKER,
+			held("queryEngine.cloudflareInfraWorkerDetail"),
+		),
+		scenario(
+			"cloudflare-worker-error",
+			"Cloudflare Worker: detail failing",
+			CF_WORKER,
+			failing("queryEngine.cloudflareInfraWorkerDetail"),
+		),
+		scenario("cloudflare-worker-hover", "Cloudflare Worker: strips under one cursor", CF_WORKER, {
+			steps: async (page) => {
+				await page.getByRole("img", { name: "Invocations" }).hover({ position: { x: 400, y: 40 } })
+				await page.locator("[data-linked-cursor-source]").waitFor()
+			},
+		}),
 		scenario("railway", "Railway: services", "/infra/railway"),
 		scenario("railway-search", "Railway: search for postgres", "/infra/railway", {
 			steps: async (page) => {
