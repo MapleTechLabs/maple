@@ -13,6 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
+import { typeSettings } from "./view-rail-types"
 
 // `WidgetSettingsBar` and the `WidgetSettings` fields the timeseries panels compose
 // (settings-fields.tsx, widgets/types/chart.tsx).
@@ -49,10 +50,10 @@ export const railSetting = (
 		...children,
 	])
 
-const divider = (h: H): Html => h.div([h.Class("h-px bg-border")], [])
+export const divider = (h: H): Html => h.div([h.Class("h-px bg-border")], [])
 
 /** `Segments`: the rail's full-width segmented control. */
-const segments = <T extends string>(
+export const segments = <T extends string>(
 	h: H,
 	value: T,
 	options: ReadonlyArray<{ value: T; label: string }>,
@@ -171,13 +172,13 @@ const DURATION_SCALES = [
 ]
 
 /** `Unit`: the duration tokens collapse into one entry with a scale under it. */
-const unitField = (h: H, model: Model, state: EditorState): Html => {
+export const unitField = (h: H, model: Model, state: EditorState, label = "Y-Axis Unit"): Html => {
 	const isDuration = state.unit.startsWith("duration_")
 	return pageSelect(h, model, "unit", isDuration ? "duration" : state.unit, UNIT_OPTIONS, {
 		className: "w-full",
-		ariaLabel: "Y-Axis Unit",
+		ariaLabel: label,
 		toView: (parts) =>
-			railSetting(h, "unit", "Y-Axis Unit", true, [
+			railSetting(h, "unit", label, true, [
 				...parts,
 				...(isDuration
 					? [segments(h, state.unit, DURATION_SCALES, (unit) => Message.ChangedUnit({ unit }))]
@@ -187,7 +188,7 @@ const unitField = (h: H, model: Model, state: EditorState): Html => {
 }
 
 /** `Legend`, with the Min/Max/Mean/Last table under it. */
-const legendField = (h: H, state: EditorState): Html =>
+export const legendField = (h: H, state: EditorState, hasSeriesStats = true): Html =>
 	railSetting(h, "legend", "Legend", false, [
 		segments(
 			h,
@@ -199,6 +200,10 @@ const legendField = (h: H, state: EditorState): Html =>
 			],
 			(legendPosition) => Message.ChangedLegend({ legendPosition }),
 		),
+		...(hasSeriesStats ? [seriesStats(h, state)] : []),
+	])
+
+const seriesStats = (h: H, state: EditorState): Html =>
 		h.div(
 			[h.Class("pt-0.5")],
 			[
@@ -210,11 +215,10 @@ const legendField = (h: H, state: EditorState): Html =>
 					Message.ToggledSeriesStats(),
 				),
 			],
-		),
-	])
+		)
 
 /** `QueryOptions`: comparison and its % change. */
-const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => [
+export const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => [
 	divider(h),
 	pageSelect(
 		h,
@@ -303,12 +307,11 @@ const timeseriesSettings = (h: H, model: Model, state: EditorState): ReadonlyArr
 	]
 }
 
-/** The "Panel Options" rail. TODO(widget-editor): the other panel types' config panels. */
+/** The "Panel Options" rail: the shared fields, then the panel type's own (`ConfigPanel`). */
 export const settingsRail = (h: H, model: Model): Html => {
 	const state = model.state
 	if (state === null) return h.empty
 	const panel = toPanelType(state.visualization, state.chartId)
-	const isTimeseries = panel === "line" || panel === "bar" || panel === "area"
 	return h.div(
 		[h.Class("flex flex-col gap-5")],
 		[
@@ -322,7 +325,9 @@ export const settingsRail = (h: H, model: Model): Html => {
 			...(panel === "markdown" ? [] : [timeRangeField(h, state)]),
 			divider(h),
 			typePicker(h, state),
-			...(isTimeseries ? timeseriesSettings(h, model, state) : []),
+			...(panel === "line" || panel === "bar" || panel === "area"
+				? timeseriesSettings(h, model, state)
+				: typeSettings(h, model, state, panel)),
 		],
 	)
 }

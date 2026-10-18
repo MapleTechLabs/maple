@@ -11,7 +11,7 @@ import { textarea } from "../../../ui/textarea"
 import { textInput } from "../../kit/query-builder/parts"
 import { queryPanelView } from "../../kit/query-builder/view"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
-import { isNote, isTimeseriesPanel, validationErrorOf } from "./lowering"
+import { isNote, isBuilderPanel, validationErrorOf } from "./lowering"
 import { autoIntervalLabel } from "./update"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -172,7 +172,7 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 	const error = validationErrorOf(state)
 	// A note has neither a query nor SQL: its body editor replaces both.
 	const isNoteEditor = isNote(state)
-	if (!isNoteEditor && !isTimeseriesPanel(state))
+	if (!isNoteEditor && !isBuilderPanel(state))
 		return h.div(
 			[h.Class("p-6")],
 			[

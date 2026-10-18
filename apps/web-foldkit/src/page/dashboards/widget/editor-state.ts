@@ -1,11 +1,17 @@
-import { TimeRangeSchema, WIDGET_VISUALIZATIONS } from "@maple/domain/http"
+import {
+	HEATMAP_COLOR_SCALES,
+	HEATMAP_SCALE_TYPES,
+	STAT_AGGREGATES,
+	TimeRangeSchema,
+	WIDGET_VISUALIZATIONS,
+} from "@maple/domain/http"
 import { QUERY_COMPARISON_MODES } from "@maple/query-model"
 import { Schema } from "effect"
 import { QueryDraft } from "../../kit/query-builder/draft"
 
 // The widget editor's state (`QueryBuilderWidgetState`, apps/web/src/lib/query-builder/
-// widget-builder-shared.ts), cut to what the timeseries panels (line, bar, area) and notes read.
-// TODO(widget-editor): the stat/gauge/table/list/breakdown/funnel/paths/markdown fields.
+// widget-builder-shared.ts), cut to what the query-builder panels and notes read.
+// TODO(widget-editor): the list, funnel and paths fields.
 
 export { QueryDraft } from "../../kit/query-builder/draft"
 
@@ -45,6 +51,16 @@ export const EditorState = Schema.Struct({
 	seriesStatsEnabled: Schema.Boolean,
 	pointsMode: PointsMode,
 	thresholds: Schema.Array(Threshold),
+	statAggregate: Schema.Literals(STAT_AGGREGATES),
+	/** The series a stat or gauge reduces; empty is the first visible series. */
+	statValueField: Schema.String,
+	sparklineEnabled: Schema.Boolean,
+	gaugeMin: Schema.String,
+	gaugeMax: Schema.String,
+	tableLimit: Schema.String,
+	/** `undefined` in legacy: never chosen, so Apply leaves `display.heatmap.colorScale` absent. */
+	heatmapColorScale: Schema.NullOr(Schema.Literals(HEATMAP_COLOR_SCALES)),
+	heatmapScaleType: Schema.Literals(HEATMAP_SCALE_TYPES),
 	/** A note's body; static, it never reaches the warehouse. */
 	markdownContent: Schema.String,
 })

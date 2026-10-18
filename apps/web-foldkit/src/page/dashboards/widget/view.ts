@@ -19,6 +19,7 @@ import { MeasurePreview } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { previewWidgetOf } from "./update"
+import type { Widget } from "./lowering"
 import { leaveDialog } from "./view-dialog"
 import { queryEditor } from "./view-query"
 import { settingsRail } from "./view-rail"
@@ -91,6 +92,14 @@ const timeLabel = (model: Model): string =>
 			: `${model.timeRange.startTime} - ${model.timeRange.endTime}`
 
 /** The preview hero: the board's range picker over the widget as it would render. */
+/** The previewed stat's sparkline series, read like any tile's data (its own data source). */
+const sparklineState = (model: Model, widget: Widget) => {
+	const source = widget.display.sparkline?.dataSource
+	return model.sparkGate === null || source === undefined
+		? null
+		: dataStateOf(model.requests, { ...widget, dataSource: source }, model.sparkGate)
+}
+
 const preview = (h: H, model: Model, timeZone: string): Html => {
 	const widget = previewWidgetOf(model)
 	return h.div(
@@ -138,6 +147,9 @@ const preview = (h: H, model: Model, timeZone: string): Html => {
 									tableSort: model.tableSort,
 									onChart: (message) => Message.GotChartMessage({ message }),
 									onSort: (field, isText) => Message.ClickedSortColumn({ field, isText }),
+									sparkline: sparklineState(model, widget),
+									sparklineChart: model.sparklineChart,
+									onSparklineChart: (message) => Message.GotSparklineChartMessage({ message }),
 								},
 								widget,
 							),

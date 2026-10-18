@@ -20,6 +20,7 @@ import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget } from "../kit/widget-data"
+import { dataStateOf } from "../kit/data-state"
 import { FetchAutocomplete, FetchWidget, ReadClock } from "./command"
 import type { EditorState } from "./editor-state"
 import { buildDataSource, buildDisplay, toInitialState, validationErrorOf, type Widget } from "./lowering"
@@ -47,6 +48,8 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		nowMs: null,
 		previewWidth: null,
 		gate: null,
+		sparkGate: null,
+		sparklineChart: Chart.init(),
 		requests: {},
 		chart: Chart.init(),
 		tableSort: { key: null, dir: "desc" },
@@ -130,14 +133,36 @@ export const planPreview = (model: Model, context: PageContext): Return => {
 		...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
 		maxDataPoints: maxDataPointsForWidth(model.previewWidth ?? DEFAULT_WIDGET_WIDTH_PX, panel),
 	})
-	const next = { ...model, gate }
-	if (gate._tag !== "Request") return { model: next }
+	const asked = ask({ model: { ...model, gate }, commands: [] }, gate)
+	// `StatSparklineLoader`: the trend is asked for once the stat itself has its value.
+	const sparkline = widget.display.sparkline
+	const sparkGate =
+		panel === "stat" &&
+		sparkline?.enabled === true &&
+		sparkline.dataSource !== undefined &&
+		dataStateOf(asked.model.requests, widget, gate)._tag === "Ready"
+			? planWidget({
+					orgId: context.orgId,
+					dataSource: sparkline.dataSource,
+					window,
+					...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
+				})
+			: null
+	const withSpark = { ...asked, model: { ...asked.model, sparkGate } }
+	return sparkGate === null ? withSpark : ask(withSpark, sparkGate)
+}
+
+type Planned = Readonly<{ model: Model; commands: ReadonlyArray<ReturnType<typeof FetchWidget>> }>
+
+/** A gate's request asked for unless its key is already held. */
+const ask = (planned: Planned, gate: Model["gate"]): Planned => {
+	if (gate === null || gate._tag !== "Request") return planned
 	const { key, endpoint, params } = gate.request
-	return Option.match(Keyed.request(model.requests[key] ?? Keyed.idle(), key, "Load"), {
-		onNone: () => ({ model: next }),
+	return Option.match(Keyed.request(planned.model.requests[key] ?? Keyed.idle(), key, "Load"), {
+		onNone: () => planned,
 		onSome: (slot) => ({
-			model: { ...next, requests: { ...model.requests, [key]: slot } },
-			commands: [FetchWidget({ key, endpoint, params })],
+			model: { ...planned.model, requests: { ...planned.model.requests, [key]: slot } },
+			commands: [...planned.commands, FetchWidget({ key, endpoint, params })],
 		}),
 	})
 }

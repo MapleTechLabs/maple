@@ -43,6 +43,9 @@ export const Model = Schema.Struct({
 	/** The preview pane's quantized width (`useWidgetMaxDataPoints`); `null` until measured. */
 	previewWidth: Schema.NullOr(Schema.Number),
 	gate: Schema.NullOr(WidgetGate),
+	/** A stat preview's trend series, planned once the stat has its value. */
+	sparkGate: Schema.NullOr(WidgetGate),
+	sparklineChart: Chart.Model,
 	requests: Schema.Record(Schema.String, KeyedSchema(Schema.Unknown, WidgetFailure)),
 	chart: Chart.Model,
 	tableSort: TableSort,

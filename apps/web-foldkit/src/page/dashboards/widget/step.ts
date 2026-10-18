@@ -1,4 +1,10 @@
-import { IsoDateTimeString, isPanelType, type PanelType } from "@maple/domain/http"
+import {
+	HEATMAP_COLOR_SCALES,
+	IsoDateTimeString,
+	isPanelType,
+	type PanelType,
+	STAT_AGGREGATES,
+} from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { Option, Schema } from "effect"
 import { Command } from "foldkit"
@@ -25,6 +31,12 @@ const applySelectValue = (state: EditorState, id: string, value: string): Editor
 			return { ...state, unit: value === "duration" ? "duration_ms" : value }
 		case "comparison":
 			return { ...state, comparisonMode: value === "previous_period" ? "previous_period" : "none" }
+		case "stat-aggregate":
+			return { ...state, statAggregate: STAT_AGGREGATES.find((aggregate) => aggregate === value) ?? state.statAggregate }
+		case "stat-value-field":
+			return { ...state, statValueField: value }
+		case "heatmap-colors":
+			return { ...state, heatmapColorScale: HEATMAP_COLOR_SCALES.find((scale) => scale === value) ?? state.heatmapColorScale }
 		default:
 			return state
 	}
@@ -110,9 +122,9 @@ export const timeRangeModeStep = (model: Model, context: PageContext, mode: "das
 
 const decodeIso = Schema.decodeUnknownOption(IsoDateTimeString)
 
-/** `TypePicker`. TODO(widget-editor): only the timeseries panels are configurable here yet. */
+/** `TypePicker`. TODO(widget-editor): list, funnel and paths are not configurable here yet. */
 export const isConfigurablePanel = (panel: string): panel is PanelType =>
-	isPanelType(panel) && (panel === "line" || panel === "bar" || panel === "area" || panel === "markdown")
+	isPanelType(panel) && panel !== "list" && panel !== "funnel" && panel !== "paths"
 
 export const chartStep = (model: Model, message: Chart.Message): Return => {
 	const next = Chart.update(model.chart, message)

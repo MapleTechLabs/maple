@@ -1,4 +1,4 @@
-import { DashboardDocument } from "@maple/domain/http"
+import { DashboardDocument, HEATMAP_SCALE_TYPES } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../charts/chart"
@@ -25,6 +25,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	GotChartMessage: { message: Chart.Message },
+	GotSparklineChartMessage: { message: Chart.Message },
 	ClickedSortColumn: { field: Schema.String, isText: Schema.Boolean },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	CompletedSaveTimeRange: { error: Schema.NullOr(Schema.String) },
@@ -59,6 +60,10 @@ export const Message = defineMessageUnion({
 	ClickedRemoveThreshold: { index: Schema.Number },
 	ToggledPercentChange: {},
 	ChangedUnit: { unit: Schema.String },
+	ToggledSparkline: {},
+	ChangedGaugeBound: { bound: Schema.Literals(["min", "max"]), value: Schema.String },
+	ChangedTableLimit: { value: Schema.String },
+	ChangedHeatmapScaleType: { scaleType: Schema.Literals(HEATMAP_SCALE_TYPES) },
 	ClickedApply: {},
 	CompletedSave: { error: Schema.NullOr(Schema.String) },
 	ClickedCancel: {},

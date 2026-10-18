@@ -17,6 +17,8 @@ export const pageSelect = (
 		size?: "sm" | "default"
 		className?: string
 		ariaLabel?: string
+		renderValue?: (value: string) => ReadonlyArray<Html | string>
+		renderItem?: (option: SelectOption) => ReadonlyArray<Html | string>
 		/** Places the trigger and its siblings (hidden input, portal) in the caller's layout. */
 		toView: (parts: ReadonlyArray<Html>) => Html
 	}>,
@@ -34,6 +36,8 @@ export const pageSelect = (
 			size: inputs.size,
 			className: inputs.className,
 			ariaLabel: inputs.ariaLabel,
+			renderValue: inputs.renderValue,
+			renderItem: inputs.renderItem,
 			toView: inputs.toView,
 		},
 	})
