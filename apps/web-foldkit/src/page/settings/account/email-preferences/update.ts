@@ -244,6 +244,7 @@ export const init = (): Return => ({
 		browserZone: null,
 		subscription: AsyncData.Loading(),
 		facets: { namespaces: [], environments: [] },
+		isFacetsRequested: false,
 		draft: Draft.emptyDraft(),
 		isTogglingOps: false,
 		isTogglingWeb: false,
@@ -252,7 +253,7 @@ export const init = (): Return => ({
 		namespacesBox: Combobox.init("digest-namespaces", "multiple"),
 		environmentsBox: Combobox.init("digest-environments", "multiple"),
 	},
-	commands: [ReadEntry(), FetchSubscription(), FetchFacets()],
+	commands: [ReadEntry(), FetchSubscription()],
 })
 
 const toast = (type: "success" | "error", title: string, description = "") =>
@@ -303,7 +304,15 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedReadEntry: (entry) => ({ model: { ...model, ...entry, isLoaded: true } }),
 		CompletedFetchSubscription: ({ result }) => {
 			const next = { ...model, subscription: AsyncData.settle(model.subscription, result) }
-			return { model: { ...next, draft: Draft.settle(next.draft, baselineOf(next), sameDigestDraft) } }
+			const showsScope = Result.isSuccess(result) && isOpsEnabled(next) && !next.isFacetsRequested
+			return {
+				model: {
+					...next,
+					draft: Draft.settle(next.draft, baselineOf(next), sameDigestDraft),
+					isFacetsRequested: next.isFacetsRequested || showsScope,
+				},
+				commands: showsScope ? [FetchFacets()] : [],
+			}
 		},
 		CompletedFetchFacets: ({ facets }) => ({ model: { ...model, facets } }),
 		ClickedRetry: () => ({ model: { ...model, subscription: AsyncData.Loading() }, commands: [FetchSubscription()] }),

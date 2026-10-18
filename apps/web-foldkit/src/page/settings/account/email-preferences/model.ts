@@ -32,6 +32,8 @@ export const Model = Schema.Struct({
 	browserZone: Schema.NullOr(Schema.String),
 	subscription: SubscriptionData.schema,
 	facets: Facets,
+	/** `ScopeFields` reads the facets once it mounts: when the ops digest's panel first shows. */
+	isFacetsRequested: Schema.Boolean,
 	draft: DraftState(DigestDraft),
 	isTogglingOps: Schema.Boolean,
 	isTogglingWeb: Schema.Boolean,
