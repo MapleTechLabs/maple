@@ -41,7 +41,10 @@ export const sectionCard = <M>(
 	options: Readonly<{ title: string; action?: Html; className?: string }>,
 	children: ReadonlyArray<Html>,
 ): Html =>
-	panel(h, { className: options.className }, [panelHeader(h, { title: options.title, action: options.action }), panelBody(h, children)])
+	panel(h, { className: options.className }, [
+		panelHeader(h, { title: options.title, action: options.action }),
+		panelBody(h, children),
+	])
 
 export const deploySummary = <M>(h: HtmlBuilder<M>, group: ReleaseGroup, clock: Clock): Html => {
 	const services = new Set(group.services.map((impact) => impact.serviceName)).size
@@ -64,23 +67,65 @@ export const deploySummary = <M>(h: HtmlBuilder<M>, group: ReleaseGroup, clock: 
 					}),
 				],
 			),
-			h.span([], [h.span([h.Class("font-medium tabular-nums text-foreground")], [String(services)]), " ", pluralize(services, "service")]),
-			h.span([], [h.span([h.Class("font-medium tabular-nums text-foreground")], [formatNumber(group.spanCount)]), " ", "requests"]),
-			...(flagged > 0 ? [h.span([h.Class("text-severity-warn")], [countLabel(flagged, "service"), " flagged"])] : []),
+			h.span(
+				[],
+				[
+					h.span([h.Class("font-medium tabular-nums text-foreground")], [String(services)]),
+					" ",
+					pluralize(services, "service"),
+				],
+			),
+			h.span(
+				[],
+				[
+					h.span(
+						[h.Class("font-medium tabular-nums text-foreground")],
+						[formatNumber(group.spanCount)],
+					),
+					" ",
+					"requests",
+				],
+			),
+			...(flagged > 0
+				? [h.span([h.Class("text-severity-warn")], [countLabel(flagged, "service"), " flagged"])]
+				: []),
 		],
 	)
 }
 
-const beforeAfter = <M>(h: HtmlBuilder<M>, before: number | undefined, after: number, format: (value: number) => string, tone?: "error" | "warn"): Html =>
+const beforeAfter = <M>(
+	h: HtmlBuilder<M>,
+	before: number | undefined,
+	after: number,
+	format: (value: number) => string,
+	tone?: "error" | "warn",
+): Html =>
 	h.span(
 		[h.Class("inline-flex items-baseline gap-1 font-mono text-xs tabular-nums")],
 		[
-			...(before === undefined ? [] : [h.span([h.Class("text-3xs text-muted-foreground/70")], [format(before), " →"])]),
-			h.span([h.Class(cn(tone === "error" && "text-severity-error", tone === "warn" && "text-severity-warn"))], [format(after)]),
+			...(before === undefined
+				? []
+				: [h.span([h.Class("text-3xs text-muted-foreground/70")], [format(before), " →"])]),
+			h.span(
+				[
+					h.Class(
+						cn(
+							tone === "error" && "text-severity-error",
+							tone === "warn" && "text-severity-warn",
+						),
+					),
+				],
+				[format(after)],
+			),
 		],
 	)
 
-const serviceRow = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact, environments: ReadonlyArray<string> | undefined, timeSearch: TimeSearch): Html =>
+const serviceRow = <M>(
+	h: HtmlBuilder<M>,
+	impact: ReleaseServiceImpact,
+	environments: ReadonlyArray<string> | undefined,
+	timeSearch: TimeSearch,
+): Html =>
 	tableRow(
 		h,
 		[
@@ -93,7 +138,9 @@ const serviceRow = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact, environm
 								releaseHref(impact.commitSha, {
 									...timeSearch,
 									service: impact.serviceName,
-									environments: environments ?? (impact.environment ? [impact.environment] : undefined),
+									environments:
+										environments ??
+										(impact.environment ? [impact.environment] : undefined),
 								}),
 							),
 							h.Class("inline-flex items-center gap-2 hover:underline"),
@@ -104,22 +151,46 @@ const serviceRow = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact, environm
 							...(impact.environment && !environments?.length
 								? [h.span([h.Class("text-muted-foreground/70")], [impact.environment])]
 								: []),
-							...(impact.health === "healthy" ? [] : [releaseHealthPill(h, impact.health, releaseHealthFigure(impact))]),
+							...(impact.health === "healthy"
+								? []
+								: [releaseHealthPill(h, impact.health, releaseHealthFigure(impact))]),
 						],
 					),
 				],
 				"pl-4",
 			),
-			tableCell(h, [impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : EMPTY_VALUE], "font-mono text-2xs text-muted-foreground"),
+			tableCell(
+				h,
+				[impact.baseline ? shortReleaseLabel(impact.baseline.commitSha) : EMPTY_VALUE],
+				"font-mono text-2xs text-muted-foreground",
+			),
 			tableCell(h, [formatNumber(impact.spanCount)], "text-right font-mono tabular-nums"),
-			tableCell(h, [beforeAfter(h, impact.baseline?.errorRate, impact.errorRate, formatErrorRate, impact.health === "regressed" ? "error" : undefined)]),
-			tableCell(h, [beforeAfter(h, impact.baseline?.p95LatencyMs, impact.p95LatencyMs, formatLatency, impact.health === "watch" ? "warn" : undefined)]),
+			tableCell(h, [
+				beforeAfter(
+					h,
+					impact.baseline?.errorRate,
+					impact.errorRate,
+					formatErrorRate,
+					impact.health === "regressed" ? "error" : undefined,
+				),
+			]),
+			tableCell(h, [
+				beforeAfter(
+					h,
+					impact.baseline?.p95LatencyMs,
+					impact.p95LatencyMs,
+					formatLatency,
+					impact.health === "watch" ? "warn" : undefined,
+				),
+			]),
 			tableCell(
 				h,
 				[impact.share === undefined ? EMPTY_VALUE : formatPercent(impact.share)],
 				cn(
 					"pr-4 text-right font-mono tabular-nums",
-					impact.share !== undefined && impact.share > 0 && impact.share < ROLLOUT_COMPLETE_SHARE ? "text-primary" : "text-muted-foreground",
+					impact.share !== undefined && impact.share > 0 && impact.share < ROLLOUT_COMPLETE_SHARE
+						? "text-primary"
+						: "text-muted-foreground",
 				),
 			),
 		],
@@ -127,13 +198,25 @@ const serviceRow = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact, environm
 		[h.Key(`${impact.serviceName}:${impact.environment}`)],
 	)
 
-export const deployServices = <M>(h: HtmlBuilder<M>, group: ReleaseGroup, environments: ReadonlyArray<string> | undefined, timeSearch: TimeSearch): Html => {
+export const deployServices = <M>(
+	h: HtmlBuilder<M>,
+	group: ReleaseGroup,
+	environments: ReadonlyArray<string> | undefined,
+	timeSearch: TimeSearch,
+): Html => {
 	const rows = group.services.toSorted(
-		(a, b) => Number(a.health === "healthy") - Number(b.health === "healthy") || b.spanCount - a.spanCount,
+		(a, b) =>
+			Number(a.health === "healthy") - Number(b.health === "healthy") || b.spanCount - a.spanCount,
 	)
 	return sectionCard(
 		h,
-		{ title: "Services", action: h.span([h.Class("text-2xs text-muted-foreground/70")], ["against the version each replaced"]) },
+		{
+			title: "Services",
+			action: h.span(
+				[h.Class("text-2xs text-muted-foreground/70")],
+				["against the version each replaced"],
+			),
+		},
 		[
 			table(h, { size: "sm" }, [
 				tableHeader(h, [
@@ -150,7 +233,10 @@ export const deployServices = <M>(h: HtmlBuilder<M>, group: ReleaseGroup, enviro
 						eyebrowVariants(),
 					),
 				]),
-				tableBody(h, rows.map((impact) => serviceRow(h, impact, environments, timeSearch))),
+				tableBody(
+					h,
+					rows.map((impact) => serviceRow(h, impact, environments, timeSearch)),
+				),
 			]),
 		],
 	)
@@ -174,12 +260,19 @@ export type ChangesetState =
 /** `ReleaseChangeset`. */
 export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, clock: Clock): Html => {
 	if (state._tag === "NoBase")
-		return sectionCard(h, { title: "What shipped" }, [emptyMessage(h, {}, ["No earlier version in this window to compare against."])])
+		return sectionCard(h, { title: "What shipped" }, [
+			emptyMessage(h, {}, ["No earlier version in this window to compare against."]),
+		])
 	if (state._tag === "NotShas")
 		return sectionCard(h, { title: "What shipped" }, [
-			emptyMessage(h, {}, ["These versions are not commit shas, so the commits between them are unknown."]),
+			emptyMessage(h, {}, [
+				"These versions are not commit shas, so the commits between them are unknown.",
+			]),
 		])
-	const action = h.span([h.Class("text-2xs text-muted-foreground/70")], ["since ", h.span([h.Class("font-mono")], [shortReleaseLabel(state.base)])])
+	const action = h.span(
+		[h.Class("text-2xs text-muted-foreground/70")],
+		["since ", h.span([h.Class("font-mono")], [shortReleaseLabel(state.base)])],
+	)
 	if (state._tag === "Loading")
 		return sectionCard(h, { title: "What shipped", action }, [
 			h.div([h.Class("space-y-2 p-3")], [skeleton(h, "h-4 w-3/4"), skeleton(h, "h-4 w-1/2")]),
@@ -207,9 +300,17 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 						const pr = pullRequestUrl(subject, commit.htmlUrl)
 						const author = commit.authorLogin ?? commit.authorName ?? "Unknown author"
 						return h.div(
-							[h.Key(commit.sha), h.Class("flex items-start gap-2.5 border-t border-border/60 px-4 py-2 text-xs first:border-t-0")],
 							[
-								h.div([h.Class("mt-px shrink-0")], [commitAvatar(h, commit.authorAvatarUrl, author)]),
+								h.Key(commit.sha),
+								h.Class(
+									"flex items-start gap-2.5 border-t border-border/60 px-4 py-2 text-xs first:border-t-0",
+								),
+							],
+							[
+								h.div(
+									[h.Class("mt-px shrink-0")],
+									[commitAvatar(h, commit.authorAvatarUrl, author)],
+								),
 								h.div(
 									[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
 									[
@@ -224,14 +325,34 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 											[subject],
 										),
 										h.span(
-											[h.Class("flex items-center gap-1.5 text-2xs text-muted-foreground")],
-											[h.span([h.Class("font-mono")], [shortReleaseLabel(commit.sha)]), h.span([h.Class("truncate")], [author])],
+											[
+												h.Class(
+													"flex items-center gap-1.5 text-2xs text-muted-foreground",
+												),
+											],
+											[
+												h.span(
+													[h.Class("font-mono")],
+													[shortReleaseLabel(commit.sha)],
+												),
+												h.span([h.Class("truncate")], [author]),
+											],
 										),
 									],
 								),
 								h.span(
-									[h.Class("shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/70")],
-									[formatRelativeTimeOrDate(new Date(commit.committedAt).toISOString(), clock.nowMs, clock.timeZone)],
+									[
+										h.Class(
+											"shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/70",
+										),
+									],
+									[
+										formatRelativeTimeOrDate(
+											new Date(commit.committedAt).toISOString(),
+											clock.nowMs,
+											clock.timeZone,
+										),
+									],
 								),
 							],
 						)
@@ -239,7 +360,11 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 					...(hidden > 0
 						? [
 								h.div(
-									[h.Class("border-t border-border/60 px-4 py-2 text-2xs text-muted-foreground/70")],
+									[
+										h.Class(
+											"border-t border-border/60 px-4 py-2 text-2xs text-muted-foreground/70",
+										),
+									],
 									[String(hidden), " older ", pluralize(hidden, "commit"), " not shown"],
 								),
 							]
@@ -262,10 +387,18 @@ const severityBadge = <M>(h: HtmlBuilder<M>, severity: string | null): Html => {
 	const known = severity === null ? undefined : SEVERITY.get(severity)
 	return known === undefined
 		? h.span([h.Class(cn("inline-flex h-5", "w-[60px] justify-center")), h.Title("Severity not set")])
-		: badge(h, { variant: "outline", className: cn(known.tone, "w-[60px] justify-center") }, [known.label])
+		: badge(h, { variant: "outline", className: cn(known.tone, "w-[60px] justify-center") }, [
+				known.label,
+			])
 }
 
-const issueLine = <M>(h: HtmlBuilder<M>, issue: ErrorIssueDocument, clock: Clock, occurrences: number | undefined, isServiceShown: boolean): Html => {
+const issueLine = <M>(
+	h: HtmlBuilder<M>,
+	issue: ErrorIssueDocument,
+	clock: Clock,
+	occurrences: number | undefined,
+	isServiceShown: boolean,
+): Html => {
 	const title = issue.errorLabel || issue.exceptionType || issue.exceptionMessage || "Unknown error"
 	return listRow(h, {
 		density: "compact",
@@ -276,7 +409,10 @@ const issueLine = <M>(h: HtmlBuilder<M>, issue: ErrorIssueDocument, clock: Clock
 					[h.Class("contents")],
 					[
 						severityBadge(h, issue.severity),
-						h.span([h.Class("ml-2.5 inline-flex"), h.Title(issue.serviceName)], [serviceDot(h, { serviceName: issue.serviceName })]),
+						h.span(
+							[h.Class("ml-2.5 inline-flex"), h.Title(issue.serviceName)],
+							[serviceDot(h, { serviceName: issue.serviceName })],
+						),
 					],
 				)
 			: severityBadge(h, issue.severity),
@@ -285,7 +421,10 @@ const issueLine = <M>(h: HtmlBuilder<M>, issue: ErrorIssueDocument, clock: Clock
 			[h.Class("contents")],
 			[
 				h.span(
-					[h.Class("font-mono text-xs tabular-nums text-muted-foreground"), h.Title("Occurrences on this version in the window")],
+					[
+						h.Class("font-mono text-xs tabular-nums text-muted-foreground"),
+						h.Title("Occurrences on this version in the window"),
+					],
 					[formatNumber(occurrences ?? issue.occurrenceCount), "×"],
 				),
 				relativeTime(h, {
@@ -312,6 +451,8 @@ export const issueList = <M>(
 		tone?: "error" | "warn"
 		isServiceShown: boolean
 		clock: Clock
+		/** Occurrences on this version, by fingerprint (the release service body). */
+		counts?: ReadonlyMap<string, number>
 	}>,
 ): Html =>
 	sectionCard(
@@ -338,7 +479,15 @@ export const issueList = <M>(
 				? emptyMessage(h, {}, [options.empty])
 				: h.div(
 						[h.Class("space-y-px p-2")],
-						options.issues.map((issue) => issueLine(h, issue, options.clock, undefined, options.isServiceShown)),
+						options.issues.map((issue) =>
+							issueLine(
+								h,
+								issue,
+								options.clock,
+								options.counts?.get(issue.fingerprintHash),
+								options.isServiceShown,
+							),
+						),
 					),
 		],
 	)

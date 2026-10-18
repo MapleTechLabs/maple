@@ -8,13 +8,17 @@ const release = opsScenarios("releases", "Releases")
 /** A TanStack search value: JSON, URI-encoded. */
 const param = (key: string, value: unknown) => `${key}=${encodeURIComponent(JSON.stringify(value))}`
 const ROLLING = `/releases?${param("impact", "rolling")}`
+const SERVICE = `/releases/${SEEDED.paymentRelease}?${param("service", "payment-svc")}`
 
 const failing = (tag: string) => ({
 	faults: {
 		failures: {
 			[tag]: {
 				status: 502,
-				body: { _tag: "@maple/http/errors/QueryEngineExecutionError", message: "ui-parity: injected releases failure" },
+				body: {
+					_tag: "@maple/http/errors/QueryEngineExecutionError",
+					message: "ui-parity: injected releases failure",
+				},
 			},
 		},
 	},
@@ -52,21 +56,59 @@ export const releasesArea: AreaModule = {
 		release("list-service-search", "Service facet searched", "/releases", {
 			steps: act((page) => page.getByPlaceholder("Search service...").fill("pay")),
 		}),
-		release("list-service-filter", "Filtered to cart-svc", "/releases", { steps: act(checkBox("cart-svc")) }),
+		release("list-service-filter", "Filtered to cart-svc", "/releases", {
+			steps: act(checkBox("cart-svc")),
+		}),
 		release("detail-loading", "Detail, releases held", `/releases/${SEEDED.paymentRelease}`, {
 			faults: { delays: { "queryEngine.releasesList": 60_000 } },
 			settle: "held",
 		}),
-		release("detail-error", "Detail, releases failing", `/releases/${SEEDED.paymentRelease}`, failing("queryEngine.releasesList")),
+		release(
+			"detail-error",
+			"Detail, releases failing",
+			`/releases/${SEEDED.paymentRelease}`,
+			failing("queryEngine.releasesList"),
+		),
 		release("detail-no-traffic", "Detail, a sha with no traffic", `/releases/${"ab".repeat(20)}`),
-		release("detail-time-preset", "Detail, Last 1 month from the picker", `/releases/${SEEDED.paymentRelease}`, {
-			steps: act(clickButton("Last 7 days"), (page) => page.getByRole("dialog").getByRole("button", { name: "Last 1 month" }).click()),
+		release(
+			"detail-time-preset",
+			"Detail, Last 1 month from the picker",
+			`/releases/${SEEDED.paymentRelease}`,
+			{
+				steps: act(clickButton("Last 7 days"), (page) =>
+					page.getByRole("dialog").getByRole("button", { name: "Last 1 month" }).click(),
+				),
+			},
+		),
+		release("detail-service", "payment-svc on 3.5.0", SERVICE),
+		release("detail-service-previous", "Service body charting the previous version", SERVICE, {
+			steps: act((page) =>
+				page.getByRole("group", { name: "Chart series" }).getByText("Previous version").click(),
+			),
 		}),
-		release("list-time-picker","Time range picker open", "/releases", {
+		release("detail-service-version", "Another version from the versions rail", SERVICE, {
+			steps: act((page) => page.locator(".max-h-80 a").last().click()),
+		}),
+		release("detail-service-open-service", "Service button to the service page", SERVICE, {
+			steps: act((page) => page.getByRole("link", { name: "payment-svc" }).first().click()),
+		}),
+		release("detail-service-loading", "Service body, detail held", SERVICE, {
+			faults: { delays: { "queryEngine.releaseDetail": 60_000 } },
+			settle: "held",
+		}),
+		release(
+			"detail-service-error",
+			"Service body, detail failing",
+			SERVICE,
+			failing("queryEngine.releaseDetail"),
+		),
+		release("list-time-picker", "Time range picker open", "/releases", {
 			steps: act(clickButton("Last 7 days")),
 		}),
 		release("list-time-preset", "Last 1 month from the picker", "/releases", {
-			steps: act(clickButton("Last 7 days"), (page) => page.getByRole("dialog").getByRole("button", { name: "Last 1 month" }).click()),
+			steps: act(clickButton("Last 7 days"), (page) =>
+				page.getByRole("dialog").getByRole("button", { name: "Last 1 month" }).click(),
+			),
 		}),
 	],
 }

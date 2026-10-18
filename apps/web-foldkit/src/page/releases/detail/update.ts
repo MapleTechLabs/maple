@@ -1,7 +1,9 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { NEW_ISSUE_SLACK_MS, previousSha } from "@maple/web/components/releases/release-model"
 import { Option } from "effect"
-import { Command } from "foldkit"
+import { AsyncData, Command } from "foldkit"
+import * as Chart from "../../../charts/chart"
+import { ChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import type { LoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
@@ -24,6 +26,7 @@ import {
 import { groupOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { followLoaded, followService } from "./service"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -56,9 +59,16 @@ const chain = (first: Return, next: (model: Model) => Return): Return => {
 	return { model: second.model, commands: [...(first.commands ?? []), ...(second.commands ?? [])] }
 }
 
-const requestReleases = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
+const requestReleases = (
+	model: Model,
+	context: PageContext,
+	window: TimeWindow,
+	mode: RequestMode,
+): Return => {
 	const environments = model.search.environments
-	const key = requestKey(context.orgId, "getReleases", { data: { startTime: window.startTime, endTime: window.endTime, environments } })
+	const key = requestKey(context.orgId, "getReleases", {
+		data: { startTime: window.startTime, endTime: window.endTime, environments },
+	})
 	return slotStep(
 		{ ...model, window },
 		model.releases,
@@ -69,22 +79,44 @@ const requestReleases = (model: Model, context: PageContext, window: TimeWindow,
 	)
 }
 
-/** What mounts with the loaded deploy: its changeset and its issues. */
+/** What mounts with the loaded deploy: its changeset and its issues; with `?service=`, the service body. */
 const followDeploy = (model: Model, context: PageContext, mode: RequestMode): Return =>
+	model.search.service !== undefined
+		? followService(model, context, mode)
+		: followOverview(model, context, mode)
+
+const followOverview = (model: Model, context: PageContext, mode: RequestMode): Return =>
 	Option.match(groupOf(model), {
 		onNone: () => ({ model }),
 		onSome: (group) => {
 			const base = previousSha(group)
 			const ranges = base === undefined ? "" : commitRangesKey([{ base, head: model.commitSha }])
 			const introducedAfter = new Date(toEpochMs(group.firstSeen) - NEW_ISSUE_SLACK_MS).toISOString()
-			const issuesKey = requestKey(context.orgId, "errorIssues.list", { introduced_after: introducedAfter, limit: 100 })
+			const issuesKey = requestKey(context.orgId, "errorIssues.list", {
+				introduced_after: introducedAfter,
+				limit: 100,
+			})
 			const changesetKey = requestKey(context.orgId, "vcsCommitRanges", { ranges, limit: 100 })
 			return chain(
 				ranges === ""
 					? { model }
-					: slotStep(model, model.changeset, (changeset) => ({ changeset }), changesetKey, mode, FetchChangeset({ key: changesetKey, ranges })),
+					: slotStep(
+							model,
+							model.changeset,
+							(changeset) => ({ changeset }),
+							changesetKey,
+							mode,
+							FetchChangeset({ key: changesetKey, ranges }),
+						),
 				(next) =>
-					slotStep(next, next.issues, (issues) => ({ issues }), issuesKey, mode, FetchDeployIssues({ key: issuesKey, introducedAfter })),
+					slotStep(
+						next,
+						next.issues,
+						(issues) => ({ issues }),
+						issuesKey,
+						mode,
+						FetchDeployIssues({ key: issuesKey, introducedAfter }),
+					),
 			)
 		},
 	})
@@ -92,7 +124,14 @@ const followDeploy = (model: Model, context: PageContext, mode: RequestMode): Re
 const loadCommit = (model: Model, context: PageContext): Return => {
 	if (!isResolvableSha(model.commitSha)) return { model }
 	const key = requestKey(context.orgId, "vcsCommitDetail", { sha: model.commitSha })
-	return slotStep(model, model.commit, (commit) => ({ commit }), key, "Load", FetchReleaseCommit({ key, sha: model.commitSha }))
+	return slotStep(
+		model,
+		model.commit,
+		(commit) => ({ commit }),
+		key,
+		"Load",
+		FetchReleaseCommit({ key, sha: model.commitSha }),
+	)
 }
 
 export const init = (route: ReleaseRoute, context: PageContext): Return => {
@@ -108,50 +147,126 @@ export const init = (route: ReleaseRoute, context: PageContext): Return => {
 		changeset: Keyed.idle(),
 		issues: Keyed.idle(),
 		timePicker: TimeRangePicker.init("release-time-range"),
+		detail: Keyed.idle(),
+		series: "version",
+		serviceIssues: Keyed.idle(),
+		charts: {},
+		themeColors: null,
+		chartRuntime: null,
+		markerCommits: {},
 	}
 	const commit = loadCommit(model, context)
-	return { model: commit.model, commands: [resolveCommand(model, context, "Load"), ...(commit.commands ?? [])] }
+	return {
+		model: commit.model,
+		commands: [resolveCommand(model, context, "Load"), ...(commit.commands ?? [])],
+	}
 }
 
-const searchHref = (commitSha: string, search: Model["search"]) => hrefOf(AppRoute.Release({ commitSha, search }))
+const searchHref = (commitSha: string, search: Model["search"]) =>
+	hrefOf(AppRoute.Release({ commitSha, search }))
 
 export const routeChanged = (model: Model, route: ReleaseRoute, context: PageContext): Return => {
-	if (searchHref(model.commitSha, model.search) === searchHref(route.commitSha, route.search)) return { model }
+	if (searchHref(model.commitSha, model.search) === searchHref(route.commitSha, route.search))
+		return { model }
 	const next = { ...model, search: route.search }
-	return { model: next, commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+	return {
+		model: next,
+		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
+	}
 }
 
 const navigate = (model: Model, search: Model["search"]): Return => ({
 	model,
-	outMessage: PageOutMessage.RequestedNavigation({ url: searchHref(model.commitSha, search), isReplace: false }),
+	outMessage: PageOutMessage.RequestedNavigation({
+		url: searchHref(model.commitSha, search),
+		isReplace: false,
+	}),
 })
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
-			chain(requestReleases({ ...model, nowMs }, context, window, mode), (next) => followDeploy(next, context, mode)),
-		CompletedFetchCommit: ({ key, result }) => ({ model: { ...model, commit: Keyed.accept(model.commit, key, result) } }),
+			chain(requestReleases({ ...model, nowMs }, context, window, mode), (next) =>
+				followDeploy(next, context, mode),
+			),
+		CompletedFetchCommit: ({ key, result }) => ({
+			model: { ...model, commit: Keyed.accept(model.commit, key, result) },
+		}),
 		CompletedFetchReleases: ({ key, result }) =>
 			followDeploy({ ...model, releases: Keyed.accept(model.releases, key, result) }, context, "Load"),
-		CompletedFetchChangeset: ({ key, result }) => ({ model: { ...model, changeset: Keyed.accept(model.changeset, key, result) } }),
-		CompletedFetchIssues: ({ key, result }) => ({ model: { ...model, issues: Keyed.accept(model.issues, key, result) } }),
+		CompletedFetchChangeset: ({ key, result }) => ({
+			model: { ...model, changeset: Keyed.accept(model.changeset, key, result) },
+		}),
+		CompletedFetchIssues: ({ key, result }) => ({
+			model: { ...model, issues: Keyed.accept(model.issues, key, result) },
+		}),
+		CompletedFetchDetail: ({ key, result }) => {
+			const next = { ...model, detail: Keyed.accept(model.detail, key, result) }
+			return next.search.service === undefined
+				? { model: next }
+				: followLoaded(next, context, next.search.service, "Load")
+		},
+		CompletedFetchServiceIssues: ({ key, result }) => ({
+			model: { ...model, serviceIssues: Keyed.accept(model.serviceIssues, key, result) },
+		}),
+		CompletedFetchMarkerCommit: ({ sha, result }) => ({
+			model: {
+				...model,
+				markerCommits: {
+					...model.markerCommits,
+					[sha]: AsyncData.settle(model.markerCommits[sha] ?? AsyncData.Loading(), result),
+				},
+			},
+		}),
+		ClickedSeries: ({ series }) => followDeploy({ ...model, series }, context, "Load"),
+		GotChartMessage: ({ chartId, message: inner }) => {
+			const next = Chart.update(model.charts[chartId] ?? Chart.init(), inner)
+			return {
+				model: { ...model, charts: { ...model.charts, [chartId]: next.model } },
+				commands: Command.mapMessages(next.commands ?? [], (chart) =>
+					Message.GotChartMessage({ chartId, message: chart }),
+				),
+			}
+		},
+		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: ChartRuntime.Ready() } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: ChartRuntime.Failed({ reason }) },
+		}),
+		CompletedMountLinkedCursor: () => ({ model }),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
 				model: reloaded,
-				commands: [resolveCommand(reloaded, context, "Refresh"), CompleteReleaseReloadSpin({ version: reloaded.refreshVersion })],
+				commands: [
+					resolveCommand(reloaded, context, "Refresh"),
+					CompleteReleaseReloadSpin({ version: reloaded.refreshVersion }),
+				],
 			}
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
-		ClickedRetry: () => (model.window === null ? { model } : requestReleases(model, context, model.window, "Refresh")),
+		// The service body's retry refreshes its detail bundle (`useAtomRefresh(atom)`), not the list.
+		ClickedRetry: () =>
+			model.window === null
+				? { model }
+				: model.search.service !== undefined && AsyncData.isFailure(model.detail.data)
+					? followService(model, context, "Refresh")
+					: requestReleases(model, context, model.window, "Refresh"),
 		ClickedResetTimeRange: () =>
-			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: DEFAULT_PRESET }),
+			navigate(model, {
+				...model.search,
+				startTime: undefined,
+				endTime: undefined,
+				timePreset: DEFAULT_PRESET,
+			}),
 		GotTimePickerMessage: ({ message: inner }) => {
 			const next = TimeRangePicker.update(model.timePicker, inner)
 			const lifted: Return = {
 				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) => Message.GotTimePickerMessage({ message: picker })),
+				commands: Command.mapMessages(next.commands, (picker) =>
+					Message.GotTimePickerMessage({ message: picker }),
+				),
 			}
 			return next.outMessage === undefined
 				? lifted

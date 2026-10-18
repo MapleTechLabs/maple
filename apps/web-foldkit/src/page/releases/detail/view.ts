@@ -1,4 +1,4 @@
-import type { ErrorIssueDocument, VcsCommitRangeResponse } from "@maple/domain/http"
+import type { ErrorIssueDocument } from "@maple/domain/http"
 import { attributeIssues, previousSha, shortReleaseLabel } from "@maple/web/components/releases/release-model"
 import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
 import { Option } from "effect"
@@ -14,20 +14,20 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { commitAvatar, commitRangesKey, firstLine, isResolvableSha } from "../kit"
+import { commitAvatar, firstLine, isResolvableSha } from "../kit"
 import { DEFAULT_PRESET, deriveOf } from "../list/derive"
 import { groupOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { type ChangesetState, type Clock, deploySummary, deployServices, issueList, releaseChangeset } from "./view-sections"
+import { changesetState, serviceBody, serviceButton } from "./view-service"
+import { type Clock, deploySummary, deployServices, issueList, releaseChangeset } from "./view-sections"
 
-// `ReleaseDetailPage` (apps/web/src/routes/releases/$commitSha.tsx) without a `service`: `ReleaseDeployOverview`.
-// TODO(release-service): the service-scoped body (`ReleaseBody`: comparison, versions rail, metrics
-// grid with commit markers, issues by fingerprint) is not ported; it renders the deploy overview.
+// `ReleaseDetailPage` (apps/web/src/routes/releases/$commitSha.tsx): `ReleaseDeployOverview`, or with `?service=` the service body (view-service.ts).
 
 type H = HtmlBuilder<Message>
 
-const plainSha = (h: H, sha: string, label: string): Html => h.span([h.Class("truncate font-mono"), h.Title(sha)], [label])
+const plainSha = (h: H, sha: string, label: string): Html =>
+	h.span([h.Class("truncate font-mono"), h.Title(sha)], [label])
 
 /** `ReleaseTitle`: the commit message once the sha resolves, the short sha until then. */
 const releaseTitle = (h: H, model: Model): Html => {
@@ -39,7 +39,12 @@ const releaseTitle = (h: H, model: Model): Html => {
 			return h.span(
 				[h.Class("flex min-w-0 items-center gap-2.5")],
 				[
-					commitAvatar(h, commit.authorAvatarUrl, commit.authorLogin ?? commit.authorName ?? "Unknown author", false),
+					commitAvatar(
+						h,
+						commit.authorAvatarUrl,
+						commit.authorLogin ?? commit.authorName ?? "Unknown author",
+						false,
+					),
 					subject
 						? h.span([h.Class("truncate"), h.Title(subject)], [subject])
 						: plainSha(h, model.commitSha, shortReleaseLabel(model.commitSha)),
@@ -47,25 +52,6 @@ const releaseTitle = (h: H, model: Model): Html => {
 			)
 		},
 	})
-}
-
-const changesetState = (model: Model, base: string | undefined): ChangesetState => {
-	if (base === undefined) return { _tag: "NoBase" }
-	if (commitRangesKey([{ base, head: model.commitSha }]) === "") return { _tag: "NotShas" }
-	return AsyncData.match(model.changeset.data, {
-		onIdle: (): ChangesetState => ({ _tag: "Loading", base }),
-		onLoading: (): ChangesetState => ({ _tag: "Loading", base }),
-		onFailure: (): ChangesetState => ({ _tag: "Unavailable", base }),
-		onStale: (): ChangesetState => ({ _tag: "Unavailable", base }),
-		onSuccess: (ranges) => loadedState(ranges),
-		onRefreshing: (ranges) => loadedState(ranges),
-	})
-	function loadedState(ranges: ReadonlyArray<VcsCommitRangeResponse>): ChangesetState {
-		const range = ranges[0]
-		return range === undefined || range.status === "unavailable" || base === undefined
-			? { _tag: "Unavailable", base: base ?? "" }
-			: { _tag: "Loaded", base, range }
-	}
 }
 
 const deployIssues = (h: H, model: Model, clock: Clock): Html => {
@@ -76,8 +62,10 @@ const deployIssues = (h: H, model: Model, clock: Clock): Html => {
 	return AsyncData.match(model.issues.data, {
 		onIdle: () => skeleton(h, "h-32 w-full rounded-md"),
 		onLoading: () => skeleton(h, "h-32 w-full rounded-md"),
-		onFailure: (failure) => errorState(h, { failure, title: "Issues could not be loaded", variant: "row" }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Issues could not be loaded", variant: "row" }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Issues could not be loaded", variant: "row" }),
+		onStale: ({ error }) =>
+			errorState(h, { failure: error, title: "Issues could not be loaded", variant: "row" }),
 		onSuccess: (issues) => lists(issues),
 		onRefreshing: (issues) => lists(issues),
 	})
@@ -113,8 +101,14 @@ const overview = (h: H, model: Model, clock: Clock): Html => {
 	return AsyncData.match(model.releases.data, {
 		onIdle: () => loading(h),
 		onLoading: () => loading(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load release", onRetry: Message.ClickedRetry() }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Failed to load release", onRetry: Message.ClickedRetry() }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Failed to load release", onRetry: Message.ClickedRetry() }),
+		onStale: ({ error }) =>
+			errorState(h, {
+				failure: error,
+				title: "Failed to load release",
+				onRetry: Message.ClickedRetry(),
+			}),
 		onSuccess: () => loaded(),
 		onRefreshing: () => loaded(),
 	})
@@ -145,41 +139,60 @@ const overview = (h: H, model: Model, clock: Clock): Html => {
 	}
 }
 
-const loading =(h: H): Html =>
+const loading = (h: H): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-3")],
-		[skeleton(h, "h-4 w-80"), skeleton(h, "h-48 w-full rounded-md"), skeleton(h, "h-48 w-full rounded-md")],
+		[
+			skeleton(h, "h-4 w-80"),
+			skeleton(h, "h-48 w-full rounded-md"),
+			skeleton(h, "h-48 w-full rounded-md"),
+		],
 	)
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	dashboardPage(
+const timeControlsOf = (h: H, model: Model): Html =>
+	timeControls(h, {
+		search: model.search,
+		defaultPreset: DEFAULT_PRESET,
+		window: model.window,
+		onReset: Message.ClickedResetTimeRange(),
+		onReload: Message.ClickedReload(),
+		isReloading: model.isReloading,
+		trigger: (label) =>
+			h.submodel({
+				slotId: "release-time-range-picker",
+				model: model.timePicker,
+				view: TimeRangePicker.view,
+				toParentMessage: (message) => Message.GotTimePickerMessage({ message }),
+				viewInputs: {
+					label,
+					selectedPreset:
+						model.search.timePreset ??
+						(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
+					presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
+				},
+			}),
+	})
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
+	const service = model.search.service
+	return dashboardPage(
 		h,
 		{
-			titleContent: pageTitle(h, { className: "flex min-w-0 items-center gap-2.5" }, [releaseTitle(h, model)]),
-			actions: timeControls(h, {
-				search: model.search,
-				defaultPreset: DEFAULT_PRESET,
-				window: model.window,
-				onReset: Message.ClickedResetTimeRange(),
-				onReload: Message.ClickedReload(),
-				isReloading: model.isReloading,
-				trigger: (label) =>
-					h.submodel({
-						slotId: "release-time-range-picker",
-						model: model.timePicker,
-						view: TimeRangePicker.view,
-						toParentMessage: (message) => Message.GotTimePickerMessage({ message }),
-						viewInputs: {
-							label,
-							selectedPreset: model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
-							presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
-						},
-					}),
-			}),
+			titleContent: pageTitle(h, { className: "flex min-w-0 items-center gap-2.5" }, [
+				releaseTitle(h, model),
+			]),
+			actions:
+				service === undefined
+					? timeControlsOf(h, model)
+					: h.div(
+							[h.Class("flex flex-wrap items-center gap-2")],
+							[serviceButton(h, model, service), timeControlsOf(h, model)],
+						),
 		},
-		[overview(h, model, { nowMs: model.nowMs, timeZone: inputs.context.timeZone })],
-	),
-)
+		[service === undefined ? overview(h, model, clock) : serviceBody(h, model, service, clock)],
+	)
+})
 
 export const breadcrumbsOf = (model: Model): ReadonlyArray<BreadcrumbEntry> =>
 	model.search.service === undefined
