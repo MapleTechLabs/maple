@@ -13,7 +13,7 @@ const step = (model: Model, message: Message) => update(model, message, "org_acm
 
 const opened = (viaKeyboard = false) => {
 	const open = step(init(), Message.RequestedOpen({ viaKeyboard }))
-	return step(open.model, Message.CompletedReadSheetTab({ orgId: "org_acme", tabId: "quick", nowMs: NOW }))
+	return step(open.model, Message.CompletedReadSheetTab({ orgId: "org_acme", tabId: "quick", nowMs: NOW, referrerPath: null }))
 }
 
 describe("chat sheet", () => {
@@ -33,13 +33,13 @@ describe("chat sheet", () => {
 	test("New chat creates a stored tab and moves the sheet onto it", () => {
 		const model = opened().model
 		expect(names(step(model, Message.ClickedNewChat()).commands)).toEqual(["CreateChatSheetTab"])
-		const created = step(model, Message.CreatedSheetTab({ orgId: "org_acme", tabId: "t-new" }))
+		const created = step(model, Message.CreatedSheetTab({ orgId: "org_acme", tabId: "t-new", referrerPath: null }))
 		expect(created.model.tabId).toBe("t-new")
 		expect(created.model.conversation?.sessionId).toBe("org_acme:t-new")
 	})
 
 	test("the first message names the stored tab", () => {
-		const model = step(opened().model, Message.CreatedSheetTab({ orgId: "org_acme", tabId: "t-new" })).model
+		const model = step(opened().model, Message.CreatedSheetTab({ orgId: "org_acme", tabId: "t-new", referrerPath: null })).model
 		const historyRead = step(
 			model,
 			Message.GotConversationMessage({
@@ -49,6 +49,25 @@ describe("chat sheet", () => {
 		const sent = step(historyRead, Message.GotConversationMessage({ message: ConversationMessage.ClickedSuggestion({ text: "Show me the slowest traces" }) }))
 		const rename = sent.commands?.find((command) => command.name === "RenameChatSheetTab")
 		expect(rename?.args).toEqual({ orgId: "org_acme", tabId: "t-new", title: "Show me the slowest traces" })
+	})
+
+	test("opened over a page, the first message carries its context until the chip is dismissed", () => {
+		const overTraces = (dismiss: boolean) => {
+			const open = step(init(), Message.RequestedOpen({ viaKeyboard: false })).model
+			const read = step(open, Message.CompletedReadSheetTab({ orgId: "org_acme", tabId: "quick", nowMs: NOW, referrerPath: "/traces" })).model
+			const kept = dismiss ? step(read, Message.DismissedContext({ id: "traces_explorer" })).model : read
+			const loaded = step(
+				kept,
+				Message.GotConversationMessage({
+					message: ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor: 0, running: false }) }),
+				}),
+			).model
+			const sent = step(loaded, Message.GotConversationMessage({ message: ConversationMessage.ClickedSuggestion({ text: "Why so slow?" }) }))
+			const post = sent.commands?.find((command) => command.name === "PostChatMessage")
+			return post?.args !== undefined && "text" in post.args ? String(post.args.text) : ""
+		}
+		expect(overTraces(false)).toContain("- view: traces explorer")
+		expect(overTraces(true)).toBe("Why so slow?")
 	})
 
 	test("Open full page registers the thread in the tab list and closes the sheet", () => {

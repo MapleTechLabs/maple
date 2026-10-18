@@ -1,3 +1,4 @@
+import { readChatReferrer } from "@maple/web/components/chat/auto-contexts"
 import { Clock, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { loadSignalPresences } from "../../kit/signal-presence"
@@ -10,7 +11,8 @@ import {
 	renameStoredTab,
 	saveSheetTab,
 } from "../kit/tab-store"
-import { Message } from "./model"
+import * as Dialog from "../../../ui/dialog"
+import { Message, SHEET_ID } from "./model"
 
 /** `loadSheetTab`: the conversation the sheet last showed for this org, else the quick thread. */
 export const ReadSheetTab = Command.define("ReadChatSheetTab", {
@@ -20,7 +22,7 @@ export const ReadSheetTab = Command.define("ReadChatSheetTab", {
 		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
 			const tabId = yield* loadSheetTab(orgId, nowMs)
-			return Message.CompletedReadSheetTab({ orgId, tabId, nowMs })
+			return Message.CompletedReadSheetTab({ orgId, tabId, nowMs, referrerPath: readChatReferrer() })
 		}),
 })
 
@@ -34,8 +36,21 @@ export const CreateSheetTab = Command.define("CreateChatSheetTab", {
 			const tabId = crypto.randomUUID()
 			yield* appendStoredTab(orgId, tabId, nowMs)
 			yield* saveSheetTab(orgId, tabId)
-			return Message.CreatedSheetTab({ orgId, tabId })
+			return Message.CreatedSheetTab({ orgId, tabId, referrerPath: readChatReferrer() })
 		}),
+})
+
+/**
+ * Focus leaves the closing sheet while it is still on screen: a focused header button removed with
+ * the popup would report its blur after the sheet's boundary is gone (Chromium blurs on removal).
+ */
+export const ReleaseFocus = Command.define("ReleaseChatSheetFocus", {
+	messages: [Message.CompletedReleaseFocus],
+	execute: Effect.sync(() => {
+		const active = document.activeElement
+		if (active instanceof HTMLElement && active.closest(`#${Dialog.popupId(SHEET_ID)}`) !== null) active.blur()
+		return Message.CompletedReleaseFocus()
+	}),
 })
 
 /** Open full page: the sheet's thread registered (and active) in the tab list before `/chat` opens. */

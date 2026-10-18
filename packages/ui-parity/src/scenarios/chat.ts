@@ -115,6 +115,38 @@ const subjectScenarios: ReadonlyArray<Scenario> = [
 	{ ...scenario("widget-fix", "a broken widget's fix prompt sent on arrival", "default", replied), path: WIDGET_FIX_PATH },
 ]
 
+/**
+ * Page context: the sheet opened over `/traces` (the root records it as `maple-chat-referrer`) shows
+ * a "Traces explorer" chip and route-aware suggestions, sends the context block with the first
+ * message unless the chip was removed, and hands both to `/chat` through Open full page.
+ */
+const overTraces = (id: string, title: string, steps: (page: Page) => Promise<void>): Scenario => ({
+	...scenario(`context-${id}`, `page context, ${title}`, "default", async (page) => {
+		await openSheet(page)
+		await page.getByRole("dialog").getByRole("button", { name: "Remove Traces explorer" }).waitFor()
+		await steps(page)
+	}),
+	path: "/traces",
+})
+
+const contextScenarios: ReadonlyArray<Scenario> = [
+	overTraces("sheet", "the sheet opened over the traces explorer", async () => {}),
+	overTraces("sheet-send", "a route-aware suggestion sent with the context", async (page) => {
+		await page.getByRole("dialog").getByRole("button", { name: "Find traces with errors" }).click()
+		await replied(page)
+	}),
+	overTraces("sheet-dismissed", "the chip removed, then a question sent without it", async (page) => {
+		await page.getByRole("dialog").getByRole("button", { name: "Remove Traces explorer" }).click()
+		await page.getByRole("dialog").getByRole("button", { name: "Remove Traces explorer" }).waitFor({ state: "detached" })
+		await page.getByRole("dialog").getByRole("button", { name: "Show me the slowest traces" }).click()
+		await replied(page)
+	}),
+	overTraces("full-page", "carried to the full page", async (page) => {
+		await page.getByRole("dialog").getByRole("link", { name: "Open full page" }).click()
+		await page.getByRole("button", { name: "Remove Traces explorer" }).waitFor()
+	}),
+]
+
 /** The mermaid block's toolbar on `chat-code`: the download menu, fullscreen, and pan and zoom. */
 const diagram = (id: string, title: string, steps: (page: Page) => Promise<void>): Scenario =>
 	scenario(`code-${id}`, `the mermaid diagram, ${title}`, "chat-code", async (page) => {
@@ -197,6 +229,11 @@ const sheetScenarios: ReadonlyArray<Scenario> = [
 	sheet("new-chat", "a new conversation started in the sheet", async (page) => {
 		await openSheet(page)
 		await page.getByRole("dialog").getByRole("button", { name: "New chat" }).click()
+	}),
+	sheet("full-page", "its thread opened in the full page", async (page) => {
+		await openSheet(page)
+		await page.getByRole("dialog").getByRole("link", { name: "Open full page" }).click()
+		await page.getByRole("complementary", { name: "Chat conversations" }).getByText("Quick chat").waitFor()
 	}),
 	sheet("closed", "opened and closed again", async (page) => {
 		await openSheet(page)
@@ -301,6 +338,7 @@ export const chatArea: AreaModule = {
 		...subjectScenarios,
 		...permalinkScenarios,
 		...diagramScenarios,
+		...contextScenarios,
 		...sheetScenarios,
 		lab("sheet-width", "at the sheet width", (page) => page.getByRole("button", { name: "Sheet (620px)" }).click()),
 		lab("narrow-width", "at the narrow width", (page) => page.getByRole("button", { name: "Narrow (420px)" }).click()),

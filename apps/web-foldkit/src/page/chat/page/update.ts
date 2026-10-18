@@ -1,5 +1,5 @@
 import { makeChatSessionId } from "@maple/domain/chat-session"
-import { deriveAutoContexts, suggestionsForContexts, type AutoContext } from "@maple/web/components/chat/auto-contexts"
+import { suggestionsForContexts, type AutoContext } from "@maple/web/components/chat/auto-contexts"
 import { Array, Option, Result } from "effect"
 import { Command } from "foldkit"
 import type { Resources } from "../../../platform/resources"
@@ -12,7 +12,7 @@ import * as ConversationModel from "../conversation/model"
 import { Message as ConversationMessage, OutMessage as ConversationOut } from "../conversation/message"
 import * as Conversation from "../conversation/update"
 import { investigationSuggestions } from "../../investigations/detail/investigation-context"
-import { investigationPreamble, pageContextPreamble, widgetFixPreamble } from "../kit/preamble"
+import { activeContextsOf, investigationPreamble, pageContextPreamble, widgetFixPreamble } from "../kit/preamble"
 import {
 	type ChatSubject,
 	subjectOfSearch,
@@ -56,9 +56,7 @@ const withCommands = (result: Return, commands: Commands): Return => ({
 
 /** The referrer's contexts the user has not dismissed (`activeContexts`). */
 export const activeContexts = (model: Model): ReadonlyArray<AutoContext> =>
-	model.referrerPath === null
-		? []
-		: deriveAutoContexts(model.referrerPath).filter((context) => !model.dismissedContexts.includes(context.id))
+	activeContextsOf(model.referrerPath, model.dismissedContexts)
 
 /** The subject when `tabId` is its tab (`isInvestigationTab` / `isWidgetFixTab`). */
 export const subjectFor = (model: Model, tabId: string): ChatSubject | null =>

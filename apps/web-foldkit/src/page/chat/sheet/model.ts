@@ -32,6 +32,9 @@ export const Model = Schema.Struct({
 	isPresenceRequested: Schema.Boolean,
 	knownServices: Schema.Array(Schema.String),
 	isKnownServicesRequested: Schema.Boolean,
+	/** `readChatReferrer()` when the thread mounted, and the context chips dismissed since. */
+	referrerPath: Schema.NullOr(Schema.String),
+	dismissedContexts: Schema.Array(Schema.String),
 })
 export type Model = typeof Model.Type
 
@@ -47,12 +50,19 @@ export const init = (): Model => ({
 	isPresenceRequested: false,
 	knownServices: [],
 	isKnownServicesRequested: false,
+	referrerPath: null,
+	dismissedContexts: [],
 })
 
 export const Message = defineMessageUnion({
 	/** "Ask Maple AI", the palette's action or `C` (`openGlobalChat`). */
 	RequestedOpen: { viaKeyboard: Schema.Boolean },
-	CompletedReadSheetTab: { orgId: Schema.String, tabId: Schema.String, nowMs: Schema.Number },
+	CompletedReadSheetTab: {
+		orgId: Schema.String,
+		tabId: Schema.String,
+		nowMs: Schema.Number,
+		referrerPath: Schema.NullOr(Schema.String),
+	},
 	GotDialogMessage: { message: Dialog.Message },
 	GotTooltipMessage: { message: Tooltip.Message },
 	/** A header button took keyboard focus (`:focus-visible`), which opens its tooltip. */
@@ -60,7 +70,8 @@ export const Message = defineMessageUnion({
 	/** The pointer moved over a header button (a sheet sliding in under a resting pointer is no hover). */
 	MovedOverTrigger: { triggerId: Schema.String },
 	ClickedNewChat: {},
-	CreatedSheetTab: { orgId: Schema.String, tabId: Schema.String },
+	CreatedSheetTab: { orgId: Schema.String, tabId: Schema.String, referrerPath: Schema.NullOr(Schema.String) },
+	DismissedContext: { id: Schema.String },
 	ClickedOpenFullPage: {},
 	CompletedEnsureStoredTab: { tabId: Schema.String },
 	CompletedRenameStoredTab: {},
@@ -69,6 +80,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	CompletedLoadKnownServices: { services: Schema.Array(Schema.String) },
 	CompletedMountScroller: {},
+	CompletedReleaseFocus: {},
 })
 export type Message = typeof Message.Type
 

@@ -1,4 +1,4 @@
-import type { AutoContext } from "@maple/web/components/chat/auto-contexts"
+import { type AutoContext, deriveAutoContexts } from "@maple/web/components/chat/auto-contexts"
 import type { InvestigationContext, WidgetFixContext } from "./subject"
 
 // `buildContextPreamble` (apps/web components/chat/context-preamble.ts), verbatim: the model must
@@ -35,6 +35,13 @@ const formatAutoContextLine = (context: AutoContext): string => {
 			return "- view: service map"
 	}
 }
+
+/** The referrer's contexts the user has not dismissed (`activeContexts`). */
+export const activeContextsOf = (
+	referrerPath: string | null,
+	dismissed: ReadonlyArray<string>,
+): ReadonlyArray<AutoContext> =>
+	referrerPath === null ? [] : deriveAutoContexts(referrerPath).filter((context) => !dismissed.includes(context.id))
 
 /** The first message's context block for the page the user came from; "" with no contexts. */
 export const pageContextPreamble = (pathname: string | null, contexts: ReadonlyArray<AutoContext>): string => {
