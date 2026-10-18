@@ -128,6 +128,23 @@ const seedPanels = (model: Model): Model => {
 	)
 }
 
+const hasAnswered = (slot: Keyed.Keyed<unknown, LoadFailure>): boolean =>
+	AsyncData.isSuccess(slot.data) || AsyncData.isFailure(slot.data)
+
+/**
+ * Both reads leave together, breakdowns first, and legacy's breakdowns answer lands first, which the
+ * Events card's sort seeds from. An events answer that beats the breakdowns waits for them here.
+ */
+const delivered = (model: Model, key: string, result: Result.Result<unknown, LoadFailure>): Model => {
+	if (key === model.events.key && key !== model.breakdowns.key && !hasAnswered(model.breakdowns))
+		return { ...model, heldEvents: { key, result } }
+	const next = seedPanels(settleSlots(model, key, result))
+	const held = next.heldEvents
+	return key !== next.breakdowns.key || held === null
+		? next
+		: seedPanels(settleSlots({ ...next, heldEvents: null }, held.key, held.result))
+}
+
 // ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
@@ -152,6 +169,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		presence: SignalPresenceData.Loading(),
 		pickedMetric: null,
 		panels: {},
+		heldEvents: null,
 		expandedPanel: null,
 		expandDialog: Dialog.init("analytics-expand-dialog", "dialog"),
 		failedFavicons: [],
@@ -227,7 +245,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			withRequests({ ...model, window, nowMs }, context, mode),
-		CompletedFetch: ({ key, result }) => ({ model: seedPanels(settleSlots(model, key, result)) }),
+		CompletedFetch: ({ key, result }) => ({ model: delivered(model, key, result) }),
 		CompletedLoadSignalPresence: ({ result }) =>
 			withRequests(seedPanels({ ...model, presence: AsyncData.settle(model.presence, result) }), context, "Load"),
 		TickedLivePoll: () => refreshOnly(model, context, ["live"]),

@@ -67,14 +67,8 @@ const define = <Fields extends Schema.Struct.Fields, R>(
 export const FetchBreakdowns = define("FetchWebAnalyticsBreakdowns", { ...Window, ...Filters, limitPerDimension: N }, (data) =>
 	getWebAnalyticsBreakdowns({ data }),
 )
-// Legacy reads the breakdowns atom before the events atom in one render, so the breakdowns request
-// leaves (and lands) first and the Events card seeds its sort before events arrive. A task's wait
-// keeps that order here; racing it flips the card's sort column between runs.
 export const FetchEvents = define("FetchWebAnalyticsEvents", { ...Window, ...Filters, limit: N }, (data) =>
-	Effect.sleep(Duration.millis(1)).pipe(
-		Effect.andThen(getWebAnalyticsEvents({ data })),
-		Effect.map((response) => response.data),
-	),
+	getWebAnalyticsEvents({ data }).pipe(Effect.map((response) => response.data)),
 )
 export const FetchLive = define("FetchWebAnalyticsLive", { ...Filters }, (data) => getWebAnalyticsLive({ data }))
 export const FetchSummary = define("FetchWebAnalyticsSummary", { ...Window, ...Filters }, (data) =>
