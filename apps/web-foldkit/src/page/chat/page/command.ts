@@ -133,16 +133,23 @@ export const LoadKnownServices = Command.define("LoadChatKnownServices", {
 	}).pipe(Effect.orElseSucceed(() => Message.CompletedLoadKnownServices({ services: [] }))),
 })
 
-/** Focuses the active composer, caret at the end (`useTypeAnywhereFocus`). */
-export const FocusComposer = Command.define("FocusChatComposer", {
-	args: { id: Schema.String },
+/**
+ * `useTypeAnywhereFocus`: focuses the active composer and types the key at its caret, then fires
+ * `input` so the composer's own handler records the text, as a keystroke there would.
+ */
+export const TypeIntoComposer = Command.define("TypeIntoChatComposer", {
+	args: { id: Schema.String, char: Schema.String },
 	messages: [Message.CompletedFocusComposer],
-	execute: ({ id }) =>
+	execute: ({ id, char }) =>
 		Effect.sync(() => {
 			const element = document.getElementById(id)
-			if (element instanceof HTMLTextAreaElement) {
+			if (element instanceof HTMLTextAreaElement && !element.disabled) {
+				const start = element.selectionStart
+				const end = element.selectionEnd
 				element.focus()
-				element.setSelectionRange(element.value.length, element.value.length)
+				element.value = element.value.slice(0, start) + char + element.value.slice(end)
+				element.setSelectionRange(start + char.length, start + char.length)
+				element.dispatchEvent(new Event("input", { bubbles: true }))
 			}
 			return Message.CompletedFocusComposer()
 		}),

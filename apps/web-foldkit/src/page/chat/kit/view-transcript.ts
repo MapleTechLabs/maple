@@ -126,12 +126,14 @@ export const statusMarker = <M>(h: HtmlBuilder<M>, label = "Thinking…"): Html 
 		],
 	)
 
-const scrollerItem = <M>(h: HtmlBuilder<M>, id: string, isAnchor: boolean | null, children: ReadonlyArray<Html>): Html =>
-	h.div(
+/** Keyed by message id (React's `key`), so the scroller sees rows added, never patched in place. */
+const scrollerItem = <M>(h: HtmlBuilder<M>, id: string, isAnchor: boolean, children: ReadonlyArray<Html>): Html =>
+	h.keyed("div")(
+		id,
 		[
 			h.Class(cn(messageScrollerItemStyles, TRANSCRIPT_ITEM)),
 			h.DataAttribute("message-id", id),
-			...(isAnchor === null ? [] : [h.DataAttribute("scroll-anchor", String(isAnchor))]),
+			h.DataAttribute("scroll-anchor", String(isAnchor)),
 			h.DataAttribute("slot", "message-scroller-item"),
 		],
 		children,
@@ -254,12 +256,16 @@ export const transcript = <M>(
 	emptyState: () => Html,
 ): Html => {
 	if (messages.length === 0)
-		return h.div([h.Class("flex min-h-0 flex-1 items-center justify-center px-4 py-6")], [emptyState()])
+		return h.keyed("div")("transcript-empty", [h.Class("flex min-h-0 flex-1 items-center justify-center px-4 py-6")], [
+			emptyState(),
+		])
 	const last = messages[messages.length - 1]
 	const awaitingFirstToken = host.isLoading && last?.role === "user"
 	const rows = buildTranscriptRows(messages)
 	const readOnlyLabel = host.readOnly === null ? undefined : READ_ONLY_LABEL.get(host.readOnly)
-	return h.div(
+	// Keyed apart from the empty state: patched in place, the scroller's Mount would never run.
+	return h.keyed("div")(
+		"transcript-scroller",
 		[
 			h.Class(cn(messageScrollerStyles, "min-h-0 flex-1")),
 			h.DataAttribute("slot", "message-scroller"),
@@ -283,7 +289,7 @@ export const transcript = <M>(
 							h.Role("log"),
 						],
 						[
-							...(readOnlyLabel === undefined ? [] : [scrollerItem(h, "__read-only", null, [separator(h, readOnlyLabel)])]),
+							...(readOnlyLabel === undefined ? [] : [scrollerItem(h, "__read-only", false, [separator(h, readOnlyLabel)])]),
 							...rows.map((row) => {
 								if (row.kind === "tool-run") {
 									const lastOfRun = row.messages[row.messages.length - 1]
@@ -298,8 +304,8 @@ export const transcript = <M>(
 									showsThinkingRow(row.message, host.isLoading, row.message.id === last?.id),
 								)
 							}),
-							...(awaitingFirstToken ? [scrollerItem(h, "__status", null, [statusMarker(h)])] : []),
-							h.div([h.AriaHidden(true), h.DataAttribute("message-scroller-spacer", ""), h.Attribute("hidden", "")], []),
+							...(awaitingFirstToken ? [scrollerItem(h, "__status", false, [statusMarker(h)])] : []),
+							h.keyed("div")("__spacer", [h.AriaHidden(true), h.DataAttribute("message-scroller-spacer", ""), h.Attribute("hidden", "")], []),
 						],
 					),
 				],

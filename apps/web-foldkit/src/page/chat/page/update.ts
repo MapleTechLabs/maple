@@ -9,13 +9,13 @@ import * as Menu from "../../../ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as ConversationModel from "../conversation/model"
-import { Message as ConversationMessage, OutMessage as ConversationOut } from "../conversation/message"
+import { OutMessage as ConversationOut } from "../conversation/message"
 import * as Conversation from "../conversation/update"
 import { pageContextPreamble } from "../kit/preamble"
 import {
 	CopyShareLink,
 	CreateTab,
-	FocusComposer,
+	TypeIntoComposer,
 	LoadKnownServices,
 	LoadPresence,
 	LoadTabs,
@@ -152,8 +152,17 @@ const updateMenu = (model: Model, tabId: string, message: Menu.Message): Return 
 	const picked = result.outMessage?._tag === "SelectedItem" ? result.outMessage.value : null
 	const after = ((): Return => {
 		switch (picked) {
+			// The row swaps its trigger for the input, so the menu closes outright: a focus return
+			// pending on its exit would land on the trigger rendered after the rename.
 			case "rename":
-				return { model: { ...next, renamingId: tabId, renameDraft: Option.match(tabById(next, tabId), { onNone: () => "", onSome: (tab) => tab.title }) } }
+				return {
+					model: {
+						...next,
+						menus: { ...next.menus, [tabId]: Menu.init(`chat-tab-menu-${tabId}`) },
+						renamingId: tabId,
+						renameDraft: Option.match(tabById(next, tabId), { onNone: () => "", onSome: (tab) => tab.title }),
+					},
+				}
 			case "copy-link":
 				return Option.match(tabById(next, tabId), {
 					onNone: () => ({ model: next }),
@@ -314,8 +323,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const id = activeTabId(model)
 			const conversation = id === null ? undefined : model.conversations[id]
 			if (id === null || conversation === undefined || conversation.readOnly !== null) return { model }
-			const step = Conversation.update(conversation, ConversationMessage.ChangedDraft({ text: conversation.draft + char }), sendContext(model))
-			return withCommands(liftConversation(model, id, step), [FocusComposer({ id: composerId(id) })])
+			return { model, commands: [TypeIntoComposer({ id: composerId(id), char })] }
 		},
 		CompletedFocusComposer: () => ({ model }),
 		CompletedMountScroller: () => ({ model }),
