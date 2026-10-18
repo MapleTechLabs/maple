@@ -2530,17 +2530,11 @@ export const productEvents = defineDatasource("product_events", {
 		/** The annotated span within {@link TraceId}. `''` on non-trace rows. */
 		SpanId: t.string().default(""),
 	},
-	// REQUIRED, proven against a real deploy: without it Tinybird REBUILDS this
-	// table from its 30-day sources to satisfy the new columns, dropping history
-	// past 30 days and every `/v1/events` row at any age (they have no source).
-	// `DEPLOYMENT_METHOD alter` on the view does not substitute — tested. Do not
-	// follow Tinybird's later suggestion to drop it in favour of ALTER TABLE.
-	// Every column must be listed; the two new ones take their type default.
-	forwardQuery: `SELECT
-		OrgId, Timestamp, Source, SessionId, Seq, VisitorId, UserId, GroupId, Kind, EventName,
-		Host, PagePath, Url, ServiceName, Attributes,
-		defaultValueOfTypeName('String') AS TraceId,
-		defaultValueOfTypeName('String') AS SpanId`,
+	// REQUIRED: without it Tinybird REBUILDS this table from its 30-day sources,
+	// dropping history past 30 days and every `/v1/events` row at any age (they
+	// have no source). `SELECT *` since the TraceId/SpanId columns shipped: the
+	// one-shot that defaulted them would now wipe them on every copy.
+	forwardQuery: "SELECT *",
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "VisitorId", "SessionId", "Seq"],
