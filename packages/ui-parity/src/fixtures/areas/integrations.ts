@@ -160,9 +160,26 @@ const checks: EndpointHandler = (request) => {
 	)
 }
 
+/** An OAuth start answers an authorize URL off the fixture origin: the harness blocks the redirect. */
+const startConnect =
+	(provider: string): EndpointHandler =>
+	() =>
+		Effect.succeed({
+			redirectUrl: `https://oauth.${provider}.example/authorize?state=parity`,
+			state: "parity-oauth-state",
+		})
+
+const disconnected: EndpointHandler = () => Effect.succeed({ disconnected: true })
+
 export const fixtureArea: FixtureArea = {
 	area: "integrations",
 	endpoints: () => ({
+		"integrations.hazelStart": startConnect("hazel"),
+		"integrations.hazelDisconnect": disconnected,
+		"integrations.githubStart": startConnect("github"),
+		"integrations.githubDisconnect": disconnected,
+		"integrations.cloudflareStart": startConnect("cloudflare"),
+		"integrations.cloudflareDisconnect": disconnected,
 		"scrapeTargets.list": (request) => Effect.succeed(list(scrapeTargetsOf(request))),
 		"scrapeTargets.listChecks": checks,
 		"chatIntegration.connectors": connectors,

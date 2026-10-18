@@ -19,6 +19,8 @@ export type IntegrationBrand = Readonly<{
 	accent: string
 	/** Monochrome marks: the glyph tints by class and the wash goes neutral. */
 	iconClassName?: string
+	/** A mark outside the generated set (a chat connector manifest's paths), drawn at `size`. */
+	glyph?: (size: number) => Html
 }>
 
 export const integrationIconPlate = <M>(
@@ -52,7 +54,11 @@ export const integrationIconPlate = <M>(
 					h.Class(cn("relative", brand.iconClassName)),
 					...(brand.iconClassName === undefined ? [h.Style({ color: brand.accent })] : []),
 				],
-				[icon(h, brand.icon, { size: options.size ?? 22 })],
+				[
+					brand.glyph === undefined
+						? icon(h, brand.icon, { size: options.size ?? 22 })
+						: brand.glyph(options.size ?? 22),
+				],
 			),
 		],
 	)
