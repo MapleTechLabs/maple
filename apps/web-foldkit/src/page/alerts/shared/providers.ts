@@ -1,11 +1,11 @@
+import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-platform/manifests"
 import type { AlertDestinationType } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
+import { manifestGlyph } from "../../../ui/manifest-glyph"
 
 // copied: `PROVIDERS` and `ProviderLogo` (components/alerts/destination-provider.tsx, a React module).
-// TODO(chat-connectors): a `chat` destination draws its connector's manifest mark and name there;
-// `@maple/chat-platform` is not a dependency of web-foldkit, so it is the generic chat provider here.
 
 const BRANDFETCH_CLIENT_ID = "1id0IQ-4i8Z46-n-DfQ"
 const HAZEL_ACCENT_TEXT = "light-dark(#A34209, #F46F0F)"
@@ -26,6 +26,8 @@ export interface DestinationProvider {
 	readonly brandfetchDomain?: string
 	readonly monogram?: Readonly<{ letter: string; gradient: readonly [string, string] }>
 	readonly fallbackIcon?: IconName
+	/** A chat connector's manifest mark, drawn where `fallbackIcon` would be. */
+	readonly fallbackGlyph?: ChatConnectorManifest["icon"]
 	readonly docsUrl?: string
 	readonly docsLabel?: string
 }
@@ -133,6 +135,33 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 ])
 
 const WEBHOOK = PROVIDERS.get("webhook")
+const CHAT = PROVIDERS.get("chat")
+
+/** `CHAT_PROVIDERS`: a `chat` destination drawn as its connector (name, accent and mark). */
+const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
+	chatConnectorManifests.flatMap((manifest) =>
+		CHAT === undefined
+			? []
+			: [
+					[
+						manifest.id,
+						{
+							...CHAT,
+							label: manifest.name,
+							accent: manifest.accent,
+							accentBg: `color-mix(in srgb, ${manifest.accent} 18%, transparent)`,
+							fallbackIcon: undefined,
+							fallbackGlyph: manifest.icon,
+						},
+					] as const,
+				],
+	),
+)
+
+/** `destinationProvider`: a `chat` destination's connector, else the type's provider. */
+export const destinationProvider = (type: AlertDestinationType, chatConnector?: string): DestinationProvider =>
+	(type === "chat" && chatConnector !== undefined ? CHAT_PROVIDERS.get(chatConnector) : undefined) ??
+	providerOf(type)
 
 export const providerOf = (type: AlertDestinationType): DestinationProvider =>
 	PROVIDERS.get(type) ??
@@ -151,6 +180,8 @@ export const destinationTypesFor = (isDiscordLinked: boolean): ReadonlyArray<Ale
 
 export type ProviderLogoOptions<M> = Readonly<{
 	type: AlertDestinationType
+	/** For a `chat` destination, the connector whose mark to draw. */
+	chatConnector?: string
 	size?: number
 	className?: string
 	isBare?: boolean
@@ -161,7 +192,7 @@ export type ProviderLogoOptions<M> = Readonly<{
 
 /** `ProviderLogo`: the brand image, else a monogram plate, else the provider's icon. */
 export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<M>): Html => {
-	const provider = providerOf(options.type)
+	const provider = destinationProvider(options.type, options.chatConnector)
 	const size = options.size ?? 40
 	const inner = size - 14
 	const content = ((): ReadonlyArray<Html> => {
@@ -200,6 +231,16 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 				),
 			]
 		}
+		if (provider.fallbackGlyph !== undefined)
+			return [
+				h.span(
+					[
+						h.Class("flex items-center justify-center rounded-md"),
+						h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
+					],
+					[manifestGlyph(h, provider.fallbackGlyph, Math.round(inner * 0.65))],
+				),
+			]
 		if (provider.fallbackIcon !== undefined)
 			return [
 				h.span(

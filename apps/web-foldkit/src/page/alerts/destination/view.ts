@@ -15,7 +15,7 @@ import { inlineCode } from "../../../ui/inline-code"
 import { panel } from "../../../ui/panel"
 import { settingRow } from "../../../ui/setting-row"
 import { switchControl } from "../../../ui/switch"
-import { providerLogo, providerOf, destinationTypesFor } from "../shared/providers"
+import { destinationProvider, providerLogo, providerOf, destinationTypesFor } from "../shared/providers"
 import { isFormReady, isValidPagerDutyKey, isValidTelegramToken, Message, type Model } from "./dialog"
 import { type TextField, toFormState } from "./form"
 
@@ -62,9 +62,10 @@ const textInput = (
 		className: options.className,
 	})
 
-const logo = (h: H, model: Model, type: AlertDestinationType, size: number) =>
+const logo = (h: H, model: Model, type: AlertDestinationType, size: number, chatConnector?: string) =>
 	providerLogo(h, {
 		type,
+		chatConnector,
 		size,
 		isLogoBroken: model.brokenLogos.includes(type),
 		onLogoError: Message.FailedLoadProviderLogo({ type }),
@@ -73,9 +74,17 @@ const logo = (h: H, model: Model, type: AlertDestinationType, size: number) =>
 const providerTile = (
 	h: H,
 	model: Model,
-	options: Readonly<{ key: string; type: AlertDestinationType; label?: string; description?: string; isSelected: boolean; onSelect: Message }>,
+	options: Readonly<{
+		key: string
+		type: AlertDestinationType
+		chatConnector?: string
+		label?: string
+		description?: string
+		isSelected: boolean
+		onSelect: Message
+	}>,
 ): Html => {
-	const provider = providerOf(options.type)
+	const provider = destinationProvider(options.type, options.chatConnector)
 	return h.button(
 		[
 			h.Key(options.key),
@@ -100,7 +109,7 @@ const providerTile = (
 			]),
 			h.div(
 				[h.Class("relative flex w-full items-center gap-2.5")],
-				[logo(h, model, options.type, 32), h.span([h.Class("truncate text-sm font-semibold")], [options.label ?? provider.label])],
+				[logo(h, model, options.type, 32, options.chatConnector), h.span([h.Class("truncate text-sm font-semibold")], [options.label ?? provider.label])],
 			),
 			h.p([h.Class("relative text-2xs leading-snug text-muted-foreground")], [options.description ?? provider.description]),
 		],
@@ -119,6 +128,7 @@ const providerPicker = (h: H, model: Model): Html => {
 					providerTile(h, model, {
 						key: workspace.id,
 						type: "chat",
+						chatConnector: connector.id,
 						label: connector.workspaces.length > 1 ? `${connector.name} · ${workspace.name}` : connector.name,
 						description: `Post to a channel in ${workspace.name}.`,
 						isSelected: model.form.type === "chat" && model.form.chatWorkspaceId === workspace.id,

@@ -5,7 +5,7 @@ import { button } from "../../ui/button"
 import { emptyMessage } from "../../ui/empty"
 import { item, itemActions, itemContent, itemDescription, itemTitle } from "../../ui/item"
 import { skeleton } from "../../ui/skeleton"
-import { manifestGlyph } from "./view-entry"
+import { manifestGlyph } from "../../ui/manifest-glyph"
 import { Message } from "./message"
 import type { Model } from "./model"
 
