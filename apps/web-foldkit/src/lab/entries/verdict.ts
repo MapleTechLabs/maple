@@ -29,7 +29,10 @@ export const lab = defineShellLab("Verdict", {
 								[h.Class("flex flex-col gap-1")],
 								[
 									h.h2([h.Class("text-sm font-semibold text-foreground")], [entry.title]),
-									h.p([h.Class("max-w-3xl text-xs leading-5 text-muted-foreground")], [entry.note]),
+									h.p(
+										[h.Class("max-w-3xl text-xs leading-5 text-muted-foreground")],
+										[entry.note],
+									),
 								],
 							),
 							verdictCard(h, entry.investigation, model.nowMs),
