@@ -11,10 +11,17 @@ export const SortState = Schema.Struct({
 export type SortState = typeof SortState.Type
 
 /** `handleSort`: same key flips the direction, a new key starts asc for names, desc otherwise. */
-export const nextSort = (state: SortState, key: string, stringKeys: ReadonlyArray<string>): SortState =>
-	key === state.key
-		? { key, dir: state.dir === "asc" ? "desc" : "asc" }
-		: { key, dir: stringKeys.includes(key) ? "asc" : "desc" }
+export const nextSort = (
+	state: SortState,
+	key: string,
+	stringKeys: ReadonlyArray<string>,
+	isResettable = false,
+): SortState => {
+	if (key !== state.key) return { key, dir: stringKeys.includes(key) ? "asc" : "desc" }
+	// desc → asc → (resettable) source order
+	if (state.dir === "asc" && isResettable) return { key: null, dir: state.dir }
+	return { key, dir: state.dir === "asc" ? "desc" : "asc" }
+}
 
 const isNumericString = (value: unknown): value is string =>
 	typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))

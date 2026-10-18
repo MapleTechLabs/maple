@@ -236,7 +236,36 @@ export const infraArea: AreaModule = {
 			K8S,
 			clickText("StatefulSets"),
 		),
-		scenario("workloads-jobs", "Workloads: Jobs", "/infra/kubernetes/workloads", K8S, clickText("Jobs")),
+		...timed("workloads", "Workloads", "/infra/kubernetes/workloads", K8S, "queryEngine.listWorkloads"),
+		scenario("workloads-sort-pods", "Workloads: sorted by pods", "/infra/kubernetes/workloads", K8S, (page) =>
+			page.getByRole("button", { name: "Pods", exact: true }).click(),
+		),
+		scenario("workloads-search", "Workloads: searched with no match", "/infra/kubernetes/workloads", K8S, (page) =>
+			page.getByRole("textbox", { name: "Search workloads…" }).fill("nope"),
+		),
+		...timed(
+			"workload-detail",
+			"Workload detail",
+			"/infra/kubernetes/workloads/deployment/payment-svc?namespace=shop",
+			K8S,
+			"queryEngine.workload",
+			"queryEngine.workloadDetailSummary",
+		),
+		scenario(
+			"workload-detail-aggregate",
+			"Workload detail: per-pod breakdown off",
+			"/infra/kubernetes/workloads/deployment/payment-svc?namespace=shop",
+			K8S,
+			(page) => page.getByRole("checkbox", { name: "Per-pod breakdown" }).click(),
+		),
+		scenario(
+			"workload-detail-memory",
+			"Workload detail: memory vs limit",
+			"/infra/kubernetes/workloads/deployment/payment-svc?namespace=shop",
+			K8S,
+			clickText("Mem / limit"),
+		),
+		scenario("workloads-jobs","Workloads: Jobs", "/infra/kubernetes/workloads", K8S, clickText("Jobs")),
 		...timed("containers", "Containers", "/infra/containers", K8S, "queryEngine.listContainers"),
 		scenario("containers-sort-cpu", "Containers: sorted by CPU", "/infra/containers", K8S, (page) =>
 			page.getByRole("button", { name: "CPU", exact: true }).click(),

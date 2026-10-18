@@ -24,6 +24,8 @@ import * as InfraKubernetesNode from "./infra/kubernetes/node"
 import * as InfraKubernetesNodes from "./infra/kubernetes/nodes"
 import * as InfraKubernetesPod from "./infra/kubernetes/pod"
 import * as InfraKubernetesPods from "./infra/kubernetes/pods"
+import * as InfraKubernetesWorkload from "./infra/kubernetes/workload"
+import * as InfraKubernetesWorkloads from "./infra/kubernetes/workloads"
 import * as LogsList from "./logs/list"
 import * as MetricsBrowse from "./metrics/browse"
 import * as MetricDetail from "./metrics/detail"
@@ -54,6 +56,8 @@ export const pages = [
 	InfraKubernetesPod.page,
 	InfraKubernetesNodes.page,
 	InfraKubernetesNode.page,
+	InfraKubernetesWorkloads.page,
+	InfraKubernetesWorkload.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))
