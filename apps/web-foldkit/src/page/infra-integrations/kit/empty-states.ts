@@ -1,8 +1,10 @@
+import type { DocsPage } from "@maple/web/lib/docs"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
+import { docsLink } from "../../kit/signal-empty-state"
 
 // `IntegrationNotConnected` (components/infra/primitives/integration-not-connected.tsx) and
 // `FilteredEmpty` (components/common/filtered-empty.tsx).
@@ -10,7 +12,7 @@ import { icon } from "../../../ui/icon"
 type ButtonVariant = Parameters<typeof button>[1]["variant"]
 
 /** `EmptyActions`: the action row under an empty state. */
-const emptyActions = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+export const emptyActions = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class("flex flex-wrap items-center justify-center gap-x-4 gap-y-2")], children)
 
 export type IntegrationNotConnectedOptions = Readonly<{
@@ -21,6 +23,7 @@ export type IntegrationNotConnectedOptions = Readonly<{
 	integration: string
 	actionLabel: string
 	actionVariant?: ButtonVariant
+	docsPage?: DocsPage
 }>
 
 export const integrationNotConnected = <M>(h: HtmlBuilder<M>, options: IntegrationNotConnectedOptions): Html =>
@@ -43,6 +46,7 @@ export const integrationNotConnected = <M>(h: HtmlBuilder<M>, options: Integrati
 						},
 						[options.actionLabel],
 					),
+					...(options.docsPage === undefined ? [] : [docsLink(h, options.docsPage)]),
 				]),
 			]),
 		],

@@ -164,6 +164,27 @@ export const infraIntegrationsArea: AreaModule = {
 			steps: press("Storage"),
 		}),
 		scenario("planetscale-empty", "PlanetScale: not connected", "/infra/planetscale", { dataset: EMPTY }),
+		scenario(
+			"planetscale-loading",
+			"PlanetScale: inventory loading",
+			"/infra/planetscale",
+			held("planetscaleIntegration.databases"),
+		),
+		scenario(
+			"planetscale-stats-loading",
+			"PlanetScale: stats loading",
+			"/infra/planetscale",
+			held("queryEngine.servicePlanetScaleStats"),
+		),
+		scenario(
+			"planetscale-stats-error",
+			"PlanetScale: stats failing",
+			"/infra/planetscale",
+			failing("queryEngine.servicePlanetScaleStats"),
+		),
+		scenario("planetscale-sorted-name", "PlanetScale: sorted by database name", "/infra/planetscale", {
+			steps: press("Database"),
+		}),
 		scenario("planetscale-db", "PlanetScale database: acme-prod", "/infra/planetscale/acme-prod"),
 	],
 }
