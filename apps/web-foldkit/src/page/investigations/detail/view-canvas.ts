@@ -283,7 +283,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 	]
 }
 
-const nodeChildren = (h: H, node: ProvenanceNode, clock: Clock): ReadonlyArray<Html> => {
+export const nodeChildren = (h: H, node: ProvenanceNode, clock: Clock): ReadonlyArray<Html> => {
 	switch (node.type) {
 		case "spine":
 			return spineNode(h, node.id, node.data, clock)
@@ -328,7 +328,7 @@ const geometryOf = (edge: ProvenanceEdge, anchors: Anchors) => {
 }
 
 /** `FlowEdge`: dashed strand and its two port dots; a live strand takes the amber. */
-const edgeView = (h: H, edge: ProvenanceEdge, anchors: Anchors): Html | null => {
+export const edgeView = (h: H, edge: ProvenanceEdge, anchors: Anchors): Html | null => {
 	const geometry = geometryOf(edge, anchors)
 	if (geometry === null) return null
 	const isLive = edge.live === true
@@ -364,7 +364,7 @@ const edgeView = (h: H, edge: ProvenanceEdge, anchors: Anchors): Html | null => 
 }
 
 /** The edge's word, parked above the midpoint of its straight run. */
-const edgeLabel = (h: H, edge: ProvenanceEdge, anchors: Anchors): Html | null => {
+export const edgeLabel = (h: H, edge: ProvenanceEdge, anchors: Anchors): Html | null => {
 	const geometry = edge.label ? geometryOf(edge, anchors) : null
 	if (geometry === null || !edge.label) return null
 	return eyebrow(
