@@ -1,7 +1,7 @@
 import { DateTime, Effect, Predicate, Schema } from "effect"
 import { ErrorIssueNotFoundError, ErrorsByTypeRequest } from "@maple/domain/http"
 import { V2ErrorIssue, V2ErrorIssueDetail } from "@maple/domain/http/v2"
-import { ActorId, ErrorIssueId, UserId } from "@maple/domain/primitives"
+import { ActorId, ErrorIncidentId, ErrorIssueId, UserId } from "@maple/domain/primitives"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { Queries } from "@maple/query-engine/registry"
 import { runQueryDefinition } from "@maple/query-engine/runtime"
@@ -19,6 +19,7 @@ const DAY_MS = 24 * 3_600_000
 const decodeIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const decodeActorId = Schema.decodeUnknownSync(ActorId)
 const decodeUserId = Schema.decodeUnknownSync(UserId)
+const decodeIncidentId = Schema.decodeUnknownSync(ErrorIncidentId)
 const encodeIssue = Schema.encodeUnknownEffect(V2ErrorIssue)
 const encodeDetail = Schema.encodeUnknownEffect(V2ErrorIssueDetail)
 
@@ -146,6 +147,24 @@ const ranked = (issues: ReadonlyArray<SeededIssue>, query: unknown) => {
 		.flatMap((hash) => issues.filter((issue) => issue.fingerprint_hash === hash))
 }
 
+/** The issue with an open incident: it opened on first sight; an earlier manual one was resolved. */
+const incidentsOf = (issue: SeededIssue) =>
+	issue.has_open_incident
+		? [
+				{
+					id: decodeIncidentId(fixtureUuid(0x46, 1)),
+					object: "error_incident" as const,
+					issue_id: issue.id,
+					status: "open" as const,
+					reason: "first_seen" as const,
+					first_triggered_at: issue.first_seen_at,
+					last_triggered_at: issue.last_seen_at,
+					resolved_at: null,
+					occurrence_count: issue.occurrence_count,
+				},
+			]
+		: []
+
 const list = (data: ReadonlyArray<unknown>) => ({ object: "list", data, has_more: false, next_cursor: null })
 
 /** The dataset's issue rows, seeded once per dataset like the Postgres rows they stand in for. */
@@ -242,7 +261,7 @@ export const errorIssueEndpoints = (
 						exception_message: row.exceptionMessage,
 						duration_micros: row.durationMicros,
 					})),
-					incidents: [],
+					incidents: incidentsOf(issue),
 					environments: environments.map((row) => ({ name: row.name, count: row.count })),
 				})
 			}),

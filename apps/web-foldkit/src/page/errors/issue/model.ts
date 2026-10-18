@@ -16,8 +16,10 @@ import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { ErrorIssueSearch } from "../../../route/search"
+import * as Combobox from "../../../ui/combobox"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
+import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
@@ -57,6 +59,14 @@ export const Model = Schema.Struct({
 	/** The severity raise waiting on "Notify escalation destinations?". */
 	/** `startingInvestigation`: the create is in flight. */
 	isStartingInvestigation: Schema.Boolean,
+	overflowMenu: Menu.Model,
+	attachDialog: Dialog.Model,
+	attachDraft: Schema.String,
+	attachCombobox: Combobox.Model,
+	isAttaching: Schema.Boolean,
+	isDetaching: Schema.Boolean,
+	commentDraft: Schema.String,
+	isCommenting: Schema.Boolean,
 	severityConfirm: Dialog.Model,
 	pendingSeverity: Schema.NullOr(
 		Schema.Struct({ severity: IssueSeverity, destinationNames: Schema.Array(Schema.String) }),

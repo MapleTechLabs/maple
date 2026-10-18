@@ -1,5 +1,5 @@
-import type { ErrorIssueId, IssueSeverity } from "@maple/domain/http"
-import { Option, Result } from "effect"
+import { type ErrorIssueId, ErrorIssuePullRequestId, type IssueSeverity } from "@maple/domain/http"
+import { Option, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
@@ -7,14 +7,18 @@ import { requestKey } from "../../../data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
+import * as Combobox from "../../../ui/combobox"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
+import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReloadSpin,
 	CreateInvestigation,
+	UnlinkPullRequest,
+	CommentOnIssue,
 	FetchAnomalies,
 	FetchDetail,
 	FetchEscalations,
@@ -26,9 +30,19 @@ import {
 	FetchVerifications,
 	ResolveWindow,
 } from "./command"
-import { DEFAULT_PRESET, detailOf, detailQueryOf, investigationPayload, type Search } from "./derive"
+import {
+	DEFAULT_PRESET,
+	detailOf,
+	detailQueryOf,
+	investigationPayload,
+	pullRequestsOf,
+	type Search,
+} from "./derive"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
+import { overflowStep } from "./overflow"
+import { attachComboboxStep, attachDialogStep, completedAttach, openAttach, submittedAttach } from "./attach"
+import { copyToast } from "../../kit/clipboard"
 import {
 	completedWrite,
 	confirmedSeverity,
@@ -38,6 +52,8 @@ import {
 	severityConfirmStep,
 	startWrite,
 } from "./writes"
+
+const decodePullRequestId = Schema.decodeUnknownOption(ErrorIssuePullRequestId)
 
 export type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -232,6 +248,14 @@ export const init = (
 		themeColors: null,
 		busy: null,
 		isStartingInvestigation: false,
+		overflowMenu: Menu.init("issue-overflow"),
+		attachDialog: Dialog.init("issue-attach-pr", "dialog"),
+		attachDraft: "",
+		attachCombobox: Combobox.init("issue-attach-pr-picker", "single"),
+		isAttaching: false,
+		isDetaching: false,
+		commentDraft: "",
+		isCommenting: false,
 		severityConfirm: Dialog.init("issue-severity-confirm", "alert-dialog"),
 		pendingSeverity: null,
 		refreshVersion: 0,
@@ -469,11 +493,131 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClaim: () => startWrite(model, { _tag: "Claim" }),
 		ClickedExtendLease: () => startWrite(model, { _tag: "Heartbeat" }),
 		ClickedReleaseLease: () => startWrite(model, { _tag: "Release" }),
-		CompletedIssueWrite: ({ write, result }) =>
-			completedWrite(model, write, result, refreshAfterWrite(context)),
+		CompletedIssueWrite: ({ write, result }) => {
+			const done = completedWrite(model, write, result, refreshAfterWrite(context))
+			// "In review" with nothing attached is the moment the link is worth asking for.
+			const asksForLink =
+				Result.isSuccess(result) &&
+				write._tag === "Transition" &&
+				write.toState === "in_review" &&
+				pullRequestsOf(model).length === 0
+			if (!asksForLink) return done
+			const opened = openAttach(done.model)
+			return {
+				...done,
+				model: opened.model,
+				commands: [...(done.commands ?? []), ...(opened.commands ?? [])],
+			}
+		},
+		ClickedAttach: () => openAttach(model),
+		GotAttachDialogMessage: ({ message: inner }) => attachDialogStep(model, inner),
+		GotAttachComboboxMessage: ({ message: inner }) => attachComboboxStep(model, inner),
+		ChangedAttachDraft: ({ value }) => ({ model: { ...model, attachDraft: value } }),
+		SubmittedAttach: () => submittedAttach(model),
+		ClickedRetryEvents: () =>
+			applySteps(model, [
+				(m) =>
+					keyed(
+						m.events,
+						requestKey(context.orgId, "errors.listIssueEvents", m.issueId),
+						"Refresh",
+						(events) => ({ events }),
+						(k) => FetchEvents({ key: k, issueId: m.issueId }),
+					),
+			]),
+		ChangedCommentDraft: ({ value }) => ({ model: { ...model, commentDraft: value } }),
+		ClickedComment: () => {
+			const body = model.commentDraft.trim()
+			return body.length === 0 || model.isCommenting
+				? { model }
+				: {
+						model: { ...model, isCommenting: true },
+						commands: [CommentOnIssue({ issueId: model.issueId, body })],
+					}
+		},
+		CompletedComment: ({ result }) => {
+			const settled = { ...model, isCommenting: false }
+			return Result.match(result, {
+				onFailure: (failure) => ({
+					model: settled,
+					outMessage: PageOutMessage.RequestedToast({
+						type: "error",
+						title: "Failed to add comment",
+						description: failure.message,
+					}),
+				}),
+				onSuccess: () => {
+					const refreshed = refreshAfterWrite(context)({ ...settled, commentDraft: "" })
+					return {
+						model: refreshed.model,
+						commands: refreshed.commands,
+						outMessage: PageOutMessage.RequestedToast({
+							type: "success",
+							title: "Comment added",
+							description: "",
+						}),
+					}
+				},
+			})
+		},
+		ClickedDetachPullRequest: ({ id }) =>
+			model.isDetaching || model.isAttaching
+				? { model }
+				: Option.match(decodePullRequestId(id), {
+						onNone: () => ({ model }),
+						onSome: (pullRequestId) => ({
+							model: { ...model, isDetaching: true },
+							commands: [UnlinkPullRequest({ issueId: model.issueId, pullRequestId })],
+						}),
+					}),
+		CompletedUnlinkPullRequest: ({ result }) => {
+			const settled = { ...model, isDetaching: false }
+			return Result.match(result, {
+				onFailure: (failure) => ({
+					model: settled,
+					outMessage: PageOutMessage.RequestedToast({
+						type: "error",
+						title: "Failed to detach the pull request",
+						description: failure.message,
+					}),
+				}),
+				onSuccess: () => {
+					const refreshed = refreshAfterWrite(context)(settled)
+					return {
+						model: refreshed.model,
+						commands: refreshed.commands,
+						outMessage: PageOutMessage.RequestedToast({
+							type: "success",
+							title: "Pull request detached",
+							description: "",
+						}),
+					}
+				},
+			})
+		},
+		CompletedLinkPullRequest: ({ result }) => {
+			const done = Result.match(result, {
+				onFailure: (failure) => completedAttach(model, false, failure),
+				onSuccess: () => completedAttach(model, true, null),
+			})
+			if (Result.isFailure(result)) return done
+			const refreshed = refreshAfterWrite(context)(done.model)
+			return {
+				...done,
+				model: refreshed.model,
+				commands: [...(done.commands ?? []), ...refreshed.commands],
+			}
+		},
 		CompletedEvaluateEscalation: ({ severity, result }) => evaluatedEscalation(model, severity, result),
 		GotSeverityConfirmMessage: ({ message: inner }) => severityConfirmStep(model, inner),
 		ClickedConfirmSeverity: () => confirmedSeverity(model),
+		GotOverflowMenuMessage: ({ message: inner }) =>
+			overflowStep(
+				model,
+				Option.getOrNull(Option.map(detailOf(model), (detail) => detail.issue)),
+				inner,
+			),
+		CompletedCopy: ({ label, isOk }) => ({ model, outMessage: copyToast(label, isOk) }),
 		ClickedInvestigate: () =>
 			Option.match(detailOf(model), {
 				onNone: () => ({ model }),
@@ -495,8 +639,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						description: failure.message,
 					}),
 				}),
+				// The create invalidates `investigations`, so the linked-investigation read goes again.
 				onSuccess: (id) => ({
-					model: { ...model, isStartingInvestigation: false },
+					...applySteps({ ...model, isStartingInvestigation: false }, [
+						(m) =>
+							keyed(
+								m.investigations,
+								requestKey(context.orgId, "investigations.list", m.issueId),
+								"Refresh",
+								(investigations) => ({ investigations }),
+								(k) => FetchInvestigations({ key: k, issueId: m.issueId }),
+							),
+					]),
 					outMessage: PageOutMessage.RequestedNavigation({
 						url: hrefOf(AppRoute.Investigation({ id, search: {} })),
 						isReplace: false,

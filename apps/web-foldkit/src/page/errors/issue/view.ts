@@ -1,5 +1,6 @@
 import type { ErrorIssueDetailResponse } from "@maple/domain/http"
 import { errorIssueDetailFromV2 } from "@maple/web/lib/services/error-issues"
+import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
@@ -22,14 +23,13 @@ import type { Model } from "./model"
 import { occurrencePanel, OCCURRENCE_TOKENS } from "./view-chart"
 import { headerActions, headerTitle, issueTabs } from "./view-header"
 import { culpritPanel, issueFactStrip } from "./view-overview"
-import {
-	attachNudge,
-	bodySection,
-	incidentsTable,
-	linkedInvestigationPanel,
-	pullRequestsPanel,
-} from "./view-panels"
+import { attachNudge, bodySection, linkedInvestigationPanel, pullRequestsPanel } from "./view-panels"
 import { issueSidebar } from "./view-sidebar"
+import { attachDialog } from "./attach"
+import { verificationCard } from "./view-verification"
+import { incidentsTable, occurrencesTable } from "./view-tables"
+import { commentComposer, issueTimeline } from "./view-activity"
+import { skeleton } from "../../../ui/skeleton"
 import { relatedAnomaliesOf, relatedAnomaliesSection } from "./view-anomalies"
 import { issueSkeleton, issueNotFound } from "./view-skeleton"
 
@@ -76,7 +76,12 @@ const overview = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: 
 								title: "Incidents",
 								count: incidents.length === 0 ? undefined : `${incidents.length} opened`,
 							},
-							[incidentsTable(h, incidents)],
+							[
+								incidentsTable(h, incidents, {
+									nowMs: model.nowMs,
+									timeZone: inputs.context.timeZone,
+								}),
+							],
 						),
 					]
 				: []),
@@ -98,35 +103,63 @@ const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html 
 			h.div(
 				[h.Class("flex flex-col gap-4 px-4 pb-4")],
 				[
-					// TODO(verification-card): `IssueVerificationCard` while a fix is being verified.
-					...(verification === null &&
-					AWAITING_FIX_STATES.has(detail.issue.workflowState) &&
-					pullRequests.length === 0
-						? [attachNudge(h)]
-						: []),
-					pullRequestsPanel(h, pullRequests),
+					...(verification !== null
+						? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
+						: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
+							? [attachNudge(h)]
+							: []),
+					pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
 				],
 			),
 		],
 	)
 }
 
-/** TODO(tabs): the Occurrences table and the Activity timeline with its composer. */
-const otherTab = (h: H, tab: "occurrences" | "activity", detail: ErrorIssueDetailResponse): Html =>
-	tab === "occurrences"
-		? bodySection(
-				h,
-				{
-					id: "occurrences",
-					title: "Latest occurrences",
-					count:
-						detail.sampleTraces.length === 0
-							? undefined
-							: `${detail.sampleTraces.length} sampled in this window`,
-				},
-				[],
-			)
-		: bodySection(h, { id: "activity", title: "Activity" }, [])
+/** The Occurrences table, or the Activity timeline with its composer. */
+const otherTab = (
+	h: H,
+	model: Model,
+	tab: "occurrences" | "activity",
+	detail: ErrorIssueDetailResponse,
+	inputs: PageViewInputs,
+): Html => {
+	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
+	if (tab === "occurrences")
+		return bodySection(
+			h,
+			{
+				id: "occurrences",
+				title: "Latest occurrences",
+				count:
+					detail.sampleTraces.length === 0
+						? undefined
+						: `${detail.sampleTraces.length} sampled in this window`,
+			},
+			[occurrencesTable(h, detail.sampleTraces, clock)],
+		)
+	const events = Option.getOrNull(AsyncData.getData(model.events.data))?.events ?? []
+	const { issue } = detail
+	// Everyone who has acted on the issue, newest first.
+	const participants = [
+		...(issue.leaseHolder ? [issue.leaseHolder] : []),
+		...(issue.assignedActor ? [issue.assignedActor] : []),
+		...[...events].reverse().flatMap((event) => (event.actor ? [event.actor] : [])),
+	]
+	return bodySection(h, { id: "activity", title: "Activity" }, [
+		AsyncData.matchData(model.events.data, {
+			onEmpty: () => skeleton(h, "h-20 w-full"),
+			onFailure: (failure) =>
+				errorState(h, {
+					failure,
+					title: "Failed to load the activity timeline",
+					variant: "inline",
+					onRetry: Message.ClickedRetryEvents(),
+				}),
+			onData: (value) => issueTimeline(h, value.events, escalationsOf(model), clock),
+		}),
+		commentComposer(h, { draft: model.commentDraft, isPosting: model.isCommenting, participants }),
+	])
+}
 
 const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: PageViewInputs): Html => {
 	const investigation = linkedInvestigationOf(model)
@@ -135,7 +168,7 @@ const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: Pa
 		h,
 		{
 			titleContent: headerTitle(h, detail.issue, investigation, relatedAnomaliesOf(model)),
-			actions: headerActions(h, model, investigation),
+			actions: headerActions(h, model, investigation, detail.issue),
 			tabs: issueTabs(h, model.issueId, model.search, {
 				active: tab,
 				showOccurrences: detail.issue.kind === "error",
@@ -145,8 +178,9 @@ const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: Pa
 			rightPanel: rightPanel(h, model, detail),
 		},
 		[
-			tab === "overview" ? overview(h, model, detail, inputs) : otherTab(h, tab, detail),
+			tab === "overview" ? overview(h, model, detail, inputs) : otherTab(h, model, tab, detail, inputs),
 			severityConfirmDialog(h, model),
+			attachDialog(h, model),
 		],
 	)
 }

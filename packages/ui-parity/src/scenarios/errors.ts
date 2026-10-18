@@ -131,6 +131,79 @@ export const errorsArea: AreaModule = {
 		errors("issue-lease-release", "lease released", LEASED_PATH, {
 			steps: clickThen("Release", "Released"),
 		}),
+		errors("issue-occurrences", "Occurrences tab", `${ISSUE_PATH}?tab=occurrences`, {
+			steps: async (page) => {
+				await page.getByText("Latest occurrences").waitFor()
+			},
+		}),
+		errors("issue-activity", "Activity tab with history", `${LEASED_PATH}?tab=activity`, {
+			steps: async (page) => {
+				await page.getByText("Verifying fix").waitFor()
+			},
+		}),
+		errors("issue-activity-empty", "Activity tab, nothing yet", `${ISSUE_PATH}?tab=activity`, {
+			steps: async (page) => {
+				await page.getByText("No activity yet").waitFor()
+			},
+		}),
+		errors("issue-comment", "a comment posted", `${LEASED_PATH}?tab=activity`, {
+			steps: async (page) => {
+				await page.getByText("Verifying fix").waitFor()
+				await page
+					.getByPlaceholder("Context, findings, links… markdown supported")
+					.fill("Looks fixed")
+				await clickThen("Comment", "Comment added")(page)
+			},
+		}),
+		errors("issue-overflow", "overflow menu open", ISSUE_PATH, {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "More issue actions" }).click()
+				await page.getByRole("menuitem", { name: "Copy fingerprint" }).waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("issue-copy-fingerprint", "fingerprint copied", ISSUE_PATH, {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "More issue actions" }).click()
+				await page.getByRole("menuitem", { name: "Copy fingerprint" }).click()
+				await page.getByText("Fingerprint copied", { exact: true }).waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("issue-attach-open", "attach dialog", ISSUE_PATH, {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Attach", exact: true }).click()
+				await page.getByRole("dialog").getByText("Attach a pull request").waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("issue-attach", "a pull request attached", ISSUE_PATH, {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Attach", exact: true }).click()
+				const picker = page
+					.getByRole("dialog")
+					.getByPlaceholder("Search by title, number, branch, or paste a link")
+				await picker.fill("https://github.com/acme/storefront/pull/491")
+				await picker.press("Enter")
+				await page.getByText("Pull request attached", { exact: true }).waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("issue-detach", "a pull request detached", LEASED_PATH, {
+			steps: clickThen("Detach acme/storefront#491", "Pull request detached"),
+		}),
+		errors("issue-investigate", "Investigate opens a new investigation", ISSUE_PATH, {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Investigate", exact: true }).click()
+				await page.waitForURL(/\/investigations\//)
+				await settlePointer(page)
+			},
+		}),
+		errors("issue-not-found", "an unknown issue", "/errors/issues/0199a004-0000-7000-8000-0000000000ff", {
+			steps: async (page) => {
+				await page.getByText("Issue not found").waitFor()
+			},
+		}),
 		errors("hub-sort-volume", "sorted by volume", "/errors", {
 			steps: async (page) => {
 				await page.getByRole("combobox").filter({ hasText: "Most recent" }).click()

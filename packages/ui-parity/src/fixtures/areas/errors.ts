@@ -111,4 +111,198 @@ const writes = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHa
 	}
 }
 
-export const fixtureArea: FixtureArea = { area: "errors", endpoints: writes }
+/** The in-progress issue (`fixtureUuid(4, 2)`): a fix under way, so it has history to show. */
+const WORKED_ISSUE = fixtureUuid(4, 2)
+const nowMsOf = (dataset: Dataset) => Date.parse(dataset.now)
+const isoAgo = (dataset: Dataset, ms: number) => new Date(nowMsOf(dataset) - ms).toISOString()
+const HOUR_MS = 3_600_000
+
+const pullRequestsOf = (dataset: Dataset) => [
+	{
+		id: fixtureUuid(0x41, 1),
+		issueId: WORKED_ISSUE,
+		provider: "github",
+		repoFullName: "acme/storefront",
+		number: 482,
+		url: "https://github.com/acme/storefront/pull/482",
+		title: "Retry upstream calls with jittered backoff",
+		authorLogin: "ada",
+		state: "merged",
+		mergedAt: isoAgo(dataset, 2 * HOUR_MS),
+		mergeCommitSha: "9f2c1e7",
+		linkSource: "auto",
+		linkedByActor: null,
+		createdAt: isoAgo(dataset, 5 * HOUR_MS),
+	},
+	{
+		id: fixtureUuid(0x41, 2),
+		issueId: WORKED_ISSUE,
+		provider: "github",
+		repoFullName: "acme/storefront",
+		number: 491,
+		url: "https://github.com/acme/storefront/pull/491",
+		title: null,
+		authorLogin: null,
+		state: "open",
+		mergedAt: null,
+		mergeCommitSha: null,
+		linkSource: "user",
+		linkedByActor: null,
+		createdAt: isoAgo(dataset, HOUR_MS),
+	},
+]
+
+const verificationsOf = (dataset: Dataset) => [
+	{
+		id: fixtureUuid(0x42, 1),
+		issueId: WORKED_ISSUE,
+		pullRequestId: fixtureUuid(0x41, 1),
+		status: "waiting",
+		mergedAt: isoAgo(dataset, 2 * HOUR_MS),
+		verifyAfter: new Date(nowMsOf(dataset) + 6 * HOUR_MS).toISOString(),
+		baselineVersions: ["3.4.2"],
+		baselineOccurrenceCount: 42,
+		baselineRatePerHour: 3.5,
+		postMergeOccurrenceCount: 0,
+		investigationId: null,
+		verdict: null,
+		verdictNote: null,
+		attempt: 0,
+		createdAt: isoAgo(dataset, 2 * HOUR_MS),
+		updatedAt: isoAgo(dataset, 2 * HOUR_MS),
+	},
+]
+
+const ADA = (dataset: Dataset) => ({
+	id: fixtureUuid(7, 1),
+	type: "user",
+	userId: dataset.identity?.userId ?? "user_parity_ada",
+	agentName: null,
+	model: null,
+	capabilities: [],
+	lastActiveAt: null,
+})
+const TRIAGE_AGENT = {
+	id: fixtureUuid(7, 2),
+	type: "agent",
+	userId: null,
+	agentName: "triage-agent",
+	model: "claude-sonnet",
+	capabilities: [],
+	lastActiveAt: null,
+}
+
+/** The worked issue's history, oldest first: triage, the claim, the fix, and its verification. */
+const eventsOf = (dataset: Dataset) => {
+	const event = (
+		index: number,
+		ago: number,
+		type: string,
+		actor: unknown,
+		payload: Readonly<Record<string, unknown>>,
+		states: readonly [string, string] | null = null,
+	) => ({
+		id: fixtureUuid(0x43, index),
+		issueId: WORKED_ISSUE,
+		actor,
+		type,
+		fromState: states?.[0] ?? null,
+		toState: states?.[1] ?? null,
+		payload,
+		createdAt: isoAgo(dataset, ago),
+	})
+	return [
+		event(1, 9 * HOUR_MS, "created", null, {}),
+		event(2, 8 * HOUR_MS, "ai_triage", TRIAGE_AGENT, {
+			summary:
+				"Upstream timeouts from the inventory service.\n\nRetries without backoff amplify the load.",
+		}),
+		event(3, 8 * HOUR_MS - 60_000, "severity_change", TRIAGE_AGENT, {
+			from: "medium",
+			to: "high",
+			source: "ai",
+			confidence: "high",
+		}),
+		event(4, 6 * HOUR_MS, "claim", ADA(dataset), {}),
+		event(5, 6 * HOUR_MS - 60_000, "state_change", ADA(dataset), {}, ["triage", "in_progress"]),
+		event(6, 5 * HOUR_MS, "comment", ADA(dataset), { body: "Adding jittered backoff to the client." }),
+		event(7, 5 * HOUR_MS - 60_000, "comment", ADA(dataset), { body: "PR incoming." }),
+		event(8, 5 * HOUR_MS - 120_000, "pr_linked", null, {
+			repoFullName: "acme/storefront",
+			number: 482,
+			source: "auto",
+		}),
+		event(9, 2 * HOUR_MS, "pr_merged", null, { repoFullName: "acme/storefront", number: 482 }),
+		event(10, 2 * HOUR_MS - 60_000, "verification_started", null, {
+			windowMs: 8 * HOUR_MS,
+			ratePerHour: 3.5,
+		}),
+	]
+}
+
+const escalationsOf = (dataset: Dataset) => [
+	{
+		id: fixtureUuid(0x44, 1),
+		issueId: WORKED_ISSUE,
+		investigationId: null,
+		severity: "high",
+		source: "ai",
+		reason: "severity_escalated",
+		status: "sent",
+		attempts: 1,
+		skipReason: null,
+		deliveries: [
+			{
+				destinationId: fixtureUuid(0x45, 1),
+				destinationName: "On-call webhook",
+				status: "delivered",
+				error: null,
+			},
+		],
+		createdAt: isoAgo(dataset, 8 * HOUR_MS - 120_000),
+		processedAt: isoAgo(dataset, 8 * HOUR_MS - 120_000),
+	},
+]
+
+const forWorked =
+	<A>(worked: (dataset: Dataset) => A, otherwise: A): EndpointHandler =>
+	({ dataset, params }) =>
+		Effect.succeed(str(params, "issueId") === WORKED_ISSUE ? worked(dataset) : otherwise)
+
+/** Reads of the worked issue's history; every other issue keeps the empty defaults. */
+const reads: Readonly<Record<string, EndpointHandler>> = {
+	"errors.listIssuePullRequests": forWorked(
+		(dataset) => ({ pullRequests: pullRequestsOf(dataset), suggestedRepository: null }),
+		{ pullRequests: [], suggestedRepository: null },
+	),
+	"errors.listIssueVerifications": forWorked((dataset) => ({ verifications: verificationsOf(dataset) }), {
+		verifications: [],
+	}),
+	"errors.listIssueEvents": forWorked((dataset) => ({ events: eventsOf(dataset) }), { events: [] }),
+	"errors.listIssueEscalations": forWorked((dataset) => ({ attempts: escalationsOf(dataset) }), {
+		attempts: [],
+	}),
+	"errors.commentOnIssue": ({ dataset, params, payload }) =>
+		Effect.succeed({
+			id: fixtureUuid(0x43, 99),
+			issueId: str(params, "issueId") ?? WORKED_ISSUE,
+			actor: ADA(dataset),
+			type: "comment",
+			fromState: null,
+			toState: null,
+			payload: { body: str(payload, "body") ?? "" },
+			createdAt: dataset.now,
+		}),
+	// Nothing is persisted: a link answers as the open pull request, an unlink with the list.
+	"errors.linkIssuePullRequest": ({ dataset }) => Effect.succeed(pullRequestsOf(dataset)[1]),
+	"errors.unlinkIssuePullRequest": ({ dataset, params }) =>
+		Effect.succeed({
+			pullRequests: pullRequestsOf(dataset).filter((pr) => pr.id !== str(params, "pullRequestId")),
+			suggestedRepository: null,
+		}),
+}
+
+export const fixtureArea: FixtureArea = {
+	area: "errors",
+	endpoints: (warehouse) => ({ ...writes(warehouse), ...reads }),
+}

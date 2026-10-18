@@ -15,8 +15,10 @@ import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
+import * as Combobox from "../../../ui/combobox"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
+import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DestinationName } from "./model"
@@ -86,6 +88,20 @@ export const Message = defineMessageUnion({
 	GotSeverityConfirmMessage: { message: Dialog.Message },
 	ClickedConfirmSeverity: {},
 	ClickedInvestigate: {},
+	ClickedAttach: {},
+	ChangedCommentDraft: { value: Schema.String },
+	ClickedComment: {},
+	ClickedRetryEvents: {},
+	CompletedComment: { result: Schema.Result(Schema.Null, LoadFailure) },
+	GotAttachDialogMessage: { message: Dialog.Message },
+	ChangedAttachDraft: { value: Schema.String },
+	GotAttachComboboxMessage: { message: Combobox.Message },
+	SubmittedAttach: {},
+	ClickedDetachPullRequest: { id: Schema.String },
+	CompletedUnlinkPullRequest: { result: Schema.Result(Schema.Null, LoadFailure) },
+	CompletedLinkPullRequest: { result: Schema.Result(Schema.Null, LoadFailure) },
+	GotOverflowMenuMessage: { message: Menu.Message },
+	CompletedCopy: { label: Schema.String, isOk: Schema.Boolean },
 	CompletedCreateInvestigation: { result: Schema.Result(Schema.String, LoadFailure) },
 })
 export type Message = typeof Message.Type

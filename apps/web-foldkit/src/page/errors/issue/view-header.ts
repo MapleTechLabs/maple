@@ -15,6 +15,8 @@ import { severityBadge } from "../kit/severity"
 import { signalStateChip } from "../kit/state-chip"
 import { DEFAULT_PRESET, headlineOf, type Search, type Tab } from "./derive"
 import { Message } from "./message"
+import { overflowEntries } from "./overflow"
+import * as MenuView from "../../../ui/menu-view"
 import { openAnomalyBadge } from "./view-anomalies"
 import type { Model } from "./model"
 
@@ -93,30 +95,41 @@ const windowControls = (h: H, model: Model): Html =>
 			}),
 	})
 
-/** `DropdownMenuTrigger` closed. TODO(overflow-menu): copy prompt, fingerprint, link; view rule. */
-const overflowTrigger = (h: H): Html =>
-	button(
-		h,
-		{
-			variant: "outline",
-			size: "icon-sm",
-			slot: "dropdown-menu-trigger",
-			attributes: [
-				h.AriaExpanded(false),
-				h.AriaHasPopup("menu"),
-				h.AriaLabel("More issue actions"),
-				h.Tabindex(0),
-			],
+/** `IssueOverflowMenu`: an outline icon trigger, the menu aligned to its end. */
+const overflowMenu = (h: H, model: Model, issue: ErrorIssueDocument): Html =>
+	h.submodel({
+		slotId: model.overflowMenu.id,
+		model: model.overflowMenu,
+		view: MenuView.view,
+		viewInputs: {
+			entries: overflowEntries(issue),
+			align: "end",
+			toView: ({ trigger, withTrigger }) =>
+				h.span(
+					[h.Class("contents")],
+					withTrigger(
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "icon-sm",
+								slot: "dropdown-menu-trigger",
+								attributes: [h.AriaLabel("More issue actions"), ...trigger],
+							},
+							[icon(h, "DotsVerticalIcon")],
+						),
+					),
+				),
 		},
-		[icon(h, "DotsVerticalIcon")],
-	)
+		toParentMessage: (message) => Message.GotOverflowMenuMessage({ message }),
+	})
 
 /** The header's actions: the window, Investigate (or the linked one) and the overflow menu. */
 export const headerActions = (
 	h: H,
 	model: Model,
 	investigation: V2Investigation | null,
-	isLoading = false,
+	issue: ErrorIssueDocument | null,
 ): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2")],
@@ -135,12 +148,12 @@ export const headerActions = (
 						h,
 						{
 							size: "sm",
-							isDisabled: isLoading || model.isStartingInvestigation,
+							isDisabled: issue === null || model.isStartingInvestigation,
 							attributes: [h.OnClick(Message.ClickedInvestigate())],
 						},
 						[icon(h, "PulseIcon"), "Investigate"],
 					),
-			...(isLoading ? [] : [overflowTrigger(h)]),
+			...(issue === null ? [] : [overflowMenu(h, model, issue)]),
 		],
 	)
 

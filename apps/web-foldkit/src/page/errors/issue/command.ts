@@ -1,6 +1,9 @@
 import {
 	ErrorIssueClaimRequest,
+	ErrorIssueCommentRequest,
 	ErrorIssueId,
+	ErrorIssueLinkPullRequestRequest,
+	ErrorIssuePullRequestId,
 	ErrorIssueReleaseRequest,
 	ErrorIssueSetSeverityRequest,
 	ErrorIssueTransitionRequest,
@@ -13,6 +16,7 @@ import { Command } from "foldkit"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
+import { writeClipboard } from "../../kit/clipboard"
 import { IssueWrite, Message, RequestMode } from "./message"
 
 /** The fetch's outcome, its error already the `displayError` body. */
@@ -232,6 +236,67 @@ export const CreateInvestigation = Command.define("CreateErrorIssueInvestigation
 		}).pipe(
 			settle,
 			Effect.map((result) => Message.CompletedCreateInvestigation({ result })),
+		),
+})
+
+/** `attachPullRequest`: links a pull request by URL. */
+export const LinkPullRequest = Command.define("LinkErrorIssuePullRequest", {
+	args: { issueId: ErrorIssueId, url: Schema.String },
+	messages: [Message.CompletedLinkPullRequest],
+	execute: ({ issueId, url }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.errors.linkIssuePullRequest({
+				params: { issueId },
+				payload: new ErrorIssueLinkPullRequestRequest({ url }),
+			})
+			return null
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedLinkPullRequest({ result })),
+		),
+})
+
+/** `submitComment`. */
+export const CommentOnIssue = Command.define("CommentOnErrorIssue", {
+	args: { issueId: ErrorIssueId, body: Schema.String },
+	messages: [Message.CompletedComment],
+	execute: ({ issueId, body }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.errors.commentOnIssue({
+				params: { issueId },
+				payload: new ErrorIssueCommentRequest({ body }),
+			})
+			return null
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedComment({ result })),
+		),
+})
+
+/** `detachPullRequest`. */
+export const UnlinkPullRequest = Command.define("UnlinkErrorIssuePullRequest", {
+	args: { issueId: ErrorIssueId, pullRequestId: ErrorIssuePullRequestId },
+	messages: [Message.CompletedUnlinkPullRequest],
+	execute: ({ issueId, pullRequestId }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.errors.unlinkIssuePullRequest({ params: { issueId, pullRequestId } })
+			return null
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedUnlinkPullRequest({ result })),
+		),
+})
+
+/** `useCopy({ label })`; `path` copies as an absolute link on this origin. */
+export const CopyText = Command.define("CopyErrorIssueText", {
+	args: { label: Schema.String, text: Schema.String, isPath: Schema.Boolean },
+	messages: [Message.CompletedCopy],
+	execute: ({ label, text, isPath }) =>
+		Effect.map(writeClipboard(isPath ? `${window.location.origin}${text}` : text), (isOk) =>
+			Message.CompletedCopy({ label, isOk }),
 		),
 })
 
