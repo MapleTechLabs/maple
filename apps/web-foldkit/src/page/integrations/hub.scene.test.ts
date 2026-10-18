@@ -89,15 +89,24 @@ describe("integrations hub", () => {
 		)
 	})
 
-	test("a chat callback toasts once, then strips its params with a replace", () => {
+	test("a chat callback strips its params with a replace; in-app it toasts first", () => {
 		const entry = init(
 			{ search: { integration: "chat-slack", chat: "connected", chat_workspace: "Acme" } },
 			context,
 		)
 		expect(entry.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/integrations?integration=chat-slack",
+				isReplace: true,
+			}),
+		)
+		const inApp = routeChanged(entered(), {
+			search: { integration: "chat-slack", chat: "connected", chat_workspace: "Acme" },
+		})
+		expect(inApp.outMessage).toEqual(
 			PageOutMessage.RequestedToast({ type: "success", title: "Connected Acme", description: "" }),
 		)
-		expect(pageUpdate(entry.model, Message.CompletedChatToast()).outMessage).toEqual(
+		expect(pageUpdate(inApp.model, Message.CompletedChatToast()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
 				url: "/integrations?integration=chat-slack",
 				isReplace: true,

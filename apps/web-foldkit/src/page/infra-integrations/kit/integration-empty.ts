@@ -21,6 +21,8 @@ export type IntegrationBrand = Readonly<{
 	iconClassName?: string
 	/** A mark outside the generated set (a chat connector manifest's paths), drawn at `size`. */
 	glyph?: (size: number) => Html
+	/** The backer plates' mark when `glyph` is set (its monochrome twin). */
+	backerGlyph?: (size: number) => Html
 }>
 
 export const integrationIconPlate = <M>(
@@ -105,11 +107,11 @@ export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBr
 		[
 			h.span(
 				[h.Class(cn(BACKER, "origin-bottom -translate-x-8 -rotate-10"))],
-				[icon(h, backerIcon, { size: 20 })],
+				[brand.backerGlyph === undefined ? icon(h, backerIcon, { size: 20 }) : brand.backerGlyph(20)],
 			),
 			h.span(
 				[h.Class(cn(BACKER, "origin-bottom translate-x-8 rotate-10"))],
-				[icon(h, backerIcon, { size: 20 })],
+				[brand.backerGlyph === undefined ? icon(h, backerIcon, { size: 20 }) : brand.backerGlyph(20)],
 			),
 			integrationIconPlate(h, brand, {
 				size: 28,

@@ -174,6 +174,20 @@ const disconnected: EndpointHandler = () => Effect.succeed({ disconnected: true 
 export const fixtureArea: FixtureArea = {
 	area: "integrations",
 	endpoints: () => ({
+		"chatIntegration.install": () =>
+			Effect.succeed({
+				object: "chat_connector.install",
+				url: "/integrations?integration=chat-slack&chat=connected&chat_workspace=Acme%20Ops",
+			}),
+		"chatIntegration.startChatIdentityLink": () =>
+			Effect.succeed({
+				object: "chat_connector.identity_link",
+				url: "/integrations?integration=chat-slack&chat_identity=linked&chat_identity_name=ada",
+			}),
+		"chatIntegration.deleteChatIdentity": () =>
+			Effect.succeed({ object: "chat_connector.identity", deleted: true }),
+		"chatIntegration.deleteWorkspace": (request) =>
+			Effect.succeed({ id: slackWorkspace(request).id, object: "chat_workspace", deleted: true }),
 		"integrations.hazelStart": startConnect("hazel"),
 		"integrations.hazelDisconnect": disconnected,
 		"integrations.githubStart": startConnect("github"),

@@ -12,6 +12,7 @@ import {
 	V2PlanetScaleIntegration,
 	V2ScrapeTarget,
 } from "@maple/domain/http/v2"
+import { ChatWorkspaceId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
@@ -70,6 +71,12 @@ export const Message = defineMessageUnion({
 	GotDisconnectDialogMessage: { message: Dialog.Message },
 	ConfirmedDisconnect: {},
 	CompletedDisconnect: { integration: Schema.String, failure: Schema.NullOr(LoadFailure) },
+	ClickedChatInstall: {},
+	CompletedChatInstall: { failure: Schema.NullOr(LoadFailure) },
+	ClickedChatIdentity: {},
+	CompletedChatIdentity: { kind: Schema.Literals(["link", "unlink"]), failure: Schema.NullOr(LoadFailure) },
+	ClickedChatDisconnect: { workspaceId: ChatWorkspaceId },
+	CompletedChatDisconnect: { failure: Schema.NullOr(LoadFailure) },
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,
 		status: Schema.String,

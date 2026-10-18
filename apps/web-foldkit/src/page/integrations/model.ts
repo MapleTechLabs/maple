@@ -17,6 +17,7 @@ import { KeyedSchema } from "../../data/keyed"
 import { LoadFailure } from "../../data/load-failure"
 import { IntegrationsSearch } from "../../route/search"
 import * as Dialog from "../../ui/dialog"
+import { ChatCardModel } from "./chat"
 import { ConnectModel } from "./connect"
 
 // `/integrations` (apps/web/src/routes/integrations.tsx): the hub and every integration's page.
@@ -48,5 +49,6 @@ export const Model = Schema.Struct({
 	connect: ConnectModel,
 	/** The page's disconnect confirmation and its in-flight flag (one integration shows at a time). */
 	disconnect: Schema.Struct({ dialog: Dialog.Model, isPending: Schema.Boolean }),
+	chatCard: ChatCardModel,
 })
 export type Model = typeof Model.Type

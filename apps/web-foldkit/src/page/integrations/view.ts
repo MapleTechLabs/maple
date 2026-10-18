@@ -4,12 +4,13 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import { button } from "../../ui/button"
-import { catalogEntry, integrationOfSearch, type IntegrationId } from "./catalog"
+import { catalogEntry, chatConnectorOf, integrationOfSearch, type IntegrationId } from "./catalog"
 import { ConnectProvider } from "./connect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { settingsNav } from "./settings-nav"
 import { entryGlyph } from "./view-entry"
+import { chatCard } from "./view-chat-card"
 import { hazelCard } from "./view-hazel"
 import { integrationHeader } from "./view-header"
 import { integrationCatalog, integrationsSummary } from "./view-hub"
@@ -36,7 +37,9 @@ const connectButton = (h: H, model: Model, integration: IntegrationId): Html | u
 }
 
 /** The integration's own card under the header. */
-const cardView = (h: H, model: Model, integration: IntegrationId): ReadonlyArray<Html> => {
+const cardView = (h: H, model: Model, integration: IntegrationId, timeZone: string): ReadonlyArray<Html> => {
+	const connector = chatConnectorOf(integration)
+	if (connector !== null) return [chatCard(h, model, connector, timeZone)]
 	switch (integration) {
 		case "hazel":
 			return [hazelCard(h, model)]
@@ -45,7 +48,7 @@ const cardView = (h: H, model: Model, integration: IntegrationId): ReadonlyArray
 	}
 }
 
-const detailView = (h: H, model: Model, integration: IntegrationId): Html =>
+const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: string): Html =>
 	dashboardPage(
 		h,
 		{
@@ -55,10 +58,10 @@ const detailView = (h: H, model: Model, integration: IntegrationId): Html =>
 			}),
 			scrollClassName: "gap-4",
 		},
-		cardView(h, model, integration),
+		cardView(h, model, integration, timeZone),
 	)
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const integration = integrationOfSearch(model.search.integration)
 	return integration === null
 		? dashboardPage(
@@ -69,5 +72,5 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				},
 				[integrationCatalog(h, model, selectIntegration)],
 			)
-		: detailView(h, model, integration)
+		: detailView(h, model, integration, inputs.context.timeZone)
 })

@@ -5,10 +5,11 @@ import { requestKey } from "../../data/request-key"
 import { AppRoute, hrefOf } from "../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import * as Dialog from "../../ui/dialog"
-import { integrationOfSearch } from "./catalog"
+import { chatConnectorOf, integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
 import { initConnect } from "./connect"
 import { Disconnect, DISCONNECTS } from "./disconnect"
+import * as Chat from "./update-chat"
 import * as Connect from "./update-connect"
 import { LoadCustomer, ReadClock, StripChatParams } from "./command"
 import { chain, requestStatus, STATUS_NAMES } from "./update-status"
@@ -28,20 +29,26 @@ const requestCustomer = (model: Model, context: PageContext): Return => {
 	})
 }
 
-/** The chat OAuth return: the toast now, the param strip after (`StripChatParams`). */
-const handleChatCallback = (model: Model): Return => {
+/**
+ * The chat OAuth return: the toast now, the param strip after (`StripChatParams`). On entry (the
+ * callback's full-page load) legacy's toast is added before its toast region subscribes and is
+ * lost; `withToast: false` keeps that (only the strip runs).
+ */
+const handleChatCallback = (model: Model, withToast: boolean): Return => {
 	const callback = chatCallbackOf(model.search)
 	return callback === null
 		? { model }
-		: {
-				model,
-				commands: [StripChatParams()],
-				outMessage: PageOutMessage.RequestedToast({
-					type: callback.type,
-					title: callback.title,
-					description: "",
-				}),
-			}
+		: !withToast
+			? navigateTo(model, hrefOfSearch(callback.next), true)
+			: {
+					model,
+					commands: [StripChatParams()],
+					outMessage: PageOutMessage.RequestedToast({
+						type: callback.type,
+						title: callback.title,
+						description: "",
+					}),
+				}
 }
 
 const navigateTo = (model: Model, url: string, isReplace: boolean): Return => ({
@@ -69,11 +76,12 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		customer: Keyed.idle(),
 		connect: initConnect(),
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
+		chatCard: { busy: null, confirmId: null, identityBusy: false },
 	}
 	const loaded = chain(model, [
 		...STATUS_NAMES.map((name) => (next: Model) => requestStatus(next, context, name, "Load")),
 		(next: Model) => requestCustomer(next, context),
-		handleChatCallback,
+		(next: Model) => handleChatCallback(next, false),
 	])
 	return { ...loaded, commands: [ReadClock(), ...(loaded.commands ?? [])] }
 }
@@ -81,7 +89,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 export const routeChanged = (model: Model, route: { readonly search: Search }): Return =>
 	hrefOfSearch(model.search) === hrefOfSearch(route.search)
 		? { model }
-		: handleChatCallback({ ...model, search: route.search })
+		: handleChatCallback({ ...model, search: route.search }, true)
 
 export const contextChanged = (model: Model): Return => ({ model })
 
@@ -123,6 +131,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return callback === null ? { model } : navigateTo(model, hrefOfSearch(callback.next), true)
 		},
 		ClickedConnect: () => Connect.clickedConnect(model),
+		ClickedChatInstall: () => Chat.clickedInstall(model),
+		CompletedChatInstall: ({ failure }) => Chat.completedInstall(model, context, failure),
+		ClickedChatIdentity: () => Chat.clickedIdentity(model),
+		CompletedChatIdentity: ({ kind, failure }) => Chat.completedIdentity(model, context, kind, failure),
+		ClickedChatDisconnect: ({ workspaceId }) => Chat.clickedDisconnect(model, workspaceId),
+		CompletedChatDisconnect: ({ failure }) => Chat.completedDisconnect(model, context, failure),
 		SucceededStartConnect: ({ attempt }) => Connect.succeededStart(model, context, attempt),
 		FailedStartConnect: ({ attempt, title, description }) =>
 			Connect.failedStart(model, attempt, title, description),
@@ -135,11 +149,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryStatus: ({ name }) => requestStatus(model, context, name, "Refresh"),
 		ClickedDisconnect: () => withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
 		GotDisconnectDialogMessage: ({ message: child }) =>
-			model.disconnect.isPending
+			model.disconnect.isPending ||
+			(model.chatCard.busy !== null && model.chatCard.busy === model.chatCard.confirmId)
 				? { model }
 				: withDisconnectDialog(model, Dialog.update(model.disconnect.dialog, child)),
 		ConfirmedDisconnect: () => {
 			const integration = integrationOfSearch(model.search.integration)
+			if (integration !== null && chatConnectorOf(integration) !== null)
+				return Chat.confirmedDisconnect(model)
 			if (integration === null || model.disconnect.isPending) return { model }
 			const closed = withDisconnectDialog(model, Dialog.close(model.disconnect.dialog))
 			return {
