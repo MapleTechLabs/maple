@@ -12,7 +12,11 @@ export type ScopeChipOptions = Readonly<{
 	trigger?: ReadonlyArray<ChildAttribute>
 }>
 
-export const scopeChip = <M>(h: HtmlBuilder<M>, options: ScopeChipOptions, children: ReadonlyArray<Html | string>): Html => {
+export const scopeChip = <M>(
+	h: HtmlBuilder<M>,
+	options: ScopeChipOptions,
+	children: ReadonlyArray<Html | string>,
+): Html => {
 	const chipClass = cn(
 		"bg-background/60 font-normal",
 		options.tone === "muted" ? "text-muted-foreground/70" : "text-muted-foreground",

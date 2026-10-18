@@ -11,7 +11,12 @@ import {
 	type GcpProjectHealth,
 	type RowRules,
 } from "@maple/web/components/infra/gcp/list-model"
-import { GCP_RESOURCES_TAB, GCP_VIEW_SERVICES, gcpResourcesError, type GcpView } from "@maple/web/components/infra/gcp/tabs"
+import {
+	GCP_RESOURCES_TAB,
+	GCP_VIEW_SERVICES,
+	gcpResourcesError,
+	type GcpView,
+} from "@maple/web/components/infra/gcp/tabs"
 import { formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
@@ -34,11 +39,25 @@ import { searchToolbar } from "../../kit/search-toolbar"
 import { listScopeOf, metricsConnectors, noticeOf, pageStateOf, statusOf } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
-import { GCP_DATABASE_BAND, GCP_SERVICE_BAND, GCP_SUBSCRIPTION_BAND, type GcpBandSpec, gcpBand, gcpBandLoading, gcpWorkloadBand } from "./view-band"
+import {
+	GCP_DATABASE_BAND,
+	GCP_SERVICE_BAND,
+	GCP_SUBSCRIPTION_BAND,
+	type GcpBandSpec,
+	gcpBand,
+	gcpBandLoading,
+	gcpWorkloadBand,
+} from "./view-band"
 import { gcpNotice } from "./view-notice"
 import { resourcesView } from "./view-resources"
 import type { H, RowsContext } from "./view-rows"
-import { databasesTable, serviceTable, serviceTableLoading, servicesTable, subscriptionsTable } from "./view-tables"
+import {
+	databasesTable,
+	serviceTable,
+	serviceTableLoading,
+	servicesTable,
+	subscriptionsTable,
+} from "./view-tables"
 
 // `GcpPage`, `GcpInfra` and `GcpListPage` (apps/web/src/routes/infra/gcp/index.tsx,
 // components/infra/gcp/gcp-list-page.tsx).
@@ -143,7 +162,11 @@ const regionChip = (h: H, region: string): Html => {
 		[h.Class("flex flex-wrap items-center gap-1.5"), h.AriaLabel("Active filters")],
 		[
 			h.span(
-				[h.Class("inline-flex items-center gap-1 rounded-sm border border-border/70 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground")],
+				[
+					h.Class(
+						"inline-flex items-center gap-1 rounded-sm border border-border/70 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground",
+					),
+				],
 				[
 					h.span([h.Class("max-w-[22ch] truncate text-foreground/80")], [label]),
 					button(
@@ -152,7 +175,10 @@ const regionChip = (h: H, region: string): Html => {
 							variant: "ghost",
 							size: "icon-2xs",
 							className: "text-muted-foreground hover:text-foreground",
-							attributes: [h.AriaLabel(`Remove ${label}`), h.OnClick(Message.ClickedClearRegion())],
+							attributes: [
+								h.AriaLabel(`Remove ${label}`),
+								h.OnClick(Message.ClickedClearRegion()),
+							],
 						},
 						[icon(h, "XmarkIcon")],
 					),
@@ -162,7 +188,9 @@ const regionChip = (h: H, region: string): Html => {
 				[
 					h.Type("button"),
 					h.OnClick(Message.ClickedClearRegion()),
-					h.Class("font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline ml-1"),
+					h.Class(
+						"font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline ml-1",
+					),
 				],
 				["Clear all"],
 			),
@@ -171,10 +199,19 @@ const regionChip = (h: H, region: string): Html => {
 }
 
 const healthText = (health: GcpProjectHealth | undefined) =>
-	health === undefined || health.tone === "ok" || health.tone === "neutral" ? "text-muted-foreground" : TONE_TEXT[health.tone]
+	health === undefined || health.tone === "ok" || health.tone === "neutral"
+		? "text-muted-foreground"
+		: TONE_TEXT[health.tone]
 
 const healthDotOf = (h: H, health: GcpProjectHealth | undefined): ReadonlyArray<Html> =>
-	health === undefined ? [] : [h.span([h.AriaHidden(true), h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_FILL[health.tone]))])]
+	health === undefined
+		? []
+		: [
+				h.span([
+					h.AriaHidden(true),
+					h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_FILL[health.tone])),
+				]),
+			]
 
 /** `GcpProjectsStrip`: one cell per project, the biggest share first; a cell scopes to it. */
 const projectsStrip = (
@@ -205,8 +242,14 @@ const projectsStrip = (
 							[h.Class("flex items-center gap-2")],
 							[
 								...healthDotOf(h, projectHealth),
-								h.span([h.Class("truncate font-mono text-xs font-medium text-foreground")], [project]),
-								h.span([h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")], [formatPercent(fraction)]),
+								h.span(
+									[h.Class("truncate font-mono text-xs font-medium text-foreground")],
+									[project],
+								),
+								h.span(
+									[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
+									[formatPercent(fraction)],
+								),
 							],
 						),
 						h.span(
@@ -214,7 +257,9 @@ const projectsStrip = (
 							[
 								h.span([
 									h.Class("block h-full rounded-full bg-muted-foreground/60"),
-									h.Style({ width: `${Math.max(fraction * 100, fraction > 0 ? 1.5 : 0)}%` }),
+									h.Style({
+										width: `${Math.max(fraction * 100, fraction > 0 ? 1.5 : 0)}%`,
+									}),
 								]),
 							],
 						),
@@ -227,7 +272,11 @@ const projectsStrip = (
 			}),
 	)
 
-const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConnectors>): ReadonlyArray<Html> => {
+const infraView = (
+	h: H,
+	model: Model,
+	connectors: ReturnType<typeof metricsConnectors>,
+): ReadonlyArray<Html> => {
 	const fleetData = model.fleet.data
 	const fleet = AsyncData.isSuccess(fleetData) || AsyncData.isRefreshing(fleetData) ? fleetData.data : null
 	const collecting = connectors.length > 0
@@ -250,7 +299,11 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 		return [
 			hero(h),
 			...failures.map((failure) =>
-				errorState(h, { failure, title: "Failed to load Google Cloud workloads", onRetry: Message.ClickedRetryFleet() }),
+				errorState(h, {
+					failure,
+					title: "Failed to load Google Cloud workloads",
+					onRetry: Message.ClickedRetryFleet(),
+				}),
 			),
 		]
 	}
@@ -259,17 +312,28 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 	const projectCounts = (name: string) => gcpProjectCounts(inRegion, name, view)
 	const isWaiting = AsyncData.isRefreshing(fleetData)
 	const ctx: RowsContext = {
-		timeSearch: { startTime: model.search.startTime, endTime: model.search.endTime, timePreset: model.search.timePreset },
+		timeSearch: {
+			startTime: model.search.startTime,
+			endTime: model.search.endTime,
+			timePreset: model.search.timePreset,
+		},
 		showProject: multiProject && project === undefined,
 		theme: model.themeColors,
 		isChartReady: model.chartRuntime._tag !== "Loading",
 	}
 	const section = (children: ReadonlyArray<Html>) =>
-		h.div([h.Class(cn("space-y-4", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])], children)
+		h.div(
+			[h.Class(cn("space-y-4", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+			children,
+		)
 	const body = (): Html => {
-		if (view === GCP_RESOURCES_TAB) return resourcesView(h, model, ctx.timeSearch, gcpResourcesError(connectors))
+		if (view === GCP_RESOURCES_TAB)
+			return resourcesView(h, model, ctx.timeSearch, gcpResourcesError(connectors))
 		if (fleet === null) {
-			return section([gcpBandLoading(h), serviceTableLoading(h, GCP_VIEW_SERVICES[view][0] ?? "cloudRun")])
+			return section([
+				gcpBandLoading(h),
+				serviceTableLoading(h, GCP_VIEW_SERVICES[view][0] ?? "cloudRun"),
+			])
 		}
 		const failed = gcpViewFailed(fleet, view)
 		switch (view) {
@@ -323,7 +387,8 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 						noun: ROWS_NOUN[view],
 						title: VIEW_LABEL[view],
 						failed,
-						render: (shown, emptyMessage) => serviceTable(h, view, shown, GENERIC_BAND[view], emptyMessage, ctx),
+						render: (shown, emptyMessage) =>
+							serviceTable(h, view, shown, GENERIC_BAND[view], emptyMessage, ctx),
 					}),
 				)
 		}
@@ -336,7 +401,10 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 			[
 				pageHero(h, {
 					title: "Google Cloud",
-					trailing: !multiProject && projects.length === 1 ? heroChip(h, `project ${projects[0] ?? ""}`) : undefined,
+					trailing:
+						!multiProject && projects.length === 1
+							? heroChip(h, `project ${projects[0] ?? ""}`)
+							: undefined,
 					actions:
 						views.length > 1
 							? [
@@ -346,7 +414,9 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 										options: views.map((option) => ({
 											value: option,
 											label:
-												option === GCP_RESOURCES_TAB || counts === null ? VIEW_LABEL[option] : `${VIEW_LABEL[option]} ${counts[option]}`,
+												option === GCP_RESOURCES_TAB || counts === null
+													? VIEW_LABEL[option]
+													: `${VIEW_LABEL[option]} ${counts[option]}`,
 										})),
 										value: view,
 										onChange: (next) => Message.ClickedView({ view: next }),
@@ -370,11 +440,19 @@ const content = (h: H, model: Model): ReadonlyArray<Html> =>
 		onLoading: () => [hero(h), skeleton(h, "h-64 w-full")],
 		onFailure: (failure) => [
 			hero(h),
-			errorState(h, { failure, title: "Failed to load the Google Cloud integration", onRetry: Message.ClickedRetryStatus() }),
+			errorState(h, {
+				failure,
+				title: "Failed to load the Google Cloud integration",
+				onRetry: Message.ClickedRetryStatus(),
+			}),
 		],
 		onStale: ({ error }) => [
 			hero(h),
-			errorState(h, { failure: error, title: "Failed to load the Google Cloud integration", onRetry: Message.ClickedRetryStatus() }),
+			errorState(h, {
+				failure: error,
+				title: "Failed to load the Google Cloud integration",
+				onRetry: Message.ClickedRetryStatus(),
+			}),
 		],
 		onRefreshing: () => connected(h, model),
 		onSuccess: () => connected(h, model),

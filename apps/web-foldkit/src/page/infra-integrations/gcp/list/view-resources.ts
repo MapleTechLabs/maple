@@ -10,7 +10,13 @@ import { icon } from "../../../../ui/icon"
 import type * as Select from "../../../../ui/select"
 import { type SelectEntry, view as selectView } from "../../../../ui/select-view"
 import { skeleton } from "../../../../ui/skeleton"
-import { columnHead, dataTable, dataTableEmpty, dataTableSkeletonRows, ROW_LINK_CLASS } from "../../kit/data-table"
+import {
+	columnHead,
+	dataTable,
+	dataTableEmpty,
+	dataTableSkeletonRows,
+	ROW_LINK_CLASS,
+} from "../../kit/data-table"
 import { filteredEmpty } from "../../kit/empty-states"
 import type { Resources } from "../data"
 import { gcpMessage } from "../gcp-message"
@@ -76,7 +82,8 @@ const filterSelect = (
 		},
 	})
 
-const metaChip = (h: H, text: string): Html => h.span([h.Class("font-mono text-3xs text-muted-foreground/80")], [text])
+const metaChip = (h: H, text: string): Html =>
+	h.span([h.Class("font-mono text-3xs text-muted-foreground/80")], [text])
 
 const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch: TimeSearch): Html => {
 	const labels = Object.entries(resource.labels).map(([key, value]) => `${key}: ${value}`)
@@ -86,7 +93,9 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 	const cells = [
 		h.div(
 			[
-				h.Class("w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary"),
+				h.Class(
+					"w-0 min-w-[220px] flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+				),
 				h.Title(resource.name),
 			],
 			[gcpResourceName(resource)],
@@ -94,24 +103,54 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		h.div([h.Class("w-[170px] truncate text-xs text-foreground/80"), h.Title(type)], [type]),
 		h.div([h.Class(`w-[200px] ${CELL}`), h.Title(resource.projectId)], [resource.projectId]),
 		h.div(
-			[h.Class(`w-[120px] ${CELL}`), ...(resource.location === null ? [] : [h.Title(resource.location)])],
+			[
+				h.Class(`w-[120px] ${CELL}`),
+				...(resource.location === null ? [] : [h.Title(resource.location)]),
+			],
 			[resource.location ?? EMPTY_VALUE],
 		),
-		h.div([h.Class("w-[120px] truncate text-xs text-foreground/80"), ...(state === null ? [] : [h.Title(state)])], [state ?? EMPTY_VALUE]),
 		h.div(
-			[h.Class("hidden w-[150px] items-center gap-2 whitespace-nowrap lg:flex"), h.Title(labels.join("\n"))],
 			[
-				...(labels.length === 0 ? [] : [h.span([h.Class("min-w-0 truncate")], [metaChip(h, labels[0] ?? "")])]),
+				h.Class("w-[120px] truncate text-xs text-foreground/80"),
+				...(state === null ? [] : [h.Title(state)]),
+			],
+			[state ?? EMPTY_VALUE],
+		),
+		h.div(
+			[
+				h.Class("hidden w-[150px] items-center gap-2 whitespace-nowrap lg:flex"),
+				h.Title(labels.join("\n")),
+			],
+			[
+				...(labels.length === 0
+					? []
+					: [h.span([h.Class("min-w-0 truncate")], [metaChip(h, labels[0] ?? "")])]),
 				...(labels.length > 1 ? [metaChip(h, `+${labels.length - 1}`)] : []),
 			],
 		),
 	]
 	return workload === undefined
-		? h.div([h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40")], cells)
-		: h.a([h.Class(ROW_LINK_CLASS), h.Href(workloadHref(workload.service, workload.keys, timeSearch))], cells)
+		? h.div(
+				[
+					h.Class(
+						"flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0 hover:bg-muted/40",
+					),
+				],
+				cells,
+			)
+		: h.a(
+				[h.Class(ROW_LINK_CLASS), h.Href(workloadHref(workload.service, workload.keys, timeSearch))],
+				cells,
+			)
 }
 
-const resourcesList = (h: H, model: Model, inventory: Resources, timeSearch: TimeSearch, isWaiting: boolean): ReadonlyArray<Html> => {
+const resourcesList = (
+	h: H,
+	model: Model,
+	inventory: Resources,
+	timeSearch: TimeSearch,
+	isWaiting: boolean,
+): ReadonlyArray<Html> => {
 	const { resources, total, types, projects } = inventory
 	const projectCount = types.find((entry) => entry.assetType === GCP_PROJECT_ASSET_TYPE)?.count ?? 0
 	const type = model.search.type || undefined
@@ -125,7 +164,10 @@ const resourcesList = (h: H, model: Model, inventory: Resources, timeSearch: Tim
 			model: model.resourceTypeSelect,
 			label: "Resource type",
 			allLabel: "All types",
-			entries: types.map((entry) => ({ value: entry.assetType, label: `${gcpAssetTypeLabel(entry.assetType)} (${entry.count})` })),
+			entries: types.map((entry) => ({
+				value: entry.assetType,
+				label: `${gcpAssetTypeLabel(entry.assetType)} (${entry.count})`,
+			})),
 			value: type,
 			toMessage: (message) => Message.GotResourceTypeSelectMessage({ message }),
 		},
@@ -145,7 +187,10 @@ const resourcesList = (h: H, model: Model, inventory: Resources, timeSearch: Tim
 					h.div(
 						[h.Class("flex flex-wrap items-center justify-between gap-3")],
 						[
-							h.div([h.Class("flex flex-wrap items-center gap-2")], [...typeParts, ...projectParts]),
+							h.div(
+								[h.Class("flex flex-wrap items-center gap-2")],
+								[...typeParts, ...projectParts],
+							),
 							h.span(
 								[h.Class("text-xs text-muted-foreground tabular-nums")],
 								[summary, " · ", countLabel(projectCount, "project"), " discovered"],
@@ -157,13 +202,20 @@ const resourcesList = (h: H, model: Model, inventory: Resources, timeSearch: Tim
 	return [
 		toolbar,
 		resources.length === 0 && filtered
-			? filteredEmpty(h, { noun: "resources", description: "Clear the type or project filter to see them all." })
+			? filteredEmpty(h, {
+					noun: "resources",
+					description: "Clear the type or project filter to see them all.",
+				})
 			: dataTable(
 					h,
 					{ ariaLabel: "Google Cloud resources", isWaiting },
 					columns(h),
 					resources.length === 0
-						? [dataTableEmpty(h, ["No resources yet. Maple lists them with a connection's first metrics read, then every hour."])]
+						? [
+								dataTableEmpty(h, [
+									"No resources yet. Maple lists them with a connection's first metrics read, then every hour.",
+								]),
+							]
 						: resources.map((resource) => resourceRow(h, resource, timeSearch)),
 				),
 	]
@@ -185,8 +237,20 @@ export const resourcesView = (h: H, model: Model, timeSearch: TimeSearch, syncEr
 			...AsyncData.match(model.resources.data, {
 				onIdle: () => [loading(h)],
 				onLoading: () => [loading(h)],
-				onFailure: (failure) => [errorState(h, { failure, title: "Failed to load resources", onRetry: Message.ClickedRetryResources() })],
-				onStale: ({ error }) => [errorState(h, { failure: error, title: "Failed to load resources", onRetry: Message.ClickedRetryResources() })],
+				onFailure: (failure) => [
+					errorState(h, {
+						failure,
+						title: "Failed to load resources",
+						onRetry: Message.ClickedRetryResources(),
+					}),
+				],
+				onStale: ({ error }) => [
+					errorState(h, {
+						failure: error,
+						title: "Failed to load resources",
+						onRetry: Message.ClickedRetryResources(),
+					}),
+				],
 				onRefreshing: (inventory) => resourcesList(h, model, inventory, timeSearch, true),
 				onSuccess: (inventory) => resourcesList(h, model, inventory, timeSearch, false),
 			}),

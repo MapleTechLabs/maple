@@ -1,7 +1,18 @@
-import { GCP_INFRA_SERVICE_IDS, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { GcpResourcesResponse } from "@maple/domain/http"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import {
+	GcpCloudSqlTopQueriesResponse,
+	GcpInfraTimeseriesResponse,
+	GcpResourcesResponse,
+} from "@maple/domain/http"
 import { V2GcpIntegration } from "@maple/domain/http/v2"
-import { getGcpInfraFleet, getGcpInfraSparklines } from "@maple/web-data/warehouse/gcp-infra"
+import {
+	getGcpCloudSqlTopQueries,
+	getGcpCloudSqlTraceSide,
+	getGcpInfraFleet,
+	getGcpInfraSparklines,
+	getGcpInfraTimeseries,
+} from "@maple/web-data/warehouse/gcp-infra"
+import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -90,5 +101,108 @@ export const loadResources = (query: ResourcesQuery) =>
 		const client = yield* MapleInternalApiClient
 		return yield* client.integrations.gcpResources({ query })
 	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+
+export const BucketPoint = GcpInfraTimeseriesResponse.fields.data.value
+export type BucketPoint = typeof BucketPoint.Type
+
+export const TimeseriesInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	bucketSeconds: Schema.Number,
+	source: Schema.Literals(GCP_INFRA_SOURCE_IDS),
+	keys: Schema.Array(Schema.String),
+})
+export type TimeseriesInput = typeof TimeseriesInput.Type
+
+/** `gcpInfraTimeseriesResultAtom`: one source's points for one workload (or cluster). */
+export const loadTimeseries = (input: TimeseriesInput) =>
+	getGcpInfraTimeseries({ data: { ...input, keys: [...input.keys] } }).pipe(
+		Effect.map((response): ReadonlyArray<BucketPoint> => response.points),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+export const Statement = GcpCloudSqlTopQueriesResponse.fields.data.value
+export type Statement = typeof Statement.Type
+
+export const CloudSqlInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	keys: Schema.Array(Schema.String),
+})
+export type CloudSqlInput = typeof CloudSqlInput.Type
+
+export const loadTopQueries = (input: CloudSqlInput) =>
+	getGcpCloudSqlTopQueries({ data: { ...input, keys: [...input.keys] } }).pipe(
+		Effect.map((response): ReadonlyArray<Statement> => response.statements),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+export const TraceSide = Schema.Struct({
+	databases: Schema.Array(Schema.String),
+	tracedQueries: Schema.Array(
+		Schema.Struct({
+			sampleStatement: Schema.String,
+			sampleService: Schema.String,
+			serviceCount: Schema.Number,
+			estimatedQueryCount: Schema.Number,
+			p95DurationMs: Schema.Number,
+		}),
+	),
+	services: Schema.Number,
+})
+export type TraceSide = typeof TraceSide.Type
+
+export const loadTraceSide = (input: CloudSqlInput) =>
+	getGcpCloudSqlTraceSide({ data: { ...input, keys: [...input.keys] } }).pipe(
+		Effect.map((response): TraceSide => ({
+			databases: response.databases,
+			tracedQueries: response.tracedQueries.map((query) => ({
+				sampleStatement: query.sampleStatement,
+				sampleService: query.sampleService,
+				serviceCount: query.serviceCount,
+				estimatedQueryCount: query.estimatedQueryCount,
+				p95DurationMs: query.p95DurationMs,
+			})),
+			services: response.services,
+		})),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+/** The entry spans the trace-gap callout counts errors on: `ServiceOverview`'s fields it reads. */
+export const OverviewRow = Schema.Struct({
+	serviceName: Schema.String,
+	errorRate: Schema.Number,
+	throughput: Schema.Number,
+})
+export type OverviewRow = typeof OverviewRow.Type
+
+export const OverviewInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	namespaces: Schema.optionalKey(Schema.Array(Schema.String)),
+})
+export type OverviewInput = typeof OverviewInput.Type
+
+/** `getServiceOverviewResultAtom({ data: window })`, the org namespace pin applied. */
+export const loadOverview = (input: OverviewInput) =>
+	getServiceOverview({
+		data:
+			input.namespaces === undefined
+				? { startTime: input.startTime, endTime: input.endTime }
+				: { ...input, namespaces: [...input.namespaces] },
+	}).pipe(
+		Effect.map((response): ReadonlyArray<OverviewRow> =>
+			response.data.map((row) => ({
+				serviceName: row.serviceName,
+				errorRate: row.errorRate,
+				throughput: row.throughput,
+			})),
+		),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
 
 export type { GcpInfraServiceId }

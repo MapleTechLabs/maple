@@ -30,7 +30,15 @@ const meterRow = <M>(h: HtmlBuilder<M>, row: MeterRow, hideLabel: boolean): Html
 				fillClassName: BAR_FILL[level],
 			}),
 			h.span(
-				[h.Class(cn("w-9", "shrink-0 text-right font-mono text-2xs tabular-nums", BAR_VALUE_TONE[level]))],
+				[
+					h.Class(
+						cn(
+							"w-9",
+							"shrink-0 text-right font-mono text-2xs tabular-nums",
+							BAR_VALUE_TONE[level],
+						),
+					),
+				],
 				[finite ? formatPercent(row.fraction) : EMPTY_VALUE],
 			),
 		],

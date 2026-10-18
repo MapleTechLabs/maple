@@ -25,7 +25,10 @@ const status = (connected: boolean) =>
 		connectors: connected
 			? [
 					{
-						id: encodePublicId(PublicIdPrefixes.gcpConnector, "00000000-0000-4000-8000-000000000002"),
+						id: encodePublicId(
+							PublicIdPrefixes.gcpConnector,
+							"00000000-0000-4000-8000-000000000002",
+						),
 						object: "gcp_connector",
 						scope_type: "project",
 						scope_id: "acme-prod",
@@ -51,7 +54,13 @@ const fleet: ReadonlyArray<FleetRead> = [
 	{
 		service: "cloudRun",
 		points: [
-			{ keys: ["checkout-api", "acme-prod", "us-central1"], metric: "run.googleapis.com/request_count", label: "2xx", total: 10, samples: 1 },
+			{
+				keys: ["checkout-api", "acme-prod", "us-central1"],
+				metric: "run.googleapis.com/request_count",
+				label: "2xx",
+				total: 10,
+				samples: 1,
+			},
 		],
 		failed: false,
 	},
@@ -59,13 +68,26 @@ const fleet: ReadonlyArray<FleetRead> = [
 
 const withStatus = (connected: boolean) => {
 	const entered = init({ search: {} }, context).model
-	const windowed = pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
-	return pageUpdate(windowed, Message.CompletedLoadStatus({ key: windowed.status.key ?? "", result: Result.succeed(status(connected)) }))
+	const windowed = pageUpdate(
+		entered,
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	).model
+	return pageUpdate(
+		windowed,
+		Message.CompletedLoadStatus({
+			key: windowed.status.key ?? "",
+			result: Result.succeed(status(connected)),
+		}),
+	)
 }
 
 describe("google cloud list", () => {
 	test("a connected status reads the fleet; until it lands the page shows its resources", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual(["ResolveGcpWindow", "LoadGcpStatus", "LoadChartRuntime"])
+		expect(names(init({ search: {} }, context).commands)).toEqual([
+			"ResolveGcpWindow",
+			"LoadGcpStatus",
+			"LoadChartRuntime",
+		])
 		expect(names(withStatus(true).commands)).toEqual(["FetchGcpFleet", "FetchGcpResources"])
 	})
 
@@ -75,7 +97,10 @@ describe("google cloud list", () => {
 
 	test("the landed fleet picks the services view and reads its sparklines", () => {
 		const model = withStatus(true).model
-		const loaded = pageUpdate(model, Message.CompletedFetchFleet({ key: model.fleet.key ?? "", result: Result.succeed(fleet) }))
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchFleet({ key: model.fleet.key ?? "", result: Result.succeed(fleet) }),
+		)
 		expect(names(loaded.commands)).toEqual(["FetchGcpSparklines"])
 	})
 
@@ -89,7 +114,9 @@ describe("google cloud list", () => {
 			}),
 		)
 		expect(names(failed.commands)).toEqual([])
-		expect(names(pageUpdate(failed.model, Message.ClickedRetryFleet()).commands)).toEqual(["FetchGcpFleet"])
+		expect(names(pageUpdate(failed.model, Message.ClickedRetryFleet()).commands)).toEqual([
+			"FetchGcpFleet",
+		])
 	})
 
 	test("a view switch writes ?view= and drops the old ?tab=, scope and search", () => {

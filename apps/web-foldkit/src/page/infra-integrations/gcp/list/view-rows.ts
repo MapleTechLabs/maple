@@ -33,7 +33,11 @@ export const NUMBER = "text-right font-mono text-xs tabular-nums"
 export const SUB = "font-mono text-3xs text-muted-foreground"
 
 /** The workload's page: the name, its identity params and the list's own time params. */
-export const workloadHref = (service: GcpInfraServiceId, keys: ReadonlyArray<string>, timeSearch: TimeSearch) =>
+export const workloadHref = (
+	service: GcpInfraServiceId,
+	keys: ReadonlyArray<string>,
+	timeSearch: TimeSearch,
+) =>
 	hrefOf(
 		AppRoute.InfraGcpResource({
 			service,
@@ -138,9 +142,13 @@ export const volumeCell = (
 	h.div(
 		[h.Class("flex w-[180px] items-center gap-3")],
 		[
-			h.span([h.Class("w-[56px] shrink-0 font-mono text-xs tabular-nums text-foreground/80")], [formatNumber(value)]),
+			h.span(
+				[h.Class("w-[56px] shrink-0 font-mono text-xs tabular-nums text-foreground/80")],
+				[formatNumber(value)],
+			),
 			spark(h, ctx, slotId, values, color),
 		],
 	)
 
-export const rowSlot = (prefix: string, keys: ReadonlyArray<string>) => `${prefix}-${gcpWorkloadId(keys).replaceAll("\u0000", "~")}`
+export const rowSlot = (prefix: string, keys: ReadonlyArray<string>) =>
+	`${prefix}-${gcpWorkloadId(keys).replaceAll("\u0000", "~")}`

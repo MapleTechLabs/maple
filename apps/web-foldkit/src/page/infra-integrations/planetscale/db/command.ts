@@ -35,13 +35,15 @@ export const ResolveWindow = Command.define("ResolvePlanetscaleDatabaseWindow", 
 export const LoadStatus = Command.define("LoadPlanetscaleDatabaseStatus", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedLoadStatus],
-	execute: ({ key }) => Effect.map(loadStatus(false), (result) => Message.CompletedLoadStatus({ key, result })),
+	execute: ({ key }) =>
+		Effect.map(loadStatus(false), (result) => Message.CompletedLoadStatus({ key, result })),
 })
 
 export const FetchDatabases = Command.define("FetchPlanetscaleInventory", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchDatabases],
-	execute: ({ key }) => Effect.map(loadDatabases, (result) => Message.CompletedFetchDatabases({ key, result })),
+	execute: ({ key }) =>
+		Effect.map(loadDatabases, (result) => Message.CompletedFetchDatabases({ key, result })),
 })
 
 export const FetchBranchStats = Command.define("FetchPlanetscaleBranchStats", {

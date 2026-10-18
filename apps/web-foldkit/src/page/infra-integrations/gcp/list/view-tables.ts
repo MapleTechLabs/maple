@@ -1,5 +1,9 @@
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { gcpQueryInsightsConsoleUrl, gcpSqlEngine, gcpSqlSize } from "@maple/web/components/infra/gcp/cloud-sql-signals"
+import {
+	gcpQueryInsightsConsoleUrl,
+	gcpSqlEngine,
+	gcpSqlSize,
+} from "@maple/web/components/infra/gcp/cloud-sql-signals"
 import {
 	GCP_DATABASE_RULES,
 	GCP_FILLING_FRACTION,
@@ -21,21 +25,55 @@ import {
 	type GcpWorkloadRow,
 	type GcpWorkloadScope,
 } from "@maple/web/components/infra/gcp/list-model"
-import { formatGcpValue, GCP_INFRA_COLUMNS, gcpWorkloadId, type GcpColumn } from "@maple/web/components/infra/gcp/tabs"
+import {
+	formatGcpValue,
+	GCP_INFRA_COLUMNS,
+	gcpWorkloadId,
+	type GcpColumn,
+} from "@maple/web/components/infra/gcp/tabs"
 import { BAR_VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
-import { EMPTY_VALUE, formatErrorRate, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import {
+	EMPTY_VALUE,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+} from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
 import { meter, segmentedBar } from "../../../../ui/meter"
 import { skeleton } from "../../../../ui/skeleton"
-import { columnHead, dataTable, dataTableEmpty, dataTableSkeletonRows, ROW_LINK_CLASS } from "../../kit/data-table"
+import {
+	columnHead,
+	dataTable,
+	dataTableEmpty,
+	dataTableSkeletonRows,
+	ROW_LINK_CLASS,
+} from "../../kit/data-table"
 import { type MetaItem, metaLine } from "../../kit/meta-line"
 import { gcpServiceIcon } from "../service-icon"
-import { GCP_DATABASE_BAND, GCP_SERVICE_BAND, GCP_SUBSCRIPTION_BAND, type GcpBandSpec, healthDot } from "./view-band"
-import { type H, NAME, NUMBER, type RowsContext, rowSlot, spark, SUB, volumeCell, workloadHref, workloadRow } from "./view-rows"
+import {
+	GCP_DATABASE_BAND,
+	GCP_SERVICE_BAND,
+	GCP_SUBSCRIPTION_BAND,
+	type GcpBandSpec,
+	healthDot,
+} from "./view-band"
+import {
+	type H,
+	NAME,
+	NUMBER,
+	type RowsContext,
+	rowSlot,
+	spark,
+	SUB,
+	volumeCell,
+	workloadHref,
+	workloadRow,
+} from "./view-rows"
 
 // `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
 
@@ -65,7 +103,10 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 	const failedWord = row.service === "cloudRun" ? "5xx" : "failed"
 	const label =
 		row.failed > 0 && (rated || clientShare === 0)
-			? { text: `${formatPercent(failedShare)} ${failedWord}`, className: rated ? TONE_TEXT.crit : undefined }
+			? {
+					text: `${formatPercent(failedShare)} ${failedWord}`,
+					className: rated ? TONE_TEXT.crit : undefined,
+				}
 			: clientShare > 0
 				? { text: `${formatPercent(clientShare)} 4xx`, className: undefined }
 				: { text: row.service === "cloudRun" ? "no errors" : "all ok", className: undefined }
@@ -84,7 +125,14 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 				],
 			}),
 			h.span(
-				[h.Class(cn("whitespace-nowrap font-mono text-2xs tabular-nums text-muted-foreground", label.className))],
+				[
+					h.Class(
+						cn(
+							"whitespace-nowrap font-mono text-2xs tabular-nums text-muted-foreground",
+							label.className,
+						),
+					),
+				],
 				[label.text],
 			),
 		],
@@ -99,7 +147,12 @@ const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyAr
 		: undefined,
 ]
 
-export const servicesTable = (h: H, rows: ReadonlyArray<GcpServiceRow>, emptyMessage: string, ctx: RowsContext): Html =>
+export const servicesTable = (
+	h: H,
+	rows: ReadonlyArray<GcpServiceRow>,
+	emptyMessage: string,
+	ctx: RowsContext,
+): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Services", maxHeight: TABLE_MAX_HEIGHT },
@@ -120,12 +173,32 @@ export const servicesTable = (h: H, rows: ReadonlyArray<GcpServiceRow>, emptyMes
 				const cpuLevel = utilizationLevel(row.cpuP95 ?? 0)
 				return workloadRow(
 					h,
-					{ row, rules: GCP_SERVICE_RULES, spec: GCP_SERVICE_BAND, meta: serviceMeta(h, row, ctx.showProject), timeSearch: ctx.timeSearch },
+					{
+						row,
+						rules: GCP_SERVICE_RULES,
+						spec: GCP_SERVICE_BAND,
+						meta: serviceMeta(h, row, ctx.showProject),
+						timeSearch: ctx.timeSearch,
+					},
 					[
-						volumeCell(h, ctx, rowSlot(`gcp-svc-${row.service}`, row.keys), row.requests, row.volume),
+						volumeCell(
+							h,
+							ctx,
+							rowSlot(`gcp-svc-${row.service}`, row.keys),
+							row.requests,
+							row.volume,
+						),
 						statusMix(h, row),
 						h.div(
-							[h.Class(cn("w-[64px]", NUMBER, rate === undefined ? "text-muted-foreground" : errorRateClass(rate)))],
+							[
+								h.Class(
+									cn(
+										"w-[64px]",
+										NUMBER,
+										rate === undefined ? "text-muted-foreground" : errorRateClass(rate),
+									),
+								),
+							],
 							[rate === undefined ? EMPTY_VALUE : formatErrorRate(rate)],
 						),
 						h.div(
@@ -134,7 +207,9 @@ export const servicesTable = (h: H, rows: ReadonlyArray<GcpServiceRow>, emptyMes
 									cn(
 										"w-[88px]",
 										NUMBER,
-										(row.latencyP95 ?? 0) >= GCP_SLOW_P95_SECONDS ? TONE_TEXT.warn : "text-foreground/80",
+										(row.latencyP95 ?? 0) >= GCP_SLOW_P95_SECONDS
+											? TONE_TEXT.warn
+											: "text-foreground/80",
 									),
 								),
 							],
@@ -194,11 +269,20 @@ export const subscriptionsTable = (
 						row,
 						rules: GCP_SUBSCRIPTION_RULES,
 						spec: GCP_SUBSCRIPTION_BAND,
-						meta: [row.pushRequests > 0 ? "push" : "pull", ctx.showProject ? row.project : undefined],
+						meta: [
+							row.pushRequests > 0 ? "push" : "pull",
+							ctx.showProject ? row.project : undefined,
+						],
 						timeSearch: ctx.timeSearch,
 					},
 					[
-						volumeCell(h, ctx, rowSlot("gcp-sub-delivered", row.keys), row.delivered, row.deliveredSpark),
+						volumeCell(
+							h,
+							ctx,
+							rowSlot("gcp-sub-delivered", row.keys),
+							row.delivered,
+							row.deliveredSpark,
+						),
 						h.div(
 							[h.Class("flex w-[200px] items-center gap-3")],
 							[
@@ -206,10 +290,23 @@ export const subscriptionsTable = (
 									[h.Class("flex w-[64px] shrink-0 flex-col")],
 									[
 										h.span(
-											[h.Class(cn("font-mono text-xs tabular-nums", growing ? TONE_TEXT.crit : "text-foreground/80"))],
-											[row.backlog === undefined ? EMPTY_VALUE : formatNumber(row.backlog)],
+											[
+												h.Class(
+													cn(
+														"font-mono text-xs tabular-nums",
+														growing ? TONE_TEXT.crit : "text-foreground/80",
+													),
+												),
+											],
+											[
+												row.backlog === undefined
+													? EMPTY_VALUE
+													: formatNumber(row.backlog),
+											],
 										),
-										...(growth === undefined ? [] : [h.span([h.Class(SUB)], [growthLabel(growth)])]),
+										...(growth === undefined
+											? []
+											: [h.span([h.Class(SUB)], [growthLabel(growth)])]),
 									],
 								),
 								spark(
@@ -227,11 +324,17 @@ export const subscriptionsTable = (
 									cn(
 										"w-[104px]",
 										NUMBER,
-										(row.oldestUnackedSeconds ?? 0) >= GCP_STALE_SECONDS ? TONE_TEXT.warn : "text-foreground/80",
+										(row.oldestUnackedSeconds ?? 0) >= GCP_STALE_SECONDS
+											? TONE_TEXT.warn
+											: "text-foreground/80",
 									),
 								),
 							],
-							[row.oldestUnackedSeconds === undefined ? EMPTY_VALUE : seconds(row.oldestUnackedSeconds)],
+							[
+								row.oldestUnackedSeconds === undefined
+									? EMPTY_VALUE
+									: seconds(row.oldestUnackedSeconds),
+							],
 						),
 						h.div(
 							[
@@ -239,14 +342,30 @@ export const subscriptionsTable = (
 									cn(
 										"hidden w-[84px] md:block",
 										NUMBER,
-										pushRate === undefined ? "text-muted-foreground" : errorRateClass(pushRate),
+										pushRate === undefined
+											? "text-muted-foreground"
+											: errorRateClass(pushRate),
 									),
 								),
 							],
-							[row.pushRequests === 0 ? "pull" : pushRate === undefined ? EMPTY_VALUE : formatErrorRate(pushRate)],
+							[
+								row.pushRequests === 0
+									? "pull"
+									: pushRate === undefined
+										? EMPTY_VALUE
+										: formatErrorRate(pushRate),
+							],
 						),
 						h.div(
-							[h.Class(cn("hidden w-[96px] md:block", NUMBER, row.deadLettered > 0 ? TONE_TEXT.crit : "text-foreground/80"))],
+							[
+								h.Class(
+									cn(
+										"hidden w-[96px] md:block",
+										NUMBER,
+										row.deadLettered > 0 ? TONE_TEXT.crit : "text-foreground/80",
+									),
+								),
+							],
 							[formatNumber(row.deadLettered)],
 						),
 					],
@@ -270,7 +389,10 @@ const quotaCell = (h: H, value: number | undefined, hidden?: string): Html =>
 	h.div(
 		[h.Class(cn("flex w-[72px] flex-col items-end gap-1", hidden))],
 		[
-			h.span([h.Class(cn("font-mono text-xs tabular-nums", quotaText(value)))], [value === undefined ? EMPTY_VALUE : formatPercent(value)]),
+			h.span(
+				[h.Class(cn("font-mono text-xs tabular-nums", quotaText(value)))],
+				[value === undefined ? EMPTY_VALUE : formatPercent(value)],
+			),
 			meter(h, { value: value ?? 0, tone: quotaTone(value ?? 0), className: "w-14" }),
 		],
 	)
@@ -278,18 +400,21 @@ const quotaCell = (h: H, value: number | undefined, hidden?: string): Html =>
 const replicasItem = (h: H, row: GcpDatabaseRow): MetaItem => {
 	if (row.replicas.length === 0) {
 		if (row.replicaLagSeconds === undefined) return undefined
-		return h.span(
-			row.replicaLagSeconds >= GCP_REPLICA_LAG_SECONDS ? [h.Class(TONE_TEXT.warn)] : [],
-			["replica, lag ", seconds(row.replicaLagSeconds)],
-		)
+		return h.span(row.replicaLagSeconds >= GCP_REPLICA_LAG_SECONDS ? [h.Class(TONE_TEXT.warn)] : [], [
+			"replica, lag ",
+			seconds(row.replicaLagSeconds),
+		])
 	}
-	const lags = row.replicas.flatMap((replica) => (replica.lagSeconds === undefined ? [] : [replica.lagSeconds]))
+	const lags = row.replicas.flatMap((replica) =>
+		replica.lagSeconds === undefined ? [] : [replica.lagSeconds],
+	)
 	const worst = lags.length === 0 ? undefined : Math.max(...lags)
 	const count = row.replicas.length === 1 ? "1 replica" : `${row.replicas.length} replicas`
-	return h.span(
-		(worst ?? 0) >= GCP_REPLICA_LAG_SECONDS ? [h.Class(TONE_TEXT.warn)] : [],
-		[worst === undefined ? count : `${count}, lag ${row.replicas.length === 1 ? "" : "up to "}${seconds(worst)}`],
-	)
+	return h.span((worst ?? 0) >= GCP_REPLICA_LAG_SECONDS ? [h.Class(TONE_TEXT.warn)] : [], [
+		worst === undefined
+			? count
+			: `${count}, lag ${row.replicas.length === 1 ? "" : "up to "}${seconds(worst)}`,
+	])
 }
 
 const databaseMeta = (h: H, row: GcpDatabaseRow, showProject: boolean): ReadonlyArray<MetaItem> => [
@@ -303,11 +428,17 @@ const isMysql = (row: GcpDatabaseRow) => row.instance?.databaseVersion?.startsWi
 
 const queriesCell = (h: H, row: GcpDatabaseRow, ctx: RowsContext): Html =>
 	row.queries !== undefined
-		? h.div([h.Class("hidden md:block")], [volumeCell(h, ctx, rowSlot("gcp-sql-queries", row.keys), row.queries, row.queriesSpark)])
+		? h.div(
+				[h.Class("hidden md:block")],
+				[volumeCell(h, ctx, rowSlot("gcp-sql-queries", row.keys), row.queries, row.queriesSpark)],
+			)
 		: h.div(
 				[h.Class("hidden w-[180px] items-center gap-3 md:flex")],
 				[
-					h.span([h.Class("w-[56px] shrink-0 font-mono text-xs text-muted-foreground")], [EMPTY_VALUE]),
+					h.span(
+						[h.Class("w-[56px] shrink-0 font-mono text-xs text-muted-foreground")],
+						[EMPTY_VALUE],
+					),
 					...(gcpQueryInsightsOff(row) ? [h.span([h.Class(SUB)], ["Insights off"])] : []),
 				],
 			)
@@ -317,9 +448,17 @@ const queryP95Cell = (h: H, row: GcpDatabaseRow): Html => {
 	return h.div(
 		[h.Class("flex w-[80px] flex-col items-end")],
 		[
-			h.span([h.Class(cn(NUMBER, slow ? TONE_TEXT.warn : "text-foreground/80"))], [row.queryP95 === undefined ? EMPTY_VALUE : seconds(row.queryP95)]),
+			h.span(
+				[h.Class(cn(NUMBER, slow ? TONE_TEXT.warn : "text-foreground/80"))],
+				[row.queryP95 === undefined ? EMPTY_VALUE : seconds(row.queryP95)],
+			),
 			...(isMysql(row) || row.slowQueries > 0
-				? [h.span([h.Class(cn(SUB, row.slowQueries > 0 && TONE_TEXT.warn))], [formatNumber(row.slowQueries), " slow"])]
+				? [
+						h.span(
+							[h.Class(cn(SUB, row.slowQueries > 0 && TONE_TEXT.warn))],
+							[formatNumber(row.slowQueries), " slow"],
+						),
+					]
 				: []),
 		],
 	)
@@ -335,7 +474,13 @@ const connectionsCell = (h: H, row: GcpDatabaseRow): Html => {
 		[
 			h.span(
 				[h.Class(cn(NUMBER, quotaText(share)))],
-				[row.connections === undefined ? EMPTY_VALUE : max === null ? count(row.connections) : `${count(row.connections)} / ${count(max)}`],
+				[
+					row.connections === undefined
+						? EMPTY_VALUE
+						: max === null
+							? count(row.connections)
+							: `${count(row.connections)} / ${count(max)}`,
+				],
 			),
 			...(idle > 0
 				? [h.span([h.Class(cn(SUB, TONE_TEXT.warn))], [formatNumber(idle), " idle in transaction"])]
@@ -352,7 +497,11 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 	if (replicas.length === 0 && off.length === 0) return []
 	return [
 		h.div(
-			[h.Class("flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2.5 font-mono text-2xs text-muted-foreground")],
+			[
+				h.Class(
+					"flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2.5 font-mono text-2xs text-muted-foreground",
+				),
+			],
 			[
 				h.span(
 					[],
@@ -362,7 +511,9 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 								[
 									"Read replicas fold into their primary",
 									...replicas.map((replica) =>
-										replica.lagSeconds === undefined ? replica.name : `${replica.name} lags ${seconds(replica.lagSeconds)}`,
+										replica.lagSeconds === undefined
+											? replica.name
+											: `${replica.name} lags ${seconds(replica.lagSeconds)}`,
 									),
 								].join(" · "),
 							],
@@ -386,7 +537,12 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 	]
 }
 
-export const databasesTable = (h: H, rows: ReadonlyArray<GcpDatabaseRow>, emptyMessage: string, ctx: RowsContext): Html =>
+export const databasesTable = (
+	h: H,
+	rows: ReadonlyArray<GcpDatabaseRow>,
+	emptyMessage: string,
+	ctx: RowsContext,
+): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Cloud SQL instances", maxHeight: TABLE_MAX_HEIGHT },
@@ -406,7 +562,13 @@ export const databasesTable = (h: H, rows: ReadonlyArray<GcpDatabaseRow>, emptyM
 				rows.map((row) =>
 					workloadRow(
 						h,
-						{ row, rules: GCP_DATABASE_RULES, spec: GCP_DATABASE_BAND, meta: databaseMeta(h, row, ctx.showProject), timeSearch: ctx.timeSearch },
+						{
+							row,
+							rules: GCP_DATABASE_RULES,
+							spec: GCP_DATABASE_BAND,
+							meta: databaseMeta(h, row, ctx.showProject),
+							timeSearch: ctx.timeSearch,
+						},
 						[
 							queriesCell(h, row, ctx),
 							queryP95Cell(h, row),
@@ -444,7 +606,10 @@ export const serviceTableLoading = (h: H, service: GcpInfraServiceId): Html =>
 			dotLane(h),
 			h.div(
 				[h.Class(cn(GENERIC_NAME, "flex items-center gap-3"))],
-				[skeleton(h, "size-7 shrink-0 rounded-md"), h.div([], [skeleton(h, "h-4 w-40"), skeleton(h, "mt-1.5 h-3 w-28")])],
+				[
+					skeleton(h, "size-7 shrink-0 rounded-md"),
+					h.div([], [skeleton(h, "h-4 w-40"), skeleton(h, "mt-1.5 h-3 w-28")]),
+				],
 			),
 			...GCP_INFRA_COLUMNS[service].map(() => skeleton(h, cn("h-3", VALUE_WIDTH))),
 		]),
@@ -494,7 +659,11 @@ export const serviceTable = (
 									[h.Class("min-w-0 flex-1")],
 									[
 										h.div(
-											[h.Class("truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary")],
+											[
+												h.Class(
+													"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+												),
+											],
 											[row.name],
 										),
 										...(line === null ? [] : [line]),
@@ -504,7 +673,15 @@ export const serviceTable = (
 						),
 						...columns.map((column, index) =>
 							h.div(
-								[h.Class(cn("text-right font-mono text-xs tabular-nums", VALUE_WIDTH, valueClass(column, row.workload.values[index])))],
+								[
+									h.Class(
+										cn(
+											"text-right font-mono text-xs tabular-nums",
+											VALUE_WIDTH,
+											valueClass(column, row.workload.values[index]),
+										),
+									),
+								],
 								[formatGcpValue(column.format, row.workload.values[index])],
 							),
 						),

@@ -115,7 +115,8 @@ const PRESENTATION = new Map<string, Presentation>([
 	["database.access_request", { tone: "neutral", short: "Access request", onChart: false }],
 ])
 
-export const presentEvent = (eventType: string): Presentation => PRESENTATION.get(eventType) ?? DEFAULT_PRESENTATION
+export const presentEvent = (eventType: string): Presentation =>
+	PRESENTATION.get(eventType) ?? DEFAULT_PRESENTATION
 
 export const eventsToChartMarkers = (events: ReadonlyArray<EventEntry>): ReadonlyArray<ChartEventMarker> =>
 	events.flatMap((event) => {

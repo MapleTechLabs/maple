@@ -19,12 +19,15 @@ import type { Model } from "./model"
 
 /** `Result.builder(...).onSuccess(...).orElse(...)`: a settled success, refreshing included. */
 export const successOf = <A, E>(data: AsyncData.AsyncData<A, E>): A | null =>
-	AsyncData.isSuccess(data) || AsyncData.isRefreshing(data) ? Option.getOrNull(AsyncData.getData(data)) : null
+	AsyncData.isSuccess(data) || AsyncData.isRefreshing(data)
+		? Option.getOrNull(AsyncData.getData(data))
+		: null
 
 export const statusOf = (model: Model): GcpStatus | null => successOf(model.status.data)
 
 /** The connections that collect metrics; none when metrics are off on all of them. */
-export const metricsConnectors = (status: GcpStatus) => status.connectors.filter((connector) => connector.metrics_enabled)
+export const metricsConnectors = (status: GcpStatus) =>
+	status.connectors.filter((connector) => connector.metrics_enabled)
 
 /** While a connection waits on its script or its first read, the status is re-read faster. */
 export const isSettling = (status: GcpStatus, nowMs: number): boolean =>
@@ -47,13 +50,17 @@ export const pageStateOf = (status: GcpStatus, nowMs: number): PageState => {
 
 export const fleetOf = (model: Model): ReadonlyArray<FleetRead> | null => successOf(model.fleet.data)
 
-export const requestedViewOf = (model: Model): GcpView | undefined => gcpRequestedView(model.search.view, model.search.tab)
+export const requestedViewOf = (model: Model): GcpView | undefined =>
+	gcpRequestedView(model.search.view, model.search.tab)
 
 export const sparksOf = (model: Model) => {
 	const window = model.window
 	const reads = successOf(model.sparks.data)
 	if (window === null || reads === null) return NO_GCP_SPARKS
-	return gcpSparks(reads, { ...window, bucketSeconds: gcpSparklineBucketSeconds(window.startTime, window.endTime) })
+	return gcpSparks(reads, {
+		...window,
+		bucketSeconds: gcpSparklineBucketSeconds(window.startTime, window.endTime),
+	})
 }
 
 const instancesOf = (inventory: Resources | null) =>
@@ -68,7 +75,8 @@ export const listScopeOf = (model: Model, collecting: boolean) => {
 		{ view: requested, project: model.search.project, region: model.search.region },
 		collecting,
 	)
-	const instances = scoped.view === "cloudSql" ? instancesOf(successOf(model.cloudSqlInventory.data)) : undefined
+	const instances =
+		scoped.view === "cloudSql" ? instancesOf(successOf(model.cloudSqlInventory.data)) : undefined
 	const allRows = fleet === null ? null : gcpListRows(fleet, sparksOf(model), instances)
 	return gcpListScope(
 		allRows,

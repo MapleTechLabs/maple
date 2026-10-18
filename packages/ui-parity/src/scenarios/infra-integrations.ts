@@ -9,6 +9,7 @@ import type { AreaModule, Scenario } from "./types.ts"
 const DATASET = "infra-integrations"
 const PS_DB = "/infra/planetscale/acme-prod"
 const RAILWAY_SERVICE = "/infra/railway/svc_acme_api?environmentId=env_acme_production"
+const GCP_WORKLOAD = "/infra/gcp/cloudRun/checkout-api?project=acme-shop-prod&region=us-central1"
 const EMPTY = "empty"
 
 const scenario = (
@@ -89,9 +90,24 @@ export const infraIntegrationsArea: AreaModule = {
 			},
 		}),
 		scenario("railway-empty", "Railway: not connected", "/infra/railway", { dataset: EMPTY }),
-		scenario("railway-loading", "Railway: services loading", "/infra/railway", held("queryEngine.railwayInfraServices")),
-		scenario("railway-status-loading", "Railway: status loading", "/infra/railway", held("integrations.railwayStatus")),
-		scenario("railway-error", "Railway: services failing", "/infra/railway", failing("queryEngine.railwayInfraServices")),
+		scenario(
+			"railway-loading",
+			"Railway: services loading",
+			"/infra/railway",
+			held("queryEngine.railwayInfraServices"),
+		),
+		scenario(
+			"railway-status-loading",
+			"Railway: status loading",
+			"/infra/railway",
+			held("integrations.railwayStatus"),
+		),
+		scenario(
+			"railway-error",
+			"Railway: services failing",
+			"/infra/railway",
+			failing("queryEngine.railwayInfraServices"),
+		),
 		scenario("railway-sort-vcpu", "Railway: sorted by vCPU", "/infra/railway", { steps: press("vCPU") }),
 		scenario("railway-sort-name-twice", "Railway: sorted by service, descending", "/infra/railway", {
 			steps: async (page) => {
@@ -116,7 +132,9 @@ export const infraIntegrationsArea: AreaModule = {
 			dataset: EMPTY,
 			...failing("integrations.railwayConnect", 400, "@maple/http/errors/IntegrationsValidationError"),
 			steps: async (page) => {
-				await page.getByRole("textbox", { name: "Account or workspace token" }).fill("rw_parity_token_0001")
+				await page
+					.getByRole("textbox", { name: "Account or workspace token" })
+					.fill("rw_parity_token_0001")
 				await page.getByRole("button", { name: "Connect Railway" }).click()
 				await page.getByRole("alert").waitFor()
 			},
@@ -140,7 +158,10 @@ export const infraIntegrationsArea: AreaModule = {
 		),
 		scenario("railway-service-hover", "Railway service: CPU chart hovered", RAILWAY_SERVICE, {
 			steps: async (page) => {
-				await page.getByRole("img", { name: "Utilization" }).first().hover({ position: { x: 300, y: 90 } })
+				await page
+					.getByRole("img", { name: "Utilization" })
+					.first()
+					.hover({ position: { x: 300, y: 90 } })
 				await page.getByText("Average").first().waitFor()
 			},
 		}),
@@ -150,11 +171,28 @@ export const infraIntegrationsArea: AreaModule = {
 		}),
 		scenario("gcp-resources", "Google Cloud: Resources tab", "/infra/gcp", { steps: press("Resources") }),
 		scenario("gcp-empty", "Google Cloud: not connected", "/infra/gcp", { dataset: EMPTY }),
-		scenario("gcp-loading", "Google Cloud: workloads loading", "/infra/gcp", held("queryEngine.gcpInfraPresence")),
-		scenario("gcp-error", "Google Cloud: workloads failing", "/infra/gcp", failing("queryEngine.gcpInfraPresence")),
-		scenario("gcp-status-loading", "Google Cloud: status loading", "/infra/gcp", held("gcpIntegration.status")),
+		scenario(
+			"gcp-loading",
+			"Google Cloud: workloads loading",
+			"/infra/gcp",
+			held("queryEngine.gcpInfraPresence"),
+		),
+		scenario(
+			"gcp-error",
+			"Google Cloud: workloads failing",
+			"/infra/gcp",
+			failing("queryEngine.gcpInfraPresence"),
+		),
+		scenario(
+			"gcp-status-loading",
+			"Google Cloud: status loading",
+			"/infra/gcp",
+			held("gcpIntegration.status"),
+		),
 		scenario("gcp-pubsub", "Google Cloud: Pub/Sub tab", "/infra/gcp", { steps: press("Pub/Sub 1") }),
-		scenario("gcp-compute", "Google Cloud: Compute Engine tab", "/infra/gcp", { steps: press("Compute Engine 1") }),
+		scenario("gcp-compute", "Google Cloud: Compute Engine tab", "/infra/gcp", {
+			steps: press("Compute Engine 1"),
+		}),
 		scenario("gcp-search", "Google Cloud: services filtered", "/infra/gcp", {
 			steps: async (page) => {
 				await page.getByRole("textbox", { name: "Filter 3 services" }).fill("checkout")
@@ -174,6 +212,24 @@ export const infraIntegrationsArea: AreaModule = {
 			"Google Cloud: checkout-api",
 			"/infra/gcp/cloudRun/checkout-api?project=acme-shop-prod&region=us-central1",
 		),
+		scenario(
+			"gcp-workload-loading",
+			"Google Cloud workload: metrics loading",
+			GCP_WORKLOAD,
+			held("queryEngine.gcpInfraTimeseries"),
+		),
+		scenario(
+			"gcp-workload-error",
+			"Google Cloud workload: metrics failing",
+			GCP_WORKLOAD,
+			failing("queryEngine.gcpInfraTimeseries"),
+		),
+		scenario("gcp-workload-hover", "Google Cloud workload: strips under one cursor", GCP_WORKLOAD, {
+			steps: async (page) => {
+				await page.getByRole("img", { name: "Requests" }).hover({ position: { x: 400, y: 40 } })
+				await page.locator("[data-linked-cursor-source]").waitFor()
+			},
+		}),
 		scenario(
 			"gcp-cloudsql-instance",
 			"Google Cloud: Cloud SQL orders-db",
@@ -206,9 +262,21 @@ export const infraIntegrationsArea: AreaModule = {
 			steps: press("Database"),
 		}),
 		scenario("planetscale-db", "PlanetScale database: acme-prod", "/infra/planetscale/acme-prod"),
-		scenario("planetscale-db-loading", "PlanetScale database: metrics loading", PS_DB, held("queryEngine.planetscaleInfraTimeseries")),
-		scenario("planetscale-db-error", "PlanetScale database: metrics failing", PS_DB, failing("queryEngine.planetscaleInfraTimeseries")),
-		scenario("planetscale-db-measure", "PlanetScale database: breakdown by CPU", PS_DB, { steps: press("CPU (max)") }),
+		scenario(
+			"planetscale-db-loading",
+			"PlanetScale database: metrics loading",
+			PS_DB,
+			held("queryEngine.planetscaleInfraTimeseries"),
+		),
+		scenario(
+			"planetscale-db-error",
+			"PlanetScale database: metrics failing",
+			PS_DB,
+			failing("queryEngine.planetscaleInfraTimeseries"),
+		),
+		scenario("planetscale-db-measure", "PlanetScale database: breakdown by CPU", PS_DB, {
+			steps: press("CPU (max)"),
+		}),
 		scenario("planetscale-db-breakdown-sort", "PlanetScale database: breakdown sorted by branch", PS_DB, {
 			// The sidebar's Branch section header is the first button named Branch.
 			steps: async (page) => {
@@ -236,7 +304,9 @@ export const infraIntegrationsArea: AreaModule = {
 		}),
 		scenario("planetscale-db-hover", "PlanetScale database: storage chart hovered", PS_DB, {
 			steps: async (page) => {
-				await page.getByRole("img", { name: "Storage used (max)" }).hover({ position: { x: 400, y: 90 } })
+				await page
+					.getByRole("img", { name: "Storage used (max)" })
+					.hover({ position: { x: 400, y: 90 } })
 				await page.getByText("Storage used (max)").nth(1).waitFor()
 			},
 		}),

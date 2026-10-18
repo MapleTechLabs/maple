@@ -94,3 +94,45 @@ export const detailRailField = <M>(
 			h.div([h.Class("min-w-0")], children),
 		],
 	)
+
+/** `DetailRail.MetaRow`: the mono, divider-separated row of infra rails; nothing for an absent value. */
+export const detailRailMetaRow = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ label: string; value: string | null | undefined; valueClassName?: string }>,
+): Html | null =>
+	options.value === null || options.value === undefined || options.value === ""
+		? null
+		: h.div(
+				[
+					h.DataAttribute("slot", "detail-rail-meta-row"),
+					h.Class(
+						"group flex items-baseline justify-between gap-3 border-b border-border/60 py-1.5 last:border-0",
+					),
+				],
+				[
+					h.span(
+						[
+							h.Class(
+								"flex shrink-0 items-center gap-1.5 font-mono text-2xs text-muted-foreground",
+							),
+						],
+						[options.label],
+					),
+					h.div(
+						[h.Class("flex min-w-0 items-center gap-1.5 text-2xs")],
+						[
+							h.span(
+								[
+									h.Class(
+										cn(
+											"break-all text-right font-mono text-2xs tabular-nums text-foreground/85",
+											options.valueClassName,
+										),
+									),
+								],
+								[options.value],
+							),
+						],
+					),
+				],
+			)

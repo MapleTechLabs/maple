@@ -33,30 +33,38 @@ const fleetWaiting = (model: Model): boolean => {
 
 const resourcesEmpty = (model: Model): boolean => successOf(model.resources.data)?.types.length === 0
 
-export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
-	statusRefresh: entry(
-		{ cadence: Schema.Literals(["off", "settling", "steady"]) },
-		{
-			modelToDependencies: ({ model }) => ({ cadence: statusCadence(model) }),
-			dependenciesToStream: ({ cadence }) =>
-				cadence === "off"
-					? Stream.empty
-					: every(cadence === "settling" ? SETTLING_REFRESH : STEADY_REFRESH, Message.TickedStatusRefresh()),
-		},
-	),
-	fleetRefresh: entry(
-		{ isWaiting: Schema.Boolean },
-		{
-			modelToDependencies: ({ model }) => ({ isWaiting: fleetWaiting(model) }),
-			dependenciesToStream: ({ isWaiting }) => (isWaiting ? every(WAITING_REFRESH, Message.TickedFleetRefresh()) : Stream.empty),
-		},
-	),
-	resourcesRefresh: entry(
-		{ isEmpty: Schema.Boolean },
-		{
-			modelToDependencies: ({ model }) => ({ isEmpty: resourcesEmpty(model) && !AsyncData.isLoading(model.resources.data) }),
-			dependenciesToStream: ({ isEmpty }) =>
-				isEmpty ? every(EMPTY_RESOURCES_REFRESH, Message.TickedResourcesRefresh()) : Stream.empty,
-		},
-	),
-}))
+export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
+	(entry) => ({
+		statusRefresh: entry(
+			{ cadence: Schema.Literals(["off", "settling", "steady"]) },
+			{
+				modelToDependencies: ({ model }) => ({ cadence: statusCadence(model) }),
+				dependenciesToStream: ({ cadence }) =>
+					cadence === "off"
+						? Stream.empty
+						: every(
+								cadence === "settling" ? SETTLING_REFRESH : STEADY_REFRESH,
+								Message.TickedStatusRefresh(),
+							),
+			},
+		),
+		fleetRefresh: entry(
+			{ isWaiting: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isWaiting: fleetWaiting(model) }),
+				dependenciesToStream: ({ isWaiting }) =>
+					isWaiting ? every(WAITING_REFRESH, Message.TickedFleetRefresh()) : Stream.empty,
+			},
+		),
+		resourcesRefresh: entry(
+			{ isEmpty: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({
+					isEmpty: resourcesEmpty(model) && !AsyncData.isLoading(model.resources.data),
+				}),
+				dependenciesToStream: ({ isEmpty }) =>
+					isEmpty ? every(EMPTY_RESOURCES_REFRESH, Message.TickedResourcesRefresh()) : Stream.empty,
+			},
+		),
+	}),
+)

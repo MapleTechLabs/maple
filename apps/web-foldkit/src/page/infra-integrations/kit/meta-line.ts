@@ -11,13 +11,20 @@ export const metaLine = <M>(
 	items: ReadonlyArray<MetaItem>,
 	options: Readonly<{ title?: string; className?: string }> = {},
 ): Html | null => {
-	const present = items.filter((item): item is Html | string => item !== null && item !== undefined && item !== "")
+	const present = items.filter(
+		(item): item is Html | string => item !== null && item !== undefined && item !== "",
+	)
 	if (present.length === 0) return null
 	const strings = present.filter((item): item is string => typeof item === "string")
 	const title = options.title ?? (strings.length === present.length ? strings.join(" · ") : undefined)
 	return h.div(
 		[
-			h.Class(cn("mt-1 flex min-w-0 items-center gap-x-2 truncate font-mono text-2xs text-muted-foreground/80", options.className)),
+			h.Class(
+				cn(
+					"mt-1 flex min-w-0 items-center gap-x-2 truncate font-mono text-2xs text-muted-foreground/80",
+					options.className,
+				),
+			),
 			...(title === undefined ? [] : [h.Title(title)]),
 		],
 		present.map((item, index) =>

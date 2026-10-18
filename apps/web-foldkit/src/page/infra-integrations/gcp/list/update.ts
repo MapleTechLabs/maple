@@ -51,7 +51,9 @@ const slot = requestSlot
 export const resourcesQueryOf = (search: Search): ResourcesQuery => {
 	const typed: ResourcesQuery =
 		search.type === undefined || search.type === "" ? {} : { assetType: search.type }
-	return search.project === undefined || search.project === "" ? typed : { ...typed, projectId: search.project }
+	return search.project === undefined || search.project === ""
+		? typed
+		: { ...typed, projectId: search.project }
 }
 
 /**
@@ -66,7 +68,9 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	if (state._tag !== "Infra") return { model }
 	const org = context.orgId
 	const fleetKey = requestKey(org, "getGcpInfraFleet", { data: window })
-	const [fleet, fleetCommands] = slot(model.fleet, fleetKey, mode, () => FetchFleet({ key: fleetKey, window }))
+	const [fleet, fleetCommands] = slot(model.fleet, fleetKey, mode, () =>
+		FetchFleet({ key: fleetKey, window }),
+	)
 	const withFleet = { ...model, fleet }
 	const loadedFleet = fleetOf(withFleet)
 	const failed = AsyncData.isFailure(withFleet.fleet.data) || AsyncData.isStale(withFleet.fleet.data)
@@ -79,7 +83,9 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	const [sparks, sparkCommands] =
 		services.length === 0
 			? ([withFleet.sparks, []] as const)
-			: slot(withFleet.sparks, sparksKey, mode, () => FetchSparks({ key: sparksKey, input: sparksInput }))
+			: slot(withFleet.sparks, sparksKey, mode, () =>
+					FetchSparks({ key: sparksKey, input: sparksInput }),
+				)
 	const sqlKey = requestKey(org, "integrations.gcpResources", { query: GCP_CLOUD_SQL_INVENTORY_QUERY })
 	const [cloudSqlInventory, sqlCommands] =
 		view === "cloudSql"
@@ -91,7 +97,9 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	const resourcesKey = requestKey(org, "integrations.gcpResources", { query })
 	const [resources, resourceCommands] =
 		view === "resources"
-			? slot(withFleet.resources, resourcesKey, mode, () => FetchResources({ key: resourcesKey, query }))
+			? slot(withFleet.resources, resourcesKey, mode, () =>
+					FetchResources({ key: resourcesKey, query }),
+				)
 			: ([withFleet.resources, []] as const)
 	return {
 		model: { ...withFleet, sparks, cloudSqlInventory, resources },
@@ -134,13 +142,20 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	if (hrefOfSearch(model.search) === hrefOfSearch(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	const synced = sync(next, context, "Load")
 	return {
 		model: synced.model,
-		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh"), ...(synced.commands ?? [])],
+		commands: [
+			resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh"),
+			...(synced.commands ?? []),
+		],
 	}
 }
 
@@ -151,7 +166,10 @@ const lift = <S, I>(
 	next: { readonly model: S; readonly commands?: ReadonlyArray<Command.Command<I, never, Resources>> },
 	patch: (state: S) => Partial<Model>,
 	wrap: (message: I) => Message,
-): Return => ({ model: { ...model, ...patch(next.model) }, commands: Command.mapMessages(next.commands ?? [], wrap) })
+): Return => ({
+	model: { ...model, ...patch(next.model) },
+	commands: Command.mapMessages(next.commands ?? [], wrap),
+})
 
 /** A resource filter Select picked a value: "all" leaves the URL. */
 const resourceFilter = (model: Model, key: "type" | "project", value: string): Return =>
@@ -164,7 +182,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			sync({ ...model, status: Keyed.accept(model.status, key, result) }, context, "Load"),
 		CompletedFetchFleet: ({ key, result }) =>
 			sync({ ...model, fleet: Keyed.accept(model.fleet, key, result) }, context, "Load"),
-		CompletedFetchSparks: ({ key, result }) => ({ model: { ...model, sparks: Keyed.accept(model.sparks, key, result) } }),
+		CompletedFetchSparks: ({ key, result }) => ({
+			model: { ...model, sparks: Keyed.accept(model.sparks, key, result) },
+		}),
 		CompletedFetchCloudSqlInventory: ({ key, result }) => ({
 			model: { ...model, cloudSqlInventory: Keyed.accept(model.cloudSqlInventory, key, result) },
 		}),
@@ -172,16 +192,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, resources: Keyed.accept(model.resources, key, result) },
 		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		TickedStatusRefresh: () => {
 			const key = statusKey(context)
-			const [status, commands] = slot(model.status, key, "Refresh", () => LoadStatus({ key, refresh: true }))
+			const [status, commands] = slot(model.status, key, "Refresh", () =>
+				LoadStatus({ key, refresh: true }),
+			)
 			return { model: { ...model, status }, commands }
 		},
 		ClickedRetryStatus: () => {
 			const key = statusKey(context)
-			const [status, commands] = slot(model.status, key, "Refresh", () => LoadStatus({ key, refresh: true }))
+			const [status, commands] = slot(model.status, key, "Refresh", () =>
+				LoadStatus({ key, refresh: true }),
+			)
 			return { model: { ...model, status }, commands }
 		},
 		TickedFleetRefresh: () => sync(model, context, "Refresh"),
@@ -189,19 +215,25 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		TickedResourcesRefresh: () => {
 			const query = resourcesQueryOf(model.search)
 			const key = requestKey(context.orgId, "integrations.gcpResources", { query })
-			const [resources, commands] = slot(model.resources, key, "Refresh", () => FetchResources({ key, query }))
+			const [resources, commands] = slot(model.resources, key, "Refresh", () =>
+				FetchResources({ key, query }),
+			)
 			return { model: { ...model, resources }, commands }
 		},
 		ClickedRetryResources: () => {
 			const query = resourcesQueryOf(model.search)
 			const key = requestKey(context.orgId, "integrations.gcpResources", { query })
-			const [resources, commands] = slot(model.resources, key, "Refresh", () => FetchResources({ key, query }))
+			const [resources, commands] = slot(model.resources, key, "Refresh", () =>
+				FetchResources({ key, query }),
+			)
 			return { model: { ...model, resources }, commands }
 		},
 		// A view of its own replaces a link's old `?tab=`, and starts unscoped and unsearched.
-		ClickedView: ({ view }) => navigate(model, { ...model.search, view, tab: undefined, scope: undefined, q: undefined }),
+		ClickedView: ({ view }) =>
+			navigate(model, { ...model.search, view, tab: undefined, scope: undefined, q: undefined }),
 		ClickedScope: ({ scope }) => navigate(model, { ...model.search, scope }),
-		ChangedSearch: ({ value }) => navigate(model, { ...model.search, q: value === "" ? undefined : value }),
+		ChangedSearch: ({ value }) =>
+			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined }),
 		SelectedProject: ({ project }) => navigate(model, { ...model.search, project, scope: undefined }),
 		ClickedClearRegion: () => navigate(model, { ...model.search, region: undefined, scope: undefined }),
@@ -209,7 +241,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
 				model: reloaded,
-				commands: [resolveCommand(reloaded, context, "Refresh"), CompleteReloadSpin({ version: reloaded.refreshVersion })],
+				commands: [
+					resolveCommand(reloaded, context, "Refresh"),
+					CompleteReloadSpin({ version: reloaded.refreshVersion }),
+				],
 			}
 		},
 		ClickedResetTimeRange: () => navigate(model, withPreset(model.search, DEFAULT_PRESET)),
@@ -222,18 +257,39 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(picker) => Message.GotTimePickerMessage({ message: picker }),
 				(preset) => hrefOfSearch(withPreset(model.search, preset)),
 			)
-			return { model: { ...model, timePicker: step.timePicker }, commands: step.commands, outMessage: step.outMessage }
+			return {
+				model: { ...model, timePicker: step.timePicker },
+				commands: step.commands,
+				outMessage: step.outMessage,
+			}
 		},
 		// Sparklines draw no focus or tooltip: their chart state is never read.
 		GotSparklineMessage: () => ({ model }),
 		GotResourceTypeSelectMessage: ({ message: inner }) => {
 			const next = Select.update(model.resourceTypeSelect, inner)
-			const lifted = lift(model, next, (resourceTypeSelect) => ({ resourceTypeSelect }), (m) => Message.GotResourceTypeSelectMessage({ message: m }))
-			return next.outMessage === undefined ? lifted : { ...lifted, outMessage: resourceFilter(model, "type", next.outMessage.value).outMessage }
+			const lifted = lift(
+				model,
+				next,
+				(resourceTypeSelect) => ({ resourceTypeSelect }),
+				(m) => Message.GotResourceTypeSelectMessage({ message: m }),
+			)
+			return next.outMessage === undefined
+				? lifted
+				: { ...lifted, outMessage: resourceFilter(model, "type", next.outMessage.value).outMessage }
 		},
 		GotResourceProjectSelectMessage: ({ message: inner }) => {
 			const next = Select.update(model.resourceProjectSelect, inner)
-			const lifted = lift(model, next, (resourceProjectSelect) => ({ resourceProjectSelect }), (m) => Message.GotResourceProjectSelectMessage({ message: m }))
-			return next.outMessage === undefined ? lifted : { ...lifted, outMessage: resourceFilter(model, "project", next.outMessage.value).outMessage }
+			const lifted = lift(
+				model,
+				next,
+				(resourceProjectSelect) => ({ resourceProjectSelect }),
+				(m) => Message.GotResourceProjectSelectMessage({ message: m }),
+			)
+			return next.outMessage === undefined
+				? lifted
+				: {
+						...lifted,
+						outMessage: resourceFilter(model, "project", next.outMessage.value).outMessage,
+					}
 		},
 	})

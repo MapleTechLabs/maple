@@ -41,7 +41,10 @@ export const fleetBand = <S extends string, M>(h: HtmlBuilder<M>, options: Fleet
 	const isWaiting = options.isWaiting === true
 	const drawn = options.segments.filter((segment) => segment.count > 0)
 	return h.div(
-		[h.Class(cn(BAND, refreshingClass(isWaiting), options.className)), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+		[
+			h.Class(cn(BAND, refreshingClass(isWaiting), options.className)),
+			...(isWaiting ? [h.AriaBusy(true)] : []),
+		],
 		[
 			h.div(
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0")],
@@ -49,8 +52,14 @@ export const fleetBand = <S extends string, M>(h: HtmlBuilder<M>, options: Fleet
 					h.span(
 						[h.Class("flex items-baseline gap-1.5")],
 						[
-							h.span([h.Class("font-mono text-base font-semibold tabular-nums")], [formatNumber(options.total)]),
-							h.span([h.Class("text-2xs text-muted-foreground")], [pluralize(options.total, options.noun), " in scope"]),
+							h.span(
+								[h.Class("font-mono text-base font-semibold tabular-nums")],
+								[formatNumber(options.total)],
+							),
+							h.span(
+								[h.Class("text-2xs text-muted-foreground")],
+								[pluralize(options.total, options.noun), " in scope"],
+							),
 						],
 					),
 					options.total > 0
@@ -58,7 +67,9 @@ export const fleetBand = <S extends string, M>(h: HtmlBuilder<M>, options: Fleet
 								className: "w-full gap-px bg-transparent",
 								total: options.total,
 								minVisible: 2,
-								label: options.segments.map((segment) => `${segment.count} ${segment.key}`).join(", "),
+								label: options.segments
+									.map((segment) => `${segment.count} ${segment.key}`)
+									.join(", "),
 								segments: drawn.map((segment) => ({
 									key: segment.key,
 									value: segment.count,
@@ -94,7 +105,11 @@ export const fleetBandLoading = <M>(h: HtmlBuilder<M>, cells: number, className?
 		[
 			h.div(
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0")],
-				[skeleton(h, "h-4 w-28"), skeleton(h, "h-1.5 w-full rounded-full"), skeleton(h, "h-2.5 w-40")],
+				[
+					skeleton(h, "h-4 w-28"),
+					skeleton(h, "h-1.5 w-full rounded-full"),
+					skeleton(h, "h-2.5 w-40"),
+				],
 			),
 			...Array.from({ length: cells }, () =>
 				h.div(

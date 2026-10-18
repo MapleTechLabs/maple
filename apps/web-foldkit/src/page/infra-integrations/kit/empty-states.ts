@@ -26,7 +26,10 @@ export type IntegrationNotConnectedOptions = Readonly<{
 	docsPage?: DocsPage
 }>
 
-export const integrationNotConnected = <M>(h: HtmlBuilder<M>, options: IntegrationNotConnectedOptions): Html =>
+export const integrationNotConnected = <M>(
+	h: HtmlBuilder<M>,
+	options: IntegrationNotConnectedOptions,
+): Html =>
 	empty(
 		h,
 		[
@@ -42,7 +45,9 @@ export const integrationNotConnected = <M>(h: HtmlBuilder<M>, options: Integrati
 						{
 							size: "sm",
 							variant: options.actionVariant,
-							href: hrefOf(AppRoute.Integrations({ search: { integration: options.integration } })),
+							href: hrefOf(
+								AppRoute.Integrations({ search: { integration: options.integration } }),
+							),
 						},
 						[options.actionLabel],
 					),

@@ -13,7 +13,12 @@ const LINK_PATTERN = new RegExp(`(https://[^\\s)]*[^\\s).,]|${BILLING_PAGE})`)
 
 const externalLink = <M>(h: HtmlBuilder<M>, href: string, text: string): Html =>
 	h.a(
-		[h.Class(cn(GCP_LINK, text !== href && "whitespace-nowrap")), h.Href(href), h.Rel("noreferrer"), h.Target("_blank")],
+		[
+			h.Class(cn(GCP_LINK, text !== href && "whitespace-nowrap")),
+			h.Href(href),
+			h.Rel("noreferrer"),
+			h.Target("_blank"),
+		],
 		[
 			text,
 			h.span(
@@ -24,13 +29,27 @@ const externalLink = <M>(h: HtmlBuilder<M>, href: string, text: string): Html =>
 	)
 
 const linked = <M>(h: HtmlBuilder<M>, text: string): ReadonlyArray<Html | string> =>
-	text.split(LINK_PATTERN).map((part, index) =>
-		index % 2 === 0
-			? part
-			: part === BILLING_PAGE
-				? h.a([h.Class(GCP_LINK), h.Href(hrefOf(AppRoute.Settings({ search: { tab: "billing" } })))], [part])
-				: externalLink(h, part, part.startsWith("https://console.cloud.google.com/") ? "Google Cloud console" : part),
-	)
+	text
+		.split(LINK_PATTERN)
+		.map((part, index) =>
+			index % 2 === 0
+				? part
+				: part === BILLING_PAGE
+					? h.a(
+							[
+								h.Class(GCP_LINK),
+								h.Href(hrefOf(AppRoute.Settings({ search: { tab: "billing" } }))),
+							],
+							[part],
+						)
+					: externalLink(
+							h,
+							part,
+							part.startsWith("https://console.cloud.google.com/")
+								? "Google Cloud console"
+								: part,
+						),
+		)
 
 export const gcpMessage = <M>(h: HtmlBuilder<M>, text: string): Html => {
 	const { headline, body, answer } = gcpMessageParts(text)
@@ -42,7 +61,12 @@ export const gcpMessage = <M>(h: HtmlBuilder<M>, text: string): Html => {
 				? []
 				: body.length === 1
 					? [h.p([h.Class("text-pretty text-muted-foreground")], linked(h, body[0] ?? ""))]
-					: [h.ul([h.Class("list-disc pl-4 text-pretty text-muted-foreground")], body.map((sentence) => h.li([], linked(h, sentence))))]),
+					: [
+							h.ul(
+								[h.Class("list-disc pl-4 text-pretty text-muted-foreground")],
+								body.map((sentence) => h.li([], linked(h, sentence))),
+							),
+						]),
 			...(answer === null ? [] : [h.p([h.Class("text-2xs text-muted-foreground/80")], [answer])]),
 		],
 	)

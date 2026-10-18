@@ -72,7 +72,10 @@ export const integrationEmptyFeatures = <M>(
 					h.Class(
 						"flex animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none",
 					),
-					h.Style({ "animation-delay": `${50 + index * 50}ms`, "animation-fill-mode": "backwards" }),
+					h.Style({
+						"animation-delay": `${50 + index * 50}ms`,
+						"animation-fill-mode": "backwards",
+					}),
 				],
 				[
 					panel(h, { className: "flex-1 gap-2 border-border/60 px-4 py-3.5" }, [
@@ -94,8 +97,14 @@ export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBr
 	return h.div(
 		[h.AriaHidden(true), h.Class("relative mb-1 flex h-16 shrink-0 items-end justify-center")],
 		[
-			h.span([h.Class(cn(BACKER, "origin-bottom -translate-x-8 -rotate-10"))], [icon(h, backerIcon, { size: 20 })]),
-			h.span([h.Class(cn(BACKER, "origin-bottom translate-x-8 rotate-10"))], [icon(h, backerIcon, { size: 20 })]),
+			h.span(
+				[h.Class(cn(BACKER, "origin-bottom -translate-x-8 -rotate-10"))],
+				[icon(h, backerIcon, { size: 20 })],
+			),
+			h.span(
+				[h.Class(cn(BACKER, "origin-bottom translate-x-8 rotate-10"))],
+				[icon(h, backerIcon, { size: 20 })],
+			),
 			integrationIconPlate(h, brand, {
 				size: 28,
 				plateClassName: "relative size-14 rounded-xl shadow-lg shadow-black/10",

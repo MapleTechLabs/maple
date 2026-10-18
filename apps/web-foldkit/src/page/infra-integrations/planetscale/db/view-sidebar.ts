@@ -27,13 +27,19 @@ type H = HtmlBuilder<Message>
 const STATES = ["ready", "provisioning", "excluded", "untracked"] as const
 const ROLES = ["production", "development"] as const
 
-const countBy = <K extends string>(keys: ReadonlyArray<K>, candidates: ReadonlyArray<BranchCandidate>, of: (c: BranchCandidate) => K) =>
+const countBy = <K extends string>(
+	keys: ReadonlyArray<K>,
+	candidates: ReadonlyArray<BranchCandidate>,
+	of: (c: BranchCandidate) => K,
+) =>
 	keys
 		.map((name) => ({ name, count: candidates.filter((candidate) => of(candidate) === name).length }))
 		.filter((option) => option.count > 0)
 
-const isLabelled = <L extends Readonly<Record<string, string>>>(labels: L, name: string): name is Extract<keyof L, string> =>
-	Object.hasOwn(labels, name)
+const isLabelled = <L extends Readonly<Record<string, string>>>(
+	labels: L,
+	name: string,
+): name is Extract<keyof L, string> => Object.hasOwn(labels, name)
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
@@ -68,7 +74,8 @@ export const planetscaleSidebar = (
 				sections: model.filterSections,
 				toSectionsMessage: toSections,
 				onToggle: (name) => Message.ToggledFilterOption({ key: "branchStates", name }),
-				getOptionLabel: (name) => (isLabelled(BRANCH_STATE_LABEL, name) ? BRANCH_STATE_LABEL[name] : name),
+				getOptionLabel: (name) =>
+					isLabelled(BRANCH_STATE_LABEL, name) ? BRANCH_STATE_LABEL[name] : name,
 			}),
 			filterSection(h, {
 				title: FILTER_SECTION_LABEL.branchRoles,
@@ -77,7 +84,8 @@ export const planetscaleSidebar = (
 				sections: model.filterSections,
 				toSectionsMessage: toSections,
 				onToggle: (name) => Message.ToggledFilterOption({ key: "branchRoles", name }),
-				getOptionLabel: (name) => (isLabelled(BRANCH_ROLE_LABEL, name) ? BRANCH_ROLE_LABEL[name] : name),
+				getOptionLabel: (name) =>
+					isLabelled(BRANCH_ROLE_LABEL, name) ? BRANCH_ROLE_LABEL[name] : name,
 			}),
 		]),
 	])

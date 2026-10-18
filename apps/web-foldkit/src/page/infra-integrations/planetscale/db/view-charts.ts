@@ -38,12 +38,18 @@ export const CHART_TOKENS = [
 ]
 
 const LEAD: PlanetScaleMetric = "storageUsedPercent"
-const GRID: ReadonlyArray<PlanetScaleMetric> = ["connectionsAvg", "cpuMaxPercent", "memMaxPercent", "replicaLagMaxSeconds"]
+const GRID: ReadonlyArray<PlanetScaleMetric> = [
+	"connectionsAvg",
+	"cpuMaxPercent",
+	"memMaxPercent",
+	"replicaLagMaxSeconds",
+]
 
 export const CHART_SCOPE_EXPLANATION = "Every branch in this database, combined."
 export const FALLBACK_EXPLANATION = {
 	chart: "PlanetScale reports these gauges per branch, but the history endpoint answers one branch or the whole database — so this shows every branch combined.",
-	insights: "PlanetScale's Query Insights API answers one branch at a time, so this shows the resolved branch only.",
+	insights:
+		"PlanetScale's Query Insights API answers one branch at a time, so this shows the resolved branch only.",
 } as const
 
 /** `PlanetScaleBranchScope`: the trigger ids are `${idPrefix}-all` and `${idPrefix}-fallback`. */
@@ -58,7 +64,9 @@ export const branchScope = (
 	}>,
 ): Html => {
 	if (options.selected.length === 0) {
-		return scopeChip(h, { tone: "muted", trigger: options.trigger(`${options.idPrefix}-all`) }, ["all branches"])
+		return scopeChip(h, { tone: "muted", trigger: options.trigger(`${options.idPrefix}-all`) }, [
+			"all branches",
+		])
 	}
 	if (options.selected.length === 1) return scopeChip(h, {}, [options.selected[0] ?? ""])
 	const extra = options.selected.length - 2
@@ -67,7 +75,9 @@ export const branchScope = (
 		[
 			scopeChip(h, {}, [options.selected.slice(0, 2).join(", "), ...(extra > 0 ? [` +${extra}`] : [])]),
 			scopeChip(h, { tone: "muted", trigger: options.trigger(`${options.idPrefix}-fallback`) }, [
-				options.surface === "chart" ? "showing all branches" : `showing ${options.resolved ?? "the default branch"}`,
+				options.surface === "chart"
+					? "showing all branches"
+					: `showing ${options.resolved ?? "the default branch"}`,
 			]),
 		],
 	)
@@ -115,7 +125,8 @@ const metricCard = (
 						slotId: `planetscale-chart-${metric}`,
 						model: model.charts[metric] ?? Chart.init(),
 						view: PlotBoxChart.view,
-						toParentMessage: (message: Chart.Message) => Message.GotChartMessage({ chartId: metric, message }),
+						toParentMessage: (message: Chart.Message) =>
+							Message.GotChartMessage({ chartId: metric, message }),
 						viewInputs: {
 							chartId: `planetscale-${metric}`,
 							ariaLabel: METRIC_LABELS[metric],
@@ -146,12 +157,26 @@ const metricCard = (
 }
 
 const grid = (h: H, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("space-y-4")], [children[0] ?? h.empty, h.div([h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")], children.slice(1))])
+	h.div(
+		[h.Class("space-y-4")],
+		[
+			children[0] ?? h.empty,
+			h.div([h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")], children.slice(1)),
+		],
+	)
 
-const loadingCharts = (h: H): Html => grid(h, [LEAD, ...GRID].map((metric) => loadingCard(h, metric)))
+const loadingCharts = (h: H): Html =>
+	grid(
+		h,
+		[LEAD, ...GRID].map((metric) => loadingCard(h, metric)),
+	)
 
 /** The chart section: skeletons until the series and the chart runtime are in, then the five cards. */
-export const chartsSection = (h: H, model: Model, context: Omit<ChartsContext, "theme"> & { theme: ThemeColors | null }): Html => {
+export const chartsSection = (
+	h: H,
+	model: Model,
+	context: Omit<ChartsContext, "theme"> & { theme: ThemeColors | null },
+): Html => {
 	const theme = context.theme
 	const isReady = theme !== null && model.chartRuntime._tag !== "Loading"
 	const cards = (buckets: ReadonlyArray<TimeseriesRow>, isWaiting: boolean) =>
@@ -159,10 +184,16 @@ export const chartsSection = (h: H, model: Model, context: Omit<ChartsContext, "
 			? loadingCharts(h)
 			: grid(
 					h,
-					[LEAD, ...GRID].map((metric) => metricCard(h, model, metric, buckets, isWaiting, { ...context, theme })),
+					[LEAD, ...GRID].map((metric) =>
+						metricCard(h, model, metric, buckets, isWaiting, { ...context, theme }),
+					),
 				)
 	const failed = (failure: Parameters<typeof errorState>[1]["failure"]) =>
-		errorState(h, { failure, title: "Failed to load database metrics", onRetry: Message.ClickedRetryTimeseries() })
+		errorState(h, {
+			failure,
+			title: "Failed to load database metrics",
+			onRetry: Message.ClickedRetryTimeseries(),
+		})
 	return AsyncData.match(model.timeseries.data, {
 		onIdle: () => loadingCharts(h),
 		onLoading: () => loadingCharts(h),

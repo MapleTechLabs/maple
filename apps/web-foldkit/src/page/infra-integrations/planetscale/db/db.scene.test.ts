@@ -61,7 +61,10 @@ describe("planetscale database", () => {
 		expect(timeseriesInputOf(model, window).branch).toBeUndefined()
 		const loaded = pageUpdate(
 			model,
-			Message.CompletedFetchDatabases({ key: model.databases.key ?? "", result: Result.succeed(inventory) }),
+			Message.CompletedFetchDatabases({
+				key: model.databases.key ?? "",
+				result: Result.succeed(inventory),
+			}),
 		)
 		expect(selectedBranchOf(loaded.model)?.name).toBe("main")
 		expect(names(loaded.commands)).toEqual([
@@ -73,10 +76,13 @@ describe("planetscale database", () => {
 	})
 
 	test("the sidebar and breakdown write the plural branches filter and drop the legacy ?branch=", () => {
-		const model = pageUpdate(init({ ...route, search: { branch: "main" } }, context).model, Message.ToggledBranch({ branch: "dev" }))
+		const model = pageUpdate(
+			init({ ...route, search: { branch: "main" } }, context).model,
+			Message.ToggledBranch({ branch: "dev" }),
+		)
 		expect(model.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: '/infra/planetscale/acme-prod?branches=%5B%22main%22%2C%22dev%22%5D',
+				url: "/infra/planetscale/acme-prod?branches=%5B%22main%22%2C%22dev%22%5D",
 				isReplace: false,
 			}),
 		)
@@ -90,7 +96,10 @@ describe("planetscale database", () => {
 			Message.ClickedClearFilters(),
 		)
 		expect(cleared.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/infra/planetscale/acme-prod?timePreset=1d", isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/planetscale/acme-prod?timePreset=1d",
+				isReplace: false,
+			}),
 		)
 	})
 })

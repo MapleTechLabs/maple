@@ -30,9 +30,19 @@ export const GCP_SERVICE_BAND: GcpBandSpec<GcpServiceScope> = {
 	noun: "service",
 	caption: "each service by its worst signal: 5xx, then p95 latency",
 	cells: {
-		serving5xx: { label: "Serving 5xx", hint: "≥1% of ≥100 requests", tone: "crit", segment: "serving 5xx" },
+		serving5xx: {
+			label: "Serving 5xx",
+			hint: "≥1% of ≥100 requests",
+			tone: "crit",
+			segment: "serving 5xx",
+		},
 		slow: { label: "Slow", hint: "latency p95 ≥1s", tone: "warn", segment: "slow" },
-		idle: { label: "Idle, still billed", hint: "0 requests, instance time > 0", tone: "neutral", segment: "idle" },
+		idle: {
+			label: "Idle, still billed",
+			hint: "0 requests, instance time > 0",
+			tone: "neutral",
+			segment: "idle",
+		},
 	},
 }
 
@@ -47,7 +57,12 @@ export const GCP_SUBSCRIPTION_BAND: GcpBandSpec<GcpSubscriptionScope> = {
 			segment: "backlog growing",
 		},
 		stale: { label: "Stale", hint: "oldest unacked ≥10m", tone: "warn", segment: "stale" },
-		deadLettering: { label: "Dead-lettering", hint: "messages moved to a DLQ", tone: "crit", segment: "dead-lettering" },
+		deadLettering: {
+			label: "Dead-lettering",
+			hint: "messages moved to a DLQ",
+			tone: "crit",
+			segment: "dead-lettering",
+		},
 	},
 }
 
@@ -55,11 +70,31 @@ export const GCP_DATABASE_BAND: GcpBandSpec<GcpDatabaseScope> = {
 	noun: "instance",
 	caption: "each instance by its worst signal: a limit, wraparound, then query p95",
 	cells: {
-		atLimit: { label: "At a limit", hint: "connections, CPU or disk ≥90%", tone: "crit", segment: "at a limit" },
+		atLimit: {
+			label: "At a limit",
+			hint: "connections, CPU or disk ≥90%",
+			tone: "crit",
+			segment: "at a limit",
+		},
 		slow: { label: "Slow", hint: "query p95 ≥1s", tone: "warn", segment: "slow" },
-		wraparound: { label: "Wraparound risk", hint: "transaction IDs ≥50% used", tone: "warn", segment: "wraparound risk" },
-		fillingUp: { label: "Filling up", hint: "connections, CPU or disk ≥80%", tone: "warn", segment: "filling up" },
-		replicaLag: { label: "Replica lag", hint: "a replica ≥10s behind", tone: "warn", segment: "replica lag" },
+		wraparound: {
+			label: "Wraparound risk",
+			hint: "transaction IDs ≥50% used",
+			tone: "warn",
+			segment: "wraparound risk",
+		},
+		fillingUp: {
+			label: "Filling up",
+			hint: "connections, CPU or disk ≥80%",
+			tone: "warn",
+			segment: "filling up",
+		},
+		replicaLag: {
+			label: "Replica lag",
+			hint: "a replica ≥10s behind",
+			tone: "warn",
+			segment: "replica lag",
+		},
 	},
 }
 
@@ -67,18 +102,32 @@ export const gcpWorkloadBand = (noun: string): GcpBandSpec<GcpWorkloadScope> => 
 	noun,
 	caption: `each ${noun} by its busiest share of a limit and its error rate`,
 	cells: {
-		atLimit: { label: "At a limit", hint: "a share of a limit ≥90%", tone: "crit", segment: "at a limit" },
+		atLimit: {
+			label: "At a limit",
+			hint: "a share of a limit ≥90%",
+			tone: "crit",
+			segment: "at a limit",
+		},
 		hot: { label: "Hot", hint: "a share of a limit ≥60%", tone: "warn", segment: "hot" },
 		erroring: { label: "Erroring", hint: "≥5% of ≥100 requests", tone: "crit", segment: "erroring" },
 	},
 })
 
 /** `GcpHealthDot`: the worst signal's tone, hollow for a quiet problem, blue when healthy. */
-export const healthDot = <S extends string, M>(h: HtmlBuilder<M>, spec: GcpBandSpec<S>, health: S | "ok"): Html => {
+export const healthDot = <S extends string, M>(
+	h: HtmlBuilder<M>,
+	spec: GcpBandSpec<S>,
+	health: S | "ok",
+): Html => {
 	const tone: Tone = health === "ok" ? "ok" : spec.cells[health].tone
 	return h.span([
 		h.AriaHidden(true),
-		h.Class(cn("size-2 shrink-0 rounded-full", tone === "neutral" ? "border border-muted-foreground/70" : TONE_FILL[tone])),
+		h.Class(
+			cn(
+				"size-2 shrink-0 rounded-full",
+				tone === "neutral" ? "border border-muted-foreground/70" : TONE_FILL[tone],
+			),
+		),
 	])
 }
 

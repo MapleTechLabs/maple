@@ -17,6 +17,7 @@ import type {
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
 import * as InfraGcp from "./infra-integrations/gcp/list"
+import * as InfraGcpWorkload from "./infra-integrations/gcp/workload"
 import * as InfraPlanetscaleDatabase from "./infra-integrations/planetscale/db"
 import * as InfraPlanetscale from "./infra-integrations/planetscale/list"
 import * as InfraRailway from "./infra-integrations/railway/list"
@@ -50,6 +51,7 @@ export const pages = [
 	InfraPlanetscale.page,
 	InfraPlanetscaleDatabase.page,
 	InfraGcp.page,
+	InfraGcpWorkload.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

@@ -12,9 +12,15 @@ import type { H } from "./view-rows"
 
 const integration = (h: H, label: string): Html =>
 	alertAction(h, [
-		linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Integrations({ search: { integration: "gcp" } })) }, [
-			label,
-		]),
+		linkButton(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				href: hrefOf(AppRoute.Integrations({ search: { integration: "gcp" } })),
+			},
+			[label],
+		),
 	])
 
 export const gcpNotice = (h: H, notice: GcpInfraNotice): Html => {
@@ -36,7 +42,9 @@ export const gcpNotice = (h: H, notice: GcpInfraNotice): Html => {
 			return alert(h, { variant: "warn" }, [
 				icon(h, "CircleWarningIcon", { size: 16 }),
 				alertTitle(h, ["Google Cloud metrics have stalled"]),
-				alertDescription(h, ["Maple has not read Cloud Monitoring for over 30 minutes. It retries on its own."]),
+				alertDescription(h, [
+					"Maple has not read Cloud Monitoring for over 30 minutes. It retries on its own.",
+				]),
 			])
 		case "waiting":
 			return alert(h, { variant: "info", role: "status" }, [

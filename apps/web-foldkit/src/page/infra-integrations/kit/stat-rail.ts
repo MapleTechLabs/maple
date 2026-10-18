@@ -65,7 +65,10 @@ const body = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<M>): ReadonlyAr
 		options.action ??
 		(options.delta === undefined || options.delta === ""
 			? undefined
-			: h.span([h.Class("shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/80")], [options.delta]))
+			: h.span(
+					[h.Class("shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/80")],
+					[options.delta],
+				))
 	const spark = options.spark
 	return [
 		h.div(

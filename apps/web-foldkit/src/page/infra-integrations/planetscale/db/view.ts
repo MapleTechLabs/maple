@@ -4,7 +4,14 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { button } from "../../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../../ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
 import { type SelectEntry, view as selectView } from "../../../../ui/select-view"
@@ -16,7 +23,13 @@ import { heroChip, pageHero } from "../../kit/page-hero"
 import { formatAbsolute } from "../../kit/relative-time"
 import { pageTime } from "../../kit/page-time"
 import { activeFilterChips, applyBranchFilters } from "../filters"
-import { BRANCH_ABSENCE_COPY, METRICS_PAUSED_MESSAGE, metricsNotice, revokedNotice, setupState } from "../notices"
+import {
+	BRANCH_ABSENCE_COPY,
+	METRICS_PAUSED_MESSAGE,
+	metricsNotice,
+	revokedNotice,
+	setupState,
+} from "../notices"
 import {
 	candidatesOf,
 	databaseOf,
@@ -30,8 +43,16 @@ import {
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { breakdownLoading, breakdownPanel } from "./view-breakdown"
-import { branchScope, CHART_SCOPE_EXPLANATION, CHART_TOKENS, chartsSection, FALLBACK_EXPLANATION, type Trigger } from "./view-charts"
-import { activitySection, eventTriggerId, insightTriggerId, sectionHeading, topQueries } from "./view-sections"
+import {
+	branchScope,
+	CHART_SCOPE_EXPLANATION,
+	CHART_TOKENS,
+	chartsSection,
+	FALLBACK_EXPLANATION,
+	type Trigger,
+} from "./view-charts"
+import { activitySection, eventTriggerId, insightTriggerId, topQueries } from "./view-sections"
+import { sectionHeading } from "../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
 import { absenceReason } from "@maple/web/components/infra/planetscale/branch-selection"
 
@@ -42,7 +63,13 @@ import { absenceReason } from "@maple/web/components/infra/planetscale/branch-se
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-const CHART_METRIC_IDS = ["storageUsedPercent", "connectionsAvg", "cpuMaxPercent", "memMaxPercent", "replicaLagMaxSeconds"]
+const CHART_METRIC_IDS = [
+	"storageUsedPercent",
+	"connectionsAvg",
+	"cpuMaxPercent",
+	"memMaxPercent",
+	"replicaLagMaxSeconds",
+]
 
 /** Every tooltip on the page: scope chips, event times, query last-run times. */
 const tooltipIds = (model: Model): ReadonlyArray<string> => [
@@ -64,7 +91,9 @@ const tooltipContent = (model: Model, clock: Clock, id: string): ReadonlyArray<s
 	if (id.endsWith("-all")) return [CHART_SCOPE_EXPLANATION]
 	if (id === "ps-insights-fallback") return [FALLBACK_EXPLANATION.insights]
 	if (id.endsWith("-fallback")) return [FALLBACK_EXPLANATION.chart]
-	const event = AsyncData.getOrElse(model.events.data, () => []).find((entry) => eventTriggerId(entry) === id)
+	const event = AsyncData.getOrElse(model.events.data, () => []).find(
+		(entry) => eventTriggerId(entry) === id,
+	)
 	if (event !== undefined) return [formatAbsolute(event.occurredAt, clock.timeZone)]
 	const insight = AsyncData.match(model.insights.data, {
 		onIdle: () => undefined,
@@ -86,23 +115,36 @@ const unknownBranchNotice = (h: H, name: string, fallback: string | null): Html 
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "PlanetScaleIcon", { size: 16 })]),
 				emptyTitle(h, ["No branch named ", h.span([h.Class("font-mono")], [name])]),
-				emptyDescription(h, ["It may have been deleted, or the inventory hasn't refreshed since it was created."]),
+				emptyDescription(h, [
+					"It may have been deleted, or the inventory hasn't refreshed since it was created.",
+				]),
 			]),
 			...(fallback === null
 				? []
 				: [
 						emptyContent(h, [
-							button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(Message.SelectedBranch({}))] }, [
-								"Show ",
-								fallback,
-							]),
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									attributes: [h.OnClick(Message.SelectedBranch({}))],
+								},
+								["Show ", fallback],
+							),
 						]),
 					]),
 		],
 		"py-10",
 	)
 
-const dataSections = (h: H, model: Model, clock: Clock, trigger: Trigger, theme: Model["themeColors"]): Html => {
+const dataSections = (
+	h: H,
+	model: Model,
+	clock: Clock,
+	trigger: Trigger,
+	theme: Model["themeColors"],
+): Html => {
 	const filters = filtersOf(model)
 	const selected = filters.branches ?? []
 	const candidates = applyBranchFilters(candidatesOf(model), filters)
@@ -111,7 +153,10 @@ const dataSections = (h: H, model: Model, clock: Clock, trigger: Trigger, theme:
 	const metricsPaused = status?.metrics_auth === "missing"
 	const selectedCandidate = candidates.find((candidate) => candidate.name === selectedBranch?.name) ?? null
 	const reason = selectedCandidate === null ? null : absenceReason(selectedCandidate)
-	const events = AsyncData.isSuccess(model.events.data) || AsyncData.isRefreshing(model.events.data) ? model.events.data.data : []
+	const events =
+		AsyncData.isSuccess(model.events.data) || AsyncData.isRefreshing(model.events.data)
+			? model.events.data.data
+			: []
 	const statsSlot = model.branchStats.data
 	return h.div(
 		[h.Class("space-y-6")],
@@ -126,7 +171,11 @@ const dataSections = (h: H, model: Model, clock: Clock, trigger: Trigger, theme:
 									theme,
 									timeZone: clock.timeZone,
 									markers: eventsToChartMarkers(events),
-									emptyMessage: metricsPaused ? METRICS_PAUSED_MESSAGE : reason !== null ? BRANCH_ABSENCE_COPY[reason] : undefined,
+									emptyMessage: metricsPaused
+										? METRICS_PAUSED_MESSAGE
+										: reason !== null
+											? BRANCH_ABSENCE_COPY[reason]
+											: undefined,
 									selected,
 									trigger,
 								}),
@@ -141,9 +190,17 @@ const dataSections = (h: H, model: Model, clock: Clock, trigger: Trigger, theme:
 						onIdle: () => breakdownLoading(h),
 						onLoading: () => breakdownLoading(h),
 						onFailure: (failure) =>
-							errorState(h, { failure, title: "Failed to load branch stats", onRetry: Message.ClickedRetryBranchStats() }),
+							errorState(h, {
+								failure,
+								title: "Failed to load branch stats",
+								onRetry: Message.ClickedRetryBranchStats(),
+							}),
 						onStale: ({ error }) =>
-							errorState(h, { failure: error, title: "Failed to load branch stats", onRetry: Message.ClickedRetryBranchStats() }),
+							errorState(h, {
+								failure: error,
+								title: "Failed to load branch stats",
+								onRetry: Message.ClickedRetryBranchStats(),
+							}),
 						onRefreshing: () =>
 							breakdownPanel(h, {
 								candidates,
@@ -151,7 +208,9 @@ const dataSections = (h: H, model: Model, clock: Clock, trigger: Trigger, theme:
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: true,
-								emptyMessage: metricsPaused ? METRICS_PAUSED_MESSAGE : "No branches match these filters.",
+								emptyMessage: metricsPaused
+									? METRICS_PAUSED_MESSAGE
+									: "No branches match these filters.",
 							}),
 						onSuccess: () =>
 							breakdownPanel(h, {
@@ -160,7 +219,9 @@ const dataSections = (h: H, model: Model, clock: Clock, trigger: Trigger, theme:
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: false,
-								emptyMessage: metricsPaused ? METRICS_PAUSED_MESSAGE : "No branches match these filters.",
+								emptyMessage: metricsPaused
+									? METRICS_PAUSED_MESSAGE
+									: "No branches match these filters.",
 							}),
 					}),
 				],
@@ -184,7 +245,10 @@ const dataSections = (h: H, model: Model, clock: Clock, trigger: Trigger, theme:
 									}),
 								],
 							),
-							h.span([h.Class("text-2xs text-muted-foreground")], ["PlanetScale Query Insights"]),
+							h.span(
+								[h.Class("text-2xs text-muted-foreground")],
+								["PlanetScale Query Insights"],
+							),
 						],
 					),
 					topQueries(h, model.insights.data, model.dbName, clock, trigger),
@@ -216,7 +280,9 @@ const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 									className: "text-muted-foreground hover:text-foreground",
 									attributes: [
 										h.AriaLabel(`Remove ${chip.label}`),
-										h.OnClick(Message.RemovedFilterChip({ key: chip.key, value: chip.value })),
+										h.OnClick(
+											Message.RemovedFilterChip({ key: chip.key, value: chip.value }),
+										),
 									],
 								},
 								[icon(h, "XmarkIcon")],
@@ -249,12 +315,21 @@ const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 		view: selectView,
 		toParentMessage: (message) => Message.GotBranchSelectMessage({ message }),
 		viewInputs: {
-			entries: candidates.map((candidate): SelectEntry => ({ _tag: "Item", item: { value: candidate.name, label: candidate.name } })),
+			entries: candidates.map((candidate): SelectEntry => ({
+				_tag: "Item",
+				item: { value: candidate.name, label: candidate.name },
+			})),
 			ariaLabel: "Branch",
 			size: "sm",
 			className: "w-44 font-mono text-xs",
-			renderItem: (option) => [option.label, ...(candidates.find((c) => c.name === option.value)?.production === true ? [" · production"] : [])],
-			toView: (parts) => h.div([h.Class("flex flex-wrap items-center gap-2")], [...parts, timeControls]),
+			renderItem: (option) => [
+				option.label,
+				...(candidates.find((c) => c.name === option.value)?.production === true
+					? [" · production"]
+					: []),
+			],
+			toView: (parts) =>
+				h.div([h.Class("flex flex-wrap items-center gap-2")], [...parts, timeControls]),
 		},
 	})
 }
@@ -291,7 +366,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			: [
 					...(status?.revoked_at != null ? [revokedNotice(h)] : []),
 					...(status?.metrics_auth === "missing" && !never ? [metricsNotice(h)] : []),
-					...(never && status !== null ? [setupState(h, derivePlanetScaleSetup(status, clock.nowMs).steps)] : []),
+					...(never && status !== null
+						? [setupState(h, derivePlanetScaleSetup(status, clock.nowMs).steps)]
+						: []),
 					...(resolution.kind === "unknown"
 						? [unknownBranchNotice(h, resolution.name, resolution.fallback?.name ?? null)]
 						: []),
@@ -310,7 +387,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					toContent: (id) => tooltipContent(model, clock, id),
 					// `ScopeChip`'s `TooltipContent className="max-w-[32ch]"`.
 					className:
-						model.tooltip.triggerId.startsWith("ps-chart-") || model.tooltip.triggerId.startsWith("ps-insights-")
+						model.tooltip.triggerId.startsWith("ps-chart-") ||
+						model.tooltip.triggerId.startsWith("ps-insights-")
 							? "max-w-[32ch]"
 							: undefined,
 					toView: ({ trigger, portal }) =>
@@ -318,7 +396,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							h,
 							{
 								scrollClassName: "gap-6",
-								filters: planetscaleSidebar(h, model, candidatesOf(model), filtersOf(model), AsyncData.isLoading(model.databases.data)),
+								filters: planetscaleSidebar(
+									h,
+									model,
+									candidatesOf(model),
+									filtersOf(model),
+									AsyncData.isLoading(model.databases.data),
+								),
 								actions: branchSelect(h, model, timeControls),
 								// TODO(alert-menu): see the note at the top of this file.
 							},
@@ -332,7 +416,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 											: [
 													button(
 														h,
-														{ variant: "outline", size: "sm", attributes: [h.AriaHasPopup("menu"), h.AriaExpanded(false)] },
+														{
+															variant: "outline",
+															size: "sm",
+															attributes: [
+																h.AriaHasPopup("menu"),
+																h.AriaExpanded(false),
+															],
+														},
 														[icon(h, "BellIcon", { size: 14 }), "Alert on this"],
 													),
 												],
@@ -340,10 +431,24 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 										database === null
 											? undefined
 											: [
-													heroChip(h, database.kind === "postgresql" ? "Postgres" : "MySQL / Vitess"),
-													...(database.region ? [heroChip(h, database.region)] : []),
+													heroChip(
+														h,
+														database.kind === "postgresql"
+															? "Postgres"
+															: "MySQL / Vitess",
+													),
+													...(database.region
+														? [heroChip(h, database.region)]
+														: []),
 													...(database.plan ? [heroChip(h, database.plan)] : []),
-													heroChip(h, countLabel(database.branches.length, "branch", "branches")),
+													heroChip(
+														h,
+														countLabel(
+															database.branches.length,
+															"branch",
+															"branches",
+														),
+													),
 													...filterChipRail(h, model),
 												],
 								}),

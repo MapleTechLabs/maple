@@ -152,6 +152,7 @@ const NAMES = [
 	"MicrochipIcon",
 	"SitemapIcon",
 	"GkeIcon",
+	"GoogleCloudMonoIcon",
 ] as const
 
 const duplicates = NAMES.filter((name, index) => NAMES.indexOf(name) !== index)

@@ -48,7 +48,9 @@ export const FetchCloudSqlInventory = Command.define("FetchGcpCloudSqlInventory"
 	args: { key: Schema.String, query: ResourcesQuery },
 	messages: [Message.CompletedFetchCloudSqlInventory],
 	execute: ({ key, query }) =>
-		Effect.map(loadResources(query), (result) => Message.CompletedFetchCloudSqlInventory({ key, result })),
+		Effect.map(loadResources(query), (result) =>
+			Message.CompletedFetchCloudSqlInventory({ key, result }),
+		),
 })
 
 export const FetchResources = Command.define("FetchGcpResources", {

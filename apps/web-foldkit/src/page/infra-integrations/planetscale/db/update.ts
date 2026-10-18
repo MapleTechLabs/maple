@@ -72,13 +72,21 @@ const requestScoped = (model: Model, context: PageContext, mode: Keyed.RequestMo
 		model.timeseries,
 		requestKey(org, "getPlanetScaleInfraTimeseries", { data: tsInput }),
 		mode,
-		() => FetchTimeseries({ key: requestKey(org, "getPlanetScaleInfraTimeseries", { data: tsInput }), input: tsInput }),
+		() =>
+			FetchTimeseries({
+				key: requestKey(org, "getPlanetScaleInfraTimeseries", { data: tsInput }),
+				input: tsInput,
+			}),
 	)
 	const [events, b] = slot(
 		model.events,
 		requestKey(org, "getPlanetScaleEvents", { data: eventsInput }),
 		mode,
-		() => FetchEvents({ key: requestKey(org, "getPlanetScaleEvents", { data: eventsInput }), input: eventsInput }),
+		() =>
+			FetchEvents({
+				key: requestKey(org, "getPlanetScaleEvents", { data: eventsInput }),
+				input: eventsInput,
+			}),
 	)
 	const [insights, c] = slot(
 		model.insights,
@@ -96,7 +104,9 @@ const requestScoped = (model: Model, context: PageContext, mode: Keyed.RequestMo
 const requestWindowed = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
 	if (window === null) return { model }
-	const key = requestKey(context.orgId, "getPlanetScaleBranchStats", { data: { database: model.dbName, ...window } })
+	const key = requestKey(context.orgId, "getPlanetScaleBranchStats", {
+		data: { database: model.dbName, ...window },
+	})
 	const [branchStats, commands] = slot(model.branchStats, key, mode, () =>
 		FetchBranchStats({ key, window, database: model.dbName }),
 	)
@@ -167,19 +177,26 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 export const contextChanged = (model: Model): Return => ({ model })
 
 /** `setFilter`: an emptied filter leaves the URL; the legacy `?branch=` is never written back. */
-const setFilter = (model: Model, key: "branches" | "branchStates" | "branchRoles" | "branchContains", values: ReadonlyArray<string> | string | undefined) =>
-	navigate(model, { ...model.search, branch: undefined, [key]: values })
+const setFilter = (
+	model: Model,
+	key: "branches" | "branchStates" | "branchRoles" | "branchContains",
+	values: ReadonlyArray<string> | string | undefined,
+) => navigate(model, { ...model.search, branch: undefined, [key]: values })
 
 const lift = <S, I>(
 	model: Model,
 	next: { readonly model: S; readonly commands?: ReadonlyArray<Command.Command<I, never, Resources>> },
 	patch: (state: S) => Partial<Model>,
 	wrap: (message: I) => Message,
-): Return => ({ model: { ...model, ...patch(next.model) }, commands: Command.mapMessages(next.commands ?? [], wrap) })
+): Return => ({
+	model: { ...model, ...patch(next.model) },
+	commands: Command.mapMessages(next.commands ?? [], wrap),
+})
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, nowMs, mode }) => requestWindowed({ ...model, window, nowMs }, context, mode),
+		CompletedResolveWindow: ({ window, nowMs, mode }) =>
+			requestWindowed({ ...model, window, nowMs }, context, mode),
 		CompletedLoadStatus: ({ key, result }) =>
 			settled({ ...model, status: Keyed.accept(model.status, key, result) }, context),
 		CompletedFetchDatabases: ({ key, result }) =>
@@ -189,28 +206,42 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchTimeseries: ({ key, result }) => ({
 			model: { ...model, timeseries: Keyed.accept(model.timeseries, key, result) },
 		}),
-		CompletedFetchEvents: ({ key, result }) => ({ model: { ...model, events: Keyed.accept(model.events, key, result) } }),
+		CompletedFetchEvents: ({ key, result }) => ({
+			model: { ...model, events: Keyed.accept(model.events, key, result) },
+		}),
 		CompletedFetchInsights: ({ key, result }) => ({
 			model: { ...model, insights: Keyed.accept(model.insights, key, result) },
 		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		ClickedRetryTimeseries: () => {
 			if (model.window === null) return { model }
 			const input = timeseriesInputOf(model, model.window)
 			const key = requestKey(context.orgId, "getPlanetScaleInfraTimeseries", { data: input })
-			const [timeseries, commands] = slot(model.timeseries, key, "Refresh", () => FetchTimeseries({ key, input }))
+			const [timeseries, commands] = slot(model.timeseries, key, "Refresh", () =>
+				FetchTimeseries({ key, input }),
+			)
 			return { model: { ...model, timeseries }, commands }
 		},
 		ClickedRetryBranchStats: () => requestWindowed(model, context, "Refresh"),
 		ClickedMeasure: ({ measure }) => ({ model: { ...model, measure } }),
 		ClickedBreakdownSort: ({ key }) => ({
-			model: { ...model, breakdownSort: nextSort(model.breakdownSort, key, { stringKeys: ["branch"] }) },
+			model: {
+				...model,
+				breakdownSort: nextSort(model.breakdownSort, key, { stringKeys: ["branch"] }),
+			},
 		}),
-		ToggledBranch: ({ branch }) => setFilter(model, "branches", toggleFilterValue(filtersOf(model).branches, branch)),
+		ToggledBranch: ({ branch }) =>
+			setFilter(model, "branches", toggleFilterValue(filtersOf(model).branches, branch)),
 		SelectedBranch: ({ branch }) =>
-			navigate(model, { ...model.search, branch: undefined, branches: branch === undefined ? undefined : [branch] }),
+			navigate(model, {
+				...model.search,
+				branch: undefined,
+				branches: branch === undefined ? undefined : [branch],
+			}),
 		ToggledFilterOption: ({ key, name }) =>
 			key === "branchContains"
 				? setFilter(model, key, undefined)
@@ -232,7 +263,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
 				model: reloaded,
-				commands: [resolveCommand(reloaded, context, "Refresh"), CompleteReloadSpin({ version: reloaded.refreshVersion })],
+				commands: [
+					resolveCommand(reloaded, context, "Refresh"),
+					CompleteReloadSpin({ version: reloaded.refreshVersion }),
+				],
 			}
 		},
 		ClickedResetTimeRange: () => navigate(model, withPreset(model.search, DEFAULT_PRESET)),
@@ -245,7 +279,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(picker) => Message.GotTimePickerMessage({ message: picker }),
 				(preset) => hrefOfSearch(model, withPreset(model.search, preset)),
 			)
-			return { model: { ...model, timePicker: step.timePicker }, commands: step.commands, outMessage: step.outMessage }
+			return {
+				model: { ...model, timePicker: step.timePicker },
+				commands: step.commands,
+				outMessage: step.outMessage,
+			}
 		},
 		GotChartMessage: ({ chartId, message: inner }) =>
 			lift(

@@ -37,7 +37,10 @@ const header = <M>(h: HtmlBuilder<M>, options: ChartCardOptions): Html | null =>
 							[
 								h.div(
 									[h.Class("flex min-w-0 flex-wrap items-center gap-2")],
-									[panelTitle(h, [title]), ...(options.scope === undefined ? [] : [options.scope])],
+									[
+										panelTitle(h, [title]),
+										...(options.scope === undefined ? [] : [options.scope]),
+									],
 								),
 								h.p([h.Class("text-2xs text-muted-foreground/70")], [options.description]),
 							],
@@ -46,7 +49,11 @@ const header = <M>(h: HtmlBuilder<M>, options: ChartCardOptions): Html | null =>
 	})
 }
 
-export const chartCard = <M>(h: HtmlBuilder<M>, options: ChartCardOptions, children: ReadonlyArray<Html>): Html => {
+export const chartCard = <M>(
+	h: HtmlBuilder<M>,
+	options: ChartCardOptions,
+	children: ReadonlyArray<Html>,
+): Html => {
 	const head = header(h, options)
 	const content = [...(head === null ? [] : [head]), ...children]
 	return options.bare === true

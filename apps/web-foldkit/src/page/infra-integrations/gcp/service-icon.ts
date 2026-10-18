@@ -43,7 +43,8 @@ export const gcpServiceIcon = <M>(
 	}>,
 ): Html => {
 	const name =
-		(options.service === "cloudSql" ? engineIcon(options.databaseVersion) : undefined) ?? SERVICE_ICON[options.service]
+		(options.service === "cloudSql" ? engineIcon(options.databaseVersion) : undefined) ??
+		SERVICE_ICON[options.service]
 	const tile = TILE[options.size ?? "md"]
 	return h.span(
 		[

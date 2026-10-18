@@ -8,7 +8,14 @@ import { skeleton, skeletonList } from "../../../../ui/skeleton"
 import { columnHead, dataTable, dataTableEmpty } from "../../kit/data-table"
 import { type Sort, sortRows } from "../../kit/table-sort"
 import { BRANCH_STATE_LABEL, branchStateOf, type BranchState } from "../filters"
-import { formatLag, formatStoragePercent, formatWholePercent, lagClass, MISSING, utilizationClass } from "../metrics"
+import {
+	formatLag,
+	formatStoragePercent,
+	formatWholePercent,
+	lagClass,
+	MISSING,
+	utilizationClass,
+} from "../metrics"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
 
 // `PlanetScaleBranchBreakdownPanel` (components/infra/planetscale/planetscale-branch-breakdown-panel.tsx).
@@ -24,7 +31,12 @@ interface MeasureSpec {
 }
 
 const MEASURES = {
-	connections: { label: "Connections", of: (c) => c.stat?.connectionsAvg ?? MISSING, format: formatNumber, additive: true },
+	connections: {
+		label: "Connections",
+		of: (c) => c.stat?.connectionsAvg ?? MISSING,
+		format: formatNumber,
+		additive: true,
+	},
 	cpu: {
 		label: "CPU (max)",
 		of: (c) => c.stat?.cpuMaxPercent ?? MISSING,
@@ -77,13 +89,23 @@ export const shareBarStyle = (share: number): Readonly<Record<string, string>> |
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return undefined
 	const fill = "color-mix(in oklab, var(--primary) 14%, transparent)"
-	return { "background-image": `linear-gradient(to right, ${fill} 0%, ${fill} ${pct}%, transparent ${pct}%)` }
+	return {
+		"background-image": `linear-gradient(to right, ${fill} 0%, ${fill} ${pct}%, transparent ${pct}%)`,
+	}
 }
 
 const rowsOf = (candidates: ReadonlyArray<BranchCandidate>, spec: MeasureSpec) => {
-	const scored = candidates.map((candidate) => ({ candidate, value: spec.of(candidate), hasValue: spec.of(candidate) !== MISSING }))
+	const scored = candidates.map((candidate) => ({
+		candidate,
+		value: spec.of(candidate),
+		hasValue: spec.of(candidate) !== MISSING,
+	}))
 	const ordered = [...scored].sort((a, b) =>
-		a.hasValue !== b.hasValue ? (a.hasValue ? -1 : 1) : b.value - a.value || a.candidate.name.localeCompare(b.candidate.name),
+		a.hasValue !== b.hasValue
+			? a.hasValue
+				? -1
+				: 1
+			: b.value - a.value || a.candidate.name.localeCompare(b.candidate.name),
 	)
 	const withValues = ordered.filter((entry) => entry.hasValue)
 	const total = withValues.reduce((acc, entry) => acc + entry.value, 0)
@@ -119,7 +141,8 @@ const rowsOf = (candidates: ReadonlyArray<BranchCandidate>, spec: MeasureSpec) =
 	return { rows, total, max }
 }
 
-const metaChip = (h: H, text: string): Html => h.span([h.Class("font-mono text-3xs text-muted-foreground/80")], [text])
+const metaChip = (h: H, text: string): Html =>
+	h.span([h.Class("font-mono text-3xs text-muted-foreground/80")], [text])
 
 const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): ReadonlyArray<Html> => [
 	h.div(
@@ -138,7 +161,9 @@ const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): Readonly
 				[row.branch],
 			),
 			...(row.production ? [metaChip(h, "production")] : []),
-			...(!row.isOther && row.state !== "ready" ? [metaChip(h, BRANCH_STATE_LABEL[row.state].toLowerCase())] : []),
+			...(!row.isOther && row.state !== "ready"
+				? [metaChip(h, BRANCH_STATE_LABEL[row.state].toLowerCase())]
+				: []),
 		],
 	),
 	h.div(
@@ -188,13 +213,21 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 				columnHead(h, {
 					label: "Branch",
 					width: "w-0 flex-1 min-w-[200px]",
-					sort: { onSort: Message.ClickedBreakdownSort({ key: "branch" }), isActive: inputs.sort.key === "branch", dir: inputs.sort.dir },
+					sort: {
+						onSort: Message.ClickedBreakdownSort({ key: "branch" }),
+						isActive: inputs.sort.key === "branch",
+						dir: inputs.sort.dir,
+					},
 				}),
 				columnHead(h, {
 					label: spec.label,
 					width: "w-[120px]",
 					align: "right",
-					sort: { onSort: Message.ClickedBreakdownSort({ key: "value" }), isActive: inputs.sort.key === "value", dir: inputs.sort.dir },
+					sort: {
+						onSort: Message.ClickedBreakdownSort({ key: "value" }),
+						isActive: inputs.sort.key === "value",
+						dir: inputs.sort.dir,
+					},
 				}),
 			],
 			sorted.length === 0
@@ -203,7 +236,10 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 						const style = shareBarStyle(row.ratio)
 						const styleAttrs = style === undefined ? [] : [h.Style(style)]
 						if (row.isOther) {
-							return h.div([h.Class("flex items-center gap-3 px-3 py-1.5"), ...styleAttrs], cells(h, row, spec, false))
+							return h.div(
+								[h.Class("flex items-center gap-3 px-3 py-1.5"), ...styleAttrs],
+								cells(h, row, spec, false),
+							)
 						}
 						const isSelected = inputs.selectedBranches.includes(row.branch)
 						return h.button(
