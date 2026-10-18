@@ -101,16 +101,3 @@ export const sectionsOf = (model: Model, dashboards: ReadonlyArray<ListDashboard
 		scoped: inScope.length,
 	}
 }
-
-const MAX_TAG_LENGTH = 32
-
-/** `normalizeTags`: trimmed, lower-cased, capped, deduped, sorted. */
-export const normalizeTags = (input: ReadonlyArray<string>): ReadonlyArray<string> =>
-	Array.from(
-		new Set(
-			input.map((raw) => raw.trim().toLowerCase().slice(0, MAX_TAG_LENGTH)).filter((tag) => tag !== ""),
-		),
-	).sort()
-
-/** `splitInput`: commas and newlines separate tags. */
-export const splitTagInput = (value: string): ReadonlyArray<string> => value.split(/[,\n]/)

@@ -19,7 +19,8 @@ import {
 	SaveTags,
 	WaitSearchDebounce,
 } from "./command"
-import { normalizeTags, queryOf, splitTagInput } from "./derive"
+import * as TagEditor from "../kit/tag-editor"
+import { displayName, queryOf } from "./derive"
 import { Message } from "./message"
 import type { ListDashboard, Model } from "./model"
 
@@ -46,9 +47,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		pendingDelete: null,
 		deleteDialog: Dialog.init("dashboard-delete-dialog", "alert-dialog"),
 		pendingTags: null,
-		tagsDialog: Dialog.init("dashboard-tags-dialog", "dialog"),
-		tagDrafts: [],
-		tagInput: "",
+		tagEditor: TagEditor.init("dashboard-tags-dialog"),
 		persistenceError: null,
 		isCreating: false,
 	},
@@ -141,7 +140,7 @@ const closeDialog = (dialog: Dialog.Model, wrap: (message: Dialog.Message) => Me
 }
 
 const wrapDelete = (message: Dialog.Message) => Message.GotDeleteDialogMessage({ message })
-const wrapTags = (message: Dialog.Message) => Message.GotTagsDialogMessage({ message })
+const wrapTags = (message: TagEditor.Message) => Message.GotTagEditorMessage({ message })
 
 /** A row menu item picked: export, duplicate, edit tags, delete. */
 const rowAction = (model: Model, context: PageContext, rowId: string, value: string): Return =>
@@ -157,16 +156,14 @@ const rowAction = (model: Model, context: PageContext, rowId: string, value: str
 						: { model, commands: [DuplicateDashboard({ orgId: context.orgId, id: rowId })] }
 				case "tags": {
 					if (isReadOnly(model)) return { model }
-					const opened = openDialog(model.tagsDialog, wrapTags)
+					const opened = TagEditor.open(
+						model.tagEditor,
+						displayName(dashboard.name),
+						dashboard.tags,
+					)
 					return {
-						model: {
-							...model,
-							pendingTags: dashboard,
-							tagsDialog: opened.dialog,
-							tagDrafts: normalizeTags(dashboard.tags),
-							tagInput: "",
-						},
-						commands: opened.commands,
+						model: { ...model, pendingTags: dashboard, tagEditor: opened.model },
+						commands: Command.mapMessages(opened.commands ?? [], wrapTags),
 					}
 				}
 				case "delete": {
@@ -218,13 +215,6 @@ const sortMenuStep = (model: Model, message: Menu.Message): Return => {
 }
 
 /** The editor's pending input committed as tags (`commit`). */
-const commitTagInput = (model: Model, value: string): Model => {
-	const added = normalizeTags(splitTagInput(value))
-	return added.length === 0
-		? model
-		: { ...model, tagDrafts: normalizeTags([...model.tagDrafts, ...added]), tagInput: "" }
-}
-
 const failedWrite = (model: Model, message: string): Return => ({
 	model: { ...model, persistenceError: message, isCreating: false },
 })
@@ -327,33 +317,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onFailure: (error) => failedWrite(model, error),
 				onSuccess: () => ({ model: { ...model, persistenceError: null } }),
 			}),
-		GotTagsDialogMessage: ({ message: inner }) =>
-			dialogStep(model, model.tagsDialog, inner, (tagsDialog) => ({ tagsDialog }), wrapTags),
-		ChangedTagInput: ({ value }) => ({ model: { ...model, tagInput: value } }),
-		PressedTagInputKey: ({ key }) => {
-			if (key === "Enter" || key === ",") return { model: commitTagInput(model, model.tagInput) }
-			const last = model.tagDrafts[model.tagDrafts.length - 1]
-			return key === "Backspace" && model.tagInput === "" && last !== undefined
-				? { model: { ...model, tagDrafts: model.tagDrafts.filter((tag) => tag !== last) } }
-				: { model }
-		},
-		ClickedAddTag: () => ({ model: commitTagInput(model, model.tagInput) }),
-		ClickedRemoveTag: ({ tag }) => ({
-			model: { ...model, tagDrafts: model.tagDrafts.filter((draft) => draft !== tag) },
-		}),
-		ClickedSuggestedTag: ({ tag }) => ({ model: commitTagInput(model, tag) }),
-		ClickedSaveTags: () => {
+		GotTagEditorMessage: ({ message: inner }) => {
+			const next = TagEditor.update(model.tagEditor, inner)
+			const commands = Command.mapMessages(next.commands ?? [], wrapTags)
+			const updated = { ...model, tagEditor: next.model }
+			if (next.outMessage === undefined) return { model: updated, commands }
 			const pending = model.pendingTags
-			const tags = normalizeTags([...model.tagDrafts, ...splitTagInput(model.tagInput)])
-			const closed = closeDialog(model.tagsDialog, wrapTags)
-			const next = { ...model, tagsDialog: closed.dialog, pendingTags: null }
+			const saved = { ...updated, pendingTags: null }
 			return pending === null || isReadOnly(model)
-				? { model: next, commands: closed.commands }
+				? { model: saved, commands }
 				: {
-						model: next,
+						model: saved,
 						commands: [
-							...closed.commands,
-							SaveTags({ orgId: context.orgId, id: pending.id, tags }),
+							...commands,
+							SaveTags({ orgId: context.orgId, id: pending.id, tags: next.outMessage.tags }),
 						],
 					}
 		},

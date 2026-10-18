@@ -17,10 +17,11 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { DASHBOARD_SORT_OPTIONS, type DashboardSortOption } from "../kit/summary"
 import { relativeTimeOrDate } from "../kit/time"
 import { collectTags, displayName, queryOf, scopeOf, sectionsOf, sortOf, tagsOf } from "./derive"
+import * as TagEditor from "../kit/tag-editor"
 import { Message } from "./message"
 import type { ListDashboard, Model, Scope } from "./model"
 import { rowMenuIdOf } from "./update"
-import { deleteDialog, tagsDialog } from "./view-dialogs"
+import { deleteDialog } from "./view-dialogs"
 
 // `DashboardList` (apps/web/src/components/dashboard-builder/list/dashboard-list.tsx).
 
@@ -660,7 +661,13 @@ export const listBody = (
 					]
 				: []),
 			...body,
-			tagsDialog(h, model, collectTags(dashboards)),
+			h.submodel({
+				slotId: "dashboard-tag-editor",
+				model: model.tagEditor,
+				view: TagEditor.view,
+				viewInputs: { allTags: collectTags(dashboards) },
+				toParentMessage: (message) => Message.GotTagEditorMessage({ message }),
+			}),
 			deleteDialog(h, model),
 		],
 	)

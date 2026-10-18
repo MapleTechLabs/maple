@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { DashboardsSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
+import * as TagEditor from "../kit/tag-editor"
 import * as Menu from "../../../ui/menu"
 
 // The dashboards list (apps/web/src/routes/dashboards/index.tsx, dashboard-builder/list/*).
@@ -54,9 +55,7 @@ export const Model = Schema.Struct({
 	pendingDelete: Schema.NullOr(ListDashboard),
 	deleteDialog: Dialog.Model,
 	pendingTags: Schema.NullOr(ListDashboard),
-	tagsDialog: Dialog.Model,
-	tagDrafts: Schema.Array(Schema.String),
-	tagInput: Schema.String,
+	tagEditor: TagEditor.Model,
 	/** `persistenceErrorAtom`: a failed write turns the list read-only with this reason. */
 	persistenceError: Schema.NullOr(Schema.String),
 	isCreating: Schema.Boolean,

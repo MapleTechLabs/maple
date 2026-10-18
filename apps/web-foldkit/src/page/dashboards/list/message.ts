@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { File } from "foldkit/file"
 import { defineMessageUnion } from "foldkit/message"
 import * as Dialog from "../../../ui/dialog"
+import * as TagEditor from "../kit/tag-editor"
 import * as Menu from "../../../ui/menu"
 import { ListDashboard, Scope } from "./model"
 
@@ -36,13 +37,7 @@ export const Message = defineMessageUnion({
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	ClickedConfirmDelete: {},
 	CompletedDeleteDashboard: { result: WriteResult },
-	GotTagsDialogMessage: { message: Dialog.Message },
-	ChangedTagInput: { value: Schema.String },
-	PressedTagInputKey: { key: Schema.String },
-	ClickedAddTag: {},
-	ClickedRemoveTag: { tag: Schema.String },
-	ClickedSuggestedTag: { tag: Schema.String },
-	ClickedSaveTags: {},
+	GotTagEditorMessage: { message: TagEditor.Message },
 	CompletedSaveTags: { result: WriteResult },
 })
 export type Message = typeof Message.Type

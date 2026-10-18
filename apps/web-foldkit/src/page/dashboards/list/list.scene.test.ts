@@ -4,6 +4,7 @@ import { expect as expectView, given, role, scene, text, withViewInputs } from "
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { CreateDashboard, DeleteDashboard, SavePreferences, SaveTags } from "./command"
+import * as TagEditor from "../kit/tag-editor"
 import { Message } from "./message"
 import type { ListDashboard, Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -155,10 +156,17 @@ describe("dashboards list", () => {
 
 	test("the tag editor commits typed tags normalised and saves them", () => {
 		const editing = { ...loaded(), pendingTags: dashboard() }
-		const typed = pageUpdate(editing, Message.ChangedTagInput({ value: "SLO, api" })).model
-		const committed = pageUpdate(typed, Message.PressedTagInputKey({ key: "Enter" })).model
-		expect(committed.tagDrafts).toEqual(["api", "slo"])
-		const saved = pageUpdate(committed, Message.ClickedSaveTags())
+		const tagKey = (message: TagEditor.Message) => Message.GotTagEditorMessage({ message })
+		const typed = pageUpdate(
+			editing,
+			tagKey(TagEditor.Message.ChangedTagInput({ value: "SLO, api" })),
+		).model
+		const committed = pageUpdate(
+			typed,
+			tagKey(TagEditor.Message.PressedTagInputKey({ key: "Enter" })),
+		).model
+		expect(committed.tagEditor.drafts).toEqual(["api", "slo"])
+		const saved = pageUpdate(committed, tagKey(TagEditor.Message.ClickedSaveTags()))
 		expect(names(saved.commands)).toContain(SaveTags.name)
 		expect(saved.model.pendingTags).toBeNull()
 	})
