@@ -75,7 +75,8 @@ export const Message = defineMessageUnion({
 	ClickedOpenFullPage: {},
 	CompletedEnsureStoredTab: { tabId: Schema.String },
 	CompletedRenameStoredTab: {},
-	GotConversationMessage: { message: ConversationMessage },
+	/** A conversation's message, named by its thread: a previous thread's late answers are dropped. */
+	GotConversationMessage: { tabId: Schema.String, message: ConversationMessage },
 	PaintedEmptyState: {},
 	CompletedLoadPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	CompletedLoadKnownServices: { services: Schema.Array(Schema.String) },

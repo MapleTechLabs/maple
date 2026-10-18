@@ -43,10 +43,11 @@ describe("chat sheet", () => {
 		const historyRead = step(
 			model,
 			Message.GotConversationMessage({
+				tabId: "t-new",
 				message: ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor: 0, running: false }) }),
 			}),
 		).model
-		const sent = step(historyRead, Message.GotConversationMessage({ message: ConversationMessage.ClickedSuggestion({ text: "Show me the slowest traces" }) }))
+		const sent = step(historyRead, Message.GotConversationMessage({ tabId: "t-new", message: ConversationMessage.ClickedSuggestion({ text: "Show me the slowest traces" }) }))
 		const rename = sent.commands?.find((command) => command.name === "RenameChatSheetTab")
 		expect(rename?.args).toEqual({ orgId: "org_acme", tabId: "t-new", title: "Show me the slowest traces" })
 	})
@@ -59,15 +60,30 @@ describe("chat sheet", () => {
 			const loaded = step(
 				kept,
 				Message.GotConversationMessage({
-					message: ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor: 0, running: false }) }),
+					tabId: "quick",
+				message: ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor: 0, running: false }) }),
 				}),
 			).model
-			const sent = step(loaded, Message.GotConversationMessage({ message: ConversationMessage.ClickedSuggestion({ text: "Why so slow?" }) }))
+			const sent = step(loaded, Message.GotConversationMessage({ tabId: "quick", message: ConversationMessage.ClickedSuggestion({ text: "Why so slow?" }) }))
 			const post = sent.commands?.find((command) => command.name === "PostChatMessage")
 			return post?.args !== undefined && "text" in post.args ? String(post.args.text) : ""
 		}
 		expect(overTraces(false)).toContain("- view: traces explorer")
 		expect(overTraces(true)).toBe("Why so slow?")
+	})
+
+	test("a new chat drops the previous thread's late history", () => {
+		const moved = step(opened().model, Message.CreatedSheetTab({ orgId: "org_acme", tabId: "t-new", referrerPath: null })).model
+		const old = [{ id: "m1", role: "user" as const, parts: [] }]
+		const late = step(
+			moved,
+			Message.GotConversationMessage({
+				tabId: "quick",
+				message: ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: old, cursor: 0, running: false }) }),
+			}),
+		).model
+		expect(late.conversation?.historyReady).toBe(false)
+		expect(late.conversation?.messages).toEqual([])
 	})
 
 	test("Open full page registers the thread in the tab list and closes the sheet", () => {

@@ -24,7 +24,7 @@ import { Message, type Model, SHEET_ID } from "./model"
 
 export type SheetViewInputs = Readonly<{ timeZone: string }>
 
-const toConversation = (message: ConversationMessage) => Message.GotConversationMessage({ message })
+const toConversation = (tabId: string) => (message: ConversationMessage) => Message.GotConversationMessage({ tabId, message })
 
 const NEW_CHAT_TRIGGER = "chat-sheet-new-chat"
 const OPEN_FULL_PAGE_TRIGGER = "chat-sheet-open-full-page"
@@ -142,14 +142,14 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: SheetViewInputs)
 			? []
 			: [
 					conversationView(h, model.conversation, {
-						toMessage: toConversation,
+						toMessage: toConversation(model.tabId),
 						timeZone: inputs.timeZone,
 						textareaId: `chat-sheet-composer-${model.tabId}`,
 						placeholder: "Ask about your system…",
 						emptyState: () =>
 							chatEmptyState(h, {
 								suggestions: suggestionsForContexts([...contexts]) ?? DEFAULT_SUGGESTIONS,
-								onSelect: (text) => toConversation(ConversationMessage.ClickedSuggestion({ text })),
+								onSelect: (text) => toConversation(model.tabId)(ConversationMessage.ClickedSuggestion({ text })),
 								tracePresence: presenceOf(model.presence, "traces"),
 								mount: MountEmptyState(),
 							}),
