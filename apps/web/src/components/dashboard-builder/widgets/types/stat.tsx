@@ -11,24 +11,21 @@ import {
 } from "@/components/dashboard-builder/widgets/widget-type-registry"
 import { toStatAggregate } from "@/lib/query-builder/widget-builder-shared"
 import { PreviewFrame } from "@/components/dashboard-builder/widgets/types/preset-preview"
+import { STAT_PRESET_SAMPLE_VALUES } from "@maple/web-data/dashboards/widget-preset-samples"
 import { formatValue } from "@/components/dashboard-builder/widgets/stat-widget"
 import type { WidgetPresetDefinition } from "@/components/dashboard-builder/widgets/widget-definitions"
-
-/** Plausible readings, so the picker's tiles aren't all zero. */
-const SAMPLE_VALUES: Record<string, number> = {
-	"stat-total-traces": 48293,
-	"stat-total-logs": 124817,
-	"stat-error-rate": 0.032,
-	"stat-total-errors": 1247,
-	"stat-total-services": 12,
-} satisfies Record<string, number>
 
 function StatPresetPreview({ preset }: { preset: WidgetPresetDefinition }) {
 	const { display } = preset
 	return (
 		<PreviewFrame title={display.title} className="flex flex-col items-center justify-center gap-1.5">
 			<div className="text-lg font-semibold tabular-nums">
-				{formatValue(SAMPLE_VALUES[preset.id] ?? 0, display.unit, display.prefix, display.suffix)}
+				{formatValue(
+					STAT_PRESET_SAMPLE_VALUES[preset.id] ?? 0,
+					display.unit,
+					display.prefix,
+					display.suffix,
+				)}
 			</div>
 		</PreviewFrame>
 	)

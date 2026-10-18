@@ -9,6 +9,7 @@ import type { WidgetTypeDefinition } from "@/components/dashboard-builder/widget
 import { createQueryDraft, type QueryBuilderQueryDraft } from "@maple/query-engine/query-builder"
 import { buildListLogsParams, parsePositiveNumber } from "@/lib/query-builder/widget-builder-shared"
 import { rowsPresetPreview } from "@/components/dashboard-builder/widgets/types/preset-preview"
+import { LIST_PRESET_SAMPLE_ROWS } from "@maple/web-data/dashboards/widget-preset-samples"
 
 /**
  * Raw trace or log rows. The only type that doesn't use the query builder: it is
@@ -24,51 +25,7 @@ export const listWidgetType: WidgetTypeDefinition = {
 	// the preview rather than in the rail.
 	ConfigPanel: () => null,
 	presets: listPresets,
-	PresetPreview: rowsPresetPreview({
-		"list-traces": [
-			{ serviceName: "api-gw", spanName: "GET /api/users", durationMs: 142, statusCode: "Ok" },
-			{ serviceName: "order-svc", spanName: "POST /api/orders", durationMs: 891, statusCode: "Error" },
-			{ serviceName: "api-gw", spanName: "GET /api/health", durationMs: 3, statusCode: "Ok" },
-		],
-		"list-error-traces": [
-			{ serviceName: "order-svc", spanName: "POST /api/orders", durationMs: 891, statusCode: "Error" },
-			{ serviceName: "auth-svc", spanName: "GET /api/auth", durationMs: 2301, statusCode: "Error" },
-			{ serviceName: "item-svc", spanName: "PUT /api/items", durationMs: 445, statusCode: "Error" },
-		],
-		"list-logs": [
-			{
-				timestamp: "12:04:23",
-				severityText: "ERROR",
-				serviceName: "api-gw",
-				body: "Connection refused",
-			},
-			{ timestamp: "12:04:21", severityText: "WARN", serviceName: "user-svc", body: "Slow query" },
-			{ timestamp: "12:04:19", severityText: "INFO", serviceName: "api-gw", body: "Request handled" },
-		],
-		"list-product-events": [
-			{
-				timestamp: "12:04:23",
-				eventName: "signup_completed",
-				userId: "user_8f2",
-				pagePath: "/signup",
-				source: "browser",
-			},
-			{
-				timestamp: "12:04:21",
-				eventName: "plan_started",
-				userId: "user_8f2",
-				pagePath: "",
-				source: "server",
-			},
-			{
-				timestamp: "12:04:19",
-				eventName: "dashboard_created",
-				userId: "user_2c1",
-				pagePath: "/dashboards",
-				source: "browser",
-			},
-		],
-	}),
+	PresetPreview: rowsPresetPreview(LIST_PRESET_SAMPLE_ROWS),
 
 	initialState: (widget) => {
 		const source = toListDataSource(widget.display.listDataSource)

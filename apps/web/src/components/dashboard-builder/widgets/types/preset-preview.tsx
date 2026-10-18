@@ -45,7 +45,9 @@ export function chartPresetPreview(defaultChartId: string) {
  * Thumbnail for the row-based types. Table and list draw the same miniature
  * grid; only their sample rows differ.
  */
-export function rowsPresetPreview(sampleRows: Record<string, Record<string, unknown>[]>) {
+export function rowsPresetPreview(
+	sampleRows: Readonly<Record<string, ReadonlyArray<Readonly<Record<string, unknown>>>>>,
+) {
 	return function RowsPresetPreview({ preset }: { preset: WidgetPresetDefinition }) {
 		const rows = sampleRows[preset.id] ?? []
 		const columns: NonNullable<WidgetDisplayConfig["columns"]> = preset.display.columns ?? []

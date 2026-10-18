@@ -1013,6 +1013,7 @@
         "@maple/query-engine": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/ui": "workspace:*",
+        "@maple/widgets": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
