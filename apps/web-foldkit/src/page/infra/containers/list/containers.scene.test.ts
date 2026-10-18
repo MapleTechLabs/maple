@@ -40,7 +40,7 @@ const row = (containerName: string): ContainerRow => ({
 const windowed = (search: Model["search"] = {}) =>
 	pageUpdate(
 		init({ search }, context).model,
-		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }) }),
+		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }) }),
 	)
 
 const loaded = (rows: ReadonlyArray<ContainerRow>, search: Model["search"] = {}) => {

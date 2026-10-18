@@ -15,7 +15,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 const resolved = Message.GotFrameMessage({
-	message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }),
 })
 const entered = () => update(init({ search: {} }, context).model, resolved, context)
 

@@ -45,7 +45,7 @@ const pod = (podName: string): PodRow => ({
 const windowed = (search: Model["search"] = {}) =>
 	pageUpdate(
 		init({ search }, context).model,
-		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }) }),
+		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }) }),
 	)
 
 describe("pods list", () => {
@@ -90,6 +90,12 @@ describe("pods list", () => {
 		)
 	}
 	const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+
+	test("the window read brings the browser locale the peek counter formats with", () => {
+		const read = Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "ar-EG", mode: "Load" })
+		const model = pageUpdate(windowed().model, Message.GotFrameMessage({ message: read })).model
+		expect(model.frame.locale).toBe("ar-EG")
+	})
 
 	test("a peeked row opens the sheet and warms it and both neighbours", () => {
 		const loaded = peekedPage()

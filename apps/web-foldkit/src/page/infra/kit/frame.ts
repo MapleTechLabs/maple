@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { timeControls, type TimeSearch } from "../../kit/time-controls"
+import { INITIAL_LOCALE, readLocale } from "../../kit/locale"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // The time scope every infra page shares: `useEffectiveTimeRange`, `PageRefreshProvider` (Reload
@@ -16,6 +17,8 @@ export type RequestMode = typeof RequestMode.Type
 export const Model = Schema.Struct({
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,
+	/** The browser's locale, read with the window, for `toLocaleString` counts. */
+	locale: Schema.String,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 	timePicker: TimeRangePicker.Model,
@@ -25,13 +28,14 @@ export type Model = typeof Model.Type
 export const init = (id: string): Model => ({
 	window: null,
 	nowMs: 0,
+	locale: INITIAL_LOCALE,
 	refreshVersion: 0,
 	isReloading: false,
 	timePicker: TimeRangePicker.init(id),
 })
 
 export const Message = defineMessageUnion({
-	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, locale: Schema.String, mode: RequestMode },
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},
@@ -66,10 +70,11 @@ export const ResolveWindow = Command.define("ResolveInfraWindow", {
 	},
 	messages: [Message.CompletedResolveWindow],
 	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
+		Effect.zipWith(Clock.currentTimeMillis, readLocale, (nowMs, locale) =>
 			Message.CompletedResolveWindow({
 				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
 				nowMs,
+				locale,
 				mode,
 			}),
 		),
@@ -93,8 +98,8 @@ const timeSearchOf = (search: TimeSearch) => ({
 
 export const update = (model: Model, message: Message, scope: Scope): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, nowMs, mode }) => ({
-			model: { ...model, window, nowMs },
+		CompletedResolveWindow: ({ window, nowMs, locale, mode }) => ({
+			model: { ...model, window, nowMs, locale },
 			outMessage: OutMessage.ResolvedWindow({ mode }),
 		}),
 		ClickedReload: () => {
