@@ -10,8 +10,12 @@ import { type TileContext, widgetTile } from "../kit/tiles"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { slotOf } from "./plan"
-import { isEditing, widgetMenuIdOf } from "./update"
+import { errorDetailsIdOf, isEditing, widgetMenuIdOf } from "./update"
+import { errorDetailsPopover } from "../kit/error-details"
+import * as Popover from "../../../ui/popover"
+import * as CopyButton from "../../../ui/copy-button"
 import { isAlertable } from "./widget-actions"
+import { moveValue } from "./move-target"
 
 // The open dashboard's tiles: their actions menu and the context the shared tiles read.
 
@@ -29,6 +33,7 @@ const widgetMenuEntries = (model: Model, widget: Widget): ReadonlyArray<MenuView
 					{ _tag: "Item", value: "clone", label: "Clone", icon: "CopyIcon" } as const,
 				]
 			: []),
+		...(isEdit && (model.document?.sections ?? []).length > 0 ? [moveToEntry(model, widget)] : []),
 		...(isAlertable(widget)
 			? [{ _tag: "Item", value: "alert", label: "Create alert", icon: "BellIcon" } as const]
 			: []),
@@ -50,6 +55,30 @@ const widgetMenuEntries = (model: Model, widget: Widget): ReadonlyArray<MenuView
 			: []),
 	]
 	return entries
+}
+
+/** `MoveWidgetToSectionMenu`: Ungrouped, then every `Group · Tab`; where it lives now is disabled. */
+const moveToEntry = (model: Model, widget: Widget): MenuView.MenuEntry => {
+	const sections = model.document?.sections ?? []
+	const inRoot = widget.sectionId === undefined || widget.tabId === undefined
+	return {
+		_tag: "Submenu",
+		value: "move",
+		label: "Move to",
+		icon: "LayersIcon",
+		separatorAfter: 0,
+		entries: [
+			{ _tag: "Item", value: moveValue(null), label: "Ungrouped", isDisabled: inRoot },
+			...sections.flatMap((section) =>
+				section.tabs.map((tab): MenuView.MenuItemEntry => ({
+					_tag: "Item",
+					value: moveValue({ sectionId: section.id, tabId: tab.id }),
+					label: section.tabs.length === 1 ? section.title : `${section.title} · ${tab.title}`,
+					isDisabled: widget.sectionId === section.id && widget.tabId === tab.id,
+				})),
+			),
+		],
+	}
 }
 
 /** The tile's "Widget actions" kebab; only the active tile holds live menu state. */
@@ -85,6 +114,15 @@ const widgetMenu = (h: H, model: Model, widget: Widget): Html | null => {
 	})
 }
 
+/** The sparkline series of a stat, read like any tile's data (its own data source). */
+const sparklineState = (model: Model, widget: Widget) => {
+	const gate = slotOf(model, widget.id).sparkGate ?? null
+	const source = widget.display.sparkline?.dataSource
+	return gate === null || source === undefined
+		? null
+		: dataStateOf(model.requests, { ...widget, dataSource: source }, gate)
+}
+
 /** The view's tile context for one widget: its data, menu, chart and sort. */
 export const tileContext = (h: H, model: Model, widget: Widget, timeZone: string): TileContext<Message> => {
 	const isEdit = isEditing(model)
@@ -109,6 +147,18 @@ export const tileContext = (h: H, model: Model, widget: Widget, timeZone: string
 		tableSort: model.tableSorts[widget.id] ?? { key: null, dir: "desc" },
 		onChart: (message) => Message.GotChartMessage({ widgetId: widget.id, message }),
 		onSort: (field, isText) => Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
+		sparkline: sparklineState(model, widget),
+		sparklineChart: model.charts[`${widget.id}:spark`] ?? Chart.init(),
+		onSparklineChart: (message) => Message.GotChartMessage({ widgetId: `${widget.id}:spark`, message }),
+		errorDetails: (message) =>
+			errorDetailsPopover(h, {
+				slotId: `error-details-${widget.id}`,
+				popover: model.errorDetails[widget.id] ?? Popover.init(errorDetailsIdOf(widget.id)),
+				copy: model.errorCopies[widget.id] ?? CopyButton.init(),
+				message,
+				onPopover: (inner) => Message.GotErrorDetailsMessage({ widgetId: widget.id, message: inner }),
+				onCopy: (inner) => Message.GotErrorCopyMessage({ widgetId: widget.id, message: inner }),
+			}),
 	}
 }
 

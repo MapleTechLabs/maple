@@ -24,6 +24,7 @@ import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
 import { presetById } from "./picker-catalog"
+import { applySectionEdit, SectionEdit } from "./section-edit"
 
 export const ReadClock = Command.define("ReadDashboardClock", {
 	messages: [Message.CompletedReadClock],
@@ -408,9 +409,15 @@ const pickedWidget = (pick: { readonly presetId: string | null; readonly chartId
 
 /** `addWidget` from the picker: a new id, the type's default size, the next free slot. */
 export const AddWidget = Command.define("AddDashboardWidget", {
-	args: { ...Target, presetId: Schema.NullOr(Schema.String), chartId: Schema.NullOr(Schema.String) },
+	args: {
+		...Target,
+		presetId: Schema.NullOr(Schema.String),
+		chartId: Schema.NullOr(Schema.String),
+		/** Which grid the widget lands in (a group's own "+"); `null` is the root canvas. */
+		target: Schema.NullOr(Schema.Struct({ sectionId: Schema.String, tabId: Schema.String })),
+	},
 	messages: [Message.CompletedWrite],
-	execute: ({ orgId, dashboardId, presetId, chartId }) =>
+	execute: ({ orgId, dashboardId, presetId, chartId, target }) =>
 		Effect.gen(function* () {
 			const picked = pickedWidget({ presetId, chartId })
 			if (picked === null) return Message.CompletedWrite({ result: Result.succeed(undefined) })
@@ -421,6 +428,7 @@ export const AddWidget = Command.define("AddDashboardWidget", {
 						document,
 						{ id, ...picked, layout: defaultWidgetLayout(picked.visualization) },
 						nowIso,
+						target,
 					),
 				),
 			)
@@ -457,4 +465,32 @@ export const SaveTags = Command.define("SaveDashboardViewTags", {
 				updatedAt: nowIso,
 			})),
 		),
+})
+
+/** How many fresh ids an edit mints: a new group and its tab, or a new tab. */
+const idsNeeded = (edit: SectionEdit): number =>
+	edit._tag === "AddSection" ? 2 : edit._tag === "AddTab" ? 1 : 0
+
+/** A group or tab write (`DashboardActionsProvider`'s section actions). */
+export const EditSections = Command.define("EditDashboardSections", {
+	args: { ...Target, edit: SectionEdit },
+	messages: [Message.CompletedWrite],
+	execute: ({ orgId, dashboardId, edit }) =>
+		Effect.gen(function* () {
+			const nowMs = yield* Clock.currentTimeMillis
+			const ids = yield* Effect.forEach(Array.from({ length: idsNeeded(edit) }), () =>
+				Effect.map(Random.next, (random) => generateWidgetId(nowMs, random)),
+			)
+			const queue = { next: 0 }
+			const nextId = () => {
+				const id = ids[queue.next] ?? generateWidgetId(nowMs, 0)
+				queue.next += 1
+				return id
+			}
+			return yield* toWriteMessage(
+				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
+					applySectionEdit(edit, document, nowIso, nextId),
+				),
+			)
+		}),
 })

@@ -4,7 +4,8 @@ import * as AreaChart from "../../../charts/area-chart"
 import * as BarChart from "../../../charts/bar-chart"
 import { bucketBarSeries } from "../../../charts/bar-chart"
 import { OTHER_LABEL } from "@maple/ui/components/charts/_shared/bucket-series"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
+import * as Chart from "../../../charts/chart"
+import { type ChartRuntime, isChartRuntimeReady } from "../../../charts/chart-runtime"
 import * as FunnelChart from "../../../charts/funnel-chart"
 import * as FunnelDropoffChart from "../../../charts/funnel-dropoff-chart"
 import * as HbarChart from "../../../charts/hbar-chart"
@@ -236,6 +237,46 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 		case "hbar":
 			return h.submodel({ ...common, view: HbarChart.view, viewInputs: { data, className, unit: display.unit } })
 	}
+}
+
+export type RegistryChartInputs<M> = Readonly<{
+	slot: string
+	chart: Chart.Model
+	onChart: (message: Chart.Message) => M
+	theme: ThemeColors | null
+	chartRuntime: ChartRuntime
+	nowMs: number | null
+	timeZone: string
+	chartId: string
+	data: Rows
+	className: string
+}>
+
+/**
+ * A registry chart with only `data` and `className` set (`ChartPreview`, the gallery thumbnails):
+ * every other setting at the chart component's own default.
+ */
+export const registryChartView = <M>(h: HtmlBuilder<M>, inputs: RegistryChartInputs<M>): Html => {
+	const category = chartCategoryOf(inputs.chartId) ?? "line"
+	const widget: Widget = { id: inputs.slot, visualization: "chart", dataSource: null, display: { chartId: inputs.chartId } }
+	const ctx: TileContext<M> = {
+		h,
+		state: { _tag: "Loading" },
+		isEdit: false,
+		menu: null,
+		isMenuOpen: false,
+		hasGrip: false,
+		configure: null,
+		chart: inputs.chart,
+		themeColors: inputs.theme,
+		chartRuntime: inputs.chartRuntime,
+		nowMs: inputs.nowMs,
+		timeZone: inputs.timeZone,
+		tableSort: { key: null, dir: "desc" },
+		onChart: inputs.onChart,
+		onSort: () => inputs.onChart(Chart.Message.LeftChart()),
+	}
+	return chartView(h, ctx, widget, { category, data: inputs.data, className: inputs.className, legend: undefined })
 }
 
 /** One chart widget: the frame, the empty state when nothing is chartable, else the chart. */

@@ -1,6 +1,7 @@
 import type { Locator, Page } from "playwright"
 import { clickButton, EMPTY, opsScenarios, SEEDED, act } from "./ops-kit.ts"
 import type { AreaModule, Scenario } from "./types.ts"
+import { groupedScenarios } from "./dashboards-sections.ts"
 
 /**
  * Dashboards built from the API's templates: stat, table, chart and list widgets, the builder in
@@ -8,6 +9,7 @@ import type { AreaModule, Scenario } from "./types.ts"
  */
 const dashboard = opsScenarios("dashboards", "Dashboards")
 const platform = `/dashboards/${SEEDED.platformDashboard}`
+const gallery = `/dashboards/${SEEDED.widgetsDashboard}`
 
 const clickMenuItem = (name: string | RegExp) => (page: Page) =>
 	page.getByRole("menuitem", { name }).first().click()
@@ -280,6 +282,29 @@ export const dashboardsArea: AreaModule = {
 		dashboard("edit-picker-notes", "Edit mode: the widget picker's Notes tab", platform, {
 			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Notes")),
 		}),
+		...["Horizontal Bars", "Pies", "Histograms", "Heatmaps", "Funnels", "Paths", "Charts", "All"].map((tab) =>
+			dashboard(
+				`edit-picker-${tab.toLowerCase().replace(" ", "-")}`,
+				`Edit mode: the widget picker's ${tab} tab`,
+				platform,
+				{ steps: act(enterEdit, clickButton("Add widget"), pickerTab(tab)) },
+			),
+		),
+		dashboard("widgets", "Widget gallery: every breakdown widget, a gauge and a stat sparkline", gallery, {
+			fullPage: true,
+		}),
+		timed(
+			"widgets-loading",
+			"Widget gallery: widget queries held",
+			gallery,
+			{ delays: { "queryEngine.": HELD_MS } },
+			"held",
+		),
+		dashboard("widgets-edit", "Widget gallery in edit mode", gallery, {
+			steps: act(enterEdit),
+			fullPage: true,
+		}),
+		...groupedScenarios,
 		dashboard("edit-widget-added", "Edit mode: the Total Logs stat added from the picker", platform, {
 			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Stats"), clickButton(/Sum of logs/)),
 			fullPage: true,

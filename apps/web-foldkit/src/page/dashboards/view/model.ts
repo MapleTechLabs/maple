@@ -7,6 +7,8 @@ import { KeyedSchema } from "../../../data/keyed"
 import { DashboardSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Popover from "../../../ui/popover"
+import * as CopyButton from "../../../ui/copy-button"
 import * as Tabs from "../../../ui/tabs"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as TagEditor from "../kit/tag-editor"
@@ -24,6 +26,8 @@ export const WidgetSlot = Schema.Struct({
 	/** `useWidgetMaxDataPoints`' quantized width; `null` before the first measurement. */
 	widthPx: Schema.NullOr(Schema.Number),
 	gate: Schema.NullOr(WidgetGate),
+	/** A stat's sparkline series (`StatSparklineLoader`), planned once the stat itself has data. */
+	sparkGate: Schema.optionalKey(Schema.NullOr(WidgetGate)),
 })
 export type WidgetSlot = typeof WidgetSlot.Type
 
@@ -80,6 +84,8 @@ export const KeyboardMove = Schema.Struct({
 })
 export type KeyboardMove = typeof KeyboardMove.Type
 
+export const SectionTargetSchema = Schema.Struct({ sectionId: Schema.String, tabId: Schema.String })
+
 export const Model = Schema.Struct({
 	dashboardId: Schema.String,
 	search: DashboardSearch,
@@ -120,6 +126,25 @@ export const Model = Schema.Struct({
 	gridAnnouncement: Schema.String,
 	/** `settled`: a dropped layout, drawn until the store echoes the write back. */
 	droppedLayout: Schema.NullOr(Schema.Array(GridItem)),
+	/** Which container the dropped layout belongs to. */
+	droppedKey: Schema.NullOr(Schema.String),
 	persistenceError: Schema.NullOr(Schema.String),
+	/** Failed tiles' "Details" popovers and their copy buttons, by widget id. */
+	/** Which grid the picker's next widget lands in: a group's own "+", reset when it closes. */
+	pickerTarget: Schema.NullOr(SectionTargetSchema),
+	/** The one open group options menu. */
+	sectionMenuId: Schema.NullOr(Schema.String),
+	sectionMenu: Menu.Model,
+	/** `InlineEditableText`: the group (or tab) title being renamed, and its draft. */
+	rename: Schema.NullOr(
+		Schema.Struct({ sectionId: Schema.String, tabId: Schema.NullOr(Schema.String), draft: Schema.String }),
+	),
+	/** `DeleteSectionDialog` and `DeleteTabDialog`, and what they would delete. */
+	sectionDialog: Dialog.Model,
+	pendingSectionDelete: Schema.NullOr(Schema.String),
+	tabDialog: Dialog.Model,
+	pendingTabDelete: Schema.NullOr(SectionTargetSchema),
+	errorDetails: Schema.Record(Schema.String, Popover.Model),
+	errorCopies: Schema.Record(Schema.String, CopyButton.Model),
 })
 export type Model = typeof Model.Type

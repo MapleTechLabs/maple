@@ -57,7 +57,16 @@ export type MenuItemEntry = Readonly<{
 export type MenuEntry =
 	| MenuItemEntry
 	| Readonly<{ _tag: "Group"; label?: string; entries: ReadonlyArray<MenuEntry> }>
-	| Readonly<{ _tag: "Submenu"; value: string; label: string; entries: ReadonlyArray<MenuItemEntry> }>
+	| Readonly<{
+			_tag: "Submenu"
+			value: string
+			label: string
+			entries: ReadonlyArray<MenuItemEntry>
+			/** A leading icon on the trigger row. */
+			icon?: IconName
+			/** A separator drawn after this item's index (`<DropdownMenuSeparator />` between items). */
+			separatorAfter?: number
+	  }>
 	| Readonly<{ _tag: "Checkbox"; value: string; label: string; isChecked: boolean }>
 	| Readonly<{
 			_tag: "RadioGroup"
@@ -162,7 +171,7 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 					...row(model, index, { kind: "Submenu", value: entry.value }),
 					isSubmenuOpen: model.submenu !== null && model.submenu.index === index,
 				},
-				[entry.label],
+				[...(entry.icon === undefined ? [] : [icon(h, entry.icon)]), entry.label],
 			)
 		case "Checkbox":
 			return menuCheckableItem(
@@ -205,10 +214,10 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 const findSubmenu = (
 	entries: ReadonlyArray<MenuEntry>,
 	value: string,
-): Option.Option<ReadonlyArray<MenuItemEntry>> =>
+): Option.Option<Extract<MenuEntry, { _tag: "Submenu" }>> =>
 	Array.findFirst(entries, (entry) =>
 		entry._tag === "Submenu" && entry.value === value
-			? Option.some(entry.entries)
+			? Option.some(entry)
 			: entry._tag === "Group"
 				? findSubmenu(entry.entries, value)
 				: Option.none(),
@@ -220,7 +229,9 @@ const keyHandler = (h: H, keys: ReadonlySet<string>, toMessage: (key: string) =>
 const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => {
 	const submenu = model.submenu
 	if (submenu === null) return []
-	const items = Option.getOrElse(findSubmenu(inputs.entries, submenu.value), () => [])
+	const found = findSubmenu(inputs.entries, submenu.value)
+	const items = Option.match(found, { onNone: () => [], onSome: (entry) => entry.entries })
+	const separatorAfter = Option.match(found, { onNone: () => undefined, onSome: (entry) => entry.separatorAfter })
 	const placement = [
 		h.DataAttribute("align", submenu.align),
 		h.DataAttribute("open", ""),
@@ -255,19 +266,21 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 									}),
 								),
 							],
-							items.map((item, index) =>
+							items.flatMap((item, index) => [
 								menuItem(
 									h,
 									{
 										id: subItemId(model.id, index),
 										variant: item.variant,
+										isDisabled: item.isDisabled,
 										isHighlighted: submenu.highlighted === index,
 										onHighlight: Message.HoveredSubmenuItem({ index }),
 										onSelect: Message.ClickedSubmenuItem({ value: item.value }),
 									},
 									[item.label, ...shortcutOf(h, item)],
 								),
-							),
+								...(separatorAfter === index ? [menuSeparator(h)] : []),
+							]),
 						),
 					],
 				),

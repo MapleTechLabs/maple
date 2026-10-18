@@ -1,6 +1,6 @@
 import { clampSize, type GridItem, type Layout, nudgeItem, resizeItem, sameLayout } from "@maple/grid-engine"
 import type { PageContext, PageReturn } from "../../contract"
-import { canvasGridOf, shownLayoutOf } from "./grid"
+import { gridOfWidget, shownLayoutOf } from "./grid"
 import { commitLayout } from "./layout-commit"
 import type { Message } from "./message"
 import type { KeyboardMove, Model } from "./model"
@@ -43,11 +43,11 @@ export const endKeyboardMove = (
 	const gridAnnouncement = isCommit
 		? `${move.label} dropped at ${position}.`
 		: `Move cancelled. ${move.label} is back at ${position}.`
-	return commitLayout({ ...model, keyboardMove: null, gridAnnouncement }, context, move.origin, final)
+	return commitLayout({ ...model, keyboardMove: null, gridAnnouncement }, context, move.widgetId, move.origin, final)
 }
 
 const pickUp = (model: Model, message: KeyMessage): Return => {
-	const grid = canvasGridOf(model)
+	const grid = gridOfWidget(model, message.widgetId)
 	if (grid === null || model.gesture !== null || !isEditing(model) || !grid.tier.canonical) return { model }
 	const origin = shownLayoutOf(model, grid)
 	const item = origin.find((candidate) => candidate.i === message.widgetId)
@@ -70,7 +70,7 @@ export const keyboardStep = (model: Model, context: PageContext, message: KeyMes
 	if (isPickKey) return endKeyboardMove(model, context, move, true)
 	if (message.key === "Escape") return endKeyboardMove(model, context, move, false)
 	const direction = ARROWS.get(message.key)
-	const grid = canvasGridOf(model)
+	const grid = gridOfWidget(model, move.widgetId)
 	if (direction === undefined || grid === null) return { model }
 	const next = message.isShift
 		? growItem(move.preview, move.widgetId, direction, grid.geometry.cols)

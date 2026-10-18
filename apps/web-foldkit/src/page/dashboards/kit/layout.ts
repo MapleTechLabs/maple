@@ -121,14 +121,15 @@ export const withClone = (
 	}
 }
 
-/** `addWidget` at the root canvas: the next free slot for its default size. */
+/** `addWidget`: the next free slot for its default size, in the grid it is dropped into. */
 export const withAddedWidget = (
 	document: DashboardDocument,
 	widget: Omit<Widget, "layout"> & { readonly layout: Omit<Widget["layout"], "x" | "y"> },
 	nowIso: DashboardDocument["updatedAt"],
+	target: SectionTarget = null,
 ): DocumentFields => {
-	const position = findNextPosition(widgetsInContainer(document.widgets, null), widget.layout.w)
-	const placed: Widget = { ...widget, layout: { ...position, ...widget.layout } }
+	const position = findNextPosition(widgetsInContainer(document.widgets, target), widget.layout.w)
+	const placed: Widget = withSectionTarget({ ...widget, layout: { ...position, ...widget.layout } }, target)
 	return { ...document, widgets: [...document.widgets, placed], updatedAt: nowIso }
 }
 

@@ -37,6 +37,7 @@ import type { FixtureWarehouse } from "../../../backend/warehouse.ts"
 import type { Dataset, EndpointHandler, SyncedRow } from "../../dataset.ts"
 import { acmeAdmin, DAY, HOUR, isoBefore } from "../../identity.ts"
 import { str } from "./synthetic.ts"
+import { sectionsDashboard, widgetsDashboard } from "./dashboard-widgets.ts"
 
 /**
  * Dashboards built from the API's own templates (`@maple/backend/dashboard-templates`), so their
@@ -85,6 +86,8 @@ export const opsDashboards: ReadonlyArray<SyncedRow> = [
 	templateDashboard(PAYMENT_DASHBOARD_ID, "service-health", "Payment service health", 3 * HOUR, {
 		[paramKey("service_name")]: "payment-svc",
 	}),
+	widgetsDashboard,
+	sectionsDashboard,
 ]
 
 const encodeTemplate = Schema.encodeSync(V2DashboardTemplate)

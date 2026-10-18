@@ -1,4 +1,3 @@
-import { latencyTimeSeriesData } from "@maple/ui/components/charts/_shared/sample-data"
 import { cn } from "@maple/ui/lib/utils"
 import * as DialogStyles from "@maple/ui/styles/ui/dialog"
 import {
@@ -8,7 +7,6 @@ import {
 } from "@maple/web-data/dashboards/widget-preset-samples"
 import type { WidgetPresetDefinition } from "@maple/web-data/dashboards/widget-presets"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as AreaChart from "../../../charts/area-chart"
 import * as Chart from "../../../charts/chart"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
@@ -19,18 +17,16 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import * as TabsView from "../../../ui/tabs-view"
 import { formatCell, formatStatValue } from "../kit/tiles"
+import { registryChartView } from "../kit/tiles-chart"
+import { sampleDataOf } from "../kit/chart-registry"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { CHART_STYLES, PICKER_SECTIONS, PICKER_TABS, type PickerSection } from "./picker-catalog"
 
 // `WidgetPicker` (dashboard-builder/config/chart-picker.tsx) and the presets' thumbnails
 // (widgets/types/preset-preview.tsx, stat.tsx, markdown.tsx).
-// TODO(picker-previews): bar, horizontal bar, pie, histogram, heatmap, funnel and paths thumbnails
-// draw the chart skeleton; their charts are not ported.
 
 type H = HtmlBuilder<Message>
-
-const CHART_ROWS = latencyTimeSeriesData
 
 /** `PickerCard`: the thumbnail over its title and description. */
 const pickerCard = (h: H, title: string, description: string, onClick: Message, preview: Html): Html =>
@@ -77,28 +73,22 @@ const previewFrame = (
 	)
 
 /** `ChartPreview`: the chart over its registry sample rows. */
-const chartPreview = (h: H, model: Model, chartId: string): Html => {
-	const category = chartId.replace("query-builder-", "")
-	const isDrawn = category === "area" || category === "line"
-	const theme = model.themeColors
+const chartPreview = (h: H, model: Model, chartId: string, key: string): Html => {
+	const slot = `picker:${key}`
 	const content =
-		!isDrawn || theme === null || !isChartRuntimeReady(model.chartRuntime) || model.nowMs === null
+		model.themeColors === null || !isChartRuntimeReady(model.chartRuntime) || model.nowMs === null
 			? chartSkeleton(h, "area")
-			: h.submodel({
-					slotId: `picker-chart-${chartId}`,
-					model: model.charts[`picker:${chartId}`] ?? Chart.init(),
-					view: AreaChart.view,
-					toParentMessage: (message) =>
-						Message.GotChartMessage({ widgetId: `picker:${chartId}`, message }),
-					viewInputs: {
-						chartId: `picker-${chartId}`,
-						data: CHART_ROWS,
-						theme,
-						nowMs: model.nowMs,
-						className: "h-full w-full aspect-auto",
-						legend: "hidden",
-						mark: category === "line" ? "line" : "area",
-					},
+			: registryChartView(h, {
+					slot: `picker-${key}`,
+					chart: model.charts[slot] ?? Chart.init(),
+					onChart: (message) => Message.GotChartMessage({ widgetId: slot, message }),
+					theme: model.themeColors,
+					chartRuntime: model.chartRuntime,
+					nowMs: model.nowMs,
+					timeZone: "UTC",
+					chartId,
+					data: sampleDataOf(chartId),
+					className: "h-full w-full aspect-auto",
 				})
 	return h.div([h.Class("aspect-[4/3] w-full overflow-hidden")], [content])
 }
@@ -196,7 +186,7 @@ const presetPreview = (h: H, model: Model, entry: PickerSection, preset: WidgetP
 			return markdownPreview(h, preset)
 		case "chart":
 			return previewFrame(h, preset.display.title, "flex flex-col gap-1.5", [
-				chartPreview(h, model, preset.display.chartId ?? entry.defaultChartId),
+				chartPreview(h, model, preset.display.chartId ?? entry.defaultChartId, preset.id),
 			])
 	}
 }
@@ -218,7 +208,7 @@ const sections = (h: H, model: Model): ReadonlyArray<Html> => {
 								style.label,
 								style.description,
 								Message.ClickedChartStyle({ chartId: style.chartId }),
-								chartPreview(h, model, style.chartId),
+								chartPreview(h, model, style.chartId, style.chartId),
 							),
 						),
 					),

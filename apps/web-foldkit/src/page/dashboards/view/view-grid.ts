@@ -10,10 +10,12 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
 import { viewTile } from "./view-widgets"
+import { sectionView } from "./view-sections"
+import { resolveSectionView } from "@maple/web/lib/dashboards/section-view-state"
+import { containerKeyFor } from "@maple/domain/http"
 
 // `DashboardSections` + `DashboardGrid` (dashboard-builder/sections/dashboard-sections.tsx,
 // canvas/dashboard-canvas.tsx): one measured container, CSS Grid placement per stored layout.
-// TODO(sections): grouped widgets (sections and tabs) are not ported; only the root canvas draws.
 
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]
@@ -151,6 +153,26 @@ const dashboardGrid = (h: H, ctx: TileContext, grid: CanvasGrid): Html => {
 	)
 }
 
+/** Each group in order; a collapsed one draws its header, an expanded one its active tab's grid. */
+const sectionsOf = (h: H, ctx: TileContext, document: DashboardDocument): ReadonlyArray<Html> => {
+	const sections = document.sections ?? []
+	const view = resolveSectionView(sections, document.widgets, ctx.model.search)
+	const isEditable = isEditing(ctx.model) && canvasGridOf(ctx.model)?.tier.canonical === true
+	return sections.map((section, index) => {
+		const activeTabId = view.activeTabs.get(section.id) ?? section.tabs[0]?.id ?? section.id
+		const grid = canvasGridOf(ctx.model, containerKeyFor({ sectionId: section.id, tabId: activeTabId }))
+		return sectionView(h, ctx.model, {
+			section,
+			index,
+			sectionCount: sections.length,
+			activeTabId,
+			isCollapsed: view.collapsed.has(section.id),
+			isEditable,
+			grid: grid === null || grid.widgets.length === 0 ? null : dashboardGrid(h, ctx, grid),
+		})
+	})
+}
+
 /** The measured canvas; grids draw once the width is known, so nothing paints on the wrong tier. */
 export const dashboardSections = (h: H, ctx: TileContext, document: DashboardDocument): Html => {
 	const grid = canvasGridOf(ctx.model)
@@ -172,6 +194,7 @@ export const dashboardSections = (h: H, ctx: TileContext, document: DashboardDoc
 					]
 				: []),
 			...(grid !== null && rootWidgetsOf(document).length > 0 ? [dashboardGrid(h, ctx, grid)] : []),
+			...(grid === null ? [] : sectionsOf(h, ctx, document)),
 		],
 	)
 }

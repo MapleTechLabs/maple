@@ -1,6 +1,6 @@
 import { cellAt, itemRect, moveItem, resizeItem, sameLayout, sizeAt } from "@maple/grid-engine"
 import type { PageContext, PageReturn } from "../../contract"
-import { canvasGridOf, shownLayoutOf } from "./grid"
+import { gridOfWidget, shownLayoutOf } from "./grid"
 import { commitLayout } from "./layout-commit"
 import type { Message } from "./message"
 import type { GridGesture, Model } from "./model"
@@ -37,7 +37,7 @@ const press = (
 	clientX: number,
 	clientY: number,
 ): Return => {
-	const grid = canvasGridOf(model)
+	const grid = gridOfWidget(model, widgetId)
 	if (grid === null || model.gesture !== null || model.keyboardMove !== null) return { model }
 	if (!isEditing(model) || !grid.tier.canonical) return { model }
 	const origin = shownLayoutOf(model, grid)
@@ -70,7 +70,7 @@ type Frame = Readonly<{ clientX: number; clientY: number; gridLeft: number; grid
  * the layout changes only when the cell does.
  */
 const move = (model: Model, gesture: GridGesture, frame: Frame): Return => {
-	const grid = canvasGridOf(model)
+	const grid = gridOfWidget(model, gesture.widgetId)
 	if (grid === null) return { model }
 	const gridOrigin = gesture.gridOrigin ?? { left: frame.gridLeft, top: frame.gridTop }
 	const dx = frame.clientX - gesture.startX + (gridOrigin.left - frame.gridLeft)
@@ -104,7 +104,7 @@ const move = (model: Model, gesture: GridGesture, frame: Frame): Return => {
 const release = (model: Model, context: PageContext, gesture: GridGesture, isCommit: boolean): Return => {
 	const ended = { ...model, gesture: null }
 	return gesture.isStarted && isCommit
-		? commitLayout(ended, context, gesture.origin, gesture.preview)
+		? commitLayout(ended, context, gesture.widgetId, gesture.origin, gesture.preview)
 		: { model: ended }
 }
 

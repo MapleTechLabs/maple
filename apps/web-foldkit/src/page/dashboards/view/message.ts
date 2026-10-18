@@ -5,6 +5,8 @@ import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Popover from "../../../ui/popover"
+import * as CopyButton from "../../../ui/copy-button"
 import * as Tabs from "../../../ui/tabs"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as TagEditor from "../kit/tag-editor"
@@ -70,6 +72,27 @@ export const Message = defineMessageUnion({
 	CompletedWrite: { result: WriteResult },
 	/** "Undo" on the "Widget removed" toast: the removed tile, as it was stored. */
 	ClickedUndoRemoveWidget: { widget: DashboardWidgetSchema },
+	/** "Undo" after a group was deleted with its widgets: they come back on the board, the group does not. */
+	ClickedUndoDeleteSection: { widgets: Schema.Array(DashboardWidgetSchema) },
 	CompletedExport: {},
+	/** A group's chevron: this viewer's collapse, in the URL. */
+	ClickedSectionChevron: { sectionId: Schema.String, collapsed: Schema.Boolean },
+	ClickedSectionTab: { sectionId: Schema.String, tabId: Schema.String },
+	/** A group's "+" or its empty state's "Add widget": the picker, targeting that tab. */
+	ClickedAddSectionWidget: { sectionId: Schema.String, tabId: Schema.String },
+	GotSectionMenuMessage: { sectionId: Schema.String, message: Menu.Message },
+	/** Double-click, Enter or F2 on a group or tab title. */
+	StartedRename: { sectionId: Schema.String, tabId: Schema.NullOr(Schema.String) },
+	ChangedRenameDraft: { value: Schema.String },
+	SubmittedRename: {},
+	CancelledRename: {},
+	ClickedAddTab: { sectionId: Schema.String },
+	ClickedDeleteTab: { sectionId: Schema.String, tabId: Schema.String },
+	GotSectionDialogMessage: { message: Dialog.Message },
+	GotTabDialogMessage: { message: Dialog.Message },
+	ConfirmedDeleteSection: { action: Schema.Literals(["ungroup", "delete"]) },
+	ConfirmedDeleteTab: { action: Schema.Literals(["move", "delete"]) },
+	GotErrorDetailsMessage: { widgetId: Schema.String, message: Popover.Message },
+	GotErrorCopyMessage: { widgetId: Schema.String, message: CopyButton.Message },
 })
 export type Message = typeof Message.Type

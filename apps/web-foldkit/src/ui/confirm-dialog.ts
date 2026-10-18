@@ -28,6 +28,8 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	cancelLabel?: string
 	tone?: "destructive" | "default"
 	onConfirm: M
+	/** `secondaryAction`: an outline button between Cancel and the confirm (a non-destructive choice). */
+	secondaryAction?: Readonly<{ label: string; onClick: M }>
 	isPending?: boolean
 	isConfirmDisabled?: boolean
 	className?: string
@@ -91,6 +93,19 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 						},
 						[options.cancelLabel ?? "Cancel"],
 					),
+					...(options.secondaryAction === undefined
+						? []
+						: [
+								button(
+									h,
+									{
+										variant: "outline",
+										isDisabled: isPending,
+										attributes: [h.OnClick(options.secondaryAction.onClick)],
+									},
+									[options.secondaryAction.label],
+								),
+							]),
 					button(
 						h,
 						{

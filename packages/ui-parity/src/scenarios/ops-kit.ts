@@ -24,6 +24,8 @@ export const SEEDED = {
 	renameRecommendation: "0199a062-0000-7000-8000-000000000003",
 	platformDashboard: "dash_parity_ops_platform",
 	paymentDashboard: "dash_parity_ops_payment",
+	widgetsDashboard: "dash_parity_ops_widgets",
+	sectionsDashboard: "dash_parity_ops_sections",
 	platformShareToken: "parity_share_platform",
 	/** payment-svc 3.5.0, the rollout behind the pool-exhaustion incident. */
 	paymentRelease: "f8f3f66ef8f3f66ef8f3f66ef8f3f66ef8f3f66e",

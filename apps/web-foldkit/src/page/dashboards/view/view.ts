@@ -23,6 +23,7 @@ import { dashboardSections } from "./view-grid"
 import * as TagEditor from "../kit/tag-editor"
 import { widgetPicker } from "./picker"
 import { toolbar } from "./view-toolbar"
+import { sectionDialogs } from "./view-sections"
 
 // `DashboardViewPage` (apps/web/src/routes/dashboards/$dashboardId.tsx).
 
@@ -244,6 +245,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				viewInputs: { allTags: model.orgTags },
 				toParentMessage: (message) => Message.GotTagEditorMessage({ message }),
 			}),
+			...sectionDialogs(h, model),
 		],
 	),
 )

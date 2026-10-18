@@ -9,12 +9,15 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Popover from "../../../ui/popover"
+import * as CopyButton from "../../../ui/copy-button"
 import * as Tabs from "../../../ui/tabs"
 import { popupId } from "../../../ui/overlay/popup-state"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CloneWidget,
+	EditSections,
 	CompleteReloadSpin,
 	ExportDashboard,
 	FetchShares,
@@ -34,6 +37,10 @@ import type { Model } from "./model"
 import { replan, slotOf, withCharts } from "./plan"
 import { isEditing } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
+import { menuStep } from "./menu-step"
+import { sectionStep } from "./section-update"
+import { SectionEdit } from "./section-edit"
+import { moveTargetOf } from "./move-target"
 import * as TagEditor from "../kit/tag-editor"
 import { createAlertSearch } from "./widget-actions"
 
@@ -73,7 +80,18 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		keyboardMove: null,
 		gridAnnouncement: "",
 		droppedLayout: null,
+		droppedKey: null,
 		persistenceError: null,
+		pickerTarget: null,
+		sectionMenuId: null,
+		sectionMenu: Menu.init("dashboard-section-menu"),
+		rename: null,
+		sectionDialog: Dialog.init("dashboard-delete-section", "alert-dialog"),
+		pendingSectionDelete: null,
+		tabDialog: Dialog.init("dashboard-delete-tab", "alert-dialog"),
+		pendingTabDelete: null,
+		errorDetails: {},
+		errorCopies: {},
 	},
 	commands: [
 		ReadClock(),
@@ -134,9 +152,9 @@ const addPicked = (
 		...Command.mapMessages(closed.commands ?? [], (dialog) =>
 			Message.GotPickerDialogMessage({ message: dialog }),
 		),
-		AddWidget({ orgId: context.orgId, dashboardId: model.dashboardId, ...pick }),
+		AddWidget({ orgId: context.orgId, dashboardId: model.dashboardId, ...pick, target: model.pickerTarget }),
 	]
-	const updated = { ...model, pickerDialog: closed.model }
+	const updated = { ...model, pickerDialog: closed.model, pickerTarget: null }
 	return isEditing(model)
 		? { model: updated, commands }
 		: {
@@ -205,6 +223,7 @@ const receiveDocument = (
 				document,
 				// The store caught up with a drop (or moved on): the grid draws what it holds.
 				droppedLayout: null,
+				droppedKey: null,
 				timeRange: model.timeRange ?? document.timeRange,
 				charts: withCharts(model, document.widgets),
 				// The toolbar's share dialog reads the shares too, so they load for an empty board as well.
@@ -270,27 +289,6 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
 }
 
-const menuStep = (
-	menu: Menu.Model,
-	message: Menu.Message,
-	wrap: (message: Menu.Message) => Message,
-): {
-	model: Menu.Model
-	commands: ReadonlyArray<Command.Command<Message>>
-	picked: Option.Option<string>
-} => {
-	const next = Menu.update(menu, message)
-	const out = next.outMessage
-	return {
-		model: next.model,
-		commands: Command.mapMessages(next.commands ?? [], wrap),
-		picked:
-			out === undefined
-				? Option.none()
-				: Option.some(out._tag === "SelectedSubmenuItem" ? out.value : out.value),
-	}
-}
-
 /** The "More dashboard actions" menu. TODO(toolbar): share, history, variables, tags, groups. */
 const moreAction = (model: Model, context: PageContext, value: string): Return => {
 	switch (value) {
@@ -302,6 +300,19 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 				commands: Command.mapMessages(opened.commands ?? [], wrapTagEditor),
 			}
 		}
+		case "add-group":
+			return model.persistenceError === null
+				? {
+						model,
+						commands: [
+							EditSections({
+								orgId: context.orgId,
+								dashboardId: model.dashboardId,
+								edit: SectionEdit.AddSection(),
+							}),
+						],
+					}
+				: { model }
 		case "auto-layout":
 			return model.persistenceError === null
 				? { model, commands: [AutoLayout({ orgId: context.orgId, dashboardId: model.dashboardId })] }
@@ -319,6 +330,20 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 /** A widget menu pick: configure, clone, create alert, delete. */
 const widgetAction = (model: Model, context: PageContext, widgetId: string, value: string): Return => {
 	const target = { orgId: context.orgId, dashboardId: model.dashboardId, widgetId }
+	const move = moveTargetOf(value)
+	if (move !== undefined)
+		return model.persistenceError !== null
+			? { model }
+			: {
+					model,
+					commands: [
+						EditSections({
+							orgId: context.orgId,
+							dashboardId: model.dashboardId,
+							edit: SectionEdit.MoveWidget({ widgetId, target: move.target }),
+						}),
+					],
+				}
 	switch (value) {
 		case "edit":
 			return navigate(
@@ -412,14 +437,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedFetchWidget: ({ key, result }) => {
 			const slot = model.requests[key]
-			return slot === undefined
-				? { model }
-				: {
-						model: {
-							...model,
-							requests: { ...model.requests, [key]: Keyed.accept(slot, key, result) },
-						},
-					}
+			if (slot === undefined) return { model }
+			// A stat that just got its value asks for its sparkline series next.
+			return withReplan(
+				{ ...model, requests: { ...model.requests, [key]: Keyed.accept(slot, key, result) } },
+				context,
+				"Load",
+			)
 		},
 		CompletedFetchShares: ({ dashboardId }) =>
 			dashboardId === model.dashboardId ? { model: { ...model, shares: "Loaded" } } : { model },
@@ -495,7 +519,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddWidget: () => {
 			const next = Dialog.open(model.pickerDialog)
 			return {
-				model: { ...model, pickerDialog: next.model },
+				model: { ...model, pickerDialog: next.model, pickerTarget: null },
 				commands: Command.mapMessages(next.commands ?? [], (dialog) =>
 					Message.GotPickerDialogMessage({ message: dialog }),
 				),
@@ -504,7 +528,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotPickerDialogMessage: ({ message: inner }) => {
 			const next = Dialog.update(model.pickerDialog, inner)
 			return {
-				model: { ...model, pickerDialog: next.model },
+				model: { ...model, pickerDialog: next.model, pickerTarget: next.model.isOpen ? model.pickerTarget : null },
 				commands: Command.mapMessages(next.commands ?? [], (dialog) =>
 					Message.GotPickerDialogMessage({ message: dialog }),
 				),
@@ -553,10 +577,50 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onSuccess: () => ({ model: { ...model, persistenceError: null } }),
 			}),
 		CompletedExport: () => ({ model }),
+		GotErrorDetailsMessage: ({ widgetId, message: inner }) => {
+			const next = Popover.update(model.errorDetails[widgetId] ?? Popover.init(errorDetailsIdOf(widgetId)), inner)
+			return {
+				model: { ...model, errorDetails: { ...model.errorDetails, [widgetId]: next.model } },
+				commands: Command.mapMessages(next.commands ?? [], (popover) =>
+					Message.GotErrorDetailsMessage({ widgetId, message: popover }),
+				),
+			}
+		},
+		GotErrorCopyMessage: ({ widgetId, message: inner }) => {
+			const next = CopyButton.update(model.errorCopies[widgetId] ?? CopyButton.init(), inner)
+			return {
+				model: { ...model, errorCopies: { ...model.errorCopies, [widgetId]: next.model } },
+				commands: Command.mapMessages(next.commands ?? [], (copy) =>
+					Message.GotErrorCopyMessage({ widgetId, message: copy }),
+				),
+			}
+		},
+		ClickedSectionChevron: (m) => sectionStep(model, context, m),
+		ClickedSectionTab: (m) => sectionStep(model, context, m),
+		ClickedAddSectionWidget: (m) => sectionStep(model, context, m),
+		GotSectionMenuMessage: (m) => sectionStep(model, context, m),
+		StartedRename: (m) => sectionStep(model, context, m),
+		ChangedRenameDraft: (m) => sectionStep(model, context, m),
+		SubmittedRename: (m) => sectionStep(model, context, m),
+		CancelledRename: (m) => sectionStep(model, context, m),
+		ClickedAddTab: (m) => sectionStep(model, context, m),
+		ClickedDeleteTab: (m) => sectionStep(model, context, m),
+		GotSectionDialogMessage: (m) => sectionStep(model, context, m),
+		GotTabDialogMessage: (m) => sectionStep(model, context, m),
+		ConfirmedDeleteSection: (m) => sectionStep(model, context, m),
+		ConfirmedDeleteTab: (m) => sectionStep(model, context, m),
+		ClickedUndoDeleteSection: ({ widgets }) => ({
+			model,
+			commands: widgets.map((widget) =>
+				RestoreWidget({ orgId: context.orgId, dashboardId: model.dashboardId, widget }),
+			),
+		}),
 		ClickedUndoRemoveWidget: ({ widget }) => ({
 			model,
 			commands: [RestoreWidget({ orgId: context.orgId, dashboardId: model.dashboardId, widget })],
 		}),
 	})
+
+export const errorDetailsIdOf = (widgetId: string): string => `dashboard-error-details-${widgetId}`
 
 export const widgetMenuIdOf = (widgetId: string): string => `dashboard-widget-menu-${widgetId}`
