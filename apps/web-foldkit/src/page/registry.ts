@@ -131,3 +131,22 @@ export const viewPage = <ParentMessage>(
 				toParentMessage,
 			}),
 	})
+
+/** The active page's top-bar actions (`DashboardPage topbarActions`), or nothing. */
+export const viewPageTopbarActions = <ParentMessage>(
+	h: HtmlBuilder<ParentMessage>,
+	slot: PageSlotBase,
+	inputs: PageViewInputs,
+	toParentMessage: (message: PageMessage) => ParentMessage,
+): Html =>
+	Option.match(pageById(slot._tag), {
+		onNone: () => h.empty,
+		onSome: (page) =>
+			h.submodel({
+				slotId: `page-topbar:${slot._tag}:${slot.key}`,
+				model: slot,
+				view: page.hostTopbarActions,
+				viewInputs: inputs,
+				toParentMessage,
+			}),
+	})

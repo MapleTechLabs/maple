@@ -78,6 +78,8 @@ export type FrameInputs = Readonly<{
 	breadcrumbs: ReadonlyArray<BreadcrumbEntry>
 	/** `PageLayout.Body` itself (`page/kit/dashboard-page.ts`): the page's filters, content and right rail. */
 	page: () => Html
+	/** `DashboardPage`'s `topbarActions`, after the shell's own buttons. */
+	topbarActions: () => Html
 }>
 
 /** `AppUpdateBanner`: not dismissible, a stale bundle may not read what the new build writes. */
@@ -115,7 +117,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 				h.div(
 					[h.Class(pageLayoutStyles), h.DataAttribute("slot", "page-layout")],
 					[
-						topbar(h, model, inputs.breadcrumbs),
+						topbar(h, model, inputs.breadcrumbs, inputs.topbarActions()),
 						...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
 						inputs.page(),
 					],

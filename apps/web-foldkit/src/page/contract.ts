@@ -87,6 +87,8 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly subscriptions?: Subscription.Subscriptions<PageSubscriptionInput<Model>, Message, Resources>
 	/** `DashboardPage`'s `breadcrumbs`. */
 	readonly breadcrumbs: (model: Model) => ReadonlyArray<BreadcrumbEntry>
+	/** `DashboardPage`'s `topbarActions`: the page's own controls after the shell's top-bar buttons. */
+	readonly topbarActions?: Submodel.View<Model, Message, PageViewInputs>
 }
 
 // ERASED PAGE (what the registry and root consume)
@@ -197,6 +199,21 @@ export const definePage = <
 						toParentMessage: wrap,
 					})
 				: null,
+		),
+		/** The page's top-bar actions, embedded by the shell's top bar; nothing for most pages. */
+		hostTopbarActions: Submodel.defineView<PageSlotBase, WrappedType, PageViewInputs>(
+			(slot, inputs, h) => {
+				const actions = spec.topbarActions
+				return isOwnSlot(slot) && actions !== undefined
+					? h.submodel({
+							slotId: `${id}:topbar`,
+							model: slot.model,
+							view: actions,
+							viewInputs: { context: inputs.context },
+							toParentMessage: wrap,
+						})
+					: null
+			},
 		),
 		/** Keys are prefixed with the page id: Subscription keys share one namespace. */
 		subscriptions: Object.fromEntries(

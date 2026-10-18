@@ -43,6 +43,7 @@ const shellAt = (currentPath: string) => {
 		currentPath,
 		breadcrumbs: [{ label: "Overview" }],
 		page: () => null,
+		topbarActions: () => null,
 	})()
 	const sheet = withViewInputs(sheetLayerView, { currentPath })()
 	const menu = withViewInputs(menuLayerView, { currentPath })()
