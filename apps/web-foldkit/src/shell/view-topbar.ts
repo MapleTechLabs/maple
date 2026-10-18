@@ -1,4 +1,6 @@
+import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import * as ChecklistView from "./onboarding-checklist-view"
 import {
 	breadcrumb,
 	breadcrumbItem,
@@ -28,7 +30,7 @@ const crumb = (h: HtmlBuilder<Message>, entry: BreadcrumbEntry): Html =>
 			: breadcrumbLink(h, { className: CRUMB_LABEL, href: entry.href }, [entry.label]),
 	])
 
-/** `IconButton variant="outline" label="Ask Maple AI" shortcut="C"` (the chat sheet is Phase 4). */
+/** `IconButton variant="outline" label="Ask Maple AI" shortcut="C"`: opens the global chat sheet. */
 const askMapleButton = (h: HtmlBuilder<Message>): Html =>
 	button(
 		h,
@@ -36,7 +38,11 @@ const askMapleButton = (h: HtmlBuilder<Message>): Html =>
 			size: "icon-sm",
 			variant: "outline",
 			slot: "icon-button",
-			attributes: [h.AriaLabel("Ask Maple AI"), h.DataAttribute("base-ui-tooltip-trigger", "")],
+			attributes: [
+				h.AriaLabel("Ask Maple AI"),
+				h.DataAttribute("base-ui-tooltip-trigger", ""),
+				h.OnClick(Message.ClickedAskMapleAi()),
+			],
 		},
 		[icon(h, "ChatBubbleSparkleIcon")],
 	)
@@ -59,6 +65,15 @@ const connectButton = (h: HtmlBuilder<Message>): Html =>
 		},
 		[icon(h, "ConnectionIcon"), "Connect"],
 	)
+
+/** `OnboardingChecklistButton`: Clerk only, self-hosted has no billing to credit. */
+const checklistPill = (h: HtmlBuilder<Message>, model: Model): Html =>
+	h.submodel({
+		slotId: "onboarding-checklist",
+		model: model.checklist,
+		view: ChecklistView.view,
+		toParentMessage: (message) => Message.GotChecklistMessage({ message }),
+	})
 
 export const topbar = (
 	h: HtmlBuilder<Message>,
@@ -90,7 +105,12 @@ export const topbar = (
 			]),
 			h.div(
 				[h.Class("ml-auto flex shrink-0 items-center gap-2")],
-				[askMapleButton(h), connectButton(h), pageActions],
+				[
+					askMapleButton(h),
+					...(isClerkAuthEnabled ? [checklistPill(h, model)] : []),
+					connectButton(h),
+					pageActions,
+				],
 			),
 		],
 	)

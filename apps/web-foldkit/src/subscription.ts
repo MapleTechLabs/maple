@@ -1,5 +1,5 @@
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Option, Schedule, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import { Message } from "./message"
 import type { Resources } from "./platform/resources"
@@ -10,6 +10,7 @@ import { pageSubscriptions } from "./page/registry"
 import { pageContextOf } from "./update"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
+import * as ChatSheet from "./page/chat/sheet"
 
 const selfHostedAuthTarget: Dom.TypedEventTarget<{ [SELF_HOSTED_AUTH_EVENT]: Event }> = window
 
@@ -33,6 +34,23 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 						mapEvent: () => Message.ChangedSelfHostedSession(),
 					}),
 					Effect.sync(() => isSelfHosted),
+				),
+		},
+	),
+	/** `useLiveClock({ intervalMs: 1000 })`: the reward pill's countdown, while one is shown. */
+	checklistClock: entry(
+		{ isCounting: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({ isCounting: Shell.isChecklistCounting(model.shell) }),
+			dependenciesToStream: ({ isCounting }) =>
+				Stream.when(
+					Stream.fromSchedule(Schedule.spaced(Duration.seconds(1))).pipe(
+						Stream.mapEffect(() => Clock.currentTimeMillis),
+						Stream.map((nowMs) =>
+							Message.GotShellMessage({ message: Shell.checklistTicked(nowMs) }),
+						),
+					),
+					Effect.sync(() => isCounting),
 				),
 		},
 	),
@@ -119,4 +137,16 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 	),
 }))
 
-export const subscriptions = Subscription.aggregate(root, pages)
+/** The global chat sheet's open event, `C`, and its conversation's live tail. */
+const chatSheet = Subscription.lift(ChatSheet.subscriptions)<Model, Message>({
+	read: (model) =>
+		Option.some({
+			sheet: model.chatSheet,
+			isSignedIn: model.session._tag === "SignedIn" && rendersShell(model.route),
+			isTypeAnywhere:
+				model.route._tag === "Chat" && (model.route.search.shared === undefined || model.route.search.shared === ""),
+		}),
+	toParentMessage: (message) => Message.GotChatSheetMessage({ message }),
+})
+
+export const subscriptions = Subscription.aggregate(root, pages, chatSheet)

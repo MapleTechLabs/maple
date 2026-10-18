@@ -26,6 +26,8 @@ export interface RawRoute {
 		readonly dataset: Dataset
 		readonly url: URL
 		readonly method: string
+		/** The request body, JSON-decoded when it parses (a chat send's `{ text }`). */
+		readonly body?: unknown
 	}) => Response | undefined
 }
 

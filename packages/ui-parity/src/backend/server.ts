@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import {
 	QueryEngineExecuteBatchRequest,
 	QueryEngineExecuteBatchResponse,
@@ -18,7 +18,7 @@ import { DATASETS, DEFAULT_DATASET } from "../fixtures/datasets/index.ts"
 import { defaultDataset } from "../fixtures/datasets/default.ts"
 import { acceptsBearer } from "./auth.ts"
 import { makeCallLog, normalizePayload } from "./call-log.ts"
-import { makeHolds, mergeFaults } from "./faults.ts"
+import { makeHolds, mergeFaults, resolveFault } from "./faults.ts"
 import { defaultHandlers } from "./defaults.ts"
 import { warehouseEndpoints } from "./endpoints/index.ts"
 import { telemetrySignalsEndpoint } from "./endpoints/signal-presence.ts"
@@ -140,21 +140,36 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 		holds,
 	})
 	// Raw routes answer only a signed-in bearer, like the API's own auth on them.
-	const rawRouteAnswer = (request: Request, url: URL, dataset: Dataset): Response | undefined => {
+	const parseBody = (text: string): unknown => {
+		try {
+			return JSON.parse(text)
+		} catch {
+			return text
+		}
+	}
+	// A request body (a chat send) is part of the logged payload, so the behavior diff checks it.
+	const rawRouteAnswer = async (request: Request, url: URL, dataset: Dataset): Promise<Response | undefined> => {
 		const capture = request.headers.get(CAPTURE_HEADER)
+		const text = request.method === "GET" || request.method === "HEAD" ? "" : await request.clone().text()
+		const body = text === "" ? undefined : parseBody(text)
 		for (const route of fixtureAreaRawRoutes) {
-			const answer = route.answer({ dataset, url, method: request.method })
+			const answer = route.answer({ dataset, url, method: request.method, body })
 			if (answer === undefined) continue
 			if (!acceptsBearer(dataset, bearerOf(request)))
 				return Response.json({ message: "Unauthorized" }, { status: 401 })
-			calls.record(
-				capture,
-				route.tag,
-				url.search
-					? { path: url.pathname, query: Object.fromEntries(url.searchParams) }
-					: { path: url.pathname },
-			)
-			return answer
+			calls.record(capture, route.tag, {
+				path: url.pathname,
+				...(url.search ? { query: Object.fromEntries(url.searchParams) } : {}),
+				...(body === undefined ? {} : { body }),
+			})
+			// Faults apply to raw routes by their tag too (`chat.history`), after logging, like the HttpApi.
+			const faults = mergeFaults(dataset.faults, request.headers.get(FAULTS_HEADER) ?? undefined)
+			if (Option.isNone(faults)) return answer
+			const fault = resolveFault(faults.value, route.tag)
+			if (fault.delayMs > 0) await Effect.runPromise(holds.hold(capture, fault.delayMs))
+			return fault.failure === undefined
+				? answer
+				: Response.json(fault.failure.body, { status: fault.failure.status })
 		}
 		return undefined
 	}
@@ -177,7 +192,7 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 			const name = request.headers.get(DATASET_HEADER)
 			const dataset = datasetNamed(name)
 			if (dataset === undefined) return unknownDataset(request, name)
-			const raw = rawRouteAnswer(request, url, dataset)
+			const raw = await rawRouteAnswer(request, url, dataset)
 			if (raw !== undefined) return withCors(request, raw)
 			return withCors(request, await api.handler(request))
 		},

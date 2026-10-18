@@ -1,7 +1,7 @@
 import { Array, Effect, Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import type { ClerkExternalAccountResource } from "../../../../platform/clerk"
-import { ClerkActionError } from "../../../../platform/clerk-resources"
+import { ClerkActionError } from "../../../../platform/clerk"
 import * as Dialog from "../../../../ui/dialog"
 import type { IconName } from "../../../../ui/icon"
 import { PageOutMessage, type PageReturn } from "../../../contract"

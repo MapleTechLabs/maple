@@ -1,9 +1,14 @@
 import { InfraSurfaceLiteral } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
+import type { BillingCustomer } from "@maple/domain/http"
+import type { ClerkOrganization, ClerkUser } from "../platform/clerk"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { PopupPosition } from "../ui/anchor"
 import * as Tooltip from "../ui/tooltip"
+import * as ClerkOrgSwitcher from "./clerk-org-switcher"
+import * as Checklist from "./onboarding-checklist"
+import * as SupportChannel from "./support-channel"
 import { PinnedDashboardRow } from "./dashboards-shape"
 import { Menu, Theme } from "./message"
 
@@ -47,10 +52,29 @@ export const Model = Schema.Struct({
 	namespaces: NamespacesData.schema,
 	/** The collapsed rail's tooltips: one Tooltip shared by every rail button. */
 	railTooltip: Tooltip.Model,
+	/** Clerk: the org switcher (`ClerkOrgSwitcherMenu namespaceScope`). */
+	clerkOrgMenu: ClerkOrgSwitcher.Model,
+	/** Clerk: the onboarding reward pill in the top bar. */
+	checklist: Checklist.Model,
+	/** Clerk: the shared Slack channel dialog of the Support menu. */
+	supportChannel: SupportChannel.Model,
+	/** `quota-banner-approaching` in sessionStorage: the approaching-quota banner was dismissed. */
+	isQuotaApproachingDismissed: Schema.Boolean,
 	/** The server serves a newer build than this tab (`AppUpdateBanner`). */
 	isAppOutdated: Schema.Boolean,
 })
 export type Model = typeof Model.Type
+
+/**
+ * What the shell reads from Clerk and Autumn in Clerk mode (`useUser`, `useOrganization`,
+ * `useOrganizationList`, `useMapleCustomer`), passed in by the root; `null` self-hosted.
+ */
+export type ShellClerk = Readonly<{
+	maybeUser: Option.Option<ClerkUser>
+	maybeOrganization: Option.Option<ClerkOrganization>
+	memberships: ReadonlyArray<ClerkOrganization>
+	customer: BillingCustomer | undefined
+}>
 
 /** `<TooltipPopup side="right" align="center">` of `SidebarMenuButton`. */
 export const initRailTooltip = (): Tooltip.Model =>
@@ -62,6 +86,7 @@ export type ShellFlags = Readonly<{
 	theme: Theme
 	pinnedNamespaces: Readonly<Record<string, string>>
 	dashboardFavorites: ReadonlyArray<string>
+	isQuotaApproachingDismissed?: boolean
 }>
 
 export const init = (flags: ShellFlags): Model => ({
@@ -80,4 +105,8 @@ export const init = (flags: ShellFlags): Model => ({
 	namespaces: NamespacesData.Idle(),
 	isAppOutdated: false,
 	railTooltip: initRailTooltip(),
+	clerkOrgMenu: ClerkOrgSwitcher.init("shell-clerk-org-switcher"),
+	checklist: Checklist.init(),
+	supportChannel: SupportChannel.init(),
+	isQuotaApproachingDismissed: flags.isQuotaApproachingDismissed ?? false,
 })

@@ -72,22 +72,121 @@ const conversation = (nowMs: number) => {
 	]
 }
 
+export const CHAT_CODE_DATASET = "chat-code"
+
+/** A reply with a fenced query and a mermaid diagram: the highlighted code block and the chart. */
+const codeConversation = (nowMs: number) => {
+	const at = (minutesAgo: number) => nowMs - minutesAgo * MINUTE
+	const answer = [
+		"The slow authorizations all run this query:",
+		"",
+		"```sql",
+		"SELECT id, status FROM payments",
+		"WHERE merchant_id = $1 AND created_at > now() - interval '1 hour'",
+		"ORDER BY created_at DESC;",
+		"```",
+		"",
+		"and the request path looks like this:",
+		"",
+		"```mermaid",
+		"flowchart LR",
+		"  checkout --> payment-svc",
+		"  payment-svc --> postgres",
+		"```",
+	].join("\n")
+	return [
+		{ id: "msg_code_user", role: "user", text: "Which query is slow?", toolCalls: [], createdAt: at(6), startSeq: 1 },
+		{ id: "msg_code_assistant", role: "assistant", text: answer, toolCalls: [], createdAt: at(5), startSeq: 2 },
+	]
+}
+
 const history: RawRoute = {
 	tag: "chat.history",
 	answer: ({ dataset, url, method }) => {
 		if (method !== "GET" || !HISTORY_PATH.test(url.pathname)) return undefined
+		const nowMs = parseWarehouseDateTime(dataset.now)
 		const messages =
 			dataset.name === CHAT_CONVERSATION_DATASET
-				? conversation(parseWarehouseDateTime(dataset.now))
-				: []
+				? conversation(nowMs)
+				: dataset.name === CHAT_CODE_DATASET
+					? codeConversation(nowMs)
+					: []
 		return Response.json({ messages, cursor: messages.length === 0 ? 0 : 40, running: false })
 	},
 }
 
+const MESSAGES_PATH = /^\/api\/chat\/sessions\/[^/]+\/messages$/
+const EVENTS_PATH = /^\/api\/chat\/sessions\/[^/]+\/events$/
+const ABORT_PATH = /^\/api\/chat\/sessions\/[^/]+\/abort$/
+
+/** The cursor a send answers with: the end of the dataset's history. */
+const historyCursor = (dataset: Dataset) => (dataset.name === CHAT_CONVERSATION_DATASET ? 40 : 0)
+
+/** `POST .../messages`: accepted, the submission's id, the cursor just before its first event. */
+const send: RawRoute = {
+	tag: "chat.send",
+	answer: ({ dataset, url, method }) =>
+		method === "POST" && MESSAGES_PATH.test(url.pathname)
+			? Response.json({ cursor: historyCursor(dataset), messageId: "msg_parity_user_sent" })
+			: undefined,
+}
+
+/** The scripted reply to any send: a tool call that settles, then the answer streamed in deltas. */
+const scriptedTurn = (cursor: number) => {
+	const messageId = "msg_parity_assistant_sent"
+	const answer = [
+		"checkout-api is **healthy**: p95 is 210 ms and the error rate is 0.2% over the last hour.",
+		"",
+		"- `POST /checkout` is the slowest operation at 480 ms.",
+		"- No new error fingerprints since the 3.4.2 deploy.",
+	].join("\n")
+	const deltas = answer.match(/[^\n]+\n*|\n+/g) ?? [answer]
+	const events = [
+		{ type: "user-message", id: "msg_parity_user_sent", text: "" },
+		{ type: "turn-start", messageId },
+		{
+			type: "tool-call",
+			messageId,
+			callId: "call_parity_sent_1",
+			name: "service_overview",
+			input: { service: "checkout-api", time_window: "1h" },
+		},
+		{
+			type: "tool-result",
+			messageId,
+			callId: "call_parity_sent_1",
+			output: { service: "checkout-api", p95Ms: 210, errorRate: 0.002 },
+		},
+		...deltas.map((text) => ({ type: "text-delta", messageId, text })),
+		{ type: "turn-end", messageId, reason: "stop" },
+	]
+	return events.map((event, index) => ({ ...event, seq: cursor + index + 1 }))
+}
+
+/** `GET .../events?cursor=`: the scripted turn as SSE frames, ending with its `turn-end`. */
+const events: RawRoute = {
+	tag: "chat.events",
+	answer: ({ url, method }) => {
+		if (method !== "GET" || !EVENTS_PATH.test(url.pathname)) return undefined
+		const cursor = Number(url.searchParams.get("cursor") ?? "0")
+		const frames = scriptedTurn(cursor)
+			.map((event) => `id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`)
+			.join("")
+		return new Response(frames, { headers: { "content-type": "text/event-stream" } })
+	},
+}
+
+const abort: RawRoute = {
+	tag: "chat.abort",
+	answer: ({ url, method }) =>
+		method === "POST" && ABORT_PATH.test(url.pathname) ? new Response(null, { status: 204 }) : undefined,
+}
+
 const chatConversationDataset: Dataset = { ...defaultDataset, name: CHAT_CONVERSATION_DATASET }
+const chatCodeDataset: Dataset = { ...defaultDataset, name: CHAT_CODE_DATASET }
 
 export const fixtureArea: FixtureArea = {
 	area: "chat",
-	rawRoutes: [history],
-	datasets: [chatConversationDataset],
+	rawRoutes: [history, send, events, abort],
+	datasets: [chatConversationDataset, chatCodeDataset],
 }

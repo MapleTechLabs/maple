@@ -116,6 +116,8 @@ export type ViewInputs = Readonly<{
 	hasTrigger?: boolean
 	/** `showCloseButton={false}`: the content renders its own close. */
 	showCloseButton?: boolean
+	/** `closeProps={{ className }}`: classes merged onto the close button's own. */
+	closeClassName?: string
 	/** Base UI points `aria-describedby` at a description only when one renders. */
 	hasDescription?: boolean
 	/** Likewise `aria-labelledby` at a title: a popup with its own chrome renders none. */
@@ -149,7 +151,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			button(
 				h,
 				{
-					className,
+					className: cn(className, inputs.closeClassName),
 					size: "icon",
 					variant: "ghost",
 					attributes: [h.AriaLabel("Close"), h.Tabindex(0), h.OnClick(Message.ClickedClose())],

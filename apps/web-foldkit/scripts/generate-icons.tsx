@@ -10,6 +10,7 @@ import { createElement, type ComponentType } from "../../web/node_modules/react/
 import { renderToStaticMarkup } from "../../web/node_modules/react-dom/server.node.js"
 import * as UiIcons from "../../../packages/ui/src/components/icons/index.ts"
 import { MAPLE_MARK_PATH } from "../../../packages/ui/src/components/icons/maple-mark.tsx"
+import { PIXEL_GLYPHS } from "../../web/src/components/onboarding/pixel-glyph.tsx"
 import * as WebIcons from "../../web/src/components/icons/index.ts"
 // Outside the apps/web barrel (its chunk loads at startup): only the Google Cloud pages draw them.
 import { CloudRunIcon } from "../../web/src/components/icons/cloud-run.tsx"
@@ -241,6 +242,9 @@ const NAMES = [
 	"NousResearchIcon",
 	"NvidiaIcon",
 	"OpenRouterIcon",
+	"CornerDownLeftIcon",
+	"SquareIcon",
+	"CompassIcon",
 	"PoolsideIcon",
 	"PydanticIcon",
 	"QwenIcon",
@@ -465,6 +469,9 @@ ${sizes.map((entry) => `\t${entry.name}: ${JSON.stringify(entry.size)},`).join("
 
 /** \`MAPLE_MARK_PATH\` from packages/ui/src/components/icons/maple-mark.tsx (the boot splash draws it). */
 export const MAPLE_MARK_PATH = ${JSON.stringify(MAPLE_MARK_PATH)}
+
+/** \`PIXEL_GLYPHS\` from apps/web/src/components/onboarding/pixel-glyph.tsx: one path per segment. */
+export const PIXEL_GLYPHS = ${JSON.stringify(PIXEL_GLYPHS, null, "\t")} as const satisfies Record<string, ReadonlyArray<string>>
 `,
 )
 console.log(`wrote ${entries.length} icons to ${out}`)

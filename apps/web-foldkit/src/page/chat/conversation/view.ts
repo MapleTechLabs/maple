@@ -1,0 +1,212 @@
+import { Mount } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
+import { isChartRuntimeReady } from "../../../charts/chart-runtime"
+import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { eyebrow } from "../../../ui/eyebrow"
+import { skeleton } from "../../../ui/skeleton"
+import { approvalCard, taskCard } from "../kit/view-cards"
+import { composer, failureNotice } from "../kit/view-composer"
+import { MountTurnMinimap } from "../kit/turn-minimap-mount"
+import { MountMermaid } from "../kit/mermaid"
+import { inlineCard } from "../kit/view-inline"
+import { chatMarkdownOverrides } from "../kit/view-markdown"
+import { type TranscriptHost, transcript } from "../kit/view-transcript"
+import { Message } from "./message"
+import { isLoading, type Model } from "./model"
+
+// `ChatConversation` (apps/web components/chat/chat-conversation.tsx): transcript, notices, composer.
+// TODO(chat-investigation-mode): the investigation and widget-fix subjects (attachment cards, their
+// suggestions and empty notices, the widget-fix auto-send) are not ported.
+
+export type ConversationViewOptions<M> = Readonly<{
+	toMessage: (message: Message) => M
+	timeZone: string
+	/** Base UI's `useId` on the composer's textarea. */
+	textareaId: string
+	placeholder: string
+	/** `ChatEmptyState` (or the host's own) for a fresh conversation. */
+	emptyState: () => Html
+	/** `PageContextChips` inside the composer. */
+	chips: ReadonlyArray<Html>
+	permalinkFor?: (messageId: string) => string
+	scrollerMount: TranscriptHost<M>["scrollerMount"]
+	/** The org's service names (`KnownServicesProvider`): table cells that name one link to it. */
+	knownServices: ReadonlySet<string>
+	/** The clock a chart's in-flight bucket is judged against. */
+	nowMs: number
+	/** An approval prompt drawn by the host instead (the lab resolves it locally). */
+	ownCard?: TranscriptHost<M>["ownCard"]
+}>
+
+/** Approvals, sub-agent rows, inline cards and the chat's tables and charts. */
+const cardsOf = <M>(
+	h: HtmlBuilder<M>,
+	model: Model,
+	options: ConversationViewOptions<M>,
+): Pick<TranscriptHost<M>, "inlineCard" | "ownCard" | "taskCard" | "markdownOverrides"> => ({
+	inlineCard: (segment) => inlineCard(h, segment, options.timeZone),
+	taskCard: (part) => taskCard(h, part, `chat-task-${part.toolCallId}`),
+	ownCard:
+		options.ownCard ??
+		((part) =>
+			part.state !== "proposed"
+				? null
+				: approvalCard(h, {
+						toolName: part.toolName,
+						input: part.input,
+						resolved: model.resolvedApprovals[part.toolCallId],
+						isRawOpen: model.openPanels.includes(`raw:${part.toolCallId}`),
+						isDeciding: model.decidingApprovals.includes(part.toolCallId),
+						onToggleRaw: options.toMessage(Message.ToggledPanel({ id: `raw:${part.toolCallId}` })),
+						onApprove: options.toMessage(Message.ClickedApprove({ toolCallId: part.toolCallId, tool: part.toolName })),
+						onDeny: options.toMessage(Message.ClickedDeny({ toolCallId: part.toolCallId })),
+					})),
+	markdownOverrides: chatMarkdownOverrides(
+		h,
+		options.knownServices,
+		{
+			charts: model.charts,
+			theme: model.themeColors,
+			isRuntimeReady: model.chartRuntime !== null && isChartRuntimeReady(model.chartRuntime),
+			nowMs: options.nowMs,
+			timeZone: options.timeZone,
+			onChart: (id, message) => options.toMessage(Message.GotChartMessage({ id, message })),
+		},
+		{
+			highlights: model.highlights,
+			onCopy: (code) => options.toMessage(Message.ClickedCopyCode({ code })),
+			onDownload: (code, language) => options.toMessage(Message.ClickedDownloadCode({ code, language })),
+			onDownloadDiagram: (code) => options.toMessage(Message.ClickedDownloadDiagram({ code })),
+			mermaidMount: (code) =>
+				Mount.mapMessage(MountMermaid({ code }), (message) =>
+					options.toMessage(Message.CompletedMermaidDiagram({ isDrawn: message._tag === "CompletedMountMermaid" })),
+				),
+		},
+	),
+})
+
+/** Reads the chart colours off the page, again on every light/dark flip. */
+export const themeMount = <M>(toMessage: (message: Message) => M) =>
+	Mount.mapMessage(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }), (message) =>
+		toMessage(Message.ResolvedThemeColors({ colors: message.colors })),
+	)
+
+const loadingSkeleton = <M>(h: HtmlBuilder<M>): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-3 py-6"), h.AriaHidden(true)],
+		[skeleton(h, "h-3 w-1/2"), skeleton(h, "h-3 w-2/3"), skeleton(h, "h-3 w-1/3")],
+	)
+
+/** `EmptyNotice`: an eyebrow and a sentence, centred where the thread will be. */
+export const emptyNotice = <M>(h: HtmlBuilder<M>, title: string, body: string): Html =>
+	h.div(
+		[h.Class("flex flex-col items-center justify-center gap-2 text-center")],
+		[
+			eyebrow(h, { as: "p", variant: "label", className: "flex items-center gap-1.5 text-muted-foreground/70" }, [
+				h.span([], [title]),
+			]),
+			h.p([h.Class("max-w-sm text-sm text-muted-foreground")], [body]),
+		],
+	)
+
+const emptyStateOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): Html => {
+	if (!model.historyReady) return loadingSkeleton(h)
+	switch (model.readOnly) {
+		case "shared":
+			return emptyNotice(
+				h,
+				"Shared conversation",
+				"This shared conversation is unavailable or empty. It may have been deleted, or belong to a different workspace than the one you're signed in to.",
+			)
+		case "resolved":
+			return emptyNotice(
+				h,
+				"Resolved",
+				"This investigation was resolved before anything was recorded. Reopen it to pick the thread back up.",
+			)
+		case "transcript":
+			return emptyNotice(
+				h,
+				"Nothing recorded yet",
+				"The agents' reasoning log appears here as the pass runs — every tool call and what it returned.",
+			)
+		case null:
+			return options.emptyState()
+	}
+}
+
+export const transcriptHostOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): TranscriptHost<M> => ({
+	isOpen: (id) => model.openPanels.includes(id),
+	onToggle: (id) => options.toMessage(Message.ToggledPanel({ id })),
+	markdown: model.markdown,
+	timeZone: options.timeZone,
+	isLoading: isLoading(model),
+	readOnly: model.readOnly,
+	copies: model.copies,
+	onCopy: (id, message) => options.toMessage(Message.GotCopyMessage({ id, message })),
+	scrollerMount: options.scrollerMount,
+	minimap: model.minimap,
+	minimapMount: Mount.mapMessage(MountTurnMinimap(), (message) => options.toMessage(Message.GotMinimapMessage({ message }))),
+	permalinkFor: options.permalinkFor,
+	...cardsOf(h, model, options),
+})
+
+const notices = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): ReadonlyArray<Html> => {
+	if (model.failedSend !== null) {
+		const text = `Message not sent: ${model.failedSend.error}`
+		return [
+			failureNotice(h, {
+				text: ["Message not sent: ", model.failedSend.error],
+				actionLabel: "Try again",
+				onAction: options.toMessage(Message.ClickedRetrySend({ text: model.failedSend.message })),
+				truncateTitle: text,
+			}),
+		]
+	}
+	return model.error === null
+		? []
+		: [
+				failureNotice(h, {
+					text: ["Response failed: ", model.error],
+					actionLabel: "Continue",
+					onAction: options.toMessage(Message.ClickedContinue()),
+				}),
+			]
+}
+
+export const conversationView = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): Html => {
+	const loading = isLoading(model)
+	return h.div(
+		[h.Class("flex h-full min-h-0 flex-col")],
+		[
+			// Chart colours are read once a chart fence appears, from an empty `display: contents`
+			// probe that inherits the page's tokens; it is its own element so its Mount runs on insert.
+			...(model.chartRuntime === null
+				? []
+				: [h.keyed("span")("chat-theme-probe", [h.Class("contents"), h.OnMount(themeMount(options.toMessage))], [])]),
+			transcript(h, transcriptHostOf(h, model, options), model.messages, () => emptyStateOf(h, model, options)),
+			...(model.readOnly !== null
+				? []
+				: [
+						h.div(
+							[h.Class("mx-auto w-full max-w-3xl shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]")],
+							[
+								...notices(h, model, options),
+								composer(h, {
+									textareaId: options.textareaId,
+									draft: model.draft,
+									placeholder: options.placeholder,
+									status: model.status,
+									onStop: loading ? options.toMessage(Message.ClickedStop()) : undefined,
+									isDisabled: false,
+									onInput: (text) => options.toMessage(Message.ChangedDraft({ text })),
+									onSubmit: options.toMessage(Message.SubmittedComposer()),
+									chips: options.chips,
+								}),
+							],
+						),
+					]),
+		],
+	)
+}

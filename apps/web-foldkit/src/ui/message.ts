@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import {
 	messageAvatarStyles,
 	messageContentStyles,
+	messageFooterStyles,
 	messageGroupStyles,
 	messageHeaderStyles,
 	messageStyles,
@@ -43,5 +44,8 @@ export const messageAvatar = <M>(h: HtmlBuilder<M>, children: Children, classNam
 export const messageContent = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	slotDiv(h, "message-content", messageContentStyles, children, className)
 
-export const messageHeader = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
+export const messageFooter = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
+	slotDiv(h, "message-footer", messageFooterStyles, children, className)
+
+export const messageHeader =<M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	slotDiv(h, "message-header", messageHeaderStyles, children, className)

@@ -8,7 +8,7 @@ import {
 	currentClerkOrganization,
 	currentClerkUser,
 	switchAwayFrom,
-} from "../../../platform/clerk-resources"
+} from "../../../platform/clerk"
 import * as Dialog from "../../../ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import * as Draft from "../kit/draft"

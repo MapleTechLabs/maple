@@ -1,5 +1,6 @@
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
+import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, iconColor } from "../ui/icon"
@@ -16,7 +17,7 @@ import {
 } from "../ui/sidebar"
 import type { PinnedDashboardRow } from "./dashboards-shape"
 import { Menu, Message } from "./message"
-import type { Model } from "./model"
+import type { Model, ShellClerk } from "./model"
 import {
 	isNavItemActive,
 	matchSubItem,
@@ -30,8 +31,16 @@ import {
 } from "./nav"
 import { ACTIVE_RAIL, GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } from "./view-sidebar"
 
-/** Self-hosted turns every rollout on; Clerk orgs read flags from metadata (not ported yet). */
-export const shellNavGroups = (): ReadonlyArray<NavGroup> => navGroups({ releases: !isClerkAuthEnabled })
+/**
+ * `useOrganizationFeatureFlags`: self-hosted turns every rollout on; a Clerk org reads its public
+ * metadata, and fails closed (no flagged rows) until Clerk has an org.
+ */
+export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> =>
+	navGroups({
+		releases:
+			!isClerkAuthEnabled ||
+			(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags.releases)),
+	})
 
 /** `useInfraSurfaces`: the probe's surfaces plus connected integrations; `null` until the probe answers. */
 export const surfacesOf = (model: Model): ReadonlySet<NavSurface> | null =>
@@ -257,8 +266,9 @@ export const navGroupSections = (
 	model: Model,
 	currentPath: string,
 	tip: RailTip = NO_TIP,
+	clerk: ShellClerk | null = null,
 ): ReadonlyArray<Html> =>
-	shellNavGroups().map((group) =>
+	shellNavGroups(clerk).map((group) =>
 		sidebarGroup(h, undefined, [
 			...(group.label === undefined ? [] : [sidebarGroupLabel(h, GROUP_LABEL, [group.label])]),
 			sidebarGroupContent(h, [
