@@ -40,6 +40,8 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	PaintedEmptyState: {},
+	/** `LogsFilterSidebar` mounted (inline, or in the sheet below `lg`): its facets read goes out. */
+	MountedFilterRail: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },

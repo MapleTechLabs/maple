@@ -64,6 +64,8 @@ export const Model = Schema.Struct({
 	summary: KeyedSchema(Schema.NullOr(ErrorsSummary), LoadFailure),
 	serviceCounts: KeyedSchema(Schema.Array(V2ErrorIssueServiceCount), LoadFailure),
 	environments: KeyedSchema(Schema.Array(Schema.String), LoadFailure),
+	/** `ErrorsFilterSidebar` has mounted: until then its counts and environments are not requested. */
+	isFilterRailMounted: Schema.Boolean,
 	/** The volume sort's warehouse ranking (fingerprints by window volume). */
 	ranking: KeyedSchema(Schema.Array(Schema.String), LoadFailure),
 	/** The list query the pages extend; a change starts over at page one. */

@@ -170,30 +170,25 @@ export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 			),
 	})
 
-/** Writes the page slot, lifts its Commands and follows its navigation and pin requests. */
+/** A page's request the shell answers: the namespace pin, or its own sidebar trigger (`/chat`). */
+const shellRequestOf = (out: PageOutMessage): Option.Option<Shell.Message> =>
+	out._tag === "RequestedNamespacePin"
+		? Option.some(Shell.Message.ClickedNamespace({ maybeNamespace: out.maybeNamespace }))
+		: out._tag === "RequestedSidebarToggle"
+			? Option.some(Shell.Message.ClickedPageSidebarTrigger())
+			: out._tag === "RequestedInfraSurfaces"
+				? Option.some(Shell.Message.RequestedInfraSurfaces())
+				: Option.none()
+
+/** Writes the page slot, lifts its Commands and follows its navigation and shell requests. */
 const applyPage =
 	(transition: PageTransition): Step =>
 	(model) =>
-		Option.match(
-			Option.filter(transition.outMessage, (out) => out._tag === "RequestedNamespacePin"),
-			{
-				onNone: () => writePage(transition)(model),
-				onSome: (out) =>
-					Update.combine([
-						writePage(transition),
-						(next: Model) =>
-							foldShell(
-								next,
-								Shell.Message.ClickedNamespace({
-									maybeNamespace:
-										out._tag === "RequestedNamespacePin"
-											? out.maybeNamespace
-											: Option.none(),
-								}),
-							),
-					])(model),
-			},
-		)
+		Option.match(Option.flatMap(transition.outMessage, shellRequestOf), {
+			onNone: () => writePage(transition)(model),
+			onSome: (shellMessage) =>
+				Update.combine([writePage(transition), (next: Model) => foldShell(next, shellMessage)])(model),
+		})
 
 const isPageMessage = Schema.is(PageMessage)
 
@@ -260,6 +255,8 @@ const writePage =
 							isReplace ? ReplaceUrl({ url }) : NavigateInternal({ url }),
 						],
 						RequestedNamespacePin: () => [],
+						RequestedSidebarToggle: () => [],
+						RequestedInfraSurfaces: () => [],
 						RequestedToast: () => [],
 					}),
 				}),
@@ -709,7 +706,7 @@ export const update = (model: Model, message: Message) =>
 				route: () => nextRoute,
 				signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
 			})
-			const routedStep = Update.combine([foldShellStep(Shell.routeChanged), settle])(routed)
+			const routedStep = Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
 			return Option.match(injected, {
 				onNone: () => routedStep,
 				onSome: (injectedUrl) => ({

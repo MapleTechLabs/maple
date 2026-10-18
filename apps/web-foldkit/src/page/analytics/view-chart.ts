@@ -36,6 +36,8 @@ export type TrafficInputs = Readonly<{
 	source: AnalyticsMetricSource
 	theme: ThemeColors
 	timeZone: string
+	/** `useMediaQuery("max-sm")`: the y axis takes a narrower margin. */
+	isNarrow: boolean
 }>
 
 /** The chart's rows (zero-filled where a metric reports absence as zero) and per-series totals. */
@@ -98,8 +100,7 @@ export const trafficChart = Submodel.defineView<Model, Message, TrafficInputs>((
 		},
 		timeZone: inputs.timeZone,
 		gradientPrefix: "analytics-traffic",
-		// TODO(narrow): legacy narrows the y margin below `sm` (`useMediaQuery`); the app is desktop here.
-		isNarrow: false,
+		isNarrow: raw.isNarrow,
 	}
 	const companion = inputs.companion
 	const legend =

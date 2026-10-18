@@ -241,8 +241,7 @@ export const requestAll = (
 ): Return =>
 	applySteps({ ...model, window }, [
 		summaryStep(context, window, mode),
-		serviceCountsStep(context),
-		environmentsStep(context, window, mode),
+		...(model.isFilterRailMounted ? [serviceCountsStep(context), environmentsStep(context, window, mode)] : []),
 		investigationsStep(context),
 		rankingStep(context, window, mode),
 		listStep(context),
@@ -341,6 +340,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		summary: Keyed.idle(),
 		serviceCounts: Keyed.idle(),
 		environments: Keyed.idle(),
+		isFilterRailMounted: false,
 		ranking: Keyed.idle(),
 		listKey: null,
 		pages: [],
@@ -532,6 +532,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchInvestigations: ({ key, result }) => ({
 			model: settled(model, "investigations", Keyed.accept(model.investigations, key, result)),
 		}),
+		MountedFilterRail: () => {
+			if (model.isFilterRailMounted) return { model }
+			const mounted = { ...model, isFilterRailMounted: true }
+			return mounted.window === null ? { model: mounted } : requestAll(mounted, context, mounted.window, "Load")
+		},
 		PaintedEmptyList: () =>
 			AsyncData.isIdle(model.presence)
 				? {

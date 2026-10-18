@@ -2,6 +2,7 @@ import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { Option, Record } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
+import * as Dialog from "../ui/dialog"
 import * as Tooltip from "../ui/tooltip"
 import type { Resources } from "../platform/resources"
 import {
@@ -32,7 +33,9 @@ import { Menu, Message, OutMessage } from "./message"
 import {
 	DashboardsData,
 	InfraPresenceData,
+	initFilterSheet,
 	initRailTooltip,
+	initRightSheet,
 	type Model,
 	NamespacesData,
 	TenantData,
@@ -54,25 +57,54 @@ export const enter =
 	(orgId: string) =>
 	(model: Model): UpdateReturn => {
 		if (Option.contains(model.maybeOrgId, orgId)) return { model }
+		const entered = modifyFields(model, {
+			maybeOrgId: () => Option.some(orgId),
+			tenant: () => TenantData.Loading(),
+			hasRequestedSidebarData: () => false,
+			infraPresence: () => InfraPresenceData.Idle(),
+		})
+		const sidebar = model.isMobile ? { model: entered } : requestSidebarData(entered)
 		return {
-			model: modifyFields(model, {
-				maybeOrgId: () => Option.some(orgId),
-				tenant: () => TenantData.Loading(),
-				infraPresence: () => InfraPresenceData.Loading(),
-				dashboards: () => DashboardsData.Loading(),
-			}),
+			model: sidebar.model,
 			commands: [
 				LoadTenant(),
-				LoadInfraPresence(),
-				LoadCloudflareStatus(),
-				LoadPlanetscaleStatus(),
-				LoadRailwayStatus(),
-				LoadGcpStatus(),
+				...(sidebar.commands ?? []),
 				// Clerk: the reward pill (`OnboardingChecklistButton`) and who is looking at it.
 				...(isClerkAuthEnabled ? [toChecklist(Checklist.LoadChecklist()), toChecklist(Checklist.LoadViewer())] : []),
 			],
 		}
 	}
+
+/**
+ * What `AppSidebar` reads once it mounts: always on desktop, but below `md` only when its sheet
+ * first opens (legacy's closed sheet renders nothing). The live dashboards read follows the flag.
+ */
+const requestSidebarData = (model: Model): UpdateReturn => {
+	if (model.hasRequestedSidebarData || Option.isNone(model.maybeOrgId)) return { model }
+	const surfaces = requestInfraSurfaces(model)
+	return {
+		model: modifyFields(surfaces.model, {
+			hasRequestedSidebarData: () => true,
+			dashboards: () => DashboardsData.Loading(),
+		}),
+		commands: surfaces.commands ?? [],
+	}
+}
+
+/** `useInfraSurfaces`: the last hour's presence probe and the four integration statuses, once. */
+const requestInfraSurfaces = (model: Model): UpdateReturn =>
+	!AsyncData.isIdle(model.infraPresence) || Option.isNone(model.maybeOrgId)
+		? { model }
+		: {
+				model: modifyFields(model, { infraPresence: () => InfraPresenceData.Loading() }),
+				commands: [
+					LoadInfraPresence(),
+					LoadCloudflareStatus(),
+					LoadPlanetscaleStatus(),
+					LoadRailwayStatus(),
+					LoadGcpStatus(),
+				],
+			}
 
 const toChecklist = Command.mapMessage((message: Checklist.Message) => Message.GotChecklistMessage({ message }))
 
@@ -96,16 +128,27 @@ export const enterBare = (model: Model): UpdateReturn =>
 		? { model: modifyFields(model, { tenant: () => TenantData.Loading() }), commands: [LoadTenant()] }
 		: { model }
 
-/** Navigation remounts the page in legacy, which closes every menu and the mobile sheet. */
-export const routeChanged = (model: Model): UpdateReturn => ({
-	model: modifyFields(closeMenu(model), { isMobileNavOpen: () => false }),
+/**
+ * Navigation remounts the page in legacy, which closes every menu and the mobile sheet. The page
+ * rails' sheets live in the page's `PageLayout.Root`: they survive a search change, not a new page.
+ */
+export const routeChanged =
+	(isSamePage: boolean) =>
+	(model: Model): UpdateReturn => ({
+	model: modifyFields(closeMenu(model), {
+		isMobileNavOpen: () => false,
+		filterSheet: (sheet) => (isSamePage ? sheet : initFilterSheet()),
+		rightSheet: (sheet) => (isSamePage ? sheet : initRightSheet()),
+	}),
 	// Every checklist step is done on another page: a navigation re-reads it (`onResolved`).
 	commands: isClerkAuthEnabled && model.checklist.checklist !== null ? [toChecklist(Checklist.LoadChecklist())] : [],
 })
 
 const toggleSidebar = (model: Model): UpdateReturn =>
 	model.isMobile
-		? { model: modifyFields(model, { isMobileNavOpen: (isOpen) => !isOpen }) }
+		? model.isMobileNavOpen
+			? { model: modifyFields(model, { isMobileNavOpen: () => false }) }
+			: requestSidebarData(modifyFields(model, { isMobileNavOpen: () => true }))
 		: {
 				// A tooltip left open on the rail would reappear on the next collapse.
 				model: modifyFields(model, {
@@ -115,7 +158,19 @@ const toggleSidebar = (model: Model): UpdateReturn =>
 				commands: [SaveSidebarState({ isOpen: !model.isSidebarOpen })],
 			}
 
-const clickedMenuTrigger = (model: Model, menu: Menu): UpdateReturn => {
+type DialogStep = ReturnType<typeof Dialog.update>
+
+const filterSheetStep = (model: Model, step: DialogStep): UpdateReturn => ({
+	model: modifyFields(model, { filterSheet: () => step.model }),
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotFilterSheetMessage({ message })),
+})
+
+const rightSheetStep = (model: Model, step: DialogStep): UpdateReturn => ({
+	model: modifyFields(model, { rightSheet: () => step.model }),
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRightSheetMessage({ message })),
+})
+
+const clickedMenuTrigger =(model: Model, menu: Menu): UpdateReturn => {
 	if (Option.exists(openMenuOf(model), (open) => isSameMenu(open, menu))) return { model: closeMenu(model) }
 	const opened = modifyFields(model, {
 		openMenu: () => Option.some({ menu, maybePosition: Option.none() }),
@@ -203,10 +258,26 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		ClickedSidebarTrigger: () => toggleSidebar(model),
 		PressedSidebarShortcut: () => toggleSidebar(model),
-		ChangedViewport: ({ isMobile }) => ({
-			model: modifyFields(closeMenu(model), { isMobile: () => isMobile, isMobileNavOpen: () => false }),
-		}),
+		ClickedPageSidebarTrigger: () => (model.isMobile ? toggleSidebar(model) : { model }),
+		RequestedInfraSurfaces: () => requestInfraSurfaces(model),
+		ChangedViewport: ({ isMobile }) => {
+			const changed = modifyFields(closeMenu(model), { isMobile: () => isMobile, isMobileNavOpen: () => false })
+			return isMobile ? { model: changed } : requestSidebarData(changed)
+		},
 		DismissedMobileNav: () => ({ model: modifyFields(model, { isMobileNavOpen: () => false }) }),
+		// Crossing `lg` swaps a sheet for the inline rail; it comes back closed.
+		ChangedFilterViewport: ({ isCollapsed }) => ({
+			model: modifyFields(model, {
+				isFilterCollapsed: () => isCollapsed,
+				filterSheet: () => initFilterSheet(),
+				rightSheet: () => initRightSheet(),
+			}),
+		}),
+		ChangedSmallViewport: ({ isBelowSm }) => ({ model: modifyFields(model, { isBelowSm: () => isBelowSm }) }),
+		ClickedOpenFilters: () => filterSheetStep(model, Dialog.open(model.filterSheet)),
+		ClickedOpenContext: () => rightSheetStep(model, Dialog.open(model.rightSheet)),
+		GotFilterSheetMessage: ({ message: child }) => filterSheetStep(model, Dialog.update(model.filterSheet, child)),
+		GotRightSheetMessage: ({ message: child }) => rightSheetStep(model, Dialog.update(model.rightSheet, child)),
 		ClickedMenuTrigger: ({ menu }) => clickedMenuTrigger(model, menu),
 		DismissedMenu: () => ({ model: closeMenu(model) }),
 		MeasuredSidebarOverflow: () => ({ model }),

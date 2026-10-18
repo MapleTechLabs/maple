@@ -99,6 +99,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 				Message.GotFilterSectionsMessage({ message }),
 			),
 		],
+		// `useInfraSurfaces()`: the sidebar's probe, which this page reads for its fleet band.
+		outMessage: PageOutMessage.RequestedInfraSurfaces(),
 	}
 }
 

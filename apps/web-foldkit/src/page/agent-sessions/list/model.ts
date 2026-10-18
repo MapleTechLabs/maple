@@ -75,6 +75,8 @@ export const Model = Schema.Struct({
 	tabTools: KeyedSchema(Schema.Number, LoadFailure),
 	detections: Detections,
 	hasPaintedTable: Schema.Boolean,
+	/** The filter rail mounted (inline, or in its sheet below `lg`): its models are detected. */
+	isFilterRailMounted: Schema.Boolean,
 	presence: SignalPresenceData.schema,
 	filterSections: FilterSections.Model,
 	rangeDrafts: Schema.Record(Schema.String, Draft),

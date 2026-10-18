@@ -43,6 +43,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchTabTools: result(Schema.Number),
 	CompletedDetectModels: { key: Schema.String, models: Schema.Array(DetectedModel) },
 	PaintedTable: {},
+	MountedFilterRail: {},
 	ChangedListWindow: { window: VirtualWindow },
 	PaintedEmptyState: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },

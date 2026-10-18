@@ -184,6 +184,12 @@ const afterPaint = <A>(message: A) =>
 		return Effect.sync(() => cancelAnimationFrame(handle))
 	})
 
+/** The filter rail is in the DOM; its `useDetectedModels` reads as it renders. */
+export const MountFilterRail = Mount.define("MountAgentSessionsFilterRail", {
+	messages: [Message.MountedFilterRail],
+	execute: () => Effect.succeed(Message.MountedFilterRail()),
+})
+
 /** The loaded table is on screen: its details read follows (`useInfiniteAiSessions`' effect). */
 export const MountTable = Mount.define("MountAgentSessionsTable", {
 	messages: [Message.PaintedTable],

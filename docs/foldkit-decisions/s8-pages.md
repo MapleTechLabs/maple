@@ -132,6 +132,22 @@ Import Scene's `expect as expectView` so the test-slop rule sees vitest's `expec
       `oxlint -c .oxlintrc.effect.json --quiet apps/web-foldkit/src` clean
 - [ ] Gaps listed as `TODO(...)` in the page and in the report
 
+## Mobile (below `lg` and `md`)
+
+Scenarios: `packages/ui-parity/src/scenarios/mobile.ts` (390 px, every responsive page, its filter
+sheet, the nav and org switcher sheets, the top pages' loading and error states).
+
+- **Rails.** Pages keep rendering their rails inline (`dashboardPage`). Below `lg` the shell lifts
+  `page-filter-sidebar` / `page-right-sidebar` out of the body (`shell/page-rails.ts`), draws
+  "Open filters" / "Open context" in the top bar and shows each rail in a sheet. A rail that is
+  not on screen mounts nothing, so its own reads (facets, model detection, GitHub status) go out
+  from a Mount on the rail (`MountFilterRail`), as legacy's sidebar reads as it renders.
+- **Sidebar.** Below `md` the sidebar's reads wait for its sheet to open. A page that reads
+  `useInfraSurfaces` itself returns `RequestedInfraSurfaces`; `/chat`'s own trigger returns
+  `RequestedSidebarToggle`.
+- **Branching layouts.** `PageViewInputs.isMobile` (`max-md`) and `isBelowSm` (`max-sm`) for the
+  few views that branch in JSX (`/chat`'s header, the analytics chart margin).
+
 ## Gotchas
 
 | Gotcha                                                                                                                                        | Fix                                                                                    |
@@ -151,9 +167,8 @@ calls `adapter.update` on every row render; `rowRevision` mirrors that, and Reac
 (regrouped rows remount) are mirrored in the row keys. Ported since: the row tooltips, the commit
 hover card, `UnnamedServiceHint`, Alt+click exclusion (a root Subscription presses the row's
 Exclude: `OnClick` has no modifiers) and the session time range (`route/session-time-range.ts`,
-applied on navigation and to a hovered link's preload). Not ported: the filter rail as a sheet
-below `lg` (the shell's mobile layout sends sidebar requests legacy defers, so no mobile scenario
-can pass yet), the picker's shorthand input, recent ranges, timezone select, custom tab and `D`.
+applied on navigation and to a hovered link's preload). Not ported: the picker's shorthand input,
+recent ranges, timezone select, custom tab and `D`.
 
 Legacy's retained atoms answer a second reader without a request. Shared reads are resources
 (`ServicesFacetsProbe`, `AnomalyServiceCounts`, `IntegrationStatuses`), and Reload refreshes

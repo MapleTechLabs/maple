@@ -161,14 +161,27 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 }
 
 /** The model sets each call site renders: the rail's (facets + selected) and the list's rows. */
-const detectionSets = (model: Model, filterKey: string): ReadonlyArray<ReadonlyArray<string>> => [
-	[
-		...Option.match(AsyncData.getData(model.facets.data), {
-			onNone: () => [],
-			onSome: (facets) => facets.models.map((option) => option.name),
+const railModels = (model: Model): ReadonlyArray<string> => [
+	...Option.match(AsyncData.getData(model.facets.data), {
+		onNone: () => [],
+		onSome: (facets) => facets.models.map((option) => option.name),
+	}),
+	...(Option.isSome(AsyncData.getData(model.facets.data)) ? (model.search.models ?? []) : []),
+]
+
+/** The rail's own detection, sent as it mounts (before the window resolves, like legacy's render). */
+const followRail = (result: Return): Return =>
+	Option.match(missingDetection(result.model.detections, railModels(result.model)), {
+		onNone: () => result,
+		onSome: (key) => ({
+			...result,
+			model: { ...result.model, detections: { ...result.model.detections, [key]: null } },
+			commands: [...(result.commands ?? []), DetectModels({ key })],
 		}),
-		...(Option.isSome(AsyncData.getData(model.facets.data)) ? (model.search.models ?? []) : []),
-	],
+	})
+
+const detectionSets = (model: Model, filterKey: string): ReadonlyArray<ReadonlyArray<string>> => [
+	...(model.isFilterRailMounted ? [railModels(model)] : []),
 	...(Option.isSome(AsyncData.getData(model.firstPage.data))
 		? [pageRows(model, filterKey).flatMap((row) => row.models)]
 		: []),
@@ -321,8 +334,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		tabSessions: Keyed.idle(),
 		tabTools: Keyed.idle(),
 		// The rail detects its (still empty) model set as it mounts.
-		detections: { "[]": null },
+		detections: {},
 		hasPaintedTable: false,
+		isFilterRailMounted: false,
 		presence: SignalPresenceData.Idle(),
 		filterSections: FilterSections.init(),
 		rangeDrafts: draftsOf(route.search),
@@ -340,7 +354,6 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		model,
 		commands: [
 			ResolveWindow({ mode: "Load", timeZone: context.timeZone }),
-			DetectModels({ key: "[]" }),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
@@ -466,6 +479,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, detections: { ...model.detections, [key]: models } },
 		}),
 		ChangedListWindow: ({ window }) => ({ model: { ...model, listWindow: window } }),
+		// `useDetectedModels` in the rail: with no facets yet it detects the empty list (`[]`).
+		MountedFilterRail: () =>
+			model.isFilterRailMounted
+				? { model }
+				: followRail({ model: { ...model, isFilterRailMounted: true } }),
 		PaintedTable: () =>
 			model.hasPaintedTable ? { model } : follow({ model: { ...model, hasPaintedTable: true } }),
 		PaintedEmptyState: () =>

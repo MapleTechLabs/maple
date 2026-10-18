@@ -154,13 +154,15 @@ const loadedReads =
 			(next) => ({ anomalies: next }),
 			(k) => FetchAnomalies({ key: k, issueId }),
 		)
-		const github = keyed(
-			model.githubStatus,
-			requestKey(context.orgId, "integrations.githubStatus", {}),
-			"Load",
-			(next) => ({ githubStatus: next }),
-			(k) => FetchGithubStatus({ key: k }),
-		)
+		const github = !model.isRightRailMounted
+			? NO_STEP
+			: keyed(
+					model.githubStatus,
+					requestKey(context.orgId, "integrations.githubStatus", {}),
+					"Load",
+					(next) => ({ githubStatus: next }),
+					(k) => FetchGithubStatus({ key: k }),
+				)
 		return {
 			patch: { ...anomalies.patch, ...github.patch },
 			commands: [...anomalies.commands, ...github.commands],
@@ -237,6 +239,7 @@ export const init = (
 		escalations: Keyed.idle(),
 		anomalies: Keyed.idle(),
 		githubStatus: Keyed.idle(),
+		isRightRailMounted: false,
 		vcsPullRequests: Keyed.idle(),
 		destinations: [],
 		timePicker: TimeRangePicker.init("issue-time-range"),
@@ -389,6 +392,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				loadedReads(context),
 				vcsStep(context),
 			]),
+		MountedRightRail: () =>
+			model.isRightRailMounted
+				? { model }
+				: applySteps({ ...model, isRightRailMounted: true }, [loadedReads(context), vcsStep(context)]),
 		CompletedFetchEvents: ({ key, result }) => ({
 			model: { ...model, events: Keyed.accept(model.events, key, result) },
 		}),

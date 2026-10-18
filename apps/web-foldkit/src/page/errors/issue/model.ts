@@ -44,6 +44,8 @@ export const Model = Schema.Struct({
 	escalations: keyed(IssueEscalationAttemptsResponse),
 	anomalies: keyed(Schema.Array(V2AnomalyIncident)),
 	githubStatus: keyed(GithubIntegrationStatus),
+	/** The issue rail mounted (inline, or in the sheet below `lg`): its attach dialog reads GitHub. */
+	isRightRailMounted: Schema.Boolean,
 	vcsPullRequests: keyed(VcsPullRequestsResponse),
 	destinations: Schema.Array(DestinationName),
 	timePicker: TimeRangePicker.Model,

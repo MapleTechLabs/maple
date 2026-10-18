@@ -613,6 +613,7 @@ const mobileList = (
 																		"flex items-center gap-3 font-mono text-xs tabular-nums",
 																	),
 																],
+																// `MobileStat`'s `{label} `: the label and its space are two text nodes.
 																[
 																	h.span(
 																		[],
@@ -623,7 +624,7 @@ const mobileList = (
 																						"text-muted-foreground/60",
 																					),
 																				],
-																				["P99 "],
+																				["P99", " "],
 																			),
 																			latencyValue(h, {
 																				ms: service.p99LatencyMs,
@@ -640,7 +641,7 @@ const mobileList = (
 																						"text-muted-foreground/60",
 																					),
 																				],
-																				["Thru "],
+																				["Thru", " "],
 																			),
 																			h.span(
 																				[h.Class("text-foreground")],

@@ -25,6 +25,8 @@ import { menuContent } from "./view-menus"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
 import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader } from "./view-sidebar"
 import { type BreadcrumbEntry, topbar } from "./view-topbar"
+import { splitPageRails } from "./page-rails"
+import { filterSheet, filterSheetTrigger, rightSheet, rightSheetTrigger } from "./view-page-sheets"
 
 export type { BreadcrumbEntry } from "./view-topbar"
 
@@ -120,8 +122,19 @@ const appUpdateBanner = (h: HtmlBuilder<Message>): Html =>
 	)
 
 /** `DashboardLayout.Root` + `Breadcrumbs` + `Body`: sidebar, inset, skip link, top bar, page body. */
-export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model, inputs, h) =>
-	sidebarWrapper(
+export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model, inputs, h) => {
+	const page = model.isFilterCollapsed
+		? splitPageRails(inputs.page())
+		: { body: inputs.page(), maybeFilters: Option.none(), maybeRight: Option.none() }
+	const railTriggers = [
+		...(Option.isSome(page.maybeFilters) ? [filterSheetTrigger(h, model)] : []),
+		...(Option.isSome(page.maybeRight) ? [rightSheetTrigger(h, model)] : []),
+	]
+	const railSheets = [
+		...Option.toArray(Option.map(page.maybeFilters, (rail) => filterSheet(h, model, rail))),
+		...Option.toArray(Option.map(page.maybeRight, (rail) => rightSheet(h, model, rail))),
+	]
+	return sidebarWrapper(
 		h,
 		[
 			...(model.isMobile ? [] : [desktopSidebar(h, model, inputs.currentPath, inputs.clerk ?? null)]),
@@ -138,7 +151,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 				h.div(
 					[h.Class(pageLayoutStyles), h.DataAttribute("slot", "page-layout")],
 					[
-						topbar(h, model, inputs.breadcrumbs, inputs.topbarActions()),
+						topbar(h, model, inputs.breadcrumbs, inputs.topbarActions(), railTriggers),
 						...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
 						...(inputs.clerk === undefined || inputs.clerk === null
 							? []
@@ -147,9 +160,11 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 									Option.fromNullishOr(inputs.clerk.customer),
 									model.isQuotaApproachingDismissed,
 								)),
-						inputs.page(),
+						page.body,
 					],
 				),
+				// The rails' sheets below `lg` (each portal moves itself to <body> while open).
+				...railSheets,
 				// Clerk: the Support menu's shared Slack channel dialog (its portal moves to <body>).
 				...(inputs.clerk === undefined || inputs.clerk === null
 					? []
@@ -158,8 +173,8 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 		],
 		// A modal sheet hides the page behind it from assistive tech, like Base UI's `aria-hidden` root.
 		model.isMobile && model.isMobileNavOpen ? [h.AriaHidden(true)] : [],
-	),
-)
+	)
+})
 
 export type BareFrameInputs = Readonly<{ currentPath: string; clerk: ShellClerk | null; page: () => Html }>
 
