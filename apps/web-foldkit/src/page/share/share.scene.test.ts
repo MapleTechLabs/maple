@@ -4,7 +4,7 @@ import { expect as expectView, given, Mount, scene, text, withViewInputs } from 
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors } from "../../charts/theme-colors"
 import type { PageContext } from "../contract"
-import { FetchBatch, ResolveShare } from "./command"
+import { FetchBatch, ResolveReloadClock, ResolveShare } from "./command"
 import { Message } from "./message"
 import type { Model, SharedDashboard, ShareWidget } from "./model"
 import { init, update } from "./update"
@@ -66,7 +66,19 @@ describe("share", () => {
 	test("a reload refetches every reported tile", () => {
 		const settled = update(measured(2), Message.CompletedFlushFrame()).model
 		expect(names(update(settled, Message.CompletedFlushFrame()).commands)).toEqual([])
-		expect(names(update(settled, Message.ClickedReload()).commands)).toContain(FetchBatch.name)
+		const clicked = update(settled, Message.ClickedReload())
+		expect(names(clicked.commands)).toEqual([ResolveReloadClock.name])
+		expect(names(update(clicked.model, Message.CompletedResolveReloadClock({ nowMs: NOW })).commands)).toContain(FetchBatch.name)
+	})
+
+	test("a reload or an auto-refresh tick moves a relative window to the current time", () => {
+		const settled = update(measured(1), Message.CompletedFlushFrame()).model
+		const later = NOW + 5 * 60_000
+		const ticked = update(settled, Message.TickedAutoRefresh())
+		expect(names(ticked.commands)).toEqual([ResolveReloadClock.name])
+		const moved = update(ticked.model, Message.CompletedResolveReloadClock({ nowMs: later })).model
+		expect(moved.window?.endTime).not.toBe(settled.window?.endTime)
+		expect(moved.window?.endTime).toBe("2026-10-01 12:05:00")
 	})
 
 	test("an unknown link renders the unavailable card", () => {
