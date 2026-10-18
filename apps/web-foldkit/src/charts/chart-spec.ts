@@ -139,6 +139,34 @@ export const ChartSpec = defineTaggedUnion({
 		gradientPrefix: Schema.String,
 		showTooltip: Schema.Boolean,
 	},
+	/**
+	 * `InfraMetricChart` (apps/web/src/components/infra/primitives/infra-metric-chart.tsx): long-form
+	 * `{bucket, attributeValue, value}` rows as lines or stacked bands over a bucket time axis.
+	 */
+	InfraMetric: {
+		rows: Schema.Array(Schema.Struct({ bucket: Schema.String, attributeValue: Schema.String, value: Schema.Number })),
+		unit: Schema.Literals([
+			"percent",
+			"cores",
+			"seconds",
+			"load",
+			"bytes_per_second",
+			"bytes",
+			"milliseconds",
+			"rate",
+			"count",
+		]),
+		seriesLabel: Nullable(Schema.String),
+		stacked: Schema.Boolean,
+		showThreshold: Schema.Boolean,
+		/** Shared bucket domain across sibling charts; `null` domains over the chart's own rows. */
+		xDomain: Nullable(Schema.Array(Schema.String)),
+		gaps: Schema.Boolean,
+		/** Resolved colour per series name, plus `border` / `background` chrome and `threshold`. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		timeZone: Schema.String,
+		gradientPrefix: Schema.String,
+	},
 })
 export type ChartSpec = typeof ChartSpec.Type
 

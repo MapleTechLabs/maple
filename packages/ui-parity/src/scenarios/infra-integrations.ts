@@ -7,6 +7,7 @@ import type { AreaModule, Scenario } from "./types.ts"
  * PlanetScale databases, all with 24 h of poller metrics. Index pages also capture the `empty` org.
  */
 const DATASET = "infra-integrations"
+const RAILWAY_SERVICE = "/infra/railway/svc_acme_api?environmentId=env_acme_production"
 const EMPTY = "empty"
 
 const scenario = (
@@ -124,6 +125,24 @@ export const infraIntegrationsArea: AreaModule = {
 			"Railway service: api (production)",
 			"/infra/railway/svc_acme_api?environmentId=env_acme_production",
 		),
+		scenario(
+			"railway-service-loading",
+			"Railway service: metrics loading",
+			RAILWAY_SERVICE,
+			held("queryEngine.railwayInfraServiceTimeseries"),
+		),
+		scenario(
+			"railway-service-error",
+			"Railway service: metrics failing",
+			RAILWAY_SERVICE,
+			failing("queryEngine.railwayInfraServiceTimeseries"),
+		),
+		scenario("railway-service-hover", "Railway service: CPU chart hovered", RAILWAY_SERVICE, {
+			steps: async (page) => {
+				await page.getByRole("img", { name: "Utilization" }).first().hover({ position: { x: 300, y: 90 } })
+				await page.getByText("Average").first().waitFor()
+			},
+		}),
 		scenario("gcp", "Google Cloud: Cloud Run", "/infra/gcp"),
 		scenario("gcp-cloudsql", "Google Cloud: Cloud SQL tab", "/infra/gcp", {
 			steps: press("Cloud SQL 1"),

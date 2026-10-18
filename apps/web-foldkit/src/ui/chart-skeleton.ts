@@ -124,3 +124,68 @@ export const chartLoading = <M>(
 		],
 		[chartSkeleton(h, options.variant)],
 	)
+
+const MESSAGE_BASE = "flex items-center justify-center px-3 text-center font-mono text-2xs"
+
+const axisLine = <M>(h: HtmlBuilder<M>, y: number, opacity: string, isDashed: boolean): Html =>
+	h.line(
+		attrs(h, [
+			["x1", "0"],
+			["y1", String(y)],
+			["x2", "100"],
+			["y2", String(y)],
+			["stroke", "currentColor"],
+			["stroke-opacity", opacity],
+			["stroke-width", "1"],
+			...(isDashed ? [["stroke-dasharray", "3 4"] as const] : []),
+			["vector-effect", "non-scaling-stroke"],
+		]),
+	)
+
+/** `EmptyAxes`: faint gridlines and a dashed baseline behind the empty message. */
+const emptyAxes = <M>(h: HtmlBuilder<M>): Html =>
+	h.svg(
+		attrs(h, [
+			["aria-hidden", "true"],
+			["viewBox", "0 0 100 100"],
+			["preserveAspectRatio", "none"],
+			[
+				"class",
+				"pointer-events-none absolute inset-0 h-full w-full [mask-image:radial-gradient(ellipse_at_center,transparent_25%,black_75%)]",
+			],
+		]),
+		[...[20, 44, 68].map((y) => axisLine(h, y, "0.14", false)), axisLine(h, 92, "0.4", true)],
+	)
+
+/** `ChartEmpty` outside a `ChartPlotArea`: the query answered with nothing to plot. */
+export const chartEmpty = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ height?: number; hint?: string; className?: string }>,
+	message: string,
+): Html =>
+	h.div(
+		[
+			h.Class(
+				cn(
+					"w-full",
+					options.height === undefined && "h-full",
+					MESSAGE_BASE,
+					"relative text-muted-foreground",
+					options.className,
+				),
+			),
+			...(options.height === undefined ? [] : [h.Style({ height: `${options.height}px` })]),
+		],
+		[
+			emptyAxes(h),
+			h.div(
+				[h.Class("relative flex flex-col items-center gap-1")],
+				[
+					h.span([h.Class("text-foreground/70")], [message]),
+					...(options.hint === undefined
+						? []
+						: [h.span([h.Class("text-3xs text-muted-foreground/80")], [options.hint])]),
+				],
+			),
+		],
+	)
