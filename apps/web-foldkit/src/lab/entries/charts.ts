@@ -27,6 +27,8 @@ import * as HistogramChart from "../../charts/histogram-chart"
 import * as PieChart from "../../charts/pie-chart"
 import { ResolveThemeColors, ThemeColors, ThemeMessage } from "../../charts/theme-colors"
 import { eyebrow } from "../../ui/eyebrow"
+import { chartEmpty } from "../../ui/chart-state"
+import { widgetShell } from "../../page/dashboards/kit/tile-shell"
 import { inlineCode } from "../../ui/inline-code"
 import { ARM_TITLES, type ChartsLabArm, SECTIONS } from "../charts/arms"
 import { histogramSpikeValues, histogramSpikeView, pieSpikeView, SPIKE_TOKENS } from "../charts/spikes"
@@ -318,6 +320,24 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 		}),
 	)
 
+/** `MetricsGrid` handed no rows: each card says so over bare axes (the service-detail grid, empty). */
+const emptyMetricsGrid = (h: HtmlBuilder<Message>): Html =>
+	h.div(
+		[h.DataAttribute("metrics-grid", ""), h.Class("grid grid-cols-1 md:grid-cols-2 gap-3")],
+		["Latency", "Throughput", "Apdex", "Error Rate"].map((title) =>
+			h.div(
+				[h.Class("h-[240px] md:h-[280px]")],
+				[
+					widgetShell(
+						h,
+						{ widgetId: title, hasGrip: false, title, isEdit: false, menu: null, isMenuOpen: false, contentClassName: undefined },
+						[chartEmpty(h, { hint: "Try a wider time range" }, ["No data in this window"])],
+					),
+				],
+			),
+		),
+	)
+
 /** The page itself, painted in one go once the theme is read and the chart library is loaded. */
 const gallery = (model: Model, h: HtmlBuilder<Message>, theme: ThemeColors): ReadonlyArray<Html> => [
 	h.header(
@@ -342,7 +362,7 @@ const gallery = (model: Model, h: HtmlBuilder<Message>, theme: ThemeColors): Rea
 			entry.rows.map((arms) => sectionRow(model, h, theme, sectionIndex, arms)),
 		),
 	),
-	section(h, "Empty window — MetricsGrid", [h.div([h.DataAttribute("testid", "charts-lab-empty")])]),
+	section(h, "Empty window — MetricsGrid", [h.div([h.DataAttribute("testid", "charts-lab-empty")], [emptyMetricsGrid(h)])]),
 ]
 
 const readyTheme = (model: Model): Option.Option<ThemeColors> =>
