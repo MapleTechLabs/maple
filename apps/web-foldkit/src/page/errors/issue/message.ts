@@ -83,6 +83,7 @@ export const Message = defineMessageUnion({
 	CompletedIssueWrite: { write: IssueWrite, result: Schema.Result(WriteOutcome, LoadFailure) },
 	CompletedEvaluateEscalation: {
 		severity: IssueSeverity,
+		pick: Schema.Number,
 		result: Schema.Result(EscalationPreview, LoadFailure),
 	},
 	GotSeverityConfirmMessage: { message: Dialog.Message },

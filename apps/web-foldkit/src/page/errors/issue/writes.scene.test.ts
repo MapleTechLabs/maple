@@ -7,6 +7,7 @@ import type { PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
+import { pickedSeverity } from "./writes"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const issueId = Schema.decodeSync(ErrorIssueId)("0199a004-0000-7000-8000-000000000001")
@@ -66,6 +67,7 @@ describe("error issue writes", () => {
 			windowed(),
 			Message.CompletedEvaluateEscalation({
 				severity: "high",
+				pick: 0,
 				result: Result.succeed({ outcome: "route", destinationIds: ["dest-1"] }),
 			}),
 		)
@@ -81,6 +83,7 @@ describe("error issue writes", () => {
 			windowed(),
 			Message.CompletedEvaluateEscalation({
 				severity: "low",
+				pick: 0,
 				result: Result.succeed({ outcome: "skip", destinationIds: [] }),
 			}),
 		)
@@ -89,10 +92,31 @@ describe("error issue writes", () => {
 			windowed(),
 			Message.CompletedEvaluateEscalation({
 				severity: "low",
+				pick: 0,
 				result: Result.fail(toLoadFailure("boom")),
 			}),
 		)
 		expect(failed.model.busy).toBeNull()
 		expect(failed.outMessage).toMatchObject({ type: "error" })
+	})
+
+	test("two quick picks write the last one; the first pick's preview is dropped", () => {
+		const skip = Result.succeed({ outcome: "skip", destinationIds: [] })
+		const first = pickedSeverity(windowed(), "low")
+		const second = pickedSeverity(first.model, "high")
+		const pickOf = (step: typeof first) => Number(step.commands?.[0]?.args?.["pick"])
+		const firstLanded = pageUpdate(
+			second.model,
+			Message.CompletedEvaluateEscalation({ severity: "low", pick: pickOf(first), result: skip }),
+		)
+		expect(firstLanded.model.busy).toBeNull()
+		const secondLanded = pageUpdate(
+			firstLanded.model,
+			Message.CompletedEvaluateEscalation({ severity: "high", pick: pickOf(second), result: skip }),
+		)
+		expect(secondLanded.commands?.[0]).toMatchObject({
+			name: "RunErrorIssueWrite",
+			args: { write: { _tag: "SetSeverity", severity: "high" } },
+		})
 	})
 })
