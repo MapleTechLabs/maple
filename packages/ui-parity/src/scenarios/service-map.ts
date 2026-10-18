@@ -3,9 +3,10 @@ import { act, clickButton, EMPTY, OPS, opsScenarios } from "./ops-kit.ts"
 import type { AreaModule, Scenario } from "./types.ts"
 
 /**
- * Service map on `acme-ops`: selection and its panels, the toolbar (focus, depth, hide rest,
- * traffic, colour, Re-sort), namespace collapse and expand, legend popover, node drag, header
- * controls, and the loading and error states.
+ * Service map on `acme-ops`: selection and the service and database panels, the toolbar (focus,
+ * depth, hide rest, traffic, colour, Re-sort and its tooltip), namespace collapse, the legend
+ * popover, node drag, the header controls, and the loading and error states. Expanding a collapsed
+ * namespace is scene-tested only: legacy's camera after it differs from run to run.
  */
 const map = opsScenarios("service-map", "Service map")
 
@@ -41,6 +42,15 @@ const dragNode = (name: string, dx: number, dy: number) => async (page: Page) =>
  * Legacy's automatic refit after a relayout races ELK, its deferred namespace boxes and React
  * Flow's store (the camera differs run to run), so these scenarios frame the result themselves.
  */
+/** Lets a relayout land (and the 400 ms camera write run) before the next step. */
+const settle = (page: Page) => page.waitForTimeout(800)
+
+/** A full reload: the map comes back from what it stored in localStorage. */
+const reloadPage = async (page: Page) => {
+	await page.reload()
+	await page.getByRole("application").waitFor()
+}
+
 const fitView = async (page: Page) => {
 	await page.waitForTimeout(800)
 	await page.getByRole("button", { name: "Fit view" }).click()
@@ -153,7 +163,23 @@ export const serviceMapArea: AreaModule = {
 				await page.getByRole("option", { name: "All environments" }).click()
 			}),
 		}),
+		map("drag-persisted", "a drag kept across a page reload", "/service-map", {
+			steps: act(dragNode("storefront", 40, 260), settle, reloadPage),
+		}),
+		map("collapsed-persisted", "a collapsed namespace kept across a page reload", "/service-map", {
+			steps: act(clickButton("Collapse shop into one node"), settle, reloadPage),
+		}),
 		map("reload", "Reload clicked", "/service-map", { steps: act(clickButton("Reload")) }),
+		map("time-range", "last 1 hour from the time range picker", "/service-map", {
+			steps: act(async (page) => {
+				await page.getByRole("button", { name: "Last 12 hours" }).click()
+				await page.getByRole("dialog").getByRole("button", { name: "Last 1 hour" }).click()
+				await page.getByRole("dialog").waitFor({ state: "detached" })
+			}, fitView),
+		}),
+		map("integrations", "integrations connected, no traces (all environments)", "/service-map", {
+			dataset: "infra-integrations",
+		}),
 		timed(
 			"loading",
 			"loading (bundle held)",
