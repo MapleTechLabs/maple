@@ -167,6 +167,8 @@ export type ViewInputs = Readonly<{
 	presets: ReadonlyArray<string>
 	/** `useTimezonePreference().effectiveTimezone` for the footer (default UTC). */
 	timeZone?: string
+	/** `hotkey`: only the page-level picker titles itself with the "D" shortcut (default true). */
+	hasHotkey?: boolean
 }>
 
 /** `ShorthandInput`: type a duration, Enter applies it. */
@@ -305,7 +307,10 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								size: "sm",
 								className: "gap-2",
 								slot: "popover-trigger",
-								attributes: [...trigger, h.Title("Time range (D)")],
+								attributes: [
+									...trigger,
+									...(inputs.hasHotkey === false ? [] : [h.Title("Time range (D)")]),
+								],
 							},
 							timeRangeTriggerContent(h, inputs.label),
 						),

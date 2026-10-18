@@ -70,6 +70,12 @@ const renameTo = (name: string) => async (page: Page) => {
 	await input.press("Enter")
 }
 
+const widgetEditor = `${platform}/widgets/throughput-by-service`
+
+const renameWidget = (name: string) => async (page: Page) => {
+	await page.getByRole("textbox", { name: "Name" }).fill(name)
+}
+
 const typeTag = (tag: string) => async (page: Page) => {
 	await page.getByRole("textbox", { name: "Add a tag" }).fill(tag)
 	await page.keyboard.press("Enter")
@@ -190,7 +196,72 @@ export const dashboardsArea: AreaModule = {
 		dashboard("edit-done", "Edit mode left with Done", platform, {
 			steps: act(enterEdit, clickButton("Done editing")),
 		}),
-		dashboard("widget", "Throughput chart widget editor", `${platform}/widgets/throughput-by-service`),
+		dashboard("widget", "Throughput chart widget editor", widgetEditor),
+		dashboard("widget-renamed", "Widget editor: renamed, then Apply", widgetEditor, {
+			steps: act(renameWidget("Throughput (all services)"), clickButton("Apply")),
+		}),
+		dashboard("widget-unsaved", "Widget editor: Cancel with unsaved changes", widgetEditor, {
+			steps: act(renameWidget("Throughput (all services)"), clickButton("Cancel")),
+		}),
+		dashboard("widget-discarded", "Widget editor: unsaved changes discarded", widgetEditor, {
+			steps: act(
+				renameWidget("Throughput (all services)"),
+				clickButton("Cancel"),
+				clickButton("Discard changes"),
+			),
+		}),
+		dashboard("widget-cancel", "Widget editor: Cancel with nothing changed", widgetEditor, {
+			steps: act(clickButton("Cancel")),
+		}),
+		dashboard("widget-line", "Widget editor: switched to a line chart", widgetEditor, {
+			steps: act(clickButton("Line")),
+		}),
+		dashboard("widget-stats", "Widget editor: the legend's Min/Max/Mean/Last stats", widgetEditor, {
+			steps: act(async (page) => {
+				await page.getByText("Show Min/Max/Mean/Last stats").click()
+			}),
+		}),
+		// Legacy's live switch leaves the plot anchor's inline transform and width on the new legend
+		// column (React reuses the node), so the preview card is masked: the rail and calls still count.
+		dashboard("widget-legend-right", "Widget editor: the legend moved to the right", widgetEditor, {
+			steps: act(clickButton("Right")),
+			mask: (page) => [page.locator("[data-slot=card]").first()],
+		}),
+		dashboard("widget-ungrouped", "Widget editor: group-by off, preview rerun", widgetEditor, {
+			steps: act(clickButton("Group by"), clickButton("Run preview")),
+		}),
+		dashboard("widget-collapsed", "Widget editor: the query collapsed", widgetEditor, {
+			steps: act(clickButton("Collapse query")),
+		}),
+		// The aggregation select, opened after the editor's first focus (which activates the lazy
+		// autocomplete lookups). Legacy's "Query source" select closes the moment it opens, so it has
+		// no open-state scenario.
+		dashboard("widget-aggregation-menu", "Widget editor: the aggregation select open", widgetEditor, {
+			steps: act(clickButton("Collapse query"), clickButton("Expand query"), (page) =>
+				page.getByRole("combobox").filter({ hasText: "count" }).first().click(),
+			),
+		}),
+		dashboard("widget-added-query", "Widget editor: a second query added", widgetEditor, {
+			steps: act(clickButton("+ Query")),
+		}),
+		dashboard("widget-added-formula", "Widget editor: a formula added", widgetEditor, {
+			steps: act(clickButton("+ Formula")),
+		}),
+		dashboard("widget-time-1h", "Widget editor: Last 1 hour picked", widgetEditor, {
+			steps: act(clickButton("Last 6 hours"), clickButton("Last 1 hour")),
+		}),
+		dashboard(
+			"widget-missing",
+			"Widget editor: a widget id that does not exist",
+			`${platform}/widgets/nope`,
+		),
+		timed(
+			"widget-loading",
+			"Widget editor: the preview's query held",
+			widgetEditor,
+			{ delays: { "warehouse:": HELD_MS, "queryEngine.": HELD_MS } },
+			"held",
+		),
 		dashboard("templates", "Template gallery", "/dashboards/templates"),
 		dashboard("template-preview", "Service Health template preview", "/dashboards/templates", {
 			steps: act(clickButton(/^Service Health/)),

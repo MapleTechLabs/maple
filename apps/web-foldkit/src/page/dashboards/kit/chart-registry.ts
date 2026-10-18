@@ -1,4 +1,4 @@
-import type { PanelType } from "@maple/domain/http"
+import { type PanelType, WIDGET_TYPES, type WidgetVisualization } from "@maple/domain/http"
 
 // The id-to-category half of `chartRegistry` (packages/ui/src/components/charts/registry.ts), which
 // also lazily imports every React chart. `toPanelType` (apps/web/src/lib/query-builder/panel-types.ts).
@@ -72,6 +72,20 @@ export const toPanelType = (visualization: string, chartId?: string): PanelType 
 		return category !== undefined && isPanelType(category) ? category : "line"
 	}
 	return isPanelType(visualization) ? visualization : "line"
+}
+
+/**
+ * `fromPanelType`: the persisted pair for a panel type. A chart id already of that panel's
+ * category is kept, so re-picking the current type never rewrites a non-canonical style.
+ */
+export const fromPanelType = (
+	panel: PanelType,
+	currentChartId?: string,
+): { visualization: WidgetVisualization; chartId: string | undefined } => {
+	const meta = WIDGET_TYPES[panel]
+	return currentChartId !== undefined && currentChartId !== "" && chartCategoryOf(currentChartId) === panel
+		? { visualization: meta.visualization, chartId: currentChartId }
+		: { visualization: meta.visualization, chartId: meta.chartId }
 }
 
 /** `maxDataPointsForWidth`: one point per pixel, or per 6 px bar. */

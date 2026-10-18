@@ -279,7 +279,8 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 
 export type ChipsViewInputs = Readonly<{
 	items: ReadonlyArray<string>
-	ariaLabel: string
+	/** Omitted when the legacy chips input has no `aria-label`. */
+	ariaLabel?: string
 	placeholder: string
 	emptyText: string
 	className?: string

@@ -1,0 +1,111 @@
+import type { PanelType } from "@maple/domain/http"
+import {
+	createFormulaDraft,
+	createQueryDraft,
+	formulaLabel,
+	queryLabel,
+	resetQueryForDataSource,
+	type QueryBuilderDataSource,
+} from "@maple/query-engine/query-builder"
+import { fromPanelType } from "../kit/chart-registry"
+import { inferDefaultUnitForQueries } from "./drafts"
+import type { EditorState, QueryDraft } from "./editor-state"
+
+// `useWidgetBuilder`'s actions and the page's query handlers, as pure state steps.
+
+export const updateQuery = (
+	state: EditorState,
+	queryId: string,
+	update: (query: QueryDraft) => QueryDraft,
+): EditorState => ({
+	...state,
+	queries: state.queries.map((query) => (query.id === queryId ? update(query) : query)),
+})
+
+/** A change that can move the inferred unit: the unit follows the queries when they agree. */
+const withInferredUnit = (state: EditorState): EditorState => ({
+	...state,
+	unit: inferDefaultUnitForQueries(state.queries) ?? state.unit,
+})
+
+export const setAggregation = (state: EditorState, queryId: string, aggregation: string): EditorState =>
+	withInferredUnit(updateQuery(state, queryId, (query) => ({ ...query, aggregation })))
+
+export const setDataSource = (
+	state: EditorState,
+	queryId: string,
+	dataSource: QueryBuilderDataSource,
+): EditorState =>
+	withInferredUnit(updateQuery(state, queryId, (query) => resetQueryForDataSource(query, dataSource)))
+
+/** `addQuery`: a default draft under the next letter. */
+export const addQuery = (state: EditorState, id: string): EditorState => ({
+	...state,
+	queries: [...state.queries, { ...createQueryDraft(state.queries.length), id }],
+})
+
+/** `cloneQuery`: a copy appended, then every query relettered in order. */
+export const cloneQuery = (state: EditorState, sourceId: string, id: string): EditorState => {
+	const source = state.queries.find((query) => query.id === sourceId)
+	if (source === undefined) return state
+	return {
+		...state,
+		queries: [...state.queries, { ...source, id }].map((query, index) => ({
+			...query,
+			name: queryLabel(index),
+		})),
+	}
+}
+
+/** `removeQuery`: the last query stays. */
+export const removeQuery = (state: EditorState, queryId: string): EditorState =>
+	state.queries.length === 1
+		? state
+		: {
+				...state,
+				queries: state.queries
+					.filter((query) => query.id !== queryId)
+					.map((query, index) => ({ ...query, name: queryLabel(index) })),
+			}
+
+export const addFormula = (state: EditorState, id: string): EditorState => ({
+	...state,
+	formulas: [
+		...state.formulas,
+		{
+			...createFormulaDraft(
+				state.formulas.length,
+				state.queries.map((query) => query.name),
+			),
+			id,
+		},
+	],
+})
+
+export const removeFormula = (state: EditorState, formulaId: string): EditorState => ({
+	...state,
+	formulas: state.formulas
+		.filter((formula) => formula.id !== formulaId)
+		.map((formula, index) => ({ ...formula, name: formulaLabel(index) })),
+})
+
+const ROOT_ONLY = /\s*AND\s*root_only\s*=\s*\w+/gi
+const ROOT_ONLY_LEADING = /root_only\s*=\s*\w+\s*AND\s*/gi
+const ROOT_ONLY_ALONE = /root_only\s*=\s*\w+/gi
+
+/** The All / Root Spans select: rewrites `root_only = true` in the where clause. */
+export const withRootOnly = (whereClause: string, isRootOnly: boolean): string => {
+	const stripped = whereClause
+		.replace(ROOT_ONLY, "")
+		.replace(ROOT_ONLY_LEADING, "")
+		.replace(ROOT_ONLY_ALONE, "")
+		.trim()
+	if (!isRootOnly) return stripped
+	return stripped === "" ? "root_only = true" : `${stripped} AND root_only = true`
+}
+
+/** `TypePicker`: the panel's persisted pair, keeping a chart id already of that panel. */
+export const setPanelType = (state: EditorState, panel: PanelType): EditorState => {
+	const { visualization, chartId } = fromPanelType(panel, state.chartId)
+	return { ...state, visualization, chartId: chartId ?? state.chartId }
+}
