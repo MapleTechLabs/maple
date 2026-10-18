@@ -18,8 +18,12 @@
  * assertable without mounting a canvas.
  */
 import type { Tone } from "@maple/ui/lib/tone"
-import { ACTION_GLYPH } from "@/components/investigations/flow/flow-nodes"
-import type { ActionKind, ActionTarget } from "@/components/investigations/flow/action-target"
+import {
+	ACTION_KIND_LABEL,
+	ACTION_KINDS,
+	type ActionKind,
+	type ActionTarget,
+} from "@maple/web-data/investigations/action-target"
 import {
 	ACTION_HEIGHT,
 	ACTION_WIDTH,
@@ -34,7 +38,7 @@ import {
 	type ProvenanceNode,
 	type SpineNodeData,
 	type XY,
-} from "@/components/investigations/flow/provenance-graph"
+} from "@maple/web-data/investigations/provenance-graph"
 
 /* -------------------------------------------------------------------------------------------------
  * Grid
@@ -378,12 +382,12 @@ export function buildNodeCatalogue(): NodeCatalogue {
 
 	g.section("ACTION · KIND")
 	let ordinal = 0
-	for (const kind of Object.keys(ACTION_GLYPH) as Array<ActionKind>) {
+	for (const kind of ACTION_KINDS) {
 		ordinal += 1
 		actionCell(g, kind.toUpperCase(), {
 			kind,
 			ordinal: String(ordinal).padStart(2, "0"),
-			text: `${ACTION_GLYPH[kind].label} — what this kind of action reads like`,
+			text: `${ACTION_KIND_LABEL[kind]} — what this kind of action reads like`,
 		})
 	}
 
