@@ -1,4 +1,4 @@
-import type { OrgId } from "@maple/domain"
+import { OrgId as OrgIdSchema, type OrgId } from "@maple/domain"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { Option, Schema } from "effect"
@@ -19,7 +19,14 @@ import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { rendersShell } from "./page/chrome"
 import { type PageContext, PageOutMessage } from "./page/contract"
-import { changeContext, enterRoute, PageMessage, type PageTransition, updatePage } from "./page/registry"
+import {
+	changeContext,
+	enterRoute,
+	isBarePageRoute,
+	PageMessage,
+	type PageTransition,
+	updatePage,
+} from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import type { ClerkSnapshot } from "./platform/clerk"
@@ -93,13 +100,28 @@ const foldToasts = Update.foldChild({
 
 // PAGES
 
-/** What every page reads from the root: a signed-in org on a shell route. */
+/** The org a bare public page (a share link) is keyed under when nobody is signed in. */
+const PUBLIC_ORG = Schema.decodeUnknownOption(OrgIdSchema)("public")
+
+/** A public page's context: the viewer's org when signed in, else `PUBLIC_ORG`; no shell state. */
+const publicContextOf = (model: Model, maybeOrgId: Option.Option<OrgId>): Option.Option<PageContext> =>
+	isBarePageRoute(model.route)
+		? Option.map(Option.orElse(maybeOrgId, () => PUBLIC_ORG), (orgId) => ({
+				orgId,
+				pinnedNamespace: null,
+				timeZone: model.timeZone,
+			}))
+		: Option.none()
+
+/** What every page reads from the root: a signed-in org on a shell route, or a bare public page. */
 export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 	Session.match(model.session, {
 		Resolving: () => Option.none(),
-		SignedOut: () => Option.none(),
+		SignedOut: () => publicContextOf(model, Option.none()),
 		SignedIn: ({ maybeOrgId }) =>
-			Option.filter(maybeOrgId, () => rendersShell(model.route)).pipe(
+			isBarePageRoute(model.route)
+				? publicContextOf(model, maybeOrgId)
+				: Option.filter(maybeOrgId, () => rendersShell(model.route)).pipe(
 				Option.map((orgId) => ({
 					orgId,
 					pinnedNamespace: model.shell.pinnedNamespaces[orgId] ?? null,

@@ -25,7 +25,10 @@ import type { ReadyData } from "./widget-data"
 // (dashboard-builder/widgets/*). TODO(widget-types): gauge, pie, bar, histogram, heatmap, funnel,
 // paths and markdown tiles render their frame with a "not ported" note.
 
-type Widget = DashboardDocument["widgets"][number]
+/** What a tile reads of its widget; a share's redacted widget satisfies it too. */
+export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "display"> &
+	Readonly<{ visualization: string; dataSource: unknown }>
+type Widget = TileWidget
 type Row = Readonly<Record<string, unknown>>
 
 /** `useTableSort`: per table widget, the active key and direction. */

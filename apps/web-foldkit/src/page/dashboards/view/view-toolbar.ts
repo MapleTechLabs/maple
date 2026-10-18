@@ -1,14 +1,10 @@
-import {
-	REFRESH_INTERVAL_OPTIONS,
-	resolveRefreshIntervalSeconds,
-} from "@maple/web/lib/dashboard-controls/search-params"
-import { cn } from "@maple/ui/lib/utils"
+import { resolveRefreshIntervalSeconds } from "@maple/web/lib/dashboard-controls/search-params"
 import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "@maple/ui/styles/ui/row-actions-menu"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 import * as MenuView from "../../../ui/menu-view"
-import { refreshButton } from "../../../ui/refresh-button"
+import { refreshControls as sharedRefreshControls } from "../../kit/refresh-controls"
 import { presetLabel } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Message } from "./message"
@@ -21,88 +17,15 @@ import { isEditing } from "./update"
 
 type H = HtmlBuilder<Message>
 
-/** `formatRefreshInterval`: `0` is off. */
-const formatInterval = (seconds: number): string =>
-	seconds === 0 ? "Off" : seconds < 60 ? `${seconds}s` : `${seconds / 60}m`
-
-const refreshControls = (h: H, model: Model): Html => {
-	const seconds = resolveRefreshIntervalSeconds(
-		model.search.refresh,
-		model.document?.refreshIntervalSeconds,
-	)
-	const isOn = seconds > 0
-	return h.div(
-		[h.Class("flex items-center")],
-		[
-			refreshButton(h, {
-				onRefresh: Message.ClickedReload(),
-				isPending: model.isReloading,
-				label: "Reload",
-				className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
-			}),
-			h.submodel({
-				slotId: model.refreshMenu.id,
-				model: model.refreshMenu,
-				view: MenuView.view,
-				viewInputs: {
-					entries: [
-						{
-							_tag: "RadioGroup",
-							label: "Auto-refresh",
-							isItemLabelWrapped: true,
-							items: REFRESH_INTERVAL_OPTIONS.map((option) => ({
-								value: String(option),
-								label: formatInterval(option),
-								isChecked: option === seconds,
-								...(model.document?.refreshIntervalSeconds === option
-									? { hint: "default" }
-									: undefined),
-							})),
-						},
-					],
-					align: "end",
-					className: "min-w-40",
-					toView: ({ trigger, withTrigger }) =>
-						h.div(
-							[h.Class("contents")],
-							withTrigger(
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										className:
-											"relative -ml-px rounded-l-none before:rounded-l-none focus-visible:z-10",
-										attributes: [
-											h.Title(
-												isOn
-													? `Reloading every ${formatInterval(seconds)}`
-													: "Auto-refresh is off",
-											),
-											h.AriaLabel(
-												isOn
-													? `Auto-refresh every ${formatInterval(seconds)}`
-													: "Auto-refresh off",
-											),
-											...trigger,
-										],
-									},
-									[
-										h.span(
-											[h.Class(cn("tabular-nums", !isOn && "text-muted-foreground"))],
-											[formatInterval(seconds)],
-										),
-										icon(h, "ChevronDownIcon", { className: "size-3 opacity-60" }),
-									],
-								),
-							),
-						),
-				},
-				toParentMessage: (message) => Message.GotRefreshMenuMessage({ message }),
-			}),
-		],
-	)
-}
+const refreshControls = (h: H, model: Model): Html =>
+	sharedRefreshControls(h, {
+		seconds: resolveRefreshIntervalSeconds(model.search.refresh, model.document?.refreshIntervalSeconds),
+		savedDefault: model.document?.refreshIntervalSeconds,
+		isReloading: model.isReloading,
+		onReload: Message.ClickedReload(),
+		menu: model.refreshMenu,
+		toMenuMessage: (message) => Message.GotRefreshMenuMessage({ message }),
+	})
 
 const moreEntries = (isEdit: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 	...(isEdit
