@@ -6,6 +6,7 @@ import { InvestigationSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as Tooltip from "../../../ui/tooltip"
+import { Model as ConversationModel } from "../../chat/conversation/model"
 import * as Canvas from "../../../service-map/xyflow/canvas"
 
 // `/investigations/$id` (apps/web/src/routes/investigations/$id.tsx and components/investigations/).
@@ -45,5 +46,14 @@ export const Model = Schema.Struct({
 	canvas: Canvas.Model,
 	/** The trace chips' full-id tooltip, one Model for every chip. */
 	traceTooltip: Tooltip.Model,
+	/** Traces whose route loader a hover or focus already ran (`defaultPreload: "intent"`). */
+	preloadedTraces: Schema.Array(Schema.String),
+	/** The Chat and Transcript tabs' thread (`ChatConversation`, investigation mode), once one opened. */
+	conversation: Schema.NullOr(ConversationModel),
+	/** The thread's report card: the action its rows opened, from local state, in its own sheet. */
+	reportActionIndex: Schema.NullOr(Schema.Number),
+	reportSheet: Dialog.Model,
+	/** `KnownServicesProvider`: table cells that name a service link to it; `null` until asked for. */
+	knownServices: Schema.NullOr(Schema.Array(Schema.String)),
 })
 export type Model = typeof Model.Type

@@ -54,3 +54,13 @@ export const Model = Schema.Struct({
 	isErrorExpanded: Schema.Boolean,
 })
 export type Model = typeof Model.Type
+
+/** What the attribute, error and log parts read: the agent session's span popover holds just this. */
+export const PanelState = Schema.Struct({
+	detail: Model.fields.detail,
+	logs: Model.fields.logs,
+	copies: Model.fields.copies,
+	openIds: Model.fields.openIds,
+	isErrorExpanded: Model.fields.isErrorExpanded,
+})
+export type PanelState = typeof PanelState.Type

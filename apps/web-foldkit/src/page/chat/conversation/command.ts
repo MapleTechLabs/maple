@@ -4,7 +4,7 @@ import { Command } from "foldkit"
 import { MapleAiClient } from "../../../platform/api-clients"
 import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
 import { highlight } from "../kit/code-highlight"
-import { parseChatMarkdown } from "../kit/markdown-parse"
+import { parseMarkdownTexts } from "../../kit/markdown"
 import { abortTurn, loadHistory, postMessage } from "../kit/chat-api"
 import { historyMessageToUIMessage } from "../kit/fold"
 import { Message } from "./message"
@@ -49,7 +49,7 @@ export const ParseMarkdown = Command.define("ParseChatMarkdown", {
 	args: { texts: Schema.Array(Schema.String) },
 	messages: [Message.CompletedParseMarkdown],
 	execute: ({ texts }) =>
-		Effect.map(parseChatMarkdown(texts), (parsed) => Message.CompletedParseMarkdown({ parsed })),
+		Effect.map(parseMarkdownTexts(texts), (parsed) => Message.CompletedParseMarkdown({ parsed })),
 })
 
 /** One fence coloured by Shiki (loaded on first use); a failure leaves it plain. */

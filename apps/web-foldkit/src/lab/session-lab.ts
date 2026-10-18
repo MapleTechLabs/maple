@@ -7,7 +7,11 @@ import type { PageContext, PageOutMessage } from "../page/contract"
 import { sessionData } from "../page/agent-sessions/session/derive"
 import { Message as SessionMessage } from "../page/agent-sessions/session/message"
 import type { Model as SessionModel } from "../page/agent-sessions/session/model"
-import { init as sessionInit, update as sessionUpdate } from "../page/agent-sessions/session/update"
+import {
+	init as sessionInit,
+	routeChanged as sessionRouteChanged,
+	update as sessionUpdate,
+} from "../page/agent-sessions/session/update"
 import { views } from "../page/agent-sessions/session/view"
 import { sessionHeader } from "../page/agent-sessions/session/view-header"
 import type { Resources } from "../platform/resources"
@@ -39,19 +43,24 @@ export const toWire = (
 ): ReadonlyArray<AiSessionSpan> =>
 	spans.flatMap((span) => Option.toArray(decodeSpan(JSON.stringify({ ...span, sessionId }))))
 
-/** The page's navigations land as state: only the view and the open span are search. */
-const followNavigation = (session: SessionModel, outMessage: PageOutMessage | undefined): SessionModel => {
-	if (outMessage?._tag !== "RequestedNavigation") return session
+/**
+ * The page's navigations land as the route change the shell would deliver: only the view and the
+ * open span are search, so the popover, the cursor and the landing follow them as on the page.
+ */
+const followNavigation = (
+	session: SessionModel,
+	outMessage: PageOutMessage | undefined,
+	timeZone: string,
+): SessionStep => {
+	if (outMessage?._tag !== "RequestedNavigation") return { session, commands: [] }
 	return Option.match(Option.map(fromString(`http://lab${outMessage.url}`), urlToAppRoute), {
-		onNone: () => session,
-		onSome: (next) =>
-			next._tag !== "AgentSession"
-				? session
-				: {
-						...session,
-						search: { ...session.search, view: next.search.view, span: next.search.span },
-						tabs: { ...session.tabs, selected: next.search.view ?? "overview" },
-					},
+		onNone: () => ({ session, commands: [] }),
+		onSome: (next) => {
+			if (next._tag !== "AgentSession") return { session, commands: [] }
+			const search = { ...session.search, view: next.search.view, span: next.search.span }
+			const changed = sessionRouteChanged(session, { sessionId: session.sessionId, search }, contextOf(timeZone))
+			return { session: changed.model, commands: withoutReads(changed.commands) }
+		},
 	})
 }
 
@@ -65,7 +74,8 @@ export const stepSession = (
 	timeZone: string,
 ): SessionStep => {
 	const next = sessionUpdate(session, message, contextOf(timeZone))
-	return { session: followNavigation(next.model, next.outMessage), commands: withoutReads(next.commands) }
+	const followed = followNavigation(next.model, next.outMessage, timeZone)
+	return { session: followed.session, commands: [...withoutReads(next.commands), ...followed.commands] }
 }
 
 /** The spans as the session's only page (reopened first, so a swap lands under the same key). */

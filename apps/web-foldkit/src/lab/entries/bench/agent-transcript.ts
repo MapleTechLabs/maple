@@ -1,6 +1,7 @@
 import { buildSessionSummary, buildSessionTurns } from "@maple/agent-sessions"
 import { Effect, Schema } from "effect"
-import { Command } from "foldkit"
+import { Command, Mount } from "foldkit"
+import { installTranscriptBench } from "../../bench/transcript-harness"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { Message as SessionMessage } from "../../../page/agent-sessions/session/message"
@@ -14,8 +15,7 @@ import { enterSession, type SessionStep, sessionViews, stepSession, toWire } fro
 import { foldLabToasts, initLabToasts, labRoot } from "../../toasts"
 
 // `/lab/bench/agent-transcript` (apps/web `lab/bench/agent-transcript-bench.tsx`): the transcript
-// over a session big enough to hurt, `?turns=` turns of it.
-// TODO(bench-harness): `window.__transcriptBench` (the perf spec's scroll sweep) is not ported.
+// over a session big enough to hurt, `?turns=` turns of it, with the perf spec's harness.
 
 const SESSION_ID = "transcript-bench"
 const DEFAULT_TURNS = 40
@@ -36,8 +36,18 @@ type Model = typeof Model.Type
 const Message = defineMessageUnion({
 	GotSessionMessage: { message: SessionMessage },
 	GotToastMessage: { message: Toast.Message },
+	CompletedBenchInstall: {},
 })
 type Message = typeof Message.Type
+
+/** `window.__transcriptBench` for the perf spec, for as long as the bench is on the page. */
+const InstallTranscriptBench = Mount.define("InstallTranscriptBench", {
+	messages: [Message.CompletedBenchInstall],
+	execute: () =>
+		Effect.acquireRelease(Effect.sync(installTranscriptBench), (uninstall) => Effect.sync(uninstall)).pipe(
+			Effect.as(Message.CompletedBenchInstall()),
+		),
+})
 
 type Return = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }>
 
@@ -78,6 +88,7 @@ const update = (model: Model, message: Message): Return =>
 		GotSessionMessage: ({ message: inner }) =>
 			landed(model, stepSession(model.session, inner, model.timeZone)),
 		GotToastMessage: ({ message: inner }) => foldToasts(model, inner),
+		CompletedBenchInstall: () => ({ model }),
 	})
 
 const page = (model: Model, h: HtmlBuilder<Message>): Html =>
@@ -85,6 +96,7 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 		[
 			h.DataAttribute("transcript-bench", ""),
 			h.Class("flex h-screen flex-col bg-background text-foreground"),
+			h.OnMount(InstallTranscriptBench()),
 		],
 		[
 			h.div(

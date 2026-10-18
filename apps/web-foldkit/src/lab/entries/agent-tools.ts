@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { buildToolAnalyticsFixture, buildToolCells, toolFixtureFacets } from "../agent-tools-fixture"
 import { Option, Result, Schema } from "effect"
-import { Command, Submodel } from "foldkit"
+import { AsyncData, Command, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { fromString } from "foldkit/url"
@@ -17,6 +17,13 @@ import {
 	update as toolsUpdate,
 } from "../../page/agent-sessions/tools/update"
 import { toolsBody } from "../../page/agent-sessions/tools/view"
+import { Message as ToolMessage } from "../../page/agent-sessions/tool/message"
+import { Model as ToolModel } from "../../page/agent-sessions/tool/model"
+import { init as toolInit, update as toolUpdate } from "../../page/agent-sessions/tool/update"
+import { toolDetailBody } from "../../page/agent-sessions/tool/view"
+import { GRID_TOKENS } from "../../page/agent-sessions/tool/view-charts"
+import { contextOf as detailContextOf, settle as settleDetail } from "../agent-tools-detail"
+import { DETAIL_TOOLS } from "../agent-tools-detail-fixture"
 import type { Resources } from "../../platform/resources"
 import { urlToAppRoute } from "../../route"
 import * as Toast from "../../ui/toast"
@@ -25,9 +32,8 @@ import { defineLabWithFlags } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 
 // `/lab/agent-tools` (apps/web `lab/agent-tools-lab.tsx`): the tools page over apps/web's synthetic
-// week. The page's warehouse reads are answered from the fixture; its URL is the lab's state.
-// TODO(lab-detail): the "detail" view (tool detail page and error modal over the fixture) is drawn as
-// its toggle only.
+// week. The page's warehouse reads are answered from the fixture; its URL is the lab's state. The
+// "detail" view is the tool detail page and its error modal over the fixture's failure groups.
 
 const WIDTHS = [
 	{ label: "Full", value: null },
@@ -39,6 +45,10 @@ const VIEWS = ["overview", "detail"] as const
 
 const Model = Schema.Struct({
 	page: ToolsModel,
+	detail: ToolModel,
+	detailTool: Schema.Literals(DETAIL_TOOLS),
+	/** "errors loading": the Errors table as it draws before its read answers. */
+	isErrorsLoading: Schema.Boolean,
 	view: Schema.Literals(VIEWS),
 	width: Schema.NullOr(Schema.Number),
 	timeZone: Schema.String,
@@ -48,6 +58,9 @@ type Model = typeof Model.Type
 
 const Message = defineMessageUnion({
 	GotPageMessage: { message: ToolsMessage },
+	GotDetailMessage: { message: ToolMessage },
+	ClickedDetailTool: { tool: Schema.Literals(DETAIL_TOOLS) },
+	ToggledErrorsLoading: {},
 	ClickedView: { view: Schema.Literals(VIEWS) },
 	ClickedWidth: { width: Schema.NullOr(Schema.Number) },
 	GotToastMessage: { message: Toast.Message },
@@ -191,22 +204,55 @@ const settle = (model: Model, step: PageStep): Return => {
 
 const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMessage({ message }))
 
+/** The detail page entered on `tool`, its reads answered; the lab's Commands carry the rest. */
+const enterDetail = (tool: (typeof DETAIL_TOOLS)[number], timeZone: string, previous?: ToolModel) => {
+	// The toolbar filters carry over; the theme read stays, since its Mount does not run again.
+	const search = { service: previous?.search.service, env: previous?.search.env, model: previous?.search.model }
+	const entered = toolInit({ toolName: tool, search }, detailContextOf(timeZone))
+	const carried = previous === undefined ? entered : { ...entered, model: { ...entered.model, themeColors: previous.themeColors } }
+	const settled = settleDetail(carried, timeZone)
+	return {
+		detail: settled.model,
+		commands: Command.mapMessages(settled.commands, (message) => Message.GotDetailMessage({ message })),
+	}
+}
+
 const init = (flags: ViewerFlags): Return => {
 	const entered = toolsInit({ search: {} }, contextOf(flags.timeZone))
-	const model: Model = {
-		page: entered.model,
-		view: "overview",
-		width: null,
-		timeZone: flags.timeZone,
-		toasts: initLabToasts(),
-	}
-	return settle(model, entered)
+	const detail = enterDetail("submit_candidate", flags.timeZone)
+	const settled = settle(
+		{
+			page: entered.model,
+			detail: detail.detail,
+			detailTool: "submit_candidate",
+			isErrorsLoading: false,
+			view: "overview",
+			width: null,
+			timeZone: flags.timeZone,
+			toasts: initLabToasts(),
+		},
+		entered,
+	)
+	return { model: settled.model, commands: [...(settled.commands ?? []), ...detail.commands] }
 }
 
 const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotPageMessage: ({ message: inner }) =>
 			settle(model, toolsUpdate(model.page, inner, contextOf(model.timeZone))),
+		GotDetailMessage: ({ message: inner }) => {
+			const settled = settleDetail(toolUpdate(model.detail, inner, detailContextOf(model.timeZone)), model.timeZone)
+			return {
+				model: { ...model, detail: settled.model },
+				commands: Command.mapMessages(settled.commands, (message) => Message.GotDetailMessage({ message })),
+			}
+		},
+		// A different tool is a fresh page: its group, session and variant are not carried over.
+		ClickedDetailTool: ({ tool }) => {
+			const entered = enterDetail(tool, model.timeZone, model.detail)
+			return { model: { ...model, detail: entered.detail, detailTool: tool }, commands: entered.commands }
+		},
+		ToggledErrorsLoading: () => ({ model: { ...model, isErrorsLoading: !model.isErrorsLoading } }),
 		ClickedView: ({ view }) => ({ model: { ...model, view } }),
 		ClickedWidth: ({ width }) => ({ model: { ...model, width } }),
 		GotToastMessage: ({ message: inner }) => foldToasts(model, inner),
@@ -231,8 +277,27 @@ const toolsPage = Submodel.defineView<ToolsModel, ToolsMessage, Readonly<{ timeZ
 /** The search as the lab prints it: the keys set, in the page's order. */
 const searchJson = (model: Model): string =>
 	JSON.stringify(
-		Object.fromEntries(Object.entries(model.page.search).filter(([, value]) => value !== undefined)),
+		Object.fromEntries(
+			Object.entries(model.view === "detail" ? model.detail.search : model.page.search).filter(
+				([key, value]) => value !== undefined && key !== "timePreset",
+			),
+		),
 	)
+
+/** The detail page without the route's time controls, the Errors read held while "errors loading". */
+const detailPage = Submodel.defineView<ToolModel, ToolMessage, Readonly<{ timeZone: string; isErrorsLoading: boolean }>>(
+	(detail, inputs, h) =>
+		h.div(
+			[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: GRID_TOKENS }))],
+			[
+				toolDetailBody(
+					h,
+					inputs.isErrorsLoading ? { ...detail, errors: { ...detail.errors, data: AsyncData.Loading() } } : detail,
+					{ timeZone: inputs.timeZone, isRoute: false },
+				),
+			],
+		),
+)
 
 const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
@@ -253,6 +318,15 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 							Message.ClickedWidth({ width: option.value }),
 						),
 					),
+					...(model.view === "detail"
+						? [
+								h.span([h.Class("w-4")], []),
+								...DETAIL_TOOLS.map((tool) =>
+									labButton(h, tool, model.detailTool === tool, Message.ClickedDetailTool({ tool })),
+								),
+								labButton(h, "errors loading", model.isErrorsLoading, Message.ToggledErrorsLoading()),
+							]
+						: []),
 					h.span([h.Class("ml-2 font-mono text-2xs text-muted-foreground")], [searchJson(model)]),
 				],
 			),
@@ -262,13 +336,21 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 					...(model.width === null ? [] : [h.Style({ width: `${model.width}px` })]),
 				],
 				[
-					h.submodel({
-						slotId: "lab-agent-tools-page",
-						model: model.page,
-						view: toolsPage,
-						viewInputs: { timeZone: model.timeZone },
-						toParentMessage: (message: ToolsMessage) => Message.GotPageMessage({ message }),
-					}),
+					model.view === "detail"
+						? h.submodel({
+								slotId: "lab-agent-tools-detail",
+								model: model.detail,
+								view: detailPage,
+								viewInputs: { timeZone: model.timeZone, isErrorsLoading: model.isErrorsLoading },
+								toParentMessage: (message: ToolMessage) => Message.GotDetailMessage({ message }),
+							})
+						: h.submodel({
+								slotId: "lab-agent-tools-page",
+								model: model.page,
+								view: toolsPage,
+								viewInputs: { timeZone: model.timeZone },
+								toParentMessage: (message: ToolsMessage) => Message.GotPageMessage({ message }),
+							}),
 				],
 			),
 		],

@@ -25,7 +25,13 @@ type Report = NonNullable<V2Investigation["report"]>
 
 const sectionEyebrow = (h: H, title: string): Html => eyebrow(h, { as: "h3", className: "block mb-0" }, [title])
 
-const content = (h: H, dialogId: string, action: ActionNodeData, report: Report | null, trigger: TipTrigger): ReadonlyArray<Html> => {
+export const actionSheetContent = (
+	h: H,
+	dialogId: string,
+	action: ActionNodeData,
+	report: Report | null,
+	trigger: TipTrigger,
+): ReadonlyArray<Html> => {
 	const glyph = ACTION_GLYPH[action.kind]
 	const evidence = (report?.evidence ?? []).filter((item) => item.note || item.traceIds.length > 0 || item.logPatterns.length > 0)
 	return [
@@ -152,7 +158,7 @@ export const actionSheet = (h: H, model: Model, investigation: V2Investigation, 
 								),
 							]),
 						]
-					: content(h, dialogId, action, investigation.report, trigger),
+					: actionSheetContent(h, dialogId, action, investigation.report, trigger),
 		},
 		toParentMessage: (message) => Message.GotActionSheetMessage({ message }),
 	})

@@ -25,7 +25,6 @@ import { listBody } from "./view-list"
 
 // `AnomaliesPage` (apps/web/src/routes/anomalies/index.tsx).
 // TODO(tooltip): the Live chip's "Auto-refreshing every 15s" tooltip popup.
-// TODO(keys): `useListNavigation` (j/k, arrows, Enter) is not ported; hover moves the focus.
 
 type H = HtmlBuilder<Message>
 

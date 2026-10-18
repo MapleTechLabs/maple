@@ -12,7 +12,6 @@ import {
 	spanStartMs,
 	spanTokenBuckets,
 	spanTtftMs,
-	toolSpanIssuers,
 } from "@maple/agent-sessions"
 import { type AxisTick, buildSessionAxis, type SessionAxis } from "@maple/web/lib/agent-sessions/session-axis"
 import { isDelegation } from "@maple/web/lib/agent-sessions/span-filters"
@@ -21,6 +20,8 @@ import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+import { Stream } from "effect"
+import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
@@ -30,17 +31,16 @@ import { icon } from "../../../ui/icon"
 import { segmentedBar } from "../../../ui/meter"
 import { type DetectedModel, detectLookup } from "../kit/detected-models"
 import { modelLabel } from "../kit/model-label"
+import { virtualAttributes, virtualize } from "../kit/virtualize"
 import { TOKEN_BUCKETS } from "../kit/token-buckets"
 import type { SessionData } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { CATEGORY_FILL, CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
 import { failedBadge } from "./view-kit"
-import { buildRows, rowHeight, spanHeading, spanTarget, type WaterfallRow } from "./waterfall-rows"
+import { rowHeight, spanHeading, spanTarget, type WaterfallRow, waterfallRowsOf } from "./waterfall-rows"
 
 // `SessionWaterfall` (session-detail/session-waterfall.tsx): turns, spans and idle gaps on one axis.
-// TODO(virtualize): every row is drawn; legacy virtualizes against the page scroller.
-// TODO(list-navigation): the ↑/↓/Enter span cursor and the `?span=` landing scroll are not ported.
 
 type H = HtmlBuilder<Message>
 
@@ -268,7 +268,7 @@ const spanBar = (
 	)
 }
 
-type SpanRowState = Readonly<{ isSelected: boolean; isRevealed: boolean }>
+type SpanRowState = Readonly<{ isSelected: boolean; isRevealed: boolean; isFocused: boolean }>
 
 const spanCell = (
 	h: H,
@@ -328,6 +328,7 @@ const spanRow = (
 					"flex h-full w-full cursor-pointer items-center px-2.5 text-left text-xs hover:bg-accent/40",
 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
 					isErrored && "bg-severity-error/6",
+					state.isFocused && "bg-accent/60",
 					rowSelectedClass(state.isSelected || state.isRevealed),
 					state.isRevealed && "bg-primary/12",
 				),
@@ -335,7 +336,7 @@ const spanRow = (
 			...(state.isRevealed ? [h.DataAttribute("revealed", "true")] : []),
 			h.DataAttribute("span-row", span.spanId),
 			h.Type("button"),
-			h.OnClick(Message.ClickedSpan({ spanId: state.isSelected ? undefined : span.spanId })),
+			h.OnClick(Message.ClickedWaterfallSpan({ spanId: span.spanId })),
 		],
 		[
 			spanCell(h, span, row.depth, category, isDelegation(span, spansById)),
@@ -450,17 +451,7 @@ export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 	const spansById = new Map(spans.map((span) => [span.spanId, span]))
 	const gaps = model.options.collapseIdle ? summary.idleGaps : []
 	const axis = buildSessionAxis({ startMs: summary.startMs, endMs: summary.endMs, collapsedGaps: gaps })
-	const rows = buildRows({
-		turns,
-		gaps,
-		collapsedTurns: model.collapsedTurns,
-		query: model.query,
-		agentSpansOnly: model.options.agentSpansOnly,
-		issuers: toolSpanIssuers(spans),
-	})
-	// Each row's top, and the list's height last: the virtualizer's offsets with every row drawn.
-	const offsets: Array<number> = [0]
-	rows.forEach((row) => offsets.push((offsets.at(-1) ?? 0) + rowHeight(row)))
+	const rows = waterfallRowsOf(model, data)
 	const rowView = (row: WaterfallRow): Html => {
 		if (row.kind === "turn")
 			return turnHeader(h, row, turns, axis, model.collapsedTurns.includes(row.turn.id))
@@ -468,39 +459,67 @@ export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 		return spanRow(h, row, axis, spansById, detect, {
 			isSelected: model.search.span === row.span.spanId,
 			isRevealed: model.revealedSpanId === row.span.spanId,
+			isFocused: model.focusedSpanId === row.span.spanId,
 		})
 	}
+	const { items, scrollMargin, totalSize } = model.waterfallWindow
 	return h.div(
 		[h.Class("@container flex grow flex-col")],
 		[
 			ruler(h, axis, gaps),
 			h.div(
-				[],
+				[
+					...virtualAttributes(
+						h,
+						rows.map((row) => row.key),
+						rows.map(rowHeight),
+						model.scroll ?? undefined,
+					),
+					h.OnMount(VirtualizeWaterfall()),
+				],
 				[
 					rows.length === 0
 						? emptyMessage(h, {}, ["No spans match this filter."])
 						: h.div(
-								[
-									h.Class("relative w-full"),
-									h.Style({ height: `${offsets[rows.length] ?? 0}px` }),
-								],
-								rows.map((row, index) =>
-									h.div(
-										[
-											h.Key(row.key),
-											h.DataAttribute("index", String(index)),
-											h.Class("absolute inset-x-0 top-0"),
-											h.Style({
-												height: `${rowHeight(row)}px`,
-												transform: `translateY(${offsets[index] ?? 0}px)`,
-											}),
-										],
-										[rowView(row)],
-									),
-								),
+								[h.Class("relative w-full"), h.Style({ height: `${totalSize}px` })],
+								items.flatMap((item) => {
+									const row = rows[item.index]
+									if (row === undefined) return []
+									return [
+										h.div(
+											[
+												h.Key(row.key),
+												h.DataAttribute("index", String(item.index)),
+												h.Class("absolute inset-x-0 top-0"),
+												h.Style({
+													height: `${item.end - item.start}px`,
+													transform: `translateY(${item.start - scrollMargin}px)`,
+												}),
+											],
+											[rowView(row)],
+										),
+									]
+								}),
 							),
 				],
 			),
 		],
 	)
 }
+
+/** `useVirtualizer` over the page scroller: rows are their estimates, never measured. */
+const VirtualizeWaterfall = Mount.defineStream("VirtualizeAgentSessionWaterfall", {
+	messages: [Message.ChangedWaterfallWindow],
+	execute: ({ element, viewStateChanges }) =>
+		viewStateChanges.pipe(
+			Stream.switchMap((viewState) =>
+				viewState === "Live" && element instanceof HTMLElement
+					? virtualize(
+							element,
+							{ overscan: 16, isMeasured: false, rows: ":scope > div > [data-index]" },
+							(window) => Message.ChangedWaterfallWindow({ window }),
+						)
+					: Stream.never,
+			),
+		),
+})

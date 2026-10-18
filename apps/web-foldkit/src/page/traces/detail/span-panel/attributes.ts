@@ -6,7 +6,7 @@ import { attributeFilterAction, tryParseJson } from "../../../../ui/attributes/a
 import { icon } from "../../../../ui/icon"
 import { copyableValue, copyButton, selectableValue } from "./copy"
 import { type AttributeScope, Message } from "./message"
-import type { Model } from "./model"
+import type { PanelState as Model } from "./model"
 
 // `AttributesSection` / `AttributesTable` / `AttributeRow` (packages/ui/src/components/attributes)
 // inside `TraceAttributeFilterProvider`, with apps/web's root `renderValue` (commit SHAs).
@@ -106,6 +106,8 @@ type RowInput = Readonly<{
 	displayKey?: string
 	displayValue?: string
 	plainKey?: boolean
+	/** `onFilterByAttribute` is in scope: the row grows its Filter and Exclude verbs. */
+	isFilterable: boolean
 }>
 
 /** `AttributeRow`: copyable key, selectable value (or JSON / commit SHA) and the filter verbs. */
@@ -159,7 +161,7 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 				[h.Class("min-w-0 font-mono text-2xs leading-relaxed text-foreground break-all")],
 				[
 					valueNode,
-					...(Option.isSome(parsed)
+					...(Option.isSome(parsed) || !row.isFilterable
 						? []
 						: [
 								h.span(
@@ -199,7 +201,14 @@ const heading = (h: H, title: string): Html =>
 	h.h4([h.Class("text-xs font-medium tracking-wide text-foreground/70")], [title])
 
 /** `AttributesTable` without search or namespace grouping (the span panel uses neither). */
-const attributesTable = (h: H, model: Model, scope: AttributeScope, entries: Entries, title: string): Html =>
+const attributesTable = (
+	h: H,
+	model: Model,
+	scope: AttributeScope,
+	entries: Entries,
+	title: string,
+	isFilterable: boolean,
+): Html =>
 	entries.length === 0
 		? h.div([h.Class("text-xs text-muted-foreground py-2")], [`No ${title.toLowerCase()} available`])
 		: h.div(
@@ -208,7 +217,9 @@ const attributesTable = (h: H, model: Model, scope: AttributeScope, entries: Ent
 					heading(h, title),
 					h.div(
 						[h.Class("divide-y divide-border/60 overflow-hidden rounded-md border")],
-						entries.map(([attrKey, value]) => attributeRow(h, model, { scope, attrKey, value })),
+						entries.map(([attrKey, value]) =>
+							attributeRow(h, model, { scope, attrKey, value, isFilterable }),
+						),
 					),
 				],
 			)
@@ -219,6 +230,7 @@ const genAiSection = (
 	model: Model,
 	scope: AttributeScope,
 	groups: ReadonlyArray<GenAiGroup>,
+	isFilterable: boolean,
 ): Html | null =>
 	groups.length === 0
 		? null
@@ -254,6 +266,7 @@ const genAiSection = (
 												displayKey: field.label,
 												displayValue: field.value,
 												plainKey: true,
+												isFilterable,
 											}),
 										),
 									),
@@ -271,7 +284,9 @@ export const attributesSection = (
 	scope: AttributeScope,
 	attributes: Readonly<Record<string, string>>,
 	title: string,
+	options: Readonly<{ isFilterable?: boolean }> = {},
 ): Html => {
+	const isFilterable = options.isFilterable ?? true
 	const { groups, rest } = splitGenAiAttributes({ ...attributes })
 	const entries = Object.entries(rest)
 	const standard = entries.filter(([key]) => !key.startsWith("maple_"))
@@ -281,9 +296,9 @@ export const attributesSection = (
 	return h.div(
 		[h.Class("space-y-2")],
 		[
-			genAiSection(h, model, scope, groups),
+			genAiSection(h, model, scope, groups, isFilterable),
 			standard.length > 0 || groups.length === 0
-				? attributesTable(h, model, scope, standard, title)
+				? attributesTable(h, model, scope, standard, title, isFilterable)
 				: null,
 			...(internal.length === 0
 				? []
@@ -329,6 +344,7 @@ export const attributesSection = (
 														scope,
 														internal,
 														"Maple internal",
+														isFilterable,
 													),
 												],
 											),

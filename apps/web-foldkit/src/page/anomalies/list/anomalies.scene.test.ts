@@ -80,6 +80,19 @@ describe("anomalies list", () => {
 		scene({ update: pageUpdate, view }, given(failed), measured(), expectView(text("Failed to load anomalies")).toExist())
 	})
 
+	test("j and k walk the rows in group order, Enter opens the focused one, Escape clears it", () => {
+		const model = loaded([incident(2, "warning"), incident(1, "critical")])
+		const first = pageUpdate(model, Message.PressedListKey({ key: "Next" }))
+		expect(first.model.focusedId).toContain("00000000001")
+		expect(names(first.commands)).toEqual(["ScrollAnomalyIncidentIntoView"])
+		const second = pageUpdate(first.model, Message.PressedListKey({ key: "Next" })).model
+		expect(second.focusedId).not.toBe(first.model.focusedId)
+		expect(pageUpdate(second, Message.PressedListKey({ key: "Previous" })).model.focusedId).toBe(first.model.focusedId)
+		const opened = pageUpdate(second, Message.PressedListKey({ key: "Open" }))
+		expect(opened.outMessage?._tag).toBe("RequestedNavigation")
+		expect(pageUpdate(second, Message.PressedListKey({ key: "Escape" })).model.focusedId).toBeNull()
+	})
+
 	test("rows group by severity and a group collapses", () => {
 		scene(
 			{ update: pageUpdate, view },

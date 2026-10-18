@@ -6,9 +6,24 @@ import { LoadFailure } from "../../../data/load-failure"
 import { AgentSessionSearch } from "../../../route/search"
 import * as Canvas from "../../../service-map/xyflow/canvas"
 import * as CopyButton from "../../../ui/copy-button"
+import * as Dialog from "../../../ui/dialog"
+import { PanelState } from "../../traces/detail/span-panel/model"
 import * as Popover from "../../../ui/popover"
 import * as Tabs from "../../../ui/tabs"
+import * as Tooltip from "../../../ui/tooltip"
 import { Detections } from "../kit/detected-models"
+import { VirtualWindow } from "../kit/virtualize"
+
+export const SPAN_DETAIL_TABS = ["details", "messages", "tools", "logs"] as const
+export const SpanDetailTab = Schema.Literals(SPAN_DETAIL_TABS)
+export type SpanDetailTab = typeof SpanDetailTab.Type
+
+export const ScrollRequest = Schema.Struct({
+	seq: Schema.Number,
+	index: Schema.Number,
+	align: Schema.Literals(["auto", "center"]),
+	reveal: Schema.Boolean,
+})
 
 // `/agent-sessions/$sessionId` (routes/agent-sessions/$sessionId.tsx, session-detail/*).
 
@@ -92,5 +107,24 @@ export const Model = Schema.Struct({
 	clampedBodies: Schema.Array(Schema.String),
 	/** The transcript's payload copies: one status, for the payload last copied. */
 	payloadCopy: Schema.Struct({ key: Schema.NullOr(Schema.String), copy: CopyButton.Model }),
+	/** The virtualizers' windows, reset when the view they belong to mounts again. */
+	waterfallWindow: VirtualWindow,
+	transcriptWindow: VirtualWindow,
+	/** The waterfall's keyboard span cursor (`useListNavigation`'s `focusedId`). */
+	focusedSpanId: Schema.NullOr(Schema.String),
+	/** A scroll the open view's list should make; `landed` once its `?span=` landing was spent. */
+	scroll: Schema.NullOr(ScrollRequest),
+	landed: Schema.Boolean,
+	/** `SpanPopover`: open while the active view has a span selected (`?span=`). */
+	spanDialog: Dialog.Model,
+	/** The reader's tab choice, held across spans and views; `null` picks by content. */
+	spanTab: Schema.NullOr(SpanDetailTab),
+	/** The open span's lazy detail and logs reads, copies and disclosures, for `spanPanelId`. */
+	spanPanel: PanelState,
+	spanPanelId: Schema.NullOr(Schema.String),
+	/** The code block whose Copy shows its check (Streamdown holds it 2s), and the hold's generation. */
+	codeCopy: Schema.Struct({ code: Schema.NullOr(Schema.String), generation: Schema.Number }),
+	/** The popover's Close button tooltip, shown on keyboard focus (a pasted link focuses it). */
+	closeTooltip: Tooltip.Model,
 })
 export type Model = typeof Model.Type

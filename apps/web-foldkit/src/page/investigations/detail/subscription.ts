@@ -5,6 +5,7 @@ import { OrgCollections } from "../../../data/collections/org-collections"
 import { liveQueryStream } from "../../../data/live-query"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
+import { Tail, tailOf, tailsMessages } from "../../chat/conversation/subscription"
 import { Message } from "./message"
 import type { Model, Sync } from "./model"
 
@@ -47,6 +48,17 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		{
 			modelToDependencies: ({ model, context }) => ({ orgId: context.orgId, id: model.id }),
 			dependenciesToStream: ({ orgId, id }) => investigationStream(orgId, id),
+		},
+	),
+	/** The thread's live turn, while one runs (`useMapleChat`'s tail). */
+	tail: entry(
+		{ tails: Schema.Array(Tail) },
+		{
+			modelToDependencies: ({ model }) => ({ tails: model.conversation === null ? [] : tailOf(model.conversation) }),
+			dependenciesToStream: ({ tails }) =>
+				tails.length === 0
+					? Stream.empty
+					: tailsMessages(tails, (_tabId, message) => Message.GotConversationMessage({ message })),
 		},
 	),
 	clock: entry(

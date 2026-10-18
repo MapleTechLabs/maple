@@ -40,6 +40,25 @@ export const investigationsArea: AreaModule = {
 		investigation("diagnosed-evidence", "Diagnosed, evidence tab", diagnosed, {
 			steps: act(clickTab(/^Evidence/)),
 		}),
+		investigation("diagnosed-chat", "Diagnosed, chat tab led by the report", `${diagnosed}?tab=chat`, {
+			steps: waitForText("AI Diagnosis"),
+		}),
+		investigation("diagnosed-transcript", "Diagnosed, transcript tab", `${diagnosed}?tab=transcript`, {
+			steps: waitForText("AI Diagnosis"),
+		}),
+		investigation("diagnosed-chat-tab", "Chat tab opened from the tab strip", diagnosed, {
+			steps: act(clickTab(/^Chat/), waitForText("AI Diagnosis")),
+		}),
+		investigation("diagnosed-chat-action", "A report card action opened in its sheet", `${diagnosed}?tab=chat`, {
+			steps: act(waitForText("Recommended actions"), (page) =>
+				page.getByRole("main").getByRole("listitem").getByRole("button").first().click(),
+			openSheet),
+		}),
+		investigation("diagnosed-chat-suggestion", "A starter prompt sent from the chat tab", `${diagnosed}?tab=chat`, {
+			steps: act(waitForText("AI Diagnosis"), (page) =>
+				page.getByRole("button", { name: "What would confirm this?" }).click(),
+			),
+		}),
 		investigation("diagnosed-menu", "Overflow menu open", diagnosed, {
 			steps: act(clickButton("More investigation actions"), (page) => page.getByRole("menu").waitFor({ state: "visible" })),
 		}),

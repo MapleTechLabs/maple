@@ -13,6 +13,7 @@ import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AgentSessionsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { detectModels } from "../kit/detected-models"
+import { virtualize } from "../kit/virtualize"
 import { countedFilters, filterInputs, PAGE_SIZE, presentInputs } from "./derive"
 import { Message, RequestMode } from "./message"
 import { RangeKey } from "./model"
@@ -187,6 +188,21 @@ const afterPaint = <A>(message: A) =>
 export const MountTable = Mount.define("MountAgentSessionsTable", {
 	messages: [Message.PaintedTable],
 	execute: () => afterPaint(Message.PaintedTable()),
+})
+
+/** `useVirtualizer` over the page scroller, on the table body: measured rows, index keys. */
+export const VirtualizeSessions = Mount.defineStream("VirtualizeAgentSessions", {
+	messages: [Message.ChangedListWindow],
+	execute: ({ element, viewStateChanges }) =>
+		viewStateChanges.pipe(
+			Stream.switchMap((viewState) =>
+				viewState === "Live" && element instanceof HTMLElement
+					? virtualize(element, { overscan: 10, isMeasured: true, rows: ":scope > tr[data-index]" }, (window) =>
+							Message.ChangedListWindow({ window }),
+						)
+					: Stream.never,
+			),
+		),
 })
 
 /** The empty state is on screen: `useSignalPresence` mounts with it. */

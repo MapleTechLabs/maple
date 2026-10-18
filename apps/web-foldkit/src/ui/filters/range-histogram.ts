@@ -8,12 +8,13 @@ import { formatValue, type RangeUnit } from "./range-format"
 
 // `RangeHistogram` (packages/ui/src/components/filters/range-filter-section.tsx): the distribution
 // above a range's inputs. A press on one bar sets "at least this"; a drag across bars sets both
-// bounds; hover names the bucket. TODO(drag-preview): the pending drag is not tinted while dragging.
+// bounds; hover names the bucket, and a drag in progress tints the range it would select.
 
 export type RangeBucket = Readonly<{ from: number; to: number; count: number; unbounded?: boolean }>
 
 export const HistogramMessage = defineMessageUnion({
-	PointedHistogramBar: { index: Schema.Number },
+	/** The bar under the pointer; `dragStart` is the bar a press went down on, while it is held. */
+	PointedHistogramBar: { index: Schema.Number, dragStart: Schema.optional(Schema.Number) },
 	LeftHistogram: {},
 	SelectedHistogramRange: { min: Schema.UndefinedOr(Schema.Number), max: Schema.UndefinedOr(Schema.Number) },
 })
@@ -46,12 +47,21 @@ export const MountRangeHistogram = Mount.defineStream("MountRangeHistogram", {
 					const onDown = (event: Event) => {
 						if (!(event instanceof PointerEvent)) return
 						state.dragStart = indexAt(event.clientX)
-						Queue.offerUnsafe(queue, HistogramMessage.PointedHistogramBar({ index: state.dragStart }))
+						Queue.offerUnsafe(
+							queue,
+							HistogramMessage.PointedHistogramBar({ index: state.dragStart, dragStart: state.dragStart }),
+						)
 						if (event.currentTarget instanceof Element) event.currentTarget.setPointerCapture(event.pointerId)
 					}
 					const onMove = (event: Event) =>
 						event instanceof PointerEvent &&
-						Queue.offerUnsafe(queue, HistogramMessage.PointedHistogramBar({ index: indexAt(event.clientX) }))
+						Queue.offerUnsafe(
+							queue,
+							HistogramMessage.PointedHistogramBar({
+								index: indexAt(event.clientX),
+								dragStart: state.dragStart === -1 ? undefined : state.dragStart,
+							}),
+						)
 					const onUp = (event: Event) => {
 						if (!(event instanceof PointerEvent)) return
 						if (state.dragStart === -1) return
@@ -96,6 +106,8 @@ export type RangeHistogramConfig<M> = Readonly<{
 	maxValue: number | undefined
 	/** The bar under the pointer, which the readout names. */
 	hoveredIndex: number | undefined
+	/** The bar a held press went down on: the drag's other end. */
+	dragStart?: number | undefined
 	toMessage: (message: HistogramMessage) => M
 }>
 
@@ -112,12 +124,24 @@ export const rangeHistogram = <M>(h: HtmlBuilder<M>, config: RangeHistogramConfi
 		if (lastOf(bucket) === bucket.from) return formatValue(bucket.from, unit)
 		return `${formatValue(bucket.from, unit)} – ${formatValue(lastOf(bucket), unit)}`
 	}
-	const hasSelection = config.minValue !== undefined || config.maxValue !== undefined
-	const isSelected = (bucket: RangeBucket): boolean =>
-		hasSelection &&
-		(config.maxValue === undefined ||
-			bucket.from < (unit === "count" ? config.maxValue + 1 : config.maxValue)) &&
-		(config.minValue === undefined || bucket.to > config.minValue)
+	// While dragging, the pending selection is previewed instead of the applied one.
+	const preview =
+		config.dragStart !== undefined && config.hoveredIndex !== undefined
+			? {
+					lo: Math.min(config.dragStart, config.hoveredIndex),
+					hi: Math.max(config.dragStart, config.hoveredIndex),
+				}
+			: undefined
+	const hasSelection = config.minValue !== undefined || config.maxValue !== undefined || preview !== undefined
+	const isSelected = (bucket: RangeBucket, index: number): boolean => {
+		if (preview !== undefined) return index >= preview.lo && index <= preview.hi
+		if (config.minValue === undefined && config.maxValue === undefined) return false
+		return (
+			(config.maxValue === undefined ||
+				bucket.from < (unit === "count" ? config.maxValue + 1 : config.maxValue)) &&
+			(config.minValue === undefined || bucket.to > config.minValue)
+		)
+	}
 	const hovered = config.hoveredIndex === undefined ? undefined : buckets[config.hoveredIndex]
 	const middle = buckets[Math.floor(buckets.length / 2)] ?? first
 	const bounds = buckets.map((bucket) => ({
@@ -157,7 +181,7 @@ export const rangeHistogram = <M>(h: HtmlBuilder<M>, config: RangeHistogramConfi
 									"min-w-px flex-1 rounded-t-[1px] motion-safe:transition-[height,background-color] duration-150",
 									index === config.hoveredIndex
 										? "bg-foreground/60"
-										: isSelected(bucket)
+										: isSelected(bucket, index)
 											? "bg-primary/70"
 											: hasSelection
 												? "bg-muted-foreground/15"

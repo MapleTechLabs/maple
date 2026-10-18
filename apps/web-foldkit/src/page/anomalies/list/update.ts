@@ -1,3 +1,4 @@
+import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
@@ -14,12 +15,15 @@ import {
 	LoadMoreIncidents,
 	LoadSignalPresence,
 	ReadAnomaliesClock,
+	ScrollIncidentIntoView,
 } from "./command"
 import {
 	allIncidentsOf,
 	anomalyFilterChips,
 	facetsOf,
+	filteredOf,
 	filtersOf,
+	groupIncidents,
 	isLiveOf,
 	nextCursorOf,
 	type Search,
@@ -27,6 +31,7 @@ import {
 } from "./derive"
 import { type Facet, Message } from "./message"
 import type { Model, StatusTab } from "./model"
+import { anomalyHref } from "../kit/row"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -155,6 +160,35 @@ const tabsStep = (model: Model, message: Tabs.Message): Return => {
 	return { model: updated, commands, outMessage: navigate({ ...model.search, status }) }
 }
 
+/** The rows in reading order: every visible group's incidents, collapsed groups included. */
+const rowsInOrder = (model: Model): ReadonlyArray<AnomalyIncidentDocument> =>
+	groupIncidents(filteredOf(model, allIncidentsOf(model))).flatMap(([, incidents]) => incidents)
+
+/** `useListNavigation` over the incident rows. */
+const pressedListKey = (model: Model, key: "Next" | "Previous" | "Open" | "Escape"): Return => {
+	if (key === "Escape") return model.focusedId === null ? { model } : { model: { ...model, focusedId: null } }
+	const incidents = rowsInOrder(model)
+	if (key === "Open") {
+		const focused = incidents.find((incident) => incident.id === model.focusedId)
+		return focused === undefined
+			? { model }
+			: {
+					model,
+					outMessage: PageOutMessage.RequestedNavigation({ url: anomalyHref(focused.id), isReplace: false }),
+				}
+	}
+	if (incidents.length === 0) return { model }
+	const current = model.focusedId === null ? -1 : incidents.findIndex((incident) => incident.id === model.focusedId)
+	const next =
+		key === "Next" ? (current < 0 ? 0 : Math.min(current + 1, incidents.length - 1)) : current <= 0 ? 0 : current - 1
+	const target = incidents[next]
+	if (target === undefined) return { model }
+	return {
+		model: { ...model, focusedId: target.id },
+		commands: [ScrollIncidentIntoView({ incidentId: target.id })],
+	}
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
@@ -226,6 +260,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			},
 		}),
 		HoveredRow: ({ id }) => (model.focusedId === id ? { model } : { model: { ...model, focusedId: id } }),
+		PressedListKey: ({ key }) => pressedListKey(model, key),
+		CompletedScrollRow: () => ({ model }),
 		PaintedBody: () =>
 			AsyncData.isIdle(model.presence)
 				? { model: { ...model, presence: SignalPresenceData.Loading() }, commands: [LoadSignalPresence()] }

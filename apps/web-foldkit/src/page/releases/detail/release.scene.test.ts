@@ -1,18 +1,26 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { LinkedCursorMessage, MountLinkedCursor } from "../../../charts/linked-cursor"
+import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import type { PageContext } from "../../contract"
+import { toLoadFailure } from "../../../data/load-failure"
 import { ReleasesData } from "../list/model"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { type Model, ReleaseDetail } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("org_parity"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 const NOW = Date.UTC(2026, 9, 1, 12)
 const window = { startTime: "2026-09-25 00:00:00", endTime: "2026-10-01 12:00:00" }
 const HEAD = "b".repeat(40)
@@ -44,8 +52,66 @@ const route = (commitSha = HEAD) => ({ _tag: "Release" as const, commitSha, sear
 
 const withReleases = (commitSha = HEAD) => {
 	const entered = init(route(commitSha), context).model
-	const resolved = pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
-	return pageUpdate(resolved, Message.CompletedFetchReleases({ key: resolved.releases.key ?? "", result: Result.succeed(data) }))
+	const resolved = pageUpdate(
+		entered,
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	).model
+	return pageUpdate(
+		resolved,
+		Message.CompletedFetchReleases({ key: resolved.releases.key ?? "", result: Result.succeed(data) }),
+	)
+}
+
+const FAILURE = toLoadFailure("injected")
+const THEME = Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+const CURSOR = Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor())
+const point = (bucket: string) => ({
+	bucket,
+	throughput: 10,
+	tracedThroughput: 10,
+	hasSampling: false,
+	samplingWeight: 1,
+	errorRate: 0,
+	p50LatencyMs: 10,
+	p95LatencyMs: 40,
+	p99LatencyMs: 80,
+	apdexScore: 1,
+	totalCount: 10,
+	partial: false,
+})
+const detail = Schema.decodeUnknownSync(ReleaseDetail)({
+	versions: data.releases,
+	timeline: [],
+	points: [point("2026-10-01T10:00:00.000Z")],
+	baselinePoints: [point("2026-09-30T10:00:00.000Z")],
+	errorFingerprints: [{ fingerprintHash: "123", count: 4, firstSeen: "2026-10-01T10:05:00.000Z" }],
+	startTime: data.startTime,
+	endTime: data.endTime,
+	bucketSeconds: 3600,
+})
+
+/** The service body once the list answered: `?service=payment-svc`. */
+const withService = () => {
+	const entered = init(
+		{ _tag: "Release", commitSha: HEAD, search: { service: "payment-svc" } },
+		context,
+	).model
+	const resolved = pageUpdate(
+		entered,
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	).model
+	return pageUpdate(
+		resolved,
+		Message.CompletedFetchReleases({ key: resolved.releases.key ?? "", result: Result.succeed(data) }),
+	)
+}
+
+const withDetail = () => {
+	const listed = withService().model
+	return pageUpdate(
+		listed,
+		Message.CompletedFetchDetail({ key: listed.detail.key ?? "", result: Result.succeed(detail) }),
+	)
 }
 
 describe("release detail", () => {
@@ -56,7 +122,54 @@ describe("release detail", () => {
 
 	test("a sha that served no traffic says so", () => {
 		const model = withReleases("c".repeat(40)).model
-		scene({ update: pageUpdate, view }, given(model), expectView(text(/served no traffic in this window/)).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text(/served no traffic in this window/)).toExist(),
+		)
+	})
+
+	test("with ?service= the detail bundle follows the list, then its issues and changeset", () => {
+		const listed = withService()
+		expect(names(listed.commands)).toEqual(["LoadChartRuntime", "FetchReleaseDetail"])
+		expect(names(withDetail().commands)).toEqual(["FetchReleaseServiceIssues", "FetchReleaseChangeset"])
+	})
+
+	test("the service body compares against the version it replaced and toggles the charted series", () => {
+		const model = withDetail().model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			THEME,
+			CURSOR,
+			expectView(text("This version vs. the previous one")).toExist(),
+			expectView(text(`Only spans that carried ${HEAD.slice(0, 7)}`)).toExist(),
+		)
+		const others = pageUpdate(model, Message.ClickedSeries({ series: "others" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(others),
+			THEME,
+			CURSOR,
+			expectView(
+				text(`Only spans that carried ${BASE.slice(0, 7)}, the version it replaced`),
+			).toExist(),
+		)
+	})
+
+	test("a failed detail bundle offers a retry that refetches only the bundle", () => {
+		const listed = withService().model
+		const failed = pageUpdate(
+			listed,
+			Message.CompletedFetchDetail({ key: listed.detail.key ?? "", result: Result.fail(FAILURE) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			THEME,
+			expectView(text("Failed to load release")).toExist(),
+		)
+		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toEqual(["FetchReleaseDetail"])
 	})
 
 	test("Reload re-resolves the window unsnapped and spins", () => {

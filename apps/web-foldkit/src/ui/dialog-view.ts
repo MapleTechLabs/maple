@@ -33,15 +33,18 @@ type Parts = Readonly<{
 }>
 
 // dialog.tsx `DialogPopup`, alert-dialog.tsx `AlertDialogPopup`, sheet.tsx `SheetPopup`, command.tsx
-const partsOf = (kind: Kind, side: SheetSide, className: string | undefined): Parts => {
+const partsOf = (kind: Kind, side: SheetSide, className: string | undefined, isBottomStick = true): Parts => {
 	switch (kind) {
 		case "dialog":
 			return {
 				backdrop: cn(DialogStyles.dialogBackdropStyles),
-				viewport: cn(DialogStyles.dialogViewportStyles, DialogStyles.dialogViewportBottomStickStyles),
+				viewport: cn(
+					DialogStyles.dialogViewportStyles,
+					isBottomStick && DialogStyles.dialogViewportBottomStickStyles,
+				),
 				popup: cn(
 					DialogStyles.dialogPopupStyles,
-					DialogStyles.dialogPopupBottomStickStyles,
+					isBottomStick && DialogStyles.dialogPopupBottomStickStyles,
 					className,
 				),
 				closeButton: Option.some(DialogStyles.dialogCloseStyles),
@@ -117,12 +120,16 @@ export type ViewInputs = Readonly<{
 	closeClassName?: string
 	/** Base UI points `aria-describedby` at a description only when one renders. */
 	hasDescription?: boolean
+	/** Likewise `aria-labelledby` at a title: a popup with its own chrome renders none. */
+	hasTitle?: boolean
+	/** `bottomStickOnMobile={false}`: the dialog stays centred on narrow screens. */
+	isBottomStickOnMobile?: boolean
 }>
 
 const slotPrefix = (kind: Kind) => kind
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
-	const parts = partsOf(model.kind, inputs.side ?? "right", inputs.className)
+	const parts = partsOf(model.kind, inputs.side ?? "right", inputs.className, inputs.isBottomStickOnMobile)
 	const slot = slotPrefix(model.kind)
 	const isVisible = isMounted(model.isOpen, model.animation)
 	const state = stateAttributes(h, model.isOpen, model.animation)
@@ -190,7 +197,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							focusGuard(h, "inside", [h.DataAttribute("base-ui-inert", "")]),
 							h.div(
 								[
-									...(parts.isLabelled
+									...(parts.isLabelled && inputs.hasTitle !== false
 										? [
 												...(inputs.hasDescription === false
 													? []
