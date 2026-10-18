@@ -4,7 +4,7 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { TONE_COLOR } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { statusDotVariants } from "@maple/ui/styles/ui/status-dot"
+import { statusDot } from "../../../ui/status-dot"
 import { tableCellStyles as tableCellClass, tableRowStyles } from "@maple/ui/styles/ui/table"
 import { HEALTH_TONE } from "@maple/web/components/dashboard/service-health"
 import { Option } from "effect"
@@ -68,16 +68,10 @@ const truncateCommitSha = (sha: string): string =>
 const healthDot = (h: HtmlBuilder<Message>, health: ServiceHealth | undefined): Html | null =>
 	health === undefined || health === "healthy"
 		? null
-		: h.span(
-				[
-					h.AriaHidden(false),
-					h.AriaLabel(health),
-					h.Title(health),
-					h.Class(cn(statusDotVariants({ tone: HEALTH_TONE[health] }))),
-					h.DataAttribute("slot", "status-dot"),
-				],
-				[],
-			)
+		: statusDot(h, {
+				tone: HEALTH_TONE[health],
+				attributes: [h.AriaHidden(false), h.AriaLabel(health), h.Title(health)],
+			})
 
 const environmentBadge = (h: HtmlBuilder<Message>, environment: string): Html => {
 	const tint =

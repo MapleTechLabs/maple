@@ -1,7 +1,7 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { SEVERITY_COLORS, SEVERITY_ORDER } from "@maple/ui/lib/severity"
 import { formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { eyebrow } from "../../../ui/eyebrow"
 import { formatWarehouseDateTime, warehouseDateTimeToIso } from "@maple/query-engine"
 import { computeBucketSeconds } from "@maple/web-data/warehouse/timeseries-utils"
 import { cn } from "@maple/ui/lib/utils"
@@ -155,13 +155,9 @@ const emptyStrip = (
 								[h.Class("absolute inset-0 flex flex-col items-center justify-center gap-2")],
 								[
 									h.span([h.Class("text-xs")], ["No log volume in this window"]),
-									h.ul(
-										[
-											h.Class(
-												cn(eyebrowVariants(), "flex items-center gap-3 opacity-60"),
-											),
-											h.DataAttribute("slot", "eyebrow"),
-										],
+									eyebrow(
+										h,
+										{ as: "ul", className: "flex items-center gap-3 opacity-60" },
 										SEVERITY_ORDER.filter((s) => s !== "WARNING").map((severity) =>
 											h.li(
 												[h.Class("flex items-center gap-1.5")],

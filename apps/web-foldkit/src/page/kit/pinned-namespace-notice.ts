@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { badge } from "../../ui/display"
 import { icon } from "../../ui/icon"
 
 /**
@@ -43,12 +43,13 @@ export const pinnedNamespaceNotice = <M>(h: HtmlBuilder<M>, namespace: string, o
 				[
 					icon(h, "LayersIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 					h.span([h.Class("truncate")], [namespace]),
-					h.span(
-						[
-							h.Class(cn(badgeVariants({ variant: "tag", className: "ml-auto" }))),
-							h.DataAttribute("slot", "badge"),
-							h.Title("Pinned for the whole app in the org menu"),
-						],
+					badge(
+						h,
+						{
+							variant: "tag",
+							className: "ml-auto",
+							attributes: [h.Title("Pinned for the whole app in the org menu")],
+						},
 						["Pinned"],
 					),
 				],
