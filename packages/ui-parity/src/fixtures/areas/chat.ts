@@ -126,6 +126,31 @@ const mathConversation = (nowMs: number) => {
 	]
 }
 
+export const CHAT_CHARTS_DATASET = "chat-charts"
+
+/** A reply with a `bar` and a `line` ```chart fence, ending a few minutes before `now`. */
+const chartsConversation = (nowMs: number) => {
+	const series = (values: ReadonlyArray<number>, name: string) =>
+		values.map((value, index) => ({
+			bucket: new Date(Math.floor(nowMs / MINUTE - (values.length - index + 2)) * MINUTE).toISOString(),
+			series: { [name]: value, "checkout-api": Math.round(value / 3) },
+		}))
+	const fence = (spec: Record<string, unknown>) => ["```chart", JSON.stringify(spec), "```"].join("\n")
+	const answer = [
+		"Errors per minute, by service:",
+		"",
+		fence({ type: "bar", title: "Errors per minute", unit: "number", data: series([4, 6, 5, 31, 88, 140, 132, 96], "payment-svc") }),
+		"",
+		"and p95 latency over the same window:",
+		"",
+		fence({ type: "line", title: "p95 latency", unit: "ms", data: series([180, 190, 210, 900, 1600, 1840, 1790, 1500], "payment-svc") }),
+	].join("\n")
+	return [
+		{ id: "msg_charts_user", role: "user", text: "Chart the incident.", toolCalls: [], createdAt: nowMs - 2 * MINUTE, startSeq: 1 },
+		{ id: "msg_charts_assistant", role: "assistant", text: answer, toolCalls: [], createdAt: nowMs - MINUTE, startSeq: 2 },
+	]
+}
+
 export const CHAT_PROPOSALS_DATASET = "chat-proposals"
 
 /** One proposal per dashboard tool, awaiting approval: each tool's own summary in its card. */
@@ -194,6 +219,8 @@ const history: RawRoute = {
 					? codeConversation(nowMs)
 					: dataset.name === CHAT_MATH_DATASET
 						? mathConversation(nowMs)
+						: dataset.name === CHAT_CHARTS_DATASET
+							? chartsConversation(nowMs)
 						: dataset.name === CHAT_PROPOSALS_DATASET
 							? proposalsConversation(nowMs)
 						: dataset.name === ACME_OPS_THREAD_DATASET && INVESTIGATION_THREAD.test(url.pathname)
@@ -281,9 +308,10 @@ const chatConversationDataset: Dataset = { ...defaultDataset, name: CHAT_CONVERS
 const chatCodeDataset: Dataset = { ...defaultDataset, name: CHAT_CODE_DATASET }
 const chatMathDataset: Dataset = { ...defaultDataset, name: CHAT_MATH_DATASET }
 const chatProposalsDataset: Dataset = { ...defaultDataset, name: CHAT_PROPOSALS_DATASET }
+const chatChartsDataset: Dataset = { ...defaultDataset, name: CHAT_CHARTS_DATASET }
 
 export const fixtureArea: FixtureArea = {
 	area: "chat",
 	rawRoutes: [history, send, events, abort, apply],
-	datasets: [chatConversationDataset, chatCodeDataset, chatMathDataset, chatProposalsDataset],
+	datasets: [chatConversationDataset, chatCodeDataset, chatMathDataset, chatProposalsDataset, chatChartsDataset],
 }

@@ -283,6 +283,9 @@ export const chatArea: AreaModule = {
 			await page.getByRole("button", { name: "Deny" }).nth(4).click()
 			await page.getByText("Denied", { exact: true }).waitFor()
 		}),
+		scenario("charts", "a reply with a bar and a line chart fence", "chat-charts", async (page) => {
+			await page.getByText("p95 latency", { exact: true }).waitFor()
+		}),
 		scenario("math", "a reply with text math, a math block and a math fence", "chat-math", async (page) => {
 			await page.getByText("With the window at one hour:").waitFor()
 		}),

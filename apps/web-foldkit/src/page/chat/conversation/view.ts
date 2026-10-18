@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
+import { BAR_CHART_TOKENS } from "../../../charts/bar-chart"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { button } from "../../../ui/button"
@@ -26,6 +27,9 @@ import { Message } from "./message"
 import { isLoading, type Model } from "./model"
 
 // `ChatConversation` (apps/web components/chat/chat-conversation.tsx): transcript, notices, composer.
+
+/** The area and bar plots' colours, read once for every chart fence. */
+const CHART_TOKENS = [...new Set([...AREA_CHART_TOKENS, ...BAR_CHART_TOKENS])]
 
 export type ConversationViewOptions<M> = Readonly<{
 	toMessage: (message: Message) => M
@@ -138,7 +142,7 @@ const cardsOf = <M>(
 
 /** Reads the chart colours off the page, again on every light/dark flip. */
 export const themeMount = <M>(toMessage: (message: Message) => M) =>
-	Mount.mapMessage(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }), (message) =>
+	Mount.mapMessage(ResolveThemeColors({ tokens: CHART_TOKENS }), (message) =>
 		toMessage(Message.ResolvedThemeColors({ colors: message.colors })),
 	)
 

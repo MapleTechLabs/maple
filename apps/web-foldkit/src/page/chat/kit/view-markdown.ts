@@ -10,6 +10,7 @@ import { panelPaddingStyles, panelStyles, panelToneStyles } from "@maple/ui/styl
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "../../../charts/area-chart"
+import * as BarChart from "../../../charts/bar-chart"
 import * as ChartModel from "../../../charts/chart"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
@@ -160,7 +161,23 @@ const plot = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, id: string, spec: ChartS
 		})
 	if (!host.isRuntimeReady || host.theme === null)
 		return chartSkeleton(h, spec.type === "bar" ? "bar" : spec.type, PLOT_HEIGHT)
-	// TODO(chat-chart-bar): a `bar` fence draws as an area until the bar chart takes chat rows.
+	if (spec.type === "bar")
+		return h.submodel({
+			slotId: `chat-chart:${id}`,
+			model: host.charts[id] ?? ChartModel.init(),
+			view: BarChart.view,
+			viewInputs: {
+				chartId: id,
+				data: timeseriesRows(spec),
+				theme: host.theme,
+				unit,
+				timeZone: host.timeZone,
+				nowMs: host.nowMs,
+				className: PLOT_HEIGHT,
+				legend: "hidden",
+			},
+			toParentMessage: (message) => host.onChart(id, message),
+		})
 	return h.submodel({
 		slotId: `chat-chart:${id}`,
 		model: host.charts[id] ?? ChartModel.init(),
