@@ -1,4 +1,5 @@
 import type { Page } from "playwright"
+import type { Faults } from "../contract.ts"
 import type { AreaModule, Scenario } from "./types.ts"
 
 /** Settings tabs, the standalone /mcp page and the /developer redirect. */
@@ -41,7 +42,12 @@ const page = (
 	id: string,
 	title: string,
 	path: string,
-	options: { readonly dataset?: string; readonly steps?: (page: Page) => Promise<void> } = {},
+	options: {
+		readonly dataset?: string
+		readonly steps?: (page: Page) => Promise<void>
+		readonly faults?: Faults
+		readonly settle?: "quiet" | "held"
+	} = {},
 ): Scenario => ({
 	id: `settings-${id}`,
 	title,
@@ -50,8 +56,60 @@ const page = (
 	viewports: ["desktop"],
 	themes: ["light", "dark"],
 	steps: options.steps,
+	...(options.faults !== undefined && { faults: options.faults }),
+	...(options.settle !== undefined && { settle: options.settle }),
 	area: "settings",
 })
+
+/** Held far past any capture, so the screenshot is the loading state. */
+const HELD_MS = 60_000
+const held = (...tags: ReadonlyArray<string>) => ({
+	faults: { delays: Object.fromEntries(tags.map((tag) => [tag, HELD_MS])) },
+	settle: "held" as const,
+})
+const failing = (...tags: ReadonlyArray<string>) => ({
+	faults: {
+		failures: Object.fromEntries(
+			tags.map((tag) => [tag, { status: 500, body: { message: "ui-parity: injected failure" } }]),
+		),
+	},
+})
+
+/** Loading and failed reads for each tab that loads data (the first read the tab renders from). */
+const FAULT_TABS: ReadonlyArray<readonly [id: string, path: string, tags: ReadonlyArray<string>]> = [
+	["audit-log", "/settings?tab=audit-log", ["auditLog.list"]],
+	["ingestion", "/settings?tab=ingestion", ["attributeMappings.list", "instrumentationRecommendations.list"]],
+	["data-platform", "/settings?tab=data-platform", ["orgClickHouseSettings.get"]],
+	["setup-audit", "/settings?tab=setup-audit", ["instrumentationAudit.retrieve"]],
+	["automation", "/settings?tab=automation", ["errors.getEscalationPolicy", "errors.listRecentEscalations"]],
+	["api-keys", "/settings?tab=api-keys", ["ingestKeys.retrieve"]],
+	["mcp", "/settings?tab=mcp", ["mcpConnections.list", "mcpTools.list"]],
+	["ai-provider", "/settings?tab=ai-provider", ["openRouterKey.get", "aiTriage.getSettings"]],
+]
+const faultScenarios: ReadonlyArray<Scenario> = FAULT_TABS.flatMap(([id, path, tags]) => [
+	page(`${id}-loading`, `${id}: loading`, path, held(...tags)),
+	page(`${id}-error`, `${id}: failed read`, path, failing(...tags)),
+])
+
+/** The Clerk tabs' reads: billing's own and the digest subscription. */
+const clerkFaultScenarios: ReadonlyArray<Scenario> = [
+	page("clerk-billing-loading", "Billing: loading", "/settings?tab=billing", {
+		dataset: CLERK,
+		...held("billing.getUsage", "billingPublic.listPlans", "billing.getDailySpend", "billing.listInvoices", "billing.getBillingProfile"),
+	}),
+	page("clerk-billing-error", "Billing: daily spend, invoices and details fail", "/settings?tab=billing", {
+		dataset: CLERK,
+		...failing("billing.getDailySpend", "billing.listInvoices", "billing.getBillingProfile"),
+	}),
+	page("account-email-preferences-loading", "Email preferences: loading", "/account?tab=email-preferences", {
+		dataset: CLERK,
+		...held("digest.getSubscription"),
+	}),
+	page("account-email-preferences-error", "Email preferences: failed read", "/account?tab=email-preferences", {
+		dataset: CLERK,
+		...failing("digest.getSubscription"),
+	}),
+]
 
 const KEYS = "/settings?tab=keys"
 const MCP = "/settings?tab=mcp"
@@ -559,6 +617,8 @@ export const settingsArea: AreaModule = {
 		...auditInteractions,
 		...dataPlatformInteractions,
 		...clerkInteractions,
+		...faultScenarios,
+		...clerkFaultScenarios,
 		page("audit-log-denied", "Audit log: denied only", "/settings?tab=audit-log", {
 			// The outcome filter precedes the table's "Denied" badges in document order.
 			steps: (page) => page.getByText("Denied", { exact: true }).first().click(),
