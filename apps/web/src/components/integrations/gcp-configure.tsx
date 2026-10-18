@@ -1542,7 +1542,8 @@ function RunStatus({
 		<div
 			role="status"
 			className={cn(
-				"flex flex-col gap-3 border-t px-6 py-4",
+				// On a phone a long error would squeeze the steps above out of view: it scrolls instead.
+				"flex max-h-[40svh] shrink-0 flex-col gap-3 overflow-y-auto border-t px-6 py-4 sm:max-h-none",
 				overdue && byScript && "bg-severity-warn/6",
 			)}
 		>
@@ -1592,13 +1593,13 @@ function RunStatus({
 					{rows.map((row) => (
 						<li
 							key={row.capability}
-							className="grid grid-cols-[auto_10rem_1fr] items-center gap-x-2.5 text-xs/5"
+							className="grid grid-cols-[auto_1fr] items-center gap-x-2.5 text-xs/5 sm:grid-cols-[auto_10rem_1fr]"
 						>
 							<RunRowMarker state={row.state} />
 							<span className="text-foreground">{row.title}</span>
 							<span
 								className={cn(
-									"text-pretty",
+									"col-start-2 text-pretty sm:col-start-auto",
 									row.error === null ? "text-muted-foreground" : "text-severity-error",
 								)}
 							>
@@ -1901,11 +1902,11 @@ export function GcpMethodApplyView({
 			<section className="flex flex-col gap-3">
 				<div className="flex flex-col gap-0.5">
 					<h3 className={GCP_TITLE}>
-						{!confirmable
-							? "If you created these, delete them in the console"
-							: iac === null
+						{iac !== null
+							? "If your file didn't create these, delete them in the console"
+							: confirmable
 								? "Delete these in the Google Cloud console"
-								: "If your file didn't create these, delete them in the console"}
+								: "If you created these, delete them in the console"}
 					</h3>
 					<p className={SMALL}>
 						In this order: Google keeps routing to the topic for a while.{" "}

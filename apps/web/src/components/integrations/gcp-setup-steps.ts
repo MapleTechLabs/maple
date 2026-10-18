@@ -290,7 +290,7 @@ export function gcpRemovalList(
 					{ what: "Pub/Sub subscription", name: names.subscription },
 					{ what: "Pub/Sub topic", name: names.topic },
 					{
-						what: "Push service account, if present: the setup script makes none",
+						what: "Push service account, if present",
 						name: gcpServiceAccountEmail(names.pushServiceAccountId, host),
 					},
 				]

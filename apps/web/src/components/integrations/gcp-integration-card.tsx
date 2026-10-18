@@ -782,7 +782,7 @@ export function GcpIntegrationCard() {
 						<IntegrationEmptyFeature
 							label="Access"
 							title="Read-only, your choice of setup"
-							description="A Cloud Shell script, the console or Terraform. No keys, no write access for Maple."
+							description="A Cloud Shell script, the console, Terraform or Alchemy. No keys, no write access for Maple."
 						/>
 					</IntegrationEmptyFeatures>
 					<IntegrationEmptyCard>
@@ -801,7 +801,7 @@ export function GcpIntegrationCard() {
 						) : (
 							<IntegrationEmptyHint>
 								A Maple organization admin connects Google Cloud with a Cloud Shell script, in
-								the console or with Terraform.
+								the console, or with Terraform or Alchemy.
 							</IntegrationEmptyHint>
 						)}
 					</IntegrationEmptyCard>
