@@ -26,16 +26,7 @@ export const BreakdownRow = Schema.Struct({ name: Schema.String, value: Schema.N
 export type BreakdownRow = typeof BreakdownRow.Type
 
 /** The `AutocompleteValuesProvider` lookups: fetched like legacy, read by the where-clause editor. */
-export const AutocompleteLookup = Schema.Literals([
-	"tracesFacets",
-	"logsFacets",
-	"spanAttributeKeys",
-	"resourceAttributeKeys",
-	"metricAttributeKeys",
-	"productEventNames",
-	"productEventAttributeKeys",
-])
-export type AutocompleteLookup = typeof AutocompleteLookup.Type
+export { AutocompleteLookup } from "../../kit/autocomplete-lookups"
 
 export const Model = Schema.Struct({
 	metricName: Schema.String,

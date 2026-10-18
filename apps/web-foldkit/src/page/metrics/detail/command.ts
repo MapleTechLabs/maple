@@ -1,15 +1,7 @@
 import { MetricsQueryDraftSchema, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import { getLogsFacets } from "@maple/web-data/warehouse/logs"
 import { getMetricAttributeKeys, listMetrics } from "@maple/web-data/warehouse/metrics"
-import { getProductEventAttributeKeys, getProductEventNames } from "@maple/web-data/warehouse/product-events"
 import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
-import {
-	getResourceAttributeKeys,
-	getSpanAttributeKeys,
-	getTracesFacets,
-} from "@maple/web-data/warehouse/traces"
-import type { MapleInternalHttp, WarehouseExecutor } from "@maple/web-data/warehouse/warehouse-services"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -17,6 +9,7 @@ import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import { Message, RequestMode } from "./message"
 import { AutocompleteLookup } from "./model"
+import { autocompleteLookup } from "../../kit/autocomplete-lookups"
 
 export const ResolveWindow = Command.define("ResolveMetricWindow", {
 	args: {
@@ -59,40 +52,11 @@ export const FetchCatalog = Command.define("FetchMetricCatalog", {
 		).pipe(Effect.map((result) => Message.CompletedFetchCatalog({ key, result }))),
 })
 
-const names = (rows: ReadonlyArray<{ readonly name: string }>) => rows.map((row) => row.name)
-const keysOf = (response: { readonly data: ReadonlyArray<{ readonly attributeKey: string }> }) =>
-	response.data.map((row) => row.attributeKey)
-
-/** One `AutocompleteValuesProvider` lookup, reduced to the names the where-clause editor offers. */
-const lookup = (
-	name: AutocompleteLookup,
-	window: TimeWindow,
-): Effect.Effect<ReadonlyArray<string>, unknown, WarehouseExecutor | MapleInternalHttp> => {
-	switch (name) {
-		case "tracesFacets":
-			return Effect.map(getTracesFacets({ data: window }), (response) => names(response.data.services))
-		case "logsFacets":
-			return Effect.map(getLogsFacets({ data: window }), (response) => names(response.data.services))
-		case "spanAttributeKeys":
-			return Effect.map(getSpanAttributeKeys({ data: window }), keysOf)
-		case "resourceAttributeKeys":
-			return Effect.map(getResourceAttributeKeys({ data: window }), keysOf)
-		case "metricAttributeKeys":
-			return Effect.map(getMetricAttributeKeys({ data: window }), keysOf)
-		case "productEventNames":
-			return Effect.map(getProductEventNames({ data: { ...window, limit: 200 } }), (response) =>
-				response.data.map((row) => row.eventName),
-			)
-		case "productEventAttributeKeys":
-			return Effect.map(getProductEventAttributeKeys({ data: window }), keysOf)
-	}
-}
-
 export const FetchAutocomplete = Command.define("FetchMetricAutocomplete", {
 	args: { key: Schema.String, lookup: AutocompleteLookup, window: TimeWindow },
 	messages: [Message.CompletedFetchAutocomplete],
 	execute: (args) =>
-		settle(lookup(args.lookup, args.window)).pipe(
+		settle(autocompleteLookup(args.lookup, args.window)).pipe(
 			Effect.map((result) =>
 				Message.CompletedFetchAutocomplete({ key: args.key, lookup: args.lookup, result }),
 			),
