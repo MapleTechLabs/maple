@@ -103,14 +103,11 @@ export const answered = (model: Model, message: PageMessage) =>
 		),
 	)
 
-/** Answers handed over by a page: kept like settled preloads, except keys the open page holds. */
+/** Answers handed over by a page (usually ones it holds itself): kept like settled preloads. */
 export const handedOff = (model: Model, messages: ReadonlyArray<PageMessage>) => {
 	const fresh = messages.flatMap((message) =>
 		Option.toArray(
-			Option.map(
-				Option.filter(keyOfMessage(message), (key) => !model.heldKeys.includes(key)),
-				(key) => [key, { result: message, isAwaited: false }] as const,
-			),
+			Option.map(keyOfMessage(message), (key) => [key, { result: message, isAwaited: false }] as const),
 		),
 	)
 	return {

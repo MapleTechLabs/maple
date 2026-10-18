@@ -66,7 +66,9 @@ describe("intent preload", () => {
 	})
 
 	test("an answer handed over by another page is delivered on entry and never preloaded again", () => {
-		const handed = Preload.handedOff(Preload.init(), [answer(keyOf())])
+		// The handing page (the traces list's peek) holds the key itself.
+		const peeking = Preload.seeded(Preload.init(), "TracesList:TracesList:org_acme", preloaded()).model
+		const handed = Preload.handedOff(peeking, [answer(keyOf())])
 		expect(handed.keys).toEqual([keyOf()])
 		expect(Preload.started(handed.model, preloaded()).commands).toEqual([])
 		const entered = Preload.seeded(handed.model, holder, preloaded())
