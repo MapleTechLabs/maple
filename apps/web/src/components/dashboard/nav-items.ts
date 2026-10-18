@@ -23,7 +23,7 @@ import {
 	SquareSparkleIcon,
 } from "@/components/icons"
 import { KUBERNETES_ROOT, KUBERNETES_VIEWS } from "@/components/infra/kubernetes/views"
-import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
+import { PLANETSCALE_COLOR } from "@maple/ui/components/service-map/service-map-db"
 import type { OrganizationFeatureFlags } from "@/lib/organization-feature-flags"
 
 /**

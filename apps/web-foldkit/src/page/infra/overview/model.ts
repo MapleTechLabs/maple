@@ -1,0 +1,84 @@
+import { GCP_INFRA_SERVICE_IDS } from "@maple/domain/gcp-infra"
+import { Schema } from "effect"
+import { KeyedSchema } from "../../../data/keyed"
+import { LoadFailure } from "../../../data/load-failure"
+import { InfraSearch } from "../../../route/search"
+import * as Frame from "../kit/frame"
+import * as InstallModal from "../kit/install-modal"
+
+// `/infra` (apps/web/src/routes/infra/index.tsx): the overview, one summary per source.
+
+export const SOURCE_IDS = ["hosts", "containers", "kubernetes", "cloudflare", "railway", "planetscale", "gcp"] as const
+export const SourceId = Schema.Literals(SOURCE_IDS)
+export type SourceId = typeof SourceId.Type
+
+const FleetScope = Schema.Literals(["saturated", "elevated", "stale"])
+const GcpService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
+
+/** `FindingTarget` (components/infra/overview/summaries.ts). */
+export const FindingTarget = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("hosts"), scope: FleetScope }),
+	Schema.Struct({ kind: Schema.Literal("host"), hostName: Schema.String }),
+	Schema.Struct({ kind: Schema.Literal("containers"), scope: FleetScope }),
+	Schema.Struct({ kind: Schema.Literal("pods"), scope: Schema.Literals(["saturated", "elevated", "unbounded"]) }),
+	Schema.Struct({ kind: Schema.Literal("zone"), zoneName: Schema.String }),
+	Schema.Struct({ kind: Schema.Literal("railway"), serviceId: Schema.String, environmentId: Schema.String }),
+	Schema.Struct({ kind: Schema.Literal("planetscale"), database: Schema.String }),
+	Schema.Struct({ kind: Schema.Literal("gcp"), service: GcpService, keys: Schema.Array(Schema.String) }),
+	Schema.Struct({ kind: Schema.Literal("gcpService"), service: GcpService }),
+])
+export type FindingTarget = typeof FindingTarget.Type
+
+export const Finding = Schema.Struct({
+	key: Schema.String,
+	source: SourceId,
+	tone: Schema.Literals(["crit", "warn", "stale"]),
+	title: Schema.String,
+	subject: Schema.optionalKey(Schema.String),
+	detail: Schema.String,
+	target: FindingTarget,
+})
+export type Finding = typeof Finding.Type
+
+export const HealthSegment = Schema.Struct({
+	key: Schema.Literals(["ok", "elevated", "saturated", "unbounded"]),
+	count: Schema.Number,
+})
+export type HealthSegment = typeof HealthSegment.Type
+
+export const SourceSummary = Schema.Struct({
+	resources: Schema.String,
+	segments: Schema.Array(HealthSegment),
+	headline: Schema.String,
+	headlineTone: Schema.Literals(["neutral", "warn", "crit"]),
+	findings: Schema.Array(Finding),
+})
+export type SourceSummary = typeof SourceSummary.Type
+
+/**
+ * One source's read: its summary (`null` when it answered with nothing readable) and whether it
+ * has anything at all, which stands in for the shell's presence probe (see `presentSources`).
+ */
+export const SourceReading = Schema.Struct({
+	summary: Schema.NullOr(SourceSummary),
+	isReporting: Schema.Boolean,
+})
+export type SourceReading = typeof SourceReading.Type
+
+export const SourceSlot = KeyedSchema(SourceReading, LoadFailure)
+
+export const Model = Schema.Struct({
+	search: InfraSearch,
+	frame: Frame.Model,
+	sources: Schema.Struct({
+		hosts: SourceSlot,
+		containers: SourceSlot,
+		kubernetes: SourceSlot,
+		cloudflare: SourceSlot,
+		railway: SourceSlot,
+		planetscale: SourceSlot,
+		gcp: SourceSlot,
+	}),
+	install: InstallModal.Model,
+})
+export type Model = typeof Model.Type

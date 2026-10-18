@@ -1,0 +1,31 @@
+import { cn } from "@maple/ui/lib/utils"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { icon } from "../../../ui/icon"
+import type { IconName } from "../../../ui/icons.generated"
+import type { SourceId } from "./model"
+
+// `SOURCE_TITLE` and `SourceMark` (components/infra/overview/infra-overview.tsx): the sidebar's marks.
+// apps/web re-exports `CloudflareBrandIcon` as `CloudflareIcon`.
+
+export const SOURCE_TITLE = {
+	hosts: "Hosts",
+	containers: "Containers",
+	kubernetes: "Kubernetes",
+	cloudflare: "Cloudflare",
+	railway: "Railway",
+	planetscale: "PlanetScale",
+	gcp: "Google Cloud",
+} satisfies Record<SourceId, string>
+
+const SOURCE_ICON = {
+	hosts: "ServerIcon",
+	containers: "DockerIcon",
+	kubernetes: "KubernetesIcon",
+	cloudflare: "CloudflareBrandIcon",
+	railway: "RailwayIcon",
+	planetscale: "PlanetScaleIcon",
+	gcp: "GoogleCloudIcon",
+} satisfies Record<SourceId, IconName>
+
+export const sourceMark = <M>(h: HtmlBuilder<M>, id: SourceId, size: number, className?: string): Html =>
+	icon(h, SOURCE_ICON[id], { size, className: cn("shrink-0 text-foreground", className) })

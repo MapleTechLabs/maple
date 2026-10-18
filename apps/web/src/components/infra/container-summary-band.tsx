@@ -5,15 +5,9 @@
 import { FleetBand, FleetBandLoading } from "./primitives/fleet-band"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 
-export interface ContainerScopeCounts {
-	readonly totalContainers: number
-	readonly saturatedContainers: number
-	readonly elevatedContainers: number
-	readonly staleContainers: number
-}
+import type { ContainerScope, ContainerScopeCounts } from "./container-scopes"
 
-/** A one-click scope. `undefined` means "no scope" (the All cell). */
-export type ContainerScope = "saturated" | "elevated" | "stale"
+export type { ContainerScope, ContainerScopeCounts } from "./container-scopes"
 
 interface ContainerSummaryBandProps {
 	counts: ContainerScopeCounts

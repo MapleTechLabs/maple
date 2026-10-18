@@ -80,6 +80,7 @@ export const infraArea: AreaModule = {
 	scenarios: [
 		scenario("overview", "Infrastructure overview (cluster org)", "/infra", K8S),
 		scenario("overview-empty", "Infrastructure overview (empty org)", "/infra", EMPTY),
+		...timed("overview", "Infrastructure overview", "/infra", K8S, "queryEngine.podsSummary"),
 		scenario("discover", "Discover redirects to the overview", "/infra/discover", "default"),
 		scenario("hosts", "Hosts", "/infra/hosts", "default"),
 		scenario("hosts-empty", "Hosts (empty org)", "/infra/hosts", EMPTY),
@@ -143,6 +144,9 @@ export const infraArea: AreaModule = {
 		// Interactions.
 		scenario("overview-open-attention", "Overview: open the saturated pods", "/infra", K8S, (page) =>
 			page.getByText("2 pods at their CPU or memory limit").click(),
+		),
+		scenario("overview-install", "Overview: the install modal", "/infra", K8S, (page) =>
+			page.getByRole("button", { name: "Install a collector" }).click(),
 		),
 		scenario(
 			"hosts-scope-elevated",
