@@ -76,6 +76,30 @@ export const alertsArea: AreaModule = {
 		alert("hub-destination-test", "Hub, test a destination", ROUTING, {
 			steps: act(clickButton(/^Test$/), waitForText("Test notification sent")),
 		}),
+		alert("hub-new-destination", "Hub, the add destination dialog", ROUTING, {
+			steps: act(clickButton("New destination")),
+		}),
+		alert("hub-new-destination-webhook", "Hub, add a webhook destination", ROUTING, {
+			steps: act(
+				clickButton("New destination"),
+				clickButton(/^Webhook/),
+				(page) => page.getByRole("textbox", { name: "Webhook URL", exact: true }).fill("https://hooks.acme.test/new"),
+				clickButton("Add Webhook destination"),
+				waitForText("Destination created"),
+			),
+		}),
+		alert("hub-edit-destination", "Hub, edit a destination", ROUTING, {
+			steps: act(clickButton("Actions for On-call webhook"), clickMenuItem("Edit")),
+		}),
+		alert("hub-edit-destination-save", "Hub, save an edited destination", ROUTING, {
+			steps: act(
+				clickButton("Actions for On-call webhook"),
+				clickMenuItem("Edit"),
+				clickSwitch("Enabled"),
+				clickButton("Save changes"),
+				waitForText("Destination updated"),
+			),
+		}),
 		alert("hub-destination-delete-confirm", "Hub, delete confirmation", ROUTING, {
 			steps: act(clickButton("Actions for On-call webhook"), clickMenuItem("Delete")),
 		}),

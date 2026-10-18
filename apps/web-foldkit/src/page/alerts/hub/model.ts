@@ -11,6 +11,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { AlertsSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as DestinationDialog from "../destination/dialog"
 
 // The `/alerts` hub (apps/web/src/routes/alerts/index.tsx, components/alerts/overview/).
 
@@ -48,5 +49,6 @@ export const Model = Schema.Struct({
 	brokenLogos: Schema.Array(Schema.String),
 	/** Row action menus by menu id, created on first use. */
 	menus: Schema.Record(Schema.String, Menu.Model),
+	destinationDialog: DestinationDialog.Model,
 })
 export type Model = typeof Model.Type

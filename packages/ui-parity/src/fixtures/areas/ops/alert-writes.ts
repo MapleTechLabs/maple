@@ -117,6 +117,23 @@ const updateDestination: EndpointHandler = (request) => {
 			)
 }
 
+/** A created destination: the payload's type and name with a fixed new id. */
+const createDestination: EndpointHandler = (request) => {
+	const payload = record(request.payload)
+	const type = str(payload, "type") ?? "webhook"
+	const row: SyncedRow = {
+		id: "0199a001-0000-7000-8000-0000000000ff",
+		name: str(payload, "name") ?? "",
+		type,
+		enabled: true,
+		config_json: { summary: str(payload, "url") ?? type, channelLabel: null },
+		last_tested_at: null,
+		last_test_error: null,
+		created_at: request.dataset.now,
+	}
+	return Effect.sync(() => destinationWire(request.dataset, row, {}))
+}
+
 const testDestination: EndpointHandler = () =>
 	Effect.sync(() =>
 		Schema.encodeUnknownSync(V2AlertDestinationTestResult)({
@@ -138,6 +155,7 @@ const deleteDestination: EndpointHandler = (request) =>
 export const alertWriteEndpoints = {
 	"alertRules.update": updateRule,
 	"alertDestinations.update": updateDestination,
+	"alertDestinations.create": createDestination,
 	"alertDestinations.test": testDestination,
 	"alertDestinations.delete": deleteDestination,
 } satisfies Readonly<Record<string, EndpointHandler>>

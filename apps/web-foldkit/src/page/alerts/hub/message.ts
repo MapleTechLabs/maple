@@ -10,6 +10,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as DestinationDialog from "../destination/dialog"
 import { TestOutcome } from "./model"
 
 export const RuleBucket = Schema.Literals(["firing", "blind", "healthy", "disabled"])
@@ -46,5 +47,6 @@ export const Message = defineMessageUnion({
 	GotRowMenuMessage: { menuId: Schema.String, message: Menu.Message },
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	FailedLoadProviderLogo: { type: Schema.String },
+	GotDestinationDialogMessage: { message: DestinationDialog.Message },
 })
 export type Message = typeof Message.Type

@@ -14,6 +14,7 @@ import type { Resources } from "../../../platform/resources"
 import type { AppRoute } from "../../../route"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as DestinationDialog from "../destination/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, ruleHref } from "../shared/links"
 import {
@@ -103,6 +104,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		deleteDialog: Dialog.init(DELETE_DIALOG_ID, "alert-dialog"),
 		brokenLogos: [],
 		menus: {},
+		destinationDialog: DestinationDialog.init("alerts-destination"),
 	}
 	const deliveries = requestDeliveries(model, context, "Load")
 	const routing = requestRoutingDeliveries(deliveries.model, context, "Load")
@@ -178,6 +180,23 @@ const confirmDelete = (model: Model): Return => {
 			}
 }
 
+// DESTINATION DIALOG
+
+/** The dialog's outcome as the page reports it: toasts, and "Destination created" for a new one. */
+const liftDestinationDialog = (model: Model, step: ReturnType<typeof DestinationDialog.update>): Return => ({
+	model: { ...model, destinationDialog: step.model },
+	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+		Message.GotDestinationDialogMessage({ message }),
+	),
+	outMessage:
+		step.outMessage === undefined
+			? undefined
+			: DestinationDialog.OutMessage.match(step.outMessage, {
+					RequestedToast: ({ type, title, description }) => toast(type, title, description),
+					CreatedDestination: () => toast("success", "Destination created"),
+				}),
+})
+
 // ROW MENUS
 
 /** Row menu ids carry what they act on: `rule:<id>` or `destination:<id>`. */
@@ -214,10 +233,9 @@ const pickedFromMenu = (model: Model, menuId: string, value: string): Return => 
 		{
 			onNone: () => ({ model }),
 			onSome: (row) =>
-				// TODO(destination-dialog): "edit" opens the destination dialog.
 				value === "delete"
 					? updateDeleteDialog({ ...model, confirmDeleteId: row.id }, Dialog.open(model.deleteDialog))
-					: { model },
+					: liftDestinationDialog(model, DestinationDialog.openEdit(model.destinationDialog, row)),
 		},
 	)
 }
@@ -322,7 +340,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			})
 		},
-		// TODO(destination-dialog): the destination dialog.
-		ClickedNewDestination: () => ({ model }),
+		ClickedNewDestination: () => liftDestinationDialog(model, DestinationDialog.openNew(model.destinationDialog)),
+		GotDestinationDialogMessage: ({ message: child }) =>
+			liftDestinationDialog(model, DestinationDialog.update(model.destinationDialog, child)),
 		GotRowMenuMessage: ({ menuId, message: child }) => updateMenu(model, menuId, child),
 	})

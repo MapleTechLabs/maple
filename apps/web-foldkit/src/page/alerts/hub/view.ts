@@ -17,6 +17,7 @@ import type { Model } from "./model"
 import { alertsEmptyState } from "./view-empty"
 import { inboxTab } from "./view-inbox"
 import { routingTab } from "./view-routing"
+import * as DestinationDialogView from "../destination/view"
 import { rulesTab } from "./view-rules"
 
 // `AlertsPage` (apps/web/src/routes/alerts/index.tsx) and `AlertsHub` (overview/alerts-hub.tsx).
@@ -161,6 +162,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				],
 			),
 			deleteDialog(h, model),
+			h.submodel({
+				slotId: "alerts-destination",
+				model: model.destinationDialog,
+				view: DestinationDialogView.view,
+				viewInputs: { id: "alerts-destination" },
+				toParentMessage: (message) => Message.GotDestinationDialogMessage({ message }),
+			}),
 		],
 	)
 })
