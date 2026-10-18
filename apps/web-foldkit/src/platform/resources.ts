@@ -1,9 +1,8 @@
 import { Layer } from "effect"
 import { BillingCustomerCache } from "../data/billing-customer"
 import { OrgCollections } from "../data/collections/org-collections"
-import { AnomalyServiceCounts } from "../data/anomaly-service-counts"
+import { ReadCache } from "../data/read-cache"
 import { IntegrationStatuses } from "../data/integration-statuses"
-import { ServicesFacetsProbe } from "../data/services-facets-probe"
 import { SessionTenant } from "../data/session-tenant"
 import { WarehouseLive } from "../data/warehouse"
 import { ApiClientsLive, MapleApiV2Client, MapleInternalApiClient } from "./api-clients"
@@ -18,9 +17,8 @@ export const ResourcesLive = Layer.mergeAll(
 	WarehouseLive,
 	OrgCollections.layer,
 	SessionTenant.layer,
+	ReadCache.layer,
 	BillingCustomerCache.layer,
-	ServicesFacetsProbe.layer.pipe(Layer.provide(WarehouseLive)),
-	AnomalyServiceCounts.layer.pipe(Layer.provide(MapleApiV2Client.layer)),
 	IntegrationStatuses.layer.pipe(Layer.provide([MapleInternalApiClient.layer, MapleApiV2Client.layer])),
 )
 export type Resources = Layer.Success<typeof ResourcesLive>
