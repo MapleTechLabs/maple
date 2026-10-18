@@ -9,6 +9,7 @@ import { toolbar } from "../../page/errors/hub/view-toolbar"
 import type { Message as HubMessage } from "../../page/errors/hub/message"
 import type { Model as HubModel } from "../../page/errors/hub/model"
 import { eyebrow } from "../../ui/eyebrow"
+import { isMounted } from "../../ui/overlay/transition"
 import { labSignals } from "./hub-step"
 import { LAB_STATES, LAB_WIDTHS, type LabState, Message, type Model } from "./model"
 
@@ -100,6 +101,11 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 					timeZone: inputs.timeZone,
 					nowMs: hub.nowMs,
 					sparkWindow: fixture.sparkWindow,
+					picker: hub.picker !== null && hub.picker.issueId === signal.id ? hub.picker : null,
+					rowMenu:
+						hub.rowMenuTarget === signal.id && isMounted(hub.rowMenu.isOpen, hub.rowMenu.animation)
+							? hub.rowMenu
+							: null,
 				}),
 			}),
 		],

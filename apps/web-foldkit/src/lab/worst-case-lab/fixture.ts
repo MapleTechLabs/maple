@@ -34,6 +34,7 @@ export const actorIdentities = (mode: WorstCaseMode): ReadonlyArray<ActorIdentit
 		kind: "user",
 		internal: false,
 		name: person.name,
+		detail: null,
 		imageUrl: person.imageUrl,
 		initials: initialsFrom(person.name),
 		seed: person.userId,

@@ -48,6 +48,8 @@ export const errorsSection = (h: H, model: Model): Html => {
 												timeZone: model.timeZone,
 												nowMs: model.nowMs,
 												sparkWindow: fixture.sparkWindow,
+												picker: null,
+												rowMenu: null,
 											},
 											toParentMessage: (message: SignalMessage) =>
 												Message.GotSignalRowMessage({ message }),
