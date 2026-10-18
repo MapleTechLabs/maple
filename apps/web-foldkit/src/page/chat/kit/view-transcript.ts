@@ -63,6 +63,8 @@ export type TranscriptHost<M> = PanelHost<M> &
 		markdownOverrides?: ViewOverrides
 		/** `fallbackDiagnosis`: the report card an investigation thread leads with until its own turn lands. */
 		fallback?: Html
+		/** `JumpToDiagnosis`: the thread's `submit_diagnosis` turn and the Mount (`MountJumpToMessage`). */
+		jump?: Readonly<{ messageId: string; mount: Parameters<HtmlBuilder<M>["OnMount"]>[0] }>
 	}>
 
 const TRANSCRIPT_ITEM = "[content-visibility:visible] [contain-intrinsic-size:none]"
@@ -250,6 +252,21 @@ const scrollButton = <M>(h: HtmlBuilder<M>): Html =>
 		],
 	)
 
+/** `JumpToDiagnosis`: back to the report once it scrolled away (its Mount shows and presses it). */
+const jumpButton = <M>(h: HtmlBuilder<M>, messageId: string, mount: Parameters<HtmlBuilder<M>["OnMount"]>[0]): Html =>
+	h.keyed("div")(`jump:${messageId}`, [h.Class("contents")], [
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				className: "absolute bottom-4 start-4 max-w-[45%] rounded-full bg-background shadow-sm",
+				attributes: [h.OnMount(mount)],
+			},
+			[icon(h, "PulseIcon"), h.span([h.Class("truncate")], ["Jump to diagnosis"])],
+		),
+	])
+
 /** The thread, or `emptyState` centred in its place while there is nothing to scroll. */
 export const transcript = <M>(
 	h: HtmlBuilder<M>,
@@ -317,6 +334,7 @@ export const transcript = <M>(
 			),
 			turnMinimap(h, rows, host.minimap, host.minimapMount),
 			scrollButton(h),
+			...(host.jump === undefined ? [] : [jumpButton(h, host.jump.messageId, host.jump.mount)]),
 		],
 	)
 }

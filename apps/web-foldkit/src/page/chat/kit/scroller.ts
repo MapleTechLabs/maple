@@ -11,6 +11,8 @@ import { defineMessageUnion } from "foldkit/message"
 export const ScrollerMessage = defineMessageUnion({ CompletedMountScroller: {} })
 export const CompletedMountScroller = ScrollerMessage.CompletedMountScroller
 
+/** Asks the scroller around the target to bring a message to the top (`scrollToMessage`). */
+export const SCROLL_TO_MESSAGE = "maple:scroll-to-message"
 const EDGE_THRESHOLD = 8
 const PREVIOUS_PEEK = 64
 const HALF_PIXEL = 0.5
@@ -93,13 +95,13 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 		scrollTo(target, "auto")
 	}
 	/** `scrollToMessage(id, { align: "start" })`: a permalink's message at the top, left where it lands. */
-	const jumpTo = (element: HTMLElement) => {
+	const jumpTo = (element: HTMLElement, behavior: ScrollBehavior = "auto") => {
 		const offset = element.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
 		const target = offset - paddings().start
 		setSpacer(target + viewport.clientHeight - contentBottom())
 		anchored = null
 		mode = "settling-jump"
-		scrollTo(target, "auto")
+		scrollTo(target, behavior)
 	}
 	const isAnchor = (element: HTMLElement) => element.dataset.scrollAnchor === "true"
 	// Legacy's thread is laid out on its first paint; here replies are laid out once their markdown
@@ -157,6 +159,11 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 		if (SCROLL_KEYS.has(event.key)) onUserScroll()
 	}
 	const onClick = () => toEnd("smooth")
+	const onScrollToMessage = (event: Event) => {
+		const id = event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : null
+		const target = items().find((item) => item.dataset.messageId === id)
+		if (target !== undefined) jumpTo(target, "smooth")
+	}
 
 	const mutation = new MutationObserver(onContentChange)
 	const markdownSettled = new MutationObserver(() => {
@@ -176,6 +183,7 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 	viewport.addEventListener("touchmove", onUserScroll, { passive: true })
 	viewport.addEventListener("keydown", onKey)
 	button?.addEventListener("click", onClick)
+	root.addEventListener(SCROLL_TO_MESSAGE, onScrollToMessage)
 	onContentChange()
 	return () => {
 		mutation.disconnect()
@@ -187,6 +195,7 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 		viewport.removeEventListener("touchmove", onUserScroll)
 		viewport.removeEventListener("keydown", onKey)
 		button?.removeEventListener("click", onClick)
+		root.removeEventListener(SCROLL_TO_MESSAGE, onScrollToMessage)
 	}
 }
 
@@ -201,5 +210,41 @@ export const MountMessageScroller = Mount.define("MountChatMessageScroller", {
 				(release) => Effect.sync(release),
 			),
 			CompletedMountScroller(),
+		),
+})
+
+export const CompletedMountJump = defineMessageUnion({ CompletedMountJump: {} }).CompletedMountJump
+
+/**
+ * `JumpToDiagnosis`: on its button, hidden while the message is in view (the scroller's
+ * IntersectionObserver, 64 px peek off the top); a press asks the scroller to bring it up.
+ */
+export const MountJumpToMessage = Mount.define("MountChatJumpToMessage", {
+	args: { messageId: Schema.String },
+	messages: [CompletedMountJump],
+	execute: ({ element, messageId }) =>
+		Effect.as(
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const root = element.closest("[data-slot=message-scroller]")
+					const viewport = root?.querySelector("[data-slot=message-scroller-viewport]")
+					const target = root?.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`)
+					if (!(element instanceof HTMLElement) || root == null || !(viewport instanceof HTMLElement) || target == null)
+						return () => {}
+					const observer = new IntersectionObserver(
+						(entries) => entries.forEach((entry) => element.toggleAttribute("hidden", entry.isIntersecting)),
+						{ root: viewport, rootMargin: `${-PREVIOUS_PEEK}px 0px 0px 0px`, threshold: [0, 0.01, 0.5, 1] },
+					)
+					observer.observe(target)
+					const onClick = () => root.dispatchEvent(new CustomEvent(SCROLL_TO_MESSAGE, { detail: messageId }))
+					element.addEventListener("click", onClick)
+					return () => {
+						observer.disconnect()
+						element.removeEventListener("click", onClick)
+					}
+				}),
+				(release) => Effect.sync(release),
+			),
+			CompletedMountJump(),
 		),
 })

@@ -1,3 +1,5 @@
+import type { AiTriageResult } from "@maple/domain/http"
+import { parseDiagnosisMarker } from "@maple/web/components/chat/diagnosis-marker"
 import { cn } from "@maple/ui/lib/utils"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -12,6 +14,8 @@ import { composer, failureNotice } from "../kit/view-composer"
 import { MountTurnMinimap } from "../kit/turn-minimap-mount"
 import { MountDiagramFullscreen, MountDiagramMenu, MountMermaid } from "../kit/mermaid"
 import { MountMath } from "../kit/math"
+import { MountJumpToMessage } from "../kit/scroller"
+import { findDiagnosisMessageId } from "../kit/transcript-rows"
 import { inlineCard } from "../kit/view-inline"
 import { chatMarkdownOverrides } from "../kit/view-markdown"
 import { type TranscriptHost, transcript } from "../kit/view-transcript"
@@ -42,6 +46,8 @@ export type ConversationViewOptions<M> = Readonly<{
 	fallback?: Html
 	/** The subject's starter prompts above the composer of an empty thread (investigation mode). */
 	suggestions?: Readonly<{ items: ReadonlyArray<string>; onSelect: (text: string) => M }>
+	/** `DiagnosisReportCard` for a `submit_diagnosis` turn; without it the turn draws nothing. */
+	diagnosisCard?: (report: AiTriageResult) => Html
 	/** The subject pinned above the thread (`InvestigationAttachmentCard`, `WidgetFixAttachmentCard`). */
 	header?: ReadonlyArray<Html>
 }>
@@ -56,8 +62,10 @@ const cardsOf = <M>(
 	taskCard: (part) => taskCard(h, part, `chat-task-${part.toolCallId}`),
 	ownCard:
 		options.ownCard ??
-		((part) =>
-			part.state !== "proposed"
+		((part) => {
+			const diagnosis = part.state === "output-available" ? parseDiagnosisMarker(part.output) : null
+			if (diagnosis !== null) return options.diagnosisCard?.(diagnosis.report) ?? null
+			return part.state !== "proposed"
 				? null
 				: approvalCard(h, {
 						toolName: part.toolName,
@@ -68,7 +76,8 @@ const cardsOf = <M>(
 						onToggleRaw: options.toMessage(Message.ToggledPanel({ id: `raw:${part.toolCallId}` })),
 						onApprove: options.toMessage(Message.ClickedApprove({ toolCallId: part.toolCallId, tool: part.toolName })),
 						onDeny: options.toMessage(Message.ClickedDeny({ toolCallId: part.toolCallId })),
-					})),
+					})
+		}),
 	markdownOverrides: chatMarkdownOverrides(
 		h,
 		options.knownServices,
@@ -177,8 +186,22 @@ export const transcriptHostOf = <M>(h: HtmlBuilder<M>, model: Model, options: Co
 	minimapMount: Mount.mapMessage(MountTurnMinimap(), (message) => options.toMessage(Message.GotMinimapMessage({ message }))),
 	permalinkFor: options.permalinkFor,
 	fallback: options.fallback,
+	...jumpOf(model, options),
 	...cardsOf(h, model, options),
 })
+
+/** `diagnosisMessageId`: a thread with a `submit_diagnosis` turn offers the way back to it. */
+const jumpOf = <M>(model: Model, options: ConversationViewOptions<M>): Pick<TranscriptHost<M>, "jump"> => {
+	const messageId = findDiagnosisMessageId(model.messages)
+	return messageId === undefined
+		? {}
+		: {
+				jump: {
+					messageId,
+					mount: Mount.mapMessage(MountJumpToMessage({ messageId }), () => options.toMessage(Message.CompletedMountJump())),
+				},
+			}
+}
 
 const notices = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): ReadonlyArray<Html> => {
 	if (model.failedSend !== null) {

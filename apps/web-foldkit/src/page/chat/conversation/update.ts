@@ -261,6 +261,7 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 		CompletedCodeAction: () => ({ model }),
 		CompletedMermaidDiagram: () => ({ model }),
 		CompletedMountMath: () => ({ model }),
+		CompletedMountJump: () => ({ model }),
 		CompletedHighlightCode: ({ key, highlighted }) => ({
 			model: { ...model, highlights: { ...model.highlights, [key]: highlighted } },
 		}),

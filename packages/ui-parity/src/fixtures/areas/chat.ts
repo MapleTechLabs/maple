@@ -3,6 +3,8 @@ import type { FixtureArea, RawRoute } from "../areas.ts"
 import type { Dataset } from "../dataset.ts"
 import { defaultDataset } from "../datasets/default.ts"
 import { MINUTE } from "../identity.ts"
+import { ACME_OPS_THREAD_DATASET } from "./ops.ts"
+import { INVESTIGATION_DIAGNOSED_ID, INVESTIGATION_DIAGNOSED_REPORT } from "./ops/investigations.ts"
 
 /**
  * `/chat`'s durable transcript (`GET /api/chat/sessions/<orgId>:<tab>/history`, a raw route in
@@ -124,6 +126,36 @@ const mathConversation = (nowMs: number) => {
 	]
 }
 
+/** The diagnosed investigation's thread (`inv-<id>`): its autonomous pass, ending in `submit_diagnosis`. */
+const investigationThread = (nowMs: number) => {
+	const at = (minutesAgo: number) => nowMs - minutesAgo * MINUTE
+	const call = (id: string, name: string, input: Record<string, unknown>, output: unknown) => ({ id, name, input, output, textOffset: 0 })
+	return [
+		{
+			id: "msg_inv_user",
+			role: "user",
+			text: "Investigate payment-svc p95 latency above baseline.",
+			toolCalls: [],
+			createdAt: at(105),
+			startSeq: 1,
+		},
+		{
+			id: "msg_inv_assistant",
+			role: "assistant",
+			text: "The pool shrank in 3.5.0 while each charge gained a query; the report is attached.",
+			toolCalls: [
+				call("call_inv_1", "service_overview", { service: "payment-svc", time_window: "24h" }, { p95Ms: 1840, baselineP95Ms: 412 }),
+				call("call_inv_2", "list_releases", { service: "payment-svc" }, { releases: [{ version: "3.5.0" }] }),
+				call("call_inv_3", "submit_diagnosis", { confidence: "high" }, { status: "diagnosis", report: INVESTIGATION_DIAGNOSED_REPORT }),
+			],
+			createdAt: at(98),
+			startSeq: 2,
+		},
+	]
+}
+
+const INVESTIGATION_THREAD = new RegExp(`(?::|%3A)inv-${INVESTIGATION_DIAGNOSED_ID}/history$`, "i")
+
 const history: RawRoute = {
 	tag: "chat.history",
 	answer: ({ dataset, url, method }) => {
@@ -136,7 +168,9 @@ const history: RawRoute = {
 					? codeConversation(nowMs)
 					: dataset.name === CHAT_MATH_DATASET
 						? mathConversation(nowMs)
-						: []
+						: dataset.name === ACME_OPS_THREAD_DATASET && INVESTIGATION_THREAD.test(url.pathname)
+							? investigationThread(nowMs)
+							: []
 		return Response.json({ messages, cursor: messages.length === 0 ? 0 : 40, running: false })
 	},
 }

@@ -38,6 +38,16 @@ const acmeOps: Dataset = {
 	},
 }
 
+/**
+ * `acme-ops` whose diagnosed investigation's chat thread already holds its `submit_diagnosis` turn
+ * (`chat.ts` answers the history), for the in-thread report card.
+ */
+export const ACME_OPS_THREAD_DATASET = "acme-ops-thread"
+
+const acmeOpsThread: Dataset = { ...acmeOps, name: ACME_OPS_THREAD_DATASET }
+
+const OPS_DATASETS: ReadonlySet<string> = new Set([ACME_OPS_DATASET, ACME_OPS_THREAD_DATASET])
+
 export const ACME_WEB_DATASET = "acme-web"
 
 /**
@@ -65,7 +75,7 @@ const onAcmeOps = (
 		Object.entries(handlers).map(([tag, handler]): [string, EndpointHandler] => [
 			tag,
 			(request) => {
-				if (request.dataset.name === ACME_OPS_DATASET) return handler(request)
+				if (OPS_DATASETS.has(request.dataset.name)) return handler(request)
 				const fallback = defaultHandlers.get(tag)
 				return fallback === undefined ? handler(request) : fallback(request)
 			},
@@ -93,5 +103,5 @@ export const fixtureArea: FixtureArea = {
 			}),
 		}
 	},
-	datasets: [acmeOps, acmeWeb],
+	datasets: [acmeOps, acmeOpsThread, acmeWeb],
 }

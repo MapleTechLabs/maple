@@ -1,4 +1,5 @@
 import type { Page } from "playwright"
+import { SEEDED } from "./ops-kit.ts"
 import type { AreaModule, Scenario } from "./types.ts"
 
 /**
@@ -144,6 +145,27 @@ const contextScenarios: ReadonlyArray<Scenario> = [
 	overTraces("full-page", "carried to the full page", async (page) => {
 		await page.getByRole("dialog").getByRole("link", { name: "Open full page" }).click()
 		await page.getByRole("button", { name: "Remove Traces explorer" }).waitFor()
+	}),
+]
+
+/**
+ * The diagnosed investigation's Chat and Transcript tabs once its thread holds the
+ * `submit_diagnosis` turn (`acme-ops-thread`): the report card drawn in the thread.
+ */
+const thread = (id: string, title: string, tab: "chat" | "transcript", steps?: (page: Page) => Promise<void>): Scenario => ({
+	...scenario(`investigation-${id}`, `investigation thread, ${title}`, "acme-ops-thread", async (page) => {
+		await page.getByText("Recommended actions").first().waitFor()
+		await steps?.(page)
+	}),
+	path: `/investigations/${SEEDED.diagnosedInvestigation}?tab=${tab}`,
+})
+
+const threadScenarios: ReadonlyArray<Scenario> = [
+	thread("thread", "the report drawn in the Chat tab", "chat"),
+	thread("thread-transcript", "the report drawn in the Transcript tab", "transcript"),
+	thread("thread-action", "a report action opened in its sheet", "chat", async (page) => {
+		await page.getByRole("button", { name: /Roll payment-svc back to 3.4.1/ }).click()
+		await page.getByRole("dialog").waitFor({ state: "visible" })
 	}),
 ]
 
@@ -339,6 +361,7 @@ export const chatArea: AreaModule = {
 		...permalinkScenarios,
 		...diagramScenarios,
 		...contextScenarios,
+		...threadScenarios,
 		...sheetScenarios,
 		lab("sheet-width", "at the sheet width", (page) => page.getByRole("button", { name: "Sheet (620px)" }).click()),
 		lab("narrow-width", "at the narrow width", (page) => page.getByRole("button", { name: "Narrow (420px)" }).click()),
