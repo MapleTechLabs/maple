@@ -31,7 +31,7 @@ export const commandTitles = (groups: ReadonlyArray<CommandGroup>): ReadonlyArra
 export const commandInput = <M>(
 	h: HtmlBuilder<M>,
 	model: Model,
-	options: Readonly<{ placeholder: string; groups: ReadonlyArray<CommandGroup> }>,
+	options: Readonly<{ placeholder: string; groups: ReadonlyArray<CommandGroup>; hasDismissButton?: boolean }>,
 	toMessage: (message: Message) => M,
 ): Html =>
 	h.div(
@@ -47,6 +47,7 @@ export const commandInput = <M>(
 					className: commandInputStyles,
 					isInline: true,
 					isListEmpty: true,
+					hasDismissButton: options.hasDismissButton,
 				},
 				toMessage,
 			),

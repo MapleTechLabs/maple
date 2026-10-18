@@ -15,6 +15,18 @@ const facetAction = (row: string, action: string) => async (page: Page) => {
 	await page.getByRole("button", { name: action }).click()
 }
 
+const DETAIL = `/anomalies/${SEEDED.latencyAnomaly}`
+const waitForText = (text: string | RegExp) => (page: Page) => page.getByText(text).first().waitFor({ state: "visible" })
+const failingTag = (tag: string) => ({
+	faults: {
+		failures: {
+			[tag]: {
+				status: 500,
+				body: { _tag: "@maple/http/anomalies/AnomalyPersistenceError", message: "ui-parity: injected anomalies failure" },
+			},
+		},
+	},
+})
 const held = { faults: { delays: { "anomalies.listIncidents": 60_000 } }, settle: "held" as const }
 const failing = {
 	faults: {
@@ -56,6 +68,44 @@ export const anomaliesArea: AreaModule = {
 			steps: act(clickButton("Clear all")),
 		}),
 		anomaly("list-group-collapse", "Critical group collapsed", ALL, { steps: act(clickButton(/^Critical/)) }),
+		anomaly("detail-loading", "Detail, incident held", DETAIL, {
+			faults: { delays: { "anomalies.getIncident": 60_000 } },
+			settle: "held",
+		}),
+		anomaly("detail-error", "Detail, incident failing", DETAIL, failingTag("anomalies.getIncident")),
+		anomaly("detail-not-found", "Detail, unknown incident", "/anomalies/0199a060-0000-7000-8000-0000000000ff"),
+		anomaly("detail-chart-loading", "Detail, signal series held", DETAIL, {
+			faults: { delays: { "anomalies.getIncidentTimeseries": 60_000 } },
+			settle: "held",
+		}),
+		anomaly("detail-chart-error", "Detail, signal series failing", DETAIL, failingTag("anomalies.getIncidentTimeseries")),
+		anomaly("detail-resolve-dialog", "Detail, resolve confirmation", DETAIL, {
+			steps: act(clickButton(/^Resolve$/)),
+		}),
+		anomaly("detail-resolve", "Detail, resolved from the dialog", DETAIL, {
+			steps: act(clickButton(/^Resolve$/), (page) => page.getByRole("alertdialog").getByRole("button", { name: "Resolve" }).click(), waitForText("Anomaly resolved")),
+		}),
+		anomaly("detail-link-dialog", "Detail, link issue dialog", DETAIL, {
+			steps: act(clickButton("Link issue"), waitForText(/^Scoped to/)),
+		}),
+		anomaly("detail-link-all-services", "Detail, link dialog across services", DETAIL, {
+			steps: act(clickButton("Link issue"), clickButton("Search all services"), waitForText(/^Showing issues across/)),
+		}),
+		anomaly("detail-link-search", "Detail, link dialog searched with no match", DETAIL, {
+			steps: act(
+				clickButton("Link issue"),
+				waitForText(/^Scoped to/),
+				(page) => page.getByRole("combobox").fill("zzz"),
+				waitForText(/^No issues matching/),
+			),
+		}),
+		anomaly("detail-link-select", "Detail, an issue linked", DETAIL, {
+			steps: act(
+				clickButton("Link issue"),
+				(page) => page.getByRole("option").first().click(),
+				waitForText("Linked to issue"),
+			),
+		}),
 		anomaly("list-row-hover", "A row hovered", ALL, {
 			steps: async (page) => {
 				await page.getByText("Throughput", { exact: true }).last().hover()

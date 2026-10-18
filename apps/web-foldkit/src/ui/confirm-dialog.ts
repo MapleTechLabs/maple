@@ -25,6 +25,8 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	onConfirm: M
 	isPending?: boolean
 	isConfirmDisabled?: boolean
+	/** `icon={null}`: drops the warning media block. */
+	hasIcon?: boolean
 	className?: string
 }>
 
@@ -44,17 +46,21 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) => [
 				DialogView.dialogHeader(h, "alert-dialog", [
-					h.div(
-						[
-							h.Class(cn(alertDialogMediaStyles, tone === "destructive" && confirmDialogMediaDestructiveStyles)),
-							h.DataAttribute("slot", "alert-dialog-media"),
-						],
-						[
-							icon(h, "AlertWarningIcon", {
-								className: cn(tone === "destructive" && confirmDialogIconDestructiveStyles),
-							}),
-						],
-					),
+					...(options.hasIcon === false
+						? []
+						: [
+								h.div(
+									[
+										h.Class(cn(alertDialogMediaStyles, tone === "destructive" && confirmDialogMediaDestructiveStyles)),
+										h.DataAttribute("slot", "alert-dialog-media"),
+									],
+									[
+										icon(h, "AlertWarningIcon", {
+											className: cn(tone === "destructive" && confirmDialogIconDestructiveStyles),
+										}),
+									],
+								),
+							]),
 					DialogView.dialogTitle(h, "alert-dialog", id, options.title),
 					...(options.description === undefined
 						? []

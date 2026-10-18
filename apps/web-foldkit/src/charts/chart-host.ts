@@ -20,6 +20,7 @@ import { buildPlanetScaleMetric } from "./definitions/planetscale-metric"
 import { buildLogsVolume } from "./definitions/logs-volume"
 import { buildPie, buildPieSpike } from "./definitions/pie"
 import { buildOccurrences } from "./definitions/occurrences"
+import { buildAnomalySignal } from "./definitions/anomaly-signal"
 import { buildSparkline } from "./definitions/sparkline"
 import { buildStackedBreakdown } from "./definitions/stacked-breakdown"
 
@@ -175,6 +176,8 @@ export const createChartHost = (
 		FixedMetric: (metric) =>
 			hostFor(container, metric, height, variant("FixedMetric"), buildFixedMetric, options),
 		AlertRule: (rule) => hostFor(container, rule, height, variant("AlertRule"), buildAlertRule, options),
+		AnomalySignal: (signal) =>
+			hostFor(container, signal, height, variant("AnomalySignal"), buildAnomalySignal, options),
 		InfraMetric: (metric) =>
 			hostFor(container, metric, height, variant("InfraMetric"), buildInfraMetric, options),
 		PlanetScaleMetric: (metric) =>

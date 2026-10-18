@@ -29,6 +29,8 @@ export type FieldOptions = Readonly<{
 	/** The command palette's inline list: no dismiss button, list-empty markers. */
 	isInline?: boolean
 	isListEmpty?: boolean
+	/** `Command inline={false}` inside a dialog: the inline layout, but with the dismiss button. */
+	hasDismissButton?: boolean
 }>
 
 /** `AutocompleteInput` with a magnifier start addon. */
@@ -66,7 +68,7 @@ export const autocompleteField = <M>(
 				],
 				[icon(h, "MagnifierIcon")],
 			),
-			...(options.isInline !== true && isMounted(model.isOpen, model.animation)
+			...((options.hasDismissButton ?? options.isInline !== true) && isMounted(model.isOpen, model.animation)
 				? [dismissButton(h)]
 				: []),
 			h.span(

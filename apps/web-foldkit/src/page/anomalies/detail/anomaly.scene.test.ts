@@ -1,0 +1,100 @@
+import { OrgId } from "@maple/domain"
+import { AnomalyIncidentId, AnomalyIncidentNotFoundError } from "@maple/domain/http"
+import { encodePublicId, PublicIdPrefixes, V2AnomalyIncident } from "@maple/domain/http/v2"
+import { Result, Schema } from "effect"
+import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import { describe, expect, test } from "vitest"
+import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
+import { toLoadFailure } from "../../../data/load-failure"
+import { type PageContext, PageOutMessage } from "../../contract"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { init, update } from "./update"
+import { view as pageView } from "./view"
+
+const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
+const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+const view = withViewInputs(pageView, { context })()
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const ID = Schema.decodeSync(AnomalyIncidentId)("0199a060-0000-7000-8000-000000000001")
+const NOW = Date.UTC(2026, 9, 1, 12)
+const themed = () => Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+
+const incident = Schema.decodeUnknownSync(V2AnomalyIncident)({
+	id: encodePublicId(PublicIdPrefixes.anomalyIncident, ID),
+	object: "anomaly_incident",
+	detector_key: "latency_p95:payment-svc:production",
+	signal_type: "latency_p95",
+	service_name: "payment-svc",
+	deployment_env: "production",
+	fingerprint_hash: null,
+	error_issue_id: null,
+	status: "open",
+	severity: "critical",
+	opened_value: 1620,
+	baseline_median: 412,
+	baseline_sigma: 100,
+	threshold_value: 640,
+	last_observed_value: 1840,
+	last_sample_count: 3100,
+	first_triggered_at: new Date(NOW - 3_600_000).toISOString(),
+	last_triggered_at: new Date(NOW - 60_000).toISOString(),
+	resolved_at: null,
+	resolve_reason: null,
+	triage_status: "completed",
+	fingerprints: [],
+	reopen_count: 0,
+	last_reopened_at: null,
+})
+
+const route = { _tag: "Anomaly" as const, incidentId: ID }
+
+const loaded = () => {
+	const entered = init(route, context)
+	const clocked = pageUpdate(entered.model, Message.ReadClock({ nowMs: NOW })).model
+	return pageUpdate(clocked, Message.CompletedFetchIncident({ key: clocked.incident.key ?? "", result: Result.succeed(incident) }))
+}
+
+describe("anomaly detail", () => {
+	test("entry reads the clock, the incident and the chart runtime; the series follows the incident", () => {
+		expect(names(init(route, context).commands)).toEqual(["ReadAnomalyClock", "FetchAnomalyIncident", "LoadChartRuntime"])
+		expect(names(loaded().commands)).toEqual(["FetchAnomalyTimeseries"])
+	})
+
+	test("a typed 404 is the not-found body, other failures the error state", () => {
+		const entered = init(route, context).model
+		const fail = (error: unknown) =>
+			pageUpdate(
+				entered,
+				Message.CompletedFetchIncident({ key: entered.incident.key ?? "", result: Result.fail(toLoadFailure(error)) }),
+			).model
+		const notFound = new AnomalyIncidentNotFoundError({ message: "Anomaly incident not found", incidentId: ID })
+		scene({ update: pageUpdate, view }, given(fail(notFound)), themed(), expectView(text("Anomaly not found")).toExist())
+		scene({ update: pageUpdate, view }, given(fail(new Error("down"))), themed(), expectView(text("Failed to load anomaly")).toExist())
+	})
+
+	test("resolving sends one request, then toasts and re-reads the incident", () => {
+		const model = loaded().model
+		const started = pageUpdate(model, Message.ClickedConfirmResolve())
+		expect(names(started.commands)).toEqual(["ResolveAnomalyIncident"])
+		expect(pageUpdate(started.model, Message.ClickedConfirmResolve()).commands ?? []).toHaveLength(0)
+		const done = pageUpdate(started.model, Message.CompletedResolve({ result: Result.succeed(incident) }))
+		expect(names(done.commands)).toContain("FetchAnomalyIncident")
+		expect(done.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "success", title: "Anomaly resolved", description: "" }))
+	})
+
+	test("Open investigation navigates to the new investigation", () => {
+		const started = pageUpdate(loaded().model, Message.ClickedInvestigate())
+		expect(names(started.commands)).toEqual(["CreateAnomalyInvestigation"])
+		const done = pageUpdate(started.model, Message.CompletedInvestigate({ result: Result.succeed("inv-1") }))
+		expect(done.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/investigations/inv-1", isReplace: false }))
+	})
+
+	test("the link dialog loads the service's issues", () => {
+		const opened = pageUpdate(loaded().model, Message.ClickedLinkIssue())
+		expect(names(opened.commands)).toContain("FetchAnomalyLinkIssues")
+		const scoped = pageUpdate(opened.model, Message.ToggledLinkScope())
+		expect(names(scoped.commands)).toEqual(["FetchAnomalyLinkIssues"])
+		expect(scoped.model.linkAllServices).toBe(true)
+	})
+})
