@@ -20,6 +20,10 @@ const pickOption = (combobox: string, option: string) => async (page: Page) => {
 	await page.getByRole("option", { name: option }).click()
 }
 
+/** The header's 2D / 3D switch. */
+const pickView = (name: "2D" | "3D") => (page: Page) =>
+	page.getByRole("group", { name: "Service map view" }).getByRole("button", { name }).click()
+
 const focusService = (name: string) => async (page: Page) => {
 	await page.getByRole("combobox", { name: "Focus a service…" }).click()
 	await page.getByRole("option", { name }).click()
@@ -64,10 +68,11 @@ const timed = (
 	title: string,
 	faults: Scenario["faults"],
 	settle: Scenario["settle"],
+	path = "/service-map",
 ): Scenario => ({
 	id: `service-map-${id}`,
 	title: `Service map: ${title}`,
-	path: "/service-map",
+	path,
 	dataset: OPS,
 	viewports: ["desktop"],
 	themes: ["light", "dark"],
@@ -99,6 +104,32 @@ export const serviceMapArea: AreaModule = {
 			steps: act(pickOption("Color nodes by", "Health")),
 		}),
 		map("empty", "Service map (empty org)", "/service-map", { dataset: EMPTY }),
+		map("3d", "the 3D view", "/service-map?view=3d"),
+		map("3d-toggle", "switched from 2D to 3D", "/service-map", { steps: act(pickView("3D")) }),
+		map("3d-toggle-back", "switched from 3D back to 2D", "/service-map?view=3d", {
+			steps: act(pickView("2D")),
+		}),
+		map("3d-cascade", "the 3D Cascade perspective", "/service-map?view=3d", {
+			steps: act((page) => page.getByRole("button", { name: "Cascade" }).click()),
+		}),
+		map("3d-hover", "a 3D sign hovered", "/service-map?view=3d", {
+			steps: (page) => page.getByRole("button", { name: "Select payment-svc" }).hover(),
+		}),
+		map("3d-selected", "payment-svc selected from its 3D sign", "/service-map?view=3d", {
+			steps: act(clickButton("Select payment-svc")),
+		}),
+		map("3d-belt", "a belt tag picked, its target selected", "/service-map?view=3d", {
+			steps: act(clickButton(/^Inspect connection to /)),
+		}),
+		map("3d-deselected", "a 3D selection cleared from its sign", "/service-map?view=3d", {
+			steps: act(clickButton("Select payment-svc"), clickButton("Select payment-svc")),
+		}),
+		map("3d-zoom-in", "the 3D camera zoomed in", "/service-map?view=3d", {
+			steps: act(clickButton("Zoom in")),
+		}),
+		map("3d-zoom-reset", "the 3D camera zoomed out, then reset", "/service-map?view=3d", {
+			steps: act(clickButton("Zoom out"), clickButton("Reset camera")),
+		}),
 		map("color-platform", "Nodes colored by platform", "/service-map", {
 			steps: act(pickOption("Color nodes by", "Platform")),
 		}),
@@ -198,5 +229,19 @@ export const serviceMapArea: AreaModule = {
 		),
 		timed("error", "the bundle failing", failing("queryEngine.serviceMapBundle"), "quiet"),
 		timed("facets-error", "the environment facets failing", failing("queryEngine.executeBatch"), "quiet"),
+		timed(
+			"3d-loading",
+			"3D, loading (bundle held)",
+			{ delays: { "queryEngine.serviceMapBundle": HELD_MS } },
+			"held",
+			"/service-map?view=3d",
+		),
+		timed(
+			"3d-error",
+			"3D, the bundle failing",
+			failing("queryEngine.serviceMapBundle"),
+			"quiet",
+			"/service-map?view=3d",
+		),
 	],
 }
