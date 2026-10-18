@@ -52,8 +52,13 @@ const RAIL_TIP_TITLES = [
 ]
 
 /** The desktop rail; collapsed, its rows share one Tooltip naming the row (`tooltip={title}`). */
-const desktopSidebar = (h: HtmlBuilder<Message>, model: Model, currentPath: string): Html => {
-	if (model.isSidebarOpen) return sidebarDesktop(h, "expanded", sidebarRegions(h, model, currentPath))
+const desktopSidebar = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	currentPath: string,
+	isOpen = model.isSidebarOpen,
+): Html => {
+	if (isOpen) return sidebarDesktop(h, "expanded", sidebarRegions(h, model, currentPath))
 	return h.submodel({
 		slotId: "shell-rail-tooltip",
 		model: model.railTooltip,
@@ -129,7 +134,25 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 	),
 )
 
-const mobileNav = (h: HtmlBuilder<Message>, model: Model, currentPath: string): Html =>
+export type BareFrameInputs = Readonly<{ currentPath: string; page: () => Html }>
+
+/**
+ * `/chat`'s own `SidebarProvider open={false} className="h-svh overflow-hidden"`: the rail held
+ * collapsed (its toggle does nothing there) and the page straight in the inset, no top bar.
+ */
+export const bareFrameView = Submodel.defineView<Model, Message, BareFrameInputs>((model, inputs, h) =>
+	sidebarWrapper(
+		h,
+		[
+			...(model.isMobile ? [] : [desktopSidebar(h, model, inputs.currentPath, false)]),
+			sidebarInset(h, [inputs.page()]),
+		],
+		model.isMobile && model.isMobileNavOpen ? [h.AriaHidden(true)] : [],
+		"h-svh overflow-hidden",
+	),
+)
+
+const mobileNav =(h: HtmlBuilder<Message>, model: Model, currentPath: string): Html =>
 	leftSheet(
 		h,
 		{

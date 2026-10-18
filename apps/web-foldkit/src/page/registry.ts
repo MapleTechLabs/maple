@@ -25,6 +25,7 @@ import * as DashboardsList from "./dashboards/list"
 import * as DashboardTemplates from "./dashboards/templates"
 import * as DashboardView from "./dashboards/view"
 import * as DashboardWidget from "./dashboards/widget"
+import * as Chat from "./chat/page"
 import * as CodeReview from "./code-review"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
@@ -108,6 +109,7 @@ export const pages = [
 	AgentSessionTools.page,
 	AgentSessionTool.page,
 	AgentSession.page,
+	Chat.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

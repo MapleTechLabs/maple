@@ -175,25 +175,23 @@ const codeBlock = <M>(
 						[
 							h.code(
 								[h.Class("[counter-increment:line_0] [counter-reset:line]")],
-								code
-									.split("\n")
-									.map((line) =>
-										h.span(
-											[h.Class(LINE_CLASS)],
-											[
-												h.span(
-													[
-														h.Class(TOKEN_CLASS),
-														h.Style({
-															"--sdm-c": "inherit",
-															"--sdm-tbg": "transparent",
-														}),
-													],
-													[line],
-												),
-											],
-										),
+								code.split("\n").map((line) =>
+									h.span(
+										[h.Class(LINE_CLASS)],
+										[
+											h.span(
+												[
+													h.Class(TOKEN_CLASS),
+													h.Style({
+														"--sdm-c": "inherit",
+														"--sdm-tbg": "transparent",
+													}),
+												],
+												[line],
+											),
+										],
 									),
+								),
 							),
 						],
 					),
@@ -203,93 +201,109 @@ const codeBlock = <M>(
 	)
 }
 
-const viewsFor = <M>(h: HtmlBuilder<M>, actions?: CodeActions<M>): Markdown.Views => ({
-	...Markdown.defaultViews,
-	InlineCode: ({ value }) =>
-		h.code(streamdown("inline-code", "rounded bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
-	Strong: (_strong, content) => h.span(streamdown("strong", "font-semibold")(h), content),
-	Link: ({ url }, content) =>
-		h.a(
-			[
-				...streamdown("link", "wrap-anywhere font-medium text-primary underline")(h),
-				h.Href(url),
-				h.Attribute("rel", "noreferrer"),
-				h.Attribute("target", "_blank"),
-			],
-			content,
-		),
-	Heading: ({ level }, content) => {
-		const attributes = streamdown(`heading-${level}`, HEADING_CLASSES[level])(h)
-		if (level === 1) return h.h1(attributes, content)
-		if (level === 2) return h.h2(attributes, content)
-		if (level === 3) return h.h3(attributes, content)
-		if (level === 4) return h.h4(attributes, content)
-		return level === 5 ? h.h5(attributes, content) : h.h6(attributes, content)
-	},
-	CodeBlock: ({ value, maybeLanguage }) =>
-		codeBlock(
-			h,
-			value,
-			Option.getOrElse(maybeLanguage, () => ""),
-			actions,
-		),
-	List: ({ isOrdered }, items) =>
-		isOrdered
-			? h.ol(
-					streamdown("ordered-list", "list-inside list-decimal whitespace-normal [li_&]:pl-6")(h),
-					items,
-				)
-			: h.ul(
-					streamdown("unordered-list", "list-inside list-disc whitespace-normal [li_&]:pl-6")(h),
-					items,
-				),
-	// Streamdown unwraps an item's lone paragraph; its inline content sits in a span here.
-	ListItem: (item, blocks) =>
-		h.li(
-			streamdown("list-item", "py-1 [&>p]:inline")(h),
-			item.blocks.length === 1 && item.blocks[0]?._tag === "Paragraph"
-				? Markdown.viewBlocks(
-						{ blocks: item.blocks },
-						{
-							views: {
-								...viewsFor(h, actions),
-								Paragraph: (_paragraph, content) => h.span([], content),
-							},
-						},
+/** A surface's own element views over Streamdown's (the chat's tables and chart fences). */
+export type ViewOverrides = (views: Markdown.Views) => Partial<Markdown.Views>
+
+const viewsFor = <M>(
+	h: HtmlBuilder<M>,
+	actions?: CodeActions<M>,
+	overrides?: ViewOverrides,
+): Markdown.Views => {
+	const views: Markdown.Views = {
+		...Markdown.defaultViews,
+		InlineCode: ({ value }) =>
+			h.code(streamdown("inline-code", "rounded bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
+		Strong: (_strong, content) => h.span(streamdown("strong", "font-semibold")(h), content),
+		Link: ({ url }, content) =>
+			h.a(
+				[
+					...streamdown("link", "wrap-anywhere font-medium text-primary underline")(h),
+					h.Href(url),
+					h.Attribute("rel", "noreferrer"),
+					h.Attribute("target", "_blank"),
+				],
+				content,
+			),
+		Heading: ({ level }, content) => {
+			const attributes = streamdown(`heading-${level}`, HEADING_CLASSES[level])(h)
+			if (level === 1) return h.h1(attributes, content)
+			if (level === 2) return h.h2(attributes, content)
+			if (level === 3) return h.h3(attributes, content)
+			if (level === 4) return h.h4(attributes, content)
+			return level === 5 ? h.h5(attributes, content) : h.h6(attributes, content)
+		},
+		CodeBlock: ({ value, maybeLanguage }) =>
+			codeBlock(
+				h,
+				value,
+				Option.getOrElse(maybeLanguage, () => ""),
+				actions,
+			),
+		List: ({ isOrdered }, items) =>
+			isOrdered
+				? h.ol(
+						streamdown(
+							"ordered-list",
+							"list-inside list-decimal whitespace-normal [li_&]:pl-6",
+						)(h),
+						items,
 					)
-				: blocks,
-		),
-	Blockquote: (_quote, blocks) =>
-		h.blockquote(
-			streamdown(
-				"blockquote",
-				"my-4 border-muted-foreground/30 border-l-4 pl-4 text-muted-foreground italic",
-			)(h),
-			blocks,
-		),
-	ThematicBreak: () => h.hr(streamdown("horizontal-rule", "my-6 border-border")(h)),
-	Table: (_table, headerRow, bodyRows) =>
-		h.div(
-			[h.DataAttribute("streamdown", "table-wrapper")],
-			[
-				h.table(streamdown("table", "w-full border-collapse border border-border")(h), [
-					h.thead(streamdown("table-header", "bg-muted/80")(h), [headerRow]),
-					h.tbody(streamdown("table-body", "divide-y divide-border")(h), bodyRows),
-				]),
-			],
-		),
-	TableRow: (_row, cells) => h.tr(streamdown("table-row", "border-border")(h), cells),
-	TableCell: (_cell, content, _alignment, isHeader) =>
-		isHeader
-			? h.th(
-					streamdown(
-						"table-header-cell",
-						"whitespace-nowrap px-4 py-2 text-left font-semibold text-sm",
-					)(h),
-					content,
-				)
-			: h.td(streamdown("table-cell", "px-4 py-2 text-sm")(h), content),
-})
+				: h.ul(
+						streamdown(
+							"unordered-list",
+							"list-inside list-disc whitespace-normal [li_&]:pl-6",
+						)(h),
+						items,
+					),
+		// Streamdown unwraps an item's lone paragraph; its inline content sits in a span here.
+		ListItem: (item, blocks) =>
+			h.li(
+				streamdown("list-item", "py-1 [&>p]:inline")(h),
+				item.blocks.length === 1 && item.blocks[0]?._tag === "Paragraph"
+					? Markdown.viewBlocks(
+							{ blocks: item.blocks },
+							{
+								views: {
+									...viewsFor(h, actions, overrides),
+									Paragraph: (_paragraph, content) => h.span([], content),
+								},
+							},
+						)
+					: blocks,
+			),
+		Blockquote: (_quote, blocks) =>
+			h.blockquote(
+				streamdown(
+					"blockquote",
+					"my-4 border-muted-foreground/30 border-l-4 pl-4 text-muted-foreground italic",
+				)(h),
+				blocks,
+			),
+		ThematicBreak: () => h.hr(streamdown("horizontal-rule", "my-6 border-border")(h)),
+		Table: (_table, headerRow, bodyRows) =>
+			h.div(
+				[h.DataAttribute("streamdown", "table-wrapper")],
+				[
+					h.table(streamdown("table", "w-full border-collapse border border-border")(h), [
+						h.thead(streamdown("table-header", "bg-muted/80")(h), [headerRow]),
+						h.tbody(streamdown("table-body", "divide-y divide-border")(h), bodyRows),
+					]),
+				],
+			),
+		TableRow: (_row, cells) => h.tr(streamdown("table-row", "border-border")(h), cells),
+		TableCell: (_cell, content, _alignment, isHeader) =>
+			isHeader
+				? h.th(
+						streamdown(
+							"table-header-cell",
+							"whitespace-nowrap px-4 py-2 text-left font-semibold text-sm",
+						)(h),
+						content,
+					)
+				: h.td(streamdown("table-cell", "px-4 py-2 text-sm")(h), content),
+	}
+	return overrides === undefined ? views : { ...views, ...overrides(views) }
+}
 
 /** The Streamdown root: its spacing, then the panel's heading scale, then the caller's prose classes. */
 const ROOT_CLASS = cn(
@@ -307,6 +321,7 @@ export const messageResponse = <M>(
 	text: string,
 	className?: string,
 	actions?: CodeActions<M>,
+	overrides?: ViewOverrides,
 ): Html =>
 	h.div(
 		[h.Class(cn(ROOT_CLASS, className))],
@@ -315,5 +330,5 @@ export const messageResponse = <M>(
 					.split(/\n{2,}/)
 					.filter((part) => part.trim() !== "")
 					.map((part) => h.p([], [part]))
-			: Markdown.viewBlocks(document, { views: viewsFor(h, actions) }),
+			: Markdown.viewBlocks(document, { views: viewsFor(h, actions, overrides) }),
 	)

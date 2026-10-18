@@ -218,6 +218,8 @@ const NAMES = [
 	"OpenRouterIcon",
 	"PerplexityIcon",
 	"PixelSparkleIcon",
+	"CornerDownLeftIcon",
+	"SquareIcon",
 	"PoolsideIcon",
 	"PydanticIcon",
 	"QwenIcon",

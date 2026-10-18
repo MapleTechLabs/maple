@@ -1,0 +1,58 @@
+import { ChatEvent } from "@maple/domain/chat-session"
+import { Schema } from "effect"
+import { defineMessageUnion } from "foldkit/message"
+import { ParsedMarkdown } from "../../agent-sessions/session/message-response"
+import * as CopyButton from "../../../ui/copy-button"
+import { UIMessage } from "../kit/ui-message"
+
+export const History = Schema.Struct({
+	messages: Schema.Array(UIMessage),
+	cursor: Schema.Number,
+	running: Schema.Boolean,
+})
+export type History = typeof History.Type
+
+export const Sent = Schema.Struct({ cursor: Schema.Number, messageId: Schema.String })
+
+/** The `chat.apply` answer: a failed apply carries the tool's own text. */
+export const ApplyOutcome = Schema.Struct({ isError: Schema.Boolean, content: Schema.String })
+
+export const Message = defineMessageUnion({
+	CompletedLoadHistory: { generation: Schema.Number, result: Schema.Result(History, Schema.String) },
+	ChangedDraft: { text: Schema.String },
+	/** The form's submit (the button, or Enter in the textarea). */
+	SubmittedComposer: {},
+	ClickedSuggestion: { text: Schema.String },
+	ClickedRetrySend: { text: Schema.String },
+	ClickedContinue: {},
+	ClickedStop: {},
+	CompletedPostMessage: {
+		generation: Schema.Number,
+		localId: Schema.String,
+		raw: Schema.String,
+		result: Schema.Result(Sent, Schema.String),
+	},
+	ReceivedChatEvents: { generation: Schema.Number, events: Schema.Array(ChatEvent), nowMs: Schema.Number },
+	FailedChatStream: { generation: Schema.Number, message: Schema.String },
+	CompletedAbortTurn: {},
+	ToggledPanel: { id: Schema.String },
+	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	CompletedParseMarkdown: { parsed: Schema.Array(ParsedMarkdown) },
+	ClickedApprove: { toolCallId: Schema.String, tool: Schema.String },
+	ClickedDeny: { toolCallId: Schema.String },
+	CompletedDecideApproval: {
+		toolCallId: Schema.String,
+		tool: Schema.String,
+		decision: Schema.Literals(["approve", "deny"]),
+		result: Schema.Result(ApplyOutcome, Schema.String),
+	},
+})
+export type Message = typeof Message.Type
+
+/** Facts the host acts on: the tab title, a toast. */
+export const OutMessage = defineMessageUnion({
+	/** `onFirstMessage(tabId, text.trim().slice(0, 40))`. */
+	SentFirstMessage: { title: Schema.String },
+	RequestedToast: { type: Schema.Literals(["success", "error"]), title: Schema.String },
+})
+export type OutMessage = typeof OutMessage.Type
