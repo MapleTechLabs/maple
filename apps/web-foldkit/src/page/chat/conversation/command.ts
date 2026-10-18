@@ -5,6 +5,7 @@ import { MapleAiClient } from "../../../platform/api-clients"
 import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
 import { highlight } from "../kit/code-highlight"
 import { parseMarkdownTexts } from "../../kit/markdown"
+import { prepareMath } from "../kit/math"
 import { abortTurn, loadHistory, postMessage } from "../kit/chat-api"
 import { historyMessageToUIMessage } from "../kit/fold"
 import { Message } from "./message"
@@ -49,7 +50,7 @@ export const ParseMarkdown = Command.define("ParseChatMarkdown", {
 	args: { texts: Schema.Array(Schema.String) },
 	messages: [Message.CompletedParseMarkdown],
 	execute: ({ texts }) =>
-		Effect.map(parseMarkdownTexts(texts), (parsed) => Message.CompletedParseMarkdown({ parsed })),
+		Effect.map(parseMarkdownTexts(texts, prepareMath), (parsed) => Message.CompletedParseMarkdown({ parsed })),
 })
 
 /** One fence coloured by Shiki (loaded on first use); a failure leaves it plain. */

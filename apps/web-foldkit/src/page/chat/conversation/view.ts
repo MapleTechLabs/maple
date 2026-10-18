@@ -11,6 +11,7 @@ import { approvalCard, taskCard } from "../kit/view-cards"
 import { composer, failureNotice } from "../kit/view-composer"
 import { MountTurnMinimap } from "../kit/turn-minimap-mount"
 import { MountMermaid } from "../kit/mermaid"
+import { MountMath } from "../kit/math"
 import { inlineCard } from "../kit/view-inline"
 import { chatMarkdownOverrides } from "../kit/view-markdown"
 import { type TranscriptHost, transcript } from "../kit/view-transcript"
@@ -88,6 +89,8 @@ const cardsOf = <M>(
 				Mount.mapMessage(MountMermaid({ code }), (message) =>
 					options.toMessage(Message.CompletedMermaidDiagram({ isDrawn: message._tag === "CompletedMountMermaid" })),
 				),
+			mathMount: (tex, isDisplay) =>
+				Mount.mapMessage(MountMath({ tex, isDisplay }), () => options.toMessage(Message.CompletedMountMath())),
 		},
 	),
 })

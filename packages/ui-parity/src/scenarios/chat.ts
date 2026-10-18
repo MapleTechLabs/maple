@@ -162,6 +162,9 @@ export const chatArea: AreaModule = {
 		scenario("code", "a reply with a SQL block and a mermaid diagram", "chat-code", async (page) => {
 			await page.getByRole("button", { name: "Copy Code" }).first().waitFor()
 		}),
+		scenario("math", "a reply with text math, a math block and a math fence", "chat-math", async (page) => {
+			await page.getByText("With the window at one hour:").waitFor()
+		}),
 		scenario(
 			"conversation-tool-open",
 			"Incident investigation, a tool call expanded",

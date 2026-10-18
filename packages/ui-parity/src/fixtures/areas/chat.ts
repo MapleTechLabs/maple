@@ -100,6 +100,30 @@ const codeConversation = (nowMs: number) => {
 	]
 }
 
+export const CHAT_MATH_DATASET = "chat-math"
+
+/** A reply with text math, a `$$` block and a ```math fence: KaTeX, inline and display. */
+const mathConversation = (nowMs: number) => {
+	const at = (minutesAgo: number) => nowMs - minutesAgo * MINUTE
+	const answer = [
+		"The error budget burns at $$\\frac{e}{r} \\times 100$$ percent, against a budget of $2 per run.",
+		"",
+		"$$",
+		"\\text{burn} = \\frac{\\text{errors}}{\\text{requests}} \\cdot \\frac{30\\,\\text{d}}{w}",
+		"$$",
+		"",
+		"With the window at one hour:",
+		"",
+		"```math",
+		"p_{95} \\le 800\\,\\text{ms}",
+		"```",
+	].join("\n")
+	return [
+		{ id: "msg_math_user", role: "user", text: "How fast are we burning the error budget?", toolCalls: [], createdAt: at(4), startSeq: 1 },
+		{ id: "msg_math_assistant", role: "assistant", text: answer, toolCalls: [], createdAt: at(3), startSeq: 2 },
+	]
+}
+
 const history: RawRoute = {
 	tag: "chat.history",
 	answer: ({ dataset, url, method }) => {
@@ -110,7 +134,9 @@ const history: RawRoute = {
 				? conversation(nowMs)
 				: dataset.name === CHAT_CODE_DATASET
 					? codeConversation(nowMs)
-					: []
+					: dataset.name === CHAT_MATH_DATASET
+						? mathConversation(nowMs)
+						: []
 		return Response.json({ messages, cursor: messages.length === 0 ? 0 : 40, running: false })
 	},
 }
@@ -184,9 +210,10 @@ const abort: RawRoute = {
 
 const chatConversationDataset: Dataset = { ...defaultDataset, name: CHAT_CONVERSATION_DATASET }
 const chatCodeDataset: Dataset = { ...defaultDataset, name: CHAT_CODE_DATASET }
+const chatMathDataset: Dataset = { ...defaultDataset, name: CHAT_MATH_DATASET }
 
 export const fixtureArea: FixtureArea = {
 	area: "chat",
 	rawRoutes: [history, send, events, abort],
-	datasets: [chatConversationDataset, chatCodeDataset],
+	datasets: [chatConversationDataset, chatCodeDataset, chatMathDataset],
 }

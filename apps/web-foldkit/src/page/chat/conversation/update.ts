@@ -246,6 +246,7 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 		ClickedDownloadDiagram: ({ code }) => ({ model, commands: [DownloadDiagram({ code })] }),
 		CompletedCodeAction: () => ({ model }),
 		CompletedMermaidDiagram: () => ({ model }),
+		CompletedMountMath: () => ({ model }),
 		CompletedHighlightCode: ({ key, highlighted }) => ({
 			model: { ...model, highlights: { ...model.highlights, [key]: highlighted } },
 		}),

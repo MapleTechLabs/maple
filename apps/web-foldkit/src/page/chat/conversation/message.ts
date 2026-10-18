@@ -48,6 +48,7 @@ export const Message = defineMessageUnion({
 	ClickedDownloadDiagram: { code: Schema.String },
 	CompletedCodeAction: {},
 	CompletedMermaidDiagram: { isDrawn: Schema.Boolean },
+	CompletedMountMath: {},
 	GotChartMessage: { id: Schema.String, message: Chart.Message },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

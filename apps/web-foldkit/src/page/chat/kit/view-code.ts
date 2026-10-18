@@ -15,6 +15,8 @@ export type CodeHost<M> = Readonly<{
 	onDownloadDiagram: (code: string) => M
 	/** `MountMermaid({ code })` lifted to the host's Message. */
 	mermaidMount: (code: string) => Parameters<HtmlBuilder<M>["OnMount"]>[0]
+	/** `MountMath({ tex, isDisplay })` lifted to the host's Message. */
+	mathMount: (tex: string, isDisplay: boolean) => Parameters<HtmlBuilder<M>["OnMount"]>[0]
 }>
 
 const ZOOM_IN_PATH =

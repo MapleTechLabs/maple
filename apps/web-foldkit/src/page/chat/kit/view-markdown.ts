@@ -17,12 +17,13 @@ import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { ViewOverrides } from "../../kit/message-response"
 import * as HbarChart from "../../../charts/hbar-chart"
+import { MATH_MARK } from "./math"
 import { type CodeHost, codeBlock, mermaidBlock } from "./view-code"
 
 // The chat's own markdown elements over Streamdown's (apps/web components/ai-elements/
 // markdown-table.tsx, markdown-chart.tsx): tables on Maple's `Table` with recognised cells, and
 // ```chart fences as the query builder's plots.
-// TODO(chat-katex): math (`$…$`) is plain text: `@foldkit/markdown`'s parser has no remark-math.
+// Math (`$$…$$`, ```math) is drawn by KaTeX (`kit/math.ts`).
 
 export type ChartHost<M> = Readonly<{
 	charts: Readonly<Record<string, ChartModel.Model>>
@@ -195,8 +196,15 @@ export const chatMarkdownOverrides =
 	<M>(h: HtmlBuilder<M>, knownServices: ReadonlySet<string>, charts: ChartHost<M>, code: CodeHost<M>): ViewOverrides =>
 	(views) => ({
 		Table: (node) => tableView(h, knownServices)(views)(node),
+		// KaTeX draws into an unstyled span: legacy's `.katex` / `.katex-display` sit in its place.
+		InlineCode: (node) =>
+			node.value.startsWith(MATH_MARK)
+				? h.keyed("span")(`math:${node.value}`, [h.OnMount(code.mathMount(node.value.slice(MATH_MARK.length), false))], [])
+				: views.InlineCode(node),
 		CodeBlock: (block) => {
 			const language = Option.getOrElse(block.maybeLanguage, () => "")
+			if (language === "math")
+				return h.keyed("span")(`math-display:${block.value}`, [h.OnMount(code.mathMount(block.value, true))], [])
 			if (language === "chart") return chartView(h, charts, block.value)
 			if (language === "mermaid") return mermaidBlock(h, code, block.value.replace(/\n+$/, ""))
 			return codeBlock(h, code, block.value, language)
