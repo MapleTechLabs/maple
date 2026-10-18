@@ -259,6 +259,10 @@ export type PanelInputs = Readonly<{
 	resourceAttributes: Readonly<Record<string, string>>
 	/** Every attribute row grows "Filter" / "Exclude" hover actions. */
 	canFilter: boolean
+	/** The log section's heading (apps/local-ui says "Log attributes"). */
+	logTitle?: string
+	/** apps/web renders commit SHAs as commit links; apps/local-ui shows them as text. */
+	hasCommitShaValues?: boolean
 }>
 
 const attributesSearch = (h: H, model: Model): Html =>
@@ -274,7 +278,7 @@ const attributesSearch = (h: H, model: Model): Html =>
 const sectionOf = (h: H, model: Model, inputs: PanelInputs, source: AttributeSource, title: string) =>
 	attributesSection(
 		h,
-		{ model, source, canFilter: inputs.canFilter, idPrefix: source },
+		{ model, source, canFilter: inputs.canFilter, idPrefix: source, hasCommitShaValues: inputs.hasCommitShaValues },
 		{
 			attributes: source === "log" ? inputs.logAttributes : inputs.resourceAttributes,
 			title,
@@ -292,7 +296,7 @@ export const view = Submodel.defineView<Model, Message, PanelInputs>((model, inp
 			Object.keys(inputs.resourceAttributes).length > 0
 				? [attributesSearch(h, model)]
 				: []),
-			sectionOf(h, model, inputs, "log", "Log Attributes"),
+			sectionOf(h, model, inputs, "log", inputs.logTitle ?? "Log Attributes"),
 			sectionOf(h, model, inputs, "resource", "Resource attributes"),
 		],
 	),

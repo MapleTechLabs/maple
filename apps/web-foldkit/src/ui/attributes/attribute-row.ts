@@ -200,6 +200,8 @@ export type RowContext = Readonly<{
 	source: AttributeSource
 	canFilter: boolean
 	idPrefix: string
+	/** apps/web's `renderValue` for commit SHAs; apps/local-ui has none (default true). */
+	hasCommitShaValues?: boolean
 }>
 
 /** `AttributeRow`: the key (copyable) and its value (JSON, commit SHA or selectable text), plus filters. */
@@ -217,7 +219,7 @@ export const attributeRow = (
 	const valueView = Option.match(parsed, {
 		onSome: (json) => jsonValue(h, model, id, value, json),
 		onNone: () =>
-			COMMIT_SHA_KEYS.has(attrKey)
+			COMMIT_SHA_KEYS.has(attrKey) && context.hasCommitShaValues !== false
 				? commitShaValue(h, id, value)
 				: selectableValue(
 						h,

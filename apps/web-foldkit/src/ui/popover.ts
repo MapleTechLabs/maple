@@ -32,6 +32,8 @@ export const Model = Schema.Struct({
 	hoverGeneration: Schema.Number,
 	/** A press on the trigger opened it (Base UI's `trigger-press` open reason): `data-pressed`. */
 	isPressOpened: Schema.Boolean,
+	/** Base UI `initialFocus`: the popup itself (default) or its first tabbable element. */
+	initialFocus: Schema.Literals(["popup", "first-tabbable"]),
 })
 export type Model = typeof Model.Type
 
@@ -41,7 +43,13 @@ export const descriptionId = (id: string): string => `${id}-description`
 /** `align` and `side` are `PopoverContent`'s; `hoverDelayMs` is the trigger's `openOnHover` delay. */
 export const init = (
 	id: string,
-	options: Readonly<{ isOpen?: boolean; align?: Align; side?: Side; hoverDelayMs?: number }> = {},
+	options: Readonly<{
+		isOpen?: boolean
+		align?: Align
+		side?: Side
+		hoverDelayMs?: number
+		initialFocus?: "popup" | "first-tabbable"
+	}> = {},
 ): Model => ({
 	...initPopup(id, {
 		isOpen: options.isOpen,
@@ -51,6 +59,7 @@ export const init = (
 	hoverDelayMs: options.hoverDelayMs ?? 0,
 	hoverGeneration: 0,
 	isPressOpened: false,
+	initialFocus: options.initialFocus ?? "popup",
 })
 
 // MESSAGE
@@ -131,9 +140,9 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 
 /** Portal, marker on the page outside, placement under the trigger and outside presses. */
 export const MountPopover = Mount.defineStream("MountPopover", {
-	args: { id: Schema.String, align: Align, side: Side },
+	args: { id: Schema.String, align: Align, side: Side, initialFocus: Schema.Literals(["popup", "first-tabbable"]) },
 	messages: [Message.CompletedMountPopover, Message.ChangedPlacement, Message.PressedOutside],
-	execute: ({ element, id, align, side }) =>
+	execute: ({ element, id, align, side, initialFocus }) =>
 		anchoredPopup(element, {
 			positionerSelector: "[data-slot=popover-positioner]",
 			popupSelector: `#${CSS.escape(popupId(id))}`,
@@ -148,7 +157,7 @@ export const MountPopover = Mount.defineStream("MountPopover", {
 			insideSelectors: [`#${CSS.escape(triggerId(id))}`],
 			markOutside: Option.some({ mark: true, ariaHidden: false }),
 			lockScroll: false,
-			focus: Option.some({ returnFocusId: Option.some(triggerId(id)), initialFocus: "popup" }),
+			focus: Option.some({ returnFocusId: Option.some(triggerId(id)), initialFocus }),
 			afterPlace: (positioner, popup, placedSide) => {
 				// Top and left popups anchor to the trigger-facing edge, measured as Base UI does.
 				if (placedSide === "top" || placedSide === "left")
@@ -216,7 +225,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.Key(portalId(model.id)),
 			h.DataAttribute("base-ui-portal", ""),
 			h.Id(portalId(model.id)),
-			h.OnMount(MountPopover({ id: model.id, align: model.align, side: model.side })),
+			h.OnMount(MountPopover({ id: model.id, align: model.align, side: model.side, initialFocus: model.initialFocus })),
 			h.OnKeyDownPreventDefault((key) =>
 				key === "Escape" ? Option.some(Message.PressedEscape()) : Option.none(),
 			),
@@ -300,13 +309,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	return inputs.toView({ trigger, withTrigger })
 })
 
-export const popoverTitle = <M>(h: HtmlBuilder<M>, id: string, text: string): Html =>
-	h.h2([h.Class(popoverTitleStyles), h.DataAttribute("slot", "popover-title"), h.Id(titleId(id))], [text])
+export const popoverTitle = <M>(h: HtmlBuilder<M>, id: string, text: string, className?: string): Html =>
+	h.h2([h.Class(cn(popoverTitleStyles, className)), h.DataAttribute("slot", "popover-title"), h.Id(titleId(id))], [text])
 
-export const popoverDescription = <M>(h: HtmlBuilder<M>, id: string, text: string): Html =>
+export const popoverDescription = <M>(h: HtmlBuilder<M>, id: string, text: string, className?: string): Html =>
 	h.p(
 		[
-			h.Class(popoverDescriptionStyles),
+			h.Class(cn(popoverDescriptionStyles, className)),
 			h.DataAttribute("slot", "popover-description"),
 			h.Id(descriptionId(id)),
 		],
