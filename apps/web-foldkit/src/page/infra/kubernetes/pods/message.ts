@@ -4,6 +4,7 @@ import { LoadFailure } from "../../../../data/load-failure"
 import * as FilterSections from "../../../../ui/filters/filter-sections"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
+import * as Peek from "../peek/message"
 import { PodsPage, RestartRows } from "../pod-data"
 import { PodCounts, PodFacets } from "./model"
 
@@ -72,5 +73,6 @@ export const Message = defineMessageUnion({
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotFrameMessage: { message: Frame.Message },
 	GotInstallMessage: { message: InstallModal.Message },
+	GotPeekMessage: { message: Peek.Message },
 })
 export type Message = typeof Message.Type

@@ -2,7 +2,9 @@ import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
+import * as Dialog from "../../../../ui/dialog"
 import * as Frame from "../../kit/frame"
+import * as PeekMessage from "../peek/message"
 import type { PodRow } from "../pod-data"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -75,5 +77,37 @@ describe("pods list", () => {
 				isReplace: false,
 			}),
 		)
+	})
+
+	const peekedPage = () => {
+		const model = windowed({ peek: "shop/payment-2" }).model
+		return pageUpdate(
+			model,
+			Message.CompletedFetchPods({
+				key: model.pods.key ?? "",
+				result: Result.succeed({ data: [pod("payment-1"), pod("payment-2"), pod("payment-3")], totalCount: 3 }),
+			}),
+		)
+	}
+	const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+
+	test("a peeked row opens the sheet and warms it and both neighbours", () => {
+		const loaded = peekedPage()
+		expect(loaded.model.peek.dialog.isOpen).toBe(true)
+		expect(names(loaded.commands).filter((name) => name === "FetchInfraPodPeekSummary")).toHaveLength(3)
+		expect(names(loaded.commands).filter((name) => name === "FetchInfraPodPeekSeries")).toHaveLength(15)
+	})
+
+	test("a step replaces the peek with the next row; closing clears it", () => {
+		const { model } = peekedPage()
+		const stepped = pageUpdate(model, Message.GotPeekMessage({ message: PeekMessage.Message.ClickedStep({ step: 1 }) }))
+		expect(stepped.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/infra/kubernetes/pods?peek=shop%2Fpayment-3", isReplace: true }),
+		)
+		const closed = pageUpdate(
+			model,
+			Message.GotPeekMessage({ message: PeekMessage.Message.GotDialogMessage({ message: Dialog.Message.PressedEscape() }) }),
+		)
+		expect(closed.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/infra/kubernetes/pods", isReplace: true }))
 	})
 })

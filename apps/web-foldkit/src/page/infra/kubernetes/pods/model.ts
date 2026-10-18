@@ -6,6 +6,7 @@ import { InfraKubernetesPodsSearch } from "../../../../route/search"
 import * as FilterSections from "../../../../ui/filters/filter-sections"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
+import * as Peek from "../peek/model"
 import { PodsPage, RestartRows } from "../pod-data"
 
 // `/infra/kubernetes/pods` (apps/web/src/routes/infra/kubernetes/pods/index.tsx).
@@ -30,5 +31,7 @@ export const Model = Schema.Struct({
 	facets: KeyedSchema(PodFacets, LoadFailure),
 	filterSections: FilterSections.Model,
 	install: InstallModal.Model,
+	/** `PodPeekSheet`, opened by `search.peek`. */
+	peek: Peek.Model,
 })
 export type Model = typeof Model.Type

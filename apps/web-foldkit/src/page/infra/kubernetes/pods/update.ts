@@ -1,3 +1,4 @@
+import { podKey } from "@maple/web/components/infra/pod-restarts"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../../data/keyed"
 import { requestKey } from "../../../../data/request-key"
@@ -12,6 +13,8 @@ import { liftFrame, resolveFrame } from "../../kit/frame-step"
 import * as InstallModal from "../../kit/install-modal"
 import { applySteps, keyed, type Step } from "../../kit/requests"
 import { pickTimeSearch } from "../../kit/view-tabs"
+import * as PeekMessage from "../peek/message"
+import * as PeekUpdate from "../peek/update"
 import { PAGE_RESTARTS_LIMIT, type PodsInput } from "../pod-data"
 import type { PodSortKey } from "../pod-table"
 import { DebounceSearch, FetchFacets, FetchPods, FetchRestarts, FetchSummary, PAGE_SIZE } from "./command"
@@ -121,33 +124,51 @@ const facetsStep: RequestStep = (model, context, window, mode) =>
 		(key) => FetchFacets({ key, window }),
 	)
 
+const toPeek = (message: PeekMessage.Message) => Message.GotPeekMessage({ message })
+
+/** The peek resolves against the page on screen (`peekIndex` in legacy). */
+export const peekOf = (model: Model) =>
+	PeekUpdate.resolvePeek(AsyncData.getOrElse(model.pods.data, () => null)?.data ?? [], model.search.peek)
+
+const syncPeek = (context: PageContext, result: Return): Return => {
+	const synced = PeekUpdate.sync(result.model.peek, context, result.model.frame.window, peekOf(result.model))
+	return {
+		...result,
+		model: { ...result.model, peek: synced.model },
+		commands: [...(result.commands ?? []), ...Command.mapMessages(synced.commands ?? [], toPeek)],
+	}
+}
+
 /** The restarts of the page on screen, once it has rows (`PodTableWithRestarts` mounts with them). */
 const followPods =
 	(context: PageContext) =>
-	(result: Return): Return => {
-		const { model } = result
-		const window = model.frame.window
-		const pods = AsyncData.getOrElse(model.pods.data, () => null)
-		if (window === null || pods === null || pods.data.length === 0) return result
-		const input = {
-			startTime: window.startTime,
-			endTime: window.endTime,
-			podNames: pods.data.map((pod) => pod.podName),
-			limit: PAGE_RESTARTS_LIMIT,
-		}
-		const step: Step<Model, Message> = keyed(
-			model.restarts,
-			requestKey(context.orgId, "podRestarts", { data: input }),
-			"Load",
-			(restarts) => ({ restarts }),
-			(key) => FetchRestarts({ key, input }),
-		)
-		return {
-			...result,
-			model: { ...model, ...step.patch },
-			commands: [...(result.commands ?? []), ...step.commands],
-		}
+	(result: Return): Return =>
+		syncPeek(context, followRestarts(context, result))
+
+const followRestarts = (context: PageContext, result: Return): Return => {
+	const { model } = result
+	const window = model.frame.window
+	const pods = AsyncData.getOrElse(model.pods.data, () => null)
+	if (window === null || pods === null || pods.data.length === 0) return result
+	const input = {
+		startTime: window.startTime,
+		endTime: window.endTime,
+		podNames: pods.data.map((pod) => pod.podName),
+		limit: PAGE_RESTARTS_LIMIT,
 	}
+	const step: Step<Model, Message> = keyed(
+		model.restarts,
+		requestKey(context.orgId, "podRestarts", { data: input }),
+		"Load",
+		(restarts) => ({ restarts }),
+		(key) => FetchRestarts({ key, input }),
+	)
+	return {
+		...result,
+		model: { ...model, ...step.patch },
+		commands: [...(result.commands ?? []), ...step.commands],
+	}
+}
 
 const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
 	const window = model.frame.window
@@ -210,6 +231,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		facets: Keyed.idle(),
 		filterSections: FilterSections.init(),
 		install: InstallModal.init("infra-pods-install", "kubernetes"),
+		peek: PeekUpdate.init("infra-pods-peek"),
 	}
 	return {
 		model,
@@ -298,4 +320,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onTimeSearch: (next, search) => navigate(next, { ...next.search, ...search }),
 			}),
 		GotInstallMessage: ({ message: inner }) => liftInstall(model, InstallModal.update(model.install, inner)),
+		GotPeekMessage: ({ message: inner }) => updatePeek(model, inner, context),
 	})
+
+/** Stepping and closing replace history: walking fifty rows must not leave fifty entries. */
+const updatePeek = (model: Model, message: PeekMessage.Message, context: PageContext): Return => {
+	const peek = peekOf(model)
+	const result = PeekUpdate.update(model.peek, message, context, model.frame.window, peek)
+	const lifted = { ...model, peek: result.model }
+	const commands = Command.mapMessages(result.commands ?? [], toPeek)
+	const out = result.outMessage
+	if (out === undefined) return { model: lifted, commands }
+	if (out._tag === "Closed") return { ...navigate(lifted, { ...model.search, peek: undefined }, true), commands }
+	const pods = AsyncData.getOrElse(model.pods.data, () => null)?.data ?? []
+	const next = peek === null ? undefined : pods[peek.index + out.step]
+	return next === undefined
+		? { model: lifted, commands }
+		: { ...navigate(lifted, { ...model.search, peek: podKey(next) }, true), commands }
+}

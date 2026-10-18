@@ -20,13 +20,14 @@ import * as InstallModalView from "../../kit/install-modal-view"
 import { offsetPager, pageRangeLabel } from "../../kit/offset-pager"
 import { countLabel, filteredEmpty, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { kubernetesViewTabs, pickTimeSearch } from "../../kit/view-tabs"
+import * as PeekView from "../peek/view"
 import { MountPodPeek } from "../peek-rows"
 import type { PodsPage } from "../pod-data"
 import { podTable, podTableLoading } from "../pod-table"
 import { PAGE_SIZE } from "./command"
 import { type FilterParam, Message, type PodScope } from "./message"
 import type { Model, PodCounts } from "./model"
-import { DEFAULT_PRESET, filtersOf, pageIndexOf, sortOf } from "./update"
+import { DEFAULT_PRESET, filtersOf, pageIndexOf, peekOf, sortOf } from "./update"
 import { filtersRail } from "./view-filters"
 
 // `PodsPage` (apps/web/src/routes/infra/kubernetes/pods/index.tsx) in `KubernetesShell`.
@@ -214,6 +215,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				},
 				[h.div([h.Class("space-y-5")], [summaryBand(h, model), podsArea(h, model, inputs)])],
 			),
+			h.submodel({
+				slotId: "pod-peek",
+				model: model.peek,
+				view: PeekView.view,
+				viewInputs: {
+					peek: peekOf(model),
+					referenceTime: model.frame.window?.endTime ?? "",
+					nowMs: model.frame.nowMs,
+					timeZone: inputs.context.timeZone,
+					timeSearch: pickTimeSearch(model.search),
+				},
+				toParentMessage: (message) => Message.GotPeekMessage({ message }),
+			}),
 		],
 	),
 )

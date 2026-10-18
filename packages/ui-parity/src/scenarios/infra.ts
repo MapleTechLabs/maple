@@ -192,6 +192,27 @@ export const infraArea: AreaModule = {
 			page.getByRole("button", { name: "Install the Helm chart" }).click(),
 		),
 		scenario("pods-scope-ended","Pods: ended scope", "/infra/kubernetes/pods", K8S, clickText("Ended")),
+		scenario("pods-peek", "Pods: peek a row", "/infra/kubernetes/pods", K8S, async (page) => {
+			await page.getByText(PAYMENT_POD, { exact: true }).first().click()
+			await page.getByRole("dialog").waitFor()
+		}),
+		// Pointer and body focus: a keyboard-focused button shows its tooltip, which is not ported yet.
+		scenario("pods-peek-step", "Pods: step the peek down", `/infra/kubernetes/pods?peek=shop%2F${PAYMENT_POD}`, K8S, async (page) => {
+			await page.getByRole("button", { name: "Next pod" }).click()
+			await page.mouse.move(0, 0)
+		}),
+		scenario("pods-peek-keys", "Pods: J steps the peek", `/infra/kubernetes/pods?peek=shop%2F${PAYMENT_POD}`, K8S, async (page) => {
+			await page.getByRole("dialog").waitFor()
+			await page.evaluate(() => {
+				const focused = document.activeElement
+				if (focused instanceof HTMLElement) focused.blur()
+			})
+			await page.keyboard.press("j")
+		}),
+		scenario("pods-peek-close", "Pods: close the peek", `/infra/kubernetes/pods?peek=shop%2F${PAYMENT_POD}`, K8S, async (page) => {
+			await page.getByRole("button", { name: "Close" }).click()
+			await page.getByRole("dialog").waitFor({ state: "detached" })
+		}),
 		...timed(
 			"pod-detail",
 			"Pod detail",
