@@ -164,14 +164,22 @@ export const shareCell = <M>(
 export const relativeTime = <M>(
 	h: HtmlBuilder<M>,
 	value: number,
-	options: Readonly<{ nowMs: number; timeZone: string; className: string }>,
+	options: Readonly<{
+		nowMs: number
+		timeZone: string
+		className: string
+		/** `tooltip="tooltip"`: a tooltip trigger (TODO(tooltip): the popup) instead of the native title. */
+		isTooltip?: boolean
+	}>,
 ): Html =>
 	Number.isFinite(value)
 		? h.time(
 				[
 					h.Datetime(new Date(value).toISOString()),
-					h.Title(formatTimestampInTimezone(value, { timeZone: options.timeZone, withYear: true })),
-					h.Class(options.className),
+					...(options.isTooltip === true
+						? [h.DataAttribute("base-ui-tooltip-trigger", ""), h.DataAttribute("slot", "tooltip-trigger")]
+						: [h.Title(formatTimestampInTimezone(value, { timeZone: options.timeZone, withYear: true }))]),
+					h.Class(options.isTooltip === true ? cn("cursor-default", options.className) : options.className),
 				],
 				[formatRelativeTimeOrDate(value, options.nowMs, options.timeZone)],
 			)

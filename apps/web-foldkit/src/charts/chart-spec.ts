@@ -41,7 +41,10 @@ export const ChartSpec = defineTaggedUnion({
 		rows: Schema.Array(FixedMetricRow),
 		series: Schema.Array(Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String })),
 		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
-		metric: Schema.Literals(["calls", "sessions", "error_rate", "duration"]),
+		/** The tick and tooltip format: a tool metric (overview), or one of the detail grid's formatters. */
+		format: Schema.Literals(["calls", "sessions", "error_rate", "duration", "number", "errorRate", "durationNs", "oneDecimal"]),
+		tickCount: Schema.NullOr(Schema.Number),
+		marginTop: Schema.Number,
 		timeZone: Schema.String,
 	},
 	/** `QueryBuilderPieChart`. */

@@ -65,19 +65,33 @@ const rowsOf = (inputs: SeriesChartInputs) =>
 			p95: point.p95,
 		}))
 
-const plotView = Submodel.defineView<Chart.Model, Chart.Message, SeriesChartInputs>((model, inputs, h) => {
-	const plotted = seriesFor(inputs.metric, inputs.percentile)
-	const title = toolChartTitle({ metric: inputs.metric, percentile: inputs.percentile, tool: inputs.tool, model: inputs.model })
-	return h.div(
-		[h.Class("w-full"), h.Style({ height: `${PLOT_HEIGHT}px` })],
+type ToolSeriesSpec = Extract<ChartSpec, { readonly _tag: "ToolSeries" }>
+
+export type ToolPlotInputs = Readonly<{
+	chartId: string
+	ariaLabel: string
+	height: number
+	rows: ToolSeriesSpec["rows"]
+	series: ReadonlyArray<Readonly<{ key: string; label: string; token: string }>>
+	format: ToolSeriesSpec["format"]
+	tickCount: number | null
+	marginTop: number
+	theme: ThemeColors
+	timeZone: string
+}>
+
+/** `CursorPlot` at a fixed height: the lines, the crosshair and the bucket tooltip. */
+export const toolPlotView = Submodel.defineView<Chart.Model, Chart.Message, ToolPlotInputs>((model, inputs, h) =>
+	h.div(
+		[h.Class("w-full"), h.Style({ height: `${inputs.height}px` })],
 		[
 			plotFrame(h, {
 				chartId: inputs.chartId,
 				className: "h-full w-full",
-				ariaLabel: title,
+				ariaLabel: inputs.ariaLabel,
 				spec: ChartSpec.ToolSeries({
-					rows: rowsOf(inputs),
-					series: plotted.map((entry) => ({
+					rows: inputs.rows,
+					series: inputs.series.map((entry) => ({
 						key: entry.key,
 						label: entry.label,
 						color: resolveColor(inputs.theme, entry.token),
@@ -86,7 +100,9 @@ const plotView = Submodel.defineView<Chart.Model, Chart.Message, SeriesChartInpu
 						border: resolveColor(inputs.theme, "--border"),
 						background: resolveColor(inputs.theme, "--background"),
 					},
-					metric: inputs.metric,
+					format: inputs.format,
+					tickCount: inputs.tickCount,
+					marginTop: inputs.marginTop,
 					timeZone: inputs.timeZone,
 				}),
 				tooltipBody: (portal) =>
@@ -95,8 +111,8 @@ const plotView = Submodel.defineView<Chart.Model, Chart.Message, SeriesChartInpu
 					),
 			}),
 		],
-	)
-})
+	),
+)
 
 /** The chart card: the metric as its heading, the scope in the primary, the bucket note. */
 export const seriesChart = <M>(
@@ -176,8 +192,19 @@ export const seriesChart = <M>(
 						: h.submodel({
 								slotId: inputs.chartId,
 								model: chart,
-								view: plotView,
-								viewInputs: inputs,
+								view: toolPlotView,
+								viewInputs: {
+									chartId: inputs.chartId,
+									ariaLabel: title,
+									height: PLOT_HEIGHT,
+									rows,
+									series: plotted,
+									format: inputs.metric,
+									tickCount: null,
+									marginTop: 4,
+									theme: inputs.theme,
+									timeZone: inputs.timeZone,
+								},
 								toParentMessage: toMessage,
 							}),
 		],

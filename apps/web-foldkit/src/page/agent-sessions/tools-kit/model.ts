@@ -38,8 +38,25 @@ export const TotalsResult = Schema.Struct({
 	allSessions: Schema.Number,
 	firstSeen: Schema.Number,
 	lastSeen: Schema.Number,
+	/** The tool's latest `gen_ai.tool.description`, where a call stamped one. */
+	description: Schema.UndefinedOr(Schema.String),
 })
 export type TotalsResult = typeof TotalsResult.Type
+
+/** `ToolErrorRow`: one error group a tool failed with. */
+export const ToolErrorRow = Schema.Struct({
+	fingerprint: Schema.String,
+	errorType: Schema.String,
+	message: Schema.String,
+	calls: Schema.Number,
+	sessions: Schema.Number,
+	variants: Schema.Number,
+	firstSeen: Schema.Number,
+	lastSeen: Schema.Number,
+	callsSince: Schema.Number,
+	trend: Schema.Array(Schema.Struct({ bucket: Schema.Number, calls: Schema.Number })),
+})
+export type ToolErrorRow = typeof ToolErrorRow.Type
 
 export const ToolMetric = Schema.Literals(["calls", "sessions", "error_rate", "duration"])
 export type ToolMetric = typeof ToolMetric.Type

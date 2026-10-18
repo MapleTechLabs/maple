@@ -1,31 +1,15 @@
 import { getAiSessionsFacets } from "@maple/web-data/warehouse/ai-sessions"
 import {
-	type AiToolsSelection,
 	getAiToolBreakdowns,
 	getAiToolSeries,
-	getAiToolTotals,
 } from "@maple/web-data/warehouse/ai-session-tools"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
+import { fetchTotals, Selection, toInput } from "../tools-kit/reads"
 import { Message, RequestMode } from "./message"
-
-/** A read's selection as data (`toolAnalyticsSelection`'s output). */
-export const Selection = Schema.Struct({
-	startTime: Schema.String,
-	endTime: Schema.String,
-	tool: Schema.UndefinedOr(Schema.String),
-	model: Schema.UndefinedOr(Schema.String),
-	service: Schema.UndefinedOr(Schema.String),
-	env: Schema.UndefinedOr(Schema.String),
-	search: Schema.UndefinedOr(Schema.String),
-	failingOnly: Schema.UndefinedOr(Schema.Boolean),
-})
-export type Selection = typeof Selection.Type
-
-const toInput = (selection: Selection): AiToolsSelection => ({ ...selection })
 
 export const ResolveWindow = Command.define("ResolveAgentToolsWindow", {
 	args: {
@@ -63,24 +47,11 @@ export const FetchSeries = Command.define("FetchAgentToolsSeries", {
 		),
 })
 
-const totals = (selection: Selection) =>
-	getAiToolTotals({ data: toInput(selection) }).pipe(
-		Effect.map((value) => ({
-			current: value.current,
-			previous: value.previous,
-			allSessions: value.allSessions,
-			firstSeen: value.firstSeen,
-			lastSeen: value.lastSeen,
-		})),
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-	)
-
 export const FetchTotals = Command.define("FetchAgentToolsTotals", {
 	args: { key: Schema.String, selection: Selection, isTab: Schema.Boolean },
 	messages: [Message.CompletedFetchTotals, Message.CompletedFetchTabTotals],
 	execute: ({ key, selection, isTab }) =>
-		Effect.map(totals(selection), (result) =>
+		Effect.map(fetchTotals(selection), (result) =>
 			isTab ? Message.CompletedFetchTabTotals({ key, result }) : Message.CompletedFetchTotals({ key, result }),
 		),
 })

@@ -18,7 +18,14 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	(commands ?? []).map(({ name }) => name)
 
 const measures = { calls: 3, sessions: 2, errors: 1, p50: 1, p90: 2, p95: 3 }
-const totals: TotalsResult = { current: measures, previous: undefined, allSessions: 8, firstSeen: 0, lastSeen: 0 }
+const totals: TotalsResult = {
+	current: measures,
+	previous: undefined,
+	allSessions: 8,
+	firstSeen: 0,
+	lastSeen: 0,
+	description: undefined,
+}
 
 const windowed = (search: Model["search"] = {}) =>
 	pageUpdate(init({ search }, context).model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))

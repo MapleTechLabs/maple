@@ -11,10 +11,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors, resolveColor } from "../../../charts/theme-colors"
 import type { LoadFailure } from "../../../data/load-failure"
-import { button } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -25,6 +22,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { agentSessionsTabs } from "../kit/tabs"
 import { metricStrip, metricStripLoading } from "../tools-kit/metric-strip"
 import { DEFAULT_TOOL_PRESET, selectedMetric, selectedPercentile, type ToolSeriesPoint } from "../tools-kit/model"
+import { scopeRow } from "../tools-kit/scope-row"
 import { seriesChart, TOOL_CHART_TOKENS } from "../tools-kit/series-chart"
 import { facetSelect, toolFilterToolbar } from "../tools-kit/toolbar"
 import { MountEmptyState } from "./command"
@@ -49,75 +47,6 @@ const tabCounts = (model: Model) => ({
 		Option.map(AsyncData.getData(model.tabBreakdowns.data), (value) => value.tools.length),
 	),
 })
-
-/** `ToolScopeRow`: what the page is about, and one click out of each of it. */
-const scopeRow = (h: H, model: Model, summary: string): Html => {
-	const chips = [
-		...(model.search.tool === undefined ? [] : [{ kind: "tool" as const, value: model.search.tool }]),
-		...(model.search.model === undefined ? [] : [{ kind: "model" as const, value: model.search.model }]),
-	]
-	const [count, ...rest] = summary.split(" ")
-	return h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-card px-6 py-2.5 font-mono",
-			),
-		],
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					eyebrow(h, { variant: "mono" }, ["Scope"]),
-					...(chips.length === 0
-						? [h.span([h.Class("text-2xs text-muted-foreground/60")], ["all tools · all models"])]
-						: [
-								...chips.map((chip) =>
-									h.button(
-										[
-											h.Key(`${chip.kind}:${chip.value}`),
-											h.AriaLabel(`Remove ${chip.kind} ${chip.value}`),
-											h.Class(
-												"inline-flex h-[22px] max-w-64 items-center gap-[5px] rounded-sm border border-primary/35 bg-primary/10 px-2 transition-colors hover:bg-primary/20",
-											),
-											h.DataAttribute("base-ui-tooltip-trigger", ""),
-											h.DataAttribute("slot", "tooltip-trigger"),
-											h.Type("button"),
-											h.OnClick(Message.RemovedScopeChip({ kind: chip.kind })),
-										],
-										[
-											h.span([h.Class("text-2xs text-muted-foreground")], [chip.kind]),
-											h.span([h.Class("truncate text-2xs text-primary")], [chip.value]),
-											icon(h, "XmarkIcon", {
-												size: 10,
-												className: "shrink-0 text-muted-foreground",
-												attributes: [h.AriaHidden(true)],
-											}),
-										],
-									),
-								),
-								button(
-									h,
-									{
-										variant: "link",
-										size: "xs",
-										className: "h-auto px-0.5 text-2xs text-muted-foreground sm:text-2xs",
-										attributes: [h.OnClick(Message.ClickedClearScope())],
-									},
-									["Clear all"],
-								),
-							]),
-				],
-			),
-			h.span(
-				[h.Class("flex items-center gap-1.5 text-2xs tabular-nums")],
-				[
-					h.span([h.Class("text-foreground")], [count ?? ""]),
-					h.span([h.Class("text-muted-foreground")], [rest.join(" ")]),
-				],
-			),
-		],
-	)
-}
 
 /** The per-tool sparks and swatches, from the split series while it splits by tool. */
 const toolLanes = (series: ReadonlyArray<ToolSeriesPoint>, isModels: boolean, percentile: Parameters<typeof metricSpark>[2]) => {
@@ -198,7 +127,15 @@ const loadedView = (h: H, model: Model, inputs: PageViewInputs, actions: Html): 
 						),
 					]
 				: [
-						scopeRow(h, model, scopeSummary(totals.current, rows.reduce((sum, row) => sum + row.calls, 0))),
+						scopeRow(h, {
+							chips: [
+								...(model.search.tool === undefined ? [] : [{ kind: "tool" as const, value: model.search.tool }]),
+								...(model.search.model === undefined ? [] : [{ kind: "model" as const, value: model.search.model }]),
+							],
+							summary: scopeSummary(totals.current, rows.reduce((sum, row) => sum + row.calls, 0)),
+							onRemove: (chip) => Message.RemovedScopeChip({ kind: chip.kind }),
+							onClearAll: Message.ClickedClearScope(),
+						}),
 						metricStrip(h, {
 							totals: totals.current,
 							previous: totals.previous,

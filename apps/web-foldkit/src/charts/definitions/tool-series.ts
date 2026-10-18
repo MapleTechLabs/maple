@@ -2,7 +2,8 @@ import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axi
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
-import { formatToolMetric } from "@maple/web-data/lib/tool-analytics"
+import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
+import { formatDurationNs, formatToolMetric } from "@maple/web-data/lib/tool-analytics"
 import { type ChartValue, d3Curve, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
@@ -29,6 +30,24 @@ const LINE_WIDTH = 1.5
 const valueAt = (row: Row, key: string): number | null => {
 	const value = row[key]
 	return typeof value === "number" ? value : null
+}
+
+/** The overview formats in the metric's unit; the detail grid's cells each name their formatter. */
+const formatOf = (spec: ToolSeriesSpec): ((value: number) => string) => {
+	switch (spec.format) {
+		case "number":
+			return formatNumber
+		case "errorRate":
+			return formatErrorRate
+		case "durationNs":
+			return formatDurationNs
+		case "oneDecimal":
+			return (value) => value.toFixed(1)
+		default: {
+			const metric = spec.format
+			return (value) => formatToolMetric(value, metric)
+		}
+	}
 }
 
 const bucketOf = (row: Row): string => {
@@ -70,12 +89,13 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 						ticks: {
 							size: 0,
 							padding: 8,
-							format: (value: number) => (value === 0 ? "0" : formatToolMetric(value, spec.metric)),
+							count: spec.tickCount ?? undefined,
+							format: (value: number) => (value === 0 ? "0" : formatOf(spec)(value)),
 						},
 					},
 				},
 			},
-			margin: { right: 8, top: 4 },
+			margin: { right: 8, top: spec.marginTop },
 			focus: "group-x",
 			maxFocusDistance: UNBOUNDED_FOCUS_DISTANCE,
 			focusRing: false,
@@ -95,7 +115,7 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 										label: entry.label,
 										color: entry.color,
 										dashed: false,
-										value: formatToolMetric(value, spec.metric),
+										value: formatOf(spec)(value),
 									},
 								]
 					}),

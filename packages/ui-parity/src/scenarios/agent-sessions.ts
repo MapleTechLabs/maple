@@ -175,6 +175,55 @@ const toolsInteractions: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+const TOOL = "/agent-sessions/tools/Bash"
+
+/** The tool detail page's controls. The error group modal (`?error=`) is not ported yet. */
+const toolDetailInteractions: ReadonlyArray<Scenario> = [
+	scenario("tool-detail-service", "Tool detail, a service picked", TOOL, {
+		steps: async (page) => {
+			await page.getByRole("combobox", { name: "service" }).click()
+			await page.getByRole("option", { name: "claude-code" }).click()
+		},
+	}),
+	scenario("tool-detail-failing", "Tool detail, failing only", TOOL, {
+		steps: (page) => page.getByRole("button", { name: "Failing only" }).click(),
+	}),
+	scenario("tool-detail-model", "Tool detail, scoped to a model", `${TOOL}?model=claude-opus-4-1`),
+	scenario("tool-detail-model-remove", "Tool detail, the model chip removed", `${TOOL}?model=claude-opus-4-1`, {
+		steps: (page) => page.getByRole("button", { name: "Remove model claude-opus-4-1" }).click(),
+	}),
+	scenario("tool-detail-sort", "Tool detail, errors sorted by sessions", TOOL, {
+		steps: (page) => page.getByRole("region", { name: "Errors" }).getByRole("button", { name: "Sessions" }).click(),
+	}),
+	scenario("tool-detail-chart-hover", "Tool detail, the calls chart hovered", TOOL, {
+		steps: (page) =>
+			page.getByRole("img", { name: "Tool calls" }).first().hover({ position: { x: 470, y: 60 } }),
+	}),
+	scenario("tool-detail-time-range", "Tool detail, last 1 day from the picker", TOOL, {
+		steps: async (page) => {
+			await page.getByRole("button", { name: "Last 7 days" }).click()
+			await page.getByRole("dialog").getByRole("button", { name: "Last 1 day" }).click()
+			await page.getByRole("dialog").waitFor({ state: "detached" })
+		},
+	}),
+	scenario("tool-detail-reload", "Tool detail, reloaded", TOOL, {
+		steps: (page) => page.getByRole("button", { name: "Reload" }).click(),
+	}),
+	scenario("tool-detail-loading", "Tool detail, the totals held", TOOL, {
+		faults: held("aiSessionsInternal.toolsTotals"),
+		settle: "held",
+	}),
+	scenario("tool-detail-error", "Tool detail, the totals failing", TOOL, {
+		faults: failing("aiSessionsInternal.toolsTotals"),
+	}),
+	scenario("tool-detail-errors-error", "Tool detail, the errors read failing", TOOL, {
+		faults: failing("aiSessionsInternal.toolErrors"),
+	}),
+	scenario("tool-detail-sessions-error", "Tool detail, the sessions read failing", TOOL, {
+		faults: failing("aiSessionsInternal.list"),
+	}),
+]
+
 export const agentSessionsArea: AreaModule = {
 	area: "agent-sessions",
 	scenarios: [
@@ -195,6 +244,7 @@ export const agentSessionsArea: AreaModule = {
 		}),
 		...listInteractions,
 		...toolsInteractions,
+		...toolDetailInteractions,
 		scenario("detail", "Session detail", `/agent-sessions/${NEWEST_SESSION}`),
 		scenario("detail-transcript", "Session detail, transcript", `/agent-sessions/${NEWEST_SESSION}`, {
 			steps: (page) => page.getByRole("tab", { name: "Transcript" }).click(),

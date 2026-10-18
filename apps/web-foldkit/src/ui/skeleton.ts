@@ -10,8 +10,17 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 
 // Port of packages/ui/src/components/ui/skeleton.tsx.
 
-export const skeleton = <M>(h: HtmlBuilder<M>, className?: string): Html =>
-	h.div([h.Class(cn(skeletonStyles, className)), h.DataAttribute("slot", "skeleton")])
+export const skeleton = <M>(
+	h: HtmlBuilder<M>,
+	className?: string,
+	/** Inline style the call site passes (`style={{ width }}`). */
+	style?: Readonly<Record<string, string>>,
+): Html =>
+	h.div([
+		h.Class(cn(skeletonStyles, className)),
+		h.DataAttribute("slot", "skeleton"),
+		...(style === undefined ? [] : [h.Style(style)]),
+	])
 
 export interface SkeletonListOptions {
 	readonly rows?: number
