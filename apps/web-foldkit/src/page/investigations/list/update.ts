@@ -140,8 +140,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedSuggestion: ({ title }) => create(model, title),
 		CompletedCreate: ({ result }) =>
 			Result.match(result, {
+				// The create invalidates the `investigations` reactivity key, so legacy re-reads the list as it leaves.
 				onSuccess: (id) => ({
-					model: { ...model, isCreating: false },
+					...loadFirstPage({ ...model, isCreating: false }, context, "Refresh"),
 					outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Investigation({ id, search: {} })), isReplace: false }),
 				}),
 				onFailure: (failure) => ({

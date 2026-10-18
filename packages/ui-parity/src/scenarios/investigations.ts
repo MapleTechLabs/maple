@@ -15,6 +15,10 @@ const waitForText = (text: string | RegExp) => (page: Page) => page.getByText(te
 const menuItem = (name: string) => (page: Page) => page.getByRole("menuitem", { name }).click()
 const openSheet = (page: Page) => page.getByRole("dialog").waitFor({ state: "visible" })
 
+/** The running page a create lands on: its live graph re-lays out, so it is masked as in `running`. */
+const runningGraph = (page: Page) => [page.getByRole("application", { name: "Investigation provenance graph" })]
+const landedOnRunning = (page: Page) => page.waitForURL(new RegExp(`/investigations/${SEEDED.runningInvestigation}`))
+
 const held = { faults: { delays: { "investigations.list": 60_000 } }, settle: "held" as const }
 const failing = {
 	faults: {
@@ -90,6 +94,24 @@ export const investigationsArea: AreaModule = {
 		}),
 		investigation("list-search-empty", "Search with no match", "/investigations", {
 			steps: act((page) => page.getByPlaceholder("Search subjects and findings").fill("zzz"), waitForText(/^No investigations match/)),
+		}),
+		investigation("list-create", "Investigate bar submitted, lands on the run", "/investigations", {
+			steps: act(
+				(page) => page.getByRole("textbox", { name: "What should Maple investigate?" }).fill("Why is checkout slow?"),
+				(page) => page.getByRole("button", { name: "Investigate", exact: true }).click(),
+				landedOnRunning,
+				waitForText("Maple is gathering evidence."),
+			),
+			mask: runningGraph,
+		}),
+		investigation("list-hero-suggestion", "First-run suggestion started", "/investigations", {
+			dataset: EMPTY,
+			steps: act(
+				(page) => page.getByRole("button", { name: /Which service is slowest right now/ }).click(),
+				(page) => page.waitForURL(/\/investigations\/[0-9a-f-]{36}/),
+				waitForText(/This investigation is unavailable|Maple is gathering evidence\./),
+			),
+			mask: runningGraph,
 		}),
 		investigation("list-typed", "Investigate bar typed", "/investigations", {
 			steps: act((page) => page.getByRole("textbox", { name: "What should Maple investigate?" }).fill("Why is checkout slow?")),

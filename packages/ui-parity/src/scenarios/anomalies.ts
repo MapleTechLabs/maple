@@ -85,6 +85,14 @@ export const anomaliesArea: AreaModule = {
 		anomaly("detail-resolve", "Detail, resolved from the dialog", DETAIL, {
 			steps: act(clickButton(/^Resolve$/), (page) => page.getByRole("alertdialog").getByRole("button", { name: "Resolve" }).click(), waitForText("Anomaly resolved")),
 		}),
+		anomaly("detail-investigate", "Detail, investigation opened", DETAIL, {
+			steps: act(
+				clickButton("Open investigation"),
+				(page) => page.waitForURL(/\/investigations\/[0-9a-f-]{36}/),
+				waitForText("Maple is gathering evidence."),
+			),
+			mask: (page) => [page.getByRole("application", { name: "Investigation provenance graph" })],
+		}),
 		anomaly("detail-link-dialog", "Detail, link issue dialog", DETAIL, {
 			steps: act(clickButton("Link issue"), waitForText(/^Scoped to/)),
 		}),
