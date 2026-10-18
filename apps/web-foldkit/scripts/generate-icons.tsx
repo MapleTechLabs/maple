@@ -33,6 +33,7 @@ const NAMES = [
 	"BranchForkIcon",
 	"BunIcon",
 	"ChartBarHorizontalIcon",
+	"ChartBarIcon",
 	"ChartLineIcon",
 	"ChatBubbleIcon",
 	"ChatBubbleSparkleIcon",

@@ -21,6 +21,7 @@ export const statRail = <M>(
 	children: ReadonlyArray<Html>,
 	isBusy?: boolean,
 	columns: 2 | 3 | 4 | 5 = 4,
+	className?: string,
 ): Html =>
 	h.div(
 		[
@@ -29,6 +30,7 @@ export const statRail = <M>(
 				cn(
 					"grid grid-cols-2 divide-x divide-y divide-border rounded-md border bg-card md:divide-y-0",
 					COLUMNS_CLASS.get(columns),
+					className,
 				),
 			),
 		],
@@ -47,6 +49,9 @@ export type StatRailItemOptions = Readonly<{
 	compact?: boolean
 	/** `sm`: tighter padding, a smaller value and no reserved spark slot. */
 	size?: "md" | "sm"
+	/** Extra classes on the tile shell and on the value. */
+	className?: string
+	valueClassName?: string
 }>
 
 export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions): Html => {
@@ -63,7 +68,11 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions)
 	return h.div(
 		[
 			h.Class(
-				cn("relative animate-in fade-in slide-in-from-bottom-1 duration-500", isSmall ? "px-4 py-3" : "px-5 py-4"),
+				cn(
+					"relative animate-in fade-in slide-in-from-bottom-1 duration-500",
+					isSmall ? "px-4 py-3" : "px-5 py-4",
+					options.className,
+				),
 			),
 			...(delay > 0
 				? [h.Style({ "animation-delay": `${delay}ms`, "animation-fill-mode": "backwards" })]
@@ -87,7 +96,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions)
 						value: options.value,
 						size: isSmall ? "sm" : "lg",
 						className: "shrink-0",
-						valueClassName: cn(VALUE_TONE[options.tone ?? "neutral"]),
+						valueClassName: cn(VALUE_TONE[options.tone ?? "neutral"], options.valueClassName),
 					}),
 					...(options.compact === true || isSmall ? [] : [h.div([h.Class("h-7 w-24 min-w-0 shrink")])]),
 				],
