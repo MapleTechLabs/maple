@@ -199,14 +199,18 @@ const liftDestinationDialog = (model: Model, step: ReturnType<typeof Destination
 
 // ROW MENUS
 
-/** Row menu ids carry what they act on: `rule:<id>` or `destination:<id>`. */
-export const ruleMenuId = (ruleId: AlertRuleId) => `rule:${ruleId}`
+/**
+ * Row menu ids carry what they act on: `rule:<id>@<tag group>` (a rule is listed under each of
+ * its tags) or `destination:<id>`.
+ */
+export const ruleMenuId = (ruleId: AlertRuleId, groupKey: string) => `rule:${ruleId}@${groupKey}`
 export const destinationMenuId = (destinationId: AlertDestinationId) => `destination:${destinationId}`
 
 const pickedFromMenu = (model: Model, menuId: string, value: string): Return => {
 	const [kind, ...rest] = menuId.split(":")
-	const id = rest.join(":")
+	const target = rest.join(":")
 	if (kind === "rule") {
+		const id = target.split("@")[0]
 		const rule = Option.map(
 			Array.findFirst(model.rules ?? [], (row) => row.id === id),
 			(row) => rowToAlertRuleDocument(row, new Map()),
@@ -227,7 +231,7 @@ const pickedFromMenu = (model: Model, menuId: string, value: string): Return => 
 	}
 	return Option.match(
 		Option.map(
-			Array.findFirst(model.destinations ?? [], (row) => row.id === id),
+			Array.findFirst(model.destinations ?? [], (row) => row.id === target),
 			rowToAlertDestinationDocument,
 		),
 		{

@@ -9,7 +9,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../shared/test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, ruleMenuId, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
@@ -111,6 +111,20 @@ describe("alerts hub", () => {
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedToast({ type: "success", title: "Test notification sent", description: "" }),
 		)
+	})
+
+	test("a rule listed under several tags has a menu per tag, and each acts on that rule", () => {
+		const tagged = pageUpdate(
+			loaded({ tab: "rules" }),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { tags_json: ["team:payments", "tier:p1"] })] }),
+		).model
+		const menus = ["team:payments", "tier:p1"].map((tag) => ruleMenuId(RULE_2, tag))
+		expect(new Set(menus).size).toBe(2)
+		const opened = pageUpdate(tagged, Message.GotRowMenuMessage({
+			menuId: menus[1] ?? "",
+			message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: "open" } }),
+		}))
+		expect(opened.outMessage?._tag).toBe("RequestedNavigation")
 	})
 
 	test("delete asks first, then sends the DELETE and closes on success", () => {

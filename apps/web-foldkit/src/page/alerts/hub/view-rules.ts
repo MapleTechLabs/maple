@@ -104,7 +104,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 	const destinationsById = new Map(destinations.map((d) => [d.id, d]))
 	const ribbonRange = { min: now - RIBBON_DAYS * DAY_MS, max: now }
 
-	const rowOf = (rule: AlertRuleDocument) =>
+	const rowOf = (rule: AlertRuleDocument, groupKey: string) =>
 		ruleRow(h, model, {
 			rule,
 			derived: derivedByRuleId.get(rule.id),
@@ -119,6 +119,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 					return destination === undefined ? [] : [destination]
 				}),
 			fired: firedByRuleId.get(rule.id) ?? 0,
+			groupKey,
 		})
 
 	return h.div(
@@ -205,7 +206,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 														),
 													],
 												),
-												h.ul([h.Class("divide-y")], group.items.map(rowOf)),
+												h.ul([h.Class("divide-y")], group.items.map((rule) => rowOf(rule, group.key))),
 											],
 										)
 									}),
@@ -252,11 +253,13 @@ type RowInputs = Readonly<{
 	ribbonRange: Readonly<{ min: number; max: number }>
 	destinations: ReadonlyArray<AlertDestinationDocument>
 	fired: number
+	/** A rule with several tags is listed once per tag: its menu is one per row. */
+	groupKey: string
 }>
 
 const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 	const { rule } = row
-	const menuId = ruleMenuId(rule.id)
+	const menuId = ruleMenuId(rule.id, row.groupKey)
 	const entries: ReadonlyArray<MenuEntry> = [
 		{ _tag: "Item", value: "open", label: "Open rule" },
 		{
