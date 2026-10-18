@@ -9,9 +9,11 @@ import { modifyFields } from "foldkit/struct"
 import { toString as urlToString } from "foldkit/url"
 import {
 	CheckSession,
+	LoadCustomer,
 	LoadExternal,
 	NavigateInternal,
 	ReplaceUrl,
+	SaveSelectedPlanKnown,
 	SaveSessionToken,
 	WaitForAuthSettle,
 } from "./command"
@@ -19,6 +21,7 @@ import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { rendersShell } from "./page/chrome"
 import * as Onboarding from "./page/onboarding"
+import { accessOf, CustomerData, type CustomerSlot, type Gate, planGate } from "./page/onboarding/plan-gate"
 import { type PageContext, PageOutMessage } from "./page/contract"
 import { changeContext, enterRoute, PageMessage, type PageTransition, updatePage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
@@ -213,14 +216,22 @@ const loadPage: Step = (model) =>
 // ONBOARDING
 
 /** The session as the onboarding screens read it. */
-export const onboardingInputsOf = (model: Model): Option.Option<Onboarding.Inputs> =>
-	Session.match(model.session, {
+export const onboardingInputsOf = (model: Model): Option.Option<Onboarding.Inputs> => {
+	const snapshot = Option.fromNullishOr(model.clerkSnapshot)
+	const clerk = {
+		maybeOrganization: Option.flatMap(snapshot, (clerkSnapshot) => clerkSnapshot.maybeOrganization),
+		memberships: Option.match(snapshot, { onNone: () => [], onSome: (clerkSnapshot) => clerkSnapshot.memberships }),
+		maybeUser: Option.flatMap(snapshot, (clerkSnapshot) => clerkSnapshot.maybeUser),
+		customer: model.customer,
+	}
+	return Session.match(model.session, {
 		Resolving: (): Option.Option<Onboarding.Inputs> => Option.none(),
 		SignedOut: (): Option.Option<Onboarding.Inputs> =>
-			Option.some({ session: "SignedOut", maybeOrgId: Option.none() }),
+			Option.some({ session: "SignedOut", maybeOrgId: Option.none(), ...clerk }),
 		SignedIn: ({ maybeOrgId }): Option.Option<Onboarding.Inputs> =>
-			Option.some({ session: "SignedIn", maybeOrgId }),
+			Option.some({ session: "SignedIn", maybeOrgId, ...clerk }),
 	})
+}
 
 const toOnboardingCommands = (step: Onboarding.Step) =>
 	step.commands.map(Command.mapMessage((message) => Message.GotOnboardingMessage({ message })))
@@ -242,9 +253,18 @@ const loadOnboarding: Step = (model) => {
 }
 
 const updateOnboarding = (model: Model, message: Onboarding.Message): UpdateReturn => {
-	if (model.onboarding === null) return { model }
-	const step = Onboarding.update(model.onboarding, message)
-	return { model: modifyFields(model, { onboarding: () => step.model }), commands: toOnboardingCommands(step) }
+	const onboarding = model.onboarding
+	return Option.match(onboardingInputsOf(model), {
+		onNone: () => ({ model }),
+		onSome: (inputs) => {
+			if (onboarding === null) return { model }
+			const step = Onboarding.update(onboarding, message, inputs)
+			return {
+				model: modifyFields(model, { onboarding: () => step.model }),
+				commands: toOnboardingCommands(step),
+			}
+		},
+	})
 }
 
 // ROUTING
@@ -282,6 +302,12 @@ const clerkReverseRedirect = (route: AppRoute, maybeOrgId: Option.Option<unknown
 		() => Option.none(),
 	)
 
+const toHome: Redirect = { url: "/", isReplace: true }
+
+/** Self-hosted has no Clerk: its sign-up and org pages `<Navigate to="/" replace />`. */
+const selfHostedRedirect = (route: AppRoute): Option.Option<Redirect> =>
+	route._tag === "SignUp" || route._tag === "OrgRequired" ? Option.some(toHome) : Option.none()
+
 /** The root `beforeLoad` gate: sign-in when signed out, `/org-required` without an org. */
 const sessionRedirect = (model: Model): Option.Option<Redirect> =>
 	Session.match(model.session, {
@@ -295,8 +321,9 @@ const sessionRedirect = (model: Model): Option.Option<Redirect> =>
 					}),
 		SignedIn: ({ maybeOrgId }) => {
 			if (isPublicRoute(model.route)) {
-				return isClerkAuthEnabled ? clerkReverseRedirect(model.route, maybeOrgId) : Option.none()
+				return isClerkAuthEnabled ? clerkReverseRedirect(model.route, maybeOrgId) : selfHostedRedirect(model.route)
 			}
+			if (!isClerkAuthEnabled && model.route._tag === "SelectPlan") return Option.some(toHome)
 			return Option.isNone(maybeOrgId)
 				? Option.some({
 						url: hrefOf(AppRoute.OrgRequired({ search: { redirect_url: hrefOf(model.route) } })),
@@ -306,11 +333,39 @@ const sessionRedirect = (model: Model): Option.Option<Redirect> =>
 		},
 	})
 
+/** The Clerk auth pages: `clerkReverseRedirect` settles those before any plan gate. */
+const isClerkAuthPage = AppRoute.isAnyOf(["SignIn", "SignUp", "OrgRequired"])
+
+/** The org Clerk has active, as `useOrganization()` reads it. */
+const clerkOrganizationOf = (model: Model) =>
+	Option.flatMap(Option.fromNullishOr(model.clerkSnapshot), (snapshot) => snapshot.maybeOrganization)
+
+/** `ClerkReverseRedirects`' plan and region gates, for a signed-in Clerk org off the auth pages. */
+export const planGateOf = (model: Model): Option.Option<Gate> =>
+	Session.match(model.session, {
+		Resolving: () => Option.none<Gate>(),
+		SignedOut: () => Option.none<Gate>(),
+		SignedIn: ({ maybeOrgId }) =>
+			Option.filter(maybeOrgId, () => isClerkAuthEnabled && !isClerkAuthPage(model.route)).pipe(
+				Option.map((orgId) =>
+					planGate({
+						route: model.route,
+						organization: clerkOrganizationOf(model),
+						customer: model.customer,
+						isKnownToRenderApp: model.knownToRenderApp[orgId] ?? false,
+					}),
+				),
+			),
+	})
+
 const followRedirects: Step = (model) => {
 	const maybeRedirect = Session.match(model.session, {
 		Resolving: () => Option.none<Redirect>(),
 		SignedOut: () => Option.orElse(routeRedirect(model.route), () => sessionRedirect(model)),
-		SignedIn: () => Option.orElse(routeRedirect(model.route), () => sessionRedirect(model)),
+		SignedIn: () =>
+			Option.orElse(routeRedirect(model.route), () => sessionRedirect(model)).pipe(
+				Option.orElse(() => Option.flatMap(planGateOf(model), (gate) => gate.redirect)),
+			),
 	})
 	return Option.match(maybeRedirect, {
 		onNone: () => ({ model }),
@@ -327,13 +382,53 @@ const loadRoute: Step = (model) =>
 		Resolving: () => ({ model }),
 		SignedOut: () => ({ model }),
 		SignedIn: ({ maybeOrgId }) =>
-			Option.isSome(maybeOrgId) && rendersShell(model.route)
-				? foldShellStep(Shell.enter(maybeOrgId.value))(model)
-				: { model },
+			Option.isNone(maybeOrgId) || isPublicRoute(model.route)
+				? { model }
+				: rendersShell(model.route)
+					? foldShellStep(Shell.enter(maybeOrgId.value))(model)
+					: foldShellStep(Shell.enterBare)(model),
 	})
 
+/**
+ * `useMapleCustomer` in `ClerkReverseRedirects`: once Clerk has an org that this region serves,
+ * its customer is read once (the atom is shared app-wide).
+ */
+const loadCustomer: Step = (model) => {
+	if (!isClerkAuthEnabled) return { model }
+	const maybeOrgId = Session.match(model.session, {
+		Resolving: () => Option.none<OrgId>(),
+		SignedOut: () => Option.none<OrgId>(),
+		SignedIn: ({ maybeOrgId: orgId }) => orgId,
+	})
+	const isServed = Option.exists(clerkOrganizationOf(model), (organization) => organization.isServedHere)
+	if (Option.isNone(maybeOrgId) || !isServed || model.customer.orgId === maybeOrgId.value) return { model }
+	return {
+		model: modifyFields(model, {
+			customer: () => ({ orgId: maybeOrgId.value, data: CustomerData.Loading() }),
+		}),
+		commands: [LoadCustomer({ orgId: maybeOrgId.value })],
+	}
+}
+
+/** A customer read for the current org settled: remember the access, then re-run the gates. */
+const settledCustomer = (model: Model, orgId: string, data: CustomerSlot["data"]): UpdateReturn => {
+	if (model.customer.orgId !== orgId) return { model }
+	const next = modifyFields(model, { customer: () => ({ orgId, data }) })
+	const access = accessOf(next.customer)
+	const settled = settle(next)
+	return access === "app" || access === "onboarding"
+		? {
+				model: settled.model,
+				commands: [
+					...(settled.commands ?? []),
+					SaveSelectedPlanKnown({ orgId, mayRenderApp: access === "app" }),
+				],
+			}
+		: settled
+}
+
 /** Everything that reads the route or the session. */
-export const settle: Step = Update.combine([followRedirects, loadRoute, loadPage, loadOnboarding])
+export const settle: Step = Update.combine([followRedirects, loadCustomer, loadRoute, loadPage, loadOnboarding])
 
 // SESSION
 
@@ -347,7 +442,8 @@ const signedOut: Step = (model) => settle(modifyFields(model, { session: () => S
 /** `useClerkAuthSettled`: a signed-out first answer waits for a refreshing session, except on public pages. */
 const appliedClerkSnapshot =
 	(snapshot: ClerkSnapshot, isFirstAnswer: boolean): Step =>
-	(model) => {
+	(previous) => {
+		const model = modifyFields(previous, { clerkSnapshot: () => snapshot })
 		if (Option.isSome(snapshot.maybeUserId)) {
 			return signedIn(snapshot.maybeOrgId)(model)
 		}
@@ -391,8 +487,10 @@ export const update = (model: Model, message: Message) =>
 			signedOut(modifyFields(model, { clerk: () => ClerkPhase.Failed({ message }) })),
 		ChangedClerkSession: ({ snapshot }) => appliedClerkSnapshot(snapshot, false)(model),
 		CompletedWaitForAuthSettle: () => (model.session._tag === "Resolving" ? signedOut(model) : { model }),
-		CompletedMountClerkSignIn: () => ({ model }),
-		FailedMountClerkSignIn: () => ({ model }),
+		SucceededLoadCustomer: ({ orgId, customer }) =>
+			settledCustomer(model, orgId, CustomerData.Success({ data: customer })),
+		FailedLoadCustomer: ({ orgId }) => settledCustomer(model, orgId, CustomerData.Failure({ error: "Failed" })),
+		CompletedSaveSelectedPlanKnown: () => ({ model }),
 		GotSignInMessage: ({ message }) => foldSignIn(model, message),
 		GotShellMessage: ({ message }) => foldShell(model, message),
 		GotToastMessage: ({ message }) =>

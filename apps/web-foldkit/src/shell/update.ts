@@ -66,6 +66,15 @@ export const enter =
 		}
 	}
 
+/**
+ * A signed-in route outside the shell (`/cli-login`, `/quick-start`): legacy's root still mounts
+ * `GlobalChatSheet`, whose org lookup is the only request of the shell's that it sends.
+ */
+export const enterBare = (model: Model): UpdateReturn =>
+	AsyncData.isIdle(model.tenant)
+		? { model: modifyFields(model, { tenant: () => TenantData.Loading() }), commands: [LoadTenant()] }
+		: { model }
+
 /** Navigation remounts the page in legacy, which closes every menu and the mobile sheet. */
 export const routeChanged = (model: Model): UpdateReturn => ({
 	model: modifyFields(closeMenu(model), { isMobileNavOpen: () => false }),

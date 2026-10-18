@@ -7,5 +7,5 @@ export { favoritesChanges, sidebarShortcut, viewportChanges } from "./subscripti
 export { DASHBOARD_FAVORITES_EVENT, DASHBOARD_FAVORITES_KEY } from "./favorites"
 export { pinnedDashboardRows } from "./dashboards-shape"
 export { BUILT_COMMIT, versionChecks } from "./version"
-export { enter, routeChanged, update } from "./update"
+export { enter, enterBare, routeChanged, update } from "./update"
 export { type BreadcrumbEntry, frameView, menuLayerView, sheetLayerView } from "./view"

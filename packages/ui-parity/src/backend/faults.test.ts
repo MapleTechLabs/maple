@@ -12,6 +12,12 @@ describe("faults", () => {
 		expect(resolveFault(faults, "alerts.listRules")).toEqual({ delayMs: 0, failure: undefined })
 	})
 
+	test("a key ending in $ matches only that endpoint, not one it prefixes", () => {
+		const faults = { failures: { "authPublic.previewSignIn$": failure } }
+		expect(resolveFault(faults, "authPublic.previewSignIn").failure).toEqual(failure)
+		expect(resolveFault(faults, "authPublic.previewSignInStatus").failure).toBeUndefined()
+	})
+
 	test("scenario header faults override the dataset's per prefix", () => {
 		const merged = mergeFaults(
 			{ delays: { "alerts.": 5, "queryEngine.": 10 } },

@@ -132,6 +132,13 @@ export const onboardingArea: AreaModule = {
 			"clerk-acme",
 		),
 		scenario(
+			"cli-login-clerk-switcher",
+			"CLI login: Clerk workspace switcher open",
+			`/cli-login?user_code=${CLI_USER_CODE}`,
+			"clerk-acme",
+			click("Switch"),
+		),
+		scenario(
 			"mcp-authorize",
 			"MCP authorize: consent",
 			`/mcp-authorize?request_id=${MCP_REQUEST_ID}`,
@@ -200,6 +207,26 @@ export const onboardingArea: AreaModule = {
 			click("Select or create organization"),
 		),
 		scenario("sign-up", "Sign up (signed out)", "/sign-up", "clerk-signed-out"),
+		scenario("sign-in-clerk", "Clerk sign in (signed out)", "/sign-in", "clerk-signed-out"),
+		scenario("sign-in-clerk-preview", "Clerk sign in: PR preview access form", "/sign-in", "clerk-preview"),
+		timed(
+			scenario("sign-in-clerk-preview-rejected", "", "/sign-in", "clerk-preview", async (page) => {
+				await page.getByLabel("Access key").fill("wrong-key")
+				await click("Sign in to preview")(page)
+				await page.getByRole("alert").waitFor()
+			}),
+			"sign-in-clerk-preview-rejected",
+			"Clerk sign in: PR preview key rejected",
+			{
+				failures: {
+					"authPublic.previewSignIn$": failure(
+						401,
+						"PreviewSignInInvalidKeyError",
+						"That preview access key is not valid.",
+					),
+				},
+			},
+		),
 		...timedScenarios,
 	],
 }

@@ -1,15 +1,19 @@
+import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
+import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { Option, Schema } from "effect"
-import { Command, Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../../platform/resources"
 import { AppRoute } from "../../route"
+import * as OrgSwitcher from "../../shell/clerk-org-switcher"
 import * as CliLogin from "./cli-login"
-import * as CliLoginView from "./cli-login-view"
+import * as ClerkScreens from "./clerk-screens"
+import * as ClerkSignIn from "./clerk-sign-in"
+import type { Inputs } from "./inputs"
 import * as McpAuthorize from "./mcp-authorize"
-import * as McpAuthorizeView from "./mcp-authorize-view"
 import * as Unsubscribe from "./unsubscribe"
-import { selfHostedWorkspace } from "./workspace"
+
+export type { Inputs } from "./inputs"
 
 /**
  * The onboarding and auth-handoff screens legacy renders without `DashboardLayout`: CLI login,
@@ -19,18 +23,19 @@ import { selfHostedWorkspace } from "./workspace"
 
 // MODEL
 
-export const Screen = Schema.Union([CliLogin.Model, McpAuthorize.Model, Unsubscribe.Model])
+export const Screen = Schema.Union([
+	CliLogin.Model,
+	McpAuthorize.Model,
+	Unsubscribe.Model,
+	ClerkSignIn.Model,
+	ClerkScreens.OrgRequired,
+	ClerkScreens.SignUp,
+])
 export type Screen = typeof Screen.Type
 
-/** The open screen and the route key it was built for (legacy remounts on a new key). */
-export const Model = Schema.Struct({ key: Schema.String, screen: Screen })
+/** The open screen, the route key it was built for, and its Clerk org switcher ("Switch"). */
+export const Model = Schema.Struct({ key: Schema.String, screen: Screen, switcher: OrgSwitcher.Model })
 export type Model = typeof Model.Type
-
-/** What the root knows about the session, read by every screen. */
-export interface Inputs {
-	readonly session: "SignedOut" | "SignedIn"
-	readonly maybeOrgId: Option.Option<string>
-}
 
 // MESSAGE
 
@@ -38,6 +43,9 @@ export const Message = defineMessageUnion({
 	GotCliLoginMessage: { message: CliLogin.Message },
 	GotMcpAuthorizeMessage: { message: McpAuthorize.Message },
 	GotUnsubscribeMessage: { message: Unsubscribe.Message },
+	GotSwitcherMessage: { message: OrgSwitcher.Message },
+	GotClerkSignInMessage: { message: ClerkSignIn.Message },
+	CompletedMountClerkCard: {},
 })
 export type Message = typeof Message.Type
 
@@ -46,48 +54,78 @@ export interface Step {
 	readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>>
 }
 
-const step = <ScreenModel extends Screen, ScreenMessage>(
-	key: string,
-	result: {
-		readonly model: ScreenModel
-		readonly commands?: ReadonlyArray<Command.Command<ScreenMessage, never, Resources>>
-	},
+export const toCliLogin = (message: CliLogin.Message) => Message.GotCliLoginMessage({ message })
+export const toMcpAuthorize = (message: McpAuthorize.Message) => Message.GotMcpAuthorizeMessage({ message })
+export const toUnsubscribe = (message: Unsubscribe.Message) => Message.GotUnsubscribeMessage({ message })
+export const toSwitcher = (message: OrgSwitcher.Message) => Message.GotSwitcherMessage({ message })
+export const toClerkSignIn = (message: ClerkSignIn.Message) => Message.GotClerkSignInMessage({ message })
+
+type ScreenResult<ScreenModel, ScreenMessage> = {
+	readonly model: ScreenModel
+	readonly commands?: ReadonlyArray<Command.Command<ScreenMessage, never, Resources>>
+}
+
+const withScreen = <ScreenModel extends Screen, ScreenMessage>(
+	model: Model,
+	result: ScreenResult<ScreenModel, ScreenMessage>,
 	wrap: (message: ScreenMessage) => Message,
 ): Step => ({
-	model: { key, screen: result.model },
+	model: { ...model, screen: result.model },
 	commands: Command.mapMessages(result.commands ?? [], wrap),
 })
-
-const toCliLogin = (message: CliLogin.Message) => Message.GotCliLoginMessage({ message })
-const toMcpAuthorize = (message: McpAuthorize.Message) => Message.GotMcpAuthorizeMessage({ message })
-const toUnsubscribe = (message: Unsubscribe.Message) => Message.GotUnsubscribeMessage({ message })
 
 // ROUTES
 
 /** The screen's key for a route it renders in this session, or `None` (a redirect is due). */
 export const keyOf = (route: AppRoute, inputs: Inputs): Option.Option<string> => {
+	const isSignedOut = inputs.session === "SignedOut"
 	const withOrg = (key: string) =>
-		inputs.session === "SignedIn" && Option.isSome(inputs.maybeOrgId) ? Option.some(key) : Option.none()
+		!isSignedOut && Option.isSome(inputs.maybeOrgId) ? Option.some(key) : Option.none()
 	return AppRoute.matchOrElse<Option.Option<string>>(
 		route,
 		{
 			CliLogin: () => withOrg("CliLogin"),
 			McpAuthorize: () => withOrg("McpAuthorize"),
 			Unsubscribe: ({ search }) => Option.some(Unsubscribe.keyOf(search.token)),
+			SignIn: () => (isClerkAuthEnabled && isSignedOut ? Option.some("ClerkSignIn") : Option.none()),
+			SignUp: () => (isClerkAuthEnabled && isSignedOut ? Option.some("SignUp") : Option.none()),
+			OrgRequired: () =>
+				isClerkAuthEnabled && !isSignedOut && Option.isNone(inputs.maybeOrgId)
+					? Option.some("OrgRequired")
+					: Option.none(),
 		},
 		() => Option.none(),
 	)
 }
 
+const fresh = <ScreenModel extends Screen, ScreenMessage>(
+	key: string,
+	result: ScreenResult<ScreenModel, ScreenMessage>,
+	wrap: (message: ScreenMessage) => Message,
+): Option.Option<Step> =>
+	Option.some(withScreen({ key, screen: result.model, switcher: OrgSwitcher.init("onboarding-org-switcher") }, result, wrap))
+
 export const init = (route: AppRoute, key: string): Option.Option<Step> =>
 	AppRoute.matchOrElse<Option.Option<Step>>(
 		route,
 		{
-			CliLogin: ({ search }) => Option.some(step(key, CliLogin.init(search.user_code), toCliLogin)),
-			McpAuthorize: ({ search }) =>
-				Option.some(step(key, McpAuthorize.init(search.request_id), toMcpAuthorize)),
-			Unsubscribe: ({ search }) =>
-				Option.some(step(key, { model: Unsubscribe.init(search.token) }, toUnsubscribe)),
+			CliLogin: ({ search }) => fresh(key, CliLogin.init(search.user_code), toCliLogin),
+			McpAuthorize: ({ search }) => fresh(key, McpAuthorize.init(search.request_id), toMcpAuthorize),
+			Unsubscribe: ({ search }) => fresh(key, { model: Unsubscribe.init(search.token) }, toUnsubscribe),
+			SignIn: ({ search }) =>
+				fresh(key, ClerkSignIn.init(validateInternalRedirect(search.redirect_url ?? null)), toClerkSignIn),
+			// Without a redirect Clerk would send a fresh sign-up to "/"; new users belong in onboarding.
+			SignUp: ({ search }) =>
+				fresh(
+					key,
+					{
+						model: ClerkScreens.SignUp.make({
+							target: validateInternalRedirect(search.redirect_url ?? null) ?? "/quick-start",
+						}),
+					},
+					toClerkSignIn,
+				),
+			OrgRequired: () => fresh(key, { model: ClerkScreens.OrgRequired.make({}) }, toClerkSignIn),
 		},
 		() => Option.none(),
 	)
@@ -96,54 +134,47 @@ export const init = (route: AppRoute, key: string): Option.Option<Step> =>
 
 const unchanged = (model: Model): Step => ({ model, commands: [] })
 
-export const update = (model: Model, message: Message): Step => {
-	const { key, screen } = model
-	return Message.match<Step>(message, {
-		GotCliLoginMessage: ({ message: child }) =>
-			screen._tag === "CliLogin" ? step(key, CliLogin.update(screen, child), toCliLogin) : unchanged(model),
-		GotMcpAuthorizeMessage: ({ message: child }) =>
-			screen._tag === "McpAuthorize"
-				? step(key, McpAuthorize.update(screen, child), toMcpAuthorize)
-				: unchanged(model),
-		GotUnsubscribeMessage: ({ message: child }) =>
-			screen._tag === "Unsubscribe"
-				? step(key, Unsubscribe.update(screen, child), toUnsubscribe)
-				: unchanged(model),
-	})
-}
-
-// VIEW
-
-const cliLoginView = Submodel.defineView<CliLogin.Model, CliLogin.Message, Inputs>((model, inputs, h) =>
-	CliLoginView.view(h, model, selfHostedWorkspace(h, inputs.maybeOrgId)),
-)
-
-const mcpAuthorizeView = Submodel.defineView<McpAuthorize.Model, McpAuthorize.Message, Inputs>(
-	(model, inputs, h) => McpAuthorizeView.view(h, model, selfHostedWorkspace(h, inputs.maybeOrgId)),
-)
-
-const unsubscribeView = Submodel.defineView<Unsubscribe.Model, Unsubscribe.Message>((model, h) =>
-	Unsubscribe.view(h, model),
-)
-
-const screenView = (screen: Screen, inputs: Inputs, h: HtmlBuilder<Message>): Html => {
-	const slotId = `onboarding:${screen._tag}`
-	switch (screen._tag) {
-		case "CliLogin":
-			return h.submodel({ slotId, model: screen, view: cliLoginView, viewInputs: inputs, toParentMessage: toCliLogin })
-		case "McpAuthorize":
-			return h.submodel({
-				slotId,
-				model: screen,
-				view: mcpAuthorizeView,
-				viewInputs: inputs,
-				toParentMessage: toMcpAuthorize,
-			})
-		case "Unsubscribe":
-			return h.submodel({ slotId, model: screen, view: unsubscribeView, toParentMessage: toUnsubscribe })
+/** A picked org other than the active one: `setActive`, then its region's app or a reload. */
+const updateSwitcher = (model: Model, message: OrgSwitcher.Message, inputs: Inputs): Step => {
+	const next = OrgSwitcher.update(model.switcher, message)
+	const out = next.outMessage
+	const picked =
+		out !== undefined && out._tag === "SelectedOrganization" && !Option.contains(inputs.maybeOrgId, out.orgId)
+			? inputs.memberships.find((organization) => organization.id === out.orgId)
+			: undefined
+	return {
+		model: { ...model, switcher: next.model },
+		commands: [
+			...Command.mapMessages(next.commands ?? [], toSwitcher),
+			...(picked === undefined
+				? []
+				: [
+						Command.mapMessage(toSwitcher)(
+							OrgSwitcher.SwitchOrganization({ orgId: picked.id, targetUrl: OrgSwitcher.switchTargetOf(picked) }),
+						),
+					]),
+		],
 	}
 }
 
-export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, h) =>
-	screenView(model.screen, inputs, h),
-)
+export const update = (model: Model, message: Message, inputs: Inputs): Step => {
+	const { screen } = model
+	return Message.match<Step>(message, {
+		GotCliLoginMessage: ({ message: child }) =>
+			screen._tag === "CliLogin" ? withScreen(model, CliLogin.update(screen, child), toCliLogin) : unchanged(model),
+		GotMcpAuthorizeMessage: ({ message: child }) =>
+			screen._tag === "McpAuthorize"
+				? withScreen(model, McpAuthorize.update(screen, child), toMcpAuthorize)
+				: unchanged(model),
+		GotUnsubscribeMessage: ({ message: child }) =>
+			screen._tag === "Unsubscribe"
+				? withScreen(model, Unsubscribe.update(screen, child), toUnsubscribe)
+				: unchanged(model),
+		GotSwitcherMessage: ({ message: child }) => updateSwitcher(model, child, inputs),
+		GotClerkSignInMessage: ({ message: child }) =>
+			screen._tag === "ClerkSignIn"
+				? withScreen(model, ClerkSignIn.update(screen, child), toClerkSignIn)
+				: unchanged(model),
+		CompletedMountClerkCard: () => unchanged(model),
+	})
+}

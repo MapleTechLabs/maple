@@ -46,13 +46,29 @@ export type MenuItemEntry = Readonly<{
 	/** Base UI's `disabled`: shown, not highlightable or selectable. */
 	isDisabled?: boolean
 	className?: string
+	/** The item's own children (an avatar, a badge), in place of `icon`, `label` and `shortcut`. */
+	content?: ReadonlyArray<Html | string>
+}>
+
+/** `<DropdownMenuSub>`: its trigger row, then the items of its popup. */
+export type MenuSubmenuEntry = Readonly<{
+	_tag: "Submenu"
+	value: string
+	label: string
+	entries: ReadonlyArray<MenuItemEntry>
+	/** The trigger's own children, in place of `label` (the chevron is always appended). */
+	content?: ReadonlyArray<Html | string>
+	/** `<DropdownMenuSubContent className>`. */
+	className?: string
+	/** Wraps the rendered items (a scroller), or shows rows that are not items (loading, empty). */
+	body?: (items: ReadonlyArray<Html>) => ReadonlyArray<Html>
 }>
 
 /** The menu's content, as data: `update` addresses highlightable entries by document order. */
 export type MenuEntry =
 	| MenuItemEntry
 	| Readonly<{ _tag: "Group"; label?: string; entries: ReadonlyArray<MenuEntry> }>
-	| Readonly<{ _tag: "Submenu"; value: string; label: string; entries: ReadonlyArray<MenuItemEntry> }>
+	| MenuSubmenuEntry
 	| Readonly<{ _tag: "Checkbox"; value: string; label: string; isChecked: boolean }>
 	| Readonly<{
 			_tag: "RadioGroup"
@@ -111,6 +127,13 @@ const SUBMENU_KEYS = new Set([...ROOT_KEYS, "ArrowLeft"])
 const shortcutOf = (h: H, entry: MenuItemEntry): ReadonlyArray<Html> =>
 	entry.shortcut === undefined ? [] : [menuShortcut(h, [entry.shortcut])]
 
+const itemContent = (h: H, entry: MenuItemEntry): ReadonlyArray<Html | string> =>
+	entry.content ?? [
+		...(entry.icon === undefined ? [] : [icon(h, entry.icon)]),
+		entry.label,
+		...shortcutOf(h, entry),
+	]
+
 const renderEntries = (
 	h: H,
 	model: Model,
@@ -139,7 +162,7 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 					isDisabled: entry.isDisabled,
 					className: entry.className,
 				},
-				[...(entry.icon === undefined ? [] : [icon(h, entry.icon)]), entry.label, ...shortcutOf(h, entry)],
+				itemContent(h, entry),
 			)
 		case "Group": {
 			const labelId = `${model.id}-group-${index}`
@@ -155,7 +178,7 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 					...row(model, index, { kind: "Submenu", value: entry.value }),
 					isSubmenuOpen: model.submenu !== null && model.submenu.index === index,
 				},
-				[entry.label],
+				entry.content ?? [entry.label],
 			)
 		case "Checkbox":
 			return menuCheckableItem(
@@ -195,13 +218,10 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 }
 
 /** The submenu entry with this value, at any depth. */
-const findSubmenu = (
-	entries: ReadonlyArray<MenuEntry>,
-	value: string,
-): Option.Option<ReadonlyArray<MenuItemEntry>> =>
+const findSubmenu = (entries: ReadonlyArray<MenuEntry>, value: string): Option.Option<MenuSubmenuEntry> =>
 	Array.findFirst(entries, (entry) =>
 		entry._tag === "Submenu" && entry.value === value
-			? Option.some(entry.entries)
+			? Option.some(entry)
 			: entry._tag === "Group"
 				? findSubmenu(entry.entries, value)
 				: Option.none(),
@@ -213,7 +233,13 @@ const keyHandler = (h: H, keys: ReadonlySet<string>, toMessage: (key: string) =>
 const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => {
 	const submenu = model.submenu
 	if (submenu === null) return []
-	const items = Option.getOrElse(findSubmenu(inputs.entries, submenu.value), () => [])
+	const maybeEntry = findSubmenu(inputs.entries, submenu.value)
+	const items = Option.match(maybeEntry, { onNone: () => [], onSome: (entry) => entry.entries })
+	const body = Option.match(maybeEntry, {
+		onNone: () => (rows: ReadonlyArray<Html>) => rows,
+		onSome: (entry) => entry.body ?? ((rows: ReadonlyArray<Html>) => rows),
+	})
+	const subClassName = Option.getOrUndefined(Option.flatMapNullishOr(maybeEntry, (entry) => entry.className))
 	const placement = [
 		h.DataAttribute("align", submenu.align),
 		h.DataAttribute("open", ""),
@@ -234,7 +260,7 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 						h.div(
 							[
 								h.AriaLabelledBy(itemId(model.id, submenu.index)),
-								h.Class(cn(dropdownMenuContentStyles, dropdownMenuSubContentStyles)),
+								h.Class(cn(dropdownMenuContentStyles, dropdownMenuSubContentStyles, subClassName)),
 								...placement,
 								h.DataAttribute("base-ui-focusable", ""),
 								h.DataAttribute("slot", "dropdown-menu-sub-content"),
@@ -248,17 +274,19 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 									}),
 								),
 							],
-							items.map((item, index) =>
-								menuItem(
-									h,
-									{
-										id: subItemId(model.id, index),
-										variant: item.variant,
-										isHighlighted: submenu.highlighted === index,
-										onHighlight: Message.HoveredSubmenuItem({ index }),
-										onSelect: Message.ClickedSubmenuItem({ value: item.value }),
-									},
-									[item.label, ...shortcutOf(h, item)],
+							body(
+								items.map((item, index) =>
+									menuItem(
+										h,
+										{
+											id: subItemId(model.id, index),
+											variant: item.variant,
+											isHighlighted: submenu.highlighted === index,
+											onHighlight: Message.HoveredSubmenuItem({ index }),
+											onSelect: Message.ClickedSubmenuItem({ value: item.value }),
+										},
+										item.content ?? [item.label, ...shortcutOf(h, item)],
+									),
 								),
 							),
 						),

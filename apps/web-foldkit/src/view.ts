@@ -1,13 +1,11 @@
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
-import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { Option } from "effect"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { bootSplash } from "./layout/boot-splash"
 import { Message } from "./message"
 import { type Model, Session } from "./model"
-import { onboardingInputsOf, pageContextOf } from "./update"
-import * as ClerkSignIn from "./page/clerk-sign-in"
-import * as Onboarding from "./page/onboarding"
+import { onboardingInputsOf, pageContextOf, planGateOf } from "./update"
+import * as OnboardingView from "./page/onboarding/view"
 import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
 import { type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } from "./page/registry"
 import * as SignIn from "./page/sign-in"
@@ -36,15 +34,14 @@ const placeholder = (model: Model, h: HtmlBuilder<Message>, children: ReadonlyAr
 		],
 	)
 
-const signInView = (model: Model, h: HtmlBuilder<Message>, redirectUrl: string | undefined): Html =>
-	isClerkAuthEnabled
-		? ClerkSignIn.view(h, Option.fromNullishOr(validateInternalRedirect(redirectUrl)))
-		: h.submodel({
-				slotId: "sign-in",
-				model: model.signIn,
-				view: SignIn.view,
-				toParentMessage: (message) => Message.GotSignInMessage({ message }),
-			})
+/** Self-hosted: the root password form. Clerk's sign-in is an onboarding screen. */
+const signInView = (model: Model, h: HtmlBuilder<Message>): Html =>
+	h.submodel({
+		slotId: "sign-in",
+		model: model.signIn,
+		view: SignIn.view,
+		toParentMessage: (message) => Message.GotSignInMessage({ message }),
+	})
 
 const toShellMessage = (message: Shell.Message) => Message.GotShellMessage({ message })
 
@@ -106,7 +103,7 @@ const onboardingView = (model: Model, h: HtmlBuilder<Message>): Option.Option<Ht
 			h.submodel({
 				slotId: "onboarding",
 				model: onboarding,
-				view: Onboarding.view,
+				view: OnboardingView.view,
 				viewInputs: inputs,
 				toParentMessage: (message) => Message.GotOnboardingMessage({ message }),
 			}),
@@ -116,7 +113,12 @@ const onboardingView = (model: Model, h: HtmlBuilder<Message>): Option.Option<Ht
 const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	AppRoute.matchOrElse<ReadonlyArray<Html>>(
 		model.route,
-		{ SignIn: ({ search }) => [signInView(model, h, search.redirect_url)] },
+		{
+			SignIn: () =>
+				isClerkAuthEnabled
+					? Option.match(onboardingView(model, h), { onNone: () => [], onSome: (screen) => [screen] })
+					: [signInView(model, h)],
+		},
 		() =>
 			Option.match(onboardingView(model, h), {
 				onSome: (screen) => [screen],
@@ -129,7 +131,9 @@ const content = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	Session.match(model.session, {
 		Resolving: () => [bootSplash(h)],
 		SignedOut: () => (isPublicRoute(model.route) ? routeView(model, h) : []),
-		SignedIn: () => routeView(model, h),
+		// `ClerkReverseRedirects` holds the app on the splash until the plan is known.
+		SignedIn: () =>
+			Option.exists(planGateOf(model), (gate) => gate.isSplash) ? [bootSplash(h)] : routeView(model, h),
 	})
 
 const body = (model: Model, h: HtmlBuilder<Message>): Html =>

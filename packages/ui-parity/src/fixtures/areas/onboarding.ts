@@ -1,5 +1,8 @@
 import { Effect, Predicate } from "effect"
-import { CliDeviceNotFoundError, McpOAuthAuthorizationNotFoundError } from "@maple/domain/http"
+import {
+	CliDeviceNotFoundError,
+	McpOAuthAuthorizationNotFoundError,
+} from "@maple/domain/http"
 import type { FixtureArea } from "../areas.ts"
 import type { Dataset, EndpointHandler } from "../dataset.ts"
 import { acmeAdmin, DAY, FROZEN_NOW, FROZEN_NOW_MS, MINUTE } from "../identity.ts"
@@ -182,5 +185,11 @@ export const fixtureArea: FixtureArea = {
 		clerkDataset("clerk-acme", acmeAdmin),
 		clerkDataset("clerk-no-org", orglessUser),
 		clerkDataset("clerk-signed-out", null),
+		// A PR preview deploy: Clerk's sign-in plus the shared reviewer's access-key form.
+		clerkDataset("clerk-preview", null, {
+			"authPublic.previewSignInStatus": () => Effect.succeed({ enabled: true }),
+			// A rejected key is a scenario fault (`onboarding-sign-in-clerk-preview-rejected`).
+			"authPublic.previewSignIn": () => Effect.succeed({ ticket: "parity-ticket" }),
+		}),
 	],
 }
