@@ -6,6 +6,7 @@ import { PageMessage, PageSlot } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import * as Toast from "./ui/toast"
 import { AppRoute } from "./route"
+import { SessionTimeRange } from "./route/session-time-range"
 import * as Shell from "./shell"
 
 /** The router's `auth` context in apps/web: unknown until resolved (`<BootSplash>`), then settled. */
@@ -40,6 +41,10 @@ export const Model = Schema.Struct({
 	page: Schema.NullOr(PageSlot),
 	/** Link-intent preloads waiting for their page (`page/preload.ts`). */
 	preload: Preload.Model,
+	/** The window this tab remembers for the org (`route/session-time-range.ts`); `nowMs` is when read. */
+	sessionTimeRange: Schema.NullOr(
+		Schema.Struct({ orgId: Schema.String, value: SessionTimeRange, nowMs: Schema.Number, isLoaded: Schema.Boolean }),
+	),
 	/** `useTimezonePreference().effectiveTimezone`, read at boot. */
 	timeZone: Schema.String,
 })

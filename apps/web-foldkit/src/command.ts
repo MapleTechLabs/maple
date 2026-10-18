@@ -6,6 +6,8 @@ import { PRELOAD_HOLD_MS } from "./page/preload"
 import { PageMessage } from "./page/registry"
 import { clearSessionToken, MapleAuthApi, readSessionToken, saveSessionToken } from "./platform/auth-api"
 import { loadClerk } from "./platform/clerk"
+import { readSessionTimeRange, writeSessionTimeRange } from "./platform/session-time-range"
+import { SessionTimeRange } from "./route/session-time-range"
 
 /** How long a signed-out Clerk answer may still turn into a session on a hard refresh (main.tsx). */
 const AUTH_SETTLE_TIMEOUT = Duration.seconds(2)
@@ -93,4 +95,24 @@ export const DeliverPreloaded = Command.define("DeliverPreloaded", {
 	args: { message: PageMessage },
 	messages: [Message.GotPageMessage],
 	execute: ({ message }) => Effect.succeed(Message.GotPageMessage({ message })),
+})
+
+/** The tab's remembered window for the org, with the clock its presets resolve against. */
+export const ReadSessionTimeRange = Command.define("ReadSessionTimeRange", {
+	args: { orgId: Schema.String },
+	messages: [Message.LoadedSessionTimeRange],
+	execute: ({ orgId }) =>
+		Effect.map(Effect.all([readSessionTimeRange(orgId), Clock.currentTimeMillis]), ([value, nowMs]) =>
+			Message.LoadedSessionTimeRange({ orgId, value, nowMs }),
+		),
+})
+
+/** `persistSessionTimeRange`: the window a settled navigation carried. */
+export const WriteSessionTimeRange = Command.define("WriteSessionTimeRange", {
+	args: { orgId: Schema.String, value: SessionTimeRange },
+	messages: [Message.CompletedWriteSessionTimeRange],
+	execute: ({ orgId, value }) =>
+		Effect.andThen(writeSessionTimeRange(orgId, value), Clock.currentTimeMillis).pipe(
+			Effect.map((nowMs) => Message.CompletedWriteSessionTimeRange({ nowMs })),
+		),
 })

@@ -131,6 +131,14 @@ export const servicesPageArea: AreaModule = {
 			await servicesTable(page).getByText("release(storefront): 5.9.0", { exact: true }).hover()
 			await page.getByText("View on GitHub").waitFor()
 		}),
+		// `sessionTimeRangeSearchMiddleware`: the window picked here opens the next time-filtered page.
+		services("session-range", "the 1 day window carried to the traces page", async (page) => {
+			await page.getByRole("button", { name: "Last 12 hours" }).click()
+			await page.getByRole("dialog").getByRole("button", { name: "Last 1 day" }).click()
+			await page.getByRole("dialog").waitFor({ state: "detached" })
+			await page.getByRole("link", { name: "Explore", exact: true }).click()
+			await page.waitForURL(/\/traces\?timePreset=1d/)
+		}),
 		services("alt-exclude", "production excluded by Alt+clicking its label", async (page) => {
 			await page.getByText("production", { exact: true }).first().click({ modifiers: ["Alt"] })
 			await page.getByText("No services match these filters").first().waitFor()

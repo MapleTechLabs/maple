@@ -6,6 +6,7 @@ import { Url } from "foldkit/url"
 import { PageMessage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { ClerkSnapshot } from "./platform/clerk"
+import { SessionTimeRange } from "./route/session-time-range"
 import * as Shell from "./shell"
 import * as Toast from "./ui/toast"
 
@@ -39,5 +40,7 @@ export const Message = defineMessageUnion({
 	ElapsedPreloadDelay: { href: Schema.String, version: Schema.Number, nowMs: Schema.Number },
 	GotPreloadMessage: { message: PageMessage },
 	ExpiredPreloads: { keys: Schema.Array(Schema.String) },
+	LoadedSessionTimeRange: { orgId: Schema.String, value: SessionTimeRange, nowMs: Schema.Number },
+	CompletedWriteSessionTimeRange: { nowMs: Schema.Number },
 })
 export type Message = typeof Message.Type

@@ -6,17 +6,19 @@ import { Command, Update } from "foldkit"
 import { UrlRequest } from "foldkit/navigation"
 import { Transition } from "foldkit/route"
 import { modifyFields } from "foldkit/struct"
-import { fromString as urlFromString, toString as urlToString } from "foldkit/url"
+import { fromString as urlFromString, toString as urlToString, type Url } from "foldkit/url"
 import {
 	CheckSession,
 	DeliverPreloaded,
 	HoldPreloads,
 	LoadExternal,
+	ReadSessionTimeRange,
 	NavigateInternal,
 	ReplaceUrl,
 	SaveSessionToken,
 	WaitForAuthSettle,
 	WaitPreloadDelay,
+	WriteSessionTimeRange,
 } from "./command"
 import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
@@ -37,6 +39,7 @@ import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import type { ClerkSnapshot } from "./platform/clerk"
 import { AppRoute, hrefOf, isPublicRoute, type Redirect, routeRedirect, urlToAppRoute } from "./route"
+import { completeRangeOf, isWithin, withSessionRange } from "./route/session-time-range"
 import * as Shell from "./shell"
 import * as Toast from "./ui/toast"
 
@@ -322,8 +325,61 @@ const loadRoute: Step = (model) =>
 				: { model },
 	})
 
+// SESSION TIME RANGE
+
+/** The signed-in org, on a shell route. */
+const shellOrgOf = (model: Model): Option.Option<string> =>
+	Session.match(model.session, {
+		Resolving: () => Option.none(),
+		SignedOut: () => Option.none(),
+		SignedIn: ({ maybeOrgId }) => maybeOrgId,
+	})
+
+/** `persistSessionTimeRange` after a navigation settles; the org's memory is read once first. */
+const syncSessionTimeRange: Step = (model) =>
+	Option.match(shellOrgOf(model), {
+		onNone: () => ({ model }),
+		onSome: (orgId) => {
+			const state = model.sessionTimeRange
+			if (state === null || state.orgId !== orgId)
+				return {
+					model: modifyFields(model, {
+						sessionTimeRange: () => ({ orgId, value: {}, nowMs: 0, isLoaded: false }),
+					}),
+					commands: [ReadSessionTimeRange({ orgId })],
+				}
+			if (!state.isLoaded) return { model }
+			return Option.match(
+				Option.filter(
+					completeRangeOf(model.route),
+					(value) =>
+						JSON.stringify(value) !== JSON.stringify(state.value) &&
+						isWithin(value, Number.POSITIVE_INFINITY, state.nowMs, model.timeZone),
+				),
+				{
+					onNone: () => ({ model }),
+					onSome: (value) => ({
+						model: modifyFields(model, { sessionTimeRange: () => ({ ...state, value }) }),
+						commands: [WriteSessionTimeRange({ orgId, value })],
+					}),
+				},
+			)
+		},
+	})
+
+const pathOf = (url: Url): string =>
+	`${url.pathname}${Option.match(url.search, { onNone: () => "", onSome: (search) => `?${search}` })}`
+
+/** `sessionTimeRangeSearchMiddleware`: the URL a navigation lands on, the remembered window added. */
+const sessionRangeUrl = (model: Model, url: Url): Option.Option<string> => {
+	const state = model.sessionTimeRange
+	return state === null || !state.isLoaded || !Option.contains(shellOrgOf(model), state.orgId)
+		? Option.none()
+		: withSessionRange(urlToAppRoute(url), pathOf(url), state.value, state.nowMs, model.timeZone)
+}
+
 /** Everything that reads the route or the session. */
-export const settle: Step = Update.combine([followRedirects, loadRoute, loadPage])
+export const settle: Step = Update.combine([followRedirects, loadRoute, loadPage, syncSessionTimeRange])
 
 // SESSION
 
@@ -357,7 +413,12 @@ const withPreload = (model: Model, preload: Preload.Model) => modifyFields(model
 /** The delay elapsed on a link still intended: run its route's page preload under that route's context. */
 const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 	Option.match(
-		Option.flatMap(urlFromString(href), (url) => {
+		Option.flatMap(urlFromString(href), (hovered) => {
+			// Legacy builds the link's location through the middleware, so the preload sees its window.
+			const url = Option.getOrElse(
+				Option.flatMap(sessionRangeUrl(model, hovered), (path) => urlFromString(new URL(path, href).href)),
+				() => hovered,
+			)
 			const route = urlToAppRoute(url)
 			return Option.map(pageContextOf(modifyFields(model, { route: () => route })), (context) =>
 				preloadRoute(route, context, nowMs),
@@ -387,14 +448,26 @@ export const update = (model: Model, message: Message) =>
 				Internal: ({ url }) => ({ model, commands: [NavigateInternal({ url: urlToString(url) })] }),
 				External: ({ href }) => ({ model, commands: [LoadExternal({ href })] }),
 			}),
-		ChangedUrl: ({ url }) => {
+		ChangedUrl: ({ url: changedUrl }) => {
+			const injected = sessionRangeUrl(model, changedUrl)
+			const url = Option.getOrElse(
+				Option.flatMap(injected, (path) => urlFromString(new URL(path, urlToString(changedUrl)).href)),
+				() => changedUrl,
+			)
 			const nextRoute = urlToAppRoute(url)
 			const isEnteringSignIn = Transition.isEntering(Transition.make(model.route, nextRoute), "SignIn")
 			const routed = modifyFields(model, {
 				route: () => nextRoute,
 				signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
 			})
-			return Update.combine([foldShellStep(Shell.routeChanged), settle])(routed)
+			const routedStep = Update.combine([foldShellStep(Shell.routeChanged), settle])(routed)
+			return Option.match(injected, {
+				onNone: () => routedStep,
+				onSome: (injectedUrl) => ({
+					...routedStep,
+					commands: [ReplaceUrl({ url: injectedUrl }), ...(routedStep.commands ?? [])],
+				}),
+			})
 		},
 		CompletedNavigateInternal: () => ({ model }),
 		CompletedReplaceUrl: () => ({ model }),
@@ -444,4 +517,15 @@ export const update = (model: Model, message: Message) =>
 					}),
 			}),
 		ExpiredPreloads: ({ keys }) => ({ model: withPreload(model, Preload.expired(model.preload, keys)) }),
+		LoadedSessionTimeRange: ({ orgId, value, nowMs }) =>
+			model.sessionTimeRange?.orgId === orgId
+				? syncSessionTimeRange(
+						modifyFields(model, { sessionTimeRange: () => ({ orgId, value, nowMs, isLoaded: true }) }),
+					)
+				: { model },
+		CompletedWriteSessionTimeRange: ({ nowMs }) => ({
+			model: modifyFields(model, {
+				sessionTimeRange: (state) => (state === null ? null : { ...state, nowMs }),
+			}),
+		}),
 	})
