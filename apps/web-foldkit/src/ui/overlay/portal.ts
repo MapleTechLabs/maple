@@ -147,6 +147,8 @@ export const manageFocus = (
 	options: Readonly<{
 		returnFocusId: Option.Option<string>
 		initialFocus: "first-tabbable" | "popup" | "highlighted" | "none"
+		/** `false`: closing leaves focus where it is (no trigger or earlier element to go back to). */
+		isReturningFocus?: boolean
 	}>,
 ): Effect.Effect<void, never, Scope.Scope> =>
 	Effect.acquireRelease(
@@ -170,7 +172,7 @@ export const manageFocus = (
 					active !== document.body &&
 					active.isConnected &&
 					!popup.contains(active)
-				if (hasMovedOn) return
+				if (hasMovedOn || options.isReturningFocus === false) return
 				const returnTo = Option.flatMapNullishOr(options.returnFocusId, (id) =>
 					document.getElementById(id),
 				)

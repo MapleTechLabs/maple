@@ -1,5 +1,5 @@
 import * as Animation from "@foldkit/ui/animation"
-import { Array, Effect, Option, Schema, Stream } from "effect"
+import { Array, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Dom, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
@@ -21,6 +21,8 @@ export const Model = Schema.Struct({
 	value: Schema.String,
 	highlighted: Schema.NullOr(Schema.Number),
 	isAlignedWithTrigger: Schema.Boolean,
+	/** `SelectScrollUpArrow` / `SelectScrollDownArrow`: shown while the list can scroll that way. */
+	scrollArrows: Schema.Struct({ up: Schema.Boolean, down: Schema.Boolean }),
 })
 export type Model = typeof Model.Type
 
@@ -36,6 +38,7 @@ export const init = (
 	value: options.value,
 	highlighted: options.isOpen === true ? options.selectedIndex : null,
 	isAlignedWithTrigger: true,
+	scrollArrows: { up: false, down: false },
 })
 
 // MESSAGE
@@ -51,6 +54,7 @@ export const Message = defineMessageUnion({
 	CompletedFocusSelectItem: {},
 	CompletedMountSelect: {},
 	ChangedPlacement: { side: Side, align: Align, isAlignedWithTrigger: Schema.Boolean },
+	ChangedScrollArrows: { up: Schema.Boolean, down: Schema.Boolean },
 	GotAnimationMessage: { message: Animation.Message },
 })
 export type Message = typeof Message.Type
@@ -87,12 +91,17 @@ const select = (model: Model, value: string): UpdateReturn => ({
 })
 
 const open = (model: Model, selectedIndex: number | null): UpdateReturn =>
-	transition.open({ ...model, highlighted: selectedIndex, isAlignedWithTrigger: true })
+	transition.open({
+		...model,
+		highlighted: selectedIndex,
+		isAlignedWithTrigger: true,
+		scrollArrows: { up: false, down: false },
+	})
 
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
-		ClickedTrigger: ({ selectedIndex }) =>
-			model.isOpen ? transition.close(model) : open(model, selectedIndex),
+		// `focusItemOnOpen: "auto"`: a pointer open highlights nothing until an item is hovered.
+		ClickedTrigger: () => (model.isOpen ? transition.close(model) : open(model, null)),
 		PressedEscape: () => transition.close(model),
 		PressedOutside: () => transition.close(model),
 		PressedTriggerKey: ({ selectedIndex }) => (model.isOpen ? { model } : open(model, selectedIndex)),
@@ -123,6 +132,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		ChangedPlacement: ({ side, align, isAlignedWithTrigger }) => ({
 			model: { ...model, side, align, isAlignedWithTrigger },
 		}),
+		ChangedScrollArrows: ({ up, down }) =>
+			model.scrollArrows.up === up && model.scrollArrows.down === down
+				? { model }
+				: { model: { ...model, scrollArrows: { up, down } } },
 		GotAnimationMessage: ({ message: animationMessage }) =>
 			transition.foldAnimation(model, animationMessage),
 	})
@@ -131,6 +144,68 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 const htmlOrNull = (element: Element | null): HTMLElement | null =>
 	element instanceof HTMLElement ? element : null
+
+const SCROLL_EDGE_TOLERANCE_PX = 1
+
+type MountMessage =
+	| typeof Message.CompletedMountSelect.Type
+	| typeof Message.ChangedPlacement.Type
+	| typeof Message.ChangedScrollArrows.Type
+	| typeof Message.PressedOutside.Type
+
+/** `handleScrollArrowVisibility`: an arrow per direction the list can still scroll. */
+const scrollArrowsOf = (scroller: HTMLElement | null) => {
+	if (scroller === null) return Message.ChangedScrollArrows({ up: false, down: false })
+	const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+	const top = Math.min(Math.max(scroller.scrollTop, 0), max)
+	return Message.ChangedScrollArrows({
+		up: top > SCROLL_EDGE_TOLERANCE_PX,
+		down: max - top > SCROLL_EDGE_TOLERANCE_PX,
+	})
+}
+
+/** The list's scroll events, as arrow visibility; resting on an arrow scrolls an item per 40 ms. */
+const listScrolls = (root: Element, id: string) =>
+	Stream.callback<typeof Message.ChangedScrollArrows.Type>((queue) =>
+		Effect.acquireRelease(
+			Effect.sync(() => {
+				const scroller = htmlOrNull(document.getElementById(listId(id)))
+				const timer = { handle: 0 }
+				const stop = () => {
+					window.clearInterval(timer.handle)
+					timer.handle = 0
+				}
+				const onScroll = () => Queue.offerUnsafe(queue, scrollArrowsOf(scroller))
+				const onMouseMove = (event: Event) => {
+					const arrow = event.target instanceof Element ? event.target.closest("[data-direction]") : null
+					if (arrow === null || scroller === null || timer.handle !== 0) return
+					const step = arrow.getAttribute("data-direction") === "up" ? -1 : 1
+					timer.handle = window.setInterval(() => {
+						const item = scroller.querySelector<HTMLElement>("[role=option]")
+						const before = scroller.scrollTop
+						scroller.scrollTop = before + step * (item?.offsetHeight ?? 32)
+						if (scroller.scrollTop === before) stop()
+					}, 40)
+				}
+				const onMouseOut = (event: Event) => {
+					const from = event.target instanceof Element ? event.target.closest("[data-direction]") : null
+					const to = event instanceof MouseEvent && event.relatedTarget instanceof Element ? event.relatedTarget : null
+					if (from !== null && (to === null || !from.contains(to))) stop()
+				}
+				scroller?.addEventListener("scroll", onScroll, { passive: true })
+				root.addEventListener("mousemove", onMouseMove)
+				root.addEventListener("mouseout", onMouseOut)
+				return { scroller, onScroll, onMouseMove, onMouseOut, stop }
+			}),
+			({ scroller, onScroll, onMouseMove, onMouseOut, stop }) =>
+				Effect.sync(() => {
+					stop()
+					scroller?.removeEventListener("scroll", onScroll)
+					root.removeEventListener("mousemove", onMouseMove)
+					root.removeEventListener("mouseout", onMouseOut)
+				}),
+		).pipe(Effect.flatMap(() => Effect.never)),
+	)
 
 /** `InternalBackdrop`'s cutout: the backdrop catches outside presses everywhere but the trigger. */
 const cutOutTrigger = (backdrop: Element | null, trigger: HTMLElement | null) => {
@@ -145,7 +220,12 @@ const cutOutTrigger = (backdrop: Element | null, trigger: HTMLElement | null) =>
  */
 export const MountSelect = Mount.defineStream("MountSelect", {
 	args: { id: Schema.String },
-	messages: [Message.CompletedMountSelect, Message.ChangedPlacement, Message.PressedOutside],
+	messages: [
+		Message.CompletedMountSelect,
+		Message.ChangedPlacement,
+		Message.ChangedScrollArrows,
+		Message.PressedOutside,
+	],
 	execute: ({ element, id }) => {
 		const alignment = { isFirst: true, isAligned: false }
 		return anchoredPopup(element, {
@@ -189,20 +269,24 @@ export const MountSelect = Mount.defineStream("MountSelect", {
 				return alignment.isAligned
 			},
 		}).pipe(
-			Stream.map((event) => {
+			Stream.flatMap((event): Stream.Stream<MountMessage> => {
 				switch (event._tag) {
 					case "Mounted":
-						return Message.CompletedMountSelect()
+						return Stream.make(Message.CompletedMountSelect())
 					case "Placed":
-						return Message.ChangedPlacement({
-							side: event.placed.side,
-							align: event.placed.align,
-							isAlignedWithTrigger: event.placed.isPlacedInstead,
-						})
+						return Stream.make(
+							Message.ChangedPlacement({
+								side: event.placed.side,
+								align: event.placed.align,
+								isAlignedWithTrigger: event.placed.isPlacedInstead,
+							}),
+							scrollArrowsOf(htmlOrNull(document.getElementById(listId(id)))),
+						)
 					case "PressedOutside":
-						return Message.PressedOutside()
+						return Stream.make(Message.PressedOutside())
 				}
 			}),
+			Stream.merge(listScrolls(element, id)),
 		)
 	},
 })

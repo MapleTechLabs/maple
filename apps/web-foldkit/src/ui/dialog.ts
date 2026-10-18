@@ -127,9 +127,14 @@ const nestedPopups = (portal: Element) =>
  * locks scroll, traps focus and moves it in; releasing (unmount) undoes each and returns focus.
  */
 export const MountDialog = Mount.defineStream("MountDialog", {
-	args: { id: Schema.String, hasTrigger: Schema.Boolean, isPopupFocused: Schema.Boolean },
+	args: {
+		id: Schema.String,
+		hasTrigger: Schema.Boolean,
+		isPopupFocused: Schema.Boolean,
+		isReturningFocus: Schema.Boolean,
+	},
 	messages: [Message.CompletedMountDialog, Message.PressedOutside],
-	execute: ({ element, id, hasTrigger, isPopupFocused }) =>
+	execute: ({ element, id, hasTrigger, isPopupFocused, isReturningFocus }) =>
 		Stream.unwrap(
 			Effect.gen(function* () {
 				yield* portalToBody(element)
@@ -142,6 +147,7 @@ export const MountDialog = Mount.defineStream("MountDialog", {
 				yield* manageFocus(popup, {
 					returnFocusId: hasTrigger ? Option.some(triggerId(id)) : Option.none(),
 					initialFocus: isPopupFocused ? "popup" : "first-tabbable",
+					isReturningFocus,
 				})
 				return Stream.concat(
 					mounted,

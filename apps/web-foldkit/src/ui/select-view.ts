@@ -10,6 +10,10 @@ import {
 	selectPopupStyles,
 	selectPopupSurfaceStyles,
 	selectPositionerStyles,
+	selectScrollDownArrowIconStyles,
+	selectScrollDownArrowStyles,
+	selectScrollUpArrowIconStyles,
+	selectScrollUpArrowStyles,
 	selectSeparatorStyles,
 	selectTriggerIconClassName,
 	selectTriggerVariants,
@@ -184,6 +188,25 @@ const listKeys = (h: H, options: ReadonlyArray<SelectOption>) =>
 
 const TRIGGER_KEYS = new Set(["ArrowDown", "ArrowUp", "Enter", " "])
 
+/** `SelectScrollUpArrow` / `SelectScrollDownArrow`, while the list can scroll that way. */
+const scrollArrow = (h: H, model: Model, direction: "up" | "down"): Html =>
+	h.div(
+		[
+			h.AriaHidden(true),
+			h.Class(direction === "up" ? selectScrollUpArrowStyles : selectScrollDownArrowStyles),
+			h.DataAttribute("direction", direction),
+			h.DataAttribute("side", model.isAlignedWithTrigger ? "none" : model.side),
+			h.DataAttribute("slot", `select-scroll-${direction}-arrow`),
+			h.DataAttribute("visible", ""),
+			h.Style({ position: "absolute" }),
+		],
+		[
+			icon(h, direction === "up" ? "ChevronUpIcon" : "ChevronDownIcon", {
+				className: direction === "up" ? selectScrollUpArrowIconStyles : selectScrollDownArrowIconStyles,
+			}),
+		],
+	)
+
 const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const state = stateAttributes(h, model.isOpen, model.animation)
 	const placement = [
@@ -201,12 +224,14 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 		[
 			h.div([
 				h.DataAttribute("base-ui-inert", ""),
+				// Base UI's `inert: !open`: a closing menu lets the pointer reach the page at once.
+				...(model.isOpen ? [] : [h.Inert(true)]),
 				h.Role("presentation"),
 				h.Style({ position: "fixed", inset: "0px", userSelect: "none" }),
 			]),
 			h.div(
 				[
-					h.Class(selectPositionerStyles),
+					h.Class(cn(selectPositionerStyles, !model.isOpen && "pointer-events-none")),
 					...placement,
 					h.DataAttribute("slot", "select-positioner"),
 					h.Role("presentation"),
@@ -227,6 +252,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 							h.Tabindex(-1),
 						],
 						[
+							...(model.scrollArrows.up ? [scrollArrow(h, model, "up")] : []),
 							h.div(
 								[h.Class(selectPopupSurfaceStyles)],
 								[
@@ -246,6 +272,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 									),
 								],
 							),
+							...(model.scrollArrows.down ? [scrollArrow(h, model, "down")] : []),
 						],
 					),
 					focusGuard(h, "inside"),

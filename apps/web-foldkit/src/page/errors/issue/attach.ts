@@ -269,6 +269,8 @@ export const attachDialog = (h: H, model: Model): Html => {
 		submitLabel: "Attach",
 		isPending: model.isAttaching,
 		isSubmitDisabled: typedOf(model) === null,
+		// Legacy's attach dialog closes without handing focus back to the Attach button.
+		isReturningFocus: false,
 		panelClassName: "space-y-3",
 		fields: [isConnected ? pickerField(h, model) : pasteField(h, model)],
 	})

@@ -147,7 +147,7 @@ const submenuPortal = (h: H, model: Model, entry: SubmenuEntry, triggerId: strin
 		[
 			h.div(
 				[
-					h.Class(contextMenuPositionerStyles),
+					h.Class(cn(contextMenuPositionerStyles, !model.isOpen && "pointer-events-none")),
 					h.DataAttribute("align", "start"),
 					h.DataAttribute("open", ""),
 					h.DataAttribute("side", "right"),
@@ -212,12 +212,14 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 			h.div([
 				h.AriaHidden(true),
 				h.DataAttribute("base-ui-inert", ""),
+				// Base UI's `inert: !open`: a closing menu lets the pointer reach the page at once.
+				...(model.isOpen ? [] : [h.Inert(true)]),
 				h.Role("presentation"),
 				h.Style({ position: "fixed", inset: "0px", userSelect: "none" }),
 			]),
 			h.div(
 				[
-					h.Class(contextMenuPositionerStyles),
+					h.Class(cn(contextMenuPositionerStyles, !model.isOpen && "pointer-events-none")),
 					...placement,
 					...state,
 					h.DataAttribute("side", model.side),

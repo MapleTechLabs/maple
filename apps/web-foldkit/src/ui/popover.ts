@@ -243,7 +243,9 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		[
 			h.div(
 				[
-					h.Class(inputs.bare?.positionerClassName ?? popoverPositionerStyles),
+					h.Class(
+						cn(inputs.bare?.positionerClassName ?? popoverPositionerStyles, !model.isOpen && "pointer-events-none"),
+					),
 					...placement,
 					...state,
 					...side,

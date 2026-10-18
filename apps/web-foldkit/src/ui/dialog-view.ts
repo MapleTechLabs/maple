@@ -117,6 +117,8 @@ export type ViewInputs = Readonly<{
 	hasDescription?: boolean
 	/** `initialFocus={popupRef}`: focus lands on the popup itself, not its first control. */
 	isPopupFocused?: boolean
+	/** `false`: closing does not hand focus back (legacy's controlled dialog ends on the body). */
+	isReturningFocus?: boolean
 }>
 
 const slotPrefix = (kind: Kind) => kind
@@ -163,6 +165,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							id: model.id,
 							hasTrigger: inputs.hasTrigger ?? true,
 							isPopupFocused: inputs.isPopupFocused ?? false,
+							isReturningFocus: inputs.isReturningFocus ?? true,
 						}),
 					),
 					h.OnKeyDownPreventDefault((key) =>

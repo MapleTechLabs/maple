@@ -24,6 +24,8 @@ export type FormDialogOptions<M> = Readonly<{
 	cancelLabel?: string
 	isPending?: boolean
 	isSubmitDisabled?: boolean
+	/** See `DialogView`'s `isReturningFocus`. */
+	isReturningFocus?: boolean
 	submitVariant?: "default" | "destructive"
 	footerStart?: Html
 	className?: string
@@ -41,6 +43,7 @@ export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>):
 		toParentMessage: options.toParentMessage,
 		viewInputs: {
 			hasTrigger: false,
+			isReturningFocus: options.isReturningFocus,
 			className: options.className,
 			hasDescription: options.description !== undefined,
 			toView: ({ portal }) => portal ?? h.empty,
