@@ -38,16 +38,22 @@ const OPERATIONS = {
 export const statusKey = (context: PageContext, name: keyof Statuses) =>
 	requestKey(context.orgId, OPERATIONS[name], {})
 
+/**
+ * `Refresh` is a write's `reactivityKeys`: it asks again even while a read is in flight, since that
+ * read may predate the write. `Poll` is a timer's refresh and joins a read in flight.
+ */
+export type StatusMode = Keyed.RequestMode | "Poll"
+
 const step = <A, E>(
 	model: Model,
 	slot: Keyed.Keyed<A, E>,
 	key: string,
-	mode: Keyed.RequestMode,
+	mode: StatusMode,
 	set: (statuses: Statuses, next: Keyed.Keyed<A, E>) => Statuses,
 	command: () => AnyCommand,
 ): Return =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ model }),
+	Option.match(Keyed.request(slot, key, mode === "Load" ? "Load" : "Refresh"), {
+		onNone: () => (mode === "Refresh" ? { model, commands: [command()] } : { model }),
 		onSome: (next) => ({
 			model: { ...model, statuses: set(model.statuses, next) },
 			commands: [command()],
@@ -59,10 +65,10 @@ export const requestStatus = (
 	model: Model,
 	context: PageContext,
 	name: keyof Statuses,
-	mode: Keyed.RequestMode,
+	mode: StatusMode,
 ): Return => {
 	const key = statusKey(context, name)
-	const refresh = mode === "Refresh"
+	const refresh = mode !== "Load"
 	const s = model.statuses
 	const go = <A, E>(
 		slot: Keyed.Keyed<A, E>,
