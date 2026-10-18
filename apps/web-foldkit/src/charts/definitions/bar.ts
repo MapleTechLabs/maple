@@ -4,6 +4,7 @@ import { bucketTimeScale, minBarLength } from "@maple/ui/components/plot/plot-sc
 import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import { barY, type ChartValue, defineChart, group } from "@tanstack/charts"
 import { Option } from "effect"
+import { thresholdMarks } from "./threshold-marks"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import {
 	axisContextOf,
@@ -115,7 +116,22 @@ export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartVa
 	// A trailing in-flight bucket with nothing in it is dropped: it is not a reading of zero.
 	const plotRows = first === -1 ? rows : trimEmptyTrailingBuckets(rows, visibleKeys, first)
 	const cells = cellsOf(plotRows, visible, first, spec.stacked)
-	const yAxis = timeseriesYAxis({ rows: plotRows, visibleKeys, unit, stacked: spec.stacked })
+	const axis = spec.axis
+	// `fitYAxisToData` is deliberately not forwarded: a bar's value is its area from the baseline.
+	const yAxis = timeseriesYAxis({
+		rows: plotRows,
+		visibleKeys,
+		unit,
+		stacked: spec.stacked,
+		...(axis === undefined
+			? undefined
+			: {
+					logScale: axis.logScale,
+					...(axis.softMin === null ? undefined : { softMin: axis.softMin }),
+					...(axis.softMax === null ? undefined : { softMax: axis.softMax }),
+					thresholds: axis.thresholds,
+				}),
+	})
 	const floor = yAxis.domain[0]
 	const floored = (value: number) => Math.max(floor, value)
 	const lift = minBarLength(yAxis.domain)
@@ -145,7 +161,11 @@ export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartVa
 		})
 
 	const definition = defineChart({
-		marks: [lane(false), lane(true)],
+		marks: [
+			...thresholdMarks(axis?.thresholds ?? [], bucketBandDomain(plotRows, axisContext.bucketSeconds)?.[1] ?? plotRows.at(-1)?.date),
+			lane(false),
+			lane(true),
+		],
 		scales: { x: timeseriesBandXAxis(axisContext, plotRows), y: yAxis.y },
 		focus: "group-x",
 		maxFocusDistance: UNBOUNDED_FOCUS_DISTANCE,

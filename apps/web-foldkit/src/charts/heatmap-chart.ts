@@ -39,14 +39,14 @@ export interface HeatmapChartInputs {
 type H = HtmlBuilder<Message>
 
 const SCALES = ["amber", "blues", "reds", "viridis", "magma", "cividis"] as const
-const FALLBACKS: Readonly<Record<(typeof SCALES)[number], readonly [string, string, string, string, string]>> = {
+const FALLBACKS = {
 	amber: ["oklch(0.32 0.035 70)", "oklch(0.45 0.075 65)", "oklch(0.58 0.115 60)", "oklch(0.71 0.15 57)", "oklch(0.85 0.13 78)"],
 	blues: ["oklch(0.32 0.04 255)", "oklch(0.45 0.08 252)", "oklch(0.58 0.12 250)", "oklch(0.71 0.15 248)", "oklch(0.85 0.11 238)"],
 	reds: ["oklch(0.32 0.045 28)", "oklch(0.45 0.09 28)", "oklch(0.58 0.14 28)", "oklch(0.71 0.185 30)", "oklch(0.85 0.135 45)"],
 	viridis: ["oklch(0.32 0.055 285)", "oklch(0.45 0.095 265)", "oklch(0.58 0.09 200)", "oklch(0.71 0.135 150)", "oklch(0.85 0.17 112)"],
 	magma: ["oklch(0.32 0.06 300)", "oklch(0.45 0.12 312)", "oklch(0.58 0.175 350)", "oklch(0.71 0.16 35)", "oklch(0.85 0.115 80)"],
 	cividis: ["oklch(0.32 0.045 262)", "oklch(0.45 0.055 250)", "oklch(0.58 0.03 130)", "oklch(0.71 0.075 95)", "oklch(0.85 0.13 95)"],
-}
+} satisfies Readonly<Record<(typeof SCALES)[number], readonly [string, string, string, string, string]>>
 const GROUT_FALLBACK = "oklch(0.175 0.008 62)"
 
 /** Every custom property the heatmap reads; a page resolves them with `ResolveThemeColors`. */
@@ -224,7 +224,7 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 					insetRight: layout.rightInset,
 				}),
 				...(footnote === null
-					? {}
+					? undefined
 					: {
 							footer: h.p(
 								[

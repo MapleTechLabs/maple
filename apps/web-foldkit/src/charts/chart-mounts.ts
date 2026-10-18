@@ -60,8 +60,10 @@ export const MountChart = Mount.defineStream("MountChart", {
 
 							// The last geometry sent: `onRender` runs on every pointer tick, a Message only on change.
 							const sent = { key: "" }
+							// A chart without a time x scale (a pie) reports its rect with an empty domain.
+							const NO_AXIS = { domainStartMs: 0, domainEndMs: 0, rangeStart: 0, rangeEnd: 0 }
 							const reportPlotOnce = (bounds: ChartBounds, timeAxis: Option.Option<TimeAxis>) =>
-								Option.map(timeAxis, (axis) => {
+								Option.map(Option.orElseSome(timeAxis, () => NO_AXIS), (axis) => {
 									const plot = {
 										x: bounds.x,
 										y: bounds.y,

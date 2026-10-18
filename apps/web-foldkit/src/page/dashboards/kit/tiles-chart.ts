@@ -2,6 +2,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "../../../charts/area-chart"
 import * as BarChart from "../../../charts/bar-chart"
+import { bucketBarSeries } from "../../../charts/bar-chart"
+import { OTHER_LABEL } from "@maple/ui/components/charts/_shared/bucket-series"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import * as FunnelChart from "../../../charts/funnel-chart"
 import * as FunnelDropoffChart from "../../../charts/funnel-dropoff-chart"
@@ -11,17 +13,19 @@ import * as HistogramChart from "../../../charts/histogram-chart"
 import * as PathsChart from "../../../charts/paths-chart"
 import * as PieChart from "../../../charts/pie-chart"
 import { hoistedSeries } from "../../../charts/timeseries"
+import type { TimeseriesAxisSpec } from "../../../charts/chart-spec"
+import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
+import { validateCssColor } from "@maple/ui/lib/sanitizers"
 import { chartSkeleton, type ChartSkeletonVariant } from "../../../ui/chart-skeleton"
 import { type ChartCategory, chartCategoryOf } from "./chart-registry"
 import { widgetEmptyState, widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
+import { isServiceChart, serviceChart, serviceLegend } from "./tiles-service"
 
 // `makeChartWidget` (dashboard-builder/widgets/make-chart-widget.tsx): one factory for every widget
 // that mounts a registry chart, each branch handing its chart only the settings it declares.
 // TODO(chart-axes): line/area/bar thresholds, log scale and soft bounds are not drawn yet.
-// TODO(service-charts): the fixed-metric registry entries (latency-line, throughput-area, apdex,
-// error rate) draw their skeleton inside a widget.
 
 type Widget = TileWidget
 type Rows = ReadonlyArray<Record<string, unknown>>
@@ -48,18 +52,19 @@ export const CHART_WIDGETS = {
 const primitiveRows = (rows: Rows): ReadonlyArray<Primitive> =>
 	rows.map((row) =>
 		Object.fromEntries(
-			Object.entries(row).flatMap(([key, value]) =>
-				typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+			Object.entries(row).flatMap(([key, value]): ReadonlyArray<readonly [string, string | number | boolean]> =>
+				typeof value === "string" || typeof value === "boolean"
 					? [[key, value] as const]
-					: [],
+					: // `asFiniteNumber`: a null or NaN reading is plotted as 0, the key kept in place.
+						typeof value === "number" || value === null
+						? [[key, typeof value === "number" && Number.isFinite(value) ? value : 0] as const]
+						: [],
 			),
 		),
 	)
 
 const skeletonOf = (category: ChartCategory, widget: Widget): ChartSkeletonVariant =>
 	category === "funnel" && widget.display.funnel?.variant === "dropoff" ? "funnel-dropoff" : category
-
-const SERVICE_CHART_IDS = new Set(["latency-line", "throughput-area", "apdex-area", "error-rate-area"])
 
 /** Charts drawn on the canvas need the theme and the chart runtime; the DOM ones do not. */
 const isCanvas = (category: ChartCategory) =>
@@ -76,6 +81,28 @@ type Render = Readonly<{
 	className: string
 	legend: "visible" | "hidden" | "right" | undefined
 }>
+
+/** `canvasSafeThresholdColor`: a validated colour resolved to a literal, else `--destructive`. */
+const thresholdColor = (theme: ThemeColors, color: string | undefined): string => {
+	const fallback = resolveColor(theme, "--destructive")
+	const validated = validateCssColor(color)
+	if (validated === null || validated === undefined) return fallback
+	const resolved = resolveColor(theme, validated, fallback)
+	return /var\(|currentcolor/i.test(resolved) ? fallback : resolved
+}
+
+/** The cartesian block every line, area and bar chart reads (`renderChart`'s `cartesian`). */
+const axisSpecOf = (widget: Widget, theme: ThemeColors): TimeseriesAxisSpec => ({
+	thresholds: (widget.display.thresholds ?? []).map((threshold) => ({
+		value: threshold.value,
+		color: thresholdColor(theme, threshold.color),
+		label: threshold.label ?? null,
+	})),
+	logScale: widget.display.yAxis?.logScale === true,
+	softMin: widget.display.yAxis?.softMin ?? null,
+	softMax: widget.display.yAxis?.softMax ?? null,
+	fitYAxisToData: widget.display.yAxis?.fitYAxisToData === true,
+})
 
 const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, render: Render): Html => {
 	const display = widget.display
@@ -104,10 +131,11 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 					showTooltip: tooltip !== "hidden",
 					legend: render.legend ?? "hidden",
 					mark: render.category,
-					...(render.category === "area" ? { stacked: display.stacked === true } : {}),
+					...(render.category === "area" ? { stacked: display.stacked === true } : undefined),
 					curveType: display.curveType === "monotone" ? "monotone" : "linear",
-					...(presentation?.showPoints === undefined ? {} : { showPoints: presentation.showPoints }),
+					...(presentation?.showPoints === undefined ? undefined : { showPoints: presentation.showPoints }),
 					seriesStats: presentation?.seriesStats === true,
+					axis: axisSpecOf(widget, theme),
 				},
 			})
 		}
@@ -126,6 +154,9 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 					stacked: display.stacked === true,
 					className,
 					showTooltip: tooltip !== "hidden",
+					legend: render.legend ?? "hidden",
+					seriesStats: presentation?.seriesStats === true,
+					axis: axisSpecOf(widget, theme),
 				},
 			})
 		}
@@ -140,13 +171,13 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 							data,
 							theme,
 							className,
-							...(render.legend === undefined ? {} : { legend: render.legend }),
-							...(tooltip === undefined ? {} : { tooltip }),
-							...(display.unit === undefined ? {} : { unit: display.unit }),
-							...(display.pie?.donut === undefined ? {} : { donut: display.pie.donut }),
-							...(display.pie?.innerRadius === undefined ? {} : { innerRadius: display.pie.innerRadius }),
-							...(display.pie?.showLabels === undefined ? {} : { showLabels: display.pie.showLabels }),
-							...(display.pie?.showPercent === undefined ? {} : { showPercent: display.pie.showPercent }),
+							...(render.legend === undefined ? undefined : { legend: render.legend }),
+							...(tooltip === undefined ? undefined : { tooltip }),
+							...(display.unit === undefined ? undefined : { unit: display.unit }),
+							...(display.pie?.donut === undefined ? undefined : { donut: display.pie.donut }),
+							...(display.pie?.innerRadius === undefined ? undefined : { innerRadius: display.pie.innerRadius }),
+							...(display.pie?.showLabels === undefined ? undefined : { showLabels: display.pie.showLabels }),
+							...(display.pie?.showPercent === undefined ? undefined : { showPercent: display.pie.showPercent }),
 						},
 					})
 		case "histogram":
@@ -160,12 +191,12 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 							data,
 							theme,
 							className,
-							...(tooltip === undefined ? {} : { tooltip }),
-							...(display.unit === undefined ? {} : { unit: display.unit }),
-							...(display.yAxis?.logScale === undefined ? {} : { logScale: display.yAxis.logScale }),
-							...(display.histogram?.bucketCount === undefined ? {} : { bucketCount: display.histogram.bucketCount }),
-							...(display.histogram?.bucketWidth === undefined ? {} : { bucketWidth: display.histogram.bucketWidth }),
-							...(display.histogram?.logScaleY === undefined ? {} : { logScaleY: display.histogram.logScaleY }),
+							...(tooltip === undefined ? undefined : { tooltip }),
+							...(display.unit === undefined ? undefined : { unit: display.unit }),
+							...(display.yAxis?.logScale === undefined ? undefined : { logScale: display.yAxis.logScale }),
+							...(display.histogram?.bucketCount === undefined ? undefined : { bucketCount: display.histogram.bucketCount }),
+							...(display.histogram?.bucketWidth === undefined ? undefined : { bucketWidth: display.histogram.bucketWidth }),
+							...(display.histogram?.logScaleY === undefined ? undefined : { logScaleY: display.histogram.logScaleY }),
 						},
 					})
 		case "heatmap":
@@ -223,15 +254,27 @@ export const chartWidgetTile = <M>(
 	const legend = widget.display.chartPresentation?.legend ?? options.defaultLegend
 	const isTimeseries = category === "line" || category === "area" || category === "bar"
 	const hoists = isTimeseries && legend !== "visible" && legend !== "right"
+	const theme = ctx.themeColors
 	const legendItems =
-		hoists && data !== undefined && data.length > 0 && ctx.themeColors !== null && !SERVICE_CHART_IDS.has(chartId)
-			? hoistedSeries(data, ctx.themeColors)
-			: undefined
+		!hoists || data === undefined || data.length === 0 || theme === null
+			? undefined
+			: isServiceChart(chartId)
+				? ctx.nowMs === null
+					? undefined
+					: serviceLegend(chartId, data, theme, ctx.timeZone, ctx.nowMs)
+				: category === "bar"
+					? hoistedSeries(bucketBarSeries(primitiveRows(data)), theme).map((item) =>
+							item.label === OTHER_LABEL ? { ...item, color: resolveColor(theme, "--muted-foreground") } : item,
+						)
+					: hoistedSeries(data, theme)
 	const options_ = frame(ctx, widget, { loadingSkeleton: skeleton, legendItems })
 	return widgetFrame(h, options_, () => {
 		if (category === undefined) return []
 		if (data === undefined || data.length === 0) return [widgetEmptyState(h)]
-		if (SERVICE_CHART_IDS.has(chartId)) return [skeleton]
+		if (isServiceChart(chartId))
+			return theme === null || ctx.nowMs === null || !isChartRuntimeReady(ctx.chartRuntime)
+				? [skeleton]
+				: [serviceChart(h, ctx, widget, chartId, data, theme, ctx.nowMs, options.className ?? "h-full w-full aspect-auto")]
 		return [chartView(h, ctx, widget, { category, data, className: options.className ?? "h-full w-full aspect-auto", legend })]
 	})
 }

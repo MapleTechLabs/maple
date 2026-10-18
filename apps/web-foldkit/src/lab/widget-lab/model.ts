@@ -31,6 +31,8 @@ export const Model = Schema.Struct({
 	menuId: Schema.NullOr(Schema.String),
 	menu: Menu.Model,
 	tableSorts: Schema.Record(Schema.String, TableSort),
+	/** The session org: the dashboards collection syncs for it, as the legacy module graph starts it. */
+	orgId: Schema.NullOr(Schema.String),
 })
 export type Model = typeof Model.Type
 
@@ -49,5 +51,6 @@ export const Message = defineMessageUnion({
 	ClickedSortColumn: { slot: Schema.String, field: Schema.String, isText: Schema.Boolean },
 	/** A widget action (`labActions`): legacy logs it; the lab has nothing to do. */
 	ClickedWidgetAction: { action: Schema.String },
+	UpdatedDashboards: { orgId: Schema.String },
 })
 export type Message = typeof Message.Type

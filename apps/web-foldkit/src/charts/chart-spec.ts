@@ -26,6 +26,21 @@ export type NumericBin = typeof NumericBin.Type
 export const CategoricalBin = Schema.Struct({ name: Schema.String, value: Schema.Number })
 export type CategoricalBin = typeof CategoricalBin.Type
 
+/**
+ * The y-axis settings a widget's line, area or bar chart honours: threshold rules (colours already
+ * canvas-safe literals), log scale and the soft bounds.
+ */
+export const TimeseriesAxisSpec = Schema.Struct({
+	thresholds: Schema.Array(
+		Schema.Struct({ value: Schema.Number, color: Schema.String, label: Schema.NullOr(Schema.String) }),
+	),
+	logScale: Schema.Boolean,
+	softMin: Schema.NullOr(Schema.Number),
+	softMax: Schema.NullOr(Schema.Number),
+	fitYAxisToData: Schema.Boolean,
+})
+export type TimeseriesAxisSpec = typeof TimeseriesAxisSpec.Type
+
 /** One heatmap slot: a cell, or a hole when `value` is null. */
 export const HeatmapSlotSchema = Schema.Struct({
 	x: Schema.String,
@@ -128,6 +143,7 @@ export const ChartSpec = defineTaggedUnion({
 		curve: Schema.optionalKey(Schema.Literals(["linear", "monotone"])),
 		/** `showPoints`: every point, none, or (absent) only isolated ones unless they fit. */
 		showPoints: Schema.optionalKey(Schema.Boolean),
+		axis: Schema.optionalKey(TimeseriesAxisSpec),
 	},
 	/**
 	 * `QueryBuilderBarChart` (threshold-free, linear): the rows as returned, the resolved colour per
@@ -144,6 +160,7 @@ export const ChartSpec = defineTaggedUnion({
 		nowMs: Schema.Number,
 		stacked: Schema.Boolean,
 		showTooltip: Schema.Boolean,
+		axis: Schema.optionalKey(TimeseriesAxisSpec),
 	},
 	/** `IssueOccurrenceChart` (apps/web/src/components/errors): bucketed counts as bars. */
 	Occurrences: {

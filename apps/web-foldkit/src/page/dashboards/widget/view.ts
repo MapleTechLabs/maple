@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
+import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { button, linkButton } from "../../../ui/button"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
@@ -164,7 +164,7 @@ const editor = (h: H, model: Model, timeZone: string): Html =>
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
-		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }))],
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))],
 		[
 			dashboardPage(h, {}, [
 				model.status === "Ready" && model.state !== null

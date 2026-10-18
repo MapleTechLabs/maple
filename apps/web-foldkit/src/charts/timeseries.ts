@@ -6,6 +6,8 @@ import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
 import {
 	integerTickValues,
 	linearYDomain,
+	logYDomain,
+	logYScale,
 	NICE_TICK_COUNT,
 	niceLinearDomain,
 } from "@maple/ui/components/plot/plot-scales"
@@ -132,19 +134,24 @@ export interface YAxisOptions {
 	readonly softMax?: number
 	/** Tick labels; defaults to `formatValueByUnit(value, unit)`. */
 	readonly format?: (value: number) => string
+	readonly logScale?: boolean
+	readonly fitYAxisToData?: boolean
+	readonly thresholds?: ReadonlyArray<{ readonly value: number }>
 }
 
-/** `timeseriesYAxis`, linear, without log scale or thresholds. */
+/** `timeseriesYAxis`: the shared y axis, domain included (log axes pin their own floor at 1). */
 export const timeseriesYAxis = (options: YAxisOptions) => {
+	const logScale = options.logScale === true
 	const dataDomain = linearYDomain({
 		rows: options.rows,
 		keys: options.visibleKeys,
 		stacked: options.stacked,
 		softMin: options.softMin,
 		softMax: options.softMax,
-		fitYAxisToData: false,
+		fitYAxisToData: options.fitYAxisToData === true && options.softMin == null && !logScale,
+		thresholds: options.thresholds === undefined ? undefined : [...options.thresholds],
 	})
-	const domain: [number, number] = niceLinearDomain(dataDomain)
+	const domain: [number, number] = logScale ? logYDomain(dataDomain[1]) : niceLinearDomain(dataDomain)
 	const integerOnly =
 		hasOnlyIntegerValues(options.rows, options.visibleKeys) &&
 		options.unit == null &&
@@ -153,14 +160,14 @@ export const timeseriesYAxis = (options: YAxisOptions) => {
 		domain,
 		y: {
 			grid: DASHED_Y_GRID,
-			scale: scaleLinear().domain(domain),
-			nice: NICE_TICK_COUNT,
+			scale: logScale ? logYScale(dataDomain[1]) : scaleLinear().domain(domain),
+			nice: logScale ? false : NICE_TICK_COUNT,
 			axis: {
 				line: false,
 				ticks: {
 					size: 0,
 					padding: 6,
-					values: integerOnly ? integerTickValues(domain) : undefined,
+					values: integerOnly && !logScale ? integerTickValues(domain) : undefined,
 					format: options.format ?? ((value: number) => formatValueByUnit(value, options.unit)),
 				},
 			},

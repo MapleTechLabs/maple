@@ -2,7 +2,7 @@ import { normalizeLayout } from "@maple/grid-engine"
 import { GRID_ROW_HEIGHT, projectLayout, tierForWidth } from "@maple/web/components/dashboard-builder/canvas/grid-breakpoints"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AREA_CHART_TOKENS } from "../../charts/area-chart"
+import { WIDGET_CHART_TOKENS } from "../dashboards/kit/chart-tokens"
 import * as Chart from "../../charts/chart"
 import { ResolveThemeColors } from "../../charts/theme-colors"
 import { button } from "../../ui/button"
@@ -247,5 +247,5 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			: resolve._tag === "Failed"
 				? wrap([errorCard(h, resolve.error)])
 				: wrap([shareBody(h, model, resolve.share, isEmbed, timeZone)], resolve.share.dashboard.name)
-	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }))], [page])
+	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))], [page])
 })
