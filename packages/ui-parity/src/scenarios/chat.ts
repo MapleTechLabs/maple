@@ -115,6 +115,57 @@ const subjectScenarios: ReadonlyArray<Scenario> = [
 	{ ...scenario("widget-fix", "a broken widget's fix prompt sent on arrival", "default", replied), path: WIDGET_FIX_PATH },
 ]
 
+/** The mermaid block's toolbar on `chat-code`: the download menu, fullscreen, and pan and zoom. */
+const diagram = (id: string, title: string, steps: (page: Page) => Promise<void>): Scenario =>
+	scenario(`code-${id}`, `the mermaid diagram, ${title}`, "chat-code", async (page) => {
+		await page.getByRole("button", { name: "Copy Code" }).first().waitFor()
+		await steps(page)
+	})
+
+const openFullscreen = async (page: Page) => {
+	await page.getByRole("button", { name: "View fullscreen" }).click()
+	await page.getByRole("dialog", { name: "View fullscreen" }).getByRole("img", { name: "Mermaid chart" }).waitFor()
+}
+
+const diagramScenarios: ReadonlyArray<Scenario> = [
+	diagram("download-menu", "its download menu open", (page) =>
+		page.getByRole("button", { name: "Download diagram", exact: true }).click(),
+	),
+	diagram("download-mmd", "its source downloaded as MMD", async (page) => {
+		await page.getByRole("button", { name: "Download diagram", exact: true }).click()
+		await page.getByRole("button", { name: "Download diagram as MMD" }).click()
+		await page.getByRole("button", { name: "Download diagram as MMD" }).waitFor({ state: "detached" })
+	}),
+	diagram("download-menu-dismissed", "its download menu closed by a press outside", async (page) => {
+		await page.getByRole("button", { name: "Download diagram", exact: true }).click()
+		await page.getByText("The slow authorizations all run this query:").click()
+		await page.getByRole("button", { name: "Download diagram as SVG" }).waitFor({ state: "detached" })
+	}),
+	diagram("zoom", "zoomed in twice", async (page) => {
+		await page.getByRole("button", { name: "Zoom in" }).click()
+		await page.getByRole("button", { name: "Zoom in" }).click()
+	}),
+	diagram("zoom-reset", "zoomed out and reset", async (page) => {
+		await page.getByRole("button", { name: "Zoom out" }).click()
+		await page.getByRole("button", { name: "Reset zoom and pan" }).click()
+	}),
+	diagram("fullscreen", "opened fullscreen", openFullscreen),
+	diagram("fullscreen-menu", "its fullscreen download menu open", async (page) => {
+		await openFullscreen(page)
+		await page.getByRole("dialog").getByRole("button", { name: "Download diagram", exact: true }).click()
+	}),
+	diagram("fullscreen-exit", "fullscreen closed with its exit button", async (page) => {
+		await openFullscreen(page)
+		await page.getByRole("button", { name: "Exit fullscreen" }).click()
+		await page.getByRole("dialog").waitFor({ state: "detached" })
+	}),
+	diagram("fullscreen-escape", "fullscreen closed with Escape", async (page) => {
+		await openFullscreen(page)
+		await page.keyboard.press("Escape")
+		await page.getByRole("dialog").waitFor({ state: "detached" })
+	}),
+]
+
 /** `?m=` permalinks open the transcript on their message; the link itself is copied from the row. */
 const permalinkScenarios: ReadonlyArray<Scenario> = [
 	{
@@ -249,6 +300,7 @@ export const chatArea: AreaModule = {
 		},
 		...subjectScenarios,
 		...permalinkScenarios,
+		...diagramScenarios,
 		...sheetScenarios,
 		lab("sheet-width", "at the sheet width", (page) => page.getByRole("button", { name: "Sheet (620px)" }).click()),
 		lab("narrow-width", "at the narrow width", (page) => page.getByRole("button", { name: "Narrow (420px)" }).click()),

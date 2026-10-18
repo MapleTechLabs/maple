@@ -10,7 +10,7 @@ import { skeleton } from "../../../ui/skeleton"
 import { approvalCard, taskCard } from "../kit/view-cards"
 import { composer, failureNotice } from "../kit/view-composer"
 import { MountTurnMinimap } from "../kit/turn-minimap-mount"
-import { MountMermaid } from "../kit/mermaid"
+import { MountDiagramFullscreen, MountDiagramMenu, MountMermaid } from "../kit/mermaid"
 import { MountMath } from "../kit/math"
 import { inlineCard } from "../kit/view-inline"
 import { chatMarkdownOverrides } from "../kit/view-markdown"
@@ -84,9 +84,27 @@ const cardsOf = <M>(
 			highlights: model.highlights,
 			onCopy: (code) => options.toMessage(Message.ClickedCopyCode({ code })),
 			onDownload: (code, language) => options.toMessage(Message.ClickedDownloadCode({ code, language })),
-			onDownloadDiagram: (code) => options.toMessage(Message.ClickedDownloadDiagram({ code })),
-			mermaidMount: (code) =>
-				Mount.mapMessage(MountMermaid({ code }), (message) =>
+			diagramMenu: model.diagramMenu,
+			fullscreenDiagram: model.fullscreenDiagram,
+			onToggleDiagramMenu: (menuId) => options.toMessage(Message.ToggledDiagramMenu({ menuId })),
+			onDiagramFormat: (menuId, code, format) => options.toMessage(Message.ClickedDiagramFormat({ menuId, code, format })),
+			onFullscreen: (code) => options.toMessage(Message.ClickedDiagramFullscreen({ code })),
+			onExitFullscreen: options.toMessage(Message.ClosedDiagramFullscreen()),
+			diagramMenuMount: (menuId) =>
+				Mount.mapMessage(MountDiagramMenu(), (message) =>
+					options.toMessage(
+						message._tag === "PressedOutsideDiagramMenu"
+							? Message.PressedOutsideDiagramMenu({ menuId })
+							: Message.CompletedMountDiagramOverlay(),
+					),
+				),
+			fullscreenMount: Mount.mapMessage(MountDiagramFullscreen(), (message) =>
+				options.toMessage(
+					message._tag === "CompletedMountDiagramOverlay" ? Message.CompletedMountDiagramOverlay() : Message.ClosedDiagramFullscreen(),
+				),
+			),
+			mermaidMount: (code, isFullscreen) =>
+				Mount.mapMessage(MountMermaid({ code, isFullscreen }), (message) =>
 					options.toMessage(Message.CompletedMermaidDiagram({ isDrawn: message._tag === "CompletedMountMermaid" })),
 				),
 			mathMount: (tex, isDisplay) =>

@@ -55,6 +55,10 @@ export const Model = Schema.Struct({
 	minimap: MinimapState,
 	/** Shiki tokens by fence (`highlightKey`); `null` while in flight or when it could not colour it. */
 	highlights: Schema.Record(Schema.String, Schema.NullOr(HighlightedCode)),
+	/** The open diagram download menu (`inline:` or `fullscreen:` + source). */
+	diagramMenu: Schema.NullOr(Schema.String),
+	/** The diagram shown fullscreen, by source. */
+	fullscreenDiagram: Schema.NullOr(Schema.String),
 	/** Markdown parses by text; `null` while in flight. */
 	markdown: Schema.Record(Schema.String, Schema.NullOr(Schema.Struct({ document: Schema.NullOr(MarkdownDocument) }))),
 })
