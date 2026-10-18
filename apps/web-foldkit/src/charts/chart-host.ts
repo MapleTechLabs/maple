@@ -14,6 +14,7 @@ import {
 } from "./definitions/histogram"
 import { buildFixedMetric } from "./definitions/fixed-metric"
 import { buildInfraMetric } from "./definitions/infra-metric"
+import { buildPlanetScaleMetric } from "./definitions/planetscale-metric"
 import { buildLogsVolume } from "./definitions/logs-volume"
 import { buildPie, buildPieSpike } from "./definitions/pie"
 import { buildOccurrences } from "./definitions/occurrences"
@@ -170,4 +171,6 @@ export const createChartHost = (
 			hostFor(container, metric, height, variant("FixedMetric"), buildFixedMetric, options),
 		InfraMetric: (metric) =>
 			hostFor(container, metric, height, variant("InfraMetric"), buildInfraMetric, options),
+		PlanetScaleMetric: (metric) =>
+			hostFor(container, metric, height, variant("PlanetScaleMetric"), buildPlanetScaleMetric, options),
 	})

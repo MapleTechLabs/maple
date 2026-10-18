@@ -7,6 +7,7 @@ import type { AreaModule, Scenario } from "./types.ts"
  * PlanetScale databases, all with 24 h of poller metrics. Index pages also capture the `empty` org.
  */
 const DATASET = "infra-integrations"
+const PS_DB = "/infra/planetscale/acme-prod"
 const RAILWAY_SERVICE = "/infra/railway/svc_acme_api?environmentId=env_acme_production"
 const EMPTY = "empty"
 
@@ -186,5 +187,45 @@ export const infraIntegrationsArea: AreaModule = {
 			steps: press("Database"),
 		}),
 		scenario("planetscale-db", "PlanetScale database: acme-prod", "/infra/planetscale/acme-prod"),
+		scenario("planetscale-db-loading", "PlanetScale database: metrics loading", PS_DB, held("queryEngine.planetscaleInfraTimeseries")),
+		scenario("planetscale-db-error", "PlanetScale database: metrics failing", PS_DB, failing("queryEngine.planetscaleInfraTimeseries")),
+		scenario("planetscale-db-measure", "PlanetScale database: breakdown by CPU", PS_DB, { steps: press("CPU (max)") }),
+		scenario("planetscale-db-breakdown-sort", "PlanetScale database: breakdown sorted by branch", PS_DB, {
+			// The sidebar's Branch section header is the first button named Branch.
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Branch", exact: true }).last().click()
+			},
+		}),
+		scenario("planetscale-db-sidebar-dev", "PlanetScale database: dev from the sidebar", PS_DB, {
+			steps: async (page) => {
+				await page.getByRole("checkbox", { name: "dev", exact: true }).click()
+				await page.getByText("branch:dev").waitFor()
+			},
+		}),
+		scenario("planetscale-db-select-dev", "PlanetScale database: dev from the branch select", PS_DB, {
+			steps: async (page) => {
+				await page.getByRole("combobox", { name: "Branch" }).click()
+				await page.getByRole("option", { name: "dev" }).click()
+				await page.getByText("branch:dev").waitFor()
+			},
+		}),
+		scenario("planetscale-db-breakdown-row", "PlanetScale database: breakdown row filters", PS_DB, {
+			steps: async (page) => {
+				await page.getByTitle("Filter to dev").click()
+				await page.getByText("branch:dev").waitFor()
+			},
+		}),
+		scenario("planetscale-db-hover", "PlanetScale database: storage chart hovered", PS_DB, {
+			steps: async (page) => {
+				await page.getByRole("img", { name: "Storage used (max)" }).hover({ position: { x: 400, y: 90 } })
+				await page.getByText("Storage used (max)").nth(1).waitFor()
+			},
+		}),
+		scenario("planetscale-db-scope-tooltip", "PlanetScale database: scope chip explained", PS_DB, {
+			steps: hoverTooltip(
+				(page) => page.getByText("all branches").first(),
+				"Every branch in this database, combined.",
+			),
+		}),
 	],
 }

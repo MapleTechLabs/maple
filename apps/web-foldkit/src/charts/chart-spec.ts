@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
+import { ChartEventMarker, MarkerColors } from "./event-marker-spec"
 
 /**
  * Everything a chart definition is built from, as data. The view renders it into the chart host's
@@ -166,6 +167,22 @@ export const ChartSpec = defineTaggedUnion({
 		colors: Schema.Record(Schema.String, Schema.String),
 		timeZone: Schema.String,
 		gradientPrefix: Schema.String,
+	},
+	/** `PlanetScaleChart` (components/infra/planetscale/planetscale-chart.tsx): one gauge, gaps kept. */
+	PlanetScaleMetric: {
+		metric: Schema.Literals([
+			"connectionsAvg",
+			"cpuMaxPercent",
+			"memMaxPercent",
+			"storageUsedPercent",
+			"replicaLagMaxSeconds",
+		]),
+		points: Schema.Array(Schema.Struct({ bucket: Schema.String, value: Nullable(Schema.Number) })),
+		/** The series colour plus `border` / `background` chrome. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		markers: Schema.Array(ChartEventMarker),
+		markerColors: MarkerColors,
+		timeZone: Schema.String,
 	},
 })
 export type ChartSpec = typeof ChartSpec.Type
