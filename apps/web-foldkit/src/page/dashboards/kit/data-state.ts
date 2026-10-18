@@ -1,7 +1,14 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
-import { dataSourceTransform, isEmptyEnvelope, type ReadyData, toReadyData } from "../kit/widget-data"
-import type { Model, WidgetSlot } from "./model"
+import type { Keyed } from "../../../data/keyed"
+import {
+	dataSourceTransform,
+	isEmptyEnvelope,
+	type ReadyData,
+	toReadyData,
+	type WidgetFailure,
+	type WidgetGate,
+} from "./widget-data"
 
 // `WidgetDataState` (dashboard-builder/types.ts), as `useWidgetDataSource` derives it.
 
@@ -21,8 +28,13 @@ export type WidgetDataState =
 const LOADING: WidgetDataState = { _tag: "Loading" }
 const NO_DATA = "No query data found in selected time range"
 
-export const dataStateOf = (model: Model, widget: Widget, slot: WidgetSlot): WidgetDataState => {
-	const gate = slot.gate
+export type RequestSlots = Readonly<Record<string, Keyed<unknown, WidgetFailure>>>
+
+export const dataStateOf = (
+	requests: RequestSlots,
+	widget: Widget,
+	gate: WidgetGate | null,
+): WidgetDataState => {
 	if (gate === null) return LOADING
 	switch (gate._tag) {
 		case "Static":
@@ -36,7 +48,7 @@ export const dataStateOf = (model: Model, widget: Widget, slot: WidgetSlot): Wid
 		case "Disabled":
 			return { _tag: "Error", title: null, message: gate.message, kind: null }
 		case "Request": {
-			const request = model.requests[gate.request.key]
+			const request = requests[gate.request.key]
 			if (request === undefined) return LOADING
 			return AsyncData.match(request.data, {
 				onIdle: () => LOADING,

@@ -8,6 +8,7 @@ import { DashboardSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 
 // The dashboard view and builder (apps/web/src/routes/dashboards/$dashboardId.tsx).
@@ -27,13 +28,6 @@ export type WidgetSlot = typeof WidgetSlot.Type
 /** The widget fetches, deduped by request key like apps/web's atom family. */
 export const RequestSlot = KeyedSchema(Schema.Unknown, WidgetFailure)
 export type RequestSlot = typeof RequestSlot.Type
-
-/** `useTableSort`: per table widget, the active key and direction. */
-export const TableSort = Schema.Struct({
-	key: Schema.NullOr(Schema.String),
-	dir: Schema.Literals(["asc", "desc"]),
-})
-export type TableSort = typeof TableSort.Type
 
 /** An in-progress pointer drag or resize over the grid (`useGridInteraction`). */
 export const GridGesture = Schema.Struct({

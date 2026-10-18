@@ -9,17 +9,16 @@ import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { isEmptyError, type WidgetDataState } from "./data-state"
-import { Message } from "./message"
 
 /** `useId` of the grid's hidden rearranging instructions, which every grip describes itself by. */
 export const GRID_INSTRUCTIONS_ID = "dashboard-grid-instructions"
 
 // `WidgetShell`, `WidgetFrame` and `WidgetEmptyState` (dashboard-builder/widgets/widget-shell.tsx).
 
-type H = HtmlBuilder<Message>
-
-export type ShellOptions = Readonly<{
+export type ShellOptions<M> = Readonly<{
 	widgetId: string
+	/** Edit mode's grip: a primary-button press starts the drag. */
+	onGripDown: ((clientX: number, clientY: number) => M) | null
 	title: string
 	isEdit: boolean
 	/** The actions menu (trigger and portal), or `null` when the tile offers none. */
@@ -31,7 +30,11 @@ export type ShellOptions = Readonly<{
 }>
 
 /** The grip a tile is dragged by (edit mode). TODO(grid-drag): presses are not wired to a gesture. */
-const grip = (h: H, widgetId: string, title: string): Html =>
+const grip = <M>(
+	h: HtmlBuilder<M>,
+	title: string,
+	onGripDown: (clientX: number, clientY: number) => M,
+): Html =>
 	h.button(
 		[
 			h.Type("button"),
@@ -42,15 +45,17 @@ const grip = (h: H, widgetId: string, title: string): Html =>
 			),
 			h.AriaDescribedBy(GRID_INSTRUCTIONS_ID),
 			h.OnPointerDown((_pointerType, button, _sx, _sy, _t, clientX, clientY) =>
-				button === 0
-					? Option.some(Message.PressedGrip({ widgetId, clientX, clientY }))
-					: Option.none(),
+				button === 0 ? Option.some(onGripDown(clientX, clientY)) : Option.none(),
 			),
 		],
 		[icon(h, "GripDotsIcon", { size: 14 })],
 	)
 
-export const widgetShell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html =>
+export const widgetShell = <M>(
+	h: HtmlBuilder<M>,
+	options: ShellOptions<M>,
+	children: ReadonlyArray<Html>,
+): Html =>
 	card(
 		h,
 		[
@@ -60,7 +65,9 @@ export const widgetShell = (h: H, options: ShellOptions, children: ReadonlyArray
 					h.div(
 						[h.Class("flex min-w-0 items-center gap-2")],
 						[
-							...(options.isEdit ? [grip(h, options.widgetId, options.title)] : []),
+							...(options.isEdit && options.onGripDown !== null
+								? [grip(h, options.title, options.onGripDown)]
+								: []),
 							eyebrow(
 								h,
 								{
@@ -108,7 +115,7 @@ export const widgetShell = (h: H, options: ShellOptions, children: ReadonlyArray
 	)
 
 /** `WidgetEmptyState`: the query ran and returned nothing. */
-export const widgetEmptyState = (h: H): Html =>
+export const widgetEmptyState = <M>(h: HtmlBuilder<M>): Html =>
 	emptyMessage(h, { className: "flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0" }, [
 		h.span([h.Class("font-medium")], ["No data in the selected time range"]),
 		h.span(
@@ -117,10 +124,10 @@ export const widgetEmptyState = (h: H): Html =>
 		),
 	])
 
-const mutedError = (
-	h: H,
+const mutedError = <M>(
+	h: HtmlBuilder<M>,
 	state: Extract<WidgetDataState, { _tag: "Error" }>,
-	configure: Message | null,
+	configure: M | null,
 ): Html =>
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
@@ -160,7 +167,7 @@ const mutedError = (
 	)
 
 /** The red block. TODO(error-details): the Details popover and "Fix with AI" are not ported. */
-const failedState = (h: H, state: Extract<WidgetDataState, { _tag: "Error" }>): Html =>
+const failedState = <M>(h: HtmlBuilder<M>, state: Extract<WidgetDataState, { _tag: "Error" }>): Html =>
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
 		[
@@ -184,11 +191,15 @@ const failedState = (h: H, state: Extract<WidgetDataState, { _tag: "Error" }>): 
 		],
 	)
 
-export type FrameOptions = ShellOptions &
-	Readonly<{ state: WidgetDataState; loadingSkeleton: Html; configure: Message | null }>
+export type FrameOptions<M> = ShellOptions<M> &
+	Readonly<{ state: WidgetDataState; loadingSkeleton: Html; configure: M | null }>
 
 /** `WidgetFrame`: loading, the three error shapes, or the tile's own content. */
-export const widgetFrame = (h: H, options: FrameOptions, content: () => ReadonlyArray<Html>): Html => {
+export const widgetFrame = <M>(
+	h: HtmlBuilder<M>,
+	options: FrameOptions<M>,
+	content: () => ReadonlyArray<Html>,
+): Html => {
 	const state = options.state
 	const body: ReadonlyArray<Html> =
 		state._tag === "Loading"

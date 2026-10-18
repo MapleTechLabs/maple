@@ -11,8 +11,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { MeasureGrid, WatchWidget } from "./command"
 import { Message } from "./message"
 import { isEditing } from "./update"
-import { GRID_INSTRUCTIONS_ID } from "./view-shell"
-import { type TileContext, widgetTile } from "./view-widgets"
+import { GRID_INSTRUCTIONS_ID } from "../kit/tile-shell"
+import type { Model } from "./model"
+import { viewTile } from "./view-widgets"
 
 // `DashboardSections` + `DashboardGrid` (dashboard-builder/sections/dashboard-sections.tsx,
 // canvas/dashboard-canvas.tsx): one measured container, CSS Grid placement per stored layout.
@@ -20,6 +21,8 @@ import { type TileContext, widgetTile } from "./view-widgets"
 
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]
+
+type TileContext = Readonly<{ model: Model; timeZone: string }>
 
 const resizeHandle = (h: H, widgetId: string): Html =>
 	h.div([
@@ -59,7 +62,7 @@ const gridCell = (
 		[
 			h.div(
 				[h.Class("h-full w-full"), h.OnMount(WatchWidget({ widgetId: widget.id }))],
-				[widgetTile(h, ctx, widget)],
+				[viewTile(h, ctx.model, widget, ctx.timeZone)],
 			),
 			...(isEditable ? [resizeHandle(h, widget.id)] : []),
 		],
