@@ -80,7 +80,7 @@ accessible way to inspect every node.
 
 The world follows the zones, not their bounding box. A distance field to the
 union of zone rectangles plus seeded noise drives the meadow outline and
-planting (`maple-scenery-field.tsx`, `maple-scenery-plan.tsx`): groves hug some
+planting (`maple-scenery-field.ts`, `maple-scenery-plan.ts`): groves hug some
 zones, meadow bays open by others, and trees thin into the paper past an
 irregular edge. Clearances: small planting (grass, bushes, rocks, saplings)
 keeps 0.35 outside every zone and 0.75 from every belt sample; full trees need
@@ -89,7 +89,7 @@ belts. Plans rebuild only when zone or belt geometry changes.
 
 The meadow is lopsided, with a rocky outcrop on the far side, a lake with reeds,
 lily pads and a dock feeding a meandering creek, low mounds, footpaths, a
-campfire and a fence (`maple-scenery-land.tsx`). The forest is one merged
+campfire and a fence (`maple-scenery-land.ts`). The forest is one merged
 drawing: maples, birches, pines, undergrowth, a deer, a fox, songbirds, ducks
 on the lake and birds gliding behind the map. Leaves fall and drift; dark mode
 adds steady fireflies.

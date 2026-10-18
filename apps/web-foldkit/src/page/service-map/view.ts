@@ -27,6 +27,8 @@ import { ResolveThemeColors } from "../../charts/theme-colors"
 import { DB_CHART_TOKENS } from "./view-db-charts"
 import { databasePanel } from "./view-db-panel"
 import { serviceMapEmptyState } from "./view-empty"
+import type * as Scene3d from "./scene3d"
+import { scene3dView } from "./view-scene3d"
 import { servicePanel } from "./view-service-panel"
 
 // `ServiceMapPage` / `ServiceMapContent` (apps/web/src/routes/service-map.tsx).
@@ -123,15 +125,7 @@ const detailPanel =
 		})
 	}
 
-/**
- * TODO(3d): the React Three Fiber scene (`components/service-map/three`) is not ported: the route
- * opens in 2D, and the 3D view needs its own vanilla three Mount (decision s5).
- */
-const scene3d = (h: H): Html =>
-	h.div(
-		[h.Class("flex h-full items-center justify-center text-sm text-muted-foreground")],
-		["The 3D view is not available yet."],
-	)
+const toScene3d = (message: Scene3d.Message) => Message.GotScene3dMessage({ message })
 
 /** `ResultView` over the bundle: the loading skeleton, the error, or the map. */
 const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
@@ -145,7 +139,7 @@ const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 			const map = model.map.value
 			return mapView(h, map, toMap, {
 				viewMode: model.search.view ?? "2d",
-				render3D: () => scene3d(h),
+				render3D: () => scene3dView(h, { model: model.scene3d, map, toMessage: toScene3d }),
 				emptyState: serviceMapEmptyState(h, model),
 				detailPanel: detailPanel(
 					h,

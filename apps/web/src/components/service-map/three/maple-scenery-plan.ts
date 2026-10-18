@@ -17,7 +17,7 @@ import {
 	zoneGap,
 	zonesOf,
 } from "./maple-scenery-field"
-import { hash } from "./maple-scenery-kit"
+import { hash } from "./maple-scenery-sketch"
 import type { District } from "./spatial-layout"
 
 /** Everything the planting avoids or follows: zones, belts, the meadow edge and the creek. */

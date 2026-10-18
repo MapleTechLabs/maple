@@ -1,5 +1,5 @@
 import type { FactoryLink } from "./factory-routing"
-import { hash } from "./maple-scenery-kit"
+import { hash } from "./maple-scenery-sketch"
 import type { District } from "./spatial-layout"
 
 /** Zone rectangles on the ground plane: centre and half extents. */
