@@ -21,7 +21,7 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHero } from "../../../infra/kit/page-parts"
-import { formatAbsolute } from "../../../infra/kit/relative-time"
+import { formatAbsolute } from "../../../kit/relative-time"
 import { pageTime } from "../../kit/page-time"
 import { activeFilterChips, applyBranchFilters } from "../filters"
 import {

@@ -5,17 +5,16 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
+import { listSectionHeader, toolbarSearch } from "../kit/list-parts"
 import * as Menu from "../../../ui/menu"
 import * as MenuView from "../../../ui/menu-view"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeleton } from "../../../ui/skeleton"
 import { docsLink } from "../../kit/signal-empty-state"
 import { DASHBOARD_SORT_OPTIONS, type DashboardSortOption } from "../kit/summary"
-import { relativeTimeOrDate } from "../kit/time"
+import { relativeTime } from "../../kit/relative-time"
 import { collectTags, displayName, queryOf, scopeOf, sectionsOf, sortOf, tagsOf } from "./derive"
 import * as TagEditor from "../kit/tag-editor"
 import { Message } from "./message"
@@ -39,65 +38,6 @@ const SCOPE_OPTIONS = [
 	{ value: "all", label: "All" },
 	{ value: "favorites", label: "Favorites" },
 ] as const
-
-/** `ListSectionHeader`: heading, count, rule, note. */
-export const listSectionHeader = (
-	h: H,
-	options: Readonly<{ title: string; count: number; accent?: boolean; note?: string; className?: string }>,
-): Html =>
-	h.div(
-		[h.Class(cn("flex items-center gap-2 pb-2", options.className))],
-		[
-			eyebrow(h, { variant: "label", as: "h3" }, [options.title]),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"font-mono text-2xs",
-							options.accent === true ? "text-primary" : "text-muted-foreground",
-						),
-					),
-				],
-				[String(options.count)],
-			),
-			h.span([h.AriaHidden(true), h.Class("h-px grow bg-border")], []),
-			...(options.note === undefined
-				? []
-				: [h.span([h.Class("text-muted-foreground text-2xs")], [options.note])]),
-		],
-	)
-
-/** `ToolbarSearch` (`SearchInput`, default size). */
-const toolbarSearch = (h: H, draft: string): Html =>
-	inputGroup(h, { className: cn("max-w-sm", "min-w-0 grow sm:max-w-70") }, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: "dashboards-search",
-			size: "default",
-			type: "text",
-			attributes: [
-				h.Placeholder("Search dashboards"),
-				h.Value(draft),
-				h.OnInput((value) => Message.ChangedSearchDraft({ value })),
-			],
-		}),
-		...(draft === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(
-							h,
-							{
-								attributes: [
-									h.AriaLabel("Clear search"),
-									h.OnClick(Message.ChangedSearchDraft({ value: "" })),
-								],
-							},
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
 
 /** `DisabledReason` around a disabled control: a `contents` tooltip trigger. */
 const disabledReason = (h: H, child: Html): Html =>
@@ -233,7 +173,13 @@ const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, s
 			),
 		],
 		[
-			toolbarSearch(h, model.searchDraft),
+			toolbarSearch(h, {
+				id: "dashboards-search",
+				draft: model.searchDraft,
+				placeholder: "Search dashboards",
+				className: "min-w-0 grow sm:max-w-70",
+				onInput: (value) => Message.ChangedSearchDraft({ value }),
+			}),
 			segmentedSelect<Scope, Message>(h, {
 				options: SCOPE_OPTIONS,
 				value: scopeOf(model.search),
@@ -417,7 +363,10 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 							),
 						],
 					),
-					relativeTimeOrDate(h, {
+					relativeTime(h, {
+						variant: "orDate",
+						tooltip: "title",
+						mono: true,
 						value: dashboard.updatedAt,
 						nowMs: context.nowMs,
 						timeZone: context.timeZone,

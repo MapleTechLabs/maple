@@ -15,7 +15,7 @@ import {
 	integrationEmptyHint,
 	integrationEmptyMedia,
 } from "../kit/integration-empty"
-import { relativeTime } from "../../infra/kit/relative-time"
+import { relativeTime } from "../../kit/relative-time"
 
 // `planetscale-absence.tsx`, `planetscale-setup-state.tsx` and `planetscale-setup-checklist.tsx`.
 

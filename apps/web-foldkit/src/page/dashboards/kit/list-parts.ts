@@ -1,8 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
+import { searchInput } from "../../../ui/search-input"
 
 // Shared by the dashboards list and the template gallery.
 
@@ -44,27 +43,12 @@ export const toolbarSearch = <M>(
 		onInput: (value: string) => M
 	}>,
 ): Html =>
-	inputGroup(h, { className: cn("max-w-sm", options.className) }, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: options.id,
-			size: "default",
-			type: "text",
-			attributes: [
-				h.Placeholder(options.placeholder),
-				h.Value(options.draft),
-				h.OnInput(options.onInput),
-			],
-		}),
-		...(options.draft === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(
-							h,
-							{ attributes: [h.AriaLabel("Clear search"), h.OnClick(options.onInput(""))] },
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
+	searchInput(h, {
+		id: options.id,
+		size: "default",
+		className: cn("max-w-sm", options.className),
+		placeholder: options.placeholder,
+		value: options.draft,
+		onInput: options.onInput,
+		onClear: options.onInput(""),
+	})

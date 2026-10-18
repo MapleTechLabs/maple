@@ -13,7 +13,7 @@ import {
 } from "../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine, platformLabel } from "../../kit/meta-line"
-import { relativeTime } from "../../kit/relative-time"
+import { relativeTime } from "../../../kit/relative-time"
 import type { SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import { type HostSortKey, Message } from "./message"

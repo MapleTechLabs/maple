@@ -5,7 +5,7 @@ import { descriptionId, titleId } from "../../../../ui/dialog"
 import { dialogHeader } from "../../../../ui/dialog-view"
 import { eyebrow } from "../../../../ui/eyebrow"
 import { heroChip } from "../../kit/hero-chip"
-import { relativeTime } from "../../kit/relative-time"
+import { relativeTime } from "../../../kit/relative-time"
 import { hostStatusBadge } from "../../kit/status"
 import type { PodRow } from "../pod-data"
 
