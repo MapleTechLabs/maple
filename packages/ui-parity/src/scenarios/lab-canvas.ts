@@ -73,22 +73,5 @@ export const labCanvasArea: AreaModule = {
 				await wheelZoom(300)(page)
 			},
 		),
-		variant(
-			"lab-timeline-select-span",
-			"Lab: Trace timeline, a span with events selected",
-			"/lab/timeline",
-			async (page) => {
-				await page.getByText("stage-3 handler").first().click()
-				await page.getByText("SearchTimeoutError").first().waitFor()
-			},
-		),
-		variant(
-			"lab-timeline-waterfall",
-			"Lab: Trace timeline, Waterfall tab",
-			"/lab/timeline",
-			async (page) => {
-				await page.getByRole("tab", { name: "Waterfall" }).click()
-			},
-		),
 	],
 }

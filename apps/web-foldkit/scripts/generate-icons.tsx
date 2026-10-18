@@ -37,6 +37,7 @@ const NAMES = [
 	"ArrowTrendUpIcon",
 	"AppleIcon",
 	"AwsIcon",
+	"AzureIcon",
 	"DockerIcon",
 	"FolderIcon",
 	"LinuxIcon",
@@ -387,11 +388,19 @@ const parse = (markup: string): Node => {
 	return root
 }
 
-/** A `useId` value becomes the id mark, wherever the markup refers to it (`url(#…)`). */
+/** React's `useId` output under react-dom/server (`_R_0_`). */
+const USE_ID = /_R_[A-Za-z0-9]*_/g
+
+/**
+ * A `useId` value becomes the id mark, wherever the markup refers to it (`url(#…)`). Several ids
+ * derived from one `useId` (`${id}-a`, `${id}-b`) mark that one value.
+ */
 const markIds = (markup: string): string => {
 	const ids = [...new Set([...markup.matchAll(/ id="([^"]*)"/g)].map(([, id = ""]) => id))]
-	if (ids.length > 1) throw new Error(`renders ${ids.length} ids; the id mark covers one`)
-	return ids.reduce((marked, id) => marked.replaceAll(id, ID), markup)
+	if (ids.length <= 1) return ids.reduce((marked, id) => marked.replaceAll(id, ID), markup)
+	const bases = [...new Set(ids.flatMap((id) => id.match(USE_ID) ?? [id]))]
+	if (bases.length > 1) throw new Error(`renders ${bases.length} ids; the id mark covers one useId`)
+	return bases.reduce((marked, base) => marked.replaceAll(base, ID), markup)
 }
 
 const render = (component: Icon, props: { size?: string; className?: string }) => {
