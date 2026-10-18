@@ -199,16 +199,16 @@ export const gcpPendingChanges = (connector: ConnectorFields, nowMs: number): Re
 	const metrics = gcpMetricsState(connector, nowMs)
 	return [
 		log.kind === "setup-pending" && connector.applied_logs_enabled === false
-			? "Log forwarding starts once the script has created the log sink."
+			? "Log forwarding starts once the log sink exists in Google Cloud."
 			: null,
 		log.kind === "off" && log.stillSetUp
-			? "Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink."
+			? "Google Cloud keeps forwarding logs, billed by Google, until the log sink is removed."
 			: null,
 		metrics.kind === "setup-pending" && connector.applied_metrics_enabled === false
-			? "Metrics and resources start once the script has created the read-only service account."
+			? "Metrics and resources start once the read-only service account exists in Google Cloud."
 			: null,
 		metrics.kind === "off" && metrics.stillSetUp
-			? "The read-only service account stays in Google Cloud until the script has removed it."
+			? "The read-only service account stays in Google Cloud until it is removed."
 			: null,
 	].filter((line) => line !== null)
 }

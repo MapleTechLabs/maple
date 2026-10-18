@@ -62,8 +62,8 @@ const scopePage = (path: string, scope: Scope) =>
 /** Where a step on the scope starts, and how to reach a folder or organization there. */
 const onScope = (where: string, scope: Scope) =>
 	scope.scopeType === "project"
-		? `In ${where}`
-		: `In ${where}, pick the ${scope.scopeType} ${scope.scopeId} in the resource picker`
+		? `In ${where},`
+		: `In ${where}, pick the ${scope.scopeType} ${scope.scopeId} in the resource picker, and`
 
 /** The console steps that create what `plan` describes, in the order Google needs them. */
 export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep> {
@@ -143,7 +143,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			{
 				title: `Create the Log Router sink${plan.scopeType === "project" ? "" : ` on the ${plan.scopeType}`}`,
 				summary: logs.sink,
-				intro: `${onScope("Logging › Log Router", plan)}, and create a sink.`,
+				intro: `${onScope("Logging › Log Router", plan)} create a sink.`,
 				consoleUrl: scopePage("logs/router", plan),
 				fields: [
 					field("Sink name", logs.sink),
@@ -224,7 +224,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			{
 				title: "Grant the read-only roles",
 				summary: `${GCP_READER_SCOPE_ROLES.length + 1} roles`,
-				intro: `${onScope("IAM & Admin › IAM", plan)}, and grant the account access.`,
+				intro: `${onScope("IAM & Admin › IAM", plan)} grant the account access.`,
 				consoleUrl: scopePage("iam-admin/iam", plan),
 				fields: [
 					field("Principal", reader.serviceAccountEmail),

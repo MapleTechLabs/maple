@@ -151,18 +151,18 @@ const CAPABILITIES = {
 		description: "Request, audit and managed-service logs, through a Log Router sink and Pub/Sub.",
 		run: { on: "Log sink and Pub/Sub topic", off: "Removes the log sink" },
 		effects: {
-			"starts-after-script": "Starts once the script has run",
+			"starts-after-script": "Starts once it's set up in Google Cloud",
 			"resumes-now": "Stored again as soon as you save",
 			"stops-now": "Maple stops storing them when you save",
-			"removed-by-script": "Still forwarded by Google Cloud until the script has run",
+			"removed-by-script": "Still forwarded by Google Cloud until the change is applied there",
 		},
 		now: {
 			"stops-now": "Stops storing this connection's logs within about a minute.",
 			"resumes-now": "Stores this connection's logs again, at once.",
 		},
 		later: {
-			"stops-now": "Keeps forwarding them to Pub/Sub, billed by Google, until the script has run.",
-			"resumes-now": "Nothing to run: the log sink is still there and forwarding.",
+			"stops-now": "Keeps forwarding them to Pub/Sub, billed by Google, until the change is applied in Google Cloud.",
+			"resumes-now": "Nothing to apply: the log sink is still there and forwarding.",
 		},
 	},
 	metrics: {
@@ -172,18 +172,18 @@ const CAPABILITIES = {
 			"Cloud Run, GKE, Compute Engine, Cloud SQL, Pub/Sub, Load Balancing and Cloud Functions. Read-only, every 5 minutes.",
 		run: { on: "Read-only service account", off: "Removes the service account" },
 		effects: {
-			"starts-after-script": "Starts once the script has run",
+			"starts-after-script": "Starts once it's set up in Google Cloud",
 			"resumes-now": "Read again from the next 5-minute read",
 			"stops-now": "Maple stops reading when you save",
-			"removed-by-script": "Its service account stays in Google Cloud until the script has run",
+			"removed-by-script": "Its service account stays in Google Cloud until the change is applied there",
 		},
 		now: {
 			"stops-now": "Stops reading this connection's metrics and resources from the next 5-minute read.",
 			"resumes-now": "Reads this connection's metrics and resources again from the next 5-minute read.",
 		},
 		later: {
-			"stops-now": "Keeps the read-only service account and its roles until the script has run.",
-			"resumes-now": "Nothing to run: the read-only service account is still there.",
+			"stops-now": "Keeps the read-only service account and its roles until the change is applied in Google Cloud.",
+			"resumes-now": "Nothing to apply: the read-only service account is still there.",
 		},
 	},
 } as const satisfies {
@@ -1337,6 +1337,8 @@ function FileCard({
 	const { copy } = useCopy({ label: "prompt", toast: false })
 	// Kept, unlike the copy status, which resets: the footer says whether this copy worked.
 	const [copied, setCopied] = useState<boolean | null>(null)
+	// Copy takes whatever is on screen.
+	const copyable = promptShown ? (prompt ?? null) : text
 	const shown = promptShown ? (prompt?.trimEnd() ?? null) : (text?.trimEnd() ?? null)
 	const link = "h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground"
 	return (
@@ -1348,7 +1350,7 @@ function FileCard({
 						? null
 						: ` · ${countLabel(shown.split("\n").length, "line")}`}
 				</span>
-				<span className="ml-auto flex items-center gap-2">
+				<span className="ml-auto flex flex-wrap items-center justify-end gap-2">
 					{prompt === undefined ? null : (
 						<Button
 							size="sm"
@@ -1367,9 +1369,9 @@ function FileCard({
 						</Button>
 					)}
 					<CopyButton
-						value={text ?? ""}
-						disabled={text === null}
-						label={name}
+						value={copyable ?? ""}
+						disabled={copyable === null}
+						label={promptShown ? "prompt" : name}
 						idleLabel={secret ? "Copy script" : "Copy"}
 						toast={false}
 						variant={children === undefined ? "default" : "outline"}
@@ -2297,7 +2299,18 @@ export function GcpDisconnectDialog({
 										.
 									</>
 								) : (
-									`Run the cleanup script in Cloud Shell. Takes ${connector.applied_logs_enabled === true ? "one to two minutes" : "about a minute"}.`
+									<>
+										{`Run the cleanup script in Cloud Shell. Takes ${connector.applied_logs_enabled === true ? "one to two minutes" : "about a minute"}. `}
+										Set up with Terraform or in the console? Remove them there (
+										<a href={`${IAC_DOCS}#change-or-remove`} target="_blank" rel="noreferrer" className="underline">
+											Terraform
+										</a>
+										,{" "}
+										<a href={`${MANUAL_DOCS}#removing`} target="_blank" rel="noreferrer" className="underline">
+											console
+										</a>
+										), then disconnect.
+									</>
 								)
 							}
 						>
@@ -2338,8 +2351,9 @@ export function GcpDisconnectDialog({
 								className="mt-1 shrink-0 text-severity-warn"
 								aria-hidden
 							/>
-							Disconnecting before the cleanup leaves Google Cloud publishing logs to Pub/Sub,
-							billed by Google.
+							{connector.applied_logs_enabled === false
+								? "Disconnecting before the cleanup leaves the read-only service account in Google Cloud."
+								: "Disconnecting before the cleanup leaves Google Cloud publishing logs to Pub/Sub, billed by Google."}
 						</p>
 					)}
 				</DialogPanel>

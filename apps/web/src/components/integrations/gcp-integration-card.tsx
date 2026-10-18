@@ -219,7 +219,7 @@ function connectionIssues({
 			needed === "setup-pending"
 				? [
 						connector.setup_reported_at === null
-							? "Google Cloud has nothing of Maple's yet. The setup script takes about a minute."
+							? "Google Cloud has nothing of Maple's yet. Finish setup with the script, in the console or as code."
 							: "Part of the setup isn't confirmed yet. A script run continues where it stopped; a setup in the console or as code is confirmed by its first data.",
 					]
 				: gcpPendingChanges(connector, nowMs)
@@ -714,12 +714,12 @@ export function GcpIntegrationCard() {
 		<Panel key={entry.id} className="gap-3 border-severity-warn/32 bg-severity-warn/4 px-4 py-3">
 			<div>
 				<h3 className={GCP_TITLE}>
-					{entry.label} {entry.reported ? "disconnected, not cleaned up" : "disconnected"}
+					{entry.label} {entry.reported ? "disconnected, may not be cleaned up" : "disconnected"}
 				</h3>
 				<p className="text-xs/5 text-pretty text-muted-foreground">
 					{entry.reported
-						? "Google Cloud still holds what the setup script created, and bills for it. Dismiss this once the cleanup script has run."
-						: "If the setup script ran part of the way, the cleanup script removes what it created."}
+						? "Google Cloud may still hold Maple's resources, billed by Google. Run the cleanup script, or remove them with Terraform or in the console, then dismiss this."
+						: "If a setup ran part of the way, the cleanup script removes what it created."}
 				</p>
 			</div>
 			<div className="flex flex-wrap items-center gap-2">
