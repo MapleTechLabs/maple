@@ -1,3 +1,5 @@
+import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
+import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { Clock, Effect } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../data/load-failure"
@@ -18,6 +20,9 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 		return {
 			isAdmin: session.roles.some((role) => role === "root" || role === "org:admin"),
 			userId: session.userId,
+			hasAiAutoTriage: isClerkAuthEnabled
+				? organizationFeatureFlagsFrom(window.Clerk?.organization?.publicMetadata).aiAutoTriage
+				: true,
 		}
 	}).pipe(
 		Effect.mapError(toLoadFailure),

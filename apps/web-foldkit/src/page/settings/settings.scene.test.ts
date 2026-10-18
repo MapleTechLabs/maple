@@ -38,7 +38,7 @@ const connection = Schema.decodeUnknownSync(V2McpConnection)({
 
 const mcpLoaded = (): Model =>
 	[
-		Message.CompletedFetchSession({ result: Result.succeed({ isAdmin: true, userId: null }) }),
+		Message.CompletedFetchSession({ result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }) }),
 		Message.CompletedFetchCustomer({ result: Result.succeed(new BillingCustomer({ id: "org_acme", subscriptions: [] })) }),
 		mcp(McpMessage.Message.CompletedFetchConnections({ result: Result.succeed([connection]) })),
 		mcp(McpMessage.Message.CompletedFetchTools({ result: Result.succeed(tools) })),

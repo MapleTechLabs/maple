@@ -125,9 +125,9 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Ai": {
-			// TODO(settings-ai): Clerk orgs read the `aiAutoTriage` rollout flag from organization
-			// metadata (`useOrganizationFeatureFlags`); self-hosted has every rollout on.
-			const step = Ai.init(!isClerkAuthEnabled && visibilityOf(model).isAdmin)
+			// `canAccessAi`: an admin of an org in the `aiAutoTriage` rollout (self-hosted has every rollout).
+			const hasFlag = AsyncData.getOrElse(AsyncData.map(model.session, (session) => session.hasAiAutoTriage), () => false)
+			const step = Ai.init(visibilityOf(model).isAdmin && (!isClerkAuthEnabled || hasFlag))
 			return {
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAiMessage({ message })),

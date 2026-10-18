@@ -19,7 +19,12 @@ import * as SetupHealth from "./setup-health/model"
 // `/settings` (apps/web/src/routes/settings.tsx): the nav rail and the active tab's section.
 
 /** What `useVisibleSettingsSections` reads from the session: whether the member administers the org. */
-export const SessionInfo = Schema.Struct({ isAdmin: Schema.Boolean, userId: Schema.NullOr(Schema.String) })
+export const SessionInfo = Schema.Struct({
+	isAdmin: Schema.Boolean,
+	userId: Schema.NullOr(Schema.String),
+	/** `useOrganizationFeatureFlags().flags.aiAutoTriage`: Clerk org metadata; on self-hosted. */
+	hasAiAutoTriage: Schema.Boolean,
+})
 export const SessionData = AsyncData.Schema(SessionInfo, LoadFailure)
 /** `billingCustomerAtom`: the nav's data-platform gate and the Billing tab read the one customer. */
 export const CustomerData = AsyncData.Schema(BillingCustomer, LoadFailure)
