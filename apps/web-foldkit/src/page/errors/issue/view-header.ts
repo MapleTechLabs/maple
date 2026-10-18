@@ -1,6 +1,7 @@
 import type { ErrorIssueDocument, ErrorIssueId } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
+import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { liveInvestigationSummary, resolveSignalState } from "@maple/web/lib/models/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -135,14 +136,6 @@ const TABS: ReadonlyArray<{ readonly value: Tab; readonly label: string }> = [
 	{ value: "activity", label: "Activity" },
 ]
 
-const underlineTabClass = (isActive: boolean): string =>
-	cn(
-		"-mb-px flex h-[34px] shrink-0 items-center gap-1.5 border-b-2 text-sm transition-colors",
-		isActive
-			? "border-primary font-medium text-foreground"
-			: "border-transparent text-muted-foreground hover:text-foreground",
-	)
-
 /** `IssueTabs`: tab links under the header, with counts where they are known. */
 export const issueTabs = (
 	h: H,
@@ -155,12 +148,9 @@ export const issueTabs = (
 		activityCount?: number
 	}>,
 ): Html =>
-	h.div(
-		[
-			h.AriaLabel("Issue sections"),
-			h.Class("flex items-center gap-6 overflow-x-auto border-b -mx-4 -mb-4 px-4"),
-			h.Role("tablist"),
-		],
+	underlineTabStrip(
+		h,
+		{ label: "Issue sections" },
 		TABS.filter((tab) => tab.value !== "occurrences" || options.showOccurrences).map((tab) => {
 			const isActive = tab.value === options.active
 			const count =

@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
@@ -105,23 +106,12 @@ const titleContent = (h: H, model: Model): Html =>
 		h.span([h.Class("truncate")], [model.serviceName]),
 	])
 
-/** `underlineTabClass`. */
-const underlineTabClass = (isActive: boolean): string =>
-	cn(
-		"-mb-px flex h-[34px] shrink-0 items-center gap-1.5 border-b-2 text-sm transition-colors",
-		isActive
-			? "border-primary font-medium text-foreground"
-			: "border-transparent text-muted-foreground hover:text-foreground",
-	)
-
 /** `UnderlineTabStrip navigation`: route links; TanStack marks a link whose search the URL contains `active`. */
 const tabs = (h: H, model: Model): Html => {
 	const active = tabOf(model.search)
-	return h.nav(
-		[
-			h.AriaLabel("Service sections"),
-			h.Class("flex items-center gap-6 overflow-x-auto border-b -mx-4 -mb-4 px-4"),
-		],
+	return underlineTabStrip(
+		h,
+		{ label: "Service sections", navigation: true },
 		SERVICE_TABS.map((tab) => {
 			const isCurrent = tab.value === active
 			const isLinkActive = tab.value === "overview" || model.search.tab === tab.value
