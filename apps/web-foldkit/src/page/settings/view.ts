@@ -10,6 +10,7 @@ import * as IngestionView from "./ingestion/view"
 import * as KeysView from "./keys/view"
 import * as McpView from "./mcp/view"
 import * as AiView from "./ai/view"
+import * as MembersView from "./members/view"
 import * as GeneralView from "./general/view"
 import * as DataPlatformView from "./data-platform/view"
 import * as AuditLogView from "./audit-log/view"
@@ -134,6 +135,16 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					view: GeneralView.view,
 					toParentMessage: (message) => Message.GotGeneralMessage({ message }),
 					viewInputs: {},
+				}),
+			]
+		case "Members":
+			return [
+				h.submodel({
+					slotId: "settings-members",
+					model: tab.model,
+					view: MembersView.view,
+					toParentMessage: (message) => Message.GotMembersMessage({ message }),
+					viewInputs: { nowMs: model.nowMs, timeZone: inputs.context.timeZone },
 				}),
 			]
 		case "Unported":

@@ -356,6 +356,17 @@ const clerkInteractions: ReadonlyArray<Scenario> = [
 			await target.getByText("Organization renamed").waitFor()
 		},
 	}),
+	page("clerk-members-invite-send", "Members: invite an admin", "/settings?tab=members", {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Invite member" }).click()
+			await target.getByRole("textbox", { name: "Email address" }).fill("grace@acme.test")
+			await target.getByRole("combobox", { name: "Role" }).click()
+			await target.getByRole("option", { name: "Admin" }).click()
+			await target.getByRole("button", { name: "Send invitation" }).click()
+			await target.getByText("Invitation sent to grace@acme.test").waitFor()
+		},
+	}),
 	page("clerk-organization-delete", "Organization: delete dialog with the name typed", ORGANIZATION, {
 		dataset: CLERK,
 		steps: async (target) => {

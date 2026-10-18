@@ -18,6 +18,7 @@ import type * as IngestionModel from "./ingestion/model"
 import * as Ingestion from "./ingestion/update"
 import * as SetupHealth from "./setup-health/update"
 import * as Ai from "./ai/update"
+import * as Members from "./members/update"
 import * as General from "./general/update"
 import * as DataPlatform from "./data-platform/update"
 import * as AuditLog from "./audit-log/update"
@@ -70,6 +71,7 @@ const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
 	["audit-log", "AuditLog"],
 	["data-platform", "DataPlatform"],
 	["general", "General"],
+	["members", "Members"],
 ])
 const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
 
@@ -154,6 +156,13 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			return {
 				model: { ...model, tab: { _tag: "General", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotGeneralMessage({ message })),
+			}
+		}
+		case "Members": {
+			const step = Members.init(visibilityOf(model).isAdmin)
+			return {
+				model: { ...model, tab: { _tag: "Members", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMembersMessage({ message })),
 			}
 		}
 		case "Unported":
@@ -322,6 +331,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return {
 				model: { ...model, tab: { _tag: "General", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotGeneralMessage({ message: child })),
+				outMessage: step.outMessage,
+			}
+		},
+		GotMembersMessage: ({ message: inner }) => {
+			if (model.tab === null || model.tab._tag !== "Members") return { model }
+			const step = Members.update(model.tab.model, inner)
+			return {
+				model: { ...model, tab: { _tag: "Members", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotMembersMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},

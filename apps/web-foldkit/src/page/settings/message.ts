@@ -4,6 +4,7 @@ import { LoadFailure } from "../../data/load-failure"
 import { settingsTabValues } from "../../route/search"
 import { ApiKeyRowSchema } from "@maple/web-data/collections/api-keys"
 import { Message as AiMessage } from "./ai/model"
+import { Message as MembersMessage } from "./members/model"
 import { Message as GeneralMessage } from "./general/model"
 import { Message as DataPlatformMessage } from "./data-platform/model"
 import { Message as AuditLogMessage } from "./audit-log/model"
@@ -24,6 +25,7 @@ export const Message = defineMessageUnion({
 	GotIngestionMessage: { message: Ingestion.Message },
 	GotSetupHealthMessage: { message: SetupHealthMessage },
 	GotAiMessage: { message: AiMessage },
+	GotMembersMessage: { message: MembersMessage },
 	GotGeneralMessage: { message: GeneralMessage },
 	GotDataPlatformMessage: { message: DataPlatformMessage },
 	GotAuditLogMessage: { message: AuditLogMessage },
