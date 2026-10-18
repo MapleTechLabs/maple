@@ -41,6 +41,24 @@ const typeWhere = (text: string): ReadonlyArray<(page: Page) => Promise<void>> =
 /** The attribute keys answered, so Enter applies a key rather than the bare `attr.` prefix. */
 const keysListed = (page: Page) => page.getByRole("option", { name: /^attr\.[a-z]/ }).first().waitFor()
 
+/** Drags a list column's grip down `rows` rows (row pitch measured), in small pointer steps. */
+const dragColumn = (grip: string, rows: number) => async (page: Page) => {
+	const handle = page.getByRole("button", { name: grip, exact: true })
+	const next = page.getByRole("button", { name: /^Reorder / }).nth(1)
+	// The column list sits below the fold: the pointer only reaches what is on screen.
+	await page.getByRole("button", { name: "+ Column" }).scrollIntoViewIfNeeded()
+	const from = await handle.boundingBox()
+	const below = await next.boundingBox()
+	if (from === null || below === null) throw new Error("list column grips not laid out")
+	const x = from.x + from.width / 2
+	const y = from.y + from.height / 2
+	await page.mouse.move(x, y)
+	await page.mouse.down()
+	await page.mouse.move(x, y + (below.y - from.y) * (rows + 0.2), { steps: 12 })
+	await page.mouse.up()
+	await page.waitForTimeout(300)
+}
+
 export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 	dashboard("widget-stat", "Widget editor: a stat", editorOf("traces-stat")),
 	dashboard("widget-stat-sparkline", "Widget editor: a stat's sparkline turned on, then Apply", editorOf("traces-stat"), {
@@ -113,6 +131,9 @@ export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 			(page) => page.getByPlaceholder("Header", { exact: true }).nth(4).fill("Trace"),
 			clickButton("Apply"),
 		),
+	}),
+	dashboard("widget-list-drag", "Widget editor: a list column dragged two rows down by its grip, then Apply", throughput, {
+		steps: act(clickButton("List"), clickButton("Logs"), dragColumn("Reorder Time", 2), clickButton("Apply")),
 	}),
 	foldkitOnly(dashboard("widget-to-paths", "Widget editor: a chart switched to paths, its anchor panel", throughput, {
 		steps: act(clickButton("Paths")),

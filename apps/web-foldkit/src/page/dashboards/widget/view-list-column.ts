@@ -5,6 +5,7 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
 import type { ListColumn } from "./editor-state"
+import { GRIP_ATTRIBUTE, ROW_ATTRIBUTE } from "./list-column-drag"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { ProductEdit } from "./product-edit"
@@ -12,7 +13,7 @@ import { listAlignSelectId, listUnitSelectId } from "./product-selects"
 import { pageSelect } from "./view-select"
 
 // `DraggableColumnRow` (list-config-panel.tsx): grip, field (with its suggestions while focused),
-// header, unit, alignment and remove. TODO(widget-editor): pointer drag; the grip reorders by keyboard.
+// header, unit, alignment and remove. The grip drags (`MountListColumnDrag`) or moves by arrow key.
 
 type H = HtmlBuilder<Message>
 
@@ -57,11 +58,12 @@ export const listColumnRow = (
 	suggestions: ReadonlyArray<string> | null,
 ): Html =>
 	h.div(
-		[h.Class("relative flex items-center gap-2 rounded-md bg-background py-1")],
+		[h.Class("relative flex items-center gap-2 rounded-md bg-background py-1"), h.DataAttribute(ROW_ATTRIBUTE, "")],
 		[
 			h.button(
 				[
 					h.Type("button"),
+					h.DataAttribute(GRIP_ATTRIBUTE, ""),
 					h.AriaLabel(`Reorder ${column.header || column.field || `column ${index + 1}`}`),
 					h.Class(
 						"shrink-0 cursor-grab touch-none text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing",

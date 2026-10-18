@@ -14,6 +14,7 @@ import { switchControl } from "../../../ui/switch"
 import { lookupField } from "../../kit/autocomplete-lookups"
 import { whereEditor } from "../../kit/query-builder/where-editor"
 import type { EditorState, ListDataSource } from "./editor-state"
+import { MountListColumnDrag } from "./list-column-drag"
 import { buildListLogsParams } from "./list-logs-params"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -231,7 +232,7 @@ export const listPanel = (h: H, model: Model, state: EditorState): ReadonlyArray
 				listLimit(h, state),
 				labelled(h, "Columns", "space-y-2", [
 					h.div(
-						[h.Class("space-y-2")],
+						[h.Class("space-y-2"), h.OnMount(MountListColumnDrag())],
 						state.listColumns.map((column, index) =>
 							listColumnRow(
 								h,
