@@ -210,6 +210,8 @@ const clerkDataset = (
 	telemetry: emptyTelemetry,
 })
 
+const attachCheckout = () => Effect.succeed({ paymentUrl: "https://checkout.stripe.com/c/pay/cs_parity" })
+
 export const fixtureArea: FixtureArea = {
 	area: "onboarding",
 	endpoints: () => ({
@@ -236,8 +238,6 @@ export const fixtureArea: FixtureArea = {
 		// The Clerk Support menu's shared Slack channel: none yet; the button creates it and invites.
 		"supportChannel.retrieve": () => Effect.succeed(supportChannel("not_created", null)),
 		"supportChannel.invite": () => Effect.succeed(supportChannel("active", "ada@acme.test")),
-		// Autumn answers a new subscription with Stripe Checkout; the harness keeps the page (204).
-		"billing.attach": () => Effect.succeed({ paymentUrl: "https://checkout.stripe.com/c/pay/cs_parity" }),
 		"emailPublic.unsubscribe": ({ query }) =>
 			Effect.succeed({
 				kind: field(query, "token").startsWith("web-analytics.") ? "web-analytics" : "digest",
@@ -246,11 +246,15 @@ export const fixtureArea: FixtureArea = {
 	datasets: [
 		clerkDataset("clerk", orbitAdmin, {
 			"billing.getCustomer": newCustomer(orbitAdmin),
+			// Autumn answers a new subscription with Stripe Checkout; the harness keeps the page (204).
+			// Dataset-scoped: the settings area answers `billing.attach` for its plan switch.
+			"billing.attach": attachCheckout,
 			"billingPublic.listPlans": () => Effect.succeed(plans(true)),
 		}),
 		clerkDataset("clerk-lapsed", orbitAdmin, {
 			// A returning subscriber is not trial-eligible.
 			"billing.getCustomer": lapsedCustomer(orbitAdmin),
+			"billing.attach": attachCheckout,
 			"billingPublic.listPlans": () => Effect.succeed(plans(false)),
 		}),
 		// Acme on Clerk with the generic Startup customer: an org already in the app.
