@@ -1,6 +1,8 @@
+import { Effect } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { existsSync, readFileSync, statSync } from "node:fs"
 import { join, normalize, resolve } from "node:path"
-import type { FixtureBackend, StartBackend } from "./contract.ts"
+import { DATASET_HEADER, type FixtureBackend, type StartBackend } from "./contract.ts"
 import {
 	type AuthMode,
 	BUILD_STAMP_FILE,
@@ -9,8 +11,10 @@ import {
 	buildName,
 	FIXTURE_BACKEND_PORT,
 	FIXTURE_ELECTRIC_PORT,
+	fixtureBackendOrigin,
 	isTargetName,
 	PORT_BASE,
+	targets,
 } from "./config.ts"
 
 export interface StaticBuild {
@@ -71,11 +75,38 @@ export const resolveStatic = (build: StaticBuild, pathname: string, headScript =
 	return { kind: "html", body: build.indexHtml.replace("<head>", `<head>${headScript}`) }
 }
 
+/** apps/local-ui's same-origin server calls, forwarded to the fixture backend with the dataset header. */
+const forwardLocal = (request: Request, url: URL, dataset: string) =>
+	Effect.runPromise(
+		Effect.gen(function* () {
+			const isGet = request.method === "GET"
+			const body = isGet ? "" : yield* Effect.promise(() => request.text())
+			const target = `${fixtureBackendOrigin}${url.pathname}${url.search}`
+			const outgoing = isGet
+				? HttpClientRequest.get(target)
+				: HttpClientRequest.post(target).pipe(HttpClientRequest.bodyText(body, "application/json"))
+			const response = yield* HttpClient.execute(
+				HttpClientRequest.setHeader(outgoing, DATASET_HEADER, dataset),
+			)
+			const bytes = yield* response.arrayBuffer
+			return new Response(bytes, { status: response.status, headers: response.headers })
+		}).pipe(
+			Effect.catch(() => Effect.succeed(new Response("fixture backend unreachable", { status: 502 }))),
+			Effect.provide(FetchHttpClient.layer),
+		),
+	)
+
+const isLocalServerPath = (build: StaticBuild, pathname: string) =>
+	targets[build.stamp.target].app === "local" &&
+	(pathname.startsWith("/local/") || pathname.startsWith("/v1/"))
+
 /** Static server for side-by-side browsing (`parity serve`). Captures fulfil in-browser instead. */
-export const serveStatic = (build: StaticBuild, port: number, headScript: string) =>
+export const serveStatic = (build: StaticBuild, port: number, headScript: string, dataset = "default") =>
 	Bun.serve({
 		port,
 		fetch(request) {
+			const url = new URL(request.url)
+			if (isLocalServerPath(build, url.pathname)) return forwardLocal(request, url, dataset)
 			const resolved = resolveStatic(build, new URL(request.url).pathname, headScript)
 			if (resolved.kind === "file") return new Response(Bun.file(resolved.path))
 			if (resolved.kind === "html")

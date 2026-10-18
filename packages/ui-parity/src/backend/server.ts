@@ -24,6 +24,7 @@ import { warehouseEndpoints } from "./endpoints/index.ts"
 import { telemetrySignalsEndpoint } from "./endpoints/signal-presence.ts"
 import { electricCorsHeaders, handleSyncRequest } from "./electric.ts"
 import { makeApiWebHandler } from "./http-api.ts"
+import { makeLocalServer, seedLocalStores } from "./local.ts"
 import { makeFixtureWarehouse, parityOrgId, seedWarehouse, type FixtureWarehouse } from "./warehouse.ts"
 
 /**
@@ -122,6 +123,9 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 	const warehouse = makeFixtureWarehouse(chdb)
 	const calls = makeCallLog()
 	const holds = makeHolds()
+	// Seeded before the servers listen: the seed switches chDB's current database.
+	await Effect.runPromise(seedLocalStores(chdb, datasets))
+	const local = makeLocalServer(chdb, calls, holds)
 	const builtIn = new Map([
 		...defaultHandlers,
 		...warehouseEndpoints(warehouse),
@@ -196,6 +200,11 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 			const name = request.headers.get(DATASET_HEADER)
 			const dataset = datasetNamed(name)
 			if (dataset === undefined) return unknownDataset(request, name)
+			// apps/local-ui's server, forwarded from the canonical origin (`isLocalServerPath`).
+			if (url.pathname.startsWith("/local/")) {
+				const answer = await local.answer(request, url, dataset)
+				if (answer !== undefined) return withCors(request, answer)
+			}
 			const raw = await rawRouteAnswer(request, url, dataset)
 			if (raw !== undefined) return withCors(request, raw)
 			return withCors(request, await api.handler(request))

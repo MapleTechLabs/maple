@@ -67,6 +67,8 @@ export const Model = Schema.Struct({
 	snapshots: Schema.Array(Snapshot),
 	/** The first automatic fit snaps; every later one animates (`hasFittedOnce`). */
 	hasFitted: Schema.Boolean,
+	/** The host's legacy frames its first reveal even with namespace boxes (apps/local-ui does). */
+	isFirstBoxedFitKept: Schema.Boolean,
 	/** The live signature had a saved camera when it became live: no auto-fit (legacy `viewportSnapshot`). */
 	hasSavedCamera: Schema.Boolean,
 	/** Where nodes are drawn: the layout, the signature's saved drags, then a drag in progress. */
@@ -254,7 +256,7 @@ export const hasNamespaceBoxes = (graph: EffectiveGraph): boolean =>
 const autoFit = (model: Model, isFirstReveal: boolean): Model => {
 	if (model.hasSavedCamera) return model
 	const fitted = { ...model, hasFitted: true }
-	return isFirstReveal && hasNamespaceBoxes(model.graph)
+	return isFirstReveal && hasNamespaceBoxes(model.graph) && !model.isFirstBoxedFitKept
 		? modifyFields(fitted, { canvas: (canvas) => ({ ...canvas, pendingFit: Option.none() }) })
 		: requestMapFit(fitted, model.hasFitted)
 }
@@ -370,6 +372,8 @@ export interface MapConfig {
 	readonly collapsedNamespaces?: ReadonlyArray<string>
 	/** Persisted drags and cameras (`serviceMapLayoutAtomFamily`). */
 	readonly snapshots?: ReadonlyArray<Snapshot>
+	/** Fit the first reveal even with namespace boxes (see `hasNamespaceBoxes`); default false. */
+	readonly isFirstBoxedFitKept?: boolean
 }
 
 export const init = (source: SourceGraph, config: MapConfig): Return => {
@@ -398,6 +402,7 @@ export const init = (source: SourceGraph, config: MapConfig): Return => {
 		}),
 		snapshots,
 		hasFitted: false,
+		isFirstBoxedFitKept: config.isFirstBoxedFitKept ?? false,
 		hasSavedCamera: Option.isSome(savedCamera),
 		positions: {},
 		drag: Option.none(),

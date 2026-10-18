@@ -24,7 +24,8 @@ import { buildExists, loadBuild, serveStatic, startBackendIfPresent } from "./se
 const usage = `ui-parity: compare the legacy React UI (apps/web) against the Foldkit UI (apps/web-foldkit)
 
   PARITY_PORT_BASE=4900 offsets every port (default 4790) so worktrees can run in parallel.
-  <build> is a target (legacy | legacy-head | foldkit) or a name given to build --out.
+  <build> is a target (legacy | legacy-head | foldkit, or local-legacy | local-legacy-head |
+  local-foldkit for apps/local-ui) or a name given to build --out.
 
   parity build <target> [--ref <git-ref>] [--auth self_hosted|clerk] [--out <name>]
   parity serve [--dataset default]              fixture backend + every built target, for browsing
@@ -82,12 +83,17 @@ const requireBuild = (name: string) => {
 	return name
 }
 
-/** Drops variants whose `Scenario.targets` leave out a build this command captures. */
+/** Drops variants of another app, or whose `Scenario.targets` leave out a build this command captures. */
 const forBuilds = (variants: ReadonlyArray<CaptureVariant>, builds: ReadonlyArray<string>) => {
 	const captured = [...new Set(builds.map((name) => loadBuild(name).stamp.target))]
+	const apps = [...new Set(captured.map((target) => targets[target].app))]
+	if (apps.length > 1) fail(`Builds ${builds.join(", ")} are of different apps (${apps.join(", ")})`)
 	const kept = variants.filter(({ scenario }) => {
 		const only = scenario.targets
-		return only === undefined || captured.every((target) => only.includes(target))
+		return (
+			(scenario.app ?? "web") === apps[0] &&
+			(only === undefined || captured.every((target) => only.includes(target)))
+		)
 	})
 	if (kept.length < variants.length)
 		console.log(
@@ -261,7 +267,7 @@ switch (command) {
 		const names = Object.keys(targets).filter(isTargetName)
 		const available: TargetName[] = names.filter((name) => buildExists(name, authMode))
 		const servers = available.map((name) =>
-			serveStatic(loadBuild(name, authMode), targets[name].port, headScript),
+			serveStatic(loadBuild(name, authMode), targets[name].port, headScript, values.dataset),
 		)
 		console.log(
 			`fixture backend  ${backend?.apiOrigin ?? "(none: src/backend missing)"}  dataset ${values.dataset}, port base ${PORT_BASE}`,

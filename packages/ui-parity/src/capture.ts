@@ -7,6 +7,7 @@ import {
 	fixtureBackendOrigin,
 	fixtureElectricOrigin,
 	outDir,
+	targets,
 } from "./config.ts"
 import {
 	CAPTURE_HEADER,
@@ -189,10 +190,33 @@ interface RouteContext {
 	readonly localUnmocked: string[]
 }
 
+/**
+ * apps/local-ui calls its server same-origin (`/local/query`, `/local/status`, OTLP on `/v1/*`), as
+ * when the binary serves it; captures forward those paths of the canonical origin to the backend.
+ */
+const isLocalServerPath = (build: StaticBuild, url: URL) =>
+	targets[build.stamp.target].app === "local" &&
+	url.origin === CANONICAL_ORIGIN &&
+	(url.pathname.startsWith("/local/") || url.pathname.startsWith("/v1/"))
+
+/** A request the fixture backend answers: its own origin, or a local-ui server path. */
+const isBackendRequest = (build: StaticBuild, url: URL) =>
+	url.origin === fixtureBackendOrigin || isLocalServerPath(build, url)
+
 /** Canonical origin from the build directory, fixture origins tagged (or 404 without a backend), the rest aborted. */
 const handleRoute = (context: RouteContext) => async (route: Route) => {
 	const request = route.request()
 	const url = new URL(request.url())
+	if (isLocalServerPath(context.build, url)) {
+		if (context.backend === null) {
+			context.localUnmocked.push(`${request.method()} ${url.pathname}`)
+			return route.fulfill({ status: 404, body: "" })
+		}
+		return route.continue({
+			url: `${fixtureBackendOrigin}${url.pathname}${url.search}`,
+			headers: { ...request.headers(), ...fixtureHeaders(context) },
+		})
+	}
 	if (url.origin === CANONICAL_ORIGIN) {
 		const resolved = resolveStatic(context.build, url.pathname)
 		if (resolved.kind === "file") return route.fulfill({ path: resolved.path })
@@ -395,7 +419,7 @@ const captureVariant = async (
 	)
 	const inFlight = new Set<Request>()
 	page.on("request", (request) => {
-		if (new URL(request.url()).origin === fixtureBackendOrigin) inFlight.add(request)
+		if (isBackendRequest(build, new URL(request.url()))) inFlight.add(request)
 	})
 	page.on("requestfinished", (request) => inFlight.delete(request))
 	page.on("requestfailed", (request) => inFlight.delete(request))

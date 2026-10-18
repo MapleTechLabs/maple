@@ -25,7 +25,7 @@ import { ParityChdbError, sharedChdb, type Chdb } from "./chdb.ts"
  */
 
 /** TTLs are relative to the host clock, so seeded rows at a frozen `now` would age out. */
-const schemaStatements = latestSnapshotStatements.map((statement) => statement.replace(/\nTTL [^\n]*/g, ""))
+export const schemaStatements = latestSnapshotStatements.map((statement) => statement.replace(/\nTTL [^\n]*/g, ""))
 
 const INSERT_CHUNK_ROWS = 5000
 
@@ -35,7 +35,7 @@ const EDGE_COLUMNS =
 const RESOLUTION_COLUMNS =
 	"OrgId, Hour, SourceService, ParentServerAddress, ResolvedTargetService, DeploymentEnv"
 
-const insertRows = (chdb: Chdb, table: string, rows: ReadonlyArray<unknown>) =>
+export const insertRows = (chdb: Chdb, table: string, rows: ReadonlyArray<unknown>) =>
 	Effect.forEach(
 		Array.from({ length: Math.ceil(rows.length / INSERT_CHUNK_ROWS) }, (_, index) =>
 			rows.slice(index * INSERT_CHUNK_ROWS, (index + 1) * INSERT_CHUNK_ROWS),
@@ -61,7 +61,7 @@ const SEAL_HOURS = 24
  * `ServiceMapRollupService` (and the CLI's local rollup) seal each completed hour of
  * `service_map_edges_hourly` from raw spans; no MV fills it, so the seed runs the same seal.
  */
-const sealServiceMap = (chdb: Chdb, orgId: OrgId, nowMs: number) => {
+export const sealServiceMap = (chdb: Chdb, orgId: OrgId, nowMs: number) => {
 	const currentHourMs = Math.floor(nowMs / CH.SERVICE_MAP_ROLLUP_HOUR_MS) * CH.SERVICE_MAP_ROLLUP_HOUR_MS
 	const hours = Array.from(
 		{ length: SEAL_HOURS },
@@ -95,7 +95,7 @@ const sealServiceMap = (chdb: Chdb, orgId: OrgId, nowMs: number) => {
 /** chDB lives for the whole process, so each org is seeded once however many backends start. */
 const seeded = new Map<string, Effect.Effect<void, ParityChdbError>>()
 
-const once = (key: string, effect: Effect.Effect<void, ParityChdbError>) => {
+export const once = (key: string, effect: Effect.Effect<void, ParityChdbError>) => {
 	const existing = seeded.get(key)
 	if (existing !== undefined) return existing
 	const cached = Effect.runSync(Effect.cached(effect))
