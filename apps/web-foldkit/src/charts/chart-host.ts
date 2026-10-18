@@ -6,6 +6,7 @@ import { createSvgChartRenderer } from "@tanstack/charts/svg/renderer"
 import { Option } from "effect"
 import { ChartSpec, type ChartTooltip } from "./chart-spec"
 import { buildAlertRule } from "./definitions/alert-rule"
+import { buildAnalyticsTraffic } from "./definitions/analytics-traffic"
 import { buildQueryBuilderArea } from "./definitions/area"
 import { buildQueryBuilderBar } from "./definitions/bar"
 import type { BuiltChart } from "./definitions/built-chart"
@@ -186,6 +187,8 @@ export const createChartHost = (
 			hostFor(container, spend, height, variant("SpendCumulative"), buildSpendCumulative, options),
 		InfraMetric: (metric) =>
 			hostFor(container, metric, height, variant("InfraMetric"), buildInfraMetric, options),
+		AnalyticsTraffic: (traffic) =>
+			hostFor(container, traffic, height, variant("AnalyticsTraffic"), buildAnalyticsTraffic, options),
 		PlanetScaleMetric: (metric) =>
 			hostFor(container, metric, height, variant("PlanetScaleMetric"), buildPlanetScaleMetric, options),
 		StackedBreakdown: (breakdown) =>

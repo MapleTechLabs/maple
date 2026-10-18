@@ -9,6 +9,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import { FetchAutocomplete, FetchWidget, SaveWidget } from "./command"
 import { setPanelType, withRootOnly } from "./edits"
 import { buildDataSource, buildDisplay, toInitialState, validationErrorOf } from "./lowering"
+import * as QueryPanel from "../../kit/query-builder/panel"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
@@ -105,7 +106,12 @@ describe("widget editor", () => {
 		const legend = pageUpdate(model, Message.ChangedLegend({ legendPosition: "right" }))
 		expect(previewWidgetOf(legend.model)?.display.chartPresentation?.legend).toBe("right")
 		expect(names(legend.commands)).toEqual([])
-		const ungrouped = pageUpdate(model, Message.ToggledAddOn({ queryId: "q-throughput", key: "groupBy" }))
+		const ungrouped = pageUpdate(
+			model,
+			Message.GotQueryPanelMessage({
+				message: QueryPanel.Message.ToggledAddOn({ queryId: "q-throughput", key: "groupBy" }),
+			}),
+		)
 		expect(names(ungrouped.commands)).toEqual([])
 		const run = pageUpdate(ungrouped.model, Message.ClickedRunPreview())
 		expect(names(run.commands)).toEqual([FetchWidget.name])

@@ -3,29 +3,15 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
-import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
+import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { LoadFailure } from "../../../data/load-failure"
 import { AutocompleteLookup } from "../../kit/autocomplete-lookups"
 import { WidgetFailure } from "../kit/widget-data"
 import { LegendPosition, PointsMode } from "./editor-state"
-
-/** A query's free-text fields under the add-on toggles. */
-export const QueryTextField = Schema.Literals([
-	"whereClause",
-	"stepInterval",
-	"having",
-	"orderBy",
-	"limit",
-	"legend",
-])
-export type QueryTextField = typeof QueryTextField.Type
-
-export const AddOnKey = Schema.Literals(["groupBy", "having", "orderBy", "limit", "legend"])
-export type AddOnKey = typeof AddOnKey.Type
 
 export const FormulaTextField = Schema.Literals(["expression", "legend"])
 export type FormulaTextField = typeof FormulaTextField.Type
@@ -44,13 +30,7 @@ export const Message = defineMessageUnion({
 	CompletedSaveTimeRange: { error: Schema.NullOr(Schema.String) },
 	GotSourceTabsMessage: { message: Tabs.Message },
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
-	GotGroupByMessage: { queryId: Schema.String, message: Combobox.Message },
-	ToggledQueryCollapsed: { queryId: Schema.String },
-	ToggledQueryVisible: { queryId: Schema.String },
-	ChangedQueryText: { queryId: Schema.String, field: QueryTextField, value: Schema.String },
-	ToggledAddOn: { queryId: Schema.String, key: AddOnKey },
-	ClickedCloneQuery: { queryId: Schema.String },
-	ClickedRemoveQuery: { queryId: Schema.String },
+	GotQueryPanelMessage: { message: QueryPanel.Message },
 	ClickedAddQuery: {},
 	ClickedAddFormula: {},
 	/** A fresh id for what was asked (`crypto.randomUUID()` in legacy's builder actions). */

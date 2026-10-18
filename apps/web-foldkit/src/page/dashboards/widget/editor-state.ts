@@ -1,49 +1,13 @@
 import { TimeRangeSchema, WIDGET_VISUALIZATIONS } from "@maple/domain/http"
-import {
-	QUERY_BUILDER_METRIC_TYPES,
-	QUERY_BUILDER_SIGNAL_SOURCES,
-	QUERY_COMPARISON_MODES,
-	QueryBuilderAddOnsSchema,
-} from "@maple/query-model"
+import { QUERY_COMPARISON_MODES } from "@maple/query-model"
 import { Schema } from "effect"
+import { QueryDraft } from "../../kit/query-builder/draft"
 
 // The widget editor's state (`QueryBuilderWidgetState`, apps/web/src/lib/query-builder/
 // widget-builder-shared.ts), cut to what the timeseries panels (line, bar, area) and notes read.
 // TODO(widget-editor): the stat/gauge/table/list/breakdown/funnel/paths/markdown fields.
 
-/** `QueryBuilderQueryDraftBase`: every field filled, unlike the stored draft. */
-const draftFields = {
-	id: Schema.String,
-	name: Schema.String,
-	enabled: Schema.Boolean,
-	hidden: Schema.Boolean,
-	whereClause: Schema.String,
-	aggregation: Schema.String,
-	stepInterval: Schema.String,
-	orderByDirection: Schema.Literals(["desc", "asc"]),
-	addOns: QueryBuilderAddOnsSchema,
-	groupBy: Schema.mutable(Schema.Array(Schema.String)),
-	having: Schema.String,
-	orderBy: Schema.String,
-	limit: Schema.String,
-	legend: Schema.String,
-}
-
-/** `QueryBuilderQueryDraft`. */
-export const QueryDraft = Schema.Union([
-	Schema.Struct({ ...draftFields, dataSource: Schema.Literal("traces") }),
-	Schema.Struct({ ...draftFields, dataSource: Schema.Literal("logs") }),
-	Schema.Struct({
-		...draftFields,
-		dataSource: Schema.Literal("metrics"),
-		signalSource: Schema.Literals(QUERY_BUILDER_SIGNAL_SOURCES),
-		metricName: Schema.String,
-		metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES),
-		isMonotonic: Schema.Boolean,
-	}),
-	Schema.Struct({ ...draftFields, dataSource: Schema.Literal("product_events") }),
-])
-export type QueryDraft = typeof QueryDraft.Type
+export { QueryDraft } from "../../kit/query-builder/draft"
 
 /** `QueryBuilderFormulaDraft`. */
 export const FormulaDraft = Schema.Struct({

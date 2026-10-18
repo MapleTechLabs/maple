@@ -217,7 +217,7 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 				model,
 				{ title: "Framework", facet: "vendors", isSearchable: false, hasDescription: true },
 				facets.vendors,
-				{ getOptionLabel: vendorLabel, iconOf: vendorIcon, iconColorOf: vendorColor },
+				{ getOptionLabel: vendorLabel, getOptionIcon: vendorIcon, getOptionIconColor: vendorColor },
 			),
 			facetSection(
 				h,
@@ -226,8 +226,8 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 				facets.models,
 				{
 					getOptionLabel: (name) => detect(name).displayName,
-					iconOf: (name) => modelVendorIcon(detect(name)),
-					iconColorOf: (name) => modelVendorColor(detect(name)),
+					getOptionIcon: (name) => modelVendorIcon(detect(name)),
+					getOptionIconColor: (name) => modelVendorColor(detect(name)),
 				},
 			),
 			facetSection(

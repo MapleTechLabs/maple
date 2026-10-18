@@ -10,11 +10,12 @@ import * as Combobox from "../../../ui/combobox"
 import { chipsView } from "../../../ui/combobox-view"
 import { filterChip } from "../../../ui/filter-chip"
 import { input } from "../../../ui/input"
+import * as Select from "../../../ui/select"
+import { view as selectView, type SelectOption } from "../../../ui/select-view"
 import { textarea } from "../../../ui/textarea"
-import type { QueryDraft } from "./editor-state"
-import { type AddOnKey, Message } from "./message"
-import type { Model } from "./model"
-import { pageSelect } from "./view-select"
+import type { AddOnKey } from "./change"
+import type { QueryDraft } from "./draft"
+import { Message, type Model } from "./panel"
 
 // The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
 
@@ -27,6 +28,38 @@ export const ADD_ON_KEYS: ReadonlyArray<{ key: AddOnKey; label: string }> = [
 	{ key: "limit", label: "Limit" },
 	{ key: "legend", label: "Legend" },
 ]
+
+/** One of the panel's selects, kept by id; its value is always the draft's. */
+export const panelSelect = (
+	h: H,
+	model: Model,
+	id: string,
+	value: string,
+	options: ReadonlyArray<SelectOption>,
+	inputs: Readonly<{
+		size?: "sm" | "default"
+		className?: string
+		ariaLabel?: string
+		/** Places the trigger and its siblings (hidden input, portal) in the caller's layout. */
+		toView: (parts: ReadonlyArray<Html>) => Html
+	}>,
+): Html => {
+	const index = options.findIndex((option) => option.value === value)
+	const current = model.selects[id] ?? Select.init(id, { value, selectedIndex: index === -1 ? null : index })
+	return h.submodel({
+		slotId: `${model.slotPrefix}-select-${id}`,
+		model: { ...current, value },
+		view: selectView,
+		toParentMessage: (message) => Message.GotSelectMessage({ id, message }),
+		viewInputs: {
+			entries: options.map((item) => ({ _tag: "Item" as const, item })),
+			size: inputs.size,
+			className: inputs.className,
+			ariaLabel: inputs.ariaLabel,
+			toView: inputs.toView,
+		},
+	})
+}
 
 const WHERE_PLACEHOLDER = {
 	traces: 'service.name = "checkout" AND status.code = "Error"',
@@ -54,12 +87,10 @@ export const whereClauseEditor = (h: H, query: QueryDraft): Html => {
 					h.AriaLabel(`Where clause for query ${query.name}`),
 					h.Placeholder(WHERE_PLACEHOLDER[query.dataSource]),
 					h.Rows(1),
-					h.OnInput((value) =>
-						Message.ChangedQueryText({ queryId: query.id, field: "whereClause", value }),
-					),
+					h.OnInput((value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value })),
 					// Where clauses are single-line.
 					h.OnKeyDownPreventDefault((key) =>
-						key === "Enter" ? Option.some(Message.ClickedRunPreview()) : Option.none(),
+						key === "Enter" ? Option.some(Message.PressedWhereEnter()) : Option.none(),
 					),
 				],
 			}),
@@ -98,13 +129,13 @@ export const whereClauseEditor = (h: H, query: QueryDraft): Html => {
 }
 
 /** A controlled `<Input>` that reports each keystroke. */
-export const textInput = (
-	h: H,
+export const textInput = <M>(
+	h: HtmlBuilder<M>,
 	id: string,
 	value: string,
 	placeholder: string,
 	className: string,
-	toMessage: (value: string) => Message,
+	toMessage: (value: string) => M,
 	type?: string,
 ): Html =>
 	input(h, {
@@ -142,7 +173,7 @@ const sectionLabel = (h: H, text: string): Html =>
 const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 	const current = model.groupBys[query.id] ?? Combobox.init(`group-by-${query.id}`, "multiple")
 	return h.submodel({
-		slotId: `widget-editor-group-by-${query.id}`,
+		slotId: `${model.slotPrefix}-group-by-${query.id}`,
 		model: { ...current, selected: query.groupBy },
 		view: chipsView,
 		toParentMessage: (message) => Message.GotGroupByMessage({ queryId: query.id, message }),
@@ -165,7 +196,7 @@ const row = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
 export const addOnSections = (h: H, model: Model, query: QueryDraft): ReadonlyArray<Html> => {
 	if (!Object.values(query.addOns).some(Boolean)) return []
 	const text = (field: "having" | "orderBy" | "limit" | "legend") => (value: string) =>
-		Message.ChangedQueryText({ queryId: query.id, field, value })
+		Message.ChangedText({ queryId: query.id, field, value })
 	return [
 		h.div(
 			[h.Class("space-y-2 pt-1")],
@@ -189,7 +220,7 @@ export const addOnSections = (h: H, model: Model, query: QueryDraft): ReadonlyAr
 					: []),
 				...(query.addOns.orderBy
 					? [
-							pageSelect(
+							panelSelect(
 								h,
 								model,
 								`orderDirection:${query.id}`,

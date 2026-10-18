@@ -27,7 +27,10 @@ export { formatStatValue } from "./tiles-stat"
 // The tiles (dashboard-builder/widgets/*): stat, gauge, table, list and note here, every registry
 // chart through `chartWidgetTile` (./tiles-chart.ts).
 
-type Widget = DashboardDocument["widgets"][number]
+/** What a tile reads of its widget; a share's redacted widget satisfies it too. */
+export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "display"> &
+	Readonly<{ visualization: string; dataSource: unknown }>
+type Widget = TileWidget
 type Row = Readonly<Record<string, unknown>>
 
 /** `useTableSort`: per table widget, the active key and direction. */

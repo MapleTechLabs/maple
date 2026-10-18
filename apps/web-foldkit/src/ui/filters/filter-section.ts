@@ -73,12 +73,12 @@ export type FilterSectionConfig<M> = Readonly<{
 	onExclude?: (name: string) => M
 	/** `colorMap`: a swatch before the label (`serviceColorMap` for services). */
 	colorOf?: (name: string) => string | undefined
-	/** `renderOptionIcon`: a glyph after the swatch, before the label. */
-	optionIcon?: (name: string) => Html | null
+	/** `getOptionIcon`: a mark before the label (browser, device, vendor), tinted by `getOptionIconColor`. */
+	getOptionIcon?: (name: string) => IconName | undefined
+	getOptionIconColor?: (name: string) => string | undefined
+	/** `renderOptionIcon`: an already-built node in the same slot (a tag dot, a favicon). */
+	renderOptionIcon?: (name: string) => Html | undefined
 	getOptionLabel?: (name: string) => string
-	/** `getOptionIcon`: a mark before the label, tinted by `iconColorOf`. */
-	iconOf?: (name: string) => IconName | undefined
-	iconColorOf?: (name: string) => string | undefined
 	/** The label's `title` when it is more than the label. */
 	getOptionDescription?: (name: string) => string | undefined
 	showCounts?: boolean
@@ -170,17 +170,17 @@ const optionIcon = <M>(
 	config: FilterSectionConfig<M>,
 	name: string,
 	isExcluded: boolean,
-): Html[] => {
-	const iconName = config.iconOf?.(name)
-	const color = config.iconColorOf?.(name)
-	return iconName === undefined
-		? []
-		: [
-				icon(h, iconName, {
-					className: cn("size-3.5 shrink-0", isExcluded && "opacity-40"),
-					...iconColor(color),
-				}),
-			]
+): ReadonlyArray<Html> => {
+	const iconName = config.getOptionIcon?.(name)
+	if (iconName !== undefined)
+		return [
+			icon(h, iconName, {
+				className: cn("size-3.5 shrink-0", isExcluded && "opacity-40"),
+				...iconColor(config.getOptionIconColor?.(name)),
+			}),
+		]
+	const node = config.renderOptionIcon?.(name)
+	return node === undefined ? [] : [node]
 }
 
 const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option: FilterOption): Html => {
@@ -225,7 +225,6 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 				[
 					...swatch(h, config.colorOf?.(option.name), isExcluded),
 					...optionIcon(h, config, option.name, isExcluded),
-					...[config.optionIcon?.(option.name) ?? null].filter((node): node is Html => node !== null),
 					h.span([h.Class("truncate")], [text]),
 				],
 			),

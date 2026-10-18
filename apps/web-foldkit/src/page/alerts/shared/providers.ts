@@ -101,8 +101,7 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 			accentBg: "rgba(38,165,228,0.16)",
 			accentText: "light-dark(#0B6E9E, #26A5E4)",
 			accentOn: INK_ON_BRIGHT_ACCENT,
-			// TODO(telegram-icon): the brand mark renders a `useId` gradient the icon generator cannot take.
-			fallbackIcon: "PaperPlaneIcon",
+			fallbackIcon: "TelegramIcon",
 			docsUrl: "https://maple.dev/docs/alerting/notification-destinations#telegram",
 			docsLabel: "Telegram setup guide",
 		},
@@ -187,7 +186,8 @@ export type ProviderLogoOptions<M> = Readonly<{
 	isBare?: boolean
 	/** The brand image failed to load (blocked or 404): the monogram plate shows instead. */
 	isLogoBroken: boolean
-	onLogoError: M
+	/** Omitted where the image already failed elsewhere on the page (a menu over the same logos). */
+	onLogoError?: M
 }>
 
 /** `ProviderLogo`: the brand image, else a monogram plate, else the provider's icon. */
@@ -205,7 +205,7 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 					h.Attribute("height", String(inner)),
 					h.Attribute("loading", "lazy"),
 					h.Attribute("referrerpolicy", "no-referrer"),
-					h.OnError(options.onLogoError),
+					...(options.onLogoError === undefined ? [] : [h.OnError(options.onLogoError)]),
 					h.Class("rounded-md object-contain"),
 					h.Style({ width: `${inner}px`, height: `${inner}px` }),
 				]),

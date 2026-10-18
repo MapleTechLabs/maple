@@ -11,9 +11,7 @@ import {
 	addQuery,
 	cloneQuery,
 	removeFormula,
-	removeQuery,
 	setPanelType,
-	updateQuery,
 } from "./edits"
 import type { EditorState } from "./editor-state"
 import { isNote, isTimeseriesPanel, validationErrorOf } from "./lowering"
@@ -23,9 +21,9 @@ import {
 	acceptFetch,
 	chartStep,
 	generate,
-	groupByStep,
 	isConfigurablePanel,
 	leaveDialogStep,
+	queryPanelStep,
 	selectStep,
 	timeRangeModeStep,
 } from "./step"
@@ -39,6 +37,7 @@ import {
 	receiveDocument,
 	requestAutocomplete,
 	type Return,
+	runPreview,
 	widgetOf,
 } from "./update"
 
@@ -110,9 +109,6 @@ const apply = (model: Model, context: PageContext): Return => {
 const edit = (model: Model, context: PageContext, change: (state: EditorState) => EditorState): Return =>
 	editState(model, context, change)
 
-const toggled = (list: ReadonlyArray<string>, value: string): ReadonlyArray<string> =>
-	list.includes(value) ? list.filter((item) => item !== value) : [...list, value]
-
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		UpdatedDashboard: (updated) => receiveDocument(model, context, updated),
@@ -133,27 +129,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedSaveTimeRange: () => ({ model }),
 		GotSourceTabsMessage: ({ message: inner }) => tabsStep(model, inner),
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, context, id, inner),
-		GotGroupByMessage: ({ queryId, message: inner }) => groupByStep(model, context, queryId, inner),
-		ToggledQueryCollapsed: ({ queryId }) => ({
-			model: { ...model, collapsed: toggled(model.collapsed, queryId) },
-		}),
-		ToggledQueryVisible: ({ queryId }) =>
-			edit(model, context, (state) =>
-				updateQuery(state, queryId, (query) => ({ ...query, hidden: !query.hidden })),
-			),
-		ChangedQueryText: ({ queryId, field, value }) =>
-			edit(model, context, (state) =>
-				updateQuery(state, queryId, (query) => ({ ...query, [field]: value })),
-			),
-		ToggledAddOn: ({ queryId, key }) =>
-			edit(model, context, (state) =>
-				updateQuery(state, queryId, (query) => ({
-					...query,
-					addOns: { ...query.addOns, [key]: !query.addOns[key] },
-				})),
-			),
-		ClickedCloneQuery: ({ queryId }) => ({ model, commands: generate("cloneQuery", queryId) }),
-		ClickedRemoveQuery: ({ queryId }) => edit(model, context, (state) => removeQuery(state, queryId)),
+		GotQueryPanelMessage: ({ message: inner }) => queryPanelStep(model, context, inner),
 		ClickedAddQuery: () => ({ model, commands: generate("addQuery", "") }),
 		ClickedAddFormula: () => ({ model, commands: generate("addFormula", "") }),
 		GeneratedId: ({ purpose, source, id }) =>
@@ -180,10 +156,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})),
 		ClickedRemoveFormula: ({ formulaId }) =>
 			edit(model, context, (state) => removeFormula(state, formulaId)),
-		ClickedRunPreview: () =>
-			model.state === null || validationErrorOf(model.state) !== null
-				? { model }
-				: planPreview({ ...model, staged: model.state }, context),
+		ClickedRunPreview: () => runPreview(model, context),
 		ChangedTitle: ({ value }) => edit(model, context, (state) => ({ ...state, title: value })),
 		ChangedMarkdown: ({ value }) =>
 			edit(model, context, (state) => ({ ...state, markdownContent: value })),

@@ -11,7 +11,7 @@ import {
 	panelTitleStyles,
 	panelToneStyles,
 } from "@maple/ui/styles/ui/panel"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 // Port of packages/ui/src/components/ui/panel.tsx: the flat bordered section frame.
 
@@ -20,7 +20,13 @@ export type PanelTone = keyof typeof panelToneStyles
 
 export const panel = <M>(
 	h: HtmlBuilder<M>,
-	options: { readonly padded?: boolean | "sm"; readonly tone?: PanelTone; readonly className?: string },
+	options: {
+		readonly padded?: boolean | "sm"
+		readonly tone?: PanelTone
+		readonly className?: string
+		/** Props spread after the panel's own (a `ref` target marker, an id). */
+		readonly attributes?: ReadonlyArray<Attribute<M>>
+	},
 	children: Children,
 ): Html =>
 	h.section(
@@ -38,6 +44,7 @@ export const panel = <M>(
 				),
 			),
 			h.DataAttribute("slot", "panel"),
+			...(options.attributes ?? []),
 		],
 		children,
 	)

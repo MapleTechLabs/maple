@@ -54,10 +54,10 @@ const rail = (h: H, model: Model, data: Parameters<typeof facetsOf>[0], isWaitin
 					onToggle: (name) => Message.ToggledHealthOption({ name }),
 					getOptionLabel: (name) => (isReleaseHealth(name) ? RELEASE_HEALTH_LABEL[name] : name),
 					getOptionDescription: (name) => (isReleaseHealth(name) ? RELEASE_HEALTH_DESCRIPTION[name] : undefined),
-					optionIcon: (name) =>
+					renderOptionIcon: (name) =>
 						isReleaseHealth(name)
 							? statusDot(h, { tone: "custom", size: "lg", className: RELEASE_HEALTH_DOT_CLASS[name] })
-							: null,
+							: undefined,
 				}),
 				filterSection(h, {
 					title: "Environment",
