@@ -1,4 +1,5 @@
-import { formatLocalDateTime, formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatDateTime, type TimeFormat } from "../kit/local-time"
 import { shortId } from "@maple/ui/lib/ids"
 import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
 import { icon } from "@maple/web-foldkit/ui/icon"
@@ -17,7 +18,7 @@ import { detailTabs } from "./view-sheet-tabs"
 
 const toCopy = (id: string) => (message: CopyButton.Message) => Message.GotCopyMessage({ id, message })
 
-const metaStrip = (h: HtmlBuilder<Message>, model: Model, log: LocalLog): Html =>
+const metaStrip = (h: HtmlBuilder<Message>, model: Model, log: LocalLog, timeFormat: TimeFormat): Html =>
 	h.div(
 		[h.Class("flex shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap border-b px-4 py-1.5 text-xs")],
 		[
@@ -26,7 +27,7 @@ const metaStrip = (h: HtmlBuilder<Message>, model: Model, log: LocalLog): Html =
 				[
 					icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
 					h.span([h.Class("font-mono"), h.Title(formatUtcTitle(log.timestamp))], [
-						copyableValue(h, model.copies, { id: "detail-time", value: log.timestamp }, [formatLocalDateTime(log.timestamp)]),
+						copyableValue(h, model.copies, { id: "detail-time", value: log.timestamp }, [formatDateTime(timeFormat, log.timestamp)]),
 					]),
 				],
 			),
@@ -66,7 +67,7 @@ const metaStrip = (h: HtmlBuilder<Message>, model: Model, log: LocalLog): Html =
 		],
 	)
 
-export const detailSheet = (h: HtmlBuilder<Message>, model: Model, detail: Detail): Html =>
+export const detailSheet = (h: HtmlBuilder<Message>, model: Model, detail: Detail, timeFormat: TimeFormat): Html =>
 	rightSheet(
 		h,
 		{
@@ -75,5 +76,5 @@ export const detailSheet = (h: HtmlBuilder<Message>, model: Model, detail: Detai
 			title: ["Log: ", detail.log.body.slice(0, 80)],
 			onDismiss: Message.ClosedDetail(),
 		},
-		[heroHeader(h, model, detail), metaStrip(h, model, detail.log), detailTabs(h, model, detail)],
+		[heroHeader(h, model, detail), metaStrip(h, model, detail.log, timeFormat), detailTabs(h, model, detail)],
 	)

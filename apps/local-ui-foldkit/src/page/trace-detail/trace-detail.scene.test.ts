@@ -19,6 +19,7 @@ const contextAt = (search: string): PageContext => ({
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
 	location: { path: `/traces/${TRACE_ID}`, search },
 	rememberedRange: "1h",
+	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 })
 const context = contextAt("")

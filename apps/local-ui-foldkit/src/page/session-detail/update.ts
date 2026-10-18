@@ -88,7 +88,11 @@ const refresh = (model: Model, context: PageContext): UpdateReturn => {
 	if (model.isRefreshing) return { model }
 	const session = loadSession({ ...model, isRefreshing: true }, context.env.apiBase, true)
 	const traces = loadTraces(session.model, context.env.apiBase, true)
-	return { model: traces.model, commands: [...(session.commands ?? []), ...(traces.commands ?? [])] }
+	return {
+		model: traces.model,
+		commands: [...(session.commands ?? []), ...(traces.commands ?? [])],
+		outMessage: PageOutMessage.RefetchedInPlace(),
+	}
 }
 
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>

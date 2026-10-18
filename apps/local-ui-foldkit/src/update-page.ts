@@ -1,7 +1,7 @@
 import type { Resources } from "./platform/resources"
 import { AsyncData, Command } from "foldkit"
 import { Option } from "effect"
-import { FetchSignalPresence, GoBack, Navigate, RememberRange } from "./command"
+import { FetchSignalPresence, GoBack, Navigate, ProbeServer, RememberRange } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { canGoBack } from "./navigation"
@@ -14,6 +14,7 @@ export const pageContextOf = (model: Model): PageContext => ({
 	env: model.env,
 	location: model.location,
 	rememberedRange: model.rememberedRange,
+	timeFormat: model.timeFormat,
 	canGoBack: canGoBack(model.visited),
 })
 
@@ -22,10 +23,21 @@ const toPageMessage = (message: PageMessage) => Message.GotPageMessage({ message
 /** `useSignalPresence` mounting: reuse the shared read unless it is loading or stale. */
 const requestPresence = (model: Model): RootReturn => {
 	if (AsyncData.isLoading(model.presence) || AsyncData.isRefreshing(model.presence)) return { model }
-	const lastReadAtMs = Option.match(AsyncData.getData(model.presence), { onNone: () => null, onSome: (result) => result.nowMs })
+	const lastReadAtMs = model.isPresenceStale
+		? null
+		: Option.match(AsyncData.getData(model.presence), { onNone: () => null, onSome: (result) => result.nowMs })
 	const presence = Option.getOrElse(AsyncData.revalidateOrLoad(model.presence), () => model.presence)
-	return { model: { ...model, presence }, commands: [FetchSignalPresence({ apiBase: model.env.apiBase, lastReadAtMs })] }
+	return { model: { ...model, presence, isPresenceStale: false }, commands: [FetchSignalPresence({ apiBase: model.env.apiBase, lastReadAtMs })] }
 }
+
+/** Start a probe now, retiring any pending timer. */
+export const probe = (model: Model): RootReturn =>
+	model.probe.isInFlight
+		? { model }
+		: {
+				model: { ...model, probe: { isInFlight: true, version: model.probe.version + 1 } },
+				commands: [ProbeServer({ apiBase: model.env.apiBase })],
+			}
 
 /** A page asked the root for something only the root may do. */
 export const foldPageOut = (model: Model, outMessage: PageOutMessage): RootReturn =>
@@ -43,6 +55,7 @@ export const foldPageOut = (model: Model, outMessage: PageOutMessage): RootRetur
 			commands: [RememberRange({ range }), Navigate({ hash, isReplace: true })],
 		}),
 		RequestedSignalPresence: () => requestPresence(model),
+		RefetchedInPlace: () => probe({ ...model, isPresenceStale: true }),
 	})
 
 /** Folds one page step's Model, Commands and OutMessage into the root. */

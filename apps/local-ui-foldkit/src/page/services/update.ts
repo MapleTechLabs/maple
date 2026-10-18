@@ -105,7 +105,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
 				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return { model: settleRefresh(refetch.model), commands: refetch.commands }
+			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
 		},
 		ChangedSearch: ({ text }) => searchStep(model, text),
 		ClickedClearSearch: () => searchStep(model, ""),

@@ -13,6 +13,7 @@ const contextAt = (search: string, canGoBack = false): PageContext => ({
 	env,
 	location: { path: "/metrics/http.server.request.duration", search },
 	rememberedRange: "1h",
+	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack,
 })
 const context = contextAt("range=1h&spanId=abc")

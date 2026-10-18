@@ -1,3 +1,4 @@
+import type { TimeFormat } from "../kit/local-time"
 import { cn } from "@maple/ui/lib/utils"
 import { spinner } from "@maple/web-foldkit/ui/spinner"
 import { Option } from "effect"
@@ -9,7 +10,7 @@ import { logRow } from "./view-row"
 import { ObserveLogsViewport, ROW_HEIGHT, virtualWindow } from "./virtualize"
 
 /** `LogListMode`'s virtualized stream: only the rows in (or near) the scroller's view are built. */
-export const logStream = (h: HtmlBuilder<Message>, model: Model, search: string | undefined): Html => {
+export const logStream = (h: HtmlBuilder<Message>, model: Model, search: string | undefined, timeFormat: TimeFormat): Html => {
 	const rows = rowsOf(model)
 	const selectedKey = Option.match(model.maybeDetail, { onNone: () => null, onSome: (detail) => logKey(detail.log) })
 	return h.div(
@@ -33,6 +34,7 @@ export const logStream = (h: HtmlBuilder<Message>, model: Model, search: string 
 									top: index * ROW_HEIGHT,
 									isSelected: selectedKey === logKey(log),
 									nowMs: model.nowMs,
+									timeFormat,
 								}),
 							]
 				}),

@@ -1,3 +1,4 @@
+import type { TimeFormat } from "../kit/local-time"
 import * as Timeline from "@maple/web-foldkit/page/traces/detail/timeline"
 import type { TraceData } from "@maple/web-foldkit/page/traces/detail/trace-data"
 import * as Waterfall from "@maple/web-foldkit/page/traces/detail/waterfall"
@@ -90,7 +91,7 @@ const traceViewTabs = (h: H, model: Model): Html =>
 		toParentMessage: (message) => Message.GotTabsMessage({ message }),
 	})
 
-const loadedBody = (h: H, model: Model, trace: TraceData): Html =>
+const loadedBody = (h: H, model: Model, trace: TraceData, timeFormat: TimeFormat): Html =>
 	h.div(
 		[h.Class("flex h-full min-h-0")],
 		[
@@ -108,6 +109,7 @@ const loadedBody = (h: H, model: Model, trace: TraceData): Html =>
 							traceStartTime: trace.traceStartTime ?? "",
 							totalDurationMs: trace.totalDurationMs,
 							nowMs: model.traceUpdatedAtMs,
+							timeFormat,
 						}),
 					]),
 		],
@@ -130,13 +132,13 @@ const hoverTooltip = (h: H, model: Model, trace: TraceData | undefined): Readonl
 			]
 }
 
-const body = (h: H, model: Model): Html => {
+const body = (h: H, model: Model, timeFormat: TimeFormat): Html => {
 	if (isPending(model.trace)) return traceDetailLoading(h)
 	const failure = failureWithoutData(model.trace)
 	if (Option.isSome(failure)) return errorState(h, { label: "trace", failure: failure.value, onRetry: Message.ClickedRefresh() })
 	return Option.match(loadedTrace(model), {
 		onNone: () => traceNotFound(h, model.traceId),
-		onSome: (trace) => loadedBody(h, model, trace),
+		onSome: (trace) => loadedBody(h, model, trace, timeFormat),
 	})
 }
 
@@ -165,7 +167,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					}),
 				],
 			),
-			h.div([h.Class("min-h-0 flex-1")], [body(h, model)]),
+			h.div([h.Class("min-h-0 flex-1")], [body(h, model, inputs.context.timeFormat)]),
 			...hoverTooltip(h, model, trace),
 		],
 	)

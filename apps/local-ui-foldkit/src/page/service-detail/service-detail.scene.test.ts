@@ -15,6 +15,7 @@ const context: PageContext = {
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
 	location: { path: "/services/checkout-api", search: "" },
 	rememberedRange: "1h",
+	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 }
 const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, hasNewDataSince: () => false }

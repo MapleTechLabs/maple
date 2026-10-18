@@ -7,7 +7,8 @@ import { Effect, Option, Schema } from "effect"
 import { AsyncData, type Runtime } from "foldkit"
 import type { Url } from "foldkit/url"
 import { ApplyTheme, ProbeServer } from "./command"
-import { LocalEnv, readLocalEnv, readRememberedRange, readSidebarOpen, readTheme, Theme } from "./env"
+import { LocalEnv, readLocalEnv, readRememberedRange, readSidebarOpen, readTheme, readTimeFormat, Theme } from "./env"
+import { TimeFormat } from "./page/kit/local-time"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { hashOf, locationOf, routeOf } from "./navigation"
@@ -27,6 +28,7 @@ export const Flags = Schema.Struct({
 	rememberedRange: Schema.String,
 	isSidebarOpen: Schema.Boolean,
 	theme: Theme,
+	timeFormat: TimeFormat,
 })
 export type Flags = typeof Flags.Type
 
@@ -35,6 +37,7 @@ export const flags: Effect.Effect<Flags> = Effect.all({
 	rememberedRange: readRememberedRange,
 	isSidebarOpen: readSidebarOpen,
 	theme: readTheme,
+	timeFormat: readTimeFormat,
 })
 
 export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resources> = (flags, url: Url) => {
@@ -47,6 +50,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		env: flags.env,
 		rememberedRange: flags.rememberedRange,
 		theme: flags.theme,
+		timeFormat: flags.timeFormat,
 		isSidebarOpen: flags.isSidebarOpen,
 		isSidebarOpenMobile: false,
 		maybeServer: Option.none(),
@@ -55,6 +59,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		connect: Popover.init(CONNECT_POPOVER_ID, { side: "right", align: "end", initialFocus: "first-tabbable" }),
 		installTabs: Tabs.init({ idBase: 0, values: INSTALL_METHODS.map((method) => method.id), selected: INSTALL_METHODS[0]?.id ?? "" }),
 		presence: AsyncData.Idle(),
+		isPresenceStale: false,
 		copies: {},
 		toasts: Toast.init("toasts"),
 		page: placeholder(""),

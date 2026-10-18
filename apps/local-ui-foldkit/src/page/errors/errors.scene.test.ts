@@ -15,6 +15,7 @@ const contextAt = (search: string): PageContext => ({
 	env,
 	location: { path: "/errors", search },
 	rememberedRange: "1h",
+	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 })
 const context = contextAt("")

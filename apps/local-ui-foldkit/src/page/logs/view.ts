@@ -38,14 +38,14 @@ const emptyState = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInput
 const listContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, filters: LogFilters): ReadonlyArray<Html> => {
 	const sheet = Option.match(model.maybeDetail, {
 		onNone: () => [],
-		onSome: (detail) => (detail.isOpen ? [detailSheet(h, model, detail)] : []),
+		onSome: (detail) => (detail.isOpen ? [detailSheet(h, model, detail, inputs.context.timeFormat)] : []),
 	})
 	if (isPending(model.logs)) return [listSkeleton(h, { variant: "table" }), ...sheet]
 	const failure = failureWithoutData(model.logs)
 	if (Option.isSome(failure))
 		return [errorState(h, { label: "logs", failure: failure.value, onRetry: Message.ClickedRefresh() }), ...sheet]
 	if (rowsOf(model).length === 0) return [emptyState(h, model, inputs, filters), ...sheet]
-	return [logStream(h, model, filters.search), ...sheet]
+	return [logStream(h, model, filters.search, inputs.context.timeFormat), ...sheet]
 }
 
 const patternsContent = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, filters: LogFilters): Html => {

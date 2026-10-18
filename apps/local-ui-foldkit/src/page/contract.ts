@@ -2,6 +2,7 @@ import { isRangeKey } from "@maple/local-ui/lib/time"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import type { LocalEnv } from "../env"
+import type { TimeFormat } from "./kit/local-time"
 import { type Location, queryOf } from "../route"
 
 /**
@@ -12,6 +13,8 @@ export type PageContext = Readonly<{
 	env: LocalEnv
 	location: Location
 	rememberedRange: string
+	/** The locale and zone timestamps render in. */
+	timeFormat: TimeFormat
 	/** In-app history exists, so a detail page's Back steps back instead of opening the list. */
 	canGoBack: boolean
 }>
@@ -32,6 +35,11 @@ export const PageOutMessage = defineMessageUnion({
 	RememberedRange: { range: Schema.String, hash: Schema.String },
 	/** A `SignalEmptyState` is on screen: `useSignalPresence` reads (or reuses) the shared result. */
 	RequestedSignalPresence: {},
+	/**
+	 * Refresh refetched the page in place (`invalidateQueries(["local"])`): the root re-probes the
+	 * server and marks the signal presence stale, so the next empty state reads it again.
+	 */
+	RefetchedInPlace: {},
 })
 export type PageOutMessage = typeof PageOutMessage.Type
 

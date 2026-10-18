@@ -7,6 +7,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureWithoutData, isPending } from "../../data/slot"
 import type { PageViewInputs } from "../kit/inputs"
+import type { TimeFormat } from "../kit/local-time"
 import { refreshButton } from "../kit/toolbar"
 import { errorState } from "../kit/view-states"
 import { Message } from "./message"
@@ -27,12 +28,12 @@ const transcriptBody = (h: HtmlBuilder<Message>, model: Model, session: SessionD
 	return transcript(h, events, session.startTime)
 }
 
-const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail): Html => {
+const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail, timeFormat: TimeFormat): Html => {
 	const label = session.userName || session.userEmail || session.userId || "Anonymous"
 	return h.div(
 		[h.Class("mx-auto max-w-5xl px-4 py-5")],
 		[
-			hero(h, model, session, label),
+			hero(h, model, session, label, timeFormat),
 			statTiles(h, session),
 			h.div(
 				[h.Class("mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]")],
@@ -45,14 +46,14 @@ const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 	)
 }
 
-const content = (h: HtmlBuilder<Message>, model: Model): Html => {
+const content = (h: HtmlBuilder<Message>, model: Model, timeFormat: TimeFormat): Html => {
 	if (isPending(model.detail)) return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
 	const failure = failureWithoutData(model.detail)
 	if (Option.isSome(failure)) return errorState(h, { label: "session", failure: failure.value, onRetry: Message.ClickedRetryDetail() })
 	const session = Option.getOrNull(AsyncData.getData(model.detail.data))
 	if (session === null)
 		return h.div([h.Class("flex h-full items-center justify-center text-sm text-muted-foreground")], ["Session not found."])
-	return sessionBody(h, model, session)
+	return sessionBody(h, model, session, timeFormat)
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
@@ -75,7 +76,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					}),
 				],
 			),
-			h.div([h.Class("min-h-0 flex-1 overflow-auto")], [content(h, model)]),
+			h.div([h.Class("min-h-0 flex-1 overflow-auto")], [content(h, model, inputs.context.timeFormat)]),
 		],
 	),
 )

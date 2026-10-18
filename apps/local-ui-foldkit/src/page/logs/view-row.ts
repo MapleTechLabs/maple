@@ -1,4 +1,5 @@
-import { formatLocalTimestamp, formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatTimestamp, type TimeFormat } from "../kit/local-time"
 import { countLabel } from "@maple/ui/lib/format"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
@@ -53,7 +54,7 @@ const chipsView = (h: HtmlBuilder<Message>, log: LocalLog): ReadonlyArray<Html> 
 
 export const logRow = (
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ log: LocalLog; search: string | undefined; top: number; isSelected: boolean; nowMs: number }>,
+	options: Readonly<{ log: LocalLog; search: string | undefined; top: number; isSelected: boolean; nowMs: number; timeFormat: TimeFormat }>,
 ): Html => {
 	const { log, search } = options
 	const firstLine = firstLineOf(log.body, search)
@@ -86,7 +87,7 @@ export const logRow = (
 		[
 			h.span(
 				[h.Class("w-36 shrink-0 truncate text-foreground/75 tabular-nums"), h.Title(formatUtcTitle(log.timestamp))],
-				[formatLocalTimestamp(log.timestamp, { nowMs: options.nowMs })],
+				[formatTimestamp(options.timeFormat, log.timestamp, { nowMs: options.nowMs })],
 			),
 			h.span(
 				[

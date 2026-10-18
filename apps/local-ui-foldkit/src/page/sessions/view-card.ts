@@ -1,4 +1,5 @@
-import { formatLocalDateTime, formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatDateTime, type TimeFormat } from "../kit/local-time"
 import { isLocalSessionLive, localSessionDurationMs } from "@maple/local-ui/lib/session-liveness"
 import { shortId } from "@maple/ui/lib/ids"
 import { initialsFrom } from "@maple/ui/lib/initials"
@@ -92,7 +93,7 @@ const counts = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 		],
 	)
 
-export const sessionCard = <M>(h: HtmlBuilder<M>, session: SessionRow, href: string, nowMs: number): Html => {
+export const sessionCard = <M>(h: HtmlBuilder<M>, session: SessionRow, href: string, nowMs: number, timeFormat: TimeFormat): Html => {
 	const label = session.userName || session.userEmail || session.userId || "Anonymous"
 	const isActive = isLocalSessionLive(session, nowMs)
 	return h.a(
@@ -119,7 +120,7 @@ export const sessionCard = <M>(h: HtmlBuilder<M>, session: SessionRow, href: str
 					h.span(
 						[
 							h.Class("inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground"),
-							h.Title(`${formatLocalDateTime(session.startTime)} (${formatUtcTitle(session.startTime)})`),
+							h.Title(`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`),
 						],
 						[icon(h, "ClockIcon", { className: "size-3.5 opacity-60" }), formatRelativeFrom(DateTime.toEpochMillis(session.startTime), nowMs)],
 					),

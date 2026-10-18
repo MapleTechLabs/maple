@@ -5,7 +5,7 @@ import { Option, Result } from "effect"
 import { Command } from "foldkit"
 import { accept } from "../../data/slot"
 import { queryOf } from "../../route"
-import type { PageContext } from "../contract"
+import { type PageContext, PageOutMessage } from "../contract"
 import { updateCopy } from "../kit/copies"
 import { CopyChip, ReadRefreshClock, WaitSearchDebounce } from "./command"
 import { modeOf } from "./filters"
@@ -65,7 +65,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
 				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return { model: settleRefresh(refetch.model), commands: refetch.commands }
+			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
 		},
 		ChangedSearch: ({ text }) => debounceSearch(model, text),
 		ClickedClearSearch: () => debounceSearch(model, ""),

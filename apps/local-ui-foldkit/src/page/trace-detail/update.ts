@@ -124,6 +124,7 @@ const refresh = (model: Model, context: PageContext): UpdateReturn => {
 			FetchTrace({ key: model.trace.key, traceId: model.traceId, apiBase: context.env.apiBase }),
 			...(panel?.commands ?? []),
 		],
+		outMessage: PageOutMessage.RefetchedInPlace(),
 	}
 }
 
