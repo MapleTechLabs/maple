@@ -220,6 +220,8 @@ export const investigationDatasetEndpoints = {
 			)
 			return list(yield* Effect.forEach(matching, (entry) => encode(entry)))
 		}),
+	// Nothing is persisted: a new investigation answers as the running one, which the detail page then reads.
+	"investigations.create": () => encode(running),
 	"investigations.retrieve": ({ params }) =>
 		Effect.gen(function* () {
 			const found = INVESTIGATIONS.find((entry) => entry.id === str(params, "id"))

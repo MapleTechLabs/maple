@@ -8,7 +8,7 @@ import {
 	listRowVariants,
 	rowSelectedClass,
 } from "@maple/ui/styles/ui/list-row"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 // Port of packages/ui/src/components/ui/list-row.tsx: icon + title + meta + trailing row.
 
@@ -27,6 +27,8 @@ export interface ListRowOptions {
 	readonly className?: string
 	/** `render={<Link />}`: the row is a link to this URL. */
 	readonly href?: string
+	/** `render={<li />}`: the row is a list item. */
+	readonly as?: "li"
 }
 
 const leadingSlot = <M>(h: HtmlBuilder<M>, leading: Child): Html =>
@@ -36,7 +38,11 @@ const trailingSlot = <M>(h: HtmlBuilder<M>, trailing: Child): Html =>
 	h.span([h.Class(listRowTrailingStyles), h.DataAttribute("slot", "list-row-trailing")], [trailing])
 
 /** One class attribute per row (S4: rows are repeated). */
-export const listRow = <M>(h: HtmlBuilder<M>, options: ListRowOptions): Html => {
+export const listRow = <M>(
+	h: HtmlBuilder<M>,
+	options: ListRowOptions,
+	extra: ReadonlyArray<Attribute<M>> = [],
+): Html => {
 	const attributes = [
 		...(options.selected === true ? [h.AriaCurrent("true"), h.DataAttribute("selected", "")] : []),
 		h.Attribute(
@@ -73,7 +79,9 @@ export const listRow = <M>(h: HtmlBuilder<M>, options: ListRowOptions): Html => 
 		),
 		...(options.trailing === undefined ? [] : [trailingSlot(h, options.trailing)]),
 	]
-	return options.href === undefined
-		? h.div(attributes, children)
-		: h.a([h.Href(options.href), ...attributes], children)
+	return options.href !== undefined
+		? h.a([h.Href(options.href), ...attributes, ...extra], children)
+		: options.as === "li"
+			? h.li([...attributes, ...extra], children)
+			: h.div([...attributes, ...extra], children)
 }
