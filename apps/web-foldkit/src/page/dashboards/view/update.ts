@@ -1,4 +1,5 @@
 import { pickDashboardControlParams, variableValuesFromSearch } from "@maple/web/lib/dashboard-controls/search-params"
+import { behindToast } from "../kit/store"
 import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
@@ -42,7 +43,9 @@ import { menuStep } from "./menu-step"
 import { sectionStep } from "./section-update"
 import { variableStep } from "./variable-update"
 import { historyStep, openHistory } from "./history-update"
+import { openEmbed, openShare, shareStep } from "./share-update"
 import { initHistory } from "./history"
+import { initSharing } from "./share"
 import * as VariablesManagerUpdate from "../kit/variables-manager/update"
 import { managerStep, openVariablesManager } from "./variables-manager"
 import { SectionEdit } from "./section-edit"
@@ -82,6 +85,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		tagEditor: TagEditor.init("dashboard-view-tags-dialog"),
 		variablesManager: VariablesManagerUpdate.init("dashboard-variables-dialog"),
 		history: initHistory(),
+		sharing: initSharing(),
 		orgTags: [],
 		pickerTabs: Tabs.init({ idBase: 300, values: PICKER_TABS.map((tab) => tab.id), selected: "all" }),
 		gesture: null,
@@ -340,6 +344,8 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 			return model.persistenceError === null
 				? { model, commands: [AutoLayout({ orgId: context.orgId, dashboardId: model.dashboardId })] }
 				: { model }
+		case "share":
+			return openShare(model)
 		case "export":
 			return {
 				model,
@@ -411,6 +417,8 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 						),
 					)
 		}
+		case "embed":
+			return openEmbed(model, widgetId)
 		default:
 			return { model }
 	}
@@ -478,8 +486,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				"Load",
 			)
 		},
-		CompletedFetchShares: ({ dashboardId }) =>
-			dashboardId === model.dashboardId ? { model: { ...model, shares: "Loaded" } } : { model },
+		GotShareMessage: ({ message: inner }) => shareStep(model, context, inner),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
@@ -607,7 +614,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedWrite: ({ result }) =>
 			Result.match(result, {
 				onFailure: (error) => ({ model: { ...model, persistenceError: error } }),
-				onSuccess: () => ({ model: { ...model, persistenceError: null } }),
+				onSuccess: (sync) =>
+					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
 			}),
 		CompletedExport: () => ({ model }),
 		GotErrorDetailsMessage: ({ widgetId, message: inner }) => {

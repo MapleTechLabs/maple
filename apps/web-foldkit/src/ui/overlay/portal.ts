@@ -159,7 +159,8 @@ export const manageFocus = (
 					: options.initialFocus === "highlighted"
 						? (popup.querySelector<HTMLElement>("[data-highlighted]") ?? popup)
 						: popup
-			if (options.initialFocus !== "none") target.focus({ preventScroll: true })
+			// Floating UI scrolls an element it focuses into view (an input to its caret); only the popup is not.
+			if (options.initialFocus !== "none") target.focus({ preventScroll: target === popup })
 			return previous
 		}),
 		(previous) =>

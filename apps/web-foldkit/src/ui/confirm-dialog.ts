@@ -35,6 +35,8 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	className?: string
 	/** `icon`: replaces the warning glyph in the media tile. */
 	icon?: Html
+	/** Opened from inside another dialog (Base UI nesting: no second backdrop). */
+	isNested?: boolean
 }>
 
 /** The confirm-before-acting dialog, opened from code (no trigger), placed anywhere in the page. */
@@ -50,6 +52,7 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 		viewInputs: {
 			hasTrigger: false,
 			className: options.className,
+			isNested: options.isNested,
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) => [
 				DialogView.dialogHeader(h, "alert-dialog", [

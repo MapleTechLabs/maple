@@ -20,11 +20,13 @@ import {
 	withLayouts,
 	withoutWidget,
 } from "../kit/layout"
-import { errorMessageOf, mutateDashboard, readDocument } from "../kit/store"
+import { errorMessageOf, mutateDashboard, readDocument, type WriteSync } from "../kit/store"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { fetchVariableOptions } from "../kit/variables"
 import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
+import { ShareMessage } from "./share"
+import { toLoadFailure } from "../../../data/load-failure"
 import { presetById } from "./picker-catalog"
 import { applySectionEdit, SectionEdit } from "./section-edit"
 
@@ -71,13 +73,18 @@ const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 /** `dashboardSharesAtom`: loaded means every widget menu offers "Embed chart". */
 export const FetchShares = Command.define("FetchDashboardShares", {
 	args: { dashboardId: Schema.String },
-	messages: [Message.CompletedFetchShares],
+	messages: [Message.GotShareMessage],
 	execute: ({ dashboardId }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
-			yield* client.dashboards.listShares({ params: { id } })
-		}).pipe(Effect.ignore, Effect.as(Message.CompletedFetchShares({ dashboardId }))),
+			const shares = yield* client.dashboards.listShares({ params: { id } })
+			return shares.map((share) => ({ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }))
+		}).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ result }) })),
+		),
 })
 
 /** `PageRefreshProvider`: how long Reload shows its pending spinner. */
@@ -88,7 +95,7 @@ export const CompleteReloadSpin = Command.define("CompleteDashboardReloadSpin", 
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
 })
 
-const toWriteMessage = <E, R>(effect: Effect.Effect<void, E, R>) =>
+const toWriteMessage = <E, R>(effect: Effect.Effect<WriteSync, E, R>) =>
 	effect.pipe(
 		Effect.mapError((error) => errorMessageOf(error)),
 		Effect.result,
@@ -439,7 +446,7 @@ export const AddWidget = Command.define("AddDashboardWidget", {
 	execute: ({ orgId, dashboardId, presetId, chartId, target }) =>
 		Effect.gen(function* () {
 			const picked = pickedWidget({ presetId, chartId })
-			if (picked === null) return Message.CompletedWrite({ result: Result.succeed(undefined) })
+			if (picked === null) return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
 			const id = generateWidgetId(yield* Clock.currentTimeMillis, yield* Random.next)
 			return yield* toWriteMessage(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>

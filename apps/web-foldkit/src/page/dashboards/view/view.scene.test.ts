@@ -229,4 +229,12 @@ describe("dashboard view", () => {
 		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model
 		expect(names(pageUpdate(editing, pick).commands)).toContain(SaveRefreshInterval.name)
 	})
+
+	test("a write that saved but never synced back says so, and keeps editing on", () => {
+		const behind = pageUpdate(ready(), Message.CompletedWrite({ result: Result.succeed("Behind") }))
+		expect(behind.outMessage?._tag === "RequestedToast" ? behind.outMessage.title : null).toBe(
+			"Saved, but this tab is behind",
+		)
+		expect(behind.model.persistenceError).toBeNull()
+	})
 })

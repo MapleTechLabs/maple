@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../../charts/chart"
 import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
+import { isShareSupported } from "../kit/share-support"
 import * as Menu from "../../../ui/menu"
 import * as MenuView from "../../../ui/menu-view"
 import { dataStateOf } from "../kit/data-state"
@@ -38,9 +39,17 @@ const widgetMenuEntries = (model: Model, widget: Widget): ReadonlyArray<MenuView
 		...(isAlertable(widget)
 			? [{ _tag: "Item", value: "alert", label: "Create alert", icon: "BellIcon" } as const]
 			: []),
-		// TODO(embed): "Embed chart" opens the embed dialog, which is not ported; the item is inert.
+		// TODO(tooltip): a disabled item's "can't be shown in shared views" tooltip is not drawn.
 		...(model.shares === "Loaded"
-			? [{ _tag: "Item", value: "embed", label: "Embed chart", icon: "CodeIcon" } as const]
+			? [
+					{
+						_tag: "Item",
+						value: "embed",
+						label: "Embed chart",
+						icon: "CodeIcon",
+						isDisabled: !isShareSupported(widget.dataSource),
+					} as const,
+				]
 			: []),
 		...(isEdit
 			? [

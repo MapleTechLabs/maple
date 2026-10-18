@@ -4,6 +4,7 @@ import type { AreaModule, Scenario } from "./types.ts"
 import { groupedScenarios } from "./dashboards-sections.ts"
 import { variableScenarios } from "./dashboards-variables.ts"
 import { historyScenarios } from "./dashboards-history.ts"
+import { shareScenarios } from "./dashboards-share.ts"
 
 /**
  * Dashboards built from the API's templates: stat, table, chart and list widgets, the builder in
@@ -309,6 +310,7 @@ export const dashboardsArea: AreaModule = {
 		...groupedScenarios,
 		...variableScenarios,
 		...historyScenarios,
+		...shareScenarios,
 		dashboard("edit-widget-added", "Edit mode: the Total Logs stat added from the picker", platform, {
 			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Stats"), clickButton(/Sum of logs/)),
 			fullPage: true,

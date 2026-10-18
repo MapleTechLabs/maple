@@ -13,11 +13,13 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as TagEditor from "../kit/tag-editor"
 import * as VariablesManager from "../kit/variables-manager/model"
 import { WidgetFailure } from "../kit/widget-data"
+import { WriteSync } from "../kit/store"
 import { LoadFailure } from "../../../data/load-failure"
 import { VersionRow } from "./history"
+import { ShareMessage } from "./share"
 
 /** A write's outcome: the failure is the message the persistence banner shows. */
-const WriteResult = Schema.Result(Schema.Void, Schema.String)
+const WriteResult = Schema.Result(WriteSync, Schema.String)
 
 export const Message = defineMessageUnion({
 	UpdatedDashboard: { orgId: Schema.String, maybeDocument: Schema.Option(DashboardDocument) },
@@ -31,7 +33,7 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(Schema.String), WidgetFailure),
 	},
-	CompletedFetchShares: { dashboardId: Schema.String },
+	GotShareMessage: { message: ShareMessage },
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

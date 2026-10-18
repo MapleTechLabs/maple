@@ -15,6 +15,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as TagEditor from "../kit/tag-editor"
 import * as VariablesManager from "../kit/variables-manager/model"
 import { HistoryState } from "./history"
+import { SharingState } from "./share"
 import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 
@@ -125,6 +126,7 @@ export const Model = Schema.Struct({
 	variablesManager: VariablesManager.Model,
 	/** `historyPanelOpenAtom` / `previewedVersionAtom` and the panel's reads. */
 	history: HistoryState,
+	sharing: SharingState,
 	/** `collectTags(dashboards)`: the tag editor's suggestions. */
 	orgTags: Schema.Array(Schema.String),
 	/** The picker's section tabs; the choice outlives a close, as the component state does. */

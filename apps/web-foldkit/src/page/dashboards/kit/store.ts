@@ -2,6 +2,7 @@ import { type DashboardDocument, IsoDateTimeString } from "@maple/domain/http"
 import { Cause, Clock, Effect, Option, Schema } from "effect"
 import { OrgCollections } from "../../../data/collections/org-collections"
 import { rowToDocument } from "../../../data/collections/dashboards"
+import { PageOutMessage } from "../../contract"
 
 // `useDashboardMutations` (apps/web/src/hooks/use-dashboard-store.ts) over the org collection:
 // writes go through the collection's optimistic update, so live queries show them at once.
@@ -80,19 +81,34 @@ const isTxidAwaitTimeout = (error: unknown, depth = 0): boolean => {
 	return Option.exists(causeOf(error), (inner) => isTxidAwaitTimeout(inner, depth + 1))
 }
 
+/** How a write settled: synced back, or saved while this tab's live sync did not catch up. */
+export const WriteSync = Schema.Literals(["Synced", "Behind"])
+export type WriteSync = typeof WriteSync.Type
+
 /**
- * A transaction's settlement as an Effect; a rejection keeps its cause for the message.
- * TODO(toast): legacy toasts "Saved, but this tab is behind" on a txid timeout; it is ignored here.
+ * The toast `applyMutationError` raises for a txid timeout: the edit reached the server, but the
+ * optimistic copy rolled back. TODO(reconnect): legacy's "Reconnect" action recreates the org
+ * collections, which `OrgCollections` cannot do yet.
  */
-const settled = <A>(promise: () => Promise<A>) =>
+export const behindToast = () =>
+	PageOutMessage.RequestedToast({
+		type: "warning",
+		title: "Saved, but this tab is behind",
+		description: "The change reached the server; this tab’s live sync didn’t catch up, so it isn’t shown yet.",
+		timeoutMs: 10000,
+		action: null,
+	})
+
+/** A transaction's settlement as an Effect; a rejection keeps its cause for the message. */
+const settled = <A>(promise: () => Promise<A>): Effect.Effect<WriteSync, DashboardWriteError> =>
 	Effect.tryPromise({
 		try: promise,
 		catch: (cause) => new DashboardWriteError({ message: errorMessageOf(cause), cause }),
 	}).pipe(
-		Effect.asVoid,
+		Effect.as<WriteSync>("Synced"),
 		Effect.catchIf(
 			(error) => isTxidAwaitTimeout(error.cause),
-			() => Effect.void,
+			() => Effect.succeed<WriteSync>("Behind"),
 		),
 	)
 
@@ -111,23 +127,23 @@ export const mutateDashboard = (
 		// `new Date().toISOString()` inside legacy's updaters.
 		const nowIso = IsoDateTimeString.make(new Date(yield* Clock.currentTimeMillis).toISOString())
 		const updated = updater(current, nowIso)
-		if (updated === current) return
+		if (updated === current) return "Synced" satisfies WriteSync
 		const plain: unknown = JSON.parse(JSON.stringify(updated))
 		const transaction = collection.update(id, (draft) => {
 			draft.payload_json = plain
 			draft.name = updated.name
 			draft.updated_at = updated.updatedAt
 		})
-		yield* settled(() => transaction.isPersisted.promise)
+		return yield* settled(() => transaction.isPersisted.promise)
 	})
 
 /** `deleteDashboard`: the collection's optimistic delete. */
 export const deleteDashboard = (orgId: string, id: string) =>
 	Effect.gen(function* () {
 		const collection = yield* dashboardsOf(orgId)
-		if (collection.get(id) === undefined) return
+		if (collection.get(id) === undefined) return "Synced" satisfies WriteSync
 		const transaction = collection.delete(id)
-		yield* settled(() => transaction.isPersisted.promise)
+		return yield* settled(() => transaction.isPersisted.promise)
 	})
 
 /** `collection.utils.awaitTxId(txid).catch(() => undefined)` after a create. */

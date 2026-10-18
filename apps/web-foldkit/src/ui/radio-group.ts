@@ -64,12 +64,12 @@ export type RadioGroupViewConfig<ParentMessage> = Readonly<{
 /** `<RadioGroup>`: the `role="radiogroup"` container. */
 export const radioGroup = <ParentMessage>(
 	h: HtmlBuilder<ParentMessage>,
-	options: Readonly<{ label: string; className?: string }>,
+	options: Readonly<{ label?: string; className?: string }>,
 	children: ReadonlyArray<Html>,
 ): Html =>
 	h.div(
 		[
-			h.AriaLabel(options.label),
+			...(options.label === undefined ? [] : [h.AriaLabel(options.label)]),
 			h.Class(cn(radioGroupStyles, options.className)),
 			h.DataAttribute("slot", "radio-group"),
 			h.Role("radiogroup"),

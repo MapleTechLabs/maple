@@ -27,6 +27,8 @@ import { widgetPicker } from "./picker"
 import { toolbar } from "./view-toolbar"
 import { sectionDialogs } from "./view-sections"
 import { historyPanel, previewBanner } from "./view-history"
+import { shareDialog } from "./view-share"
+import { embedDialog } from "./view-embed"
 import { errorState } from "../../../ui/error-state"
 
 // `DashboardViewPage` (apps/web/src/routes/dashboards/$dashboardId.tsx).
@@ -283,6 +285,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				viewInputs: { slotId: "dashboard-variables-dialog" },
 				toParentMessage: (message) => Message.GotVariablesManagerMessage({ message }),
 			}),
+			shareDialog(h, model),
+			embedDialog(h, model, inputs.context),
 			...sectionDialogs(h, model),
 		],
 	),

@@ -115,6 +115,10 @@ export type ViewInputs = Readonly<{
 	showCloseButton?: boolean
 	/** Base UI points `aria-describedby` at a description only when one renders. */
 	hasDescription?: boolean
+	/** Opened from inside another dialog: no backdrop of its own, `data-nested` on viewport and popup. */
+	isNested?: boolean
+	/** Dialogs open inside this one: `--nested-dialogs` and `data-nested-dialog-open` on its popup. */
+	nestedDialogs?: number
 }>
 
 const slotPrefix = (kind: Kind) => kind
@@ -150,6 +154,9 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				[icon(h, "XmarkIcon")],
 			),
 	)
+	const isNested = inputs.isNested ?? false
+	const nestedDialogs = inputs.nestedDialogs ?? 0
+	const nestedAttribute = isNested ? [h.DataAttribute("nested", "")] : []
 	const portal = isVisible
 		? h.div(
 				[
@@ -168,19 +175,24 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						h.Role("presentation"),
 						h.Style({ position: "fixed", inset: "0px", userSelect: "none" }),
 					]),
-					h.div([
-						h.AriaHidden(true),
-						h.DataAttribute("base-ui-inert", ""),
-						h.Class(parts.backdrop),
-						...state,
-						h.DataAttribute("slot", `${slot}-backdrop`),
-						h.Role("presentation"),
-						h.Style({ userSelect: "none" }),
-					]),
+					...(isNested
+						? []
+						: [
+								h.div([
+									h.AriaHidden(true),
+									h.DataAttribute("base-ui-inert", ""),
+									h.Class(parts.backdrop),
+									...state,
+									h.DataAttribute("slot", `${slot}-backdrop`),
+									h.Role("presentation"),
+									h.Style({ userSelect: "none" }),
+								]),
+							]),
 					h.div(
 						[
 							h.Class(parts.viewport),
 							...state,
+							...nestedAttribute,
 							h.DataAttribute("slot", `${slot}-viewport`),
 							h.Role("presentation"),
 						],
@@ -198,11 +210,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 										: []),
 									h.Class(parts.popup),
 									h.DataAttribute("base-ui-focusable", ""),
+									...nestedAttribute,
+									...(nestedDialogs > 0 ? [h.DataAttribute("nested-dialog-open", "")] : []),
 									...state,
 									h.DataAttribute("slot", `${slot}-popup`),
 									h.Id(popupId(model.id)),
 									h.Role(parts.role),
-									h.Style({ "--nested-dialogs": "0" }),
+									h.Style({ "--nested-dialogs": String(nestedDialogs) }),
 									h.Tabindex(-1),
 								],
 								[...inputs.toContent(close), ...Option.toArray(closeButton)],
