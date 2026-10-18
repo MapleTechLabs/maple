@@ -320,19 +320,25 @@ const reads = {
 export const ERRORS_BUSY_DATASET = "errors-busy"
 const BUSY_COMMENTS = 56
 
+/** Acme's status with a second repository beside its one (a copy under another name). */
 const twoRepositories: EndpointHandler = (request) =>
-	Effect.map(acmeGithubEndpoints["integrations.githubStatus"](request), (status) => ({
-		...status,
-		repositories: [
-			...status.repositories,
-			...status.repositories.map((repo) => ({
-				...repo,
-				id: fixtureUuid(5, 2),
-				fullName: "acme-shop/storefront",
-				htmlUrl: "https://github.com/acme-shop/storefront",
-			})),
-		],
-	}))
+	Effect.map(acmeGithubEndpoints["integrations.githubStatus"](request), (status) => {
+		if (!Predicate.isObject(status) || !Predicate.hasProperty(status, "repositories")) return status
+		const repositories = Array.isArray(status.repositories) ? status.repositories : []
+		const copies = repositories.flatMap((repo) =>
+			Predicate.isObject(repo)
+				? [
+						{
+							...repo,
+							id: fixtureUuid(5, 2),
+							fullName: "acme-shop/storefront",
+							htmlUrl: "https://github.com/acme-shop/storefront",
+						},
+					]
+				: [],
+		)
+		return { ...status, repositories: [...repositories, ...copies] }
+	})
 
 const errorsBusy: Dataset = {
 	...defaultDataset,
