@@ -38,6 +38,8 @@ const MOUNTED: AnchoredEvent = { _tag: "Mounted" }
 export const outsidePresses = (
 	root: Element,
 	insideSelectors: ReadonlyArray<string>,
+	/** Presses this accepts are not outside either (a popup nested in a dialog). */
+	isAlsoInside: (target: Node) => boolean = () => false,
 ): Stream.Stream<AnchoredEvent> =>
 	Stream.callback<AnchoredEvent>((queue) =>
 		Effect.acquireRelease(
@@ -49,7 +51,7 @@ export const outsidePresses = (
 						insideSelectors,
 						(selector) => document.querySelector(selector)?.contains(target) ?? false,
 					)
-					if (!isInside) Queue.offerUnsafe(queue, { _tag: "PressedOutside" })
+					if (!isInside && !isAlsoInside(target)) Queue.offerUnsafe(queue, { _tag: "PressedOutside" })
 				}
 				document.addEventListener("pointerdown", onPointerDown, true)
 				return onPointerDown

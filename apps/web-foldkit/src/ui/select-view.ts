@@ -36,6 +36,8 @@ export type ViewInputs = Readonly<{
 	entries: ReadonlyArray<SelectEntry>
 	/** Omit when the trigger is named by its value alone, as a bare `<SelectTrigger>` is. */
 	ariaLabel?: string
+	/** A field label's id: inside a Base UI `Field` the trigger is `aria-labelledby` its label. */
+	ariaLabelledBy?: string
 	/** `<SelectTrigger size>`. */
 	size?: "sm" | "default" | "lg"
 	className?: string
@@ -229,6 +231,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.AriaExpanded(model.isOpen),
 			h.AriaHasPopup("listbox"),
 			...(inputs.ariaLabel === undefined ? [] : [h.AriaLabel(inputs.ariaLabel)]),
+			...(inputs.ariaLabelledBy === undefined ? [] : [h.AriaLabelledBy(inputs.ariaLabelledBy)]),
 			h.Class(cn(selectTriggerVariants({ size: inputs.size ?? "default" }), inputs.className)),
 			...(model.isOpen ? [h.DataAttribute("popup-open", "")] : []),
 			h.DataAttribute("popup-side", model.side),

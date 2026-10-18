@@ -117,6 +117,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 // MOUNT
 
+/** Floating UI's tree: a press in a popup opened from inside the dialog (a select's list) stays inside. */
+const isInNestedPortal = (dialogPortal: Element) => (target: Node) => {
+	const element = target instanceof Element ? target : target.parentElement
+	const portal = element?.closest("[data-base-ui-portal]") ?? null
+	return portal !== null && portal !== dialogPortal
+}
+
 /**
  * On the portal root: moves it to `<body>`, hides the rest of the page from assistive tech,
  * locks scroll, traps focus and moves it in; releasing (unmount) undoes each and returns focus.
@@ -140,7 +147,7 @@ export const MountDialog = Mount.defineStream("MountDialog", {
 				})
 				return Stream.concat(
 					mounted,
-					outsidePresses(popup, []).pipe(Stream.map(() => Message.PressedOutside())),
+					outsidePresses(popup, [], isInNestedPortal(element)).pipe(Stream.map(() => Message.PressedOutside())),
 				)
 			}),
 		),
