@@ -1,31 +1,14 @@
 import * as Markdown from "@foldkit/markdown"
 import { cn } from "@maple/ui/lib/utils"
-import { Effect, Option, Schema } from "effect"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // `MessageResponse lightweight` (components/ai-elements/message-response.tsx over Streamdown): markdown
 // laid out with Streamdown's element classes. The parser loads on first use, never at startup.
 // TODO(markdown-table): Maple's `MarkdownTable` primitives are drawn with Streamdown's own table classes.
 
-/** A parsed body; `null` when the text holds a construct the vocabulary rejects (raw HTML). */
-export const ParsedMarkdown = Schema.Struct({
-	text: Schema.String,
-	document: Schema.NullOr(Markdown.MarkdownDocument),
-})
-export type ParsedMarkdown = typeof ParsedMarkdown.Type
-
-/** Parses each text with the lazily imported remark pipeline; a rejected text parses to `null`. */
-export const parseMarkdownTexts = (texts: ReadonlyArray<string>) =>
-	Effect.promise(() => import("@foldkit/markdown/vite")).pipe(
-		Effect.flatMap(({ parseMarkdown }) =>
-			Effect.forEach(texts, (text) =>
-				Effect.try(() => parseMarkdown(text)).pipe(
-					Effect.map((document): ParsedMarkdown => ({ text, document })),
-					Effect.orElseSucceed((): ParsedMarkdown => ({ text, document: null })),
-				),
-			),
-		),
-	)
+// The parse is the shared one (`page/kit/markdown`), re-exported for the pages that import it here.
+export { ParsedMarkdown, parseMarkdownTexts } from "../../kit/markdown"
 
 const streamdown =
 	(slot: string, className: string) =>
