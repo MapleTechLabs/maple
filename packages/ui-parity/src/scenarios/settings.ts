@@ -313,6 +313,33 @@ const automationInteractions: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+const AUDIT = "/settings?tab=audit-log"
+
+/** Audit log: open an entry, filter by actor type, date range and person, refresh. */
+const auditInteractions: ReadonlyArray<Scenario> = [
+	page("audit-log-detail", "Audit log: an entry's full record", AUDIT, {
+		steps: (target) => target.getByRole("button", { name: "Show details: Updated alert rule" }).first().click(),
+	}),
+	page("audit-log-actor", "Audit log: API key actors", AUDIT, {
+		steps: (target) => target.getByRole("button", { name: "API keys", exact: true }).click(),
+	}),
+	page("audit-log-range", "Audit log: last 7 days", AUDIT, {
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Date range: All time" }).click()
+			await target.getByRole("button", { name: "Last 7 days" }).click()
+		},
+	}),
+	page("audit-log-person", "Audit log: one API key", AUDIT, {
+		steps: async (target) => {
+			await target.getByRole("combobox", { name: "Person" }).click()
+			await target.getByRole("option", { name: "CI deploy" }).click()
+		},
+	}),
+	page("audit-log-refresh", "Audit log: refresh", AUDIT, {
+		steps: (target) => target.getByRole("button", { name: "Refresh audit log" }).click(),
+	}),
+]
+
 export const settingsArea: AreaModule = {
 	area: "settings",
 	scenarios: [
@@ -339,6 +366,7 @@ export const settingsArea: AreaModule = {
 		...setupHealthInteractions,
 		...aiInteractions,
 		...automationInteractions,
+		...auditInteractions,
 		page("audit-log-denied", "Audit log: denied only", "/settings?tab=audit-log", {
 			// The outcome filter precedes the table's "Denied" badges in document order.
 			steps: (page) => page.getByText("Denied", { exact: true }).first().click(),

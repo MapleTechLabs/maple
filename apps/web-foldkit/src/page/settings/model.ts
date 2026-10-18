@@ -4,6 +4,7 @@ import { AsyncData } from "foldkit"
 import { LoadFailure } from "../../data/load-failure"
 import { SettingsSearch } from "../../route/search"
 import * as Ai from "./ai/model"
+import * as AuditLog from "./audit-log/model"
 import * as Automation from "./automation/model"
 import * as Ingestion from "./ingestion/model"
 import * as Keys from "./keys/model"
@@ -26,6 +27,7 @@ export const TabModel = Schema.Union([
 	Schema.TaggedStruct("SetupHealth", { model: SetupHealth.Model }),
 	Schema.TaggedStruct("Ai", { model: Ai.Model }),
 	Schema.TaggedStruct("Automation", { model: Automation.Model }),
+	Schema.TaggedStruct("AuditLog", { model: AuditLog.Model }),
 	/** A tab whose section is not ported yet. */
 	Schema.TaggedStruct("Unported", { tab: Schema.String }),
 ])

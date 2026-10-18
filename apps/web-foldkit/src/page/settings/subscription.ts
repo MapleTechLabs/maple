@@ -24,8 +24,8 @@ const readsApiKeys = (model: Model): boolean => {
 			return true
 		case "Mcp":
 			return tab.model.createKey.isCreating || tab.model.createKey.created !== null
-		case "Unported":
-			return tab.tab === "audit-log"
+		case "AuditLog":
+			return true
 		default:
 			return false
 	}

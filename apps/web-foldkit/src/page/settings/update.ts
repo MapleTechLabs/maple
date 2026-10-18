@@ -18,6 +18,7 @@ import type * as IngestionModel from "./ingestion/model"
 import * as Ingestion from "./ingestion/update"
 import * as SetupHealth from "./setup-health/update"
 import * as Ai from "./ai/update"
+import * as AuditLog from "./audit-log/update"
 import * as Automation from "./automation/update"
 import type * as KeysMessage from "./keys/message"
 import { Message as KeysMessageValue } from "./keys/message"
@@ -64,6 +65,7 @@ const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
 	["setup-health", "SetupHealth"],
 	["ai", "Ai"],
 	["automation", "Automation"],
+	["audit-log", "AuditLog"],
 ])
 const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
 
@@ -129,6 +131,13 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAutomationMessage({ message })),
 			}
 		}
+		case "AuditLog": {
+			const step = AuditLog.init(model.search)
+			return {
+				model: { ...model, tab: { _tag: "AuditLog", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAuditLogMessage({ message })),
+			}
+		}
 		case "Unported":
 			return { model: { ...model, tab: { _tag: "Unported", tab } } }
 	}
@@ -138,7 +147,16 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 const syncTab = (model: Model, context: PageContext): Return => {
 	if (isSettingsLoading(model)) return { model: { ...model, tab: null } }
 	const tab = activeTabOf(model)
-	return isTabCurrent(model.tab, tab) ? { model } : initTab(model, tab, context)
+	if (!isTabCurrent(model.tab, tab)) return initTab(model, tab, context)
+	// The audit log's filters live in the search: a change restarts its list.
+	if (model.tab !== null && model.tab._tag === "AuditLog") {
+		const step = AuditLog.searchChanged(model.tab.model, model.search)
+		return {
+			model: { ...model, tab: { _tag: "AuditLog", model: step.model } },
+			commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAuditLogMessage({ message })),
+		}
+	}
+	return { model }
 }
 
 // NAVIGATION
@@ -259,6 +277,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return {
 				model: { ...model, tab: { _tag: "Automation", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAutomationMessage({ message: child })),
+				outMessage: step.outMessage,
+			}
+		},
+		GotAuditLogMessage: ({ message: inner }) => {
+			if (model.tab === null || model.tab._tag !== "AuditLog") return { model }
+			const step = AuditLog.update(model.tab.model, inner, model.search)
+			return {
+				model: { ...model, tab: { _tag: "AuditLog", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAuditLogMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
