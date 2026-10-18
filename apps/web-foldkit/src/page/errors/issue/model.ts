@@ -36,6 +36,8 @@ export const Model = Schema.Struct({
 	/** The resolved window and the clock it was resolved at; `null` until the first resolve. */
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,
+	/** `LeaseHud`'s own clock, ticking once a second while a lease is held; 0 before its first tick. */
+	leaseNowMs: Schema.Number,
 	detail: keyed(V2ErrorIssueDetail),
 	events: keyed(ErrorIssueEventsResponse),
 	investigations: keyed(Schema.Array(V2Investigation)),

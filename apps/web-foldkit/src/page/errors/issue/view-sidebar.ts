@@ -193,7 +193,7 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 						leaseExpiresAt: issue.leaseExpiresAt,
 						claimedAt: issue.claimedAt,
 					},
-					model.nowMs,
+					model.leaseNowMs === 0 ? model.nowMs : model.leaseNowMs,
 				)
 			: undefined
 	if (hud !== undefined)

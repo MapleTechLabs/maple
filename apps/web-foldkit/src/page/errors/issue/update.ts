@@ -229,6 +229,7 @@ export const init = (
 		search: route.search,
 		window: null,
 		nowMs: 0,
+		leaseNowMs: 0,
 		detail: Keyed.idle(),
 		events: Keyed.idle(),
 		investigations: Keyed.idle(),
@@ -417,6 +418,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		UpdatedDestinations: ({ orgId, destinations }) =>
 			orgId === context.orgId ? { model: { ...model, destinations } } : { model },
+		TickedLeaseClock: ({ nowMs }) => ({ model: { ...model, leaseNowMs: nowMs } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
