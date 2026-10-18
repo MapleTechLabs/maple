@@ -71,6 +71,16 @@ export type Scene3dOptions<M> = Readonly<{
 	toMessage: (message: Message) => M
 }>
 
+/** `ServiceMap3DViewport`'s props: a fixed topology, as the 3D lab passes it with `sample`. */
+export type ViewportOptions<M> = Readonly<{
+	model: Model
+	topology: Topology3D
+	selectedId: string | null
+	reducedMotion: boolean
+	sample?: boolean
+	toMessage: (message: Message) => M
+}>
+
 type Palette = ReturnType<typeof mapPalette>
 
 /** `topology` as `LiveServiceMap3D` builds it from the effective graph and its dimming. */
@@ -82,8 +92,11 @@ export const topologyOf = (map: ServiceMap.Model): Topology3D =>
 		map.graph.declutter.dimmedEdgeIds,
 	)
 
-const perspectiveBar = <M>(h: HtmlBuilder<M>, { model, map, toMessage }: Scene3dOptions<M>): Html => {
-	const flowing = model.traffic && !map.reducedMotion
+const perspectiveBar = <M>(
+	h: HtmlBuilder<M>,
+	{ model, reducedMotion, toMessage }: ViewportOptions<M>,
+): Html => {
+	const flowing = model.traffic && !reducedMotion
 	return h.div(
 		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2")],
 		[
@@ -115,7 +128,7 @@ const perspectiveBar = <M>(h: HtmlBuilder<M>, { model, map, toMessage }: Scene3d
 					size: "sm",
 					variant: "ghost",
 					className: "ml-auto text-xs",
-					isDisabled: map.reducedMotion,
+					isDisabled: reducedMotion,
 					attributes: [
 						h.AriaPressed(String(flowing)),
 						h.OnClick(toMessage(Message.ClickedTraffic())),
@@ -123,7 +136,7 @@ const perspectiveBar = <M>(h: HtmlBuilder<M>, { model, map, toMessage }: Scene3d
 				},
 				[
 					icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
-					map.reducedMotion ? "Reduced motion" : flowing ? "Pause traffic" : "Resume traffic",
+					reducedMotion ? "Reduced motion" : flowing ? "Pause traffic" : "Resume traffic",
 				],
 			),
 		],
@@ -348,13 +361,21 @@ const overlays = <M>(
 }
 
 /** The 3D view: `render3D` of the map. Labels and overlays are DOM; the scene draws behind them. */
-export const scene3dView = <M>(h: HtmlBuilder<M>, options: Scene3dOptions<M>): Html => {
-	const { model, map, toMessage } = options
-	const topology = topologyOf(map)
-	const selectedId = Option.getOrNull(map.selectedId)
+export const scene3dView = <M>(h: HtmlBuilder<M>, { model, map, toMessage }: Scene3dOptions<M>): Html =>
+	viewportView(h, {
+		model,
+		topology: topologyOf(map),
+		selectedId: Option.getOrNull(map.selectedId),
+		reducedMotion: map.reducedMotion,
+		toMessage,
+	})
+
+/** `ServiceMap3DViewport` over any topology. */
+export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>): Html => {
+	const { model, topology, selectedId, toMessage } = options
 	const isDark = model.isDark ?? true
 	const palette = mapPalette(isDark)
-	const flowing = model.traffic && !map.reducedMotion
+	const flowing = model.traffic && !options.reducedMotion
 	const layout = spatialLayoutOf(topology, model.perspective)
 	const related = connectedIds(topology, selectedId)
 	const background = paperBackground(palette)
@@ -420,7 +441,9 @@ export const scene3dView = <M>(h: HtmlBuilder<M>, options: Scene3dOptions<M>): H
 						[
 							selectedId
 								? `${related?.size ?? 0} connected nodes · click the canvas to clear`
-								: "Rates from selected time range · ~ sampled estimate",
+								: options.sample === true
+									? "Narrow belts · calls / Wide belts · queues · sample traffic"
+									: "Rates from selected time range · ~ sampled estimate",
 						],
 					),
 				],
