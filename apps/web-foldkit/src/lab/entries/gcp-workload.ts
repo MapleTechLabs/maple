@@ -14,7 +14,7 @@ export const lab = defineShellLab("Google Cloud workload", {
 	init,
 	update,
 	view,
-	overlay,
+	before: overlay,
 	currentPath: "/lab/gcp-workload",
 	breadcrumbs,
 })

@@ -56,7 +56,10 @@ type Context = Readonly<{ theme: ThemeColors; timeZone: string }>
 /** The stacked charts name `--chart-2` and the colour-mixed severities too. */
 const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--chart-2", "--severity-fatal", "--primary"]
 
-const header = (h: H, model: Model): Html => {
+/** The lab's frame: legacy's lab page has no time controls and no filter chips. */
+export type ZonePageOptions = Readonly<{ isTimed?: boolean; hasFilters?: boolean }>
+
+const header = (h: H, model: Model, hasFilters: boolean): Html => {
 	const tabs = tabsOf(model)
 	const tab = model.search.tab ?? "traffic"
 	const severity = severityOf(model)
@@ -99,8 +102,8 @@ const header = (h: H, model: Model): Html => {
 		meta: [
 			heroChip(h, "zone"),
 			...accountChip,
-			...(chips === null ? [] : [chips]),
-			filterPopover(h, model, filters),
+			...(!hasFilters || chips === null ? [] : [chips]),
+			...(hasFilters ? [filterPopover(h, model, filters)] : []),
 		],
 	})
 }
@@ -221,8 +224,8 @@ const tooltipContent = (model: Model, id: string): ReadonlyArray<string> => {
 	return []
 }
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
-	const timeZone = inputs.context.timeZone
+/** `ZoneDetailPage` below the top bar. */
+export const zonePage = (h: H, model: Model, timeZone: string, options: ZonePageOptions = {}): Html => {
 	const theme = model.themeColors
 	const ctx = theme === null || model.chartRuntime._tag === "Loading" ? null : { theme, timeZone }
 	const account = zoneAccountOf(model)
@@ -245,16 +248,20 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							h,
 							{
 								scrollClassName: "gap-6",
-								actions: pageTime(h, {
-									search: model.search,
-									defaultPreset: DEFAULT_PRESET,
-									window: model.window,
-									picker: model.timePicker,
-									toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-									onReset: Message.ClickedResetTimeRange(),
-									onReload: Message.ClickedReload(),
-									isReloading: model.isReloading,
-								}),
+								actions:
+									options.isTimed === false
+										? undefined
+										: pageTime(h, {
+												search: model.search,
+												defaultPreset: DEFAULT_PRESET,
+												window: model.window,
+												picker: model.timePicker,
+												toPickerMessage: (message) =>
+													Message.GotTimePickerMessage({ message }),
+												onReset: Message.ClickedResetTimeRange(),
+												onReload: Message.ClickedReload(),
+												isReloading: model.isReloading,
+											}),
 								rightPanel: zoneRail(h, model, {
 									serviceName: serviceNameOf(model),
 									accountName: account?.name ?? null,
@@ -264,7 +271,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								}),
 							},
 							[
-								header(h, model),
+								header(h, model, options.hasFilters !== false),
 								...(account === null || account.zoneError === null || account.zoneError === ""
 									? []
 									: [
@@ -290,4 +297,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			}),
 		],
 	)
-})
+}
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
+	zonePage(h, model, inputs.context.timeZone),
+)

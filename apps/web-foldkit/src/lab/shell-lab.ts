@@ -27,11 +27,12 @@ export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFl
 	view: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
 	subscriptions?: Subscription.Subscriptions<PageModel, PageMessage, Resources>
 	currentPath: string
+	/** Fixed, or read from the page (a lab switching between pages). */
 	breadcrumbs:
 		| ReadonlyArray<Shell.BreadcrumbEntry>
 		| ((model: PageModel) => ReadonlyArray<Shell.BreadcrumbEntry>)
-	/** A floating lab control rendered before the shell, as legacy's fragment sibling. */
-	overlay?: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
+	/** Rendered in `#app` before the shell, as legacy's lab toolbars that sit beside `DashboardLayout`. */
+	before?: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
 }>
 
 export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, PageFlags>(
@@ -50,8 +51,10 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 	const toPage = (message: PageMessage): Message => Message.GotPageMessage({ message })
 	const foldShell = foldLabShell<Model, Message>(toShell)
 	const pageView = Submodel.defineView<PageModel, PageMessage>(page.view)
-	const overlayView =
-		page.overlay === undefined ? undefined : Submodel.defineView<PageModel, PageMessage>(page.overlay)
+	const before = page.before
+	const beforeView = before === undefined ? null : Submodel.defineView<PageModel, PageMessage>(before)
+	const breadcrumbsOf = (model: PageModel) =>
+		typeof page.breadcrumbs === "function" ? page.breadcrumbs(model) : page.breadcrumbs
 	const own = Subscription.lift(page.subscriptions ?? {})<Model, Message>({
 		read: (model: Model) => Option.some(model.page),
 		toParentMessage: toPage,
@@ -86,22 +89,19 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 			h.div(
 				[h.Id("app")],
 				[
-					...(overlayView === undefined
+					...(beforeView === null
 						? []
 						: [
 								h.submodel({
-									slotId: "lab-overlay",
+									slotId: "lab-before",
 									model: model.page,
-									view: overlayView,
+									view: beforeView,
 									toParentMessage: toPage,
 								}),
 							]),
 					...labShellView(h, model.shell, toShell, {
 						currentPath: page.currentPath,
-						breadcrumbs:
-							typeof page.breadcrumbs === "function"
-								? page.breadcrumbs(model.page)
-								: page.breadcrumbs,
+						breadcrumbs: breadcrumbsOf(model.page),
 						page: () =>
 							h.submodel({
 								slotId: "lab-page",

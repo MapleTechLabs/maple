@@ -15,7 +15,7 @@ export const lab = defineShellLab("Google Cloud", {
 	init: () => init(),
 	update,
 	view,
-	overlay,
+	before: overlay,
 	currentPath: "/lab/gcp-infra",
 	breadcrumbs: [{ label: "Infrastructure" }, { label: "Google Cloud" }],
 })
