@@ -64,7 +64,17 @@ export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 	dashboard("widget-sql-collapsed", "Widget editor: the SQL panel collapsed", throughput, {
 		steps: act((page) => page.getByRole("tab", { name: "Raw SQL" }).click(), clickButton("Collapse SQL")),
 	}),
-	dashboard("widget-metric", "Widget editor: a metrics query and its metric picker", editorOf("cpu-line")),
+	// The first viewport only: growing it scrolls the chip out from under the pointer, which closes
+	// the tooltip (legacy's stays mounted in its frozen exit animation instead).
+	dashboard("widget-sql-chip-tooltip", "Widget editor: a Raw SQL macro chip's description", throughput, {
+		fullPage: false,
+		steps: async (page) => {
+			await page.getByRole("tab", { name: "Raw SQL" }).click()
+			await page.getByRole("button", { name: "$__orgFilter", exact: true }).hover()
+			await page.getByText("Required: expands to OrgId = '<your org>'").waitFor()
+		},
+	}),
+	dashboard("widget-metric","Widget editor: a metrics query and its metric picker", editorOf("cpu-line")),
 	// The list opens near the fold and flips above; the capture then grows the viewport, and the
 	// combobox keeps the flipped side (Base UI's `lazyFlip`).
 	dashboard("widget-metric-open", "Widget editor: the metric list open", editorOf("cpu-line"), {

@@ -7,6 +7,7 @@ import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
+import * as Tooltip from "../../../ui/tooltip"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { LoadFailure } from "../../../data/load-failure"
@@ -54,6 +55,7 @@ export const Message = defineMessageUnion({
 	CompletedInsertSqlToken: { sql: Schema.String, caret: Schema.Number },
 	CompletedFocusSql: {},
 	ToggledSqlCollapsed: {},
+	GotSqlChipTooltipMessage: { message: Tooltip.Message },
 	ChangedTitle: { value: Schema.String },
 	ChangedMarkdown: { value: Schema.String },
 	ChangedDescription: { value: Schema.String },

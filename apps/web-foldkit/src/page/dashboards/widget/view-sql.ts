@@ -4,7 +4,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { fieldErrorStyles } from "@maple/ui/styles/ui/field"
 import { tokenizeSql } from "@maple/web/lib/sql-highlight"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
+import * as Tooltip from "../../../ui/tooltip"
 import { button } from "../../../ui/button"
 import { field, fieldLabel, type FieldState } from "../../../ui/field"
 import { icon } from "../../../ui/icon"
@@ -19,17 +20,19 @@ import { widgetOf } from "./update"
 
 // `RawSqlEditorPanel` (dashboard-builder/config/raw-sql-editor-panel.tsx) under the editor's Raw SQL
 // tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
-// TODO(tooltip): the chips' description tooltips.
 
 type H = HtmlBuilder<Message>
 
-const MACRO_HINTS: ReadonlyArray<string> = [
-	"$__orgFilter",
-	"$__timeFilter(Column)",
-	"$__startTime",
-	"$__endTime",
-	"$__interval_s",
+const MACRO_HINTS: ReadonlyArray<readonly [token: string, description: string]> = [
+	["$__orgFilter", "Required: expands to OrgId = '<your org>'"],
+	["$__timeFilter(Column)", "Column >= <start> AND Column <= <end>"],
+	["$__startTime", "Range start as toDateTime('...')"],
+	["$__endTime", "Range end as toDateTime('...')"],
+	["$__interval_s", "Auto-computed bucket size in seconds"],
 ]
+
+/** The tooltip trigger id of a chip, by position (variable names are free text). */
+const chipTriggerId = (index: number): string => `widget-sql-chip-${index}`
 
 const CHIP = "h-auto rounded-sm px-2 py-0.5 font-mono text-2xs sm:h-auto sm:text-2xs"
 
@@ -111,39 +114,80 @@ const editor = (h: H, sql: string): Html =>
 		],
 	)
 
-const chip = (h: H, token: string, className: string): Html =>
+const chip = (h: H, token: string, className: string, trigger: ReadonlyArray<ChildAttribute>): Html =>
 	button(
 		h,
 		{
 			variant: "ghost",
 			size: "xs",
 			className: cn(className, CHIP),
-			attributes: [h.OnClick(Message.ClickedSqlToken({ token }))],
+			attributes: [...trigger, h.OnClick(Message.ClickedSqlToken({ token }))],
 		},
 		[token],
 	)
 
+/** What a chip's tooltip says: the macro's expansion, or how a variable expands. */
+const chipDescription = (chips: ReadonlyArray<readonly [string, string]>, triggerId: string): string =>
+	chips.find((_, index) => chipTriggerId(index) === triggerId)?.[1] ?? ""
+
 const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
 const BUCKET_IDS = { control: "widget-editor-sql-bucket", label: "widget-editor-sql-bucket-label", error: "widget-editor-sql-bucket-error" }
+
+/** The chips, each a trigger of the one description tooltip (`<Tooltip>` around each in legacy). */
+const chipRow = (
+	h: H,
+	chips: ReadonlyArray<readonly [string, string]>,
+	trigger: (id: string) => ReadonlyArray<ChildAttribute>,
+): Html =>
+	h.div(
+		[h.Class("flex flex-wrap gap-1.5 flex-1 pt-2")],
+		chips.map(([token], index) =>
+			chip(
+				h,
+				token,
+				index < MACRO_HINTS.length
+					? "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+					: "bg-primary/10 text-primary hover:bg-primary/20",
+				trigger(chipTriggerId(index)),
+			),
+		),
+	)
 
 /** The macro chips, a chip per dashboard variable, and the bucket override. */
 const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 	const variables = model.document?.variables ?? []
+	const chips = [
+		...MACRO_HINTS,
+		...variables.map(
+			(variable) =>
+				[
+					`$${variable.name}`,
+					`Dashboard variable: expands to the selected value, e.g. ServiceName IN ($${variable.name}). "All" expands to every value.`,
+				] as const,
+		),
+	]
+	// The portal sits after the row in block flow, so its brief in-place render moves no chip.
+	return h.submodel({
+		slotId: "widget-sql-chip-tooltip",
+		model: model.sqlChipTooltip,
+		view: Tooltip.view,
+		toParentMessage: (message) => Message.GotSqlChipTooltipMessage({ message }),
+		viewInputs: {
+			triggerIds: chips.map((_, index) => chipTriggerId(index)),
+			className: "max-w-xs",
+			toContent: (triggerId) => [chipDescription(chips, triggerId)],
+			toView: ({ trigger, portal }) =>
+				h.div([], [footerRow(h, rawSql, chipRow(h, chips, trigger)), ...(portal === null ? [] : [portal])]),
+		},
+	})
+}
+
+const footerRow = (h: H, rawSql: RawSqlState, chips: Html): Html => {
 	const bucket = rawSql.draft.granularitySeconds
 	return h.div(
 		[h.Class("flex items-start gap-3 pt-1 border-t border-dashed")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap gap-1.5 flex-1 pt-2")],
-				[
-					...MACRO_HINTS.map((token) =>
-						chip(h, token, "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"),
-					),
-					...variables.map((variable) =>
-						chip(h, `$${variable.name}`, "bg-primary/10 text-primary hover:bg-primary/20"),
-					),
-				],
-			),
+			chips,
 			field(h, { className: "flex-row items-center gap-2 pt-1.5 shrink-0", state: IDLE }, [
 				fieldLabel(
 					h,

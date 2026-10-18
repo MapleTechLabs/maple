@@ -15,6 +15,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardWidgetSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Tabs from "../../../ui/tabs"
+import * as Tooltip from "../../../ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -77,6 +78,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		listFieldFocus: null,
 		isProductPanelCollapsed: false,
 		breakdownAttribute: { isActive: false, key: "" },
+		sqlChipTooltip: Tooltip.init("widget-sql-chip-tooltip"),
 		isSaving: false,
 		leaveDialog: Dialog.init("widget-editor-leave-dialog", "alert-dialog"),
 	},

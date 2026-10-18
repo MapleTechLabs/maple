@@ -10,6 +10,7 @@ import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
+import * as Tooltip from "../../../ui/tooltip"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { TableSort } from "../kit/tiles"
@@ -83,6 +84,8 @@ export const Model = Schema.Struct({
 	/** The funnel or paths panel's own collapse toggle (`QueryPanelShell`'s state). */
 	isProductPanelCollapsed: Schema.Boolean,
 	breakdownAttribute: Schema.Struct({ isActive: Schema.Boolean, key: Schema.String }),
+	/** The Raw SQL chips' description tooltip (one model, a trigger per chip). */
+	sqlChipTooltip: Tooltip.Model,
 	isSaving: Schema.Boolean,
 	/** The unsaved-changes confirmation (`useBlocker`). */
 	leaveDialog: Dialog.Model,

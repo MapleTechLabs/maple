@@ -5,6 +5,7 @@ import * as Chart from "../../../charts/chart"
 import * as Keyed from "../../../data/keyed"
 import * as Dialog from "../../../ui/dialog"
 import * as Tabs from "../../../ui/tabs"
+import * as Tooltip from "../../../ui/tooltip"
 import { type PageContext, PageOutMessage } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { SaveTimeRange, SaveWidget } from "./command"
@@ -198,6 +199,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedInsertSqlToken: (m) => sqlStep(model, m),
 		CompletedFocusSql: (m) => sqlStep(model, m),
 		ToggledSqlCollapsed: (m) => sqlStep(model, m),
+		GotSqlChipTooltipMessage: ({ message: inner }) => {
+			const next = Tooltip.update(model.sqlChipTooltip, inner)
+			return {
+				model: { ...model, sqlChipTooltip: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (tip) => Message.GotSqlChipTooltipMessage({ message: tip })),
+			}
+		},
 		ChangedTitle: ({ value }) => edit(model, context, (state) => ({ ...state, title: value })),
 		ChangedMarkdown: ({ value }) =>
 			edit(model, context, (state) => ({ ...state, markdownContent: value })),
