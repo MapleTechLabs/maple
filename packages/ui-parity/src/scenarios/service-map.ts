@@ -116,6 +116,16 @@ export const serviceMapArea: AreaModule = {
 		map("focus", "payment-svc focused from the combobox", "/service-map", {
 			steps: act(focusService("payment-svc")),
 		}),
+		map("focus-search", "the focus combobox filtered by typing", "/service-map", {
+			steps: async (page) => {
+				await page.getByRole("combobox", { name: "Focus a service…" }).fill("pay")
+				await page.getByRole("option", { name: "payment-svc" }).waitFor()
+			},
+		}),
+		// Framed first: legacy's d3 camera starts a fraction off the drawn one (its cancelled first fit).
+		map("zoom-in", "framed, then zoomed in twice from the controls", "/service-map", {
+			steps: act(fitView, clickButton("Zoom in"), clickButton("Zoom in")),
+		}),
 		map("focus-hide", "focused, rest hidden", "/service-map", {
 			steps: act(focusService("payment-svc"), clickButton("Hide rest"), fitView),
 		}),
