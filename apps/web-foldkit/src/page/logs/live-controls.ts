@@ -1,11 +1,8 @@
-import { buttonVariants } from "@maple/ui/styles/ui/button"
-import { cn } from "@maple/ui/lib/utils"
-import { REFRESH_INTERVAL_OPTIONS } from "@maple/web/lib/dashboard-controls/search-params"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import type * as Menu from "../../ui/menu"
-import * as MenuView from "../../ui/menu-view"
+import { refreshControls } from "../kit/refresh-controls"
 
 // `LogsLiveControls` (apps/web/src/components/logs/logs-live-controls.tsx), shared by /logs and /lab/logs.
 
@@ -21,10 +18,6 @@ export type LiveControlsInputs<M> = Readonly<{
 	menu: Menu.Model
 	toMenuMessage: (message: Menu.Message) => M
 }>
-
-/** `formatRefreshInterval`: 0 is the off sentinel. */
-export const refreshLabel = (seconds: number) =>
-	seconds === 0 ? "Off" : seconds < 60 ? `${seconds}s` : `${seconds / 60}m`
 
 /** `LogsLiveControls`: why the tail holds still, then `RefreshControls`' split button. */
 export const liveControls = <M>(h: HtmlBuilder<M>, model: LiveControlsInputs<M>): Html => {
@@ -59,92 +52,14 @@ export const liveControls = <M>(h: HtmlBuilder<M>, model: LiveControlsInputs<M>)
 						: []),
 				],
 			),
-			h.div(
-				[h.Class("flex items-center")],
-				[
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
-							isDisabled: model.isReloading,
-							attributes: [
-								...(model.isReloading ? [h.AriaBusy(true)] : []),
-								h.OnClick(model.onReload),
-							],
-						},
-						[
-							icon(h, "ArrowRotateAnticlockwiseIcon", {
-								size: 24,
-								className: cn("size-3.5", model.isReloading && "animate-spin"),
-							}),
-							h.span([], ["Reload"]),
-						],
-					),
-					refreshMenu(h, model),
-				],
-			),
+			refreshControls(h, {
+				seconds: model.refreshInterval,
+				savedDefault: undefined,
+				isReloading: model.isReloading,
+				onReload: model.onReload,
+				menu: model.menu,
+				toMenuMessage: model.toMenuMessage,
+			}),
 		],
 	)
-}
-
-/** `RefreshControls`' cadence half: the trigger names the interval, the menu offers the closed set. */
-const refreshMenu = <M>(h: HtmlBuilder<M>, model: LiveControlsInputs<M>): Html => {
-	const isOn = model.refreshInterval > 0
-	const label = refreshLabel(model.refreshInterval)
-	return h.submodel({
-		slotId: "logs-refresh-menu",
-		model: model.menu,
-		view: MenuView.view,
-		toParentMessage: model.toMenuMessage,
-		viewInputs: {
-			entries: [
-				{
-					_tag: "RadioGroup",
-					label: "Auto-refresh",
-					isItemLabelWrapped: true,
-					items: REFRESH_INTERVAL_OPTIONS.map((seconds) => ({
-						value: String(seconds),
-						label: refreshLabel(seconds),
-						isChecked: seconds === model.refreshInterval,
-					})),
-				},
-			],
-			className: "min-w-40",
-			align: "end",
-			toView: ({ trigger, withTrigger }) =>
-				h.div(
-					[h.Class("contents")],
-					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.Class(
-									cn(
-										buttonVariants({
-											className:
-												"relative -ml-px rounded-l-none before:rounded-l-none focus-visible:z-10",
-											size: "sm",
-											variant: "outline",
-										}),
-									),
-								),
-								h.Title(isOn ? `Reloading every ${label}` : "Auto-refresh is off"),
-								h.AriaLabel(isOn ? `Auto-refresh every ${label}` : "Auto-refresh off"),
-								h.Tabindex(0),
-								...trigger,
-							],
-							[
-								h.span(
-									[h.Class(cn("tabular-nums", !isOn && "text-muted-foreground"))],
-									[label],
-								),
-								icon(h, "ChevronDownIcon", { size: 24, className: "size-3 opacity-60" }),
-							],
-						),
-					),
-				),
-		},
-	})
 }
