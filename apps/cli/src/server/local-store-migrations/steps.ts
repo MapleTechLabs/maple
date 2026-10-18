@@ -8,6 +8,7 @@ import {
 	PRODUCT_EVENTS_TRACE_BACKFILL,
 	PRODUCT_EVENTS_TRACE_FILTER,
 	errorRollupBackfill,
+	tracesTraceKeyRekey,
 } from "./backfills"
 import {
 	addColumns,
@@ -1334,6 +1335,33 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				preservationInterval: "source retention horizon",
 				sourceRetentionDays: 30,
 				targetRetentionDays: 30,
+			},
+		],
+	},
+	{
+		// The bootstrap keeps the v33 traces (IF NOT EXISTS); the custom step swaps in a
+		// v34-keyed copy. Every view and rollup is untouched: none fires on the copy.
+		id: "local-0033-to-0034-traces-trace-key",
+		from: 33,
+		to: 34,
+		description: "Re-sort traces by service, 5-minute bucket and trace id, with a span-name bloom index",
+		clonedBefore: "any DDL runs",
+		custom: tracesTraceKeyRekey,
+		plan: [
+			[
+				"resort-traces",
+				"Copy traces into a view-free table with the v34 sort key and span-name index, then exchange it in for traces",
+			],
+		],
+		verifies:
+			"Verify the v34 physical schema, the retained raw telemetry counts, and that no staging table is left",
+		dispositions: [
+			{
+				name: "traces",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"Every span inside its TTL is copied as written into the re-sorted table, keeping the store's TTL; spans already past it are dropped as a merge would. No view fires on the copy, so no rollup counts a span twice.",
 			},
 		],
 	},
