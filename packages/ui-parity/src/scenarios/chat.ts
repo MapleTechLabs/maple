@@ -272,6 +272,17 @@ export const chatArea: AreaModule = {
 		scenario("code", "a reply with a SQL block and a mermaid diagram", "chat-code", async (page) => {
 			await page.getByRole("button", { name: "Copy Code" }).first().waitFor()
 		}),
+		scenario("proposals", "the dashboard tools' approval summaries", "chat-proposals", async (page) => {
+			await page.getByText("Reorder ").first().waitFor()
+		}),
+		scenario("proposal-approved", "a dashboard proposal approved", "chat-proposals", async (page) => {
+			await page.getByRole("button", { name: "Approve" }).first().click()
+			await page.getByText("Change applied").waitFor()
+		}),
+		scenario("proposal-denied", "a dashboard proposal denied", "chat-proposals", async (page) => {
+			await page.getByRole("button", { name: "Deny" }).nth(4).click()
+			await page.getByText("Denied", { exact: true }).waitFor()
+		}),
 		scenario("math", "a reply with text math, a math block and a math fence", "chat-math", async (page) => {
 			await page.getByText("With the window at one hour:").waitFor()
 		}),

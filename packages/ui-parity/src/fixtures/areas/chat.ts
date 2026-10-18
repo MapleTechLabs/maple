@@ -126,6 +126,32 @@ const mathConversation = (nowMs: number) => {
 	]
 }
 
+export const CHAT_PROPOSALS_DATASET = "chat-proposals"
+
+/** One proposal per dashboard tool, awaiting approval: each tool's own summary in its card. */
+const proposalsConversation = (nowMs: number) => {
+	const widget = { id: "w-p95", visualization: "chart", display: { title: "Checkout p95" }, dataSource: { endpoint: "custom_timeseries", params: { group_by: "service" } } }
+	const propose = (id: string, name: string, input: Record<string, unknown>) => ({ id, name, input, proposed: true, textOffset: 0 })
+	return [
+		{ id: "msg_prop_user", role: "user", text: "Build me a checkout dashboard.", toolCalls: [], createdAt: nowMs - 3 * MINUTE, startSeq: 1 },
+		{
+			id: "msg_prop_assistant",
+			role: "assistant",
+			text: "Here are the changes, each waiting for your approval.",
+			toolCalls: [
+				propose("call_prop_1", "create_dashboard", { name: "Checkout", description: "Checkout health", service_name: "checkout-api", dashboard_json: JSON.stringify({ name: "Checkout v2", widgets: [widget, { ...widget, id: "w-2", visualization: "table", display: { title: "Slow routes" } }] }) }),
+				propose("call_prop_2", "update_dashboard", { dashboard_id: "dash-checkout", name: "Checkout (prod)", time_range: "24h" }),
+				propose("call_prop_3", "add_dashboard_widget", { dashboard_id: "dash-checkout", visualization: "pie", display_json: JSON.stringify({ title: "Errors by route" }), data_source_json: JSON.stringify({ endpoint: "errors_by_type", params: { service_name: "checkout-api" } }), layout_json: JSON.stringify({ x: 0, y: 4, w: 6, h: 4 }) }),
+				propose("call_prop_4", "update_dashboard_widget", { dashboard_id: "dash-checkout", widget_id: "w-p95", display_json: JSON.stringify({ title: "Checkout p99" }), layout_json: "{}" }),
+				propose("call_prop_5", "remove_dashboard_widget", { dashboard_id: "dash-checkout", widget_id: "w-2" }),
+				propose("call_prop_6", "reorder_dashboard_widgets", { dashboard_id: "dash-checkout", layouts_json: JSON.stringify(["a", "b", "c", "d", "e"].map((id) => ({ id }))) }),
+			],
+			createdAt: nowMs - 2 * MINUTE,
+			startSeq: 2,
+		},
+	]
+}
+
 /** The diagnosed investigation's thread (`inv-<id>`): its autonomous pass, ending in `submit_diagnosis`. */
 const investigationThread = (nowMs: number) => {
 	const at = (minutesAgo: number) => nowMs - minutesAgo * MINUTE
@@ -168,6 +194,8 @@ const history: RawRoute = {
 					? codeConversation(nowMs)
 					: dataset.name === CHAT_MATH_DATASET
 						? mathConversation(nowMs)
+						: dataset.name === CHAT_PROPOSALS_DATASET
+							? proposalsConversation(nowMs)
 						: dataset.name === ACME_OPS_THREAD_DATASET && INVESTIGATION_THREAD.test(url.pathname)
 							? investigationThread(nowMs)
 							: []
@@ -242,12 +270,20 @@ const abort: RawRoute = {
 		method === "POST" && ABORT_PATH.test(url.pathname) ? new Response(null, { status: 204 }) : undefined,
 }
 
+/** `POST /internal/chat/apply`: the session ran the approved proposal (or recorded the denial). */
+const apply: RawRoute = {
+	tag: "chat.apply",
+	answer: ({ url, method }) =>
+		method === "POST" && url.pathname === "/internal/chat/apply" ? Response.json({ content: "Applied." }) : undefined,
+}
+
 const chatConversationDataset: Dataset = { ...defaultDataset, name: CHAT_CONVERSATION_DATASET }
 const chatCodeDataset: Dataset = { ...defaultDataset, name: CHAT_CODE_DATASET }
 const chatMathDataset: Dataset = { ...defaultDataset, name: CHAT_MATH_DATASET }
+const chatProposalsDataset: Dataset = { ...defaultDataset, name: CHAT_PROPOSALS_DATASET }
 
 export const fixtureArea: FixtureArea = {
 	area: "chat",
-	rawRoutes: [history, send, events, abort],
-	datasets: [chatConversationDataset, chatCodeDataset, chatMathDataset],
+	rawRoutes: [history, send, events, abort, apply],
+	datasets: [chatConversationDataset, chatCodeDataset, chatMathDataset, chatProposalsDataset],
 }

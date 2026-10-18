@@ -10,11 +10,10 @@ import { item, itemContent, itemMedia, itemTitle } from "../../../ui/item"
 import { keyValue, keyValueList } from "../../../ui/key-value"
 import { toolLabel } from "./tool-metadata"
 import { inputRecord } from "./tool-output"
+import { dashboardSummary } from "./view-approval"
 
 // `ApprovalCard` and `TaskCard` (apps/web components/chat): a proposal waiting on the user, and
 // a sub-agent run as a line.
-// TODO(chat-approval-dashboard): the dashboard tools' own summaries (approval-renderers/dashboard)
-// fall back to the key-value list.
 
 const stringify = (input: unknown): string => JSON.stringify(input, null, 2) ?? String(input)
 
@@ -74,7 +73,7 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 			h.div(
 				[h.Class("border-t border-severity-warn/20 bg-background/50 p-3")],
 				[
-					approvalSummary(h, options.input),
+					dashboardSummary(h, options.toolName, options.input) ?? approvalSummary(h, options.input),
 					button(
 						h,
 						{
