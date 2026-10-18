@@ -6,12 +6,14 @@ import {
 	pageScrollAreaStyles,
 	pageStickyAreaStyles,
 } from "@maple/ui/styles/ui/page-layout"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Stream } from "effect"
+import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { replaysToolbar } from "../../page/replays/kit/replays-toolbar"
 import { sessionListItems, type SessionRow } from "../../page/replays/kit/session-row"
 import { sessionsList } from "../../page/replays/kit/sessions-list"
+import { emptyWindow, VirtualWindow, virtualizeSessions } from "../../page/replays/kit/virtualize"
 import { viewerFlags } from "../../ui/logs/viewer"
 import { defineLabWithFlags } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
@@ -39,6 +41,7 @@ const Model = Schema.Struct({
 	expanded: Schema.Array(Schema.String),
 	/** `ToolbarSearch`'s own input state; the lab's `onSearch` does nothing with it. */
 	query: Schema.String,
+	virtualWindow: VirtualWindow,
 	toasts: Toast.Model,
 })
 type Model = typeof Model.Type
@@ -54,6 +57,7 @@ const Message = defineMessageUnion({
 	ClickedSession: { sessionId: Schema.String },
 	ChangedSearch: { value: Schema.String },
 	GotToastMessage: { message: Toast.Message },
+	ChangedVirtualWindow: { window: VirtualWindow },
 })
 type Message = typeof Message.Type
 
@@ -82,6 +86,7 @@ const updateState = (model: Model, message: Message): Model =>
 		ClickedSession: () => model,
 		ChangedSearch: ({ value }) => ({ ...model, query: value }),
 		GotToastMessage: () => model,
+		ChangedVirtualWindow: ({ window }) => ({ ...model, virtualWindow: window }),
 	})
 
 const visibleRows = (model: Model, rows: ReadonlyArray<SessionRow>) =>
@@ -163,7 +168,7 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html => {
 								onToggleRun: (key) => Message.ToggledRun({ key }),
 								onFilterTag: (tag) => Message.ClickedTag({ tag }),
 								onFilterGroup: (group) => Message.ClickedGroup({ group }),
-							}),
+							}, { window: model.virtualWindow, mount: h.OnMount(VirtualizeList()) }),
 						]),
 					]),
 				]),
@@ -171,6 +176,14 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html => {
 		),
 	])
 }
+
+const VirtualizeList = Mount.defineStream("VirtualizeLabReplaysList", {
+	messages: [Message.ChangedVirtualWindow],
+	execute: ({ element }) =>
+		element instanceof HTMLElement
+			? virtualizeSessions(element, (window) => Message.ChangedVirtualWindow({ window }))
+			: Stream.never,
+})
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	labRoot(h, model.toasts, (message) => Message.GotToastMessage({ message }), page(model, h))
@@ -192,6 +205,7 @@ export const lab = defineLabWithFlags("Session replays list", {
 			group: null,
 			expanded: [],
 			query: "",
+			virtualWindow: emptyWindow,
 			toasts: initLabToasts(),
 		},
 	}),

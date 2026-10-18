@@ -9,7 +9,7 @@ import * as Checkbox from "../checkbox"
 import { badge } from "../display"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { emptyMessage } from "../empty"
-import { icon } from "../icon"
+import { icon, type IconName } from "../icon"
 import { label } from "../label"
 import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
 import { searchInput } from "../search-input"
@@ -73,6 +73,10 @@ export type FilterSectionConfig<M> = Readonly<{
 	onExclude?: (name: string) => M
 	/** `colorMap`: a swatch before the label (`serviceColorMap` for services). */
 	colorOf?: (name: string) => string | undefined
+	/** `getOptionIcon`: a mark before the label (browser, device). */
+	getOptionIcon?: (name: string) => IconName | undefined
+	/** `renderOptionIcon`: an already-built node in the same slot (a tag dot, a favicon). */
+	renderOptionIcon?: (name: string) => Html | undefined
 	getOptionLabel?: (name: string) => string
 	/** The label's `title` when it is more than the label. */
 	getOptionDescription?: (name: string) => string | undefined
@@ -159,6 +163,19 @@ const swatch = <M>(h: HtmlBuilder<M>, color: string | undefined, isExcluded: boo
 				),
 			]
 
+const optionIcon = <M>(
+	h: HtmlBuilder<M>,
+	config: FilterSectionConfig<M>,
+	name: string,
+	isExcluded: boolean,
+): ReadonlyArray<Html> => {
+	const iconName = config.getOptionIcon?.(name)
+	if (iconName !== undefined)
+		return [icon(h, iconName, { className: cn("size-3.5 shrink-0", isExcluded && "opacity-40") })]
+	const node = config.renderOptionIcon?.(name)
+	return node === undefined ? [] : [node]
+}
+
 const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option: FilterOption): Html => {
 	const excluded = config.excluded ?? []
 	const isExcluded = excluded.includes(option.name)
@@ -200,6 +217,7 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 				},
 				[
 					...swatch(h, config.colorOf?.(option.name), isExcluded),
+					...optionIcon(h, config, option.name, isExcluded),
 					h.span([h.Class("truncate")], [text]),
 				],
 			),

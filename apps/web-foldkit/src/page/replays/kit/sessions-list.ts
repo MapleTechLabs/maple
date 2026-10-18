@@ -1,13 +1,14 @@
 import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { SESSION_TAG_DOTS, SESSION_TAG_LABELS } from "@maple/web/components/replays/session-tags"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import type { SessionListItem } from "./session-row"
 import { sessionListRow } from "./session-list-row"
 import { COLUMNS, columnHeader, type SessionsListOptions } from "./sessions-parts"
+import { KEYS_ATTRIBUTE, keysValue, type VirtualWindow } from "./virtualize"
 
 // `SessionsList` (components/replays/sessions-list.tsx). Rows render in flow: the virtualizer's
 // absolute rows stack to the same offsets once every row is in view.
@@ -57,19 +58,48 @@ const quietRunRow = <M>(
 		],
 	)
 
-/** The rows under the column header. The caller renders the empty state and the footer. */
-export const sessionsList = <M>(h: HtmlBuilder<M>, options: SessionsListOptions<M>, footer: ReadonlyArray<Html> = []): Html =>
+/** `getItemKey`. */
+export const itemKey = (item: SessionListItem): string =>
+	item.kind === "quiet" ? `quiet:${item.key}` : item.session.sessionId
+
+/**
+ * The column header and the virtual window's rows, absolutely placed like legacy's. `virtualize` is
+ * the caller's Mount (`virtualizeSessions`) that reports the window. The caller renders the footer.
+ */
+export const sessionsList = <M>(
+	h: HtmlBuilder<M>,
+	options: SessionsListOptions<M>,
+	virtual: Readonly<{ window: VirtualWindow; mount: Attribute<M> }>,
+	footer: ReadonlyArray<Html> = [],
+): Html =>
 	h.div([h.Class("@container")], [
 		columnHeader(h),
 		h.div(
-			[h.Class("relative w-full")],
-			options.items.map((item) =>
-				item.kind === "quiet"
-					? h.div([h.Key(`quiet:${item.key}`), h.Class("w-full")], [quietRunRow(h, item, options.onToggleRun(item.key))])
-					: h.div([h.Key(item.session.sessionId), h.Class("w-full")], [
-							sessionListRow(h, options, item.session, item.lowSignal),
-						]),
-			),
+			[
+				h.Class("relative w-full"),
+				h.DataAttribute(KEYS_ATTRIBUTE, keysValue(options.items.map(itemKey))),
+				h.Style({ height: `${virtual.window.totalSize}px` }),
+				virtual.mount,
+			],
+			virtual.window.rows.flatMap((row) => {
+				const item = options.items[row.index]
+				if (item === undefined) return []
+				return [
+					h.div(
+						[
+							h.Key(itemKey(item)),
+							h.DataAttribute("index", String(row.index)),
+							h.Class("absolute top-0 left-0 w-full"),
+							h.Style({ transform: `translateY(${row.start - virtual.window.scrollMargin}px)` }),
+						],
+						[
+							item.kind === "quiet"
+								? quietRunRow(h, item, options.onToggleRun(item.key))
+								: sessionListRow(h, options, item.session, item.lowSignal),
+						],
+					),
+				]
+			}),
 		),
 		...footer,
 	])

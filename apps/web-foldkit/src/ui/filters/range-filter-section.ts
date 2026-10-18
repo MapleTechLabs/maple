@@ -10,10 +10,10 @@ import { icon } from "../icon"
 import { input } from "../input"
 import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
 import { formatRange, type RangeUnit, UNIT_SUFFIX, UNIT_WORDS } from "./range-format"
+import { type RangeBucket, rangeHistogram } from "./range-histogram"
 
 // Port of `RangeFilterSection` (packages/ui/src/components/filters/range-filter-section.tsx).
 // The draft text lives in the caller's Model; it commits on blur, Enter or the caller's debounce.
-// TODO(histogram): the distribution bars are not ported (the trace duration filter passes none).
 
 export type RangePreset = Readonly<{ key: string; label: string; value?: string; min?: number; max?: number }>
 
@@ -24,6 +24,11 @@ export type RangeFilterSectionConfig<M> = Readonly<{
 	maxValue: number | undefined
 	draft: Readonly<{ min: string; max: string }>
 	presets: ReadonlyArray<RangePreset>
+	/** One short line under the header, for meaning the label can't carry. */
+	hint?: string
+	/** The distribution above the inputs (drawn when it has more than one bucket). */
+	histogram?: ReadonlyArray<RangeBucket>
+	histogramUnitLabel?: string
 	/** Base UI `useId`s for the panel and the two inputs. */
 	ids: Readonly<{ panel: string; min: string; max: string }>
 	sections: SectionsModel
@@ -67,9 +72,23 @@ const presetMessage = <M>(config: RangeFilterSectionConfig<M>, preset: RangePres
 const panelBody = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): Html => {
 	const hasActiveRange = config.minValue !== undefined || config.maxValue !== undefined
 	const hasUnitText = /[a-z$]/i.test(config.draft.min) || /[a-z$]/i.test(config.draft.max)
+	const histogram =
+		config.histogram !== undefined && config.histogram.length > 1
+			? rangeHistogram(h, {
+					buckets: config.histogram,
+					unit: config.unit,
+					unitLabel: config.histogramUnitLabel ?? "sessions",
+					title: config.title,
+					minValue: config.minValue,
+					maxValue: config.maxValue,
+					onApply: config.onApply,
+				})
+			: null
 	return h.div(
 		[h.Class("space-y-2")],
 		[
+			...(config.hint === undefined ? [] : [h.p([h.Class("text-xs text-muted-foreground/70")], [config.hint])]),
+			...(histogram === null ? [] : [histogram]),
 			h.div(
 				[h.Class("flex items-center gap-1.5")],
 				[
