@@ -110,6 +110,15 @@ export const localInteractionsArea: AreaModule = {
 			// The elapsed time is the browser's wall clock (`performance.now()`), not the frozen one.
 			mask: (page) => [page.getByText(/^\d+ ms$/)],
 		},
+		// Reload in the same minute refetches in place: the list, the facets, the server status and
+		// (the empty state is on screen) the signal presence.
+		{
+			...interaction("traces-empty-reload", "Traces: Reload on an empty store", "/traces", async (page) => {
+				await page.getByRole("button", { name: "Reload" }).click()
+				await page.waitForTimeout(DEBOUNCE_MS)
+			}),
+			dataset: "local-empty",
+		},
 		interaction("connect-open", "Connect popover", "/traces", (page) =>
 			page.getByRole("button", { name: "Connect your app" }).click(),
 		),
