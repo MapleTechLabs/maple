@@ -14,6 +14,7 @@ import { MapleApiV2Client } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message, RequestMode } from "./message"
 import { HubWrite, runHubWrite } from "./writes"
+import { writeClipboard } from "../../kit/clipboard"
 
 /** The warehouse side's filters: the trend window plus the sidebar's service and environment. */
 export const WarehouseFilters = Schema.Struct({
@@ -253,4 +254,25 @@ export const MountRowSelect = Mount.defineStream("MountErrorsRowSelect", {
 					}),
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),
+})
+
+/** `useCopy({ label })` for a row; `isPath` copies an absolute link on this origin. */
+export const CopyRowText = Command.define("CopyErrorsRowText", {
+	args: { label: Schema.String, text: Schema.String, isPath: Schema.Boolean },
+	messages: [Message.CompletedCopy],
+	execute: ({ label, text, isPath }) =>
+		Effect.map(writeClipboard(isPath ? `${window.location.origin}${text}` : text), (isOk) =>
+			Message.CompletedCopy({ label, isOk }),
+		),
+})
+
+/** "Open in new tab": `window.open(href, "_blank", "noopener,noreferrer")`. */
+export const OpenInNewTab = Command.define("OpenErrorsRowInNewTab", {
+	args: { path: Schema.String },
+	messages: [Message.CompletedOpenInNewTab],
+	execute: ({ path }) =>
+		Effect.sync(() => {
+			window.open(path, "_blank", "noopener,noreferrer")
+			return Message.CompletedOpenInNewTab()
+		}),
 })

@@ -9,6 +9,7 @@ import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as ContextMenu from "../../../ui/context-menu"
 import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
@@ -42,6 +43,8 @@ import {
 	warehouseFiltersOf,
 } from "./derive"
 import { type FilterParam, Message, type RequestMode } from "./message"
+import { pressedRowPointer, rowMenuStep } from "./row-menu"
+import { copyToast } from "../../kit/clipboard"
 import {
 	bulkMenuStep,
 	bulkWrite,
@@ -351,6 +354,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		bulkSeverityMenu: Menu.init("errors-bulk-severity"),
 		bulkMoveMenu: Menu.init("errors-bulk-move"),
 		writingIds: [],
+		rowMenu: ContextMenu.init("errors-row-menu"),
+		rowMenuTarget: null,
 		picker: null,
 		searchDraft: search.q ?? "",
 		searchGeneration: 0,
@@ -573,6 +578,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRowSelect: ({ id, isShift }) => ({ model: toggledSelection(model, id, isShift) }),
 		PressedListKey: ({ key, isShift }) => pressedListKey(model, key, isShift, openedPicker),
 		ClickedPickerTrigger: ({ id, kind }) => openedPicker(model, id, kind),
+		PressedRowPointer: ({ id, point }) => pressedRowPointer(model, id, point),
+		OpenedRowMenu: ({ id }) =>
+			rowMenuStep(
+				model.rowMenuTarget === id ? model : pressedRowPointer(model, id, model.rowMenu.point).model,
+				ContextMenu.Message.OpenedContextMenu(),
+			),
+		GotRowMenuMessage: ({ message: inner }) => rowMenuStep(model, inner),
+		CompletedCopy: ({ label, isOk }) => ({
+			model,
+			outMessage: copyToast(
+				label,
+				isOk,
+				label === "Agent prompt" ? "Agent prompt copied — paste it into your MCP agent" : undefined,
+			),
+		}),
+		CompletedOpenInNewTab: () => ({ model }),
 		GotPickerMessage: ({ message: inner }) => pickerStep(model, inner),
 		ClickedBulkClaim: () => bulkWrite(model, { _tag: "Claim" }),
 		ClickedClearSelection: () => ({ model: { ...model, selectedIds: [], selectionAnchor: null } }),

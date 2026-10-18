@@ -5,25 +5,57 @@ import {
 	contextMenuPositionerStyles,
 	contextMenuSeparatorStyles,
 	contextMenuShortcutStyles,
+	contextMenuSubTriggerIconStyles,
+	contextMenuSubTriggerStyles,
 	contextMenuTriggerStyles,
 } from "@maple/ui/styles/ui/context-menu"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import { type Html, type HtmlBuilder } from "foldkit/html"
-import { itemId, Message, type Model, MountContextMenu } from "./context-menu"
+import {
+	itemId,
+	Message,
+	type Model,
+	MountContextMenu,
+	MountContextSubmenu,
+	subItemId,
+	subPopupId,
+} from "./context-menu"
+import { icon } from "./icon"
 import { popupId, portalId } from "./overlay/popup-state"
 import { focusGuard, isMounted, stateAttributes } from "./overlay/transition"
 
 /** An entry of the menu: an item (with an optional shortcut) or a separator. */
+export type ItemEntry = Readonly<{
+	_tag: "Item"
+	label: string
+	shortcut?: string
+	variant?: "default" | "destructive"
+	/** Base UI's `disabled`: shown, not highlightable or pickable. */
+	isDisabled?: boolean
+	/** The item's children when they are more than its label (an icon, a check). */
+	content?: ReadonlyArray<Html | string>
+}>
+
+/** An entry of the menu: an item (with an optional shortcut), a separator, or a submenu. */
 export type Entry =
-	| Readonly<{ _tag: "Item"; label: string; shortcut?: string; variant?: "default" | "destructive" }>
+	| ItemEntry
 	| Readonly<{ _tag: "Separator" }>
+	| Readonly<{
+			_tag: "Submenu"
+			/** The trigger's children (`<Icon /><span>Label</span>`), before Base UI's chevron. */
+			content: ReadonlyArray<Html | string>
+			entries: ReadonlyArray<ItemEntry>
+			className?: string
+	  }>
 
 export type ViewInputs = Readonly<{
 	entries: ReadonlyArray<Entry>
 	/** Classes for the trigger area (`ContextMenuTrigger className`). */
 	triggerClassName?: string
 	triggerContent: ReadonlyArray<Html | string>
+	/** Trigger content with handlers of its own (a row link): built by the parent, scoped to it. */
+	toTriggerContent?: () => ReadonlyArray<Html | string>
 	className?: string
 }>
 
@@ -38,22 +70,27 @@ const separator = (h: H): Html =>
 		h.Role("separator"),
 	])
 
-const item = (h: H, model: Model, entry: Extract<Entry, { _tag: "Item" }>, index: number): Html => {
-	const isHighlighted = model.highlighted === index
+const item = (
+	h: H,
+	entry: ItemEntry,
+	options: Readonly<{ id: string; isHighlighted: boolean; onHover: Message; onClick: Message }>,
+): Html => {
+	const isDisabled = entry.isDisabled ?? false
 	return h.div(
 		[
+			...(isDisabled ? [h.AriaDisabled(true)] : []),
 			h.Class(cn(contextMenuItemStyles)),
-			...(isHighlighted ? [h.DataAttribute("highlighted", "")] : []),
+			...(isDisabled ? [h.DataAttribute("disabled", "")] : []),
+			...(options.isHighlighted ? [h.DataAttribute("highlighted", "")] : []),
 			h.DataAttribute("slot", "context-menu-item"),
 			h.DataAttribute("variant", entry.variant ?? "default"),
-			h.Id(itemId(model.id, index)),
+			h.Id(options.id),
 			h.Role("menuitem"),
-			h.Tabindex(isHighlighted ? 0 : -1),
-			h.OnMouseMove(Message.HoveredItem({ index })),
-			h.OnClick(Message.ClickedItem({ index })),
+			h.Tabindex(options.isHighlighted ? 0 : -1),
+			...(isDisabled ? [] : [h.OnMouseMove(options.onHover), h.OnClick(options.onClick)]),
 		],
 		[
-			entry.label,
+			...(entry.content ?? [entry.label]),
 			...(entry.shortcut === undefined
 				? []
 				: [
@@ -69,6 +106,79 @@ const item = (h: H, model: Model, entry: Extract<Entry, { _tag: "Item" }>, index
 	)
 }
 
+type SubmenuEntry = Extract<Entry, { _tag: "Submenu" }>
+
+/** `ContextMenuSubTrigger`, and its `ContextMenuSubContent` while open (portaled beside it). */
+const subTrigger = (h: H, model: Model, entry: SubmenuEntry, index: number): Html => {
+	const isOpen = model.submenu === index
+	const triggerId = itemId(model.id, index)
+	return h.div(
+		[
+			h.AriaExpanded(isOpen),
+			h.AriaHasPopup("menu"),
+			h.Class(cn(contextMenuSubTriggerStyles)),
+			...(model.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
+			...(isOpen ? [h.DataAttribute("popup-open", "")] : []),
+			h.DataAttribute("slot", "context-menu-sub-trigger"),
+			h.Id(triggerId),
+			h.Role("menuitem"),
+			h.Tabindex(-1),
+			h.OnMouseMove(Message.OpenedSubmenu({ index })),
+			h.OnClick(Message.OpenedSubmenu({ index })),
+		],
+		[
+			...entry.content,
+			icon(h, "ChevronRightIcon", {
+				className: contextMenuSubTriggerIconStyles,
+				attributes: [h.Attribute("stroke-width", "2")],
+			}),
+			...(isOpen ? [submenuPortal(h, model, entry, triggerId)] : []),
+		],
+	)
+}
+
+const submenuPortal = (h: H, model: Model, entry: SubmenuEntry, triggerId: string): Html =>
+	h.div(
+		[
+			h.Key(`${portalId(model.id)}-sub`),
+			h.DataAttribute("base-ui-portal", ""),
+			h.OnMount(MountContextSubmenu({ id: model.id, triggerId })),
+		],
+		[
+			h.div(
+				[
+					h.Class(contextMenuPositionerStyles),
+					h.DataAttribute("align", "start"),
+					h.DataAttribute("open", ""),
+					h.DataAttribute("side", "right"),
+					h.Role("presentation"),
+				],
+				[
+					h.div(
+						[
+							h.Class(cn(contextMenuContentStyles, entry.className)),
+							h.DataAttribute("align", "start"),
+							h.DataAttribute("open", ""),
+							h.DataAttribute("side", "right"),
+							h.DataAttribute("slot", "context-menu-sub-content"),
+							h.Id(subPopupId(model.id)),
+							h.Role("menu"),
+							h.Tabindex(-1),
+						],
+						entry.entries.map((sub, index) =>
+							item(h, sub, {
+								id: subItemId(model.id, index),
+								isHighlighted: model.subHighlighted === index,
+								onHover: Message.HoveredSubItem({ index }),
+								onClick: Message.ClickedSubItem({ index }),
+							}),
+						),
+					),
+				],
+			),
+		],
+	)
+
 const MENU_KEYS = new Set(["ArrowDown", "ArrowUp", "Home", "End", "Enter", " ", "Escape"])
 
 /** Menu keys go to `update` with which entries can take the highlight (items, not separators). */
@@ -76,7 +186,14 @@ const menuKeys = (h: H, entries: ReadonlyArray<Entry>) =>
 	h.OnKeyDownPreventDefault((key) =>
 		MENU_KEYS.has(key)
 			? Option.some(
-					Message.PressedMenuKey({ key, enabled: entries.map((entry) => entry._tag === "Item") }),
+					Message.PressedMenuKey({
+						key,
+						enabled: entries.map(
+							(entry) =>
+								entry._tag !== "Separator" &&
+								!(entry._tag === "Item" && entry.isDisabled === true),
+						),
+					}),
 				)
 			: Option.none(),
 	)
@@ -123,9 +240,21 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 							menuKeys(h, inputs.entries),
 							h.OnMouseLeave(Message.LeftMenu()),
 						],
-						inputs.entries.map((entry, index) =>
-							entry._tag === "Separator" ? separator(h) : item(h, model, entry, index),
-						),
+						inputs.entries.map((entry, index) => {
+							switch (entry._tag) {
+								case "Separator":
+									return separator(h)
+								case "Submenu":
+									return subTrigger(h, model, entry, index)
+								case "Item":
+									return item(h, entry, {
+										id: itemId(model.id, index),
+										isHighlighted: model.highlighted === index,
+										onHover: Message.HoveredItem({ index }),
+										onClick: Message.ClickedItem({ index }),
+									})
+							}
+						}),
 					),
 					focusGuard(h, "inside"),
 				],
@@ -147,7 +276,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.OnContextMenu(Message.OpenedContextMenu()),
 		],
 		[
-			...inputs.triggerContent,
+			...(inputs.toTriggerContent?.() ?? inputs.triggerContent),
 			...(isMounted(model.isOpen, model.animation) ? [portal(h, model, inputs)] : []),
 		],
 	),

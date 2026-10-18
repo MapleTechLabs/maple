@@ -19,6 +19,11 @@ import {
 	statePickerTrigger,
 } from "../kit/pickers"
 import * as QuickPick from "../kit/quick-pick"
+import type * as ContextMenu from "../../../ui/context-menu"
+import * as ContextMenuView from "../../../ui/context-menu-view"
+import { contextMenuTriggerStyles } from "@maple/ui/styles/ui/context-menu"
+import { Option } from "effect"
+import { rowMenuEntries } from "./row-menu"
 import { Message } from "./message"
 import {
 	formatLastSeen,
@@ -126,6 +131,8 @@ export type RowState = Readonly<{
 	sparkWindow: SparkWindow
 	/** This row's open quick-pick, if any. */
 	picker: Readonly<{ kind: PickerKind; quickPick: QuickPick.Model }> | null
+	/** The right-click menu, when this row was the last one pressed. */
+	rowMenu: ContextMenu.Model | null
 }>
 
 /** `ErrorSignalRow`: the row is the link; the checkbox and pickers sit inside it. */
@@ -137,83 +144,109 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 	const rowTitle = swap ? messageLine : signal.title
 	const rowDetail = swap ? signal.title : signal.detail
 	const activity = signalActivity(h, signal)
-	// TODO(context-menu): the right-click menu (status, severity, claim, copy) is not ported.
-	return h.div(
-		[h.Class("select-none"), h.DataAttribute("slot", "context-menu-trigger")],
-		[
-			h.a(
+	return rowMenuTrigger(h, signal, state, [
+		h.a(
+			[
+				h.Class(
+					cn(
+						ROW_SHELL,
+						"group/row h-11 text-sm",
+						"hover:bg-muted/50 data-focused:bg-muted/40",
+						"data-selected:bg-primary/10 data-selected:hover:bg-primary/15",
+						"focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+						"transition-colors",
+					),
+				),
+				...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
+				h.DataAttribute("issue-id", signal.id),
+				...(state.isSelected ? [h.DataAttribute("selected", "true")] : []),
+				h.Href(href),
+				h.OnMouseEnter(Message.HoveredRow({ id: signal.id })),
+			],
+			[
+				h.span(
+					[
+						h.Class(cn(LANE.select, "flex items-center justify-center")),
+						h.DataAttribute("row-select", signal.id),
+						h.Role("presentation"),
+					],
+					Checkbox.view(h, {
+						model: { isChecked: state.isSelected },
+						toParentMessage: () => Message.ToggledRow({ id: signal.id }),
+						id: `errors-row-${signal.id}`,
+						inputId: `errors-row-${signal.id}-input`,
+						ariaLabel: state.isSelected ? "Deselect this error" : "Select this error",
+						className: cn(
+							"transition-opacity",
+							state.isSelecting || state.isSelected
+								? "opacity-100"
+								: "opacity-0 group-hover/row:opacity-100 group-data-focused/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
+						),
+					}),
+				),
+				h.span(
+					[h.Class(cn(LANE.severity, "flex items-center justify-center"))],
+					[severityPicker(h, signal, state)],
+				),
+				h.span(
+					[h.Class(cn(LANE.identity, "flex items-baseline gap-2"))],
+					[
+						truncatedText(
+							h,
+							{
+								text: swap ? signal.detail : rowTitle,
+								className:
+									"font-medium text-foreground @4xl/page:max-w-[60%] @4xl/page:shrink-0",
+							},
+							[rowTitle],
+						),
+						...(rowDetail
+							? [
+									truncatedText(h, {
+										text: rowDetail,
+										className: "hidden flex-1 text-muted-foreground @4xl/page:inline",
+									}),
+								]
+							: []),
+						...(activity === null ? [] : [activity]),
+					],
+				),
+				volumeLane(h, signal, dense, isSurging, label),
+				...trailingLanes(h, signal, state),
+			],
+		),
+	])
+}
+
+/** `IssueContextMenu`'s trigger around the row; the row last pressed carries the menu itself. */
+const rowMenuTrigger = (h: H, signal: ErrorSignal, state: RowState, children: ReadonlyArray<Html>): Html =>
+	state.rowMenu === null
+		? h.div(
 				[
-					h.Class(
-						cn(
-							ROW_SHELL,
-							"group/row h-11 text-sm",
-							"hover:bg-muted/50 data-focused:bg-muted/40",
-							"data-selected:bg-primary/10 data-selected:hover:bg-primary/15",
-							"focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-							"transition-colors",
+					h.Class(cn(contextMenuTriggerStyles, "select-none")),
+					h.DataAttribute("slot", "context-menu-trigger"),
+					h.OnPointerDown((_type, _button, _sx, _sy, _t, clientX, clientY) =>
+						Option.some(
+							Message.PressedRowPointer({ id: signal.id, point: { x: clientX, y: clientY } }),
 						),
 					),
-					...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
-					h.DataAttribute("issue-id", signal.id),
-					...(state.isSelected ? [h.DataAttribute("selected", "true")] : []),
-					h.Href(href),
-					h.OnMouseEnter(Message.HoveredRow({ id: signal.id })),
+					h.OnContextMenu(Message.OpenedRowMenu({ id: signal.id })),
 				],
-				[
-					h.span(
-						[
-							h.Class(cn(LANE.select, "flex items-center justify-center")),
-							h.DataAttribute("row-select", signal.id),
-							h.Role("presentation"),
-						],
-						Checkbox.view(h, {
-							model: { isChecked: state.isSelected },
-							toParentMessage: () => Message.ToggledRow({ id: signal.id }),
-							id: `errors-row-${signal.id}`,
-							inputId: `errors-row-${signal.id}-input`,
-							ariaLabel: state.isSelected ? "Deselect this error" : "Select this error",
-							className: cn(
-								"transition-opacity",
-								state.isSelecting || state.isSelected
-									? "opacity-100"
-									: "opacity-0 group-hover/row:opacity-100 group-data-focused/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
-							),
-						}),
-					),
-					h.span(
-						[h.Class(cn(LANE.severity, "flex items-center justify-center"))],
-						[severityPicker(h, signal, state)],
-					),
-					h.span(
-						[h.Class(cn(LANE.identity, "flex items-baseline gap-2"))],
-						[
-							truncatedText(
-								h,
-								{
-									text: swap ? signal.detail : rowTitle,
-									className:
-										"font-medium text-foreground @4xl/page:max-w-[60%] @4xl/page:shrink-0",
-								},
-								[rowTitle],
-							),
-							...(rowDetail
-								? [
-										truncatedText(h, {
-											text: rowDetail,
-											className: "hidden flex-1 text-muted-foreground @4xl/page:inline",
-										}),
-									]
-								: []),
-							...(activity === null ? [] : [activity]),
-						],
-					),
-					volumeLane(h, signal, dense, isSurging, label),
-					...trailingLanes(h, signal, state),
-				],
-			),
-		],
-	)
-}
+				children,
+			)
+		: h.submodel({
+				slotId: state.rowMenu.id,
+				model: state.rowMenu,
+				view: ContextMenuView.view,
+				toParentMessage: (message) => Message.GotRowMenuMessage({ message }),
+				viewInputs: {
+					entries: rowMenuEntries(h, signal.issue),
+					triggerClassName: "select-none",
+					triggerContent: [],
+					toTriggerContent: () => children,
+					className: "w-56 p-1",
+				},
+			})
 
 const volumeLane = (
 	h: H,

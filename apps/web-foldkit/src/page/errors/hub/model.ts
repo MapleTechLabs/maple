@@ -5,6 +5,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { ErrorsSearch } from "../../../route/search"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as ContextMenu from "../../../ui/context-menu"
 import * as Menu from "../../../ui/menu"
 import * as QuickPick from "../kit/quick-pick"
 import * as Select from "../../../ui/select"
@@ -80,6 +81,9 @@ export const Model = Schema.Struct({
 	bulkMoveMenu: Menu.Model,
 	/** Rows with a write in flight; another write on them waits. */
 	writingIds: Schema.Array(Schema.String),
+	/** The right-click menu, on the row last pressed. */
+	rowMenu: ContextMenu.Model,
+	rowMenuTarget: Schema.NullOr(Schema.String),
 	/** The one quick-pick open across the list (`openPicker`). */
 	picker: Schema.NullOr(
 		Schema.Struct({

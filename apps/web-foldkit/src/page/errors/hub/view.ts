@@ -48,6 +48,7 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 					nowMs: model.nowMs,
 					sparkWindow,
 					picker: model.picker !== null && model.picker.issueId === signal.id ? model.picker : null,
+					rowMenu: model.rowMenuTarget === signal.id ? model.rowMenu : null,
 				}),
 			}),
 		],

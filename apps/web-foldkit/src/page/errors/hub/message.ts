@@ -4,6 +4,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as ContextMenu from "../../../ui/context-menu"
 import * as Menu from "../../../ui/menu"
 import * as QuickPick from "../kit/quick-pick"
 import * as Select from "../../../ui/select"
@@ -54,6 +55,11 @@ export const Message = defineMessageUnion({
 	ClickedRowSelect: { id: Schema.String, isShift: Schema.Boolean },
 	PressedListKey: { key: Schema.String, isShift: Schema.Boolean },
 	ClickedBulkClaim: {},
+	PressedRowPointer: { id: Schema.String, point: ContextMenu.Point },
+	OpenedRowMenu: { id: Schema.String },
+	GotRowMenuMessage: { message: ContextMenu.Message },
+	CompletedCopy: { label: Schema.String, isOk: Schema.Boolean },
+	CompletedOpenInNewTab: {},
 	ClickedPickerTrigger: { id: Schema.String, kind: Schema.Literals(["severity", "state"]) },
 	GotPickerMessage: { message: QuickPick.Message },
 	ClickedClearSelection: {},

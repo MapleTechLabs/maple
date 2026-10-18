@@ -18,7 +18,10 @@ describe("quick pick", () => {
 	})
 
 	test("typing filters by label and keywords; Enter picks the first match", () => {
-		const typed = QuickPick.update(QuickPick.init("picker"), QuickPick.Message.ChangedQuery({ value: "unset" }))
+		const typed = QuickPick.update(
+			QuickPick.init("picker"),
+			QuickPick.Message.ChangedQuery({ value: "unset" }),
+		)
 		expect(QuickPick.visibleOf(items, typed.model.query).map((item) => item.value)).toEqual(["none"])
 		expect(press(typed.model, "Enter").outMessage).toEqual(QuickPick.OutMessage.Picked({ value: "none" }))
 	})
