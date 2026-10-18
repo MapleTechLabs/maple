@@ -22,6 +22,7 @@ import { icon } from "../../../ui/icon"
 import { marker, markerContent, markerIcon } from "../../../ui/marker"
 import { message as messageRow, messageContent, messageFooter } from "../../../ui/message"
 import { dotLoader } from "./dot-loader"
+import { type MinimapState, turnMinimap } from "./turn-minimap"
 import { richTextSegments } from "./rich-text"
 import {
 	buildTranscriptRows,
@@ -53,6 +54,9 @@ export type TranscriptHost<M> = PanelHost<M> &
 		/** Cards the transcript does not own: inline `<<maple:…>>` cards, approvals, sub-agents. */
 		/** The autoscroll Mount (`MountMessageScroller()`), typed for the host's Message. */
 		scrollerMount: Parameters<HtmlBuilder<M>["OnMount"]>[0]
+		/** The turn rail's state and its Mount (`MountTurnMinimap` lifted to the host). */
+		minimap: MinimapState
+		minimapMount: Parameters<HtmlBuilder<M>["OnMount"]>[0]
 		inlineCard?: (segment: Exclude<AnnotationSegment, { type: "text" }>) => Html
 		ownCard?: (part: ToolPart, messageId: string) => Html | null
 		taskCard?: (part: Extract<UIMessagePart, { _tag: "task" }>) => Html
@@ -300,6 +304,7 @@ export const transcript = <M>(
 					),
 				],
 			),
+			turnMinimap(h, rows, host.minimap, host.minimapMount),
 			scrollButton(h),
 		],
 	)

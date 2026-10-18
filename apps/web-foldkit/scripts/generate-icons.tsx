@@ -220,6 +220,7 @@ const NAMES = [
 	"PixelSparkleIcon",
 	"CornerDownLeftIcon",
 	"SquareIcon",
+	"CompassIcon",
 	"PoolsideIcon",
 	"PydanticIcon",
 	"QwenIcon",

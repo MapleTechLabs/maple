@@ -1,0 +1,177 @@
+import { humanize } from "@maple/web/lib/humanize"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
+import { Option } from "effect"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../../../ui/button"
+import { icon, type IconName } from "../../../ui/icon"
+import { item, itemContent, itemMedia, itemTitle } from "../../../ui/item"
+import { keyValue, keyValueList } from "../../../ui/key-value"
+import { trace, traceDescription, traceIcon, traceLine } from "../../../ui/trace"
+import { dotLoader } from "./dot-loader"
+import { toolLabel } from "./tool-metadata"
+import { inputRecord } from "./tool-output"
+import type { TaskPart } from "./ui-message"
+
+// `ApprovalCard` and `TaskCard` (apps/web components/chat): a proposal waiting on the user, and
+// a sub-agent run as a line.
+// TODO(chat-approval-dashboard): the dashboard tools' own summaries (approval-renderers/dashboard)
+// fall back to the key-value list.
+// TODO(chat-task-sheet): a task row's sheet (the question, the answer, its own steps) is not drawn.
+
+const stringify = (input: unknown): string => JSON.stringify(input, null, 2) ?? String(input)
+
+type Formatted = { readonly kind: "scalar"; readonly text: string } | { readonly kind: "blob"; readonly chars: number }
+
+const formatValue = (value: unknown): Formatted => {
+	if (value === null || value === undefined) return { kind: "scalar", text: EMPTY_VALUE }
+	if (typeof value === "boolean") return { kind: "scalar", text: value ? "true" : "false" }
+	if (typeof value === "number") return { kind: "scalar", text: String(value) }
+	const text = typeof value === "string" ? value : JSON.stringify(value)
+	return text.length > 200 ? { kind: "blob", chars: text.length } : { kind: "scalar", text }
+}
+
+const RAW_CLASS = "max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-2xs leading-snug"
+
+/** `KeyValueFallback`: the proposal's arguments, one row each. */
+const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown): Html =>
+	Option.match(inputRecord(input), {
+		onNone: () => h.pre([h.Class(RAW_CLASS)], [stringify(input)]),
+		onSome: (record) => {
+			const entries = Object.entries(record).filter(([, value]) => value !== undefined && value !== null && value !== "")
+			if (entries.length === 0) return h.div([h.Class("text-xs text-muted-foreground")], ["No input fields"])
+			return keyValueList(
+				h,
+				{ layout: "grid", className: "gap-x-2 gap-y-1" },
+				entries.map(([key, value]) => {
+					const formatted = formatValue(value)
+					return keyValue(h, { label: humanize(key) }, [
+						formatted.kind === "scalar"
+							? h.span([h.Class("font-medium")], [formatted.text])
+							: h.span([h.Class("text-muted-foreground italic")], ["JSON · ", String(formatted.chars), " chars"]),
+					])
+				}),
+			)
+		},
+	})
+
+export type ApprovalCardOptions<M> = Readonly<{
+	toolName: string
+	input: unknown
+	resolved: "applied" | "denied" | undefined
+	isRawOpen: boolean
+	isDeciding: boolean
+	onToggleRaw: M
+	onApprove: M
+	onDeny: M
+}>
+
+export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<M>): Html =>
+	h.div(
+		[h.Class("overflow-hidden rounded-lg border border-severity-warn/40 bg-severity-warn/5 text-xs")],
+		[
+			item(h, { size: "xs", variant: "flush", className: "gap-2 px-3" }, [
+				itemMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { className: cn("size-3.5", TONE_TEXT.warn) })]),
+				itemContent(h, [itemTitle(h, ["Approval required: ", toolLabel(options.toolName)])]),
+			]),
+			h.div(
+				[h.Class("border-t border-severity-warn/20 bg-background/50 p-3")],
+				[
+					approvalSummary(h, options.input),
+					button(
+						h,
+						{
+							variant: "link",
+							size: "xs",
+							className: "mt-3 text-muted-foreground hover:text-foreground",
+							attributes: [h.OnClick(options.onToggleRaw)],
+						},
+						[icon(h, options.isRawOpen ? "ChevronDownIcon" : "ChevronRightIcon"), options.isRawOpen ? "Hide raw input" : "Show raw input"],
+					),
+					...(options.isRawOpen ? [h.pre([h.Class(cn("mt-2", RAW_CLASS))], [stringify(options.input)])] : []),
+					options.resolved === "applied"
+						? h.div(
+								[h.Class("mt-3 flex items-center gap-1.5 font-medium text-severity-info")],
+								[icon(h, "CircleCheckIcon", { className: "size-3.5 shrink-0" }), "Applied"],
+							)
+						: options.resolved === "denied"
+							? h.div(
+									[h.Class("mt-3 flex items-center gap-1.5 font-medium text-muted-foreground")],
+									[icon(h, "CircleXmarkIcon", { className: "size-3.5 shrink-0" }), "Denied"],
+								)
+							: h.div(
+									[h.Class("mt-3 flex gap-2")],
+									[
+										button(h, { size: "sm", isLoading: options.isDeciding, attributes: [h.OnClick(options.onApprove)] }, ["Approve"]),
+										button(
+											h,
+											{ size: "sm", variant: "ghost", isDisabled: options.isDeciding, attributes: [h.OnClick(options.onDeny)] },
+											["Deny"],
+										),
+									],
+								),
+				],
+			),
+		],
+	)
+
+// SUB-AGENTS
+
+type AgentPresentation = Readonly<{ label: string; activity: string; icon: IconName }>
+
+const AGENTS = new Map<string, AgentPresentation>([
+	["explore", { label: "Explore", activity: "Exploring", icon: "MagnifierIcon" }],
+	["investigation-planner", { label: "Planner", activity: "Planning", icon: "CompassIcon" }],
+	["investigation-validator", { label: "Validator", activity: "Validating", icon: "ShieldIcon" }],
+])
+
+/** `agentPresentation` (components/ai-elements/agent-metadata.ts). */
+export const agentPresentation = (agent: string): AgentPresentation =>
+	AGENTS.get(agent) ??
+	(agent.startsWith("hypothesis-")
+		? { label: "Hypothesis", activity: "Testing", icon: "CompassIcon" }
+		: { label: humanize(agent), activity: "Working", icon: "FaceRobotIcon" })
+
+const taskGlyph = <M>(h: HtmlBuilder<M>, status: TaskPart["status"]): Html => {
+	if (status === "running") return dotLoader(h)
+	if (status === "error") return icon(h, "CircleXmarkIcon", { className: "size-3.5 text-severity-error" })
+	if (status === "aborted") return icon(h, "CircleWarningIcon", { className: "size-3.5 text-muted-foreground" })
+	return icon(h, "CircleCheckIcon", { className: "size-3.5 text-severity-info" })
+}
+
+/** One sub-agent run as a line: what it is doing (or who it was), its question, its outcome. */
+export const taskCard = <M>(h: HtmlBuilder<M>, part: TaskPart, triggerId: string): Html => {
+	const running = part.status === "running"
+	const agent = agentPresentation(part.agent)
+	return trace(h, [
+		h.button(
+			[
+				h.AriaExpanded(false),
+				h.AriaHasPopup("dialog"),
+				h.DataAttribute("base-ui-click-trigger", ""),
+				h.DataAttribute("slot", "sheet-trigger"),
+				h.Id(triggerId),
+				h.Tabindex(0),
+				h.Type("button"),
+			],
+			[
+				traceLine(h, running ? { status: "running" } : part.status === "error" ? { status: "error" } : {}, [
+					traceIcon(h, [taskGlyph(h, part.status)], running ? "size-5" : undefined),
+					...(running ? [] : [traceIcon(h, [icon(h, agent.icon, { className: "size-3.5 text-muted-foreground/70" })])]),
+					h.span(
+						[h.Class("min-w-0 truncate motion-reduce:shimmer-none shrink-0 font-medium text-foreground"), h.DataAttribute("slot", "trace-title")],
+						[running ? `${agent.activity}…` : agent.label],
+					),
+					traceDescription(h, [h.span([h.Class("mr-1 text-muted-foreground/40")], ["·"]), part.prompt], "min-w-0 shrink truncate text-2xs"),
+					...(part.status === "error"
+						? [h.span([h.Class(cn("shrink-0 text-2xs", TONE_TEXT.crit))], ["failed"])]
+						: part.budgetExhausted === true
+							? [h.span([h.Class(cn("shrink-0 text-2xs", TONE_TEXT.warn))], ["partial"])]
+							: []),
+					traceIcon(h, [icon(h, "ChevronRightIcon", { className: "size-3 text-muted-foreground/60" })]),
+				]),
+			],
+		),
+	])
+}

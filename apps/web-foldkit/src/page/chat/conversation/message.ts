@@ -1,8 +1,11 @@
 import { ChatEvent } from "@maple/domain/chat-session"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as Chart from "../../../charts/chart"
+import { ThemeColors } from "../../../charts/theme-colors"
 import { ParsedMarkdown } from "../../agent-sessions/session/message-response"
 import * as CopyButton from "../../../ui/copy-button"
+import { MinimapMessage } from "../kit/turn-minimap"
 import { UIMessage } from "../kit/ui-message"
 
 export const History = Schema.Struct({
@@ -38,6 +41,11 @@ export const Message = defineMessageUnion({
 	ToggledPanel: { id: Schema.String },
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 	CompletedParseMarkdown: { parsed: Schema.Array(ParsedMarkdown) },
+	GotChartMessage: { id: Schema.String, message: Chart.Message },
+	CompletedLoadChartRuntime: {},
+	FailedLoadChartRuntime: { reason: Schema.String },
+	ResolvedThemeColors: { colors: ThemeColors },
+	GotMinimapMessage: { message: MinimapMessage },
 	ClickedApprove: { toolCallId: Schema.String, tool: Schema.String },
 	ClickedDeny: { toolCallId: Schema.String },
 	CompletedDecideApproval: {

@@ -1,6 +1,10 @@
 import { MarkdownDocument } from "@foldkit/markdown"
 import { Schema } from "effect"
+import * as Chart from "../../../charts/chart"
+import { ChartRuntime } from "../../../charts/chart-runtime"
+import { ThemeColors } from "../../../charts/theme-colors"
 import * as CopyButton from "../../../ui/copy-button"
+import { MinimapState } from "../kit/turn-minimap"
 import { ChatStatus, UIMessage } from "../kit/ui-message"
 
 // One conversation (`ChatConversation` + `useMapleChat`): its transcript, composer and live tail.
@@ -42,6 +46,12 @@ export const Model = Schema.Struct({
 	resolvedApprovals: Schema.Record(Schema.String, Approval),
 	/** Approvals with a decision in flight. */
 	decidingApprovals: Schema.Array(Schema.String),
+	/** ```chart fences: each plot's interaction state, by the fence's source. */
+	charts: Schema.Record(Schema.String, Chart.Model),
+	/** The lazily loaded plotting runtime; `null` until a chart fence asks for it. */
+	chartRuntime: Schema.NullOr(ChartRuntime),
+	themeColors: Schema.NullOr(ThemeColors),
+	minimap: MinimapState,
 	/** Markdown parses by text; `null` while in flight. */
 	markdown: Schema.Record(Schema.String, Schema.NullOr(Schema.Struct({ document: Schema.NullOr(MarkdownDocument) }))),
 })

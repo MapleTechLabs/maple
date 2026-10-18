@@ -1,7 +1,15 @@
+import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
+import { isChartRuntimeReady } from "../../../charts/chart-runtime"
+import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { eyebrow } from "../../../ui/eyebrow"
 import { skeleton } from "../../../ui/skeleton"
+import { approvalCard, taskCard } from "../kit/view-cards"
 import { composer, failureNotice } from "../kit/view-composer"
+import { MountTurnMinimap } from "../kit/turn-minimap-mount"
+import { inlineCard } from "../kit/view-inline"
+import { chatMarkdownOverrides } from "../kit/view-markdown"
 import { type TranscriptHost, transcript } from "../kit/view-transcript"
 import { Message } from "./message"
 import { isLoading, type Model } from "./model"
@@ -22,9 +30,52 @@ export type ConversationViewOptions<M> = Readonly<{
 	chips: ReadonlyArray<Html>
 	permalinkFor?: (messageId: string) => string
 	scrollerMount: TranscriptHost<M>["scrollerMount"]
-	/** Cards the host draws (inline cards, approvals, sub-agents, structured tool output). */
-	cards?: Pick<TranscriptHost<M>, "inlineCard" | "ownCard" | "taskCard" | "structured" | "markdownOverrides">
+	/** The org's service names (`KnownServicesProvider`): table cells that name one link to it. */
+	knownServices: ReadonlySet<string>
+	/** The clock a chart's in-flight bucket is judged against. */
+	nowMs: number
+	/** An approval prompt drawn by the host instead (the lab resolves it locally). */
+	ownCard?: TranscriptHost<M>["ownCard"]
 }>
+
+/** Approvals, sub-agent rows, inline cards and the chat's tables and charts. */
+const cardsOf = <M>(
+	h: HtmlBuilder<M>,
+	model: Model,
+	options: ConversationViewOptions<M>,
+): Pick<TranscriptHost<M>, "inlineCard" | "ownCard" | "taskCard" | "markdownOverrides"> => ({
+	inlineCard: (segment) => inlineCard(h, segment, options.timeZone),
+	taskCard: (part) => taskCard(h, part, `chat-task-${part.toolCallId}`),
+	ownCard:
+		options.ownCard ??
+		((part) =>
+			part.state !== "proposed"
+				? null
+				: approvalCard(h, {
+						toolName: part.toolName,
+						input: part.input,
+						resolved: model.resolvedApprovals[part.toolCallId],
+						isRawOpen: model.openPanels.includes(`raw:${part.toolCallId}`),
+						isDeciding: model.decidingApprovals.includes(part.toolCallId),
+						onToggleRaw: options.toMessage(Message.ToggledPanel({ id: `raw:${part.toolCallId}` })),
+						onApprove: options.toMessage(Message.ClickedApprove({ toolCallId: part.toolCallId, tool: part.toolName })),
+						onDeny: options.toMessage(Message.ClickedDeny({ toolCallId: part.toolCallId })),
+					})),
+	markdownOverrides: chatMarkdownOverrides(h, options.knownServices, {
+		charts: model.charts,
+		theme: model.themeColors,
+		isRuntimeReady: model.chartRuntime !== null && isChartRuntimeReady(model.chartRuntime),
+		nowMs: options.nowMs,
+		timeZone: options.timeZone,
+		onChart: (id, message) => options.toMessage(Message.GotChartMessage({ id, message })),
+	}),
+})
+
+/** Reads the chart colours off the page, again on every light/dark flip. */
+export const themeMount = <M>(toMessage: (message: Message) => M) =>
+	Mount.mapMessage(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }), (message) =>
+		toMessage(Message.ResolvedThemeColors({ colors: message.colors })),
+	)
 
 const loadingSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
@@ -70,7 +121,7 @@ const emptyStateOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationV
 	}
 }
 
-export const transcriptHostOf = <M>(model: Model, options: ConversationViewOptions<M>): TranscriptHost<M> => ({
+export const transcriptHostOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): TranscriptHost<M> => ({
 	isOpen: (id) => model.openPanels.includes(id),
 	onToggle: (id) => options.toMessage(Message.ToggledPanel({ id })),
 	markdown: model.markdown,
@@ -80,8 +131,10 @@ export const transcriptHostOf = <M>(model: Model, options: ConversationViewOptio
 	copies: model.copies,
 	onCopy: (id, message) => options.toMessage(Message.GotCopyMessage({ id, message })),
 	scrollerMount: options.scrollerMount,
+	minimap: model.minimap,
+	minimapMount: Mount.mapMessage(MountTurnMinimap(), (message) => options.toMessage(Message.GotMinimapMessage({ message }))),
 	permalinkFor: options.permalinkFor,
-	...options.cards,
+	...cardsOf(h, model, options),
 })
 
 const notices = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): ReadonlyArray<Html> => {
@@ -110,9 +163,9 @@ const notices = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOp
 export const conversationView = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): Html => {
 	const loading = isLoading(model)
 	return h.div(
-		[h.Class("flex h-full min-h-0 flex-col")],
+		[h.Class("flex h-full min-h-0 flex-col"), h.OnMount(themeMount(options.toMessage))],
 		[
-			transcript(h, transcriptHostOf(model, options), model.messages, () => emptyStateOf(h, model, options)),
+			transcript(h, transcriptHostOf(h, model, options), model.messages, () => emptyStateOf(h, model, options)),
 			...(model.readOnly !== null
 				? []
 				: [

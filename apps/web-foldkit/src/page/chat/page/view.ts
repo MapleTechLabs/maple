@@ -46,6 +46,8 @@ const conversation = (
 		chips: contextChips(h, activeContexts(model), (id) => Message.DismissedContext({ id })),
 		permalinkFor: (messageId) => shareUrl(model.origin, tab, messageId),
 		scrollerMount: MountMessageScroller(),
+		knownServices: new Set(model.knownServices),
+		nowMs: model.nowMs,
 	})
 
 const conversations = (h: H, model: Model, timeZone: string): Html => {
@@ -111,6 +113,8 @@ const sharedView = (h: H, model: Model, timeZone: string): Html => {
 										emptyState: () => h.empty,
 										chips: [],
 										scrollerMount: MountMessageScroller(),
+										knownServices: new Set(model.knownServices),
+										nowMs: model.nowMs,
 										permalinkFor: (messageId) =>
 											shareUrl(model.origin, { id: shared.tabId, title: shared.title ?? "" }, messageId),
 									}),

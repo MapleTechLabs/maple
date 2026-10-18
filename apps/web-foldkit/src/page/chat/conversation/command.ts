@@ -2,7 +2,7 @@ import { ChatApplyRequest } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { MapleAiClient } from "../../../platform/api-clients"
-import { parseMarkdownTexts } from "../../agent-sessions/session/message-response"
+import { parseChatMarkdown } from "../kit/markdown-parse"
 import { abortTurn, loadHistory, postMessage } from "../kit/chat-api"
 import { historyMessageToUIMessage } from "../kit/fold"
 import { Message } from "./message"
@@ -47,7 +47,7 @@ export const ParseMarkdown = Command.define("ParseChatMarkdown", {
 	args: { texts: Schema.Array(Schema.String) },
 	messages: [Message.CompletedParseMarkdown],
 	execute: ({ texts }) =>
-		Effect.map(parseMarkdownTexts(texts), (parsed) => Message.CompletedParseMarkdown({ parsed })),
+		Effect.map(parseChatMarkdown(texts), (parsed) => Message.CompletedParseMarkdown({ parsed })),
 })
 
 /** `MapleAiAtomClient.mutation("chat", "apply")`: the session runs (or declines) the proposal. */

@@ -1,11 +1,15 @@
+import { chartFences } from "@maple/domain/chat-chart-spec"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import type { ChatEvent } from "@maple/domain/chat-session"
 import { Array, Result } from "effect"
 import { Command, type Update } from "foldkit"
+import * as Chart from "../../../charts/chart"
+import { ChartRuntime, LoadChartRuntime } from "../../../charts/chart-runtime"
 import type { Resources } from "../../../platform/resources"
 import * as CopyButton from "../../../ui/copy-button"
 import { applyChatEvent, finalizeStreamingText, taskOf } from "../kit/fold"
 import { transcriptMarkdown } from "../kit/rich-text"
+import { initMinimap, updateMinimap } from "../kit/turn-minimap"
 import { TextPart } from "../kit/ui-message"
 import { AbortTurn, DecideApproval, LoadHistory, ParseMarkdown, PostMessage } from "./command"
 import { Message, OutMessage } from "./message"
@@ -39,6 +43,16 @@ const followMarkdown = (result: Return): Return => {
 	)
 }
 
+/** A ```chart fence anywhere in the thread loads the plotting runtime, once. */
+const followCharts = (result: Return): Return => {
+	const model = result.model
+	if (model.chartRuntime !== null) return result
+	const hasChart = transcriptMarkdown(model.messages).some((text) => chartFences(text).length > 0)
+	return hasChart
+		? withCommands({ ...result, model: { ...model, chartRuntime: ChartRuntime.Loading() } }, [LoadChartRuntime()])
+		: result
+}
+
 export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null): Return => ({
 	model: {
 		tabId,
@@ -57,6 +71,10 @@ export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null
 		copies: {},
 		resolvedApprovals: {},
 		decidingApprovals: [],
+		charts: {},
+		chartRuntime: null,
+		themeColors: null,
+		minimap: initMinimap(),
 		markdown: {},
 	},
 	commands: [LoadHistory({ sessionId, generation: 1 })],
@@ -191,6 +209,17 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 				},
 			},
 		}),
+		GotChartMessage: ({ id, message: child }) => {
+			const chart = Chart.update(model.charts[id] ?? Chart.init(), child)
+			return {
+				model: { ...model, charts: { ...model.charts, [id]: chart.model } },
+				commands: Command.mapMessages(chart.commands ?? [], (inner) => Message.GotChartMessage({ id, message: inner })),
+			}
+		},
+		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: ChartRuntime.Ready() } }),
+		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: ChartRuntime.Failed({ reason }) } }),
+		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		GotMinimapMessage: ({ message: child }) => ({ model: { ...model, minimap: updateMinimap(model.minimap, child) } }),
 		ClickedApprove: ({ toolCallId, tool }) => decide(model, toolCallId, tool, "approve"),
 		ClickedDeny: ({ toolCallId }) => decide(model, toolCallId, "", "deny"),
 		CompletedDecideApproval: ({ toolCallId, tool, decision, result }) => {
@@ -223,4 +252,8 @@ const decide = (model: Model, toolCallId: string, tool: string, decision: "appro
 			}
 
 export const update = (model: Model, message: Message, context: SendContext): Return =>
-	followMarkdown(step(model, message, context))
+	followCharts(followMarkdown(step(model, message, context)))
+
+/** A transcript known up front (the lab, a fixture): its parses and chart runtime requested. */
+export const withMessages = (result: Return, messages: Model["messages"]): Return =>
+	followCharts(followMarkdown({ ...result, model: { ...result.model, messages, historyReady: true } }))
