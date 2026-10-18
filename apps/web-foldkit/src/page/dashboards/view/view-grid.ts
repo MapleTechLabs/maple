@@ -21,7 +21,13 @@ import { containerKeyFor } from "@maple/domain/http"
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]
 
-type TileContext = Readonly<{ model: Model; timeZone: string; variables: VariableValues }>
+type TileContext = Readonly<{
+	model: Model
+	timeZone: string
+	variables: VariableValues
+	/** `renderWidget`: the tile drawn in each cell (the bench lab's stand-in), else the widget's own. */
+	renderTile?: (widget: Widget) => Html
+}>
 
 const gridArea = (item: GridItem) => ({
 	"grid-column": `${item.x + 1} / span ${item.w}`,
@@ -75,7 +81,7 @@ const gridCell = (h: H, ctx: TileContext, widget: Widget, item: GridItem, isEdit
 		[
 			h.div(
 				[h.Class("h-full w-full"), h.OnMount(WatchWidget({ widgetId: widget.id }))],
-				[viewTile(h, ctx.model, widget, ctx.timeZone, ctx.variables)],
+				[ctx.renderTile?.(widget) ?? viewTile(h, ctx.model, widget, ctx.timeZone, ctx.variables)],
 			),
 			...(isEditable ? [resizeHandle(h)] : []),
 		],

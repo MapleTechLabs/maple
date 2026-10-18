@@ -49,7 +49,7 @@ const autoScroll = (scroller: HTMLElement, clientY: number): boolean => {
  * The gesture's window listeners and its per-frame step: each frame auto-scrolls if the pointer
  * is near the edge and reports the pointer with the grid's position, so the tile stays under it.
  */
-const pointerEvents = (widgetId: string) => Stream.callback<PointerMessage>((queue) =>
+export const pointerEvents = (widgetId: string) => Stream.callback<PointerMessage>((queue) =>
 	Effect.acquireRelease(
 		Effect.sync(() => {
 			// The gesture's own grid: a sectioned board has one per container.
