@@ -17,6 +17,7 @@ import {
 	FetchEscalation,
 	FetchSignalLogs,
 	FetchSignalTraces,
+	PreloadTrace,
 	ReadInvestigationClock,
 	ResolveInvestigation,
 	RestartInvestigation,
@@ -106,6 +107,7 @@ export const init = (route: InvestigationRoute, _context: PageContext): Return =
 		actionSheet: Dialog.init("investigation-action-sheet", "sheet", { isOpen: false }),
 		canvas: Canvas.init({ minZoom: 0.3, maxZoom: 1.4, fitOnInit: Option.none() }),
 		traceTooltip: Tooltip.init("investigation-trace-tooltip"),
+		preloadedTraces: [],
 	}
 	return { model, commands: [ReadInvestigationClock()] }
 }
@@ -143,6 +145,10 @@ const primaryKind = (investigation: V2Investigation): "resolve" | "restart" =>
 	investigation.status === "failed" || investigation.status === "inconclusive" || investigation.status === "resolved"
 		? "restart"
 		: "resolve"
+
+/** The trace a chip's tooltip trigger names (`traceTipId`). */
+const traceOfTip = (triggerId: string): string | undefined =>
+	/^trace-tip-(?:sheet|evidence)-(.+)$/.exec(triggerId)?.[1]
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -208,11 +214,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotTraceTooltipMessage: ({ message: inner }) => {
 			const step = Tooltip.update(model.traceTooltip, inner)
+			const intent = inner._tag === "EnteredTrigger" || inner._tag === "FocusedTrigger" ? traceOfTip(inner.triggerId) : undefined
+			const isPreload = intent !== undefined && !model.preloadedTraces.includes(intent)
 			return {
-				model: { ...model, traceTooltip: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (tooltip) => Message.GotTraceTooltipMessage({ message: tooltip })),
+				model: {
+					...model,
+					traceTooltip: step.model,
+					preloadedTraces: isPreload ? [...model.preloadedTraces, intent] : model.preloadedTraces,
+				},
+				commands: [
+					...Command.mapMessages(step.commands ?? [], (tooltip) => Message.GotTraceTooltipMessage({ message: tooltip })),
+					...(isPreload ? [PreloadTrace({ traceId: intent })] : []),
+				],
 			}
 		},
+		CompletedPreloadTrace: () => ({ model }),
 		GotCanvasMessage: ({ message: inner }) => {
 			const updated = Canvas.update(model.canvas, inner, [])
 			const isZoom = inner._tag === "ClickedZoomIn" || inner._tag === "ClickedZoomOut"

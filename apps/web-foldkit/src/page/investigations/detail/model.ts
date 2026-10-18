@@ -45,5 +45,7 @@ export const Model = Schema.Struct({
 	canvas: Canvas.Model,
 	/** The trace chips' full-id tooltip, one Model for every chip. */
 	traceTooltip: Tooltip.Model,
+	/** Traces whose route loader a hover or focus already ran (`defaultPreload: "intent"`). */
+	preloadedTraces: Schema.Array(Schema.String),
 })
 export type Model = typeof Model.Type
