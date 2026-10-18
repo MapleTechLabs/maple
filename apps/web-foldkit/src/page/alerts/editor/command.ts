@@ -1,7 +1,9 @@
 import { AlertRuleId } from "@maple/domain/http"
 import { V2AlertRuleCreateParams, V2AlertRulePreviewParams, V2AlertRuleTestParams } from "@maple/domain/http/v2"
 import { getTracesFacets } from "@maple/web-data/warehouse/traces"
-import { Clock, Effect, Schema } from "effect"
+import { displayError } from "@maple/web-data/lib/error-messages"
+import { Clock, Effect, Exit, Schema } from "effect"
+import { HttpClientError } from "effect/http"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -76,8 +78,10 @@ export const FetchEditorPreview = Command.define("FetchAlertEditorPreview", {
 		),
 })
 
+/** `AtomHttpApi` turns transport and decode failures into defects, which `toastExit` reads as unexpected. */
 const failure = (error: unknown) => {
-	const body = toLoadFailure(error)
+	const isDefect = Schema.isSchemaError(error) || HttpClientError.isHttpClientError(error)
+	const body = displayError(isDefect ? Exit.die(error) : Exit.fail(error))
 	return { title: body.title, message: body.message }
 }
 

@@ -63,6 +63,9 @@ export const planPreviews = (model: Model, context: PageContext): Planned => {
 		if (Option.isNone(payload)) return none(current)
 		const key = requestKey(context.orgId, "alertRules.preview", payload.value)
 		const existing = isSaved ? current.savedPreview : current.preview
+		const other = isSaved ? current.preview : current.savedPreview
+		if (existing.key !== key && other.key === key)
+			return none(isSaved ? { ...current, savedPreview: other } : { ...current, preview: other })
 		return Option.match(Keyed.request(existing, key, "Load"), {
 			onNone: () => none(current),
 			onSome: (next) => ({
@@ -71,7 +74,14 @@ export const planPreviews = (model: Model, context: PageContext): Planned => {
 			}),
 		})
 	}
-	const draft = slot(false, model.form)(model)
+	// The saved rule's replay is the draft's first preview: one retained atom in legacy, never refetched.
+	const savedPayload = model.savedForm === null ? Option.none() : previewPayload(model.savedForm, window)
+	const savedKey = Option.map(savedPayload, (payload) => requestKey(context.orgId, "alertRules.preview", payload))
+	const seeded: Model =
+		Option.isSome(savedKey) && model.savedPreview.key !== savedKey.value && model.preview.key === savedKey.value
+			? { ...model, savedPreview: model.preview }
+			: model
+	const draft = slot(false, seeded.form)(seeded)
 	return isEvaluationChanged(draft.model) ? then(draft, slot(true, draft.model.savedForm)) : draft
 }
 

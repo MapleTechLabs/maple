@@ -55,10 +55,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: { model: { ...model, autocomplete: { ...model.autocomplete, [lookup]: Keyed.accept(slot, key, result) } } }
 		},
-		CompletedFetchPreview: ({ key, isSaved, result }) => ({
-			model: isSaved
-				? { ...model, savedPreview: Keyed.accept(model.savedPreview, key, result) }
-				: { ...model, preview: Keyed.accept(model.preview, key, result) },
+		// Both slots take an answer for their key: the replay can share the draft's first request.
+		CompletedFetchPreview: ({ key, result }) => ({
+			model: {
+				...model,
+				preview: model.preview.key === key ? Keyed.accept(model.preview, key, result) : model.preview,
+				savedPreview: model.savedPreview.key === key ? Keyed.accept(model.savedPreview, key, result) : model.savedPreview,
+			},
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),

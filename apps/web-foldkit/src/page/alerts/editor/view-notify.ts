@@ -1,5 +1,6 @@
 import type { AlertDestinationDocument, AlertDestinationId, AlertDestinationType } from "@maple/domain/http"
 import type { V2ChatConnector } from "@maple/domain/http/v2"
+import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { iconButton } from "../../../ui/icon-button"
 import { icon } from "../../../ui/icon"
@@ -153,9 +154,10 @@ const addMenu = (
 	const newTypes = destinationTypesFor(isDiscordLinked)
 	const previewChat = connectors.filter((c) => c.workspaces.length > 0 || (c.available && c.id !== "discord"))
 	const menuId = menuIdOf(tier)
+	const menu = model.menus[menuId] ?? Menu.init(menuId)
 	return h.submodel({
 		slotId: menuId,
-		model: model.menus[menuId] ?? Menu.init(menuId),
+		model: menu,
 		view: MenuView.view,
 		viewInputs: {
 			entries: menuEntries(h, model, available, connectors, newTypes),
@@ -169,7 +171,11 @@ const addMenu = (
 							[
 								h.Type("button"),
 								h.Class(
-									"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground",
+									cn(
+										"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground",
+										// Open, Base UI's guards follow the trigger, so the panel's divider lands on it.
+										menu.isOpen && "border-b border-border/60",
+									),
 								),
 								h.DataAttribute("slot", "dropdown-menu-trigger"),
 								...trigger,
