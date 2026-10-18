@@ -1,3 +1,4 @@
+import { BillingCustomer } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
 import { V2McpConnection } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
@@ -38,7 +39,7 @@ const connection = Schema.decodeUnknownSync(V2McpConnection)({
 const mcpLoaded = (): Model =>
 	[
 		Message.CompletedFetchSession({ result: Result.succeed({ isAdmin: true, userId: null }) }),
-		Message.CompletedFetchCustomer({ result: Result.succeed({ hasByoc: false }) }),
+		Message.CompletedFetchCustomer({ result: Result.succeed(new BillingCustomer({ id: "org_acme", subscriptions: [] })) }),
 		mcp(McpMessage.Message.CompletedFetchConnections({ result: Result.succeed([connection]) })),
 		mcp(McpMessage.Message.CompletedFetchTools({ result: Result.succeed(tools) })),
 	].reduce((model, message) => pageUpdate(model, message).model, entered({ tab: "mcp" }).model)

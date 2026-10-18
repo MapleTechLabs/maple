@@ -345,6 +345,7 @@ const DRIFT = "settings-data-platform-drift"
 
 /** Data platform: save the connection, disconnect, read the diff, apply the schema. */
 const ORGANIZATION = "/settings?tab=organization"
+const BILLING = "/settings?tab=billing"
 
 /** Clerk-only tabs: each write goes through the Clerk stub, which logs it as a `clerk:` call. */
 const clerkInteractions: ReadonlyArray<Scenario> = [
@@ -447,6 +448,45 @@ const clerkInteractions: ReadonlyArray<Scenario> = [
 			await target.getByLabel("Day").selectOption("2")
 			await target.getByRole("button", { name: "Save", exact: true }).click()
 			await target.getByText("Email preferences saved").waitFor()
+		},
+	}),
+	page("clerk-billing-cap", "Billing: cap logs overage", BILLING, {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Edit Logs cap" }).click()
+			await target.getByRole("textbox", { name: "Logs paid overage cap" }).fill("50")
+			await target.getByRole("button", { name: "Save", exact: true }).click()
+			await target.getByText("Logs cap saved").waitFor()
+		},
+	}),
+	page("clerk-billing-set-caps", "Billing: Set caps opens the first uncapped row", BILLING, {
+		dataset: CLERK,
+		steps: (target) => target.getByRole("button", { name: "Set caps" }).click(),
+	}),
+	page("clerk-billing-breakdown", "Billing: the cost breakdown", BILLING, {
+		dataset: CLERK,
+		steps: (target) => target.getByRole("button", { name: /Cost breakdown/ }).click(),
+	}),
+	page("clerk-billing-compare", "Billing: compare plans", BILLING, {
+		dataset: CLERK,
+		steps: (target) => target.getByRole("button", { name: "Compare plans" }).click(),
+	}),
+	page("clerk-billing-details", "Billing: edit and save the billing details", BILLING, {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Edit", exact: true }).click()
+			await target.getByRole("textbox", { name: "Company name" }).fill("Acme Retail Ltd")
+			await target.getByRole("button", { name: "Save details" }).click()
+			await target.getByText("Billing details saved").waitFor()
+		},
+	}),
+	page("clerk-billing-tax-id", "Billing: add a tax ID", BILLING, {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Edit", exact: true }).click()
+			await target.getByRole("textbox", { name: "Tax ID", exact: true }).fill("GB987654321")
+			await target.getByRole("button", { name: "Add", exact: true }).click()
+			await target.getByText("Tax ID added. Stripe is verifying it.").waitFor()
 		},
 	}),
 	page("clerk-organization-delete", "Organization: delete dialog with the name typed", ORGANIZATION, {

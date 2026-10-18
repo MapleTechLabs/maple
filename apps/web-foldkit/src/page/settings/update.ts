@@ -1,3 +1,4 @@
+import { hasBringYourOwnCloudAddOn } from "@maple/web/lib/billing/plan-gating"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { rowToV2ApiKey } from "@maple/web-data/collections/api-keys"
 import { Option } from "effect"
@@ -18,6 +19,7 @@ import type * as IngestionModel from "./ingestion/model"
 import * as Ingestion from "./ingestion/update"
 import * as SetupHealth from "./setup-health/update"
 import * as Ai from "./ai/update"
+import * as Billing from "./billing/update"
 import * as Members from "./members/update"
 import * as General from "./general/update"
 import * as DataPlatform from "./data-platform/update"
@@ -46,7 +48,7 @@ export const visibilityOf = (model: Model): Visibility => {
 	const isAdmin = isClerkAuthEnabled
 		? AsyncData.getOrElse(AsyncData.map(model.session, (session) => session.isAdmin), () => false)
 		: true
-	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer, (customer) => customer.hasByoc), () => false)
+	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer, hasBringYourOwnCloudAddOn), () => false)
 	return { isClerk: isClerkAuthEnabled, isAdmin, canAccessDataPlatform: isAdmin && hasByoc }
 }
 
@@ -72,6 +74,7 @@ const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
 	["data-platform", "DataPlatform"],
 	["general", "General"],
 	["members", "Members"],
+	["billing", "Billing"],
 ])
 const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
 
@@ -163,6 +166,13 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			return {
 				model: { ...model, tab: { _tag: "Members", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMembersMessage({ message })),
+			}
+		}
+		case "Billing": {
+			const step = Billing.init(visibilityOf(model).isAdmin)
+			return {
+				model: { ...model, tab: { _tag: "Billing", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotBillingMessage({ message })),
 			}
 		}
 		case "Unported":
@@ -340,6 +350,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return {
 				model: { ...model, tab: { _tag: "Members", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotMembersMessage({ message: child })),
+				outMessage: step.outMessage,
+			}
+		},
+		GotBillingMessage: ({ message: inner }) => {
+			if (model.tab === null || model.tab._tag !== "Billing") return { model }
+			const customer = AsyncData.getOrElse(model.customer, () => null)
+			const { step, isCustomerStale } = Billing.update(model.tab.model, inner, customer, model.nowMs)
+			const next = { ...model, tab: { _tag: "Billing", model: step.model } } as const
+			// `BILLING_CUSTOMER_KEY`: a cap save, the portal, a plan change or Retry read the customer again.
+			return {
+				model: isCustomerStale
+					? { ...next, customer: Option.getOrElse(AsyncData.revalidate(model.customer), () => AsyncData.Loading()) }
+					: next,
+				commands: [
+					...Command.mapMessages(step.commands ?? [], (child) => Message.GotBillingMessage({ message: child })),
+					...(isCustomerStale ? [FetchSettingsCustomer()] : []),
+				],
 				outMessage: step.outMessage,
 			}
 		},

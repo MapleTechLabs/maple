@@ -1,4 +1,3 @@
-import { hasBringYourOwnCloudAddOn } from "@maple/web/lib/billing/plan-gating"
 import { Clock, Effect } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../data/load-failure"
@@ -27,13 +26,12 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 	),
 })
 
-/** `billingCustomerAtom`: the nav's data-platform gate reads the add-on flag. */
+/** `billingCustomerAtom`: the nav's data-platform gate and the Billing tab. */
 export const FetchSettingsCustomer = Command.define("FetchSettingsCustomer", {
 	messages: [Message.CompletedFetchCustomer],
 	execute: Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
-		const customer = yield* client.billing.getCustomer()
-		return { hasByoc: hasBringYourOwnCloudAddOn(customer) }
+		return yield* client.billing.getCustomer()
 	}).pipe(
 		Effect.mapError(toLoadFailure),
 		Effect.result,

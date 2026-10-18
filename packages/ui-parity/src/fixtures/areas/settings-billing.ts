@@ -101,8 +101,7 @@ const invoices: EndpointHandler = (request) =>
 		})),
 	})
 
-const profile: EndpointHandler = () =>
-	Effect.succeed({
+const profileOf = () => ({
 		linked: true,
 		name: `${acmeAdmin.orgName} Ltd`,
 		address: {
@@ -123,6 +122,34 @@ const profile: EndpointHandler = () =>
 			},
 		],
 	})
+const profile: EndpointHandler = () => Effect.succeed(profileOf())
+
+/** Billing details writes answer the profile with the change applied. */
+const updateProfile: EndpointHandler = ({ payload }) =>
+	Effect.succeed({ ...profileOf(), ...(Predicate.isObject(payload) && payload) })
+const addTaxId: EndpointHandler = ({ payload }) => {
+	const current = profileOf()
+	const added = Predicate.isObject(payload) ? { id: "txi_parity_2", verificationStatus: "pending", ...payload } : null
+	return Effect.succeed({ ...current, taxIds: added === null ? current.taxIds : [...current.taxIds, added] })
+}
+const removeTaxId: EndpointHandler = () => Effect.succeed({ ...profileOf(), taxIds: [] })
+
+/** A cap save answers the customer with the cap applied (`spendLimits` merged per feature). */
+const updateBillingControls: EndpointHandler = ({ dataset, payload }) => {
+	const now = parseWarehouseDateTime(dataset.now)
+	const limits = Predicate.hasProperty(payload, "spendLimits") && Array.isArray(payload.spendLimits) ? payload.spendLimits : []
+	return Effect.succeed({
+		id: dataset.identity?.orgId ?? "org_parity_signed_out",
+		subscriptions: [
+			{ planId: "startup", status: "active", currentPeriodStart: now - 10 * DAY, currentPeriodEnd: now + 20 * DAY },
+		],
+		billingControls: { spendLimits: limits },
+	})
+}
+
+/** The portal and checkout answer a Stripe URL; the scenarios stop before following it. */
+const openPortal: EndpointHandler = () => Effect.succeed({ url: "https://billing.stripe.test/p/session_parity" })
+const attach: EndpointHandler = () => Effect.succeed({ paymentUrl: null })
 
 /** `DailySpendService.get`: three warehouse reads, gap-filled across the whole cycle. */
 const dailySpend =
@@ -206,4 +233,10 @@ export const clerkBillingEndpoints = (
 	"billing.getDailySpend": dailySpend(warehouse),
 	"digest.getSubscription": digest,
 	"digest.upsertSubscription": upsertDigest,
+	"billing.updateBillingProfile": updateProfile,
+	"billing.addBillingTaxId": addTaxId,
+	"billing.removeBillingTaxId": removeTaxId,
+	"billing.updateBillingControls": updateBillingControls,
+	"billing.openCustomerPortal": openPortal,
+	"billing.attach": attach,
 })
