@@ -146,7 +146,8 @@ export const pinZone = (model: ZoneModel): ZoneModel => ({
 /** `WorkerPage`'s reads: maple-api's rollup, outcomes and releases. */
 export const pinWorker = (model: WorkerModel): WorkerModel => ({
 	...model,
-	window: WINDOW,
+	// Legacy's lab snaps deploys to 30-minute buckets from 00:00; a 48h window is what buckets so.
+	window: { startTime: WINDOW.startTime, endTime: "2026-10-16 00:00:00" },
 	nowMs: DEMO_NOW,
 	status: loaded(WORKER_STATUS),
 	usage: { key: null, data: AsyncData.Idle() },
