@@ -25,6 +25,7 @@ import {
 	ParseMarkdown,
 	ResolveClock,
 	RunCodeAction,
+	WaitCodeCopied,
 	ScrollToTools,
 } from "./command"
 import { loadedSpans, progressOf, sessionData, viewOf } from "./derive"
@@ -238,6 +239,7 @@ export const init = (
 		spanPanel: freshSpanPanel(),
 		spanPanelId: null,
 		closeTooltip: Tooltip.init(CLOSE_TOOLTIP_ID),
+		codeCopy: { code: null, generation: 0 },
 	}
 	const first = requestFirstPage(model, context, "Load")
 	return { ...first, commands: [...(first.commands ?? []), ResolveClock()] }
@@ -476,12 +478,21 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			)
 			return { model: { ...model, flowCanvas: Canvas.update(model.flowCanvas, inner, positions) } }
 		},
+		// Streamdown writes nothing while its check is showing.
+		ClickedCodeAction: ({ action, code, language }) =>
+			action === "copy" && model.codeCopy.code === code
+				? { model }
+				: { model, commands: [RunCodeAction({ action, code, language })] },
+		CompletedCodeAction: ({ code, isCopied }) => {
+			if (!isCopied) return { model }
+			const generation = model.codeCopy.generation + 1
+			return { model: { ...model, codeCopy: { code, generation } }, commands: [WaitCodeCopied({ generation })] }
+		},
+		ElapsedCodeCopied: ({ generation }) =>
+			generation === model.codeCopy.generation
+				? { model: { ...model, codeCopy: { code: null, generation } } }
+				: { model },
 		// "Top of the session at 1:1": a reset rather than a fit, which clamps unpredictably.
-		ClickedCodeAction: ({ action, code, language }) => ({
-			model,
-			commands: [RunCodeAction({ action, code, language })],
-		}),
-		CompletedCodeAction: () => ({ model }),
 		ClickedResetFlowView: () => ({
 			model: { ...model, flowCanvas: { ...model.flowCanvas, viewport: { x: 0, y: 0, zoom: 1 } } },
 		}),

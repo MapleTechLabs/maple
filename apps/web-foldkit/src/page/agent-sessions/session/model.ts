@@ -122,6 +122,8 @@ export const Model = Schema.Struct({
 	/** The open span's lazy detail and logs reads, copies and disclosures, for `spanPanelId`. */
 	spanPanel: PanelState,
 	spanPanelId: Schema.NullOr(Schema.String),
+	/** The code block whose Copy shows its check (Streamdown holds it 2s), and the hold's generation. */
+	codeCopy: Schema.Struct({ code: Schema.NullOr(Schema.String), generation: Schema.Number }),
 	/** The popover's Close button tooltip, shown on keyboard focus (a pasted link focuses it). */
 	closeTooltip: Tooltip.Model,
 })

@@ -40,6 +40,7 @@ export const clampedBody = (
 		codeActions: {
 			onCopy: (code) => Message.ClickedCodeAction({ action: "copy", code, language: "" }),
 			onDownload: (code, language) => Message.ClickedCodeAction({ action: "download", code, language }),
+			copiedCode: model.codeCopy.code,
 		},
 	})
 
