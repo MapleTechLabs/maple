@@ -57,6 +57,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		shell: Shell.init(flags.shell),
 		toasts: Toast.init("toasts"),
 		toastActions: {},
+		toastRootActions: {},
 		chatSheet: ChatSheet.init(),
 		page: null,
 		onboarding: null,

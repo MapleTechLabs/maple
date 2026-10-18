@@ -1,6 +1,17 @@
 import { createEffectCollection } from "@maple/effect-db/electric"
 import { electricSyncBaseUrl } from "@maple/web/lib/services/common/electric-sync-url"
-import { Context, Duration, Effect, Layer, ManagedRuntime, Option, type Scope, SynchronizedRef } from "effect"
+import {
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Option,
+	type Scope,
+	Stream,
+	SubscriptionRef,
+	SynchronizedRef,
+} from "effect"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { SessionBearer } from "../../platform/session-bearer"
 import { makeDashboardsCollection } from "./dashboards"
@@ -172,12 +183,33 @@ export class OrgCollections extends Context.Service<
 		readonly forInvestigation: (orgId: string, investigationId: string) => Effect.Effect<InvestigationCollection>
 		/** Cleans the collection up once its last live query has let go (in the background). */
 		readonly releaseInvestigation: (collection: InvestigationCollection) => Effect.Effect<void>
+		/** `retryOrgCollections`: a fresh set for the open org; live streams move onto it. */
+		readonly recreate: Effect.Effect<void>
+		/**
+		 * `useOrgCollections`: `build` over the org's set, rebuilt on each `recreate` (the old
+		 * stream is torn down first, so its live queries let the superseded set drain).
+		 */
+		readonly liveFor: <A, R>(
+			orgId: string,
+			build: (set: OrgCollectionSet) => Stream.Stream<A, never, R>,
+		) => Stream.Stream<A, never, R>
 	}
 >()("@maple/web-foldkit/OrgCollections") {
 	static readonly layer = Layer.effect(this, makeOrgCollections()).pipe(
 		Layer.provide([SessionBearer.layer, MapleApiV2Client.layer]),
 	)
 }
+
+/** A live stream over the org's collections that follows every `recreate` (Reconnect). */
+export const orgLive = <A, R>(
+	orgId: string,
+	build: (set: OrgCollectionSet) => Stream.Stream<A, never, R>,
+): Stream.Stream<A, never, R | OrgCollections> =>
+	Stream.unwrap(
+		Effect.gen(function* () {
+			return (yield* OrgCollections).liveFor(orgId, build)
+		}),
+	)
 
 function makeOrgCollections(): Effect.Effect<
 	OrgCollections["Service"],
@@ -194,6 +226,7 @@ function makeOrgCollections(): Effect.Effect<
 			(managed) => managed.disposeEffect,
 		)
 		const current = yield* SynchronizedRef.make(Option.none<OrgCollectionSet>())
+		const generation = yield* SubscriptionRef.make(0)
 		const retire = (set: OrgCollectionSet) =>
 			Effect.asVoid(
 				Effect.forkIn(
@@ -230,6 +263,17 @@ function makeOrgCollections(): Effect.Effect<
 			Effect.sync(() => makeInvestigationCollection(orgId, investigationId, runtime, fetchClient))
 		const releaseInvestigation = (collection: InvestigationCollection) =>
 			Effect.asVoid(Effect.forkIn(cleanupWhenIdle(collection), scope))
-		return { forOrg, forInvestigation, releaseInvestigation }
+		const recreate = SynchronizedRef.updateEffect(current, (existing) =>
+			Option.match(existing, {
+				onNone: () => Effect.succeed(existing),
+				onSome: (set) =>
+					Effect.as(retire(set), Option.some(makeSet(set.orgId, runtime, fetchClient, client))),
+			}),
+		).pipe(Effect.andThen(SubscriptionRef.update(generation, (value) => value + 1)))
+		const liveFor = <A, R>(orgId: string, build: (set: OrgCollectionSet) => Stream.Stream<A, never, R>) =>
+			SubscriptionRef.changes(generation).pipe(
+				Stream.switchMap(() => Stream.unwrap(Effect.map(forOrg(orgId), build))),
+			)
+		return { forOrg, forInvestigation, releaseInvestigation, recreate, liveFor }
 	})
 }

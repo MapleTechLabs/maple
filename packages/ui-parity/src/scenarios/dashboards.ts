@@ -234,6 +234,16 @@ export const dashboardsArea: AreaModule = {
 		dashboard("view-renamed", "Platform overview: renamed inline", platform, {
 			steps: act(renameTo("Platform overview v2")),
 		}),
+		// The fixture never syncs a write's txid back: after TanStack DB's 15 s wait the tab is
+		// "behind", and Reconnect recreates the org collections, which resubscribe their shapes.
+		dashboard("view-behind-reconnect", "Platform overview: a rename saved behind, then Reconnect", platform, {
+			steps: act(
+				renameTo("Platform overview v2"),
+				(page) => page.getByText("Saved, but this tab is behind").waitFor({ timeout: 25_000 }),
+				clickButton("Reconnect"),
+				(page) => page.waitForTimeout(800),
+			),
+		}),
 		dashboard("view-blank", "A dashboard with no widgets", "/dashboards/dash_parity_2"),
 		dashboard("view-missing", "A dashboard id that does not exist", "/dashboards/dash_parity_missing"),
 		timed(

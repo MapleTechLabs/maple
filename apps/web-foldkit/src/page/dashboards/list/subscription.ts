@@ -1,12 +1,12 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import type { DashboardRow } from "@maple/web-data/collections/dashboards"
-import { Array as Arr, Effect, Option, Order, Schema, Stream } from "effect"
+import { Array as Arr, Option, Order, Schema } from "effect"
 import { Subscription } from "foldkit"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { liveQueryStream } from "../../../data/live-query"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
-import { dashboardsOf } from "../kit/store"
+import { orgLive } from "../../../data/collections/org-collections"
 import { dashboardDomains, readsFromLabel } from "../kit/summary"
 import { Message } from "./message"
 import type { Glyph, ListDashboard, Model } from "./model"
@@ -56,12 +56,10 @@ export const deriveDashboardsList = (rows: ReadonlyArray<DashboardRow>): Readonl
 
 /** `DashboardsListModel`: the org's synced `dashboards` collection. */
 const dashboards = (orgId: string) =>
-	Stream.unwrap(
-		Effect.map(dashboardsOf(orgId), (collection) =>
-			liveQueryStream(
-				(q) => q.from({ d: collection }),
-				(rows) => Message.UpdatedDashboards({ orgId, dashboards: deriveDashboardsList(rows) }),
-			),
+	orgLive(orgId, ({ dashboards: collection }) =>
+		liveQueryStream(
+			(q) => q.from({ d: collection }),
+			(rows) => Message.UpdatedDashboards({ orgId, dashboards: deriveDashboardsList(rows) }),
 		),
 	)
 

@@ -4,8 +4,8 @@ import type {
 	AlertRuleRow,
 	AlertRuleStateRow,
 } from "@maple/web-data/collections/alerts"
-import { Effect, Stream } from "effect"
-import { type OrgCollectionSet, OrgCollections } from "../../../data/collections/org-collections"
+import type { Stream } from "effect"
+import { type OrgCollectionSet, type OrgCollections, orgLive } from "../../../data/collections/org-collections"
 import { liveQueryStream } from "../../../data/live-query"
 
 // The four alert shapes as live streams (`useAlertRulesList`, `useAlertIncidentsList`,
@@ -13,12 +13,7 @@ import { liveQueryStream } from "../../../data/live-query"
 
 const fromSet = <A>(build: (set: OrgCollectionSet) => Stream.Stream<A>) =>
 	(orgId: string): Stream.Stream<A, never, OrgCollections> =>
-		Stream.unwrap(
-			Effect.gen(function* () {
-				const collections = yield* OrgCollections
-				return build(yield* collections.forOrg(orgId))
-			}),
-		)
+		orgLive(orgId, build)
 
 /** `alert_rules`, newest edit first (the server's `listRules` order). */
 export const ruleRows = <M>(orgId: string, toMessage: (rows: ReadonlyArray<AlertRuleRow>) => M) =>
