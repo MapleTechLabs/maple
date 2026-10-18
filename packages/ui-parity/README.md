@@ -247,4 +247,8 @@ installed) and checks every endpoint family; run it locally after backend or fix
   below the fold grow 8 px each, with or without a scroll adjustment. Waiting for a settled DOM
   after each scroll write reproduces legacy's write sequence (1451, 1515, 1921) in every capture,
   but the post-latch growth still varies, so the port stays verbatim.
+- `dashboards-view-behind-reconnect` sends `shape:dashboards` twice where legacy sends it once: a
+  documented legacy-bug divergence. Legacy's `useLiveQuery` keys a query by collection id, and the
+  recreated set keeps the same ids, so legacy goes on reading the old collections and Reconnect does
+  nothing visible. Foldkit resubscribes on purpose; the extra call is the expected behavior diff.
 - `perf` from `docs/foldkit-migration.md` §3 is not ported yet.
