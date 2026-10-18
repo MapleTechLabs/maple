@@ -523,6 +523,13 @@ export const fixtureArea: FixtureArea = {
 		"apiKeys.roll": rollApiKey,
 		"ingestKeys.rollPublic": rolledIngestKeys,
 		"ingestKeys.rollPrivate": rolledIngestKeys,
+		"errors.upsertEscalationPolicy": (request) =>
+			Effect.map(escalationPolicy(request), (current) => ({
+				...current,
+				...(Predicate.isObject(request.payload) ? request.payload : {}),
+			})),
+		"errors.evaluateEscalationPolicy": () =>
+			Effect.succeed({ outcome: "route", destinationIds: [DESTINATION_ID], skipReason: null }),
 		"aiTriage.updateSettings": (request) =>
 			Effect.map(aiTriageSettings(request), (current) => ({
 				...current,

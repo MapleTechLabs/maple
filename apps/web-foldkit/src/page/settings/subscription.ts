@@ -7,6 +7,9 @@ import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
 import { Message as IngestionMessage } from "./ingestion/message"
 import { Message } from "./message"
+import { Message as AutomationMessage } from "./automation/model"
+import { destinationRows } from "../alerts/shared/collections"
+import { rowToAlertDestinationDocument } from "@maple/web-data/collections/alerts"
 import type { Model } from "./model"
 
 /**
@@ -52,6 +55,21 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		{
 			modelToDependencies: ({ model, context }) => ({ orgId: context.orgId, isReading: readsApiKeys(model) }),
 			dependenciesToStream: ({ orgId, isReading }) => (isReading ? apiKeyRows(orgId, (rows) => Message.UpdatedApiKeys({ orgId, rows })) : Stream.empty),
+		},
+	),
+	/** `useAlertDestinationsList()` while the Automation tab routes to them. */
+	destinations: entry(
+		{ orgId: Schema.String, isReading: Schema.Boolean },
+		{
+			modelToDependencies: ({ model, context }) => ({ orgId: context.orgId, isReading: model.tab?._tag === "Automation" }),
+			dependenciesToStream: ({ orgId, isReading }) =>
+				isReading
+					? destinationRows(orgId, (rows) =>
+							Message.GotAutomationMessage({
+								message: AutomationMessage.UpdatedDestinations({ destinations: rows.map(rowToAlertDestinationDocument) }),
+							}),
+						)
+					: Stream.empty,
 		},
 	),
 	ingestPoll: entry(

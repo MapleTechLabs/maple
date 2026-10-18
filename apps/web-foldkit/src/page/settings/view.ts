@@ -10,6 +10,7 @@ import * as IngestionView from "./ingestion/view"
 import * as KeysView from "./keys/view"
 import * as McpView from "./mcp/view"
 import * as AiView from "./ai/view"
+import * as AutomationView from "./automation/view"
 import * as SetupHealthView from "./setup-health/view"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -85,6 +86,16 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					view: AiView.view,
 					toParentMessage: (message) => Message.GotAiMessage({ message }),
 					viewInputs: {},
+				}),
+			]
+		case "Automation":
+			return [
+				h.submodel({
+					slotId: "settings-automation",
+					model: tab.model,
+					view: AutomationView.view,
+					toParentMessage: (message) => Message.GotAutomationMessage({ message }),
+					viewInputs: { nowMs: model.nowMs, timeZone: inputs.context.timeZone },
 				}),
 			]
 		case "Unported":

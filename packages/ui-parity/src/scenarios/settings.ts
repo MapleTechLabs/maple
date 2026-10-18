@@ -289,6 +289,30 @@ const aiInteractions: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+const AUTOMATION = "/settings?tab=automation"
+
+/** Automation: route a severity, set its confidence floor, save; run the simulator. */
+const automationInteractions: ReadonlyArray<Scenario> = [
+	page("automation-save", "Automation: route medium and save", AUTOMATION, {
+		steps: async (target) => {
+			// Destination toggles are named by id; the third group is "medium".
+			await target.getByRole("button", { name: "0199a001-0000-7000-8000-000000000001" }).nth(2).click()
+			await target.getByRole("button", { name: "Save policy" }).click()
+			await target.getByText("Escalation policy saved").waitFor()
+		},
+	}),
+	page("automation-dirty", "Automation: unsaved edit blocks the simulator", AUTOMATION, {
+		steps: (target) => target.getByRole("switch", { name: "Severity escalation" }).click(),
+	}),
+	page("automation-evaluate", "Automation: evaluate a manual decision", AUTOMATION, {
+		steps: async (target) => {
+			await target.getByRole("combobox").filter({ hasText: "AI diagnosis" }).selectOption("manual")
+			await target.getByRole("button", { name: "Evaluate policy" }).click()
+			await target.getByText("route", { exact: true }).waitFor()
+		},
+	}),
+]
+
 export const settingsArea: AreaModule = {
 	area: "settings",
 	scenarios: [
@@ -314,6 +338,7 @@ export const settingsArea: AreaModule = {
 		...ingestionInteractions,
 		...setupHealthInteractions,
 		...aiInteractions,
+		...automationInteractions,
 		page("audit-log-denied", "Audit log: denied only", "/settings?tab=audit-log", {
 			// The outcome filter precedes the table's "Denied" badges in document order.
 			steps: (page) => page.getByText("Denied", { exact: true }).first().click(),

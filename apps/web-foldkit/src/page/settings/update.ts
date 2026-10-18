@@ -18,6 +18,7 @@ import type * as IngestionModel from "./ingestion/model"
 import * as Ingestion from "./ingestion/update"
 import * as SetupHealth from "./setup-health/update"
 import * as Ai from "./ai/update"
+import * as Automation from "./automation/update"
 import type * as KeysMessage from "./keys/message"
 import { Message as KeysMessageValue } from "./keys/message"
 import type * as KeysModel from "./keys/model"
@@ -62,6 +63,7 @@ const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
 	["ingestion", "Ingestion"],
 	["setup-health", "SetupHealth"],
 	["ai", "Ai"],
+	["automation", "Automation"],
 ])
 const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
 
@@ -118,6 +120,13 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			return {
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAiMessage({ message })),
+			}
+		}
+		case "Automation": {
+			const step = Automation.init(visibilityOf(model).isAdmin)
+			return {
+				model: { ...model, tab: { _tag: "Automation", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAutomationMessage({ message })),
 			}
 		}
 		case "Unported":
@@ -241,6 +250,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return {
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAiMessage({ message: child })),
+				outMessage: step.outMessage,
+			}
+		},
+		GotAutomationMessage: ({ message: inner }) => {
+			if (model.tab === null || model.tab._tag !== "Automation") return { model }
+			const step = Automation.update(model.tab.model, inner)
+			return {
+				model: { ...model, tab: { _tag: "Automation", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAutomationMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
