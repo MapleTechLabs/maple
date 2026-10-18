@@ -39,6 +39,9 @@ export const Message = defineMessageUnion({
 	ClickedClearExclusions: {},
 	ToggledGroup: { group: GroupKey },
 	HoveredRow: { id: Schema.String },
+	/** `useListNavigation`: j/k and the arrows move the focus, Enter opens it, Escape clears it. */
+	PressedListKey: { key: Schema.Literals(["Next", "Previous", "Open", "Escape"]) },
+	CompletedScrollRow: {},
 	PaintedBody: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	GotTabsMessage: { message: Tabs.Message },

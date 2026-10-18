@@ -22,6 +22,19 @@ const fetchPage = (status: StatusTab, cursor: string | undefined) =>
 		return { data: page.data, nextCursor: page.next_cursor }
 	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
+/** `scrollIntoView(id)`: the focused row, nearest edge, smoothly. Ids are read off the rows. */
+export const ScrollIncidentIntoView = Command.define("ScrollAnomalyIncidentIntoView", {
+	args: { incidentId: Schema.String },
+	messages: [Message.CompletedScrollRow],
+	execute: ({ incidentId }) =>
+		Effect.sync(() => {
+			Array.from(document.querySelectorAll<HTMLElement>("[data-incident-id]"))
+				.find((row) => row.getAttribute("data-incident-id") === incidentId)
+				?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+			return Message.CompletedScrollRow()
+		}),
+})
+
 export const ReadAnomaliesClock = Command.define("ReadAnomaliesClock", {
 	messages: [Message.ReadClock],
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
