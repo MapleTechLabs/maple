@@ -465,6 +465,8 @@ const otherOrgEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string,
 	"planetscaleIntegration.queryInsights": emptyInsights,
 	"planetscaleIntegration.events": emptyEvents,
 	"integrations.gcpResources": constant({ resources: [], total: 0, types: [], projects: [] }),
+	// The connect write answers as if the token were accepted; scenarios inject the rejections.
+	"integrations.railwayConnect": constant(railwayStatus),
 })
 
 /** One handler per tag that picks the connected answer for this area's dataset only. */

@@ -1,4 +1,4 @@
-import type { Page } from "playwright"
+import type { Locator, Page } from "playwright"
 import type { AreaModule, Scenario } from "./types.ts"
 
 /**
@@ -17,6 +17,8 @@ const scenario = (
 		readonly dataset?: string
 		readonly steps?: (page: Page) => Promise<void>
 		readonly fullPage?: boolean
+		readonly faults?: Scenario["faults"]
+		readonly settle?: Scenario["settle"]
 	} = {},
 ): Scenario => ({
 	id: `infra-int-${id}`,
@@ -27,8 +29,29 @@ const scenario = (
 	themes: ["light", "dark"],
 	steps: options.steps,
 	fullPage: options.fullPage,
+	faults: options.faults,
+	settle: options.settle,
 	area: "infra-integrations",
 })
+
+/** Held far past any capture, so the screenshot is the loading state. */
+const HELD_MS = 60_000
+
+const held = (tag: string) => ({ faults: { delays: { [tag]: HELD_MS } }, settle: "held" as const })
+
+const failing = (tag: string, status = 502, errorTag = "@maple/http/errors/QueryEngineExecutionError") => ({
+	faults: {
+		failures: {
+			[tag]: { status, body: { _tag: errorTag, message: "ui-parity: injected failure" } },
+		},
+	},
+})
+
+/** Rests the pointer on an element long enough for a Base UI tooltip to open (600 ms delay). */
+const hoverTooltip = (locate: (page: Page) => Locator, content: string) => async (page: Page) => {
+	await locate(page).hover()
+	await page.getByText(content).waitFor()
+}
 
 const press = (name: string) => async (page: Page) => {
 	await page.getByRole("button", { name, exact: true }).click()
@@ -64,6 +87,38 @@ export const infraIntegrationsArea: AreaModule = {
 			},
 		}),
 		scenario("railway-empty", "Railway: not connected", "/infra/railway", { dataset: EMPTY }),
+		scenario("railway-loading", "Railway: services loading", "/infra/railway", held("queryEngine.railwayInfraServices")),
+		scenario("railway-status-loading", "Railway: status loading", "/infra/railway", held("integrations.railwayStatus")),
+		scenario("railway-error", "Railway: services failing", "/infra/railway", failing("queryEngine.railwayInfraServices")),
+		scenario("railway-sort-vcpu", "Railway: sorted by vCPU", "/infra/railway", { steps: press("vCPU") }),
+		scenario("railway-sort-name-twice", "Railway: sorted by service, descending", "/infra/railway", {
+			steps: async (page) => {
+				await press("Service")(page)
+				await press("Service")(page)
+			},
+		}),
+		scenario("railway-search-cleared", "Railway: search typed, then cleared", "/infra/railway", {
+			steps: async (page) => {
+				await page.getByRole("textbox", { name: "Search services…" }).fill("zzz")
+				await page.getByText("No services match these filters").waitFor()
+				await page.getByRole("button", { name: "Clear search" }).click()
+			},
+		}),
+		scenario("railway-memory-tooltip", "Railway: memory avg/peak tooltip", "/infra/railway", {
+			steps: hoverTooltip(
+				(page) => page.getByRole("link").filter({ hasText: "postgres" }).getByText("→").first(),
+				"Over the selected time range.",
+			),
+		}),
+		scenario("railway-connect-rejected", "Railway: connect with a rejected token", "/infra/railway", {
+			dataset: EMPTY,
+			...failing("integrations.railwayConnect", 400, "@maple/http/errors/IntegrationsValidationError"),
+			steps: async (page) => {
+				await page.getByRole("textbox", { name: "Account or workspace token" }).fill("rw_parity_token_0001")
+				await page.getByRole("button", { name: "Connect Railway" }).click()
+				await page.getByRole("alert").waitFor()
+			},
+		}),
 		scenario(
 			"railway-service",
 			"Railway service: api (production)",

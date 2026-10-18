@@ -2,8 +2,9 @@ import { InfraPresenceRequest } from "@maple/domain/http"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { IntegrationStatuses } from "../data/integration-statuses"
 import { ServicesFacetsProbe } from "../data/services-facets-probe"
-import { MapleApiClient, MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
+import { MapleApiClient, MapleInternalApiClient } from "../platform/api-clients"
 import { fetchDashboardRows } from "./dashboards-shape"
 import { Message } from "./message"
 
@@ -56,7 +57,7 @@ const integrationMessages = [Message.SucceededLoadIntegration, Message.FailedLoa
 export const LoadCloudflareStatus = Command.define("LoadCloudflareStatus", {
 	messages: integrationMessages,
 	execute: Effect.gen(function* () {
-		const status = yield* (yield* MapleInternalApiClient).integrations.cloudflareStatus()
+		const status = yield* (yield* IntegrationStatuses).cloudflare()
 		return Message.SucceededLoadIntegration({ integration: "cloudflare", isConnected: status.connected })
 	}).pipe(failed(Message.FailedLoadIntegration({ integration: "cloudflare" }))),
 })
@@ -64,7 +65,7 @@ export const LoadCloudflareStatus = Command.define("LoadCloudflareStatus", {
 export const LoadRailwayStatus = Command.define("LoadRailwayStatus", {
 	messages: integrationMessages,
 	execute: Effect.gen(function* () {
-		const status = yield* (yield* MapleInternalApiClient).integrations.railwayStatus()
+		const status = yield* (yield* IntegrationStatuses).railway()
 		return Message.SucceededLoadIntegration({ integration: "railway", isConnected: status.connected })
 	}).pipe(failed(Message.FailedLoadIntegration({ integration: "railway" }))),
 })
@@ -72,7 +73,7 @@ export const LoadRailwayStatus = Command.define("LoadRailwayStatus", {
 export const LoadPlanetscaleStatus = Command.define("LoadPlanetscaleStatus", {
 	messages: integrationMessages,
 	execute: Effect.gen(function* () {
-		const status = yield* (yield* MapleApiV2Client).planetscaleIntegration.status()
+		const status = yield* (yield* IntegrationStatuses).planetscale()
 		return Message.SucceededLoadIntegration({ integration: "planetscale", isConnected: status.connected })
 	}).pipe(failed(Message.FailedLoadIntegration({ integration: "planetscale" }))),
 })
@@ -81,7 +82,7 @@ export const LoadPlanetscaleStatus = Command.define("LoadPlanetscaleStatus", {
 export const LoadGcpStatus = Command.define("LoadGcpStatus", {
 	messages: integrationMessages,
 	execute: Effect.gen(function* () {
-		const status = yield* (yield* MapleApiV2Client).gcpIntegration.status()
+		const status = yield* (yield* IntegrationStatuses).gcp()
 		const isConnected = status.connectors.some((connector) => connector.metrics_enabled)
 		return Message.SucceededLoadIntegration({ integration: "gcp", isConnected })
 	}).pipe(failed(Message.FailedLoadIntegration({ integration: "gcp" }))),
