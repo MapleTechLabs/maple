@@ -8,6 +8,7 @@ import * as Onboarding from "./page/onboarding"
 import { PageMessage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { ClerkSnapshot } from "./platform/clerk"
+import { SessionTimeRange } from "./route/session-time-range"
 import * as Shell from "./shell"
 import * as ChatSheet from "./page/chat/sheet"
 import * as Toast from "./ui/toast"
@@ -40,5 +41,13 @@ export const Message = defineMessageUnion({
 	GotPageMessage: { message: PageMessage },
 	GotChatSheetMessage: { message: ChatSheet.Message },
 	GotOnboardingMessage: { message: Onboarding.Message },
+	/** Link intent (`page/preload.ts`): hovered, focused or touched; left or blurred. */
+	IntendedLink: { href: Schema.String, isImmediate: Schema.Boolean },
+	EndedLinkIntent: { href: Schema.String },
+	ElapsedPreloadDelay: { href: Schema.String, version: Schema.Number, nowMs: Schema.Number },
+	GotPreloadMessage: { message: PageMessage },
+	ExpiredPreloads: { keys: Schema.Array(Schema.String) },
+	LoadedSessionTimeRange: { orgId: Schema.String, value: SessionTimeRange, nowMs: Schema.Number },
+	CompletedWriteSessionTimeRange: { nowMs: Schema.Number },
 })
 export type Message = typeof Message.Type

@@ -57,6 +57,35 @@ export const overviewPageArea: AreaModule = {
 				await page.getByRole("option", { name: "All environments" }).waitFor()
 			},
 		}),
+		// The hovered chart's tooltip bolds the series nearest the pointer; its siblings draw the
+		// linked cursor line at the same time ratio.
+		overview("chart-hover", "the latency chart hovered, with the linked cursor", {
+			fullPage: false,
+			steps: async (page) => {
+				const latency = page.getByRole("img", { name: "Latency percentiles" })
+				await latency.hover({ position: { x: 260, y: 120 } })
+				await latency.hover({ position: { x: 280, y: 186 } })
+				await page.waitForTimeout(300)
+			},
+		}),
+		overview("reload", "Reload pressed", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Reload" }).click()
+				await page.waitForTimeout(300)
+			},
+		}),
+		overview("view-services", "the rail's View healthy services link followed", {
+			steps: async (page) => {
+				await page.getByRole("link", { name: "View healthy services" }).click()
+				await page.waitForURL(/\/services\?/)
+			},
+		}),
+		overview("service-row", "a service row of the health list followed", {
+			steps: async (page) => {
+				await page.getByRole("link", { name: /^payment-svc production/ }).click()
+				await page.waitForURL(/\/services\/payment-svc/)
+			},
+		}),
 		overview("time-range", "last 6 hours from the time range picker", {
 			steps: (page) => pickPreset(page, "Last 6 hours"),
 		}),

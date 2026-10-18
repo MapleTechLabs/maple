@@ -1,5 +1,16 @@
 import { Option } from "effect"
-import { AsyncData, Command } from "foldkit"
+import { AsyncData, Command, type Update } from "foldkit"
+import * as AddToDashboard from "./add-to-dashboard"
+import {
+	appliedSuggestion,
+	caretMessage,
+	completedAttributeValues,
+	dismissedSuggestions,
+	isWhereOpen,
+	movedSuggestion,
+	pressedTab,
+} from "./update-where"
+import { initWhereEditor } from "./where-editor"
 import * as Chart from "../../../charts/chart"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
@@ -133,7 +144,8 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 	const attributeKeys = keyed(
 		model.attributeKeys,
 		requestKey(org, "getMetricAttributeKeys", { data: keysInput }),
-		mode,
+		// The scoped keys are read with `useAtomValue`: Reload leaves them alone.
+		"Load",
 		(key) => FetchAttributeKeys({ key, input: keysInput }),
 	)
 	const timeseries = keyed(
@@ -169,7 +181,8 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		mode,
 		(key) => FetchCatalog({ key, metricName: model.metricName, window }),
 	)
-	const lookups = requestAutocomplete(model, context, window, mode)
+	// Reload leaves the provider's lookups alone: they are read with `useAtomValue`.
+	const lookups = requestAutocomplete(model, context, window, "Load")
 	const content = requestContent(
 		{ ...model, window, catalog: catalog.slot, autocomplete: lookups.autocomplete },
 		context,
@@ -224,6 +237,33 @@ export const backToMetricsHref = (search: Search): string =>
 const isSameWindow = (a: Search, b: Search) =>
 	a.startTime === b.startTime && a.endTime === b.endTime && a.timePreset === b.timePreset
 
+/** The dialog's step; a widget that landed opens its dashboard. */
+const liftAddToDashboard = (
+	model: Model,
+	step: Update.ReturnWithOutMessage<
+		AddToDashboard.Model,
+		AddToDashboard.Message,
+		AddToDashboard.OutMessage,
+		Resources
+	>,
+): Return => {
+	const lifted: Return = {
+		model: { ...model, addToDashboard: step.model },
+		commands: Command.mapMessages(step.commands ?? [], (message) =>
+			Message.GotAddToDashboardMessage({ message }),
+		),
+	}
+	if (step.outMessage === undefined) return lifted
+	const dashboardId = AppRoute.Dashboard.fields.dashboardId.make(step.outMessage.dashboardId)
+	return {
+		...lifted,
+		outMessage: PageOutMessage.RequestedNavigation({
+			url: hrefOf(AppRoute.Dashboard({ dashboardId, search: {} })),
+			isReplace: false,
+		}),
+	}
+}
+
 // ENTRY POINTS
 
 export const AGGREGATION_SELECT_ID = "metric-aggregation"
@@ -241,6 +281,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		breakdown: Keyed.idle(),
 		whereInput: route.search.where ?? "",
 		whereGeneration: 0,
+		whereEditor: initWhereEditor(route.search.where ?? ""),
 		stepInput: route.search.step ?? "",
 		aggregationSelect: Select.init(AGGREGATION_SELECT_ID, { value: "", selectedIndex: null }),
 		groupByCombobox: Combobox.init("metric-group-by", "single", {
@@ -250,6 +291,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			selected: [breakdownKeyOf(route.search)],
 		}),
 		copyLink: CopyButton.init(),
+		addToDashboard: AddToDashboard.init(),
 		chart: Chart.init(),
 		timePicker: TimeRangePicker.init("metric-time-range"),
 		chartRuntime: { _tag: "Loading" },
@@ -412,6 +454,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: { model },
 		// Where clauses are single-line: Enter never inserts a newline (suggestions are not ported).
 		PressedWhereEnter: () => ({ model }),
+		GotCaretMessage: ({ message: caret }) => caretMessage(model, caret, context, summaryOf(model)),
+		MovedWhereSuggestion: ({ step }) => (isWhereOpen(model) ? movedSuggestion(model, step) : { model }),
+		DismissedWhereSuggestions: () => (isWhereOpen(model) ? dismissedSuggestions(model) : { model }),
+		AppliedWhereSuggestion: ({ index }) => appliedSuggestion(model, index, context, summaryOf(model)),
+		CompletedPlaceWhereCaret: () => ({ model }),
+		PressedWhereTab: () =>
+			isWhereOpen(model) ? pressedTab(model, model.whereEditor.activeIndex, context, summaryOf(model)) : { model },
+		PressedWhereEnterOnList: () =>
+			isWhereOpen(model)
+				? appliedSuggestion(model, model.whereEditor.activeIndex, context, summaryOf(model))
+				: { model },
+		CompletedFetchAttributeValues: ({ key, result }) => completedAttributeValues(model, key, result),
 		ChangedStepInput: ({ value }) => ({ model: { ...model, stepInput: value } }),
 		CommittedStepInput: () =>
 			model.stepInput === (model.search.step ?? "")
@@ -439,8 +493,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
 		}),
-		// TODO(add-to-dashboard): the dialog needs the dashboards store (`useDashboardStore`) and its mutations.
-		ClickedAddToDashboard: () => ({ model }),
+		ClickedAddToDashboard: () => liftAddToDashboard(model, AddToDashboard.open(model.addToDashboard)),
+		GotAddToDashboardMessage: ({ message: inner }) => {
+			const summary = summaryOf(model)
+			return liftAddToDashboard(
+				model,
+				AddToDashboard.update(model.addToDashboard, inner, {
+					orgId: context.orgId,
+					draft: summary === null ? null : draftOf(model, summary),
+				}),
+			)
+		},
 		ClickedCopyLink: () => ({ model, commands: [ReadLocation()] }),
 		ReadLocationHref: ({ href }) => liftCopyLink(model, CopyButton.Message.ClickedCopy({ text: href })),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),

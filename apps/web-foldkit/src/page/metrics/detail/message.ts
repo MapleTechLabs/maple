@@ -1,4 +1,6 @@
 import { Schema } from "effect"
+import * as AddToDashboard from "./add-to-dashboard"
+import { CaretMessage } from "./where-editor"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
@@ -29,6 +31,14 @@ export const Message = defineMessageUnion({
 	CompletedFetchBreakdown: result(Schema.Array(BreakdownRow)),
 	ChangedWhereInput: { value: Schema.String },
 	PressedWhereEnter: {},
+	GotCaretMessage: { message: CaretMessage },
+	MovedWhereSuggestion: { step: Schema.Number },
+	DismissedWhereSuggestions: {},
+	AppliedWhereSuggestion: { index: Schema.Number },
+	PressedWhereTab: {},
+	PressedWhereEnterOnList: {},
+	CompletedPlaceWhereCaret: {},
+	CompletedFetchAttributeValues: result(Schema.Array(Schema.String)),
 	CompletedWhereDebounce: { generation: Schema.Number },
 	ChangedStepInput: { value: Schema.String },
 	CommittedStepInput: {},
@@ -36,6 +46,7 @@ export const Message = defineMessageUnion({
 	ClickedCreateAlert: {},
 	BuiltAlertLink: { url: Schema.String },
 	ClickedAddToDashboard: {},
+	GotAddToDashboardMessage: { message: AddToDashboard.Message },
 	ClickedCopyLink: {},
 	ReadLocationHref: { href: Schema.String },
 	CompletedLoadChartRuntime: {},

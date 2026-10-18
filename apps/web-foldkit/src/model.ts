@@ -4,10 +4,12 @@ import { defineTaggedUnion } from "foldkit/schema"
 import * as Onboarding from "./page/onboarding"
 import { CustomerSlot } from "./page/onboarding/plan-gate"
 import { ClerkSnapshot } from "./platform/clerk"
+import * as Preload from "./page/preload"
 import { PageMessage, PageSlot } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import * as Toast from "./ui/toast"
 import { AppRoute } from "./route"
+import { SessionTimeRange } from "./route/session-time-range"
 import * as Shell from "./shell"
 import * as ChatSheet from "./page/chat/sheet"
 
@@ -51,6 +53,12 @@ export const Model = Schema.Struct({
 	customer: CustomerSlot,
 	/** `maple.billing.selected-plan.<orgId>` per org, read at boot and written as plans settle. */
 	knownToRenderApp: Schema.Record(Schema.String, Schema.Boolean),
+	/** Link-intent preloads waiting for their page (`page/preload.ts`). */
+	preload: Preload.Model,
+	/** The window this tab remembers for the org (`route/session-time-range.ts`); `nowMs` is when read. */
+	sessionTimeRange: Schema.NullOr(
+		Schema.Struct({ orgId: Schema.String, value: SessionTimeRange, nowMs: Schema.Number, isLoaded: Schema.Boolean }),
+	),
 	/** `useTimezonePreference().effectiveTimezone`, read at boot. */
 	timeZone: Schema.String,
 })

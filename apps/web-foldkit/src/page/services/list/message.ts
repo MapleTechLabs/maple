@@ -5,7 +5,11 @@ import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
+import * as CopyButton from "../../../ui/copy-button"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as HoverCard from "../../../ui/hover-card"
+import * as Tooltip from "../../../ui/tooltip"
+import { CommitDetail, CommitFailure } from "../../kit/commit-card"
 import { SignalPresences } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { IncidentCause, LatencyBaseline, ServiceRow, ServicesFacets, Sparklines } from "./model"
@@ -26,6 +30,9 @@ export const FilterParam = Schema.Literals([
 	"excludedNamespaces",
 	"excludedCommitShas",
 ])
+
+export const RowTooltip = Schema.Literals(["rollout", "sampling", "unnamed"])
+export type RowTooltip = typeof RowTooltip.Type
 
 export const GroupBy = Schema.Literals(["namespace", "environment"])
 export type GroupBy = typeof GroupBy.Type
@@ -67,5 +74,11 @@ export const Message = defineMessageUnion({
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotSparklineMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
+	GotRowTooltipMessage: { tooltip: RowTooltip, message: Tooltip.Message },
+	GotCommitCardMessage: { message: HoverCard.Message },
+	ElapsedCommitArm: { sha: Schema.String, generation: Schema.Number },
+	CompletedFetchCommitDetail: { sha: Schema.String, result: Schema.Result(CommitDetail, CommitFailure) },
+	ClickedCopyCommitSha: { sha: Schema.String, serviceName: Schema.String, environment: Schema.String },
+	GotCopyMessage: { message: CopyButton.Message },
 })
 export type Message = typeof Message.Type

@@ -18,7 +18,7 @@ import { timeseriesYAxis } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"
 import { roundCapDasharray, verticalGradient } from "./fixed-metric-axes"
-import { cursorTooltip } from "./plot-constants"
+import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
 // Ports of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`
 // (packages/ui/src/components/charts/{area,line}), definition half. Code copied, constants unchanged.
@@ -55,10 +55,16 @@ const chromeOf = (spec: FixedMetricSpec) => ({
 
 /** `PlotTooltipBody` reduced to data: rows off `points[0].datum`, nulls skipped. */
 const bucketTooltip =
-	(model: FixedMetricModel, series: ReadonlyArray<TooltipSeries>) =>
+	(
+		model: FixedMetricModel,
+		series: ReadonlyArray<TooltipSeries>,
+		focus: ReturnType<typeof tooltipFocusCapture>,
+	) =>
 	(points: ReadonlyArray<Point>): Option.Option<ChartTooltip> =>
-		Option.map(Option.fromNullishOr(points[0]), ({ datum }) =>
-			ChartTooltip.Bucket({
+		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
+			// `resolveTooltipHighlight`: the series nearest the cursor is emphasised.
+			const highlighted = focus.highlight(series.map((entry) => [entry.label, entry.value(datum)] as const))
+			const base = {
 				heading: formatBucketLabel(datum.bucket, model.axisContext, "tooltip"),
 				rows: series.flatMap((entry) => {
 					const value = entry.value(datum)
@@ -73,11 +79,13 @@ const bucketTooltip =
 								},
 							]
 				}),
-			}),
-		)
+			}
+			return highlighted === undefined ? ChartTooltip.Bucket(base) : ChartTooltip.Bucket({ ...base, highlighted })
+		})
 
 const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
+	const focus = tooltipFocusCapture()
 	const plot = throughputPlot(model, spec.perSecond)
 	const { rows, rateLabel, hasSampling, hasErrors, hasTraced } = plot
 	const throughputColor = colorOf(spec, "throughput")
@@ -158,7 +166,7 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 		},
 		focus: "group-x",
 		focusRing: false,
-		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>("pointer") : false,
+		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>(focus.anchor) : false,
 	})
 
 	const withSuffix = (value: number) => formatThroughput(value, rateLabel)
@@ -198,7 +206,7 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 	return {
 		definition,
 		focusKeyOf: (point) => point.datum.bucket,
-		tooltipOf: bucketTooltip(model, tooltipSeries),
+		tooltipOf: bucketTooltip(model, tooltipSeries, focus),
 	}
 }
 
@@ -213,6 +221,7 @@ const errorRateCeiling = (rows: ReadonlyArray<Record<string, unknown>>): number 
 
 const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
+	const focus = tooltipFocusCapture()
 	const { plotRows } = model
 	const color = colorOf(spec, "errorRate")
 	const chrome = chromeOf(spec)
@@ -267,14 +276,15 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 		},
 		focus: "group-x",
 		focusRing: false,
-		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>("pointer") : false,
+		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>(focus.anchor) : false,
 	})
 	const series = [{ label: "Error rate", color, value: read("errorRate"), format: formatErrorRate }]
-	return { definition, focusKeyOf: (point) => point.datum.bucket, tooltipOf: bucketTooltip(model, series) }
+	return { definition, focusKeyOf: (point) => point.datum.bucket, tooltipOf: bucketTooltip(model, series, focus) }
 }
 
 const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
+	const focus = tooltipFocusCapture()
 	const { plotRows } = model
 	const chrome = chromeOf(spec)
 	const series = LATENCY_SERIES.map((entry) => ({ ...entry, color: colorOf(spec, entry.key) }))
@@ -304,7 +314,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 		},
 		focus: "group-x",
 		focusRing: false,
-		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>("pointer") : false,
+		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>(focus.anchor) : false,
 	})
 	const tooltipSeries = series.map((entry) => ({
 		label: entry.label,
@@ -315,13 +325,14 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	return {
 		definition,
 		focusKeyOf: (point) => point.datum.bucket,
-		tooltipOf: bucketTooltip(model, tooltipSeries),
+		tooltipOf: bucketTooltip(model, tooltipSeries, focus),
 	}
 }
 
 /** `ApdexAreaChart`: the band and its top edge on a `[0, 1]` axis, the in-flight tail dashed. */
 const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
+	const focus = tooltipFocusCapture()
 	const { plotRows } = model
 	const color = colorOf(spec, "apdexScore")
 	const chrome = chromeOf(spec)
@@ -370,11 +381,11 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 		},
 		focus: "group-x",
 		focusRing: false,
-		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>("pointer") : false,
+		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>(focus.anchor) : false,
 	})
 	const format = (score: number) => score.toFixed(2)
 	const series = [{ label: "Apdex", color, value: read("apdexScore"), format }]
-	return { definition, focusKeyOf: (point) => point.datum.bucket, tooltipOf: bucketTooltip(model, series) }
+	return { definition, focusKeyOf: (point) => point.datum.bucket, tooltipOf: bucketTooltip(model, series, focus) }
 }
 
 export const buildFixedMetric = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {

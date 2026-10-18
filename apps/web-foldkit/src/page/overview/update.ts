@@ -151,9 +151,10 @@ const alwaysSteps = (
 			keyed(
 				model.facets,
 				requestKey(context.orgId, "getServicesFacets", { data: facetsWindow }),
-				mode,
+				// Reload leaves the facets probe alone (`useAtomValue`, not refreshable).
+				"Load",
 				(facets) => ({ facets }),
-				(key) => FetchFacets({ key, window: facetsWindow, refresh: mode === "Refresh" }),
+				(key) => FetchFacets({ key, window: facetsWindow, refresh: false }),
 			),
 		(model) =>
 			keyed(
@@ -161,7 +162,7 @@ const alwaysSteps = (
 				requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" }),
 				mode,
 				(anomalies) => ({ anomalies }),
-				(key) => FetchAnomalies({ key }),
+				(key) => FetchAnomalies({ key, refresh: mode === "Refresh" }),
 			),
 		(model) =>
 			keyed(
@@ -406,6 +407,7 @@ const withChart = (model: Model, chartId: string, message: Chart.Message): Retur
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
+		CompletedMountLinkedCursor: () => ({ model }),
 		CompletedReadEntry: ({ nowMs, hint }) =>
 			sync({ ...model, nowMs, hint, facetsWindow: facetsWindowAt(nowMs) }, context, "Load"),
 		CompletedResolveClock: ({ nowMs }) => sync({ ...model, nowMs }, context, "Refresh"),

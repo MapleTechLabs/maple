@@ -37,7 +37,7 @@ describe("hover card scene", () => {
 	})
 
 	test("a delay overtaken by a newer pointer move is dropped", () => {
-		const entered = update(init(ID), Message.EnteredTrigger())
+		const entered = update(init(ID), Message.EnteredTrigger({ triggerId: "service-trigger" }))
 		const left = update(entered.model, Message.LeftTrigger())
 		const stale = update(left.model, Message.ElapsedHoverDelay({ generation: 1, isOpening: true }))
 		assert({ model: stale.model, generation: left.model.hoverGeneration }).toEqual({

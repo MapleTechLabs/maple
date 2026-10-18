@@ -1,11 +1,15 @@
-import { Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { load, pushUrl, replaceUrl } from "foldkit/navigation"
 import { Message } from "./message"
+import { PRELOAD_HOLD_MS } from "./page/preload"
+import { PageMessage } from "./page/registry"
 import { clearSessionToken, MapleAuthApi, readSessionToken, saveSessionToken } from "./platform/auth-api"
 import { saveSelectedPlanKnown } from "./page/onboarding/plan-gate"
 import { loadClerk, signOutOfClerk } from "./platform/clerk"
 import { BillingCustomerCache } from "./data/billing-customer"
+import { readSessionTimeRange, writeSessionTimeRange } from "./platform/session-time-range"
+import { SessionTimeRange } from "./route/session-time-range"
 
 /** How long a signed-out Clerk answer may still turn into a session on a hard refresh (main.tsx). */
 const AUTH_SETTLE_TIMEOUT = Duration.seconds(2)
@@ -92,4 +96,50 @@ export const SaveSelectedPlanKnown = Command.define("SaveSelectedPlanKnown", {
 	messages: [Message.CompletedSaveSelectedPlanKnown],
 	execute: ({ orgId, mayRenderApp }) =>
 		saveSelectedPlanKnown(orgId, mayRenderApp).pipe(Effect.as(Message.CompletedSaveSelectedPlanKnown())),
+})
+
+/** TanStack's intent timer: the link stayed hovered or focused for `delayMs`. */
+export const WaitPreloadDelay = Command.define("WaitPreloadDelay", {
+	args: { href: Schema.String, version: Schema.Number, delayMs: Schema.Number },
+	messages: [Message.ElapsedPreloadDelay],
+	execute: ({ href, version, delayMs }) =>
+		Effect.sleep(Duration.millis(delayMs)).pipe(
+			Effect.andThen(Clock.currentTimeMillis),
+			Effect.map((nowMs) => Message.ElapsedPreloadDelay({ href, version, nowMs })),
+		),
+})
+
+/** `warmAtoms`' hold: unused preloads are released after it. */
+export const HoldPreloads = Command.define("HoldPreloads", {
+	args: { keys: Schema.Array(Schema.String) },
+	messages: [Message.ExpiredPreloads],
+	execute: ({ keys }) =>
+		Effect.sleep(Duration.millis(PRELOAD_HOLD_MS)).pipe(Effect.as(Message.ExpiredPreloads({ keys }))),
+})
+
+/** A preloaded answer handed to the page that asked for it, instead of a second request. */
+export const DeliverPreloaded = Command.define("DeliverPreloaded", {
+	args: { message: PageMessage },
+	messages: [Message.GotPageMessage],
+	execute: ({ message }) => Effect.succeed(Message.GotPageMessage({ message })),
+})
+
+/** The tab's remembered window for the org, with the clock its presets resolve against. */
+export const ReadSessionTimeRange = Command.define("ReadSessionTimeRange", {
+	args: { orgId: Schema.String },
+	messages: [Message.LoadedSessionTimeRange],
+	execute: ({ orgId }) =>
+		Effect.map(Effect.all([readSessionTimeRange(orgId), Clock.currentTimeMillis]), ([value, nowMs]) =>
+			Message.LoadedSessionTimeRange({ orgId, value, nowMs }),
+		),
+})
+
+/** `persistSessionTimeRange`: the window a settled navigation carried. */
+export const WriteSessionTimeRange = Command.define("WriteSessionTimeRange", {
+	args: { orgId: Schema.String, value: SessionTimeRange },
+	messages: [Message.CompletedWriteSessionTimeRange],
+	execute: ({ orgId, value }) =>
+		Effect.andThen(writeSessionTimeRange(orgId, value), Clock.currentTimeMillis).pipe(
+			Effect.map((nowMs) => Message.CompletedWriteSessionTimeRange({ nowMs })),
+		),
 })

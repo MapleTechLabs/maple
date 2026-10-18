@@ -1,4 +1,5 @@
 import { AsyncData, Submodel } from "foldkit"
+import * as AddToDashboard from "./add-to-dashboard"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
@@ -74,6 +75,13 @@ const content = (h: H, model: Model, summary: CatalogSummary, timeZone: string):
 		[h.Class("flex flex-col gap-4")],
 		[
 			graduationActions(h, model),
+			h.submodel({
+				slotId: "metric-add-to-dashboard-dialog",
+				model: model.addToDashboard,
+				view: AddToDashboard.view,
+				viewInputs: { metricName: model.metricName },
+				toParentMessage: (message) => Message.GotAddToDashboardMessage({ message }),
+			}),
 			queryControls(h, model, summary.metricType, summary.isMonotonic),
 			h.div(
 				[h.Class("grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]")],

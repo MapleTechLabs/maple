@@ -3,10 +3,10 @@ import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
-import type { TimeWindow } from "../../../data/time-range"
+import { resolveWindow, type TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import * as FilterSections from "../../../ui/filters/filter-sections"
-import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { Resources } from "../../../platform/resources"
@@ -25,6 +25,15 @@ import {
 import { commitsKey, displayedServices, healthSummary, isServiceHealth, type Search } from "./derive"
 import { type Facet, Message, type RequestMode } from "./message"
 import { IncidentsData, type Model } from "./model"
+import {
+	clickedCopySha,
+	commitCardMessage,
+	completedCommitDetail,
+	copyMessage,
+	elapsedCommitArm,
+	initOverlays,
+	rowTooltipMessage,
+} from "./update-overlays"
 
 type Return = PageReturn<Model, Message>
 
@@ -112,7 +121,7 @@ const facetsStep = (model: Model, context: PageContext, window: TimeWindow, mode
 		requestKey(context.orgId, "getServicesFacets", { data: window }),
 		mode,
 		(facets) => ({ facets }),
-		(key) => FetchFacets({ key, window }),
+		(key) => FetchFacets({ key, window, refresh: mode === "Refresh" }),
 	)
 
 /** Every query the page reads, keyed like apps/web's atoms, for the resolved window. */
@@ -139,17 +148,18 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			(key) => FetchSparklines({ key, input }),
 		),
 		facetsStep(model, context, window, mode),
+		// Reload refreshes the overview, sparklines and facets only (`useRefreshableAtomValue`).
 		keyed(
 			model.baseline,
 			requestKey(org, "getServiceHealthBaseline", { data: baselineInput }),
-			mode,
+			"Load",
 			(baseline) => ({ baseline }),
 			(key) => FetchBaseline({ key, input: baselineInput }),
 		),
 		keyed(
 			model.anomalies,
 			requestKey(org, "anomalies.serviceCounts", { status: "open" }),
-			mode,
+			"Load",
 			(anomalies) => ({ anomalies }),
 			(key) => FetchAnomalies({ key }),
 		),
@@ -211,6 +221,20 @@ const bumped = <A, E>(model: Model, before: Keyed.Keyed<A, E>, after: Keyed.Keye
 	before === after ? model.rowRevision : model.rowRevision + 1
 
 // NAVIGATION
+
+/** The row's `goToDetail`: the service in its environment, the window carried. */
+const serviceHref = (model: Model, serviceName: string, environment: string): string =>
+	hrefOf(
+		AppRoute.Service({
+			serviceName,
+			search: {
+				startTime: model.search.startTime,
+				endTime: model.search.endTime,
+				timePreset: model.search.timePreset,
+				environments: [environment],
+			},
+		}),
+	)
 
 const navigate = (model: Model, search: Search): Return => ({
 	model,
@@ -283,6 +307,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		hasPaintedTable: false,
 		commitMessages: Keyed.idle(),
 		presence: SignalPresenceData.Idle(),
+		...initOverlays(),
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("services-time-range"),
 		chartRuntime: { _tag: "Loading" },
@@ -305,6 +330,29 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 }
 
 /** The search changed (a filter, the window, grouping): re-resolve and re-request. */
+/**
+ * `servicesRouteAtoms(search)`, warmed on link intent: the facets, overview and sparklines for the
+ * snapped window. Built from search alone, so the namespace pin is not applied (legacy's loader).
+ */
+export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
+	const { model } = init(route, context)
+	const window = resolveWindow(
+		{
+			startTime: model.search.startTime,
+			endTime: model.search.endTime,
+			preset: model.search.timePreset ?? DEFAULT_PRESET,
+			snap: true,
+			timeZone: context.timeZone,
+		},
+		nowMs,
+	)
+	return pickCommands(requestAll(model, { ...context, pinnedNamespace: null }, window, "Load"), [
+		FetchOverview.name,
+		FetchSparklines.name,
+		FetchFacets.name,
+	])
+}
+
 export const routeChanged = (
 	model: Model,
 	route: { readonly search: Search },
@@ -415,17 +463,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedServiceRow: ({ serviceName, environment }) => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({
-				url: hrefOf(
-					AppRoute.Service({
-						serviceName,
-						search: {
-							startTime: model.search.startTime,
-							endTime: model.search.endTime,
-							timePreset: model.search.timePreset,
-							environments: [environment],
-						},
-					}),
-				),
+				url: serviceHref(model, serviceName, environment),
 				isReplace: false,
 			}),
 		}),
@@ -439,6 +477,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		GotSparklineMessage: () => ({ model }),
+		GotRowTooltipMessage: ({ tooltip, message }) => rowTooltipMessage(model, tooltip, message),
+		GotCommitCardMessage: ({ message }) => commitCardMessage(model, message),
+		ElapsedCommitArm: ({ sha, generation }) => elapsedCommitArm(model, sha, generation),
+		CompletedFetchCommitDetail: ({ sha, result }) => completedCommitDetail(model, sha, result),
+		ClickedCopyCommitSha: ({ sha, serviceName, environment }) =>
+			clickedCopySha(model, sha, serviceHref(model, serviceName, environment)),
+		GotCopyMessage: ({ message }) => copyMessage(model, message),
 		ClickedResetTimeRange: () =>
 			navigate(model, {
 				...model.search,

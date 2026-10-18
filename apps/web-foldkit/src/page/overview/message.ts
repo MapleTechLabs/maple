@@ -32,6 +32,7 @@ const result = <A extends Schema.Top>(schema: A) => ({
 })
 
 export const Message = defineMessageUnion({
+	CompletedMountLinkedCursor: {},
 	CompletedReadEntry: { nowMs: Schema.Number, hint: FacetsHint },
 	CompletedResolveClock: { nowMs: Schema.Number },
 	CompletedFetchFacets: result(OverviewFacets),

@@ -67,6 +67,64 @@ export const metricsArea: AreaModule = {
 		metric("browse-open-card", "a preview card opened", "/metrics", {
 			steps: act(clickButton(/^system\.memory\.utilization/)),
 		}),
+		metric("where-suggestions", "the where editor's key suggestions", HISTOGRAM, {
+			steps: act(
+				(page) => page.getByRole("textbox", { name: /^Where clause for/ }).click(),
+				(page) => page.keyboard.type("attr."),
+				(page) => page.getByRole("listbox", { name: "Where clause suggestions" }).waitFor(),
+			),
+		}),
+		metric("where-accept", "a key suggestion accepted, its values offered", HISTOGRAM, {
+			steps: act(
+				(page) => page.getByRole("textbox", { name: /^Where clause for/ }).click(),
+				(page) => page.keyboard.type("attr."),
+				(page) => page.getByRole("listbox", { name: "Where clause suggestions" }).waitFor(),
+				(page) => page.keyboard.press("ArrowDown"),
+				(page) => page.keyboard.press("Tab"),
+				(page) => page.waitForTimeout(700),
+			),
+		}),
+		metric("where-enter", "a key suggestion applied with Enter, its values offered", HISTOGRAM, {
+			steps: act(
+				(page) => page.getByRole("textbox", { name: /^Where clause for/ }).click(),
+				(page) => page.keyboard.type("attr."),
+				(page) => page.getByRole("listbox", { name: "Where clause suggestions" }).waitFor(),
+				(page) => page.keyboard.press("ArrowDown"),
+				(page) => page.keyboard.press("Enter"),
+				(page) => page.waitForTimeout(700),
+			),
+		}),
+		metric("copy-link", "the explorer link copied", HISTOGRAM, {
+			steps: act(clickButton("Copy link"), (page) => page.waitForTimeout(300)),
+		}),
+		metric("reload", "Reload pressed on a metric", HISTOGRAM, {
+			steps: act(clickButton("Reload"), (page) => page.waitForTimeout(300)),
+		}),
+		metric("browse-typed-search", "the explorer search typed into", "/metrics", {
+			steps: act(
+				(page) => page.getByRole("searchbox").or(page.getByRole("textbox")).first().fill("memory"),
+				(page) => page.waitForTimeout(700),
+			),
+		}),
+		metric("add-dialog", "the Add to dashboard dialog open", HISTOGRAM, {
+			steps: act(clickButton("Add to dashboard"), (page) => page.getByRole("dialog").waitFor()),
+		}),
+		metric("add-existing", "the query added to an existing dashboard", HISTOGRAM, {
+			steps: act(
+				clickButton("Add to dashboard"),
+				clickButton(/^Checkout health/),
+				(page) => page.waitForURL(/\/dashboards\//),
+			),
+		}),
+		metric("add-create", "the query added to a new dashboard", HISTOGRAM, {
+			steps: act(
+				clickButton("Add to dashboard"),
+				(page) => page.getByRole("dialog").getByRole("textbox").fill("Request latency"),
+				clickButton("Create & add"),
+				// The fixture never syncs the create's txid back, so both apps hold on "creating".
+				(page) => page.waitForTimeout(500),
+			),
+		}),
 		metric(
 			"histogram-grouped",
 			"Request duration grouped by service",

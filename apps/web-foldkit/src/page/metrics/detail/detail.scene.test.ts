@@ -5,7 +5,9 @@ import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { MetricRow } from "../shared"
+import { MountWhereCaret } from "./command"
 import { appendWhereFilter } from "./derive"
+import { CaretMessage } from "./where-editor"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { draftOf, init, routeChanged, summaryOf, update, type Search } from "./update"
@@ -166,6 +168,7 @@ describe("metric detail", () => {
 			{ update: pageUpdate, view },
 			given(loaded([row("payment-svc"), row("checkout-api")])),
 			themeResolved(),
+			Mount.resolve(MountWhereCaret, Message.GotCaretMessage({ message: CaretMessage.BlurredEditor() })),
 			expectView(text(`avg(${NAME})`)).toExist(),
 			expectView(text("Top values · avg per value")).toExist(),
 			expectView(role("button", { name: /^Filter to service\.name = payment-svc/ })).toExist(),

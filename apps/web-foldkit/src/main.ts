@@ -6,6 +6,7 @@ import { CheckSession, LoadClerk } from "./command"
 import type { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { initCustomer, readKnownToRenderApp } from "./page/onboarding/plan-gate"
+import * as Preload from "./page/preload"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { readSessionToken } from "./platform/auth-api"
@@ -62,6 +63,8 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		clerkSnapshot: null,
 		customer: initCustomer(),
 		knownToRenderApp: flags.knownToRenderApp,
+		preload: Preload.init(),
+		sessionTimeRange: null,
 		timeZone: flags.timeZone,
 	}
 

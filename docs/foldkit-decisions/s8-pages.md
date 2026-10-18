@@ -79,6 +79,25 @@ keyed(
 )
 ```
 
+## Preload (link intent)
+
+Legacy's router runs `defaultPreload: "intent"`: a `<Link>` hovered or focused for 50 ms
+(`defaultPreloadDelay`), or touched, runs the target route's loader, which `warmAtoms` the requests
+the page will read and holds them 30 s. The root mirrors it (`page/preload.ts`):
+
+- A page whose legacy route has a loader declares `preload(route, context, nowMs)`: the fetch
+  Commands its own `init` (or its first window load) sends, picked by name with `pickCommands`, so
+  the keys match by construction. Build them the way the loader does (e.g. `/services` ignores the
+  namespace pin there). Pages: services list, traces list, trace detail, replays list, replay detail.
+- The root listens for `mouseover`/`mouseout`/`focusin`/`focusout`/`touchstart` on internal links,
+  waits the delay per href (cancelled on leave or blur), reads the clock and runs the target page's
+  `preload` under that route's context. Keys already preloaded, or requested by the open page
+  instance (a mounted atom), are not sent again.
+- Every page step's Commands pass through `Preload.seeded`: a settled preloaded key becomes
+  `DeliverPreloaded` (its answer as a page Message), an in-flight one is awaited and forwarded when
+  it lands. Unused answers are dropped after 30 s. This relies on S6: fetch Commands carry
+  `args.key` and their result Messages carry `key`.
+
 ## Search params
 
 The route union decodes the legacy `validateSearch` schema (`route/search.ts`), so `route.search`
@@ -128,7 +147,13 @@ Empty variants are `identical`; loaded ones `pass` with 0 perceptual px and 0 be
 6 to 30 strict px of rounded-corner anti-aliasing, and in the filtered view the last pixel column
 of redrawn sparklines (88 canvas px in 87.16 CSS px), differ by repaint timing. Legacy's `PlotFrame`
 calls `adapter.update` on every row render; `rowRevision` mirrors that, and React's fragment keys
-(regrouped rows remount) are mirrored in the row keys. Not ported: tooltips (sampling, rollout), the commit hover card,
-`UnnamedServiceHint`, the filter rail as a sheet below `lg`, the picker's shorthand input,
-recent ranges, timezone select, custom tab and `D` hotkey, Alt+click exclusion, session time
-range carried across pages.
+(regrouped rows remount) are mirrored in the row keys. Ported since: the row tooltips, the commit
+hover card, `UnnamedServiceHint`, Alt+click exclusion (a root Subscription presses the row's
+Exclude: `OnClick` has no modifiers) and the session time range (`route/session-time-range.ts`,
+applied on navigation and to a hovered link's preload). Not ported: the filter rail as a sheet
+below `lg` (the shell's mobile layout sends sidebar requests legacy defers, so no mobile scenario
+can pass yet), the picker's shorthand input, recent ranges, timezone select, custom tab and `D`.
+
+Legacy's retained atoms answer a second reader without a request. Shared reads are resources
+(`ServicesFacetsProbe`, `AnomalyServiceCounts`, `IntegrationStatuses`), and Reload refreshes
+only what legacy reads through `useRefreshableAtomValue` (every other slot requests in `Load`).

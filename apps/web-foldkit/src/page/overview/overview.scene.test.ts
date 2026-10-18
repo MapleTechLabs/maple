@@ -3,6 +3,7 @@ import { Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { LinkedCursorMessage, MountLinkedCursor } from "../../charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
 import { toLoadFailure } from "../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
@@ -61,6 +62,8 @@ const loaded = (rows: ReadonlyArray<HealthSnapshot>): Model => {
 
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+const cursorMounted = () =>
+	Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor())
 
 describe("overview", () => {
 	test("entry reads the clock and hint; downstream queries wait for facets", () => {
@@ -152,10 +155,27 @@ describe("overview", () => {
 			{ update: pageUpdate, view },
 			given(loaded([snapshotRow("checkout"), snapshotRow("cart")])),
 			themeResolved(),
+			cursorMounted(),
 			expectView(text("Firing now")).toExist(),
 			expectView(text("1 critical")).toExist(),
 			expectView(role("link", { name: "View healthy services" })).toExist(),
 			expectView(role("link", { name: /checkout/ })).toExist(),
+		)
+	})
+
+	test("a card handed no rows says so instead of drawing bare axes", () => {
+		const start = loaded([snapshotRow("checkout")])
+		const empty = pageUpdate(
+			start,
+			Message.CompletedFetchLogSeries({ key: start.logSeries.key ?? "", result: Result.succeed([]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(empty),
+			themeResolved(),
+			cursorMounted(),
+			expectView(text("No data in this window")).toExist(),
+			expectView(text("Try a wider time range")).toExist(),
 		)
 	})
 
@@ -164,6 +184,7 @@ describe("overview", () => {
 			{ update: pageUpdate, view },
 			given(loaded([])),
 			themeResolved(),
+			cursorMounted(),
 			expectView(text("No services found")).toExist(),
 			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
 			Command.resolve(
