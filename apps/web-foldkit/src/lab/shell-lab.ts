@@ -27,7 +27,12 @@ export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFl
 	view: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
 	subscriptions?: Subscription.Subscriptions<PageModel, PageMessage, Resources>
 	currentPath: string
-	breadcrumbs: ReadonlyArray<Shell.BreadcrumbEntry>
+	/** Fixed, or read from the page (a lab switching between pages). */
+	breadcrumbs:
+		| ReadonlyArray<Shell.BreadcrumbEntry>
+		| ((model: PageModel) => ReadonlyArray<Shell.BreadcrumbEntry>)
+	/** Rendered in `#app` before the shell, as legacy's lab toolbars that sit beside `DashboardLayout`. */
+	before?: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
 }>
 
 export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, PageFlags>(
@@ -46,6 +51,10 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 	const toPage = (message: PageMessage): Message => Message.GotPageMessage({ message })
 	const foldShell = foldLabShell<Model, Message>(toShell)
 	const pageView = Submodel.defineView<PageModel, PageMessage>(page.view)
+	const before = page.before
+	const beforeView = before === undefined ? null : Submodel.defineView<PageModel, PageMessage>(before)
+	const breadcrumbsOf = (model: PageModel) =>
+		typeof page.breadcrumbs === "function" ? page.breadcrumbs(model) : page.breadcrumbs
 	const own = Subscription.lift(page.subscriptions ?? {})<Model, Message>({
 		read: (model: Model) => Option.some(model.page),
 		toParentMessage: toPage,
@@ -79,17 +88,29 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 		view: (model: Model, h: HtmlBuilder<Message>) =>
 			h.div(
 				[h.Id("app")],
-				labShellView(h, model.shell, toShell, {
-					currentPath: page.currentPath,
-					breadcrumbs: page.breadcrumbs,
-					page: () =>
-						h.submodel({
-							slotId: "lab-page",
-							model: model.page,
-							view: pageView,
-							toParentMessage: toPage,
-						}),
-				}),
+				[
+					...(beforeView === null
+						? []
+						: [
+								h.submodel({
+									slotId: "lab-before",
+									model: model.page,
+									view: beforeView,
+									toParentMessage: toPage,
+								}),
+							]),
+					...labShellView(h, model.shell, toShell, {
+						currentPath: page.currentPath,
+						breadcrumbs: breadcrumbsOf(model.page),
+						page: () =>
+							h.submodel({
+								slotId: "lab-page",
+								model: model.page,
+								view: pageView,
+								toParentMessage: toPage,
+							}),
+					}),
+				],
 			),
 		subscriptions: Subscription.aggregate<Model, Message, Resources>()(
 			labShellSubscriptions<Model, Message>(toShell),

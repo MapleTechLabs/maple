@@ -479,9 +479,9 @@ const body = (
 	})
 }
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+/** `WorkerDetailPage` below the top bar; the lab's has no time controls. */
+export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true): Html => {
 	const data = pageOf(model)
-	const timeZone = inputs.context.timeZone
 	const theme = model.themeColors
 	const ctx = theme === null || model.chartRuntime._tag === "Loading" ? null : { theme, timeZone }
 	return h.div(
@@ -491,20 +491,26 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					scrollClassName: "gap-6",
-					actions: pageTime(h, {
-						search: model.search,
-						defaultPreset: DEFAULT_PRESET,
-						window: model.window,
-						picker: model.timePicker,
-						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-						onReset: Message.ClickedResetTimeRange(),
-						onReload: Message.ClickedReload(),
-						isReloading: model.isReloading,
-					}),
+					actions: !isTimed
+						? undefined
+						: pageTime(h, {
+								search: model.search,
+								defaultPreset: DEFAULT_PRESET,
+								window: model.window,
+								picker: model.timePicker,
+								toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+								onReset: Message.ClickedResetTimeRange(),
+								onReload: Message.ClickedReload(),
+								isReloading: model.isReloading,
+							}),
 					rightPanel: rail(h, data, timeZone),
 				},
 				[header(h, model, data), body(h, model, data, ctx)],
 			),
 		],
 	)
-})
+}
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
+	workerPage(h, model, inputs.context.timeZone),
+)
