@@ -21,10 +21,13 @@ import { viteWrapperConfig } from "./runtime/vite-wrapper.ts"
 /** Written once a pinned worktree finished installing, so a half-done setup is redone. */
 const SETUP_DONE_FILE = ".parity-setup-done"
 
-/** A detached worktree at `ref`, installed and with the libs the web build imports from `dist/`. */
-const pinnedWorktree = async (name: TargetName, ref: string) => {
+/**
+ * A detached worktree at `ref`, installed and with the libs the web build imports from `dist/`.
+ * Every pinned target (apps/web and apps/local-ui) shares the one checkout per commit.
+ */
+const pinnedWorktree = async (ref: string) => {
 	const sha = (await $`git -C ${repoRoot} rev-parse ${`${ref}^{commit}`}`.text()).trim()
-	const root = resolve(worktreesDir, `${name}-${sha.slice(0, 12)}`)
+	const root = resolve(worktreesDir, `legacy-${sha.slice(0, 12)}`)
 	if (!existsSync(root)) await $`git -C ${repoRoot} worktree add --detach ${root} ${sha}`
 	if (!existsSync(resolve(root, SETUP_DONE_FILE))) {
 		await $`bun install --frozen-lockfile`.cwd(root)
@@ -50,7 +53,7 @@ export interface BuildOptions {
 export const buildTarget = async (name: TargetName, options: BuildOptions = {}) => {
 	const target = targets[name]
 	const authMode = options.authMode ?? "self_hosted"
-	const pinned = target.pinned ? await pinnedWorktree(name, options.ref ?? LEGACY_BASELINE_REF) : undefined
+	const pinned = target.pinned ? await pinnedWorktree(options.ref ?? LEGACY_BASELINE_REF) : undefined
 	const root = pinned?.root ?? repoRoot
 	const appDir = resolve(root, target.appDir)
 	if (!existsSync(resolve(appDir, "package.json")))

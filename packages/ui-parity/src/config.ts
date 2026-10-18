@@ -18,7 +18,7 @@ const CHROMIUM_UNSAFE_PORTS = new Set([
 	5000, 7000, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668,
 	6669, 6679, 6697, 10080,
 ])
-const PORT_OFFSETS = [0, 1, 2, 3, 4] as const
+const PORT_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7] as const
 
 export const PORT_BASE = (() => {
 	const raw = process.env.PARITY_PORT_BASE
@@ -34,7 +34,7 @@ export const PORT_BASE = (() => {
 	return base
 })()
 
-/** Offsets from the base: backend +0, legacy +1, foldkit +2, Electric +3, legacy-head +4. */
+/** Offsets from the base: backend +0, legacy +1, foldkit +2, Electric +3, legacy-head +4, local-ui targets +5..+7. */
 const BACKEND_OFFSET = 0
 export const FIXTURE_BACKEND_PORT = PORT_BASE + BACKEND_OFFSET
 /** Electric gets its own origin so shape polling never competes with API calls for connections. */
@@ -54,11 +54,21 @@ export const CANONICAL_ORIGIN = "http://localhost:4800"
  */
 export const LEGACY_BASELINE_REF = "0a7d4a9ef12a19646b3d3cc34b18d3e4832737c9"
 
-export type TargetName = "legacy" | "legacy-head" | "foldkit"
+export type TargetName =
+	| "legacy"
+	| "legacy-head"
+	| "foldkit"
+	| "local-legacy"
+	| "local-legacy-head"
+	| "local-foldkit"
 export type AuthMode = "self_hosted" | "clerk"
+
+/** Which product a target builds: the cloud app (`apps/web`) or the local-mode SPA (`apps/local-ui`). */
+export type AppName = "web" | "local"
 
 export interface Target {
 	readonly name: TargetName
+	readonly app: AppName
 	/** Port `parity serve` binds for side-by-side browsing. Captures never use it. */
 	readonly port: number
 	/** App directory relative to the repo root (inside the pinned worktree for `legacy`). */
@@ -68,9 +78,30 @@ export interface Target {
 }
 
 export const targets = {
-	legacy: { name: "legacy", port: PORT_BASE + 1, appDir: "apps/web", pinned: true },
-	foldkit: { name: "foldkit", port: PORT_BASE + 2, appDir: "apps/web-foldkit", pinned: false },
-	"legacy-head": { name: "legacy-head", port: PORT_BASE + 4, appDir: "apps/web", pinned: false },
+	legacy: { name: "legacy", app: "web", port: PORT_BASE + 1, appDir: "apps/web", pinned: true },
+	foldkit: { name: "foldkit", app: "web", port: PORT_BASE + 2, appDir: "apps/web-foldkit", pinned: false },
+	"legacy-head": { name: "legacy-head", app: "web", port: PORT_BASE + 4, appDir: "apps/web", pinned: false },
+	"local-legacy": {
+		name: "local-legacy",
+		app: "local",
+		port: PORT_BASE + 5,
+		appDir: "apps/local-ui",
+		pinned: true,
+	},
+	"local-legacy-head": {
+		name: "local-legacy-head",
+		app: "local",
+		port: PORT_BASE + 6,
+		appDir: "apps/local-ui",
+		pinned: false,
+	},
+	"local-foldkit": {
+		name: "local-foldkit",
+		app: "local",
+		port: PORT_BASE + 7,
+		appDir: "apps/local-ui-foldkit",
+		pinned: false,
+	},
 } as const satisfies Readonly<Record<TargetName, Target>>
 
 export const isTargetName = (value: string): value is TargetName => Object.hasOwn(targets, value)

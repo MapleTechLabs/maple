@@ -32,6 +32,12 @@ export const normalizePayload = (value: unknown): Schema.Json => {
 export interface CallLog {
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- any decoded request part; normalizePayload parses it
 	readonly record: (captureId: string | null, tag: string, payload: unknown) => void
+	/**
+	 * Records `tag` only if this capture has no entry with it yet: for timer-driven polls, whose
+	 * count depends on how long a capture takes, not on what the app does.
+	 */
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- any decoded request part; normalizePayload parses it
+	readonly recordOnce: (captureId: string | null, tag: string, payload: unknown) => void
 	readonly recordUnmocked: (captureId: string | null, description: string) => void
 	readonly take: (captureId: string) => {
 		readonly calls: ReadonlyArray<CallLogEntry>
@@ -51,6 +57,10 @@ export const makeCallLog = (): CallLog => {
 	return {
 		record: (captureId, tag, payload) => {
 			if (captureId !== null) push(calls, captureId, { tag, payload: normalizePayload(payload) })
+		},
+		recordOnce: (captureId, tag, payload) => {
+			if (captureId === null || calls.get(captureId)?.some((entry) => entry.tag === tag)) return
+			push(calls, captureId, { tag, payload: normalizePayload(payload) })
 		},
 		recordUnmocked: (captureId, description) => {
 			if (captureId !== null) push(unmocked, captureId, description)
