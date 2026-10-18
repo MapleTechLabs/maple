@@ -21,6 +21,10 @@ import { SERVICE_KEY } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { GROUP_BY_NONE_LABEL } from "./update"
+import { whereAutocompleteOf } from "./update-where"
+import { isOpenOf, listboxStyle } from "./where-editor"
+import { MountKeepWhereFocus, MountWhereCaret } from "./command"
+import { eyebrow } from "../../../ui/eyebrow"
 
 // `MetricGraduationActions` and `MetricQueryControls` (components/metrics/).
 
@@ -71,10 +75,66 @@ export const graduationActions = (h: H, model: Model): Html =>
 const toAggregation = (message: Select.Message) => Message.GotAggregationSelectMessage({ message })
 const toGroupBy = (message: Combobox.Message) => Message.GotGroupByComboboxMessage({ message })
 
-// TODO(where-suggestions): `useWhereClauseAutocomplete`'s suggestion list (keys, values, Tab/arrow
-// keys) is not ported; the lookups it reads are already fetched into `model.autocomplete`.
 /** `WhereClauseEditor`: the textarea with its syntax-highlight overlay. */
+/**
+ * `onKeyDown`: Enter never inserts a newline; arrows, Tab and Escape drive an open list. The
+ * handler carries no list state: `update` reads the open list and its active row.
+ */
+const whereKey =
+	(isOpen: boolean) =>
+	(key: string): Option.Option<Message> => {
+		if (key === "Enter") return Option.some(Message.PressedWhereEnterOnList())
+		if (!isOpen) return Option.none()
+		switch (key) {
+			case "ArrowDown":
+				return Option.some(Message.MovedWhereSuggestion({ step: 1 }))
+			case "ArrowUp":
+				return Option.some(Message.MovedWhereSuggestion({ step: -1 }))
+			case "Tab":
+				return Option.some(Message.PressedWhereTab())
+			case "Escape":
+				return Option.some(Message.DismissedWhereSuggestions())
+			default:
+				return Option.none()
+		}
+	}
+
+/** The suggestion list, fixed under (or over) the textarea like legacy's body portal. */
+const suggestionList = (h: H, model: Model, suggestions: ReturnType<typeof whereAutocompleteOf>["suggestions"]): Html =>
+	h.div(
+		[
+			h.Role("listbox"),
+			h.AriaLabel("Where clause suggestions"),
+			h.Class("fixed z-[60] overflow-auto rounded-md border bg-popover text-popover-foreground shadow-md"),
+			...(model.whereEditor.anchor === null ? [] : [h.Style(listboxStyle(model.whereEditor.anchor))]),
+			h.OnMount(MountKeepWhereFocus()),
+		],
+		suggestions.map((suggestion, index) =>
+			h.button(
+				[
+					h.Key(suggestion.id),
+					h.Type("button"),
+					h.Role("option"),
+					h.AriaSelected(index === model.whereEditor.activeIndex),
+					h.Class(
+						cn(
+							"flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-xs",
+							index === model.whereEditor.activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
+						),
+					),
+					h.OnClick(Message.AppliedWhereSuggestion({ index })),
+				],
+				[
+					h.span([h.Class("min-w-0 truncate font-mono"), h.Title(suggestion.label)], [suggestion.label]),
+					eyebrow(h, { className: "shrink-0" }, [suggestion.kind]),
+				],
+			),
+		),
+	)
+
 const whereEditor = (h: H, model: Model): Html => {
+	const autocomplete = whereAutocompleteOf(model)
+	const isOpen = isOpenOf(model.whereEditor, autocomplete)
 	const isHighlighting = model.whereInput.length > 0
 	const textareaClassName = "min-h-8 resize-y text-xs"
 	return h.div(
@@ -89,9 +149,8 @@ const whereEditor = (h: H, model: Model): Html => {
 					h.Placeholder('http.route = "/api/users"'),
 					h.Rows(1),
 					h.OnInput((value) => Message.ChangedWhereInput({ value })),
-					h.OnKeyDownPreventDefault((key) =>
-						key === "Enter" ? Option.some(Message.PressedWhereEnter()) : Option.none(),
-					),
+					h.OnKeyDownPreventDefault(whereKey(isOpen)),
+					h.OnMount(MountWhereCaret()),
 				],
 			}),
 			...(isHighlighting
@@ -124,6 +183,7 @@ const whereEditor = (h: H, model: Model): Html => {
 						),
 					]
 				: []),
+			...(isOpen ? [suggestionList(h, model, autocomplete.suggestions)] : []),
 		],
 	)
 }

@@ -1,6 +1,16 @@
 import { Option } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as AddToDashboard from "./add-to-dashboard"
+import {
+	appliedSuggestion,
+	caretMessage,
+	completedAttributeValues,
+	dismissedSuggestions,
+	isWhereOpen,
+	movedSuggestion,
+	pressedTab,
+} from "./update-where"
+import { initWhereEditor } from "./where-editor"
 import * as Chart from "../../../charts/chart"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
@@ -269,6 +279,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		breakdown: Keyed.idle(),
 		whereInput: route.search.where ?? "",
 		whereGeneration: 0,
+		whereEditor: initWhereEditor(route.search.where ?? ""),
 		stepInput: route.search.step ?? "",
 		aggregationSelect: Select.init(AGGREGATION_SELECT_ID, { value: "", selectedIndex: null }),
 		groupByCombobox: Combobox.init("metric-group-by", "single", {
@@ -441,6 +452,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: { model },
 		// Where clauses are single-line: Enter never inserts a newline (suggestions are not ported).
 		PressedWhereEnter: () => ({ model }),
+		GotCaretMessage: ({ message: caret }) => caretMessage(model, caret, context, summaryOf(model)),
+		MovedWhereSuggestion: ({ step }) => (isWhereOpen(model) ? movedSuggestion(model, step) : { model }),
+		DismissedWhereSuggestions: () => (isWhereOpen(model) ? dismissedSuggestions(model) : { model }),
+		AppliedWhereSuggestion: ({ index }) => appliedSuggestion(model, index, context, summaryOf(model)),
+		CompletedPlaceWhereCaret: () => ({ model }),
+		PressedWhereTab: () =>
+			isWhereOpen(model) ? pressedTab(model, model.whereEditor.activeIndex, context, summaryOf(model)) : { model },
+		PressedWhereEnterOnList: () =>
+			isWhereOpen(model)
+				? appliedSuggestion(model, model.whereEditor.activeIndex, context, summaryOf(model))
+				: { model },
+		CompletedFetchAttributeValues: ({ key, result }) => completedAttributeValues(model, key, result),
 		ChangedStepInput: ({ value }) => ({ model: { ...model, stepInput: value } }),
 		CommittedStepInput: () =>
 			model.stepInput === (model.search.step ?? "")

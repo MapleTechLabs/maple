@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import * as AddToDashboard from "./add-to-dashboard"
+import { WhereEditor } from "./where-editor"
 import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
@@ -45,6 +46,8 @@ export const Model = Schema.Struct({
 	/** The where clause as typed; committed to the URL 400 ms after the last keystroke. */
 	whereInput: Schema.String,
 	whereGeneration: Schema.Number,
+	/** The where editor's caret, focus and suggestion list (`useWhereClauseAutocomplete`). */
+	whereEditor: WhereEditor,
 	/** The step interval as typed; committed on blur or Enter. */
 	stepInput: Schema.String,
 	aggregationSelect: Select.Model,

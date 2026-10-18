@@ -1,15 +1,16 @@
 import { MetricsQueryDraftSchema, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import { getMetricAttributeKeys, listMetrics } from "@maple/web-data/warehouse/metrics"
+import { getMetricAttributeKeys, getMetricAttributeValues, listMetrics } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
-import { Clock, Duration, Effect, Schema } from "effect"
-import { Command } from "foldkit"
+import { Clock, Duration, Effect, Option, Schema, Stream } from "effect"
+import { Command, Dom, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import { Message, RequestMode } from "./message"
 import { AutocompleteLookup } from "./model"
 import { autocompleteLookup } from "../../kit/autocomplete-lookups"
+import { caretEvents, placeCaret, WHERE_TEXTAREA_ID } from "./where-editor"
 
 export const ResolveWindow = Command.define("ResolveMetricWindow", {
 	args: {
@@ -186,4 +187,51 @@ export const CompleteReloadSpin = Command.define("CompleteMetricReloadSpin", {
 	messages: [Message.CompletedReloadSpin],
 	execute: ({ version }) =>
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
+})
+
+/** The where textarea's caret, focus and blur, read off the native events. */
+export const MountWhereCaret = Mount.defineStream("MountMetricWhereCaret", {
+	messages: [Message.GotCaretMessage],
+	execute: ({ element }) => Stream.map(caretEvents(element), (message) => Message.GotCaretMessage({ message })),
+})
+
+/** `onMouseDown={(e) => e.preventDefault()}` on the list: picking a suggestion keeps the focus. */
+export const MountKeepWhereFocus = Mount.defineStream("MountMetricKeepWhereFocus", {
+	messages: [Message.CompletedPlaceWhereCaret],
+	execute: ({ element }) =>
+		Dom.streamFromEventFilterMap({
+			target: element,
+			type: "mousedown",
+			filterMapEvent: (event): Option.Option<typeof Message.CompletedPlaceWhereCaret.Type> => {
+				event.preventDefault()
+				return Option.none()
+			},
+		}),
+})
+
+export const PlaceWhereCaret = Command.define("PlaceMetricWhereCaret", {
+	args: { value: Schema.String, cursor: Schema.Number },
+	messages: [Message.CompletedPlaceWhereCaret],
+	execute: ({ value, cursor }) =>
+		Effect.as(placeCaret(WHERE_TEXTAREA_ID, value, cursor), Message.CompletedPlaceWhereCaret()),
+})
+
+export const AttributeValuesInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	attributeKey: Schema.String,
+	metricName: Schema.String,
+	metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES),
+})
+
+/** `getMetricAttributeValuesResultAtom`: the values offered after `attr.<key> =`. */
+export const FetchAttributeValues = Command.define("FetchMetricAttributeValues", {
+	args: { key: Schema.String, input: AttributeValuesInput },
+	messages: [Message.CompletedFetchAttributeValues],
+	execute: ({ key, input }) =>
+		settle(
+			Effect.map(getMetricAttributeValues({ data: input }), (response) =>
+				response.data.map((row) => row.attributeValue),
+			),
+		).pipe(Effect.map((result) => Message.CompletedFetchAttributeValues({ key, result }))),
 })

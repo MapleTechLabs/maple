@@ -67,6 +67,33 @@ export const metricsArea: AreaModule = {
 		metric("browse-open-card", "a preview card opened", "/metrics", {
 			steps: act(clickButton(/^system\.memory\.utilization/)),
 		}),
+		metric("where-suggestions", "the where editor's key suggestions", HISTOGRAM, {
+			steps: act(
+				(page) => page.getByRole("textbox", { name: /^Where clause for/ }).click(),
+				(page) => page.keyboard.type("attr."),
+				(page) => page.getByRole("listbox", { name: "Where clause suggestions" }).waitFor(),
+			),
+		}),
+		metric("where-accept", "a key suggestion accepted, its values offered", HISTOGRAM, {
+			steps: act(
+				(page) => page.getByRole("textbox", { name: /^Where clause for/ }).click(),
+				(page) => page.keyboard.type("attr."),
+				(page) => page.getByRole("listbox", { name: "Where clause suggestions" }).waitFor(),
+				(page) => page.keyboard.press("ArrowDown"),
+				(page) => page.keyboard.press("Tab"),
+				(page) => page.waitForTimeout(700),
+			),
+		}),
+		metric("where-enter", "a key suggestion applied with Enter, its values offered", HISTOGRAM, {
+			steps: act(
+				(page) => page.getByRole("textbox", { name: /^Where clause for/ }).click(),
+				(page) => page.keyboard.type("attr."),
+				(page) => page.getByRole("listbox", { name: "Where clause suggestions" }).waitFor(),
+				(page) => page.keyboard.press("ArrowDown"),
+				(page) => page.keyboard.press("Enter"),
+				(page) => page.waitForTimeout(700),
+			),
+		}),
 		metric("add-dialog", "the Add to dashboard dialog open", HISTOGRAM, {
 			steps: act(clickButton("Add to dashboard"), (page) => page.getByRole("dialog").waitFor()),
 		}),
