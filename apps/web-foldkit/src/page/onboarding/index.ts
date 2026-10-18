@@ -226,8 +226,12 @@ export const update = (model: Model, message: Message, inputs: Inputs): Step => 
 				? withScreen(model, ClerkSignIn.update(screen, child), toClerkSignIn)
 				: unchanged(model),
 		CompletedMountClerkCard: () => unchanged(model),
-		GotQuickStartMessage: ({ message: child }) =>
-			screen._tag === "QuickStart" ? withScreen(model, QuickStart.update(screen, child), toQuickStart) : unchanged(model),
+		GotQuickStartMessage: ({ message: child }) => {
+			if (screen._tag !== "QuickStart") return unchanged(model)
+			const next = QuickStart.update(screen, child)
+			const step = withScreen(model, next, toQuickStart)
+			return next.outMessage === undefined ? step : { ...step, outMessage: next.outMessage }
+		},
 		GotSelectPlanMessage: ({ message: child }) => {
 			if (screen._tag !== "SelectPlan") return unchanged(model)
 			const next = SelectPlan.update(screen, child)

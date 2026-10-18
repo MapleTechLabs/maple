@@ -12,6 +12,9 @@ import * as AccountMenu from "./account-menu"
 import { accessOf, customerOf, needsRegion } from "./plan-gate"
 import * as SelectPlan from "./select-plan"
 import type * as QuickStart from "./quick-start"
+import { Message as QuickStartMessage } from "./quick-start"
+import * as QuickStartTeamView from "./quick-start-team-view"
+import * as PricingCardsView from "./pricing-cards-view"
 import * as QuickStartView from "./quick-start-view"
 import { bootSplash } from "../../layout/boot-splash"
 import * as MenuView from "../../ui/menu-view"
@@ -121,8 +124,17 @@ const quickStartView = Submodel.defineView<
 		? bootSplash(h)
 		: QuickStartView.view(h, model, {
 				accountCluster: inputs.accountCluster,
-				teamStep: () => h.empty,
-				planStep: h.empty,
+				teamStep: () => QuickStartTeamView.teamStep(h, model.team),
+				planStep: QuickStartTeamView.planStep(
+					h,
+					accessOf(inputs.customer) === "loading",
+					h.submodel({
+						slotId: "quick-start-pricing",
+						model: model.pricing,
+						view: PricingCardsView.view,
+						toParentMessage: (message) => QuickStartMessage.GotPricingMessage({ message }),
+					}),
+				),
 			}),
 )
 

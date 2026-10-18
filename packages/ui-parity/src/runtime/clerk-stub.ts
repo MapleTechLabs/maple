@@ -84,6 +84,9 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 						total_count: 1,
 					}),
 					getInvitations: async () => ({ data: [], total_count: 0 }),
+					// Onboarding's team step renames the workspace and invites teammates through these.
+					update: async () => ({}),
+					inviteMember: async () => ({}),
 				}
 			: null
 		const memberships = organization

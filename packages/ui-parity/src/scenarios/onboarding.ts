@@ -39,6 +39,15 @@ const decideMcp = (name: string) => async (page: Page) => {
 	await click(name)(page)
 }
 
+/** Role, then one intent, to the team step. */
+const toTeamStep = async (page: Page) => {
+	await page.getByText("Backend engineer", { exact: true }).click()
+	await page.getByRole("button", { name: /Continue/ }).click()
+	await page.getByText("Traces", { exact: true }).click()
+	await page.getByRole("button", { name: "Continue", exact: true }).click()
+	await page.getByText("Bring your team").waitFor()
+}
+
 const HELD_MS = 60_000
 
 const failure = (status: number, tag: string, message: string) => ({
@@ -196,6 +205,20 @@ export const onboardingArea: AreaModule = {
 			await page.getByText("Traces", { exact: true }).click()
 			await page.getByText("Logs", { exact: true }).click()
 		}),
+		scenario("quick-start-team", "Quick start: team step", "/quick-start", "clerk", toTeamStep),
+		scenario("quick-start-team-invited", "Quick start: teammate invited", "/quick-start", "clerk", async (page) => {
+			await toTeamStep(page)
+			await page.getByLabel(/Invite a teammate/).fill("grace@orbit.test")
+			await click("Send invitation")(page)
+			await page.getByText("Invitation sent to grace@orbit.test.").waitFor()
+		}),
+		{
+			...scenario("quick-start-plan", "Quick start: plan step", "/quick-start", "clerk", async (page) => {
+				await toTeamStep(page)
+				await click("Continue to plans")(page)
+			}),
+			fullPage: true,
+		},
 		{ ...scenario("select-plan", "Select plan: free trial", "/select-plan", "clerk"), fullPage: true },
 		{
 			...scenario("select-plan-trial-start", "Select plan: trial started, leaving for Stripe", "/select-plan", "clerk", async (page) => {

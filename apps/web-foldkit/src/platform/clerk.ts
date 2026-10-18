@@ -17,6 +17,11 @@ interface ClerkOrganizationResource {
 	readonly imageUrl?: string
 	readonly publicMetadata?: unknown
 	readonly createdAt?: Date
+	readonly update?: (input: { name: string }) => Promise<object>
+	readonly inviteMember?: (input: { emailAddress: string; role: "org:member" }) => Promise<object>
+	readonly getInvitations?: (params: {
+		readonly status: ReadonlyArray<string>
+	}) => Promise<{ readonly data: ReadonlyArray<{ readonly emailAddress: string }> }>
 }
 interface ClerkResources {
 	readonly user?: {
@@ -24,7 +29,10 @@ interface ClerkResources {
 		readonly fullName?: string | null
 		readonly imageUrl?: string
 		readonly primaryEmailAddress?: { readonly emailAddress: string } | null
-		readonly organizationMemberships?: ReadonlyArray<{ readonly organization: ClerkOrganizationResource }>
+		readonly organizationMemberships?: ReadonlyArray<{
+			readonly organization: ClerkOrganizationResource
+			readonly role?: string
+		}>
 	} | null
 	readonly session?: { readonly getToken: () => Promise<string | null> } | null
 	readonly organization?: ClerkOrganizationResource | null
@@ -187,6 +195,38 @@ export const setActiveOrganization = (orgId: string): Effect.Effect<void> =>
 export const signOutOfClerk: Effect.Effect<void> = Effect.promise(
 	() => window.Clerk?.signOut() ?? Promise.resolve(),
 ).pipe(Effect.catchDefect(() => Effect.void))
+
+/** The active org's handle for its own rename and invitations (`useOrganization().organization`). */
+export interface ClerkTeamOrganization {
+	readonly name: string
+	/** `useAuth().orgRole === "org:admin"`: the role of the user's membership in it. */
+	readonly isAdmin: boolean
+	readonly update: (input: { name: string }) => Promise<object>
+	readonly inviteMember: (input: { emailAddress: string; role: "org:member" }) => Promise<object>
+	readonly pendingInvitations: () => Promise<ReadonlyArray<string>>
+}
+
+export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganization>> = Effect.sync(() =>
+	Option.flatMap(Option.fromNullishOr(window.Clerk?.organization), (organization) => {
+		const { update, inviteMember, getInvitations } = organization
+		const missing = () => Promise.reject(new TypeError("Clerk organization method is missing"))
+		const membership = window.Clerk?.user?.organizationMemberships?.find(
+			(candidate) => candidate.organization.id === organization.id,
+		)
+		return Option.some({
+			name: organization.name,
+			isAdmin: membership?.role === "org:admin",
+			update: (input) => (update === undefined ? missing() : update.call(organization, input)),
+			inviteMember: (input) => (inviteMember === undefined ? missing() : inviteMember.call(organization, input)),
+			pendingInvitations: () =>
+				getInvitations === undefined
+					? Promise.resolve([])
+					: getInvitations
+							.call(organization, { status: ["pending"] })
+							.then((page) => page.data.map((invitation) => invitation.emailAddress)),
+		})
+	}),
+)
 
 /** The session JWT for API calls (`getToken()` in apps/web's ClerkAuthBridge). */
 export const clerkSessionToken: Effect.Effect<Option.Option<string>> = Effect.tryPromise(

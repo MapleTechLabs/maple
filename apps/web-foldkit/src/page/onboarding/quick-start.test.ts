@@ -1,10 +1,11 @@
 import { CatalogPlan, CatalogPlansResponse } from "@maple/domain/http"
 import { describe, expect, test } from "vitest"
 import * as PricingCards from "./pricing-cards"
-import { Message, type Model, update } from "./quick-start"
+import { init, Message, type Model, update } from "./quick-start"
 import { DEFAULT_QUICK_START_STATE, resolveQuickStartStep } from "./quick-start-state"
+import { loadingTeam, TeamMessage, updateTeam } from "./quick-start-team"
 
-const loaded = (): Model => ({ _tag: "QuickStart", storageKey: "maple-onboarding-v6-org_1", state: DEFAULT_QUICK_START_STATE })
+const loaded = (): Model => ({ ...init("maple-onboarding-v6-org_1").model, state: DEFAULT_QUICK_START_STATE })
 
 const names = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) =>
 	(result.commands ?? []).map((command) => command.name)
@@ -40,6 +41,30 @@ describe("quick start", () => {
 		expect(stateOf(twice.model).qualifyAnswers.intents).toEqual([])
 		const back = update(atIntent, Message.ClickedBack({ to: "role" })).model
 		expect(resolveQuickStartStep(stateOf(back))).toBe("role")
+	})
+})
+
+describe("quick start team step", () => {
+	const admin = updateTeam(loadingTeam(), TeamMessage.LoadedTeam({ name: "Orbit", canManage: true, invitations: [] })).team
+
+	test("an admin invites a teammate once; an address already invited is refused", () => {
+		const typed = updateTeam(admin, TeamMessage.ChangedTeammateEmail({ value: " grace@orbit.test " })).team
+		const sent = updateTeam(typed, TeamMessage.SubmittedInvite())
+		expect(sent.commands.map((command) => [command.name, command.args])).toEqual([
+			["RunOnboardingTeamOperation", { operation: "invite", value: "grace@orbit.test" }],
+		])
+		expect(updateTeam(sent.team, TeamMessage.SubmittedRename()).commands).toEqual([])
+		const done = updateTeam(sent.team, TeamMessage.SucceededTeamOperation({ operation: "invite", value: "grace@orbit.test" })).team
+		expect(done).toMatchObject({ invited: ["grace@orbit.test"], email: "", pending: null })
+		const again = updateTeam(updateTeam(done, TeamMessage.ChangedTeammateEmail({ value: "GRACE@orbit.test" })).team, TeamMessage.SubmittedInvite())
+		expect(again.commands).toEqual([])
+	})
+
+	test("a member sees why the forms are off and cannot submit them", () => {
+		const member = updateTeam(loadingTeam(), TeamMessage.LoadedTeam({ name: "Orbit", canManage: false, invitations: [] })).team
+		expect(member.unavailableReason).not.toBeNull()
+		const renamed = updateTeam(member, TeamMessage.ChangedWorkspaceName({ value: "Orbit Labs" })).team
+		expect(updateTeam(renamed, TeamMessage.SubmittedRename()).commands).toEqual([])
 	})
 })
 
