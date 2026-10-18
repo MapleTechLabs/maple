@@ -30,7 +30,7 @@ import {
 	clickedCopySha,
 	commitCardMessage,
 	completedCommitDetail,
-	copyMessage,
+	copiedSha,
 	elapsedCommitArm,
 	initOverlays,
 	rowTooltipMessage,
@@ -480,7 +480,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchCommitDetail: ({ sha, result }) => completedCommitDetail(model, sha, result),
 		ClickedCopyCommitSha: ({ sha, serviceName, environment }) =>
 			clickedCopySha(model, sha, serviceHref(model, serviceName, environment)),
-		GotCopyMessage: ({ message }) => copyMessage(model, message),
+		CompletedCopyCommitSha: ({ rowUrl, isCopied }) => copiedSha(model, rowUrl, isCopied),
 		ClickedResetTimeRange: () =>
 			navigate(model, {
 				...model.search,

@@ -10,6 +10,7 @@ import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "../../../data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { writeClipboard } from "../../../ui/copy-button"
 import { ARM_DELAY_MS, loadCommitDetail, readCommitDetails } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { loadAnomalyServiceCounts } from "../../../data/anomaly-service-counts"
@@ -227,4 +228,12 @@ export const MountTable = Mount.define("MountServicesTable", {
 export const LoadSignalPresence = Command.define("LoadSignalPresence", {
 	messages: [Message.CompletedLoadSignalPresence],
 	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+})
+
+/** `CopyableBadge`'s write for the commit SHA; the row navigation waits on it. */
+export const CopyCommitSha = Command.define("CopyServicesCommitSha", {
+	args: { sha: Schema.String, rowUrl: Schema.String },
+	messages: [Message.CompletedCopyCommitSha],
+	execute: ({ sha, rowUrl }) =>
+		Effect.map(writeClipboard(sha), (isCopied) => Message.CompletedCopyCommitSha({ rowUrl, isCopied })),
 })

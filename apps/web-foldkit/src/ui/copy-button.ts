@@ -52,16 +52,21 @@ export type Message = typeof Message.Type
 
 // COMMAND
 
+/** `useCopy`'s write: whether the text reached the clipboard. */
+export const writeClipboard = (text: string): Effect.Effect<boolean> =>
+	Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
+		Effect.as(true),
+		// A rejected clipboard API falls back to the `execCommand` textarea write.
+		Effect.catch(() => Effect.try(() => writeClipboardFallback(text))),
+		Effect.orElseSucceed(() => false),
+	)
+
 export const WriteClipboard = Command.define("WriteClipboard", {
 	args: { text: Schema.String, generation: Schema.Finite },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
 	execute: ({ text, generation }) =>
-		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
-			Effect.as(true),
-			// `useCopy`: a rejected clipboard API falls back to the `execCommand` textarea write.
-			Effect.catch(() => Effect.try(() => writeClipboardFallback(text))),
-			Effect.orElseSucceed(() => false),
-			Effect.map((ok) => (ok ? Message.SucceededCopy({ generation }) : Message.FailedCopy({ generation }))),
+		Effect.map(writeClipboard(text), (ok) =>
+			ok ? Message.SucceededCopy({ generation }) : Message.FailedCopy({ generation }),
 		),
 })
 
