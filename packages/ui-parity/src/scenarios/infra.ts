@@ -32,6 +32,32 @@ const scenario = (
 	area: "infra",
 })
 
+/** Held far past any capture, so the screenshot is the loading state. */
+const HELD_MS = 60_000
+
+/** The loading and error states of a page whose data comes from `tag` (a tag prefix). */
+const timed = (id: string, title: string, path: string, dataset: string, tag: string): ReadonlyArray<Scenario> => [
+	{
+		...scenario(`${id}-loading`, `${title}: loading`, path, dataset),
+		faults: { delays: { [tag]: HELD_MS } },
+		settle: "held",
+	},
+	{
+		...scenario(`${id}-error`, `${title}: failing`, path, dataset),
+		faults: {
+			failures: {
+				[tag]: {
+					status: 502,
+					body: {
+						_tag: "@maple/http/errors/QueryEngineExecutionError",
+						message: "ui-parity: injected infra failure",
+					},
+				},
+			},
+		},
+	},
+]
+
 /** One exact-text click: chart tabs, scope cards and facet values carry no richer role. */
 const clickText = (text: string) => (page: Page) => page.getByText(text, { exact: true }).first().click()
 
@@ -100,6 +126,16 @@ export const infraArea: AreaModule = {
 			"/infra/hosts",
 			"default",
 			clickText("Elevated"),
+		),
+		...timed("hosts", "Hosts", "/infra/hosts", "default", "queryEngine.listHosts"),
+		scenario("hosts-add-host", "Hosts: the install modal", "/infra/hosts", "default", (page) =>
+			page.getByRole("button", { name: "Add host" }).click(),
+		),
+		scenario("hosts-sort-name", "Hosts: sorted by name", "/infra/hosts", "default", (page) =>
+			page.getByRole("button", { name: "Host", exact: true }).click(),
+		),
+		scenario("hosts-search", "Hosts: searched with no match", "/infra/hosts", "default", (page) =>
+			page.getByRole("textbox", { name: "Search hosts…" }).fill("nope"),
 		),
 		scenario(
 			"hosts-open-row",
