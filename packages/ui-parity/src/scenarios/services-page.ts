@@ -131,7 +131,11 @@ export const servicesPageArea: AreaModule = {
 			await servicesTable(page).getByText("release(storefront): 5.9.0", { exact: true }).hover()
 			await page.getByText("View on GitHub").waitFor()
 		}),
-		edge("edge", "an unnamed and a sampled service", async (page) => {
+		services("alt-exclude", "production excluded by Alt+clicking its label", async (page) => {
+			await page.getByText("production", { exact: true }).first().click({ modifiers: ["Alt"] })
+			await page.getByText("No services match these filters").first().waitFor()
+		}),
+		edge("edge","an unnamed and a sampled service", async (page) => {
 			await servicesTable(page).getByRole("row").nth(2).waitFor()
 		}),
 		edge("unnamed-hint", "the no service.name hint's tooltip", async (page) => {

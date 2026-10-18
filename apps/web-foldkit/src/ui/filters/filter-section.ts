@@ -15,7 +15,8 @@ import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } fr
 import { searchInput } from "../search-input"
 
 // Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
-// TODO(alt-click): legacy's Alt+click on a label toggles the exclusion; Foldkit's OnClick has no modifiers.
+// Alt+click on a label toggles the exclusion: `OnClick` carries no modifiers, so the root's
+// `altClickExclude` Subscription reads it and presses the row's Exclude action (`data-alt-exclude`).
 
 export type FilterOption = Readonly<{ name: string; count: number }>
 
@@ -113,6 +114,7 @@ const rowAction = <M>(
 			),
 			h.DataAttribute("slot", "badge"),
 			h.Title(labelText),
+			...(text === "Exclude" ? [h.DataAttribute("filter-exclude", "")] : []),
 			h.Type("button"),
 			h.OnClick(onClick),
 		],
@@ -220,7 +222,12 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 							? "text-muted-foreground/70 line-through decoration-1 decoration-muted-foreground/50"
 							: "text-foreground",
 					),
-					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(title)],
+					attributes: [
+						h.For(inputId),
+						h.Id(Checkbox.labelId(inputId)),
+						h.Title(title),
+						...(isTriState ? [h.DataAttribute("alt-exclude", "")] : []),
+					],
 				},
 				[
 					...swatch(h, config.colorOf?.(option.name), isExcluded),

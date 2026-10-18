@@ -12,6 +12,20 @@ import { pageContextOf } from "./update"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
 
+/** Emits nothing: an Alt+click on a tri-state filter label is redirected to that row's Exclude button. */
+const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
+	target: () => document,
+	type: "click",
+	filterMapEvent: (event): Option.Option<Message> => {
+		const label = event.target instanceof Element ? event.target.closest("label[data-alt-exclude]") : null
+		const exclude = label?.parentElement?.querySelector("button[data-filter-exclude]")
+		if (!event.altKey || !(exclude instanceof HTMLButtonElement)) return Option.none()
+		event.preventDefault()
+		exclude.click()
+		return Option.none()
+	},
+})
+
 const selfHostedAuthTarget: Dom.TypedEventTarget<{ [SELF_HOSTED_AUTH_EVENT]: Event }> = window
 
 /** Every page's Subscriptions, lifted onto the root (`page/registry.ts`). */
@@ -122,6 +136,14 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 					),
 					Effect.sync(() => isShellOpen),
 				),
+		},
+	),
+	/** Alt+click on a filter label excludes the value (`filter-section.ts`): it presses the row's Exclude. */
+	altClickExclude: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () => altClickExclude,
 		},
 	),
 	/** Clerk's listener (what `useAuth()` re-renders on), once clerk-js has loaded. */
