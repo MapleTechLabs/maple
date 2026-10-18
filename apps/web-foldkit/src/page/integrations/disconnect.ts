@@ -40,6 +40,18 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 			refresh: ["github"],
 		},
 	],
+	...(["cloudflare", "cloudflare-multi"] as const).map((key): readonly [string, DisconnectSpec] => [
+		key,
+		{
+			title: "Disconnect Cloudflare",
+			description: "",
+			confirmLabel: "Disconnect",
+			success:
+				key === "cloudflare" ? "Cloudflare account disconnected" : "Cloudflare accounts disconnected",
+			error: "Failed to disconnect Cloudflare",
+			refresh: ["cloudflare"],
+		},
+	]),
 ])
 
 const mutation = (integration: string) =>
@@ -50,6 +62,9 @@ const mutation = (integration: string) =>
 				return yield* Effect.asVoid(internal.integrations.hazelDisconnect())
 			case "github":
 				return yield* Effect.asVoid(internal.integrations.githubDisconnect())
+			case "cloudflare":
+			case "cloudflare-multi":
+				return yield* Effect.asVoid(internal.integrations.cloudflareDisconnect())
 			default:
 				return yield* Effect.void
 		}

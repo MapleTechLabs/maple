@@ -11,6 +11,7 @@ import type { Model } from "./model"
 import { settingsNav } from "./settings-nav"
 import { entryGlyph } from "./view-entry"
 import { chatCard } from "./view-chat-card"
+import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
 import { githubCard } from "./view-github"
 import { hazelCard } from "./view-hazel"
 import { integrationHeader } from "./view-header"
@@ -46,6 +47,8 @@ const cardView = (h: H, model: Model, integration: IntegrationId, timeZone: stri
 			return [hazelCard(h, model)]
 		case "github":
 			return githubCard(h, model, timeZone)
+		case "cloudflare":
+			return [cloudflareCard(h, model, timeZone)]
 		default:
 			return []
 	}
@@ -58,6 +61,7 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 			filters: settingsNav(h, (tab) => Message.ClickedSettingsTab({ tab })),
 			titleContent: integrationHeader(h, model, integration, {
 				connect: connectButton(h, model, integration),
+				actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
 			}),
 			scrollClassName: "gap-4",
 		},

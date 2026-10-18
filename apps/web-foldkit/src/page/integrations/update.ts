@@ -12,6 +12,8 @@ import { Disconnect, DISCONNECTS } from "./disconnect"
 import { initGithubCard } from "./github"
 import * as Chat from "./update-chat"
 import * as Github from "./update-github"
+import * as CloudflareCard from "./update-cloudflare"
+import { isMultiAccount } from "./view-cloudflare"
 import * as Connect from "./update-connect"
 import { LoadCustomer, ReadClock, StripChatParams } from "./command"
 import { chain, requestStatus, STATUS_NAMES } from "./update-status"
@@ -80,19 +82,34 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: { busy: null, confirmId: null, identityBusy: false },
 		githubCard: initGithubCard(),
+		cloudflareCard: { usage: Keyed.idle(), isPrimed: false, isPriming: false },
 	}
 	const loaded = chain(model, [
 		...STATUS_NAMES.map((name) => (next: Model) => requestStatus(next, context, name, "Load")),
 		(next: Model) => requestCustomer(next, context),
+		(next: Model) => enterIntegration(next, context),
 		(next: Model) => handleChatCallback(next, false),
 	])
 	return { ...loaded, commands: [ReadClock(), ...(loaded.commands ?? [])] }
 }
 
-export const routeChanged = (model: Model, route: { readonly search: Search }): Return =>
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return =>
 	hrefOfSearch(model.search) === hrefOfSearch(route.search)
 		? { model }
-		: handleChatCallback({ ...model, search: route.search }, true)
+		: chain({ ...model, search: route.search }, [
+				(next) => enterIntegration(next, context),
+				(next) => handleChatCallback(next, true),
+			])
+
+/** The reads an integration's card mounts (Cloudflare's usage). */
+const enterIntegration = (model: Model, context: PageContext): Return =>
+	integrationOfSearch(model.search.integration) === "cloudflare"
+		? CloudflareCard.requestUsage(model, context, "Load")
+		: { model }
 
 export const contextChanged = (model: Model): Return => ({ model })
 
@@ -135,6 +152,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedConnect: () => Connect.clickedConnect(model),
 		ClickedChatInstall: () => Chat.clickedInstall(model),
+		CompletedLoadCloudflareUsage: ({ key, result }) => ({
+			model: {
+				...model,
+				cloudflareCard: {
+					...model.cloudflareCard,
+					usage: Keyed.accept(model.cloudflareCard.usage, key, result),
+				},
+			},
+		}),
+		CompletedCloudflarePrime: ({ isOk, isConnected }) =>
+			CloudflareCard.completedPrime(model, context, isOk, isConnected),
+		TickedCloudflareIngest: () => CloudflareCard.refreshCloudflare(model, context),
 		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),
 		CompletedGithubRefreshSpin: ({ version }) => Github.completedRefreshSpin(model, version),
 		ToggledCiTraces: () => Github.toggledCiTraces(model),
@@ -187,7 +216,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return {
 				...closed,
 				model: { ...closed.model, disconnect: { ...closed.model.disconnect, isPending: true } },
-				commands: [...(closed.commands ?? []), Disconnect({ integration })],
+				commands: [
+					...(closed.commands ?? []),
+					Disconnect({
+						integration:
+							integration === "cloudflare" && isMultiAccount(model)
+								? "cloudflare-multi"
+								: integration,
+					}),
+				],
 			}
 		},
 		CompletedDisconnect: ({ integration, failure }) => {
@@ -204,6 +241,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...(failure === null ? spec.refresh : []).map(
 					(name) => (next: Model) => requestStatus(next, context, name, "Refresh"),
 				),
+				(next) =>
+					failure === null && integration.startsWith("cloudflare")
+						? CloudflareCard.requestUsage(next, context, "Refresh")
+						: { model: next },
 			])
 		},
 	})

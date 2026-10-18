@@ -5,6 +5,7 @@ import { ConnectProvider, type ConnectModel, PROVIDERS } from "./connect"
 import type { Message } from "./message"
 import type { Model, Statuses } from "./model"
 import { chain, requestStatus } from "./update-status"
+import * as Cloudflare from "./update-cloudflare"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
 
@@ -37,8 +38,9 @@ export const clickedConnect = (model: Model): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (!Schema.is(ConnectProvider)(integration) || model.connect.isStarting) return { model }
 	const attempt = model.connect.attempts + 1
+	const base = integration === "cloudflare" ? Cloudflare.resetPrime(model) : model
 	return {
-		model: withConnect(model, {
+		model: withConnect(base, {
 			attempts: attempt,
 			active: { provider: integration, attempt },
 			isStarting: true,
@@ -85,7 +87,9 @@ export const closedPopup = (model: Model, context: PageContext, attempt: number)
 	if (active === null || active.attempt !== attempt) return { model }
 	const hasGrace = PROVIDERS[active.provider].closeGraceMs > 0
 	const next = hasGrace ? withConnect(model, { isClosed: true }) : withConnect(model, { active: null })
-	return refreshProvider(next, context, active.provider)
+	return active.provider === "cloudflare"
+		? chain(next, [(after) => Cloudflare.refreshCloudflare(after, context), Cloudflare.prime])
+		: refreshProvider(next, context, active.provider)
 }
 
 export const endedGrace = (model: Model, attempt: number): Return =>
@@ -111,7 +115,8 @@ export const receivedCallback = (
 		const title = CONNECTED_TITLE[provider]
 		return chain(model, [
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
-			(next) => refreshProvider(next, context, provider),
+			(next) =>
+				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
 		])
 	}
 	if (status !== "error") return { model }

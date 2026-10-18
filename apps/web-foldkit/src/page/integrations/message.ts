@@ -1,6 +1,7 @@
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
+	CloudflareUsageResponse,
 	GithubIntegrationStatus,
 	HazelIntegrationStatus,
 	RailwayIntegrationStatus,
@@ -101,6 +102,10 @@ export const Message = defineMessageUnion({
 		backfillQueued: Schema.Boolean,
 		failure: Schema.NullOr(LoadFailure),
 	},
+	CompletedLoadCloudflareUsage: result(CloudflareUsageResponse),
+	CompletedCloudflarePrime: { isConnected: Schema.Boolean, isOk: Schema.Boolean },
+	/** Every 30 s while a fresh Cloudflare connection settles (`useCloudflareIngestPhase`). */
+	TickedCloudflareIngest: {},
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,
 		status: Schema.String,

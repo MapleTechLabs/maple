@@ -185,6 +185,40 @@ export const integrationsArea: AreaModule = {
 			},
 		}),
 		page("cloudflare", "Cloudflare (not connected)", "/integrations?integration=cloudflare"),
+		page("cloudflare-connect", "Cloudflare: connect", "/integrations?integration=cloudflare", {
+			steps: (page) => page.getByRole("button", { name: "Connect Cloudflare" }).last().click(),
+		}),
+		page("cloudflare-connected", "Cloudflare (connected)", "/integrations?integration=cloudflare", {
+			dataset: "infra-integrations",
+		}),
+		page("cloudflare-disconnect", "Cloudflare: disconnect", "/integrations?integration=cloudflare", {
+			dataset: "infra-integrations",
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Disconnect" }).click()
+				await page.getByRole("alertdialog").getByRole("button", { name: "Disconnect" }).click()
+			},
+		}),
+		page("cloudflare-reconnect", "Cloudflare: reconnect", "/integrations?integration=cloudflare", {
+			dataset: "infra-integrations",
+			steps: (page) => page.getByRole("button", { name: "Reconnect" }).click(),
+		}),
+		page("hub-infra", "Hub with infrastructure connected", "/integrations", {
+			dataset: "infra-integrations",
+		}),
+		timed(
+			"cloudflare-error",
+			"Cloudflare: status failing",
+			"/integrations?integration=cloudflare",
+			{ failures: { "integrations.cloudflareStatus": persistenceFailure } },
+			"quiet",
+		),
+		timed(
+			"cloudflare-loading",
+			"Cloudflare: status loading",
+			"/integrations?integration=cloudflare",
+			{ delays: { "integrations.cloudflareStatus": HELD_MS } },
+			"held",
+		),
 		page("open-card", "Hub: open the Prometheus card", "/integrations", {
 			steps: (page) =>
 				page

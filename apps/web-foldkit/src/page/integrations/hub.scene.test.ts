@@ -100,9 +100,13 @@ describe("integrations hub", () => {
 				isReplace: true,
 			}),
 		)
-		const inApp = routeChanged(entered(), {
-			search: { integration: "chat-slack", chat: "connected", chat_workspace: "Acme" },
-		})
+		const inApp = routeChanged(
+			entered(),
+			{
+				search: { integration: "chat-slack", chat: "connected", chat_workspace: "Acme" },
+			},
+			context,
+		)
 		expect(inApp.outMessage).toEqual(
 			PageOutMessage.RequestedToast({ type: "success", title: "Connected Acme", description: "" }),
 		)
@@ -112,7 +116,11 @@ describe("integrations hub", () => {
 				isReplace: true,
 			}),
 		)
-		const failed = routeChanged(entered(), { search: { chat: "error", chat_reason: "conflict" } })
+		const failed = routeChanged(
+			entered(),
+			{ search: { chat: "error", chat_reason: "conflict" } },
+			context,
+		)
 		expect(failed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",

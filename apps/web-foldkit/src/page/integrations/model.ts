@@ -18,6 +18,7 @@ import { LoadFailure } from "../../data/load-failure"
 import { IntegrationsSearch } from "../../route/search"
 import * as Dialog from "../../ui/dialog"
 import { ChatCardModel } from "./chat"
+import { CloudflareCardModel } from "./cloudflare"
 import { GithubCardModel } from "./github"
 import { ConnectModel } from "./connect"
 
@@ -52,5 +53,6 @@ export const Model = Schema.Struct({
 	disconnect: Schema.Struct({ dialog: Dialog.Model, isPending: Schema.Boolean }),
 	chatCard: ChatCardModel,
 	githubCard: GithubCardModel,
+	cloudflareCard: CloudflareCardModel,
 })
 export type Model = typeof Model.Type
