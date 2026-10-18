@@ -9,6 +9,7 @@ import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
@@ -41,6 +42,7 @@ import {
 	warehouseFiltersOf,
 } from "./derive"
 import { type FilterParam, Message, type RequestMode } from "./message"
+import { bulkMenuStep, bulkWrite, completedHubWrite, pressedListKey, toggledSelection } from "./selection"
 import { SOURCES } from "../kit/source"
 import type { IssuePage, Model, PageSlot } from "./model"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -338,6 +340,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		selectedIds: [],
 		selectionAnchor: null,
 		focusedId: null,
+		bulkSeverityMenu: Menu.init("errors-bulk-severity"),
+		bulkMoveMenu: Menu.init("errors-bulk-move"),
+		writingIds: [],
 		searchDraft: search.q ?? "",
 		searchGeneration: 0,
 		tabs: Tabs.init({ idBase: 0, values: HUB_VIEWS, selected: viewOf(search) }),
@@ -414,14 +419,6 @@ export const CLEARED_ERROR_FILTERS = {
 	kind: undefined,
 	regressed: undefined,
 } satisfies Partial<Search>
-
-/** `updateIssueSelection`'s single toggle (TODO(shift-select): no modifier keys on the checkbox). */
-const toggledRow = (model: Model, id: string): Partial<Model> => ({
-	selectedIds: model.selectedIds.includes(id)
-		? model.selectedIds.filter((selected) => selected !== id)
-		: [...model.selectedIds, id],
-	selectionAnchor: id,
-})
 
 /** The header checkbox: every visible row, or none once they all are. */
 const toggledAllRows = (model: Model): Partial<Model> => {
@@ -563,7 +560,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedViewAll: () => navigate(model, { view: "all" }),
 		ClickedClearSearch: () => navigate(model, { q: undefined }),
 		ClickedShowAllSeverities: () => navigate(model, { severity: undefined }),
-		ToggledRow: ({ id }) => ({ model: { ...model, ...toggledRow(model, id) } }),
+		ToggledRow: ({ id }) => ({ model: toggledSelection(model, id, false) }),
+		ClickedRowSelect: ({ id, isShift }) => ({ model: toggledSelection(model, id, isShift) }),
+		PressedListKey: ({ key, isShift }) =>
+			pressedListKey(model, key, isShift, (m: Model) => ({ model: m })),
+		ClickedBulkClaim: () => bulkWrite(model, { _tag: "Claim" }),
+		ClickedClearSelection: () => ({ model: { ...model, selectedIds: [], selectionAnchor: null } }),
+		GotBulkSeverityMenuMessage: ({ message: inner }) => bulkMenuStep(model, "bulkSeverityMenu", inner),
+		GotBulkMoveMenuMessage: ({ message: inner }) => bulkMenuStep(model, "bulkMoveMenu", inner),
+		CompletedHubWrite: ({ ids, write, isBulk, outcome }) =>
+			completedHubWrite(model, context, ids, write, isBulk, outcome, pageQuery),
 		ToggledAllRows: () => ({ model: { ...model, ...toggledAllRows(model) } }),
 		HoveredRow: ({ id }) => (model.focusedId === id ? { model } : { model: { ...model, focusedId: id } }),
 		ClickedInvestigation: ({ id }) => ({

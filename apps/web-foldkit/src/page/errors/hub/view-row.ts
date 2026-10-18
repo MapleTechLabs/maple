@@ -153,6 +153,7 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 					h.span(
 						[
 							h.Class(cn(LANE.select, "flex items-center justify-center")),
+							h.DataAttribute("row-select", signal.id),
 							h.Role("presentation"),
 						],
 						Checkbox.view(h, {

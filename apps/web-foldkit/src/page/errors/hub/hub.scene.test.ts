@@ -5,7 +5,7 @@ import { Command, expect as expectView, given, Mount, role, scene, text, withVie
 import { describe, expect, test } from "vitest"
 import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { FetchInvestigations, FetchPage, LoadSignalPresence, MountEmptyList } from "./command"
+import { FetchInvestigations, FetchPage, LoadSignalPresence, MountEmptyList, MountRowSelect } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -139,6 +139,7 @@ describe("errors hub", () => {
 			{ update: pageUpdate, view },
 			given(withPage(windowed(), [issue()])),
 			measured,
+			Mount.resolve(MountRowSelect, Message.ClickedRowSelect({ id: "", isShift: false })),
 			expectView(role("link", { name: /ConnectionTimeout/ })).toHaveAttr(
 				"href",
 				"/errors/issues/0199a004-0000-7000-8000-000000000001",

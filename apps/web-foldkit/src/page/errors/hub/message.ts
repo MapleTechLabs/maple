@@ -4,9 +4,11 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
 import { SignalPresences } from "../../kit/signal-presence"
+import { HubWrite, WriteOutcome } from "./writes"
 import { ErrorsSummary, IssuePage, SparkSeries, VolumeRow } from "./model"
 
 /** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
@@ -47,6 +49,19 @@ export const Message = defineMessageUnion({
 	ClickedClearSearch: {},
 	ClickedShowAllSeverities: {},
 	ToggledRow: { id: Schema.String },
+	/** A row checkbox clicked with Shift held extends from the anchor (`toggledSelection`). */
+	ClickedRowSelect: { id: Schema.String, isShift: Schema.Boolean },
+	PressedListKey: { key: Schema.String, isShift: Schema.Boolean },
+	ClickedBulkClaim: {},
+	ClickedClearSelection: {},
+	GotBulkSeverityMenuMessage: { message: Menu.Message },
+	GotBulkMoveMenuMessage: { message: Menu.Message },
+	CompletedHubWrite: {
+		ids: Schema.Array(Schema.String),
+		write: HubWrite,
+		isBulk: Schema.Boolean,
+		outcome: WriteOutcome,
+	},
 	ToggledAllRows: {},
 	HoveredRow: { id: Schema.String },
 	ClickedInvestigation: { id: Schema.String },

@@ -220,6 +220,120 @@ export const errorsArea: AreaModule = {
 				await settlePointer(page)
 			},
 		}),
+		errors("hub-select-range", "shift-click selects a range", "/errors", {
+			steps: async (page) => {
+				const boxes = page.getByRole("checkbox", { name: "Select this error" })
+				await boxes.nth(0).click()
+				await boxes.nth(2).click({ modifiers: ["Shift"] })
+				await page.getByText("3 selected").waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("hub-bulk-claim", "bulk claim", "/errors", {
+			steps: async (page) => {
+				const boxes = page.getByRole("checkbox", { name: "Select this error" })
+				await boxes.nth(0).click()
+				await boxes.nth(1).click()
+				await page
+					.getByRole("region", { name: "Bulk actions" })
+					.getByRole("button", { name: "Claim" })
+					.click()
+				await page.getByText("Claimed 2 issues", { exact: true }).waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("hub-bulk-severity-menu", "bulk severity menu", "/errors", {
+			steps: async (page) => {
+				await page.getByRole("checkbox", { name: "Select this error" }).nth(0).click()
+				await page
+					.getByRole("region", { name: "Bulk actions" })
+					.getByRole("button", { name: "Severity" })
+					.click()
+				await page.getByRole("menuitem", { name: "Clear severity" }).waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("hub-bulk-move", "bulk move to Todo", "/errors", {
+			steps: async (page) => {
+				await page.getByRole("checkbox", { name: "Select this error" }).nth(0).click()
+				await page
+					.getByRole("region", { name: "Bulk actions" })
+					.getByRole("button", { name: "Move to" })
+					.click()
+				await page.getByRole("menuitem", { name: "Todo" }).click()
+				await page.getByText("Moved 1 to Todo", { exact: true }).waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("hub-keyboard", "j, j, x on the list", "/errors", {
+			steps: async (page) => {
+				await page
+					.getByText(/^\d+ issues?$/)
+					.first()
+					.waitFor()
+				await page.keyboard.press("j")
+				await page.keyboard.press("j")
+				await page.keyboard.press("x")
+				await page.getByText("1 selected").waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("hub-keyboard-open", "j then Enter opens the issue", "/errors", {
+			steps: async (page) => {
+				await page
+					.getByText(/^\d+ issues?$/)
+					.first()
+					.waitFor()
+				await page.keyboard.press("j")
+				await page.keyboard.press("Enter")
+				await page.waitForURL(/\/errors\/issues\//)
+				await page.getByText("Fingerprint").first().waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("hub-context-menu", "right-click on a row", "/errors", {
+			steps: async (page) => {
+				await page.getByRole("checkbox", { name: "Select this error" }).nth(0).waitFor()
+				await page.locator("[data-issue-id]").first().click({ button: "right" })
+				await page.getByRole("menuitem", { name: "Copy link" }).waitFor()
+			},
+		}),
+		errors("hub-context-claim", "claim from the context menu", "/errors", {
+			steps: async (page) => {
+				await page.getByRole("checkbox", { name: "Select this error" }).nth(0).waitFor()
+				await page.locator("[data-issue-id]").first().click({ button: "right" })
+				await page.getByRole("menuitem", { name: "Claim" }).click()
+				await page.getByText("Claimed", { exact: true }).waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("hub-status-picker", "a row's status picker", "/errors", {
+			steps: async (page) => {
+				await page.locator("[data-picker=state]").first().click()
+				await page.getByRole("option", { name: "Todo" }).waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("hub-status-pick", "status picked from a row", "/errors", {
+			steps: async (page) => {
+				await page.locator("[data-picker=state]").first().click()
+				await page.getByRole("option", { name: "Todo" }).click()
+				await page.getByText("Moved to Todo", { exact: true }).waitFor()
+				await settlePointer(page)
+			},
+		}),
+		errors("hub-severity-hotkey", "p opens the focused row's severity picker", "/errors", {
+			steps: async (page) => {
+				await page
+					.getByText(/^\d+ issues?$/)
+					.first()
+					.waitFor()
+				await page.keyboard.press("j")
+				await page.keyboard.press("p")
+				await page.getByRole("option", { name: "No severity" }).waitFor()
+				await settlePointer(page)
+			},
+		}),
 		errors("hub-sort-volume", "sorted by volume", "/errors", {
 			steps: async (page) => {
 				await page.getByRole("combobox").filter({ hasText: "Most recent" }).click()
