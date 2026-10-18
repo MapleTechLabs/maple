@@ -18,6 +18,25 @@ export interface LoadOptions {
 
 type Loader<A> = (options?: LoadOptions) => Effect.Effect<A, unknown>
 
+/** One shared load per status. A failure is not kept: the next reader asks again, like the atom. */
+export const sharedLoader = <A>(load: Effect.Effect<A, unknown>): Effect.Effect<Loader<A>> =>
+	Effect.map(SynchronizedRef.make(Option.none<Effect.Effect<A, unknown>>()), (ref) => {
+		const forget = (failed: Effect.Effect<A, unknown>) =>
+			SynchronizedRef.update(ref, (held) => (Option.isSome(held) && held.value === failed ? Option.none() : held))
+		const start = Effect.map(Effect.cached(load), (memo) => {
+			const shared: Effect.Effect<A, unknown> = Effect.tapError(memo, () => forget(shared))
+			return shared
+		})
+		return (options) =>
+			Effect.flatten(
+				SynchronizedRef.modifyEffect(ref, (current) =>
+					Option.isSome(current) && options?.refresh !== true
+						? Effect.succeed([current.value, current] as const)
+						: Effect.map(start, (next) => [next, Option.some(next)] as const),
+				),
+			)
+	})
+
 export class IntegrationStatuses extends Context.Service<
 	IntegrationStatuses,
 	{
@@ -32,27 +51,11 @@ export class IntegrationStatuses extends Context.Service<
 		Effect.gen(function* () {
 			const internal = yield* MapleInternalApiClient
 			const v2 = yield* MapleApiV2Client
-			const cached = <A>(load: Effect.Effect<A, unknown>) =>
-				Effect.map(
-					SynchronizedRef.make(Option.none<Effect.Effect<A, unknown>>()),
-					(ref): Loader<A> =>
-						(options) =>
-							Effect.flatten(
-								SynchronizedRef.modifyEffect(ref, (current) =>
-									Option.isSome(current) && options?.refresh !== true
-										? Effect.succeed([current.value, current] as const)
-										: Effect.map(
-												Effect.cached(load),
-												(next) => [next, Option.some(next)] as const,
-											),
-								),
-							),
-				)
 			return {
-				cloudflare: yield* cached(internal.integrations.cloudflareStatus()),
-				railway: yield* cached(internal.integrations.railwayStatus()),
-				planetscale: yield* cached<PlanetscaleStatus>(v2.planetscaleIntegration.status()),
-				gcp: yield* cached<GcpStatus>(v2.gcpIntegration.status()),
+				cloudflare: yield* sharedLoader(internal.integrations.cloudflareStatus()),
+				railway: yield* sharedLoader(internal.integrations.railwayStatus()),
+				planetscale: yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status()),
+				gcp: yield* sharedLoader<GcpStatus>(v2.gcpIntegration.status()),
 			}
 		}),
 	)
