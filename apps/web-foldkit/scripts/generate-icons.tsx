@@ -151,6 +151,16 @@ const NAMES = [
 	"SquarePlusIcon",
 	"BracketsCurlyIcon",
 	"SparkleIcon",
+	"ArrowPathIcon",
+	"ArrowRightFromLineIcon",
+	"BoltIcon",
+	"CreditCardIcon",
+	"FingerprintIcon",
+	"GoogleIcon",
+	"KeyIcon",
+	"LockIcon",
+	"MobileIcon",
+	"ShieldIcon",
 ] as const
 
 const duplicates = NAMES.filter((name, index) => NAMES.indexOf(name) !== index)

@@ -18,7 +18,8 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	model: Dialog.Model
 	toParentMessage: (message: Dialog.Message) => M
 	title: string
-	description?: string
+	/** Text, or rich children (a highlighted name inside the sentence). */
+	description?: string | ReadonlyArray<Html | string>
 	confirmLabel: string
 	cancelLabel?: string
 	tone?: "destructive" | "default"
