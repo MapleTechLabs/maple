@@ -80,6 +80,10 @@ const headerActions = (h: H, model: Model): Html => {
 			entries: environmentItems(model).map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
 			size: "sm",
 			className: "w-full min-w-0 @2xl/page:w-auto @2xl/page:min-w-36",
+			// `SelectValue` shows the raw value when it is not among the items (facets not loaded).
+			renderValue: (value) => [
+				environmentItems(model).find((item) => item.value === value)?.label ?? value,
+			],
 			toView: (parts) =>
 				h.div([h.Class("flex flex-wrap items-center gap-2")], [views, ...parts, controls]),
 		},

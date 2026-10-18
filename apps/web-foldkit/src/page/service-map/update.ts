@@ -277,7 +277,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// The default environment can move once facets land (a confirmed no-production org).
 		CompletedFetchFacets: ({ key, result }) => {
 			const next = { ...model, facets: Keyed.accept(model.facets, key, result) }
-			return applySteps(next, [bundleStep(next, context, "Load")])
+			const rekeyed = applySteps(next, [bundleStep(next, context, "Load")])
+			// Only a new environment re-asks; the same key keeps its answer, a failure included.
+			return rekeyed.model.bundle.key === model.bundle.key ? { model: next } : rekeyed
 		},
 		CompletedFetchBundle: ({ key, result }) =>
 			syncMap(context)({ model: { ...model, bundle: Keyed.accept(model.bundle, key, result) } }),

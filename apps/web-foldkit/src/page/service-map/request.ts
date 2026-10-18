@@ -115,14 +115,15 @@ const overlaySteps = (model: Model, context: PageContext, mode: RequestMode): Re
 		keyed(
 			model.planetscaleInventory,
 			requestKey(org, "planetscaleIntegration.databases", {}),
-			mode,
+			// `useAtomValue`, not page-refreshable: Reload leaves the inventories alone.
+			"Load",
 			(planetscaleInventory) => ({ planetscaleInventory }),
 			(key) => FetchPlanetScaleInventory({ key }),
 		),
 		keyed(
 			model.hyperdrives,
 			requestKey(org, "integrations.cloudflareHyperdrives", {}),
-			mode,
+			"Load",
 			(hyperdrives) => ({ hyperdrives }),
 			(key) => FetchHyperdrives({ key }),
 		),

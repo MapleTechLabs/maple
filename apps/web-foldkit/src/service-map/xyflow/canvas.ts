@@ -126,19 +126,28 @@ type NodePositions = ReadonlyArray<{
 	readonly position: { readonly x: number; readonly y: number }
 }>
 
-export const update = (model: Model, message: Message, nodes: NodePositions): Model =>
+/**
+ * `nodes` are the parent's positioned nodes; `extra` adds already-measured rects a fit must frame
+ * too (nodes React Flow knows that the parent derives, such as the service map's namespace boxes).
+ */
+export const update = (
+	model: Model,
+	message: Message,
+	nodes: NodePositions,
+	extra: (canvas: Model) => ReadonlyArray<PlacedNode> = () => [],
+): Model =>
 	Message.match<Model>(message, {
 		ChangedViewport: ({ viewport }) =>
 			modifyFields(model, { viewport: () => viewport, movedByUser: () => true }),
 		ResizedPane: ({ width, height }) => {
 			const next = modifyFields(model, { pane: () => ({ width, height }) })
-			return resolvePendingFit(next, placed(next, nodes))
+			return resolvePendingFit(next, [...placed(next, nodes), ...extra(next)])
 		},
 		MeasuredNodes: ({ nodes: measurements }) => {
 			const measured = { ...model.measured }
 			for (const node of measurements) measured[node.id] = node
 			const next = modifyFields(model, { measured: () => measured })
-			return resolvePendingFit(next, placed(next, nodes))
+			return resolvePendingFit(next, [...placed(next, nodes), ...extra(next)])
 		},
 		ClickedZoomIn: () =>
 			modifyFields(model, {
@@ -149,7 +158,7 @@ export const update = (model: Model, message: Message, nodes: NodePositions): Mo
 				viewport: () => scaleViewport(model.viewport, 1 / ZOOM_STEP, model.pane, model),
 			}),
 		ClickedFitView: () =>
-			requestFit(model, placed(model, nodes), {
+			requestFit(model, [...placed(model, nodes), ...extra(model)], {
 				padding: 0.1,
 				minZoom: model.minZoom,
 				maxZoom: model.maxZoom,

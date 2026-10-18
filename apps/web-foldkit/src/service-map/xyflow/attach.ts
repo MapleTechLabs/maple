@@ -218,16 +218,29 @@ const attachNodeDrag = (renderer: HTMLElement, emit: (message: MountMessage) => 
 		const id = node?.getAttribute("data-id")
 		if (node === null || node === undefined || id === null || id === undefined) return
 		const origin = nodeOrigin(node)
-		const start = pointerAt(event)
-		const grab = { x: start.x - origin.x, y: start.y - origin.y }
-		const state = { moved: false, dragging: false, position: origin }
+		const state = {
+			moved: false,
+			dragging: false,
+			position: origin,
+			grab: { x: 0, y: 0 },
+			last: { x: Number.NaN, y: Number.NaN },
+		}
 		const move = (moveEvent: MouseEvent) => {
 			const pointer = pointerAt(moveEvent)
 			state.moved =
 				state.moved || moveEvent.clientX !== event.clientX || moveEvent.clientY !== event.clientY
-			if (!state.dragging && Math.hypot(pointer.x - start.x, pointer.y - start.y) <= 1) return
-			state.dragging = true
-			state.position = { x: pointer.x - grab.x, y: pointer.y - grab.y }
+			// The threshold is in client pixels; the drag starts from where the pointer crossed it.
+			if (!state.dragging) {
+				if (Math.hypot(moveEvent.clientX - event.clientX, moveEvent.clientY - event.clientY) <= 1)
+					return
+				state.dragging = true
+				state.grab = { x: pointer.x - origin.x, y: pointer.y - origin.y }
+				state.last = pointer
+				return
+			}
+			if (pointer.x === state.last.x && pointer.y === state.last.y) return
+			state.last = pointer
+			state.position = { x: pointer.x - state.grab.x, y: pointer.y - state.grab.y }
 			emit(Message.DraggedNode({ id, position: state.position }))
 		}
 		const up = () => {

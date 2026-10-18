@@ -34,6 +34,7 @@ import {
 	snapshotFor,
 	upsert,
 } from "./state"
+import { namespaceBoxRects } from "./namespace-group"
 import * as Toolbar from "./toolbar"
 
 /**
@@ -53,6 +54,8 @@ export const Model = Schema.Struct({
 	collapsedNamespaces: Schema.Array(Schema.String),
 	/** ELK's answer, or the synchronous stand-in it is replaced by after the grace period. */
 	layout: Schema.Struct({ status: LayoutStatus, positions: Positions }),
+	/** The signature's synchronous layout, anchored on what was on screen when it became live. */
+	fallback: Schema.Struct({ signature: Schema.String, positions: Positions }),
 	/** The first final or fallback layout has been shown; later recomputes keep the map visible. */
 	revealed: Schema.Boolean,
 	selectedId: Schema.Option(Schema.String),
@@ -75,7 +78,9 @@ export const Model = Schema.Struct({
 	 */
 	bridge: Schema.Option(Schema.Struct({ signature: Schema.String, isAwaitingPaint: Schema.Boolean })),
 	/** ELK's answer, held while the bridge is not yet on screen. */
-	heldLayout: Schema.Option(Schema.Struct({ signature: Schema.String, positions: Positions })),
+	heldLayout: Schema.Option(
+		Schema.Struct({ signature: Schema.String, status: LayoutStatus, positions: Positions }),
+	),
 	/** Debounces camera writes (`VIEWPORT_PERSIST_DEBOUNCE_MS`). */
 	cameraWrite: Schema.Number,
 	toolbar: Toolbar.Model,
@@ -212,13 +217,21 @@ const withPositions = (model: Model): Model => {
 export const placedNodes = (model: Model) =>
 	model.graph.nodes.map((node) => ({ id: node.id, position: positionOf(model.positions, node) }))
 
+/** The namespace boxes as React Flow nodes: `fitView` frames them with the services. */
+const boxTargets = (model: Model) => (canvas: Canvas.Model) =>
+	namespaceBoxRects(model.graph, model.positions, canvas.measured).map((rect) => ({
+		id: rect.id,
+		position: rect.position,
+		measured: { id: rect.id, width: rect.width, height: rect.height, handles: [] },
+	}))
+
 /** `fitView()`, or `fitView({ duration: 300 })` for the moves of a map already on screen. */
 const requestMapFit = (model: Model, isAnimated: boolean): Model =>
 	modifyFields(model, {
 		canvas: () =>
 			Canvas.requestFit(
 				model.canvas,
-				Canvas.placed(model.canvas, placedNodes(model)),
+				[...Canvas.placed(model.canvas, placedNodes(model)), ...boxTargets(model)(model.canvas)],
 				isAnimated ? { ...MAP_FIT, duration: FIT_DURATION_MS } : MAP_FIT,
 			),
 	})
@@ -226,20 +239,22 @@ const requestMapFit = (model: Model, isAnimated: boolean): Model =>
 const FIT_DURATION_MS = 300
 
 /**
- * Legacy bug, mirrored for parity: with namespace boxes on the map the automatic fit never lands.
- * `ServiceMapFlowCanvas` marks the fit done, schedules it for the next frame, and the boxes'
- * deferred measurement (an `onNodesChange` that always yields a new array) re-runs the effect,
- * whose cleanup cancels that frame. The camera stays where it was (React Flow's 0,0,1 at first).
+ * Legacy bug, mirrored for parity: when the map first appears with namespace boxes, its fit never
+ * lands. `ServiceMapFlowCanvas` marks the fit done and schedules it for the next frame; the boxes
+ * mount a frame later (deferred), React Flow reports their first measurement through
+ * `onNodesChange`, which always yields a new array, and the effect's cleanup cancels the frame.
+ * The camera stays at React Flow's 0,0,1. Later layouts mount their boxes while bridged, so fit.
  */
 export const hasNamespaceBoxes = (graph: EffectiveGraph): boolean =>
 	graph.nodes.some((node) => !node.id.startsWith(DB_NODE_PREFIX) && Boolean(node.data.namespace))
 
-/** The automatic fit of a new layout: skipped for a saved camera, and dropped where legacy drops it. */
-const autoFit = (model: Model): Model => {
+/** The automatic fit of a new layout: skipped for a saved camera, dropped where legacy drops it. */
+const autoFit = (model: Model, isFirstReveal: boolean): Model => {
 	if (model.hasSavedCamera) return model
-	if (hasNamespaceBoxes(model.graph))
-		return modifyFields(model, { canvas: (canvas) => ({ ...canvas, pendingFit: Option.none() }) })
-	return requestMapFit({ ...model, hasFitted: true }, model.hasFitted)
+	const fitted = { ...model, hasFitted: true }
+	return isFirstReveal && hasNamespaceBoxes(model.graph)
+		? modifyFields(fitted, { canvas: (canvas) => ({ ...canvas, pendingFit: Option.none() }) })
+		: requestMapFit(fitted, model.hasFitted)
 }
 
 /** The synchronous layered layout (`computeNodePositions`), anchored on what is on screen. */
@@ -254,22 +269,18 @@ const fallbackPositions = (graph: EffectiveGraph, anchor: Positions): Positions 
 	)
 
 /** A layout landed: show it, framed unless the signature brought its own camera. */
-const reveal = (model: Model, status: LayoutStatus, positions: Positions): Model => {
-	return autoFit(withPositions({ ...model, layout: { status, positions }, revealed: true }))
-}
-
-/** Whether moving nodes from `before` to `after` changes a namespace box (drags were reset). */
-const isBoxResize = (before: Model, after: Model): boolean =>
-	hasNamespaceBoxes(after.graph) &&
-	after.graph.nodes.some((node) => {
-		const was = positionOf(before.positions, node)
-		const now = positionOf(after.positions, node)
-		return Boolean(node.data.namespace) && (was.x !== now.x || was.y !== now.y)
-	})
+const reveal = (model: Model, status: LayoutStatus, positions: Positions): Model =>
+	autoFit(withPositions({ ...model, layout: { status, positions }, revealed: true }), !model.revealed)
 
 const fallBack = (model: Model, signature: string): Model =>
 	signature === model.graph.signature && model.layout.status === "pending"
-		? reveal(model, "fallback", fallbackPositions(model.graph, model.layout.positions))
+		? reveal(
+				model,
+				"fallback",
+				model.fallback.signature === signature
+					? model.fallback.positions
+					: fallbackPositions(model.graph, model.layout.positions),
+			)
 		: model
 
 const savedCameraOf = (snapshots: ReadonlyArray<Snapshot>, signature: string) =>
@@ -294,11 +305,15 @@ const applyGraph = (model: Model, graph: EffectiveGraph): Return => {
 	if (graph.signature === model.graph.signature) return { model: withPositions({ ...model, graph }) }
 	const savedCamera = savedCameraOf(model.snapshots, graph.signature)
 	const anchor = model.layout.positions
-	const positions = model.revealed ? { ...fallbackPositions(graph, anchor), ...anchor } : anchor
+	// One synchronous layout per signature (legacy's `fallbackPositions` memo): the bridge places
+	// new nodes by it, and it is the layout shown if ELK fails or is late.
+	const fallback = fallbackPositions(graph, anchor)
+	const positions = model.revealed ? { ...fallback, ...anchor } : anchor
 	const next = withPositions({
 		...model,
 		graph,
 		layout: { status: "pending", positions },
+		fallback: { signature: graph.signature, positions: fallback },
 		hasSavedCamera: Option.isSome(savedCamera),
 		canvas: Option.match(savedCamera, {
 			onNone: () => model.canvas,
@@ -370,6 +385,7 @@ export const init = (source: SourceGraph, config: MapConfig): Return => {
 		graph,
 		...prefs,
 		layout: { status: "pending", positions: {} },
+		fallback: { signature: "", positions: {} },
 		revealed: false,
 		selectedId: Option.none(),
 		colorMode: "service",
@@ -475,7 +491,9 @@ const awaitBridgePaint = (model: Model): Return => {
 }
 
 const passToCanvas = (model: Model, message: Canvas.Message): Return => ({
-	model: modifyFields(model, { canvas: () => Canvas.update(model.canvas, message, placedNodes(model)) }),
+	model: modifyFields(model, {
+		canvas: () => Canvas.update(model.canvas, message, placedNodes(model), boxTargets(model)),
+	}),
 })
 
 /** `onMoveEnd`: the last camera of a burst is written 400 ms later. */
@@ -519,10 +537,27 @@ const step = (model: Model, message: Message): Return =>
 				signature !== model.graph.signature
 					? model
 					: Option.exists(model.bridge, (bridge) => bridge.signature === signature)
-						? { ...model, heldLayout: Option.some({ signature, positions }) }
+						? {
+								...model,
+								heldLayout: Option.some({ signature, status: "ready" as const, positions }),
+							}
 						: reveal(model, "ready", positions),
 		}),
-		FailedElkLayout: ({ signature }) => ({ model: fallBack(model, signature) }),
+		// A failure lands after the bridge's frame too; legacy then shows the signature's fallback.
+		FailedElkLayout: ({ signature }) =>
+			Option.exists(model.bridge, (bridge) => bridge.signature === signature) &&
+			model.fallback.signature === signature
+				? {
+						model: {
+							...model,
+							heldLayout: Option.some({
+								signature,
+								status: "fallback" as const,
+								positions: model.fallback.positions,
+							}),
+						},
+					}
+				: { model: fallBack(model, signature) },
 		ElapsedLayoutGrace: ({ signature }) => ({ model: fallBack(model, signature) }),
 		PaintedBridge: ({ signature }) => {
 			if (!Option.exists(model.bridge, (bridge) => bridge.signature === signature)) return { model }
@@ -532,7 +567,7 @@ const step = (model: Model, message: Message): Return =>
 					onNone: () => cleared,
 					onSome: (held) =>
 						held.signature === model.graph.signature
-							? reveal(cleared, "ready", held.positions)
+							? reveal(cleared, held.status, held.positions)
 							: cleared,
 				}),
 			}
@@ -547,13 +582,7 @@ const step = (model: Model, message: Message): Return =>
 				hasSavedCamera: false,
 				snapshots: model.snapshots.filter((s) => s.signature !== model.graph.signature),
 			})
-			// Legacy's deferred fit is cancelled the same way when the reset re-sizes the boxes.
-			return {
-				model:
-					reset.positions !== model.positions && isBoxResize(model, reset)
-						? reset
-						: requestMapFit(reset, true),
-			}
+			return { model: requestMapFit(reset, true) }
 		},
 		ChangedReducedMotion: ({ reduced }) => ({ model: { ...model, reducedMotion: reduced } }),
 		CompletedMountParticles: () => ({ model }),

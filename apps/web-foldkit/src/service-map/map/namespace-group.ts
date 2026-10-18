@@ -57,14 +57,20 @@ const box = <M>(h: HtmlBuilder<M>, label: string, hue: number, onCollapse: M): H
 		],
 	)
 
-/** One box per namespace around its measured service nodes, painted behind them. */
-export const namespaceBoxes = <M>(
-	h: HtmlBuilder<M>,
+export interface NamespaceBox {
+	readonly id: string
+	readonly namespace: string
+	readonly position: { readonly x: number; readonly y: number }
+	readonly width: number
+	readonly height: number
+}
+
+/** Each namespace's box: its service nodes' extent (measured, else the fallback size) plus padding. */
+export const namespaceBoxRects = (
 	graph: EffectiveGraph,
 	positions: Positions,
 	measured: Readonly<Record<string, MeasuredNode>>,
-	onCollapse: (namespace: string) => M,
-): ReadonlyArray<Html> => {
+): ReadonlyArray<NamespaceBox> => {
 	const extents = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
 	for (const node of graph.nodes) {
 		const ns = node.data.namespace
@@ -80,17 +86,31 @@ export const namespaceBoxes = <M>(
 			ext.maxY = Math.max(ext.maxY, y + hgt)
 		} else extents.set(ns, { minX: x, minY: y, maxX: x + w, maxY: y + hgt })
 	}
-	return [...extents].map(([ns, ext]) => {
-		const width = ext.maxX - ext.minX + NS_PADDING_X * 2
-		const height = ext.maxY - ext.minY + NS_LABEL_HEIGHT + NS_PADDING_Y * 2
-		return flowNode(h, {
-			id: nsGroupId(ns),
+	return [...extents].map(([ns, ext]) => ({
+		id: nsGroupId(ns),
+		namespace: ns,
+		position: { x: ext.minX - NS_PADDING_X, y: ext.minY - (NS_LABEL_HEIGHT + NS_PADDING_Y) },
+		width: ext.maxX - ext.minX + NS_PADDING_X * 2,
+		height: ext.maxY - ext.minY + NS_LABEL_HEIGHT + NS_PADDING_Y * 2,
+	}))
+}
+
+/** One box per namespace around its measured service nodes, painted behind them. */
+export const namespaceBoxes = <M>(
+	h: HtmlBuilder<M>,
+	graph: EffectiveGraph,
+	positions: Positions,
+	measured: Readonly<Record<string, MeasuredNode>>,
+	onCollapse: (namespace: string) => M,
+): ReadonlyArray<Html> =>
+	namespaceBoxRects(graph, positions, measured).map((rect) =>
+		flowNode(h, {
+			id: rect.id,
 			type: "namespaceGroup",
-			position: { x: ext.minX - NS_PADDING_X, y: ext.minY - (NS_LABEL_HEIGHT + NS_PADDING_Y) },
+			position: rect.position,
 			measured: true,
 			focusable: false,
-			style: { width: `${width}px`, height: `${height}px`, "pointer-events": "none" },
-			children: [box(h, ns, getValueHue(ns) ?? 0, onCollapse(ns))],
-		})
-	})
-}
+			style: { width: `${rect.width}px`, height: `${rect.height}px`, "pointer-events": "none" },
+			children: [box(h, rect.namespace, getValueHue(rect.namespace) ?? 0, onCollapse(rect.namespace))],
+		}),
+	)
