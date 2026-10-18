@@ -45,7 +45,33 @@ const loaded = (search: Model["search"] = {}, rule = ruleRow(2, { name: "Payment
 		Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
 	].reduce((model, message) => pageUpdate(model, message).model, init(route(search), context).model)
 
+const totals = { total: 0, breached: 0, healthy: 0, skipped: 0, error: 0, transitions: 0 }
+const firstPage = (nextCursor: string) => ({
+	checks: [],
+	hasMore: true,
+	nextCursor,
+	summary: { bucketSeconds: 60, totals, points: [] },
+})
+const withChecks = (model: Model, cursor: string) =>
+	pageUpdate(model, Message.CompletedFetchChecks({ key: model.checks.key ?? "", result: Result.succeed(firstPage(cursor)) })).model
+
 describe("alert rule", () => {
+	test("load more answers only its own window: a new window's panel starts over with its own cursor", () => {
+		const shown = withChecks(loaded(), "cursor-a")
+		const loading = pageUpdate(shown, Message.ClickedLoadMoreChecks())
+		expect(loading.commands?.[0]?.args).toMatchObject({ cursor: "cursor-a" })
+		expect(pageUpdate(loading.model, Message.ClickedLoadMoreChecks()).commands ?? []).toEqual([])
+		const nextWindow = { startTime: "2026-09-30 13:00:00", endTime: "2026-10-01 13:00:00" }
+		const moved = pageUpdate(loading.model, Message.CompletedResolveWindow({ window: nextWindow, nowMs: NOW, mode: "Load" })).model
+		expect(pageUpdate(moved, Message.ClickedLoadMoreChecks()).commands ?? []).toEqual([])
+		const generation = loading.commands?.[0]?.args !== undefined && "generation" in loading.commands[0].args ? Number(loading.commands[0].args.generation) : 0
+		const late = Message.CompletedLoadMoreChecks({ generation, result: Result.succeed({ checks: [], nextCursor: "cursor-a2" }) })
+		const dropped = pageUpdate(moved, late).model
+		expect(dropped.nextCursorOverride).toBeUndefined()
+		const fresh = withChecks(dropped, "cursor-b")
+		expect(pageUpdate(fresh, Message.ClickedLoadMoreChecks()).commands?.[0]?.args).toMatchObject({ cursor: "cursor-b" })
+	})
+
 	test("entry resolves the window; the checks and the preview follow the window and the rule", () => {
 		const entered = init(route(), context)
 		expect(names(entered.commands)).toEqual([

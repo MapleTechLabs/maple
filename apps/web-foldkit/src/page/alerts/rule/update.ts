@@ -3,7 +3,7 @@ import { IsoDateTimeString } from "@maple/domain/http"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
 import { Option, Result } from "effect"
-import { Command } from "foldkit"
+import { AsyncData, Command } from "foldkit"
 import * as Chart from "../../../charts/chart"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
@@ -114,6 +114,7 @@ export const init = (route: RuleRoute, context: PageContext): Return => {
 		isShowingAllIncidents: false,
 		extraChecks: [],
 		isLoadingMoreChecks: false,
+		checksGeneration: 0,
 		isDiagnosisExpanded: null,
 		isShowingAllStages: false,
 		selectedGroup: null,
@@ -251,7 +252,9 @@ const selectBucket = (model: Model, index: number | null): Return => {
 const loadMoreChecks = (model: Model): Return => {
 	const page = checksPageOf(model)
 	const cursor = model.nextCursorOverride === undefined ? (page?.nextCursor ?? null) : model.nextCursorOverride
-	if (cursor === null || model.isLoadingMoreChecks || model.window === null) return { model }
+	// The first page must answer the current window: a previous window's page holds its cursor.
+	const isCurrentPage = AsyncData.isSuccess(model.checks.data)
+	if (cursor === null || !isCurrentPage || model.isLoadingMoreChecks || model.window === null) return { model }
 	return {
 		model: { ...model, isLoadingMoreChecks: true },
 		commands: [
@@ -261,6 +264,7 @@ const loadMoreChecks = (model: Model): Return => {
 				until: isoOf(model.window.endTime),
 				cursor,
 				status: model.checkStatusFilter,
+				generation: model.checksGeneration,
 			}),
 		],
 	}
@@ -278,6 +282,7 @@ const resetChecksPanel = (model: Model): Model => ({
 	extraChecks: [],
 	nextCursorOverride: undefined,
 	isLoadingMoreChecks: false,
+	checksGeneration: model.checksGeneration + 1,
 })
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -322,8 +327,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}),
 		ClickedShowAllIncidents: () => ({ model: { ...model, isShowingAllIncidents: true } }),
 		ClickedLoadMoreChecks: () => loadMoreChecks(model),
-		CompletedLoadMoreChecks: ({ result }) =>
-			Result.match(result, {
+		CompletedLoadMoreChecks: ({ generation, result }) =>
+			generation !== model.checksGeneration
+				? { model }
+				: Result.match(result, {
 				onSuccess: ({ checks, nextCursor }) => ({
 					model: {
 						...model,

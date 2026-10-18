@@ -46,6 +46,7 @@ export const Message = defineMessageUnion({
 	ClickedShowAllIncidents: {},
 	ClickedLoadMoreChecks: {},
 	CompletedLoadMoreChecks: {
+		generation: Schema.Number,
 		result: Schema.Result(
 			Schema.Struct({ checks: Schema.Array(AlertCheckDocument), nextCursor: Schema.NullOr(Schema.String) }),
 			LoadFailure,

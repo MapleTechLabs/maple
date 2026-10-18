@@ -121,9 +121,10 @@ export const LoadMoreChecks = Command.define("LoadMoreAlertRuleChecks", {
 		until: IsoDateTimeString,
 		cursor: Schema.String,
 		status: CheckStatusFilter,
+		generation: Schema.Number,
 	},
 	messages: [Message.CompletedLoadMoreChecks],
-	execute: ({ ruleId, since, until, cursor, status }) =>
+	execute: ({ ruleId, since, until, cursor, status, generation }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const query = { since, until, limit: PAGE_LIMIT, cursor }
@@ -135,7 +136,7 @@ export const LoadMoreChecks = Command.define("LoadMoreAlertRuleChecks", {
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedLoadMoreChecks({ result })),
+			Effect.map((result) => Message.CompletedLoadMoreChecks({ generation, result })),
 		),
 })
 

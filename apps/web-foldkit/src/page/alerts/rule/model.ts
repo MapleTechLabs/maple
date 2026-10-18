@@ -90,6 +90,8 @@ export const Model = Schema.Struct({
 	extraChecks: Schema.Array(AlertCheckDocument),
 	nextCursorOverride: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	isLoadingMoreChecks: Schema.Boolean,
+	/** Bumped when the panel starts over (window or filter): a load-more for an older one is dropped. */
+	checksGeneration: Schema.Number,
 	/** `RuleDiagnosisPanel`: the header toggle (`null` follows the verdict), steps and evidence. */
 	isDiagnosisExpanded: Schema.NullOr(Schema.Boolean),
 	isShowingAllStages: Schema.Boolean,
