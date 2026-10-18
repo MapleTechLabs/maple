@@ -1,0 +1,44 @@
+import * as AttributesPanel from "@maple/web-foldkit/ui/attributes/attributes-panel"
+import * as Tabs from "@maple/web-foldkit/ui/tabs"
+import { SpanNodeData } from "@maple/web-foldkit/page/traces/detail/trace-data"
+import { CopyState } from "@maple/web-foldkit/page/traces/detail/span-panel/model"
+import { Schema } from "effect"
+import { SlotSchema } from "../../data/slot"
+
+// apps/local-ui/src/components/span-detail-panel.tsx as Model data: the selected span, its lazily
+// loaded attribute maps and logs, the Details / Logs tabs and the copy and disclosure state.
+
+/** `useLocalSpanDetail`: the full attribute maps; null when the point lookup found no row. */
+export const SpanAttrs = Schema.NullOr(
+	Schema.Struct({
+		spanAttributes: Schema.Record(Schema.String, Schema.String),
+		resourceAttributes: Schema.Record(Schema.String, Schema.String),
+	}),
+)
+export type SpanAttrs = typeof SpanAttrs.Type
+
+/** The `LocalLog` fields a Logs-tab row reads, plus its `logKey`. */
+export const SpanLog = Schema.Struct({
+	key: Schema.String,
+	timestamp: Schema.String,
+	severityText: Schema.String,
+	body: Schema.String,
+})
+export type SpanLog = typeof SpanLog.Type
+
+/** Matches the query limit of `useLocalSpanLogs`; a full page means "at least". */
+export const LOG_LIMIT = 100
+
+export const PanelModel = Schema.Struct({
+	span: SpanNodeData,
+	detail: SlotSchema(SpanAttrs),
+	logs: SlotSchema(Schema.Array(SpanLog)),
+	tabs: Tabs.Model,
+	/** Copy status by target id (`span-name`, `duration`, `span-id`, ...). */
+	copies: Schema.Record(Schema.String, CopyState),
+	isErrorExpanded: Schema.Boolean,
+	attributes: AttributesPanel.Model,
+})
+export type PanelModel = typeof PanelModel.Type
+
+export const PANEL_TABS = ["details", "logs"] as const

@@ -1,5 +1,5 @@
 import type { Locator, Page } from "playwright"
-import type { TargetName } from "../config.ts"
+import type { AppName, TargetName } from "../config.ts"
 import type { Faults } from "../contract.ts"
 
 /**
@@ -33,6 +33,8 @@ export interface Scenario {
 	 * build it captures is one of these, e.g. `["foldkit"]` for a Foldkit-only lab probe.
 	 */
 	readonly targets?: ReadonlyArray<TargetName>
+	/** The app the screen belongs to (default `"web"`); only builds of that app capture it. */
+	readonly app?: AppName
 	/** Delays and failures on top of the dataset's (`contract.ts`), e.g. a held or failing execute-batch. */
 	readonly faults?: Faults
 	/**

@@ -48,4 +48,15 @@ export interface Dataset extends DatasetSummary {
 	readonly telemetry: TelemetryRows
 	/** Deliberate delays and failures for every scenario on this dataset (scenarios add their own). */
 	readonly faults?: Faults
+	/** The local-mode server apps/local-ui talks to (`/local/query`, `/local/status`). */
+	readonly local?: LocalStore
+}
+
+/** One `maple start` server: its own chDB database, every row under local mode's OrgId `local`. */
+export interface LocalStore {
+	/** chDB database the rows live in, so stores never share the `local` org. */
+	readonly database: string
+	readonly rows: TelemetryRows
+	/** `/local/status`'s `lastIngestAtMs` as an ISO instant; `null` = nothing since the server started. */
+	readonly lastIngestAt: string | null
 }

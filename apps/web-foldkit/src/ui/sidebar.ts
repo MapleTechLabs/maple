@@ -25,6 +25,7 @@ import {
 	sidebarMenuSubButtonStyles,
 	sidebarMenuSubItemStyles,
 	sidebarMenuSubStyles,
+	sidebarRailStyles,
 	sidebarSeparatorStyles,
 	sidebarTriggerLabelStyles,
 	sidebarTriggerStyles,
@@ -118,8 +119,8 @@ export const sidebarDesktop = <Message>(
 	)
 // SIDEBAR PARTS
 
-export const sidebarHeader = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
-	h.div([h.Class(cn(sidebarHeaderStyles)), ...slot(h, "header")], children)
+export const sidebarHeader = <Message>(h: HtmlBuilder<Message>, children: Children, className?: string): Html =>
+	h.div([h.Class(cn(sidebarHeaderStyles, className)), ...slot(h, "header")], children)
 
 export const sidebarFooter = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
 	h.div([h.Class(cn(sidebarFooterStyles)), ...slot(h, "footer")], children)
@@ -275,6 +276,8 @@ export type SidebarMenuButtonOptions<Message> = Readonly<{
 	isActive?: boolean
 	/** Rendered as a router link instead of a button. */
 	link?: LinkTarget
+	/** `render={<a href />}`: a plain anchor, no router active state (apps/local-ui's hash links). */
+	href?: string
 	/** `tooltip` was given: Base UI marks the element as a tooltip trigger. */
 	hasTooltip?: boolean
 	/** `data-slot` when the button is another primitive's trigger (`dropdown-menu-trigger`). */
@@ -300,6 +303,7 @@ export const sidebarMenuButton = <Message>(
 		h.DataAttribute("slot", options.slot ?? "sidebar-menu-button"),
 		...(options.attributes ?? []),
 	]
+	if (options.href !== undefined) return h.a([h.Href(options.href), ...attributes], children)
 	if (options.link === undefined) return h.button([h.Type("button"), ...attributes], children)
 	return h.a(
 		[
@@ -339,6 +343,22 @@ export const sidebarMenuSubButton = <Message>(
 		children,
 	)
 }
+
+/** `<SidebarRail>`: the edge strip that toggles the sidebar, out of the tab order. */
+export const sidebarRail = <Message>(h: HtmlBuilder<Message>, onToggle: Message): Html =>
+	h.button(
+		[
+			h.AriaLabel("Toggle sidebar"),
+			h.Class(cn(...sidebarRailStyles)),
+			h.DataAttribute("sidebar", "rail"),
+			h.DataAttribute("slot", "sidebar-rail"),
+			h.OnClick(onToggle),
+			h.Tabindex(-1),
+			h.Title("Toggle sidebar"),
+			h.Type("button"),
+		],
+		[],
+	)
 
 /** `<SidebarInset>`: the page column beside the sidebar. */
 export const sidebarInset = <Message>(

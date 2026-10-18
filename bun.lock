@@ -248,6 +248,33 @@
         "vitest": "catalog:",
       },
     },
+    "apps/local-ui-foldkit": {
+      "name": "@maple/local-ui-foldkit",
+      "dependencies": {
+        "@floating-ui/dom": "1.8.0",
+        "@foldkit/ui": "0.168.0",
+        "@fontsource-variable/geist": "^5.3.0",
+        "@fontsource-variable/geist-mono": "^5.3.0",
+        "@maple/domain": "workspace:*",
+        "@maple/query-engine": "workspace:*",
+        "@tanstack/charts": "catalog:charts",
+        "@tanstack/charts-scales": "catalog:charts",
+        "effect": "catalog:effect",
+        "foldkit": "0.168.0",
+        "sugar-high": "^2.5.1",
+      },
+      "devDependencies": {
+        "@effect/language-service": "catalog:effect",
+        "@foldkit/vite-plugin": "0.27.1",
+        "@tailwindcss/vite": "catalog:tailwind",
+        "@types/node": "catalog:tooling",
+        "tailwindcss": "catalog:tailwind",
+        "tw-animate-css": "catalog:tailwind",
+        "typescript": "catalog:tooling",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "apps/sandbox": {
       "name": "@maple/sandbox",
       "dependencies": {
@@ -1730,6 +1757,8 @@
     "@maple/landing": ["@maple/landing@workspace:apps/landing"],
 
     "@maple/local-ui": ["@maple/local-ui@workspace:apps/local-ui"],
+
+    "@maple/local-ui-foldkit": ["@maple/local-ui-foldkit@workspace:apps/local-ui-foldkit"],
 
     "@maple/primitives": ["@maple/primitives@workspace:packages/primitives"],
 

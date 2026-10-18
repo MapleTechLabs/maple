@@ -24,7 +24,18 @@ parity run                    # capture legacy and foldkit, diff, write the repo
 | `legacy`      | `apps/web` at `LEGACY_BASELINE_REF`, detached worktree in `~/.cache/maple-ui-parity/worktrees` | base + 1     |
 | `foldkit`     | `apps/web-foldkit` (working tree)                                                              | base + 2     |
 | `legacy-head` | `apps/web` (working tree)                                                                      | base + 4     |
+| `local-legacy` | `apps/local-ui` at `LEGACY_BASELINE_REF` (the same pinned worktree as `legacy`)               | base + 5     |
+| `local-legacy-head` | `apps/local-ui` (working tree)                                                            | base + 6     |
+| `local-foldkit` | `apps/local-ui-foldkit` (working tree)                                                       | base + 7     |
 
+- **Local mode.** The `local-*` targets build apps/local-ui and its Foldkit port. They only capture
+  scenarios with `app: "local"` (`src/scenarios/local.ts`), and web targets only the others; a run
+  across apps is refused. local-ui calls its server same-origin (`/local/query`, `/local/status`), so
+  captures forward those canonical-origin paths to the fixture backend, which answers them from
+  `src/backend/local.ts`: the CLI's own query guard (`apps/cli/src/server/query-guard.ts`) on chDB,
+  one database per dataset `local` store (rows under OrgId `local`). Calls are logged as
+  `local.query` (payload: the SQL) and `local.status`, which is logged once per capture because its
+  poll count follows wall time. Faults use the same tags.
 - The pinned worktree is created on first use: `git worktree add --detach`, `bun install --frozen-lockfile`,
   `bun run --cwd packages/effect-sdk build`. A `.parity-setup-done` marker makes a half-done setup retry.
 - Builds are production `vite build`s with every URL pointed at the fixture backend (`buildEnv` in
