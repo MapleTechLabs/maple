@@ -1,3 +1,5 @@
+import { byTypeFromCached, errorsKey, facetsFromCached, summaryFromCached, tracesFromCached, tracesKey } from "./cache"
+import { withCache } from "../../data/cached"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { type ErrorsFilters, fetchErrorsByType, fetchErrorsFacets, fetchErrorsSummary, fetchErrorTraces } from "./fetch"
@@ -31,43 +33,64 @@ export const ReadRefreshClock = Command.define("ReadErrorsRefreshClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadRefreshClock({ nowMs })),
 })
 
+const same = <A>(data: A) => data
+
 export const FetchSummary = Command.define("FetchLocalErrorsSummary", {
-	args: RequestArgs,
-	messages: [Message.SucceededFetchSummary, Message.FailedFetchSummary],
-	execute: ({ key, search, startTime, endTime, apiBase }) =>
-		fetchErrorsSummary(filtersOf(search), { startTime, endTime }, apiBase).pipe(
-			Effect.map((summary) => Message.SucceededFetchSummary({ key, summary })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchSummary({ key, failure }))),
-		),
+	args: { ...RequestArgs, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchSummary, Message.FailedFetchSummary, Message.FoundCachedSummary],
+	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
+		withCache({
+			key: errorsKey("summary", { search, startTime, endTime }),
+			readsCache,
+			fromCached: summaryFromCached,
+			toCached: same,
+			fetch: fetchErrorsSummary(filtersOf(search), { startTime, endTime }, apiBase),
+			found: (cached) => Message.FoundCachedSummary({ key, cached }),
+			succeeded: (summary, fetchedAtMs) => Message.SucceededFetchSummary({ key, summary, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSummary({ key, failure })))),
 })
 
 export const FetchByType = Command.define("FetchLocalErrorsByType", {
-	args: RequestArgs,
-	messages: [Message.SucceededFetchByType, Message.FailedFetchByType],
-	execute: ({ key, search, startTime, endTime, apiBase }) =>
-		Effect.gen(function* () {
-			const rows = yield* fetchErrorsByType(filtersOf(search), { startTime, endTime }, apiBase)
-			const fetchedAtMs = yield* Clock.currentTimeMillis
-			return Message.SucceededFetchByType({ key, rows, fetchedAtMs })
+	args: { ...RequestArgs, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchByType, Message.FailedFetchByType, Message.FoundCachedByType],
+	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
+		withCache({
+			key: errorsKey("by-type", { search, startTime, endTime }),
+			readsCache,
+			fromCached: byTypeFromCached,
+			toCached: same,
+			fetch: fetchErrorsByType(filtersOf(search), { startTime, endTime }, apiBase),
+			found: (cached) => Message.FoundCachedByType({ key, cached }),
+			succeeded: (rows, fetchedAtMs) => Message.SucceededFetchByType({ key, rows, fetchedAtMs }),
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchByType({ key, failure })))),
 })
 
 export const FetchFacets = Command.define("FetchLocalErrorsFacets", {
-	args: RequestArgs,
-	messages: [Message.SucceededFetchFacets, Message.FailedFetchFacets],
-	execute: ({ key, search, startTime, endTime, apiBase }) =>
-		fetchErrorsFacets(filtersOf(search), { startTime, endTime }, apiBase).pipe(
-			Effect.map((facets) => Message.SucceededFetchFacets({ key, facets })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchFacets({ key, failure }))),
-		),
+	args: { ...RequestArgs, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchFacets, Message.FailedFetchFacets, Message.FoundCachedFacets],
+	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
+		withCache({
+			key: errorsKey("facets", { search, startTime, endTime }),
+			readsCache,
+			fromCached: facetsFromCached,
+			toCached: same,
+			fetch: fetchErrorsFacets(filtersOf(search), { startTime, endTime }, apiBase),
+			found: (cached) => Message.FoundCachedFacets({ key, cached }),
+			succeeded: (facets, fetchedAtMs) => Message.SucceededFetchFacets({ key, facets, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchFacets({ key, failure })))),
 })
 
 export const FetchTraces = Command.define("FetchLocalErrorTraces", {
-	args: { ...RequestArgs, fingerprintHash: Schema.String },
-	messages: [Message.SucceededFetchTraces, Message.FailedFetchTraces],
-	execute: ({ key, fingerprintHash, search, startTime, endTime, apiBase }) =>
-		fetchErrorTraces(fingerprintHash, filtersOf(search), { startTime, endTime }, apiBase).pipe(
-			Effect.map((traces) => Message.SucceededFetchTraces({ fingerprintHash, key, traces })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchTraces({ fingerprintHash, key, failure }))),
-		),
+	args: { ...RequestArgs, fingerprintHash: Schema.String, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchTraces, Message.FailedFetchTraces, Message.FoundCachedTraces],
+	execute: ({ key, fingerprintHash, search, startTime, endTime, apiBase, readsCache }) =>
+		withCache({
+			key: tracesKey(fingerprintHash, { search, startTime, endTime }),
+			readsCache,
+			fromCached: tracesFromCached,
+			toCached: same,
+			fetch: fetchErrorTraces(fingerprintHash, filtersOf(search), { startTime, endTime }, apiBase),
+			found: (cached) => Message.FoundCachedTraces({ fingerprintHash, key, cached }),
+			succeeded: (traces, fetchedAtMs) => Message.SucceededFetchTraces({ fingerprintHash, key, traces, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchTraces({ fingerprintHash, key, failure })))),
 })

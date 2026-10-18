@@ -69,7 +69,7 @@ describe("local errors", () => {
 		const opened = pageUpdate(model, Message.ClickedErrorType({ fingerprintHash: "fp1" }))
 		expect(names(opened.commands)).toEqual(["FetchLocalErrorTraces"])
 		const key = opened.model.cards.fp1?.traces.key ?? ""
-		const answered = pageUpdate(opened.model, Message.SucceededFetchTraces({ fingerprintHash: "fp1", key, traces: [] }))
+		const answered = pageUpdate(opened.model, Message.SucceededFetchTraces({ fingerprintHash: "fp1", key, traces: [], fetchedAtMs: 0 }))
 		scene(
 			{ update: pageUpdate, view },
 			given(answered.model),
