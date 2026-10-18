@@ -143,7 +143,11 @@ const loadedRail = (
 					}),
 			facetSection(h, model, "Service", "services", facets.services, {
 				isSearchable: true,
-				colorOf: getServiceColor,
+				// `serviceColorMap` covers the facet's services only: a selected unknown one has no swatch.
+				colorOf: (name) =>
+					facets.services.some((option) => option.name === name)
+						? getServiceColor(name)
+						: undefined,
 			}),
 		]),
 	])
