@@ -406,6 +406,7 @@ const withChart = (model: Model, chartId: string, message: Chart.Message): Retur
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
+		CompletedMountLinkedCursor: () => ({ model }),
 		CompletedReadEntry: ({ nowMs, hint }) =>
 			sync({ ...model, nowMs, hint, facetsWindow: facetsWindowAt(nowMs) }, context, "Load"),
 		CompletedResolveClock: ({ nowMs }) => sync({ ...model, nowMs }, context, "Refresh"),

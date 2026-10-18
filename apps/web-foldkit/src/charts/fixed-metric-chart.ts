@@ -8,7 +8,6 @@ import { plotFrame } from "./plot-frame"
 
 // The `PlotFrame` half of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`, with
 // `PlotTooltipBody` as the tooltip. Embed it with `h.submodel`; the definition is built in the Mount.
-// TODO(tooltip-highlight): the series nearest the pointer is not emphasised (`resolveTooltipHighlight`).
 
 export interface FixedMetricChartInputs {
 	readonly chartId: string

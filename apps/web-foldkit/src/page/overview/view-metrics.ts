@@ -3,13 +3,14 @@ import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { AsyncData as FoldkitAsyncData } from "foldkit"
+import { AsyncData as FoldkitAsyncData, Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../charts/chart"
 import { chartSkeleton, type ChartSkeletonVariant } from "../../ui/chart-skeleton"
+import { chartEmpty } from "../../ui/chart-state"
 import * as FixedMetricChart from "../../charts/fixed-metric-chart"
 import type { FixedMetricChartInputs } from "../../charts/fixed-metric-chart"
-import { LINKED_CURSOR_STYLE, linkedCursorOverlay } from "../../charts/linked-cursor"
+import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "../../charts/linked-cursor"
 import {
 	fixedMetricModel,
 	type FixedMetricSeries,
@@ -55,6 +56,8 @@ type CardBody =
 	| Readonly<{ _tag: "Loading" }>
 	| Readonly<{ _tag: "Failed"; failure: LoadFailure; retry: RetryTarget }>
 	| Readonly<{ _tag: "Chart"; spec: Spec; ariaLabel: string }>
+	/** `item.data.length === 0`: a chart handed no rows draws bare axes and says nothing. */
+	| Readonly<{ _tag: "Empty" }>
 
 export type GridItem = Readonly<{
 	id: string
@@ -130,6 +133,7 @@ const latencyColors = (context: GridContext) =>
 	Object.fromEntries(LATENCY_SERIES.map((entry) => [entry.key, resolveColor(context.colors, entry.token)]))
 
 const LOADING: CardBody = { _tag: "Loading" }
+const EMPTY: CardBody = { _tag: "Empty" }
 
 /** `OVERVIEW_CHARTS` with the `metrics` memo's data, loading, error, header value and footer. */
 export const gridItems = <M>(
@@ -144,11 +148,9 @@ export const gridItems = <M>(
 	const chart = (body: CardBody) => (context.isChartReady || body._tag !== "Chart" ? body : LOADING)
 	const overviewBody = (spec: (rows: ReadonlyArray<FixedMetricRow>) => Spec, ariaLabel: string) =>
 		chart(
-			bodyOf(model.overviewSeries.data, "Overview", () => ({
-				_tag: "Chart",
-				spec: spec(overviewRows),
-				ariaLabel,
-			})),
+			bodyOf(model.overviewSeries.data, "Overview", (): CardBody =>
+				overviewRows.length === 0 ? EMPTY : { _tag: "Chart", spec: spec(overviewRows), ariaLabel },
+			),
 		)
 	const isOverviewSettled =
 		!FoldkitAsyncData.isIdle(model.overviewSeries.data) &&
@@ -170,11 +172,15 @@ export const gridItems = <M>(
 		"Latency percentiles",
 	)
 	const logBody = chart(
-		bodyOf(model.logSeries.data, "LogVolume", (rows) => ({
-			_tag: "Chart",
-			spec: specOf("Throughput", rows, throughput, context, false, "log-volume"),
-			ariaLabel: "Throughput",
-		})),
+		bodyOf(model.logSeries.data, "LogVolume", (rows): CardBody =>
+			rows.length === 0
+				? EMPTY
+				: {
+						_tag: "Chart",
+						spec: specOf("Throughput", rows, throughput, context, false, "log-volume"),
+						ariaLabel: "Throughput",
+					},
+		),
 	)
 	return [
 		{
@@ -236,7 +242,6 @@ export const gridItems = <M>(
 	]
 }
 
-// TODO(linked-cursor): the grid's pointer tracking (`useLinkedCursor`) is not ported; the cursor stays hidden.
 const cardContent = (h: HtmlBuilder<Message>, model: Model, item: GridItem): Html => {
 	switch (item.body._tag) {
 		case "Loading":
@@ -248,6 +253,8 @@ const cardContent = (h: HtmlBuilder<Message>, model: Model, item: GridItem): Htm
 				className: "border-0",
 				onRetry: Message.ClickedRetry({ target: item.body.retry }),
 			})
+		case "Empty":
+			return chartEmpty(h, { hint: "Try a wider time range" }, ["No data in this window"])
 		case "Chart": {
 			const { spec, ariaLabel } = item.body
 			return h.div(
@@ -286,6 +293,7 @@ export const metricsGrid = (
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 			h.Class(cn("grid grid-cols-1 md:grid-cols-2 gap-3", refreshingClass(isWaiting), "mt-4")),
 			h.Style(LINKED_CURSOR_STYLE),
+			h.OnMount(Mount.mapMessage(MountLinkedCursor(), () => Message.CompletedMountLinkedCursor())),
 		],
 		items.map((item) =>
 			h.div(

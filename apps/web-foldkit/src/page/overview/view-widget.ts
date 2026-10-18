@@ -76,7 +76,8 @@ export type WidgetShellOptions = Readonly<{
 	contentClassName?: string
 }>
 
-// TODO(title-hint-tooltip): the hint's hover tooltip (`TooltipContent` with the text) is not ported.
+// No overview card sets `titleHint`, so its hover tooltip has nothing to show here; a page that
+// sets one wires a Tooltip Model to the trigger.
 const titleHint = <M>(
 	h: HtmlBuilder<M>,
 	title: string,
