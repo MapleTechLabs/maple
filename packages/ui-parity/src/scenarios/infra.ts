@@ -181,6 +181,14 @@ export const infraArea: AreaModule = {
 			page.getByRole("button", { name: "Install the Helm chart" }).click(),
 		),
 		scenario("pods-scope-ended","Pods: ended scope", "/infra/kubernetes/pods", K8S, clickText("Ended")),
+		...timed(
+			"pod-detail",
+			"Pod detail",
+			`/infra/kubernetes/pods/${PAYMENT_POD}?namespace=shop`,
+			K8S,
+			"queryEngine.pod",
+			"queryEngine.podDetailSummary",
+		),
 		scenario(
 			"pod-detail-memory",
 			"Pod detail: memory vs limit chart",

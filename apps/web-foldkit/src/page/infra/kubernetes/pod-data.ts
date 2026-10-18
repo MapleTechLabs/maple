@@ -1,6 +1,13 @@
-import { ListPodsResponse, PodRestartsResponse } from "@maple/domain/http"
+import { ListPodsResponse, PodDetailSummaryResponse, PodRestartsResponse } from "@maple/domain/http"
 import { summarizePodRestarts } from "@maple/web/components/infra/pod-restarts"
-import { listPods, podRestarts, type ListPodsInput, type PodRestartsInput } from "@maple/web-data/warehouse/infra"
+import {
+	listPods,
+	podDetailSummary,
+	podInfraTimeseries,
+	podRestarts,
+	type ListPodsInput,
+	type PodRestartsInput,
+} from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { toLoadFailure } from "../../../data/load-failure"
 
@@ -76,6 +83,53 @@ export const fetchRestarts = (input: RestartsInput) =>
 		Effect.mapError(toLoadFailure),
 		Effect.result,
 	)
+
+export const PodSummary = PodDetailSummaryResponse.fields.data
+export type PodSummary = PodDetailSummaryResponse["data"]
+
+export const PodSummaryInput = Schema.Struct({
+	podName: Schema.String,
+	namespace: Schema.optional(Schema.String),
+	startTime: Schema.String,
+	endTime: Schema.String,
+})
+export type PodSummaryInput = typeof PodSummaryInput.Type
+
+export const fetchPodSummary = (input: PodSummaryInput) =>
+	podDetailSummary({ data: input }).pipe(
+		Effect.map((response) => response.data),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+export const PodMetric = Schema.Literals(["cpu_usage", "cpu_limit", "cpu_request", "memory_limit", "memory_request"])
+export type PodMetric = typeof PodMetric.Type
+
+export const PodSeriesInput = Schema.Struct({
+	podName: Schema.String,
+	namespace: Schema.optional(Schema.String),
+	metric: PodMetric,
+	startTime: Schema.String,
+	endTime: Schema.String,
+	bucketSeconds: Schema.Number,
+})
+export type PodSeriesInput = typeof PodSeriesInput.Type
+
+export const fetchPodSeries = (input: PodSeriesInput) =>
+	podInfraTimeseries({ data: input }).pipe(
+		Effect.map((response) => ({ rows: response.data, unit: response.unit })),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+/** `POD_METRIC_LABELS` (k8s-detail-chart.tsx). */
+export const POD_METRIC_LABELS = new Map<PodMetric, string>([
+	["cpu_usage", "CPU usage"],
+	["cpu_limit", "CPU / limit"],
+	["cpu_request", "CPU / request"],
+	["memory_limit", "Memory / limit"],
+	["memory_request", "Memory / request"],
+])
 
 /** `PAGE_RESTARTS_LIMIT`: a page of 50 pods with a few containers each. */
 export const PAGE_RESTARTS_LIMIT = 500

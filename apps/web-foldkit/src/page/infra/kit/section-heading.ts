@@ -1,0 +1,37 @@
+import { cn } from "@maple/ui/lib/utils"
+import type { Html, HtmlBuilder } from "foldkit/html"
+
+// `SectionHeading` (apps/web/src/components/common/section-heading.tsx), the `title` variant.
+
+export type SectionHeadingOptions = Readonly<{
+	title: string
+	hint?: string
+	count?: Html | string
+	badge?: Html
+	actions?: Html
+	as?: "h2" | "h3"
+	className?: string
+}>
+
+export const sectionHeading = <M>(h: HtmlBuilder<M>, options: SectionHeadingOptions): Html => {
+	const titleChildren = [
+		options.title,
+		...(options.count === undefined
+			? []
+			: [h.span([h.Class("ml-2 font-mono text-xs text-muted-foreground")], [options.count])]),
+	]
+	const titleClass = h.Class("text-sm font-medium text-foreground")
+	const heading = h.div(
+		[h.Class(cn("flex items-baseline gap-2.5", options.actions === undefined && options.className))],
+		[
+			options.as === "h3" ? h.h3([titleClass], titleChildren) : h.h2([titleClass], titleChildren),
+			...(options.badge === undefined ? [] : [options.badge]),
+			...(options.hint ? [h.span([h.Class("text-xs text-muted-foreground")], [options.hint])] : []),
+		],
+	)
+	if (options.actions === undefined) return heading
+	return h.div(
+		[h.Class(cn("flex flex-wrap items-center justify-between gap-x-3 gap-y-2", options.className))],
+		[heading, options.actions],
+	)
+}
