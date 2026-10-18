@@ -13,6 +13,9 @@ import type { Model, TabModel } from "./model"
 import type * as McpMessage from "./mcp/message"
 import type * as McpModel from "./mcp/model"
 import * as Mcp from "./mcp/update"
+import type * as IngestionMessage from "./ingestion/message"
+import type * as IngestionModel from "./ingestion/model"
+import * as Ingestion from "./ingestion/update"
 import type * as KeysMessage from "./keys/message"
 import { Message as KeysMessageValue } from "./keys/message"
 import type * as KeysModel from "./keys/model"
@@ -54,6 +57,7 @@ export const activeTabOf = (model: Model): SettingsTab =>
 const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
 	["mcp", "Mcp"],
 	["keys", "Keys"],
+	["ingestion", "Ingestion"],
 ])
 const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
 
@@ -65,8 +69,23 @@ const sessionOf = (model: Model) => ({
 	userId: AsyncData.getOrElse(AsyncData.map(model.session, (session) => session.userId), () => null),
 })
 
-const initTab = (model: Model, tab: SettingsTab): Return => {
+/** The Ingestion tab's options: the quick-start key is the org in Clerk mode, `default` self-hosted. */
+export const ingestionOptionsOf = (model: Model, context: PageContext): Ingestion.InitOptions => ({
+	isAdmin: visibilityOf(model).isAdmin,
+	orgKey: isClerkAuthEnabled ? context.orgId : "default",
+	timeZone: context.timeZone,
+	pinnedNamespace: context.pinnedNamespace,
+})
+
+const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return => {
 	switch (tabTag(tab)) {
+		case "Ingestion": {
+			const step = Ingestion.init(ingestionOptionsOf(model, context))
+			return {
+				model: { ...model, tab: { _tag: "Ingestion", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotIngestionMessage({ message })),
+			}
+		}
 		case "Mcp": {
 			const step = Mcp.init()
 			return {
@@ -87,10 +106,10 @@ const initTab = (model: Model, tab: SettingsTab): Return => {
 }
 
 /** Mounts the active tab's section once the nav can resolve it, dropping the previous one. */
-const syncTab = (model: Model): Return => {
+const syncTab = (model: Model, context: PageContext): Return => {
 	if (isSettingsLoading(model)) return { model: { ...model, tab: null } }
 	const tab = activeTabOf(model)
-	return isTabCurrent(model.tab, tab) ? { model } : initTab(model, tab)
+	return isTabCurrent(model.tab, tab) ? { model } : initTab(model, tab, context)
 }
 
 // NAVIGATION
@@ -117,9 +136,9 @@ const auditLogSearchOf = (search: SettingsSearch): SettingsSearch => ({
 })
 
 /** Retired `?tab=` values `<Navigate replace>` to their new home before the page renders. */
-const enter = (model: Model): Return =>
+const enter = (model: Model, context: PageContext): Return =>
 	Option.match(resolveLegacySettingsTab(model.search.tab), {
-		onNone: () => syncTab(model),
+		onNone: () => syncTab(model, context),
 		onSome: (redirect) => ({
 			model: { ...model, tab: null },
 			outMessage: PageOutMessage.RequestedNavigation({ url: redirectUrl(redirect), isReplace: true }),
@@ -128,23 +147,40 @@ const enter = (model: Model): Return =>
 
 // ENTRY
 
-export const init = (route: SettingsRoute, _context: PageContext): Return => {
-	const entered = enter({
-		search: route.search,
-		nowMs: 0,
-		session: AsyncData.Loading(),
-		customer: AsyncData.Loading(),
-		apiKeys: null,
-		tab: null,
-	})
+export const init = (route: SettingsRoute, context: PageContext): Return => {
+	const entered = enter(
+		{
+			search: route.search,
+			nowMs: 0,
+			session: AsyncData.Loading(),
+			customer: AsyncData.Loading(),
+			apiKeys: null,
+			tab: null,
+		},
+		context,
+	)
 	return {
 		...entered,
 		commands: [ReadSettingsClock(), FetchSettingsSession(), FetchSettingsCustomer(), ...(entered.commands ?? [])],
 	}
 }
 
-export const routeChanged = (model: Model, route: SettingsRoute, _context: PageContext): Return =>
-	enter({ ...model, search: route.search })
+export const routeChanged = (model: Model, route: SettingsRoute, context: PageContext): Return =>
+	enter({ ...model, search: route.search }, context)
+
+const liftIngestion = (
+	model: Model,
+	current: IngestionModel.Model,
+	message: IngestionMessage.Message,
+	context: PageContext,
+): Return => {
+	const step = Ingestion.update(current, message, ingestionOptionsOf(model, context))
+	return {
+		model: { ...model, tab: { _tag: "Ingestion", model: step.model } },
+		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotIngestionMessage({ message: inner })),
+		outMessage: step.outMessage,
+	}
+}
 
 const liftMcp = (model: Model, current: McpModel.Model, message: McpMessage.Message): Return => {
 	const step = Mcp.update(current, message)
@@ -167,8 +203,14 @@ const liftKeys = (model: Model, current: KeysModel.Model, message: KeysMessage.M
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedFetchSession: ({ result }) => syncTab({ ...model, session: AsyncData.settle(model.session, result) }),
-		CompletedFetchCustomer: ({ result }) => syncTab({ ...model, customer: AsyncData.settle(model.customer, result) }),
+		CompletedFetchSession: ({ result }) =>
+			syncTab({ ...model, session: AsyncData.settle(model.session, result) }, context),
+		CompletedFetchCustomer: ({ result }) =>
+			syncTab({ ...model, customer: AsyncData.settle(model.customer, result) }, context),
+		GotIngestionMessage: ({ message: inner }) =>
+			model.tab !== null && model.tab._tag === "Ingestion"
+				? liftIngestion(model, model.tab.model, inner, context)
+				: { model },
 		ClickedTab: ({ tab }) => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({

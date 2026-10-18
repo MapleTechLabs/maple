@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from "../../web/node_modules/react-dom/server.no
 import * as UiIcons from "../../../packages/ui/src/components/icons/index.ts"
 import { MAPLE_MARK_PATH } from "../../../packages/ui/src/components/icons/maple-mark.tsx"
 import * as WebIcons from "../../web/src/components/icons/index.ts"
+import * as FrameworkIcons from "../../web/src/components/quick-start/framework-icons.tsx"
 
 type Icon = ComponentType<{ size?: string; className?: string }>
 
@@ -161,6 +162,12 @@ const NAMES = [
 	"LockIcon",
 	"MobileIcon",
 	"ShieldIcon",
+	"FrameworkNextjsIcon",
+	"FrameworkNodejsIcon",
+	"FrameworkPythonIcon",
+	"FrameworkGoIcon",
+	"FrameworkEffectIcon",
+	"FrameworkOpenTelemetryIcon",
 ] as const
 
 const duplicates = NAMES.filter((name, index) => NAMES.indexOf(name) !== index)
@@ -172,11 +179,26 @@ const SOURCE_OF = new Map<string, "ui" | "web">([
 	["LayersIcon", "web"],
 ])
 
-/** Names for an icon the other set shadows: `UiLayersIcon` is @maple/ui's `LayersIcon` (the kit gallery). */
-const ALIASES = new Map<string, readonly ["ui" | "web", string]>([["UiLayersIcon", ["ui", "LayersIcon"]]])
+type Source = "ui" | "web" | "framework"
+
+/**
+ * Names for an icon another set shadows: `UiLayersIcon` is @maple/ui's `LayersIcon` (the kit
+ * gallery); `Framework*` are the quick-start stack logos (`components/quick-start/framework-icons`).
+ */
+const ALIASES = new Map<string, readonly [Source, string]>([
+	["UiLayersIcon", ["ui", "LayersIcon"]],
+	["FrameworkNextjsIcon", ["framework", "NextjsIcon"]],
+	["FrameworkNodejsIcon", ["framework", "NodejsIcon"]],
+	["FrameworkPythonIcon", ["framework", "PythonIcon"]],
+	["FrameworkGoIcon", ["framework", "GoIcon"]],
+	["FrameworkEffectIcon", ["framework", "EffectIcon"]],
+	["FrameworkOpenTelemetryIcon", ["framework", "OpenTelemetryIcon"]],
+])
 
 const uiIcons = new Map<string, Icon>(Object.entries(UiIcons))
 const webIcons = new Map<string, Icon>(Object.entries(WebIcons))
+const frameworkIcons = new Map<string, Icon>(Object.entries(FrameworkIcons))
+const setOf = (source: Source) => (source === "ui" ? uiIcons : source === "web" ? webIcons : frameworkIcons)
 
 /** Placeholders the template fills per call: React writes `size` to width/height. */
 const SIZE = "7777"
@@ -238,7 +260,7 @@ const render = (component: Icon, props: { size?: string; className?: string }) =
 const pick = (name: string): Icon => {
 	const alias = ALIASES.get(name)
 	if (alias !== undefined) {
-		const aliased = (alias[0] === "ui" ? uiIcons : webIcons).get(alias[1])
+		const aliased = setOf(alias[0]).get(alias[1])
 		if (aliased === undefined) throw new Error(`${name}: ${alias[1]} is not an icon in ${alias[0]}`)
 		return aliased
 	}

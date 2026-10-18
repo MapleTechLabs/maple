@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { LoadFailure } from "../../data/load-failure"
 import { SettingsSearch } from "../../route/search"
+import * as Ingestion from "./ingestion/model"
 import * as Keys from "./keys/model"
 import * as Mcp from "./mcp/model"
 
@@ -18,6 +19,7 @@ export const CustomerData = AsyncData.Schema(Schema.Struct({ hasByoc: Schema.Boo
 export const TabModel = Schema.Union([
 	Schema.TaggedStruct("Mcp", { model: Mcp.Model }),
 	Schema.TaggedStruct("Keys", { model: Keys.Model }),
+	Schema.TaggedStruct("Ingestion", { model: Ingestion.Model }),
 	/** A tab whose section is not ported yet. */
 	Schema.TaggedStruct("Unported", { tab: Schema.String }),
 ])

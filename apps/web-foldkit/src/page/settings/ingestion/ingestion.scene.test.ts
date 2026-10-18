@@ -1,0 +1,106 @@
+import { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2"
+import { Result, Schema } from "effect"
+import { describe, expect, test } from "vitest"
+import * as Combobox from "../../../ui/combobox"
+import * as Field from "../../../ui/field"
+import { PageOutMessage } from "../../contract"
+import * as MappingDialog from "./mapping-dialog"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { init, type InitOptions, update } from "./update"
+
+const options: InitOptions = { isAdmin: true, orgKey: "default", timeZone: "UTC", pinnedNamespace: null }
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const step = (model: Model, message: Message) => update(model, message, options)
+
+const rename = Schema.decodeUnknownSync(V2Recommendation)({
+	id: "rec_YofPTrK9782DWwcnXhpcCw",
+	object: "recommendation",
+	number: 7,
+	recommendation_key: "rename:http.status_code",
+	kind: "rename",
+	source_key: "http.status_code",
+	canonical_key: "http.response.status_code",
+	status: "open",
+	usage_count: 4182,
+	opened_at: "2026-07-01T12:00:00.000Z",
+	updated_at: "2026-07-15T09:12:00.000Z",
+	resolved_at: null,
+})
+const mapping = Schema.decodeUnknownSync(V2AttributeMapping)({
+	id: "amap_YofPTrK9782DWwcnXhpcCw",
+	object: "attribute_mapping",
+	name: "Promote team label",
+	source_context: "resource",
+	source_key: "labels.team",
+	target_key: "team",
+	operation: "copy",
+	enabled: false,
+	created_at: "2026-07-01T12:00:00.000Z",
+	updated_at: "2026-07-15T09:12:00.000Z",
+})
+
+const loaded = (): Model =>
+	[
+		Message.CompletedFetchRecommendations({ result: Result.succeed([rename]) }),
+		Message.CompletedFetchMappings({ result: Result.succeed([mapping]) }),
+	].reduce((model, message) => step(model, message).model, init(options).model)
+
+describe("ingestion tab", () => {
+	test("entry reads the overview, ingest keys, both rule lists and the stored framework", () => {
+		expect(names(init(options).commands)).toEqual([
+			"FetchIngestOverview",
+			"FetchIngestionKeys",
+			"FetchRecommendations",
+			"FetchAttributeMappings",
+			"ReadQuickStartFramework",
+		])
+	})
+
+	test("applying a rename creates the copy mapping, then refreshes both lists with a toast", () => {
+		const applying = step(loaded(), Message.ClickedApplyRecommendation({ id: rename.id }))
+		expect(applying.commands?.[0]).toMatchObject({
+			name: "ApplyRecommendation",
+			args: { sourceKey: "http.status_code", canonicalKey: "http.response.status_code" },
+		})
+		const applied = step(
+			applying.model,
+			Message.CompletedRecommendationAction({
+				id: rename.id,
+				action: "apply",
+				label: "http.status_code → http.response.status_code",
+				result: Result.succeed(undefined),
+			}),
+		)
+		expect(names(applied.commands)).toEqual(["FetchRecommendations", "FetchAttributeMappings"])
+		expect(applied.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Mapping created: http.status_code → http.response.status_code",
+				description: "",
+			}),
+		)
+	})
+
+	test("a toggle flips the mapping once until its answer lands", () => {
+		const toggling = step(loaded(), Message.ToggledMapping({ id: mapping.id }))
+		expect(toggling.commands?.[0]).toMatchObject({ name: "ToggleAttributeMapping", args: { isEnabled: true } })
+		expect(step(toggling.model, Message.ToggledMapping({ id: mapping.id })).commands ?? []).toEqual([])
+	})
+
+	test("the add dialog posts the trimmed form", () => {
+		const dialog = (message: MappingDialog.Message) => Message.GotMappingDialogMessage({ message })
+		const opened = step(loaded(), Message.ClickedAddMapping())
+		expect(names(opened.commands)).toContain("FetchMappingAttributeKeys")
+		const filled = [
+			dialog(MappingDialog.Message.GotNameMessage({ message: Field.Message.ChangedValue({ value: " Status " }) })),
+			dialog(MappingDialog.Message.GotKeyMessage({ field: "sourceKey", message: Combobox.Message.ChangedInput({ value: "a.b" }) })),
+			dialog(MappingDialog.Message.GotKeyMessage({ field: "targetKey", message: Combobox.Message.ChangedInput({ value: "c.d" }) })),
+		].reduce((model, message) => step(model, message).model, opened.model)
+		const saving = step(filled, dialog(MappingDialog.Message.ClickedSave()))
+		expect(saving.commands?.[0]).toMatchObject({
+			name: "SaveAttributeMapping",
+			args: { editingId: null, payload: { name: "Status", source_context: "span", source_key: "a.b", target_key: "c.d", operation: "copy" } },
+		})
+	})
+})

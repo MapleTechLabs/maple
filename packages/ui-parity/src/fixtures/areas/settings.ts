@@ -420,6 +420,81 @@ const settingsMcpClients: Dataset = {
 	telemetry: emptyTelemetry,
 }
 
+// INGESTION RULES (attribute mappings and recommendations, with every write)
+
+const mapping = (index: number, fields: Readonly<Record<string, unknown>>) => ({
+	id: encodePublicId(PublicIdPrefixes.attributeMapping, fixtureUuid(0xd5, index)),
+	object: "attribute_mapping",
+	source_context: "span",
+	operation: "copy",
+	enabled: true,
+	created_at: isoBefore(20 * DAY),
+	updated_at: isoBefore(3 * DAY),
+	...fields,
+})
+
+const MAPPINGS = [
+	mapping(1, { name: "HTTP status code", source_key: "http.status_code", target_key: "http.response.status_code" }),
+	mapping(2, {
+		name: "Team label",
+		source_context: "resource",
+		source_key: "labels.team",
+		target_key: "team",
+		operation: "move",
+		enabled: false,
+	}),
+]
+
+const recommendation = (index: number, fields: Readonly<Record<string, unknown>>) => ({
+	id: encodePublicId(PublicIdPrefixes.recommendation, fixtureUuid(0xd6, index)),
+	object: "recommendation",
+	number: index,
+	canonical_key: null,
+	status: "open",
+	usage_count: 1200 * index,
+	opened_at: isoBefore(6 * DAY),
+	updated_at: isoBefore(DAY),
+	resolved_at: null,
+	...fields,
+})
+
+const RECOMMENDATIONS = [
+	recommendation(1, {
+		recommendation_key: "rename:http.method",
+		kind: "rename",
+		source_key: "http.method",
+		canonical_key: "http.request.method",
+	}),
+	recommendation(2, { recommendation_key: "naming:userId", kind: "naming", source_key: "userId" }),
+	recommendation(3, {
+		recommendation_key: "double-emission:db.statement",
+		kind: "double-emission",
+		source_key: "db.statement",
+		canonical_key: "db.query.text",
+		status: "dismissed",
+	}),
+]
+
+const echoMapping: EndpointHandler = ({ payload }) =>
+	Effect.succeed(mapping(9, Predicate.isObject(payload) ? { ...payload } : {}))
+const firstMapping: EndpointHandler = () => Effect.succeed(MAPPINGS[0])
+const firstRecommendation =
+	(status: string): EndpointHandler =>
+	() =>
+		Effect.succeed({ ...RECOMMENDATIONS[0], status })
+
+/** Acme with ingest rules to manage: two mappings, two open recommendations and a dismissed one. */
+const settingsIngestionRules: Dataset = {
+	...defaultDataset,
+	name: "settings-ingestion-rules",
+	endpoints: {
+		...defaultDataset.endpoints,
+		"attributeMappings.list": () => Effect.succeed(list(MAPPINGS)),
+		"instrumentationRecommendations.list": () => Effect.succeed(list(RECOMMENDATIONS)),
+	},
+	telemetry: emptyTelemetry,
+}
+
 /** Acme in Clerk mode: the Clerk-only settings tabs and /account. Shares Acme's warehouse org. */
 const settingsClerk: Dataset = {
 	name: "settings-clerk",
@@ -448,8 +523,14 @@ export const fixtureArea: FixtureArea = {
 		"apiKeys.roll": rollApiKey,
 		"ingestKeys.rollPublic": rolledIngestKeys,
 		"ingestKeys.rollPrivate": rolledIngestKeys,
+		"attributeMappings.create": echoMapping,
+		"attributeMappings.update": firstMapping,
+		"attributeMappings.delete": () =>
+			Effect.succeed({ id: MAPPINGS[0]?.id, object: "attribute_mapping", deleted: true }),
+		"instrumentationRecommendations.dismiss": firstRecommendation("dismissed"),
+		"instrumentationRecommendations.reopen": firstRecommendation("open"),
 		...clerkBillingEndpoints(warehouse),
 	}),
 	defaultSynced: { api_keys: API_KEYS },
-	datasets: [settingsClerk, settingsMcpClients],
+	datasets: [settingsClerk, settingsMcpClients, settingsIngestionRules],
 }

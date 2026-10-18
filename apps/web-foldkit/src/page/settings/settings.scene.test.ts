@@ -52,7 +52,11 @@ const indicatorMeasured = () =>
 
 describe("settings page", () => {
 	test("entry reads the clock, session and customer; the MCP tab adds its two reads", () => {
-		expect(names(entered().commands)).toEqual(["ReadSettingsClock", "FetchSettingsSession", "FetchSettingsCustomer"])
+		expect(names(entered({ tab: "automation" }).commands)).toEqual([
+			"ReadSettingsClock",
+			"FetchSettingsSession",
+			"FetchSettingsCustomer",
+		])
 		expect(names(entered({ tab: "mcp" }).commands)).toEqual([
 			"ReadSettingsClock",
 			"FetchSettingsSession",
@@ -73,7 +77,7 @@ describe("settings page", () => {
 
 	test("self-hosted lands on Ingestion and a nav click carries the audit filters", () => {
 		const model = entered({ outcome: "denied" }).model
-		expect(model.tab).toEqual({ _tag: "Unported", tab: "ingestion" })
+		expect(model.tab?._tag).toBe("Ingestion")
 		expect(pageUpdate(model, Message.ClickedTab({ tab: "mcp" })).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/settings?tab=mcp&outcome=denied", isReplace: false }),
 		)

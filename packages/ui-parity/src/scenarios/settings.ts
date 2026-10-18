@@ -158,6 +158,82 @@ const mcpInteractions: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+const INGESTION = "/settings?tab=ingestion"
+const RULES = "settings-ingestion-rules"
+
+/** Ingestion: setup steps, mappings (add, edit, toggle, delete) and recommendations (apply, dismiss, reopen). */
+const ingestionInteractions: ReadonlyArray<Scenario> = [
+	page("ingestion-show-setup", "Ingestion: expand setup, pick Python, Instrument tab", INGESTION, {
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Show setup" }).click()
+			await target.getByRole("button", { name: "Python" }).click()
+			await target.getByRole("tab", { name: "Instrument" }).click()
+		},
+	}),
+	page("ingestion-add-mapping", "Ingestion: add mapping dialog", INGESTION, {
+		steps: (target) => target.getByRole("button", { name: "Add mapping" }).first().click(),
+	}),
+	page("ingestion-add-mapping-submit", "Ingestion: create a mapping", INGESTION, {
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Add mapping" }).first().click()
+			const dialog = target.getByRole("dialog")
+			await dialog.getByRole("textbox", { name: "Name" }).fill("Status code")
+			// Each key's suggestion popup closes before the next field (it hides the rest of the dialog).
+			const sourceKey = dialog.getByRole("combobox", { name: "Source key" })
+			await sourceKey.fill("http.status_code")
+			await sourceKey.press("Escape")
+			const targetKey = dialog.getByRole("combobox", { name: "Target span attribute key" })
+			await targetKey.fill("http.response.status_code")
+			await targetKey.press("Escape")
+			await dialog.getByRole("button", { name: "Add mapping" }).click()
+			await target.getByText("Attribute mapping created").waitFor()
+		},
+	}),
+	page("ingestion-rules", "Ingestion: mappings and recommendations", INGESTION, { dataset: RULES }),
+	page("ingestion-rules-closed", "Ingestion: closed recommendations", INGESTION, {
+		dataset: RULES,
+		steps: (target) => target.getByRole("button", { name: "Closed · 1" }).click(),
+	}),
+	page("ingestion-apply", "Ingestion: apply a rename recommendation", INGESTION, {
+		dataset: RULES,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Apply fix" }).click()
+			await target.getByText("Mapping created", { exact: false }).waitFor()
+		},
+	}),
+	page("ingestion-dismiss-reopen", "Ingestion: dismiss, then reopen", INGESTION, {
+		dataset: RULES,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Dismiss" }).first().click()
+			await target.getByRole("button", { name: "Closed · 1" }).click()
+			await target.getByRole("button", { name: "Reopen" }).click()
+		},
+	}),
+	page("ingestion-toggle-mapping", "Ingestion: turn a mapping on", INGESTION, {
+		dataset: RULES,
+		steps: (target) => target.getByRole("switch", { name: "Turn on Team label" }).click(),
+	}),
+	page("ingestion-edit-mapping", "Ingestion: edit a mapping", INGESTION, {
+		dataset: RULES,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Actions for HTTP status code" }).click()
+			await target.getByRole("menuitem", { name: "Edit mapping" }).click()
+			await target.getByRole("dialog").getByRole("textbox", { name: "Name" }).fill("HTTP status")
+			await target.getByRole("button", { name: "Save changes" }).click()
+			await target.getByText("Attribute mapping updated").waitFor()
+		},
+	}),
+	page("ingestion-delete-mapping", "Ingestion: delete a mapping", INGESTION, {
+		dataset: RULES,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Actions for HTTP status code" }).click()
+			await target.getByRole("menuitem", { name: "Delete mapping" }).click()
+			await target.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click()
+			await target.getByText("Attribute mapping deleted").waitFor()
+		},
+	}),
+]
+
 export const settingsArea: AreaModule = {
 	area: "settings",
 	scenarios: [
@@ -180,6 +256,7 @@ export const settingsArea: AreaModule = {
 		}),
 		...keysInteractions,
 		...mcpInteractions,
+		...ingestionInteractions,
 		page("audit-log-denied", "Audit log: denied only", "/settings?tab=audit-log", {
 			// The outcome filter precedes the table's "Denied" badges in document order.
 			steps: (page) => page.getByText("Denied", { exact: true }).first().click(),

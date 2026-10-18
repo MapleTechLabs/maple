@@ -30,6 +30,10 @@ export interface TabsViewInputs {
 	/** `<TabsList className>`. */
 	readonly listClassName?: string
 	readonly panelClassName?: string
+	/** Extra panel classes for one value (`<TabsContent className>` differing per tab). */
+	readonly panelClassNameFor?: (value: string) => string | undefined
+	/** The list inside a wrapper (`<div className="border-b"><TabsList /></div>`). */
+	readonly wrapList?: (list: Html) => Html
 	/** `<TabsTab className>` for every tab. */
 	readonly tabClassName?: string
 	/** `<TabsList aria-label>`. */
@@ -157,7 +161,7 @@ const tabPanel = (
 	h.div(
 		[
 			h.AriaLabelledBy(tabId(model, model.values.indexOf(model.selected))),
-			h.Class(cn(tabsPanelStyles, inputs.panelClassName)),
+			h.Class(cn(tabsPanelStyles, inputs.panelClassName, inputs.panelClassNameFor?.(model.selected))),
 			...stateAttributes(h, model),
 			h.DataAttribute("index", String(index)),
 			h.DataAttribute("slot", "tabs-content"),
@@ -183,7 +187,9 @@ export const view = defineView<Model, Message, TabsViewInputs>((model, inputs, h
 			h.DataAttribute("slot", "tabs"),
 		],
 		[
-			tabList(h, model, inputs, panelValues),
+			inputs.wrapList === undefined
+				? tabList(h, model, inputs, panelValues)
+				: inputs.wrapList(tabList(h, model, inputs, panelValues)),
 			...(content === undefined
 				? []
 				: [tabPanel(h, model, inputs, panelValues.indexOf(model.selected), content)]),
