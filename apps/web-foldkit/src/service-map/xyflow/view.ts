@@ -102,6 +102,12 @@ export interface FlowCanvasView<M> {
 	/** Children rendered after the renderer: controls, minimap, background, overlays. */
 	readonly panels: ReadonlyArray<Html>
 	readonly onPaneClick?: M
+	/** `<ReactFlow aria-label>`. */
+	readonly ariaLabel?: string
+	/** `EdgeLabelRenderer` portals: absolutely placed labels in flow space. */
+	readonly edgeLabels?: ReadonlyArray<Html>
+	/** `zoomOnScroll`/`zoomOnDoubleClick`/`preventScrolling`; `false` leaves the wheel to the page. */
+	readonly isWheelZoom?: boolean
 }
 
 /** `<ReactFlow>`: wrapper, zoom pane, pane, viewport and the a11y descriptions. */
@@ -110,6 +116,7 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 		[
 			h.Class("react-flow light"),
 			h.DataAttribute("testid", "rf__wrapper"),
+			...(canvas.ariaLabel === undefined ? [] : [h.AriaLabel(canvas.ariaLabel)]),
 			h.Role("application"),
 			h.Style({
 				width: "100%",
@@ -130,6 +137,7 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 							AttachFlowCanvas({
 								minZoom: canvas.model.minZoom,
 								maxZoom: canvas.model.maxZoom,
+								isWheelZoom: canvas.isWheelZoom ?? true,
 							}),
 							canvas.toMessage,
 						),
@@ -150,7 +158,7 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 								],
 								[
 									canvas.edges,
-									h.div([h.Class("react-flow__edgelabel-renderer")]),
+									h.div([h.Class("react-flow__edgelabel-renderer")], canvas.edgeLabels ?? []),
 									canvas.nodes,
 									h.div([
 										h.Class("react-flow__viewport-portal"),

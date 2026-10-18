@@ -10,6 +10,7 @@ import {
 	AlertRuleRowSchema,
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
+import { InvestigationRowSchema } from "@maple/web-data/collections/investigations"
 import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
 
 /** `getOrgCollections`'s 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
@@ -97,12 +98,38 @@ const makeSet = (
 	}),
 })
 export type OrgCollectionSet = ReturnType<typeof makeSet>
+
+/**
+ * `createInvestigationCollection` (lib/collections/investigation-collections.ts): the
+ * `investigation_v2` shape scoped to one investigation, read-only. Not part of the org set: its
+ * lifecycle is the page's, so the caller releases it when its live query lets go.
+ */
+const makeInvestigationCollection = (
+	orgId: string,
+	investigationId: string,
+	runtime: ManagedRuntime.ManagedRuntime<never, never>,
+	fetchClient: typeof globalThis.fetch,
+) =>
+	createEffectCollection({
+		id: `investigation_v2:${orgId}:${investigationId}`,
+		runtime,
+		schema: InvestigationRowSchema,
+		getKey: (row) => row.id,
+		shapeOptions: {
+			url: syncProxyUrl,
+			params: { shape: "investigation_v2", org: orgId, scope: investigationId },
+			fetchClient,
+			parser: timestamptzParser,
+		},
+	})
+export type InvestigationCollection = ReturnType<typeof makeInvestigationCollection>
 type SyncedCollection =
 	| OrgCollectionSet["dashboards"]
 	| OrgCollectionSet["alertRules"]
 	| OrgCollectionSet["alertRuleStates"]
 	| OrgCollectionSet["alertIncidents"]
 	| OrgCollectionSet["alertDestinations"]
+	| InvestigationCollection
 
 /** `cleanupCollectionWhenIdle`: wait for the last live query to let go, then clean up. */
 const cleanupWhenIdle = (collection: SyncedCollection): Effect.Effect<void> =>
@@ -125,7 +152,13 @@ const cleanupWhenIdle = (collection: SyncedCollection): Effect.Effect<void> =>
  */
 export class OrgCollections extends Context.Service<
 	OrgCollections,
-	{ readonly forOrg: (orgId: string) => Effect.Effect<OrgCollectionSet> }
+	{
+		readonly forOrg: (orgId: string) => Effect.Effect<OrgCollectionSet>
+		/** A fresh scoped collection for one investigation; the caller releases it. */
+		readonly forInvestigation: (orgId: string, investigationId: string) => Effect.Effect<InvestigationCollection>
+		/** Cleans the collection up once its last live query has let go (in the background). */
+		readonly releaseInvestigation: (collection: InvestigationCollection) => Effect.Effect<void>
+	}
 >()("@maple/web-foldkit/OrgCollections") {
 	static readonly layer = Layer.effect(this, makeOrgCollections()).pipe(
 		Layer.provide([SessionBearer.layer, MapleApiV2Client.layer]),
@@ -178,6 +211,10 @@ function makeOrgCollections(): Effect.Effect<
 					Option.some(next),
 				] as const)
 			})
-		return { forOrg }
+		const forInvestigation = (orgId: string, investigationId: string) =>
+			Effect.sync(() => makeInvestigationCollection(orgId, investigationId, runtime, fetchClient))
+		const releaseInvestigation = (collection: InvestigationCollection) =>
+			Effect.asVoid(Effect.forkIn(cleanupWhenIdle(collection), scope))
+		return { forOrg, forInvestigation, releaseInvestigation }
 	})
 }

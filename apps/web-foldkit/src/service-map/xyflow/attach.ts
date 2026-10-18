@@ -130,7 +130,7 @@ const observeNodes = (renderer: HTMLElement, emit: (message: MountMessage) => vo
 const attachPanZoom = (
 	system: typeof import("@xyflow/system"),
 	renderer: HTMLElement,
-	limits: { readonly minZoom: number; readonly maxZoom: number },
+	limits: { readonly minZoom: number; readonly maxZoom: number; readonly isWheelZoom: boolean },
 	emit: (message: MountMessage) => void,
 ) => {
 	const panZoom = system.XYPanZoom({
@@ -145,15 +145,16 @@ const attachPanZoom = (
 	panZoom.update({
 		noWheelClassName: "nowheel",
 		noPanClassName: "nopan",
-		preventScrolling: true,
+		// `zoomOnScroll={false} zoomOnDoubleClick={false} preventScrolling={false}`: the wheel scrolls the page.
+		preventScrolling: limits.isWheelZoom,
 		panOnScroll: false,
 		panOnDrag: true,
 		panOnScrollMode: system.PanOnScrollMode.Free,
 		panOnScrollSpeed: 0.5,
 		userSelectionActive: false,
 		zoomOnPinch: true,
-		zoomOnScroll: true,
-		zoomOnDoubleClick: true,
+		zoomOnScroll: limits.isWheelZoom,
+		zoomOnDoubleClick: limits.isWheelZoom,
 		zoomActivationKeyPressed: false,
 		lib: "react",
 		connectionInProgress: false,
@@ -281,7 +282,7 @@ const observePane = (renderer: HTMLElement, emit: (message: MountMessage) => voi
  * node measurement. Everything it learns returns as canvas Messages; the view renders the camera.
  */
 export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
-	args: { minZoom: Schema.Number, maxZoom: Schema.Number },
+	args: { minZoom: Schema.Number, maxZoom: Schema.Number, isWheelZoom: Schema.Boolean },
 	messages: [
 		Message.ChangedViewport,
 		Message.ResizedPane,
@@ -290,7 +291,7 @@ export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
 		Message.EndedNodeDrag,
 		Message.EndedViewportMove,
 	],
-	execute: ({ element, minZoom, maxZoom }) =>
+	execute: ({ element, minZoom, maxZoom, isWheelZoom }) =>
 		Stream.callback<MountMessage>((queue) =>
 			Effect.acquireRelease(
 				Effect.promise(() => import("@xyflow/system")).pipe(
@@ -300,7 +301,7 @@ export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
 						const releases = [
 							observePane(element, emit),
 							observeNodes(element, emit),
-							attachPanZoom(system, element, { minZoom, maxZoom }, emit),
+							attachPanZoom(system, element, { minZoom, maxZoom, isWheelZoom }, emit),
 							attachNodeDrag(element, emit),
 						]
 						return () => releases.forEach((release) => release())

@@ -1,5 +1,5 @@
 import type { Page } from "playwright"
-import { act, clickTab, EMPTY, opsScenarios, SEEDED } from "./ops-kit.ts"
+import { act, clickButton, clickTab, EMPTY, opsScenarios, SEEDED } from "./ops-kit.ts"
 import type { AreaModule } from "./types.ts"
 
 /** AI investigations: one running, one diagnosed (payment-svc pool exhaustion), one resolved. */
@@ -11,6 +11,9 @@ const pickOption = (trigger: string, option: string) => async (page: Page) => {
 	await page.getByRole("option", { name: option }).click()
 }
 const waitForText = (text: string | RegExp) => (page: Page) => page.getByText(text).first().waitFor({ state: "visible" })
+
+const menuItem = (name: string) => (page: Page) => page.getByRole("menuitem", { name }).click()
+const openSheet = (page: Page) => page.getByRole("dialog").waitFor({ state: "visible" })
 
 const held = { faults: { delays: { "investigations.list": 60_000 } }, settle: "held" as const }
 const failing = {
@@ -32,6 +35,41 @@ export const investigationsArea: AreaModule = {
 		investigation("diagnosed", "Diagnosed: payment-svc latency", diagnosed),
 		investigation("diagnosed-evidence", "Diagnosed, evidence tab", diagnosed, {
 			steps: act(clickTab(/^Evidence/)),
+		}),
+		investigation("diagnosed-menu", "Overflow menu open", diagnosed, {
+			steps: act(clickButton("More investigation actions"), (page) => page.getByRole("menu").waitFor({ state: "visible" })),
+		}),
+		investigation("diagnosed-resolve", "Resolved from the header", diagnosed, {
+			steps: act(clickButton(/^Resolve$/), waitForText("Investigation resolved")),
+		}),
+		investigation("diagnosed-run-again", "Run again from the menu", diagnosed, {
+			steps: act(clickButton("More investigation actions"), menuItem("Run again"), waitForText("Investigation restarted")),
+		}),
+		investigation("diagnosed-mark-resolved", "Mark resolved from the menu", diagnosed, {
+			steps: act(clickButton("More investigation actions"), menuItem("Mark resolved"), waitForText("Investigation resolved")),
+		}),
+		investigation("diagnosed-action", "Proposed action opened from the canvas", diagnosed, {
+			steps: act(clickButton(/^Proposed action 01/), openSheet),
+		}),
+		investigation("diagnosed-action-link", "Proposed action linked by ?action=", `${diagnosed}?action=1`, { steps: act(openSheet) }),
+		investigation("diagnosed-action-closed", "Proposed action closed", diagnosed, {
+			steps: act(
+				clickButton(/^Proposed action 01/),
+				openSheet,
+				(page) => page.keyboard.press("Escape"),
+				(page) => page.getByRole("dialog").waitFor({ state: "hidden" }),
+			),
+		}),
+		investigation("diagnosed-zoom-in", "Canvas zoomed in", diagnosed, { steps: act(clickButton("Zoom in")) }),
+		investigation("diagnosed-zoom-out", "Canvas zoomed out", diagnosed, { steps: act(clickButton("Zoom out")) }),
+		investigation("diagnosed-fit", "Canvas zoomed, then fitted", diagnosed, {
+			steps: act(clickButton("Zoom in"), clickButton("Zoom in"), clickButton("Fit the graph to the view")),
+		}),
+		investigation("diagnosed-view-service", "Node link to the service", diagnosed, {
+			steps: act(
+				(page) => page.getByRole("link", { name: "VIEW SERVICE →" }).click(),
+				(page) => page.waitForURL(/\/services\/payment-svc/),
+			),
 		}),
 		// The in-progress graph re-lays out as live progress lands (a 1px drift run to run), so it is masked.
 		investigation("running", "Still investigating", `/investigations/${SEEDED.runningInvestigation}`, {

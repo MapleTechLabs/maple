@@ -46,6 +46,7 @@ import * as InfraPlanetscaleDatabase from "./infra-integrations/planetscale/db"
 import * as InfraPlanetscale from "./infra-integrations/planetscale/list"
 import * as InfraRailway from "./infra-integrations/railway/list"
 import * as InfraRailwayService from "./infra-integrations/railway/service"
+import * as InvestigationDetail from "./investigations/detail"
 import * as InvestigationsList from "./investigations/list"
 import * as LogsList from "./logs/list"
 import * as MetricsBrowse from "./metrics/browse"
@@ -110,6 +111,7 @@ export const pages = [
 	ReleasesList.page,
 	ReleaseDetail.page,
 	InvestigationsList.page,
+	InvestigationDetail.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

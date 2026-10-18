@@ -222,6 +222,11 @@ export const investigationDatasetEndpoints = {
 		}),
 	// Nothing is persisted: a new investigation answers as the running one, which the detail page then reads.
 	"investigations.create": () => encode(running),
+	// Writes answer with the row as it would read after; the detail page re-reads the shape, which stays seeded.
+	"investigations.updateStatus": ({ params }) =>
+		encode({ ...(INVESTIGATIONS.find((entry) => entry.id === str(params, "id")) ?? diagnosed), status: "resolved" as const }),
+	"investigations.restart": ({ params }) =>
+		encode({ ...(INVESTIGATIONS.find((entry) => entry.id === str(params, "id")) ?? diagnosed), status: "investigating" as const }),
 	"investigations.retrieve": ({ params }) =>
 		Effect.gen(function* () {
 			const found = INVESTIGATIONS.find((entry) => entry.id === str(params, "id"))
