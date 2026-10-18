@@ -18,7 +18,6 @@ import { alert, alertDescription } from "../../../ui/alert"
 import { button } from "../../../ui/button"
 import { filterChip } from "../../../ui/filter-chip"
 import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
 import * as Menu from "../../../ui/menu"
 import type { MenuEntry } from "../../../ui/menu-view"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
@@ -29,6 +28,7 @@ import { isoMs } from "../shared/time"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
 import { ruleMenuId } from "./update"
+import { searchInput } from "../../../ui/search-input"
 
 // `RulesTab` (components/alerts/overview/rules-tab.tsx).
 
@@ -127,7 +127,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],
 				[
-					searchInput(h, model.rulesQuery),
+					rulesSearch(h, model.rulesQuery),
 					...BUCKETS.map((bucket) =>
 						filterChip(
 							h,
@@ -232,35 +232,16 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 }
 
 /** `SearchInput size="default"`. */
-const searchInput = (h: H, value: string): Html =>
-	inputGroup(h, { className: "w-full max-w-xs" }, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: "alerts-rules-search",
-			type: "text",
-			attributes: [
-				h.Placeholder("Search rules, services, tags..."),
-				h.Value(value),
-				h.OnInput((next) => Message.ChangedRulesQuery({ value: next })),
-			],
-		}),
-		...(value === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(
-							h,
-							{
-								attributes: [
-									h.AriaLabel("Clear search"),
-									h.OnClick(Message.ChangedRulesQuery({ value: "" })),
-								],
-							},
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
+const rulesSearch = (h: H, value: string): Html =>
+	searchInput(h, {
+		id: "alerts-rules-search",
+		size: "default",
+		className: "w-full max-w-xs",
+		placeholder: "Search rules, services, tags...",
+		value,
+		onInput: (next) => Message.ChangedRulesQuery({ value: next }),
+		onClear: Message.ChangedRulesQuery({ value: "" }),
+	})
 
 type RowInputs = Readonly<{
 	rule: AlertRuleDocument

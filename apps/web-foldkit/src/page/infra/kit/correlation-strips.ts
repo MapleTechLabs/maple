@@ -12,8 +12,8 @@ import {
 	UNNAMED_SERIES_KEY,
 } from "../../../charts/infra-metric-series"
 import type { ThemeColors } from "../../../charts/theme-colors"
-import { LINKED_CURSOR_STYLE } from "./linked-cursor"
-import { seriesLegend } from "./series-legend"
+import { LINKED_CURSOR_STYLE } from "../../../charts/linked-cursor"
+import { seriesLegend } from "../../kit/series-legend"
 
 // `CorrelationStrips` (components/infra/service-lens/correlation-strips.tsx): signals stacked on one
 // time axis under one linked cursor, each with its label, source and window summary.

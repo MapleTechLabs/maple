@@ -127,7 +127,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedScope: ({ scope }) => navigate(model, { ...model.search, scope }),
 		ChangedKind: ({ kind }) => navigate(model, { ...model.search, kind, workloadNames: undefined }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined, scope: undefined }),
-		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, ["workloadName"], true) } }),
+		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["workloadName"], resettable: true }) } }),
 		ToggledFacetOption: ({ facet, name }) =>
 			navigate(model, {
 				...model.search,

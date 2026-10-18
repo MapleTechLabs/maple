@@ -11,7 +11,7 @@ import * as FilterSections from "../../../../ui/filters/filter-sections"
 import * as Select from "../../../../ui/select"
 import * as Tooltip from "../../../../ui/tooltip"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { SortState } from "../../kit/table-sort"
+import { sortStateOf } from "../../../kit/table-sort"
 import {
 	BranchStat,
 	DatabaseList,
@@ -45,7 +45,7 @@ export const Model = Schema.Struct({
 	events: KeyedSchema(Schema.Array(EventEntry), LoadFailure),
 	insights: KeyedSchema(QueryInsights, LoadFailure),
 	measure: Measure,
-	breakdownSort: SortState(BreakdownSortKey),
+	breakdownSort: sortStateOf(BreakdownSortKey),
 	charts: Schema.Record(Schema.String, Chart.Model),
 	branchSelect: Select.Model,
 	filterSections: FilterSections.Model,

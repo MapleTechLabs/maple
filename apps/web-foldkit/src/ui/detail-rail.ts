@@ -97,6 +97,18 @@ export const detailRailField = <M>(
 		],
 	)
 
+const tooltipTrigger = <M>(h: HtmlBuilder<M>, tooltip: string | undefined, value: Html): Html =>
+	tooltip === undefined || tooltip === ""
+		? value
+		: h.span(
+				[
+					h.Class("cursor-default"),
+					h.DataAttribute("base-ui-tooltip-trigger", ""),
+					h.DataAttribute("slot", "tooltip-trigger"),
+				],
+				[value],
+			)
+
 /** `DetailRail.MetaRow`: the mono, divider-separated row of infra rails; nothing for an absent value. */
 export const detailRailMetaRow = <M>(
 	h: HtmlBuilder<M>,
@@ -108,6 +120,8 @@ export const detailRailMetaRow = <M>(
 		icon?: IconName
 		/** `copyable`: the hover-revealed copy button, its status and click owned by the page. */
 		copy?: Readonly<{ status: CopyStatus; onClick: M }>
+		/** `tooltip`: the value is a tooltip trigger (the page Tooltip draws the text). */
+		tooltip?: string
 	}>,
 ): Html | null =>
 	options.value === null || options.value === undefined || options.value === ""
@@ -141,16 +155,20 @@ export const detailRailMetaRow = <M>(
 					h.div(
 						[h.Class("flex min-w-0 items-center gap-1.5 text-2xs")],
 						[
-							h.span(
-								[
-									h.Class(
-										cn(
-											"break-all text-right font-mono text-2xs tabular-nums text-foreground/85",
-											options.valueClassName,
+							tooltipTrigger(
+								h,
+								options.tooltip,
+								h.span(
+									[
+										h.Class(
+											cn(
+												"break-all text-right font-mono text-2xs tabular-nums text-foreground/85",
+												options.valueClassName,
+											),
 										),
-									),
-								],
-								[options.value],
+									],
+									[options.value],
+								),
 							),
 							...(options.copy === undefined
 								? []

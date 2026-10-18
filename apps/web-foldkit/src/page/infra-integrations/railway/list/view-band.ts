@@ -4,8 +4,8 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { segmentedBar } from "../../../../ui/meter"
 import { skeleton } from "../../../../ui/skeleton"
-import { relativeTime } from "../../kit/relative-time"
-import { statRailItem } from "../../kit/stat-rail"
+import { relativeTime } from "../../../infra/kit/relative-time"
+import { statRailItem } from "../../../kit/stat-rail"
 import type { RailwayServiceRow } from "../model"
 import { fleetSync } from "./derive"
 
@@ -62,7 +62,7 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 	const subline = inputs.authFailed
 		? "Railway rejected the token"
 		: sync.lastSyncedAt !== null
-			? relativeTime(h, {
+			? relativeTime(h, { tooltip: "title",
 					value: sync.lastSyncedAt,
 					nowMs: inputs.nowMs,
 					timeZone: inputs.timeZone,

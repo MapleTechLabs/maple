@@ -15,7 +15,7 @@ import {
 	integrationEmptyHint,
 	integrationEmptyMedia,
 } from "../kit/integration-empty"
-import { relativeTime } from "../kit/relative-time"
+import { relativeTime } from "../../infra/kit/relative-time"
 
 // `planetscale-absence.tsx`, `planetscale-setup-state.tsx` and `planetscale-setup-checklist.tsx`.
 
@@ -75,7 +75,7 @@ export const inventoryNotice = <M>(
 						" ",
 						options.lastInventoryAt === null
 							? "never"
-							: relativeTime(h, {
+							: relativeTime(h, { tooltip: "title",
 									value: options.lastInventoryAt,
 									nowMs: options.nowMs,
 									timeZone: options.timeZone,

@@ -99,7 +99,8 @@ const tableArea = (h: H, model: Model, page: ContainersPage, inputs: PageViewInp
 			searchToolbar(h, {
 				id: "infra-containers-search",
 				value: searchText,
-				onChange: (value) => Message.ChangedQuery({ value }),
+				onInput: (value) => Message.ChangedQuery({ value }),
+				onClear: Message.ChangedQuery({ value: "" }),
 				placeholder: "Search all containers…",
 				trailing:
 					offset > 0

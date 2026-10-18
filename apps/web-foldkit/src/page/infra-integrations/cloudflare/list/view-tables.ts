@@ -29,11 +29,11 @@ import {
 	columnHead,
 	dataTable,
 	dataTableEmpty,
-	dataTableSkeletonRows,
+	skeletonRows,
 	ROW_LINK_CLASS,
-} from "../../kit/data-table"
-import { metaLine } from "../../kit/meta-line"
-import { type Sort, sortRows } from "../../kit/table-sort"
+} from "../../../infra/kit/data-table"
+import { metaLine } from "../../../infra/kit/meta-line"
+import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { QueueRow, ZoneRow } from "../data"
 import { Message, type QueueSortKey, type ZoneSortKey } from "./model"
 
@@ -111,7 +111,7 @@ export const zoneTableLoading = (h: H): Html =>
 		h,
 		{ ariaLabel: "Zones" },
 		zoneColumns(h, undefined, false, false),
-		dataTableSkeletonRows(h, 4, () => [
+		skeletonRows(h, 4, () => [
 			h.div(
 				[h.Class("w-0 min-w-[200px] flex-1 space-y-1.5")],
 				[skeleton(h, "h-3.5 w-40"), skeleton(h, "h-2.5 w-24")],
@@ -312,7 +312,7 @@ export const zoneTable = (
 		spark: SparkContext
 	}>,
 ): Html => {
-	const sorted = sortRows(options.zones, options.sort)
+	const sorted = sortRowsByField(options.zones, options.sort)
 	// Latency quantiles are plan-gated; four always-empty columns were most of the old table.
 	const showLatency = options.zones.some((zone) => zone.ttfbP99Ms > 0)
 	return dataTable(
@@ -514,7 +514,7 @@ export const queueTable = (
 	h: H,
 	options: Readonly<{ queues: ReadonlyArray<QueueRow>; sort: Sort<QueueSortKey>; isWaiting: boolean }>,
 ): Html => {
-	const sorted = sortRows(options.queues, options.sort)
+	const sorted = sortRowsByField(options.queues, options.sort)
 	const { sort } = options
 	return dataTable(
 		h,

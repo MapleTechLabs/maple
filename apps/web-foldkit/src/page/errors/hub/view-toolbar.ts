@@ -4,8 +4,6 @@ import { cn } from "@maple/ui/lib/utils"
 import { HUB_SORTS, SEVERITY_FILTERS, type SeverityFilter } from "@maple/web/lib/errors/hub-params"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
 import * as SelectView from "../../../ui/select-view"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
@@ -13,6 +11,7 @@ import * as TabsView from "../../../ui/tabs-view"
 import { SEVERITY_FILL, SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../kit/severity"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { searchInput } from "../../../ui/search-input"
 
 // `ErrorsStatStrip`, `ListToolbar`, `ToolbarSearch` and the sort and severity selects (errors-hub-view.tsx).
 
@@ -120,35 +119,15 @@ const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = SEVERITY_FILTERS
 
 /** `ToolbarSearch` (`SearchInput` size sm): typing is debounced into the URL's `q`. */
 const toolbarSearch = (h: H, draft: string): Html =>
-	inputGroup(h, { className: cn("max-w-sm", "w-52") }, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: "errors-search",
-			size: "sm",
-			type: "text",
-			attributes: [
-				h.Placeholder("Search issues..."),
-				h.Value(draft),
-				h.OnInput((value) => Message.ChangedSearchDraft({ value })),
-			],
-		}),
-		...(draft === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(
-							h,
-							{
-								attributes: [
-									h.AriaLabel("Clear search"),
-									h.OnClick(Message.ChangedSearchDraft({ value: "" })),
-								],
-							},
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
+	searchInput(h, {
+		id: "errors-search",
+		size: "sm",
+		className: cn("max-w-sm", "w-52"),
+		placeholder: "Search issues...",
+		value: draft,
+		onInput: (value) => Message.ChangedSearchDraft({ value }),
+		onClear: Message.ChangedSearchDraft({ value: "" }),
+	})
 
 /** `ListToolbar`: view tabs, then search, sort, severity and the count readout. */
 export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null): Html =>

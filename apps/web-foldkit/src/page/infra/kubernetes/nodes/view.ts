@@ -135,7 +135,8 @@ const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: Pag
 					searchToolbar(h, {
 						id: "infra-nodes-search",
 						value: searchText,
-						onChange: (value) => Message.ChangedQuery({ value }),
+						onInput: (value) => Message.ChangedQuery({ value }),
+						onClear: Message.ChangedQuery({ value: "" }),
 						placeholder: "Search nodes…",
 						trailing:
 							nodes.length >= NODE_LIST_LIMIT

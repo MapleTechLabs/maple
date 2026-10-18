@@ -10,9 +10,9 @@ import { badge } from "../display"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { emptyMessage } from "../empty"
 import { icon } from "../icon"
-import { inputGroup, inputGroupAddon, inputGroupInput } from "../input-group"
 import { label } from "../label"
 import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
+import { searchInput } from "../search-input"
 
 // Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
 // TODO(alt-click): legacy's Alt+click on a label toggles the exclusion; Foldkit's OnClick has no modifiers.
@@ -343,7 +343,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 								h.div(
 									[h.Class("pb-3")],
 									[
-										...(isSearchable ? [searchInput(h, config, state.search)] : []),
+										...(isSearchable ? [sectionSearch(h, config, state.search)] : []),
 										h.div(
 											[h.Class("space-y-2")],
 											[
@@ -407,46 +407,17 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 	)
 }
 
-const searchInput = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, search: string): Html =>
-	inputGroup(h, { className: "mb-2" }, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: `filter-section-${config.title}-search`,
-			size: "sm",
-			attributes: [
-				h.Placeholder(`Search ${config.title.toLowerCase()}...`),
-				h.Value(search),
-				h.OnInput((value) =>
-					config.toSectionsMessage(
-						SectionsMessage.ChangedSearch({ key: config.title, search: value }),
-					),
-				),
-			],
-		}),
-		...(search === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						button(
-							h,
-							{
-								size: "xs",
-								variant: "ghost",
-								slot: "input-group-button",
-								attributes: [
-									h.AriaLabel("Clear search"),
-									h.OnClick(
-										config.toSectionsMessage(
-											SectionsMessage.ChangedSearch({ key: config.title, search: "" }),
-										),
-									),
-								],
-							},
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
+const sectionSearch = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, search: string): Html =>
+	searchInput(h, {
+		id: `filter-section-${config.title}-search`,
+		size: "sm",
+		className: "mb-2",
+		placeholder: `Search ${config.title.toLowerCase()}...`,
+		value: search,
+		onInput: (value) =>
+			config.toSectionsMessage(SectionsMessage.ChangedSearch({ key: config.title, search: value })),
+		onClear: config.toSectionsMessage(SectionsMessage.ChangedSearch({ key: config.title, search: "" })),
+	})
 
 /** `SingleCheckboxFilter`: one checkbox with its label (and count). */
 export const singleCheckboxFilter = <M>(

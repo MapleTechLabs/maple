@@ -118,8 +118,8 @@ export const dataTable = <M>(
 }
 
 /** `DataTable.Empty`. */
-export const dataTableEmpty = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	emptyMessage(h, { className: "py-12" }, [text])
+export const dataTableEmpty = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
+	emptyMessage(h, { className: "py-12" }, children)
 
 /** `DataTable.SkeletonRows`: `count` identical placeholder rows. */
 export const skeletonRows = <M>(

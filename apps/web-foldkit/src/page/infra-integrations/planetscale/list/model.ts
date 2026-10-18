@@ -5,7 +5,7 @@ import { LoadFailure } from "../../../../data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { InfraPlanetscaleSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { SortState } from "../../kit/table-sort"
+import { sortStateOf } from "../../../kit/table-sort"
 import { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
 
 // `/infra/planetscale` (apps/web/src/routes/infra/planetscale/index.tsx).
@@ -29,7 +29,7 @@ export const Model = Schema.Struct({
 	databases: KeyedSchema(DatabaseList, LoadFailure),
 	stats: KeyedSchema(Schema.Array(DatabaseStat), LoadFailure),
 	/** `null` until a head is clicked: the table's initial sort depends on the metrics state. */
-	sort: Schema.NullOr(SortState(SortKey)),
+	sort: Schema.NullOr(sortStateOf(SortKey)),
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,

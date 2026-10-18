@@ -98,7 +98,8 @@ const hostList = (
 			searchToolbar(h, {
 				id: "infra-hosts-search",
 				value: model.search.q ?? "",
-				onChange: (value) => Message.ChangedQuery({ value }),
+				onInput: (value) => Message.ChangedQuery({ value }),
+				onClear: Message.ChangedQuery({ value: "" }),
 				placeholder: "Search hosts…",
 				trailing,
 			}),

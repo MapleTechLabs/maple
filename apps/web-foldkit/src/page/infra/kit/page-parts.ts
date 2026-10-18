@@ -5,20 +5,28 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
+import { searchInput } from "../../../ui/search-input"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 
 // `PageHero` (common/page-hero.tsx), `SearchToolbar` (common/search-toolbar.tsx) and the infra
 // empty states.
 
+type Children = ReadonlyArray<Html | string>
+
 export type PageHeroOptions = Readonly<{
 	title: Html | string
 	description?: Html | string
-	meta?: ReadonlyArray<Html>
-	actions?: ReadonlyArray<Html>
-	trailing?: ReadonlyArray<Html>
+	meta?: Children
+	actions?: Children
+	/** Beside the title: a status badge. */
+	trailing?: Html | ReadonlyArray<Html>
 	className?: string
 }>
+
+const isHtmlList = (value: Html | ReadonlyArray<Html>): value is ReadonlyArray<Html> => Array.isArray(value)
+
+const trailingOf = (trailing: PageHeroOptions["trailing"]): ReadonlyArray<Html> =>
+	trailing === undefined ? [] : isHtmlList(trailing) ? trailing : [trailing]
 
 export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =>
 	h.header(
@@ -38,13 +46,13 @@ export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =
 								],
 								[options.title],
 							),
-							...(options.trailing ?? []),
+							...trailingOf(options.trailing),
 						],
 					),
-					...(options.description === undefined
+					...(options.description === undefined || options.description === ""
 						? []
 						: [h.p([h.Class("max-w-2xl text-sm text-muted-foreground")], [options.description])]),
-					...(options.meta === undefined
+					...(options.meta === undefined || options.meta.length === 0
 						? []
 						: [h.div([h.Class("mt-2 flex flex-wrap items-center gap-2")], options.meta)]),
 				],
@@ -58,15 +66,16 @@ export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =
 export type SearchToolbarOptions<M> = Readonly<{
 	id: string
 	value: string
-	onChange: (value: string) => M
 	placeholder: string
-	trailing?: string
-	/** Controls beside the search (a kind pivot). */
+	onInput: (value: string) => M
+	onClear: M
+	/** Controls beside the search: a kind pivot, a sort menu. */
 	children?: ReadonlyArray<Html>
+	trailing?: string
 	className?: string
 }>
 
-/** `SearchToolbar` over `SearchInput size="default"` (w-64), with its clear button. */
+/** `SearchToolbar` over `SearchInput size="default"` (w-64). */
 export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOptions<M>): Html =>
 	h.div(
 		[h.Class(cn("flex flex-wrap items-center justify-between gap-3", options.className))],
@@ -74,41 +83,21 @@ export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOption
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],
 				[
-					inputGroup(h, { className: "w-64" }, [
-						inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-						inputGroupInput(h, {
-							id: options.id,
-							size: "default",
-							type: "text",
-							attributes: [
-								h.Placeholder(options.placeholder),
-								h.Value(options.value),
-								h.OnInput(options.onChange),
-							],
-						}),
-						...(options.value === ""
-							? []
-							: [
-									inputGroupAddon(h, { align: "inline-end" }, [
-										inputGroupButton(
-											h,
-											{
-												attributes: [
-													h.AriaLabel("Clear search"),
-													h.OnClick(options.onChange("")),
-												],
-											},
-											[icon(h, "XmarkIcon")],
-										),
-									]),
-								]),
-					]),
+					searchInput(h, {
+						id: options.id,
+						size: "default",
+						className: "w-64",
+						placeholder: options.placeholder,
+						value: options.value,
+						onInput: options.onInput,
+						onClear: options.onClear,
+					}),
 					...(options.children ?? []),
 				],
 			),
-			...(options.trailing
-				? [h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [options.trailing])]
-				: []),
+			...(options.trailing === undefined || options.trailing === ""
+				? []
+				: [h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [options.trailing])]),
 		],
 	)
 

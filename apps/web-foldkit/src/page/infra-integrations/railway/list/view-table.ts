@@ -3,10 +3,11 @@ import { formatBytes, pluralize } from "@maple/ui/lib/format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { skeleton } from "../../../../ui/skeleton"
-import { columnHead, dataTable, dataTableSkeletonRows, ROW_LINK_CLASS } from "../../kit/data-table"
-import { avgPeak, meterRows } from "../../kit/meters"
-import { relativeTime } from "../../kit/relative-time"
-import type { Sort } from "../../kit/table-sort"
+import { columnHead, dataTable, skeletonRows, ROW_LINK_CLASS } from "../../../infra/kit/data-table"
+import { meterRows } from "../../../infra/kit/meter-rows"
+import { avgPeak } from "../../../infra/kit/avg-peak"
+import { relativeTime } from "../../../infra/kit/relative-time"
+import type { Sort } from "../../../kit/table-sort"
 import type { RailwayServiceRow } from "../model"
 import { formatVcpu, groupedRows, type RailwayRowView, type RailwaySync, rowKey } from "./derive"
 import { Message } from "./message"
@@ -58,7 +59,7 @@ export const railwayTableLoading = (h: H): Html =>
 		h,
 		{ ariaLabel: "Railway services" },
 		columns(h, false, undefined),
-		dataTableSkeletonRows(h, 5, () => [
+		skeletonRows(h, 5, () => [
 			h.div([h.Class("w-0 min-w-[240px] flex-1")], [skeleton(h, "h-4 w-36")]),
 			skeleton(h, "ml-auto h-3 w-[150px]"),
 			skeleton(h, "ml-auto h-3 w-[140px]"),
@@ -70,7 +71,7 @@ export const railwayTableLoading = (h: H): Html =>
 const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 	switch (sync.kind) {
 		case "synced":
-			return relativeTime(h, { value: sync.at, ...clock, prefix: "synced" })
+			return relativeTime(h, { tooltip: "title", value: sync.at, ...clock, prefix: "synced" })
 		case "pending":
 			return h.span([], ["waiting on the first sync"])
 		case "unknown":
@@ -81,7 +82,7 @@ const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 				[
 					"paused",
 					...(sync.lastSyncedAt !== null
-						? [" · last data ", relativeTime(h, { value: sync.lastSyncedAt, ...clock })]
+						? [" · last data ", relativeTime(h, { tooltip: "title", value: sync.lastSyncedAt, ...clock })]
 						: []),
 				],
 			)

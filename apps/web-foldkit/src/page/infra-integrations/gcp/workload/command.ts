@@ -1,7 +1,7 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
-import { linkedCursorStream } from "../../kit/linked-cursor"
+import { linkedCursorStream } from "../../../../charts/linked-cursor"
 import {
 	CloudSqlInput,
 	loadFleet,

@@ -118,7 +118,8 @@ export const infraMetricModel = (options: InfraMetricOptions) => {
 	return { spec, info }
 }
 
-export const infraMetricSpec = (options: InfraMetricOptions): InfraMetricSpec => infraMetricModel(options).spec
+export const infraMetricSpec = (options: InfraMetricOptions): InfraMetricSpec =>
+	infraMetricModel(options).spec
 
 export interface InfraMetricChartInputs {
 	readonly chartId: string

@@ -137,6 +137,6 @@ export const hostTable = (h: H, hosts: ReadonlyArray<HostRow>, inputs: HostTable
 		{ ariaLabel: "Hosts", isWaiting: inputs.isWaiting },
 		columns(h, inputs.sort),
 		hosts.length === 0
-			? [dataTableEmpty(h, "No hosts match your search.")]
+			? [dataTableEmpty(h, ["No hosts match your search."])]
 			: hosts.map((host) => hostRow(h, host, inputs)),
 	)

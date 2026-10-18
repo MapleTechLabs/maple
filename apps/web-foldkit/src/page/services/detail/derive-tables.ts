@@ -22,7 +22,7 @@ export const initialSort = (table: SortTable): SortState => ({
 
 /** `handleSort`: the active column flips direction; another column starts desc (asc for text). */
 export const nextSort = (table: SortTable, current: SortState, key: string): SortState =>
-	nextSortBy(current, key, SORT_CONFIG[table].stringKeys)
+	nextSortBy(current, key, { stringKeys: SORT_CONFIG[table].stringKeys })
 
 /** `operationTraceSearch`: the /traces search for one operation, at span level. */
 export const operationTraceSearch = (args: {

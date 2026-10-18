@@ -9,7 +9,7 @@ import {
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../kit/fleet-band"
+import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 
 // copied: the band specs and `GcpHealthDot` of components/infra/gcp/gcp-bands.tsx (a React module).
 

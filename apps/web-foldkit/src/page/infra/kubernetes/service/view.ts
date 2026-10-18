@@ -28,7 +28,10 @@ import { bucketSecondsOf, cpuRowsOf, type LinkedWorkload, linkedWorkload, worstP
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
-import { correlationStrips, type StripSeries } from "./view-strips"
+import * as Chart from "../../../../charts/chart"
+import * as InfraMetricChart from "../../../../charts/infra-metric-chart"
+import { MountLinkedCursor } from "../../../../charts/linked-cursor"
+import { correlationStrips, type StripSeries } from "../../kit/correlation-strips"
 
 // `ServiceLensPage` / `LensBody` (routes/infra/kubernetes/services/$serviceName.tsx) in `ServiceLensShell`.
 
@@ -201,7 +204,23 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 								}),
 								isLoading || theme === null || model.chartRuntime._tag === "Loading"
 									? chartLoading(h, { variant: "line", height: 360 })
-									: correlationStrips(h, model, { series: strips, xDomain, isWaiting, theme, timeZone: inputs.context.timeZone }),
+									: correlationStrips(h, {
+											strips,
+											xDomain,
+											isWaiting,
+											theme,
+											timeZone: inputs.context.timeZone,
+											mountCursor: h.OnMount(MountLinkedCursor()),
+											chart: (chartId, chartInputs) =>
+												h.submodel({
+													slotId: chartId,
+													model: model.charts[chartId] ?? Chart.init(),
+													view: InfraMetricChart.view,
+													toParentMessage: (message: Chart.Message) =>
+														Message.GotChartMessage({ id: chartId, message }),
+													viewInputs: { ...chartInputs, chartId },
+												}),
+										}),
 							],
 						),
 						podsSection(h, model, inputs, pods, totalPods),

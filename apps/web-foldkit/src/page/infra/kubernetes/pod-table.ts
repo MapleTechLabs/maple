@@ -175,10 +175,10 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 					]),
 				],
 			),
-			h.div([h.Class("hidden w-[132px] text-right lg:block")], [avgPeak(h, pod.cpuUsage, pod.cpuUsagePeak, formatCores)]),
+			h.div([h.Class("hidden w-[132px] text-right lg:block")], [avgPeak(h, { avg: pod.cpuUsage, peak: pod.cpuUsagePeak, format: formatCores })]),
 			h.div(
 				[h.Class("hidden w-[120px] text-right lg:block")],
-				[avgPeak(h, pod.memoryLimitPct, pod.memoryLimitPctPeak, formatWholePercent)],
+				[avgPeak(h, { avg: pod.memoryLimitPct, peak: pod.memoryLimitPctPeak, format: formatWholePercent })],
 			),
 			h.div(
 				[h.Class("w-[100px] text-right")],
@@ -201,5 +201,5 @@ export const podTable = <M>(h: HtmlBuilder<M>, pods: ReadonlyArray<PodRow>, inpu
 		h,
 		{ ariaLabel: "Pods", isWaiting: inputs.isWaiting },
 		columns(h, { key: inputs.sortBy, dir: inputs.sortDir }, inputs.onSort),
-		pods.length === 0 ? [dataTableEmpty(h, "No pods match your filter.")] : pods.map((pod) => podRow(h, pod, inputs)),
+		pods.length === 0 ? [dataTableEmpty(h, ["No pods match your filter."])] : pods.map((pod) => podRow(h, pod, inputs)),
 	)

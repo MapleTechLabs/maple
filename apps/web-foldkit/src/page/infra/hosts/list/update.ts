@@ -128,7 +128,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ChangedScope: ({ scope }) => navigate(model, { ...model.search, scope }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined, scope: undefined }),
-		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, ["hostName"]) } }),
+		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["hostName"] }) } }),
 		GotFrameMessage: ({ message: inner }) => updateFrame(model, inner, context),
 		GotInstallMessage: ({ message: inner }) =>
 			liftInstall(model, InstallModal.update(model.install, inner)),

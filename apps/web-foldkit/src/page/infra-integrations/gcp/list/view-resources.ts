@@ -14,10 +14,10 @@ import {
 	columnHead,
 	dataTable,
 	dataTableEmpty,
-	dataTableSkeletonRows,
+	skeletonRows,
 	ROW_LINK_CLASS,
-} from "../../kit/data-table"
-import { filteredEmpty } from "../../kit/empty-states"
+} from "../../../infra/kit/data-table"
+import { filteredEmpty } from "../../../kit/signal-empty-state"
 import type { Resources } from "../data"
 import { gcpMessage } from "../gcp-message"
 import { Message, type Model } from "./model"
@@ -44,7 +44,7 @@ const loading = (h: H): Html =>
 		h,
 		{ ariaLabel: "Google Cloud resources" },
 		columns(h),
-		dataTableSkeletonRows(h, 5, () => [
+		skeletonRows(h, 5, () => [
 			skeleton(h, "h-4 w-0 min-w-[220px] flex-1"),
 			skeleton(h, "h-3 w-[170px]"),
 			skeleton(h, "h-3 w-[200px]"),

@@ -14,15 +14,13 @@ import {
 	filterSidebarHeader,
 	filterSidebarLoading,
 } from "../../../ui/filters/filter-sidebar"
-import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupInput } from "../../../ui/input-group"
-import { button } from "../../../ui/button"
 import type * as Popover from "../../../ui/popover"
 import { searchHelp } from "./view-search-help"
 import { pinnedNamespaceNotice } from "../../kit/pinned-namespace-notice"
 import type { Search } from "./derive"
 import { type Facet, Message } from "./message"
 import type { LogsFacets, Model } from "./model"
+import { searchInput } from "../../../ui/search-input"
 
 // `LogsFilterSidebar` (apps/web/src/components/logs/logs-filter-sidebar.tsx).
 
@@ -81,37 +79,17 @@ const logSearchInput = (h: HtmlBuilder<Message>, value: string, help: Popover.Mo
 				[h.Class("flex items-center gap-1")],
 				[eyebrow(h, { variant: "label" }, ["Search"]), searchHelp(h, help)],
 			),
-			inputGroup(h, { className: "mt-2" }, [
-				inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-				inputGroupInput(h, {
-					id: "logs-search-input",
-					size: "sm",
-					attributes: [
-						h.Type("text"),
-						h.Placeholder("Text or trace id"),
-						h.DataAttribute("shortcut-focus", "search"),
-						h.Value(value),
-						h.OnInput((text) => Message.ChangedSearchText({ text })),
-					],
-				}),
-				inputGroupAddon(h, { align: "inline-end" }, [
-					value === ""
-						? kbd(h, undefined, ["/"])
-						: button(
-								h,
-								{
-									size: "xs",
-									variant: "ghost",
-									slot: "input-group-button",
-									attributes: [
-										h.AriaLabel("Clear search"),
-										h.OnClick(Message.ChangedSearchText({ text: "" })),
-									],
-								},
-								[icon(h, "XmarkIcon")],
-							),
-				]),
-			]),
+			searchInput(h, {
+				id: "logs-search-input",
+				size: "sm",
+				className: "mt-2",
+				placeholder: "Text or trace id",
+				value,
+				onInput: (text) => Message.ChangedSearchText({ text }),
+				onClear: Message.ChangedSearchText({ text: "" }),
+				trailing: value === "" ? [kbd(h, undefined, ["/"])] : [],
+				attributes: [h.DataAttribute("shortcut-focus", "search")],
+			}),
 		],
 	)
 

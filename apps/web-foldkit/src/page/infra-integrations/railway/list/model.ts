@@ -6,7 +6,7 @@ import { InfraRailwaySearch } from "../../../../route/search"
 import * as Field from "../../../../ui/field"
 import * as Tooltip from "../../../../ui/tooltip"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { SortState } from "../../kit/table-sort"
+import { sortStateOf } from "../../../kit/table-sort"
 import { RailwayServiceRow, RailwayStatus } from "../model"
 
 // `/infra/railway` (apps/web/src/routes/infra/railway/index.tsx).
@@ -35,7 +35,7 @@ export const Model = Schema.Struct({
 	nowMs: Schema.Number,
 	status: KeyedSchema(RailwayStatus, LoadFailure),
 	services: KeyedSchema(Schema.Array(RailwayServiceRow), LoadFailure),
-	sort: SortState(SortKey),
+	sort: sortStateOf(SortKey),
 	rowTooltip: Tooltip.Model,
 	connect: ConnectForm,
 	timePicker: TimeRangePicker.Model,

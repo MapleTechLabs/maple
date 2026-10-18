@@ -6,7 +6,7 @@ import {
 	type RailwaySync,
 } from "@maple/web/components/infra/railway/list-model"
 import type { RailwayEnvironmentStatus } from "@maple/domain/http"
-import { sortRows, type Sort } from "../../kit/table-sort"
+import { sortRowsByField, type Sort } from "../../../kit/table-sort"
 import type { RailwayServiceRow } from "../model"
 import type { SortKey } from "./model"
 
@@ -44,7 +44,7 @@ export const groupedRows = (
 	authFailed: boolean,
 	sort: Sort<SortKey>,
 ): ReadonlyArray<RailwayServiceGroup<RailwayRowView>> =>
-	groupRailwayServices(sortRows(services.map(toView), sort), environments, authFailed)
+	groupRailwayServices(sortRowsByField(services.map(toView), sort), environments, authFailed)
 
 /** The search box: service, project or environment name contains the query. */
 export const filterServices = (

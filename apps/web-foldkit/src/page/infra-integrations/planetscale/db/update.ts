@@ -12,7 +12,7 @@ import * as Tooltip from "../../../../ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../kit/page-time"
-import { nextSort } from "../../kit/table-sort"
+import { nextSort } from "../../../kit/table-sort"
 import { toggleFilterValue } from "../filters"
 import {
 	CompleteReloadSpin,

@@ -11,8 +11,8 @@ import { listFooter } from "../../../../ui/list-footer"
 import { panel, panelHeader, panelTitle } from "../../../../ui/panel"
 import { segmentedSelect } from "../../../../ui/segmented-select"
 import { skeleton } from "../../../../ui/skeleton"
-import { columnHead, dataTable, dataTableEmpty } from "../../kit/data-table"
-import { type Sort, sortRows } from "../../kit/table-sort"
+import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
+import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { BreakdownTotal, ZoneBreakdown } from "../data"
 import { DIMENSIONS, type DimensionDef, dimensionOf } from "./derive"
 import { type BreakdownSortKey, Message, type Model } from "./model"
@@ -113,7 +113,7 @@ const table = (
 		selected: ReadonlyArray<string> | null
 	}>,
 ): Html => {
-	const sorted = sortRows(options.rows, options.sort)
+	const sorted = sortRowsByField(options.rows, options.sort)
 	const head = (label: string, key: BreakdownSortKey, width: string, hidden?: string) =>
 		columnHead(h, {
 			label,

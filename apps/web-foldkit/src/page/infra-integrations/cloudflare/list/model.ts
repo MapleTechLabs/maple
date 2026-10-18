@@ -14,7 +14,7 @@ import { TimeWindow } from "../../../../data/time-range"
 import { InfraCloudflareSearch } from "../../../../route/search"
 import * as Menu from "../../../../ui/menu"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { SortState } from "../../kit/table-sort"
+import { sortStateOf } from "../../../kit/table-sort"
 import { PlatformResources, Status, Usage, WorkerRow, ZoneBucket, ZoneRow } from "../data"
 
 // `/infra/cloudflare` (apps/web/src/routes/infra/cloudflare/index.tsx).
@@ -51,8 +51,8 @@ export const Model = Schema.Struct({
 	timeseries: KeyedSchema(Schema.Array(ZoneBucket), LoadFailure),
 	workers: KeyedSchema(Schema.Array(WorkerRow), LoadFailure),
 	platform: KeyedSchema(PlatformResources, LoadFailure),
-	zoneSort: SortState(ZoneSortKey),
-	queueSort: SortState(QueueSortKey),
+	zoneSort: sortStateOf(ZoneSortKey),
+	queueSort: sortStateOf(QueueSortKey),
 	accountMenu: Menu.Model,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),

@@ -108,11 +108,11 @@ const containerRow = (h: H, container: ContainerRow, inputs: ContainerTableInput
 			),
 			h.div(
 				[h.Class("hidden w-[132px] text-right lg:block")],
-				[avgPeak(h, container.cpuPct, container.cpuPctPeak, formatWholePercent)],
+				[avgPeak(h, { avg: container.cpuPct, peak: container.cpuPctPeak, format: formatWholePercent })],
 			),
 			h.div(
 				[h.Class("hidden w-[120px] text-right lg:block")],
-				[avgPeak(h, container.memoryPct, container.memoryPctPeak, formatWholePercent)],
+				[avgPeak(h, { avg: container.memoryPct, peak: container.memoryPctPeak, format: formatWholePercent })],
 			),
 			h.div(
 				[h.Class("w-[100px] text-right")],
@@ -135,6 +135,6 @@ export const containerTable = (h: H, containers: ReadonlyArray<ContainerRow>, in
 		{ ariaLabel: "Containers", isWaiting: inputs.isWaiting },
 		columns(h, { key: inputs.sortBy, dir: inputs.sortDir }),
 		containers.length === 0
-			? [dataTableEmpty(h, "No containers match your filter.")]
+			? [dataTableEmpty(h, ["No containers match your filter."])]
 			: containers.map((container) => containerRow(h, container, inputs)),
 	)

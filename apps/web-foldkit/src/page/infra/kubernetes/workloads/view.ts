@@ -166,7 +166,8 @@ const workloadList = (h: H, model: Model, workloads: ReadonlyArray<WorkloadRow>,
 					searchToolbar(h, {
 						id: "infra-workloads-search",
 						value: searchText,
-						onChange: (value) => Message.ChangedQuery({ value }),
+						onInput: (value) => Message.ChangedQuery({ value }),
+						onClear: Message.ChangedQuery({ value: "" }),
 						placeholder: "Search workloads…",
 						trailing:
 							workloads.length >= WORKLOAD_LIST_LIMIT

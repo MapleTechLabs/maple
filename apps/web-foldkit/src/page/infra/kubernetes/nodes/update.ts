@@ -115,7 +115,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedQuery: ({ value }) => navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ChangedStatus: ({ status }) => navigate(model, { ...model.search, status }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined, status: undefined }),
-		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, ["nodeName"]) } }),
+		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["nodeName"] }) } }),
 		ToggledFacetOption: ({ facet, name }) =>
 			navigate(model, {
 				...model.search,

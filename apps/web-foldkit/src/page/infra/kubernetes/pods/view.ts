@@ -142,7 +142,8 @@ const listArea = (h: H, model: Model, page: PodsPage, inputs: PageViewInputs): H
 			searchToolbar(h, {
 				id: "infra-pods-search",
 				value: searchText,
-				onChange: (value) => Message.ChangedQuery({ value }),
+				onInput: (value) => Message.ChangedQuery({ value }),
+				onClear: Message.ChangedQuery({ value: "" }),
 				placeholder: "Search all pods…",
 				trailing:
 					offset > 0 ? pageRangeLabel(offset, pods.length, page.totalCount, "pods") : countLabel(pods.length, page.totalCount, "pod"),

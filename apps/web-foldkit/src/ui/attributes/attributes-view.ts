@@ -6,9 +6,9 @@ import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../display"
 import { icon } from "../icon"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../input-group"
 import { attributeRow, type RowContext } from "./attribute-row"
 import { type AttributeSource, isOpen, Message, type Model } from "./attributes-panel"
+import { searchInput } from "../search-input"
 
 // Port of `AttributesTable`, `AttributesSection`, `ResourceAttributesSection` (packages/ui/src/
 // components/attributes/attributes-table.tsx) and `LogAttributesPanel` (apps/web components/logs).
@@ -261,36 +261,15 @@ export type PanelInputs = Readonly<{
 	canFilter: boolean
 }>
 
-const searchInput = (h: H, model: Model): Html =>
-	inputGroup(h, {}, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: `${model.id}-search`,
-			size: "sm",
-			attributes: [
-				h.Type("text"),
-				h.Placeholder("Search attributes..."),
-				h.Value(model.search),
-				h.OnInput((text) => Message.ChangedSearch({ text })),
-			],
-		}),
-		...(model.search === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(
-							h,
-							{
-								attributes: [
-									h.AriaLabel("Clear search"),
-									h.OnClick(Message.ChangedSearch({ text: "" })),
-								],
-							},
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
+const attributesSearch = (h: H, model: Model): Html =>
+	searchInput(h, {
+		id: `${model.id}-search`,
+		size: "sm",
+		placeholder: "Search attributes...",
+		value: model.search,
+		onInput: (text) => Message.ChangedSearch({ text }),
+		onClear: Message.ChangedSearch({ text: "" }),
+	})
 
 const sectionOf = (h: H, model: Model, inputs: PanelInputs, source: AttributeSource, title: string) =>
 	attributesSection(
@@ -311,7 +290,7 @@ export const view = Submodel.defineView<Model, Message, PanelInputs>((model, inp
 		[
 			...(Object.keys(inputs.logAttributes).length > 0 ||
 			Object.keys(inputs.resourceAttributes).length > 0
-				? [searchInput(h, model)]
+				? [attributesSearch(h, model)]
 				: []),
 			sectionOf(h, model, inputs, "log", "Log Attributes"),
 			sectionOf(h, model, inputs, "resource", "Resource attributes"),

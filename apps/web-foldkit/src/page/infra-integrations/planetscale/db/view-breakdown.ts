@@ -5,8 +5,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { panel, panelHeader } from "../../../../ui/panel"
 import { segmentedSelect } from "../../../../ui/segmented-select"
 import { skeleton, skeletonList } from "../../../../ui/skeleton"
-import { columnHead, dataTable, dataTableEmpty } from "../../kit/data-table"
-import { type Sort, sortRows } from "../../kit/table-sort"
+import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
+import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import { BRANCH_STATE_LABEL, branchStateOf, type BranchState } from "../filters"
 import {
 	formatLag,
@@ -193,7 +193,7 @@ const toSortRow = (row: Row) => ({ ...row, branch: row.branch, value: row.value 
 export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 	const spec: MeasureSpec = MEASURES[inputs.measure]
 	const { rows, total, max } = rowsOf(inputs.candidates, spec)
-	const sorted = sortRows(rows.map(toSortRow), inputs.sort, (row) => !row.isOther && row.production)
+	const sorted = sortRowsByField(rows.map(toSortRow), inputs.sort, (row) => !row.isOther && row.production)
 	return panel(h, { className: "border-border/60" }, [
 		panelHeader(h, {
 			title: "Branches",

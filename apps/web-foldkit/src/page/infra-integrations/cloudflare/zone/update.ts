@@ -15,7 +15,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../../cont
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
-import { nextSort } from "../../kit/table-sort"
+import { nextSort } from "../../../kit/table-sort"
 import {
 	CompleteReloadSpin,
 	FetchBreakdown,

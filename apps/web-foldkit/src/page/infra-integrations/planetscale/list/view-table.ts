@@ -9,10 +9,10 @@ import {
 	columnHead,
 	dataTable,
 	dataTableEmpty,
-	dataTableSkeletonRows,
+	skeletonRows,
 	ROW_LINK_CLASS,
-} from "../../kit/data-table"
-import { type Sort, sortRows } from "../../kit/table-sort"
+} from "../../../infra/kit/data-table"
+import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { DatabaseStat } from "../data"
 import {
 	abnormalState,
@@ -93,7 +93,7 @@ export const databaseTableLoading = (h: H): Html =>
 		h,
 		{ ariaLabel: "Databases" },
 		headerCells(h, undefined, false),
-		dataTableSkeletonRows(h, 3, () => [
+		skeletonRows(h, 3, () => [
 			h.div([h.Class("w-0 min-w-[220px] flex-1")], [skeleton(h, "h-4 w-44")]),
 			skeleton(h, "hidden h-3 w-[80px] md:block"),
 			skeleton(h, "h-3 w-[96px]"),
@@ -210,7 +210,7 @@ export type DatabaseTableInputs = Readonly<{
 
 export const databaseTable = (h: H, inputs: DatabaseTableInputs): Html => {
 	const statsByName = new Map(inputs.stats.map((row) => [row.database.toLowerCase(), row]))
-	const rows = sortRows(
+	const rows = sortRowsByField(
 		inputs.databases.map((db) => toRow(db, statsByName)),
 		inputs.sort,
 	)

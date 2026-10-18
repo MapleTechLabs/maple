@@ -25,9 +25,10 @@ import { errorState } from "../../../../ui/error-state"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { CHART_HEIGHT } from "../../kit/chart-card"
-import { heroChip, pageHero } from "../../kit/page-hero"
+import { heroChip } from "../../../infra/kit/hero-chip"
+import { pageHero } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
-import { sectionHeading } from "../../kit/section-heading"
+import { sectionHeading } from "../../../kit/section-heading"
 import { gcpServiceIcon } from "../service-icon"
 import { type PageData, pageOf } from "./derive"
 import { Message, type Model } from "./model"
@@ -300,7 +301,7 @@ const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: C
 					h.section(
 						[h.Class("space-y-3")],
 						[
-							sectionHeading(h, "All charts", { hint: "each opens in the metrics explorer" }),
+							sectionHeading(h, { title: "All charts", hint: "each opens in the metrics explorer" }),
 							workloadCharts(
 								h,
 								model,
@@ -339,7 +340,8 @@ const nodesSection = (
 		h.section(
 			[h.Class(cn("space-y-3", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
 			[
-				sectionHeading(h, `Nodes of ${keys[0] ?? ""}`, {
+				sectionHeading(h, {
+ title: `Nodes of ${keys[0] ?? ""}`,
 					hint: "share of allocatable, averaged over the cluster's nodes",
 				}),
 				workloadCharts(

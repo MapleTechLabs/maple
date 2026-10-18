@@ -12,7 +12,7 @@ import * as FilterSections from "../../../../ui/filters/filter-sections"
 import * as Popover from "../../../../ui/popover"
 import * as Tooltip from "../../../../ui/tooltip"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { SortState } from "../../kit/table-sort"
+import { sortStateOf } from "../../../kit/table-sort"
 import {
 	BreakdownDimension,
 	Status,
@@ -64,10 +64,10 @@ export const Model = Schema.Struct({
 	dimension: BreakdownDimension,
 	breakdown: KeyedSchema(ZoneBreakdown, LoadFailure),
 	breakdownSearch: Schema.String,
-	breakdownSort: SortState(BreakdownSortKey),
+	breakdownSort: sortStateOf(BreakdownSortKey),
 	liveQuery: Schema.NullOr(Schema.String),
 	liveTraffic: KeyedSchema(TopTraffic, LoadFailure),
-	liveSort: SortState(BreakdownSortKey),
+	liveSort: sortStateOf(BreakdownSortKey),
 	areChipsExpanded: Schema.Boolean,
 	filterPopover: Popover.Model,
 	filterSections: FilterSections.Model,

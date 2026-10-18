@@ -50,10 +50,10 @@ import {
 	columnHead,
 	dataTable,
 	dataTableEmpty,
-	dataTableSkeletonRows,
+	skeletonRows,
 	ROW_LINK_CLASS,
-} from "../../kit/data-table"
-import { type MetaItem, metaLine } from "../../kit/meta-line"
+} from "../../../infra/kit/data-table"
+import { type MetaItem, metaLine } from "../../../infra/kit/meta-line"
 import { gcpServiceIcon } from "../service-icon"
 import {
 	GCP_DATABASE_BAND,
@@ -602,7 +602,7 @@ export const serviceTableLoading = (h: H, service: GcpInfraServiceId): Html =>
 		h,
 		{ ariaLabel: GCP_INFRA_SERVICES[service].title },
 		genericHead(h, service),
-		dataTableSkeletonRows(h, 5, () => [
+		skeletonRows(h, 5, () => [
 			dotLane(h),
 			h.div(
 				[h.Class(cn(GENERIC_NAME, "flex items-center gap-3"))],

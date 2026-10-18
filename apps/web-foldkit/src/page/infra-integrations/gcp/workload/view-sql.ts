@@ -17,8 +17,8 @@ import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { meter } from "../../../../ui/meter"
 import { skeletonList } from "../../../../ui/skeleton"
-import { columnHead, dataTable } from "../../kit/data-table"
-import { sectionHeading } from "../../kit/section-heading"
+import { columnHead, dataTable } from "../../../infra/kit/data-table"
+import { sectionHeading } from "../../../kit/section-heading"
 import type { Statement } from "../data"
 import { Message } from "./model"
 
@@ -200,7 +200,7 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 	return h.section(
 		[h.Class("space-y-3")],
 		[
-			sectionHeading(h, "Top queries", { hint: "by total time, Query Insights and traces" }),
+			sectionHeading(h, { title: "Top queries", hint: "by total time, Query Insights and traces" }),
 			AsyncData.match(inputs.slot, {
 				onIdle: () =>
 					skeletonList(h, { rows: 3, rowClassName: "h-[48px] rounded-md", className: "gap-1.5" }),

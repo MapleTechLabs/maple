@@ -52,84 +52,87 @@ const alignOverlays = (container: HTMLElement) => {
 	})
 }
 
-/** Pointer tracking on the grid container; resolves `CompletedMountLinkedCursor` once listening. */
-export const MountLinkedCursor = Mount.defineStream("MountLinkedCursor", {
-	messages: [LinkedCursorMessage.CompletedMountLinkedCursor],
-	execute: ({ element }) =>
-		Stream.callback<LinkedCursorMessage>((queue) =>
-			Effect.acquireRelease(
-				Effect.sync(() => {
-					if (!(element instanceof HTMLElement)) return () => undefined
-					const container = element
-					// Mutable listener state lives only as long as this Mount.
-					const state: CursorState = { active: null, lastTooltip: 0, aligned: false }
-					const setSource = (next: HTMLElement | null) => {
-						if (state.active === next) return
-						state.active?.querySelector<HTMLElement>(OVERLAY_SELECTOR)?.removeAttribute("hidden")
-						state.active?.removeAttribute("data-linked-cursor-source")
-						state.active = next
-						next?.setAttribute("data-linked-cursor-source", "")
-						next?.querySelector<HTMLElement>(OVERLAY_SELECTOR)?.setAttribute("hidden", "")
+/** Pointer tracking on the container; emits `attached` once listening. A page with its own Message wraps this in its Mount. */
+export const linkedCursorStream = <A>(element: Element, attached: A): Stream.Stream<A> =>
+	Stream.callback<A>((queue) =>
+		Effect.acquireRelease(
+			Effect.sync(() => {
+				if (!(element instanceof HTMLElement)) return () => undefined
+				const container = element
+				// Mutable listener state lives only as long as this Mount.
+				const state: CursorState = { active: null, lastTooltip: 0, aligned: false }
+				const setSource = (next: HTMLElement | null) => {
+					if (state.active === next) return
+					state.active?.querySelector<HTMLElement>(OVERLAY_SELECTOR)?.removeAttribute("hidden")
+					state.active?.removeAttribute("data-linked-cursor-source")
+					state.active = next
+					next?.setAttribute("data-linked-cursor-source", "")
+					next?.querySelector<HTMLElement>(OVERLAY_SELECTOR)?.setAttribute("hidden", "")
+				}
+				const hide = () => {
+					container.style.setProperty("--linked-cursor-visible", "0")
+					setSource(null)
+				}
+				const onMouseMove = (event: MouseEvent) => {
+					const elapsed = event.timeStamp - state.lastTooltip
+					if (state.lastTooltip === 0 || elapsed >= TOOLTIP_UPDATE_INTERVAL_MS) {
+						state.lastTooltip = event.timeStamp
+						return
 					}
-					const hide = () => {
-						container.style.setProperty("--linked-cursor-visible", "0")
-						setSource(null)
-					}
-					const onMouseMove = (event: MouseEvent) => {
-						const elapsed = event.timeStamp - state.lastTooltip
-						if (state.lastTooltip === 0 || elapsed >= TOOLTIP_UPDATE_INTERVAL_MS) {
-							state.lastTooltip = event.timeStamp
-							return
-						}
-						event.stopPropagation()
-					}
-					const onPointerMove = (event: PointerEvent) => {
-						const target = event.target
-						const chart =
-							target instanceof Element ? target.closest<HTMLElement>(CHART_SELECTOR) : null
-						const plot = chart?.querySelector<Element>(PLOT_SELECTOR)
-						const bounds = plot?.getBoundingClientRect()
-						const isInside =
-							chart !== null &&
-							bounds !== undefined &&
-							container.contains(chart) &&
-							bounds.width !== 0 &&
-							event.clientX >= bounds.left &&
-							event.clientX <= bounds.right &&
-							event.clientY >= bounds.top &&
-							event.clientY <= bounds.bottom
-						if (!isInside || chart === null || bounds === undefined) {
-							state.aligned = false
-							hide()
-							return
-						}
-						if (!state.aligned) {
-							state.aligned = true
-							alignOverlays(container)
-						}
-						const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
-						setSource(chart)
-						container.style.setProperty("--linked-cursor-ratio", String(ratio))
-						container.style.setProperty("--linked-cursor-visible", "1")
-					}
-					const onPointerLeave = () => {
-						state.lastTooltip = 0
+					event.stopPropagation()
+				}
+				const onPointerMove = (event: PointerEvent) => {
+					const target = event.target
+					const chart =
+						target instanceof Element ? target.closest<HTMLElement>(CHART_SELECTOR) : null
+					const plot = chart?.querySelector<Element>(PLOT_SELECTOR)
+					const bounds = plot?.getBoundingClientRect()
+					const isInside =
+						chart !== null &&
+						bounds !== undefined &&
+						container.contains(chart) &&
+						bounds.width !== 0 &&
+						event.clientX >= bounds.left &&
+						event.clientX <= bounds.right &&
+						event.clientY >= bounds.top &&
+						event.clientY <= bounds.bottom
+					if (!isInside || chart === null || bounds === undefined) {
 						state.aligned = false
 						hide()
+						return
 					}
-					container.addEventListener("mousemove", onMouseMove, true)
-					container.addEventListener("pointermove", onPointerMove)
-					container.addEventListener("pointerleave", onPointerLeave)
-					Queue.offerUnsafe(queue, LinkedCursorMessage.CompletedMountLinkedCursor())
-					return () => {
-						container.removeEventListener("mousemove", onMouseMove, true)
-						container.removeEventListener("pointermove", onPointerMove)
-						container.removeEventListener("pointerleave", onPointerLeave)
+					if (!state.aligned) {
+						state.aligned = true
+						alignOverlays(container)
 					}
-				}),
-				(release) => Effect.sync(release),
-			).pipe(Effect.flatMap(() => Effect.never)),
-		),
+					const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
+					setSource(chart)
+					container.style.setProperty("--linked-cursor-ratio", String(ratio))
+					container.style.setProperty("--linked-cursor-visible", "1")
+				}
+				const onPointerLeave = () => {
+					state.lastTooltip = 0
+					state.aligned = false
+					hide()
+				}
+				container.addEventListener("mousemove", onMouseMove, true)
+				container.addEventListener("pointermove", onPointerMove)
+				container.addEventListener("pointerleave", onPointerLeave)
+				Queue.offerUnsafe(queue, attached)
+				return () => {
+					container.removeEventListener("mousemove", onMouseMove, true)
+					container.removeEventListener("pointermove", onPointerMove)
+					container.removeEventListener("pointerleave", onPointerLeave)
+				}
+			}),
+			(release) => Effect.sync(release),
+		).pipe(Effect.flatMap(() => Effect.never)),
+	)
+
+/** `linkedCursorStream` as a Mount resolving `CompletedMountLinkedCursor`. */
+export const MountLinkedCursor = Mount.defineStream("MountLinkedCursor", {
+	messages: [LinkedCursorMessage.CompletedMountLinkedCursor],
+	execute: ({ element }) => linkedCursorStream(element, LinkedCursorMessage.CompletedMountLinkedCursor()),
 })
 
 /** `LinkedCursorOverlay`: positioned and shown by `MountLinkedCursor`. */

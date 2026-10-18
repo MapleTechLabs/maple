@@ -6,7 +6,6 @@ import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import type * as Select from "../../../ui/select"
 import { type SelectEntry, type SelectOption, view as selectView } from "../../../ui/select-view"
@@ -24,6 +23,7 @@ import type { Model, SummaryRow } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { loadingGrid, previewGrid } from "./view-grid"
 import { loadingTable, metricsTable } from "./view-table"
+import { searchInput } from "../../../ui/search-input"
 
 // `MetricsPage` (routes/metrics/index.tsx): `MetricsBrowseFilters`, `MetricsViewToggle`, `MetricsBrowse`.
 // TODO(session-range): `sessionTimeRangeSearchMiddleware` (the window carried across pages) is not ported.
@@ -79,34 +79,15 @@ const typeItem =
 
 /** `ToolbarSearch` (debounced) over `SearchInput`. */
 const toolbarSearch = (h: H, model: Model): Html =>
-	inputGroup(h, { className: "max-w-sm w-64" }, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: "metrics-search",
-			type: "text",
-			attributes: [
-				h.Placeholder("Search metrics..."),
-				h.Value(model.searchInput),
-				h.OnInput((value) => Message.ChangedSearchInput({ value })),
-			],
-		}),
-		...(model.searchInput === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(
-							h,
-							{
-								attributes: [
-									h.AriaLabel("Clear search"),
-									h.OnClick(Message.ClickedClearSearch()),
-								],
-							},
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
+	searchInput(h, {
+		id: "metrics-search",
+		size: "default",
+		className: "max-w-sm w-64",
+		placeholder: "Search metrics...",
+		value: model.searchInput,
+		onInput: (value) => Message.ChangedSearchInput({ value }),
+		onClear: Message.ClickedClearSearch(),
+	})
 
 const toTypeSelect = (message: Select.Message) => Message.GotTypeSelectMessage({ message })
 

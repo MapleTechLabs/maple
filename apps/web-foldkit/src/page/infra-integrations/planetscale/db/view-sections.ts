@@ -11,8 +11,8 @@ import { panel } from "../../../../ui/panel"
 import { skeleton, skeletonList } from "../../../../ui/skeleton"
 import { statusDot } from "../../../../ui/status-dot"
 import { latencyValue } from "../../../../ui/values"
-import { relativeTime } from "../../kit/relative-time"
-import { sectionHeading } from "../../kit/section-heading"
+import { relativeTime } from "../../../infra/kit/relative-time"
+import { sectionHeading } from "../../../kit/section-heading"
 import type { EventEntry, QueryInsights } from "../data"
 import { presentEvent } from "./derive"
 import { Message } from "./model"
@@ -127,7 +127,8 @@ export const activitySection = (
 	return h.section(
 		[h.Class("space-y-2")],
 		[
-			sectionHeading(h, "Activity", {
+			sectionHeading(h, {
+ title: "Activity",
 				actions: h.span(
 					[h.Class("font-mono text-2xs text-muted-foreground")],
 					[String(events.length)],

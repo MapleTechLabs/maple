@@ -1,14 +1,14 @@
-import { VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
+import { SPARK_COLOR, VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { miniBars } from "../../ui/mini-bars"
 import { skeleton } from "../../ui/skeleton"
 import { statFigure } from "../../ui/stat-figure"
 
 // `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`
 // (apps/web/src/components/common/stat-rail.tsx).
-// TODO(spark): the `spark` MiniBars slot is not ported; no page in scope passes one.
 
 export type StatRailColumns = 2 | 3 | 4 | 5
 
@@ -46,9 +46,12 @@ export type StatRailItemOptions<M> = Readonly<{
 	action?: Html
 	subline?: Html | string
 	compact?: boolean
+	/** The trailing `MiniBars` (last 28 values), toned like the value unless `sparkColor` says. */
+	spark?: ReadonlyArray<number>
+	sparkColor?: string
 	/** Entry animation delay in ms (the rail staggers its tiles). */
 	delay?: number
-	/** Makes the tile a button (with `selected` and `disabled`). */
+	/** Makes the tile a button, which then honours `isSelected` and `isDisabled`. */
 	onSelect?: M
 	isSelected?: boolean
 	isDisabled?: boolean
@@ -64,7 +67,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 	const isSelected = options.isSelected === true
 	const corner =
 		options.action ??
-		(options.delta === undefined
+		(options.delta === undefined || options.delta === ""
 			? undefined
 			: h.span(
 					[h.Class("shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/80")],
@@ -98,10 +101,21 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 					className: "shrink-0",
 					valueClassName: cn(VALUE_TONE[options.tone ?? "neutral"], options.valueClassName),
 				}),
-				...(options.compact === true || isSmall ? [] : [h.div([h.Class("h-7 w-24 min-w-0 shrink")])]),
+				...(options.spark !== undefined && options.spark.length > 1
+					? [
+							miniBars(h, {
+								values: options.spark.slice(-28),
+								color: options.sparkColor ?? SPARK_COLOR[options.tone ?? "neutral"],
+								opacityRamp: true,
+								className: "h-7 w-24 min-w-0 shrink",
+							}),
+						]
+					: options.compact === true || isSmall
+						? []
+						: [h.div([h.Class("h-7 w-24 min-w-0 shrink")])]),
 			],
 		),
-		...(options.subline === undefined
+		...(options.subline === undefined || options.subline === ""
 			? []
 			: [h.div([h.Class("mt-2 truncate text-2xs text-muted-foreground")], [options.subline])]),
 	]
@@ -119,7 +133,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 		[
 			h.Type("button"),
 			...(isDisabled ? [h.Disabled(true)] : []),
-			h.AriaPressed(String(isSelected)),
+			...(options.isSelected === undefined ? [] : [h.AriaPressed(String(isSelected))]),
 			...(options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]),
 			h.OnClick(options.onSelect),
 			...delayStyle,

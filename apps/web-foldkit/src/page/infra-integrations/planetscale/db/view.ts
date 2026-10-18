@@ -19,8 +19,9 @@ import * as Tooltip from "../../../../ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { heroChip, pageHero } from "../../kit/page-hero"
-import { formatAbsolute } from "../../kit/relative-time"
+import { heroChip } from "../../../infra/kit/hero-chip"
+import { pageHero } from "../../../infra/kit/page-parts"
+import { formatAbsolute } from "../../../infra/kit/relative-time"
 import { pageTime } from "../../kit/page-time"
 import { activeFilterChips, applyBranchFilters } from "../filters"
 import {
@@ -52,7 +53,7 @@ import {
 	type Trigger,
 } from "./view-charts"
 import { activitySection, eventTriggerId, insightTriggerId, topQueries } from "./view-sections"
-import { sectionHeading } from "../../kit/section-heading"
+import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
 import { absenceReason } from "@maple/web/components/infra/planetscale/branch-selection"
 
@@ -235,7 +236,7 @@ const dataSections = (
 							h.div(
 								[h.Class("flex flex-wrap items-baseline gap-2")],
 								[
-									sectionHeading(h, "Top queries"),
+									sectionHeading(h, { title: "Top queries" }),
 									branchScope(h, {
 										selected,
 										resolved: selectedBranch?.name ?? null,
