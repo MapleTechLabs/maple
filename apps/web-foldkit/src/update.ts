@@ -1,7 +1,7 @@
 import type { OrgId } from "@maple/domain"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
-import { Option, Schema } from "effect"
+import { Option, Schema, Struct } from "effect"
 import { Command, Update } from "foldkit"
 import { UrlRequest } from "foldkit/navigation"
 import { Transition } from "foldkit/route"
@@ -315,7 +315,28 @@ const onboardingOut =
 					model,
 					PageOutMessage.RequestedToast({ type: "error", title: "Failed to update your plan", description: message }),
 				),
+			RequestedCustomerRefresh: () =>
+				model.customer.orgId === null
+					? { model }
+					: { model, commands: [LoadCustomer({ orgId: model.customer.orgId })] },
+			RequestedClearCheckoutMarker: () =>
+				Option.match(withoutCheckoutMarker(model.route), {
+					onNone: () => ({ model }),
+					onSome: (url) => ({ model, commands: [ReplaceUrl({ url })] }),
+				}),
 		})
+
+/** `withoutCheckoutReturn`: the page's own URL without `checkout=complete`. */
+const withoutCheckoutMarker = (route: AppRoute): Option.Option<string> =>
+	AppRoute.matchOrElse<Option.Option<string>>(
+		route,
+		{
+			SelectPlan: ({ search }) => Option.some(hrefOf(AppRoute.SelectPlan({ search: Struct.omit(search, ["checkout"]) }))),
+			QuickStart: ({ search }) => Option.some(hrefOf(AppRoute.QuickStart({ search: Struct.omit(search, ["checkout"]) }))),
+			Settings: ({ search }) => Option.some(hrefOf(AppRoute.Settings({ search: Struct.omit(search, ["checkout"]) }))),
+		},
+		() => Option.none(),
+	)
 
 const updateOnboarding = (model: Model, message: Onboarding.Message): UpdateReturn => {
 	const onboarding = model.onboarding

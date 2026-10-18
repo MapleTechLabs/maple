@@ -11,6 +11,8 @@ import { errorState } from "../../ui/error-state"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import { skeleton } from "../../ui/skeleton"
+import { panel } from "../../ui/panel"
+import { spinner } from "../../ui/spinner"
 import { Message, type Model } from "./pricing-cards"
 import {
 	ENTERPRISE_DATA_FEATURES,
@@ -217,26 +219,58 @@ const enterpriseCard = (h: H): Html =>
 
 /** `PricingCards`: skeletons while the catalog loads, its error row, or the plan grid. */
 export const view = Submodel.defineView<Model, Message>((model, h) =>
-	AsyncData.match(model.plans, {
+	model.checkoutReturn === "Confirming"
+		? checkoutConfirming(h)
+		: AsyncData.match(model.plans, {
 		onIdle: () => loadingGrid(h),
 		onLoading: () => loadingGrid(h),
-		onRefreshing: (response) => plansGrid(h, response.plans, model.loadingPlanId),
-		onStale: ({ data }) => plansGrid(h, data.plans, model.loadingPlanId),
-		onSuccess: (response) => plansGrid(h, response.plans, model.loadingPlanId),
+		onRefreshing: (response) => plansGrid(h, response.plans, model),
+		onStale: ({ data }) => plansGrid(h, data.plans, model),
+		onSuccess: (response) => plansGrid(h, response.plans, model),
 		onFailure: (message) =>
 			errorState(h, { title: "Unable to load pricing plans", failure: message, variant: "row" }),
 	}),
 )
 
+/** `CheckoutConfirmingPanel`: back from Stripe, before Autumn has the plan; the offer is withheld. */
+const checkoutConfirming = (h: H): Html =>
+	panel(
+		h,
+		{
+			className: "mx-auto max-w-md items-center gap-3 px-6 py-10 text-center",
+			attributes: [h.Role("status"), h.AriaLive("polite")],
+		},
+		[
+			spinner(h, "size-5"),
+			h.p([h.Class("text-sm font-medium")], ["Confirming your subscription…"]),
+			h.p(
+				[h.Class("text-sm text-muted-foreground")],
+				[
+					"Stripe is letting us know your checkout finished. This usually takes a few seconds; there's nothing else to click.",
+				],
+			),
+		],
+	)
+
+/** `CheckoutTimedOutNotice`: the wait gave up, so a slow sync does not read as a failure. */
+const checkoutTimedOut = (h: H): Html =>
+	panel(h, { tone: "muted", className: "px-4 py-3 text-sm text-muted-foreground", attributes: [h.Role("status")] }, [
+		"We haven't heard back from Stripe yet. If you completed checkout, your plan will appear here shortly; there's no need to subscribe again. If you left checkout, ",
+		"pick a plan below",
+		".",
+	])
+
 const loadingGrid = (h: H): Html =>
 	h.div([h.Class("grid grid-cols-1 gap-4 sm:grid-cols-2")], [loadingCard(h), loadingCard(h)])
 
-const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, loadingPlanId: string | null): Html => {
+const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html => {
+	const { loadingPlanId } = model
 	const visible = plans.filter((plan) => !plan.addOn && !plan.autoEnable)
 	const totalCards = visible.length + 1
 	return h.div(
 		[h.Class("space-y-6")],
 		[
+			...(model.checkoutReturn === "TimedOut" ? [checkoutTimedOut(h)] : []),
 			h.div(
 				[
 					h.Class(

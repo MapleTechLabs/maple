@@ -1,7 +1,11 @@
 import { AttachRequest, CatalogPlansResponse } from "@maple/domain/http"
-import { buildCheckoutSuccessUrl } from "@maple/web/lib/billing/checkout-return"
+import {
+	buildCheckoutSuccessUrl,
+	CHECKOUT_CONFIRM_POLL_MS,
+	CHECKOUT_CONFIRM_TIMEOUT_MS,
+} from "@maple/web/lib/billing/checkout-return"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { Effect, Schema } from "effect"
+import { Duration, Effect, Schema } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { load } from "foldkit/navigation"
@@ -16,14 +20,19 @@ import { getScenario } from "./pricing-plans"
 
 export const PlansData = AsyncData.Schema(CatalogPlansResponse, LoadFailure)
 
+export const CheckoutReturn = Schema.Literals(["Idle", "Confirming", "TimedOut"])
+export type CheckoutReturn = typeof CheckoutReturn.Type
+
 export const Model = Schema.Struct({
 	plans: PlansData.schema,
 	/** The plan whose button spins; kept while the page leaves for Stripe. */
 	loadingPlanId: Schema.NullOr(Schema.String),
+	/** `useCheckoutReturn`: back from Stripe (`?checkout=complete`), waiting on the Autumn sync. */
+	checkoutReturn: CheckoutReturn,
 })
 export type Model = typeof Model.Type
 
-export const init = (): Model => ({ plans: PlansData.Loading(), loadingPlanId: null })
+export const init = (): Model => ({ plans: PlansData.Loading(), loadingPlanId: null, checkoutReturn: "Idle" })
 
 export const Message = defineMessageUnion({
 	SucceededLoadPlans: { response: CatalogPlansResponse },
@@ -34,6 +43,8 @@ export const Message = defineMessageUnion({
 	ClickedEnterpriseContact: {},
 	CompletedOpenEnterpriseContact: {},
 	CompletedOpenCheckout: {},
+	ElapsedCheckoutPoll: {},
+	ElapsedCheckoutTimeout: {},
 })
 export type Message = typeof Message.Type
 
@@ -42,6 +53,10 @@ export const OutMessage = defineMessageUnion({
 	/** Leaving for Stripe: the customer is re-read, but nothing is toasted. */
 	ChangedPlan: { isLeavingForCheckout: Schema.Boolean },
 	FailedChangePlan: { message: Schema.String },
+	/** Waiting on the Stripe to Autumn sync: read the customer again. */
+	RequestedCustomerRefresh: {},
+	/** The wait gave up: drop `checkout=complete` from the URL (replace). */
+	RequestedClearCheckoutMarker: {},
 })
 export type OutMessage = typeof OutMessage.Type
 
@@ -85,6 +100,29 @@ export const OpenEnterpriseContact = Command.define("OpenEnterpriseContact", {
 	}),
 })
 
+/** `CHECKOUT_CONFIRM_POLL_MS`: the customer is re-read this often while confirming. */
+export const WaitCheckoutPoll = Command.define("WaitCheckoutPoll", {
+	messages: [Message.ElapsedCheckoutPoll],
+	execute: Effect.sleep(Duration.millis(CHECKOUT_CONFIRM_POLL_MS)).pipe(Effect.as(Message.ElapsedCheckoutPoll())),
+})
+
+/** `CHECKOUT_CONFIRM_TIMEOUT_MS`: then the offer comes back, with the timed-out note. */
+export const WaitCheckoutTimeout = Command.define("WaitCheckoutTimeout", {
+	messages: [Message.ElapsedCheckoutTimeout],
+	execute: Effect.sleep(Duration.millis(CHECKOUT_CONFIRM_TIMEOUT_MS)).pipe(
+		Effect.as(Message.ElapsedCheckoutTimeout()),
+	),
+})
+
+/**
+ * A return from Stripe while the customer is still planless waits on the sync. Once the plan
+ * shows up, the root's plan gate takes the page away (the plan picker and the wizard both leave).
+ */
+export const initReturning = (isReturning: boolean): { readonly model: Model; readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>> } =>
+	isReturning
+		? { model: { ...init(), checkoutReturn: "Confirming" }, commands: [LoadPlans(), WaitCheckoutPoll(), WaitCheckoutTimeout()] }
+		: { model: init(), commands: [LoadPlans()] }
+
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
 export const update = (model: Model, message: Message): UpdateReturn =>
@@ -123,4 +161,12 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		ClickedEnterpriseContact: () => ({ model, commands: [OpenEnterpriseContact()] }),
 		CompletedOpenEnterpriseContact: () => ({ model }),
 		CompletedOpenCheckout: () => ({ model }),
+		ElapsedCheckoutPoll: () =>
+			model.checkoutReturn === "Confirming"
+				? { model, commands: [WaitCheckoutPoll()], outMessage: OutMessage.RequestedCustomerRefresh() }
+				: { model },
+		ElapsedCheckoutTimeout: () =>
+			model.checkoutReturn === "Confirming"
+				? { model: { ...model, checkoutReturn: "TimedOut" }, outMessage: OutMessage.RequestedClearCheckoutMarker() }
+				: { model },
 	})

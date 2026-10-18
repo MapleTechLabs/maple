@@ -32,6 +32,8 @@ export const Model = Schema.TaggedStruct("QuickStart", {
 	/** The plan step's pricing cards; the catalog is read the first time the step is shown. */
 	pricing: PricingCards.Model,
 	isPlansRequested: Schema.Boolean,
+	/** Back from Stripe (`?checkout=complete`): the plan step's cards wait on the sync. */
+	isCheckoutReturn: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -63,10 +65,11 @@ export const SaveQuickStartState = Command.define("SaveQuickStartState", {
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PricingCards.OutMessage, Resources>
 
-export const init = (storageKey: string): UpdateReturn => ({
+export const init = (storageKey: string, isCheckoutReturn = false): UpdateReturn => ({
 	model: {
 		_tag: "QuickStart",
 		storageKey,
+		isCheckoutReturn,
 		state: null,
 		team: isClerkAuthEnabled ? loadingTeam() : selfHostedTeam(),
 		pricing: PricingCards.init(),
@@ -94,12 +97,14 @@ const entered = (previous: Model, result: UpdateReturn): UpdateReturn => {
 			model: { ...model, team: loadingTeam() },
 			commands: [...(result.commands ?? []), Command.mapMessage(toTeam)(LoadTeam())],
 		}
-	if (step === "plan" && !model.isPlansRequested)
+	if (step === "plan" && !model.isPlansRequested) {
+		const pricing = PricingCards.initReturning(model.isCheckoutReturn)
 		return {
 			...result,
-			model: { ...model, isPlansRequested: true },
-			commands: [...(result.commands ?? []), Command.mapMessage(toPricing)(PricingCards.LoadPlans())],
+			model: { ...model, isPlansRequested: true, pricing: pricing.model },
+			commands: [...(result.commands ?? []), ...Command.mapMessages(pricing.commands, toPricing)],
 		}
+	}
 	return result
 }
 

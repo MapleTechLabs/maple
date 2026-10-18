@@ -24,10 +24,14 @@ export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PricingCa
 
 const toPricing = (message: PricingCards.Message) => Message.GotPricingMessage({ message })
 
-export const init = (): UpdateReturn => ({
-	model: { _tag: "SelectPlan", pricing: PricingCards.init() },
-	commands: [Command.mapMessage(toPricing)(PricingCards.LoadPlans())],
-})
+/** `isCheckoutReturn`: back from Stripe (`?checkout=complete`), the cards wait on the sync. */
+export const init = (isCheckoutReturn: boolean): UpdateReturn => {
+	const pricing = PricingCards.initReturning(isCheckoutReturn)
+	return {
+		model: { _tag: "SelectPlan", pricing: pricing.model },
+		commands: Command.mapMessages(pricing.commands, toPricing),
+	}
+}
 
 export const update = (model: Model, message: Message): UpdateReturn => {
 	const next = PricingCards.update(model.pricing, message.message)

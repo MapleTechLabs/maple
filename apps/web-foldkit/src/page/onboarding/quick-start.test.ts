@@ -85,6 +85,19 @@ describe("pricing cards", () => {
 		expect(attached.outMessage).toEqual(PricingCards.OutMessage.ChangedPlan({ isLeavingForCheckout: true }))
 	})
 
+	test("back from Stripe, the cards wait on the sync: polling the customer, then giving up", () => {
+		const returning = PricingCards.initReturning(true)
+		expect(returning.model.checkoutReturn).toBe("Confirming")
+		expect(returning.commands.map((command) => command.name)).toEqual(["LoadPlans", "WaitCheckoutPoll", "WaitCheckoutTimeout"])
+		const polled = PricingCards.update(returning.model, PricingCards.Message.ElapsedCheckoutPoll())
+		expect(polled.outMessage).toEqual(PricingCards.OutMessage.RequestedCustomerRefresh())
+		expect(names(polled)).toEqual(["WaitCheckoutPoll"])
+		const timedOut = PricingCards.update(returning.model, PricingCards.Message.ElapsedCheckoutTimeout())
+		expect(timedOut.model.checkoutReturn).toBe("TimedOut")
+		expect(timedOut.outMessage).toEqual(PricingCards.OutMessage.RequestedClearCheckoutMarker())
+		expect(PricingCards.update(timedOut.model, PricingCards.Message.ElapsedCheckoutPoll()).outMessage).toBeUndefined()
+	})
+
 	test("a refused attach frees the button and reports the failure", () => {
 		const clicked = PricingCards.update(ready, PricingCards.Message.ClickedPlan({ planId: "startup" })).model
 		const failed = PricingCards.update(clicked, PricingCards.Message.FailedAttach({ message: "Card declined" }))

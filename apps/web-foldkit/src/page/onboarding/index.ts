@@ -141,8 +141,9 @@ export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Optio
 		{
 			CliLogin: ({ search }) => fresh(key, CliLogin.init(search.user_code), toCliLogin),
 			McpAuthorize: ({ search }) => fresh(key, McpAuthorize.init(search.request_id), toMcpAuthorize),
-			QuickStart: () => fresh(key, QuickStart.init(storageKeyOf(inputs.maybeOrgId)), toQuickStart),
-			SelectPlan: () => fresh(key, SelectPlan.init(), toSelectPlan),
+			QuickStart: ({ search }) =>
+				fresh(key, QuickStart.init(storageKeyOf(inputs.maybeOrgId), search.checkout === "complete"), toQuickStart),
+			SelectPlan: ({ search }) => fresh(key, SelectPlan.init(search.checkout === "complete"), toSelectPlan),
 			Unsubscribe: ({ search }) => fresh(key, { model: Unsubscribe.init(search.token) }, toUnsubscribe),
 			SignIn: ({ search }) =>
 				fresh(key, ClerkSignIn.init(validateInternalRedirect(search.redirect_url ?? null)), toClerkSignIn),
