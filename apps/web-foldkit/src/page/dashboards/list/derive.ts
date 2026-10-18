@@ -53,16 +53,20 @@ export const headerSummary = (
 	dashboards: ReadonlyArray<ListDashboard>,
 	nowMs: number,
 	timeZone: string,
+	locale: string,
 ): string => {
 	if (dashboards.length === 0) return "No dashboards yet"
 	const widgets = dashboards.reduce((total, dashboard) => total + dashboard.widgetCount, 0)
-	const parts = [countLabel(dashboards.length, "dashboard"), countLabel(widgets, "widget")]
+	const parts = [
+		countLabel(dashboards.length, "dashboard", undefined, locale),
+		countLabel(widgets, "widget", undefined, locale),
+	]
 	const latest = dashboards.reduce<string | null>(
 		(newest, dashboard) =>
 			newest === null || epochOf(dashboard.updatedAt) > epochOf(newest) ? dashboard.updatedAt : newest,
 		null,
 	)
-	if (latest !== null) parts.push(`last edited ${formatRelativeTimeOrDate(latest, nowMs, timeZone)}`)
+	if (latest !== null) parts.push(`last edited ${formatRelativeTimeOrDate(latest, nowMs, timeZone, locale)}`)
 	const empty = dashboards.filter((dashboard) => dashboard.widgetCount === 0).length
 	if (empty > 0) parts.push(`${empty} with no widgets`)
 	return parts.join(" · ")

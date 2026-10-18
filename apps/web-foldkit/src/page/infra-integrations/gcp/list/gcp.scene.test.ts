@@ -70,7 +70,7 @@ const withStatus = (connected: boolean) => {
 	const entered = init({ search: {} }, context).model
 	const windowed = pageUpdate(
 		entered,
-		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "de-DE", mode: "Load" }),
 	).model
 	return pageUpdate(
 		windowed,
@@ -89,6 +89,10 @@ describe("google cloud list", () => {
 			"LoadChartRuntime",
 		])
 		expect(names(withStatus(true).commands)).toEqual(["FetchGcpFleet", "FetchGcpResources"])
+	})
+
+	test("the window read carries the browser locale the tables format counts with", () => {
+		expect(withStatus(true).model.locale).toBe("de-DE")
 	})
 
 	test("an org with no connection reads nothing more", () => {

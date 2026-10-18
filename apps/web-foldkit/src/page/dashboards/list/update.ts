@@ -24,6 +24,7 @@ import {
 import * as TagEditor from "../kit/tag-editor"
 import { displayName, queryOf, tagsOf } from "./derive"
 import * as Combobox from "../../../ui/combobox"
+import { INITIAL_LOCALE } from "../../kit/locale"
 import { Message } from "./message"
 import type { ListDashboard, Model } from "./model"
 
@@ -40,6 +41,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		search: route.search,
 		dashboards: null,
 		nowMs: null,
+		locale: INITIAL_LOCALE,
 		favorites: [],
 		storedSort: "updated",
 		isPrefsLoaded: false,
@@ -227,7 +229,7 @@ const failedWrite = (model: Model, message: string): Return => ({
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		CompletedReadClock: ({ nowMs, locale }) => ({ model: { ...model, nowMs, locale } }),
 		CompletedLoadPreferences: ({ favorites, sort }) => ({
 			model: { ...model, favorites, storedSort: sort, isPrefsLoaded: true },
 		}),

@@ -42,6 +42,8 @@ export const Model = Schema.Struct({
 	/** `null` until the collection is ready (`DashboardsListModel`'s `loading`). */
 	dashboards: Schema.NullOr(Schema.Array(ListDashboard)),
 	nowMs: Schema.NullOr(Schema.Number),
+	/** `toLocaleString`'s locale for the header counts and dates. */
+	locale: Schema.String,
 	/** `useDashboardPreferences`: localStorage favorites and the stored default sort. */
 	favorites: Schema.Array(Schema.String),
 	storedSort: Schema.String,

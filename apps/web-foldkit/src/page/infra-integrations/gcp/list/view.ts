@@ -320,6 +320,7 @@ const infraView = (
 		showProject: multiProject && project === undefined,
 		theme: model.themeColors,
 		isChartReady: model.chartRuntime._tag !== "Loading",
+		locale: model.locale,
 	}
 	const section = (children: ReadonlyArray<Html>) =>
 		h.div(

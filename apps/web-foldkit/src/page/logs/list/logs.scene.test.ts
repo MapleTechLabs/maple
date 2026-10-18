@@ -179,6 +179,17 @@ describe("logs list", () => {
 		)
 	})
 
+	test("an empty volume strip labels its axis in the locale read on entry", () => {
+		const base = pageUpdate(windowed(), Message.CompletedReadPreferences({ wrap: false, density: "comfortable", locale: "de-DE" })).model
+		const model = pageUpdate(base, Message.CompletedFetchVolume({ key: base.volume.key ?? "", result: Result.succeed([]) })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text("06:00")).toExist(),
+		)
+	})
+
 	test("ticking a severity writes it to the URL search", () => {
 		const model = pageUpdate(
 			withFirstPage(),

@@ -17,6 +17,7 @@ import {
 	toPortable,
 } from "../kit/portable"
 import { awaitTxid, deleteDashboard, errorMessageOf, mutateDashboard, readDocument } from "../kit/store"
+import { readLocale } from "../../kit/locale"
 import { Message } from "./message"
 
 /** `dashboardSortAtom`'s key: the default sort for a URL without `?sort`. */
@@ -25,7 +26,9 @@ const decodeStoredSort = Schema.decodeUnknownOption(Schema.fromJsonString(Schema
 
 export const ReadClock = Command.define("ReadDashboardsListClock", {
 	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
+	execute: Effect.zipWith(Clock.currentTimeMillis, readLocale, (nowMs, locale) =>
+		Message.CompletedReadClock({ nowMs, locale }),
+	),
 })
 
 /** A picked tag keeps focus in the filter's search, as Base UI's items do. */

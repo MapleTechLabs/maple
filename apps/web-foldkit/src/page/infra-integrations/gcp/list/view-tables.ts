@@ -220,7 +220,7 @@ export const servicesTable = (
 							[
 								row.instances === undefined
 									? EMPTY_VALUE
-									: row.instances.toLocaleString(undefined, { maximumFractionDigits: 1 }),
+									: row.instances.toLocaleString(ctx.locale, { maximumFractionDigits: 1 }),
 							],
 						),
 						h.div(
@@ -464,11 +464,11 @@ const queryP95Cell = (h: H, row: GcpDatabaseRow): Html => {
 	)
 }
 
-const connectionsCell = (h: H, row: GcpDatabaseRow): Html => {
+const connectionsCell = (h: H, row: GcpDatabaseRow, locale: string): Html => {
 	const max = row.instance?.maxConnections ?? null
 	const share = gcpConnectionShare(row)
 	const idle = Math.round(row.idleInTransaction ?? 0)
-	const count = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 })
+	const count = (value: number) => value.toLocaleString(locale, { maximumFractionDigits: 0 })
 	return h.div(
 		[h.Class("flex w-[150px] flex-col items-end")],
 		[
@@ -575,7 +575,7 @@ export const databasesTable = (
 							quotaCell(h, row.cpu),
 							quotaCell(h, row.memory, "hidden md:flex"),
 							quotaCell(h, row.disk),
-							connectionsCell(h, row),
+							connectionsCell(h, row, ctx.locale),
 						],
 					),
 				),

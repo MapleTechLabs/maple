@@ -50,7 +50,7 @@ const BOARDS = [
 /** Entered with its clock, preferences and rows. */
 const loaded = (search = {}, dashboards: ReadonlyArray<ListDashboard> = BOARDS): Model =>
 	[
-		Message.CompletedReadClock({ nowMs: NOW }),
+		Message.CompletedReadClock({ nowMs: NOW, locale: "en-US" }),
 		Message.CompletedLoadPreferences({ favorites: [], sort: "updated" }),
 		Message.UpdatedDashboards({ orgId, dashboards }),
 	].reduce((model, message) => pageUpdate(model, message).model, init({ search }, context).model)
@@ -69,6 +69,22 @@ describe("dashboards list", () => {
 				"/dashboards/dash_platform",
 			),
 			expectView(text("3 dashboards · 16 widgets · last edited 1h ago · 1 with no widgets")).toExist(),
+		)
+	})
+
+	test("the header formats its counts and dates in the locale read with the clock", () => {
+		const many = Array.from({ length: 1200 }, (_, index) =>
+			dashboard({ id: `dash_${index}`, widgetCount: 1, updatedAt: "2026-09-01T12:00:00.000Z" }),
+		)
+		const model = [
+			Message.CompletedReadClock({ nowMs: NOW, locale: "de-DE" }),
+			Message.CompletedLoadPreferences({ favorites: [], sort: "updated" }),
+			Message.UpdatedDashboards({ orgId, dashboards: many }),
+		].reduce((next, message) => pageUpdate(next, message).model, init({ search: {} }, context).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("1.200 dashboards · 1.200 widgets · last edited 1. Sept. 2026")).toExist(),
 		)
 	})
 

@@ -95,10 +95,11 @@ const emptyStrip = (
 	window: Readonly<{ startTime: string; endTime: string }>,
 	bucketSeconds: number,
 	timeZone: string,
+	locale: string,
 ): Html => {
 	const startMs = epochOf(window.startTime)
 	const rangeMs = Math.max(0, epochOf(window.endTime) - startMs)
-	const axisContext = { rangeMs, bucketSeconds, timeZone }
+	const axisContext = { rangeMs, bucketSeconds, timeZone, locale }
 	const ticks = Array.from({ length: EMPTY_STRIP_TICKS }, (_, i) => ({
 		label: formatBucketLabel(
 			formatWarehouseDateTime(startMs + (rangeMs * i) / (EMPTY_STRIP_TICKS - 1)),
@@ -235,6 +236,7 @@ export const volumeChart = (h: HtmlBuilder<Message>, model: Model, timeZone: str
 									HISTOGRAM_TARGET_POINTS,
 								),
 								timeZone,
+								model.locale,
 							)
 						: model.themeColors === null
 							? h.div([h.Style({ height: `${LOGS_VOLUME_CHART_HEIGHT}px` })], [])

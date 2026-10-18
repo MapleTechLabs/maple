@@ -2,6 +2,7 @@ import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import { loadFleet, loadResources, loadSparks, loadStatus, ResourcesQuery, SparksInput } from "../data"
+import { readLocale } from "../../../kit/locale"
 import { Message, RequestMode } from "./model"
 
 export const ResolveWindow = Command.define("ResolveGcpWindow", {
@@ -14,10 +15,11 @@ export const ResolveWindow = Command.define("ResolveGcpWindow", {
 	},
 	messages: [Message.CompletedResolveWindow],
 	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
+		Effect.zipWith(Clock.currentTimeMillis, readLocale, (nowMs, locale) =>
 			Message.CompletedResolveWindow({
 				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
 				nowMs,
+				locale,
 				mode,
 			}),
 		),
