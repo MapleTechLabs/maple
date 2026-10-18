@@ -52,7 +52,7 @@ const MASK_MEANINGS = new Map([
 
 type Range = Readonly<{ startMs: number; endMs: number }>
 
-type Prepared = ToolErrorRow &
+export type Prepared = ToolErrorRow &
 	Readonly<{
 		tokens: ReadonlyArray<ErrorTextToken>
 		display: string
@@ -61,7 +61,7 @@ type Prepared = ToolErrorRow &
 	}>
 
 /** `prepareToolErrors`: messages unwrapped, the shared prefix hoisted, trends filled over the window. */
-const prepare = (rows: ReadonlyArray<ToolErrorRow>, range: Range) => {
+export const prepare = (rows: ReadonlyArray<ToolErrorRow>, range: Range) => {
 	const failures = rows.reduce((sum, row) => sum + row.calls, 0)
 	const bucket = errorTrendBucket(range.startMs, range.endMs)
 	const texts = rows.map((row) => unwrapToolErrorText(row.message).text)

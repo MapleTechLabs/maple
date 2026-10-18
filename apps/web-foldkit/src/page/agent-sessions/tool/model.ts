@@ -11,6 +11,7 @@ import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
 import { ToolErrorRow, ToolSeries, TotalsResult } from "../tools-kit/model"
+import * as ErrorModal from "./error-modal-model"
 
 // `/agent-sessions/tools/$toolName` (routes/agent-sessions/tools/$toolName.tsx, tools/tool-detail-view.tsx).
 
@@ -41,5 +42,7 @@ export const Model = Schema.Struct({
 	chartRuntime: ChartRuntime,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
+	/** `ToolErrorModal`, open while `?error=` names a row the Errors table holds. */
+	errorModal: ErrorModal.Model,
 })
 export type Model = typeof Model.Type

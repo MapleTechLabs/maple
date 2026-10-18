@@ -215,8 +215,59 @@ const toolsInteractions: ReadonlyArray<Scenario> = [
 
 const TOOL = "/agent-sessions/tools/Bash"
 
-/** The tool detail page's controls. The error group modal (`?error=`) is not ported yet. */
+/** Opens the Errors table's first group in the error modal (`?error=`). */
+const openErrorGroup = async (page: Page) => {
+	await page
+		.getByRole("region", { name: "Errors" })
+		.getByRole("button", { name: /failed: expected/ })
+		.click()
+	await page.getByRole("dialog").waitFor()
+}
+
+/** `ToolErrorModal`: the group's rail, its samples, stepping and closing. */
+const errorModalInteractions: ReadonlyArray<Scenario> = [
+	scenario("tool-detail-error-modal", "Tool detail, an error group opened", TOOL, { steps: openErrorGroup }),
+	scenario("tool-detail-error-close", "Tool detail, the error modal closed", TOOL, {
+		steps: async (page) => {
+			await openErrorGroup(page)
+			await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click()
+		},
+	}),
+	scenario("tool-detail-error-escape", "Tool detail, the error modal dismissed with Escape", TOOL, {
+		steps: async (page) => {
+			await openErrorGroup(page)
+			await page.keyboard.press("Escape")
+		},
+	}),
+	scenario("tool-detail-error-session", "Tool detail, the samples narrowed to a session", TOOL, {
+		steps: async (page) => {
+			await openErrorGroup(page)
+			await page.getByRole("button", { name: /^Show samples in/ }).first().click()
+		},
+	}),
+	scenario("tool-detail-error-sample-closed", "Tool detail, the open sample closed", TOOL, {
+		steps: async (page) => {
+			await openErrorGroup(page)
+			await page.getByRole("button", { name: /^Sample at/ }).first().click()
+		},
+	}),
+	scenario("tool-detail-error-next-sample", "Tool detail, j opens the next sample", TOOL, {
+		steps: async (page) => {
+			await openErrorGroup(page)
+			await page.keyboard.press("j")
+		},
+	}),
+	scenario("tool-detail-error-step", "Tool detail, ArrowDown on the only error group", TOOL, {
+		steps: async (page) => {
+			await openErrorGroup(page)
+			await page.keyboard.press("ArrowDown")
+		},
+	}),
+]
+
+/** The tool detail page's controls. */
 const toolDetailInteractions: ReadonlyArray<Scenario> = [
+	...errorModalInteractions,
 	scenario("tool-detail-service", "Tool detail, a service picked", TOOL, {
 		steps: async (page) => {
 			await page.getByRole("combobox", { name: "service" }).click()
@@ -516,6 +567,12 @@ const labInteractions: ReadonlyArray<Scenario> = [
 		"Agent sessions list, with errors",
 		"/lab/agent-sessions",
 		(page) => page.getByRole("switch", { name: "With errors" }).click(),
+	),
+	labVariant(
+		"lab-bench-agent-transcript-copy",
+		"Agent transcript bench, a code block copied",
+		"/lab/bench/agent-transcript",
+		(page) => page.getByRole("button", { name: "Copy Code" }).first().click(),
 	),
 	labVariant("lab-agent-tools-width", "Agent tools at 820px", "/lab/agent-tools", (page) =>
 		page.getByRole("button", { name: "820px" }).click(),

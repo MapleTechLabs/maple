@@ -1,7 +1,7 @@
 import { errorTrendBucket } from "@maple/web/lib/agent-sessions/tool-error-display"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Record } from "effect"
-import { Command } from "foldkit"
+import { AsyncData, Command } from "foldkit"
 import * as Chart from "../../../charts/chart"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
@@ -28,6 +28,8 @@ import {
 } from "./command"
 import { type FacetKey, Message, type RequestMode } from "./message"
 import type { Model } from "./model"
+import * as ErrorModal from "./error-modal-model"
+import * as ErrorModalUpdate from "./error-modal-update"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -159,6 +161,7 @@ export const init = (
 		chartRuntime: { _tag: "Loading" },
 		refreshVersion: 0,
 		isReloading: false,
+		errorModal: ErrorModal.init(),
 	}
 	return {
 		model,
@@ -209,8 +212,55 @@ const facetSelectStep = (model: Model, facet: FacetKey, message: Select.Message)
 		: { ...navigate(updated, { ...model.search, [facet]: facetValue(next.outMessage.value) }), commands }
 }
 
+/** The groups of the Errors read in its own order: what the modal opens on and steps through. */
+const errorFingerprints = (model: Model): ReadonlyArray<string> =>
+	Option.match(AsyncData.getData(model.errors.data), {
+		onNone: () => [],
+		onSome: (errors) => errors.data.map((row) => row.fingerprint),
+	})
+
+const modalContextOf = (model: Model, context: PageContext): ErrorModalUpdate.ModalContext => ({
+	orgId: context.orgId,
+	selection: model.window === null ? null : selectionOf(model, model.window),
+	error: model.search.error,
+	session: model.search.session,
+	variant: model.search.variant,
+	fingerprints: errorFingerprints(model),
+})
+
+/** The modal's step lifted: its search asks are set at once (nothing re-opens it meanwhile), then pushed. */
+const liftModal = (model: Model, step: ErrorModalUpdate.Return): Return => {
+	const lifted: Model = { ...model, errorModal: step.model }
+	const commands = Command.mapMessages(step.commands ?? [], (message) => Message.GotErrorModalMessage({ message }))
+	if (step.outMessage === undefined) return { model: lifted, commands }
+	const { error, session, variant } = step.outMessage
+	const search = { ...model.search, error, session, variant }
+	return { ...navigate({ ...lifted, search }, search), commands }
+}
+
+/** After every step: the modal follows the URL and the Errors read. */
+const followModal =
+	(context: PageContext) =>
+	(result: Return): Return => {
+		const followed = liftModal(
+			result.model,
+			ErrorModalUpdate.follow(result.model.errorModal, modalContextOf(result.model, context)),
+		)
+		return {
+			...result,
+			model: followed.model,
+			commands: [...(result.commands ?? []), ...(followed.commands ?? [])],
+			outMessage: result.outMessage ?? followed.outMessage,
+		}
+	}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	followModal(context)(step(model, message, context))
+
+const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
+		GotErrorModalMessage: ({ message: inner }) =>
+			liftModal(model, ErrorModalUpdate.update(model.errorModal, inner, modalContextOf(model, context))),
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			requestAll({ ...model, window, nowMs }, context, mode),
 		CompletedFetchSeries: ({ key, result }) => ({

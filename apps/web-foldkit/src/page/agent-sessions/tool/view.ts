@@ -27,11 +27,12 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { rangeOf } from "./update"
 import { detailCharts, GRID_TOKENS } from "./view-charts"
-import { errorsTable } from "./view-errors"
+import { errorsTable, prepare } from "./view-errors"
+import * as ErrorModal from "./error-modal-model"
+import * as ErrorModalView from "./view-error-modal"
 import { sessionsPanel } from "./view-sessions"
 
 // `ToolDetailPage` / `ToolDetailBody` (routes/agent-sessions/tools/$toolName.tsx) and `ToolDetailView`.
-// TODO(error-modal): `?error=` opens `ToolErrorModal` in legacy; the row writes the param, the modal is not ported.
 // TODO(tooltip): the description's tooltip is drawn as its trigger.
 
 type H = HtmlBuilder<Message>
@@ -197,8 +198,46 @@ const loadedView = (h: H, model: Model, totals: TotalsResult, inputs: PageViewIn
 				nowMs: model.nowMs,
 				timeZone,
 			}),
+			errorModalView(h, model, totals, range, timeZone),
 		],
 	)
+}
+
+/** `ErrorModal`: mounted from the row, so a stale `?error=` the window no longer holds opens nothing. */
+const errorModalView = (
+	h: H,
+	model: Model,
+	totals: TotalsResult,
+	range: Readonly<{ startMs: number; endMs: number }>,
+	timeZone: string,
+): Html => {
+	const rows = AsyncData.getOrElse(model.errors.data, () => ({ data: [] })).data
+	const prepared = prepare(rows, range).rows
+	const index = prepared.findIndex((row) => row.fingerprint === model.errorModal.fingerprint)
+	const group = prepared[index]
+	return h.submodel({
+		slotId: "agent-tool-error-modal-root",
+		model: model.errorModal,
+		view: ErrorModalView.view,
+		toParentMessage: (message: ErrorModal.Message) => Message.GotErrorModalMessage({ message }),
+		viewInputs: {
+			inputs:
+				group === undefined
+					? undefined
+					: {
+							tool: model.toolName,
+							group,
+							position: { index, total: prepared.length },
+							toolFailures: rows.reduce((sum, row) => sum + row.calls, 0),
+							toolCalls: totals.current.calls,
+							range,
+							session: model.search.session,
+							variant: model.search.variant,
+							timeZone,
+							nowMs: model.nowMs,
+						},
+		},
+	})
 }
 
 const loadingView = (h: H): Html =>

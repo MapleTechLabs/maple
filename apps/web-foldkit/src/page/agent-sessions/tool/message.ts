@@ -8,6 +8,7 @@ import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
 import { ToolErrorRow, ToolSeries, TotalsResult } from "../tools-kit/model"
+import * as ErrorModal from "./error-modal-model"
 import { SessionRows } from "./model"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
@@ -42,5 +43,6 @@ export const Message = defineMessageUnion({
 	GotFacetSelectMessage: { facet: FacetKey, message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
+	GotErrorModalMessage: { message: ErrorModal.Message },
 })
 export type Message = typeof Message.Type
