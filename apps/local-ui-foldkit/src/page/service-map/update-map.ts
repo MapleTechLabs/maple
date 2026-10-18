@@ -58,6 +58,8 @@ export const syncMap = (result: UpdateReturn, context: PageContext): UpdateRetur
 				collapsedNamespaces: stored.prefs.collapsedNamespaces,
 				focus: Option.none(),
 				snapshots: stored.snapshots,
+				// local-ui's map frames itself on its first layout, namespace boxes or not.
+				isFirstBoxedFitKept: true,
 			}),
 		onSome: (map) => ServiceMap.setSource(map, source),
 	})
