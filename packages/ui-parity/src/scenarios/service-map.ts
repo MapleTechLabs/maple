@@ -127,6 +127,10 @@ export const serviceMapArea: AreaModule = {
 				page.getByRole("tab", { name: /Infrastructure/ }).click(),
 			),
 		}),
+		map("database-selected", "the shop database selected", "/service-map", {
+			steps: act(selectNode("PostgreSQL")),
+		}),
+		map("cache-selected", "the cache selected", "/service-map", { steps: act(selectNode("Redis")) }),
 		map("panel-close", "a selection closed from its panel", "/service-map", {
 			steps: act(selectNode("payment-svc"), clickButton("Close")),
 		}),

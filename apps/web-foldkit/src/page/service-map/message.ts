@@ -60,6 +60,6 @@ export const Message = defineMessageUnion({
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotServiceTabsMessage: { message: Tabs.Message },
-	GotChartMessage: { message: Chart.Message },
+	GotChartMessage: { chart: Schema.Literals(["volume", "latency"]), message: Chart.Message },
 })
 export type Message = typeof Message.Type

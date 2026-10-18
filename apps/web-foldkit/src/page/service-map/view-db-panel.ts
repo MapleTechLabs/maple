@@ -42,6 +42,7 @@ export type DatabasePanelInputs = Readonly<{
 	planetscale: PlanetScaleNodeMetrics | undefined
 	rows: ScopedRows
 	durationSeconds: number
+	timeZone: string
 }>
 
 const toMap = (message: ServiceMap.Message) => Message.GotMapMessage({ message })
@@ -232,7 +233,7 @@ export const databasePanel = (h: H, model: Model, inputs: DatabasePanelInputs): 
 									],
 								),
 								...Option.toArray(failureAlert(h, model.dbSummary.data)),
-								queryActivity(h, model, metrics.response, isWaiting),
+								queryActivity(h, model, metrics.response, isWaiting, inputs.timeZone),
 							],
 						),
 						...topQueries(h, metrics.response),

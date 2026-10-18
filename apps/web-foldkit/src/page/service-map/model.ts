@@ -6,6 +6,7 @@ import type {
 	getServiceMapPlanetScale,
 } from "@maple/web-data/warehouse/service-map"
 import { type Effect, Schema } from "effect"
+import * as Chart from "../../charts/chart"
 import { ChartRuntime } from "../../charts/chart-runtime"
 import { ThemeColors } from "../../charts/theme-colors"
 import { KeyedSchema } from "../../data/keyed"
@@ -94,6 +95,8 @@ export const Model = Schema.Struct({
 	branchStats: KeyedSchema(BranchStatsSchema, LoadFailure),
 	/** The service panel's Service / Infrastructure tabs (`defaultValue="service"`, reset per node). */
 	serviceTabs: Tabs.Model,
+	/** The database panel's query volume and latency plots. */
+	dbCharts: Schema.Struct({ volume: Chart.Model, latency: Chart.Model }),
 	environmentSelect: Select.Model,
 	timePicker: TimeRangePicker.Model,
 	/** `useSignalPresence("traces")` of the empty canvas, requested once it painted. */

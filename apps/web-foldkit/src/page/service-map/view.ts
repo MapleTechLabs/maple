@@ -23,6 +23,8 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { ResolveThemeColors } from "../../charts/theme-colors"
+import { DB_CHART_TOKENS } from "./view-db-charts"
 import { databasePanel } from "./view-db-panel"
 import { serviceMapEmptyState } from "./view-empty"
 import { servicePanel } from "./view-service-panel"
@@ -94,7 +96,14 @@ const toMap = (message: ServiceMap.Message) => Message.GotMapMessage({ message }
 
 /** `renderDetailPanel`: a database node gets its panel, anything else the service panel. */
 const detailPanel =
-	(h: H, model: Model, rows: ScopedRows, durationSeconds: number, map: ServiceMap.Model) =>
+	(
+		h: H,
+		model: Model,
+		rows: ScopedRows,
+		durationSeconds: number,
+		map: ServiceMap.Model,
+		timeZone: string,
+	) =>
 	(selectedId: string): Html => {
 		if (!selectedId.startsWith(DB_NODE_PREFIX))
 			return servicePanel(h, model, {
@@ -110,6 +119,7 @@ const detailPanel =
 			planetscale: node?.data.planetscale,
 			rows,
 			durationSeconds,
+			timeZone,
 		})
 	}
 
@@ -137,21 +147,34 @@ const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 				viewMode: model.search.view ?? "2d",
 				render3D: () => scene3d(h),
 				emptyState: serviceMapEmptyState(h, model),
-				detailPanel: detailPanel(h, model, rows, durationSecondsOf(model.window), map),
+				detailPanel: detailPanel(
+					h,
+					model,
+					rows,
+					durationSecondsOf(model.window),
+					map,
+					inputs.context.timeZone,
+				),
 			})
 		},
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	dashboardPage(h, { actions: headerActions(h, model) }, [
-		Option.match(AsyncData.getError(model.facets.data), {
-			onSome: (failure) =>
-				errorState(h, {
-					failure,
-					title: "Failed to load service environments",
-					onRetry: Message.ClickedRetryFacets(),
+	h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: DB_CHART_TOKENS }))],
+		[
+			dashboardPage(h, { actions: headerActions(h, model) }, [
+				Option.match(AsyncData.getError(model.facets.data), {
+					onSome: (failure) =>
+						errorState(h, {
+							failure,
+							title: "Failed to load service environments",
+							onRetry: Message.ClickedRetryFacets(),
+						}),
+					onNone: () =>
+						h.div([h.Class("-mx-4 -mb-4 h-[calc(100vh-10rem)]")], [mapArea(h, model, inputs)]),
 				}),
-			onNone: () => h.div([h.Class("-mx-4 -mb-4 h-[calc(100vh-10rem)]")], [mapArea(h, model, inputs)]),
-		}),
-	]),
+			]),
+		],
+	),
 )

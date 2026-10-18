@@ -336,6 +336,7 @@ export const queryActivity = (
 	model: Model,
 	response: SummaryResponse | null,
 	isWaiting: boolean,
+	timeZone: string,
 ): Html => {
 	if (response === null && isWaiting) return skeleton(h, "h-44 w-full rounded-md")
 	if (response === null || response.timeseries.length === 0)
@@ -352,7 +353,7 @@ export const queryActivity = (
 				docsLink(h, "otelConventions"),
 			],
 		)
-	return queryActivityCharts(h, model, response)
+	return queryActivityCharts(h, model, response, timeZone)
 }
 
 /** `formatQueryLabel`: whitespace collapsed, long statements cut in the middle. */

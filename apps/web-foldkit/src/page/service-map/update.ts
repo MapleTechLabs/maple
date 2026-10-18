@@ -1,6 +1,7 @@
 import { DB_NODE_PREFIX } from "@maple/ui/components/service-map/service-map-utils"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
+import * as Chart from "../../charts/chart"
 import { LoadChartRuntime } from "../../charts/chart-runtime"
 import * as Keyed from "../../data/keyed"
 import * as ServiceMap from "../../service-map/map/service-map"
@@ -60,6 +61,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		dbSummary: Keyed.idle(),
 		branchStats: Keyed.idle(),
 		serviceTabs: initServiceTabs(),
+		dbCharts: { volume: Chart.init(), latency: Chart.init() },
 		environmentSelect: Select.init("service-map-environment", {
 			value: "production",
 			selectedIndex: null,
@@ -361,5 +363,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
-		GotChartMessage: () => ({ model }),
+		GotChartMessage: ({ chart, message: inner }) => {
+			const next = Chart.update(model.dbCharts[chart], inner)
+			return {
+				model: { ...model, dbCharts: { ...model.dbCharts, [chart]: next.model } },
+				commands: Command.mapMessages(next.commands ?? [], (m) =>
+					Message.GotChartMessage({ chart, message: m }),
+				),
+			}
+		},
 	})

@@ -2,6 +2,7 @@ import { OrgId } from "@maple/domain"
 import { Option, Result, Schema } from "effect"
 import { Command, expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
 import * as ServiceMap from "../../service-map/map/service-map"
 import { PageOutMessage, type PageContext } from "../contract"
 import { LoadSignalPresence, MountEmptyState } from "./command"
@@ -208,6 +209,7 @@ describe("service map page: view", () => {
 			{ update: pageUpdate, view },
 			given(empty),
 			expectView(text("service calls")).toExist(),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
 			Command.resolve(
 				LoadSignalPresence,
