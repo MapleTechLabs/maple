@@ -15,6 +15,7 @@ import type {
 	PageViewInputs,
 } from "./contract"
 import * as AlertsHub from "./alerts/hub"
+import * as AnomaliesList from "./anomalies/list"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
 import * as DashboardsList from "./dashboards/list"
@@ -100,6 +101,7 @@ export const pages = [
 	DashboardTemplates.page,
 	DashboardWidget.page,
 	Recommendation.page,
+	AnomaliesList.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))
