@@ -4,7 +4,9 @@ import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "../../data/local-query"
+import { ListRequest, SparklinesRequest, SummaryRequest } from "./requests"
 import { MetricsListData } from "./catalog"
 import { MetricSparkline, SummaryRow } from "./fetch"
 
@@ -15,10 +17,14 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
 	SucceededFetchList: { key: Schema.String, data: MetricsListData, fetchedAtMs: Schema.Number },
 	FailedFetchList: { key: Schema.String, failure: LoadFailure },
-	SucceededFetchSummary: { key: Schema.String, rows: Schema.Array(SummaryRow) },
+	/** The result cache answered first; `request` is the read the fetch then repeats. */
+	FoundCachedList: { request: ListRequest, cached: CachedOf(MetricsListData) },
+	SucceededFetchSummary: { key: Schema.String, rows: Schema.Array(SummaryRow), fetchedAtMs: Schema.Number },
 	FailedFetchSummary: { key: Schema.String, failure: LoadFailure },
-	SucceededFetchSparklines: { key: Schema.String, sparklines: Schema.Array(MetricSparkline) },
+	FoundCachedSummary: { request: SummaryRequest, cached: CachedOf(Schema.Array(SummaryRow)) },
+	SucceededFetchSparklines: { key: Schema.String, sparklines: Schema.Array(MetricSparkline), fetchedAtMs: Schema.Number },
 	FailedFetchSparklines: { key: Schema.String, failure: LoadFailure },
+	FoundCachedSparklines: { request: SparklinesRequest, cached: CachedOf(Schema.Array(MetricSparkline)) },
 	ClickedRefresh: {},
 	CompletedReadRefreshClock: { nowMs: Schema.Number },
 	ChangedSearch: { text: Schema.String },

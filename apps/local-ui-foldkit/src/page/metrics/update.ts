@@ -4,11 +4,11 @@ import { LoadChartRuntime } from "@maple/web-foldkit/charts/chart-runtime"
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { accept, idle } from "../../data/slot"
+import { accept, idle, acceptCached } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import { updateCopy } from "../kit/copies"
-import { ReadClock, ReadRefreshClock, WaitSearchDebounce } from "./command"
+import { FetchList, FetchSparklines, FetchSummary, ReadClock, ReadRefreshClock, WaitSearchDebounce } from "./command"
 import { load, loadSparklines } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -102,15 +102,37 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
 		SucceededFetchList: ({ key, data, fetchedAtMs }) => {
 			const isCurrent = model.list.key === key
-			const next = { ...model, list: accept(model.list, key, Result.succeed(data)), listUpdatedAtMs: isCurrent ? fetchedAtMs : model.listUpdatedAtMs }
+			const next = { ...model, list: accept(model.list, key, Result.succeed(data), fetchedAtMs), listUpdatedAtMs: isCurrent ? fetchedAtMs : model.listUpdatedAtMs }
 			const sparklines = loadSparklines(next, context)
 			return withPresence({ model: settleRefresh(sparklines.model), commands: sparklines.commands }, context)
 		},
 		FailedFetchList: ({ key, failure }) => ({ model: settleRefresh({ ...model, list: accept(model.list, key, Result.fail(failure)) }) }),
-		SucceededFetchSummary: ({ key, rows }) => ({ model: settleRefresh({ ...model, summary: accept(model.summary, key, Result.succeed(rows)) }) }),
+		SucceededFetchSummary: ({ key, rows, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, summary: accept(model.summary, key, Result.succeed(rows), fetchedAtMs) }) }),
+		FoundCachedList: ({ request, cached }) => {
+			if (model.list.key !== request.key) return { model }
+			const next = { ...model, list: acceptCached(model.list, request.key, cached, cached.isFresh), listUpdatedAtMs: cached.updatedAtMs }
+			const sparklines = loadSparklines(next, context)
+			const fetch = cached.isFresh ? [] : [FetchList({ ...request, readsCache: false })]
+			return withPresence({ model: settleRefresh(sparklines.model), commands: [...fetch, ...(sparklines.commands ?? [])] }, context)
+		},
+		FoundCachedSummary: ({ request, cached }) =>
+			model.summary.key === request.key
+				? {
+						model: settleRefresh({ ...model, summary: acceptCached(model.summary, request.key, cached, cached.isFresh) }),
+						commands: cached.isFresh ? [] : [FetchSummary({ ...request, readsCache: false })],
+					}
+				: { model },
+		FoundCachedSparklines: ({ request, cached }) =>
+			model.sparklines.key === request.key
+				? {
+						model: settleRefresh({ ...model, sparklines: acceptCached(model.sparklines, request.key, cached, cached.isFresh) }),
+						commands: cached.isFresh ? [] : [FetchSparklines({ ...request, readsCache: false })],
+					}
+				: { model },
 		FailedFetchSummary: ({ key, failure }) => ({ model: settleRefresh({ ...model, summary: accept(model.summary, key, Result.fail(failure)) }) }),
-		SucceededFetchSparklines: ({ key, sparklines }) =>
-			({ model: settleRefresh({ ...model, sparklines: accept(model.sparklines, key, Result.succeed(sparklines)) }) }),
+		SucceededFetchSparklines: ({ key, sparklines, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, sparklines: accept(model.sparklines, key, Result.succeed(sparklines), fetchedAtMs) }) }),
 		FailedFetchSparklines: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, sparklines: accept(model.sparklines, key, Result.fail(failure)) }) }),
 		ClickedRefresh: () =>
