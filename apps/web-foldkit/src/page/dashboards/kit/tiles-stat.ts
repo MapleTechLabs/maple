@@ -1,4 +1,3 @@
-import type { DashboardDocument } from "@maple/domain/http"
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -9,13 +8,13 @@ import { resolveColor } from "../../../charts/theme-colors"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
 import type { WidgetDataState } from "./data-state"
 import { widgetFrame } from "./tile-shell"
-import type { TileContext } from "./tiles"
+import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 
 // `StatWidget` (dashboard-builder/widgets/stat-widget.tsx), with its trend sparkline when
 // `display.sparkline` names a series (`StatSparkline`).
 
-type Widget = DashboardDocument["widgets"][number]
+type Widget = TileWidget
 
 /** `formatValue` (stat-widget.tsx). */
 export const formatStatValue = (value: unknown, unit?: string, prefix?: string, suffix?: string): string => {

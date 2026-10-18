@@ -1,5 +1,4 @@
 // BOUNDARY: chart tiles render whatever their endpoint answered; rows are untyped query results.
-import type { DashboardDocument } from "@maple/domain/http"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "../../../charts/area-chart"
 import * as BarChart from "../../../charts/bar-chart"
@@ -15,7 +14,7 @@ import { hoistedSeries } from "../../../charts/timeseries"
 import { chartSkeleton, type ChartSkeletonVariant } from "../../../ui/chart-skeleton"
 import { type ChartCategory, chartCategoryOf } from "./chart-registry"
 import { widgetEmptyState, widgetFrame } from "./tile-shell"
-import type { TileContext } from "./tiles"
+import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 
 // `makeChartWidget` (dashboard-builder/widgets/make-chart-widget.tsx): one factory for every widget
@@ -24,7 +23,7 @@ import { frame } from "./tiles-frame"
 // TODO(service-charts): the fixed-metric registry entries (latency-line, throughput-area, apdex,
 // error rate) draw their skeleton inside a widget.
 
-type Widget = DashboardDocument["widgets"][number]
+type Widget = TileWidget
 type Rows = ReadonlyArray<Record<string, unknown>>
 type Primitive = Readonly<Record<string, string | number | boolean>>
 

@@ -1,9 +1,8 @@
-import type { DashboardDocument } from "@maple/domain/http"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
 import type { FrameOptions } from "./tile-shell"
-import type { TileContext } from "./tiles"
+import type { TileContext, TileWidget } from "./tiles"
 
-type Widget = DashboardDocument["widgets"][number]
+type Widget = TileWidget
 
 /** The `WidgetFrame` props every tile passes: title, mode, menu, data state and the error CTAs. */
 export const frame = <M>(
