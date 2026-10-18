@@ -208,10 +208,10 @@ const requestAll = (
 				(key) => FetchAttributeKeys({ key, window }),
 			),
 	]
-	const done = steps.reduce((step, next) => next(step), {
+	const done = steps.reduce<Step>((step, next) => next(step), {
 		model: { ...model, window },
 		commands: [],
-	} as Step)
+	})
 	// A new first-page request owns a fresh set of later pages (`initialPagination`).
 	const isNewFirstPage = done.model.firstPage.key !== model.firstPage.key
 	return {

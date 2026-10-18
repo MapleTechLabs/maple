@@ -37,9 +37,25 @@ export const setRuleEnabled = (ruleId: AlertRuleId, isEnabled: boolean) =>
 export const updateDestination = (destinationId: AlertDestinationId, payload: V2AlertDestinationUpdateParams) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
-		// `as never`, as apps/web: the generated client collapses this union payload to one member.
-		yield* client.alertDestinations.update({ params: { id: destinationId }, payload: payload as never })
-	}).pipe(Effect.mapError(toLoadFailure))
+		const params = { id: destinationId }
+		// The client takes one request type per union member, so each narrowed payload is sent on its own.
+		switch (payload.type) {
+			case "pagerduty":
+				return yield* client.alertDestinations.update({ params, payload })
+			case "webhook":
+				return yield* client.alertDestinations.update({ params, payload })
+			case "hazel-oauth":
+				return yield* client.alertDestinations.update({ params, payload })
+			case "discord":
+				return yield* client.alertDestinations.update({ params, payload })
+			case "telegram":
+				return yield* client.alertDestinations.update({ params, payload })
+			case "email":
+				return yield* client.alertDestinations.update({ params, payload })
+			case "chat":
+				return yield* client.alertDestinations.update({ params, payload })
+		}
+	}).pipe(Effect.asVoid, Effect.mapError(toLoadFailure))
 
 export const testDestination = (destinationId: AlertDestinationId) =>
 	Effect.gen(function* () {

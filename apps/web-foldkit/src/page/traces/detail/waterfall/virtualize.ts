@@ -116,14 +116,25 @@ const attach = (scroller: HTMLElement, parts: Parts): (() => void) => {
 	}
 }
 
+/** The virtualizer's running state between its measure, scroll and scroll-to callbacks. */
+type VirtualizerState = {
+	keys: ReadonlyArray<string>
+	rows: ReadonlyArray<VirtualRow>
+	totalSize: number
+	isMeasuring: boolean
+	isEmitScheduled: boolean
+	scrolledTo: string
+	handle: number
+}
+
 /** `useVirtualizer` keyed by span id, measuring every mounted row, plus the scroll effect. */
 const virtualize = (scroller: HTMLElement): Stream.Stream<WindowMessage> =>
 	Stream.callback<WindowMessage>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() => {
-				const state = {
+				const state: VirtualizerState = {
 					keys: keysOf(scroller),
-					rows: [] as ReadonlyArray<VirtualRow>,
+					rows: [],
 					totalSize: -1,
 					isMeasuring: false,
 					isEmitScheduled: false,
