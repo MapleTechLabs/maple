@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
 import { PopupPosition } from "../ui/anchor"
+import * as Dialog from "../ui/dialog"
 import * as Tooltip from "../ui/tooltip"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
@@ -28,8 +29,19 @@ export type Theme = typeof Theme.Type
 export const Message = defineMessageUnion({
 	ClickedSidebarTrigger: {},
 	PressedSidebarShortcut: {},
+	/** `/chat`'s own `SidebarTrigger`: its provider is held closed, so only the mobile sheet opens. */
+	ClickedPageSidebarTrigger: {},
+	/** A page reads `useInfraSurfaces` itself (the infra overview, Kubernetes workloads). */
+	RequestedInfraSurfaces: {},
 	ChangedViewport: { isMobile: Schema.Boolean },
 	DismissedMobileNav: {},
+	ChangedFilterViewport: { isCollapsed: Schema.Boolean },
+	ChangedSmallViewport: { isBelowSm: Schema.Boolean },
+	/** The top bar's "Open filters" / "Open context" (`FilterSidebarTrigger`, `RightSidebarTrigger`). */
+	ClickedOpenFilters: {},
+	ClickedOpenContext: {},
+	GotFilterSheetMessage: { message: Dialog.Message },
+	GotRightSheetMessage: { message: Dialog.Message },
 	ClickedMenuTrigger: { menu: Menu },
 	DismissedMenu: {},
 	MeasuredMenuPopup: { menu: Menu, position: PopupPosition },

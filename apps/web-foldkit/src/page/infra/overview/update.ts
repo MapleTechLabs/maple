@@ -67,6 +67,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model: loaded.model,
 		commands: [resolveFrame(model.frame, scopeOf(model, context), toFrame, "Load"), ...(loaded.commands ?? [])],
+		// TODO(infra-window): legacy probes presence over the page's window; the shell's is the last hour.
+		outMessage: PageOutMessage.RequestedInfraSurfaces(),
 	}
 }
 

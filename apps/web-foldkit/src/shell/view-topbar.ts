@@ -80,6 +80,8 @@ export const topbar = (
 	model: Model,
 	breadcrumbs: ReadonlyArray<BreadcrumbEntry>,
 	pageActions: Html,
+	/** `FilterSidebarTrigger` / `RightSidebarTrigger`: below `lg`, one per rail the page renders. */
+	railTriggers: ReadonlyArray<Html> = [],
 ): Html =>
 	h.header(
 		[
@@ -109,6 +111,7 @@ export const topbar = (
 					askMapleButton(h),
 					...(isClerkAuthEnabled ? [checklistPill(h, model)] : []),
 					connectButton(h),
+					...railTriggers,
 					pageActions,
 				],
 			),

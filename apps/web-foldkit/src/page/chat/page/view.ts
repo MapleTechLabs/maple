@@ -20,11 +20,12 @@ import { Message as ConversationMessage } from "../conversation/message"
 import { emptyNotice } from "../conversation/view"
 import { investigationNoun } from "../../investigations/detail/investigation-context"
 import { investigationCard, widgetFixCard } from "../kit/view-subject"
+import { mobileLayout } from "./view-mobile"
 import { chatSidebar } from "./view-sidebar"
 
 // `ChatPage` (apps/web components/chat/chat-page.tsx), desktop layout: the conversation rail
 // beside every open conversation (hidden but mounted, like legacy's tab panes).
-// TODO(chat-mobile): below `md` legacy swaps the rail for a header with a conversation sheet.
+// Below `md` the rail becomes a header with a conversation sheet (`view-mobile.ts`).
 
 type H = HtmlBuilder<Message>
 
@@ -114,7 +115,11 @@ const sharedView = (h: H, model: Model, timeZone: string): Html => {
 			h.header(
 				[h.Class("flex h-12 shrink-0 items-center gap-2 border-b bg-sidebar px-2 text-sidebar-foreground")],
 				[
-					sidebarTrigger(h, { state: "collapsed", className: "size-9" }),
+					sidebarTrigger(h, {
+						state: "collapsed",
+						className: "size-9",
+						attributes: [h.OnClick(Message.ClickedSidebarTrigger())],
+					}),
 					icon(h, "LinkIcon", { size: 14, className: "shrink-0 text-muted-foreground/70" }),
 					h.div(
 						[h.Class("flex min-w-0 flex-1 flex-col justify-center")],
@@ -161,11 +166,13 @@ const sharedView = (h: H, model: Model, timeZone: string): Html => {
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	model.shared !== null
 		? sharedView(h, model, inputs.context.timeZone)
-		: h.div(
-				[h.Class("flex h-full min-h-0 flex-1")],
-				[
-					chatSidebar(h, model, "w-[260px] border-r"),
-					h.div([h.Class("flex min-w-0 flex-1 flex-col")], [conversations(h, model, inputs.context.timeZone)]),
-				],
-			),
+		: inputs.isMobile === true
+			? mobileLayout(h, model, conversations(h, model, inputs.context.timeZone))
+			: h.div(
+					[h.Class("flex h-full min-h-0 flex-1")],
+					[
+						chatSidebar(h, model, "w-[260px] border-r"),
+						h.div([h.Class("flex min-w-0 flex-1 flex-col")], [conversations(h, model, inputs.context.timeZone)]),
+					],
+				),
 )

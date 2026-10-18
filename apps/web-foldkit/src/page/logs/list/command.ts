@@ -171,6 +171,12 @@ export const WaitSearchDebounce = Command.define("WaitLogsSearchDebounce", {
 		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
 })
 
+/** The filter rail is in the DOM (legacy reads its facets as it renders, so no paint wait). */
+export const MountFilterRail = Mount.define("MountLogsFilterRail", {
+	messages: [Message.MountedFilterRail],
+	execute: () => Effect.succeed(Message.MountedFilterRail()),
+})
+
 /** The empty state is on screen: resolves after the frame that painted it. */
 export const MountEmptyState = Mount.define("MountLogsEmptyState", {
 	messages: [Message.PaintedEmptyState],

@@ -34,6 +34,8 @@ export const Model = Schema.Struct({
 	renameDraft: Schema.String,
 	menus: Schema.Record(Schema.String, Menu.Model),
 	deleteDialog: Dialog.Model,
+	/** Below `md`: the conversation list as a left sheet (`convListOpen`). */
+	conversationSheet: Dialog.Model,
 	confirmDeleteId: Schema.NullOr(Schema.String),
 	/** `maple-chat-referrer`: the page the user came from, for the composer's context chips. */
 	referrerPath: Schema.NullOr(Schema.String),
@@ -51,3 +53,4 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 export const DELETE_DIALOG_ID = "chat-delete-conversation"
+export const CONVERSATION_SHEET_ID = "chat-conversation-sheet"

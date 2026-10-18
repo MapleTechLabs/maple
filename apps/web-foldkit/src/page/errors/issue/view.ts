@@ -18,6 +18,7 @@ import {
 	tabOf,
 	windowLabel,
 } from "./derive"
+import { MountRightRail } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { occurrencePanel, OCCURRENCE_TOKENS } from "./view-chart"
@@ -104,7 +105,7 @@ const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html 
 	const verification = latestVerificationOf(model)
 	const pullRequests = pullRequestsOf(model)
 	return h.div(
-		[h.Class("flex flex-col gap-4")],
+		[h.Class("flex flex-col gap-4"), h.OnMount(MountRightRail())],
 		[
 			issueSidebar(h, model, detail.issue, detail.environments),
 			h.div(

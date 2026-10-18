@@ -99,7 +99,7 @@ const pairedCompanion = (metric: AnalyticsMetricDescriptor, source: AnalyticsMet
 	return isMetricAvailable(companion, source) ? companion : undefined
 }
 
-const summarySection = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>
+const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean): ReadonlyArray<Html> =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => [
 			h.div(
@@ -145,6 +145,7 @@ const summarySection = (h: H, model: Model, timeZone: string): ReadonlyArray<Htm
 									source,
 									theme: model.themeColors,
 									timeZone,
+									isNarrow,
 								},
 								toParentMessage: (message) => Message.GotChartMessage({ message }),
 							}),
@@ -315,5 +316,5 @@ const breakdownSection = (h: H, model: Model, timeZone: string): Html =>
 	})
 
 /** `AnalyticsContent`. */
-export const overviewContent = (h: H, model: Model, timeZone: string): Html =>
-	h.div([h.Class("space-y-6")], [...summarySection(h, model, timeZone), breakdownSection(h, model, timeZone)])
+export const overviewContent = (h: H, model: Model, timeZone: string, isNarrow = false): Html =>
+	h.div([h.Class("space-y-6")], [...summarySection(h, model, timeZone, isNarrow), breakdownSection(h, model, timeZone)])

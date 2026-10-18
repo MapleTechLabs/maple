@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http"
 import { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { Clock, Duration, Effect, Result, Schema } from "effect"
-import { Command } from "foldkit"
+import { Command, Mount } from "foldkit"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
@@ -147,6 +147,12 @@ export const FetchAnomalies = Command.define("FetchErrorIssueAnomalies", {
 			settle,
 			Effect.map((result) => Message.CompletedFetchAnomalies({ key, result })),
 		),
+})
+
+/** The rail (and the attach dialog in it) is in the DOM; it reads as it renders. */
+export const MountRightRail = Mount.define("MountErrorIssueRightRail", {
+	messages: [Message.MountedRightRail],
+	execute: () => Effect.succeed(Message.MountedRightRail()),
 })
 
 /** The attach dialog's GitHub connection, read while the dialog is mounted (closed). */

@@ -13,6 +13,7 @@ import {
 } from "../../../ui/filters/filter-sidebar"
 import { SOURCE_COLOR, SOURCE_DESCRIPTION, SOURCES } from "../kit/source"
 import { hasErrorFilters, KIND_LABEL } from "./derive"
+import { MountFilterRail } from "./command"
 import { type FilterParam, Message } from "./message"
 import type { Model } from "./model"
 
@@ -43,8 +44,12 @@ const section = (
 		...extra,
 	})
 
+/** `ErrorsFilterSidebar`; its Mount asks for the counts once the rail is actually rendered. */
+export const filtersRail = (h: H, model: Model): Html =>
+	h.div([h.Class("contents"), h.OnMount(MountFilterRail())], [railContent(h, model)])
+
 /** The service counts are what the sidebar is mostly made of: it waits for them. */
-export const filtersRail = (h: H, model: Model): Html => {
+const railContent = (h: H, model: Model): Html => {
 	const { search } = model
 	const counts = model.serviceCounts.data
 	if (!AsyncData.hasData(counts) && !AsyncData.isFailure(counts)) return filterSidebarLoading(h, 3)

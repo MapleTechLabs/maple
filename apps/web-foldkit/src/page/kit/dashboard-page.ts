@@ -18,7 +18,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 
 // `DashboardPage` (apps/web/src/components/layout/dashboard-page.tsx) below the shell's top bar:
 // `PageLayout.Body` with its filter rail, content column, sticky header and scroll area.
-// TODO(lg): legacy moves the filter rail into a left sheet below `lg` (`useMediaQuery("max-lg")`).
+// Below `lg` the shell lifts both rails out of the body into sheets (`shell/page-rails.ts`).
 
 export type DashboardPageOptions = Readonly<{
 	/** `DashboardLayout.Filters`'s children. */
@@ -37,7 +37,7 @@ export type DashboardPageOptions = Readonly<{
 	gap?: PageGap
 	/** `header`:replaces the composed header (a page with its own title block). */
 	header?: Html
-	/** `DashboardLayout.RightPanel` as the inline rail (lg and up). TODO(lg): the sheet below lg. */
+	/** `DashboardLayout.RightPanel`: inline at `lg` and up, a sheet below it (the shell lifts it). */
 	rightPanel?: Html
 	rightPanelWidth?: string
 	/** `DashboardPage`'s `sticky`: pinned under the header and tabs (a chart, a toolbar, a banner). */

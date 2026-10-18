@@ -7,7 +7,7 @@ import * as Menu from "../../../ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { Message as ConversationMessage } from "../conversation/message"
 import { LoadHistory } from "../conversation/command"
-import { CreateTab, LoadPresence, MountEmptyState, SaveTabs } from "./command"
+import { CopyShareLink, CreateTab, LoadPresence, MountEmptyState, SaveTabs } from "./command"
 import { Message } from "./message"
 import { MountMessage, MountStopClickPropagation } from "./mounts"
 import { view } from "./view"
@@ -167,5 +167,27 @@ describe("chat page", () => {
 			["Yesterday", ["c"]],
 			["Older", ["a"]],
 		])
+	})
+})
+
+describe("chat page below md", () => {
+	test("the header's trigger asks the shell for its sidebar sheet", () => {
+		expect(step(loaded().model, Message.ClickedSidebarTrigger()).outMessage).toEqual(
+			PageOutMessage.RequestedSidebarToggle(),
+		)
+	})
+
+	test("the title opens the conversation sheet; picking a conversation there closes it", () => {
+		const model = loaded([tab("default"), tab("t2", "Checkout errors")]).model
+		const opened = step(model, Message.ClickedSwitchConversation()).model
+		expect(opened.conversationSheet.isOpen).toBe(true)
+		const picked = step(opened, Message.ClickedTab({ id: "t2" })).model
+		expect(picked.tabs?.activeTabId).toBe("t2")
+		expect(picked.conversationSheet.isOpen).toBe(false)
+	})
+
+	test("share copies the active conversation's link", () => {
+		const shared = step(loaded().model, Message.ClickedCopyActiveShareLink())
+		expect(names(shared.commands)).toEqual([CopyShareLink.name])
 	})
 })

@@ -5,7 +5,14 @@ import { Command, expect as expectView, given, Mount, role, scene, text, withVie
 import { describe, expect, test } from "vitest"
 import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { FetchInvestigations, FetchPage, LoadSignalPresence, MountEmptyList, MountRowSelect } from "./command"
+import {
+	FetchInvestigations,
+	FetchPage,
+	LoadSignalPresence,
+	MountEmptyList,
+	MountFilterRail,
+	MountRowSelect,
+} from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -21,6 +28,7 @@ const view = withViewInputs(pageView, { context })()
 
 const RECT = { left: 2, right: 115, top: 2, bottom: 2, width: 51, height: 28 }
 const measured = Mount.resolve(MeasureTabIndicator, TabsMessage.MeasuredIndicator({ rect: RECT }))
+const railMounted = Mount.resolve(MountFilterRail, Message.MountedFilterRail())
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
@@ -66,7 +74,8 @@ const issue = (overrides: Partial<Record<string, unknown>> = {}) =>
 /** Entered and windowed: every query in flight. */
 const windowed = (search = {}): Model => {
 	const entered = init({ search }, context).model
-	return pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
+	const resolved = pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
+	return pageUpdate(resolved, Message.MountedFilterRail()).model
 }
 
 const withPage = (model: Model, data: ReadonlyArray<V2ErrorIssue>): Model =>
@@ -79,20 +88,16 @@ const withPage = (model: Model, data: ReadonlyArray<V2ErrorIssue>): Model =>
 	).model
 
 describe("errors hub", () => {
-	test("entry resolves the day window, then asks the summary, sidebar, first page and investigations", () => {
+	test("entry resolves the day window, then asks the summary, first page and investigations, and the sidebar once it mounts", () => {
 		expect(names(init({ search: {} }, context).commands)).toContain("ResolveErrorsWindow")
 		const entered = init({ search: {} }, context).model
 		const resolved = pageUpdate(
 			entered,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([
-			"FetchErrorsSummary",
-			"FetchErrorIssueServiceCounts",
-			"FetchErrorsEnvironments",
-			FetchInvestigations.name,
-			FetchPage.name,
-		])
+		expect(names(resolved.commands)).toEqual(["FetchErrorsSummary", FetchInvestigations.name, FetchPage.name])
+		const mounted = pageUpdate(resolved.model, Message.MountedFilterRail())
+		expect(names(mounted.commands)).toEqual(["FetchErrorIssueServiceCounts", "FetchErrorsEnvironments"])
 	})
 
 	test("loaded rows ask volume and trend for exactly their fingerprints", () => {
@@ -139,6 +144,7 @@ describe("errors hub", () => {
 			{ update: pageUpdate, view },
 			given(withPage(windowed(), [issue()])),
 			measured,
+			railMounted,
 			Mount.resolve(MountRowSelect, Message.ClickedRowSelect({ id: "", isShift: false })),
 			expectView(role("link", { name: /ConnectionTimeout/ })).toHaveAttr(
 				"href",
@@ -178,6 +184,7 @@ describe("errors hub", () => {
 			{ update: pageUpdate, view },
 			given(withPage(windowed(), [])),
 			measured,
+			railMounted,
 			expectView(text("No open errors")).toExist(),
 			Mount.resolve(MountEmptyList, Message.PaintedEmptyList()),
 			Command.resolve(

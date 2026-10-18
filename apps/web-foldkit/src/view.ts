@@ -52,7 +52,7 @@ const toPageMessage = (message: PageMessage) => Message.GotPageMessage({ message
 const pageView = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const maybeContext = pageContextOf(model)
 	return model.page !== null && Option.isSome(maybeContext)
-		? viewPage(h, model.page, { context: maybeContext.value }, toPageMessage)
+		? viewPage(h, model.page, { context: maybeContext.value, isMobile: model.shell.isMobile, isBelowSm: model.shell.isBelowSm }, toPageMessage)
 		: placeholderContent(h, model.route)
 }
 
@@ -60,7 +60,7 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html => {
 const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const maybeContext = pageContextOf(model)
 	return model.page !== null && Option.isSome(maybeContext)
-		? viewPageTopbarActions(h, model.page, { context: maybeContext.value }, toPageMessage)
+		? viewPageTopbarActions(h, model.page, { context: maybeContext.value, isMobile: model.shell.isMobile, isBelowSm: model.shell.isBelowSm }, toPageMessage)
 		: h.empty
 }
 
@@ -132,7 +132,7 @@ const bareShellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Ht
 				clerk,
 				page: () =>
 					model.page !== null && Option.isSome(maybeContext)
-						? viewPage(h, model.page, { context: maybeContext.value }, toPageMessage)
+						? viewPage(h, model.page, { context: maybeContext.value, isMobile: model.shell.isMobile, isBelowSm: model.shell.isBelowSm }, toPageMessage)
 						: h.empty,
 			},
 		}),
