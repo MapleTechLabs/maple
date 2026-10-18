@@ -73,7 +73,10 @@ const listInteractions: ReadonlyArray<Scenario> = [
 		steps: (page) => rail(page).getByRole("button", { name: "Environment" }).click(),
 	}),
 	scenario("list-range-preset", "List, the Quick session length preset", "/agent-sessions", {
-		steps: (page) => rail(page).getByRole("button", { name: /^Quick/ }).click(),
+		steps: (page) =>
+			rail(page)
+				.getByRole("button", { name: /^Quick/ })
+				.click(),
 	}),
 	scenario("list-range-typed", "List, a minimum cost typed", "/agent-sessions", {
 		steps: async (page) => {
@@ -83,19 +86,32 @@ const listInteractions: ReadonlyArray<Scenario> = [
 		},
 	}),
 	scenario("list-histogram", "List, a tokens bar clicked", "/agent-sessions", {
-		steps: (page) => rail(page).getByRole("img", { name: /^Tokens distribution/ }).click(),
+		steps: (page) =>
+			rail(page)
+				.getByRole("img", { name: /^Tokens distribution/ })
+				.click(),
 	}),
 	scenario("list-grouped", "List, single-trace sessions hidden", "/agent-sessions", {
 		// Unnamed in both apps: its `aria-labelledby` id holds spaces, so it is the rail's last checkbox.
 		steps: (page) => rail(page).getByRole("checkbox").last().click(),
 	}),
-	scenario("list-clear-all", "List, the rail's Clear all", "/agent-sessions?agents=%5B%22researcher%22%5D", {
-		steps: (page) => rail(page).getByRole("button", { name: "Clear all" }).click(),
-	}),
+	scenario(
+		"list-clear-all",
+		"List, the rail's Clear all",
+		"/agent-sessions?agents=%5B%22researcher%22%5D",
+		{
+			steps: (page) => rail(page).getByRole("button", { name: "Clear all" }).click(),
+		},
+	),
 	scenario("list-filtered-empty", "List, filtered to nothing", "/agent-sessions?agents=%5B%22nobody%22%5D"),
-	scenario("list-clear-filters", "List, Clear filters on the empty list", "/agent-sessions?agents=%5B%22nobody%22%5D", {
-		steps: (page) => page.getByRole("button", { name: "Clear filters" }).click(),
-	}),
+	scenario(
+		"list-clear-filters",
+		"List, Clear filters on the empty list",
+		"/agent-sessions?agents=%5B%22nobody%22%5D",
+		{
+			steps: (page) => page.getByRole("button", { name: "Clear filters" }).click(),
+		},
+	),
 	scenario("list-reload", "List, reloaded", "/agent-sessions", {
 		steps: (page) => page.getByRole("button", { name: "Reload" }).click(),
 	}),
@@ -137,15 +153,22 @@ const toolsInteractions: ReadonlyArray<Scenario> = [
 		steps: (page) => page.getByRole("button", { name: "P90 duration" }).click(),
 	}),
 	scenario("tools-percentile", "Tools, P95 picked", TOOLS, {
-		steps: (page) => page.getByRole("group", { name: "Percentile" }).getByRole("button", { name: "p95" }).click(),
+		steps: (page) =>
+			page.getByRole("group", { name: "Percentile" }).getByRole("button", { name: "p95" }).click(),
 	}),
 	scenario("tools-sort", "Tools, the table sorted by errors", TOOLS, {
-		steps: (page) => page.getByRole("region", { name: "Tools" }).getByRole("button", { name: "Errors" }).click(),
+		steps: (page) =>
+			page.getByRole("region", { name: "Tools" }).getByRole("button", { name: "Errors" }).click(),
 	}),
 	scenario("tools-scope", "Tools, scoped to a tool and model", `${TOOLS}?tool=Bash&model=claude-opus-4-1`),
-	scenario("tools-scope-remove", "Tools, the tool chip removed", `${TOOLS}?tool=Bash&model=claude-opus-4-1`, {
-		steps: (page) => page.getByRole("button", { name: "Remove tool Bash" }).click(),
-	}),
+	scenario(
+		"tools-scope-remove",
+		"Tools, the tool chip removed",
+		`${TOOLS}?tool=Bash&model=claude-opus-4-1`,
+		{
+			steps: (page) => page.getByRole("button", { name: "Remove tool Bash" }).click(),
+		},
+	),
 	scenario("tools-scope-clear", "Tools, the scope cleared", `${TOOLS}?tool=Bash&model=claude-opus-4-1`, {
 		steps: (page) => page.getByRole("button", { name: "Clear all" }).click(),
 	}),
@@ -161,7 +184,10 @@ const toolsInteractions: ReadonlyArray<Scenario> = [
 	}),
 	scenario("tools-chart-hover", "Tools, the chart hovered", TOOLS, {
 		steps: (page) =>
-			page.getByRole("img", { name: "Tool calls" }).first().hover({ position: { x: 900, y: 100 } }),
+			page
+				.getByRole("img", { name: "Tool calls" })
+				.first()
+				.hover({ position: { x: 900, y: 100 } }),
 	}),
 	scenario("tools-loading", "Tools, the totals held", TOOLS, {
 		faults: held("aiSessionsInternal.toolsTotals"),
@@ -189,15 +215,24 @@ const toolDetailInteractions: ReadonlyArray<Scenario> = [
 		steps: (page) => page.getByRole("button", { name: "Failing only" }).click(),
 	}),
 	scenario("tool-detail-model", "Tool detail, scoped to a model", `${TOOL}?model=claude-opus-4-1`),
-	scenario("tool-detail-model-remove", "Tool detail, the model chip removed", `${TOOL}?model=claude-opus-4-1`, {
-		steps: (page) => page.getByRole("button", { name: "Remove model claude-opus-4-1" }).click(),
-	}),
+	scenario(
+		"tool-detail-model-remove",
+		"Tool detail, the model chip removed",
+		`${TOOL}?model=claude-opus-4-1`,
+		{
+			steps: (page) => page.getByRole("button", { name: "Remove model claude-opus-4-1" }).click(),
+		},
+	),
 	scenario("tool-detail-sort", "Tool detail, errors sorted by sessions", TOOL, {
-		steps: (page) => page.getByRole("region", { name: "Errors" }).getByRole("button", { name: "Sessions" }).click(),
+		steps: (page) =>
+			page.getByRole("region", { name: "Errors" }).getByRole("button", { name: "Sessions" }).click(),
 	}),
 	scenario("tool-detail-chart-hover", "Tool detail, the calls chart hovered", TOOL, {
 		steps: (page) =>
-			page.getByRole("img", { name: "Tool calls" }).first().hover({ position: { x: 470, y: 60 } }),
+			page
+				.getByRole("img", { name: "Tool calls" })
+				.first()
+				.hover({ position: { x: 470, y: 60 } }),
 	}),
 	scenario("tool-detail-time-range", "Tool detail, last 1 day from the picker", TOOL, {
 		steps: async (page) => {
@@ -224,6 +259,131 @@ const toolDetailInteractions: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+const SESSION = `/agent-sessions/${NEWEST_SESSION}`
+
+const openView = async (page: Page, name: "Traces" | "Flow" | "Transcript") => {
+	await page.getByRole("tab", { name }).click()
+	await page.getByRole("tab", { name, selected: true }).waitFor()
+}
+
+const openDisplay = async (page: Page, name: "Traces" | "Flow" | "Transcript") => {
+	await openView(page, name)
+	await page.getByRole("button", { name: "Display options" }).click()
+}
+
+/**
+ * The session page's controls. Not exercised: a span opens the inspection popover (`?span=`),
+ * which is not ported yet.
+ */
+const detailInteractions: ReadonlyArray<Scenario> = [
+	scenario("detail-flow", "Session detail, flow", SESSION, { steps: (page) => openView(page, "Flow") }),
+	scenario("detail-hotkey", "Session detail, the 2 key opens Traces", SESSION, {
+		steps: (page) => page.keyboard.press("2"),
+	}),
+	scenario("detail-ledger", "Session detail, a tool ledger row opened", SESSION, {
+		steps: (page) => page.getByRole("button", { name: "Bash", exact: true }).click(),
+	}),
+	scenario("detail-checks-passed", "Session detail, the passed checks opened", SESSION, {
+		steps: (page) => page.getByRole("button", { name: /^Passed/ }).click(),
+	}),
+	scenario("detail-checks-skipped", "Session detail, the unchecked checks opened", SESSION, {
+		steps: (page) => page.getByRole("button", { name: /^Not checked/ }).click(),
+	}),
+	scenario("detail-open-tools", "Session detail, the Tools section link", SESSION, {
+		steps: (page) => page.getByRole("button", { name: "Tools section" }).click(),
+	}),
+	scenario("detail-traces-filter", "Session detail, traces filtered", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Traces")
+			await page.getByRole("textbox", { name: "Filter spans" }).fill("Bash")
+		},
+	}),
+	scenario("detail-traces-display", "Session detail, the traces Display options", SESSION, {
+		steps: (page) => openDisplay(page, "Traces"),
+	}),
+	scenario("detail-traces-idle", "Session detail, traces with idle kept", SESSION, {
+		steps: async (page) => {
+			await openDisplay(page, "Traces")
+			await page.getByRole("switch", { name: "Collapse idle" }).click()
+		},
+	}),
+	scenario("detail-traces-all-spans", "Session detail, traces with app spans", SESSION, {
+		steps: async (page) => {
+			await openDisplay(page, "Traces")
+			await page.getByRole("switch", { name: "Agent spans only" }).click()
+		},
+	}),
+	scenario("detail-traces-collapse", "Session detail, a trace turn collapsed", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Traces")
+			await page.getByRole("button", { name: /^Turn 1/ }).click()
+		},
+	}),
+	scenario("detail-transcript-filter", "Session detail, transcript filtered", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Transcript")
+			await page.getByRole("textbox", { name: "Filter transcript" }).fill("retry")
+		},
+	}),
+	scenario("detail-transcript-payloads", "Session detail, transcript payloads expanded", SESSION, {
+		steps: async (page) => {
+			await openDisplay(page, "Transcript")
+			await page.getByRole("switch", { name: "Expand tool payloads" }).click()
+			await page.keyboard.press("Escape")
+		},
+	}),
+	scenario("detail-transcript-tool", "Session detail, a transcript tool card opened", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Transcript")
+			await page.getByRole("button", { name: /^Grep \d/ }).click()
+		},
+	}),
+	scenario("detail-transcript-system", "Session detail, a system prompt opened", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Transcript")
+			await page
+				.getByRole("button", { name: /^System prompt/ })
+				.first()
+				.click()
+		},
+	}),
+	scenario("detail-transcript-raw", "Session detail, a message shown raw", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Transcript")
+			await page.getByRole("button", { name: "raw" }).first().click({ force: true })
+		},
+	}),
+	scenario("detail-transcript-collapse", "Session detail, a transcript turn collapsed", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Transcript")
+			await page
+				.getByRole("heading", { name: /^Turn 1/ })
+				.getByRole("button")
+				.click()
+		},
+	}),
+	scenario("detail-flow-merge", "Session detail, flow with repeats merged", SESSION, {
+		steps: async (page) => {
+			await openDisplay(page, "Flow")
+			await page.getByRole("switch", { name: "Merge repeat tools" }).click()
+			await page.keyboard.press("Escape")
+		},
+	}),
+	scenario("detail-flow-zoom", "Session detail, flow zoomed in", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Flow")
+			await page.getByRole("button", { name: "Zoom in" }).click()
+		},
+	}),
+	scenario("detail-loading", "Session detail, the spans held", SESSION, {
+		faults: held("aiSessionsInternal.spans"),
+		settle: "held",
+	}),
+	scenario("detail-error", "Session detail, the spans failing", SESSION, {
+		faults: failing("aiSessionsInternal.spans"),
+	}),
+]
+
 export const agentSessionsArea: AreaModule = {
 	area: "agent-sessions",
 	scenarios: [
@@ -245,6 +405,7 @@ export const agentSessionsArea: AreaModule = {
 		...listInteractions,
 		...toolsInteractions,
 		...toolDetailInteractions,
+		...detailInteractions,
 		scenario("detail", "Session detail", `/agent-sessions/${NEWEST_SESSION}`),
 		scenario("detail-transcript", "Session detail, transcript", `/agent-sessions/${NEWEST_SESSION}`, {
 			steps: (page) => page.getByRole("tab", { name: "Transcript" }).click(),

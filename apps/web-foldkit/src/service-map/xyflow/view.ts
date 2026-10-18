@@ -1,7 +1,14 @@
 import "./react-flow.css"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AttachFlowCanvas, MEASURE_EPOCH_ATTRIBUTE, VIEWPORT_ATTRIBUTE, viewportAttribute } from "./attach"
+import {
+	AttachFlowCanvas,
+	DEFAULT_GESTURES,
+	type FlowGestures,
+	MEASURE_EPOCH_ATTRIBUTE,
+	VIEWPORT_ATTRIBUTE,
+	viewportAttribute,
+} from "./attach"
 import type { Message, Model } from "./canvas"
 import type { XY } from "./geometry"
 import { viewportTransform } from "./viewport"
@@ -81,6 +88,8 @@ export interface FlowEdgeView {
 	readonly target: string
 	/** Extra classes, e.g. `animated`. */
 	readonly className?: string
+	/** `focusable: false` drops `tabindex`; the edge is then an `img`. */
+	readonly focusable?: boolean
 	readonly children: ReadonlyArray<Html>
 }
 
@@ -94,12 +103,17 @@ export interface FlowCanvasView<M> {
 	/** Children rendered after the renderer: controls, minimap, background, overlays. */
 	readonly panels: ReadonlyArray<Html>
 	readonly onPaneClick?: M
+	/** `<ReactFlow aria-label>`. */
+	readonly ariaLabel?: string
+	/** `panOnScroll`, `zoomOnScroll`, `zoomOnDoubleClick`, `translateExtent`. */
+	readonly gestures?: FlowGestures
 }
 
 /** `<ReactFlow>`: wrapper, zoom pane, pane, viewport and the a11y descriptions. */
 export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Html =>
 	h.div(
 		[
+			...(canvas.ariaLabel === undefined ? [] : [h.AriaLabel(canvas.ariaLabel)]),
 			h.Class("react-flow light"),
 			h.DataAttribute("testid", "rf__wrapper"),
 			h.Role("application"),
@@ -122,6 +136,7 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 							AttachFlowCanvas({
 								minZoom: canvas.model.minZoom,
 								maxZoom: canvas.model.maxZoom,
+								gestures: canvas.gestures ?? DEFAULT_GESTURES,
 							}),
 							canvas.toMessage,
 						),
@@ -198,11 +213,10 @@ export const flowEdge = <M>(h: HtmlBuilder<M>, edge: FlowEdgeView): Html =>
 					),
 					h.DataAttribute("id", edge.id),
 					h.DataAttribute("testid", `rf__edge-${edge.id}`),
-					h.Tabindex(0),
-					h.Role("group"),
+					...(edge.focusable === false ? [h.Role("img")] : [h.Tabindex(0), h.Role("group")]),
 					h.AriaLabel(`Edge from ${edge.source} to ${edge.target}`),
 					h.Attribute("aria-roledescription", "edge"),
-					h.AriaDescribedBy("react-flow__edge-desc-1"),
+					...(edge.focusable === false ? [] : [h.AriaDescribedBy("react-flow__edge-desc-1")]),
 				],
 				edge.children,
 			),

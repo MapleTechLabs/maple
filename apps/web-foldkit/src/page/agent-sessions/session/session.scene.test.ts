@@ -1,0 +1,108 @@
+import { OrgId } from "@maple/domain"
+import { Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
+import { describe, expect, test } from "vitest"
+import { PageOutMessage, type PageContext } from "../../contract"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { init, update } from "./update"
+
+const orgId = Schema.decodeSync(OrgId)("org_acme")
+const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+const SESSION = "5f1c2a90-3b7e-4c1d-9a2f-7e0d4b6c8a11"
+
+const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
+const entered = (search: Model["search"] = {}) => init({ sessionId: SESSION, search }, context)
+
+describe("agent session detail", () => {
+	test("entering reads the first page and the clock", () => {
+		const { model, commands } = entered()
+		expect(names(commands)).toEqual(["FetchAgentSessionFirstPage", "ResolveAgentSessionClock"])
+		expect(AsyncData.isLoading(model.firstPage.data)).toBe(true)
+	})
+
+	test("the tool a link carries seeds the span filter", () => {
+		expect(entered({ tool: "Bash" }).model.query).toBe("Bash")
+	})
+
+	test("an empty first page is the not-found state and stamps nothing", () => {
+		const { model } = entered()
+		const key = model.firstPage.key ?? ""
+		const landed = pageUpdate(
+			model,
+			Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: null }) }),
+		)
+		expect(landed.outMessage).toBeUndefined()
+		expect(names(landed.commands)).toEqual([])
+	})
+
+	test("a stale first page is dropped", () => {
+		const { model } = entered()
+		const late = pageUpdate(
+			model,
+			Message.CompletedFetchFirstPage({
+				key: "old",
+				result: Result.succeed({ data: [], nextCursor: null }),
+			}),
+		)
+		expect(AsyncData.isLoading(late.model.firstPage.data)).toBe(true)
+	})
+
+	test("the 2 key opens Traces as a step Back can undo", () => {
+		expect(pageUpdate(entered().model, Message.PressedViewKey({ view: "trace" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: `/agent-sessions/${SESSION}?view=trace`,
+				isReplace: false,
+			}),
+		)
+	})
+
+	test("opening a span pushes, moving to another replaces", () => {
+		const opened = pageUpdate(entered().model, Message.ClickedSpan({ spanId: "a1" }))
+		expect(opened.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: `/agent-sessions/${SESSION}?span=a1`,
+				isReplace: false,
+			}),
+		)
+		const moved = pageUpdate(entered({ span: "a1" }).model, Message.ClickedSpan({ spanId: "b2" }))
+		expect(moved.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: `/agent-sessions/${SESSION}?span=b2`,
+				isReplace: true,
+			}),
+		)
+	})
+
+	test("the body view switch flips only when the pressed segment changes", () => {
+		const model = entered().model
+		const raw = pageUpdate(model, Message.PressedBodyView({ key: "row:raw", isRaw: true })).model
+		expect(raw.openRows).toEqual(["row:raw"])
+		expect(
+			pageUpdate(raw, Message.PressedBodyView({ key: "row:raw", isRaw: true })).model.openRows,
+		).toEqual(["row:raw"])
+		expect(
+			pageUpdate(raw, Message.PressedBodyView({ key: "row:raw", isRaw: false })).model.openRows,
+		).toEqual([])
+	})
+
+	test("display options and the ledger toggle in place", () => {
+		const model = entered().model
+		expect(
+			pageUpdate(model, Message.ToggledOption({ option: "collapseIdle" })).model.options.collapseIdle,
+		).toBe(false)
+		const open = pageUpdate(model, Message.ToggledLedgerTool({ name: "Bash" })).model
+		expect(open.ledgerOpen).toBe("Bash")
+		expect(pageUpdate(open, Message.ToggledLedgerTool({ name: "Bash" })).model.ledgerOpen).toBeNull()
+	})
+
+	test("a measured clamp is recorded once", () => {
+		const model = entered().model
+		const clamped = pageUpdate(model, Message.MeasuredClamp({ key: "k", isClamped: true })).model
+		expect(
+			pageUpdate(clamped, Message.MeasuredClamp({ key: "k", isClamped: true })).model.clampedBodies,
+		).toEqual(["k"])
+	})
+})

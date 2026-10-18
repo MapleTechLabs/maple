@@ -20,6 +20,8 @@ export type FitRequest = typeof FitRequest.Type
 export const Model = Schema.Struct({
 	viewport: Viewport,
 	pane: Schema.Struct({ width: Schema.Number, height: Schema.Number }),
+	/** d3-zoom's extent: the pane's fractional content box, which the zoom buttons scale around. */
+	extent: Schema.Struct({ width: Schema.Number, height: Schema.Number }),
 	measured: Schema.Record(Schema.String, MeasuredNode),
 	/** A fit to run once every node is measured (React Flow's `fitView` prop / queued `fitView`). */
 	pendingFit: Schema.Option(FitRequest),
@@ -48,6 +50,7 @@ export const init = (config: {
 }): Model => ({
 	viewport: INITIAL_VIEWPORT,
 	pane: { width: 0, height: 0 },
+	extent: { width: 0, height: 0 },
 	measured: {},
 	pendingFit: config.fitOnInit,
 	movedByUser: false,
@@ -59,7 +62,12 @@ export const init = (config: {
 
 export const Message = defineMessageUnion({
 	ChangedViewport: { viewport: Viewport },
-	ResizedPane: { width: Schema.Number, height: Schema.Number },
+	ResizedPane: {
+		width: Schema.Number,
+		height: Schema.Number,
+		extentWidth: Schema.Number,
+		extentHeight: Schema.Number,
+	},
 	MeasuredNodes: { nodes: Schema.Array(MeasuredNode) },
 	ClickedZoomIn: {},
 	ClickedZoomOut: {},
@@ -106,8 +114,11 @@ export const update = (model: Model, message: Message, nodes: NodePositions): Mo
 	Message.match(message, {
 		ChangedViewport: ({ viewport }) =>
 			modifyFields(model, { viewport: () => viewport, movedByUser: () => true }),
-		ResizedPane: ({ width, height }) => {
-			const next = modifyFields(model, { pane: () => ({ width, height }) })
+		ResizedPane: ({ width, height, extentWidth, extentHeight }) => {
+			const next = modifyFields(model, {
+				pane: () => ({ width, height }),
+				extent: () => ({ width: extentWidth, height: extentHeight }),
+			})
 			return resolvePendingFit(next, placed(next, nodes))
 		},
 		MeasuredNodes: ({ nodes: measurements }) => {
@@ -118,11 +129,11 @@ export const update = (model: Model, message: Message, nodes: NodePositions): Mo
 		},
 		ClickedZoomIn: () =>
 			modifyFields(model, {
-				viewport: () => scaleViewport(model.viewport, ZOOM_STEP, model.pane, model),
+				viewport: () => scaleViewport(model.viewport, ZOOM_STEP, model.extent, model),
 			}),
 		ClickedZoomOut: () =>
 			modifyFields(model, {
-				viewport: () => scaleViewport(model.viewport, 1 / ZOOM_STEP, model.pane, model),
+				viewport: () => scaleViewport(model.viewport, 1 / ZOOM_STEP, model.extent, model),
 			}),
 		ClickedFitView: () =>
 			requestFit(model, placed(model, nodes), {
