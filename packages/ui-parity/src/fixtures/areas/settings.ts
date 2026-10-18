@@ -523,6 +523,15 @@ export const fixtureArea: FixtureArea = {
 		"apiKeys.roll": rollApiKey,
 		"ingestKeys.rollPublic": rolledIngestKeys,
 		"ingestKeys.rollPrivate": rolledIngestKeys,
+		"aiTriage.updateSettings": (request) =>
+			Effect.map(aiTriageSettings(request), (current) => ({
+				...current,
+				...(Predicate.isObject(request.payload) ? request.payload : {}),
+			})),
+		"openRouterKey.set": (request) =>
+			Effect.map(openRouterKey(request), (current) => ({ ...current, configured: true, keyHint: "9Zq1" })),
+		"openRouterKey.remove": (request) =>
+			Effect.map(openRouterKey(request), (current) => ({ ...current, configured: false, keyHint: null })),
 		"attributeMappings.create": echoMapping,
 		"attributeMappings.update": firstMapping,
 		"attributeMappings.delete": () =>

@@ -17,6 +17,7 @@ import type * as IngestionMessage from "./ingestion/message"
 import type * as IngestionModel from "./ingestion/model"
 import * as Ingestion from "./ingestion/update"
 import * as SetupHealth from "./setup-health/update"
+import * as Ai from "./ai/update"
 import type * as KeysMessage from "./keys/message"
 import { Message as KeysMessageValue } from "./keys/message"
 import type * as KeysModel from "./keys/model"
@@ -60,6 +61,7 @@ const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
 	["keys", "Keys"],
 	["ingestion", "Ingestion"],
 	["setup-health", "SetupHealth"],
+	["ai", "Ai"],
 ])
 const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
 
@@ -107,6 +109,15 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			return {
 				model: { ...model, tab: { _tag: "SetupHealth", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotSetupHealthMessage({ message })),
+			}
+		}
+		case "Ai": {
+			// TODO(settings-ai): Clerk orgs read the `aiAutoTriage` rollout flag from organization
+			// metadata (`useOrganizationFeatureFlags`); self-hosted has every rollout on.
+			const step = Ai.init(!isClerkAuthEnabled && visibilityOf(model).isAdmin)
+			return {
+				model: { ...model, tab: { _tag: "Ai", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAiMessage({ message })),
 			}
 		}
 		case "Unported":
@@ -222,6 +233,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return {
 				model: { ...model, tab: { _tag: "SetupHealth", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotSetupHealthMessage({ message: child })),
+			}
+		},
+		GotAiMessage: ({ message: inner }) => {
+			if (model.tab === null || model.tab._tag !== "Ai") return { model }
+			const step = Ai.update(model.tab.model, inner)
+			return {
+				model: { ...model, tab: { _tag: "Ai", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAiMessage({ message: child })),
+				outMessage: step.outMessage,
 			}
 		},
 		GotIngestionMessage: ({ message: inner }) =>

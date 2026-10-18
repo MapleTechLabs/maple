@@ -249,6 +249,46 @@ const setupHealthInteractions: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+const AI = "/settings?tab=ai"
+
+/** AI: the triage switch, the daily ceiling save bar, replace / remove the OpenRouter key. */
+const aiInteractions: ReadonlyArray<Scenario> = [
+	page("ai-toggle-triage", "AI: turn auto-triage off", AI, {
+		steps: async (target) => {
+			await target.getByRole("switch", { name: "Investigate new incidents" }).click()
+			await target.getByText("Auto-triage turned off").waitFor()
+		},
+	}),
+	page("ai-limits", "AI: edit and save a daily ceiling", AI, {
+		steps: async (target) => {
+			await target.getByRole("textbox", { name: "Investigations per day" }).fill("80")
+			await target.getByRole("button", { name: "Save", exact: true }).click()
+			await target.getByText("Auto-triage limits saved").waitFor()
+		},
+	}),
+	page("ai-limits-invalid", "AI: invalid ceiling, advanced limits", AI, {
+		steps: async (target) => {
+			await target.getByRole("textbox", { name: "Investigations per day" }).fill("0")
+			await target.getByRole("button", { name: /^Advanced limits/ }).click()
+		},
+	}),
+	page("ai-replace-key", "AI: replace the OpenRouter key", AI, {
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Replace" }).click()
+			await target.getByLabel("New OpenRouter API key").fill("sk-or-v1-parity9Zq1")
+			await target.getByRole("button", { name: "Save key" }).click()
+			await target.getByText("OpenRouter key saved").waitFor()
+		},
+	}),
+	page("ai-remove-key", "AI: switch back to Maple managed", AI, {
+		steps: async (target) => {
+			await target.getByRole("radio", { name: "Maple managed" }).click()
+			await target.getByRole("alertdialog").getByRole("button", { name: "Remove key" }).click()
+			await target.getByText("Switched to Maple managed").waitFor()
+		},
+	}),
+]
+
 export const settingsArea: AreaModule = {
 	area: "settings",
 	scenarios: [
@@ -273,6 +313,7 @@ export const settingsArea: AreaModule = {
 		...mcpInteractions,
 		...ingestionInteractions,
 		...setupHealthInteractions,
+		...aiInteractions,
 		page("audit-log-denied", "Audit log: denied only", "/settings?tab=audit-log", {
 			// The outcome filter precedes the table's "Denied" badges in document order.
 			steps: (page) => page.getByText("Denied", { exact: true }).first().click(),

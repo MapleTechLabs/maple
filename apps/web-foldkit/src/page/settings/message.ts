@@ -3,6 +3,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
 import { settingsTabValues } from "../../route/search"
 import { ApiKeyRowSchema } from "@maple/web-data/collections/api-keys"
+import { Message as AiMessage } from "./ai/model"
 import * as Ingestion from "./ingestion/message"
 import * as Keys from "./keys/message"
 import * as Mcp from "./mcp/message"
@@ -18,6 +19,7 @@ export const Message = defineMessageUnion({
 	GotKeysMessage: { message: Keys.Message },
 	GotIngestionMessage: { message: Ingestion.Message },
 	GotSetupHealthMessage: { message: SetupHealthMessage },
+	GotAiMessage: { message: AiMessage },
 	/** The `api_keys` shape (Keys and the audit log's actor names), for the org it was read for. */
 	UpdatedApiKeys: { orgId: Schema.String, rows: Schema.Array(ApiKeyRowSchema) },
 })
