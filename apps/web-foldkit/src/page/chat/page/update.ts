@@ -24,7 +24,7 @@ import {
 	shareUrl,
 } from "./command"
 import { Message } from "./message"
-import { type ChatTab, DELETE_DIALOG_ID, type Model, type TabsState } from "./model"
+import { type ChatTab, CONVERSATION_SHEET_ID, DELETE_DIALOG_ID, type Model, type TabsState } from "./model"
 
 export type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -177,6 +177,18 @@ const updateMenu = (model: Model, tabId: string, message: Menu.Message): Return 
 	return { ...after, commands: [...commands, ...(after.commands ?? [])] }
 }
 
+const updateConversationSheet = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: { ...model, conversationSheet: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotConversationSheetMessage({ message })),
+})
+
+/** Picking or creating a conversation in the sheet closes it (`onSelect` / `onCreate`). */
+const closingSheet = (model: Model, result: Return): Return => {
+	if (!model.conversationSheet.isOpen) return result
+	const closed = updateConversationSheet(result.model, Dialog.close(result.model.conversationSheet))
+	return { ...result, model: closed.model, commands: [...(result.commands ?? []), ...(closed.commands ?? [])] }
+}
+
 const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -206,6 +218,7 @@ export const init = (route: ChatRoute, context: PageContext): Return => {
 		renameDraft: "",
 		menus: {},
 		deleteDialog: Dialog.init(DELETE_DIALOG_ID, "alert-dialog"),
+		conversationSheet: Dialog.init(CONVERSATION_SHEET_ID, "sheet"),
 		confirmDeleteId: null,
 		referrerPath: null,
 		dismissedContexts: [],
@@ -261,10 +274,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const started = startConversations(loaded, tabs.tabs.map((tab) => tab.id), context)
 			return urlTab === tabs.activeTabId ? started : { ...started, outMessage: tabUrl(tabs.activeTabId) }
 		},
-		ClickedNewChat: () => ({ model, commands: [CreateTab()] }),
+		ClickedNewChat: () => closingSheet(model, { model, commands: [CreateTab()] }),
 		PressedNewChatKey: () => (model.shared === null ? { model, commands: [CreateTab()] } : { model }),
 		CreatedTab: ({ id, nowMs }) => createTab(model, id, nowMs, context),
-		ClickedTab: ({ id }) => (model.renamingId === id ? { model } : setActive(model, id, context)),
+		ClickedTab: ({ id }) => (model.renamingId === id ? { model } : closingSheet(model, setActive(model, id, context))),
+		ClickedSidebarTrigger: () => ({ model, outMessage: PageOutMessage.RequestedSidebarToggle() }),
+		ClickedSwitchConversation: () => updateConversationSheet(model, Dialog.open(model.conversationSheet)),
+		GotConversationSheetMessage: ({ message: child }) =>
+			updateConversationSheet(model, Dialog.update(model.conversationSheet, child)),
+		ClickedCopyActiveShareLink: () =>
+			Option.match(Option.flatMap(Option.fromNullishOr(activeTabId(model)), (id) => tabById(model, id)), {
+				onNone: () => ({ model }),
+				onSome: (tab) => ({ model, commands: [CopyShareLink({ url: shareUrl(model.origin, tab) })] }),
+			}),
 		DoubleClickedTab: ({ id }) =>
 			model.renamingId === id
 				? { model }

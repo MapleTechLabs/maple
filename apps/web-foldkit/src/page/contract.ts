@@ -22,6 +22,8 @@ export interface PageContext {
 
 export interface PageViewInputs {
 	readonly context: PageContext
+	/** `useIsMobile()` (below `md`), for the few layouts that branch on it in JSX (`/chat`). */
+	readonly isMobile?: boolean
 }
 
 /** What a page's Subscriptions see: its own Model plus the context. */
@@ -43,6 +45,8 @@ export const PageOutMessage = defineMessageUnion({
 	},
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
+	/** A page's own `SidebarTrigger` (`/chat` renders its header without the shell's top bar). */
+	RequestedSidebarToggle: {},
 	/**
 	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
 	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.
@@ -221,7 +225,7 @@ export const definePage = <
 						slotId: id,
 						model: slot.model,
 						view: spec.view,
-						viewInputs: { context: inputs.context },
+						viewInputs: { context: inputs.context, isMobile: inputs.isMobile ?? false },
 						toParentMessage: wrap,
 					})
 				: null,
@@ -235,7 +239,7 @@ export const definePage = <
 							slotId: `${id}:topbar`,
 							model: slot.model,
 							view: actions,
-							viewInputs: { context: inputs.context },
+							viewInputs: { context: inputs.context, isMobile: inputs.isMobile ?? false },
 							toParentMessage: wrap,
 						})
 					: null

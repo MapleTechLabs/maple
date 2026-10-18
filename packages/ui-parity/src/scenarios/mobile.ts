@@ -65,5 +65,19 @@ export const mobileArea: AreaModule = {
 		mobile("services-time-picker", "Services, time range picker open", "/services", {
 			steps: openTimePicker,
 		}),
+		mobile("services-org-switcher", "Services, org switcher open in the sidebar sheet", "/services", {
+			steps: async (page) => {
+				await openNav(page)
+				await page.getByRole("button", { name: /Self Hosted/ }).click()
+				await page.getByRole("menu").waitFor()
+			},
+		}),
+		mobile("chat-switch", "Chat, conversation sheet open", "/chat", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Switch conversation" }).click()
+				await page.getByRole("dialog", { name: "Conversations" }).waitFor()
+			},
+		}),
+		mobile("chat-nav", "Chat, sidebar sheet open from the chat header", "/chat", { steps: openNav }),
 	],
 }

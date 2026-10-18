@@ -248,6 +248,7 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		ClickedSidebarTrigger: () => toggleSidebar(model),
 		PressedSidebarShortcut: () => toggleSidebar(model),
+		ClickedPageSidebarTrigger: () => (model.isMobile ? toggleSidebar(model) : { model }),
 		ChangedViewport: ({ isMobile }) => {
 			const changed = modifyFields(closeMenu(model), { isMobile: () => isMobile, isMobileNavOpen: () => false })
 			return isMobile ? { model: changed } : requestSidebarData(changed)

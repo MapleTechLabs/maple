@@ -27,6 +27,11 @@ export const Message = defineMessageUnion({
 	GotTabMenuMessage: { tabId: Schema.String, message: Menu.Message },
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	ClickedConfirmDelete: {},
+	/** Below `md`, the page's own header: its `SidebarTrigger`, title switch and share button. */
+	ClickedSidebarTrigger: {},
+	ClickedSwitchConversation: {},
+	ClickedCopyActiveShareLink: {},
+	GotConversationSheetMessage: { message: Dialog.Message },
 	CompletedSaveTabs: {},
 	CompletedCopyShareLink: { ok: Schema.Boolean },
 	GotConversationMessage: { tabId: Schema.String, message: ConversationMessage },

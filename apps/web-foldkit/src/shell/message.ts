@@ -29,6 +29,8 @@ export type Theme = typeof Theme.Type
 export const Message = defineMessageUnion({
 	ClickedSidebarTrigger: {},
 	PressedSidebarShortcut: {},
+	/** `/chat`'s own `SidebarTrigger`: its provider is held closed, so only the mobile sheet opens. */
+	ClickedPageSidebarTrigger: {},
 	ChangedViewport: { isMobile: Schema.Boolean },
 	DismissedMobileNav: {},
 	ChangedFilterViewport: { isCollapsed: Schema.Boolean },
