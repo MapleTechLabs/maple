@@ -15,6 +15,8 @@ import * as Github from "./update-github"
 import * as CloudflareCard from "./update-cloudflare"
 import { initCloudflareCard } from "./cloudflare"
 import { initPrometheusCard } from "./prometheus"
+import { initRailwayCard } from "./railway"
+import * as Railway from "./update-railway"
 import * as Prometheus from "./update-prometheus"
 import { ChartRuntime } from "../../charts/chart-runtime"
 import { isMultiAccount } from "./view-cloudflare"
@@ -88,6 +90,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		githubCard: initGithubCard(),
 		cloudflareCard: initCloudflareCard(),
 		prometheusCard: initPrometheusCard(),
+		railwayCard: initRailwayCard(),
 	}
 	const loaded = chain(model, [
 		...STATUS_NAMES.map((name) => (next: Model) => requestStatus(next, context, name, "Load")),
@@ -210,6 +213,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotTargetDeleteDialogMessage: ({ message: child }) => Prometheus.gotDeleteDialog(model, child),
 		ConfirmedTargetDelete: () => Prometheus.confirmedDelete(model),
 		CompletedTargetDelete: ({ id, failure }) => Prometheus.completedDelete(model, context, id, failure),
+		GotRailwayTokenMessage: ({ message: child }) => Railway.gotToken(model, child),
+		SubmittedRailwayToken: () => Railway.submittedToken(model),
+		SucceededRailwayConnect: ({ title, description }) =>
+			Railway.succeededConnect(model, context, title, description),
+		FailedRailwayConnect: ({ error }) => Railway.failedConnect(model, error),
+		ClickedRailwaySync: () => Railway.clickedSync(model),
+		CompletedRailwaySync: ({ failure }) => Railway.completedSync(model, context, failure),
+		ClickedRailwayRotate: () => Railway.setRotating(model, true),
+		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
+		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
 		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),
 		CompletedGithubRefreshSpin: ({ version }) => Github.completedRefreshSpin(model, version),
 		ToggledCiTraces: () => Github.toggledCiTraces(model),

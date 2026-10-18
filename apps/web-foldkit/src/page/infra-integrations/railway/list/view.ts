@@ -23,7 +23,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { railwayFleetBand, railwayFleetBandLoading } from "./view-band"
-import { railwayConnectCard } from "./view-connect"
+import { LIST_TOKEN_FORM, railwayConnectCard } from "./view-connect"
 import { type Clock, railwayTable, railwayTableLoading, triggerIds } from "./view-table"
 
 // `RailwayPage` (apps/web/src/routes/infra/railway/index.tsx).
@@ -157,7 +157,9 @@ const servicesList = (
 
 /** `RailwayIntegrationCard` keeps the last loaded status when a refetch fails. */
 const connectedView = (h: H, model: Model, status: RailwayStatus, clock: Clock): Html =>
-	status.connected ? servicesView(h, model, status, clock) : railwayConnectCard(h, model.connect)
+	status.connected
+		? servicesView(h, model, status, clock)
+		: railwayConnectCard(h, model.connect, LIST_TOKEN_FORM)
 
 const statusView = (h: H, model: Model, clock: Clock): Html =>
 	AsyncData.match(model.status.data, {

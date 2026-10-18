@@ -296,6 +296,38 @@ export const integrationsArea: AreaModule = {
 			dataset: "infra-integrations",
 			steps: (page) => page.getByRole("textbox", { name: "Filter zones by name" }).fill("nomatch"),
 		}),
+		page("railway", "Railway (not connected)", "/integrations?integration=railway"),
+		page("railway-connect", "Railway: connect with a token", "/integrations?integration=railway", {
+			steps: async (page) => {
+				await page.getByLabel("Account or workspace token").fill("rw_token_parity_0001")
+				await page.getByRole("button", { name: "Connect Railway" }).last().click()
+			},
+		}),
+		page("railway-connected", "Railway (connected)", "/integrations?integration=railway", {
+			dataset: "infra-integrations",
+		}),
+		page("railway-sync", "Railway: sync now", "/integrations?integration=railway", {
+			dataset: "infra-integrations",
+			steps: (page) => page.getByRole("button", { name: "Sync now" }).click(),
+		}),
+		page("railway-rotate", "Railway: replace the token", "/integrations?integration=railway", {
+			dataset: "infra-integrations",
+			steps: (page) => page.getByRole("button", { name: "Replace token" }).click(),
+		}),
+		page("railway-disconnect", "Railway: disconnect", "/integrations?integration=railway", {
+			dataset: "infra-integrations",
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Disconnect" }).click()
+				await page.getByRole("alertdialog").getByRole("button", { name: "Disconnect" }).click()
+			},
+		}),
+		timed(
+			"railway-error",
+			"Railway: status failing",
+			"/integrations?integration=railway",
+			{ failures: { "integrations.railwayStatus": persistenceFailure } },
+			"quiet",
+		),
 		page("hub-infra", "Hub with infrastructure connected", "/integrations", {
 			dataset: "infra-integrations",
 		}),

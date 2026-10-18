@@ -7,6 +7,7 @@ import { integrationOfSearch } from "./catalog"
 import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startConnect } from "./connect"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { unsyncedEnvironments } from "./railway"
 import { githubStatusOf } from "./update-github"
 
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
@@ -140,6 +141,12 @@ const after = (millis: number, message: () => Message) =>
 
 const CLOUDFLARE_INGEST_MS = 30_000
 
+const isRailwaySettling = (model: Model): boolean => {
+	if (integrationOfSearch(model.search.integration) !== "railway") return false
+	const status = Option.getOrNull(AsyncData.getData(model.statuses.railway.data))
+	return status !== null && status.connected && !status.authFailed && unsyncedEnvironments(status) > 0
+}
+
 /** Prometheus and WarpStream share the scrape-target section. */
 const isScrapePage = (model: Model): boolean => {
 	const integration = integrationOfSearch(model.search.integration)
@@ -266,6 +273,15 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				}),
 				dependenciesToStream: ({ selectedId }) =>
 					selectedId === null ? Stream.empty : every(10_000, () => Message.TickedChecksRefresh()),
+			},
+		),
+		/** `useIntervalRefresh(refreshStatus, { intervalMs: 15_000, enabled: queued > 0 })`. */
+		railwaySettle: entry(
+			{ isSettling: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isSettling: isRailwaySettling(model) }),
+				dependenciesToStream: ({ isSettling }) =>
+					isSettling ? every(15_000, () => Message.TickedRailwaySettle()) : Stream.empty,
 			},
 		),
 		connectCallback: entry(

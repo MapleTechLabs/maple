@@ -40,6 +40,18 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 			refresh: ["github"],
 		},
 	],
+	[
+		"railway",
+		{
+			title: "Disconnect Railway",
+			description:
+				"Maple stops collecting metrics from your Railway projects. You can reconnect later.",
+			confirmLabel: "Disconnect",
+			success: "Railway disconnected",
+			error: "Failed to disconnect Railway",
+			refresh: ["railway"],
+		},
+	],
 	...(["cloudflare", "cloudflare-multi"] as const).map((key): readonly [string, DisconnectSpec] => [
 		key,
 		{
@@ -62,6 +74,8 @@ const mutation = (integration: string) =>
 				return yield* Effect.asVoid(internal.integrations.hazelDisconnect())
 			case "github":
 				return yield* Effect.asVoid(internal.integrations.githubDisconnect())
+			case "railway":
+				return yield* Effect.asVoid(internal.integrations.railwayDisconnect())
 			case "cloudflare":
 			case "cloudflare-multi":
 				return yield* Effect.asVoid(internal.integrations.cloudflareDisconnect())

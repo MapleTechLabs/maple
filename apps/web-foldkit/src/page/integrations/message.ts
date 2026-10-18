@@ -156,6 +156,16 @@ export const Message = defineMessageUnion({
 	GotTargetDeleteDialogMessage: { message: Dialog.Message },
 	ConfirmedTargetDelete: {},
 	CompletedTargetDelete: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
+	GotRailwayTokenMessage: { message: Field.Message },
+	SubmittedRailwayToken: {},
+	SucceededRailwayConnect: { title: Schema.String, description: Schema.String },
+	FailedRailwayConnect: { error: Schema.String },
+	ClickedRailwaySync: {},
+	CompletedRailwaySync: { failure: Schema.NullOr(LoadFailure) },
+	ClickedRailwayRotate: {},
+	ClickedRailwayRotateCancel: {},
+	/** Every 15 s while environments wait for their first sync. */
+	TickedRailwaySettle: {},
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,
 		status: Schema.String,

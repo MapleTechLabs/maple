@@ -188,6 +188,19 @@ export const fixtureArea: FixtureArea = {
 			Effect.succeed({ object: "chat_connector.identity", deleted: true }),
 		"chatIntegration.deleteWorkspace": (request) =>
 			Effect.succeed({ id: slackWorkspace(request).id, object: "chat_workspace", deleted: true }),
+		"integrations.railwayDisconnect": disconnected,
+		// The sync answers a refreshed status; the card re-reads the status itself, so its shape is all that matters.
+		"integrations.railwaySync": (request) =>
+			Effect.succeed({
+				connected: true,
+				workspaceNames: null,
+				connectedByUserId: null,
+				connectedAt: null,
+				authFailed: false,
+				lastSyncedAt: parseWarehouseDateTime(request.dataset.now),
+				lastError: null,
+				environments: [],
+			}),
 		"integrations.hazelStart": startConnect("hazel"),
 		"integrations.hazelDisconnect": disconnected,
 		"integrations.githubStart": startConnect("github"),
