@@ -1,5 +1,5 @@
-import { Clock, Duration, Effect, Schema } from "effect"
-import { Command } from "foldkit"
+import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { Command, Mount } from "foldkit"
 import { fetchSpanDetail, fetchSpanLogs, fetchTrace } from "./fetch"
 import { Message } from "./message"
 
@@ -50,6 +50,36 @@ export const WriteClipboard = Command.define("WriteLocalSpanClipboard", {
 			Effect.as(true),
 			Effect.orElseSucceed(() => false),
 			Effect.map((isOk) => Message.CompletedWriteClipboard({ id, generation, isOk })),
+		),
+})
+
+/**
+ * The pointer's viewport position over the page, at most once per frame (the timeline's
+ * `onMouseMove` writes the tooltip position from a rAF).
+ */
+export const TrackPointer = Mount.defineStream("TrackLocalTracePointer", {
+	messages: [Message.MovedPointer],
+	execute: ({ element }) =>
+		Stream.callback<typeof Message.MovedPointer.Type>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const state = { frame: 0 }
+					const onMove = (event: Event) => {
+						if (!(event instanceof MouseEvent)) return
+						cancelAnimationFrame(state.frame)
+						const { clientX, clientY } = event
+						state.frame = requestAnimationFrame(() =>
+							Queue.offerUnsafe(queue, Message.MovedPointer({ x: clientX, y: clientY })),
+						)
+					}
+					element.addEventListener("mousemove", onMove)
+					return () => {
+						cancelAnimationFrame(state.frame)
+						element.removeEventListener("mousemove", onMove)
+					}
+				}),
+				(cleanup) => Effect.sync(cleanup),
+			).pipe(Effect.flatMap(() => Effect.never)),
 		),
 })
 

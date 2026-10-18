@@ -12,7 +12,7 @@ export type SectionInputs = Readonly<{ attributes: Readonly<Record<string, strin
 export const sectionView = Submodel.defineView<Model, Message, SectionInputs>((model, inputs, h) =>
 	attributesSection(
 		h,
-		{ model, source: "log", canFilter: false, idPrefix: inputs.section },
+		{ model, source: "log", canFilter: false, idPrefix: inputs.section, hasCommitShaValues: false },
 		{ attributes: inputs.attributes, title: inputs.title, section: inputs.section, isGrouped: true },
 	),
 )

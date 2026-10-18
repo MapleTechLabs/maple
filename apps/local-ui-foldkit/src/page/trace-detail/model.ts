@@ -30,5 +30,7 @@ export const Model = Schema.TaggedStruct("TraceDetailPage", {
 	flow: Schema.NullOr(Schema.Struct({ graph: FlowGraphData, model: TraceFlow.Model })),
 	/** The span panel, mounted while the hash's `spanId` names a span of the trace. */
 	panel: Schema.NullOr(PanelModel),
+	/** Where the span tooltip anchors (the last pointer move), none before the first. */
+	pointer: Schema.NullOr(Schema.Struct({ x: Schema.Number, y: Schema.Number })),
 })
 export type Model = typeof Model.Type

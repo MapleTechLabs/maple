@@ -16,6 +16,8 @@ export const Message = defineMessageUnion({
 	ClickedBack: {},
 	ClickedRefresh: {},
 	PressedEscape: {},
+	/** The pointer over the page, for the timeline's span tooltip (`handleHover`'s position). */
+	MovedPointer: { x: Schema.Number, y: Schema.Number },
 	GotTabsMessage: { message: Tabs.Message },
 	GotTimelineMessage: { message: Timeline.Message },
 	GotWaterfallMessage: { message: Waterfall.Message },

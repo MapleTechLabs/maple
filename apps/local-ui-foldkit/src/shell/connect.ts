@@ -15,7 +15,8 @@ const note = (h: HtmlBuilder<Message>): Html =>
 	h.p(
 		[h.Class("text-xs text-muted-foreground")],
 		[
-			"Recording browser sessions? Point ",
+			"Recording browser sessions? Point",
+			" ",
 			h.code([h.Class("rounded bg-muted px-1")], ["@maple-dev/browser"]),
 			" at the same endpoint.",
 		],
@@ -54,11 +55,12 @@ export const connectButton = (h: HtmlBuilder<Message>, model: Model): Html =>
 						h.div(
 							[h.Class("space-y-1")],
 							[
-								Popover.popoverTitle(h, CONNECT_POPOVER_ID, "Connect your app"),
+								Popover.popoverTitle(h, CONNECT_POPOVER_ID, "Connect your app", "text-base"),
 								Popover.popoverDescription(
 									h,
 									CONNECT_POPOVER_ID,
 									"Point your OpenTelemetry SDK at your local Maple to stream traces, logs and metrics.",
+									"text-xs",
 								),
 							],
 						),

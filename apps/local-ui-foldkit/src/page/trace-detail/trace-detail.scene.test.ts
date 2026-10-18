@@ -1,11 +1,11 @@
 import { SpanId, TraceId } from "@maple/domain"
 import type { TraceData } from "@maple/web-foldkit/page/traces/detail/trace-data"
 import { Option, Schema } from "effect"
-import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { type PageContext, PageOutMessage } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
-import { FetchSpanDetail, FetchSpanLogs, FetchTrace } from "./command"
+import { FetchSpanDetail, FetchSpanLogs, FetchTrace, TrackPointer } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, locationChanged, update } from "./update"
@@ -70,7 +70,12 @@ describe("local trace detail", () => {
 	})
 
 	test("a trace without spans reads as not found", () => {
-		scene({ update: pageUpdate, view }, given(answered(entered.model, Option.none()).model), expectView(text("Trace not found")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(entered.model, Option.none()).model),
+			Mount.resolve(TrackPointer, Message.MovedPointer({ x: 10, y: 10 })),
+			expectView(text("Trace not found")).toExist(),
+		)
 	})
 
 	test("the trace mounts the timeline; a hash span opens the panel and loads its logs and attributes", () => {

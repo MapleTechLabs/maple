@@ -14,7 +14,6 @@ import type { Detail, LocalLog, Model } from "./model"
 import { buildLogJsonPayload, copyableValue, traceHrefOf } from "./view-sheet-parts"
 
 // The Attributes / Trace / Raw tabs of `LogDetailSheet`.
-// TODO(attributes-title): the kit panel titles its log section "Log Attributes"; local says "Log attributes".
 
 const TABS: ReadonlyMap<string, Readonly<{ label: string; icon: IconName }>> = new Map([
 	["attributes", { label: "Attributes", icon: "CircleInfoIcon" }],
@@ -79,7 +78,7 @@ export const detailTabs = (h: HtmlBuilder<Message>, model: Model, detail: Detail
 					slotId: "log-detail-attributes-panel",
 					model: detail.attributes,
 					view: AttributesView.view,
-					viewInputs: { logAttributes: log.logAttributes, resourceAttributes: log.resourceAttributes, canFilter: false },
+					viewInputs: { logAttributes: log.logAttributes, resourceAttributes: log.resourceAttributes, canFilter: false, logTitle: "Log attributes", hasCommitShaValues: false },
 					toParentMessage: (message) => Message.GotDetailAttributesMessage({ message }),
 				}),
 			])

@@ -85,6 +85,7 @@ export const init = (
 			waterfall: null,
 			flow: null,
 			panel: null,
+			pointer: null,
 		},
 		commands: [FetchTrace({ key, traceId, apiBase: context.env.apiBase })],
 	}
@@ -166,6 +167,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		ClickedRefresh: () => refresh(model, context),
 		// Escape closes the span panel.
 		PressedEscape: () => (model.panel === null ? { model } : setParams(model, context, { spanId: null })),
+		MovedPointer: ({ x, y }) => ({ model: { ...model, pointer: { x, y } } }),
 		GotTabsMessage: ({ message: child }) => {
 			const next = Tabs.update(model.tabs, child)
 			const lifted: UpdateReturn = {
@@ -208,7 +210,10 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		},
 		GotFlowMessage: ({ message: child }) => {
 			if (model.flow === null) return { model }
-			const flowModel = TraceFlow.update(model.flow.graph)(model.flow.model, child)
+			const stepped = TraceFlow.update(model.flow.graph)(model.flow.model, child)
+			// Handles stay measured at the unfitted zoom (exact positions): legacy's re-measure at the
+			// fitted zoom only adds sub-1e-3 px float residue, which made one edge label round differently.
+			const flowModel = { ...stepped, canvas: { ...stepped.canvas, measureEpoch: model.flow.model.canvas.measureEpoch } }
 			const next: Model = { ...model, flow: { ...model.flow, model: flowModel } }
 			const picked = Option.getOrUndefined(flowModel.selectedSpanId)
 			return child._tag === "ClickedSpanNode" && picked !== undefined ? selectSpan(next, context, picked) : { model: next }

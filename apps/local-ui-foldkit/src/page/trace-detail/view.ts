@@ -18,6 +18,9 @@ import type { Model } from "./model"
 import { loadedTrace } from "./update"
 import { anatomyStrip, httpInfoOf, rootSpanOf } from "./view-anatomy"
 import { spanPanel } from "./view-panel"
+import { spanTooltip } from "./view-span-tooltip"
+import { TrackPointer } from "./command"
+import { findSpan } from "@maple/web-foldkit/page/traces/detail/select"
 import { traceDetailLoading, traceNotFound } from "./view-states"
 
 // `TraceDetailView` (apps/local-ui/src/views/trace-detail-view.tsx).
@@ -110,6 +113,23 @@ const loadedBody = (h: H, model: Model, trace: TraceData): Html =>
 		],
 	)
 
+/** The timeline's span tooltip, while a row is hovered and the pointer has moved over the page. */
+const hoverTooltip = (h: H, model: Model, trace: TraceData | undefined): ReadonlyArray<Html> => {
+	const hoveredId = model.timeline?.hoveredSpanId ?? null
+	if (trace === undefined || hoveredId === null || model.pointer === null) return []
+	const span = findSpan(trace.rootSpans, hoveredId)
+	return span === undefined
+		? []
+		: [
+				spanTooltip(h, {
+					span,
+					pointer: model.pointer,
+					totalDurationMs: trace.totalDurationMs,
+					traceStartTime: trace.traceStartTime ?? "",
+				}),
+			]
+}
+
 const body = (h: H, model: Model): Html => {
 	if (isPending(model.trace)) return traceDetailLoading(h)
 	const failure = failureWithoutData(model.trace)
@@ -125,6 +145,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return h.div(
 		[
 			h.Class("flex h-full flex-col"),
+			h.OnMount(TrackPointer()),
 			h.OnKeyDownPreventDefault((key) => (key === "Escape" && model.panel !== null ? Option.some(Message.PressedEscape()) : Option.none())),
 		],
 		[
@@ -145,6 +166,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				],
 			),
 			h.div([h.Class("min-h-0 flex-1")], [body(h, model)]),
+			...hoverTooltip(h, model, trace),
 		],
 	)
 })

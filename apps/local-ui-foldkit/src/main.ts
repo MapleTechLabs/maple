@@ -52,7 +52,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		maybeServer: Option.none(),
 		probe: { isInFlight: true, version: 0 },
 		hasIngested: false,
-		connect: Popover.init(CONNECT_POPOVER_ID, { side: "right", align: "end" }),
+		connect: Popover.init(CONNECT_POPOVER_ID, { side: "right", align: "end", initialFocus: "first-tabbable" }),
 		installTabs: Tabs.init({ idBase: 0, values: INSTALL_METHODS.map((method) => method.id), selected: INSTALL_METHODS[0]?.id ?? "" }),
 		presence: AsyncData.Idle(),
 		copies: {},
