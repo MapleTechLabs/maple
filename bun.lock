@@ -425,6 +425,7 @@
         "d3-shape": "^3.2.0",
         "effect": "catalog:effect",
         "foldkit": "0.168.0",
+        "fuse.js": "7.5.0",
         "katex": "0.16.47",
         "mermaid": "11.17.2",
         "shiki": "4.4.3",

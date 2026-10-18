@@ -89,11 +89,29 @@ export const LogOut = Command.define("LogOut", {
 	execute: clearSessionToken.pipe(Effect.andThen(load("/sign-in")), Effect.as(Message.CompletedLogOut())),
 })
 
+/**
+ * `focusSearch`: a page tags its primary search with `data-shortcut-focus="search"`. A field is
+ * focused and selected; anything else (the traces Advanced Filter trigger) is clicked.
+ */
+export const FocusShortcutSearch = Command.define("FocusShortcutSearch", {
+	messages: [Message.CompletedFocusShortcutSearch],
+	execute: Effect.sync(() => {
+		const target = document.querySelector('[data-shortcut-focus="search"]')
+		if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+			target.focus()
+			target.select()
+		} else if (target instanceof HTMLElement) target.click()
+		return Message.CompletedFocusShortcutSearch()
+	}),
+})
+
 /** `openGlobalChat()`: the root's chat sheet (`page/chat/sheet`) listens for its document event. */
 export const OpenGlobalChat = Command.define("OpenGlobalChat", {
+	args: { isFocusVisible: Schema.Boolean },
 	messages: [Message.CompletedOpenGlobalChat],
-	execute: Effect.sync(() => {
-		openGlobalChat()
-		return Message.CompletedOpenGlobalChat()
-	}),
+	execute: ({ isFocusVisible }) =>
+		Effect.sync(() => {
+			openGlobalChat({ isFocusVisible })
+			return Message.CompletedOpenGlobalChat()
+		}),
 })

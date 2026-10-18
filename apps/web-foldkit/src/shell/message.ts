@@ -10,6 +10,7 @@ import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
 import * as SupportChannel from "./support-channel"
 import { PinnedDashboardRow } from "./dashboards-shape"
+import * as Palette from "./palette/model"
 
 /** The shell's dropdown menus; a collapsed-rail section menu is keyed by its section title. */
 export const Menu = defineTaggedUnion({
@@ -87,6 +88,20 @@ export const Message = defineMessageUnion({
 	FailedOpenCustomerPortal: { message: Schema.String },
 	ClickedDismissQuotaBanner: {},
 	CompletedDismissQuotaBanner: {},
+	/** The sidebar's Search row (`openCommandPalette`). */
+	ClickedSearch: {},
+	/** Mod+K, anywhere: opens the palette (legacy's toggle nets out while it is open). */
+	PressedPaletteShortcut: {},
+	/** `?`, `T` and `/` outside fields and dialogs (`GlobalShortcuts`). */
+	PressedShortcutsKey: {},
+	PressedThemeKey: {},
+	PressedFocusSearchKey: {},
+	CompletedFocusShortcutSearch: {},
+	GotPaletteMessage: { message: Palette.Message },
+	GotShortcutsDialogMessage: { message: Dialog.Message },
+	MeasuredShortcutsPanel: {},
+	/** A menu's "Keyboard shortcuts" item (`showKeyboardShortcuts`). */
+	ClickedKeyboardShortcuts: {},
 })
 export type Message = typeof Message.Type
 
@@ -102,5 +117,7 @@ export const OutMessage = defineMessageUnion({
 	RequestedErrorToast: { title: Schema.String },
 	/** A billing mutation succeeded: the Autumn customer is re-read. */
 	RequestedCustomerRefresh: {},
+	/** The command palette opened a page. */
+	RequestedNavigation: { url: Schema.String },
 })
 export type OutMessage = typeof OutMessage.Type

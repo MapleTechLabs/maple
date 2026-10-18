@@ -59,7 +59,7 @@ const items = (
 
 const keyboardShortcuts = (h: HtmlBuilder<Message>): Item => ({
 	content: [icon(h, "KeyboardIcon"), "Keyboard shortcuts", menuShortcut(h, ["?"])],
-	onSelect: Message.ClickedMenuAction(),
+	onSelect: Message.ClickedKeyboardShortcuts(),
 })
 
 /** `ThemeToggle`: a plain row, not an item, so flipping the switch keeps the menu open. */

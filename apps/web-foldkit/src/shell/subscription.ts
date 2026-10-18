@@ -1,3 +1,4 @@
+import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { Option, Stream } from "effect"
 import { Dom } from "foldkit"
 import { DASHBOARD_FAVORITES_EVENT, readDashboardFavorites } from "./favorites"
@@ -35,6 +36,41 @@ export const sidebarShortcut: Stream.Stream<Message> = Dom.streamFromEventFilter
 		if (event.key !== "b" || !(event.metaKey || event.ctrlKey)) return Option.none()
 		event.preventDefault()
 		return Option.some(Message.PressedSidebarShortcut())
+	},
+})
+
+/**
+ * `GlobalShortcuts`' document keydown: Mod+K opens the palette anywhere; `?`, `T` and `/` only
+ * outside fields and dialogs, and not after an element handled the key (legacy's stopPropagation).
+ */
+export const globalShortcuts: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
+	target: () => document,
+	type: "keydown",
+	filterMapEvent: (event): Option.Option<Message> => {
+		const key = event.key.toLowerCase()
+		if ((event.metaKey || event.ctrlKey) && key === "k") {
+			event.preventDefault()
+			return Option.some(Message.PressedPaletteShortcut())
+		}
+		if (
+			event.defaultPrevented ||
+			isEditableTarget(event.target) ||
+			isDialogOpen() ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.altKey
+		)
+			return Option.none()
+		const message =
+			event.key === "?"
+				? Message.PressedShortcutsKey()
+				: key === "t"
+					? Message.PressedThemeKey()
+					: event.key === "/"
+						? Message.PressedFocusSearchKey()
+						: null
+		if (message !== null) event.preventDefault()
+		return Option.fromNullishOr(message)
 	},
 })
 

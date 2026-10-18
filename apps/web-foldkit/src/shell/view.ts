@@ -27,6 +27,9 @@ import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader } from "./
 import { type BreadcrumbEntry, topbar } from "./view-topbar"
 import { splitPageRails } from "./page-rails"
 import { filterSheet, filterSheetTrigger, rightSheet, rightSheetTrigger } from "./view-page-sheets"
+import { paletteView } from "./palette/view"
+import { shortcutsDialogView } from "./palette/shortcuts-view"
+import { paletteContextOf } from "./update-palette"
 
 export type { BreadcrumbEntry } from "./view-topbar"
 
@@ -262,6 +265,40 @@ export type OverlayInputs = Readonly<{ currentPath: string; clerk?: ShellClerk |
 /** Base UI's sheet portal for the mobile nav, after the frame in the app root. */
 export const sheetLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
 	model.isMobile && model.isMobileNavOpen ? mobileNav(h, model, inputs.currentPath, inputs.clerk ?? null) : null,
+)
+
+/** A box-less holder that always renders, so a portal moved to `<body>` is never an insertion point. */
+const layer = (h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
+	h.div([h.Style({ display: "contents" })], children)
+
+/** `CommandPalette`'s portal while it is mounted. */
+export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
+	layer(h, model.palette === null
+		? []
+		: [paletteView(
+				h,
+				model.palette,
+				{
+					context: paletteContextOf(model),
+					isReleasesVisible: shellNavGroups(inputs.clerk ?? null).some((group) =>
+						group.items.some((item) => item.href === "/releases"),
+					),
+				},
+				(message) => Message.GotPaletteMessage({ message }),
+			)]),
+)
+
+/** `KeyboardShortcutsDialog`'s portal while it is mounted. */
+export const shortcutsLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, _inputs, h) =>
+	layer(h, model.shortcutsDialog === null
+		? []
+		: [shortcutsDialogView(
+				h,
+				model.shortcutsDialog,
+				model.platform,
+				(message) => Message.GotShortcutsDialogMessage({ message }),
+				Message.MeasuredShortcutsPanel(),
+			)]),
 )
 
 /** Base UI's menu portal for the open menu, last in the app root. */

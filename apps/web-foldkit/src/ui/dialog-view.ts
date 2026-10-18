@@ -5,7 +5,7 @@ import * as DialogStyles from "@maple/ui/styles/ui/dialog"
 import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
-import { type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
+import { type Attribute, type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
 import {
 	descriptionId,
 	type Kind,
@@ -335,13 +335,24 @@ export const dialogPanel = <M>(
 	id: string,
 	children: ReadonlyArray<Html>,
 	className?: string,
+	/** A Mount on the ScrollArea viewport (its fades) and the scrollbar it sizes (`trackScrollbar`). */
+	measured?: Readonly<{ viewportAttributes: ReadonlyArray<Attribute<M>> }>,
 ): Html =>
-	scrollArea(h, { idPrefix: `${id}-panel`, scrollFade: true }, [
+	scrollArea(
+		h,
+		{
+			idPrefix: `${id}-panel`,
+			scrollFade: true,
+			viewportAttributes: measured?.viewportAttributes,
+			hasMeasuredScrollbar: measured !== undefined,
+		},
+		[
 		h.div(
 			[h.Class(cn(contentStyles[kind].panel, className)), h.DataAttribute("slot", `${kind}-panel`)],
 			children,
 		),
-	])
+		],
+	)
 
 export const dialogFooter = <M>(
 	h: HtmlBuilder<M>,

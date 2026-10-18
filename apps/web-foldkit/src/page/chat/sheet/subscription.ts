@@ -12,9 +12,14 @@ import { Message, type Model } from "./model"
 /** `OPEN_CHAT_EVENT`: whoever wants the sheet (the top bar, the command palette) dispatches it. */
 export const OPEN_CHAT_EVENT = "maple:open-chat-sheet"
 
+/** The event's detail when focus that lands in the sheet stays `:focus-visible` (from the palette's input). */
+const FOCUS_VISIBLE_OPEN = "focus-visible"
+
 /** `openGlobalChat()`. */
-export const openGlobalChat = (): void => {
-	document.dispatchEvent(new CustomEvent(OPEN_CHAT_EVENT))
+export const openGlobalChat = (options: Readonly<{ isFocusVisible?: boolean }> = {}): void => {
+	document.dispatchEvent(
+		new CustomEvent(OPEN_CHAT_EVENT, options.isFocusVisible === true ? { detail: FOCUS_VISIBLE_OPEN } : {}),
+	)
 }
 
 const openTarget = (): Dom.TypedEventTarget<{ [OPEN_CHAT_EVENT]: Event }> => document
@@ -22,7 +27,8 @@ const openTarget = (): Dom.TypedEventTarget<{ [OPEN_CHAT_EVENT]: Event }> => doc
 const openEvents: Stream.Stream<Message> = Dom.streamFromEvent({
 	target: openTarget,
 	type: OPEN_CHAT_EVENT,
-	mapEvent: () => Message.RequestedOpen({ viaKeyboard: false }),
+	mapEvent: (event) =>
+		Message.RequestedOpen({ viaKeyboard: event instanceof CustomEvent && event.detail === FOCUS_VISIBLE_OPEN }),
 })
 
 const shortcut: Stream.Stream<Message> = Dom.streamFromEventFilterMapPreventDefault({

@@ -108,6 +108,20 @@ const shellOverlays = (
 		viewInputs: { currentPath, clerk },
 	}),
 	h.submodel({
+		slotId: "shell-palette",
+		model: model.shell,
+		view: Shell.paletteLayerView,
+		toParentMessage: toShellMessage,
+		viewInputs: { currentPath, clerk },
+	}),
+	h.submodel({
+		slotId: "shell-shortcuts",
+		model: model.shell,
+		view: Shell.shortcutsLayerView,
+		toParentMessage: toShellMessage,
+		viewInputs: { currentPath, clerk },
+	}),
+	h.submodel({
 		slotId: "chat-sheet",
 		model: model.chatSheet,
 		view: ChatSheet.view,
