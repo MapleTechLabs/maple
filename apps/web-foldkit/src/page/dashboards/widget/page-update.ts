@@ -47,6 +47,10 @@ import {
 	widgetOf,
 } from "./update"
 
+/** A failed write's message, kept until dismissed. */
+const errorToast = (title: string) =>
+	PageOutMessage.RequestedToast({ type: "error", title, description: "", timeoutMs: null, action: null })
+
 const timePickerStep = (model: Model, context: PageContext, message: TimeRangePicker.Message): Return => {
 	const next = TimeRangePicker.update(model.timePicker, message)
 	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
@@ -143,7 +147,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotChartMessage: ({ message: inner }) => chartStep(model, inner),
 		ClickedSortColumn: ({ field, isText }) => sortStep(model, field, isText),
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, context, inner),
-		CompletedSaveTimeRange: () => ({ model }),
+		// Legacy raises the store's persistence banner; the editor has none, so the failure toasts.
+		CompletedSaveTimeRange: ({ error }) => (error === null ? { model } : { model, outMessage: errorToast(error) }),
 		GotSourceTabsMessage: ({ message: inner }) => tabsStep(model, context, inner),
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, context, id, inner),
 		GotQueryPanelMessage: ({ message: inner }) => queryPanelStep(model, context, inner),
@@ -254,13 +259,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? navigate({ ...model, isSaving: false }, backHref(model))
 				: {
 						model: { ...model, isSaving: false },
-						outMessage: PageOutMessage.RequestedToast({
-							type: "error",
-							title: error,
-							description: "",
-							timeoutMs: null,
-							action: null,
-						}),
+						outMessage: errorToast(error),
 					},
 		ClickedCancel: () => leave(model, backHref(model)),
 		GotLeaveDialogMessage: ({ message: inner }) => leaveDialogStep(model, inner),

@@ -141,6 +141,20 @@ describe("widget editor", () => {
 		expect(dirty.model.leaveDialog.isOpen).toBe(true)
 	})
 
+	test("a failed time-range save is reported, a saved one is quiet", () => {
+		const model = opened().model
+		expect(pageUpdate(model, Message.CompletedSaveTimeRange({ error: null })).outMessage).toBeUndefined()
+		expect(pageUpdate(model, Message.CompletedSaveTimeRange({ error: "Dashboard is read-only" })).outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Dashboard is read-only",
+				description: "",
+				timeoutMs: null,
+				action: null,
+			}),
+		)
+	})
+
 	test("the first focus in the query editor starts every autocomplete lookup, once", () => {
 		const focused = pageUpdate(opened().model, Message.FocusedQueryEditor())
 		expect(names(focused.commands).filter((name) => name === FetchAutocomplete.name)).toHaveLength(7)
