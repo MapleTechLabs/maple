@@ -242,4 +242,9 @@ installed) and checks every endpoint family; run it locally after backend or fix
   estimated row heights unless ResizeObserver measured the rows first, leaving `scrollTop` 96 px short.
   An app race; freezing only `Date` (real rAF instead of `page.clock`'s timer) did not fix it and
   made the service-map fit race (`service-map-canvas.tsx` marks the fit done before its rAF) flaky.
+  Foldkit's port (`waterfall/virtualize.ts`) races twice: its attempts read a DOM one render
+  behind the virtualizer (legacy's `flushSync` keeps them in step), and after the latch the rows
+  below the fold grow 8 px each, with or without a scroll adjustment. Waiting for a settled DOM
+  after each scroll write reproduces legacy's write sequence (1451, 1515, 1921) in every capture,
+  but the post-latch growth still varies, so the port stays verbatim.
 - `perf` from `docs/foldkit-migration.md` §3 is not ported yet.
