@@ -6,7 +6,11 @@ import { getReplaysForTrace } from "@maple/web-data/warehouse/replays"
 import { getSpanHierarchy, getTraceSpanEvents } from "@maple/web-data/warehouse/traces"
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
+import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "../../../data/load-failure"
+import { readThrough } from "../../../data/read-cache"
+import { requestKey, type RequestKey } from "../../../data/request-key"
+import { TraceData } from "./trace-data"
 import { Message } from "./message"
 
 /** `decodeTraceIdParam`: a pasted id may carry whitespace; anything still undecodable is not found. */
@@ -34,11 +38,25 @@ export const ReadClock = Command.define("ReadTraceDetailClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
 })
 
+/** `getSpanHierarchyResultAtom({ data })`'s identity, shared with the investigation's trace chips. */
+export const spanHierarchyKey = (
+	orgId: string,
+	traceId: TraceId,
+	timestamp: string | undefined,
+): RequestKey => requestKey(orgId, "getSpanHierarchy", { data: { traceId, timestamp } })
+
+/** `getSpanHierarchy` through the read cache, under `spanHierarchyKey`. */
+export const readSpanHierarchy = (key: RequestKey, traceId: TraceId, timestamp: string | undefined) =>
+	readThrough(
+		{ key, idleTtlMs: IdleTtl.spanHierarchy, schema: TraceData },
+		getSpanHierarchy({ data: { traceId, timestamp } }),
+	)
+
 export const FetchHierarchy = Command.define("FetchSpanHierarchy", {
 	args: { key: Schema.String, traceId: TraceId, timestamp: Schema.optional(Schema.String) },
 	messages: [Message.CompletedFetchHierarchy],
 	execute: ({ key, traceId, timestamp }) =>
-		getSpanHierarchy({ data: { traceId, timestamp } }).pipe(
+		readSpanHierarchy(key, traceId, timestamp).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchHierarchy({ key, result })),

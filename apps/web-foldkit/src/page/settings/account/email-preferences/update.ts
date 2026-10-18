@@ -3,7 +3,7 @@ import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { Clock, Effect, Option, Predicate, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { toLoadFailure } from "../../../../data/load-failure"
-import { ServicesFacetsProbe } from "../../../../data/services-facets-probe"
+import { loadServicesFacets } from "../../../../data/services-facets-probe"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import * as Combobox from "../../../../ui/combobox"
 import { PageOutMessage, type PageReturn } from "../../../contract"
@@ -103,7 +103,7 @@ const FetchFacets = Command.define("FetchDigestScopeFacets", {
 			startTime: formatWarehouseDateTime(now - 24 * 60 * 60 * 1000),
 			endTime: formatWarehouseDateTime(now),
 		})
-		const response = yield* (yield* ServicesFacetsProbe).load(range)
+		const response = yield* loadServicesFacets(range)
 		// The facets carry an empty-string entry for "not reported", which a digest cannot pin to.
 		return {
 			namespaces: response.data.namespaces.map((item) => item.name).filter((name) => name !== ""),

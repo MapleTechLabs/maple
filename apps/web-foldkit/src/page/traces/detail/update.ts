@@ -13,6 +13,7 @@ import {
 	correlationWindow,
 	decodeTraceId,
 	FetchHierarchy,
+	spanHierarchyKey,
 	FetchLogsCount,
 	FetchProductEvents,
 	FetchReplays,
@@ -208,9 +209,7 @@ const requestHierarchy = (model: Model, context: PageContext): Return =>
 	Option.match(decodeTraceId(model.traceId), {
 		onNone: () => ({ model }),
 		onSome: (traceId) => {
-			const key = requestKey(context.orgId, "getSpanHierarchy", {
-				data: { traceId, timestamp: model.search.t },
-			})
+			const key = spanHierarchyKey(context.orgId, traceId, model.search.t)
 			return Option.match(Keyed.request(model.hierarchy, key, "Load"), {
 				onNone: () => ({ model }),
 				onSome: (hierarchy) => ({

@@ -10,8 +10,8 @@ import { fromString as urlFromString, toString as urlToString, type Url } from "
 import {
 	CheckSession,
 	LoadCustomer,
-	DeliverPreloaded,
 	HoldPreloads,
+	ReleaseReads,
 	LoadExternal,
 	ReadSessionTimeRange,
 	NavigateInternal,
@@ -243,12 +243,16 @@ const writePage =
 			),
 			{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
 		)
-		const seeded = Preload.seeded(toasted.model.preload, pageIdentity(transition.slot), transition.commands)
+		const held = Preload.held(toasted.model.preload, pageIdentity(transition.slot), transition.commands)
 		return {
-			model: modifyFields(toasted.model, { page: () => transition.slot, preload: () => seeded.model }),
+			model: modifyFields(toasted.model, { page: () => transition.slot, preload: () => held.model }),
 			commands: [
-				...seeded.commands.map(Command.mapMessage((message) => Message.GotPageMessage({ message }))),
-				...seeded.delivered.map((message) => DeliverPreloaded({ message })),
+				...(held.isNewHolder
+					? [ReleaseReads({ orgId: transition.slot?.orgId ?? null, keys: held.released })]
+					: []),
+				...transition.commands.map(
+					Command.mapMessage((message) => Message.GotPageMessage({ message })),
+				),
 				...Option.match(transition.outMessage, {
 					onNone: () => [],
 					onSome: PageOutMessage.match({
@@ -672,12 +676,12 @@ const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 		{
 			onNone: () => ({ model }),
 			onSome: (commands) => {
-				const started = Preload.started(model.preload, commands)
+				const keys = Preload.keysOf(commands)
 				return {
-					model: withPreload(model, started.model),
+					model,
 					commands: [
-						...started.commands.map(Command.mapMessage((message) => Message.GotPreloadMessage({ message }))),
-						...(started.keys.length === 0 ? [] : [HoldPreloads({ keys: started.keys })]),
+						...commands.map(Command.mapMessage((message) => Message.GotPreloadMessage({ message }))),
+						...(keys.length === 0 ? [] : [HoldPreloads({ keys })]),
 					],
 				}
 			},
@@ -757,16 +761,16 @@ export const update = (model: Model, message: Message) =>
 				onNone: () => ({ model }),
 				onSome: (preload) => preloadLink(withPreload(model, preload), href, nowMs),
 			}),
-		GotPreloadMessage: ({ message }) =>
-			Option.match(Preload.answered(model.preload, message), {
-				onNone: () => ({ model }),
-				onSome: ({ model: preload, forward }) =>
-					Option.match(forward, {
-						onNone: () => ({ model: withPreload(model, preload) }),
-						onSome: (forwarded) => toPage(withPreload(model, preload), forwarded),
-					}),
-			}),
-		ExpiredPreloads: ({ keys }) => ({ model: withPreload(model, Preload.expired(model.preload, keys)) }),
+		// The answer is in the read cache, where the opening page's own read finds it.
+		GotPreloadMessage: () => ({ model }),
+		ExpiredPreloads: ({ keys }) => {
+			const released = Preload.expired(model.preload, keys)
+			return {
+				model,
+				commands: released.length === 0 ? [] : [ReleaseReads({ orgId: null, keys: released })],
+			}
+		},
+		CompletedReleaseReads: () => ({ model }),
 		LoadedSessionTimeRange: ({ orgId, value, nowMs }) =>
 			model.sessionTimeRange?.orgId === orgId
 				? syncSessionTimeRange(

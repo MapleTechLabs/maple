@@ -91,12 +91,11 @@ the page will read and holds them 30 s. The root mirrors it (`page/preload.ts`):
   namespace pin there). Pages: services list, traces list, trace detail, replays list, replay detail.
 - The root listens for `mouseover`/`mouseout`/`focusin`/`focusout`/`touchstart` on internal links,
   waits the delay per href (cancelled on leave or blur), reads the clock and runs the target page's
-  `preload` under that route's context. Keys already preloaded, or requested by the open page
-  instance (a mounted atom), are not sent again.
-- Every page step's Commands pass through `Preload.seeded`: a settled preloaded key becomes
-  `DeliverPreloaded` (its answer as a page Message), an in-flight one is awaited and forwarded when
-  it lands. Unused answers are dropped after 30 s. This relies on S6: fetch Commands carry
-  `args.key` and their result Messages carry `key`.
+  `preload` under that route's context.
+- Preload Commands read through the `ReadCache` (s6 "Read cache"), so a key already preloaded or
+  held by the open page is answered there, and the opening page's own reads join or reuse the
+  preload. Their result Messages are dropped; unused keys are released after the 30 s hold.
+  Every page step's keys are held for its instance (`Preload.held`) and released when it changes.
 
 ## Search params
 

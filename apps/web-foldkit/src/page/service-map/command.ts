@@ -7,9 +7,9 @@ import {
 	getServiceMapCloudflare,
 	getServiceMapPlanetScale,
 } from "@maple/web-data/warehouse/service-map"
-import { getServicesFacets } from "@maple/web-data/warehouse/services"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command, Mount } from "foldkit"
+import { loadServicesFacets } from "../../data/services-facets-probe"
 import { toLoadFailure } from "../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
@@ -114,7 +114,7 @@ export const FetchFacets = Command.define("FetchServiceMapFacets", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
-		getServicesFacets({ data: window }).pipe(
+		loadServicesFacets(window, { key }).pipe(
 			Effect.map(({ data }) => data.environments.map((environment) => environment.name)),
 			Effect.mapError(toLoadFailure),
 			Effect.result,

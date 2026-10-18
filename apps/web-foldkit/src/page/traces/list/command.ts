@@ -6,13 +6,15 @@ import {
 } from "@maple/web-data/warehouse/traces"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
+import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "../../../data/load-failure"
+import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { TracesSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import type { Search } from "./derive"
 import { Message, RequestMode } from "./message"
-import type { TraceRow, TracesPage } from "./model"
+import { type TraceRow, TracesFacets, type TracesPage } from "./model"
 
 /** `useInfiniteTraces`' page size; the first page is the atom, the rest direct fetches. */
 export const PAGE_SIZE = 100
@@ -41,8 +43,13 @@ export const FetchFacets = Command.define("FetchTracesFacets", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
-		getTracesFacets({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
-			Effect.map((response) => response.data),
+		readThrough(
+			{ key, idleTtlMs: IdleTtl.tracesFacets, schema: TracesFacets },
+			Effect.map(
+				getTracesFacets({ data: { startTime: window.startTime, endTime: window.endTime } }),
+				(response) => response.data,
+			),
+		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
