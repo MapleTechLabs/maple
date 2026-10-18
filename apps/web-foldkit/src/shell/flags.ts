@@ -5,7 +5,7 @@ import { readDashboardFavorites } from "./favorites"
 import { NAMESPACE_STORAGE_PREFIX, THEME_STORAGE_KEY } from "./command"
 import { Theme } from "./message"
 import type { ShellFlags } from "./model"
-import { MOBILE_QUERY } from "./subscription"
+import { FILTER_COLLAPSED_QUERY, MOBILE_QUERY } from "./subscription"
 
 const decodeTheme = Schema.decodeUnknownOption(Theme)
 
@@ -38,6 +38,7 @@ export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* ()
 	const pinnedNamespaces = yield* readPinnedNamespaces
 	return {
 		isMobile: window.matchMedia(MOBILE_QUERY).matches,
+		isFilterCollapsed: window.matchMedia(FILTER_COLLAPSED_QUERY).matches,
 		theme: readTheme(),
 		pinnedNamespaces,
 		dashboardFavorites: readDashboardFavorites(),

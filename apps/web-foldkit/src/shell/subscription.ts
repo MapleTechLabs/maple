@@ -11,6 +11,14 @@ export const viewportChanges: Stream.Stream<Message> = Dom.streamFromMediaQuery(
 	mapMatches: (isMobile) => Message.ChangedViewport({ isMobile }),
 })
 
+/** `PageLayout`'s `useMediaQuery("max-lg")`: below 1024px the page rails are sheets. */
+export const FILTER_COLLAPSED_QUERY = "(max-width: 1023px)"
+
+export const filterViewportChanges: Stream.Stream<Message> = Dom.streamFromMediaQuery({
+	query: FILTER_COLLAPSED_QUERY,
+	mapMatches: (isCollapsed) => Message.ChangedFilterViewport({ isCollapsed }),
+})
+
 /** `SidebarProvider`'s ⌘B / Ctrl+B toggle. */
 export const sidebarShortcut: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 	target: () => window,

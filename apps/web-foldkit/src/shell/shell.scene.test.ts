@@ -18,13 +18,20 @@ import {
 	text,
 	withViewInputs,
 } from "foldkit/scene"
-import { describe, test } from "vitest"
+import { describe, expect as expectVitest, test } from "vitest"
 import { FocusElement, SaveNamespace, SaveSidebarState, SaveTheme } from "./command"
-import { LoadNamespaces } from "./data"
+import {
+	LoadCloudflareStatus,
+	LoadGcpStatus,
+	LoadInfraPresence,
+	LoadNamespaces,
+	LoadPlanetscaleStatus,
+	LoadRailwayStatus,
+} from "./data"
 import { Menu, Message, OutMessage } from "./message"
 import { init, type Model } from "./model"
 import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
-import { update } from "./update"
+import { enter, update } from "./update"
 import * as Tooltip from "../ui/tooltip"
 import { CheckDeployedCommit, ReloadPage } from "./version"
 import { frameView, menuLayerView, sheetLayerView } from "./view"
@@ -116,19 +123,44 @@ describe("sidebar collapse", () => {
 		)
 	})
 
-	test("below md the trigger opens the nav as a sheet, and the backdrop closes it", () => {
+	test("below md the trigger opens the nav as a sheet, reading its data once, and the backdrop closes it", () => {
+		const open = () => [
+			click(toggle),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("dialog", { name: "Sidebar" })).toExist(),
+		]
+		const close = () => [
+			click(selector('[data-slot="sheet-backdrop"]')),
+			Mount.expectEnded(MeasureSidebarOverflow),
+			expect(role("dialog", { name: "Sidebar" })).toBeAbsent(),
+		]
 		scene(
 			{ update, view },
 			given(signedIn({ isMobile: true })),
 			expect(sidebar).toBeAbsent(),
-			click(toggle),
+			...open(),
+			Command.expectExact(LoadInfraPresence, LoadCloudflareStatus, LoadPlanetscaleStatus, LoadRailwayStatus, LoadGcpStatus),
+			Command.resolveAll(
+				[LoadInfraPresence, Message.SucceededLoadInfraPresence({ surfaces: [] })],
+				[LoadCloudflareStatus, Message.SucceededLoadIntegration({ integration: "cloudflare", isConnected: false })],
+				[LoadPlanetscaleStatus, Message.SucceededLoadIntegration({ integration: "planetscale", isConnected: false })],
+				[LoadRailwayStatus, Message.SucceededLoadIntegration({ integration: "railway", isConnected: false })],
+				[LoadGcpStatus, Message.SucceededLoadIntegration({ integration: "gcp", isConnected: false })],
+			),
+			...close(),
+			...open(),
 			Command.expectNone(),
-			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
-			expect(role("dialog", { name: "Sidebar" })).toExist(),
-			click(selector('[data-slot="sheet-backdrop"]')),
-			Mount.expectEnded(MeasureSidebarOverflow),
-			expect(role("dialog", { name: "Sidebar" })).toBeAbsent(),
+			...close(),
 		)
+	})
+
+	test("entering an org below md defers the sidebar's reads; on desktop they go with the tenant", () => {
+		const mobile = enter("org_parity")(init({ ...flags, isMobile: true }))
+		const desktop = enter("org_parity")(init(flags))
+		expectVitest((mobile.commands ?? []).map((command) => command.name)).toEqual(["LoadTenant"])
+		expectVitest(mobile.model.hasRequestedSidebarData).toBe(false)
+		expectVitest((desktop.commands ?? []).map((command) => command.name)).toContain("LoadInfraPresence")
+		expectVitest(desktop.model.hasRequestedSidebarData).toBe(true)
 	})
 })
 

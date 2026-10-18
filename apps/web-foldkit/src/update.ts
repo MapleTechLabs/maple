@@ -709,7 +709,7 @@ export const update = (model: Model, message: Message) =>
 				route: () => nextRoute,
 				signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
 			})
-			const routedStep = Update.combine([foldShellStep(Shell.routeChanged), settle])(routed)
+			const routedStep = Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
 			return Option.match(injected, {
 				onNone: () => routedStep,
 				onSome: (injectedUrl) => ({

@@ -78,6 +78,15 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				Stream.map(Shell.viewportChanges, (message) => Message.GotShellMessage({ message })),
 		},
 	),
+	/** `PageLayout`'s `max-lg` query: the page rails turn into sheets below `lg`. */
+	shellFilterViewport: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () =>
+				Stream.map(Shell.filterViewportChanges, (message) => Message.GotShellMessage({ message })),
+		},
+	),
 	/** ⌘B / Ctrl+B toggles the sidebar while a shell page is open (`SidebarProvider`). */
 	shellSidebarShortcut: entry(
 		{ isShellOpen: Schema.Boolean },
@@ -98,7 +107,7 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 		{
 			modelToDependencies: (model) => ({
 				orgId:
-					model.session._tag === "SignedIn" && rendersShell(model.route)
+					model.session._tag === "SignedIn" && rendersShell(model.route) && model.shell.hasRequestedSidebarData
 						? Option.getOrNull(model.shell.maybeOrgId)
 						: null,
 			}),

@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
 import { PopupPosition } from "../ui/anchor"
+import * as Dialog from "../ui/dialog"
 import * as Tooltip from "../ui/tooltip"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
@@ -30,6 +31,12 @@ export const Message = defineMessageUnion({
 	PressedSidebarShortcut: {},
 	ChangedViewport: { isMobile: Schema.Boolean },
 	DismissedMobileNav: {},
+	ChangedFilterViewport: { isCollapsed: Schema.Boolean },
+	/** The top bar's "Open filters" / "Open context" (`FilterSidebarTrigger`, `RightSidebarTrigger`). */
+	ClickedOpenFilters: {},
+	ClickedOpenContext: {},
+	GotFilterSheetMessage: { message: Dialog.Message },
+	GotRightSheetMessage: { message: Dialog.Message },
 	ClickedMenuTrigger: { menu: Menu },
 	DismissedMenu: {},
 	MeasuredMenuPopup: { menu: Menu, position: PopupPosition },
