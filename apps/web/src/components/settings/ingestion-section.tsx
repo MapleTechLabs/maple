@@ -217,7 +217,7 @@ function CredentialRow({
 					<IconButton
 						variant="outline"
 						onClick={onRegenerate}
-						label={`Roll ${label.toLowerCase()}`}
+						label={`Regenerate ${label.toLowerCase()}`}
 						disabled={disabled}
 					>
 						<ArrowPathIcon className="text-destructive" />
@@ -243,7 +243,7 @@ function EndpointAndKeysSection() {
 					rel="noopener noreferrer"
 					className="text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors"
 				>
-					Setup docs ↗
+					Docs ↗
 				</a>
 			}
 		>
@@ -286,8 +286,8 @@ function IngestKeyRows() {
 		const isPublic = rollType === "public"
 		const result = isPublic ? await rollPublic({}) : await rollPrivate({})
 		const ok = toastExit(result, {
-			success: `${isPublic ? "Public" : "Private"} ingest key rolled. The previous key stopped working immediately.`,
-			error: "Unable to roll the ingest key",
+			success: `${isPublic ? "Public" : "Private"} key regenerated. Previous key was revoked immediately.`,
+			error: "Unable to complete request",
 		})
 		if (ok) refreshKeys()
 		setRollOpen(false)
@@ -324,7 +324,7 @@ function IngestKeyRows() {
 				value={privateKey}
 				failed={failed}
 				masked
-				description="For server-side SDKs and collectors"
+				description="For server-side ingestion and backend services"
 				isVisible={privateKeyVisible}
 				onToggleVisibility={() => setPrivateKeyVisible((v) => !v)}
 				onRegenerate={() => openRoll("private")}
@@ -333,16 +333,16 @@ function IngestKeyRows() {
 			<ConfirmDialog
 				open={rollOpen}
 				onOpenChange={setRollOpen}
-				title={`Roll ${rollType} ingest key?`}
+				title={`Regenerate ${rollType} key?`}
 				description={
 					<>
-						This action cannot be undone. Everything sending telemetry with this key will be
-						rejected immediately. You will need to update your{" "}
+						This action cannot be undone. All existing integrations using this key will stop
+						working immediately. You will need to update your{" "}
 						{rollType === "public" ? "client-side SDKs" : "server configurations"} with the new
 						key.
 					</>
 				}
-				confirmLabel="Roll key"
+				confirmLabel="Regenerate key"
 				onConfirm={() => void handleRoll()}
 				pending={rolling}
 			/>
