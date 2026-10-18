@@ -5,6 +5,9 @@ import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import { ListDashboard, Scope } from "./model"
 
+/** A created dashboard: its id to open and its name for the toast. */
+const Created = Schema.Struct({ id: Schema.String, name: Schema.String, isPerses: Schema.Boolean })
+
 /** A write's outcome: the failure is the message `getErrorMessage` would show. */
 const WriteResult = Schema.Result(Schema.Void, Schema.String)
 
@@ -23,13 +26,13 @@ export const Message = defineMessageUnion({
 	ClickedImport: {},
 	CompletedOpenImportPicker: {},
 	ChoseImportFile: { files: Schema.Array(File) },
-	CompletedImportDashboard: { result: Schema.Result(Schema.String, Schema.String) },
+	CompletedImportDashboard: { result: Schema.Result(Created, Schema.String) },
 	ToggledFavorite: { id: Schema.String },
 	CompletedSavePreferences: {},
 	GotSortMenuMessage: { message: Menu.Message },
 	GotRowMenuMessage: { rowId: Schema.String, message: Menu.Message },
 	CompletedExportDashboard: {},
-	CompletedDuplicateDashboard: { result: Schema.Result(Schema.String, Schema.String) },
+	CompletedDuplicateDashboard: { result: Schema.Result(Created, Schema.String) },
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	ClickedConfirmDelete: {},
 	CompletedDeleteDashboard: { result: WriteResult },

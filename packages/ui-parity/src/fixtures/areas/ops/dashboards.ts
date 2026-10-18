@@ -183,6 +183,17 @@ const writeEndpoints: Readonly<Record<string, EndpointHandler>> = {
 		Effect.flatMap(decodeUpdateParams(payload), (update) =>
 			mutation(str(params, "id") ?? "", { ...update, name: update.name ?? "" }),
 		),
+	// The API's `instantiateTemplate`: the template's own build, answered as the created board.
+	"dashboards.instantiateTemplate": ({ params, payload }) => {
+		const built = getTemplate(str(params, "template_id") ?? "")?.build(templateParameters(payload))
+		return mutation(CREATED_DASHBOARD_ID, {
+			name: built?.name ?? "Untitled Dashboard",
+			description: built?.description ?? null,
+			timeRange: built?.timeRange,
+			widgets: built?.widgets ?? [],
+			variables: built?.variables ?? [],
+		})
+	},
 	"dashboards.delete": ({ params }) =>
 		encodeDeleted({
 			id: str(params, "id") ?? "",

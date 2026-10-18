@@ -1,5 +1,5 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Clock, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { File as FoldkitFile } from "foldkit/file"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -79,7 +79,7 @@ const createFromPortable = (orgId: string, portable: PortableDashboard) =>
 		const client = yield* MapleApiV2Client
 		const created = yield* client.dashboards.create({ payload: createPayload(portable) })
 		yield* awaitTxid(orgId, created.txid)
-		return created.id
+		return { id: created.id, name: created.name, isPerses: false }
 	})
 
 const toResult = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -98,7 +98,8 @@ export const CreateDashboard = Command.define("CreateDashboard", {
 					widgets: [],
 				}),
 			),
-			(result) => Message.CompletedCreateDashboard({ result }),
+			(result) =>
+				Message.CompletedCreateDashboard({ result: Result.map(result, (created) => created.id) }),
 		),
 })
 
@@ -144,7 +145,7 @@ export const ImportDashboard = Command.define("ImportDashboard", {
 							payload: { dashboard: parsed },
 						})
 						yield* awaitTxid(orgId, imported.dashboard.txid)
-						return imported.dashboard.id
+						return { id: imported.dashboard.id, name: imported.dashboard.name, isPerses: true }
 					}
 					return yield* createFromPortable(orgId, yield* parsePortable(parsed))
 				}),

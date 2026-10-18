@@ -33,7 +33,14 @@ export interface PageSubscriptionInput<Model> {
 /** Facts a page reports to the root; the root owns the URL. */
 export const PageOutMessage = defineMessageUnion({
 	/** `navigate({ search })` / `<Link>`: the root pushes (or replaces) the URL, which re-enters the route. */
-	RequestedNavigation: { url: Schema.String, isReplace: Schema.Boolean },
+	RequestedNavigation: {
+		url: Schema.String,
+		isReplace: Schema.Boolean,
+		/** A toast raised with the navigation (`navigate(...)` then `toastManager.add(...)`). */
+		toast: Schema.optionalKey(
+			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
+		),
+	},
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
 	/**

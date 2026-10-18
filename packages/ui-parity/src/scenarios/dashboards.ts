@@ -195,6 +195,35 @@ export const dashboardsArea: AreaModule = {
 		dashboard("template-preview", "Service Health template preview", "/dashboards/templates", {
 			steps: act(clickButton(/^Service Health/)),
 		}),
+		dashboard("templates-search", "Template gallery: searched for redis", "/dashboards/templates", {
+			steps: act(async (page) => {
+				await page.getByRole("textbox", { name: "Search templates" }).fill("redis")
+				await page.waitForTimeout(400)
+			}),
+		}),
+		dashboard("templates-needs-setup", "Template gallery: Needs setup only", "/dashboards/templates", {
+			steps: act(clickButton("Needs setup")),
+		}),
+		dashboard(
+			"templates-ready-empty",
+			"Template gallery: Ready filter over a gated search",
+			"/dashboards/templates",
+			{
+				steps: act(async (page) => {
+					await page.getByRole("textbox", { name: "Search templates" }).fill("redis")
+					await page.waitForTimeout(400)
+				}, clickButton("Ready")),
+			},
+		),
+		dashboard("template-gated", "Redis template: a gated template's panel", "/dashboards/templates", {
+			steps: act(clickButton(/^Redis Overview/)),
+		}),
+		dashboard("template-created", "Platform Overview template instantiated", "/dashboards/templates", {
+			steps: act(clickButton(/^Platform Overview/), clickButton("Create dashboard")),
+		}),
+		dashboard("template-blank", "Blank dashboard from the gallery", "/dashboards/templates", {
+			steps: act(clickButton(/^Blank dashboard/)),
+		}),
 		dashboard("list-empty", "Dashboards (empty org)", "/dashboards", { dataset: EMPTY }),
 		dashboard("list-empty-create", "Dashboards (empty org): Create blank dashboard", "/dashboards", {
 			dataset: EMPTY,

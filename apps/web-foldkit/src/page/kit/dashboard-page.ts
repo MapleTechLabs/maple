@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import {
 	pageBodyStyles,
 	pageContentStyles,
+	pageFillStyles,
 	pageFilterSidebarStyles,
 	pageFilterSidebarWidthStyles,
 	pageHeaderActionsStyles,
@@ -23,10 +24,12 @@ export type DashboardPageOptions = Readonly<{
 	filters?: Html
 	filtersWidth?: string
 	/** `DashboardLayout.Header`'s `titleContent`. */
-	titleContent?: Html
+	titleContent?: Html | undefined
 	/** The header's right side: `headerActions` and the time controls, already composed. */
 	actions?: Html
 	scrollClassName?: string
+	/** `DashboardPage fill`: the body owns its scrolling (`DashboardLayout.Fill`, not `Scroll`). */
+	fill?: boolean
 	/** `header`: replaces the composed header (a page with its own title block). */
 	header?: Html
 	/** `DashboardLayout.Tabs`: page tabs pinned under the header. */
@@ -110,7 +113,9 @@ export const dashboardPage = <M>(
 		...(options.filters === undefined ? [] : [filterRail(h, options.filters, options.filtersWidth)]),
 		pageContent(h, [
 			...(sticky.length === 0 ? [] : [stickyArea(h, sticky)]),
-			scrollArea(h, children, options.scrollClassName),
+			options.fill === true
+				? h.div([h.DataAttribute("slot", "page-fill"), h.Class(cn(pageFillStyles))], children)
+				: scrollArea(h, children, options.scrollClassName),
 		]),
 		...(options.rightPanel === undefined
 			? []

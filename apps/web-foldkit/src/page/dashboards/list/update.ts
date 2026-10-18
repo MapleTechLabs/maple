@@ -91,6 +91,28 @@ const dashboardHref = (id: string, mode?: "edit") =>
 
 const isReadOnly = (model: Model): boolean => model.persistenceError !== null
 
+/** `navigate(...)` then a success toast. */
+const navigateWithToast = (model: Model, url: string, title: string): Return => ({
+	model,
+	outMessage: PageOutMessage.RequestedNavigation({
+		url,
+		isReplace: false,
+		toast: { type: "success", title, description: "" },
+	}),
+})
+
+/** `toastManager.add({ title: errorMessage(error), type: "error" })`. */
+const toastFailure = (model: Model, message: string): Return => ({
+	model,
+	outMessage: PageOutMessage.RequestedToast({
+		type: "error",
+		title: message,
+		description: "",
+		timeoutMs: null,
+		action: null,
+	}),
+})
+
 const findDashboard = (model: Model, id: string): Option.Option<ListDashboard> =>
 	Option.fromNullishOr((model.dashboards ?? []).find((dashboard) => dashboard.id === id))
 
@@ -255,8 +277,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedImportDashboard: ({ result }) =>
 			Result.match(result, {
-				onFailure: () => ({ model }),
-				onSuccess: (id) => navigateTo(model, dashboardHref(id)),
+				onFailure: (error) => toastFailure(model, error),
+				onSuccess: (created) =>
+					navigateWithToast(
+						model,
+						dashboardHref(created.id),
+						created.isPerses
+							? `Dashboard "${created.name}" imported from Perses`
+							: `Dashboard "${created.name}" imported`,
+					),
 			}),
 		ToggledFavorite: ({ id }) => {
 			const favorites = model.favorites.includes(id)
@@ -273,9 +302,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedExportDashboard: () => ({ model }),
 		CompletedDuplicateDashboard: ({ result }) =>
 			Result.match(result, {
-				// TODO(toast): legacy also toasts "Failed to duplicate dashboard".
-				onFailure: (error) => failedWrite(model, error),
-				onSuccess: (id) => navigateTo(model, dashboardHref(id)),
+				onFailure: (error) => toastFailure(failedWrite(model, error).model, error),
+				onSuccess: (created) =>
+					navigateWithToast(model, dashboardHref(created.id), `Duplicated as "${created.name}"`),
 			}),
 		GotDeleteDialogMessage: ({ message: inner }) =>
 			dialogStep(model, model.deleteDialog, inner, (deleteDialog) => ({ deleteDialog }), wrapDelete),

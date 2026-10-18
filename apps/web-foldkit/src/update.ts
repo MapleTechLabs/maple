@@ -166,7 +166,19 @@ const writePage =
 	(transition: PageTransition): Step =>
 	(model) => {
 		const toasted = Option.match(
-			Option.filter(transition.outMessage, (out): out is PageToast => out._tag === "RequestedToast"),
+			Option.flatMap(transition.outMessage, (out): Option.Option<PageToast> =>
+				out._tag === "RequestedToast"
+					? Option.some(out)
+					: out._tag === "RequestedNavigation" && out.toast !== undefined
+						? Option.some(
+								PageOutMessage.RequestedToast({
+									...out.toast,
+									timeoutMs: null,
+									action: null,
+								}),
+							)
+						: Option.none(),
+			),
 			{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
 		)
 		return {
