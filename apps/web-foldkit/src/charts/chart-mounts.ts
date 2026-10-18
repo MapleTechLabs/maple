@@ -82,7 +82,6 @@ export const MountChart = Mount.defineStream("MountChart", {
 									sent.key = key
 									Queue.offerUnsafe(queue, Message.RenderedPlot({ plot }))
 								})
-							const measured = Math.round(element.getBoundingClientRect().height)
 							const create = (spec: typeof initialSpec.value, height: number): ChartHost =>
 								createChartHost(surface, spec, height, {
 									ariaLabel: () => element.getAttribute(CHART_LABEL_ATTRIBUTE) ?? ariaLabel,
@@ -115,6 +114,9 @@ export const MountChart = Mount.defineStream("MountChart", {
 								height: FALLBACK_HEIGHT,
 								chart: create(initialSpec.value, FALLBACK_HEIGHT),
 							}
+							// Measured with the fallback drawn, as legacy's layout effect is: a flex item's
+							// automatic minimum then holds a fixed-height box at its height instead of shrinking.
+							const measured = Math.round(element.getBoundingClientRect().height)
 
 							const redraw = (spec: typeof initialSpec.value) => {
 								if (state.chart.update(spec, state.height)) return
