@@ -26,8 +26,9 @@ export interface SettingRowIds {
 
 export interface SettingRowOptions {
 	readonly ids: SettingRowIds
-	readonly label: string
-	readonly description?: string
+	/** Text, or a node (`label={<span>Google<Badge /></span>}`). */
+	readonly label: string | Html
+	readonly description?: string | Html
 	readonly icon?: Html
 	/** The control, with its hidden form input when it has one (a Base UI Switch renders two nodes). */
 	readonly control: ReadonlyArray<Html>

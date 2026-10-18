@@ -169,7 +169,7 @@ export const fieldError = <Message>(
 		state: FieldState
 		attributes?: ReadonlyArray<Attribute<Message>>
 	}>,
-	text: string,
+	text: string | ReadonlyArray<Html | string>,
 ): Html =>
 	h.div(
 		[
@@ -179,5 +179,5 @@ export const fieldError = <Message>(
 			h.Class(cn(fieldErrorStyles, options.className)),
 			...fieldStateAttributes(h, options.state),
 		],
-		[text],
+		typeof text === "string" ? [text] : text,
 	)
