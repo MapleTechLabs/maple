@@ -24,6 +24,7 @@ import { buildAnomalySignal } from "./definitions/anomaly-signal"
 import { buildSparkline } from "./definitions/sparkline"
 import { buildStackedBreakdown } from "./definitions/stacked-breakdown"
 import { buildToolSeries } from "./definitions/tool-series"
+import { buildSpendCumulative } from "./definitions/spend"
 
 /**
  * What `RendererChartImplementation` (`@tanstack/charts/react`) does with a `CanvasChart` or SVG
@@ -180,6 +181,8 @@ export const createChartHost = (
 		AlertRule: (rule) => hostFor(container, rule, height, variant("AlertRule"), buildAlertRule, options),
 		AnomalySignal: (signal) =>
 			hostFor(container, signal, height, variant("AnomalySignal"), buildAnomalySignal, options),
+		SpendCumulative: (spend) =>
+			hostFor(container, spend, height, variant("SpendCumulative"), buildSpendCumulative, options),
 		InfraMetric: (metric) =>
 			hostFor(container, metric, height, variant("InfraMetric"), buildInfraMetric, options),
 		PlanetScaleMetric: (metric) =>

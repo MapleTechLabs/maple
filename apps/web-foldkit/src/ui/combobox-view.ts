@@ -313,8 +313,11 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 
 export type ChipsViewInputs = Readonly<{
 	items: ReadonlyArray<string>
-	/** Omitted when the legacy chips input has no `aria-label`. */
+	/** Omitted when a field label names the input (`ariaLabelledBy`). */
 	ariaLabel?: string
+	/** A Base UI `Field`'s label and description ids. */
+	ariaLabelledBy?: string
+	ariaDescribedBy?: string
 	placeholder: string
 	emptyText: string
 	className?: string
@@ -358,7 +361,8 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 			h.Key("chips"),
 			h.Class(cn(C.comboboxChipsStyles, inputs.className)),
 			h.DataAttribute("slot", "combobox-chips"),
-			h.Role("toolbar"),
+			// Base UI's chips are a toolbar once there is a chip to move between.
+			...(model.selected.length === 0 ? [] : [h.Role("toolbar")]),
 		],
 		[
 			...model.selected.map((value) => chip(h, value, isOpen)),
@@ -377,6 +381,8 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 					},
 					(message) => message,
 				),
+				...(inputs.ariaLabelledBy === undefined ? [] : [h.AriaLabelledBy(inputs.ariaLabelledBy)]),
+				...(inputs.ariaDescribedBy === undefined ? [] : [h.AriaDescribedBy(inputs.ariaDescribedBy)]),
 			]),
 		],
 	)

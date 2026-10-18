@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { otpFieldInputStyles, otpFieldSeparatorStyles, otpFieldStyles } from "@maple/ui/styles/ui/otp-field"
 import { Effect, Option, Schema } from "effect"
 import { Command, Dom, type Update } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { VISUALLY_HIDDEN_STYLE } from "./choice"
@@ -92,7 +92,8 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 export type OtpFieldViewConfig<ParentMessage> = Readonly<{
 	model: Model
 	toParentMessage: (message: Message) => ParentMessage
-	label: string
+	/** The group's `aria-label`; omitted when slot one carries the name through a label. */
+	label?: string
 	size?: "default" | "lg"
 	className?: string
 }>
@@ -113,7 +114,7 @@ export const otpField = <ParentMessage>(
 	return [
 		h.div(
 			[
-				h.AriaLabel(config.label),
+				...(config.label === undefined ? [] : [h.AriaLabel(config.label)]),
 				h.Class(cn(otpFieldStyles, config.className)),
 				...(config.model.slots.some((slot) => slot !== "") ? [h.DataAttribute("filled", "")] : []),
 				h.DataAttribute("size", config.size ?? "default"),
@@ -144,11 +145,14 @@ export const otpFieldInput = <ParentMessage>(
 	config: OtpFieldViewConfig<ParentMessage>,
 	index: number,
 	className?: string,
+	/** `<OTPFieldInput aria-label>`: the slots after the first name their position. */
+	attributes: ReadonlyArray<Attribute<ParentMessage>> = [],
 ): Html => {
 	const { model, toParentMessage } = config
 	const length = model.slots.length
 	const slot = model.slots[index] ?? ""
 	return h.input([
+		...attributes,
 		h.Autocomplete(index === 0 ? "one-time-code" : "off"),
 		h.Autocorrect("off"),
 		h.Class(cn(otpFieldInputStyles, className)),

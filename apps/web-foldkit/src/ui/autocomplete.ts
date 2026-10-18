@@ -19,7 +19,7 @@ import { isMounted } from "./overlay/transition"
  */
 export { Message, type Model } from "./combobox"
 
-export type FieldOptions = Readonly<{
+export type FieldOptions<M = never> = Readonly<{
 	items: ReadonlyArray<string>
 	ariaLabel?: string
 	placeholder?: string
@@ -31,16 +31,21 @@ export type FieldOptions = Readonly<{
 	isListEmpty?: boolean
 	/** `Command inline={false}` inside a dialog: the inline layout, but with the dismiss button. */
 	hasDismissButton?: boolean
+	/** `startAddon`: the magnifier (default) or none. */
+	hasStartAddon?: boolean
+	/** `showClear`: Base UI renders the clear button while the input holds a value. */
+	onClear?: M
 }>
 
-/** `AutocompleteInput` with a magnifier start addon. */
+/** `AutocompleteInput` with a magnifier start addon (unless `hasStartAddon: false`). */
 export const autocompleteField = <M>(
 	h: HtmlBuilder<M>,
 	model: Model,
-	options: FieldOptions,
+	options: FieldOptions<M>,
 	toMessage: (message: Message) => M,
 ): Html => {
 	const size = options.size ?? "default"
+	const hasStartAddon = options.hasStartAddon ?? true
 	const listEmpty: ReadonlyArray<Attribute<M>> =
 		options.isListEmpty === true ? [h.DataAttribute("list-empty", "")] : []
 	const popupState: ReadonlyArray<Attribute<M>> = model.isOpen
@@ -60,14 +65,18 @@ export const autocompleteField = <M>(
 			h.Role("group"),
 		],
 		[
-			h.div(
-				[
-					h.AriaHidden(true),
-					h.Class(A.autocompleteStartAddonStyles),
-					h.DataAttribute("slot", "autocomplete-start-addon"),
-				],
-				[icon(h, "MagnifierIcon")],
-			),
+			...(hasStartAddon
+				? [
+						h.div(
+							[
+								h.AriaHidden(true),
+								h.Class(A.autocompleteStartAddonStyles),
+								h.DataAttribute("slot", "autocomplete-start-addon"),
+							],
+							[icon(h, "MagnifierIcon")],
+						),
+					]
+				: []),
 			...((options.hasDismissButton ?? options.isInline !== true) && isMounted(model.isOpen, model.animation)
 				? [dismissButton(h)]
 				: []),
@@ -77,7 +86,7 @@ export const autocompleteField = <M>(
 						cn(
 							inputControlLayoutStyles,
 							inputControlChromeStyles,
-							A.autocompleteInputStartAddonStyles,
+							hasStartAddon && A.autocompleteInputStartAddonStyles,
 							A.autocompleteInputDefaultStyles,
 							options.className,
 						),
@@ -104,6 +113,20 @@ export const autocompleteField = <M>(
 					]),
 				],
 			),
+			...(options.onClear === undefined || model.inputValue === ""
+				? []
+				: [
+						h.button(
+							[
+								h.Type("button"),
+								h.AriaLabel("Clear"),
+								h.Class(cn(A.autocompleteInputClearStyles, A.autocompleteInputClearDefaultStyles)),
+								h.DataAttribute("slot", "autocomplete-clear"),
+								h.OnClick(options.onClear),
+							],
+							[icon(h, "XmarkIcon")],
+						),
+					]),
 		],
 	)
 }
@@ -113,13 +136,24 @@ export type ViewInputs = Readonly<{
 	ariaLabel: string
 	placeholder: string
 	emptyText: string
+	hasStartAddon?: boolean
+	/** `showClear`: the clear button empties the input. */
+	hasClear?: boolean
 	/** Wraps the field (`<div className="w-64">`) and places it with the hidden input and portal. */
 	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html
 }>
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 	inputs.toView({
-		field: autocompleteField(h, model, inputs, (message) => message),
+		field: autocompleteField(
+			h,
+			model,
+			{
+				...inputs,
+				onClear: inputs.hasClear === true ? Message.ChangedInput({ value: "" }) : undefined,
+			},
+			(message) => message,
+		),
 		rest: [
 			hiddenInput(h, model),
 			...(isMounted(model.isOpen, model.animation)

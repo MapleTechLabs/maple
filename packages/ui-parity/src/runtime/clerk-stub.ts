@@ -44,12 +44,32 @@ declare global {
 	interface Window {
 		/** Clerk members the app read that the stub lacks; `capture.ts` reports them. */
 		__parityClerkUnknown?: Set<string>
+		/** Clerk writes the app made (`organization.inviteMember`, `user.update`, ...); `capture.ts` logs them. */
+		__parityClerkCalls?: Array<{ tag: string; payload: unknown }>
 	}
 }
 
 export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 	const noop = () => {}
 	const asyncNoop = async () => {}
+	// Writes resolve and are logged as `clerk:<resource>.<method>` calls, so the behavior diff checks them.
+	const calls: Array<{ tag: string; payload: unknown }> = []
+	window.__parityClerkCalls = calls
+	const write =
+		(tag: string, result: unknown = {}) =>
+		async (payload?: unknown) => {
+			calls.push({ tag: `clerk:${tag}`, payload: payload === undefined ? null : payload })
+			return result
+		}
+	// `File` payloads are not JSON: log the file's name and type.
+	const fileWrite = (tag: string) => async (payload: { file: File | null }) => {
+		const file = payload.file
+		calls.push({
+			tag: `clerk:${tag}`,
+			payload: { file: file === null ? null : { name: file.name, type: file.type } },
+		})
+		return {}
+	}
 	const signedIn = (id: ClerkStubIdentity) => {
 		// Fixed timestamps: the org switcher reads `organization.createdAt.getTime()`.
 		const createdAt = new Date(Date.UTC(2026, 0, 1))
@@ -79,11 +99,16 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 									imageUrl: id.imageUrl,
 									hasImage: false,
 								},
+								update: write("membership.update"),
+								destroy: write("membership.destroy"),
 							},
 						],
 						total_count: 1,
 					}),
 					getInvitations: async () => ({ data: [], total_count: 0 }),
+					update: write("organization.update"),
+					setLogo: fileWrite("organization.setLogo"),
+					inviteMember: write("organization.inviteMember"),
 				}
 			: null
 		const memberships = organization
@@ -104,6 +129,13 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 			id: "idn_parity_primary",
 			emailAddress: id.email,
 			verification: { status: "verified" },
+			destroy: write("emailAddress.destroy"),
+			prepareVerification: write("emailAddress.prepareVerification"),
+			attemptVerification: write("emailAddress.attemptVerification"),
+		}
+		const totp = {
+			uri: "otpauth://totp/Maple:parity?secret=JBSWY3DPEHPK3PXP&issuer=Maple",
+			secret: "JBSWY3DPEHPK3PXP",
 		}
 		const user = {
 			id: id.clerkUserId,
@@ -117,7 +149,16 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 			emailAddresses: [primaryEmail],
 			externalAccounts: [],
 			// What the /account tabs read: one passkey, a password, no TOTP, this one session.
-			passkeys: [{ id: "pk_parity", name: "MacBook Touch ID", createdAt, lastUsedAt: createdAt }],
+			passkeys: [
+				{
+					id: "pk_parity",
+					name: "MacBook Touch ID",
+					createdAt,
+					lastUsedAt: createdAt,
+					update: write("passkey.update"),
+					delete: write("passkey.delete"),
+				},
+			],
 			passwordEnabled: true,
 			totpEnabled: false,
 			backupCodeEnabled: false,
@@ -147,7 +188,18 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 			publicMetadata: {},
 			unsafeMetadata: {},
 			reload: asyncNoop,
-			update: asyncNoop,
+			update: write("user.update"),
+			setProfileImage: fileWrite("user.setProfileImage"),
+			delete: write("user.delete"),
+			updatePassword: write("user.updatePassword"),
+			createEmailAddress: write("user.createEmailAddress", primaryEmail),
+			createPasskey: write("user.createPasskey"),
+			createTOTP: write("user.createTOTP", totp),
+			verifyTOTP: write("user.verifyTOTP", { backupCodes: [] }),
+			disableTOTP: write("user.disableTOTP"),
+			createBackupCode: write("user.createBackupCode", { codes: [] }),
+			createExternalAccount: write("user.createExternalAccount"),
+			leaveOrganization: write("user.leaveOrganization"),
 		}
 		const session = {
 			id: "sess_parity",

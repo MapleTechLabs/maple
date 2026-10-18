@@ -24,10 +24,18 @@ export interface SettingRowIds {
 	readonly description: string
 }
 
+const isChildList = (
+	value: string | Html | ReadonlyArray<Html | string>,
+): value is ReadonlyArray<Html | string> => Array.isArray(value)
+
+const descriptionChildren = (value: string | Html | ReadonlyArray<Html | string>) =>
+	isChildList(value) ? value : [value]
+
 export interface SettingRowOptions {
 	readonly ids: SettingRowIds
-	readonly label: string
-	readonly description?: string | ReadonlyArray<Html | string>
+	/** Text, or a node (`label={<span>Google<Badge /></span>}`). */
+	readonly label: string | Html
+	readonly description?: string | Html | ReadonlyArray<Html | string>
 	readonly icon?: Html
 	/** The control, with its hidden form input when it has one (a Base UI Switch renders two nodes). */
 	readonly control: ReadonlyArray<Html>
@@ -93,7 +101,7 @@ export const settingRow = <M>(
 														...fieldState,
 														h.Id(options.ids.description),
 													],
-													typeof options.description === "string" ? [options.description] : options.description,
+													descriptionChildren(options.description),
 												),
 											]),
 								],

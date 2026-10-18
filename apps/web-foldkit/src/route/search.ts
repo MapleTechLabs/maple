@@ -153,7 +153,7 @@ const HUB_SORTS = ["last_seen", "volume", "severity"] as const
 const SEVERITY_FILTERS = ["all", "critical", "high", "medium", "low", "unset"] as const
 
 // Tab sets from account-nav.tsx, settings-nav.tsx (+ settings.tsx legacy), issue-tabs.tsx, investigation-tabs.tsx
-const accountTabValues = [
+export const accountTabValues = [
 	"profile",
 	"emails",
 	"password",
@@ -161,23 +161,33 @@ const accountTabValues = [
 	"passkeys",
 	"connections",
 	"sessions",
+	"email-preferences",
 ] as const
 
-const settingsTabValues = [
-	"organization",
+export const settingsTabValues = [
+	"general",
 	"members",
 	"billing",
 	"audit-log",
+	"keys",
+	"mcp",
+	"ai",
 	"ingestion",
 	"data-platform",
+	"setup-health",
+	"automation",
+] as const
+export const legacySettingsTabValues = [
+	"organization",
+	"api-keys",
+	"ai-provider",
 	"setup-audit",
 	"notifications",
-	"automation",
-	"api-keys",
-	"mcp",
-	"ai-provider",
+	"connectors",
+	"integrations",
+	"escalations",
+	"developer",
 ] as const
-const legacyTabValues = ["connectors", "integrations", "escalations", "ai", "developer"] as const
 
 const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
 const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
@@ -267,8 +277,15 @@ export const ServiceMapSearch = Schema.Struct({
 })
 
 export const SettingsSearch = Schema.Struct({
-	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacyTabValues])),
+	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacySettingsTabValues])),
 	checkout: Schema.optional(Schema.Literal("complete")),
+	// audit-log-filters.ts `AuditLogSearchFields`
+	range: Schema.optional(Schema.String),
+	since: Schema.optional(Schema.String),
+	until: Schema.optional(Schema.String),
+	actor: Schema.optional(Schema.String),
+	actor_type: Schema.optional(Schema.String),
+	outcome: Schema.optional(Schema.String),
 })
 
 export const SignInSearch = Schema.Struct({

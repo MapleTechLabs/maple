@@ -9,6 +9,7 @@ export type SearchInputOptions<M> = Readonly<{
 	id: string
 	value: string
 	placeholder?: string
+	ariaLabel?: string
 	onInput: (value: string) => M
 	onClear: M
 	clearLabel?: string
@@ -31,6 +32,7 @@ export const searchInput = <M>(h: HtmlBuilder<M>, options: SearchInputOptions<M>
 			type: "text",
 			attributes: [
 				...(options.placeholder === undefined ? [] : [h.Placeholder(options.placeholder)]),
+				...(options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]),
 				h.Value(options.value),
 				h.OnInput(options.onInput),
 				...(options.attributes ?? []),

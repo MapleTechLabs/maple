@@ -55,7 +55,7 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 			Developer: ({ search }) =>
 				redirect(
 					AppRoute.Settings({
-						search: { tab: search.tab === "ingestion" ? "ingestion" : "api-keys" },
+						search: { tab: search.tab === "ingestion" ? "ingestion" : "keys" },
 					}),
 					true,
 				),

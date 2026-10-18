@@ -30,6 +30,10 @@ export interface TabsViewInputs {
 	/** `<TabsList className>`. */
 	readonly listClassName?: string
 	readonly panelClassName?: string
+	/** Extra panel classes for one value (`<TabsContent className>` differing per tab). */
+	readonly panelClassNameFor?: (value: string) => string | undefined
+	/** The list inside a wrapper (`<div className="border-b"><TabsList /></div>`). */
+	readonly wrapList?: (list: Html) => Html
 	/** `<TabsTab className>` for every tab. */
 	readonly tabClassName?: string
 	/** `<TabsList aria-label>`. */
@@ -38,8 +42,6 @@ export interface TabsViewInputs {
 	readonly panel: (value: string) => ReadonlyArray<Html | string> | undefined
 	/** Which values have a panel, without building them (a panel holding a Submodel renders once). */
 	readonly hasPanel?: (value: string) => boolean
-	/** Places the tab list inside page chrome (a sticky bar with a toolbar beside it). */
-	readonly wrapList?: (list: Html) => Html
 }
 
 type H = HtmlBuilder<Message>
@@ -159,7 +161,7 @@ const tabPanel = (
 	h.div(
 		[
 			h.AriaLabelledBy(tabId(model, model.values.indexOf(model.selected))),
-			h.Class(cn(tabsPanelStyles, inputs.panelClassName)),
+			h.Class(cn(tabsPanelStyles, inputs.panelClassName, inputs.panelClassNameFor?.(model.selected))),
 			...stateAttributes(h, model),
 			h.DataAttribute("index", String(index)),
 			h.DataAttribute("slot", "tabs-content"),

@@ -2,11 +2,98 @@ import { cn } from "@maple/ui/lib/utils"
 import { toggleVariants } from "@maple/ui/styles/ui/toggle"
 import {
 	toggleGroupHorizontalStyles,
+	toggleGroupStandaloneStyles,
 	toggleGroupStyles,
 	toggleGroupTrackStyles,
 } from "@maple/ui/styles/ui/toggle-group"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { icon } from "./icon"
 import { togglePrimitive } from "./toggle"
+
+export type MultiSegmentedOption<T extends string> = Readonly<{
+	value: T
+	label: Html | string
+	/** The option's accessible name (`optionAriaLabel`: the value when the label is not text). */
+	ariaLabel: string
+	icon?: Html
+	isDisabled?: boolean
+}>
+
+/** `MultiSegmentedSelect`: standalone outline toggles; a pressed one swaps its icon for a check. */
+export const multiSegmentedSelect = <T extends string, M>(
+	h: HtmlBuilder<M>,
+	config: Readonly<{
+		options: ReadonlyArray<MultiSegmentedOption<T>>
+		value: ReadonlyArray<T>
+		onToggle: (value: T) => M
+		size?: "sm" | "default"
+		ariaLabel?: string
+		isDisabled?: boolean
+		className?: string
+	}>,
+): Html => {
+	const size = config.size ?? "default"
+	const isDisabled = config.isDisabled ?? false
+	return h.div(
+		[
+			...(config.ariaLabel === undefined ? [] : [h.AriaLabel(config.ariaLabel)]),
+			h.Class(cn(toggleGroupStyles, toggleGroupHorizontalStyles, toggleGroupStandaloneStyles, config.className)),
+			...(isDisabled ? [h.DataAttribute("disabled", "")] : []),
+			h.DataAttribute("multiple", ""),
+			h.DataAttribute("orientation", "horizontal"),
+			h.DataAttribute("size", size),
+			h.DataAttribute("slot", "toggle-group"),
+			h.DataAttribute("variant", "outline"),
+			h.Role("group"),
+		],
+		config.options.map((option, index) => {
+			const isSelected = config.value.includes(option.value)
+			const isOptionDisabled = isDisabled || (option.isDisabled ?? false)
+			return togglePrimitive(
+				h,
+				{
+					isPressed: isSelected,
+					isDisabled: isOptionDisabled,
+					onClick: config.onToggle(option.value),
+					className: cn(
+						toggleVariants({
+							size,
+							variant: "outline",
+							className: cn(
+								"transition-colors",
+								isSelected &&
+									"border-primary/70 data-pressed:border-primary/70 data-pressed:bg-primary/10 data-pressed:text-foreground hover:bg-primary/15 dark:hover:bg-primary/15",
+							),
+						}),
+					),
+					slot: "toggle",
+					tabIndex: index === 0 ? 0 : -1,
+					attributes: [
+						h.AriaDisabled(isOptionDisabled),
+						h.AriaLabel(option.ariaLabel),
+						h.DataAttribute("size", size),
+						h.DataAttribute("variant", "outline"),
+					],
+				},
+				[
+					...(option.icon !== undefined || isSelected
+						? [
+								h.span(
+									[h.Class("flex size-3.5 shrink-0 items-center justify-center")],
+									[
+										isSelected
+											? icon(h, "CheckIcon", { className: "size-3.5 text-primary opacity-100" })
+											: (option.icon ?? h.empty),
+									],
+								),
+							]
+						: []),
+					option.label,
+				],
+			)
+		}),
+	)
+}
 
 // Port of `SegmentedSelect` (apps/web/src/components/common/segmented-select.tsx): an `outline`
 // ToggleGroup track with one raised pill. Stateless: the value is the caller's (often the URL).

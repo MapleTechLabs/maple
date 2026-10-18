@@ -166,8 +166,7 @@ const TABLES = [
 const VIEWS = ["service_usage_mv", "traces_aggregates_hourly_mv", "logs_aggregates_hourly_mv"] as const
 
 /** Acme writes to its own ClickHouse service, synced and on the current schema. */
-const clickhouseSettings: EndpointHandler = (request) =>
-	Effect.succeed({
+const clickhouseSettingsOf = (request: EndpointRequest) => ({
 		configured: isAcme(request),
 		chUrl: isAcme(request) ? "https://ch.acme.test:8443" : null,
 		chUser: isAcme(request) ? "maple_writer" : null,
@@ -177,6 +176,7 @@ const clickhouseSettings: EndpointHandler = (request) =>
 		lastSyncError: null,
 		schemaVersion: isAcme(request) ? SCHEMA_VERSION : null,
 	})
+const clickhouseSettings: EndpointHandler = (request) => Effect.succeed(clickhouseSettingsOf(request))
 
 const schemaDiff: EndpointHandler = () =>
 	Effect.succeed({
@@ -205,8 +205,7 @@ const applySchemaStatus: EndpointHandler = (request) => {
 	})
 }
 
-const escalationPolicy: EndpointHandler = (request) =>
-	Effect.succeed(
+const escalationPolicyOf = (request: EndpointRequest) =>
 		isAcme(request)
 			? {
 					enabled: true,
@@ -217,8 +216,8 @@ const escalationPolicy: EndpointHandler = (request) =>
 					updatedAt: iso(request, 6 * DAY),
 					updatedBy: acmeAdmin.userId,
 				}
-			: { enabled: false, rules: [], updatedAt: null, updatedBy: null },
-	)
+			: { enabled: false, rules: [], updatedAt: null, updatedBy: null }
+const escalationPolicy: EndpointHandler = (request) => Effect.succeed(escalationPolicyOf(request))
 
 /** One AI escalation that paged on-call, one manual one the confidence floor held back. */
 const escalation = (request: EndpointRequest, index: 0 | 1) => ({
@@ -249,8 +248,7 @@ const escalation = (request: EndpointRequest, index: 0 | 1) => ({
 const recentEscalations: EndpointHandler = (request) =>
 	Effect.succeed({ attempts: isAcme(request) ? [escalation(request, 0), escalation(request, 1)] : [] })
 
-const aiTriageSettings: EndpointHandler = (request) =>
-	Effect.succeed({
+const aiTriageSettingsOf = (request: EndpointRequest) => ({
 		enabled: isAcme(request),
 		maxRunsPerDay: 50,
 		maxPassesPerDay: 300,
@@ -262,15 +260,16 @@ const aiTriageSettings: EndpointHandler = (request) =>
 		updatedAt: isAcme(request) ? iso(request, 12 * DAY) : null,
 		updatedBy: isAcme(request) ? acmeAdmin.userId : null,
 	})
+const aiTriageSettings: EndpointHandler = (request) => Effect.succeed(aiTriageSettingsOf(request))
 
-const openRouterKey: EndpointHandler = (request) =>
-	Effect.succeed({
+const openRouterKeyOf = (request: EndpointRequest) => ({
 		entitled: true,
 		configured: isAcme(request),
 		keyHint: isAcme(request) ? "x7Qa" : null,
 		updatedAt: isAcme(request) ? iso(request, 18 * DAY) : null,
 		updatedBy: isAcme(request) ? acmeAdmin.userId : null,
 	})
+const openRouterKey: EndpointHandler = (request) => Effect.succeed(openRouterKeyOf(request))
 
 const STEP_TITLES = {
 	send_telemetry: "Send your first telemetry",
@@ -355,6 +354,175 @@ const API_KEYS: ReadonlyArray<SyncedRow> = [
 	}),
 ]
 
+// KEY AND CONNECTION WRITES (the Keys and MCP tabs click every one through)
+
+const wireApiKey = (row: SyncedRow, overrides: Readonly<Record<string, unknown>> = {}) => ({
+	...row,
+	id: encodePublicId(PublicIdPrefixes.apiKey, String(row.id)),
+	object: "api_key",
+	...overrides,
+})
+const paramId = (params: unknown): string | undefined =>
+	Predicate.hasProperty(params, "id") && typeof params.id === "string" ? params.id : undefined
+const keyById = (params: unknown) => API_KEYS.find((row) => row.id === paramId(params)) ?? API_KEYS[0]
+
+/** Echoes the payload into a new key with a fixed secret, as `createApiKey` would. */
+const createApiKey: EndpointHandler = ({ payload }) => {
+	const field = (key: string) => (Predicate.hasProperty(payload, key) ? payload[key] : undefined)
+	const kind = field("kind") === "mcp" ? "mcp" : "standard"
+	const scopes = field("scopes")
+	const row = apiKey(9, {
+		name: typeof field("name") === "string" ? String(field("name")) : "New key",
+		kind,
+		scopes: Array.isArray(scopes) ? scopes.filter(Predicate.isString) : null,
+		usedAgoMs: null,
+		ageMs: 0,
+	})
+	return Effect.succeed({ ...wireApiKey(row), secret: `maple_${kind === "mcp" ? "mcp" : "ak"}_parity_secret_0009` })
+}
+
+const revokeApiKey: EndpointHandler = ({ params }) =>
+	Effect.succeed(wireApiKey(keyById(params), { revoked: true, revoked_at: isoBefore(0) }))
+
+const rollApiKey: EndpointHandler = ({ params }) =>
+	Effect.succeed({ ...wireApiKey(keyById(params)), secret: "maple_ak_parity_rolled_0001" })
+
+const rolledIngestKeys: EndpointHandler = ({ dataset }) =>
+	Effect.succeed({
+		object: "ingest_keys",
+		public_key: `maple_pk_parity_${dataset.name}_rolled`,
+		private_key: `maple_sk_parity_${dataset.name}_rolled`,
+		public_rotated_at: isoBefore(0),
+		private_rotated_at: isoBefore(0),
+	})
+
+const mcpConnection = {
+	id: encodePublicId(PublicIdPrefixes.mcpConnection, fixtureUuid(0xd4, 1)),
+	object: "mcp_connection",
+	client_name: "Claude Code",
+	user_id: acmeAdmin.userId,
+	user_email: acmeAdmin.email,
+	scopes: ["mcp:tools"],
+	connected_at: isoBefore(18 * DAY),
+	last_refreshed_at: isoBefore(40 * MINUTE),
+	expires_at: isoBefore(-72 * DAY),
+}
+
+/** Acme with one OAuth client connected, so the MCP tab's revoke can be clicked through. */
+const settingsMcpClients: Dataset = {
+	...defaultDataset,
+	name: "settings-mcp-clients",
+	endpoints: {
+		...defaultDataset.endpoints,
+		"mcpConnections.list": () => Effect.succeed(list([mcpConnection])),
+		"mcpConnections.revoke": () => Effect.succeed(mcpConnection),
+	},
+	telemetry: emptyTelemetry,
+}
+
+// INGESTION RULES (attribute mappings and recommendations, with every write)
+
+const mapping = (index: number, fields: Readonly<Record<string, unknown>>) => ({
+	id: encodePublicId(PublicIdPrefixes.attributeMapping, fixtureUuid(0xd5, index)),
+	object: "attribute_mapping",
+	source_context: "span",
+	operation: "copy",
+	enabled: true,
+	created_at: isoBefore(20 * DAY),
+	updated_at: isoBefore(3 * DAY),
+	...fields,
+})
+
+const MAPPINGS = [
+	mapping(1, { name: "HTTP status code", source_key: "http.status_code", target_key: "http.response.status_code" }),
+	mapping(2, {
+		name: "Team label",
+		source_context: "resource",
+		source_key: "labels.team",
+		target_key: "team",
+		operation: "move",
+		enabled: false,
+	}),
+]
+
+const recommendation = (index: number, fields: Readonly<Record<string, unknown>>) => ({
+	id: encodePublicId(PublicIdPrefixes.recommendation, fixtureUuid(0xd6, index)),
+	object: "recommendation",
+	number: index,
+	canonical_key: null,
+	status: "open",
+	usage_count: 1200 * index,
+	opened_at: isoBefore(6 * DAY),
+	updated_at: isoBefore(DAY),
+	resolved_at: null,
+	...fields,
+})
+
+const RECOMMENDATIONS = [
+	recommendation(1, {
+		recommendation_key: "rename:http.method",
+		kind: "rename",
+		source_key: "http.method",
+		canonical_key: "http.request.method",
+	}),
+	recommendation(2, { recommendation_key: "naming:userId", kind: "naming", source_key: "userId" }),
+	recommendation(3, {
+		recommendation_key: "double-emission:db.statement",
+		kind: "double-emission",
+		source_key: "db.statement",
+		canonical_key: "db.query.text",
+		status: "dismissed",
+	}),
+]
+
+const echoMapping: EndpointHandler = ({ payload }) =>
+	Effect.succeed(mapping(9, Predicate.isObject(payload) ? { ...payload } : {}))
+const firstMapping: EndpointHandler = () => Effect.succeed(MAPPINGS[0])
+const firstRecommendation =
+	(status: string): EndpointHandler =>
+	() =>
+		Effect.succeed({ ...RECOMMENDATIONS[0], status })
+
+/** Acme with ingest rules to manage: two mappings, two open recommendations and a dismissed one. */
+const settingsIngestionRules: Dataset = {
+	...defaultDataset,
+	name: "settings-ingestion-rules",
+	endpoints: {
+		...defaultDataset.endpoints,
+		"attributeMappings.list": () => Effect.succeed(list(MAPPINGS)),
+		"instrumentationRecommendations.list": () => Effect.succeed(list(RECOMMENDATIONS)),
+	},
+	telemetry: emptyTelemetry,
+}
+
+/** Acme's cluster behind Maple's schema: a missing view and a drifted table, so Apply has work. */
+const settingsDataPlatformDrift: Dataset = {
+	...defaultDataset,
+	name: "settings-data-platform-drift",
+	endpoints: {
+		...defaultDataset.endpoints,
+		"orgClickHouseSettings.schemaDiff": () =>
+			Effect.succeed({
+				expectedSchemaVersion: SCHEMA_VERSION,
+				appliedSchemaVersion: "2026-09-01.1",
+				entries: [
+					{ status: "missing", name: "service_usage_mv", kind: "materialized_view" },
+					{
+						status: "drifted",
+						name: "logs",
+						kind: "table",
+						columnDrifts: [
+							{ kind: "missing", column: "ScopeVersion", expectedType: "LowCardinality(String)" },
+							{ kind: "type_mismatch", column: "Body", expectedType: "String", actualType: "Nullable(String)" },
+						],
+					},
+					...TABLES.filter((name) => name !== "logs").map((name) => ({ status: "up_to_date", name, kind: "table" })),
+				],
+			}),
+	},
+	telemetry: emptyTelemetry,
+}
+
 /** Acme in Clerk mode: the Clerk-only settings tabs and /account. Shares Acme's warehouse org. */
 const settingsClerk: Dataset = {
 	name: "settings-clerk",
@@ -378,8 +546,45 @@ export const fixtureArea: FixtureArea = {
 		"aiTriage.getSettings": aiTriageSettings,
 		"openRouterKey.get": openRouterKey,
 		"instrumentationAudit.retrieve": setupAuditEndpoint(warehouse),
+		"apiKeys.create": createApiKey,
+		"apiKeys.revoke": revokeApiKey,
+		"apiKeys.roll": rollApiKey,
+		"ingestKeys.rollPublic": rolledIngestKeys,
+		"ingestKeys.rollPrivate": rolledIngestKeys,
+		"orgClickHouseSettings.upsert": (request) =>
+			Effect.sync(() => clickhouseSettingsOf(request)).pipe(Effect.map((current) => ({
+				...current,
+				configured: true,
+				chUrl: Predicate.hasProperty(request.payload, "url") ? request.payload.url : current.chUrl,
+				chUser: Predicate.hasProperty(request.payload, "user") ? request.payload.user : current.chUser,
+				chDatabase: Predicate.hasProperty(request.payload, "database") ? request.payload.database : current.chDatabase,
+			}))),
+		"orgClickHouseSettings.delete": () => Effect.succeed({ configured: false }),
+		"orgClickHouseSettings.applySchema": () => Effect.succeed({ status: "started" }),
+		"errors.upsertEscalationPolicy": (request) =>
+			Effect.succeed({
+				...escalationPolicyOf(request),
+				...(Predicate.isObject(request.payload) && request.payload),
+			}),
+		"errors.evaluateEscalationPolicy": () =>
+			Effect.succeed({ outcome: "route", destinationIds: [DESTINATION_ID], skipReason: null }),
+		"aiTriage.updateSettings": (request) =>
+			Effect.succeed({
+				...aiTriageSettingsOf(request),
+				...(Predicate.isObject(request.payload) && request.payload),
+			}),
+		"openRouterKey.set": (request) =>
+			Effect.succeed({ ...openRouterKeyOf(request), configured: true, keyHint: "9Zq1" }),
+		"openRouterKey.remove": (request) =>
+			Effect.succeed({ ...openRouterKeyOf(request), configured: false, keyHint: null }),
+		"attributeMappings.create": echoMapping,
+		"attributeMappings.update": firstMapping,
+		"attributeMappings.delete": () =>
+			Effect.succeed({ id: MAPPINGS[0]?.id, object: "attribute_mapping", deleted: true }),
+		"instrumentationRecommendations.dismiss": firstRecommendation("dismissed"),
+		"instrumentationRecommendations.reopen": firstRecommendation("open"),
 		...clerkBillingEndpoints(warehouse),
 	}),
 	defaultSynced: { api_keys: API_KEYS },
-	datasets: [settingsClerk],
+	datasets: [settingsClerk, settingsMcpClients, settingsIngestionRules, settingsDataPlatformDrift],
 }

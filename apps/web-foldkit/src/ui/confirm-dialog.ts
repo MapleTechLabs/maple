@@ -31,6 +31,8 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	isPending?: boolean
 	isConfirmDisabled?: boolean
 	className?: string
+	/** `icon`: replaces the warning glyph in the media tile. */
+	icon?: Html
 }>
 
 /** The confirm-before-acting dialog, opened from code (no trigger), placed anywhere in the page. */
@@ -63,11 +65,12 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 										h.DataAttribute("slot", "alert-dialog-media"),
 									],
 									[
-										icon(h, "AlertWarningIcon", {
-											className: cn(
-												tone === "destructive" && confirmDialogIconDestructiveStyles,
-											),
-										}),
+										options.icon ??
+											icon(h, "AlertWarningIcon", {
+												className: cn(
+													tone === "destructive" && confirmDialogIconDestructiveStyles,
+												),
+											}),
 									],
 								),
 							]),

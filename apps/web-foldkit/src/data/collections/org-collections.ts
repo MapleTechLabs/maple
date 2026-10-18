@@ -11,6 +11,7 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { InvestigationRowSchema } from "@maple/web-data/collections/investigations"
+import { ApiKeyRowSchema } from "@maple/web-data/collections/api-keys"
 import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
 
 /** `getOrgCollections`'s 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
@@ -46,6 +47,18 @@ const makeSet = (
 	orgId,
 	// `createDashboardsCollection`: writes PATCH/DELETE through the v2 API.
 	dashboards: makeDashboardsCollection({ orgId, url: syncProxyUrl, runtime, fetchClient, client }),
+	apiKeys: createEffectCollection({
+		id: `api_keys:${orgId}`,
+		runtime,
+		schema: ApiKeyRowSchema,
+		getKey: (row) => row.id,
+		shapeOptions: {
+			url: syncProxyUrl,
+			params: { shape: "api_keys", org: orgId },
+			fetchClient,
+			parser: timestamptzParser,
+		},
+	}),
 	// `createSyncedCollection`'s shape: id `<shape>:<org>`, `org=` param for URL cache keying only.
 	alertRules: createEffectCollection({
 		id: `alert_rules:${orgId}`,
@@ -125,6 +138,7 @@ const makeInvestigationCollection = (
 export type InvestigationCollection = ReturnType<typeof makeInvestigationCollection>
 type SyncedCollection =
 	| OrgCollectionSet["dashboards"]
+	| OrgCollectionSet["apiKeys"]
 	| OrgCollectionSet["alertRules"]
 	| OrgCollectionSet["alertRuleStates"]
 	| OrgCollectionSet["alertIncidents"]
@@ -185,6 +199,7 @@ function makeOrgCollections(): Effect.Effect<
 				Effect.forkIn(
 					Effect.all([
 						cleanupWhenIdle(set.dashboards),
+						cleanupWhenIdle(set.apiKeys),
 						cleanupWhenIdle(set.alertRules),
 						cleanupWhenIdle(set.alertRuleStates),
 						cleanupWhenIdle(set.alertIncidents),
