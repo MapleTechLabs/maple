@@ -23,7 +23,7 @@ export const updateQuery = (
 })
 
 /** A change that can move the inferred unit: the unit follows the queries when they agree. */
-const withInferredUnit = (state: EditorState): EditorState => ({
+export const withInferredUnit = (state: EditorState): EditorState => ({
 	...state,
 	unit: inferDefaultUnitForQueries(state.queries) ?? state.unit,
 })

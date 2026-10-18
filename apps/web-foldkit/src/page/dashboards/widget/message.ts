@@ -12,6 +12,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { AutocompleteLookup } from "../../kit/autocomplete-lookups"
 import { WidgetFailure } from "../kit/widget-data"
 import { LegendPosition, PointsMode } from "./editor-state"
+import { MetricOptionSchema } from "./metric-option"
 
 export const FormulaTextField = Schema.Literals(["expression", "legend"])
 export type FormulaTextField = typeof FormulaTextField.Type
@@ -76,6 +77,11 @@ export const Message = defineMessageUnion({
 	GotLeaveDialogMessage: { message: Dialog.Message },
 	ClickedDiscard: {},
 	FocusedQueryEditor: {},
+	CompletedFetchMetricOptions: {
+		search: Schema.String,
+		result: Schema.Result(Schema.Array(MetricOptionSchema), LoadFailure),
+	},
+	CompletedFetchMetricKeys: { metric: Schema.String, result: Schema.Result(Schema.Array(Schema.String), LoadFailure) },
 	CompletedFetchAutocomplete: {
 		key: Schema.String,
 		lookup: AutocompleteLookup,

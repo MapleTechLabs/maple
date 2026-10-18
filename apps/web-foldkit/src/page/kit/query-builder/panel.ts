@@ -15,15 +15,27 @@ export const Model = Schema.Struct({
 	slotPrefix: Schema.String,
 	selects: Schema.Record(Schema.String, Select.Model),
 	groupBys: Schema.Record(Schema.String, Combobox.Model),
+	/** `MetricsBody`: the metric picker and the one-field "by" combobox, by query id. */
+	metricPickers: Schema.Record(Schema.String, Combobox.Model),
+	metricBreakdowns: Schema.Record(Schema.String, Combobox.Model),
 	collapsed: Schema.Array(Schema.String),
 })
 export type Model = typeof Model.Type
 
-export const init = (slotPrefix: string): Model => ({ slotPrefix, selects: {}, groupBys: {}, collapsed: [] })
+export const init = (slotPrefix: string): Model => ({
+	slotPrefix,
+	selects: {},
+	groupBys: {},
+	metricPickers: {},
+	metricBreakdowns: {},
+	collapsed: [],
+})
 
 export const Message = defineMessageUnion({
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
 	GotGroupByMessage: { queryId: Schema.String, message: Combobox.Message },
+	GotMetricMessage: { queryId: Schema.String, message: Combobox.Message },
+	GotMetricBreakdownMessage: { queryId: Schema.String, message: Combobox.Message },
 	ToggledCollapsed: { queryId: Schema.String },
 	ToggledVisible: { queryId: Schema.String },
 	ChangedText: { queryId: Schema.String, field: QueryTextField, value: Schema.String },
@@ -36,6 +48,10 @@ export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
 	ChangedQuery: { queryId: Schema.String, change: QueryChange },
+	/** A metric picked: the host knows whether it is monotonic from the list it fetched. */
+	PickedMetric: { queryId: Schema.String, value: Schema.String },
+	/** `onMetricSearch`: the host re-reads the metric list for what is typed. */
+	ChangedMetricSearch: { search: Schema.String },
 	ClickedClone: { queryId: Schema.String },
 	ClickedRemove: { queryId: Schema.String },
 	PressedWhereEnter: {},
@@ -62,6 +78,7 @@ const selectChange = (field: string, value: string): QueryChange | null => {
 		}
 		case "spans":
 			return QueryChange.SetRootOnly({ isRootOnly: value === "root" })
+		case "aggregation-across":
 		case "aggregation":
 			return QueryChange.SetAggregation({ aggregation: value })
 		case "orderDirection":
@@ -93,10 +110,42 @@ const groupByStep = (model: Model, queryId: string, message: Combobox.Message): 
 	return changed(lifted, queryId, QueryChange.SetGroupBy({ groupBy: [...next.outMessage.selected] }), commands)
 }
 
+export const metricPickerIdOf = (queryId: string): string => `metric-${queryId}`
+export const metricBreakdownIdOf = (queryId: string): string => `metric-by-${queryId}`
+
+/** The metric picker: a pick goes to the host, typing re-reads the list. */
+const metricStep = (model: Model, queryId: string, message: Combobox.Message): Return => {
+	const current = model.metricPickers[queryId] ?? Combobox.init(metricPickerIdOf(queryId), "single")
+	const next = Combobox.update(current, message)
+	const lifted: Model = { ...model, metricPickers: { ...model.metricPickers, [queryId]: next.model } }
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotMetricMessage({ queryId, message: inner }),
+	)
+	if (message._tag === "ChangedInput")
+		return { model: lifted, commands, outMessage: OutMessage.ChangedMetricSearch({ search: message.value }) }
+	return next.outMessage?._tag === "ChangedValue"
+		? { model: lifted, commands, outMessage: OutMessage.PickedMetric({ queryId, value: next.outMessage.value }) }
+		: { model: lifted, commands }
+}
+
+const metricBreakdownStep = (model: Model, queryId: string, message: Combobox.Message): Return => {
+	const current = model.metricBreakdowns[queryId] ?? Combobox.init(metricBreakdownIdOf(queryId), "single")
+	const next = Combobox.update(current, message)
+	const lifted: Model = { ...model, metricBreakdowns: { ...model.metricBreakdowns, [queryId]: next.model } }
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotMetricBreakdownMessage({ queryId, message: inner }),
+	)
+	return next.outMessage?._tag === "ChangedValue"
+		? changed(lifted, queryId, QueryChange.SetMetricBreakdown({ value: next.outMessage.value }), commands)
+		: { model: lifted, commands }
+}
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, id, inner),
 		GotGroupByMessage: ({ queryId, message: inner }) => groupByStep(model, queryId, inner),
+		GotMetricMessage: ({ queryId, message: inner }) => metricStep(model, queryId, inner),
+		GotMetricBreakdownMessage: ({ queryId, message: inner }) => metricBreakdownStep(model, queryId, inner),
 		ToggledCollapsed: ({ queryId }) => ({ model: { ...model, collapsed: toggled(model.collapsed, queryId) } }),
 		ToggledVisible: ({ queryId }) => changed(model, queryId, QueryChange.ToggledHidden()),
 		ChangedText: ({ queryId, field, value }) => changed(model, queryId, QueryChange.SetText({ field, value })),

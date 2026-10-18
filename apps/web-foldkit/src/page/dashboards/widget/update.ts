@@ -25,6 +25,7 @@ import { FetchAutocomplete, FetchWidget, ReadClock } from "./command"
 import type { EditorState } from "./editor-state"
 import { buildDataSource, buildDisplay, toInitialState, validationErrorOf, type Widget } from "./lowering"
 import { initRawSql, type RawSqlDraft, rawSqlDataSourceOf } from "./raw-sql"
+import { askMetricOptions } from "./metric-options"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -63,6 +64,11 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		sourceTabs: Tabs.init({ idBase: 0, values: SOURCE_MODES, selected: "builder" }),
 		selects: {},
 		queryPanels: QueryPanel.init("widget-editor"),
+		metricSearch: "",
+		metricOptions: null,
+		metricRequested: null,
+		metricKeys: {},
+		metricKeysRequested: [],
 		isAutocompleteActive: false,
 		autocomplete: {},
 		isSaving: false,
@@ -125,7 +131,16 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 }
 
 /** The preview's request against the board's window; a key already held is not asked again. */
+/** The preview's requests, and the metric list while a query reads metrics. */
 export const planPreview = (model: Model, context: PageContext): Return => {
+	const metrics = askMetricOptions(model)
+	const planned = planWidgetPreview(metrics.model, context)
+	return metrics.commands.length === 0
+		? planned
+		: { ...planned, commands: [...metrics.commands, ...(planned.commands ?? [])] }
+}
+
+const planWidgetPreview = (model: Model, context: PageContext): Return => {
 	const widget = previewWidgetOf(model)
 	if (widget === null || model.timeRange === null || model.nowMs === null) return { model }
 	const window = resolveTimeRangeWindow(model.timeRange, {

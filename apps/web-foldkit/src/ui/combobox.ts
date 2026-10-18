@@ -68,6 +68,8 @@ export const Message = defineMessageUnion({
 	ClickedTrigger: {},
 	/** A `<ComboboxTrigger>` opening its popup list: the selected value starts highlighted. */
 	ClickedTriggerOf: { items: Schema.Array(Schema.String) },
+	/** An input click on a single combobox that opens on its selected value, highlighted. */
+	ClickedInputOf: { items: Schema.Array(Schema.String), selected: Schema.NullOr(Schema.String) },
 	HighlightedItem: { index: Schema.NullOr(Schema.Number) },
 	/** `items` unfiltered: `update` filters by the current input, so a key typed in the same frame counts. */
 	PressedInputKey: {
@@ -140,6 +142,11 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			transition.open({ ...model, inputValue: value, highlighted: model.autoHighlight ? 0 : null }),
 		ClickedInput: () => transition.open(model),
 		ClickedTrigger: () => (model.isOpen ? closed(model) : transition.open(model)),
+		ClickedInputOf: ({ items, selected }) => {
+			if (model.isOpen) return { model }
+			const index = selected === null ? -1 : items.indexOf(selected)
+			return transition.open({ ...model, highlighted: index === -1 ? null : index })
+		},
 		ClickedTriggerOf: ({ items }) => {
 			if (model.isOpen) return closed(model)
 			const index = model.selected[0] === undefined ? -1 : items.indexOf(model.selected[0])

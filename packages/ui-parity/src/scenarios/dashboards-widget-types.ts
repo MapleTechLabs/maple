@@ -47,7 +47,23 @@ export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 	dashboard("widget-sql-collapsed", "Widget editor: the SQL panel collapsed", throughput, {
 		steps: act((page) => page.getByRole("tab", { name: "Raw SQL" }).click(), clickButton("Collapse SQL")),
 	}),
-	dashboard("widget-to-stat","Widget editor: a chart switched to a stat, then Apply", throughput, {
+	dashboard("widget-metric", "Widget editor: a metrics query and its metric picker", editorOf("cpu-line")),
+	// The list opens near the fold: legacy keeps the side it flipped to before the capture grows the
+	// viewport, foldkit re-places it below, so these two differ in the popup's position only.
+	dashboard("widget-metric-open", "Widget editor: the metric list open", editorOf("cpu-line"), {
+		steps: act((page) => page.getByPlaceholder("Search metrics...").click()),
+	}),
+	dashboard("widget-metric-search", "Widget editor: the metric list searched", editorOf("cpu-line"), {
+		steps: act((page) => page.getByPlaceholder("Search metrics...").fill("http")),
+	}),
+	dashboard("widget-metric-picked", "Widget editor: another metric picked, then Run preview", editorOf("cpu-line"), {
+		steps: act(
+			(page) => page.getByPlaceholder("Search metrics...").fill("http"),
+			(page) => page.getByRole("option").first().click(),
+			clickButton("Run preview"),
+		),
+	}),
+	dashboard("widget-to-stat", "Widget editor: a chart switched to a stat, then Apply", throughput, {
 		steps: act(clickButton("Stat"), clickButton("Apply")),
 	}),
 ]

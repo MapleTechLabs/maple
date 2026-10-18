@@ -57,6 +57,8 @@ export const inputAttributes = <M>(
 		/** An inline list (the command palette) has no popup side. */
 		isInline?: boolean
 		isUnfiltered?: boolean
+		/** Opening highlights the selected item, as a single Base UI combobox with a value does. */
+		highlightsSelected?: boolean
 	}>,
 	toMessage: (message: Message) => M,
 ): ReadonlyArray<Attribute<M>> => {
@@ -85,7 +87,11 @@ export const inputAttributes = <M>(
 		h.Spellcheck(false),
 		h.Value(model.inputValue),
 		h.OnInput((value) => toMessage(Message.ChangedInput({ value }))),
-		h.OnClick(toMessage(Message.ClickedInput())),
+		h.OnClick(
+			toMessage(
+				options.highlightsSelected === true ? Message.ClickedInputOf({ items: options.items, selected: model.selected[0] ?? null }) : Message.ClickedInput(),
+			),
+		),
 		h.OnKeyDownPreventDefault((key) =>
 			INPUT_KEYS.has(key) && !(options.isInline === true && key === "Escape")
 				? Option.some(
@@ -443,6 +449,8 @@ export type SingleViewInputs = Readonly<{
 	 * list keeps every item, and reports Empty as soon as something is typed.
 	 */
 	isUnfiltered?: boolean
+	/** Opening highlights the selected item (Base UI's single combobox with a value). */
+	highlightsSelected?: boolean
 	/**
 	 * Place the popup under the input instead of the input group. Measured on the service map's
 	 * toolbar combobox, whose Base UI positioner resolves no input group and falls back to the input.
@@ -456,7 +464,7 @@ export type SingleViewInputs = Readonly<{
 
 export type InputFieldOptions = Pick<
 	SingleViewInputs,
-	"items" | "ariaLabel" | "placeholder" | "startAddon" | "size" | "showTrigger" | "isUnfiltered" | "className"
+	"items" | "ariaLabel" | "placeholder" | "startAddon" | "size" | "showTrigger" | "isUnfiltered" | "className" | "highlightsSelected"
 > &
 	Readonly<{
 		/** Inside a trigger's popup the input carries no dismiss button of its own. */
@@ -514,6 +522,7 @@ export const inputField = (h: H, model: Model, inputs: InputFieldOptions): Html 
 								placeholder: inputs.placeholder,
 								items: inputs.items,
 								isUnfiltered: inputs.isUnfiltered,
+								highlightsSelected: inputs.highlightsSelected,
 							},
 							(message) => message,
 						),

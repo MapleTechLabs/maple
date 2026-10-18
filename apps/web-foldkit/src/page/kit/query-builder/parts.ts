@@ -74,10 +74,14 @@ const WHERE_TEXTAREA_CLASS = "min-h-[32px] resize-y text-xs"
  * `WhereClauseEditor`: the textarea under its highlight overlay.
  * TODO(widget-editor): the autocomplete listbox (`useWhereClauseAutocomplete`).
  */
-export const whereClauseEditor = (h: H, query: QueryDraft): Html => {
+export const whereClauseEditor = (
+	h: H,
+	query: QueryDraft,
+	options: Readonly<{ placeholder?: string; className?: string }> = {},
+): Html => {
 	const isHighlighting = query.whereClause.length > 0
 	return h.div(
-		[h.Class("relative flex-1")],
+		[h.Class(options.className ?? "relative flex-1")],
 		[
 			textarea(h, {
 				id: `where-${query.id}`,
@@ -85,7 +89,7 @@ export const whereClauseEditor = (h: H, query: QueryDraft): Html => {
 				defaultValue: query.whereClause,
 				attributes: [
 					h.AriaLabel(`Where clause for query ${query.name}`),
-					h.Placeholder(WHERE_PLACEHOLDER[query.dataSource]),
+					h.Placeholder(options.placeholder ?? WHERE_PLACEHOLDER[query.dataSource]),
 					h.Rows(1),
 					h.OnInput((value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value })),
 					// Where clauses are single-line.

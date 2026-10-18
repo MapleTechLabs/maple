@@ -16,7 +16,8 @@ import type { PageContext } from "../../contract"
 import { applyQueryChange } from "../../kit/query-builder/change"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import { GenerateId } from "./command"
-import { removeQuery, setAggregation, setDataSource, updateQuery } from "./edits"
+import { askMetricOptions, optionsOf, pickedMetric } from "./metric-options"
+import { removeQuery, setAggregation, setDataSource, updateQuery, withInferredUnit } from "./edits"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -66,6 +67,7 @@ const applyPanelEdit = (state: EditorState, queryId: string, change: QueryPanel.
 	const inner = change.change
 	if (inner._tag === "SetSource") return setDataSource(state, queryId, inner.source)
 	if (inner._tag === "SetAggregation") return setAggregation(state, queryId, inner.aggregation)
+	if (inner._tag === "SetMetric") return withInferredUnit(updateQuery(state, queryId, (query) => applyQueryChange(query, inner)))
 	return updateQuery(state, queryId, (query) => applyQueryChange(query, inner))
 }
 
@@ -80,6 +82,18 @@ export const queryPanelStep = (model: Model, context: PageContext, message: Quer
 	if (out._tag === "PressedWhereEnter") {
 		const ran = runPreview(lifted, context)
 		return { ...ran, commands: [...commands, ...(ran.commands ?? [])] }
+	}
+	if (out._tag === "ChangedMetricSearch") {
+		const asked = askMetricOptions({ ...lifted, metricSearch: out.search })
+		return { model: asked.model, commands: [...commands, ...asked.commands] }
+	}
+	if (out._tag === "PickedMetric") {
+		const change = pickedMetric(out.value, optionsOf(lifted))
+		if (change === null) return { model: lifted, commands }
+		const picked = editState(lifted, context, (state) =>
+			applyPanelEdit(state, out.queryId, QueryPanel.OutMessage.ChangedQuery({ queryId: out.queryId, change })),
+		)
+		return { ...picked, commands: [...commands, ...(picked.commands ?? [])] }
 	}
 	if (out._tag === "ClickedClone") return { model: lifted, commands: [...commands, ...(generate("cloneQuery", out.queryId) ?? [])] }
 	const edited = editState(lifted, context, (state) => applyPanelEdit(state, out.queryId, out))

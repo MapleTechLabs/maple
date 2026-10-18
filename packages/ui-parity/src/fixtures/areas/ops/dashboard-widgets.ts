@@ -41,6 +41,25 @@ const breakdown = (queries: ReadonlyArray<QueryBuilderQueryDraft>) =>
 
 const byService = (whereClause: string) => breakdown([breakdownQuery(0, { whereClause, groupBy: ["service.name"] })])
 
+/** A metrics query, so the widget editor opens on its metric picker. */
+const cpuUtilization = makeQueryDataSource({
+	resultShape: "timeseries",
+	queries: [
+		{
+			...createQueryDraft(0),
+			dataSource: "metrics",
+			signalSource: "default",
+			metricName: "process.cpu.utilization",
+			metricType: "gauge",
+			isMonotonic: false,
+			aggregation: "avg",
+			whereClause: "",
+			groupBy: [],
+			addOns: { groupBy: false, having: false, orderBy: false, limit: false, legend: false },
+		},
+	],
+})
+
 const traceCount = makeQueryDataSource({
 	resultShape: "timeseries",
 	queries: [{ ...createQueryDraft(0), dataSource: "traces", aggregation: "count", whereClause: "" }],
@@ -108,6 +127,11 @@ const WIDGETS = [
 		unit: "number",
 		heatmap: { colorScale: "blues" },
 	}, { x: 0, y: 12, w: 12, h: 5 }),
+	widget("cpu-line", "chart", cpuUtilization, {
+		title: "CPU utilization",
+		chartId: "query-builder-line",
+		unit: "percent",
+	}, { x: 0, y: 17, w: 12, h: 4 }),
 ]
 
 export const SECTIONS_DASHBOARD_ID = "dash_parity_ops_sections"

@@ -42,6 +42,10 @@ const queryPanel = (
 			intervalPlaceholder,
 			hasHeaderActions: true,
 			hasVisibilityToggle: true,
+			metricOptions: model.metricOptions?.options ?? [],
+			metricSearch: model.metricSearch,
+			metricBreakdownKeys:
+				query.dataSource === "metrics" ? (model.metricKeys[`${query.metricName}::${query.metricType}`] ?? []) : [],
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 	})

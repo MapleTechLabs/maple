@@ -1,4 +1,5 @@
 import type { TimeRange } from "@maple/domain/http"
+import { Result } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "../../../charts/chart"
 import * as Keyed from "../../../data/keyed"
@@ -17,6 +18,7 @@ import {
 import type { EditorState } from "./editor-state"
 import { isNote, isBuilderPanel, validationErrorOf } from "./lowering"
 import { rawSqlErrorOf, reseedForType } from "./raw-sql"
+import { withDefaultMetric } from "./metric-options"
 import { runSqlPreview, sqlStep } from "./sql-step"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -278,6 +280,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.isAutocompleteActive
 				? { model }
 				: requestAutocomplete({ ...model, isAutocompleteActive: true }, context),
+		CompletedFetchMetricKeys: ({ metric, result }) =>
+			Result.isSuccess(result)
+				? { model: { ...model, metricKeys: { ...model.metricKeys, [metric]: result.success } } }
+				: { model },
+		CompletedFetchMetricOptions: ({ search, result }) => {
+			if (search !== model.metricSearch || !Result.isSuccess(result)) return { model }
+			const listed = { ...model, metricOptions: { search, options: result.success } }
+			// A metrics query without a metric yet takes the first one listed.
+			return listed.state !== null && listed.state.queries.some((query) => query.dataSource === "metrics" && query.metricName === "")
+				? edit(listed, context, (state) => withDefaultMetric(state, result.success))
+				: { model: listed }
+		},
 		CompletedFetchAutocomplete: ({ key, lookup, result }) => {
 			const slot = model.autocomplete[lookup]
 			return slot === undefined
