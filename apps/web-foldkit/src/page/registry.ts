@@ -24,6 +24,7 @@ import * as MetricsBrowse from "./metrics/browse"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as ServiceDetail from "./services/detail"
+import * as ServiceMap from "./service-map"
 import * as ServicesList from "./services/list"
 import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
@@ -46,6 +47,7 @@ export const pages = [
 	AlertsHub.page,
 	AlertIncident.page,
 	AlertRule.page,
+	ServiceMap.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

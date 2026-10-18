@@ -67,7 +67,7 @@ export type ToggleOptions<Message> = VariantProps<typeof toggleVariants> &
 		isDisabled?: boolean
 		onClick: Message
 		className?: string
-		attributes?: ReadonlyArray<Attribute<Message>>
+		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 	}>
 
 /** `<Toggle>` from @maple/ui. */

@@ -16,6 +16,7 @@ import {
 } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
+import { fitPositionerToPopup } from "./overlay/auto-resize"
 import { initPopup, makeTransition, PopupState, popupId, portalId, triggerId } from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
 import { isMounted, stateAttributes } from "./overlay/transition"
@@ -140,28 +141,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 // MOUNT
 
-/** Base UI's adaptive origin: the popup sticks to the positioner edge facing the trigger. */
-const pinPopup = (positioner: HTMLElement, popup: HTMLElement, side: Side): void => {
-	// The fractional box, as Base UI measures it: a rounded width would shift the centred popup.
-	// Measured from the origin at its natural width, so a popup near the viewport edge or sized by
-	// an earlier measurement is not shrunk to fit.
-	const placedLeft = positioner.style.left
-	positioner.style.left = "0px"
-	positioner.style.removeProperty("--positioner-width")
-	popup.style.removeProperty("position")
-	const box = popup.getBoundingClientRect()
-	positioner.style.left = placedLeft
-	positioner.style.setProperty("--positioner-width", `${box.width}px`)
-	positioner.style.setProperty("--positioner-height", `${box.height}px`)
-	popup.style.position = "absolute"
-	const isTop = side === "top"
-	const isLeft = side === "left"
-	popup.style.removeProperty(isTop ? "top" : "bottom")
-	popup.style.removeProperty(isLeft ? "left" : "right")
-	popup.style.setProperty(isTop ? "bottom" : "top", "0px")
-	popup.style.setProperty(isLeft ? "right" : "left", "0px")
-}
-
 /** Portal and placement only: a tooltip neither marks the page nor moves focus. */
 export const MountTooltip = Mount.defineStream("MountTooltip", {
 	args: {
@@ -188,7 +167,7 @@ export const MountTooltip = Mount.defineStream("MountTooltip", {
 			markOutside: Option.none(),
 			lockScroll: false,
 			focus: Option.none(),
-			afterPlace: pinPopup,
+			afterPlace: fitPositionerToPopup,
 		}).pipe(
 			Stream.filter((event) => event._tag !== "PressedOutside"),
 			Stream.map((event) =>

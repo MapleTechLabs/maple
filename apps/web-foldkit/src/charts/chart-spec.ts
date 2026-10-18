@@ -99,6 +99,22 @@ export const ChartSpec = defineTaggedUnion({
 		gradientPrefix: Schema.String,
 		showTooltip: Schema.Boolean,
 	},
+	/**
+	 * `QueryBuilderBarChart` (threshold-free, linear): the rows as returned, the resolved colour per
+	 * series key (`s1..sN`), stacked or grouped, and the clock that decides the in-flight tail.
+	 */
+	QueryBuilderBar: {
+		data: Schema.Array(
+			Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
+		),
+		colors: Schema.Record(Schema.String, Schema.String),
+		fallbackColor: Schema.String,
+		unit: Nullable(Schema.String),
+		timeZone: Nullable(Schema.String),
+		nowMs: Schema.Number,
+		stacked: Schema.Boolean,
+		showTooltip: Schema.Boolean,
+	},
 	/** `IssueOccurrenceChart` (apps/web/src/components/errors): bucketed counts as bars. */
 	Occurrences: {
 		points: Schema.Array(Schema.Struct({ bucket: Schema.String, count: Schema.Number })),

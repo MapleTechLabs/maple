@@ -1,7 +1,15 @@
 import "./react-flow.css"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AttachFlowCanvas, MEASURE_EPOCH_ATTRIBUTE, VIEWPORT_ATTRIBUTE, viewportAttribute } from "./attach"
+import { Option } from "effect"
+import {
+	ANIMATION_ATTRIBUTE,
+	AttachFlowCanvas,
+	animationAttribute,
+	MEASURE_EPOCH_ATTRIBUTE,
+	VIEWPORT_ATTRIBUTE,
+	viewportAttribute,
+} from "./attach"
 import type { Message, Model } from "./canvas"
 import type { XY } from "./geometry"
 import { viewportTransform } from "./viewport"
@@ -149,6 +157,14 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 										h.Attribute(
 											VIEWPORT_ATTRIBUTE,
 											viewportAttribute(canvas.model.viewport),
+										),
+										...Option.toArray(
+											Option.map(canvas.model.animation, (animation) =>
+												h.Attribute(
+													ANIMATION_ATTRIBUTE,
+													animationAttribute(animation),
+												),
+											),
 										),
 									]),
 								],
