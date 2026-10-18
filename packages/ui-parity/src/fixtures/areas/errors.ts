@@ -1,3 +1,4 @@
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Effect, Option, Predicate, Schema } from "effect"
 import { ErrorIssueDocument, ErrorIssueNotFoundError, IssueSeverity, WorkflowState } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/domain/primitives"
@@ -16,15 +17,16 @@ import { fixtureUuid } from "../identity.ts"
 const encodeDocument = Schema.encodeUnknownEffect(ErrorIssueDocument)
 const decodeDocument = Schema.decodeUnknownEffect(ErrorIssueDocument)
 const decodeIssueId = Schema.decodeUnknownSync(ErrorIssueId)
-const decodeState = Schema.decodeUnknownOption(WorkflowState)
-const decodeSeverity = Schema.decodeUnknownOption(IssueSeverity)
+const decodeTransition = Schema.decodeUnknownOption(Schema.Struct({ toState: WorkflowState }))
+const decodeSeverity = Schema.decodeUnknownOption(Schema.Struct({ severity: IssueSeverity }))
 
-const field = (value: unknown, key: string): unknown =>
-	Predicate.hasProperty(value, key) ? value[key] : undefined
 const str = (value: unknown, key: string): string | undefined => {
-	const found = field(value, key)
+	if (!Predicate.hasProperty(value, key)) return undefined
+	const found = value[key]
 	return typeof found === "string" ? found : undefined
 }
+
+type EndpointRequest = Parameters<EndpointHandler>[0]
 
 const actorOf = (actor: SeededIssue["assigned_actor"]) =>
 	actor === null
@@ -81,31 +83,31 @@ const writes = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHa
 	const issuesOf = issueSeed(warehouse)
 	const answer =
 		(
-			patchOf: (payload: unknown, dataset: Dataset) => Readonly<Record<string, unknown>>,
+			patchOf: (request: EndpointRequest) => Readonly<Record<string, unknown>>,
 		): EndpointHandler =>
-		({ dataset, params, payload }) =>
+		(request) =>
 			Effect.gen(function* () {
-				const id = str(params, "issueId")
-				const issue = (yield* issuesOf(dataset)).find((candidate) => candidate.id === id)
+				const id = str(request.params, "issueId")
+				const issue = (yield* issuesOf(request.dataset)).find((candidate) => candidate.id === id)
 				if (issue === undefined)
 					return yield* new ErrorIssueNotFoundError({
 						message: "Issue not found",
 						issueId: decodeIssueId(id ?? fixtureUuid(4, 0)),
 					})
-				return yield* documentOf(issue, patchOf(payload, dataset))
+				return yield* documentOf(issue, patchOf(request))
 			})
 	return {
-		"errors.transitionIssue": answer((payload) =>
-			Option.match(decodeState(field(payload, "toState")), {
+		"errors.transitionIssue": answer(({ payload }) =>
+			Option.match(decodeTransition(payload), {
 				onNone: () => ({}),
-				onSome: (workflowState) => ({ workflowState }),
+				onSome: ({ toState }) => ({ workflowState: toState }),
 			}),
 		),
 		"errors.claimIssue": answer(() => ({})),
 		"errors.heartbeatIssue": answer(() => ({})),
 		"errors.releaseIssue": answer(() => ({ leaseHolder: null, leaseExpiresAt: null, claimedAt: null })),
-		"errors.setIssueSeverity": answer((payload) => ({
-			severity: Option.getOrNull(decodeSeverity(field(payload, "severity"))),
+		"errors.setIssueSeverity": answer(({ payload }) => ({
+			severity: Option.getOrNull(Option.map(decodeSeverity(payload), ({ severity }) => severity)),
 			severitySource: "manual" as const,
 		})),
 	}
@@ -113,7 +115,7 @@ const writes = (warehouse: FixtureWarehouse): Readonly<Record<string, EndpointHa
 
 /** The in-progress issue (`fixtureUuid(4, 2)`): a fix under way, so it has history to show. */
 const WORKED_ISSUE = fixtureUuid(4, 2)
-const nowMsOf = (dataset: Dataset) => Date.parse(dataset.now)
+const nowMsOf = (dataset: Dataset) => parseWarehouseDateTime(dataset.now)
 const isoAgo = (dataset: Dataset, ms: number) => new Date(nowMsOf(dataset) - ms).toISOString()
 const HOUR_MS = 3_600_000
 
@@ -270,7 +272,7 @@ const forWorked =
 		Effect.succeed(str(params, "issueId") === WORKED_ISSUE ? worked(dataset) : otherwise)
 
 /** Reads of the worked issue's history; every other issue keeps the empty defaults. */
-const reads: Readonly<Record<string, EndpointHandler>> = {
+const reads = {
 	"errors.listIssuePullRequests": forWorked(
 		(dataset) => ({ pullRequests: pullRequestsOf(dataset), suggestedRepository: null }),
 		{ pullRequests: [], suggestedRepository: null },
@@ -300,7 +302,7 @@ const reads: Readonly<Record<string, EndpointHandler>> = {
 			pullRequests: pullRequestsOf(dataset).filter((pr) => pr.id !== str(params, "pullRequestId")),
 			suggestedRepository: null,
 		}),
-}
+} satisfies Readonly<Record<string, EndpointHandler>>
 
 export const fixtureArea: FixtureArea = {
 	area: "errors",
