@@ -147,7 +147,13 @@ Empty variants are `identical`; loaded ones `pass` with 0 perceptual px and 0 be
 6 to 30 strict px of rounded-corner anti-aliasing, and in the filtered view the last pixel column
 of redrawn sparklines (88 canvas px in 87.16 CSS px), differ by repaint timing. Legacy's `PlotFrame`
 calls `adapter.update` on every row render; `rowRevision` mirrors that, and React's fragment keys
-(regrouped rows remount) are mirrored in the row keys. Not ported: tooltips (sampling, rollout), the commit hover card,
-`UnnamedServiceHint`, the filter rail as a sheet below `lg`, the picker's shorthand input,
-recent ranges, timezone select, custom tab and `D` hotkey, Alt+click exclusion, session time
-range carried across pages.
+(regrouped rows remount) are mirrored in the row keys. Ported since: the row tooltips, the commit
+hover card, `UnnamedServiceHint`, Alt+click exclusion (a root Subscription presses the row's
+Exclude: `OnClick` has no modifiers) and the session time range (`route/session-time-range.ts`,
+applied on navigation and to a hovered link's preload). Not ported: the filter rail as a sheet
+below `lg` (the shell's mobile layout sends sidebar requests legacy defers, so no mobile scenario
+can pass yet), the picker's shorthand input, recent ranges, timezone select, custom tab and `D`.
+
+Legacy's retained atoms answer a second reader without a request. Shared reads are resources
+(`ServicesFacetsProbe`, `AnomalyServiceCounts`, `IntegrationStatuses`), and Reload refreshes
+only what legacy reads through `useRefreshableAtomValue` (every other slot requests in `Load`).
