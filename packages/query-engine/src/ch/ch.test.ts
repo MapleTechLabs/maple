@@ -924,9 +924,16 @@ describe("converted queries", () => {
 	it("spanDetailQuery is a point lookup returning the full attribute maps", () => {
 		const q = spanDetailQuery({ traceId: "abc123", spanId: "span1" })
 		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
-		expect(sql).toContain("toJSONString(trace_detail_spans.SpanAttributes) AS spanAttributes")
-		expect(sql).toContain("toJSONString(trace_detail_spans.ResourceAttributes) AS resourceAttributes")
-		expect(sql).toContain("FROM trace_detail_spans")
+		expect(sql).toContain("toJSONString(traces.SpanAttributes) AS spanAttributes")
+		expect(sql).toContain("toJSONString(traces.ResourceAttributes) AS resourceAttributes")
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain(
+			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
+		)
+		expect(sql).toMatch(
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId = 'abc123'\)/,
+		)
+		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).toContain("TraceId = 'abc123'")
 		expect(sql).toContain("SpanId = 'span1'")
 		expect(sql).toContain("OrgId = 'org_1'")
@@ -986,25 +993,25 @@ describe("converted queries", () => {
 		expect(sql).toContain("LIMIT 10")
 	})
 
-	it("traceTimeProbeQuery is a cheap LIMIT-1 timestamp seek with no ORDER BY", () => {
+	it("traceTimeProbeQuery reads the earliest MinTimestamp of the trace from trace_index", () => {
 		const q = traceTimeProbeQuery({ traceId: "abc123" })
 		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
-		expect(sql).toContain("Timestamp AS timestamp")
-		expect(sql).toContain("FROM trace_detail_spans")
+		expect(sql).toContain("trace_index.MinTimestamp AS timestamp")
+		expect(sql).toContain("FROM trace_index")
+		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).toContain("TraceId = 'abc123'")
 		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("LIMIT 1")
-		// Must early-terminate per partition — no sort, no full projection.
-		expect(sql).not.toContain("ORDER BY")
+		// A trace spans several index rows; the earliest one wins.
+		expect(sql).toMatch(/ORDER BY timestamp ASC\s+LIMIT 1/)
 		expect(sql).not.toContain("toJSONString")
 		// Unbounded fallback shape — no time predicate.
 		expect(sql).not.toContain("Timestamp >=")
 	})
 
-	it("recentTraceTimeProbeQuery adds a Timestamp lower bound for partition pruning", () => {
+	it("recentTraceTimeProbeQuery bounds the trace's MaxTimestamp below for partition pruning", () => {
 		const q = recentTraceTimeProbeQuery({ traceId: "abc123" })
 		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1"), startTime: "2026-04-15 13:00:00" })
-		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
+		expect(sql).toContain("trace_index.MaxTimestamp >= '2026-04-15 13:00:00'")
 		// Lower bound only — "recent" needs no upper bound.
 		expect(sql).not.toContain("Timestamp <=")
 		expect(sql).toContain("LIMIT 1")
