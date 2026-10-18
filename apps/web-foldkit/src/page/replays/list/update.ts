@@ -52,7 +52,13 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 		timeZone: context.timeZone,
 	})
 
-const freshPagination = (key: string | null): Pagination => ({ key, pages: [], isFetching: false, isStopped: false })
+const freshPagination = (key: string | null, generation: number): Pagination => ({
+	key,
+	generation,
+	pages: [],
+	isFetching: false,
+	isStopped: false,
+})
 
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const inputs = filterInputs(model.search, window)
@@ -67,7 +73,10 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			window,
 			firstPage: Option.getOrElse(firstPage, () => model.firstPage),
 			facets: Option.getOrElse(facets, () => model.facets),
-			pagination: model.pagination.key === listKey && mode === "Load" ? model.pagination : freshPagination(listKey),
+			pagination:
+				model.pagination.key === listKey && mode === "Load"
+					? model.pagination
+					: freshPagination(listKey, model.pagination.generation + 1),
 		},
 		commands: [
 			...(Option.isSome(firstPage) ? [FetchFirstPage({ key: listKey, ...args, refresh: mode === "Refresh" })] : []),
@@ -80,10 +89,13 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 const fetchNext = (model: Model): Return => {
 	const cursor = nextCursor(model)
 	const { pagination, window } = model
-	if (cursor === null || window === null || pagination.key === null || pagination.isFetching) return { model }
+	// Page 2 follows the current key's settled first page, never the previous one still on screen.
+	const isFirstPageCurrent = pagination.pages.length > 0 || AsyncData.isSuccess(model.firstPage.data)
+	if (cursor === null || !isFirstPageCurrent || window === null || pagination.key === null || pagination.isFetching)
+		return { model }
 	return {
 		model: { ...model, pagination: { ...pagination, isFetching: true } },
-		commands: [FetchNextPage({ key: pagination.key, search: model.search, window, cursor })],
+		commands: [FetchNextPage({ key: pagination.key, search: model.search, window, cursor, generation: pagination.generation })],
 	}
 }
 
@@ -103,7 +115,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		window: null,
 		nowMs: 0,
 		firstPage: Keyed.idle(),
-		pagination: freshPagination(null),
+		pagination: freshPagination(null, 0),
 		facets: Keyed.idle(),
 		expandedRuns: [],
 		virtualWindow: emptyWindow,
@@ -229,8 +241,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchFirstPage: ({ key, result }) => ({
 			model: { ...model, firstPage: Keyed.accept(model.firstPage, key, result) },
 		}),
-		CompletedFetchNextPage: ({ key, result }) =>
-			key !== model.pagination.key
+		// Accepted only for the exact request it answers: the key, its set of pages and the cursor.
+		CompletedFetchNextPage: ({ key, generation, cursor, result }) =>
+			key !== model.pagination.key ||
+			generation !== model.pagination.generation ||
+			!model.pagination.isFetching ||
+			cursor !== nextCursor(model)
 				? { model }
 				: {
 						model: {

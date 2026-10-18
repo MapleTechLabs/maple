@@ -44,6 +44,8 @@ export type ReplaysFacets = typeof ReplaysFacets.Type
 /** `useInfiniteReplays`' pages after the first, for the current first-page key. */
 export const Pagination = Schema.Struct({
 	key: Schema.NullOr(Schema.String),
+	/** Bumped by every fresh set of pages (a new key or a Reload): an older page is dropped. */
+	generation: Schema.Number,
 	pages: Schema.Array(ReplaysPage),
 	isFetching: Schema.Boolean,
 	isStopped: Schema.Boolean,

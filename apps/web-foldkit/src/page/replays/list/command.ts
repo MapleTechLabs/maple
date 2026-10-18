@@ -84,11 +84,11 @@ export const FetchFirstPage = Command.define("FetchReplaysFirstPage", {
 
 /** `fetchNextPage`: the cursor the last page handed back. */
 export const FetchNextPage = Command.define("FetchReplaysNextPage", {
-	args: { ...PageArgs, cursor: Schema.String },
+	args: { ...PageArgs, cursor: Schema.String, generation: Schema.Number },
 	messages: [Message.CompletedFetchNextPage],
-	execute: ({ key, search, window, cursor }) =>
+	execute: ({ key, search, window, cursor, generation }) =>
 		Effect.map(fetchPage({ ...filterInputs(search, window), limit: PAGE_SIZE, cursor }), (result) =>
-			Message.CompletedFetchNextPage({ key, result }),
+			Message.CompletedFetchNextPage({ key, generation, cursor, result }),
 		),
 })
 
