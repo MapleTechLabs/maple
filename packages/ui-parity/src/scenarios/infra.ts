@@ -168,7 +168,19 @@ export const infraArea: AreaModule = {
 			K8S,
 			clickText("observability"),
 		),
-		scenario("pods-scope-ended", "Pods: ended scope", "/infra/kubernetes/pods", K8S, clickText("Ended")),
+		...timed("pods", "Pods", "/infra/kubernetes/pods", K8S, "queryEngine.listPods"),
+		scenario("pods-sort-cpu", "Pods: sorted by CPU cores", "/infra/kubernetes/pods", K8S, (page) =>
+			page.getByRole("button", { name: "CPU cores", exact: true }).click(),
+		),
+		scenario("pods-search", "Pods: searched by name", "/infra/kubernetes/pods", K8S, async (page) => {
+			await page.getByRole("textbox", { name: "Search all pods…" }).fill("payment")
+			await page.getByText("2 pods", { exact: true }).waitFor()
+		},
+		),
+		scenario("pods-empty-install", "Pods: the Helm install modal", "/infra/kubernetes/pods", EMPTY, (page) =>
+			page.getByRole("button", { name: "Install the Helm chart" }).click(),
+		),
+		scenario("pods-scope-ended","Pods: ended scope", "/infra/kubernetes/pods", K8S, clickText("Ended")),
 		scenario(
 			"pod-detail-memory",
 			"Pod detail: memory vs limit chart",
@@ -206,8 +218,11 @@ export const infraArea: AreaModule = {
 		scenario("containers-facet", "Containers: one container ticked", "/infra/containers", K8S, (page) =>
 			page.getByRole("checkbox", { name: "ci-stack-redis-1" }).click(),
 		),
-		scenario("containers-search", "Containers: searched by name", "/infra/containers", K8S, (page) =>
-			page.getByRole("textbox", { name: "Search all containers…" }).fill("redis"),
+		scenario("containers-search", "Containers: searched by name", "/infra/containers", K8S, async (page) => {
+			await page.getByRole("textbox", { name: "Search all containers…" }).fill("redis")
+			// The search is debounced (300 ms): wait for the narrowed page before settling.
+			await page.getByText("1 container", { exact: true }).waitFor()
+		},
 		),
 		scenario("containers-empty-install", "Containers: the Docker install modal", "/infra/containers", EMPTY, (page) =>
 			page.getByRole("button", { name: "Install the Docker agent" }).click(),

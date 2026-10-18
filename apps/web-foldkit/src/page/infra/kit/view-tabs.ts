@@ -73,3 +73,36 @@ export const hostsViewTabs = <M>(h: HtmlBuilder<M>, view: HostsView, search: Tim
 		view,
 	)
 }
+
+export type KubernetesView = "pods" | "workloads" | "nodes" | "services"
+
+/** `KUBERNETES_VIEWS` (components/infra/kubernetes/views.ts), with the window carried. */
+const kubernetesViews = (search: TimeSearch): ReadonlyArray<TabLink> => {
+	const window = pickTimeSearch(search)
+	return [
+		{ id: "pods", title: "Pods", href: hrefOf(AppRoute.InfraKubernetesPods({ search: window })) },
+		{ id: "workloads", title: "Workloads", href: hrefOf(AppRoute.InfraKubernetesWorkloads({ search: window })) },
+		{ id: "nodes", title: "Nodes", href: hrefOf(AppRoute.InfraKubernetesNodes({ search: window })) },
+		{ id: "services", title: "Services", href: hrefOf(AppRoute.InfraKubernetesServices({ search: window })) },
+	]
+}
+
+/** `KubernetesViewTabs`. */
+export const kubernetesViewTabs = <M>(h: HtmlBuilder<M>, view: KubernetesView, search: TimeSearch): Html =>
+	linkTabStrip(h, "Kubernetes views", kubernetesViews(search), view)
+
+/** `KubernetesShell`'s breadcrumbs: the view crumb links back to its list once a trail follows. */
+export const kubernetesBreadcrumbs = (
+	view: KubernetesView,
+	search: TimeSearch,
+	trail: ReadonlyArray<Readonly<{ label: string; href?: string }>> = [],
+): ReadonlyArray<Readonly<{ label: string; href?: string }>> => {
+	const current = kubernetesViews(search).find((candidate) => candidate.id === view)
+	const title = current?.title ?? ""
+	return [
+		{ label: "Infrastructure", href: "/infra" },
+		{ label: "Kubernetes", href: hrefOf(AppRoute.InfraKubernetes({ search: pickTimeSearch(search) })) },
+		trail.length > 0 && current !== undefined ? { label: title, href: current.href } : { label: title },
+		...trail,
+	]
+}

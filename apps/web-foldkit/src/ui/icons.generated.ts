@@ -754,6 +754,30 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	FolderIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M3 19V6H9L11 8H21V19H3Z"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	LinuxIcon: [
 		"svg",
 		[

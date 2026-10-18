@@ -29,6 +29,7 @@ const NAMES = [
 	"AppleIcon",
 	"AwsIcon",
 	"DockerIcon",
+	"FolderIcon",
 	"LinuxIcon",
 	"MicrochipIcon",
 	"MicrosoftIcon",
