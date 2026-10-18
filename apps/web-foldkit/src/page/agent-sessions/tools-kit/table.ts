@@ -1,11 +1,8 @@
-import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { ERROR_RATE_FILL, ERROR_RATE_TEXT, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
@@ -183,42 +180,3 @@ export const shareCell = <M>(
 			),
 		],
 	)
-
-/** `RelativeTime variant="orDate" tooltip="title"`. */
-export const relativeTime = <M>(
-	h: HtmlBuilder<M>,
-	value: number,
-	options: Readonly<{
-		nowMs: number
-		timeZone: string
-		className: string
-		/** `tooltip="tooltip"`: a tooltip trigger (TODO(tooltip): the popup) instead of the native title. */
-		isTooltip?: boolean
-	}>,
-): Html =>
-	Number.isFinite(value)
-		? h.time(
-				[
-					h.Datetime(new Date(value).toISOString()),
-					...(options.isTooltip === true
-						? [
-								h.DataAttribute("base-ui-tooltip-trigger", ""),
-								h.DataAttribute("slot", "tooltip-trigger"),
-							]
-						: [
-								h.Title(
-									formatTimestampInTimezone(value, {
-										timeZone: options.timeZone,
-										withYear: true,
-									}),
-								),
-							]),
-					h.Class(
-						options.isTooltip === true
-							? cn("cursor-default", options.className)
-							: options.className,
-					),
-				],
-				[formatRelativeTimeOrDate(value, options.nowMs, options.timeZone)],
-			)
-		: h.span([h.Class(cn("text-muted-foreground", options.className))], [EMPTY_VALUE])

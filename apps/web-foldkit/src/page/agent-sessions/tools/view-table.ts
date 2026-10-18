@@ -21,7 +21,6 @@ import type { ToolBreakdownRow, ToolPercentile, ToolSearch } from "../tools-kit/
 import { toolDetailLinkSearch } from "../tools-kit/model"
 import {
 	errorTone,
-	relativeTime,
 	shareCell,
 	type SortState,
 	sortRows,
@@ -32,6 +31,7 @@ import {
 	toolTableFooter,
 	toolTableHead,
 } from "../tools-kit/table"
+import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 
 // `ToolsTable` (agent-sessions/tools/tool-breakdown-tables.tsx).
@@ -194,7 +194,10 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 			],
 			[formatToolCount(row.sessions)],
 		),
-		relativeTime(h, row.lastSeen, {
+		relativeTime(h, {
+			value: row.lastSeen,
+			variant: "orDate",
+			tooltip: "title",
 			nowMs: inputs.nowMs,
 			timeZone: inputs.timeZone,
 			className:

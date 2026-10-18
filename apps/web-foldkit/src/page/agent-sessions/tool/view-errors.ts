@@ -23,7 +23,6 @@ import { truncatedText } from "../../../ui/truncated-text"
 import { errorTextLine, failureStatusLine, maskChip, windowRangeLabel } from "../tools-kit/error-parts"
 import type { ToolErrorRow } from "../tools-kit/model"
 import {
-	relativeTime,
 	shareCell,
 	type SortState,
 	sortRows,
@@ -33,6 +32,7 @@ import {
 	toolTableBody,
 	toolTableHead,
 } from "../tools-kit/table"
+import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 
 // `ToolErrorsTable` (agent-sessions/tools/tool-errors-table.tsx).
@@ -204,7 +204,10 @@ const errorRow = (
 				],
 				[formatToolCount(row.sessions)],
 			),
-			relativeTime(h, row.lastSeen, {
+			relativeTime(h, {
+				value: row.lastSeen,
+				variant: "orDate",
+				tooltip: "title",
 				nowMs: inputs.nowMs,
 				timeZone: inputs.timeZone,
 				className:

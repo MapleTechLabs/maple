@@ -10,7 +10,7 @@ import { keyValue, keyValueList } from "../../../ui/key-value"
 import { pageTitle } from "../../../ui/page-layout"
 import { sessionIdentity } from "../kit/session-name"
 import { vendorColor, vendorIcon } from "../kit/vendor"
-import { relativeTime } from "../tools-kit/table"
+import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -78,7 +78,14 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 			),
 			keyValueList(h, { layout: "inline" }, [
 				keyValue(h, { label: "Started" }, [
-					relativeTime(h, summary.startMs, { nowMs: model.nowMs, timeZone, className: "" }),
+					relativeTime(h, {
+						value: summary.startMs,
+						variant: "orDate",
+						tooltip: "title",
+						nowMs: model.nowMs,
+						timeZone,
+						className: "",
+					}),
 				]),
 				...(summary.serviceNames.length > 0
 					? [

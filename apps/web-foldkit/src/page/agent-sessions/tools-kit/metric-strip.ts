@@ -1,7 +1,5 @@
-import { VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
 import { formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import {
 	formatToolCount,
 	formatToolMetric,
@@ -13,11 +11,10 @@ import {
 } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { delta } from "../../../ui/delta"
-import { miniBars } from "../../../ui/mini-bars"
 import { skeleton } from "../../../ui/skeleton"
-import { statFigure } from "../../../ui/stat-figure"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import type { ToolMetric, ToolPercentile, ToolSeriesPoint, ToolTotals } from "./model"
+import { statRailItem } from "../../kit/stat-rail"
 
 // `ToolMetricStrip` (agent-sessions/tools/tool-metric-strip.tsx) over the selectable `StatRailItem`
 // (components/common/stat-rail.tsx).
@@ -38,67 +35,17 @@ type TileOptions<M> = Readonly<{
 
 /** `StatRailItem` with `onSelect`: the tile is a button that lights when its metric is drawn. */
 export const selectableTile = <M>(h: HtmlBuilder<M>, options: TileOptions<M>): Html =>
-	h.button(
-		[
-			...(options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]),
-			h.AriaPressed(String(options.isSelected)),
-			h.Class(
-				cn(
-					cn(
-						"relative animate-in fade-in slide-in-from-bottom-1 duration-500",
-						"px-5 py-4",
-						options.className,
-					),
-					"w-full text-left",
-					rowSelectedClass(options.isSelected),
-					"cursor-pointer hover:bg-muted/25",
-					"focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-				),
-			),
-			h.Type("button"),
-			h.OnClick(options.onSelect),
-		],
-		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-3")],
-				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									"truncate text-2xs font-medium transition-colors",
-									options.isSelected ? "text-primary" : "text-muted-foreground",
-								),
-							),
-						],
-						[options.eyebrow],
-					),
-				],
-			),
-			h.div(
-				[h.Class(cn("flex items-end justify-between gap-3", "mt-2"))],
-				[
-					statFigure(h, {
-						value: options.value,
-						size: "lg",
-						className: "shrink-0",
-						valueClassName: cn(VALUE_TONE.neutral),
-					}),
-					options.spark.length > 1
-						? miniBars(h, {
-								values: options.spark.slice(-28),
-								color: "var(--primary)",
-								opacityRamp: true,
-								className: "h-7 w-24 min-w-0 shrink",
-							})
-						: h.div([h.Class("h-7 w-24 min-w-0 shrink")], []),
-				],
-			),
-			...(options.subline === null
-				? []
-				: [h.div([h.Class("mt-2 truncate text-2xs text-muted-foreground")], [options.subline])]),
-		],
-	)
+	statRailItem(h, {
+		eyebrow: options.eyebrow,
+		value: options.value,
+		spark: options.spark,
+		sparkColor: "var(--primary)",
+		subline: options.subline ?? undefined,
+		onSelect: options.onSelect,
+		isSelected: options.isSelected,
+		ariaLabel: options.ariaLabel,
+		className: options.className,
+	})
 
 const sublineText = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
 	h.span([h.Class("inline-flex items-center gap-[5px] font-mono tabular-nums")], children)

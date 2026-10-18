@@ -2,10 +2,9 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { filterChip } from "../../../ui/filter-chip"
-import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
 import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
+import { searchInput } from "../../../ui/search-input"
 
 // `ToolFilterToolbar` and `FacetSelect` (agent-sessions/tools/tool-filter-toolbar.tsx,
 // components/common/facet-select.tsx).
@@ -79,25 +78,15 @@ export type ToolbarConfig<M> = Readonly<{
 }>
 
 const nameSearchInput = <M>(h: HtmlBuilder<M>, search: NonNullable<ToolbarConfig<M>["nameSearch"]>): Html =>
-	inputGroup(h, { className: cn("max-w-sm", "w-full font-mono sm:w-[260px]") }, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: search.inputId,
-			type: "text",
-			attributes: [h.Placeholder("Tool name…"), h.Value(search.value), h.OnInput(search.onInput)],
-		}),
-		...(search.value === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(
-							h,
-							{ attributes: [h.AriaLabel("Clear search"), h.OnClick(search.onClear)] },
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
+	searchInput(h, {
+		id: search.inputId,
+		size: "default",
+		className: cn("max-w-sm", "w-full font-mono sm:w-[260px]"),
+		placeholder: "Tool name…",
+		value: search.value,
+		onInput: search.onInput,
+		onClear: search.onClear,
+	})
 
 /** `ToolFilterToolbar` inside the shared `Toolbar` shell. */
 export const toolFilterToolbar = <M>(h: HtmlBuilder<M>, config: ToolbarConfig<M>): Html =>

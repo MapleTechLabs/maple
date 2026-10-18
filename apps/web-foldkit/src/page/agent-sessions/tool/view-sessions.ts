@@ -16,7 +16,7 @@ import { icon } from "../../../ui/icon"
 import { skeletonList } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import { vendorLabel } from "../kit/vendor"
-import { relativeTime } from "../tools-kit/table"
+import { relativeTime } from "../../kit/relative-time"
 import type { Message } from "./message"
 
 // `ToolDetailSessions` (agent-sessions/tools/tool-detail-sessions.tsx).
@@ -108,11 +108,13 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 				[h.Class("hidden w-[140px] shrink-0 @min-[900px]/panel:flex")],
 				hasErrors ? [errorCountPill(h, session.errorSpanCount)] : [],
 			),
-			relativeTime(h, toEpochMs(session.startTime), {
+			relativeTime(h, {
+				value: toEpochMs(session.startTime),
+				variant: "orDate",
+				tooltip: "tooltip",
 				nowMs,
 				timeZone,
 				className: "shrink-0 whitespace-nowrap text-xs text-muted-foreground",
-				isTooltip: true,
 			}),
 		],
 	)

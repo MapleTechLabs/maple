@@ -2,12 +2,11 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
 import { refreshButton } from "../../../ui/refresh-button"
 import { switchControl } from "../../../ui/switch"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { searchInput } from "../../../ui/search-input"
 
 // `AgentSessionsToolbar` (agent-sessions-toolbar.tsx), `ToolbarSearch` over `SearchInput`.
 // TODO(tooltip): the count's and the switch's tooltips are drawn as triggers only.
@@ -18,34 +17,15 @@ const ERRORS_LABEL_ID = "agent-sessions-errors-label"
 
 /** `ToolbarSearch` (debounced 300 ms), default size. */
 const toolbarSearch = (h: H, model: Model): Html =>
-	inputGroup(h, { className: cn("max-w-sm", "w-full sm:max-w-sm") }, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: "agent-sessions-search",
-			type: "text",
-			attributes: [
-				h.Placeholder("Session or trace ID…"),
-				h.Value(model.searchInput),
-				h.OnInput((value) => Message.ChangedSearchInput({ value })),
-			],
-		}),
-		...(model.searchInput === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(
-							h,
-							{
-								attributes: [
-									h.AriaLabel("Clear search"),
-									h.OnClick(Message.ChangedSearchInput({ value: "" })),
-								],
-							},
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
+	searchInput(h, {
+		id: "agent-sessions-search",
+		size: "default",
+		className: cn("max-w-sm", "w-full sm:max-w-sm"),
+		placeholder: "Session or trace ID…",
+		value: model.searchInput,
+		onInput: (value) => Message.ChangedSearchInput({ value }),
+		onClear: Message.ChangedSearchInput({ value: "" }),
+	})
 
 /** `ToolbarStat`. */
 const stat = (h: H, value: number, label: string): Html =>
