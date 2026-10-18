@@ -140,28 +140,32 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 		holds,
 	})
 	// Raw routes answer only a signed-in bearer, like the API's own auth on them.
-	const parseBody = (text: string): unknown => {
-		try {
-			return JSON.parse(text)
-		} catch {
-			return text
-		}
+	/** What a raw route's call log records: the path, its query and the request body. */
+	interface LoggedRawCall {
+		path: string
+		query?: Record<string, string>
+		body?: unknown
 	}
+	// A JSON body is logged parsed; anything else as its text.
+	const decodeJsonBody = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 	// A request body (a chat send) is part of the logged payload, so the behavior diff checks it.
-	const rawRouteAnswer = async (request: Request, url: URL, dataset: Dataset): Promise<Response | undefined> => {
+	const rawRouteAnswer = async (
+		request: Request,
+		url: URL,
+		dataset: Dataset,
+	): Promise<Response | undefined> => {
 		const capture = request.headers.get(CAPTURE_HEADER)
 		const text = request.method === "GET" || request.method === "HEAD" ? "" : await request.clone().text()
-		const body = text === "" ? undefined : parseBody(text)
+		const body = text === "" ? undefined : Option.getOrElse(decodeJsonBody(text), () => text)
 		for (const route of fixtureAreaRawRoutes) {
 			const answer = route.answer({ dataset, url, method: request.method, body })
 			if (answer === undefined) continue
 			if (!acceptsBearer(dataset, bearerOf(request)))
 				return Response.json({ message: "Unauthorized" }, { status: 401 })
-			calls.record(capture, route.tag, {
-				path: url.pathname,
-				...(url.search ? { query: Object.fromEntries(url.searchParams) } : {}),
-				...(body === undefined ? {} : { body }),
-			})
+			const logged: LoggedRawCall = { path: url.pathname }
+			if (url.search) logged.query = Object.fromEntries(url.searchParams)
+			if (body !== undefined) logged.body = body
+			calls.record(capture, route.tag, logged)
 			// Faults apply to raw routes by their tag too (`chat.history`), after logging, like the HttpApi.
 			const faults = mergeFaults(dataset.faults, request.headers.get(FAULTS_HEADER) ?? undefined)
 			if (Option.isNone(faults)) return answer

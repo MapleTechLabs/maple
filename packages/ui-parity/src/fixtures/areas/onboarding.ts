@@ -1,8 +1,5 @@
 import { Effect, Predicate } from "effect"
-import {
-	CliDeviceNotFoundError,
-	McpOAuthAuthorizationNotFoundError,
-} from "@maple/domain/http"
+import { CliDeviceNotFoundError, McpOAuthAuthorizationNotFoundError } from "@maple/domain/http"
 import type { FixtureArea } from "../areas.ts"
 import type { Dataset, EndpointHandler } from "../dataset.ts"
 import { acmeAdmin, DAY, FROZEN_NOW, FROZEN_NOW_MS, MINUTE } from "../identity.ts"
@@ -110,8 +107,8 @@ const activeCustomer =
 		identity: DatasetIdentity,
 		options: { readonly pastDue?: boolean; readonly balances?: Readonly<Record<string, unknown>> },
 	): EndpointHandler =>
-	() =>
-		Effect.succeed({
+	() => {
+		const customer = {
 			id: identity.orgId,
 			subscriptions: [
 				{
@@ -123,8 +120,11 @@ const activeCustomer =
 					currentPeriodEnd: FROZEN_NOW_MS + 20 * DAY,
 				},
 			],
-			...(options.balances === undefined ? {} : { balances: options.balances }),
-		})
+		}
+		return Effect.succeed(
+			options.balances === undefined ? customer : { ...customer, balances: options.balances },
+		)
+	}
 
 /** A Startup subscription that expired a week ago: the reactivation framing. */
 const lapsedCustomer =
@@ -264,7 +264,8 @@ export const fixtureArea: FixtureArea = {
 		// Acme whose last invoice failed: the payment banner and its customer portal.
 		clerkDataset("clerk-past-due", acmeAdmin, {
 			"billing.getCustomer": activeCustomer(acmeAdmin, { pastDue: true }),
-			"billing.openCustomerPortal": () => Effect.succeed({ url: "https://billing.stripe.com/p/session/parity" }),
+			"billing.openCustomerPortal": () =>
+				Effect.succeed({ url: "https://billing.stripe.com/p/session/parity" }),
 		}),
 		// Acme at 85% of its included logs: the dismissible usage banner.
 		clerkDataset("clerk-quota", acmeAdmin, {

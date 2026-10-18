@@ -180,7 +180,7 @@ const mutation = (id: string, fields: MutationFields) => {
 }
 
 /** `dashboards.create` / `update` / `delete` / `importPerses`, answered without persisting. */
-const writeEndpoints: Readonly<Record<string, EndpointHandler>> = {
+const writeEndpoints = {
 	"dashboards.create": ({ payload }) =>
 		Effect.flatMap(decodeCreateParams(payload), (params) => mutation(CREATED_DASHBOARD_ID, params)),
 	"dashboards.update": ({ params, payload }) =>
@@ -213,7 +213,7 @@ const writeEndpoints: Readonly<Record<string, EndpointHandler>> = {
 			),
 			(dashboard) => encodePersesImport({ object: "dashboard_import", dashboard, warnings: [] }),
 		),
-}
+} satisfies Readonly<Record<string, EndpointHandler>>
 
 export const dashboardEndpoints = (
 	warehouse: FixtureWarehouse,

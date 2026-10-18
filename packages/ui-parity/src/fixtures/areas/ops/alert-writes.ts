@@ -39,7 +39,15 @@ const ruleWire = (dataset: Dataset, row: SyncedRow, patch: Readonly<Record<strin
 		notification_template: null,
 		enabled: bool(row, "enabled") ?? true,
 		severity,
-		thresholds: [{ severity, value: threshold, upper: null, recovery_value: null, destination_ids: destinationIds }],
+		thresholds: [
+			{
+				severity,
+				value: threshold,
+				upper: null,
+				recovery_value: null,
+				destination_ids: destinationIds,
+			},
+		],
 		service_names: strings(row, "service_names_json"),
 		exclude_service_names: strings(row, "exclude_service_names_json"),
 		environments: strings(row, "environments_json"),
@@ -144,12 +152,12 @@ const updateDestination: EndpointHandler = (request) => {
 	const payload = record(request.payload)
 	return row === undefined
 		? Effect.fail(new Error("alert destination not seeded"))
-		: Effect.sync(() =>
-				destinationWire(request.dataset, row, {
-					...("enabled" in payload ? { enabled: payload.enabled } : {}),
-					...(typeof payload.name === "string" ? { name: payload.name } : {}),
-				}),
-			)
+		: Effect.sync(() => {
+				const patch: Record<string, unknown> = {}
+				if ("enabled" in payload) patch.enabled = payload.enabled
+				if (typeof payload.name === "string") patch.name = payload.name
+				return destinationWire(request.dataset, row, patch)
+			})
 }
 
 /** A created destination: the payload's type and name with a fixed new id. */
