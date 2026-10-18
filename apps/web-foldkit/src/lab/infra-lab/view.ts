@@ -5,8 +5,6 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { FLEET_BAND_BOXED } from "../../page/infra/kit/fleet-band"
 import { pageHero, searchToolbar } from "../../page/infra/kit/page-parts"
 import { filterHosts } from "../../page/infra/hosts/list/derive"
-import type * as HostsList from "../../page/infra/hosts/list/message"
-import type { HostRow } from "../../page/infra/hosts/list/model"
 import { HOST_SORT_ACCESSORS } from "../../page/infra/hosts/list/view"
 import { hostSummaryBand } from "../../page/infra/hosts/list/view-band"
 import { hostTable } from "../../page/infra/hosts/list/view-table"
@@ -17,7 +15,7 @@ import type * as RailwayList from "../../page/infra-integrations/railway/list/me
 import type { Model as RailwayModel } from "../../page/infra-integrations/railway/list/model"
 import { servicesList } from "../../page/infra-integrations/railway/list/view"
 import { sectionHeading } from "../../page/kit/section-heading"
-import { type SortState, sortRowsBy } from "../../page/kit/table-sort"
+import { sortRowsBy } from "../../page/kit/table-sort"
 import { eyebrow } from "../../ui/eyebrow"
 import { Message, type Model } from "./update"
 
@@ -66,18 +64,6 @@ const overview = (h: H, fixture: InfraLabFixture): Html => {
 	])
 }
 
-type HostTableInputs = Readonly<{ hosts: ReadonlyArray<HostRow>; nowMs: number; timeZone: string }>
-
-/** `HostTable` with its own sort, hosted with the hosts page's Message. */
-const hostTableView = Submodel.defineView<SortState, HostsList.Message, HostTableInputs>((sort, inputs, h) =>
-	hostTable(h, sortRowsBy(inputs.hosts, sort, HOST_SORT_ACCESSORS), {
-		nowMs: inputs.nowMs,
-		timeZone: inputs.timeZone,
-		isWaiting: false,
-		sort,
-	}),
-)
-
 const hosts = (h: H, model: Model, fixture: InfraLabFixture): Html => {
 	const shown = filterHosts(fixture.hosts, model.hostScope, model.hostQuery, fixture.end)
 	return frame(h, "/infra/hosts", [
@@ -103,12 +89,13 @@ const hosts = (h: H, model: Model, fixture: InfraLabFixture): Html => {
 					placeholder: "Search hosts…",
 					trailing: `${shown.length} of ${fixture.hosts.length} hosts`,
 				}),
-				h.submodel({
-					slotId: "lab-host-table",
-					model: model.hostSort,
-					view: hostTableView,
-					viewInputs: { hosts: shown, nowMs: model.nowMs, timeZone: model.timeZone },
-					toParentMessage: (message: HostsList.Message) => Message.GotHostsMessage({ message }),
+				// `HostTable` keeps its own sort: CPU, descending, until a head is pressed.
+				hostTable(h, sortRowsBy(shown, model.hostSort, HOST_SORT_ACCESSORS), {
+					nowMs: model.nowMs,
+					timeZone: model.timeZone,
+					isWaiting: false,
+					sort: model.hostSort,
+					onSort: (key) => Message.ClickedHostSort({ key }),
 				}),
 			],
 		),

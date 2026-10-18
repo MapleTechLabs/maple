@@ -34,7 +34,7 @@ export type Model = typeof Model.Type
 export const Message = defineMessageUnion({
 	ChangedHostQuery: { value: Schema.String },
 	ChangedHostScope: { scope: Schema.optional(HostsList.HostScope) },
-	GotHostsMessage: { message: HostsList.Message },
+	ClickedHostSort: { key: HostsList.HostSortKey },
 	GotRailwayMessage: { message: RailwayList.Message },
 })
 export type Message = typeof Message.Type
@@ -63,15 +63,9 @@ export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		ChangedHostQuery: ({ value }) => ({ model: { ...model, hostQuery: value } }),
 		ChangedHostScope: ({ scope }) => ({ model: { ...model, hostScope: scope } }),
-		GotHostsMessage: ({ message: inner }) =>
-			inner._tag === "ClickedSort"
-				? {
-						model: {
-							...model,
-							hostSort: nextSort(model.hostSort, inner.key, { stringKeys: ["hostName"] }),
-						},
-					}
-				: { model },
+		ClickedHostSort: ({ key }) => ({
+			model: { ...model, hostSort: nextSort(model.hostSort, key, { stringKeys: ["hostName"] }) },
+		}),
 		// Only the table's sort and tooltips; legacy's Railway search box here is inert.
 		GotRailwayMessage: ({ message: inner }) => {
 			if (inner._tag !== "ClickedSort" && inner._tag !== "GotRowTooltipMessage") return { model }
