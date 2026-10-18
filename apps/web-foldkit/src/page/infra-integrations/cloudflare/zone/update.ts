@@ -253,8 +253,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		AttachedLinkedCursor: () => ({ model }),
-		TickedIngestPoll: () => ({
-			model,
+		TickedIngestPoll: ({ nowMs }) => ({
+			model: { ...model, nowMs },
 			commands: [
 				LoadStatus({ key: statusKey(context), refresh: true }),
 				LoadUsage({ key: usageKey(context) }),

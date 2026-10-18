@@ -53,7 +53,8 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	AttachedLinkedCursor: {},
-	TickedIngestPoll: {},
+	/** The poll reads the clock so the phase can advance to "stalled". */
+	TickedIngestPoll: { nowMs: Schema.Number },
 	ClickedReload: {},
 	ClickedResetTimeRange: {},
 	CompletedReloadSpin: { version: Schema.Number },

@@ -105,7 +105,8 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	AttachedLinkedCursor: {},
-	TickedIngestPoll: {},
+	/** The poll reads the clock so the phase can advance to "stalled". */
+	TickedIngestPoll: { nowMs: Schema.Number },
 	ClickedTab: { tab: ZoneTab },
 	ToggledFilter: { key: FilterKey, value: Schema.String },
 	RemovedFilterChip: { key: FilterKey, value: Schema.String },
