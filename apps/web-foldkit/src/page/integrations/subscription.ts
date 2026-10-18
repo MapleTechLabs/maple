@@ -11,6 +11,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
 import { githubStatusOf } from "./update-github"
+import { runConfirmed } from "./gcp-configure-derive"
+import { configureConnector } from "./update-gcp-configure"
 
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
 
@@ -164,6 +166,14 @@ const gcpRefreshInterval = (model: Model): number | null => {
 	if (connectors.length === 0) return null
 	const settling = connectors.some((connector) => gcpConnectionState(connector, model.nowMs) !== "healthy")
 	return settling ? 10_000 : 60_000
+}
+
+/** The wizard's run step is open and Maple has not confirmed the run. */
+const isAwaitingRun = (model: Model): boolean => {
+	const configure = model.gcpCard.configure
+	if (configure === null || configure.opened === null) return false
+	const connector = configureConnector(model, configure)
+	return connector !== undefined && !runConfirmed(connector, configure.opened, model.nowMs)
 }
 
 /** Prometheus and WarpStream share the scrape-target section. */
@@ -332,6 +342,15 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				}),
 				dependenciesToStream: ({ isOpen }) =>
 					isOpen ? every(10_000, () => Message.TickedGcpRefresh()) : Stream.empty,
+			},
+		),
+		/** `ApplyStage`'s `useIntervalRefresh(gcpStatus, 10_000)` until the run is confirmed. */
+		gcpApplyRefresh: entry(
+			{ isWaiting: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isWaiting: isAwaitingRun(model) }),
+				dependenciesToStream: ({ isWaiting }) =>
+					isWaiting ? every(10_000, () => Message.TickedGcpRefresh()) : Stream.empty,
 			},
 		),
 		connectCallback: entry(

@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Result } from "effect"
 import { Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "../../data/keyed"
 import { requestKey } from "../../data/request-key"
@@ -20,6 +20,7 @@ import { initRailwayCard } from "./railway"
 import { initPlanetscaleCard } from "./planetscale"
 import { initGcpCard } from "./gcp"
 import * as Gcp from "./update-gcp"
+import * as Configure from "./update-gcp-configure"
 import * as Planetscale from "./update-planetscale"
 import * as Railway from "./update-railway"
 import * as Prometheus from "./update-prometheus"
@@ -170,8 +171,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...s,
 				planetscaleDatabases: Keyed.accept(s.planetscaleDatabases, key, result),
 			}),
-		CompletedLoadGcp: ({ key, result }) =>
-			gcpBand(accepted(model, { ...s, gcp: Keyed.accept(s.gcp, key, result) }).model, context),
+		CompletedLoadGcp: ({ key, result }) => {
+			const read = accepted(model, { ...s, gcp: Keyed.accept(s.gcp, key, result) }).model
+			const arrived =
+				s.gcp.key === key && Result.isSuccess(result) ? Configure.statusArrived(read).model : read
+			return gcpBand(arrived, context)
+		},
 		CompletedLoadHazel: ({ key, result }) =>
 			accepted(model, { ...s, hazel: Keyed.accept(s.hazel, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
@@ -310,7 +315,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedGcpInventory: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { inventory: Keyed.accept(model.gcpCard.inventory, key, result) }),
 		GotWorkloadFilterMessage: ({ message: child }) => Gcp.gotWorkloadFilter(model, child),
-		GotGcpMenuMessage: ({ id, message: child }) => Gcp.gotMenu(model, context, id, child),
+		GotGcpMenuMessage: ({ id, message: child }) =>
+			Gcp.gotMenu(model, context, id, child, (next, target) =>
+				Configure.openConfigure(next, context, target),
+			),
 		CompletedGcpScripts: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { scripts: Keyed.accept(model.gcpCard.scripts, key, result) }),
 		ClickedGcpScriptToggle: () =>
@@ -326,8 +334,30 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotGcpDismissDialogMessage: ({ message: child }) => Gcp.gotDismissDialog(model, child),
 		ConfirmedDismissCleanup: () => Gcp.confirmedDismiss(model, context),
 		GotGcpCopyMessage: ({ id, message: child }) => Gcp.gotCopy(model, id, child),
-		ClickedGcpConfigure: ({ target }) => Gcp.updateGcpCard(model, { configureTarget: target }),
-		ClosedGcpConfigure: () => Gcp.updateGcpCard(model, { configureTarget: null }),
+		ClickedGcpConfigure: ({ target }) => Configure.openConfigure(model, context, target),
+		ClosedGcpConfigure: () => Configure.closedConfigure(model),
+		GotGcpConfigureDialogMessage: ({ message: child }) => Configure.gotConfigureDialog(model, child),
+		GotGcpScopeTypeMessage: ({ message: child }) => Configure.gotScopeType(model, child),
+		GotGcpScopeFieldMessage: ({ field, message: child }) => Configure.gotScopeField(model, field, child),
+		SubmittedGcpScope: () => Configure.submittedScope(model),
+		SubmittedGcpCreate: () => Configure.submittedCreate(model),
+		ClickedGcpConfigureBack: () => Configure.clickedBack(model),
+		ToggledGcpCollect: ({ capability }) => Configure.toggledCollect(model, capability),
+		ClickedGcpLogFilter: () => Configure.clickedLogFilter(model),
+		GotGcpFilterModeMessage: ({ message: child }) => Configure.gotFilterMode(model, child),
+		ClickedGcpForwardOutput: () => Configure.clickedForwardOutput(model),
+		ClickedGcpUseOpenTelemetry: () => Configure.clickedUseOpenTelemetry(model),
+		ToggledGcpRuntime: ({ runtime }) => Configure.toggledRuntime(model, runtime),
+		CompletedGcpCreate: ({ connector, failure }) =>
+			Configure.completedCreate(model, context, connector, failure),
+		ClickedGcpChooseApply: () => Configure.clickedChooseApply(model, context),
+		GotGcpConfirmDialogMessage: ({ message: child }) => Configure.gotConfirmDialog(model, child),
+		ConfirmedGcpSave: () => Configure.confirmedSave(model),
+		CompletedGcpUpdate: ({ flags, failure }) => Configure.completedUpdate(model, context, flags, failure),
+		ClickedGcpRunEdit: () => Configure.clickedRunEdit(model),
+		CompletedGcpConfigureScripts: ({ key, result }) => Configure.completedScripts(model, key, result),
+		ClickedGcpConfigureScriptRetry: () => Configure.retriedScripts(model, context),
+		ClickedGcpScriptExpand: () => Configure.clickedScriptExpand(model),
 		TickedGcpRefresh: () => {
 			const refreshed = requestStatus(model, context, "gcp", "Refresh")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
