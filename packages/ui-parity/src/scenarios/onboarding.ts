@@ -109,6 +109,31 @@ const timedScenarios: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+/** `/lab/onboarding`, the sessionless preview: later steps, the simulated team and checkout. */
+const lab = (id: string, title: string, path: string, steps?: (page: Page) => Promise<void>): Scenario => ({
+	id: `onboarding-lab-${id}`,
+	title: `Onboarding lab: ${title}`,
+	path,
+	viewports: ["desktop"],
+	themes: ["light", "dark"],
+	steps,
+	area: "onboarding",
+})
+
+const labScenarios: ReadonlyArray<Scenario> = [
+	lab("team-renamed", "workspace renamed and a teammate invited", "/lab/onboarding?step=3", async (page) => {
+		await page.getByLabel("Workspace name").fill("Orbit Labs")
+		await click("Save name")(page)
+		await page.getByText("Workspace name saved. Make yourself at home.").waitFor()
+		await page.getByLabel(/Invite a teammate/).fill("grace@orbit.test")
+		await click("Send invitation")(page)
+		await page.getByText("Invitation sent to grace@orbit.test.").waitFor()
+	}),
+	{ ...lab("plan", "sample plans", "/lab/onboarding?step=4"), fullPage: true },
+	lab("complete", "checkout simulated", "/lab/onboarding?step=4", click("Start 14-day trial")),
+	lab("restart", "restarted from the plans", "/lab/onboarding?step=4", click("Restart")),
+]
+
 export const onboardingArea: AreaModule = {
 	area: "onboarding",
 	scenarios: [
@@ -266,5 +291,6 @@ export const onboardingArea: AreaModule = {
 			},
 		),
 		...timedScenarios,
+		...labScenarios,
 	],
 }

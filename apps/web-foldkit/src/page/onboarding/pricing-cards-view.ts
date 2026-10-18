@@ -263,29 +263,35 @@ const checkoutTimedOut = (h: H): Html =>
 const loadingGrid = (h: H): Html =>
 	h.div([h.Class("grid grid-cols-1 gap-4 sm:grid-cols-2")], [loadingCard(h), loadingCard(h)])
 
-const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html => {
-	const { loadingPlanId } = model
-	const visible = plans.filter((plan) => !plan.addOn && !plan.autoEnable)
-	const totalCards = visible.length + 1
+/** `PlanCards`: the plans offered, then Enterprise as a peer card. */
+export const planCards = (h: H, plans: ReadonlyArray<CatalogPlan>, loadingPlanId: string | null): Html => {
+	const totalCards = plans.length + 1
 	return h.div(
+		[
+			h.Class(
+				cn(
+					"grid grid-cols-1 gap-4",
+					totalCards === 2 && "sm:grid-cols-2",
+					totalCards >= 3 && "sm:grid-cols-2 lg:grid-cols-3",
+				),
+			),
+		],
+		[...plans.map((plan) => planCard(h, plan, loadingPlanId)), enterpriseCard(h)],
+	)
+}
+
+const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html =>
+	h.div(
 		[h.Class("space-y-6")],
 		[
 			...(model.checkoutReturn === "TimedOut" ? [checkoutTimedOut(h)] : []),
-			h.div(
-				[
-					h.Class(
-						cn(
-							"grid grid-cols-1 gap-4",
-							totalCards === 2 && "sm:grid-cols-2",
-							totalCards >= 3 && "sm:grid-cols-2 lg:grid-cols-3",
-						),
-					),
-				],
-				[...visible.map((plan) => planCard(h, plan, loadingPlanId)), enterpriseCard(h)],
+			planCards(
+				h,
+				plans.filter((plan) => !plan.addOn && !plan.autoEnable),
+				model.loadingPlanId,
 			),
 		],
 	)
-}
 
 const dataIncluded = (h: H, rows: ReadonlyArray<FeatureRow>, isDetailed: boolean): Html =>
 	h.div(

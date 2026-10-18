@@ -52,7 +52,7 @@ const INTENT_GLYPH = {
 	alerts: "bell",
 } satisfies Record<OnboardingIntent, PixelGlyphName>
 
-const stepLabel = (h: H, label: string): Html =>
+const stepLabel = <M>(h: HtmlBuilder<M>, label: string): Html =>
 	h.span([h.Class("hidden text-sm text-muted-foreground tabular-nums sm:inline")], [label])
 
 /** `OnboardingLayout`'s right cluster: the step label, then the account actions. */
@@ -60,8 +60,8 @@ export const accountClusterOf = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<H
 	h.div([h.Class("flex items-center gap-3")], children)
 
 /** `OnboardingLayout`: the mark, the step pills and the account actions over the step. */
-export const onboardingLayout = (
-	h: H,
+export const onboardingLayout = <M>(
+	h: HtmlBuilder<M>,
 	currentStep: number,
 	totalSteps: number,
 	accountCluster: (label: Html) => Html,
@@ -133,7 +133,7 @@ const roleDetailField = (h: H, state: QuickStartState): Html =>
 	])
 
 /** `StepRole`. */
-const roleStep = (h: H, state: QuickStartState): Html => {
+export const roleStep = (h: H, state: QuickStartState): Html => {
 	const { role } = state.qualifyAnswers
 	return h.div(
 		[h.Class("flex flex-1 flex-col items-center justify-center overflow-auto px-6 py-12")],
@@ -208,7 +208,7 @@ const backButton = (h: H, to: (typeof STEP_IDS)[number], className?: string): Ht
 	])
 
 /** `StepIntent`. */
-const intentStep = (h: H, state: QuickStartState): Html => {
+export const intentStep = (h: H, state: QuickStartState): Html => {
 	const { intents } = state.qualifyAnswers
 	return h.div(
 		[h.Class("flex flex-1 flex-col items-center justify-center px-6 py-10")],
@@ -281,7 +281,7 @@ const intentStep = (h: H, state: QuickStartState): Html => {
 }
 
 /** Width, not scale: scaling a pill squashes its end caps mid-transition. */
-const stepPill = (h: H, isReached: boolean): Html =>
+const stepPill = <M>(h: HtmlBuilder<M>, isReached: boolean): Html =>
 	h.div(
 		[
 			h.Class(
@@ -318,7 +318,7 @@ export type QuickStartParts = Readonly<{
  * `MotionStep key={step}` at rest (reduced motion: no slide). A new step is a new element, as
  * AnimatePresence remounts it, so no card is patched over from the previous step.
  */
-const motionStep = (h: H, step: string, child: Html): Html =>
+export const motionStep = <M>(h: HtmlBuilder<M>, step: string, child: Html): Html =>
 	h.div([h.Key(step), h.Class("flex flex-1 flex-col"), h.Style({ opacity: "1", transform: "none" })], [child])
 
 export const view = (h: H, model: Model, parts: QuickStartParts): Html | null => {

@@ -23,7 +23,7 @@ export const Team = Schema.Struct({
 })
 export type Team = typeof Team.Type
 
-const ready = (name: string, invited: ReadonlyArray<string>, canManage: boolean, reason: string | null): Team => ({
+export const ready = (name: string, invited: ReadonlyArray<string>, canManage: boolean, reason: string | null): Team => ({
 	isLoaded: true,
 	name,
 	savedName: name,
