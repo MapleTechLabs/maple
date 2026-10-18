@@ -12,26 +12,57 @@ import { isMounted, stateAttributes } from "./overlay/transition"
 
 /**
  * Base UI `PreviewCard` (`@maple/ui/hover-card`): opens after the pointer rests on the trigger
- * (600 ms), closes after it leaves trigger and card (300 ms), placed below with offsets 4 and 4.
+ * (600 ms, or the trigger's `delay`), closes after it leaves trigger and card (300 ms), placed
+ * below with offsets 4 and 4 unless `HoverCardContent` says otherwise. One Model can serve many
+ * triggers (a table's commit cells): `triggerId` is the one it is anchored to.
  */
 
 // MODEL
 
-export const Model = Schema.Struct({ ...PopupState.fields, hoverGeneration: Schema.Number })
+export const Model = Schema.Struct({
+	...PopupState.fields,
+	hoverGeneration: Schema.Number,
+	triggerId: Schema.String,
+	openDelayMs: Schema.Number,
+	requestedSide: Side,
+	requestedAlign: Align,
+	sideOffset: Schema.Number,
+	alignOffset: Schema.Number,
+})
 export type Model = typeof Model.Type
 
 export const OPEN_DELAY = Duration.millis(600)
 export const CLOSE_DELAY = Duration.millis(300)
 
-export const init = (id: string, options: Readonly<{ isOpen?: boolean }> = {}): Model => ({
-	...initPopup(id, { ...options, side: "bottom", align: "center" }),
-	hoverGeneration: 0,
-})
+export type InitOptions = Readonly<{
+	isOpen?: boolean
+	/** `HoverCardTrigger delay` */
+	openDelayMs?: number
+	side?: Side
+	align?: Align
+	sideOffset?: number
+	alignOffset?: number
+}>
+
+export const init = (id: string, options: InitOptions = {}): Model => {
+	const side = options.side ?? "bottom"
+	const align = options.align ?? "center"
+	return {
+		...initPopup(id, { isOpen: options.isOpen, side, align }),
+		hoverGeneration: 0,
+		triggerId: triggerId(id),
+		openDelayMs: options.openDelayMs ?? Duration.toMillis(OPEN_DELAY),
+		requestedSide: side,
+		requestedAlign: align,
+		sideOffset: options.sideOffset ?? 4,
+		alignOffset: options.alignOffset ?? 4,
+	}
+}
 
 // MESSAGE
 
 export const Message = defineMessageUnion({
-	EnteredTrigger: {},
+	EnteredTrigger: { triggerId: Schema.String },
 	LeftTrigger: {},
 	EnteredCard: {},
 	LeftCard: {},
@@ -47,10 +78,10 @@ export type Message = typeof Message.Type
 
 /** The open or close delay; a newer pointer move bumps the generation and drops this one. */
 export const WaitHoverDelay = Command.define("WaitHoverDelay", {
-	args: { generation: Schema.Number, isOpening: Schema.Boolean },
+	args: { generation: Schema.Number, isOpening: Schema.Boolean, openDelayMs: Schema.Number },
 	messages: [Message.ElapsedHoverDelay],
-	execute: ({ generation, isOpening }) =>
-		Effect.sleep(isOpening ? OPEN_DELAY : CLOSE_DELAY).pipe(
+	execute: ({ generation, isOpening, openDelayMs }) =>
+		Effect.sleep(isOpening ? Duration.millis(openDelayMs) : CLOSE_DELAY).pipe(
 			Effect.as(Message.ElapsedHoverDelay({ generation, isOpening })),
 		),
 })
@@ -65,7 +96,7 @@ const schedule = (model: Model, isOpening: boolean): UpdateReturn => {
 	const generation = Number.increment(model.hoverGeneration)
 	return {
 		model: { ...model, hoverGeneration: generation },
-		commands: [WaitHoverDelay({ generation, isOpening })],
+		commands: [WaitHoverDelay({ generation, isOpening, openDelayMs: model.openDelayMs })],
 	}
 }
 
@@ -76,7 +107,11 @@ const cancel = (model: Model): UpdateReturn => ({
 
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
-		EnteredTrigger: () => (model.isOpen ? cancel(model) : schedule(model, true)),
+		// Moving to another trigger of an open card re-anchors it at once.
+		EnteredTrigger: ({ triggerId: nextTriggerId }) =>
+			model.isOpen
+				? cancel({ ...model, triggerId: nextTriggerId })
+				: schedule({ ...model, triggerId: nextTriggerId }, true),
 		LeftTrigger: () => (model.isOpen ? schedule(model, false) : cancel(model)),
 		EnteredCard: () => cancel(model),
 		LeftCard: () => schedule(model, false),
@@ -97,19 +132,26 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 /** Portal and placement only: a preview card neither marks the page nor moves focus. */
 export const MountHoverCard = Mount.defineStream("MountHoverCard", {
-	args: { id: Schema.String },
+	args: {
+		id: Schema.String,
+		triggerId: Schema.String,
+		side: Side,
+		align: Align,
+		sideOffset: Schema.Number,
+		alignOffset: Schema.Number,
+	},
 	messages: [Message.CompletedMountHoverCard, Message.ChangedPlacement],
-	execute: ({ element, id }) =>
+	execute: ({ element, id, triggerId: anchorId, side, align, sideOffset, alignOffset }) =>
 		anchoredPopup(element, {
 			positionerSelector: "[role=presentation]",
-			popupSelector: "[data-slot=hover-card-content]",
+			popupSelector: `#${CSS.escape(popupId(id))}`,
 			config: {
 				...positionDefaults,
-				anchor: { _tag: "Element", id: triggerId(id) },
-				side: "bottom",
-				align: "center",
-				sideOffset: 4,
-				alignOffset: 4,
+				anchor: { _tag: "Element", id: anchorId },
+				side,
+				align,
+				sideOffset,
+				alignOffset,
 			},
 			insideSelectors: [],
 			markOutside: Option.none(),
@@ -127,11 +169,20 @@ export const MountHoverCard = Mount.defineStream("MountHoverCard", {
 
 // VIEW
 
-export type RenderInfo = Readonly<{ trigger: ReadonlyArray<ChildAttribute>; portal: Html }>
+export type RenderInfo = Readonly<{
+	/** The default trigger's attributes. */
+	trigger: ReadonlyArray<ChildAttribute>
+	/** The attributes of the trigger with this id (one of `triggerIds`). */
+	triggerFor: (id: string) => ReadonlyArray<ChildAttribute>
+	portal: Html
+}>
 
 export type ViewInputs = Readonly<{
 	toView: (render: RenderInfo) => Html
-	toContent: () => ReadonlyArray<Html>
+	/** The card's content for the trigger it is anchored to. */
+	toContent: (triggerId: string) => ReadonlyArray<Html>
+	/** Every trigger id `triggerFor(id)` is asked for, besides the default one. */
+	triggerIds?: ReadonlyArray<string>
 	className?: string
 }>
 
@@ -139,21 +190,40 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const state = stateAttributes(h, model.isOpen, model.animation)
 	const placement = [h.DataAttribute("align", model.align)]
 	const side = [h.DataAttribute("side", model.side)]
-	const trigger = childAttributes([
-		...(model.isOpen ? [h.DataAttribute("popup-open", "")] : []),
-		h.DataAttribute("slot", "hover-card-trigger"),
-		h.Id(triggerId(model.id)),
-		h.OnMouseEnter(Message.EnteredTrigger()),
-		h.OnMouseLeave(Message.LeftTrigger()),
-	])
+	const attributesOf = (id: string) =>
+		childAttributes([
+			...(model.isOpen && id === model.triggerId ? [h.DataAttribute("popup-open", "")] : []),
+			h.DataAttribute("slot", "hover-card-trigger"),
+			h.Id(id),
+			h.OnMouseEnter(Message.EnteredTrigger({ triggerId: id })),
+			h.OnMouseLeave(Message.LeftTrigger()),
+		])
+	// Built here, not when `toView` asks: handlers bind to the boundary that builds them.
+	const triggers = new Map(
+		[triggerId(model.id), ...(inputs.triggerIds ?? [])].map(
+			(id): readonly [string, ReadonlyArray<ChildAttribute>] => [id, attributesOf(id)],
+		),
+	)
+	const trigger = triggers.get(triggerId(model.id)) ?? []
+	const triggerFor = (id: string) => triggers.get(id) ?? []
 	const portal = isMounted(model.isOpen, model.animation)
 		? h.div(
 				[
-					h.Key(portalId(model.id)),
+					// Keyed by the trigger, so moving to another trigger re-runs the Mount against it.
+					h.Key(`${portalId(model.id)}-${model.triggerId}`),
 					h.DataAttribute("base-ui-portal", ""),
 					h.DataAttribute("slot", "hover-card-portal"),
 					h.Id(portalId(model.id)),
-					h.OnMount(MountHoverCard({ id: model.id })),
+					h.OnMount(
+						MountHoverCard({
+							id: model.id,
+							triggerId: model.triggerId,
+							side: model.requestedSide,
+							align: model.requestedAlign,
+							sideOffset: model.sideOffset,
+							alignOffset: model.alignOffset,
+						}),
+					),
 				],
 				[
 					h.div(
@@ -183,12 +253,12 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 											: Option.none(),
 									),
 								],
-								inputs.toContent(),
+								inputs.toContent(model.triggerId),
 							),
 						],
 					),
 				],
 			)
 		: null
-	return inputs.toView({ trigger, portal })
+	return inputs.toView({ trigger, triggerFor, portal })
 })

@@ -25,6 +25,15 @@ import {
 import { commitsKey, displayedServices, healthSummary, isServiceHealth, type Search } from "./derive"
 import { type Facet, Message, type RequestMode } from "./message"
 import { IncidentsData, type Model } from "./model"
+import {
+	clickedCopySha,
+	commitCardMessage,
+	completedCommitDetail,
+	copyMessage,
+	elapsedCommitArm,
+	initOverlays,
+	rowTooltipMessage,
+} from "./update-overlays"
 
 type Return = PageReturn<Model, Message>
 
@@ -212,6 +221,20 @@ const bumped = <A, E>(model: Model, before: Keyed.Keyed<A, E>, after: Keyed.Keye
 
 // NAVIGATION
 
+/** The row's `goToDetail`: the service in its environment, the window carried. */
+const serviceHref = (model: Model, serviceName: string, environment: string): string =>
+	hrefOf(
+		AppRoute.Service({
+			serviceName,
+			search: {
+				startTime: model.search.startTime,
+				endTime: model.search.endTime,
+				timePreset: model.search.timePreset,
+				environments: [environment],
+			},
+		}),
+	)
+
 const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -283,6 +306,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		hasPaintedTable: false,
 		commitMessages: Keyed.idle(),
 		presence: SignalPresenceData.Idle(),
+		...initOverlays(),
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("services-time-range"),
 		chartRuntime: { _tag: "Loading" },
@@ -438,17 +462,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedServiceRow: ({ serviceName, environment }) => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({
-				url: hrefOf(
-					AppRoute.Service({
-						serviceName,
-						search: {
-							startTime: model.search.startTime,
-							endTime: model.search.endTime,
-							timePreset: model.search.timePreset,
-							environments: [environment],
-						},
-					}),
-				),
+				url: serviceHref(model, serviceName, environment),
 				isReplace: false,
 			}),
 		}),
@@ -462,6 +476,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		GotSparklineMessage: () => ({ model }),
+		GotRowTooltipMessage: ({ tooltip, message }) => rowTooltipMessage(model, tooltip, message),
+		GotCommitCardMessage: ({ message }) => commitCardMessage(model, message),
+		ElapsedCommitArm: ({ sha, generation }) => elapsedCommitArm(model, sha, generation),
+		CompletedFetchCommitDetail: ({ sha, result }) => completedCommitDetail(model, sha, result),
+		ClickedCopyCommitSha: ({ sha, serviceName, environment }) =>
+			clickedCopySha(model, sha, serviceHref(model, serviceName, environment)),
+		GotCopyMessage: ({ message }) => copyMessage(model, message),
 		ClickedResetTimeRange: () =>
 			navigate(model, {
 				...model.search,

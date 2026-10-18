@@ -1,4 +1,4 @@
-import { countLabel, formatErrorRate, formatPercent, formatThroughput, pluralize } from "@maple/ui/lib/format"
+import { countLabel, formatErrorRate, formatThroughput, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
@@ -43,6 +43,7 @@ import {
 import { MountEmptyState, MountTable } from "./command"
 import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
+import { isUnnamedService, type Overlays, rowIdOf, unnamedServiceHint, withOverlays } from "./view-overlays"
 
 // `ServicesTable` (apps/web/src/components/services/services-table.tsx).
 
@@ -60,6 +61,8 @@ export type TableContext = Readonly<{
 	theme: ThemeColors | null
 	isNamespacePinned: boolean
 	timeZone: string
+	/** The row tooltips' and commit card's trigger attributes (`withOverlays`). */
+	overlays?: Overlays
 }>
 
 const truncateCommitSha = (sha: string): string =>
@@ -138,6 +141,7 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 						h.DataAttribute("base-ui-tooltip-trigger", ""),
 						h.DataAttribute("slot", "tooltip-trigger"),
 						h.Type("button"),
+						...(ctx.overlays?.tooltip("rollout", rowIdOf(service)) ?? []),
 					],
 					[
 						meter(h, {
@@ -158,6 +162,7 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 				[
 					h.Class("cursor-default min-w-0 max-w-full truncate text-xs text-foreground"),
 					h.DataAttribute("slot", "hover-card-trigger"),
+					...(ctx.overlays?.commit(rowIdOf(service), info.sha) ?? []),
 				],
 				[message !== "" ? message : shortSha],
 			)
@@ -234,7 +239,9 @@ const serviceRow = (
 					[
 						serviceDot(h, { serviceName: service.serviceName }),
 						h.span([h.Class("min-w-0 truncate")], [service.serviceName]),
-						// TODO(unnamed): `UnnamedServiceHint` (a tooltip badge) for `unknown_service*` names.
+						isUnnamedService(service.serviceName)
+							? unnamedServiceHint(h, ctx.overlays?.tooltip("unnamed", rowIdOf(service)) ?? [])
+							: null,
 						healthDot(h, health),
 					],
 				),
@@ -294,11 +301,7 @@ const serviceRow = (
 							h.DataAttribute("slot", "tooltip-trigger"),
 							h.Type("button"),
 							...(service.hasSampling
-								? [
-										h.Title(
-											`Estimated from ${formatPercent(1 / service.samplingWeight)} sampled traces (x${service.samplingWeight.toFixed(0)} extrapolation)`,
-										),
-									]
+								? (ctx.overlays?.tooltip("sampling", rowIdOf(service)) ?? [])
 								: []),
 						],
 						[
@@ -322,7 +325,9 @@ const serviceRow = (
 														),
 													],
 													[
-														`~${formatThroughput(service.tracedThroughput, "/s")} traced`,
+														"~",
+														formatThroughput(service.tracedThroughput, "/s"),
+														" traced",
 													],
 												),
 											]
@@ -574,6 +579,15 @@ const mobileList = (
 																		text: service.serviceName,
 																		tail: 12,
 																	}),
+																	isUnnamedService(service.serviceName)
+																		? unnamedServiceHint(
+																				h,
+																				ctx.overlays?.tooltip(
+																					"unnamed",
+																					rowIdOf(service, true),
+																				) ?? [],
+																			)
+																		: null,
 																	healthDot(
 																		h,
 																		healthOf(ctx.summary, service),
@@ -727,56 +741,90 @@ export const servicesTable = (
 	const unhealthy = services.filter((s) => healthOf(ctx.summary, s) === "unhealthy").length
 	const degraded = services.filter((s) => healthOf(ctx.summary, s) === "degraded").length
 	const healthFilter = ctx.model.search.health
-	return h.div(
-		[h.Class(cn("space-y-4", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+	return withOverlays(
+		h,
+		ctx.model,
+		{ nowMs: ctx.model.nowMs, timeZone: ctx.timeZone },
+		services,
+		(overlays) =>
+			body(
+				h,
+				{ ...ctx, overlays },
+				overview,
+				services,
+				mode,
+				hasNamespaces,
+				unhealthy,
+				degraded,
+				healthFilter,
+			),
+		(children) =>
+			h.div(
+				[
+					h.Class(cn("space-y-4", refreshingClass(isWaiting))),
+					...(isWaiting ? [h.AriaBusy(true)] : []),
+				],
+				children,
+			),
+	)
+}
+
+const body = (
+	h: HtmlBuilder<Message>,
+	ctx: TableContext,
+	overview: ReadonlyArray<ServiceRow>,
+	services: ReadonlyArray<ServiceRow>,
+	mode: "namespace" | "environment",
+	hasNamespaces: boolean,
+	unhealthy: number,
+	degraded: number,
+	healthFilter: string | undefined,
+): ReadonlyArray<Html> => [
+	...(hasNamespaces
+		? [
+				h.div(
+					[h.Class("flex items-center justify-end")],
+					[
+						segmentedSelect(h, {
+							options: [
+								{ value: "namespace", label: "Namespace" },
+								{ value: "environment", label: "Environment" },
+							],
+							value: mode,
+							onChange: (groupBy) => Message.ClickedGroupBy({ groupBy }),
+							size: "sm",
+							ariaLabel: "Group services by",
+							className: "shrink-0",
+						}),
+					],
+				),
+			]
+		: []),
+	desktopTable(h, ctx, services, mode),
+	mobileList(h, ctx, services, mode),
+	h.div(
+		[h.Class("flex items-center justify-between text-sm text-muted-foreground")],
 		[
-			...(hasNamespaces
+			h.span(
+				[],
+				[
+					overview.length >= SERVICE_OVERVIEW_ROW_CAP
+						? `Showing first ${SERVICE_OVERVIEW_ROW_CAP} services`
+						: `Showing ${[String(services.length), healthFilter, pluralize(services.length, "service")].filter(Boolean).join(" ")}`,
+				],
+			),
+			...(unhealthy > 0 || degraded > 0
 				? [
-						h.div(
-							[h.Class("flex items-center justify-end")],
+						h.span(
+							[h.Class("text-xs")],
 							[
-								segmentedSelect(h, {
-									options: [
-										{ value: "namespace", label: "Namespace" },
-										{ value: "environment", label: "Environment" },
-									],
-									value: mode,
-									onChange: (groupBy) => Message.ClickedGroupBy({ groupBy }),
-									size: "sm",
-									ariaLabel: "Group services by",
-									className: "shrink-0",
-								}),
+								...(unhealthy > 0 ? [`${unhealthy} unhealthy`] : []),
+								...(unhealthy > 0 && degraded > 0 ? [" · "] : []),
+								...(degraded > 0 ? [`${degraded} degraded`] : []),
 							],
 						),
 					]
 				: []),
-			desktopTable(h, ctx, services, mode),
-			mobileList(h, ctx, services, mode),
-			h.div(
-				[h.Class("flex items-center justify-between text-sm text-muted-foreground")],
-				[
-					h.span(
-						[],
-						[
-							overview.length >= SERVICE_OVERVIEW_ROW_CAP
-								? `Showing first ${SERVICE_OVERVIEW_ROW_CAP} services`
-								: `Showing ${[String(services.length), healthFilter, pluralize(services.length, "service")].filter(Boolean).join(" ")}`,
-						],
-					),
-					...(unhealthy > 0 || degraded > 0
-						? [
-								h.span(
-									[h.Class("text-xs")],
-									[
-										...(unhealthy > 0 ? [`${unhealthy} unhealthy`] : []),
-										...(unhealthy > 0 && degraded > 0 ? [" · "] : []),
-										...(degraded > 0 ? [`${degraded} degraded`] : []),
-									],
-								),
-							]
-						: []),
-				],
-			),
 		],
-	)
-}
+	),
+]

@@ -21,6 +21,12 @@ const services = (
 	area: "services",
 })
 
+/** On `services-edge` (fixtures/areas/services.ts): an unnamed and a head-sampled service. */
+const edge = (id: string, title: string, steps: (page: Page) => Promise<void>): Scenario => ({
+	...services(id, title, steps),
+	dataset: "services-edge",
+})
+
 const servicesTable = (page: Page) => page.getByRole("table", { name: "Services" })
 
 /** Held far past any capture, so the screenshot is the loading state. */
@@ -117,6 +123,25 @@ export const servicesPageArea: AreaModule = {
 			},
 			"/",
 		),
+		services("rollout-tooltip", "a mid-rollout deploy's split tooltip", async (page) => {
+			await servicesTable(page).getByRole("button", { name: /^\d+% · \+\d+$/ }).first().hover()
+			await page.waitForTimeout(900)
+		}),
+		services("commit-card", "a deploy's commit hover card", async (page) => {
+			await servicesTable(page).getByText("release(storefront): 5.9.0", { exact: true }).hover()
+			await page.getByText("View on GitHub").waitFor()
+		}),
+		edge("edge", "an unnamed and a sampled service", async (page) => {
+			await servicesTable(page).getByRole("row").nth(2).waitFor()
+		}),
+		edge("unnamed-hint", "the no service.name hint's tooltip", async (page) => {
+			await servicesTable(page).getByText("no service.name").hover()
+			await page.getByText("OTEL_SERVICE_NAME").waitFor()
+		}),
+		edge("sampling-tooltip", "a sampled service's throughput estimate tooltip", async (page) => {
+			await servicesTable(page).getByRole("button", { name: /^Throughput:/ }).last().hover()
+			await page.getByText(/^Estimated from/).waitFor()
+		}),
 		services("time-range", "last 24 hours from the time range picker", async (page) => {
 			await page.getByRole("button", { name: "Last 12 hours" }).click()
 			await page.getByRole("dialog").getByRole("button", { name: "Last 1 day" }).click()

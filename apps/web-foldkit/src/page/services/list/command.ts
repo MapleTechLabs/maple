@@ -5,11 +5,12 @@ import {
 	getServicesFacets,
 	type GetServiceOverviewInput,
 } from "@maple/web-data/warehouse/services"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
+import { ARM_DELAY_MS, loadCommitDetail } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message, RequestMode } from "./message"
 
@@ -170,6 +171,22 @@ export const FetchCommitMessages = Command.define("FetchCommitMessages", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchCommitMessages({ key, result })),
 		),
+})
+
+/** `CommitShaHoverCard`'s arm timer: the lookup starts 20 ms into a hover, ahead of the card. */
+export const ArmCommitLookup = Command.define("ArmServicesCommitLookup", {
+	args: { sha: Schema.String, generation: Schema.Number },
+	messages: [Message.ElapsedCommitArm],
+	execute: ({ sha, generation }) =>
+		Effect.as(Effect.sleep(Duration.millis(ARM_DELAY_MS)), Message.ElapsedCommitArm({ sha, generation })),
+})
+
+/** `commitQueryAtom(sha)`, for the hover card. */
+export const FetchCommitDetail = Command.define("FetchServicesCommitDetail", {
+	args: { sha: Schema.String },
+	messages: [Message.CompletedFetchCommitDetail],
+	execute: ({ sha }) =>
+		Effect.map(loadCommitDetail(sha), (result) => Message.CompletedFetchCommitDetail({ sha, result })),
 })
 
 // copied: `firstLine` (commit-sha-hover-card.tsx, a React module).
