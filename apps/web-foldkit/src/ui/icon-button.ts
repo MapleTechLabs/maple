@@ -23,7 +23,7 @@ export type IconButtonOptions<Message> = Readonly<{
 export const iconButton = <Message>(
 	h: HtmlBuilder<Message>,
 	options: IconButtonOptions<Message>,
-	children: ReadonlyArray<Html>,
+	children: ReadonlyArray<Html | string>,
 ): Html =>
 	button(
 		h,

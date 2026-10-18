@@ -19,6 +19,7 @@ import * as Select from "../../ui/select"
 import * as Tabs from "../../ui/tabs"
 import { SignalPresenceData } from "../kit/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import * as Scene3d from "./scene3d"
 
 // `/service-map` (apps/web/src/routes/service-map.tsx and components/service-map/).
 
@@ -99,6 +100,8 @@ export const Model = Schema.Struct({
 	dbCharts: Schema.Struct({ volume: Chart.Model, latency: Chart.Model }),
 	environmentSelect: Select.Model,
 	timePicker: TimeRangePicker.Model,
+	/** The 3D view's own state; fresh each time the view switches to 3D. */
+	scene3d: Scene3d.Model,
 	/** `useSignalPresence("traces")` of the empty canvas, requested once it painted. */
 	presence: SignalPresenceData.schema,
 	chartRuntime: ChartRuntime,

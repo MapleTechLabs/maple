@@ -11,6 +11,7 @@ import * as Tabs from "../../ui/tabs"
 import type { PageContext } from "../contract"
 import { SignalPresenceData } from "../kit/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import * as Scene3d from "./scene3d"
 import { CompleteReloadSpin, LoadSignalPresence, ReadStored, SaveStored } from "./command"
 import { DEFAULT_PRESET, focusOf, scopedRows, type Search, sourceGraphOf, withFocus } from "./derive"
 import { Message } from "./message"
@@ -57,6 +58,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			selectedIndex: null,
 		}),
 		timePicker: TimeRangePicker.init("service-map-time-range"),
+		scene3d: Scene3d.init(),
 		presence: SignalPresenceData.Idle(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -204,7 +206,9 @@ export const routeChanged = (
 	context: PageContext,
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
-	const next = { ...model, search: route.search }
+	// The 3D viewport remounts when the view switches to it, so its state starts over.
+	const isEntering3d = route.search.view === "3d" && model.search.view !== "3d"
+	const next = { ...model, search: route.search, scene3d: isEntering3d ? Scene3d.init() : model.scene3d }
 	const requested = isWindowChange(model.search, route.search)
 		? {
 				model: next,
@@ -233,6 +237,27 @@ const withEnvironmentSelect = (model: Model, message: Select.Message): Return =>
 				outMessage: navigate(model, { ...model.search, environment: next.outMessage.value })
 					.outMessage,
 			}
+}
+
+/** The 3D view's step; a pick becomes the map's `onSelect`. */
+const withScene3d = (model: Model, message: Scene3d.Message, context: PageContext): Return => {
+	const next = Scene3d.update(model.scene3d, message)
+	const lifted: Return = {
+		model: { ...model, scene3d: next.model },
+		commands: Command.mapMessages(next.commands ?? [], (inner) =>
+			Message.GotScene3dMessage({ message: inner }),
+		),
+	}
+	if (next.outMessage === undefined) return lifted
+	const picked = ServiceMap.Message.PickedNode({ nodeId: next.outMessage.nodeId })
+	return Option.match(lifted.model.map, {
+		onNone: () => lifted,
+		onSome: (map) =>
+			merge(
+				lifted,
+				withMapStep(lifted.model, lifted.model.map, ServiceMap.update(map, picked), context),
+			),
+	})
 }
 
 const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
@@ -341,6 +366,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onSome: (map) => withMapStep(model, model.map, ServiceMap.update(map, inner), context),
 			}),
 		GotEnvironmentSelectMessage: ({ message: inner }) => withEnvironmentSelect(model, inner),
+		GotScene3dMessage: ({ message: inner }) => withScene3d(model, inner, context),
 		GotTimePickerMessage: ({ message: inner }) => withTimePicker(model, inner),
 		GotServiceTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(model.serviceTabs, inner)

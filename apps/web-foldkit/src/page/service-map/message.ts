@@ -9,6 +9,7 @@ import * as Select from "../../ui/select"
 import * as Tabs from "../../ui/tabs"
 import { SignalPresences } from "../kit/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import * as Scene3d from "./scene3d"
 import {
 	BranchStatsSchema,
 	CloudflareStatsSchema,
@@ -59,6 +60,7 @@ export const Message = defineMessageUnion({
 	GotMapMessage: { message: ServiceMap.Message },
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
+	GotScene3dMessage: { message: Scene3d.Message },
 	GotServiceTabsMessage: { message: Tabs.Message },
 	GotChartMessage: { chart: Schema.Literals(["volume", "latency"]), message: Chart.Message },
 })

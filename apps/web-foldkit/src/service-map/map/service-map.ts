@@ -95,6 +95,8 @@ export const Message = defineMessageUnion({
 	FailedElkLayout: { signature: Schema.String },
 	ElapsedLayoutGrace: { signature: Schema.String },
 	ClickedNode: { nodeId: Schema.String },
+	/** The 3D scene's `onSelect`: a machine, label or belt picked, or `null` for empty paper. */
+	PickedNode: { nodeId: Schema.NullOr(Schema.String) },
 	ClickedPane: {},
 	ClickedResort: {},
 	ChangedReducedMotion: { reduced: Schema.Boolean },
@@ -446,6 +448,13 @@ const clickedNode = (model: Model, nodeId: string): Return => {
 	})
 }
 
+/** `onSelect` of the 3D view: a collapsed namespace expands, anything else becomes the selection. */
+const pickedNode = (model: Model, nodeId: string | null): Return => {
+	if (nodeId !== null && isNsAggregateId(nodeId)) return clickedNode(model, nodeId)
+	if (Option.getOrNull(model.selectedId) === nodeId) return { model }
+	return redeclutter(withSelection(model, nodeId === null ? Option.none() : Option.some(nodeId)))
+}
+
 const canvasMessage = (model: Model, message: Canvas.Message): Return =>
 	Canvas.Message.match<Return>(message, {
 		DraggedNode: ({ id, position }) => ({
@@ -573,6 +582,7 @@ const step = (model: Model, message: Message): Return =>
 			}
 		},
 		ClickedNode: ({ nodeId }) => clickedNode(model, nodeId),
+		PickedNode: ({ nodeId }) => pickedNode(model, nodeId),
 		ClickedPane: () =>
 			Option.isNone(model.selectedId) ? { model } : redeclutter(withSelection(model, Option.none())),
 		// "Re-sort": drop this signature's drags and camera, snap back to the layout and fit it.
