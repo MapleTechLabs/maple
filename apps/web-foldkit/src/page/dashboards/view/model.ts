@@ -7,11 +7,13 @@ import { KeyedSchema } from "../../../data/keyed"
 import { DashboardSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Combobox from "../../../ui/combobox"
 import * as Popover from "../../../ui/popover"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Tabs from "../../../ui/tabs"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as TagEditor from "../kit/tag-editor"
+import * as VariablesManager from "../kit/variables-manager/model"
 import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 
@@ -34,6 +36,9 @@ export type WidgetSlot = typeof WidgetSlot.Type
 /** The widget fetches, deduped by request key like apps/web's atom family. */
 export const RequestSlot = KeyedSchema(Schema.Unknown, WidgetFailure)
 export type RequestSlot = typeof RequestSlot.Type
+
+export const VariableOptionsSlot = KeyedSchema(Schema.Array(Schema.String), WidgetFailure)
+export type VariableOptionsSlot = typeof VariableOptionsSlot.Type
 
 /** `GridItem` (`@maple/grid-engine`): one placed tile in grid units. */
 export const GridItem = Schema.Struct({
@@ -116,6 +121,7 @@ export const Model = Schema.Struct({
 	titleDraft: Schema.NullOr(Schema.String),
 	pickerDialog: Dialog.Model,
 	tagEditor: TagEditor.Model,
+	variablesManager: VariablesManager.Model,
 	/** `collectTags(dashboards)`: the tag editor's suggestions. */
 	orgTags: Schema.Array(Schema.String),
 	/** The picker's section tabs; the choice outlives a close, as the component state does. */
@@ -146,5 +152,12 @@ export const Model = Schema.Struct({
 	pendingTabDelete: Schema.NullOr(SectionTargetSchema),
 	errorDetails: Schema.Record(Schema.String, Popover.Model),
 	errorCopies: Schema.Record(Schema.String, CopyButton.Model),
+	/** Each query variable's option list, by variable name (custom ones are inline). */
+	variableOptions: Schema.Record(Schema.String, VariableOptionsSlot),
+	/** The one open variable value list (`Combobox`), and which variable it is for. */
+	variableCombo: Combobox.Model,
+	variableComboName: Schema.NullOr(Schema.String),
+	/** A textbox variable's text while typed, committed on blur or Enter. */
+	variableDrafts: Schema.Record(Schema.String, Schema.String),
 })
 export type Model = typeof Model.Type

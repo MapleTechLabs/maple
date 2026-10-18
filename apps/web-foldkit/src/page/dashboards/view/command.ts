@@ -2,6 +2,7 @@ import {
 	DashboardId,
 	defaultWidgetLayout,
 	DashboardRefreshIntervalSeconds,
+	DashboardVariableSchema,
 	DashboardWidgetSchema,
 	TimeRangeSchema,
 } from "@maple/domain/http"
@@ -21,6 +22,7 @@ import {
 } from "../kit/layout"
 import { errorMessageOf, mutateDashboard, readDocument } from "../kit/store"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
+import { fetchVariableOptions } from "../kit/variables"
 import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
 import { presetById } from "./picker-catalog"
@@ -44,6 +46,23 @@ export const FetchWidget = Command.define("FetchDashboardWidget", {
 			Effect.mapError(toWidgetFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchWidget({ key, result })),
+		),
+})
+
+/** A query variable's option list for the window (`variableOptionsAtomFamily`). */
+export const FetchVariableOptions = Command.define("FetchDashboardVariableOptions", {
+	args: {
+		name: Schema.String,
+		key: Schema.String,
+		variable: DashboardVariableSchema,
+		window: Schema.Struct({ startTime: Schema.String, endTime: Schema.String }),
+	},
+	messages: [Message.CompletedFetchVariableOptions],
+	execute: ({ name, key, variable, window }) =>
+		fetchVariableOptions(variable, window).pipe(
+			Effect.mapError(toWidgetFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchVariableOptions({ name, key, result })),
 		),
 })
 
@@ -464,6 +483,16 @@ export const SaveTags = Command.define("SaveDashboardViewTags", {
 				tags,
 				updatedAt: nowIso,
 			})),
+		),
+})
+
+/** `VariablesManagerDialog`'s save: `updateDashboardVariables(id, variables)`. */
+export const SaveVariables = Command.define("SaveDashboardVariables", {
+	args: { ...Target, variables: Schema.Array(DashboardVariableSchema) },
+	messages: [Message.CompletedWrite],
+	execute: ({ orgId, dashboardId, variables }) =>
+		toWriteMessage(
+			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({ ...document, variables, updatedAt: nowIso })),
 		),
 })
 

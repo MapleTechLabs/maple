@@ -17,7 +17,7 @@ import {
 } from "./combobox"
 import { icon } from "./icon"
 import { portalId } from "./overlay/popup-state"
-import { isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
+import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { inputControlClassName } from "./input"
 import { scrollArea } from "./scroll-area"
 
@@ -137,12 +137,13 @@ const comboboxItem = (
 	value: string,
 	index: number,
 	renderItem?: (value: string) => ReadonlyArray<Html | string>,
+	className?: string,
 ): Html => {
 	const isSelected = model.selected.includes(value)
 	return h.div(
 		[
 			h.AriaSelected(isSelected),
-			h.Class(cn(C.comboboxItemStyles)),
+			h.Class(cn(C.comboboxItemStyles, className)),
 			...(model.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
 			...(isSelected ? [h.DataAttribute("selected", "")] : []),
 			h.DataAttribute("slot", "combobox-item"),
@@ -210,6 +211,11 @@ export type PopupOptions = Readonly<{
 	/** A `<ComboboxItem>`'s children when they are more than its value. */
 	renderItem?: (value: string) => ReadonlyArray<Html | string>
 	isUnfiltered?: boolean
+	/** `<ComboboxContent>` under a `<ComboboxTrigger>`: a dialog popup with its search input on top. */
+	trigger?: Readonly<{ returnFocusId: string; header: Html; sideOffset?: number }>
+	/** `<ComboboxItem className>`. */
+	itemClassName?: (value: string) => string | undefined
+	listClassName?: string
 }>
 
 /** `ComboboxPopup` / `AutocompletePopup` with `Empty` and `List` (in a ScrollArea) inside. */
@@ -229,6 +235,8 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 					slot: options.slot,
 					anchorSelector: options.anchorSelector,
 					positionSelector: options.positionSelector,
+					returnFocusId: options.trigger?.returnFocusId,
+					sideOffset: options.trigger?.sideOffset,
 				}),
 			),
 		],
@@ -244,6 +252,7 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 					h.span(
 						[h.Class(cn(styles.frame, options.className))],
 						[
+							...(options.trigger === undefined ? [] : [focusGuard(h, "inside")]),
 							h.div(
 								[
 									h.Class(styles.popup),
@@ -253,10 +262,11 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 									h.DataAttribute("side", model.side),
 									h.DataAttribute("slot", `${options.slot}-popup`),
 									h.Id(`${model.id}-popup`),
-									h.Role("presentation"),
+									h.Role(options.trigger === undefined ? "presentation" : "dialog"),
 									h.Tabindex(-1),
 								],
 								[
+									...(options.trigger === undefined ? [] : [options.trigger.header]),
 									h.div(
 										[
 											h.AriaAtomic(true),
@@ -280,7 +290,10 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 													...(model.mode === "multiple"
 														? [h.AriaMultiSelectable(true)]
 														: []),
-													h.Class(styles.list),
+													...(options.trigger !== undefined && model.highlighted !== null
+														? [h.AriaActiveDescendant(itemId(model.id, model.highlighted))]
+														: []),
+													h.Class(cn(styles.list, options.listClassName)),
 													h.DataAttribute("slot", `${options.slot}-list`),
 													h.Id(listId(model.id)),
 													h.Role("listbox"),
@@ -294,6 +307,7 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 																value,
 																index,
 																options.renderItem,
+																options.itemClassName?.(value),
 															)
 														: autocompleteItem(h, model, value, index),
 												),
@@ -302,9 +316,10 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 									),
 								],
 							),
+							...(options.trigger === undefined ? [] : [focusGuard(h, "inside")]),
 						],
 					),
-					dismissButton(h),
+					...(options.trigger === undefined ? [dismissButton(h)] : []),
 				],
 			),
 		],

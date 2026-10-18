@@ -2,6 +2,7 @@ import type { Locator, Page } from "playwright"
 import { clickButton, EMPTY, opsScenarios, SEEDED, act } from "./ops-kit.ts"
 import type { AreaModule, Scenario } from "./types.ts"
 import { groupedScenarios } from "./dashboards-sections.ts"
+import { variableScenarios } from "./dashboards-variables.ts"
 
 /**
  * Dashboards built from the API's templates: stat, table, chart and list widgets, the builder in
@@ -305,6 +306,7 @@ export const dashboardsArea: AreaModule = {
 			fullPage: true,
 		}),
 		...groupedScenarios,
+		...variableScenarios,
 		dashboard("edit-widget-added", "Edit mode: the Total Logs stat added from the picker", platform, {
 			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Stats"), clickButton(/Sum of logs/)),
 			fullPage: true,

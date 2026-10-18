@@ -8,6 +8,7 @@ import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "../../../charts/chart"
 import type { ChartRuntime } from "../../../charts/chart-runtime"
+import type { VariableValues } from "@maple/query-engine"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
@@ -18,7 +19,7 @@ import type { WidgetDataState } from "./data-state"
 import { renderMarkdown } from "./markdown"
 import { widgetEmptyState, widgetFrame, widgetShell } from "./tile-shell"
 import { chartWidgetTile, CHART_WIDGETS } from "./tiles-chart"
-import { frame } from "./tiles-frame"
+import { frame, titleOf } from "./tiles-frame"
 import { gaugeDial } from "./gauge-view"
 import { statTile, thresholdColor } from "./tiles-stat"
 
@@ -62,6 +63,8 @@ export type TileContext<M> = Readonly<{
 	/** The sparkline's own chart slot. */
 	sparklineChart?: Chart.Model
 	onSparklineChart?: (message: Chart.Message) => M
+	/** The board's resolved variables: titles read `$service` as its value (`interpolateDisplayText`). */
+	variables?: VariableValues
 	/** "Fix with AI" on a decode error, when the surface offers it. */
 	fix?: M | null
 	/** The "Details" popover under a failed tile's message, when the surface renders one. */
@@ -353,10 +356,7 @@ const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget)
 		h,
 		{
 			widgetId: widget.id,
-			title:
-				widget.display.title !== undefined && widget.display.title !== ""
-					? widget.display.title
-					: "Note",
+			title: titleOf(ctx, widget.display.title, "Note"),
 			isEdit: ctx.isEdit,
 			hasGrip: ctx.hasGrip,
 			menu: ctx.menu,

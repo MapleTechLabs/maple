@@ -5,11 +5,13 @@ import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Combobox from "../../../ui/combobox"
 import * as Popover from "../../../ui/popover"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Tabs from "../../../ui/tabs"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as TagEditor from "../kit/tag-editor"
+import * as VariablesManager from "../kit/variables-manager/model"
 import { WidgetFailure } from "../kit/widget-data"
 
 /** A write's outcome: the failure is the message the persistence banner shows. */
@@ -22,6 +24,11 @@ export const Message = defineMessageUnion({
 	MeasuredWidget: { widgetId: Schema.String, widthPx: Schema.Number },
 	RevealedWidget: { widgetId: Schema.String },
 	CompletedFetchWidget: { key: Schema.String, result: Schema.Result(Schema.Unknown, WidgetFailure) },
+	CompletedFetchVariableOptions: {
+		name: Schema.String,
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(Schema.String), WidgetFailure),
+	},
 	CompletedFetchShares: { dashboardId: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedLoadChartRuntime: {},
@@ -46,6 +53,7 @@ export const Message = defineMessageUnion({
 	ClickedWidgetPreset: { presetId: Schema.String },
 	ClickedChartStyle: { chartId: Schema.String },
 	GotTagEditorMessage: { message: TagEditor.Message },
+	GotVariablesManagerMessage: { message: VariablesManager.Message },
 	UpdatedOrgTags: { tags: Schema.Array(Schema.String) },
 	GotPickerTabsMessage: { message: Tabs.Message },
 	PressedGrip: { widgetId: Schema.String, clientX: Schema.Number, clientY: Schema.Number },
@@ -92,6 +100,10 @@ export const Message = defineMessageUnion({
 	GotTabDialogMessage: { message: Dialog.Message },
 	ConfirmedDeleteSection: { action: Schema.Literals(["ungroup", "delete"]) },
 	ConfirmedDeleteTab: { action: Schema.Literals(["move", "delete"]) },
+	GotVariableComboMessage: { name: Schema.String, message: Combobox.Message },
+	ChangedVariableDraft: { name: Schema.String, value: Schema.String },
+	CommittedVariableDraft: { name: Schema.String },
+	ClickedManageVariables: {},
 	GotErrorDetailsMessage: { widgetId: Schema.String, message: Popover.Message },
 	GotErrorCopyMessage: { widgetId: Schema.String, message: CopyButton.Message },
 })

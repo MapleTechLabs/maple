@@ -10,6 +10,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
 import { viewTile } from "./view-widgets"
+import type { VariableValues } from "@maple/query-engine"
 import { sectionView } from "./view-sections"
 import { resolveSectionView } from "@maple/web/lib/dashboards/section-view-state"
 import { containerKeyFor } from "@maple/domain/http"
@@ -20,7 +21,7 @@ import { containerKeyFor } from "@maple/domain/http"
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]
 
-type TileContext = Readonly<{ model: Model; timeZone: string }>
+type TileContext = Readonly<{ model: Model; timeZone: string; variables: VariableValues }>
 
 const gridArea = (item: GridItem) => ({
 	"grid-column": `${item.x + 1} / span ${item.w}`,
@@ -74,7 +75,7 @@ const gridCell = (h: H, ctx: TileContext, widget: Widget, item: GridItem, isEdit
 		[
 			h.div(
 				[h.Class("h-full w-full"), h.OnMount(WatchWidget({ widgetId: widget.id }))],
-				[viewTile(h, ctx.model, widget, ctx.timeZone)],
+				[viewTile(h, ctx.model, widget, ctx.timeZone, ctx.variables)],
 			),
 			...(isEditable ? [resizeHandle(h)] : []),
 		],

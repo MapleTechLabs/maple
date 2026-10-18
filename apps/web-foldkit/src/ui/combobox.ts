@@ -66,6 +66,8 @@ export const Message = defineMessageUnion({
 	ChangedInput: { value: Schema.String },
 	ClickedInput: {},
 	ClickedTrigger: {},
+	/** A `<ComboboxTrigger>` opening its popup list: the selected value starts highlighted. */
+	ClickedTriggerOf: { items: Schema.Array(Schema.String) },
 	HighlightedItem: { index: Schema.NullOr(Schema.Number) },
 	/** `items` unfiltered: `update` filters by the current input, so a key typed in the same frame counts. */
 	PressedInputKey: {
@@ -136,6 +138,11 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			transition.open({ ...model, inputValue: value, highlighted: model.autoHighlight ? 0 : null }),
 		ClickedInput: () => transition.open(model),
 		ClickedTrigger: () => (model.isOpen ? closed(model) : transition.open(model)),
+		ClickedTriggerOf: ({ items }) => {
+			if (model.isOpen) return closed(model)
+			const index = model.selected[0] === undefined ? -1 : items.indexOf(model.selected[0])
+			return transition.open({ ...model, inputValue: "", highlighted: index === -1 ? null : index })
+		},
 		HighlightedItem: ({ index }) => ({ model: { ...model, highlighted: index } }),
 		PressedInputKey: ({ key, items, isUnfiltered }) => {
 			const values = isUnfiltered === true ? items : visibleItems(model, items)
@@ -175,9 +182,12 @@ export const MountCombobox = Mount.defineStream("MountCombobox", {
 		anchorSelector: Schema.String,
 		/** Where the popup is placed when not under `anchorSelector` (which still counts as inside). */
 		positionSelector: Schema.optional(Schema.String),
+		/** A `<ComboboxTrigger>`: focus moves into the popup and returns to this id on close. */
+		returnFocusId: Schema.optional(Schema.String),
+		sideOffset: Schema.optional(Schema.Number),
 	},
 	messages: [Message.CompletedMountCombobox, Message.ChangedPlacement, Message.PressedOutside],
-	execute: ({ element, slot, anchorSelector, positionSelector }) =>
+	execute: ({ element, slot, anchorSelector, positionSelector, returnFocusId, sideOffset }) =>
 		anchoredPopup(element, {
 			positionerSelector: `[data-slot=${slot}-positioner]`,
 			popupSelector: `[data-slot=${slot}-popup]`,
@@ -186,13 +196,16 @@ export const MountCombobox = Mount.defineStream("MountCombobox", {
 				anchor: { _tag: "Selector", selector: positionSelector ?? anchorSelector },
 				side: "bottom",
 				align: "start",
-				sideOffset: 4,
+				sideOffset: sideOffset ?? 4,
 				fallbackAxisSide: "none",
 			},
 			insideSelectors: [anchorSelector],
 			markOutside: Option.some({ mark: true, ariaHidden: true, keep: [anchorSelector] }),
 			lockScroll: false,
-			focus: Option.none(),
+			focus:
+				returnFocusId === undefined
+					? Option.none()
+					: Option.some({ returnFocusId: Option.some(returnFocusId), initialFocus: "first-tabbable" }),
 		}).pipe(
 			Stream.map((event) => {
 				switch (event._tag) {

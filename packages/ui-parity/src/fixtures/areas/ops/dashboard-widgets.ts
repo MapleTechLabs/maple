@@ -173,6 +173,34 @@ const SECTIONS = [
 	{ id: "sec-pinned", title: "Pinned notes", collapsible: false, tabs: [{ id: "tab-pinned", title: "Pinned notes" }] },
 ]
 
+export const VARIABLES_DASHBOARD_ID = "dash_parity_ops_variables"
+
+/** A board with a custom, a query (facet, with All) and a textbox variable, read by its widgets. */
+const VARIABLES = [
+	{
+		name: "env",
+		label: "Environment",
+		type: "custom",
+		defaultValue: "production",
+		options: [{ value: "production" }, { value: "staging" }],
+	},
+	{ name: "service", type: "query", includeAll: true, source: { kind: "facet", facet: "service" } },
+	{ name: "route", type: "textbox" },
+]
+
+const VARIABLE_WIDGETS = [
+	widget("var-pie", "pie", byService('deployment.environment = "$env"'), {
+		title: "Traces in $env",
+		chartId: "query-builder-pie",
+		unit: "number",
+	}, { x: 0, y: 0, w: 6, h: 4 }),
+	widget("var-hbar", "hbar", byService('service.name = "$service"'), {
+		title: "Spans for $service",
+		chartId: "query-builder-hbar",
+		unit: "number",
+	}, { x: 6, y: 0, w: 6, h: 4 }),
+]
+
 const createdAt = isoBefore(5 * DAY)
 const updatedAt = isoBefore(DAY)
 
@@ -201,3 +229,9 @@ export const sectionsDashboard = board(SECTIONS_DASHBOARD_ID, "Grouped board", "
 	widgets: SECTION_WIDGETS,
 	sections: SECTIONS,
 })
+
+export const variablesDashboard = board(VARIABLES_DASHBOARD_ID, "Variables board", "Widgets filtered by dashboard variables.", {
+	widgets: VARIABLE_WIDGETS,
+	variables: VARIABLES,
+})
+

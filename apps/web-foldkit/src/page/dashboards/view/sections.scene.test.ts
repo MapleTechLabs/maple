@@ -86,7 +86,7 @@ describe("dashboard groups", () => {
 
 	test("a stat's sparkline series is asked for only once the stat has its value", () => {
 		const route = { dashboardId: "dash_grouped", search: {} }
-		const model = routeChanged(ready(), route).model
+		const model = routeChanged(ready(), route, context).model
 		const revealed = pageUpdate(model, Message.RevealedWidget({ widgetId: "root" }))
 		expect(names(revealed.commands)).toEqual([FetchWidget.name])
 		expect(revealed.model.widgets.root?.sparkGate ?? null).toBeNull()

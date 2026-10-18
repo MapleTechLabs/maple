@@ -1,4 +1,4 @@
-import { pickDashboardControlParams } from "@maple/web/lib/dashboard-controls/search-params"
+import { pickDashboardControlParams, variableValuesFromSearch } from "@maple/web/lib/dashboard-controls/search-params"
 import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
@@ -9,6 +9,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Combobox from "../../../ui/combobox"
 import * as Popover from "../../../ui/popover"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Tabs from "../../../ui/tabs"
@@ -39,6 +40,9 @@ import { isEditing } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
 import { sectionStep } from "./section-update"
+import { variableStep } from "./variable-update"
+import * as VariablesManagerUpdate from "../kit/variables-manager/update"
+import { managerStep, openVariablesManager } from "./variables-manager"
 import { SectionEdit } from "./section-edit"
 import { moveTargetOf } from "./move-target"
 import * as TagEditor from "../kit/tag-editor"
@@ -74,6 +78,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		titleDraft: null,
 		pickerDialog: Dialog.init("dashboard-widget-picker", "dialog"),
 		tagEditor: TagEditor.init("dashboard-view-tags-dialog"),
+		variablesManager: VariablesManagerUpdate.init("dashboard-variables-dialog"),
 		orgTags: [],
 		pickerTabs: Tabs.init({ idBase: 300, values: PICKER_TABS.map((tab) => tab.id), selected: "all" }),
 		gesture: null,
@@ -92,6 +97,10 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		pendingTabDelete: null,
 		errorDetails: {},
 		errorCopies: {},
+		variableOptions: {},
+		variableCombo: Combobox.init("dashboard-variable", "single"),
+		variableComboName: null,
+		variableDrafts: {},
 	},
 	commands: [
 		ReadClock(),
@@ -103,9 +112,16 @@ export const init = (route: Route, _context: PageContext): Return => ({
 	],
 })
 
-export const routeChanged = (model: Model, route: Route): Return => ({
-	model: { ...model, search: route.search },
-})
+const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean =>
+	Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value)
+
+/** A `var-*` change re-plans the tiles that read the variable (their request keys move). */
+export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
+	const next = { ...model, search: route.search }
+	return sameValues(variableValuesFromSearch(model.search), variableValuesFromSearch(route.search))
+		? { model: next }
+		: withReplan(next, context, "Load")
+}
 
 export { isEditing } from "./mode"
 
@@ -289,7 +305,7 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
 }
 
-/** The "More dashboard actions" menu. TODO(toolbar): share, history, variables, tags, groups. */
+/** The "More dashboard actions" menu. TODO(toolbar): share, history. */
 const moreAction = (model: Model, context: PageContext, value: string): Return => {
 	switch (value) {
 		case "tags": {
@@ -300,6 +316,8 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 				commands: Command.mapMessages(opened.commands ?? [], wrapTagEditor),
 			}
 		}
+		case "variables":
+			return model.persistenceError === null ? openVariablesManager(model) : { model }
 		case "add-group":
 			return model.persistenceError === null
 				? {
@@ -434,6 +452,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						context,
 						"Load",
 					)
+		},
+		CompletedFetchVariableOptions: ({ name, key, result }) => {
+			const slot = model.variableOptions[name]
+			if (slot === undefined) return { model }
+			// The options settle the variables, which may unblock tiles waiting on them.
+			return withReplan(
+				{ ...model, variableOptions: { ...model.variableOptions, [name]: Keyed.accept(slot, key, result) } },
+				context,
+				"Load",
+			)
 		},
 		CompletedFetchWidget: ({ key, result }) => {
 			const slot = model.requests[key]
@@ -595,6 +623,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
+		GotVariableComboMessage: (m) => variableStep(model, context, m),
+		ChangedVariableDraft: (m) => variableStep(model, context, m),
+		CommittedVariableDraft: (m) => variableStep(model, context, m),
+		ClickedManageVariables: () => openVariablesManager(model),
+		GotVariablesManagerMessage: ({ message: inner }) => managerStep(model, context, inner),
 		ClickedSectionChevron: (m) => sectionStep(model, context, m),
 		ClickedSectionTab: (m) => sectionStep(model, context, m),
 		ClickedAddSectionWidget: (m) => sectionStep(model, context, m),

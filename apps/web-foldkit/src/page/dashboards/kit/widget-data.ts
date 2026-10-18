@@ -1,6 +1,12 @@
 // BOUNDARY: widget endpoints answer untyped JSON; this module narrows it into rows and values.
 import { QueryEngineValidationError } from "@maple/domain/http"
-import { formatRangeSeconds, MAX_LIST_RANGE_SECONDS, planWidgetRequest } from "@maple/query-engine"
+import {
+	formatRangeSeconds,
+	hasUnresolvedVariableRefs,
+	MAX_LIST_RANGE_SECONDS,
+	planWidgetRequest,
+	type VariableValues,
+} from "@maple/query-engine"
 import { displayError } from "@maple/web-data/lib/error-messages"
 import { WarehouseDecodeError } from "@maple/web-data/warehouse/effect-utils"
 import { getWidgetServerFunction } from "@maple/web-data/warehouse/widget-data-sources"
@@ -43,11 +49,12 @@ export interface PlanInput {
 	readonly window: { readonly startTime: string; readonly endTime: string } | null
 	readonly widgetTimeRange?: Parameters<typeof planWidgetRequest>[0]["widgetTimeRange"]
 	readonly maxDataPoints?: number
+	/** The board's variables: their names, and the values resolved so far (`useDashboardVariables`). */
+	readonly variables?: Readonly<{ names: ReadonlyArray<string>; values: VariableValues }>
 }
 
 /**
  * `useWidgetDataSource`'s `plan`, `disableReason` and gating, in that order.
- * TODO(variables): dashboard variables (`var-*` values, waiting on unresolved refs) are not ported.
  */
 export const planWidget = (input: PlanInput): WidgetGate => {
 	if (input.dataSource === undefined || input.dataSource === null)
@@ -55,12 +62,19 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 	const request = toWidgetRequest(input.dataSource)
 	if (request === null) return { _tag: "Disabled", message: "Unsupported data source" }
 	if (request.endpoint === "markdown_static") return { _tag: "Static" }
+	// A literal `$service` must never reach the API: wait until every referenced variable resolves.
+	if (
+		input.variables !== undefined &&
+		hasUnresolvedVariableRefs(request.params, input.variables.names, input.variables.values)
+	)
+		return { _tag: "WaitingOnVariables" }
 	if (input.window === null) return { _tag: "Disabled", message: "Unable to resolve dashboard time range" }
 	const plan = planWidgetRequest({
 		request,
 		dashboardWindow: input.window,
 		...(input.widgetTimeRange === undefined ? undefined : { widgetTimeRange: input.widgetTimeRange }),
 		...(input.maxDataPoints === undefined ? undefined : { maxDataPoints: input.maxDataPoints }),
+		...(input.variables === undefined ? undefined : { variableValues: input.variables.values }),
 	})
 	if (plan.kind === "disabled") {
 		return plan.reason === "metric_not_selected"

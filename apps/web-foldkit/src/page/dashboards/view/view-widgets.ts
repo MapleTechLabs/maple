@@ -6,6 +6,7 @@ import { icon } from "../../../ui/icon"
 import * as Menu from "../../../ui/menu"
 import * as MenuView from "../../../ui/menu-view"
 import { dataStateOf } from "../kit/data-state"
+import type { VariableValues } from "@maple/query-engine"
 import { type TileContext, widgetTile } from "../kit/tiles"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -124,7 +125,13 @@ const sparklineState = (model: Model, widget: Widget) => {
 }
 
 /** The view's tile context for one widget: its data, menu, chart and sort. */
-export const tileContext = (h: H, model: Model, widget: Widget, timeZone: string): TileContext<Message> => {
+export const tileContext = (
+	h: H,
+	model: Model,
+	widget: Widget,
+	timeZone: string,
+	variables: VariableValues,
+): TileContext<Message> => {
 	const isEdit = isEditing(model)
 	return {
 		h,
@@ -148,6 +155,7 @@ export const tileContext = (h: H, model: Model, widget: Widget, timeZone: string
 		onChart: (message) => Message.GotChartMessage({ widgetId: widget.id, message }),
 		onSort: (field, isText) => Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
 		sparkline: sparklineState(model, widget),
+		variables,
 		sparklineChart: model.charts[`${widget.id}:spark`] ?? Chart.init(),
 		onSparklineChart: (message) => Message.GotChartMessage({ widgetId: `${widget.id}:spark`, message }),
 		errorDetails: (message) =>
@@ -163,5 +171,5 @@ export const tileContext = (h: H, model: Model, widget: Widget, timeZone: string
 }
 
 /** A tile of the open dashboard. */
-export const viewTile = (h: H, model: Model, widget: Widget, timeZone: string): Html =>
-	widgetTile(h, tileContext(h, model, widget, timeZone), widget)
+export const viewTile = (h: H, model: Model, widget: Widget, timeZone: string, variables: VariableValues): Html =>
+	widgetTile(h, tileContext(h, model, widget, timeZone, variables), widget)

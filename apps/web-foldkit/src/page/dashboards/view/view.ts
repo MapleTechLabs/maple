@@ -13,7 +13,8 @@ import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTi
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
 import { skeleton } from "../../../ui/skeleton"
-import type { PageViewInputs } from "../../contract"
+import type { PageContext, PageViewInputs } from "../../contract"
+import { variablesOf } from "./plan"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
@@ -21,6 +22,7 @@ import type { Model } from "./model"
 import { isEditing } from "./update"
 import { dashboardSections } from "./view-grid"
 import * as TagEditor from "../kit/tag-editor"
+import * as VariablesManagerView from "../kit/variables-manager/view"
 import { widgetPicker } from "./picker"
 import { toolbar } from "./view-toolbar"
 import { sectionDialogs } from "./view-sections"
@@ -210,7 +212,8 @@ const persistenceBanner = (h: H, error: string): Html =>
 		alertDescription(h, [error, ". Dashboard editing is temporarily disabled."], TONE_TEXT.crit),
 	])
 
-const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
+const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => {
+	const timeZone = context.timeZone
 	if (model.status === "Loading") return [viewSkeleton(h)]
 	if (model.status === "Missing" || model.document === null) return [notFound(h, model.dashboardId)]
 	const document = model.document
@@ -219,7 +222,7 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 		...(model.persistenceError === null ? [] : [persistenceBanner(h, model.persistenceError)]),
 		isBlank
 			? blankDashboard(h, model.persistenceError !== null)
-			: dashboardSections(h, { model, timeZone }, document),
+			: dashboardSections(h, { model, timeZone, variables: variablesOf(model, context).values }, document),
 	]
 }
 
@@ -233,9 +236,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					? {}
 					: {
 							titleContent: title(h, model, model.document.name),
-							actions: toolbar(h, model, inputs.context.timeZone),
+							actions: toolbar(h, model, inputs.context),
 						},
-				body(h, model, inputs.context.timeZone),
+				body(h, model, inputs.context),
 			),
 			widgetPicker(h, model),
 			h.submodel({
@@ -244,6 +247,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				view: TagEditor.view,
 				viewInputs: { allTags: model.orgTags },
 				toParentMessage: (message) => Message.GotTagEditorMessage({ message }),
+			}),
+			h.submodel({
+				slotId: "dashboard-view-variables-manager",
+				model: model.variablesManager,
+				view: VariablesManagerView.view,
+				viewInputs: { slotId: "dashboard-variables-dialog" },
+				toParentMessage: (message) => Message.GotVariablesManagerMessage({ message }),
 			}),
 			...sectionDialogs(h, model),
 		],
