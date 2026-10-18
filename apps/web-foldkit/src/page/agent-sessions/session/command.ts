@@ -1,7 +1,7 @@
 import { AiSessionSpanCursor } from "@maple/domain/http"
 import { getAiSessionSpans, getAiSessionSummary } from "@maple/web-data/warehouse/ai-sessions"
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -111,7 +111,10 @@ export const RunCodeAction = Command.define("RunAgentSessionCodeAction", {
 	messages: [Message.CompletedCodeAction],
 	execute: ({ action, code, language }) =>
 		(action === "copy"
-			? Effect.ignore(Effect.tryPromise(() => navigator.clipboard.writeText(code)))
+			? Effect.tryPromise(() => navigator.clipboard.writeText(code)).pipe(
+					Effect.as(true),
+					Effect.orElseSucceed(() => false),
+				)
 			: Effect.sync(() => {
 					const url = URL.createObjectURL(new Blob([code], { type: "text/plain" }))
 					const anchor = document.createElement("a")
@@ -119,8 +122,17 @@ export const RunCodeAction = Command.define("RunAgentSessionCodeAction", {
 					anchor.download = `file.${DOWNLOAD_EXTENSIONS.get(language) ?? "txt"}`
 					anchor.click()
 					URL.revokeObjectURL(url)
+					return false
 				})
-		).pipe(Effect.as(Message.CompletedCodeAction())),
+		).pipe(Effect.map((isCopied) => Message.CompletedCodeAction({ code, isCopied }))),
+})
+
+/** Streamdown's `CodeBlockCopyButton` holds its check for `timeout` (2s), then shows Copy again. */
+export const WaitCodeCopied = Command.define("WaitAgentSessionCodeCopied", {
+	args: { generation: Schema.Number },
+	messages: [Message.ElapsedCodeCopied],
+	execute: ({ generation }) =>
+		Effect.sleep(Duration.millis(2000)).pipe(Effect.as(Message.ElapsedCodeCopied({ generation }))),
 })
 
 /** "Check the Tools section": brings the Overview's ledger into view. */

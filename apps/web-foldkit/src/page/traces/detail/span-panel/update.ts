@@ -8,7 +8,7 @@ import * as Tabs from "../../../../ui/tabs"
 import type { SpanNodeData } from "../trace-data"
 import { FetchSpanDetail, FetchSpanLogs, LOG_LIMIT, WaitSpanCopyStatus, WriteSpanClipboard } from "./command"
 import { Message, OutMessage } from "./message"
-import type { CopyStatus, Model } from "./model"
+import type { CopyStatus, Model, PanelState } from "./model"
 
 export type InitInput = Readonly<{
 	span: SpanNodeData
@@ -24,7 +24,13 @@ export type Return = Readonly<{
 	outMessage?: OutMessage
 }>
 
-export const TAB_VALUES = ["details", "logs", "infrastructure"] as const
+type StateReturn<S> = Readonly<{
+	model: S
+	commands?: ReadonlyArray<Command.Command<Message, never, Resources>>
+	outMessage?: OutMessage
+}>
+
+export const TAB_VALUES =["details", "logs", "infrastructure"] as const
 
 /** The panel as it mounts: the logs read always, the full attributes unless the span is missing. */
 export const init = (input: InitInput): Return => {
@@ -64,7 +70,12 @@ export const init = (input: InitInput): Return => {
 	}
 }
 
-const copyStatus = (model: Model, id: string, generation: number, status: CopyStatus): Return =>
+const copyStatus = <S extends PanelState>(
+	model: S,
+	id: string,
+	generation: number,
+	status: CopyStatus,
+): StateReturn<S> =>
 	model.copies[id]?.generation === generation
 		? {
 				model: { ...model, copies: Record.set(model.copies, id, { status, generation }) },
@@ -86,8 +97,9 @@ const attributeFilterUrl = (scope: "span" | "resource", key: string, value: stri
 	)
 }
 
-export const update = (model: Model, message: Message): Return =>
-	Message.match<Return>(message, {
+/** The panel's reads, copies and disclosures over any model holding them (the session popover's too). */
+export const updateState = <S extends PanelState>(model: S, message: Message): StateReturn<S> =>
+	Message.match<StateReturn<S>>(message, {
 		CompletedFetchDetail: ({ key, result }) => ({
 			model: { ...model, detail: Keyed.accept(model.detail, key, result) },
 		}),
@@ -123,13 +135,15 @@ export const update = (model: Model, message: Message): Return =>
 				url: attributeFilterUrl(scope, key, value, isExclude),
 			}),
 		}),
-		GotTabsMessage: ({ message: inner }) => {
-			const next = Tabs.update(model.tabs, inner)
-			return {
-				model: { ...model, tabs: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tab) =>
-					Message.GotTabsMessage({ message: tab }),
-				),
-			}
-		},
+		// The panel's own tab strip; a holder without one keeps its state.
+		GotTabsMessage: () => ({ model }),
 	})
+
+export const update = (model: Model, message: Message): Return => {
+	if (message._tag !== "GotTabsMessage") return updateState(model, message)
+	const next = Tabs.update(model.tabs, message.message)
+	return {
+		model: { ...model, tabs: next.model },
+		commands: Command.mapMessages(next.commands ?? [], (tab) => Message.GotTabsMessage({ message: tab })),
+	}
+}

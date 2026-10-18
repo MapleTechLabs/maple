@@ -28,6 +28,17 @@ const stringifySearch = (decoded: unknown): Record<string, string> =>
 		? Record.getSomes(Record.map(Record.fromEntries(Object.entries(decoded.search)), stringifyValue))
 		: {}
 
+/**
+ * A query string in the order the entries are given, as TanStack writes a `search` object literal
+ * (`{ t, spanId }`): the route codec writes its schema's field order instead.
+ */
+export const orderedSearch = (entries: ReadonlyArray<readonly [string, string | undefined]>): string => {
+	const query = new URLSearchParams(
+		entries.flatMap(([key, value]) => Option.toArray(Option.map(stringifyValue(value), (raw) => [key, raw]))),
+	).toString()
+	return query === "" ? "" : `?${query}`
+}
+
 const SearchRecord = Schema.Record(Schema.String, Schema.String)
 
 /** The query codec of a route: the legacy `validateSearch` schema, carried as the route's `search`. */

@@ -6,9 +6,12 @@ import {
 	type SessionTurn,
 	spanModel,
 	spanStartMs,
+	toolSpanIssuers,
 } from "@maple/agent-sessions"
 import { filterSpans } from "@maple/web/lib/agent-sessions/span-filters"
 import { Option, Schema } from "effect"
+import type { SessionData } from "./derive"
+import type { Model } from "./model"
 
 // copied: the row model of session-waterfall.tsx (`buildRows`, `orderByTree`, `spanHeading`, `toolTarget`).
 
@@ -21,6 +24,19 @@ export type WaterfallRow =
 	| Readonly<{ kind: "gap"; key: string; gap: IdleGap }>
 
 export const rowHeight = (row: WaterfallRow): number => (row.kind === "turn" ? TURN_ROW_HEIGHT : ROW_HEIGHT)
+
+/** The rows the open waterfall draws, for the view and for the keyboard cursor in `update`. */
+export const waterfallRowsOf = (model: Model, data: SessionData): ReadonlyArray<WaterfallRow> => {
+	const spans = data.turns.flatMap((turn) => turn.spans)
+	return buildRows({
+		turns: data.turns,
+		gaps: model.options.collapseIdle ? data.summary.idleGaps : [],
+		collapsedTurns: model.collapsedTurns,
+		query: model.query,
+		agentSpansOnly: model.options.agentSpansOnly,
+		issuers: toolSpanIssuers(spans),
+	})
+}
 
 /** Depth-first over the parent chain; a tool span sits under the model call that issued it when on the page. */
 const orderByTree = (

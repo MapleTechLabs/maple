@@ -114,6 +114,20 @@ export const anomaliesArea: AreaModule = {
 				waitForText("Linked to issue"),
 			),
 		}),
+		anomaly("list-keys", "The row cursor moved with j and ArrowDown", ALL, {
+			steps: async (page) => {
+				await page.keyboard.press("j")
+				await page.keyboard.press("ArrowDown")
+				await page.keyboard.press("k")
+			},
+		}),
+		anomaly("list-keys-open", "Enter opens the row under the cursor", ALL, {
+			steps: async (page) => {
+				await page.keyboard.press("j")
+				await page.keyboard.press("Enter")
+				await page.waitForURL(/\/anomalies\/[0-9a-f-]+/)
+			},
+		}),
 		anomaly("list-row-hover", "A row hovered", ALL, {
 			steps: async (page) => {
 				await page.getByText("Throughput", { exact: true }).last().hover()

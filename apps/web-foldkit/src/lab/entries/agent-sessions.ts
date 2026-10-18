@@ -12,7 +12,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { PageContext } from "../../page/contract"
 import { detectLookup, missingDetection } from "../../page/agent-sessions/kit/detected-models"
 import { agentSessionsTabs } from "../../page/agent-sessions/kit/tabs"
-import { CompleteReloadSpin, DetectModels } from "../../page/agent-sessions/list/command"
+import { CompleteReloadSpin, DetectModels, VirtualizeSessions } from "../../page/agent-sessions/list/command"
 import { type DisplayRow, sortOf, sortPatch } from "../../page/agent-sessions/list/derive"
 import { Message as ListMessage } from "../../page/agent-sessions/list/message"
 import { Model as ListModel } from "../../page/agent-sessions/list/model"
@@ -111,6 +111,8 @@ const stepList = (model: Model, message: ListMessage): Return => {
 			return message.version === list.refreshVersion ? set({ ...list, isReloading: false }) : { model }
 		case "CompletedDetectModels":
 			return set({ ...list, detections: { ...list.detections, [message.key]: message.models } })
+		case "ChangedListWindow":
+			return set({ ...list, listWindow: message.window })
 		default:
 			return { model }
 	}
@@ -191,6 +193,7 @@ const listPage = Submodel.defineView<ListModel, ListMessage, ListInputs>((list, 
 								hasMore: false,
 								isLoadingMore: false,
 								isCapped: false,
+								virtual: { window: list.listWindow, mount: h.OnMount(VirtualizeSessions()) },
 							}),
 						],
 					),

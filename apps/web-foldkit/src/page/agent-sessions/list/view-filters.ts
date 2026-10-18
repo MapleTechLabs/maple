@@ -118,6 +118,7 @@ const rangeSection = (
 		histogram,
 		histogramUnitLabel: spec.unitLabel,
 		histogramHover: model.histogramHover[spec.range],
+		histogramDrag: model.histogramDrag[spec.range],
 		onHistogram: (message) => Message.GotHistogramMessage({ range: spec.range, message }),
 		minValue: numberOrUndefined(model.search[minKey]),
 		maxValue: numberOrUndefined(model.search[maxKey]),

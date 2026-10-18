@@ -156,15 +156,24 @@ export type GridState = Readonly<{
 	context: GridContext | null
 }>
 
-const chartBody = (
-	h: HtmlBuilder<Message>,
-	model: Model,
+/** What any page's `MetricsGrid` over the four golden-signal cards needs (services, a release). */
+export type GridInput<M> = Readonly<{
+	charts: Readonly<Record<string, Chart.Model>>
+	rows: ReadonlyArray<FixedMetricRow>
+	markers: ReturnType<typeof commitMarkers>
+	toChartMessage: (chartId: string, message: Chart.Message) => M
+	/** `h.OnMount(MountLinkedCursor())`, lifted to the page's Message. */
+	linkedCursorMount: Parameters<HtmlBuilder<M>["OnMount"]>[0]
+}>
+
+const chartBody = <M>(
+	h: HtmlBuilder<M>,
+	input: GridInput<M>,
 	chart: ChartConfig,
-	rows: ReadonlyArray<FixedMetricRow>,
 	context: GridContext,
-	markers: ReturnType<typeof commitMarkers>,
 ): Html => {
-	const chartModel = model.charts[chart.id] ?? Chart.init()
+	const { rows, markers } = input
+	const chartModel = input.charts[chart.id] ?? Chart.init()
 	const overlay =
 		markers.length === 0
 			? undefined
@@ -191,8 +200,7 @@ const chartBody = (
 					overlay,
 					reportPlot: true,
 				},
-				toParentMessage: (message: Chart.Message) =>
-					Message.GotChartMessage({ chartId: chart.id, message }),
+				toParentMessage: (message: Chart.Message) => input.toChartMessage(chart.id, message),
 			}),
 			linkedCursorOverlay(h, chart.id),
 		],
@@ -201,7 +209,6 @@ const chartBody = (
 
 export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridState): Html => {
 	const points = mergedPoints(model)
-	const rows: ReadonlyArray<FixedMetricRow> = points.map((point) => ({ ...point }))
 	const overview = AsyncData.getData(model.overview.data)
 	const markers = Option.match(overview, {
 		onNone: () => [],
@@ -212,11 +219,27 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 				model.commits,
 			),
 	})
-	const hasOverlay = markers.length > 0
+	return metricsGridOf(
+		h,
+		{
+			charts: model.charts,
+			rows: points.map((point) => ({ ...point })),
+			markers,
+			toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
+			linkedCursorMount: MountLinkedCursor(),
+		},
+		state,
+	)
+}
+
+/** `MetricsGrid`: the four cards in a 2-column grid, the hover cursor linked across them. */
+export const metricsGridOf = <M>(h: HtmlBuilder<M>, input: GridInput<M>, state: GridState): Html => {
+	const { rows } = input
+	const hasOverlay = input.markers.length > 0
 	return h.div(
 		[
 			h.DataAttribute("metrics-grid", ""),
-			h.OnMount(MountLinkedCursor()),
+			h.OnMount(input.linkedCursorMount),
 			...(state.isWaiting ? [h.AriaBusy(true)] : []),
 			h.Class(cn("grid grid-cols-1 md:grid-cols-2 gap-3", refreshingClass(state.isWaiting))),
 			h.Style(LINKED_CURSOR_STYLE),
@@ -240,9 +263,7 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 							contentClassName: hasOverlay ? "flex-1 min-h-0 p-2 overflow-visible" : undefined,
 						},
 						// TODO(chart-empty): `ChartEmpty` for a loaded overview with no buckets is not ported.
-						isChart
-							? chartBody(h, model, chart, rows, context, markers)
-							: chartSkeleton(h, chart.skeleton),
+						isChart ? chartBody(h, input, chart, context) : chartSkeleton(h, chart.skeleton),
 					),
 				],
 			)

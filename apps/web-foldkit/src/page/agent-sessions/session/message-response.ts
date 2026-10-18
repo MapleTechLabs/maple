@@ -1,32 +1,14 @@
 import * as Markdown from "@foldkit/markdown"
 import { cn } from "@maple/ui/lib/utils"
-import { Effect, Option, Schema } from "effect"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // `MessageResponse lightweight` (components/ai-elements/message-response.tsx over Streamdown): markdown
 // laid out with Streamdown's element classes. The parser loads on first use, never at startup.
-// TODO(markdown-code): the copied state of a code block's Copy button is not drawn.
 // TODO(markdown-table): Maple's `MarkdownTable` primitives are drawn with Streamdown's own table classes.
 
-/** A parsed body; `null` when the text holds a construct the vocabulary rejects (raw HTML). */
-export const ParsedMarkdown = Schema.Struct({
-	text: Schema.String,
-	document: Schema.NullOr(Markdown.MarkdownDocument),
-})
-export type ParsedMarkdown = typeof ParsedMarkdown.Type
-
-/** Parses each text with the lazily imported remark pipeline; a rejected text parses to `null`. */
-export const parseMarkdownTexts = (texts: ReadonlyArray<string>) =>
-	Effect.promise(() => import("@foldkit/markdown/vite")).pipe(
-		Effect.flatMap(({ parseMarkdown }) =>
-			Effect.forEach(texts, (text) =>
-				Effect.try(() => parseMarkdown(text)).pipe(
-					Effect.map((document): ParsedMarkdown => ({ text, document })),
-					Effect.orElseSucceed((): ParsedMarkdown => ({ text, document: null })),
-				),
-			),
-		),
-	)
+// The parse is the shared one (`page/kit/markdown`), re-exported for the pages that import it here.
+export { ParsedMarkdown, parseMarkdownTexts } from "../../kit/markdown"
 
 const streamdown =
 	(slot: string, className: string) =>
@@ -45,10 +27,14 @@ const HEADING_CLASSES = {
 export type CodeActions<M> = Readonly<{
 	onCopy: (code: string) => M
 	onDownload: (code: string, language: string) => M
+	/** The code whose Copy shows its check, while Streamdown holds it. */
+	copiedCode?: string | null
 }>
 
 export const DOWNLOAD_PATH =
 	"M8.75 1V1.75V8.68934L10.7197 6.71967L11.25 6.18934L12.3107 7.25L11.7803 7.78033L8.70711 10.8536C8.31658 11.2441 7.68342 11.2441 7.29289 10.8536L4.21967 7.78033L3.68934 7.25L4.75 6.18934L5.28033 6.71967L7.25 8.68934V1.75V1H8.75ZM13.5 9.25V13.5H2.5V9.25V8.5H1V9.25V14C1 14.5523 1.44771 15 2 15H14C14.5523 15 15 14.5523 15 14V9.25V8.5H13.5V9.25Z"
+export const CHECK_PATH =
+	"M15.5607 3.99999L15.0303 4.53032L6.23744 13.3232C5.55403 14.0066 4.44599 14.0066 3.76257 13.3232L4.2929 12.7929L3.76257 13.3232L0.969676 10.5303L0.439346 9.99999L1.50001 8.93933L2.03034 9.46966L4.82323 12.2626C4.92086 12.3602 5.07915 12.3602 5.17678 12.2626L13.9697 3.46966L14.5 2.93933L15.5607 3.99999Z"
 export const COPY_PATH =
 	"M2.75 0.5C1.7835 0.5 1 1.2835 1 2.25V9.75C1 10.7165 1.7835 11.5 2.75 11.5H3.75H4.5V10H3.75H2.75C2.61193 10 2.5 9.88807 2.5 9.75V2.25C2.5 2.11193 2.61193 2 2.75 2H8.25C8.38807 2 8.5 2.11193 8.5 2.25V3H10V2.25C10 1.2835 9.2165 0.5 8.25 0.5H2.75ZM7.75 4.5C6.7835 4.5 6 5.2835 6 6.25V13.75C6 14.7165 6.7835 15.5 7.75 15.5H13.25C14.2165 15.5 15 14.7165 15 13.75V6.25C15 5.2835 14.2165 4.5 13.25 4.5H7.75ZM7.5 6.25C7.5 6.11193 7.61193 6 7.75 6H13.25C13.3881 6 13.5 6.11193 13.5 6.25V13.75C13.5 13.8881 13.3881 14 13.25 14H7.75C7.61193 14 7.5 13.8881 7.5 13.75V6.25Z"
 
@@ -107,6 +93,7 @@ const codeBlock = <M>(
 	actions: CodeActions<M> | undefined,
 ): Html => {
 	const code = value.replace(/\n+$/, "")
+	const isCopied = actions?.copiedCode === code
 	return h.div(
 		[
 			h.Class(
@@ -148,9 +135,12 @@ const codeBlock = <M>(
 								h,
 								"code-block-copy-button",
 								"Copy Code",
-								COPY_PATH,
+								isCopied ? CHECK_PATH : COPY_PATH,
 								actions?.onCopy(code),
 							),
+							...(isCopied
+								? [h.output([h.AriaLive("polite"), h.Class("sr-only")], ["Copied"])]
+								: []),
 						],
 					),
 				],

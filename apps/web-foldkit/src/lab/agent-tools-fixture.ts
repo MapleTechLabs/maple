@@ -32,11 +32,11 @@ export type AgentToolsViewData = Readonly<{
 	tools: ReadonlyArray<ToolBreakdownRow>
 }>
 
-const HOUR = 3_600_000
-const BUCKET_MS = 3 * HOUR
-const BUCKETS = 56
+export const HOUR = 3_600_000
+export const BUCKET_MS = 3 * HOUR
+export const BUCKETS = 56
 /** Nanoseconds per millisecond — the fixture is written in ms, the view model is ns. */
-const MS = 1_000_000
+export const MS = 1_000_000
 
 interface ToolProfile {
 	readonly name: string
@@ -232,7 +232,7 @@ export function buildToolCells(nowMs: number): ReadonlyArray<ToolFixtureCell> {
  * A fixture's shortcut only: two p90s do not combine into the p90 of their
  * union, which is why the real reads merge inside the query.
  */
-function rollup(
+export function rollup(
 	cells: ReadonlyArray<ToolFixtureCell>,
 	keyOf: (cell: ToolFixtureCell) => string,
 ): Map<string, ToolMeasures> {

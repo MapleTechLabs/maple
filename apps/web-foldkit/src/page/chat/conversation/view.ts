@@ -1,8 +1,10 @@
+import { cn } from "@maple/ui/lib/utils"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { skeleton } from "../../../ui/skeleton"
 import { approvalCard, taskCard } from "../kit/view-cards"
@@ -37,6 +39,10 @@ export type ConversationViewOptions<M> = Readonly<{
 	nowMs: number
 	/** An approval prompt drawn by the host instead (the lab resolves it locally). */
 	ownCard?: TranscriptHost<M>["ownCard"]
+	/** An investigation thread's report card, drawn ahead of its turns (`fallbackDiagnosis`). */
+	fallback?: Html
+	/** The subject's starter prompts above the composer of an empty thread (investigation mode). */
+	suggestions?: Readonly<{ items: ReadonlyArray<string>; onSelect: (text: string) => M }>
 }>
 
 /** Approvals, sub-agent rows, inline cards and the chat's tables and charts. */
@@ -149,6 +155,7 @@ export const transcriptHostOf = <M>(h: HtmlBuilder<M>, model: Model, options: Co
 	minimap: model.minimap,
 	minimapMount: Mount.mapMessage(MountTurnMinimap(), (message) => options.toMessage(Message.GotMinimapMessage({ message }))),
 	permalinkFor: options.permalinkFor,
+	fallback: options.fallback,
 	...cardsOf(h, model, options),
 })
 
@@ -175,6 +182,27 @@ const notices = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOp
 			]
 }
 
+/** `Suggestions` + `Suggestion` (ai-elements/suggestion.tsx): one-line outline pills. */
+const suggestionPills = <M>(
+	h: HtmlBuilder<M>,
+	suggestions: Readonly<{ items: ReadonlyArray<string>; onSelect: (text: string) => M }>,
+): Html =>
+	h.div(
+		[h.Class(cn("flex flex-wrap items-center gap-2", "mb-3"))],
+		suggestions.items.map((suggestion) =>
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					className: "max-w-[min(100%,24rem)] cursor-pointer rounded-full px-3.5",
+					attributes: [h.Title(suggestion), h.OnClick(suggestions.onSelect(suggestion))],
+				},
+				[h.span([h.Class("min-w-0 truncate")], [suggestion])],
+			),
+		),
+	)
+
 export const conversationView = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): Html => {
 	const loading = isLoading(model)
 	return h.div(
@@ -192,6 +220,9 @@ export const conversationView = <M>(h: HtmlBuilder<M>, model: Model, options: Co
 						h.div(
 							[h.Class("mx-auto w-full max-w-3xl shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]")],
 							[
+								...(model.messages.length === 0 && options.suggestions !== undefined
+									? [suggestionPills(h, options.suggestions)]
+									: []),
 								...notices(h, model, options),
 								composer(h, {
 									textareaId: options.textareaId,

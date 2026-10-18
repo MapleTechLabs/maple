@@ -8,6 +8,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { AppRoute } from "../../../route"
 import { AttachFlowCanvas } from "../../../service-map/xyflow/attach"
 import * as Canvas from "../../../service-map/xyflow/canvas"
+import * as Tooltip from "../../../ui/tooltip"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -88,6 +89,15 @@ describe("investigation detail", () => {
 	test("a malformed id is not found without a request", () => {
 		const start = init(AppRoute.Investigation({ id: "not-a-uuid", search: {} }), context)
 		scene({ update: pageUpdate, view }, given(start.model), expectView(text("This investigation is unavailable")).toExist())
+	})
+
+	test("a trace chip hovered or focused warms its trace route's read once, as TanStack's intent preload", () => {
+		const tip = (triggerId: string) =>
+			Message.GotTraceTooltipMessage({ message: Tooltip.Message.FocusedTrigger({ triggerId }) })
+		const first = pageUpdate(entered(), tip("trace-tip-sheet-6843a8853182b32339b2dd5120d423f2"))
+		expect(names(first.commands)).toContain("PreloadInvestigationTrace")
+		const again = pageUpdate(first.model, tip("trace-tip-evidence-6843a8853182b32339b2dd5120d423f2"))
+		expect(names(again.commands)).not.toContain("PreloadInvestigationTrace")
 	})
 
 	test("a lost live connection offers a retry", () => {

@@ -26,7 +26,6 @@ import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
 
 // `SessionOverview` (session-detail/session-overview.tsx): checks and the tool ledger, the rail.
-// TODO(span-popover): opening a span writes `?span=`; the inspection popover is not ported.
 
 type H = HtmlBuilder<Message>
 

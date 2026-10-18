@@ -7,6 +7,7 @@ import * as FilterSections from "../../../ui/filters/filter-sections"
 import { HistogramMessage } from "../../../ui/filters/range-histogram"
 import { SignalPresences } from "../../kit/signal-presence"
 import { DetectedModel } from "../kit/detected-models"
+import { VirtualWindow } from "../kit/virtualize"
 import { Distributions, Facets, RangeKey, SessionsPage } from "./model"
 
 /** `Load` on entry; `Refresh` from Reload (re-resolve the week, revalidate every slot). */
@@ -42,6 +43,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchTabTools: result(Schema.Number),
 	CompletedDetectModels: { key: Schema.String, models: Schema.Array(DetectedModel) },
 	PaintedTable: {},
+	ChangedListWindow: { window: VirtualWindow },
 	PaintedEmptyState: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ReachedListEnd: {},

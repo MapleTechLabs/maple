@@ -50,7 +50,7 @@ export const textHash = (text: string): string => {
 }
 
 /** A message body as the transcript shows it: the markdown text it lays out, if it lays any out. */
-const shownMarkdown = (model: Model, key: string, text: string): ReadonlyArray<string> => {
+export const shownMarkdown = (model: Model, key: string, text: string): ReadonlyArray<string> => {
 	if (disclosed(model.openRows, `${key}:raw`, false) || messageBody(text).rendered !== "md") return []
 	const shown = disclosed(model.openRows, `${key}:text`, false) ? text : previewOf(text)
 	return shown.length > RENDER_LIMIT_CHARS ? [] : [shown]

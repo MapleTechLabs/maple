@@ -40,6 +40,7 @@ export const clampedBody = (
 		codeActions: {
 			onCopy: (code) => Message.ClickedCodeAction({ action: "copy", code, language: "" }),
 			onDownload: (code, language) => Message.ClickedCodeAction({ action: "download", code, language }),
+			copiedCode: model.codeCopy.code,
 		},
 	})
 
@@ -65,7 +66,18 @@ export const messageBodyView = (
 export const payloadCopyButton = (
 	h: H,
 	model: Model,
-	options: Readonly<{ key: string; value: string; label: string; className?: string }>,
+	options: Readonly<{
+		key: string
+		value: string
+		label: string
+		className?: string
+		/** `tooltip` (the transcript's); the span popover's copies have none. */
+		hasTooltip?: boolean
+		idleLabel?: string
+		iconSize?: number
+		variant?: "outline" | "ghost"
+		size?: "sm" | "icon-xs"
+	}>,
 ): Html =>
 	CopyButton.view(h, {
 		model: model.payloadCopy.key === options.key ? model.payloadCopy.copy : CopyButton.init(),
@@ -73,7 +85,11 @@ export const payloadCopyButton = (
 		value: options.value,
 		label: options.label,
 		className: cn(options.className),
+		idleLabel: options.idleLabel,
+		iconSize: options.iconSize,
+		variant: options.variant,
+		size: options.size,
 		// TODO(tooltip): the copy's tooltip is drawn as its trigger.
-		slot: "tooltip-trigger",
-		attributes: [h.DataAttribute("base-ui-tooltip-trigger", "")],
+		slot: options.hasTooltip === false ? undefined : "tooltip-trigger",
+		attributes: options.hasTooltip === false ? [] : [h.DataAttribute("base-ui-tooltip-trigger", "")],
 	})

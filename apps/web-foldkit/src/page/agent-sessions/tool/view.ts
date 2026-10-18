@@ -27,11 +27,12 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { rangeOf } from "./update"
 import { detailCharts, GRID_TOKENS } from "./view-charts"
-import { errorsTable } from "./view-errors"
+import { errorsTable, prepare } from "./view-errors"
+import * as ErrorModal from "./error-modal-model"
+import * as ErrorModalView from "./view-error-modal"
 import { sessionsPanel } from "./view-sessions"
 
 // `ToolDetailPage` / `ToolDetailBody` (routes/agent-sessions/tools/$toolName.tsx) and `ToolDetailView`.
-// TODO(error-modal): `?error=` opens `ToolErrorModal` in legacy; the row writes the param, the modal is not ported.
 // TODO(tooltip): the description's tooltip is drawn as its trigger.
 
 type H = HtmlBuilder<Message>
@@ -42,7 +43,7 @@ const failureOf = <A>(data: AsyncData.AsyncData<A, LoadFailure>): LoadFailure | 
 const isPendingFirst = <A>(data: AsyncData.AsyncData<A, LoadFailure>): boolean =>
 	!AsyncData.hasData(data) && failureOf(data) === undefined
 
-const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, controls: Html): Html => {
+const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, controls: Html | undefined): Html => {
 	const { current } = totals
 	const subtitle = [
 		`${formatToolCount(current.calls)} ${pluralize(current.calls, "call")} in ${formatToolCount(current.sessions)} ${pluralize(current.sessions, "session")}`,
@@ -83,7 +84,7 @@ const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, cont
 					h.p([h.Class("font-mono text-ui text-muted-foreground")], [subtitle.join(" · ")]),
 				],
 			),
-			h.div([h.Class("flex shrink-0 items-center gap-2 pt-1")], [controls]),
+			...(controls === undefined ? [] : [h.div([h.Class("flex shrink-0 items-center gap-2 pt-1")], [controls])]),
 		],
 	)
 }
@@ -144,27 +145,30 @@ const timeActions = (h: H, model: Model): Html =>
 			}),
 	})
 
-const loadedView = (h: H, model: Model, totals: TotalsResult, inputs: PageViewInputs): Html => {
+const loadedView = (
+	h: H,
+	model: Model,
+	totals: TotalsResult,
+	timeZone: string,
+	isRoute: boolean,
+): Html => {
 	const { window, themeColors } = model
 	if (window === null || themeColors === null) return h.empty
-	const timeZone = inputs.context.timeZone
 	const isWaiting = AsyncData.isRefreshing(model.totals.data)
 	const range = rangeOf(window)
 	const series = Option.match(AsyncData.getData(model.series.data), {
 		onNone: (): ReadonlyArray<ToolSeriesPoint> => [],
+		// The route fills empty buckets; the lab hands the view its fixture's series as they are.
 		onSome: (value) =>
-			fillSeriesBuckets(
-				value.data,
-				range.startMs,
-				range.endMs,
-				chartBucketSeconds(range.startMs, range.endMs),
-			),
+			isRoute
+				? fillSeriesBuckets(value.data, range.startMs, range.endMs, chartBucketSeconds(range.startMs, range.endMs))
+				: value.data,
 	})
 	const sessions = AsyncData.getOrElse(model.sessions.data, () => ({ data: [] })).data
 	return h.div(
 		[h.Class("flex flex-col")],
 		[
-			header(h, model, totals, timeZone, timeActions(h, model)),
+			header(h, model, totals, timeZone, isRoute ? timeActions(h, model) : undefined),
 			toolbar(h, model, isWaiting),
 			scopeRow(h, {
 				chips: model.search.model === undefined ? [] : [{ kind: "model", value: model.search.model }],
@@ -197,8 +201,46 @@ const loadedView = (h: H, model: Model, totals: TotalsResult, inputs: PageViewIn
 				nowMs: model.nowMs,
 				timeZone,
 			}),
+			errorModalView(h, model, totals, range, timeZone),
 		],
 	)
+}
+
+/** `ErrorModal`: mounted from the row, so a stale `?error=` the window no longer holds opens nothing. */
+const errorModalView = (
+	h: H,
+	model: Model,
+	totals: TotalsResult,
+	range: Readonly<{ startMs: number; endMs: number }>,
+	timeZone: string,
+): Html => {
+	const rows = AsyncData.getOrElse(model.errors.data, () => ({ data: [] })).data
+	const prepared = prepare(rows, range).rows
+	const index = prepared.findIndex((row) => row.fingerprint === model.errorModal.fingerprint)
+	const group = prepared[index]
+	return h.submodel({
+		slotId: "agent-tool-error-modal-root",
+		model: model.errorModal,
+		view: ErrorModalView.view,
+		toParentMessage: (message: ErrorModal.Message) => Message.GotErrorModalMessage({ message }),
+		viewInputs: {
+			inputs:
+				group === undefined
+					? undefined
+					: {
+							tool: model.toolName,
+							group,
+							position: { index, total: prepared.length },
+							toolFailures: rows.reduce((sum, row) => sum + row.calls, 0),
+							toolCalls: totals.current.calls,
+							range,
+							session: model.search.session,
+							variant: model.search.variant,
+							timeZone,
+							nowMs: model.nowMs,
+						},
+		},
+	})
 }
 
 const loadingView = (h: H): Html =>
@@ -207,20 +249,27 @@ const loadingView = (h: H): Html =>
 		[skeleton(h, "h-14 w-full max-w-2xl"), skeleton(h, "h-64"), skeleton(h, "h-64")],
 	)
 
+/** `ResultView` over the totals read; the lab draws it without the route's time controls. */
+export const toolDetailBody = (
+	h: H,
+	model: Model,
+	options: Readonly<{ timeZone: string; isRoute: boolean }>,
+): Html =>
+	AsyncData.matchData(model.totals.data, {
+		onEmpty: () => loadingView(h),
+		onFailure: (failure) => errorState(h, { failure, title: `Failed to load ${model.toolName}` }),
+		onData: (totals) =>
+			model.themeColors === null || model.chartRuntime._tag === "Loading"
+				? loadingView(h)
+				: loadedView(h, model, totals, options.timeZone, options.isRoute),
+	})
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: GRID_TOKENS }))],
 		[
 			dashboardPage(h, { scrollClassName: "p-0" }, [
-				AsyncData.matchData(model.totals.data, {
-					onEmpty: () => loadingView(h),
-					onFailure: (failure) =>
-						errorState(h, { failure, title: `Failed to load ${model.toolName}` }),
-					onData: (totals) =>
-						model.themeColors === null || model.chartRuntime._tag === "Loading"
-							? loadingView(h)
-							: loadedView(h, model, totals, inputs),
-				}),
+				toolDetailBody(h, model, { timeZone: inputs.context.timeZone, isRoute: true }),
 			]),
 		],
 	),

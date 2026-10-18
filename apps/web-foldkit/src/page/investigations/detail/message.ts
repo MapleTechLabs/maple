@@ -5,6 +5,7 @@ import * as Canvas from "../../../service-map/xyflow/canvas"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as Tooltip from "../../../ui/tooltip"
+import { Message as ConversationMessage } from "../../chat/conversation/message"
 import { Escalation, LogBucket, Sync, TracesRow } from "./model"
 
 const result = <A extends Schema.Top>(schema: A) => ({ key: Schema.String, result: Schema.Result(schema, LoadFailure) })
@@ -30,5 +31,12 @@ export const Message = defineMessageUnion({
 	GotActionSheetMessage: { message: Dialog.Message },
 	GotCanvasMessage: { message: Canvas.Message },
 	GotTraceTooltipMessage: { message: Tooltip.Message },
+	CompletedPreloadTrace: {},
+	GotConversationMessage: { message: ConversationMessage },
+	ClickedReportAction: { index: Schema.Number },
+	GotReportSheetMessage: { message: Dialog.Message },
+	CompletedMountScroller: {},
+	CompletedLoadKnownServices: { services: Schema.Array(Schema.String) },
+	CheckedTipFocus: { triggerId: Schema.String, isFocusVisible: Schema.Boolean },
 })
 export type Message = typeof Message.Type

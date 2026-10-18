@@ -9,6 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
+import { orderedSearch } from "../../../route/tanstack-search"
 import { badge } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
@@ -41,13 +42,14 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 			h.Class(
 				"relative flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none",
 			),
+			// `{ ...sessionLinkWindow(session), tool, view }` in that order, as the legacy link writes it.
 			h.Href(
-				hrefOf(
-					AppRoute.AgentSession({
-						sessionId: session.sessionId,
-						search: { ...sessionLinkWindow(session), tool, view: "trace" },
-					}),
-				),
+				`${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch([
+					["t", sessionLinkWindow(session).t],
+					["end", sessionLinkWindow(session).end],
+					["tool", tool],
+					["view", "trace"],
+				])}`,
 			),
 		],
 		[
