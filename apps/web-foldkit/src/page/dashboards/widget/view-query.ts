@@ -11,7 +11,11 @@ import { textarea } from "../../../ui/textarea"
 import { textInput } from "../../kit/query-builder/parts"
 import { queryPanelView } from "../../kit/query-builder/view"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
-import { isNote, isBuilderPanel, validationErrorOf } from "./lowering"
+import { toPanelType } from "../kit/chart-registry"
+import type { EditorState } from "./editor-state"
+import { isNote, isProductEventsFunnel, validationErrorOf } from "./lowering"
+import { listPanel } from "./view-list"
+import { funnelPanel, pathsPanel } from "./view-panels"
 import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
 import { rawSqlEditor } from "./view-sql"
 import { Message } from "./message"
@@ -45,7 +49,9 @@ const queryPanel = (
 			metricOptions: model.metricOptions?.options ?? [],
 			metricSearch: model.metricSearch,
 			metricBreakdownKeys:
-				query.dataSource === "metrics" ? (model.metricKeys[`${query.metricName}::${query.metricType}`] ?? []) : [],
+				query.dataSource === "metrics"
+					? (model.metricKeys[`${query.metricName}::${query.metricType}`] ?? [])
+					: [],
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 	})
@@ -177,17 +183,7 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 	const error = validationErrorOf(state)
 	// A note has neither a query nor SQL: its body editor replaces both.
 	const isNoteEditor = isNote(state)
-	if (!isNoteEditor && !isBuilderPanel(state))
-		return h.div(
-			[h.Class("p-6")],
-			[
-				// TODO(widget-editor): the stat, gauge, table, list, breakdown, funnel and paths editors.
-				h.p(
-					[h.Class("text-muted-foreground text-xs")],
-					[`Editing ${state.visualization} widgets is not ported yet.`],
-				),
-			],
-		)
+	const panel = toPanelType(state.visualization, state.chartId)
 	return h.div(
 		[h.Class("p-6 space-y-6"), h.OnFocusEnter(Message.FocusedQueryEditor())],
 		[
@@ -208,72 +204,84 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 											[error],
 										),
 									]),
-							h.div(
-								[h.Class("space-y-3")],
-								state.queries.map((query, index) =>
-									queryPanel(
-										h,
-										model,
-										query,
-										index,
-										state.queries.length > 1,
-										autoIntervalLabel(model, timeZone),
-									),
-								),
-							),
-							...(state.formulas.length === 0
-								? []
-								: [
-										h.div(
-											[h.Class("space-y-3")],
-											state.formulas.map((formula) => formulaPanel(h, formula)),
-										),
-									]),
-							h.div(
-								[h.Class("flex items-center gap-3")],
-								[
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											attributes: [h.OnClick(Message.ClickedAddQuery())],
-										},
-										["+ Query"],
-									),
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											attributes: [h.OnClick(Message.ClickedAddFormula())],
-										},
-										["+ Formula"],
-									),
-									button(
-										h,
-										{
-											size: "sm",
-											isDisabled: error !== null,
-											attributes: [h.OnClick(Message.ClickedRunPreview())],
-										},
-										["Run preview"],
-									),
-									// Two text nodes once there are formulas, as legacy renders them.
-									h.span(
-										[h.Class("text-2xs text-muted-foreground ml-auto")],
-										[
-											state.queries.map((query) => query.name).join(", "),
-											...(state.formulas.length === 0
-												? []
-												: [
-														`, ${state.formulas.map((formula) => formula.name).join(", ")}`,
-													]),
-										],
-									),
-								],
-							),
+							...(panel === "list"
+								? listPanel(h, model, state)
+								: panel === "paths"
+									? pathsPanel(h, model, state)
+									: isProductEventsFunnel(state)
+										? funnelPanel(h, model, state)
+										: queryPanels(h, model, state, timeZone)),
 						]),
 		],
 	)
+}
+
+/** The query panels, formula panels and the toolbar under them. */
+const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): ReadonlyArray<Html> => {
+	const error = validationErrorOf(state)
+	return [
+		h.div(
+			[h.Class("space-y-3")],
+			state.queries.map((query, index) =>
+				queryPanel(
+					h,
+					model,
+					query,
+					index,
+					state.queries.length > 1,
+					autoIntervalLabel(model, timeZone),
+				),
+			),
+		),
+		...(state.formulas.length === 0
+			? []
+			: [
+					h.div(
+						[h.Class("space-y-3")],
+						state.formulas.map((formula) => formulaPanel(h, formula)),
+					),
+				]),
+		h.div(
+			[h.Class("flex items-center gap-3")],
+			[
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						attributes: [h.OnClick(Message.ClickedAddQuery())],
+					},
+					["+ Query"],
+				),
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						attributes: [h.OnClick(Message.ClickedAddFormula())],
+					},
+					["+ Formula"],
+				),
+				button(
+					h,
+					{
+						size: "sm",
+						isDisabled: error !== null,
+						attributes: [h.OnClick(Message.ClickedRunPreview())],
+					},
+					["Run preview"],
+				),
+				// Two text nodes once there are formulas, as legacy renders them.
+				h.span(
+					[h.Class("text-2xs text-muted-foreground ml-auto")],
+					[
+						state.queries.map((query) => query.name).join(", "),
+						...(state.formulas.length === 0
+							? []
+							: [`, ${state.formulas.map((formula) => formula.name).join(", ")}`]),
+					],
+				),
+			],
+		),
+	]
 }

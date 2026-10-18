@@ -61,6 +61,8 @@ export interface ChartHostCallbacks {
 	readonly onFocusChange: (maybeKey: Option.Option<string>) => void
 	readonly onTooltipChange: (maybeTooltip: Option.Option<ChartTooltip>) => void
 	readonly onRender: (bounds: ChartBounds, timeAxis: Option.Option<TimeAxis>) => void
+	/** A library-drawn legend (`interactiveColorLegend`) toggled `key` of `keys`. */
+	readonly onLegendToggle?: (key: string, keys: ReadonlyArray<string>) => void
 }
 
 export interface ChartHostOptions {
@@ -77,7 +79,7 @@ export interface ChartHost {
 	readonly destroy: () => void
 }
 
-const hostFor = <S extends ChartSpec, TDatum, X extends ChartValue, Y extends ChartValue>(
+export const hostFor = <S extends ChartSpec, TDatum, X extends ChartValue, Y extends ChartValue>(
 	container: HTMLElement,
 	initialSpec: S,
 	initialHeight: number,
@@ -130,7 +132,7 @@ const hostFor = <S extends ChartSpec, TDatum, X extends ChartValue, Y extends Ch
 	}
 }
 
-const variant =
+export const variant =
 	<Tag extends ChartSpec["_tag"]>(tag: Tag) =>
 	(spec: ChartSpec): Option.Option<Extract<ChartSpec, { readonly _tag: Tag }>> =>
 		Option.liftPredicate(
@@ -203,4 +205,6 @@ export const createChartHost = (
 		ToolSeries: (series) =>
 			hostFor(container, series, height, variant("ToolSeries"), buildToolSeries, options),
 		Heatmap: (heatmap) => hostFor(container, heatmap, height, variant("Heatmap"), buildHeatmap, options),
+		// Drawn by the lab's host (`MountChart host: "lab"`); this host has no definition for it.
+		LabSpike: () => ({ update: () => false, destroy: () => undefined }),
 	})

@@ -43,6 +43,8 @@ export const PositionConfig = Schema.Struct({
 	adaptiveOrigin: Schema.Boolean,
 	/** A context menu shifts along the cross axis instead of flipping (`shift.crossAxis`). */
 	shiftCrossAxis: Schema.Boolean,
+	/** `lazyFlip` (Combobox): once flipped, the rendered side becomes the preferred one for this open. */
+	lazyFlip: Schema.Boolean,
 })
 export type PositionConfig = typeof PositionConfig.Type
 
@@ -54,6 +56,7 @@ export const positionDefaults = {
 	fallbackAxisSide: "end",
 	adaptiveOrigin: false,
 	shiftCrossAxis: false,
+	lazyFlip: false,
 } as const satisfies Partial<PositionConfig>
 
 /** Where the popup rendered; `isPlacedInstead` when a `placeInstead` hook placed it. */
@@ -209,13 +212,15 @@ export const anchorPosition = (
 					side: config.side,
 					align: config.align,
 					isPlacedInstead: false,
+					/** Base UI's `mountSide`: the placement asked for; the flip padding keeps `config.side`. */
+					preferredSide: config.side,
 				}
 				floating.style.position = config.positionMethod
 				floating.style.top = "0px"
 				floating.style.left = "0px"
 				const update = () => {
 					computePosition(reference, floating, {
-						placement: placementOf(config.side, config.align),
+						placement: placementOf(state.preferredSide, config.align),
 						strategy: config.positionMethod,
 						middleware: middlewareFor(floating, config),
 					}).then(({ x, y, placement }) => {
@@ -225,6 +230,7 @@ export const anchorPosition = (
 						const side = sideOf(placement)
 						afterPlace(floating, side)
 						const align = alignOf(placement)
+						if (config.lazyFlip && side !== state.preferredSide) state.preferredSide = side
 						const isSame =
 							side === state.side &&
 							align === state.align &&

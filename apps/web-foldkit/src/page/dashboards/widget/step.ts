@@ -6,6 +6,7 @@ import {
 	STAT_AGGREGATES,
 } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
+import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
 import { Option, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "../../../charts/chart"
@@ -19,6 +20,8 @@ import { GenerateId } from "./command"
 import { askMetricOptions, optionsOf, pickedMetric } from "./metric-options"
 import { removeQuery, setAggregation, setDataSource, updateQuery, withInferredUnit } from "./edits"
 import type { EditorState } from "./editor-state"
+import { applyProductEdit } from "./product-apply"
+import { BREAKDOWN_ATTRIBUTE, BREAKDOWN_SELECT_ID, breakdownPicked, productSelectEdit } from "./product-selects"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { editState, type Return, runPreview } from "./update"
@@ -36,10 +39,20 @@ const applySelectValue = (state: EditorState, id: string, value: string): Editor
 			return { ...state, statAggregate: STAT_AGGREGATES.find((aggregate) => aggregate === value) ?? state.statAggregate }
 		case "stat-value-field":
 			return { ...state, statValueField: value }
+		// The step editor's source: any other brings the query set back, retargeted to it.
+		case "funnel-source": {
+			const first = state.queries[0]
+			const source = QUERY_BUILDER_DATA_SOURCES.find((candidate) => candidate === value)
+			if (first === undefined || source === undefined || source === "product_events") return state
+			return setDataSource({ ...state, funnel: { ...state.funnel, source: "query_set" } }, first.id, source)
+		}
 		case "heatmap-colors":
 			return { ...state, heatmapColorScale: HEATMAP_COLOR_SCALES.find((scale) => scale === value) ?? state.heatmapColorScale }
 		default:
-			return state
+			return Option.match(productSelectEdit(id, value), {
+				onNone: () => state,
+				onSome: (edit) => applyProductEdit(state, edit),
+			})
 	}
 }
 
@@ -57,7 +70,17 @@ export const selectStep = (
 	)
 	if (next.outMessage === undefined) return { model: lifted, commands }
 	const value = next.outMessage.value
-	const edited = editState(lifted, context, (state) => applySelectValue(state, id, value))
+	// `BreakdownPicker` holds "Attribute..." locally; only a typed key becomes a breakdown.
+	const picked: Model =
+		id === BREAKDOWN_SELECT_ID
+			? {
+					...lifted,
+					breakdownAttribute: { ...lifted.breakdownAttribute, isActive: value === BREAKDOWN_ATTRIBUTE },
+				}
+			: lifted
+	const edited = editState(picked, context, (state) =>
+		id === BREAKDOWN_SELECT_ID ? breakdownPicked(state, value, picked.breakdownAttribute.key) : applySelectValue(state, id, value),
+	)
 	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
 }
 
@@ -136,9 +159,8 @@ export const timeRangeModeStep = (model: Model, context: PageContext, mode: "das
 
 const decodeIso = Schema.decodeUnknownOption(IsoDateTimeString)
 
-/** `TypePicker`. TODO(widget-editor): list, funnel and paths are not configurable here yet. */
-export const isConfigurablePanel = (panel: string): panel is PanelType =>
-	isPanelType(panel) && panel !== "list" && panel !== "funnel" && panel !== "paths"
+/** `TypePicker`: every panel type. */
+export const isConfigurablePanel = (panel: string): panel is PanelType => isPanelType(panel)
 
 export const chartStep = (model: Model, message: Chart.Message): Return => {
 	const next = Chart.update(model.chart, message)

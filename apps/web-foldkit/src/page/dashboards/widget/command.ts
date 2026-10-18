@@ -7,6 +7,19 @@ import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-l
 import { errorMessageOf, mutateDashboard } from "../kit/store"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { Message } from "./message"
+import { fetchSuggestions, SuggestionLookup } from "./suggestions"
+
+/** One `useFunnelSuggestions` lookup over the preview's window. */
+export const FetchSuggestions = Command.define("FetchWidgetEditorSuggestions", {
+	args: { key: Schema.String, lookup: SuggestionLookup, window: TimeWindow },
+	messages: [Message.CompletedFetchSuggestions],
+	execute: ({ key, lookup, window }) =>
+		fetchSuggestions(lookup, window).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSuggestions({ key, lookup, result })),
+		),
+})
 
 export const ReadClock = Command.define("ReadWidgetEditorClock", {
 	messages: [Message.CompletedReadClock],

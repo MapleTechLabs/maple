@@ -384,6 +384,17 @@ export const ChartSpec = defineTaggedUnion({
 		foreground: Schema.String,
 		showTooltip: Schema.Boolean,
 	},
+	/**
+	 * A `/lab/charts` prototype, drawn by the lab's own host (`lab/charts/spike-host.ts`): the arm
+	 * names its fixture and definition; the legend's emphasis and the resolved tokens ride along.
+	 */
+	LabSpike: {
+		arm: Schema.String,
+		colors: Schema.Record(Schema.String, Schema.String),
+		highlighted: Nullable(Schema.String),
+		active: Nullable(Schema.String),
+		hidden: Schema.Array(Schema.String),
+	},
 })
 export type ChartSpec = typeof ChartSpec.Type
 
@@ -417,6 +428,8 @@ export const ChartTooltip = defineTaggedUnion({
 				value: Schema.String,
 			}),
 		),
+		/** A closing total row under the series (the lab's stacked bar). */
+		total: Schema.optionalKey(Schema.String),
 	},
 })
 export type ChartTooltip = typeof ChartTooltip.Type

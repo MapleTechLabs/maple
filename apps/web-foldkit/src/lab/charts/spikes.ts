@@ -1,4 +1,6 @@
 import { histogramSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import { formatNumber } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -7,6 +9,8 @@ import { ChartSpec, ChartTooltip } from "../../charts/chart-spec"
 import { countTooltipBody } from "../../charts/histogram-chart"
 import { formatInterval } from "../../charts/histogram-format"
 import { plotFrame } from "../../charts/plot-frame"
+import { statsLegend } from "../../charts/plot-legend"
+import { muteColor } from "../../charts/sequential-colors"
 import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
 
 // Ports of `PieSpike` (apps/web/src/lab/charts/pie-spike.tsx) and `HistogramSpike`
@@ -16,6 +20,9 @@ export interface PieSpikeRow {
 	readonly name: string
 	readonly value: number
 }
+
+/** `MUTED_COLOR_AMOUNT` (plot-legend.tsx). */
+const MUTED_COLOR_AMOUNT = 0.78
 
 const SLICE_TOKENS = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"] as const
 export const SPIKE_TOKENS: ReadonlyArray<string> = [...SLICE_TOKENS]
@@ -81,6 +88,55 @@ export const pieSpikeView = Submodel.defineView<Model, Message, PieSpikeInputs>(
 		tooltipBody: (portal) =>
 			Option.flatMap(model.tooltip, (tooltip) => pieSpikeTooltip(h, tooltip, portal)),
 	})
+})
+
+/**
+ * `PieLegendSpike`: the pie beside its stats legend. Plot focus and legend hover share the active
+ * slice (it grows); a legend click pins one slice and mutes the rest by colour.
+ */
+export const pieLegendSpikeView = Submodel.defineView<Model, Message, PieSpikeInputs>((model, inputs, h) => {
+	const colorFor = sliceColorFor(inputs.theme, inputs.rows)
+	const background = resolveColor(inputs.theme, "--background")
+	const emphasised = Option.match(model.highlightedKey, {
+		onNone: () => colorFor,
+		onSome: (highlighted) => (name: string) =>
+			name === highlighted ? colorFor(name) : muteColor(colorFor(name), background, MUTED_COLOR_AMOUNT),
+	})
+	const total = inputs.rows.reduce((sum, row) => sum + row.value, 0)
+	const legend = statsLegend(h, {
+		series: inputs.rows.map((row) => ({
+			key: row.name,
+			label: row.name,
+			color: colorFor(row.name),
+			value: formatNumber(row.value),
+			secondary: total === 0 ? "—" : `${Math.round((row.value / total) * 1000) / 10}%`,
+		})),
+		highlighted: model.highlightedKey,
+		active: model.activeKey,
+		label: "Share by category",
+	})
+	return h.div(
+		[h.Class(cn("flex min-h-0 items-center gap-3", inputs.className))],
+		[
+			plotFrame(h, {
+				chartId: inputs.chartId,
+				className: "h-full min-w-0 flex-1",
+				ariaLabel: "Share by category",
+				spec: ChartSpec.PieSpike({
+					rows: inputs.rows.map((row) => ({
+						name: row.name,
+						value: row.value,
+						color: emphasised(row.name),
+					})),
+					donut: inputs.donut ?? true,
+					activeName: Option.getOrNull(model.activeKey),
+				}),
+				tooltipBody: (portal) =>
+					Option.flatMap(model.tooltip, (tooltip) => pieSpikeTooltip(h, tooltip, portal)),
+			}),
+			h.div([h.Class("w-56 shrink-0 overflow-auto")], Option.toArray(legend)),
+		],
+	)
 })
 
 /** `expandSampleData`: the pre-bucketed fixture spread back into evenly spaced raw observations. */

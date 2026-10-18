@@ -42,13 +42,15 @@ const picker = (h: H, model: Model, query: MetricsQuery, options: ReadonlyArray<
 		slotId: `${model.slotPrefix}-metric-${query.id}`,
 		model: comboOf(model.metricPickers[query.id], metricPickerIdOf(query.id), value),
 		view: ComboboxView.view,
-		toParentMessage: (message) => Message.GotMetricMessage({ queryId: query.id, message }),
+		toParentMessage: (message) => Message.GotMetricMessage({ queryId: query.id, value, message }),
 		viewInputs: {
 			items: listed.map((option) => option.value),
 			placeholder: "Search metrics...",
 			// `MetricOptionsEmpty` replaces the list only when nothing is listed.
 			emptyText: listed.length > 0 ? "" : term === "" ? "No metrics found." : `No metric name contains "${term}".`,
 			highlightsSelected: true,
+			// Measured: legacy's positioner resolves the input (30 px), not the input group.
+			anchorsInput: true,
 			renderItem: (item) => [listed.find((option) => option.value === item)?.label ?? item],
 			isUnfiltered: true,
 			className: "h-8 flex-1 text-xs",
@@ -76,6 +78,8 @@ const breakdown = (h: H, model: Model, query: MetricsQuery, keys: ReadonlyArray<
 			placeholder: "Search fields...",
 			emptyText: "",
 			highlightsSelected: true,
+			// Measured: legacy's positioner resolves the input (30 px), not the input group.
+			anchorsInput: true,
 			renderItem: (item) => [item === NONE ? "Everything (no breakdown)" : item],
 			isUnfiltered: true,
 			className: "h-8 w-[220px] text-xs",

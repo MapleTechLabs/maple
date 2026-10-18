@@ -1,9 +1,16 @@
 import { type DashboardDocument, type PanelType, STAT_AGGREGATES, WIDGET_TYPES } from "@maple/domain/http"
-import { BREAKDOWN_TAIL_LIMIT, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
+import {
+	BREAKDOWN_TAIL_LIMIT,
+	buildTimeseriesQuerySpec,
+	createQueryDraft,
+	resetQueryForDataSource,
+} from "@maple/query-engine/query-builder"
 import {
 	dataSourceQuerySet,
 	dataSourceRouteParams,
 	dataSourceTransform,
+	makeProductEventsFunnelDataSource,
+	makeProductEventsPathsDataSource,
 	makeQueryDataSource,
 	makeStaticDataSource,
 } from "@maple/widgets/dashboard"
@@ -25,16 +32,27 @@ import {
 	pointsModeFromShowPoints,
 	showPointsFromPointsMode,
 } from "./editor-state"
+import { listDataSourceOf, listDisplayOf, listInitialState } from "./lowering-list"
+import {
+	defaultFunnelDraft,
+	defaultPathsDraft,
+	funnelDefinitionOf,
+	funnelInitialState,
+	funnelValidationError,
+	pathsDefinitionOf,
+	pathsInitialState,
+	pathsValidationError,
+} from "./lowering-product"
 
 // The editor state read out of a stored widget and lowered back (`toInitialState`,
 // `buildWidgetDataSource`, `buildWidgetDisplay`, `validateQueries` in widget-builder-utils.ts, with
-// each type's halves from widgets/types/*.tsx). TODO(widget-editor): list, funnel and paths.
+// each type's halves from widgets/types/*.tsx).
 
 export type Widget = DashboardDocument["widgets"][number]
 type Display = Widget["display"]
 type DataSource = Widget["dataSource"]
 
-/** The panel types whose queries this editor builds (`queryEditor: "builder"`, funnel aside). */
+/** The panel types whose queries this editor builds (`queryEditor: "builder"`). */
 const BUILDER_PANELS: ReadonlySet<PanelType> = new Set<PanelType>([
 	"line",
 	"bar",
@@ -46,6 +64,7 @@ const BUILDER_PANELS: ReadonlySet<PanelType> = new Set<PanelType>([
 	"hbar",
 	"heatmap",
 	"histogram",
+	"funnel",
 ])
 
 const panelOf = (state: Pick<EditorState, "visualization" | "chartId">): PanelType =>
@@ -56,6 +75,10 @@ export const isBuilderPanel = (state: Pick<EditorState, "visualization" | "chart
 
 export const isNote = (state: Pick<EditorState, "visualization" | "chartId">): boolean =>
 	panelOf(state) === "markdown"
+
+/** `isProductEventsFunnel`: fetched from its step definition, not its query set. */
+export const isProductEventsFunnel = (state: Pick<EditorState, "visualization" | "funnel">): boolean =>
+	state.visualization === "funnel" && state.funnel.source === "product_events"
 
 const legendOf = (legend: string | undefined): LegendPosition =>
 	legend === "hidden" ? "hidden" : legend === "right" ? "right" : legend === "visible" ? "bottom" : "hidden"
@@ -87,6 +110,17 @@ export const toInitialState = (widget: Widget): EditorState => {
 	const presentation = widget.display.chartPresentation
 	const isScalar = panel === "stat" || panel === "gauge"
 	const gauge = panel === "gauge" ? widget.display.gauge : undefined
+	const funnel = panel === "funnel" ? funnelInitialState(widget) : defaultFunnelDraft()
+	// A list's draft query only satisfies the state shape; a product-event funnel's placeholder reads product events.
+	const queries =
+		panel === "list"
+			? [createQueryDraft(0)]
+			: loaded !== null && loaded.queries.length > 0
+				? loaded.queries
+				: panel === "funnel" && funnel.source === "product_events"
+					? [resetQueryForDataSource(createQueryDraft(0), "product_events")]
+					: // A widget from before the query builder reads its route params as query A.
+						[legacyQueryDraft(dataSourceRouteParams(widget.dataSource) ?? {})]
 	return {
 		visualization: normalized.visualization,
 		title: widget.display.title ?? "",
@@ -95,12 +129,8 @@ export const toInitialState = (widget: Widget): EditorState => {
 		chartId: normalized.chartId ?? "query-builder-line",
 		stacked: widget.display.stacked ?? false,
 		curveType: widget.display.curveType ?? "linear",
-		// A widget from before the query builder reads its route params as query A.
-		queries:
-			loaded !== null && loaded.queries.length > 0
-				? loaded.queries
-				: [legacyQueryDraft(dataSourceRouteParams(widget.dataSource) ?? {})],
-		formulas: loaded?.formulas ?? [],
+		queries,
+		formulas: panel === "list" ? [] : (loaded?.formulas ?? []),
 		comparisonMode: comparison.mode === "previous_period" ? "previous_period" : "none",
 		includePercentChange: comparison.includePercentChange ?? true,
 		unit: widget.display.unit ?? inferDefaultUnitForQueries(loaded?.queries ?? []) ?? "number",
@@ -119,6 +149,9 @@ export const toInitialState = (widget: Widget): EditorState => {
 		heatmapColorScale: panel === "heatmap" ? (widget.display.heatmap?.colorScale ?? null) : null,
 		heatmapScaleType: panel === "heatmap" ? (widget.display.heatmap?.scaleType ?? "linear") : "linear",
 		markdownContent: widget.display.markdown?.content ?? "",
+		...listInitialState(panel === "list" ? widget : null),
+		funnel,
+		paths: panel === "paths" ? pathsInitialState(widget) : defaultPathsDraft(),
 	}
 }
 
@@ -198,6 +231,14 @@ export const buildDataSource = (state: EditorState): DataSource => {
 			return breakdownOf(state)
 		case "histogram":
 			return histogramOf(state)
+		case "list":
+			return listDataSourceOf(state)
+		case "funnel":
+			return isProductEventsFunnel(state)
+				? makeProductEventsFunnelDataSource(funnelDefinitionOf(state.funnel), timeseriesOf(state).sharedTransform)
+				: breakdownOf(state)
+		case "paths":
+			return makeProductEventsPathsDataSource(pathsDefinitionOf(state.paths), timeseriesOf(state).sharedTransform)
 		default:
 			return timeseriesOf(state).base
 	}
@@ -227,6 +268,19 @@ const tableColumnsOf = (state: EditorState): Display["columns"] => {
 	]
 }
 
+/** `display.funnel`: the definition on a product-event funnel; only the rendering flags on a query set. */
+const funnelDisplayOf = (state: EditorState): Display["funnel"] => {
+	const { showStepPercent, variant } = state.funnel
+	const stepPercent = showStepPercent === null ? undefined : { showStepPercent }
+	if (isProductEventsFunnel(state)) {
+		const definition = funnelDefinitionOf(state.funnel)
+		return { ...stepPercent, ...definition, steps: [...definition.steps] }
+	}
+	return stepPercent !== undefined || variant !== "bars"
+		? { ...stepPercent, ...(variant !== "bars" ? { variant } : undefined) }
+		: undefined
+}
+
 /** Each type's `buildDisplay` additions (`extendDisplay` in widgets/types/*.tsx). */
 const ownDisplayOf = (state: EditorState): Partial<Display> => {
 	switch (panelOf(state)) {
@@ -253,6 +307,12 @@ const ownDisplayOf = (state: EditorState): Partial<Display> => {
 					scaleType: state.heatmapScaleType,
 				},
 			}
+		case "funnel":
+			return { funnel: funnelDisplayOf(state) }
+		case "paths": {
+			const { exclude, ...definition } = pathsDefinitionOf(state.paths)
+			return { paths: { ...definition, ...(exclude === undefined ? undefined : { exclude: [...exclude] }) } }
+		}
 		case "pie":
 		case "hbar":
 		case "histogram":
@@ -269,6 +329,8 @@ const ownDisplayOf = (state: EditorState): Partial<Display> => {
 
 /** `buildWidgetDisplay`: the shared base, then the panel type's own keys. */
 export const buildDisplay = (widget: Widget, state: EditorState): Display => {
+	// A list owns its whole display: nothing of the previous type survives.
+	if (panelOf(state) === "list") return listDisplayOf(state)
 	const showPoints = showPointsFromPointsMode(state.pointsMode)
 	const legend = state.legendPosition === "bottom" ? "visible" : state.legendPosition
 	const kept = Object.fromEntries(
@@ -280,8 +342,13 @@ export const buildDisplay = (widget: Widget, state: EditorState): Display => {
 	// An absent preference is an `undefined` key here; the write's JSON round trip drops it.
 	return {
 		...kept,
-		// Query-driven widgets saved untitled get a derived title; a note has no query to derive from.
-		title: title !== "" ? title : isNote(state) ? undefined : deriveDefaultWidgetTitle(state.queries),
+		// Query-driven widgets saved untitled get a derived title; notes and paths have no query to derive from.
+		title:
+			title !== ""
+				? title
+				: isNote(state) || panelOf(state) === "paths"
+					? undefined
+					: deriveDefaultWidgetTitle(state.queries),
 		description: description === "" ? undefined : description,
 		chartPresentation: {
 			...widget.display.chartPresentation,
@@ -296,7 +363,11 @@ export const buildDisplay = (widget: Widget, state: EditorState): Display => {
 
 /** `validateQueries` for a query-builder panel: the message that blocks Apply, or `null`. */
 export const validationErrorOf = (state: EditorState): string | null => {
-	if (isNote(state)) return null
+	const panelType = panelOf(state)
+	if (panelType === "paths") return pathsValidationError(state.paths)
+	// A list is configured by its own panel and a note never queries: neither has a query to check.
+	if (isNote(state) || panelType === "list") return null
+	if (isProductEventsFunnel(state)) return funnelValidationError(state.funnel)
 	const active = state.queries.filter((query) => query.enabled !== false)
 	if (active.length === 0) return "Add at least one query"
 	const invalid = active

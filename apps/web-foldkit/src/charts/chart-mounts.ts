@@ -19,6 +19,7 @@ type ChartMountMessage =
 	| typeof Message.RenderedPlot.Type
 	| typeof Message.ChangedChartFocus.Type
 	| typeof Message.ChangedChartTooltip.Type
+	| typeof Message.ToggledLegendSeries.Type
 
 const failed = (reason: string) => Message.FailedMountChart({ reason })
 
@@ -35,6 +36,8 @@ export const MountChart = Mount.defineStream("MountChart", {
 		renderer: ChartRenderer,
 		/** Report the plot rect and time axis (`RenderedPlot`) for an overlay. */
 		reportPlot: Schema.Boolean,
+		/** `"lab"`: the `/lab/charts` prototypes' host, loaded only there. */
+		host: Schema.optional(Schema.Literal("lab")),
 	},
 	messages: [
 		Message.CompletedMountChart,
@@ -42,11 +45,14 @@ export const MountChart = Mount.defineStream("MountChart", {
 		Message.RenderedPlot,
 		Message.ChangedChartFocus,
 		Message.ChangedChartTooltip,
+		Message.ToggledLegendSeries,
 	],
-	execute: ({ element, chartId, ariaLabel, renderer, reportPlot }) =>
+	execute: ({ element, chartId, ariaLabel, renderer, reportPlot, host: hostKind }) =>
 		Stream.callback<ChartMountMessage>((queue) =>
 			Effect.acquireRelease(
-				Effect.tryPromise(() => import("./chart-host")).pipe(
+				Effect.tryPromise(() =>
+					hostKind === "lab" ? import("../lab/charts/spike-host") : import("./chart-host"),
+				).pipe(
 					Effect.flatMap(({ createChartHost }) =>
 						Effect.try(() => {
 							const host = element.querySelector<HTMLElement>(".ts-chart-host")
@@ -90,6 +96,8 @@ export const MountChart = Mount.defineStream("MountChart", {
 												queue,
 												Message.ChangedChartTooltip({ maybeTooltip }),
 											),
+										onLegendToggle: (key, keys) =>
+											Queue.offerUnsafe(queue, Message.ToggledLegendSeries({ key, keys })),
 										onRender: (bounds, timeAxis) => {
 											if (reportPlot) reportPlotOnce(bounds, timeAxis)
 											if (!anchor) return
