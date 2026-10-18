@@ -22,6 +22,8 @@ export interface PlotFrameInputs {
 	readonly overlay?: Html
 	/** The chart reports its plot geometry (`Message.RenderedPlot`) so the page can draw `overlay`. */
 	readonly reportPlot?: boolean
+	/** The `/lab/charts` prototypes' host (`MountChart host`). */
+	readonly host?: "lab"
 	/**
 	 * `renderTooltipBody(...)` for the current tooltip datum, `None` while the tooltip is hidden. The
 	 * body's root carries `portal`, the Mount that moves it into the library's tooltip shell.
@@ -56,6 +58,7 @@ const plotBox = (
 					ariaLabel: inputs.ariaLabel,
 					renderer,
 					reportPlot: inputs.reportPlot ?? false,
+					...(inputs.host === undefined ? undefined : { host: inputs.host }),
 				}),
 			),
 		],

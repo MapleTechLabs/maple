@@ -32,6 +32,8 @@ import { widgetShell } from "../../page/dashboards/kit/tile-shell"
 import { inlineCode } from "../../ui/inline-code"
 import { ARM_TITLES, type ChartsLabArm, SECTIONS } from "../charts/arms"
 import { histogramSpikeValues, histogramSpikeView, pieSpikeView, SPIKE_TOKENS } from "../charts/spikes"
+import { SPIKE_ARMS, SPIKE_TOKENS_ALL } from "../charts/spike-arms"
+import { spikeView } from "../charts/spike-view"
 import { defineLab } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 import * as Toast from "../../ui/toast"
@@ -97,12 +99,13 @@ const PORTED_ARMS: ReadonlyArray<ChartsLabArm> = [
 	"histogram-production",
 	"histogram-tanstack",
 ]
-const isPorted = (arm: ChartsLabArm): boolean => PORTED_ARMS.includes(arm)
+const isPorted = (arm: ChartsLabArm): boolean => PORTED_ARMS.includes(arm) || SPIKE_ARMS[arm] !== undefined
 
 const THEME_TOKENS: ReadonlyArray<string> = [
 	...new Set([
 		...PieChart.pieChartTokens(pieSampleData),
 		...SPIKE_TOKENS,
+		...SPIKE_TOKENS_ALL,
 		HistogramChart.HISTOGRAM_BAR_TOKEN,
 		...AreaChart.AREA_CHART_TOKENS,
 		...BarChart.BAR_CHART_TOKENS,
@@ -249,6 +252,20 @@ const chartNode = (
 		return timeseries.kind === "bar"
 			? [h.submodel({ ...common, view: BarChart.view, viewInputs: { ...base, stacked: true } })]
 			: [h.submodel({ ...common, view: AreaChart.view, viewInputs: { ...base, mark: timeseries.kind } })]
+	}
+	const spike = SPIKE_ARMS[arm]
+	if (spike !== undefined) {
+		const legend = spike.legend
+		const viewInputs = {
+			chartId,
+			arm,
+			theme,
+			tokens: spike.tokens,
+			ariaLabel: spike.ariaLabel,
+			className: "h-full w-full",
+			...(legend === undefined ? undefined : { legend: { label: legend.label, series: legend.series(theme) } }),
+		}
+		return [h.submodel({ ...common, view: spikeView, viewInputs })]
 	}
 	if (arm === "histogram-tanstack") {
 		const viewInputs = { chartId, values: histogramSpikeValues, theme, className: "h-full w-full" }
