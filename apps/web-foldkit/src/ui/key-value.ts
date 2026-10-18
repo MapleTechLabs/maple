@@ -73,6 +73,8 @@ export interface KeyValueCopy<M> {
 
 export interface KeyValueOptions<M> {
 	readonly label: string
+	/** A rich label (`label={<Eyebrow>…</Eyebrow>}`); `label` still names the copy button. */
+	readonly labelContent?: Html
 	readonly mono?: boolean
 	/** Adds a copy button; the caller's Model owns its status. */
 	readonly copy?: KeyValueCopy<M>
@@ -100,7 +102,10 @@ export const keyValue = <M>(h: HtmlBuilder<M>, options: KeyValueOptions<M>, chil
 			h.DataAttribute("slot", "key-value"),
 		],
 		[
-			h.dt([h.Class(cn(keyValueLabelStyles, keyValueLabelOverlineStyles))], [options.label]),
+			h.dt(
+				[h.Class(cn(keyValueLabelStyles, keyValueLabelOverlineStyles))],
+				[options.labelContent ?? options.label],
+			),
 			h.dd(
 				[
 					h.Class(
@@ -119,7 +124,7 @@ export const keyValue = <M>(h: HtmlBuilder<M>, options: KeyValueOptions<M>, chil
 						? []
 						: [
 								copyButton(h, {
-									label: options.label,
+									label: options.labelContent === undefined ? options.label : "value",
 									status: options.copy.status,
 									size: "icon-xs",
 									className: keyValueCopyButtonStyles,

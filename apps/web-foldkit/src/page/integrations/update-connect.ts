@@ -53,7 +53,14 @@ export const clickedConnect = (model: Model): Return => {
 export const succeededStart = (model: Model, context: PageContext, attempt: number): Return => {
 	const active = model.connect.active
 	return active !== null && active.attempt === attempt
-		? refreshProvider(withConnect(model, { isStarting: false }), context, active.provider)
+		? chain(withConnect(model, { isStarting: false }), [
+				(next) => refreshProvider(next, context, active.provider),
+				// PlanetScale's start invalidates every `planetscaleIntegration` read, the inventory too.
+				(next) =>
+					active.provider === "planetscale"
+						? requestStatus(next, context, "planetscaleDatabases", "Refresh")
+						: { model: next },
+			])
 		: { model }
 }
 

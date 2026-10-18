@@ -328,6 +328,62 @@ export const integrationsArea: AreaModule = {
 			{ failures: { "integrations.railwayStatus": persistenceFailure } },
 			"quiet",
 		),
+		page("planetscale", "PlanetScale (not connected)", "/integrations?integration=planetscale"),
+		page("planetscale-connect", "PlanetScale: connect", "/integrations?integration=planetscale", {
+			steps: (page) => page.getByRole("button", { name: "Connect PlanetScale" }).last().click(),
+		}),
+		page("planetscale-connected", "PlanetScale (connected)", "/integrations?integration=planetscale", {
+			dataset: "infra-integrations",
+		}),
+		page(
+			"planetscale-change-org",
+			"PlanetScale: change organization",
+			"/integrations?integration=planetscale",
+			{
+				dataset: "infra-integrations",
+				steps: (page) => page.getByRole("button", { name: "Change organization" }).click(),
+			},
+		),
+		page(
+			"planetscale-change-org-submit",
+			"PlanetScale: switch to another organization",
+			"/integrations?integration=planetscale",
+			{
+				dataset: "infra-integrations",
+				steps: async (page) => {
+					await page.getByRole("button", { name: "Change organization" }).click()
+					await page.getByRole("radio", { name: "acme-labs" }).check({ force: true })
+					await page.getByRole("button", { name: "Connect organization" }).click()
+				},
+			},
+		),
+		page(
+			"planetscale-rotate",
+			"PlanetScale: rotate the metrics token",
+			"/integrations?integration=planetscale",
+			{
+				dataset: "infra-integrations",
+				steps: (page) => page.getByRole("button", { name: "Rotate token" }).click(),
+			},
+		),
+		page(
+			"planetscale-rotate-submit",
+			"PlanetScale: save a new metrics token",
+			"/integrations?integration=planetscale",
+			{
+				dataset: "infra-integrations",
+				steps: async (page) => {
+					await page.getByRole("button", { name: "Rotate token" }).click()
+					await page.getByRole("textbox", { name: "Service token ID" }).fill("tok_parity")
+					await page.getByLabel("Service token secret").fill("pscale_tkn_parity")
+					await page.getByRole("button", { name: "Update token" }).click()
+				},
+			},
+		),
+		page("planetscale-webhook", "PlanetScale: webhook setup", "/integrations?integration=planetscale", {
+			dataset: "infra-integrations",
+			steps: (page) => page.getByRole("button", { name: "Show setup" }).click(),
+		}),
 		page("hub-infra", "Hub with infrastructure connected", "/integrations", {
 			dataset: "infra-integrations",
 		}),

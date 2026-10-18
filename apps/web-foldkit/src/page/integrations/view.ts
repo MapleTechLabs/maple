@@ -14,6 +14,7 @@ import { chatCard } from "./view-chat-card"
 import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
 import { githubCard } from "./view-github"
 import { hazelCard } from "./view-hazel"
+import { planetscaleCard } from "./view-planetscale"
 import { railwayCard } from "./view-railway"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
@@ -53,6 +54,8 @@ const cardView = (h: H, model: Model, integration: IntegrationId, timeZone: stri
 			return [cloudflareCard(h, model, timeZone)]
 		case "railway":
 			return [railwayCard(h, model, timeZone)]
+		case "planetscale":
+			return [planetscaleCard(h, model, timeZone)]
 		case "prometheus":
 		case "warpstream":
 			return [scrapeIntro(h, integration), ...scrapeTargetsSection(h, model, timeZone)]

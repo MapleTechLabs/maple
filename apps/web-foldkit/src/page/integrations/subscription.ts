@@ -1,5 +1,6 @@
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
+import { derivePlanetScaleSetup } from "@maple/web/components/integrations/planetscale-setup-steps"
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
@@ -147,6 +148,12 @@ const isRailwaySettling = (model: Model): boolean => {
 	return status !== null && status.connected && !status.authFailed && unsyncedEnvironments(status) > 0
 }
 
+const isAwaitingFirstScrape = (model: Model): boolean => {
+	if (integrationOfSearch(model.search.integration) !== "planetscale") return false
+	const status = Option.getOrNull(AsyncData.getData(model.statuses.planetscale.data))
+	return status !== null && derivePlanetScaleSetup(status, model.nowMs).awaitingFirstScrape
+}
+
 /** Prometheus and WarpStream share the scrape-target section. */
 const isScrapePage = (model: Model): boolean => {
 	const integration = integrationOfSearch(model.search.integration)
@@ -282,6 +289,15 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ isSettling: isRailwaySettling(model) }),
 				dependenciesToStream: ({ isSettling }) =>
 					isSettling ? every(15_000, () => Message.TickedRailwaySettle()) : Stream.empty,
+			},
+		),
+		/** `useIntervalRefresh(refreshStatus, { intervalMs: 5_000, enabled: awaitingFirstScrape })`. */
+		planetscaleWatch: entry(
+			{ isWatching: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isWatching: isAwaitingFirstScrape(model) }),
+				dependenciesToStream: ({ isWatching }) =>
+					isWatching ? every(5_000, () => Message.TickedPlanetscaleWatch()) : Stream.empty,
 			},
 		),
 		connectCallback: entry(

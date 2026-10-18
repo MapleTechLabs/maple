@@ -13,6 +13,8 @@ import {
 	V2GcpIntegration,
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
+	V2PlanetScaleOrganizationList,
+	V2PlanetScaleWebhookConfig,
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
@@ -20,6 +22,7 @@ import { ChatWorkspaceId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
+import * as CopyButton from "../../ui/copy-button"
 import * as Dialog from "../../ui/dialog"
 import * as Popover from "../../ui/popover"
 import * as Field from "../../ui/field"
@@ -166,6 +169,27 @@ export const Message = defineMessageUnion({
 	ClickedRailwayRotateCancel: {},
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
+	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
+	CompletedFetchWebhookConfig: result(V2PlanetScaleWebhookConfig),
+	ClickedChangeOrganization: {},
+	GotPickerDialogMessage: { message: Dialog.Message },
+	SelectedOrganization: { name: Schema.String },
+	GotBranchFieldMessage: { field: Schema.Literals(["include", "exclude"]), message: Field.Message },
+	ClickedPickerCancel: {},
+	SubmittedOrganization: {},
+	CompletedSelectOrganization: { organization: Schema.String, failure: Schema.NullOr(LoadFailure) },
+	ClickedRotateToken: {},
+	ClickedRotateCancel: {},
+	GotMetricsTokenMessage: { field: Schema.Literals(["id", "secret"]), message: Field.Message },
+	/** A paste into a token field (`normalizeTokenPaste`): an `id:secret` line fills both. */
+	PastedMetricsToken: { field: Schema.Literals(["id", "secret"]), text: Schema.String },
+	SubmittedMetricsToken: {},
+	CompletedSetMetricsToken: { error: Schema.NullOr(Schema.String) },
+	ClickedMetricsDetails: {},
+	ClickedShowWebhookSetup: {},
+	/** Every 5 s while the first scrape is awaited. */
+	TickedPlanetscaleWatch: {},
+	GotWebhookCopyMessage: { field: Schema.Literals(["url", "secret"]), message: CopyButton.Message },
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,
 		status: Schema.String,

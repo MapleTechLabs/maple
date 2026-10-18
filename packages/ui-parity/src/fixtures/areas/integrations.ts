@@ -4,6 +4,7 @@ import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import type { FixtureArea } from "../areas.ts"
 import type { EndpointHandler, EndpointRequest } from "../dataset.ts"
 import { acmeAdmin, DAY, fixtureUuid, MINUTE } from "../identity.ts"
+import { planetscaleStatus } from "./infra-integrations.ts"
 
 /**
  * The /integrations hub's Postgres-backed reads, canned: Acme scrapes two Prometheus targets (one
@@ -188,6 +189,31 @@ export const fixtureArea: FixtureArea = {
 			Effect.succeed({ object: "chat_connector.identity", deleted: true }),
 		"chatIntegration.deleteWorkspace": (request) =>
 			Effect.succeed({ id: slackWorkspace(request).id, object: "chat_workspace", deleted: true }),
+		"planetscaleIntegration.connect": () =>
+			Effect.succeed({
+				object: "planetscale_integration.connect",
+				redirect_url: "https://oauth.planetscale.example/authorize?state=parity",
+				state: "parity-oauth-state",
+			}),
+		"planetscaleIntegration.organizations": () =>
+			Effect.succeed({
+				object: "planetscale_integration.organization_list",
+				organizations: [
+					{ id: "organization/acme", name: "acme" },
+					{ id: "organization/acme-labs", name: "acme-labs" },
+				],
+			}),
+		"planetscaleIntegration.selectOrganization": () => Effect.succeed(planetscaleStatus),
+		"planetscaleIntegration.setMetricsToken": () => Effect.succeed(planetscaleStatus),
+		"planetscaleIntegration.disconnect": () =>
+			Effect.succeed({ object: "planetscale_integration", connected: false }),
+		"planetscaleIntegration.webhookConfig": () =>
+			Effect.succeed({
+				object: "planetscale_integration.webhook_config",
+				configured: true,
+				url: "https://api.maple.dev/api/integrations/planetscale/webhook/parity",
+				secret: "whsec_parity_0000000000000000",
+			}),
 		"integrations.railwayDisconnect": disconnected,
 		// The sync answers a refreshed status; the card re-reads the status itself, so its shape is all that matters.
 		"integrations.railwaySync": (request) =>

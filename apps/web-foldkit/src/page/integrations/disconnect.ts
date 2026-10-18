@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../data/load-failure"
-import { MapleInternalApiClient } from "../../platform/api-clients"
+import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 import { Message, type StatusName } from "./message"
 
 // Each integration's disconnect: the confirmation copy, the mutation, its toasts, and the status
@@ -52,6 +52,17 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 			refresh: ["railway"],
 		},
 	],
+	[
+		"planetscale",
+		{
+			title: "Disconnect PlanetScale",
+			description: "Maple stops collecting data from PlanetScale. You can reconnect later.",
+			confirmLabel: "Disconnect",
+			success: "PlanetScale organization disconnected",
+			error: "Failed to disconnect PlanetScale organization",
+			refresh: ["planetscale", "planetscaleDatabases"],
+		},
+	],
 	...(["cloudflare", "cloudflare-multi"] as const).map((key): readonly [string, DisconnectSpec] => [
 		key,
 		{
@@ -69,11 +80,14 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 const mutation = (integration: string) =>
 	Effect.gen(function* () {
 		const internal = yield* MapleInternalApiClient
+		const v2 = yield* MapleApiV2Client
 		switch (integration) {
 			case "hazel":
 				return yield* Effect.asVoid(internal.integrations.hazelDisconnect())
 			case "github":
 				return yield* Effect.asVoid(internal.integrations.githubDisconnect())
+			case "planetscale":
+				return yield* Effect.asVoid(v2.planetscaleIntegration.disconnect())
 			case "railway":
 				return yield* Effect.asVoid(internal.integrations.railwayDisconnect())
 			case "cloudflare":

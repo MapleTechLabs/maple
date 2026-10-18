@@ -4,6 +4,7 @@ import * as Keyed from "../../data/keyed"
 import { requestKey } from "../../data/request-key"
 import { AppRoute, hrefOf } from "../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
+import * as CopyButton from "../../ui/copy-button"
 import * as Dialog from "../../ui/dialog"
 import { chatConnectorOf, integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
@@ -16,6 +17,8 @@ import * as CloudflareCard from "./update-cloudflare"
 import { initCloudflareCard } from "./cloudflare"
 import { initPrometheusCard } from "./prometheus"
 import { initRailwayCard } from "./railway"
+import { initPlanetscaleCard } from "./planetscale"
+import * as Planetscale from "./update-planetscale"
 import * as Railway from "./update-railway"
 import * as Prometheus from "./update-prometheus"
 import { ChartRuntime } from "../../charts/chart-runtime"
@@ -90,6 +93,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		githubCard: initGithubCard(),
 		cloudflareCard: initCloudflareCard(),
 		prometheusCard: initPrometheusCard(),
+		planetscaleCard: initPlanetscaleCard(),
 		railwayCard: initRailwayCard(),
 	}
 	const loaded = chain(model, [
@@ -126,13 +130,29 @@ const accepted = (model: Model, statuses: Statuses): Return => ({ model: { ...mo
 export const update = (model: Model, message: Message, context: PageContext): Return => {
 	const s = model.statuses
 	return Message.match<Return>(message, {
-		CompletedReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		CompletedReadClock: ({ nowMs }) => ({
+			model: {
+				...model,
+				nowMs,
+				planetscaleCard: {
+					...model.planetscaleCard,
+					watchStartedAt: model.planetscaleCard.watchStartedAt ?? nowMs,
+				},
+			},
+		}),
 		CompletedLoadCloudflare: ({ key, result }) =>
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
 		CompletedLoadRailway: ({ key, result }) =>
 			accepted(model, { ...s, railway: Keyed.accept(s.railway, key, result) }),
-		CompletedLoadPlanetscale: ({ key, result }) =>
-			accepted(model, { ...s, planetscale: Keyed.accept(s.planetscale, key, result) }),
+		CompletedLoadPlanetscale: ({ key, result }) => {
+			const next = accepted(model, {
+				...s,
+				planetscale: Keyed.accept(s.planetscale, key, result),
+			}).model
+			return integrationOfSearch(next.search.integration) === "planetscale"
+				? Planetscale.ensurePendingPicker(next, context)
+				: { model: next }
+		},
 		CompletedLoadPlanetscaleDatabases: ({ key, result }) =>
 			accepted(model, {
 				...s,
@@ -223,6 +243,54 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
+		CompletedFetchOrganizations: ({ key, result }) =>
+			Planetscale.updateCard(model, {
+				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),
+			}),
+		CompletedFetchWebhookConfig: ({ key, result }) =>
+			Planetscale.updateCard(model, {
+				webhookConfig: Keyed.accept(model.planetscaleCard.webhookConfig, key, result),
+			}),
+		ClickedChangeOrganization: () => Planetscale.clickedChange(model, context),
+		GotPickerDialogMessage: ({ message: child }) => Planetscale.gotPickerDialog(model, child),
+		SelectedOrganization: ({ name }) => Planetscale.updateCard(model, { selectedOrg: name }),
+		GotBranchFieldMessage: ({ field, message: child }) => Planetscale.gotBranchField(model, field, child),
+		ClickedPickerCancel: () =>
+			model.planetscaleCard.pickerDialog.isOpen
+				? Planetscale.clickedPickerCancel(model)
+				: withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
+		SubmittedOrganization: () => Planetscale.submittedOrganization(model),
+		CompletedSelectOrganization: ({ organization, failure }) =>
+			Planetscale.completedSelect(model, context, organization, failure),
+		ClickedRotateToken: () => Planetscale.updateCard(model, { isRotating: true }),
+		ClickedRotateCancel: () => Planetscale.updateCard(model, { isRotating: false }),
+		GotMetricsTokenMessage: ({ field, message: child }) => Planetscale.gotTokenField(model, field, child),
+		PastedMetricsToken: ({ field, text }) => Planetscale.pastedToken(model, field, text),
+		SubmittedMetricsToken: () => Planetscale.submittedToken(model),
+		CompletedSetMetricsToken: ({ error }) => Planetscale.completedToken(model, context, error),
+		ClickedMetricsDetails: () =>
+			Planetscale.updateCard(model, { isDetailsOpen: !model.planetscaleCard.isDetailsOpen }),
+		ClickedShowWebhookSetup: () => Planetscale.clickedShowWebhook(model, context),
+		GotWebhookCopyMessage: ({ field, message: child }) => {
+			const card = model.planetscaleCard
+			const step = CopyButton.update(field === "url" ? card.urlCopy : card.secretCopy, child)
+			return {
+				model: {
+					...model,
+					planetscaleCard:
+						field === "url"
+							? { ...card, urlCopy: step.model }
+							: { ...card, secretCopy: step.model },
+				},
+				commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotWebhookCopyMessage({ field, message: inner }),
+				),
+			}
+		},
+		TickedPlanetscaleWatch: () => {
+			const refreshed = requestStatus(model, context, "planetscale", "Refresh")
+			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
+		},
 		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),
 		CompletedGithubRefreshSpin: ({ version }) => Github.completedRefreshSpin(model, version),
 		ToggledCiTraces: () => Github.toggledCiTraces(model),

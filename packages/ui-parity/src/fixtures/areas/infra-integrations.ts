@@ -100,7 +100,7 @@ const railwayStatus = {
 	})),
 }
 
-const planetscaleStatus = {
+export const planetscaleStatus = {
 	object: "planetscale_integration",
 	connected: true,
 	pending_org_selection: false,
