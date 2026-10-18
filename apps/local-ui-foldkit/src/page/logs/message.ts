@@ -1,12 +1,11 @@
-import * as AttributesPanel from "@maple/web-foldkit/ui/attributes/attributes-panel"
 import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
-import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import * as ToggleGroup from "@maple/web-foldkit/ui/toggle-group"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/local-query"
-import { FacetOption, LocalLog, LogPages, LogPatterns, LogPattern, Viewport } from "./model"
+import { Message as LogSheetMessage } from "../kit/log-sheet/message"
+import { ChipRef, FacetOption, LocalLog, LogPages, LogPatterns, LogPattern, Viewport } from "./model"
 
 export const FacetParam = Schema.Literals(["severity", "service"])
 export type FacetParam = typeof FacetParam.Type
@@ -38,11 +37,17 @@ export const Message = defineMessageUnion({
 	ClickedPattern: { pattern: LogPattern },
 	ClickedLog: { log: LocalLog },
 	ClickedChip: { text: Schema.String },
+	EnteredChip: { chip: ChipRef },
+	FocusedChip: { chip: ChipRef },
+	LeftChip: { chip: ChipRef },
+	BlurredChip: { chip: ChipRef },
+	PressedChipEscape: { chip: ChipRef },
+	EnteredChipCard: {},
+	LeftChipCard: {},
+	ElapsedChipDelay: { generation: Schema.Number },
+	PlacedChipCard: {},
 	CompletedCopyChip: {},
-	ClosedDetail: {},
-	ToggledBodyExpanded: {},
-	GotDetailTabsMessage: { message: Tabs.Message },
-	GotDetailAttributesMessage: { message: AttributesPanel.Message },
+	GotLogSheetMessage: { message: LogSheetMessage },
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 })

@@ -30,6 +30,7 @@ export const logStream = (h: HtmlBuilder<Message>, model: Model, search: string 
 						: [
 								logRow(h, {
 									log,
+									index,
 									search,
 									top: index * ROW_HEIGHT,
 									isSelected: selectedKey === logKey(log),

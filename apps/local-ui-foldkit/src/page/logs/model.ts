@@ -1,28 +1,14 @@
-import * as AttributesPanel from "@maple/web-foldkit/ui/attributes/attributes-panel"
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
-import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import * as ToggleGroup from "@maple/web-foldkit/ui/toggle-group"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
 import { Copies } from "../kit/copies"
+import * as LogSheet from "../kit/log-sheet/model"
+import { LocalLog } from "../kit/log-sheet/model"
 
 // apps/local-ui/src/lib/log-shape.ts and the logs hooks, as Schemas.
 
-/** `LocalLog`: one row of the list, attribute maps already decoded. */
-export const LocalLog = Schema.Struct({
-	/** The stored `DateTime64(9)` value with its nanoseconds: shown verbatim and the keyset cursor. */
-	timestamp: Schema.String,
-	severityText: Schema.String,
-	severityNumber: Schema.Number,
-	serviceName: Schema.String,
-	body: Schema.String,
-	traceId: Schema.String,
-	spanId: Schema.String,
-	recordIdentity: Schema.String,
-	logAttributes: Schema.Record(Schema.String, Schema.String),
-	resourceAttributes: Schema.Record(Schema.String, Schema.String),
-})
-export type LocalLog = typeof LocalLog.Type
+export { LocalLog } from "../kit/log-sheet/model"
 
 export const LogPages = Schema.Struct({ pages: Schema.Array(Schema.Array(LocalLog)), hasNextPage: Schema.Boolean })
 export type LogPages = typeof LogPages.Type
@@ -52,15 +38,18 @@ export type LogPatterns = typeof LogPatterns.Type
 export const Viewport = Schema.Struct({ scrollTop: Schema.Number, height: Schema.Number })
 export type Viewport = typeof Viewport.Type
 
-/** The open detail sheet: the log, its body expansion, tabs and attribute panel. */
-export const Detail = Schema.Struct({
-	log: LocalLog,
-	isOpen: Schema.Boolean,
-	isBodyExpanded: Schema.Boolean,
-	tabs: Tabs.Model,
-	attributes: AttributesPanel.Model,
+/** A row's chip: the row's place in the list, its log and the attribute key. */
+export const ChipRef = Schema.Struct({ index: Schema.Number, logKey: Schema.String, key: Schema.String })
+export type ChipRef = typeof ChipRef.Type
+
+/** `LogAttributeChip`'s hover card: the one shown and the rest-to-reveal / grace timers. */
+export const ChipCard = Schema.Struct({
+	visible: Schema.Option(ChipRef),
+	pendingOpen: Schema.Option(Schema.Struct({ chip: ChipRef, generation: Schema.Number })),
+	pendingClose: Schema.Option(Schema.Number),
+	generation: Schema.Number,
 })
-export type Detail = typeof Detail.Type
+export type ChipCard = typeof ChipCard.Type
 
 export const Draft = Schema.Struct({ text: Schema.String, version: Schema.Number, sent: Schema.String })
 export type Draft = typeof Draft.Type
@@ -81,8 +70,10 @@ export const Model = Schema.TaggedStruct("LogsPage", {
 	search: Draft,
 	modeToggle: ToggleGroup.Model,
 	sections: FilterSections.Model,
-	maybeDetail: Schema.Option(Detail),
+	/** The log sheet, once a row was opened; it stays (closed) so the row stays selected. */
+	maybeDetail: Schema.Option(LogSheet.Model),
 	isRefreshing: Schema.Boolean,
 	copies: Copies,
+	chipCard: ChipCard,
 })
 export type Model = typeof Model.Type

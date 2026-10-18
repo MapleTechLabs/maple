@@ -8,10 +8,10 @@ import { scrollArea } from "@maple/web-foldkit/ui/scroll-area"
 import * as TabsView from "@maple/web-foldkit/ui/tabs-view"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { copyOf } from "../kit/copies"
+import { copyOf } from "../copies"
 import { Message } from "./message"
-import type { Detail, LocalLog, Model } from "./model"
-import { buildLogJsonPayload, copyableValue, traceHrefOf } from "./view-sheet-parts"
+import type { LocalLog, Model } from "./model"
+import { buildLogJsonPayload, copyableValue, traceHrefOf } from "./parts"
 
 // The Attributes / Trace / Raw tabs of `LogDetailSheet`.
 
@@ -41,7 +41,7 @@ const tracePanel = (h: HtmlBuilder<Message>, model: Model, log: LocalLog, href: 
 		]),
 		linkButton(
 			h,
-			{ variant: "outline", size: "sm", className: "w-full gap-1.5", href, attributes: [h.OnClick(Message.ClosedDetail())] },
+			{ variant: "outline", size: "sm", className: "w-full gap-1.5", href, attributes: [h.OnClick(Message.ClosedSheet())] },
 			[icon(h, "PulseIcon"), "Open trace"],
 		),
 	])
@@ -68,18 +68,18 @@ const rawPanel = (h: HtmlBuilder<Message>, model: Model, log: LocalLog): Html =>
 	])
 }
 
-export const detailTabs = (h: HtmlBuilder<Message>, model: Model, detail: Detail): Html => {
-	const { log } = detail
+export const detailTabs = (h: HtmlBuilder<Message>, model: Model): Html => {
+	const { log } = model
 	const maybeHref = traceHrefOf(log)
 	const panel = (value: string): ReadonlyArray<Html> | undefined => {
 		if (value === "attributes")
 			return padded(h, "log-detail-attributes", [
 				h.submodel({
 					slotId: "log-detail-attributes-panel",
-					model: detail.attributes,
+					model: model.attributes,
 					view: AttributesView.view,
 					viewInputs: { logAttributes: log.logAttributes, resourceAttributes: log.resourceAttributes, canFilter: false, logTitle: "Log attributes", hasCommitShaValues: false },
-					toParentMessage: (message) => Message.GotDetailAttributesMessage({ message }),
+					toParentMessage: (message) => Message.GotAttributesMessage({ message }),
 				}),
 			])
 		if (value === "trace")
@@ -88,11 +88,11 @@ export const detailTabs = (h: HtmlBuilder<Message>, model: Model, detail: Detail
 	}
 	return h.submodel({
 		slotId: "log-detail-tabs",
-		model: detail.tabs,
+		model: model.tabs,
 		view: TabsView.view,
 		viewInputs: {
 			variant: "underline",
-			labels: detail.tabs.values.map((value) => TABS.get(value)?.label ?? value),
+			labels: model.tabs.values.map((value) => TABS.get(value)?.label ?? value),
 			tabContent: (value, label) => {
 				const tab = TABS.get(value)
 				return tab === undefined ? [label] : [icon(h, tab.icon, { size: 14 }), " ", label]
@@ -102,6 +102,6 @@ export const detailTabs = (h: HtmlBuilder<Message>, model: Model, detail: Detail
 			panelClassName: "mt-0 min-h-0 flex-1",
 			panel,
 		},
-		toParentMessage: (message) => Message.GotDetailTabsMessage({ message }),
+		toParentMessage: (message) => Message.GotTabsMessage({ message }),
 	})
 }

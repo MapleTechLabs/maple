@@ -23,7 +23,7 @@ const findChip = (index: number, key: string): HTMLElement | undefined =>
 	).pipe(Option.getOrUndefined)
 
 /** Flips side, then alignment, then shifts into the viewport, as Floating UI does for Base UI. */
-const place = (positioner: HTMLElement, popup: HTMLElement, anchor: DOMRect) => {
+export const place = (positioner: HTMLElement, popup: HTMLElement, anchor: DOMRect) => {
 	const width = popup.offsetWidth
 	const height = popup.offsetHeight
 	const viewportWidth = document.documentElement.clientWidth

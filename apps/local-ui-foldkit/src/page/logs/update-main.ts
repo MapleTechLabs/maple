@@ -12,10 +12,24 @@ import { modeOf } from "./filters"
 import { load } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { appendPage, loadMoreIfAtEnd, openDetail } from "./stream"
+import { appendPage, loadMoreIfAtEnd, rowsOf } from "./stream"
 import { navigate, selectPattern, setRange, settleRefresh, toSections, type UpdateReturn } from "./update"
-import { closeDetail, foldAttributes, foldTabs, toggleBody } from "./update-detail"
+import * as LogSheet from "../kit/log-sheet/update"
+import { closeChip, elapseDelay, enterCard, leaveCard, leaveChip, scheduleOpen } from "./update-chips"
 import { updateFetch } from "./update-fetch"
+import { virtualWindow } from "./virtualize"
+
+/** A card whose row scrolled out of the virtual window goes with it. */
+const dropScrolledCard = (model: Model): Model => {
+	const rendered = new Set(virtualWindow(rowsOf(model).length, model.viewport))
+	return { ...model, chipCard: { ...model.chipCard, visible: Option.filter(model.chipCard.visible, (chip) => rendered.has(chip.index)) } }
+}
+
+/** Folds a sheet step into the page. */
+const liftSheet = (model: Model, step: LogSheet.UpdateReturn): UpdateReturn => ({
+	model: { ...model, maybeDetail: Option.some(step.model) },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotLogSheetMessage({ message })),
+})
 
 const debounceSearch = (model: Model, text: string): UpdateReturn => {
 	const version = model.search.version + 1
@@ -56,7 +70,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			({ model: settleRefresh({ ...model, severities: accept(model.severities, key, Result.succeed(options)) }) }),
 		FailedFetchSeverities: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, severities: accept(model.severities, key, Result.fail(failure)) }) }),
-		ChangedViewport: ({ viewport }) => loadMoreIfAtEnd({ ...model, viewport }, context),
+		ChangedViewport: ({ viewport }) => loadMoreIfAtEnd(dropScrolledCard({ ...model, viewport }), context),
 		ClickedRefresh: () =>
 			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {
@@ -81,13 +95,20 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		ClickedWidenRange: () => setRange(model, context, WIDEST_RANGE),
 		GotModeToggleMessage: ({ message: child }) => foldModeToggle(model, context, child),
 		ClickedPattern: ({ pattern }) => selectPattern(model, context, pattern.template),
-		ClickedLog: ({ log }) => ({ model: { ...model, maybeDetail: Option.some(openDetail(model.maybeDetail, log)) } }),
+		ClickedLog: ({ log }) => liftSheet(model, LogSheet.openLog(model.maybeDetail, log)),
 		ClickedChip: ({ text }) => ({ model, commands: [CopyChip({ text })] }),
 		CompletedCopyChip: () => ({ model }),
-		ClosedDetail: () => closeDetail(model),
-		ToggledBodyExpanded: () => toggleBody(model),
-		GotDetailTabsMessage: ({ message: child }) => foldTabs(model, child),
-		GotDetailAttributesMessage: ({ message: child }) => foldAttributes(model, child),
+		EnteredChip: ({ chip }) => scheduleOpen(model, chip),
+		FocusedChip: ({ chip }) => scheduleOpen(model, chip),
+		LeftChip: ({ chip }) => leaveChip(model, chip),
+		BlurredChip: ({ chip }) => closeChip(model, chip),
+		PressedChipEscape: ({ chip }) => closeChip(model, chip),
+		EnteredChipCard: () => enterCard(model),
+		LeftChipCard: () => leaveCard(model),
+		ElapsedChipDelay: ({ generation }) => elapseDelay(model, generation),
+		PlacedChipCard: () => ({ model }),
+		GotLogSheetMessage: ({ message: child }) =>
+			Option.match(model.maybeDetail, { onNone: () => ({ model }), onSome: (sheet) => liftSheet(model, LogSheet.update(sheet, child)) }),
 		GotFilterSectionsMessage: ({ message: child }) => {
 			const next = FilterSections.update(model.sections, child)
 			return { model: { ...model, sections: next.model }, commands: Command.mapMessages(next.commands ?? [], toSections) }

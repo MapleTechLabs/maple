@@ -94,4 +94,27 @@ describe("local trace detail", () => {
 		const closed = update(open, Message.PressedEscape(), ctx)
 		expect(closed.outMessage).toEqual(PageOutMessage.RequestedNavigation({ hash: `#/traces/${TRACE_ID}`, isReplace: true }))
 	})
+
+	test("a row of the span's Logs tab opens the log sheet on that log", () => {
+		const ctx = contextAt(`spanId=${SPAN_ID}`)
+		const open = answered(init(ctx, TRACE_ID).model, Option.some(trace), ctx).model
+		const spanLog = {
+			key: "k1",
+			timestamp: "2026-10-01 11:59:00.004000000",
+			severityText: "ERROR",
+			severityNumber: 17,
+			serviceName: "storefront",
+			body: "card declined",
+			traceId: TRACE_ID,
+			spanId: SPAN_ID,
+			recordIdentity: "1",
+			logAttributes: {},
+			resourceAttributes: {},
+		}
+		const logsKey = open.panel?.logs.key ?? ""
+		const withLogs = update(open, Message.SucceededFetchSpanLogs({ key: logsKey, logs: [spanLog] }), ctx).model
+		const clicked = update(withLogs, Message.ClickedSpanLog({ log: spanLog }), ctx).model
+		const sheet = Option.getOrNull(clicked.panel?.maybeLogSheet ?? Option.none())
+		expect([sheet?.dialog.isOpen, sheet?.log.body]).toEqual([true, "card declined"])
+	})
 })

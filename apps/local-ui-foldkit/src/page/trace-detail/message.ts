@@ -8,6 +8,8 @@ import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/local-query"
+import { Message as LogSheetMessage } from "../kit/log-sheet/message"
+import { LocalLog } from "../kit/log-sheet/model"
 import { SpanAttrs, SpanLog } from "./panel-model"
 
 export const Message = defineMessageUnion({
@@ -30,6 +32,9 @@ export const Message = defineMessageUnion({
 	GotSpanPanelMessage: { message: SpanPanel.Message },
 	GotPanelTabsMessage: { message: Tabs.Message },
 	GotAttributesMessage: { message: AttributesPanel.Message },
+	/** A row of the span's Logs tab: `LogDetailSheet` opens on it. */
+	ClickedSpanLog: { log: LocalLog },
+	GotLogSheetMessage: { message: LogSheetMessage },
 	CompletedWriteClipboard: { id: Schema.String, generation: Schema.Number, isOk: Schema.Boolean },
 	ElapsedCopyStatus: { id: Schema.String, generation: Schema.Number },
 })

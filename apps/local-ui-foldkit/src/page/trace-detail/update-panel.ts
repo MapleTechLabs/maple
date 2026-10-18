@@ -5,6 +5,7 @@ import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import { Match, Option, Record, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { accept, idle, keyOf } from "../../data/slot"
+import * as LogSheet from "../kit/log-sheet/update"
 import type { Resources } from "../../platform/resources"
 import { FetchSpanDetail, FetchSpanLogs, WaitCopyStatus, WriteClipboard } from "./command"
 import { Message } from "./message"
@@ -46,6 +47,7 @@ export const initPanel = (span: SpanNodeData, apiBase: string): PanelReturn => (
 		copies: {},
 		isErrorExpanded: false,
 		attributes: AttributesPanel.init("span-attributes"),
+		maybeLogSheet: Option.none(),
 	},
 	commands: fetches(span, apiBase),
 })
@@ -62,6 +64,12 @@ export const refetchPanel = (panel: PanelModel, apiBase: string): PanelReturn =>
 
 const refreshing = <A, E>(data: AsyncData.AsyncData<A, E>): AsyncData.AsyncData<A, E> =>
 	Option.getOrElse(AsyncData.revalidateOrLoad(data), () => data)
+
+/** Folds a log sheet step into the panel. */
+const liftSheet = (panel: PanelModel, step: LogSheet.UpdateReturn): PanelReturn => ({
+	panel: { ...panel, maybeLogSheet: Option.some(step.model) },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotLogSheetMessage({ message })),
+})
 
 /** A copy's settled status, if it is still the latest copy of that target. */
 const settleCopy = (panel: PanelModel, id: string, generation: number, status: "copied" | "error" | "idle"): PanelReturn =>
@@ -120,6 +128,12 @@ export const updatePanel = (panel: PanelModel, message: Message): PanelReturn =>
 				commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotAttributesMessage({ message: inner })),
 			}
 		},
+		ClickedSpanLog: ({ log }) => liftSheet(panel, LogSheet.openLog(panel.maybeLogSheet, log)),
+		GotLogSheetMessage: ({ message: child }) =>
+			Option.match(panel.maybeLogSheet, {
+				onNone: () => ({ panel }),
+				onSome: (sheet) => liftSheet(panel, LogSheet.update(sheet, child)),
+			}),
 		CompletedWriteClipboard: ({ id, generation, isOk }) => settleCopy(panel, id, generation, isOk ? "copied" : "error"),
 		ElapsedCopyStatus: ({ id, generation }) => settleCopy(panel, id, generation, "idle"),
 		}),

@@ -117,7 +117,7 @@ export const spanPanel = (h: H, panel: PanelModel, input: PanelViewInput): Html 
 						],
 						panel: (value: string) =>
 							value === "logs"
-								? [spanLogs(h, panel, input.nowMs, input.timeFormat)]
+								? spanLogs(h, panel, input.nowMs, input.timeFormat)
 								: [
 										h.submodel({
 											slotId: "span-panel-details",

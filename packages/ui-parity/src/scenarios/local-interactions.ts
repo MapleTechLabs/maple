@@ -60,6 +60,14 @@ export const localInteractionsArea: AreaModule = {
 		interaction("logs-open-row", "Logs: open a log", "/logs", (page) =>
 			page.getByRole("listitem", { name: /^WARN payment-svc: pool exhausted/ }).first().click(),
 		),
+		interaction("logs-open-error-row", "Logs: open an error log", "/logs?severity=ERROR", (page) =>
+			page.getByRole("listitem", { name: /^ERROR payment-svc: ConnectionTimeout/ }).first().click(),
+		),
+		// Past the chip's 300 ms rest-to-reveal delay.
+		interaction("logs-chip-card", "Logs: a chip's hover card", "/logs", async (page) => {
+			await page.getByRole("button", { name: "Copy db.client.connection.pool.name=payments" }).first().hover()
+			await page.waitForTimeout(DEBOUNCE_MS)
+		}),
 		interaction("errors-expand", "Errors: expand a card", "/errors", (page) =>
 			page.getByRole("button", { name: /^ConnectionTimeout/ }).click(),
 		),
@@ -81,6 +89,19 @@ export const localInteractionsArea: AreaModule = {
 		interaction("trace-detail-span", "Trace detail: open a span", "/traces/0eab694ff33721d5a836ce7444afadcc", (page) =>
 			page.getByText("INSERT shop.payments").first().click(),
 		),
+		// The span of a `ConnectionTimeout` error log, whose Logs tab lists it.
+		interaction("trace-detail-span-log", "Trace detail: open a span's log", "/traces/6843a8853182b32339b2dd5120d423f2?spanId=5649cc1dd6f78f8c", async (page) => {
+			await page.getByRole("tab", { name: /^Logs/ }).click()
+			await page.getByRole("tabpanel", { name: /^Logs/ }).getByRole("button").first().click()
+		}),
+		// Every `/local/query` is held, so the run is still in flight when Cancel aborts it.
+		{
+			...interaction("query-cancel", "Query: cancel a run", "/query?sql=SELECT%201", async (page) => {
+				await page.getByRole("button", { name: "Run" }).click()
+				await page.getByRole("button", { name: "Cancel" }).click()
+			}),
+			faults: { delays: { "local.query": 60_000 } },
+		},
 		{
 			...interaction("query-table", "Query: run a table", "/query", async (page) => {
 				await page.getByRole("button", { name: /^traces / }).click()

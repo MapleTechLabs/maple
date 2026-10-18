@@ -5,12 +5,22 @@ import { cn } from "@maple/ui/lib/utils"
 import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { hrefFor } from "../../route"
-import { type Copies, copyOf } from "../kit/copies"
+import { hrefFor } from "../../../route"
+import { type Copies, copyOf } from "../copies"
 import { Message } from "./message"
 import type { LocalLog } from "./model"
 
 // Pure helpers and the copy-on-click value of `LogDetailSheet`.
+
+const SEVERITY_NUMBER_LABELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"] as const
+
+/** copied: `severityLabel` (packages/ui/src/components/logs/severity-badge.tsx, a React module). */
+export const severityLabel = (severityText: string, severityNumber?: number): string => {
+	if (severityText.trim() !== "") return severityText
+	if (severityNumber !== undefined && severityNumber >= 1 && severityNumber <= 24)
+		return SEVERITY_NUMBER_LABELS[Math.floor((severityNumber - 1) / 4)] ?? "UNSET"
+	return "UNSET"
+}
 
 /** A faint wash of the severity colour behind the hero; unknown levels keep the plain border. */
 export const heroToneStyle = (severity: string): Readonly<Record<string, string>> | undefined => {
