@@ -150,11 +150,33 @@ describe("traces list", () => {
 			asked,
 			Message.CompletedFetchNextPage({
 				key: asked.pagination.key ?? "",
+				generation: asked.pagination.generation,
+				offset: 100,
 				result: Result.fail(toLoadFailure("injected")),
 			}),
 		)
 		expect(failed.model.pagination.isStopped).toBe(true)
 		expect(names(pageUpdate(failed.model, windowOver(70, 96)).commands)).toEqual([])
+	})
+
+	test("a next page answers only its own request: filter A, B, then A again appends page 2 once", () => {
+		const resolved = (model: Model) => pageUpdate(model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
+		const first = pageUpdate(loaded(page(100)), windowOver(70, 95))
+		const [stale] = first.commands ?? []
+		const away = resolved(routeChanged(first.model, { search: { hasError: true } }, context).model)
+		const back = resolved(routeChanged(away, { search: {} }, context).model)
+		const second = pageUpdate(back, windowOver(70, 95))
+		const [current] = second.commands ?? []
+		expect(names(second.commands)).toEqual([FetchNextPage.name])
+		const answer = (command: typeof current) => {
+			const args = command?.args !== undefined && "generation" in command.args ? command.args : { generation: -1 }
+			return Message.CompletedFetchNextPage({ key: second.model.pagination.key ?? "", generation: Number(args.generation), offset: 100, result: Result.succeed(page(100)) })
+		}
+		const dropped = pageUpdate(second.model, answer(stale)).model
+		expect(allRows(dropped)).toHaveLength(100)
+		const appended = pageUpdate(dropped, answer(current)).model
+		expect(allRows(appended)).toHaveLength(200)
+		expect(allRows(pageUpdate(appended, answer(current)).model)).toHaveLength(200)
 	})
 
 	test("loaded rows render in the window with the footer tally", () => {

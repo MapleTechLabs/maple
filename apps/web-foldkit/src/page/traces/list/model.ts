@@ -65,6 +65,8 @@ export type VirtualRow = typeof VirtualRow.Type
 /** `useInfiniteTraces`' pages after the first, for the current first-page key. */
 export const Pagination = Schema.Struct({
 	key: Schema.NullOr(Schema.String),
+	/** Bumped by every fresh set of pages: a page fetched for an earlier one is dropped. */
+	generation: Schema.Number,
 	pages: Schema.Array(TracesPage),
 	isFetching: Schema.Boolean,
 	isStopped: Schema.Boolean,
