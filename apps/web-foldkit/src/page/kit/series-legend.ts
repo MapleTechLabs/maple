@@ -7,11 +7,11 @@ export type SeriesLegendSwatch = "dot" | "square" | "line" | "dashed"
 
 export interface SeriesLegendItem {
 	readonly key: string
-	readonly label?: string
+	readonly label?: Html | string
 	readonly title?: string
 	readonly color?: string
 	/** The value, as React's children: a number renders as its own text node. */
-	readonly value?: string | number
+	readonly value?: Html | string | number
 	readonly swatch?: SeriesLegendSwatch
 }
 
@@ -47,7 +47,11 @@ const swatch = <M>(h: HtmlBuilder<M>, kind: SeriesLegendSwatch, color: string, s
 				h.Style({ "border-color": color }),
 			])
 		case "square":
-			return h.span([h.AriaHidden(true), h.Class(cn(size, "shrink-0 rounded-xs")), h.Style({ background: color })])
+			return h.span([
+				h.AriaHidden(true),
+				h.Class(cn(size, "shrink-0 rounded-xs")),
+				h.Style({ background: color }),
+			])
 		case "dot":
 			return h.span([
 				h.AriaHidden(true),
@@ -84,15 +88,27 @@ export const seriesLegend = <M>(
 							? []
 							: [
 									h.span(
-										[h.Class(styles.label), ...(item.title === undefined ? [] : [h.Title(item.title)])],
+										[
+											h.Class(styles.label),
+											...(item.title === undefined ? [] : [h.Title(item.title)]),
+										],
 										[item.label],
 									),
 								]),
-						...(item.value === undefined ? [] : [h.span([h.Class(styles.value)], [String(item.value)])]),
+						...(item.value === undefined
+							? []
+							: [
+									h.span(
+										[h.Class(styles.value)],
+										[typeof item.value === "number" ? String(item.value) : item.value],
+									),
+								]),
 					],
 				),
 			),
-			...(overflow > 0 ? [h.span([h.Class("text-2xs text-muted-foreground/70")], ["+", String(overflow)])] : []),
+			...(overflow > 0
+				? [h.span([h.Class("text-2xs text-muted-foreground/70")], ["+", String(overflow)])]
+				: []),
 		],
 	)
 }

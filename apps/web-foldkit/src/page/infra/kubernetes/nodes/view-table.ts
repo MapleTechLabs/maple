@@ -8,7 +8,7 @@ import { columnHead, dataTable, dataTableEmpty, headSort, ROW_LINK_CLASS, skelet
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine } from "../../kit/meta-line"
 import { relativeTime } from "../../kit/relative-time"
-import type { SortState } from "../../kit/sort"
+import type { SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import { Message, type NodeSortKey } from "./message"
 import type { NodeRow } from "./model"

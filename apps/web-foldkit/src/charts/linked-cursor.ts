@@ -1,15 +1,22 @@
 import { Effect, Queue, Stream } from "effect"
 import { Mount } from "foldkit"
-import { Message } from "./message"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { defineMessageUnion } from "foldkit/message"
 
-// `useLinkedCursor` (apps/web/src/hooks/use-linked-cursor.ts) on the metrics grid: hovering one chart
-// paints a cursor at the same x ratio on every sibling, through CSS variables written imperatively,
-// never through state, exactly as legacy does.
+// `useLinkedCursor` / `LinkedCursorOverlay` (apps/web/src/hooks/use-linked-cursor.tsx): hovering one
+// chart paints a cursor at the same x ratio on every sibling, through CSS variables written
+// imperatively, never through state, exactly as legacy does.
+
+/** The container's resting cursor variables. */
+export const LINKED_CURSOR_STYLE = { "--linked-cursor-ratio": "0", "--linked-cursor-visible": "0" }
 
 const CHART_SELECTOR = "[data-linked-cursor-chart]"
 const OVERLAY_SELECTOR = "[data-linked-cursor-overlay]"
-const PLOT_SELECTOR = "[data-chart-plot]"
+const PLOT_SELECTOR = "[data-chart-plot], .recharts-cartesian-grid"
 const TOOLTIP_UPDATE_INTERVAL_MS = 1000 / 30
+
+export const LinkedCursorMessage = defineMessageUnion({ CompletedMountLinkedCursor: {} })
+export type LinkedCursorMessage = typeof LinkedCursorMessage.Type
 
 /** The hovered chart, the last tooltip-forwarding move, and whether overlays sit on their plots. */
 interface CursorState {
@@ -45,11 +52,11 @@ const alignOverlays = (container: HTMLElement) => {
 	})
 }
 
-/** Pointer tracking on the grid container; resolves `AttachedLinkedCursor` once listening. */
-export const MountLinkedCursor = Mount.defineStream("MountServiceLinkedCursor", {
-	messages: [Message.AttachedLinkedCursor],
+/** Pointer tracking on the grid container; resolves `CompletedMountLinkedCursor` once listening. */
+export const MountLinkedCursor = Mount.defineStream("MountLinkedCursor", {
+	messages: [LinkedCursorMessage.CompletedMountLinkedCursor],
 	execute: ({ element }) =>
-		Stream.callback<typeof Message.AttachedLinkedCursor.Type>((queue) =>
+		Stream.callback<LinkedCursorMessage>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					if (!(element instanceof HTMLElement)) return () => undefined
@@ -113,7 +120,7 @@ export const MountLinkedCursor = Mount.defineStream("MountServiceLinkedCursor", 
 					container.addEventListener("mousemove", onMouseMove, true)
 					container.addEventListener("pointermove", onPointerMove)
 					container.addEventListener("pointerleave", onPointerLeave)
-					Queue.offerUnsafe(queue, Message.AttachedLinkedCursor())
+					Queue.offerUnsafe(queue, LinkedCursorMessage.CompletedMountLinkedCursor())
 					return () => {
 						container.removeEventListener("mousemove", onMouseMove, true)
 						container.removeEventListener("pointermove", onPointerMove)
@@ -124,3 +131,20 @@ export const MountLinkedCursor = Mount.defineStream("MountServiceLinkedCursor", 
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),
 })
+
+/** `LinkedCursorOverlay`: positioned and shown by `MountLinkedCursor`. */
+export const linkedCursorOverlay = <M>(h: HtmlBuilder<M>, chartId: string): Html =>
+	h.div(
+		[
+			h.AriaHidden(true),
+			h.Class("pointer-events-none absolute"),
+			h.DataAttribute("linked-cursor-overlay", chartId),
+			h.Style({ "container-type": "inline-size", opacity: "var(--linked-cursor-visible)" }),
+		],
+		[
+			h.div([
+				h.Class("absolute inset-y-0 left-0 w-px bg-muted-foreground/45 will-change-transform"),
+				h.Style({ transform: "translateX(calc(var(--linked-cursor-ratio) * (100cqw - 1px)))" }),
+			]),
+		],
+	)

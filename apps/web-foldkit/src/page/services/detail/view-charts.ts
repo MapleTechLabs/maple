@@ -8,7 +8,7 @@ import * as Chart from "../../../charts/chart"
 import { chartSkeleton, type ChartSkeletonVariant } from "../../../ui/chart-skeleton"
 import { ChartSpec, type FixedMetricRow } from "../../../charts/chart-spec"
 import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
-import { fixedMetricLegend, latencySeries, linkedCursorOverlay } from "../../../charts/fixed-metric-legend"
+import { fixedMetricLegend, latencySeries } from "../../../charts/fixed-metric-legend"
 import {
 	fixedMetricModel,
 	LATENCY_SERIES,
@@ -18,7 +18,7 @@ import {
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { widgetShell } from "../../overview/view-widget"
 import { commitMarkers, markerLayout } from "./derive-markers"
-import { MountLinkedCursor } from "./linked-cursor"
+import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "../../../charts/linked-cursor"
 import { markersOverlay } from "./view-markers"
 import { Message } from "./message"
 import type { DetailPoint, Model } from "./model"
@@ -149,7 +149,6 @@ const headerChips = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, co
 				error: resolveColor(context.theme, "--chart-error"),
 			})
 
-/** `LinkedCursorOverlay`: positioned and shown by `MountLinkedCursor`. */
 export type GridState = Readonly<{
 	/** No overview yet (`Result.isInitial`), or the chart runtime and theme are still loading. */
 	isLoading: boolean
@@ -220,7 +219,7 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 			h.OnMount(MountLinkedCursor()),
 			...(state.isWaiting ? [h.AriaBusy(true)] : []),
 			h.Class(cn("grid grid-cols-1 md:grid-cols-2 gap-3", refreshingClass(state.isWaiting))),
-			h.Style({ "--linked-cursor-ratio": "0", "--linked-cursor-visible": "0" }),
+			h.Style(LINKED_CURSOR_STYLE),
 		],
 		CHARTS.map((chart) => {
 			const context = state.context

@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { delta } from "../../ui/delta"
 import { skeleton } from "../../ui/skeleton"
 import type { Model, UsageTotals } from "./model"
-import { statRail, statRailItem, statRailLoading } from "./view-stat-rail"
+import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 
 // `ServiceUsageCards` (apps/web/src/components/dashboard/service-usage-cards.tsx).
 
@@ -22,6 +22,7 @@ export const usageCards = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 		onFailure: () =>
 			statRail(
 				h,
+				{},
 				CARDS.map((card) =>
 					statRailItem(h, {
 						eyebrow: card.title,
@@ -34,6 +35,7 @@ export const usageCards = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 		onData: ({ totals, previous }) =>
 			statRail(
 				h,
+				{},
 				CARDS.map((card) =>
 					statRailItem(h, {
 						eyebrow: card.title,

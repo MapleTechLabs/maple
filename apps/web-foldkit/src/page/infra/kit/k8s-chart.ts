@@ -7,7 +7,7 @@ import type { ThemeColors } from "../../../charts/theme-colors"
 import { panel } from "../../../ui/panel"
 import { chartError, chartLoadingIn, type InfraSeriesInfo, view as metricChartView } from "./metric-chart"
 import type { SeriesSlot } from "./series"
-import { seriesLegend } from "./series-legend"
+import { seriesLegend } from "../../kit/series-legend"
 
 // `K8sMetricChartView` and the detail-chart wrappers around it (components/infra/k8s-detail-chart.tsx,
 // container-detail-chart.tsx): one metric at a time, 280 tall, chip legend, in a `ChartCard`.

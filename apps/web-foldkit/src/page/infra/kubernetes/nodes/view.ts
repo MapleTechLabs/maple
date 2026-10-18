@@ -24,8 +24,9 @@ import { fleetBand } from "../../kit/fleet-band"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
-import { countLabel, filteredEmpty, searchToolbar, setupEmpty } from "../../kit/page-parts"
-import { type SortAccessors, sortRows } from "../../kit/sort"
+import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
+import { filteredEmpty } from "../../../kit/signal-empty-state"
+import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
 import { kubernetesViewTabs } from "../../kit/view-tabs"
 import { Message } from "./message"
 import { type Model, NODE_LIST_LIMIT, type NodeFacets, type NodeRow } from "./model"
@@ -154,7 +155,7 @@ const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: Pag
 								onClear: Message.ClickedClearSearch(),
 								clearLabel: q !== "" ? "Clear search" : "Show all nodes",
 							})
-						: nodeTable(h, sortRows(filtered, model.sort, NODE_SORT_ACCESSORS), {
+						: nodeTable(h, sortRowsBy(filtered, model.sort, NODE_SORT_ACCESSORS), {
 								sort: model.sort,
 								isWaiting,
 								referenceTime: endTime,

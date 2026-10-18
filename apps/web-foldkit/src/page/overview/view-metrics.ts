@@ -9,7 +9,7 @@ import * as Chart from "../../charts/chart"
 import { chartSkeleton, type ChartSkeletonVariant } from "../../ui/chart-skeleton"
 import * as FixedMetricChart from "../../charts/fixed-metric-chart"
 import type { FixedMetricChartInputs } from "../../charts/fixed-metric-chart"
-import { linkedCursorOverlay } from "../../charts/fixed-metric-legend"
+import { LINKED_CURSOR_STYLE, linkedCursorOverlay } from "../../charts/linked-cursor"
 import {
 	fixedMetricModel,
 	type FixedMetricSeries,
@@ -285,7 +285,7 @@ export const metricsGrid = (
 			h.DataAttribute("metrics-grid", ""),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 			h.Class(cn("grid grid-cols-1 md:grid-cols-2 gap-3", refreshingClass(isWaiting), "mt-4")),
-			h.Style({ "--linked-cursor-ratio": "0", "--linked-cursor-visible": "0" }),
+			h.Style(LINKED_CURSOR_STYLE),
 		],
 		items.map((item) =>
 			h.div(

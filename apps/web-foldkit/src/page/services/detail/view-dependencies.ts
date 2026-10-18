@@ -21,7 +21,8 @@ import {
 	foldHostRows,
 } from "./derive-dependencies"
 import type { DependencyKind } from "./derive-panels"
-import { sortRows, TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
+import { sortRows } from "../../kit/table-sort"
+import { TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { barCell, headLabel, sortColumnHead } from "./view-table-cells"

@@ -9,7 +9,8 @@ import { TimeWindow } from "../../../data/time-range"
 import { ServiceSearch } from "../../../route/search"
 import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { DependencyBundle, Endpoint, Operation, SortState } from "./model-tabs"
+import { SortState } from "../../kit/table-sort"
+import { DependencyBundle, Endpoint, Operation } from "./model-tabs"
 
 // The service detail page (apps/web/src/routes/services/$serviceName.tsx and components/services/).
 

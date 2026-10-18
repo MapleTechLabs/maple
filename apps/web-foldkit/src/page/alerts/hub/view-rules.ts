@@ -16,7 +16,6 @@ import { groupByTag, type TagGroup, UNTAGGED_KEY } from "@maple/web-data/alerts/
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "../../../ui/alert"
 import { button } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { filterChip } from "../../../ui/filter-chip"
 import { icon } from "../../../ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
@@ -24,6 +23,7 @@ import * as Menu from "../../../ui/menu"
 import type { MenuEntry } from "../../../ui/menu-view"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import { statusDot } from "../../../ui/status-dot"
+import { filteredEmpty } from "../../kit/signal-empty-state"
 import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS, ruleHref } from "../shared/links"
 import { isoMs } from "../shared/time"
 import { Message, type RuleBucket } from "./message"
@@ -155,7 +155,14 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 					]
 				: []),
 			filtered.length === 0
-				? filteredEmpty(h)
+				? filteredEmpty(h, {
+						noun: "rules",
+						title: "No rules match your filters",
+						description: "Try a different search term or status.",
+						icon: icon(h, "MagnifierIcon", { size: 18 }),
+						onClear: Message.ClickedClearRuleFilters(),
+						className: "py-12",
+					})
 				: h.div(
 						[h.Class("overflow-x-auto rounded-md border")],
 						[
@@ -254,25 +261,6 @@ const searchInput = (h: H, value: string): Html =>
 					]),
 				]),
 	])
-
-/** `FilteredEmpty` with the magnifier. */
-const filteredEmpty = (h: H): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "MagnifierIcon", { size: 18 })]),
-				emptyTitle(h, ["No rules match your filters"]),
-				emptyDescription(h, ["Try a different search term or status."]),
-			]),
-			emptyContent(h, [
-				button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedClearRuleFilters())] }, [
-					"Clear filters",
-				]),
-			]),
-		],
-		"py-12",
-	)
 
 type RowInputs = Readonly<{
 	rule: AlertRuleDocument

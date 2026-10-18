@@ -3,7 +3,8 @@ import * as BarChart from "../../charts/bar-chart"
 import * as Chart from "../../charts/chart"
 import { ChartSpec } from "../../charts/chart-spec"
 import * as FixedMetricChart from "../../charts/fixed-metric-chart"
-import { fixedMetricLegend, latencySeries, linkedCursorOverlay } from "../../charts/fixed-metric-legend"
+import { fixedMetricLegend, latencySeries } from "../../charts/fixed-metric-legend"
+import { LINKED_CURSOR_STYLE, linkedCursorOverlay } from "../../charts/linked-cursor"
 import { LATENCY_SERIES } from "../../charts/fixed-metric-series"
 import { resolveColor } from "../../charts/theme-colors"
 import { Message } from "./message"
@@ -51,7 +52,7 @@ export const queryActivityCharts = (
 		p95LatencyMs: point.p95DurationMs,
 	}))
 	return h.div(
-		[h.Class("space-y-2"), h.Style({ "--linked-cursor-ratio": "0", "--linked-cursor-visible": "0" })],
+		[h.Class("space-y-2"), h.Style(LINKED_CURSOR_STYLE)],
 		[
 			plotBox(
 				h,

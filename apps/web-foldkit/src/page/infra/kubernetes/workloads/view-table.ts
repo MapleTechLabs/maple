@@ -10,7 +10,7 @@ import { columnHead, dataTable, dataTableEmpty, headSort, ROW_LINK_CLASS, skelet
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine } from "../../kit/meta-line"
 import { relativeTime } from "../../kit/relative-time"
-import type { SortState } from "../../kit/sort"
+import type { SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
 import { Message, type WorkloadSortKey } from "./message"
 import type { WorkloadKind, WorkloadRow } from "./model"

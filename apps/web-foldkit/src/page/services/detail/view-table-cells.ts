@@ -5,7 +5,8 @@ import { icon } from "../../../ui/icon"
 import { backdropBar } from "../../../ui/meter"
 import { tableCell, tableHead } from "../../../ui/table"
 import { Message } from "./message"
-import type { SortState, SortTable } from "./model-tabs"
+import type { SortState } from "../../kit/table-sort"
+import type { SortTable } from "./model-tabs"
 
 // The shared cells of the tab tables (components/services/service-table-cells.tsx, sortable-header.tsx).
 

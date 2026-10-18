@@ -20,21 +20,19 @@ import { rowActionsMenu } from "../../../ui/row-actions-menu"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
-import { statRail, statRailItem } from "../../overview/view-stat-rail"
+import { statRail, statRailItem } from "../../kit/stat-rail"
 import { alertStatusBadge } from "../shared/badges"
 import { msIso } from "../shared/time"
 import { Message } from "./message"
 import type { Model, StateFilter } from "./model"
 import { incidentMenuId } from "./update"
+import { sectionHeading } from "../../kit/section-heading"
 
 // The History tab of `RuleDetailContent` (apps/web/src/routes/alerts/$ruleId.tsx).
 
 type H = HtmlBuilder<Message>
 
 const INCIDENT_RENDER_LIMIT = 100
-
-const sectionTitle = (h: H, title: string): Html =>
-	h.div([h.Class("flex items-baseline gap-2.5")], [h.h2([h.Class("text-sm font-medium text-foreground")], [title])])
 
 export const historyTab = (
 	h: H,
@@ -63,7 +61,7 @@ export const historyTab = (
 					h.div(
 						[],
 						[
-							sectionTitle(h, "History"),
+							sectionHeading(h, { title: "History" }),
 							h.p([h.Class("text-muted-foreground text-sm")], [String(stats.totalTriggered), " total triggers"]),
 						],
 					),
@@ -78,12 +76,11 @@ export const historyTab = (
 			),
 			statRail(
 				h,
+				{ columns: 2 },
 				[
 					statRailItem(h, { size: "sm", eyebrow: "Total triggered", value: String(stats.totalTriggered) }),
 					statRailItem(h, { size: "sm", eyebrow: "Avg resolution", value: stats.avgResolution }),
 				],
-				false,
-				2,
 			),
 			...(stats.topContributors.length > 0
 				? [

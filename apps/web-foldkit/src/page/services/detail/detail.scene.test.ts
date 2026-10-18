@@ -16,7 +16,7 @@ import {
 	FetchUsage,
 	FetchWorkloads,
 } from "./command"
-import { MountLinkedCursor } from "./linked-cursor"
+import { LinkedCursorMessage, MountLinkedCursor } from "../../../charts/linked-cursor"
 import { Message } from "./message"
 import type { Model, OverviewData } from "./model"
 import type { Endpoint, Operation } from "./model-tabs"
@@ -246,7 +246,7 @@ describe("service detail view", () => {
 			{ update: pageUpdate, view },
 			given(loaded),
 			themeResolved(),
-			Mount.resolve(MountLinkedCursor, Message.AttachedLinkedCursor()),
+			Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
 			expectView(text("10 versions")).toExist(),
 			expectView(text("v1.0.1")).not.toExist(),
 			click(role("button", { name: "Show all 10 deploys" })),

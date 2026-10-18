@@ -33,7 +33,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
 	CompletedFetchDependencies: result(DependencyBundle),
 	CompletedFetchCommit: { sha: Schema.String, result: Schema.Result(Commit, CommitFailure) },
-	AttachedLinkedCursor: {},
+	CompletedMountLinkedCursor: {},
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },

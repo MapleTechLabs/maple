@@ -13,8 +13,9 @@ import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../kit/fleet-b
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
-import { countLabel, filteredEmpty, pageHero, searchToolbar, setupEmpty } from "../../kit/page-parts"
-import { type SortAccessors, sortRows } from "../../kit/sort"
+import { countLabel, pageHero, searchToolbar, setupEmpty } from "../../kit/page-parts"
+import { filteredEmpty } from "../../../kit/signal-empty-state"
+import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
 import { hostsViewTabs } from "../../kit/view-tabs"
 import { HOST_LIST_LIMIT } from "./command"
 import { countHostScopes, filterHosts } from "./derive"
@@ -111,7 +112,7 @@ const hostList = (
 						onClear: Message.ClickedClearSearch(),
 						clearLabel: "Clear",
 					})
-				: hostTable(h, sortRows(filtered, model.sort, HOST_SORT_ACCESSORS), {
+				: hostTable(h, sortRowsBy(filtered, model.sort, HOST_SORT_ACCESSORS), {
 						nowMs: model.frame.nowMs,
 						timeZone: inputs.context.timeZone,
 						isWaiting,

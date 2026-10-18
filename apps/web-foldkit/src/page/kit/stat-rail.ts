@@ -3,12 +3,12 @@ import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { skeleton } from "../../../ui/skeleton"
-import { statFigure } from "../../../ui/stat-figure"
+import { skeleton } from "../../ui/skeleton"
+import { statFigure } from "../../ui/stat-figure"
 
 // `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`
 // (apps/web/src/components/common/stat-rail.tsx).
-// TODO(spark): the `spark` MiniBars slot is not ported; no infra page in scope passes one.
+// TODO(spark): the `spark` MiniBars slot is not ported; no page in scope passes one.
 
 export type StatRailColumns = 2 | 3 | 4 | 5
 
@@ -46,6 +46,8 @@ export type StatRailItemOptions<M> = Readonly<{
 	action?: Html
 	subline?: Html | string
 	compact?: boolean
+	/** Entry animation delay in ms (the rail staggers its tiles). */
+	delay?: number
 	/** Makes the tile a button (with `selected` and `disabled`). */
 	onSelect?: M
 	isSelected?: boolean
@@ -108,7 +110,10 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 		isSmall ? "px-4 py-3" : "px-5 py-4",
 		options.className,
 	)
-	if (options.onSelect === undefined) return h.div([h.Class(shell)], body)
+	const delay = options.delay ?? 0
+	const delayStyle =
+		delay > 0 ? [h.Style({ "animation-delay": `${delay}ms`, "animation-fill-mode": "backwards" })] : []
+	if (options.onSelect === undefined) return h.div([h.Class(shell), ...delayStyle], body)
 	const isDisabled = options.isDisabled === true
 	return h.button(
 		[
@@ -117,6 +122,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 			h.AriaPressed(String(isSelected)),
 			...(options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]),
 			h.OnClick(options.onSelect),
+			...delayStyle,
 			h.Class(
 				cn(
 					shell,

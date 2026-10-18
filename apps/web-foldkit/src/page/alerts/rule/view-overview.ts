@@ -37,6 +37,7 @@ import { Message } from "./message"
 import type { Model, SignalSource } from "./model"
 import { checksPanel } from "./view-checks"
 import { diagnosisPanel } from "./view-diagnosis"
+import { sectionHeading } from "../../kit/section-heading"
 
 // The Overview tab of `RuleDetailContent` (apps/web/src/routes/alerts/$ruleId.tsx).
 
@@ -46,9 +47,6 @@ const SIGNAL_SOURCE_DESCRIPTION = new Map<SignalSource, string>([
 	["preview", "The rule's query, replayed now over the selected window."],
 	["checks", "What the evaluator actually observed and stored, one point per check."],
 ])
-
-const sectionTitle = (h: H, title: string): Html =>
-	h.div([h.Class("flex items-baseline gap-2.5")], [h.h2([h.Class("text-sm font-medium text-foreground")], [title])])
 
 /** `tierCondition`: one tier's condition, e.g. "> 2.00% (recovers < 1.50%)". */
 const tierCondition = (rule: AlertRuleDocument, tier: AlertRuleDocument["thresholds"][number]): string => {
@@ -72,7 +70,7 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 	h.div(
 		[h.Class("space-y-3")],
 		[
-			sectionTitle(h, "Configuration"),
+			sectionHeading(h, { title: "Configuration" }),
 			card(h, [
 				cardPanel(
 					h,
@@ -338,7 +336,7 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 					h.div(
 						[h.Class("space-y-4")],
 						[
-							sectionTitle(h, "Checks"),
+							sectionHeading(h, { title: "Checks" }),
 							errorState(h, { failure, title: "Failed to load checks", onRetry: Message.ClickedReload() }),
 						],
 					),

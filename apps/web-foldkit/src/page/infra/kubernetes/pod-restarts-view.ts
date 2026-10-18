@@ -6,8 +6,8 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../data/load-failure"
 import { columnHead, dataTable } from "../kit/data-table"
-import { sectionHeading } from "../kit/section-heading"
-import { statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
+import { sectionHeading } from "../../kit/section-heading"
+import { statRailItem, statRailItemSkeleton } from "../../kit/stat-rail"
 import type { RestartRow } from "./pod-data"
 
 // `PodRestartsStat` and `PodContainerRestarts` (components/infra/kubernetes/pod-restarts-panel.tsx).

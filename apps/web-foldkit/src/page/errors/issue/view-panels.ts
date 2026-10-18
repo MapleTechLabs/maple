@@ -9,6 +9,7 @@ import { icon } from "../../../ui/icon"
 import { panel, panelHeader } from "../../../ui/panel"
 import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
+import { sectionHeading } from "../../kit/section-heading"
 
 // `IssuePullRequestsPanel`, `LinkedInvestigationPanel`, `IssueIncidentsTable` and `BodySection`.
 // TODO(attach-dialog): Attach opens `AttachPullRequestDialog` in legacy (picker and link mutation).
@@ -158,18 +159,7 @@ export const bodySection = (
 	h.section(
 		[h.AriaLabelledBy(`${options.id}-heading`), h.Class("flex shrink-0 flex-col gap-3.5")],
 		[
-			h.div(
-				[h.Class("flex items-baseline gap-2.5")],
-				[
-					h.h2(
-						[h.Id(`${options.id}-heading`), h.Class("text-sm font-medium text-foreground")],
-						[options.title],
-					),
-					...(options.count === undefined
-						? []
-						: [h.span([h.Class("text-xs text-muted-foreground")], [options.count])]),
-				],
-			),
+			sectionHeading(h, { title: options.title, hint: options.count, id: `${options.id}-heading` }),
 			...children,
 		],
 	)

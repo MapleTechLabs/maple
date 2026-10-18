@@ -1,17 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import type { TimeSearch } from "../../kit/time-controls"
+import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 
-// `UnderlineTabStrip navigation` + `underlineTabClass` (common/underline-link-tabs.tsx), and the
-// two section strips built on it: `HostsViewTabs` and `KubernetesViewTabs`.
-
-export const underlineTabClass = (isActive: boolean): string =>
-	cn(
-		"-mb-px flex h-[34px] shrink-0 items-center gap-1.5 border-b-2 text-sm transition-colors",
-		isActive
-			? "border-primary font-medium text-foreground"
-			: "border-transparent text-muted-foreground hover:text-foreground",
-	)
+// The link strip on `UnderlineTabStrip navigation` and the two section strips built on it:
+// `HostsViewTabs` and `KubernetesViewTabs`.
 
 export type TabLink = Readonly<{ id: string; title: string; href: string }>
 
@@ -22,11 +16,9 @@ export const linkTabStrip = <M>(
 	tabs: ReadonlyArray<TabLink>,
 	activeId: string,
 ): Html =>
-	h.nav(
-		[
-			h.AriaLabel(label),
-			h.Class(cn("flex items-center gap-6 overflow-x-auto", "border-b", "-mx-4 -mb-4 px-4")),
-		],
+	underlineTabStrip(
+		h,
+		{ label, navigation: true },
 		tabs.map((tab) => {
 			const isActive = tab.id === activeId
 			return h.a(
@@ -46,7 +38,7 @@ export const linkTabStrip = <M>(
 		}),
 	)
 
-export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
+export type { TimeSearch }
 
 /** `pickTimeRangeSearch`: only the window travels between sibling views. */
 export const pickTimeSearch = (search: TimeSearch): TimeSearch => ({
@@ -81,9 +73,17 @@ const kubernetesViews = (search: TimeSearch): ReadonlyArray<TabLink> => {
 	const window = pickTimeSearch(search)
 	return [
 		{ id: "pods", title: "Pods", href: hrefOf(AppRoute.InfraKubernetesPods({ search: window })) },
-		{ id: "workloads", title: "Workloads", href: hrefOf(AppRoute.InfraKubernetesWorkloads({ search: window })) },
+		{
+			id: "workloads",
+			title: "Workloads",
+			href: hrefOf(AppRoute.InfraKubernetesWorkloads({ search: window })),
+		},
 		{ id: "nodes", title: "Nodes", href: hrefOf(AppRoute.InfraKubernetesNodes({ search: window })) },
-		{ id: "services", title: "Services", href: hrefOf(AppRoute.InfraKubernetesServices({ search: window })) },
+		{
+			id: "services",
+			title: "Services",
+			href: hrefOf(AppRoute.InfraKubernetesServices({ search: window })),
+		},
 	]
 }
 

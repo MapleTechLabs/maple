@@ -14,7 +14,7 @@ import { asChartUnit, infraPoints, labelFor } from "../../../charts/definitions/
 import { plotFrame } from "../../../charts/plot-frame"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { chartSkeleton, type ChartSkeletonVariant } from "../../../ui/chart-skeleton"
-import { linkedCursorOverlay } from "./linked-cursor"
+import { linkedCursorOverlay } from "../../../charts/linked-cursor"
 
 // `InfraMetricChart` (apps/web/src/components/infra/primitives/infra-metric-chart.tsx), view half,
 // and the `ChartPlotArea` / `ChartLoading` / `ChartEmpty` / `ChartError` states it alternates with

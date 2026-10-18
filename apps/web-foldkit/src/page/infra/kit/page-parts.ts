@@ -1,14 +1,15 @@
-import { type DocsPage, docsUrl } from "@maple/web/lib/docs"
+import type { DocsPage } from "@maple/web/lib/docs"
 import { countLabel as nounCount } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
+import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 
-// `PageHero` (common/page-hero.tsx), `SearchToolbar` (common/search-toolbar.tsx), `FilteredEmpty`
-// (common/filtered-empty.tsx) and `DocsLink` / `EmptyActions` (common/docs-link.tsx).
+// `PageHero` (common/page-hero.tsx), `SearchToolbar` (common/search-toolbar.tsx) and the infra
+// empty states.
 
 export type PageHeroOptions = Readonly<{
 	title: Html | string
@@ -110,67 +111,6 @@ export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOption
 				: []),
 		],
 	)
-
-/** `FilteredEmpty`: the list is empty because the user's own filters excluded everything. */
-export const filteredEmpty = <M>(
-	h: HtmlBuilder<M>,
-	options: Readonly<{
-		noun: string
-		title?: string
-		description?: string
-		onClear?: M
-		clearLabel?: string
-		icon?: Html
-		className?: string
-	}>,
-): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [options.icon ?? icon(h, "SlidersIcon")]),
-				emptyTitle(h, [options.title ?? `No ${options.noun} match these filters`]),
-				...(options.description === ""
-					? []
-					: [
-							emptyDescription(h, [
-								options.description ??
-									"Everything in this time range was excluded by the current filters.",
-							]),
-						]),
-			]),
-			...(options.onClear === undefined
-				? []
-				: [
-						emptyContent(h, [
-							button(
-								h,
-								{ variant: "outline", size: "sm", attributes: [h.OnClick(options.onClear)] },
-								[options.clearLabel ?? "Clear filters"],
-							),
-						]),
-					]),
-		],
-		options.className,
-	)
-
-/** `DocsLink`. */
-export const docsLink = <M>(h: HtmlBuilder<M>, page: DocsPage, label = "Read the docs"): Html =>
-	h.a(
-		[
-			h.Href(docsUrl(page)),
-			h.Target("_blank"),
-			h.Rel("noopener noreferrer"),
-			h.Class(
-				"inline-flex items-center gap-1.5 text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline",
-			),
-		],
-		[label, icon(h, "ExternalLinkIcon", { size: 12 })],
-	)
-
-/** `EmptyActions`. */
-export const emptyActions = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("flex flex-wrap items-center justify-center gap-x-4 gap-y-2")], children)
 
 /** `InfraSetupEmpty`: nothing reporting yet; the button opens the page's install modal. */
 export const setupEmpty = <M>(

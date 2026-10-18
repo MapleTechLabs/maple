@@ -530,7 +530,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, dependencies: Keyed.accept(model.dependencies, key, result) },
 		}),
 		CompletedFetchCommit: ({ sha, result }) => ({ model: settleCommit(model, sha, result) }),
-		AttachedLinkedCursor: () => ({ model }),
+		CompletedMountLinkedCursor: () => ({ model }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },

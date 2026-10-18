@@ -6,7 +6,7 @@ import { InfraKubernetesNodesSearch } from "../../../../route/search"
 import * as FilterSections from "../../../../ui/filters/filter-sections"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
-import { SortState } from "../../kit/sort"
+import { SortState } from "../../../kit/table-sort"
 
 // `/infra/kubernetes/nodes` (apps/web/src/routes/infra/kubernetes/nodes/index.tsx).
 

@@ -2,13 +2,6 @@ import { Schema } from "effect"
 
 // Row schemas of the Operations, API and Dependencies data (mirroring the web-data types).
 
-export const SortDir = Schema.Literals(["asc", "desc"])
-export type SortDir = typeof SortDir.Type
-
-/** `useSortState`: the sorted column (`null` = source order) and its direction. */
-export const SortState = Schema.Struct({ key: Schema.NullOr(Schema.String), dir: SortDir })
-export type SortState = typeof SortState.Type
-
 /** The three sortable tables of the tabs. */
 export const SortTable = Schema.Literals(["operations", "endpoints", "dependencies"])
 export type SortTable = typeof SortTable.Type

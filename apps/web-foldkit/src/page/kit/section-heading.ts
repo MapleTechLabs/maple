@@ -10,6 +10,8 @@ export type SectionHeadingOptions = Readonly<{
 	badge?: Html
 	actions?: Html
 	as?: "h2" | "h3"
+	/** The heading element's id, for a section `aria-labelledby` it. */
+	id?: string
 	className?: string
 }>
 
@@ -20,11 +22,14 @@ export const sectionHeading = <M>(h: HtmlBuilder<M>, options: SectionHeadingOpti
 			? []
 			: [h.span([h.Class("ml-2 font-mono text-xs text-muted-foreground")], [options.count])]),
 	]
-	const titleClass = h.Class("text-sm font-medium text-foreground")
+	const titleAttributes = [
+		...(options.id === undefined ? [] : [h.Id(options.id)]),
+		h.Class("text-sm font-medium text-foreground"),
+	]
 	const heading = h.div(
 		[h.Class(cn("flex items-baseline gap-2.5", options.actions === undefined && options.className))],
 		[
-			options.as === "h3" ? h.h3([titleClass], titleChildren) : h.h2([titleClass], titleChildren),
+			options.as === "h3" ? h.h3(titleAttributes, titleChildren) : h.h2(titleAttributes, titleChildren),
 			...(options.badge === undefined ? [] : [options.badge]),
 			...(options.hint ? [h.span([h.Class("text-xs text-muted-foreground")], [options.hint])] : []),
 		],

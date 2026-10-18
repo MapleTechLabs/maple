@@ -16,17 +16,15 @@ import { skeleton } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedText } from "../../../ui/truncated-text"
 import { docsLink } from "../../kit/signal-empty-state"
-import { statRail, statRailItem } from "../../overview/view-stat-rail"
+import { statRail, statRailItem } from "../../kit/stat-rail"
 import { alertStatusBadge } from "../shared/badges"
 import { Message } from "./message"
 import type { CheckStatusFilter, ChecksResponse, Model } from "./model"
+import { sectionHeading } from "../../kit/section-heading"
 
 // `ChecksPanel` and `CheckDelta` (apps/web/src/routes/alerts/$ruleId.tsx).
 
 type H = HtmlBuilder<Message>
-
-const sectionTitle = (h: H, title: string): Html =>
-	h.div([h.Class("flex items-baseline gap-2.5")], [h.h2([h.Class("text-sm font-medium text-foreground")], [title])])
 
 const checkKey = (check: AlertCheckDocument) => `${check.timestamp}:${check.groupKey}:${check.status}`
 
@@ -132,9 +130,10 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 	return h.div(
 		[h.Class("space-y-4")],
 		[
-			sectionTitle(h, "Checks"),
+			sectionHeading(h, { title: "Checks" }),
 			statRail(
 				h,
+				{ columns: totals.errored > 0 ? 5 : 4 },
 				[
 					statRailItem(h, { size: "sm", eyebrow: "Total checks", value: String(totals.total) }),
 					statRailItem(h, {
@@ -149,8 +148,6 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 						: []),
 					statRailItem(h, { size: "sm", eyebrow: "Transitions", value: String(totals.transitions) }),
 				],
-				false,
-				totals.errored > 0 ? 5 : 4,
 			),
 			h.div(
 				[h.Class("space-y-3")],

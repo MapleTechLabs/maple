@@ -27,7 +27,7 @@ import {
 } from "./derive"
 import type { HealthSnapshot, Incident, Model } from "./model"
 import { alertFiringHero } from "./view-hero"
-import { statRail, statRailItem, statRailLoading } from "./view-stat-rail"
+import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 
 // `ServiceHealthOverview` (components/dashboard/service-health-section.tsx): the alerts banner and
 // the health summary rail above the usage cards.
@@ -119,7 +119,7 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 				counts[health] > 0 ? active : "neutral"
 			return section(h, "mb-4 space-y-3", AsyncData.isRefreshing(data), [
 				banner,
-				statRail(h, [
+				statRail(h, {}, [
 					statRailItem(h, {
 						eyebrow: "Services",
 						value: String(snapshot.length),

@@ -6,7 +6,7 @@ import * as Chart from "../../../../charts/chart"
 import { panel, panelHeader } from "../../../../ui/panel"
 import { middleTruncate } from "../../../../ui/middle-truncate"
 import { formatValueWithUnit } from "@maple/web/components/infra/chart-units"
-import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "../../kit/linked-cursor"
+import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "../../../../charts/linked-cursor"
 import {
 	chartError,
 	chartLoadingIn,
@@ -16,7 +16,7 @@ import {
 	view as metricChartView,
 } from "../../kit/metric-chart"
 import { attributeSection, metaRow, resourceAttributesCard } from "../../kit/resource-attributes"
-import { seriesLegend } from "../../kit/series-legend"
+import { seriesLegend } from "../../../kit/series-legend"
 import { formatSeen } from "../../../metrics/time-format"
 import { type HostMetric, Message } from "./message"
 import type { HostSummary, Model } from "./model"

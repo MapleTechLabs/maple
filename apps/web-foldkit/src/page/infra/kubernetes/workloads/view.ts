@@ -25,8 +25,9 @@ import { fleetBand } from "../../kit/fleet-band"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
-import { countLabel, filteredEmpty, searchToolbar, setupEmpty } from "../../kit/page-parts"
-import { type SortAccessors, sortRows } from "../../kit/sort"
+import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
+import { filteredEmpty } from "../../../kit/signal-empty-state"
+import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
 import { kubernetesViewTabs } from "../../kit/view-tabs"
 import { type Facet, Message, type WorkloadScope } from "./message"
 import { type Model, WORKLOAD_LIST_LIMIT, type WorkloadFacets, type WorkloadKind, type WorkloadRow } from "./model"
@@ -194,7 +195,7 @@ const workloadList = (h: H, model: Model, workloads: ReadonlyArray<WorkloadRow>,
 								onClear: Message.ClickedClearSearch(),
 								clearLabel: q !== "" ? "Clear search" : "Show all workloads",
 							})
-						: workloadTable(h, sortRows(filtered, model.sort, SORT_ACCESSORS), {
+						: workloadTable(h, sortRowsBy(filtered, model.sort, SORT_ACCESSORS), {
 								kind,
 								sort: model.sort,
 								isWaiting,

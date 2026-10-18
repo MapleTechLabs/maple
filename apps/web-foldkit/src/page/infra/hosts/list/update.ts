@@ -6,7 +6,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../../cont
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import { applySteps, keyed } from "../../kit/requests"
-import { nextSort } from "../../kit/sort"
+import { nextSort } from "../../../kit/table-sort"
 import { FetchHosts, HOST_LIST_LIMIT } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"

@@ -109,44 +109,54 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 const detailOf = (detail: Html | null | undefined): ReadonlyArray<Html> =>
 	detail === undefined || detail === null ? [] : [detail]
 
-/** `FilteredEmpty` with its defaults. */
-const filteredEmpty = <M>(
+/** `FilteredEmpty`: the list is empty because the user's own filters excluded everything. */
+export const filteredEmpty = <M>(
 	h: HtmlBuilder<M>,
-	noun: string,
-	onClear: M | undefined,
-	className?: string,
-	detail?: Html | null,
+	options: Readonly<{
+		noun: string
+		title?: string
+		/** `""` drops the description line. */
+		description?: string
+		onClear?: M
+		clearLabel?: string
+		icon?: Html
+		/** Page detail above the clear button; `null` renders nothing. */
+		detail?: Html | null
+		className?: string
+	}>,
 ): Html =>
 	empty(
 		h,
 		[
 			emptyHeader(h, [
-				iconMedia(h, "SlidersIcon"),
-				emptyTitle(h, [`No ${noun} match these filters`]),
-				emptyDescription(h, ["Everything in this time range was excluded by the current filters."]),
+				options.icon === undefined ? iconMedia(h, "SlidersIcon") : emptyMedia(h, { variant: "icon" }, [options.icon]),
+				emptyTitle(h, [options.title ?? `No ${options.noun} match these filters`]),
+				...(options.description === ""
+					? []
+					: [
+							emptyDescription(h, [
+								options.description ?? "Everything in this time range was excluded by the current filters.",
+							]),
+						]),
 			]),
-			...(onClear === undefined && detail === undefined
+			...(options.onClear === undefined && options.detail === undefined
 				? []
 				: [
 						emptyContent(h, [
-							...detailOf(detail),
-							...(onClear === undefined
+							...detailOf(options.detail),
+							...(options.onClear === undefined
 								? []
 								: [
 										button(
 											h,
-											{
-												variant: "outline",
-												size: "sm",
-												attributes: [h.OnClick(onClear)],
-											},
-											["Clear filters"],
+											{ variant: "outline", size: "sm", attributes: [h.OnClick(options.onClear)] },
+											[options.clearLabel ?? "Clear filters"],
 										),
 									]),
 						]),
 					]),
 		],
-		className,
+		options.className,
 	)
 
 /** `SignalEmptyStateView`: filtered, then absent (setup), present (quiet window), else unknown. */
@@ -154,7 +164,12 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 	const copy = SIGNAL_COPY[options.signal]
 	const subject = options.noun ?? copy.noun
 	if (options.isFiltered === true)
-		return filteredEmpty(h, subject, options.onClearFilters, options.className, options.detail)
+		return filteredEmpty(h, {
+			noun: subject,
+			onClear: options.onClearFilters,
+			className: options.className,
+			detail: options.detail,
+		})
 	const { presence } = options
 	if (presence.status === "absent") {
 		return empty(

@@ -5,7 +5,7 @@ import { LoadFailure } from "../../../../data/load-failure"
 import { InfraHostsSearch } from "../../../../route/search"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
-import { SortState } from "../../kit/sort"
+import { SortState } from "../../../kit/table-sort"
 
 // `/infra/hosts` (apps/web/src/routes/infra/hosts/index.tsx).
 
