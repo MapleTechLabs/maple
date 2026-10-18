@@ -18,7 +18,7 @@ const STALE_DOT = "border-[1.5px] border-muted-foreground bg-transparent"
 export const ROW_CLASS =
 	"group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
 
-const FINDINGS_LIST_CLASS = "flex flex-col overflow-hidden rounded-md border"
+export const FINDINGS_LIST_CLASS = "flex flex-col overflow-hidden rounded-md border"
 const FINDINGS_ROW_CLASS = "-mt-px border-t"
 
 /** Errors sit after warnings: a source we couldn't check outranks one that went quiet. */
@@ -48,7 +48,7 @@ const findingTitle = <M>(h: HtmlBuilder<M>, { subject, title }: Finding): Html =
 				],
 			)
 
-const findingRow = <M>(h: HtmlBuilder<M>, finding: Finding, time: TimeSearch): Html =>
+export const findingRow = <M>(h: HtmlBuilder<M>, finding: Finding, time: TimeSearch): Html =>
 	h.a(
 		[h.Class(cn(ROW_CLASS, FINDINGS_ROW_CLASS, FINDING_ORDER[finding.tone])), h.Href(findingHref(finding.target, time))],
 		[
