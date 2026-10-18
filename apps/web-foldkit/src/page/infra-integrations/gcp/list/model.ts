@@ -56,6 +56,8 @@ export const Message = defineMessageUnion({
 	TickedStatusRefresh: {},
 	TickedFleetRefresh: {},
 	TickedResourcesRefresh: {},
+	/** `useLiveClock`: connector states that expire on a timer (setup, waiting) age while open. */
+	TickedLiveClock: { nowMs: Schema.Number },
 	ClickedRetryStatus: {},
 	ClickedRetryFleet: {},
 	ClickedRetryResources: {},

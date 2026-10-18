@@ -1,4 +1,4 @@
-import { Duration, Effect, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import type { Resources } from "../../../../platform/resources"
 import type { PageSubscriptionInput } from "../../../contract"
@@ -12,6 +12,13 @@ const SETTLING_REFRESH = Duration.seconds(10)
 const STEADY_REFRESH = Duration.seconds(60)
 const WAITING_REFRESH = Duration.seconds(30)
 const EMPTY_RESOURCES_REFRESH = Duration.seconds(30)
+
+/** `LIVE_CLOCK_INTERVAL_MS`. */
+const LIVE_CLOCK = Duration.seconds(30)
+
+const liveClock = Stream.fromEffectRepeat(
+	Effect.andThen(Effect.sleep(LIVE_CLOCK), () => Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveClock({ nowMs }))),
+)
 
 const every = (interval: Duration.Duration, message: Message) =>
 	Stream.fromEffectRepeat(Effect.as(Effect.sleep(interval), message))
@@ -35,6 +42,13 @@ const resourcesEmpty = (model: Model): boolean => successOf(model.resources.data
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
+		liveClock: entry(
+			{ hasStatus: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ hasStatus: statusOf(model) !== null }),
+				dependenciesToStream: ({ hasStatus }) => (hasStatus ? liveClock : Stream.empty),
+			},
+		),
 		statusRefresh: entry(
 			{ cadence: Schema.Literals(["off", "settling", "steady"]) },
 			{
