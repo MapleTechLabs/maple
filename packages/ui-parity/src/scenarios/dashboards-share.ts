@@ -51,4 +51,13 @@ export const shareScenarios: ReadonlyArray<Scenario> = [
 	dashboard("share-embed-made-public", "Payment board: made public from the embed dialog", payment, {
 		steps: act(...openEmbed, clickButton("Make dashboard public")),
 	}),
+	// The traces list cannot render in a shared view: its "Embed chart" is disabled, with a tooltip.
+	dashboard("share-embed-unsupported", "Platform board: the disabled Embed chart item's tooltip", platform, {
+		steps: act(
+			(page) => page.getByRole("button", { name: "Widget actions" }).last().click(),
+			// A disabled item takes no pointer events: the hover lands on its tooltip wrapper.
+			(page) => page.getByRole("menuitem", { name: "Embed chart" }).hover({ force: true }),
+			(page) => page.getByText("This widget can't be shown in shared views").waitFor(),
+		),
+	}),
 ]

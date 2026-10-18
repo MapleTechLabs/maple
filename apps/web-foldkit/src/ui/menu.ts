@@ -6,6 +6,7 @@ import { anchoredPopup } from "./overlay/anchored"
 import { initPopup, makeTransition, PopupState, popupId, triggerId } from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
 import { isRovingKey, nextIndex } from "./overlay/roving"
+import * as Tooltip from "./tooltip"
 
 /**
  * Base UI `Menu` (`@maple/ui/dropdown-menu`): the trigger toggles it; arrows move the highlight,
@@ -40,6 +41,8 @@ export const Model = Schema.Struct({
 	highlighted: Schema.NullOr(Schema.Number),
 	submenu: Schema.NullOr(Submenu),
 	submenuGeneration: Schema.Number,
+	/** The one tooltip a disabled item can carry (a `<TooltipTrigger render={<div />}>` around it). */
+	itemTooltip: Tooltip.Model,
 })
 export type Model = typeof Model.Type
 
@@ -49,6 +52,8 @@ export const itemId = (id: string, index: number): string => `${id}-item-${index
 export const subItemId = (id: string, index: number): string => `${id}-sub-item-${index}`
 export const subPopupId = (id: string): string => `${id}-sub-popup`
 export const subPortalId = (id: string): string => `${id}-sub-portal`
+export const itemTooltipId = (id: string): string => `${id}-item-tooltip`
+export const itemTooltipTriggerId = (id: string, index: number): string => `${id}-item-${index}-tooltip`
 
 /** `<DropdownMenuContent>`'s defaults: below the trigger, start-aligned. */
 export const init = (id: string, options: Readonly<{ isOpen?: boolean }> = {}): Model => ({
@@ -56,6 +61,7 @@ export const init = (id: string, options: Readonly<{ isOpen?: boolean }> = {}): 
 	highlighted: null,
 	submenu: null,
 	submenuGeneration: 0,
+	itemTooltip: Tooltip.init(itemTooltipId(id), { side: "left" }),
 })
 
 // MESSAGE
@@ -78,6 +84,7 @@ export const Message = defineMessageUnion({
 	ChangedPlacement: { side: Side, align: Align },
 	ChangedSubmenuPlacement: { side: Side, align: Align },
 	GotAnimationMessage: { message: Animation.Message },
+	GotItemTooltipMessage: { message: Tooltip.Message, side: Side },
 })
 export type Message = typeof Message.Type
 
@@ -118,6 +125,7 @@ type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 const close = (model: Model): UpdateReturn =>
 	transition.close({
 		...model,
+		itemTooltip: Tooltip.init(itemTooltipId(model.id), { side: model.itemTooltip.requestedSide }),
 		highlighted: null,
 		submenu: null,
 		submenuGeneration: Number.increment(model.submenuGeneration),
@@ -256,6 +264,15 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		}),
 		GotAnimationMessage: ({ message: animationMessage }) =>
 			transition.foldAnimation(model, animationMessage),
+		GotItemTooltipMessage: ({ message: inner, side }) => {
+			const next = Tooltip.update({ ...model.itemTooltip, requestedSide: side }, inner)
+			return {
+				model: { ...model, itemTooltip: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (tooltipMessage) =>
+					Message.GotItemTooltipMessage({ message: tooltipMessage, side }),
+				),
+			}
+		},
 	})
 
 // MOUNT
