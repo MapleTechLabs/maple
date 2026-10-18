@@ -46,8 +46,6 @@ export const Model = Schema.Struct({
 	canvas: Canvas.Model,
 	/** The trace chips' full-id tooltip, one Model for every chip. */
 	traceTooltip: Tooltip.Model,
-	/** Traces whose route loader a hover or focus already ran (`defaultPreload: "intent"`). */
-	preloadedTraces: Schema.Array(Schema.String),
 	/** The Chat and Transcript tabs' thread (`ChatConversation`, investigation mode), once one opened. */
 	conversation: Schema.NullOr(ConversationModel),
 	/** The thread's report card: the action its rows opened, from local state, in its own sheet. */
