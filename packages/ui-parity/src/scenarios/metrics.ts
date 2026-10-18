@@ -94,6 +94,18 @@ export const metricsArea: AreaModule = {
 				(page) => page.waitForTimeout(700),
 			),
 		}),
+		metric("copy-link", "the explorer link copied", HISTOGRAM, {
+			steps: act(clickButton("Copy link"), (page) => page.waitForTimeout(300)),
+		}),
+		metric("reload", "Reload pressed on a metric", HISTOGRAM, {
+			steps: act(clickButton("Reload"), (page) => page.waitForTimeout(300)),
+		}),
+		metric("browse-typed-search", "the explorer search typed into", "/metrics", {
+			steps: act(
+				(page) => page.getByRole("searchbox").or(page.getByRole("textbox")).first().fill("memory"),
+				(page) => page.waitForTimeout(700),
+			),
+		}),
 		metric("add-dialog", "the Add to dashboard dialog open", HISTOGRAM, {
 			steps: act(clickButton("Add to dashboard"), (page) => page.getByRole("dialog").waitFor()),
 		}),

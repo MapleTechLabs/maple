@@ -2,16 +2,17 @@ import { getCustomChartServiceSparklines } from "@maple/web-data/warehouse/custo
 import {
 	getServiceHealthBaseline,
 	getServiceOverview,
-	getServicesFacets,
 	type GetServiceOverviewInput,
 } from "@maple/web-data/warehouse/services"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
-import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
+import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { ARM_DELAY_MS, loadCommitDetail } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
+import { AnomalyServiceCounts } from "../../../data/anomaly-service-counts"
+import { ServicesFacetsProbe } from "../../../data/services-facets-probe"
 import { Message, RequestMode } from "./message"
 
 /** The overview, sparklines and baseline input: the window plus the URL filters, pin applied. */
@@ -97,11 +98,15 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 		),
 })
 
+/** `getServicesFacetsResultAtom`: shared with the Overview through the facets probe. */
 export const FetchFacets = Command.define("FetchServicesFacets", {
-	args: { key: Schema.String, window: TimeWindow },
+	args: { key: Schema.String, window: TimeWindow, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
-	execute: ({ key, window }) =>
-		getServicesFacets({ data: window }).pipe(
+	execute: ({ key, window, refresh }) =>
+		Effect.gen(function* () {
+			const probe = yield* ServicesFacetsProbe
+			return yield* probe.load(window, { refresh })
+		}).pipe(
 			Effect.map(({ data }) => ({
 				environments: data.environments,
 				namespaces: data.namespaces,
@@ -145,9 +150,8 @@ export const FetchAnomalies = Command.define("FetchOpenAnomalyServiceCounts", {
 	messages: [Message.CompletedFetchAnomalies],
 	execute: ({ key }) =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiV2Client
-			const response = yield* client.anomalies.serviceCounts({ query: { status: "open" } })
-			return response.data
+			const counts = yield* AnomalyServiceCounts
+			return yield* counts.load()
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,

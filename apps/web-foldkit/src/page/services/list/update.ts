@@ -121,7 +121,7 @@ const facetsStep = (model: Model, context: PageContext, window: TimeWindow, mode
 		requestKey(context.orgId, "getServicesFacets", { data: window }),
 		mode,
 		(facets) => ({ facets }),
-		(key) => FetchFacets({ key, window }),
+		(key) => FetchFacets({ key, window, refresh: mode === "Refresh" }),
 	)
 
 /** Every query the page reads, keyed like apps/web's atoms, for the resolved window. */
@@ -148,17 +148,18 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			(key) => FetchSparklines({ key, input }),
 		),
 		facetsStep(model, context, window, mode),
+		// Reload refreshes the overview, sparklines and facets only (`useRefreshableAtomValue`).
 		keyed(
 			model.baseline,
 			requestKey(org, "getServiceHealthBaseline", { data: baselineInput }),
-			mode,
+			"Load",
 			(baseline) => ({ baseline }),
 			(key) => FetchBaseline({ key, input: baselineInput }),
 		),
 		keyed(
 			model.anomalies,
 			requestKey(org, "anomalies.serviceCounts", { status: "open" }),
-			mode,
+			"Load",
 			(anomalies) => ({ anomalies }),
 			(key) => FetchAnomalies({ key }),
 		),

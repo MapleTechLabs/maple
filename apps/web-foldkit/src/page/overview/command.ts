@@ -9,9 +9,9 @@ import { getServiceHealthSnapshot } from "@maple/web-data/warehouse/services"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../data/load-failure"
+import { AnomalyServiceCounts } from "../../data/anomaly-service-counts"
 import { ServicesFacetsProbe } from "../../data/services-facets-probe"
 import { TimeWindow } from "../../data/time-range"
-import { MapleApiV2Client } from "../../platform/api-clients"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { Message } from "./message"
 import { FacetsHint } from "./model"
@@ -133,13 +133,12 @@ export const FetchSnapshot = Command.define("FetchServiceHealthSnapshot", {
 
 /** `openAnomalyServiceCountsAtom`. */
 export const FetchAnomalies = Command.define("FetchOverviewAnomalyCounts", {
-	args: { key: Schema.String },
+	args: { key: Schema.String, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchAnomalies],
-	execute: ({ key }) =>
+	execute: ({ key, refresh }) =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiV2Client
-			const response = yield* client.anomalies.serviceCounts({ query: { status: "open" } })
-			return response.data
+			const counts = yield* AnomalyServiceCounts
+			return yield* counts.load({ refresh })
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,

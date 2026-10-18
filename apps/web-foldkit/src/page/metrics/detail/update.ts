@@ -144,7 +144,8 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 	const attributeKeys = keyed(
 		model.attributeKeys,
 		requestKey(org, "getMetricAttributeKeys", { data: keysInput }),
-		mode,
+		// The scoped keys are read with `useAtomValue`: Reload leaves them alone.
+		"Load",
 		(key) => FetchAttributeKeys({ key, input: keysInput }),
 	)
 	const timeseries = keyed(
@@ -180,7 +181,8 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		mode,
 		(key) => FetchCatalog({ key, metricName: model.metricName, window }),
 	)
-	const lookups = requestAutocomplete(model, context, window, mode)
+	// Reload leaves the provider's lookups alone: they are read with `useAtomValue`.
+	const lookups = requestAutocomplete(model, context, window, "Load")
 	const content = requestContent(
 		{ ...model, window, catalog: catalog.slot, autocomplete: lookups.autocomplete },
 		context,

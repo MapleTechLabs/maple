@@ -1,5 +1,6 @@
 import { Layer } from "effect"
 import { OrgCollections } from "../data/collections/org-collections"
+import { AnomalyServiceCounts } from "../data/anomaly-service-counts"
 import { IntegrationStatuses } from "../data/integration-statuses"
 import { ServicesFacetsProbe } from "../data/services-facets-probe"
 import { SessionTenant } from "../data/session-tenant"
@@ -17,6 +18,7 @@ export const ResourcesLive = Layer.mergeAll(
 	OrgCollections.layer,
 	SessionTenant.layer,
 	ServicesFacetsProbe.layer.pipe(Layer.provide(WarehouseLive)),
+	AnomalyServiceCounts.layer.pipe(Layer.provide(MapleApiV2Client.layer)),
 	IntegrationStatuses.layer.pipe(Layer.provide([MapleInternalApiClient.layer, MapleApiV2Client.layer])),
 )
 export type Resources = Layer.Success<typeof ResourcesLive>

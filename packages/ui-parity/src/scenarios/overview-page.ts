@@ -68,6 +68,24 @@ export const overviewPageArea: AreaModule = {
 				await page.waitForTimeout(300)
 			},
 		}),
+		overview("reload", "Reload pressed", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Reload" }).click()
+				await page.waitForTimeout(300)
+			},
+		}),
+		overview("view-services", "the rail's View healthy services link followed", {
+			steps: async (page) => {
+				await page.getByRole("link", { name: "View healthy services" }).click()
+				await page.waitForURL(/\/services\?/)
+			},
+		}),
+		overview("service-row", "a service row of the health list followed", {
+			steps: async (page) => {
+				await page.getByRole("link", { name: /^payment-svc production/ }).click()
+				await page.waitForURL(/\/services\/payment-svc/)
+			},
+		}),
 		overview("time-range", "last 6 hours from the time range picker", {
 			steps: (page) => pickPreset(page, "Last 6 hours"),
 		}),

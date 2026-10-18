@@ -139,6 +139,33 @@ export const servicesPageArea: AreaModule = {
 			await page.getByRole("link", { name: "Explore", exact: true }).click()
 			await page.waitForURL(/\/traces\?timePreset=1d/)
 		}),
+		services("only-environment", "production only, from its row's Only action", async (page) => {
+			await page.getByText("production", { exact: true }).first().hover()
+			await page.getByRole("button", { name: "Show only production" }).click()
+			await page.waitForURL(/environments=/)
+		}),
+		services("health-filter", "healthy services only, from the Health facet", async (page) => {
+			await page.getByRole("checkbox", { name: "healthy", exact: true }).click()
+			await page.waitForURL(/health=healthy/)
+		}),
+		// Opened filtered, so clearing lands on a window neither app has fetched yet.
+		services(
+			"clear-filters",
+			"a filter cleared from the rail header",
+			async (page) => {
+				await page.getByRole("button", { name: /^Clear/ }).first().click()
+				await page.waitForURL((url) => !url.search.includes("environments"))
+			},
+			"/services?environments=%5B%22production%22%5D",
+		),
+		services("row-open", "a service row opened", async (page) => {
+			await servicesTable(page).getByRole("row").nth(3).click({ position: { x: 600, y: 10 } })
+			await page.waitForURL(/\/services\/[^?]+\?/)
+		}),
+		services("reload", "Reload pressed", async (page) => {
+			await page.getByRole("button", { name: "Reload" }).click()
+			await page.waitForTimeout(300)
+		}),
 		services("alt-exclude", "production excluded by Alt+clicking its label", async (page) => {
 			await page.getByText("production", { exact: true }).first().click({ modifiers: ["Alt"] })
 			await page.getByText("No services match these filters").first().waitFor()
