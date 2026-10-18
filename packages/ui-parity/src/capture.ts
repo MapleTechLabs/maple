@@ -16,6 +16,7 @@ import {
 	type DatasetSummary,
 	type FixtureBackend,
 } from "./contract.ts"
+import { normalizePayload } from "./backend/call-log.ts"
 import { clerkIdentityFor, installClerkStub } from "./runtime/clerk-stub.ts"
 import { installSelfHostedSession, installTheme, selfHostedTokenFor } from "./runtime/session.ts"
 import { BOX_STYLE_PROPS, collectSnapshot, serializeDom, TEXT_STYLE_PROPS } from "./runtime/snapshot.ts"
@@ -299,6 +300,13 @@ const readClerkUnknown = (page: Page) =>
 		})
 		.catch(() => [])
 
+/** The Clerk writes the stub logged, as call-log entries (`clerk:organization.inviteMember`). */
+const readClerkCalls = (page: Page): Promise<ReadonlyArray<CallLogEntry>> =>
+	page
+		.evaluate(() => window.__parityClerkCalls ?? [])
+		.then((entries) => entries.map((entry) => ({ tag: entry.tag, payload: normalizePayload(entry.payload) })))
+		.catch(() => [])
+
 const errorMessage = (cause: unknown) =>
 	cause instanceof Error ? (cause.message.split("\n")[0] ?? "") : String(cause)
 
@@ -423,7 +431,8 @@ const captureVariant = async (
 		// Behavior and accessibility as of the screenshot: calls sent so far and the ARIA tree.
 		const taken = options.backend?.takeCalls(captureKey)
 		backendUnmocked.push(...(taken?.unmocked ?? []))
-		const calls = taken?.calls ?? []
+		const clerkCalls = authMode === "clerk" ? await readClerkCalls(page) : []
+		const calls = [...(taken?.calls ?? []), ...clerkCalls]
 		const aria = await page.locator("body").ariaSnapshot()
 		const file: CaptureFile = { url: page.url(), calls, aria }
 		writeFileSync(join(dir, `${variant.id}.json`), JSON.stringify({ ...snapshot, ...file }))

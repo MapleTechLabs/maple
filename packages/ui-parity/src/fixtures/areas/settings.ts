@@ -166,8 +166,7 @@ const TABLES = [
 const VIEWS = ["service_usage_mv", "traces_aggregates_hourly_mv", "logs_aggregates_hourly_mv"] as const
 
 /** Acme writes to its own ClickHouse service, synced and on the current schema. */
-const clickhouseSettings: EndpointHandler = (request) =>
-	Effect.succeed({
+const clickhouseSettingsOf = (request: EndpointRequest) => ({
 		configured: isAcme(request),
 		chUrl: isAcme(request) ? "https://ch.acme.test:8443" : null,
 		chUser: isAcme(request) ? "maple_writer" : null,
@@ -177,6 +176,7 @@ const clickhouseSettings: EndpointHandler = (request) =>
 		lastSyncError: null,
 		schemaVersion: isAcme(request) ? SCHEMA_VERSION : null,
 	})
+const clickhouseSettings: EndpointHandler = (request) => Effect.succeed(clickhouseSettingsOf(request))
 
 const schemaDiff: EndpointHandler = () =>
 	Effect.succeed({
@@ -205,8 +205,7 @@ const applySchemaStatus: EndpointHandler = (request) => {
 	})
 }
 
-const escalationPolicy: EndpointHandler = (request) =>
-	Effect.succeed(
+const escalationPolicyOf = (request: EndpointRequest) =>
 		isAcme(request)
 			? {
 					enabled: true,
@@ -217,8 +216,8 @@ const escalationPolicy: EndpointHandler = (request) =>
 					updatedAt: iso(request, 6 * DAY),
 					updatedBy: acmeAdmin.userId,
 				}
-			: { enabled: false, rules: [], updatedAt: null, updatedBy: null },
-	)
+			: { enabled: false, rules: [], updatedAt: null, updatedBy: null }
+const escalationPolicy: EndpointHandler = (request) => Effect.succeed(escalationPolicyOf(request))
 
 /** One AI escalation that paged on-call, one manual one the confidence floor held back. */
 const escalation = (request: EndpointRequest, index: 0 | 1) => ({
@@ -249,8 +248,7 @@ const escalation = (request: EndpointRequest, index: 0 | 1) => ({
 const recentEscalations: EndpointHandler = (request) =>
 	Effect.succeed({ attempts: isAcme(request) ? [escalation(request, 0), escalation(request, 1)] : [] })
 
-const aiTriageSettings: EndpointHandler = (request) =>
-	Effect.succeed({
+const aiTriageSettingsOf = (request: EndpointRequest) => ({
 		enabled: isAcme(request),
 		maxRunsPerDay: 50,
 		maxPassesPerDay: 300,
@@ -262,15 +260,16 @@ const aiTriageSettings: EndpointHandler = (request) =>
 		updatedAt: isAcme(request) ? iso(request, 12 * DAY) : null,
 		updatedBy: isAcme(request) ? acmeAdmin.userId : null,
 	})
+const aiTriageSettings: EndpointHandler = (request) => Effect.succeed(aiTriageSettingsOf(request))
 
-const openRouterKey: EndpointHandler = (request) =>
-	Effect.succeed({
+const openRouterKeyOf = (request: EndpointRequest) => ({
 		entitled: true,
 		configured: isAcme(request),
 		keyHint: isAcme(request) ? "x7Qa" : null,
 		updatedAt: isAcme(request) ? iso(request, 18 * DAY) : null,
 		updatedBy: isAcme(request) ? acmeAdmin.userId : null,
 	})
+const openRouterKey: EndpointHandler = (request) => Effect.succeed(openRouterKeyOf(request))
 
 const STEP_TITLES = {
 	send_telemetry: "Send your first telemetry",
@@ -371,10 +370,11 @@ const keyById = (params: unknown) => API_KEYS.find((row) => row.id === paramId(p
 const createApiKey: EndpointHandler = ({ payload }) => {
 	const field = (key: string) => (Predicate.hasProperty(payload, key) ? payload[key] : undefined)
 	const kind = field("kind") === "mcp" ? "mcp" : "standard"
+	const scopes = field("scopes")
 	const row = apiKey(9, {
 		name: typeof field("name") === "string" ? String(field("name")) : "New key",
 		kind,
-		scopes: Array.isArray(field("scopes")) ? field("scopes") : null,
+		scopes: Array.isArray(scopes) ? scopes.filter(Predicate.isString) : null,
 		usedAgoMs: null,
 		ageMs: 0,
 	})
@@ -552,31 +552,31 @@ export const fixtureArea: FixtureArea = {
 		"ingestKeys.rollPublic": rolledIngestKeys,
 		"ingestKeys.rollPrivate": rolledIngestKeys,
 		"orgClickHouseSettings.upsert": (request) =>
-			Effect.map(clickhouseSettings(request), (current) => ({
+			Effect.sync(() => clickhouseSettingsOf(request)).pipe(Effect.map((current) => ({
 				...current,
 				configured: true,
 				chUrl: Predicate.hasProperty(request.payload, "url") ? request.payload.url : current.chUrl,
 				chUser: Predicate.hasProperty(request.payload, "user") ? request.payload.user : current.chUser,
 				chDatabase: Predicate.hasProperty(request.payload, "database") ? request.payload.database : current.chDatabase,
-			})),
+			}))),
 		"orgClickHouseSettings.delete": () => Effect.succeed({ configured: false }),
 		"orgClickHouseSettings.applySchema": () => Effect.succeed({ status: "started" }),
 		"errors.upsertEscalationPolicy": (request) =>
-			Effect.map(escalationPolicy(request), (current) => ({
-				...current,
-				...(Predicate.isObject(request.payload) ? request.payload : {}),
-			})),
+			Effect.succeed({
+				...escalationPolicyOf(request),
+				...(Predicate.isObject(request.payload) && request.payload),
+			}),
 		"errors.evaluateEscalationPolicy": () =>
 			Effect.succeed({ outcome: "route", destinationIds: [DESTINATION_ID], skipReason: null }),
 		"aiTriage.updateSettings": (request) =>
-			Effect.map(aiTriageSettings(request), (current) => ({
-				...current,
-				...(Predicate.isObject(request.payload) ? request.payload : {}),
-			})),
+			Effect.succeed({
+				...aiTriageSettingsOf(request),
+				...(Predicate.isObject(request.payload) && request.payload),
+			}),
 		"openRouterKey.set": (request) =>
-			Effect.map(openRouterKey(request), (current) => ({ ...current, configured: true, keyHint: "9Zq1" })),
+			Effect.succeed({ ...openRouterKeyOf(request), configured: true, keyHint: "9Zq1" }),
 		"openRouterKey.remove": (request) =>
-			Effect.map(openRouterKey(request), (current) => ({ ...current, configured: false, keyHint: null })),
+			Effect.succeed({ ...openRouterKeyOf(request), configured: false, keyHint: null }),
 		"attributeMappings.create": echoMapping,
 		"attributeMappings.update": firstMapping,
 		"attributeMappings.delete": () =>
