@@ -17,7 +17,7 @@ import * as Tooltip from "../ui/tooltip"
 import { placementOf, popupIdOf, triggerIdOf } from "./menus"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { PositionMenu } from "./mounts"
+import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
 import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
@@ -34,10 +34,11 @@ const sidebarRegions = (
 	tip: RailTip = NO_TIP,
 ): ReadonlyArray<Html> => [
 	shellSidebarHeader(h, model, tip),
-	sidebarContent(h, [
-		...navGroupSections(h, model, currentPath, tip),
-		...pinnedGroup(h, model, currentPath),
-	]),
+	sidebarContent(
+		h,
+		[...navGroupSections(h, model, currentPath, tip), ...pinnedGroup(h, model, currentPath)],
+		[h.OnMount(MeasureSidebarOverflow())],
+	),
 	shellSidebarFooter(h, model, currentPath, userAvatar(h, "RT"), tip),
 ]
 

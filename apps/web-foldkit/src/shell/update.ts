@@ -149,6 +149,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		DismissedMobileNav: () => ({ model: modifyFields(model, { isMobileNavOpen: () => false }) }),
 		ClickedMenuTrigger: ({ menu }) => clickedMenuTrigger(model, menu),
 		DismissedMenu: () => ({ model: closeMenu(model) }),
+		MeasuredSidebarOverflow: () => ({ model }),
 		MeasuredMenuPopup: ({ menu, position }) => ({
 			model: modifyFields(model, {
 				openMenu: Option.map((open) =>

@@ -124,11 +124,20 @@ export const sidebarHeader = <Message>(h: HtmlBuilder<Message>, children: Childr
 export const sidebarFooter = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
 	h.div([h.Class(cn(sidebarFooterStyles)), ...slot(h, "footer")], children)
 
-/** `<SidebarContent>`: a fading `ScrollArea` around the scrolling nav. */
-export const sidebarContent = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
+/** `<SidebarContent>`: a fading `ScrollArea` around the scrolling nav (`viewportAttributes`: its measuring Mount). */
+export const sidebarContent = <Message>(
+	h: HtmlBuilder<Message>,
+	children: Children,
+	viewportAttributes: ReadonlyArray<Attribute<Message>> = [],
+): Html =>
 	scrollArea(
 		h,
-		{ className: sidebarContentScrollAreaStyles, scrollFade: true, idPrefix: "sidebar-content" },
+		{
+			className: sidebarContentScrollAreaStyles,
+			scrollFade: true,
+			idPrefix: "sidebar-content",
+			viewportAttributes,
+		},
 		[h.div([h.Class(cn(sidebarContentStyles)), ...slot(h, "content")], children)],
 	)
 

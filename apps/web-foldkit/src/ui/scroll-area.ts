@@ -15,7 +15,25 @@ const DISABLE_SCROLLBAR = "base-ui-disable-scrollbar"
 /** What Base UI measured for a vertically overflowing viewport (scrolled to the top). */
 export type ScrollAreaOverflowY = Readonly<{ endPx: number; thumbHeightPx: number }>
 
-export type ScrollAreaOptions = Readonly<{
+/**
+ * Base UI's overflow measurement, written straight onto a mounted viewport: the `--scroll-area-
+ * overflow-y-*` variables the fade masks read and the root's `data-has-overflow-y` / edge flags.
+ */
+export const applyScrollOverflow = (viewport: HTMLElement): void => {
+	const root = viewport.parentElement
+	const max = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+	const start = Math.min(Math.max(viewport.scrollTop, 0), max)
+	const end = max - start
+	viewport.style.setProperty("--scroll-area-overflow-y-start", `${start}px`)
+	viewport.style.setProperty("--scroll-area-overflow-y-end", `${end}px`)
+	for (const element of [viewport, root]) {
+		element?.toggleAttribute("data-has-overflow-y", max > 0)
+		element?.toggleAttribute("data-overflow-y-start", start > 0)
+		element?.toggleAttribute("data-overflow-y-end", end > 0)
+	}
+}
+
+export type ScrollAreaOptions<Message = never> = Readonly<{
 	className?: string
 	scrollFade?: boolean
 	scrollbarGutter?: boolean
@@ -23,6 +41,8 @@ export type ScrollAreaOptions = Readonly<{
 	idPrefix: string
 	/** Renders the vertical scrollbar Base UI shows once content overflows. */
 	overflowY?: ScrollAreaOverflowY
+	/** Extra viewport attributes, e.g. a Mount that measures the overflow (`MeasureScrollOverflow`). */
+	viewportAttributes?: ReadonlyArray<Attribute<Message>>
 }>
 
 const verticalScrollbar = <Message>(
@@ -71,7 +91,7 @@ const verticalScrollbar = <Message>(
  */
 export const scrollArea = <Message>(
 	h: HtmlBuilder<Message>,
-	options: ScrollAreaOptions,
+	options: ScrollAreaOptions<Message>,
 	children: ReadonlyArray<Html>,
 ): Html => {
 	const { overflowY } = options
@@ -112,6 +132,7 @@ export const scrollArea = <Message>(
 						"--scroll-area-overflow-y-end": `${overflowY?.endPx ?? 0}px`,
 					}),
 					h.Tabindex(overflowY === undefined ? -1 : 0),
+					...(options.viewportAttributes ?? []),
 				],
 				children,
 			),
