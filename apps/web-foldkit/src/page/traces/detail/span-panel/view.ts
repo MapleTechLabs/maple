@@ -8,6 +8,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { keyValue, keyValueList } from "../../../../ui/key-value"
 import { scrollArea } from "../../../../ui/scroll-area"
 import { skeleton } from "../../../../ui/skeleton"
+import * as InfraCorrelation from "../../../kit/infra-correlation"
 import { attributesSection } from "./attributes"
 import { copyableValue, selectableValue } from "./copy"
 import { errorSection } from "./error-section"
@@ -162,10 +163,7 @@ const attributesBody = (h: H, model: Model): ReadonlyArray<Html | null> => {
 	})
 }
 
-/**
- * The root `<SpanDetailPanel />` as the page's ResizablePanel holds it.
- * TODO(infra): the Infrastructure tab's `InfraCorrelationPanel` charts are not ported; its trigger is.
- */
+/** The root `<SpanDetailPanel />` as the page's ResizablePanel holds it. */
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const { span } = model
 	const detail = AsyncData.getData(model.detail.data)
@@ -216,7 +214,25 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							]
 						: value === "logs"
 							? [spanLogs(h, model, inputs.timeZone)]
-							: [h.div([h.Class("p-3")], [])],
+							: [
+									h.div(
+										[h.Class("p-3")],
+										[
+											h.submodel({
+												slotId: `${model.infra.id}-panel`,
+												model: model.infra,
+												view: InfraCorrelation.view,
+												viewInputs: {
+													resourceAttributes: infraAttrs,
+													anchor: span.startTime,
+													spanDurationMs: span.durationMs,
+													timeZone: inputs.timeZone,
+												},
+												toParentMessage: (message) => Message.GotInfraMessage({ message }),
+											}),
+										],
+									),
+								],
 				),
 			]),
 		],

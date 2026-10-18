@@ -44,9 +44,9 @@ export const Model = Schema.Struct({
 	/** The open tool rows, by `tool:<toolCallId>`. */
 	openTools: Schema.Array(Schema.String),
 	/** The root `ToastProvider`'s two Notifications regions. */
-	/** The release comparison's commit hover card. */
-	releaseOverlays: ReleaseOverlays.Model,
 	toasts: Toast.Model,
+	/** `ReleaseComparison`'s health tooltip and commit hover card. */
+	releaseOverlays: ReleaseOverlays.Model,
 })
 export type Model = typeof Model.Type
 

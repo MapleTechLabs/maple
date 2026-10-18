@@ -1,6 +1,7 @@
 import { Duration, Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import * as AttributesPanel from "../../../ui/attributes/attributes-panel"
+import * as InfraCorrelation from "../../kit/infra-correlation"
 import type { CopyStatus } from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
@@ -76,6 +77,7 @@ export const init = (id: string, isPage = false): Model => ({
 	log: null,
 	tabs: Tabs.init({ idBase: TABS_ID_BASE, values: ["attributes"], selected: "attributes" }),
 	attributes: AttributesPanel.init(`${id}-attributes`),
+	infra: InfraCorrelation.init(`${id}-infra`, ""),
 	isHeroExpanded: false,
 	copy: { id: "", status: "idle", generation: 0 },
 })
@@ -101,6 +103,7 @@ const viewing = (model: Model, log: LogRecord, selected: string): Model => {
 					selected: values.includes(selected) ? selected : "attributes",
 				}),
 		attributes: AttributesPanel.init(`${model.id}-attributes`),
+		infra: InfraCorrelation.init(`${model.id}-infra`, model.orgId),
 		contextScope: initScope(),
 		isHeroExpanded: false,
 		isErrorExpanded: false,
@@ -194,6 +197,13 @@ export const update = (model: Model, message: Message): Return =>
 								value: next.outMessage.value,
 								negated: next.outMessage.negated,
 							}),
+			}
+		},
+		GotInfraMessage: ({ message: inner }) => {
+			const next = InfraCorrelation.update(model.infra, inner)
+			return {
+				model: { ...model, infra: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotInfraMessage({ message: m })),
 			}
 		},
 		ClickedShowFullMessage: () => ({ model: { ...model, isHeroExpanded: !model.isHeroExpanded } }),

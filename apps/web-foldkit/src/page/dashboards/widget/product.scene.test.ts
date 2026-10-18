@@ -11,6 +11,7 @@ import type { Model } from "./model"
 import { update } from "./page-update"
 import { ProductEdit } from "./product-edit"
 import { setDataSource } from "./edits"
+import { targetIndex } from "./list-column-drag"
 import * as Select from "../../../ui/select"
 import { init } from "./update"
 
@@ -84,6 +85,19 @@ describe("list, funnel and paths panels", () => {
 		const applied = run(step, Message.ClickedApply())
 		expect(names(applied)).toContain(SaveWidget.name)
 		expect(state === null ? null : buildDisplay(document.widgets[0], state).listDataSource).toBe("logs")
+	})
+
+	test("a column dragged past two centres lands two slots down", () => {
+		const list = run(opened(), Message.ClickedPanelType({ panel: "list" }), edit(ProductEdit.SetListSource({ source: "logs" })))
+		// Rows 40 px apart: the first row's centre dragged 85 px down passes the next two.
+		const to = targetIndex([20, 60, 100, 140], 0, 20 + 85)
+		const dragged = run(list, edit(ProductEdit.MovedListColumn({ index: 0, delta: to })))
+		expect(dragged.model.state?.listColumns.map((column) => column.header)).toEqual([
+			"Severity",
+			"Service",
+			"Time",
+			"Message",
+		])
 	})
 
 	test("the paths panel blocks Apply until the anchor names an event", () => {

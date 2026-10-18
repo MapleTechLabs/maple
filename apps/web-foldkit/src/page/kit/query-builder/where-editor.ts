@@ -48,36 +48,33 @@ export const whereEditor = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>
 					),
 				],
 			}),
-			...(isHighlighting
-				? [
-						h.div(
-							[
-								h.AriaHidden(true),
-								h.Class(
-									cn(
-										"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
-										options.textareaClassName,
-									),
-								),
-							],
-							[
-								h.div(
-									[
-										h.Class(
-											"px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap",
-										),
-									],
-									tokenizeWhereClause(options.value).map((token) =>
-										h.span(
-											[h.Style({ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] })],
-											[token.text],
-										),
-									),
-								),
-							],
-						),
-					]
-				: []),
+			...highlightOverlay(h, options.value, options.textareaClassName),
 		],
 	)
 }
+
+/** The colored tokens drawn over a transparent textarea, matching its box. */
+export const highlightOverlay = <M>(h: HtmlBuilder<M>, whereClause: string, textareaClassName: string): ReadonlyArray<Html> =>
+	whereClause.length === 0
+		? []
+		: [
+				h.div(
+					[
+						h.AriaHidden(true),
+						h.Class(
+							cn(
+								"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
+								textareaClassName,
+							),
+						),
+					],
+					[
+						h.div(
+							[h.Class("px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap")],
+							tokenizeWhereClause(whereClause).map((token) =>
+								h.span([h.Style({ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] })], [token.text]),
+							),
+						),
+					],
+				),
+			]

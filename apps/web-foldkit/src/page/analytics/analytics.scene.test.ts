@@ -72,6 +72,20 @@ describe("web analytics", () => {
 		expect(sent).not.toContain("FetchWebAnalyticsAiCrawlers")
 	})
 
+	test("an events answer ahead of the breakdowns lands after them, as legacy's does", () => {
+		const resolved = windowed()
+		const sent = names(
+			pageUpdate(init({ search: {} }, context).model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))
+				.commands,
+		)
+		expect(sent.indexOf("FetchWebAnalyticsBreakdowns")).toBeLessThan(sent.indexOf("FetchWebAnalyticsEvents"))
+		const early = settled(resolved, "events", [{ name: "add_to_cart", events: 12, sessions: 4 }])
+		expect(early.events.data._tag).toBe("Loading")
+		const both = settled(early, "breakdowns", breakdowns)
+		expect(both.events.data._tag).toBe("Success")
+		expect(both.heldEvents).toBeNull()
+	})
+
 	test("the AI tab asks for referrals and crawlers instead of the overview series", () => {
 		const resolved = pageUpdate(
 			init({ search: { tab: "ai" } }, context).model,

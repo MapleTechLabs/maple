@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../../data/load-failure"
 import * as Tabs from "../../../../ui/tabs"
+import * as InfraCorrelation from "../../../kit/infra-correlation"
 import { LogEntry, SpanDetail } from "./model"
 
 const result = <A extends Schema.Top>(schema: A) => ({
@@ -30,6 +31,7 @@ export const Message = defineMessageUnion({
 		isExclude: Schema.Boolean,
 	},
 	GotTabsMessage: { message: Tabs.Message },
+	GotInfraMessage: { message: InfraCorrelation.Message },
 })
 export type Message = typeof Message.Type
 

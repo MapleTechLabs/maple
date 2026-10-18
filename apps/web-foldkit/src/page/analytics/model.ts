@@ -146,6 +146,8 @@ export const Model = Schema.Struct({
 	/** The tile picked in the strip; `null` until someone picks. */
 	pickedMetric: Schema.NullOr(Schema.String),
 	panels: Schema.Record(Schema.String, PanelState),
+	/** An events answer that came in ahead of the breakdowns (`delivered` in update.ts). */
+	heldEvents: Schema.NullOr(Schema.Struct({ key: Schema.String, result: Schema.Result(Schema.Unknown, LoadFailure) })),
 	/** The breakdown card whose table is open in the dialog. */
 	expandedPanel: Schema.NullOr(Schema.String),
 	expandDialog: Dialog.Model,

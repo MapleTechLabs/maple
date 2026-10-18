@@ -1,9 +1,5 @@
 import { GROUP_BY_OPTIONS } from "@maple/query-engine/query-builder"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	tokenizeWhereClause,
-	WHERE_CLAUSE_TOKEN_COLOR,
-} from "@maple/web/lib/query-builder/where-clause-highlight"
 import type { WhereClauseAutocompleteValues } from "@maple/web/lib/query-builder/where-clause-autocomplete"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "../../../ui/combobox"
@@ -17,6 +13,7 @@ import type { AddOnKey } from "./change"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
 import { MountWhereCaret, MountWhereListbox } from "./where-command"
+import { highlightOverlay } from "./where-editor"
 import { caretOf, whereAutocompleteOf, whereTextareaId } from "./where"
 import { isOpenOf } from "../where-autocomplete"
 import { suggestionListbox, whereKeyHandler } from "../where-autocomplete-view"
@@ -83,7 +80,6 @@ export const whereClauseEditor = (
 	values: WhereClauseAutocompleteValues,
 	options: Readonly<{ placeholder?: string; className?: string }> = {},
 ): Html => {
-	const isHighlighting = query.whereClause.length > 0
 	const caret = caretOf(model, query)
 	const autocomplete = whereAutocompleteOf(model, query, values)
 	const isOpen = isOpenOf(caret, autocomplete)
@@ -92,15 +88,13 @@ export const whereClauseEditor = (
 		[
 			textarea(h, {
 				id: whereTextareaId(query.id),
-				className: cn(WHERE_TEXTAREA_CLASS, isHighlighting && "text-transparent caret-foreground"),
+				className: cn(WHERE_TEXTAREA_CLASS, query.whereClause.length > 0 && "text-transparent caret-foreground"),
 				defaultValue: query.whereClause,
 				attributes: [
 					h.AriaLabel(`Where clause for query ${query.name}`),
 					h.Placeholder(options.placeholder ?? WHERE_PLACEHOLDER[query.dataSource]),
 					h.Rows(1),
-					h.OnInput((value) =>
-						Message.ChangedText({ queryId: query.id, field: "whereClause", value }),
-					),
+					h.OnInput((value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value })),
 					h.OnKeyDownPreventDefault(
 						whereKeyHandler<Message>(isOpen, {
 							enter: Message.PressedWhereEnter({ queryId: query.id }),
@@ -112,36 +106,7 @@ export const whereClauseEditor = (
 					h.OnMount(MountWhereCaret({ queryId: query.id })),
 				],
 			}),
-			...(isHighlighting
-				? [
-						h.div(
-							[
-								h.AriaHidden(true),
-								h.Class(
-									cn(
-										"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
-										WHERE_TEXTAREA_CLASS,
-									),
-								),
-							],
-							[
-								h.div(
-									[
-										h.Class(
-											"px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap",
-										),
-									],
-									tokenizeWhereClause(query.whereClause).map((token) =>
-										h.span(
-											[h.Style({ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] })],
-											[token.text],
-										),
-									),
-								),
-							],
-						),
-					]
-				: []),
+			...highlightOverlay(h, query.whereClause, WHERE_TEXTAREA_CLASS),
 			...(isOpen
 				? [
 						suggestionListbox(h, {
@@ -156,6 +121,7 @@ export const whereClauseEditor = (
 		],
 	)
 }
+
 
 /** A controlled `<Input>` that reports each keystroke. */
 export const textInput = <M>(
