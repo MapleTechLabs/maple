@@ -8,7 +8,8 @@ import { catalogEntry, chatConnectorOf, integrationOfSearch, type IntegrationId 
 import { ConnectProvider } from "./connect"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { settingsNav } from "./settings-nav"
+import { navShell } from "../settings/kit/nav-shell"
+import { visibleSections } from "../settings/nav"
 import { entryGlyph } from "./view-entry"
 import { chatCard } from "./view-chat-card"
 import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
@@ -71,7 +72,7 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 	dashboardPage(
 		h,
 		{
-			filters: settingsNav(h, (tab) => Message.ClickedSettingsTab({ tab })),
+			filters: settingsNav(h),
 			titleContent: integrationHeader(h, model, integration, {
 				connect: connectButton(h, model, integration),
 				actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
@@ -82,13 +83,22 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 		cardView(h, model, integration, timeZone),
 	)
 
+/** The self-hosted settings rail with "Integrations" the active link. TODO(clerk): the Clerk-mode rows. */
+const settingsNav = (h: HtmlBuilder<Message>): Html =>
+	navShell(
+		h,
+		visibleSections({ isClerk: false, isAdmin: true, canAccessDataPlatform: true }),
+		"integrations",
+		(tab) => Message.ClickedSettingsTab({ tab }),
+	)
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const integration = integrationOfSearch(model.search.integration)
 	return integration === null
 		? dashboardPage(
 				h,
 				{
-					filters: settingsNav(h, (tab) => Message.ClickedSettingsTab({ tab })),
+					filters: settingsNav(h),
 					actions: integrationsSummary(h, model) ?? h.empty,
 				},
 				[integrationCatalog(h, model, selectIntegration)],

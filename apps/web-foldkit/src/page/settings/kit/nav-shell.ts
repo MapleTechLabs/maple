@@ -52,7 +52,18 @@ export const navShell = <M, Id extends string>(
 							const isActive = row.id === active
 							return row.kind === "link"
 								? h.a(
-										[h.Key(row.id), h.Href(row.href), h.Class(rowClass(isActive))],
+										[
+											h.Key(row.id),
+											h.Href(row.href),
+											// TanStack's active `<Link>`: `aria-current`, the `active` class and `data-status`.
+											...(isActive
+												? [
+														h.AriaCurrent("page"),
+														h.Class(`${rowClass(isActive)} active`),
+														h.DataAttribute("status", "active"),
+													]
+												: [h.Class(rowClass(isActive))]),
+										],
 										rowChildren(h, isActive, row.icon, row.label),
 									)
 								: h.button(
