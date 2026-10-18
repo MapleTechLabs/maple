@@ -51,6 +51,7 @@ import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as ServiceDetail from "./services/detail"
 import * as ServiceMap from "./service-map"
+import * as ReplayDetail from "./replays/detail"
 import * as ReplaysList from "./replays/list"
 import * as ServicesList from "./services/list"
 import * as TraceDetail from "./traces/detail"
@@ -102,6 +103,7 @@ export const pages = [
 	DashboardWidget.page,
 	CodeReview.page,
 	ReplaysList.page,
+	ReplayDetail.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

@@ -5,7 +5,7 @@ import { eyebrow } from "./eyebrow"
 import { icon, type IconName } from "./icon"
 
 // Port of `DetailRail` (packages/ui/src/components/detail-rail.tsx): Group, Row and Field.
-// TODO(icon): `Row`'s leading icon is not ported yet; `MetaRow` has no value tooltip.
+// TODO(tooltip): `MetaRow` has no value tooltip.
 
 type Children = ReadonlyArray<Html | string>
 
@@ -27,6 +27,8 @@ export const detailRailGroup = <M>(
 	)
 
 export type DetailRailRowOptions = Readonly<{
+	/** A glyph before the label; give every row in a rail one or none. */
+	icon?: IconName
 	label: string
 	hint?: string | undefined
 	title?: string
@@ -51,6 +53,14 @@ export const detailRailRow = <M>(
 			h.span(
 				[h.Class("flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground")],
 				[
+					...(options.icon === undefined
+						? []
+						: [
+								icon(h, options.icon, {
+									className: "size-3.5 shrink-0 text-muted-foreground/70",
+									attributes: [h.AriaHidden(true)],
+								}),
+							]),
 					h.span(
 						[h.Class("flex min-w-0 flex-col")],
 						[

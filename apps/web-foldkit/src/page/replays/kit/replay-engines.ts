@@ -1,0 +1,15 @@
+// TODO(deps): apps/web-foldkit should depend on @rrweb/replay itself; until then its stylesheet is
+// read from apps/web's install (the engines below resolve rrweb from there too).
+import "../../../../../web/node_modules/@rrweb/replay/dist/style.css"
+import type { ReplayEngineFactory } from "@maple/web/components/replays/engine/replay-engine"
+import { rrwebEngineFactory } from "@maple/web/components/replays/engine/rrweb-engine"
+import { videoEngineFactory } from "@maple/web/components/replays/engine/video-engine"
+import type { ReplayFormat } from "./replay-window"
+
+// Loaded with `import()` from the player Mount only (S2): rrweb and its stylesheet never reach
+// the startup chunk. The engines are apps/web's, unchanged.
+
+export const ENGINE_FACTORIES = {
+	rrweb: rrwebEngineFactory,
+	video: videoEngineFactory,
+} satisfies Record<ReplayFormat, ReplayEngineFactory>

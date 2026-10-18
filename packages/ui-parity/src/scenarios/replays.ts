@@ -44,6 +44,48 @@ export const replaysArea: AreaModule = {
 			steps: act(clickButton(/^Session$/)),
 		}),
 		replay("list-empty", "Replays (empty org)", "/replays", { dataset: EMPTY }),
+		replay("detail-loading", "Failed checkout, loading (session held)", checkout, {
+			dataset: WEB,
+			faults: { delays: { "sessionReplays.retrieve": HELD_MS } },
+			settle: "held",
+		}),
+		replay("detail-error", "Failed checkout, session failing", checkout, {
+			dataset: WEB,
+			faults: { failures: { "sessionReplays.retrieve": injected } },
+		}),
+		replay("detail-not-found", "Unknown session", "/replays/0000000000000000000000000000beef", { dataset: WEB }),
+		replay("detail-speed", "Failed checkout, 2x speed", checkout, {
+			dataset: WEB,
+			steps: act(clickButton("2×")),
+		}),
+		replay("detail-skip-idle-off", "Failed checkout, skip idle off", checkout, {
+			dataset: WEB,
+			steps: act(clickButton("Skip idle")),
+		}),
+		replay("detail-seek", "Failed checkout, seeked from the scrubber", checkout, {
+			dataset: WEB,
+			steps: act(async (page) => {
+				await page.getByRole("slider", { name: "Seek" }).first().click()
+			}),
+		}),
+		replay("detail-play-pause", "Failed checkout, played, paused, then seeked", checkout, {
+			dataset: WEB,
+			steps: act(clickButton("Play"), clickButton("Pause"), (page) =>
+				page.getByRole("slider", { name: "Seek" }).first().click(),
+			),
+		}),
+		replay("detail-event-open", "Failed checkout, an event opened", checkout, {
+			dataset: WEB,
+			steps: act(clickButton(/PaymentError/)),
+		}),
+		replay("detail-network", "Failed checkout, network events", checkout, {
+			dataset: WEB,
+			steps: act(clickButton(/^Network requests/)),
+		}),
+		replay("detail-traces", "Failed checkout, traces tab", checkout, {
+			dataset: WEB,
+			steps: act(clickButton(/^Traces/)),
+		}),
 		replay("list-loading", "loading (list and facets held)", "/replays", {
 			dataset: WEB,
 			faults: { delays: { "sessionReplays.search": HELD_MS, "sessionReplaysInternal.facets": HELD_MS } },
