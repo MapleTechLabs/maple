@@ -247,8 +247,13 @@ const contentStyles = {
 	},
 } as const
 
-export const dialogHeader = <M>(h: HtmlBuilder<M>, kind: TitledKind, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class(cn(contentStyles[kind].header)), h.DataAttribute("slot", `${kind}-header`)], children)
+export const dialogHeader = <M>(
+	h: HtmlBuilder<M>,
+	kind: TitledKind,
+	children: ReadonlyArray<Html>,
+	className?: string,
+): Html =>
+	h.div([h.Class(cn(contentStyles[kind].header, className)), h.DataAttribute("slot", `${kind}-header`)], children)
 
 export const dialogTitle = <M>(h: HtmlBuilder<M>, kind: TitledKind, id: string, text: string): Html =>
 	h.h2(
@@ -272,15 +277,21 @@ export const dialogPanel = <M>(
 	kind: "dialog" | "sheet",
 	id: string,
 	children: ReadonlyArray<Html>,
+	className?: string,
 ): Html =>
 	scrollArea(h, { idPrefix: `${id}-panel`, scrollFade: true }, [
-		h.div([h.Class(cn(contentStyles[kind].panel)), h.DataAttribute("slot", `${kind}-panel`)], children),
+		h.div([h.Class(cn(contentStyles[kind].panel, className)), h.DataAttribute("slot", `${kind}-panel`)], children),
 	])
 
-export const dialogFooter = <M>(h: HtmlBuilder<M>, kind: TitledKind, children: ReadonlyArray<Html>): Html =>
+export const dialogFooter = <M>(
+	h: HtmlBuilder<M>,
+	kind: TitledKind,
+	children: ReadonlyArray<Html>,
+	className?: string,
+): Html =>
 	h.div(
 		[
-			h.Class(cn(contentStyles[kind].footer, contentStyles[kind].footerDefault)),
+			h.Class(cn(contentStyles[kind].footer, contentStyles[kind].footerDefault, className)),
 			h.DataAttribute("slot", `${kind}-footer`),
 		],
 		children,

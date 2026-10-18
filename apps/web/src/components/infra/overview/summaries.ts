@@ -16,12 +16,14 @@ import {
 	gcpWorkloadTone,
 	type GcpFleetService,
 } from "../gcp/tabs"
-import type { ContainerScopeCounts } from "../container-summary-band"
-import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-summary-band"
-import type { HostRow } from "../host-table"
+import type { ContainerScopeCounts } from "../container-scopes"
+import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-scopes"
+import type { ListHostsResponse } from "@maple/domain/http"
 import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../planetscale/metrics"
-import { railwayInScope } from "../railway/railway-service-table"
+import { railwayInScope } from "../railway/railway-scope"
 import type { Tone } from "../severity-tokens"
+
+type HostRow = ListHostsResponse["data"][number]
 
 export type SourceId =
 	| "hosts"

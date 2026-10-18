@@ -19,6 +19,18 @@ import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
+import * as InfraContainer from "./infra/containers/detail"
+import * as InfraContainers from "./infra/containers/list"
+import * as InfraHost from "./infra/hosts/detail"
+import * as InfraHosts from "./infra/hosts/list"
+import * as InfraKubernetesNode from "./infra/kubernetes/node"
+import * as InfraKubernetesNodes from "./infra/kubernetes/nodes"
+import * as InfraKubernetesPod from "./infra/kubernetes/pod"
+import * as InfraKubernetesPods from "./infra/kubernetes/pods"
+import * as InfraKubernetesService from "./infra/kubernetes/service"
+import * as InfraKubernetesWorkload from "./infra/kubernetes/workload"
+import * as InfraKubernetesWorkloads from "./infra/kubernetes/workloads"
+import * as InfraOverview from "./infra/overview"
 import * as LogsList from "./logs/list"
 import * as MetricsBrowse from "./metrics/browse"
 import * as MetricDetail from "./metrics/detail"
@@ -48,6 +60,18 @@ export const pages = [
 	AlertIncident.page,
 	AlertRule.page,
 	ServiceMap.page,
+	InfraHosts.page,
+	InfraHost.page,
+	InfraContainers.page,
+	InfraContainer.page,
+	InfraKubernetesPods.page,
+	InfraKubernetesPod.page,
+	InfraKubernetesNodes.page,
+	InfraKubernetesNode.page,
+	InfraKubernetesWorkloads.page,
+	InfraKubernetesWorkload.page,
+	InfraKubernetesService.page,
+	InfraOverview.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

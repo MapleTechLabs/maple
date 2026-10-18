@@ -1,3 +1,4 @@
+import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	copyButtonStatusStyles,
@@ -56,8 +57,11 @@ export const WriteClipboard = Command.define("WriteClipboard", {
 	messages: [Message.SucceededCopy, Message.FailedCopy],
 	execute: ({ text, generation }) =>
 		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
-			Effect.as(Message.SucceededCopy({ generation })),
-			Effect.orElseSucceed(() => Message.FailedCopy({ generation })),
+			Effect.as(true),
+			// `useCopy`: a rejected clipboard API falls back to the `execCommand` textarea write.
+			Effect.catch(() => Effect.try(() => writeClipboardFallback(text))),
+			Effect.orElseSucceed(() => false),
+			Effect.map((ok) => (ok ? Message.SucceededCopy({ generation }) : Message.FailedCopy({ generation }))),
 		),
 })
 
