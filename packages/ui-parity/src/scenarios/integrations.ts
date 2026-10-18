@@ -30,6 +30,22 @@ const persistenceFailure = {
 	},
 }
 
+/** The same failure on a v2 endpoint, in its public error envelope. */
+const v2PersistenceFailure = {
+	status: 503,
+	body: {
+		error: {
+			_tag: "@maple/http/errors/IntegrationsPersistenceError",
+			type: "api_error",
+			code: "integration_persistence_unavailable",
+			title: "Integrations are temporarily unavailable",
+			message: "Integrations are temporarily unavailable. Retry in a few seconds.",
+			retryable: true,
+			recovery: "retry",
+		},
+	},
+}
+
 const timed = (
 	id: string,
 	title: string,
@@ -383,6 +399,85 @@ export const integrationsArea: AreaModule = {
 		page("planetscale-webhook", "PlanetScale: webhook setup", "/integrations?integration=planetscale", {
 			dataset: "infra-integrations",
 			steps: (page) => page.getByRole("button", { name: "Show setup" }).click(),
+		}),
+		page("gcp", "Google Cloud (not connected)", "/integrations?integration=gcp"),
+		page("gcp-connected", "Google Cloud (connected)", "/integrations?integration=gcp", {
+			dataset: "infra-integrations",
+		}),
+		page("gcp-menu", "Google Cloud: a connection's menu", "/integrations?integration=gcp", {
+			dataset: "infra-integrations",
+			steps: (page) => page.getByRole("button", { name: /^Actions for / }).click(),
+		}),
+		page(
+			"gcp-disconnect-dialog",
+			"Google Cloud: the disconnect dialog",
+			"/integrations?integration=gcp",
+			{
+				dataset: "infra-integrations",
+				steps: async (page) => {
+					await page.getByRole("button", { name: /^Actions for / }).click()
+					await page.getByRole("menuitem", { name: "Disconnect" }).click()
+					await page.getByRole("button", { name: "Read the script" }).click()
+				},
+			},
+		),
+		page("gcp-disconnect-submit", "Google Cloud: disconnect anyway", "/integrations?integration=gcp", {
+			dataset: "infra-integrations",
+			steps: async (page) => {
+				await page.getByRole("button", { name: /^Actions for / }).click()
+				await page.getByRole("menuitem", { name: "Disconnect" }).click()
+				await page.getByRole("button", { name: "Disconnect anyway" }).click()
+				await page.getByRole("button", { name: "Dismiss" }).waitFor()
+			},
+		}),
+		page("gcp-dismiss", "Google Cloud: dismiss a cleanup script", "/integrations?integration=gcp", {
+			dataset: "infra-integrations",
+			steps: async (page) => {
+				await page.getByRole("button", { name: /^Actions for / }).click()
+				await page.getByRole("menuitem", { name: "Disconnect" }).click()
+				await page.getByRole("button", { name: "Disconnect anyway" }).click()
+				await page.getByRole("button", { name: "Dismiss" }).click()
+				await page.getByRole("alertdialog").getByRole("button", { name: "Dismiss" }).click()
+			},
+		}),
+		timed(
+			"gcp-error",
+			"Google Cloud: status failing",
+			"/integrations?integration=gcp",
+			{ failures: { "gcpIntegration.status": v2PersistenceFailure } },
+			"quiet",
+		),
+		timed(
+			"gcp-loading",
+			"Google Cloud: status loading",
+			"/integrations?integration=gcp",
+			{ delays: { "gcpIntegration.status": HELD_MS } },
+			"held",
+		),
+		{
+			...page(
+				"gcp-disconnect-failure",
+				"Google Cloud: disconnect fails",
+				"/integrations?integration=gcp",
+				{
+					dataset: "infra-integrations",
+					steps: async (page) => {
+						await page.getByRole("button", { name: /^Actions for / }).click()
+						await page.getByRole("menuitem", { name: "Disconnect" }).click()
+						await page.getByRole("button", { name: "Disconnect anyway" }).click()
+						await page.getByText("Failed to disconnect").waitFor()
+					},
+				},
+			),
+			faults: { failures: { "gcpIntegration.deleteConnector": v2PersistenceFailure } },
+		},
+		page("gcp-view-logs", "Google Cloud: View logs from the menu", "/integrations?integration=gcp", {
+			dataset: "infra-integrations",
+			steps: async (page) => {
+				await page.getByRole("button", { name: /^Actions for / }).click()
+				await page.getByRole("menuitem", { name: "View logs" }).click()
+				await page.waitForURL(/\/logs/)
+			},
 		}),
 		page("hub-infra", "Hub with infrastructure connected", "/integrations", {
 			dataset: "infra-integrations",

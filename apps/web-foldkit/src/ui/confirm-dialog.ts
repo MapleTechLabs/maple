@@ -20,6 +20,8 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	title: string
 	/** Rich copy (a highlighted name) as children. */
 	description?: string | ReadonlyArray<Html | string>
+	/** Content between the header and the footer (`children`). */
+	children?: ReadonlyArray<Html | string>
 	confirmLabel: string
 	/** `icon={null}`: drops the warning media block. */
 	hasIcon?: boolean
@@ -50,23 +52,31 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 					...(options.hasIcon === false
 						? []
 						: [
-					h.div(
-						[
-							h.Class(cn(alertDialogMediaStyles, tone === "destructive" && confirmDialogMediaDestructiveStyles)),
-							h.DataAttribute("slot", "alert-dialog-media"),
-						],
-						[
-							icon(h, "AlertWarningIcon", {
-								className: cn(tone === "destructive" && confirmDialogIconDestructiveStyles),
-							}),
-						],
-					),
+								h.div(
+									[
+										h.Class(
+											cn(
+												alertDialogMediaStyles,
+												tone === "destructive" && confirmDialogMediaDestructiveStyles,
+											),
+										),
+										h.DataAttribute("slot", "alert-dialog-media"),
+									],
+									[
+										icon(h, "AlertWarningIcon", {
+											className: cn(
+												tone === "destructive" && confirmDialogIconDestructiveStyles,
+											),
+										}),
+									],
+								),
 							]),
 					DialogView.dialogTitle(h, "alert-dialog", id, options.title),
 					...(options.description === undefined
 						? []
 						: [DialogView.dialogDescription(h, "alert-dialog", id, options.description)]),
 				]),
+				...(options.children === undefined ? [] : [h.div([h.Class("px-6 py-2")], options.children)]),
 				DialogView.dialogFooter(h, "alert-dialog", [
 					button(
 						h,

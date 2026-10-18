@@ -615,7 +615,7 @@ export const serviceTableLoading = (h: H, service: GcpInfraServiceId): Html =>
 		]),
 	)
 
-const valueClass = (spec: GcpColumn, value: number | undefined): string => {
+export const valueClass = (spec: GcpColumn, value: number | undefined): string => {
 	if (value !== undefined && spec.format === "errorRate") return errorRateClass(value)
 	if (value !== undefined && spec.format === "percent" && utilizationLevel(value) !== "ok") {
 		return BAR_VALUE_TONE[utilizationLevel(value)]

@@ -214,6 +214,25 @@ export const fixtureArea: FixtureArea = {
 				url: "https://api.maple.dev/api/integrations/planetscale/webhook/parity",
 				secret: "whsec_parity_0000000000000000",
 			}),
+		"gcpIntegration.setupScripts": () =>
+			Effect.succeed({
+				object: "gcp_connector.setup_scripts",
+				setup_script: "#!/usr/bin/env bash\necho 'setting up Maple'\n",
+				cleanup_script: "#!/usr/bin/env bash\necho 'removing Maple'\n",
+			}),
+		"gcpIntegration.deleteConnector": (request) =>
+			Effect.succeed({
+				// The decoded param is the internal id; the answer carries the public one.
+				id: encodePublicId(
+					PublicIdPrefixes.gcpConnector,
+					Predicate.hasProperty(request.params, "id") && typeof request.params.id === "string"
+						? request.params.id
+						: fixtureUuid(40, 2),
+				),
+				object: "gcp_connector",
+				deleted: true,
+				cleanup_script: "#!/usr/bin/env bash\necho 'removing Maple'\n",
+			}),
 		"integrations.railwayDisconnect": disconnected,
 		// The sync answers a refreshed status; the card re-reads the status itself, so its shape is all that matters.
 		"integrations.railwaySync": (request) =>

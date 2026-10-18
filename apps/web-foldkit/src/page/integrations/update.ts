@@ -18,6 +18,8 @@ import { initCloudflareCard } from "./cloudflare"
 import { initPrometheusCard } from "./prometheus"
 import { initRailwayCard } from "./railway"
 import { initPlanetscaleCard } from "./planetscale"
+import { initGcpCard } from "./gcp"
+import * as Gcp from "./update-gcp"
 import * as Planetscale from "./update-planetscale"
 import * as Railway from "./update-railway"
 import * as Prometheus from "./update-prometheus"
@@ -94,6 +96,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		cloudflareCard: initCloudflareCard(),
 		prometheusCard: initPrometheusCard(),
 		planetscaleCard: initPlanetscaleCard(),
+		gcpCard: initGcpCard(),
 		railwayCard: initRailwayCard(),
 	}
 	const loaded = chain(model, [
@@ -118,10 +121,17 @@ export const routeChanged = (
 			])
 
 /** The reads an integration's card mounts (Cloudflare's usage). */
-const enterIntegration = (model: Model, context: PageContext): Return =>
-	integrationOfSearch(model.search.integration) === "cloudflare"
-		? CloudflareCard.enterCloudflare(model, context)
-		: { model }
+const enterIntegration = (model: Model, context: PageContext): Return => {
+	const integration = integrationOfSearch(model.search.integration)
+	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
+	if (integration === "gcp")
+		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
+	return { model }
+}
+
+/** The GCP band's reads wait on the status and the clock. */
+const gcpBand = (model: Model, context: PageContext): Return =>
+	integrationOfSearch(model.search.integration) === "gcp" ? Gcp.requestBand(model, context) : { model }
 
 export const contextChanged = (model: Model): Return => ({ model })
 
@@ -130,16 +140,18 @@ const accepted = (model: Model, statuses: Statuses): Return => ({ model: { ...mo
 export const update = (model: Model, message: Message, context: PageContext): Return => {
 	const s = model.statuses
 	return Message.match<Return>(message, {
-		CompletedReadClock: ({ nowMs }) => ({
-			model: {
-				...model,
-				nowMs,
-				planetscaleCard: {
-					...model.planetscaleCard,
-					watchStartedAt: model.planetscaleCard.watchStartedAt ?? nowMs,
+		CompletedReadClock: ({ nowMs }) =>
+			gcpBand(
+				{
+					...model,
+					nowMs,
+					planetscaleCard: {
+						...model.planetscaleCard,
+						watchStartedAt: model.planetscaleCard.watchStartedAt ?? nowMs,
+					},
 				},
-			},
-		}),
+				context,
+			),
 		CompletedLoadCloudflare: ({ key, result }) =>
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
 		CompletedLoadRailway: ({ key, result }) =>
@@ -159,7 +171,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				planetscaleDatabases: Keyed.accept(s.planetscaleDatabases, key, result),
 			}),
 		CompletedLoadGcp: ({ key, result }) =>
-			accepted(model, { ...s, gcp: Keyed.accept(s.gcp, key, result) }),
+			gcpBand(accepted(model, { ...s, gcp: Keyed.accept(s.gcp, key, result) }).model, context),
 		CompletedLoadHazel: ({ key, result }) =>
 			accepted(model, { ...s, hazel: Keyed.accept(s.hazel, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
@@ -289,6 +301,35 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		TickedPlanetscaleWatch: () => {
 			const refreshed = requestStatus(model, context, "planetscale", "Refresh")
+			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
+		},
+		CompletedGcpLogVolume: ({ key, result }) =>
+			Gcp.updateGcpCard(model, { logVolume: Keyed.accept(model.gcpCard.logVolume, key, result) }),
+		CompletedGcpFleet: ({ key, result }) =>
+			Gcp.updateGcpCard(model, { fleet: Keyed.accept(model.gcpCard.fleet, key, result) }),
+		CompletedGcpInventory: ({ key, result }) =>
+			Gcp.updateGcpCard(model, { inventory: Keyed.accept(model.gcpCard.inventory, key, result) }),
+		GotWorkloadFilterMessage: ({ message: child }) => Gcp.gotWorkloadFilter(model, child),
+		GotGcpMenuMessage: ({ id, message: child }) => Gcp.gotMenu(model, context, id, child),
+		CompletedGcpScripts: ({ key, result }) =>
+			Gcp.updateGcpCard(model, { scripts: Keyed.accept(model.gcpCard.scripts, key, result) }),
+		ClickedGcpScriptToggle: () =>
+			Gcp.updateGcpCard(model, { isScriptShown: !model.gcpCard.isScriptShown }),
+		ClickedGcpScriptRetry: () => Gcp.retriedScripts(model, context),
+		GotGcpDisconnectDialogMessage: ({ message: child }) => Gcp.gotDisconnectDialog(model, child),
+		ConfirmedGcpDisconnect: () => Gcp.confirmedDisconnect(model),
+		CompletedGcpDisconnect: ({ id, cleanupScript, failure }) =>
+			Gcp.completedDisconnect(model, context, id, cleanupScript, failure),
+		CompletedReadGcpRemoved: ({ removed }) => Gcp.updateGcpCard(model, { removed }),
+		CompletedWriteGcpRemoved: () => ({ model }),
+		ClickedDismissCleanup: ({ id }) => Gcp.clickedDismiss(model, id),
+		GotGcpDismissDialogMessage: ({ message: child }) => Gcp.gotDismissDialog(model, child),
+		ConfirmedDismissCleanup: () => Gcp.confirmedDismiss(model, context),
+		GotGcpCopyMessage: ({ id, message: child }) => Gcp.gotCopy(model, id, child),
+		ClickedGcpConfigure: ({ target }) => Gcp.updateGcpCard(model, { configureTarget: target }),
+		ClosedGcpConfigure: () => Gcp.updateGcpCard(model, { configureTarget: null }),
+		TickedGcpRefresh: () => {
+			const refreshed = requestStatus(model, context, "gcp", "Refresh")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
 		},
 		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),

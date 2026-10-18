@@ -1,6 +1,7 @@
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { derivePlanetScaleSetup } from "@maple/web/components/integrations/planetscale-setup-steps"
+import { gcpConnectionState } from "@maple/web/components/integrations/gcp-connector-state"
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
@@ -154,6 +155,17 @@ const isAwaitingFirstScrape = (model: Model): boolean => {
 	return status !== null && derivePlanetScaleSetup(status, model.nowMs).awaitingFirstScrape
 }
 
+const gcpRefreshInterval = (model: Model): number | null => {
+	if (integrationOfSearch(model.search.integration) !== "gcp") return null
+	const connectors = Option.match(AsyncData.getData(model.statuses.gcp.data), {
+		onNone: () => [],
+		onSome: (status) => status.connectors,
+	})
+	if (connectors.length === 0) return null
+	const settling = connectors.some((connector) => gcpConnectionState(connector, model.nowMs) !== "healthy")
+	return settling ? 10_000 : 60_000
+}
+
 /** Prometheus and WarpStream share the scrape-target section. */
 const isScrapePage = (model: Model): boolean => {
 	const integration = integrationOfSearch(model.search.integration)
@@ -298,6 +310,28 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ isWatching: isAwaitingFirstScrape(model) }),
 				dependenciesToStream: ({ isWatching }) =>
 					isWatching ? every(5_000, () => Message.TickedPlanetscaleWatch()) : Stream.empty,
+			},
+		),
+		/** `useIntervalRefresh(refreshStatus, { intervalMs: settling ? 10_000 : 60_000 })` with the live clock. */
+		gcpRefresh: entry(
+			{ intervalMs: Schema.NullOr(Schema.Number) },
+			{
+				modelToDependencies: ({ model }) => ({ intervalMs: gcpRefreshInterval(model) }),
+				dependenciesToStream: ({ intervalMs }) =>
+					intervalMs === null ? Stream.empty : every(intervalMs, () => Message.TickedGcpRefresh()),
+			},
+		),
+		/** `GcpDisconnectDialog`'s own `useIntervalRefresh(gcpStatus, 10_000)` while it is open. */
+		gcpDisconnectRefresh: entry(
+			{ isOpen: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({
+					isOpen:
+						model.gcpCard.disconnectDialog.isOpen &&
+						model.gcpCard.disconnectDialog.kind === "dialog",
+				}),
+				dependenciesToStream: ({ isOpen }) =>
+					isOpen ? every(10_000, () => Message.TickedGcpRefresh()) : Stream.empty,
 			},
 		),
 		connectCallback: entry(

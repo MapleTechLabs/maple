@@ -12,6 +12,7 @@ import { settingsNav } from "./settings-nav"
 import { entryGlyph } from "./view-entry"
 import { chatCard } from "./view-chat-card"
 import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
+import { gcpCard, gcpHeaderStatus } from "./view-gcp"
 import { githubCard } from "./view-github"
 import { hazelCard } from "./view-hazel"
 import { planetscaleCard } from "./view-planetscale"
@@ -56,6 +57,8 @@ const cardView = (h: H, model: Model, integration: IntegrationId, timeZone: stri
 			return [railwayCard(h, model, timeZone)]
 		case "planetscale":
 			return [planetscaleCard(h, model, timeZone)]
+		case "gcp":
+			return [gcpCard(h, model, timeZone)]
 		case "prometheus":
 		case "warpstream":
 			return [scrapeIntro(h, integration), ...scrapeTargetsSection(h, model, timeZone)]
@@ -72,6 +75,7 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 			titleContent: integrationHeader(h, model, integration, {
 				connect: connectButton(h, model, integration),
 				actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
+				statusLine: integration === "gcp" ? gcpHeaderStatus(h, model) : undefined,
 			}),
 			scrollClassName: "gap-4",
 		},

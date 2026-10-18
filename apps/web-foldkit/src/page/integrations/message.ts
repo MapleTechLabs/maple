@@ -2,6 +2,7 @@ import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
 	CloudflareUsageResponse,
+	GcpResourcesResponse,
 	GithubIntegrationStatus,
 	HazelIntegrationStatus,
 	RailwayIntegrationStatus,
@@ -11,6 +12,7 @@ import {
 import {
 	V2ChatConnectorList,
 	V2GcpIntegration,
+	V2GcpSetupScripts,
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
 	V2PlanetScaleOrganizationList,
@@ -18,7 +20,7 @@ import {
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
-import { ChatWorkspaceId } from "@maple/domain/primitives"
+import { ChatWorkspaceId, GcpConnectorId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
@@ -32,6 +34,8 @@ import { FormFieldName } from "./prometheus-form-field"
 import * as ToggleGroup from "../../ui/toggle-group"
 import * as Chart from "../../charts/chart"
 import { ConnectProvider } from "./connect"
+import { FleetRead } from "../infra-integrations/gcp/data"
+import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",
@@ -190,6 +194,31 @@ export const Message = defineMessageUnion({
 	/** Every 5 s while the first scrape is awaited. */
 	TickedPlanetscaleWatch: {},
 	GotWebhookCopyMessage: { field: Schema.Literals(["url", "secret"]), message: CopyButton.Message },
+	CompletedGcpLogVolume: { key: Schema.String, result: Schema.Result(LogVolume, LoadFailure) },
+	CompletedGcpFleet: { key: Schema.String, result: Schema.Result(Schema.Array(FleetRead), LoadFailure) },
+	CompletedGcpInventory: result(GcpResourcesResponse),
+	GotWorkloadFilterMessage: { message: ToggleGroup.Message },
+	GotGcpMenuMessage: { id: GcpConnectorId, message: Menu.Message },
+	GotGcpDisconnectDialogMessage: { message: Dialog.Message },
+	ConfirmedGcpDisconnect: {},
+	CompletedGcpDisconnect: {
+		id: GcpConnectorId,
+		cleanupScript: Schema.NullOr(Schema.String),
+		failure: Schema.NullOr(LoadFailure),
+	},
+	CompletedReadGcpRemoved: { removed: Schema.Array(RemovedConnector) },
+	CompletedWriteGcpRemoved: {},
+	ClickedDismissCleanup: { id: Schema.String },
+	GotGcpDismissDialogMessage: { message: Dialog.Message },
+	ConfirmedDismissCleanup: {},
+	GotGcpCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	CompletedGcpScripts: { key: Schema.String, result: Schema.Result(V2GcpSetupScripts, LoadFailure) },
+	ClickedGcpScriptToggle: {},
+	ClickedGcpScriptRetry: {},
+	ClickedGcpConfigure: { target: ConfigureTarget },
+	ClosedGcpConfigure: {},
+	/** The status poll: 10 s while a connection settles, else every minute (`useIntervalRefresh`). */
+	TickedGcpRefresh: {},
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,
 		status: Schema.String,

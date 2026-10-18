@@ -23,6 +23,7 @@ import { GithubCardModel } from "./github"
 import { PrometheusCardModel } from "./prometheus"
 import { RailwayCardModel } from "./railway"
 import { PlanetscaleCardModel } from "./planetscale"
+import { GcpCardModel } from "./gcp"
 import { ConnectModel } from "./connect"
 
 // `/integrations` (apps/web/src/routes/integrations.tsx): the hub and every integration's page.
@@ -60,5 +61,6 @@ export const Model = Schema.Struct({
 	prometheusCard: PrometheusCardModel,
 	railwayCard: RailwayCardModel,
 	planetscaleCard: PlanetscaleCardModel,
+	gcpCard: GcpCardModel,
 })
 export type Model = typeof Model.Type
