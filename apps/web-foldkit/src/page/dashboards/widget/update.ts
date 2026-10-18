@@ -24,6 +24,8 @@ import { dataStateOf } from "../kit/data-state"
 import { FetchAutocomplete, FetchWidget, ReadClock } from "./command"
 import type { EditorState } from "./editor-state"
 import { buildDataSource, buildDisplay, toInitialState, validationErrorOf, type Widget } from "./lowering"
+import { initRawSql, type RawSqlDraft, rawSqlDataSourceOf } from "./raw-sql"
+import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -44,6 +46,8 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		initial: null,
 		staged: null,
 		sourceMode: "builder",
+		initialSourceMode: "builder",
+		rawSql: null,
 		timeRange: null,
 		nowMs: null,
 		previewWidth: null,
@@ -111,8 +115,12 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 		...widget,
 		timeRange: state.timeRange ?? undefined,
 		visualization: state.visualization,
-		dataSource: buildDataSource(preview),
-		display: buildDisplay(widget, preview),
+		dataSource:
+			isSqlSource(model) && model.rawSql !== null
+				? rawSqlDataSourceOf(widget, model.rawSql.staged, state)
+				: buildDataSource(preview),
+		// The SQL's display follows the editing state; the builder's, its staged queries.
+		display: buildDisplay(widget, isSqlSource(model) ? state : preview),
 	}
 }
 
@@ -185,20 +193,49 @@ export const receiveDocument = (
 			const widget = document.widgets.find((candidate) => candidate.id === model.widgetId)
 			if (widget === undefined) return { model: { ...model, status: "Missing", document } }
 			const seeded = model.state ?? toInitialState(widget)
+			// The first read picks the source the widget was saved with.
+			const opened =
+				model.rawSql === null
+					? openedSource(model, widget)
+					: { sourceMode: model.sourceMode, initialSourceMode: model.initialSourceMode, sourceTabs: model.sourceTabs }
 			return planPreview(
 				{
 					...model,
+					...opened,
 					status: "Ready",
 					document,
 					timeRange: model.timeRange ?? document.timeRange,
 					state: seeded,
 					initial: model.initial ?? seeded,
 					staged: model.staged ?? seeded,
+					rawSql: model.rawSql ?? initRawSql(widget),
 				},
 				context,
 			)
 		},
 	})
+
+/** `showSourceToggle`: lists, notes and paths have no SQL rendering. */
+export const showsSourceToggle = (state: EditorState): boolean => {
+	const panel = toPanelType(state.visualization, state.chartId)
+	return panel !== "list" && panel !== "markdown" && panel !== "paths"
+}
+
+/** The Raw SQL tab is picked and the panel type has a SQL rendering. */
+export const isSqlSource = (model: Model): boolean =>
+	model.sourceMode === "rawSql" && model.state !== null && showsSourceToggle(model.state)
+
+const openedSource = (
+	model: Model,
+	widget: Widget,
+): Pick<Model, "sourceMode" | "initialSourceMode" | "sourceTabs"> => {
+	const mode = dataSourceRawSql(widget.dataSource) === null ? "builder" : "rawSql"
+	return {
+		sourceMode: mode,
+		initialSourceMode: mode,
+		sourceTabs: Tabs.init({ idBase: model.sourceTabs.idBase, values: SOURCE_MODES, selected: mode }),
+	}
+}
 
 /** An edit to the editing state; a presentation edit re-plans the preview. */
 export const editState = (
@@ -207,9 +244,11 @@ export const editState = (
 	edit: (state: EditorState) => EditorState,
 ): Return => (model.state === null ? { model } : planPreview({ ...model, state: edit(model.state) }, context))
 
-/** `isDirty`: the source tab moved, or the state differs from what was opened. */
+/** `isDirty`: the source tab moved, or the state (or, in Raw SQL, the SQL) differs from what was opened. */
 export const isDirty = (model: Model): boolean =>
-	model.sourceMode !== "builder" || JSON.stringify(model.state) !== JSON.stringify(model.initial)
+	model.sourceMode !== model.initialSourceMode ||
+	JSON.stringify(model.state) !== JSON.stringify(model.initial) ||
+	(model.sourceMode === "rawSql" && JSON.stringify(model.rawSql?.draft) !== JSON.stringify(model.rawSql?.initial))
 
 export const navigate = (model: Model, url: string): Return => ({
 	model,
@@ -229,11 +268,12 @@ export const leave = (model: Model, url: string): Return => {
 }
 
 /** The widget Apply writes: the stored widget with the edited type, source and display. */
-export const editedWidget = (widget: Widget, state: EditorState): Widget => {
+/** `rawSql` set: the Raw SQL source, built for the type picked in the editor. */
+export const editedWidget = (widget: Widget, state: EditorState, rawSql: RawSqlDraft | null): Widget => {
 	const edited: Widget = {
 		...widget,
 		visualization: state.visualization,
-		dataSource: buildDataSource(state),
+		dataSource: rawSql === null ? buildDataSource(state) : rawSqlDataSourceOf(widget, rawSql, state),
 		display: buildDisplay(widget, state),
 	}
 	if (state.timeRange !== null) return { ...edited, timeRange: state.timeRange }

@@ -12,7 +12,8 @@ import { textInput } from "../../kit/query-builder/parts"
 import { queryPanelView } from "../../kit/query-builder/view"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
 import { isNote, isBuilderPanel, validationErrorOf } from "./lowering"
-import { autoIntervalLabel } from "./update"
+import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
+import { rawSqlEditor } from "./view-sql"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -186,16 +187,11 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 	return h.div(
 		[h.Class("p-6 space-y-6"), h.OnFocusEnter(Message.FocusedQueryEditor())],
 		[
-			...(isNoteEditor ? [] : [sourceToggle(h, model)]),
+			...(showsSourceToggle(state) ? [sourceToggle(h, model)] : []),
 			...(isNoteEditor
 				? [markdownEditor(h, state.markdownContent)]
-				: model.sourceMode === "rawSql"
-					? [
-							h.p(
-								[h.Class("text-muted-foreground text-xs")],
-								["The Raw SQL editor is not ported yet."],
-							),
-						]
+				: isSqlSource(model) && model.rawSql !== null
+					? rawSqlEditor(h, model, model.rawSql)
 					: [
 							...(error === null
 								? []

@@ -14,6 +14,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 import { EditorState } from "./editor-state"
+import { RawSqlState } from "./raw-sql"
 
 // The widget editor (apps/web/src/routes/dashboards/$dashboardId_.widgets.$widgetId.tsx and
 // dashboard-builder/config/widget-query-builder-page.tsx).
@@ -37,6 +38,9 @@ export const Model = Schema.Struct({
 	/** `WidgetBuilderPreview`: the queries the preview runs, staged by Run preview. */
 	staged: Schema.NullOr(EditorState),
 	sourceMode: SourceMode,
+	/** The source the widget was opened in: switching tabs is an unsaved change. */
+	initialSourceMode: SourceMode,
+	rawSql: Schema.NullOr(RawSqlState),
 	/** `DashboardTimeRange`: the board's range, which the preview follows. */
 	timeRange: Schema.NullOr(TimeRangeSchema),
 	nowMs: Schema.NullOr(Schema.Number),

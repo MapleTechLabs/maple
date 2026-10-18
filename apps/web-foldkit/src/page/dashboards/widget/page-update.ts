@@ -16,6 +16,8 @@ import {
 } from "./edits"
 import type { EditorState } from "./editor-state"
 import { isNote, isBuilderPanel, validationErrorOf } from "./lowering"
+import { rawSqlErrorOf, reseedForType } from "./raw-sql"
+import { runSqlPreview, sqlStep } from "./sql-step"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -31,6 +33,7 @@ import {
 import {
 	backHref,
 	editedWidget,
+	isSqlSource,
 	editState,
 	leave,
 	navigate,
@@ -62,17 +65,19 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
 }
 
-const tabsStep = (model: Model, message: Tabs.Message): Return => {
+/** The Source tabs: the preview switches to what the picked source runs. */
+const tabsStep = (model: Model, context: PageContext, message: Tabs.Message): Return => {
 	const next = Tabs.update(model.sourceTabs, message)
+	const planned = planPreview(
+		{ ...model, sourceTabs: next.model, sourceMode: next.model.selected === "rawSql" ? "rawSql" : "builder" },
+		context,
+	)
 	return {
-		model: {
-			...model,
-			sourceTabs: next.model,
-			sourceMode: next.model.selected === "rawSql" ? "rawSql" : "builder",
-		},
-		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotSourceTabsMessage({ message: inner }),
-		),
+		...planned,
+		commands: [
+			...Command.mapMessages(next.commands ?? [], (inner) => Message.GotSourceTabsMessage({ message: inner })),
+			...(planned.commands ?? []),
+		],
 	}
 }
 
@@ -92,16 +97,17 @@ const sortStep = (model: Model, field: string, isText: boolean): Return => {
 const apply = (model: Model, context: PageContext): Return => {
 	const widget = widgetOf(model)
 	if (model.isSaving || widget === null || model.state === null) return { model }
-	if (validationErrorOf(model.state) !== null) return { model }
 	// TODO(widget-editor): list, funnel and paths cannot be configured yet; Apply stays a no-op.
 	if (!isNote(model.state) && !isBuilderPanel(model.state)) return { model }
+	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
+	if (rawSql === null ? validationErrorOf(model.state) !== null : rawSqlErrorOf(rawSql) !== null) return { model }
 	return {
 		model: { ...model, isSaving: true },
 		commands: [
 			SaveWidget({
 				orgId: context.orgId,
 				dashboardId: model.dashboardId,
-				widget: editedWidget(widget, model.state),
+				widget: editedWidget(widget, model.state, rawSql),
 			}),
 		],
 	}
@@ -136,7 +142,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedSortColumn: ({ field, isText }) => sortStep(model, field, isText),
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, context, inner),
 		CompletedSaveTimeRange: () => ({ model }),
-		GotSourceTabsMessage: ({ message: inner }) => tabsStep(model, inner),
+		GotSourceTabsMessage: ({ message: inner }) => tabsStep(model, context, inner),
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, context, id, inner),
 		GotQueryPanelMessage: ({ message: inner }) => queryPanelStep(model, context, inner),
 		ClickedAddQuery: () => ({ model, commands: generate("addQuery", "") }),
@@ -165,7 +171,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})),
 		ClickedRemoveFormula: ({ formulaId }) =>
 			edit(model, context, (state) => removeFormula(state, formulaId)),
-		ClickedRunPreview: () => runPreview(model, context),
+		ClickedRunPreview: () => (isSqlSource(model) ? runSqlPreview(model, context) : runPreview(model, context)),
+		ChangedSql: (m) => sqlStep(model, m),
+		ChangedSqlBucket: (m) => sqlStep(model, m),
+		ClickedSqlToken: (m) => sqlStep(model, m),
+		CompletedInsertSqlToken: (m) => sqlStep(model, m),
+		CompletedFocusSql: (m) => sqlStep(model, m),
+		ToggledSqlCollapsed: (m) => sqlStep(model, m),
 		ChangedTitle: ({ value }) => edit(model, context, (state) => ({ ...state, title: value })),
 		ChangedMarkdown: ({ value }) =>
 			edit(model, context, (state) => ({ ...state, markdownContent: value })),
@@ -174,7 +186,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedTimeRangeMode: ({ mode }) => timeRangeModeStep(model, context, mode),
 		ClickedPanelType: ({ panel }) =>
 			isConfigurablePanel(panel)
-				? edit(model, context, (state) => setPanelType(state, panel))
+				? edit(
+						model.state === null || model.rawSql === null
+							? model
+							: { ...model, rawSql: reseedForType(model.rawSql, model.state, setPanelType(model.state, panel)) },
+						context,
+						(state) => setPanelType(state, panel),
+					)
 				: { model },
 		ChangedStacked: ({ isStacked }) =>
 			edit(model, context, (state) => ({ ...state, stacked: isStacked })),

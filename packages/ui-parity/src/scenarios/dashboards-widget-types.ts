@@ -34,7 +34,20 @@ export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 	dashboard("widget-to-table", "Widget editor: a chart switched to a table with a row limit", throughput, {
 		steps: act(clickButton("Table"), fillNumber("50", "20"), clickButton("Run preview")),
 	}),
-	dashboard("widget-to-stat", "Widget editor: a chart switched to a stat, then Apply", throughput, {
+	dashboard("widget-sql", "Widget editor: the Raw SQL source with its template", throughput, {
+		steps: act((page) => page.getByRole("tab", { name: "Raw SQL" }).click()),
+	}),
+	dashboard("widget-sql-applied", "Widget editor: Raw SQL run, then Apply", throughput, {
+		steps: act(
+			(page) => page.getByRole("tab", { name: "Raw SQL" }).click(),
+			clickButton("Run preview"),
+			clickButton("Apply"),
+		),
+	}),
+	dashboard("widget-sql-collapsed", "Widget editor: the SQL panel collapsed", throughput, {
+		steps: act((page) => page.getByRole("tab", { name: "Raw SQL" }).click(), clickButton("Collapse SQL")),
+	}),
+	dashboard("widget-to-stat","Widget editor: a chart switched to a stat, then Apply", throughput, {
 		steps: act(clickButton("Stat"), clickButton("Apply")),
 	}),
 ]
