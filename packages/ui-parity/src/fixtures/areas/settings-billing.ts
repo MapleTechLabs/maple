@@ -1,4 +1,4 @@
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Predicate } from "effect"
 import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
@@ -175,8 +175,7 @@ const dailySpend =
 		})
 
 /** Weekly digest on Mondays in the reader's timezone. */
-const digest: EndpointHandler = (request) =>
-	Effect.succeed({
+const digestOf = (request: EndpointRequest) => ({
 		id: "0199a0d6-0000-7000-8000-000000000001",
 		email: acmeAdmin.email,
 		enabled: true,
@@ -190,6 +189,11 @@ const digest: EndpointHandler = (request) =>
 		createdAt: parseWarehouseDateTime(request.dataset.now) - 40 * DAY,
 		updatedAt: parseWarehouseDateTime(request.dataset.now) - 40 * DAY,
 	})
+const digest: EndpointHandler = (request) => Effect.succeed(digestOf(request))
+
+/** The upsert answers the stored row with the payload applied. */
+const upsertDigest: EndpointHandler = (request) =>
+	Effect.succeed({ ...digestOf(request), ...(Predicate.isObject(request.payload) && request.payload) })
 
 /** Tags no default answers; Billing and Notifications only render in Clerk builds. */
 export const clerkBillingEndpoints = (
@@ -201,4 +205,5 @@ export const clerkBillingEndpoints = (
 	"billing.getBillingProfile": profile,
 	"billing.getDailySpend": dailySpend(warehouse),
 	"digest.getSubscription": digest,
+	"digest.upsertSubscription": upsertDigest,
 })

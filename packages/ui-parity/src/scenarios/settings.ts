@@ -375,6 +375,80 @@ const clerkInteractions: ReadonlyArray<Scenario> = [
 			await target.getByText("Profile updated").waitFor()
 		},
 	}),
+	page("account-password-change", "Account: change the password", "/account?tab=password", {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByLabel("Current password").fill("old-password-1")
+			await target.getByLabel("New password", { exact: true }).fill("new-password-2")
+			await target.getByLabel("Confirm new password").fill("new-password-2")
+			await target.getByRole("button", { name: "Change password" }).click()
+			await target.getByText("Password changed").waitFor()
+		},
+	}),
+	page("account-password-short", "Account: a new password under 8 characters", "/account?tab=password", {
+		dataset: CLERK,
+		steps: (target) => target.getByLabel("New password", { exact: true }).fill("short"),
+	}),
+	page("account-emails-add", "Account: add an email, then the code step", "/account?tab=emails", {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Add email" }).click()
+			await target.getByRole("textbox", { name: "Email address" }).fill("ada@lovelace.test")
+			await target.getByRole("button", { name: "Send code" }).click()
+			await target.getByText("Enter the six-digit code we just emailed to that address.").waitFor()
+		},
+	}),
+	page("account-passkeys-rename", "Account: rename a passkey", "/account?tab=passkeys", {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Actions for MacBook Touch ID" }).click()
+			await target.getByRole("menuitem", { name: "Rename" }).click()
+			await target.getByRole("textbox", { name: "Name" }).fill("Studio Display")
+			await target.getByRole("button", { name: "Save", exact: true }).click()
+			await target.getByText("Passkey renamed").waitFor()
+		},
+	}),
+	page("account-two-factor-scan", "Account: the authenticator QR step", "/account?tab=two-factor", {
+		dataset: CLERK,
+		steps: (target) => target.getByRole("button", { name: "Set up authenticator" }).click(),
+	}),
+	page("account-two-factor-setup", "Account: set up an authenticator", "/account?tab=two-factor", {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Set up authenticator" }).click()
+			await target.getByRole("button", { name: "Continue" }).click()
+			// Slot one is labelled; each digit moves focus on, as typing a code does.
+			await target.locator("[data-slot=otp-field-input]").first().click()
+			await target.keyboard.type("123456")
+			await target.getByText("Two-factor authentication enabled").waitFor()
+		},
+	}),
+	page("account-connections-connect", "Account: connect Google (no consent URL)", "/account?tab=connections", {
+		dataset: CLERK,
+		steps: async (target) => {
+			// The header has its own "Connect" (the onboarding popover): click the Google row's.
+			await target
+				.locator("[data-slot=setting-row]", { hasText: "Google" })
+				.getByRole("button", { name: "Connect", exact: true })
+				.click()
+			await target.getByText("Google did not return a sign-in URL").waitFor()
+		},
+	}),
+	page("account-email-preferences-web", "Account: turn the web analytics digest on", "/account?tab=email-preferences", {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("switch", { name: "Web analytics digest" }).click()
+			await target.getByText("Web analytics digest turned on").waitFor()
+		},
+	}),
+	page("account-email-preferences-save", "Account: move the digest to Tuesday and save", "/account?tab=email-preferences", {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByLabel("Day").selectOption("2")
+			await target.getByRole("button", { name: "Save", exact: true }).click()
+			await target.getByText("Email preferences saved").waitFor()
+		},
+	}),
 	page("clerk-organization-delete", "Organization: delete dialog with the name typed", ORGANIZATION, {
 		dataset: CLERK,
 		steps: async (target) => {
