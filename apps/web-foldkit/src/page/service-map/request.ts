@@ -1,6 +1,6 @@
 import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
 import { Option } from "effect"
-import { AsyncData, Command } from "foldkit"
+import type { Command } from "foldkit"
 import * as Keyed from "../../data/keyed"
 import { requestKey } from "../../data/request-key"
 import type { Resources } from "../../platform/resources"
@@ -219,5 +219,3 @@ export const searchHref = (search: Search) => hrefOf(AppRoute.ServiceMap({ searc
 /** Whether two searches differ in what decides the window. */
 export const isWindowChange = (a: Search, b: Search) =>
 	a.startTime !== b.startTime || a.endTime !== b.endTime || a.timePreset !== b.timePreset
-
-export const hasData = <A, E>(slot: Keyed.Keyed<A, E>) => AsyncData.isSuccess(slot.data)

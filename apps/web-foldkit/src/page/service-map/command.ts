@@ -22,7 +22,6 @@ import {
 	DbSummary,
 	MapBundle,
 	PlanetScaleStats,
-	type Stored,
 	Stored as StoredSchema,
 } from "./model"
 
@@ -275,5 +274,3 @@ export const CompleteReloadSpin = Command.define("CompleteServiceMapReloadSpin",
 	execute: ({ version }) =>
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
 })
-
-export type { Stored }
