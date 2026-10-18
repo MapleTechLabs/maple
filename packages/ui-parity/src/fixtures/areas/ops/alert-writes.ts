@@ -4,12 +4,13 @@ import {
 	V2AlertDestinationMutationResponse,
 	V2AlertDestinationTestResult,
 	V2AlertRuleMutationResponse,
+	V2AlertRuleTestResult,
 } from "@maple/domain/http/v2"
 import type { Dataset, EndpointHandler, SyncedRow } from "../../dataset.ts"
 import { epochMs, iso, num, str, strings } from "./synthetic.ts"
 
 /**
- * The alert writes the pages send (enable/disable, create, edit, destination toggle, test,
+ * The alert writes the pages send (enable/disable, create, edit, dry run, destination toggle, test,
  * delete). Nothing is persisted: each answers what the server would return for the seeded row,
  * so the call log carries the request and both apps render the same success path.
  */
@@ -104,6 +105,40 @@ const updateRule: EndpointHandler = (request) => {
 			)
 }
 
+/** A created rule: the payload's name, signal and threshold under a fixed new id. */
+const createRule: EndpointHandler = (request) => {
+	const payload = record(request.payload)
+	const row: SyncedRow = {
+		id: "0199a002-0000-7000-8000-0000000000ff",
+		name: str(payload, "name") ?? "",
+		severity: str(payload, "severity") ?? "warning",
+		signal_type: str(payload, "signal_type") ?? "error_rate",
+		comparator: str(payload, "comparator") ?? "gt",
+		threshold: num(payload, "threshold") ?? 0,
+		window_minutes: num(payload, "window_minutes") ?? 5,
+		created_at: request.dataset.now,
+	}
+	return Effect.sync(() => ruleWire(request.dataset, row, {}))
+}
+
+/** A dry run: the payload's comparator and threshold, evaluated healthy against the fixture. */
+const testRule: EndpointHandler = (request) => {
+	const rule = record(record(request.payload).rule)
+	const threshold = num(rule, "threshold") ?? 0
+	return Effect.sync(() =>
+		Schema.encodeUnknownSync(V2AlertRuleTestResult)({
+			object: "alert_rule.test_result",
+			status: "healthy",
+			value: threshold / 2,
+			sample_count: 312,
+			threshold,
+			threshold_upper: null,
+			comparator: str(rule, "comparator") ?? "gt",
+			reason: "ui-parity: within threshold",
+		}),
+	)
+}
+
 const updateDestination: EndpointHandler = (request) => {
 	const row = destinationRow(request.dataset, idOf(request))
 	const payload = record(request.payload)
@@ -154,6 +189,8 @@ const deleteDestination: EndpointHandler = (request) =>
 
 export const alertWriteEndpoints = {
 	"alertRules.update": updateRule,
+	"alertRules.create": createRule,
+	"alertRules.test": testRule,
 	"alertDestinations.update": updateDestination,
 	"alertDestinations.create": createDestination,
 	"alertDestinations.test": testDestination,
