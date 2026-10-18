@@ -1,6 +1,7 @@
 import { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as Overlays from "../overlays"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "../../../ui/filters/filter-sections"
@@ -40,5 +41,6 @@ export const Message = defineMessageUnion({
 	ToggledExpanded: { commitSha: Schema.String },
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
+	GotOverlaysMessage: { message: Overlays.Message },
 })
 export type Message = typeof Message.Type

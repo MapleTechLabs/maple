@@ -1,6 +1,7 @@
 import { CommitSha, ServiceName, VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
 import { V2ErrorIssue } from "@maple/domain/http/v2"
 import { Schema } from "effect"
+import * as Overlays from "../overlays"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -65,5 +66,7 @@ export const Model = Schema.Struct({
 	expanded: Schema.Array(Schema.String),
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,
+	/** The health pills' tooltip and the commit hover card. */
+	overlays: Overlays.Model,
 })
 export type Model = typeof Model.Type

@@ -2,6 +2,7 @@ import { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/h
 import { V2ErrorIssue } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as Overlays from "../overlays"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -37,5 +38,6 @@ export const Message = defineMessageUnion({
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	CompletedMountLinkedCursor: {},
+	GotOverlaysMessage: { message: Overlays.Message },
 })
 export type Message = typeof Message.Type
