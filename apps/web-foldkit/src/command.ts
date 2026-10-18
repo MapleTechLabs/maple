@@ -3,7 +3,9 @@ import { Command } from "foldkit"
 import { load, pushUrl, replaceUrl } from "foldkit/navigation"
 import { Message } from "./message"
 import { clearSessionToken, MapleAuthApi, readSessionToken, saveSessionToken } from "./platform/auth-api"
-import { loadClerk } from "./platform/clerk"
+import { saveSelectedPlanKnown } from "./page/onboarding/plan-gate"
+import { MapleInternalApiClient } from "./platform/api-clients"
+import { loadClerk, signOutOfClerk } from "./platform/clerk"
 
 /** How long a signed-out Clerk answer may still turn into a session on a hard refresh (main.tsx). */
 const AUTH_SETTLE_TIMEOUT = Duration.seconds(2)
@@ -65,4 +67,30 @@ export const LoadClerk = Command.define("LoadClerk", {
 export const WaitForAuthSettle = Command.define("WaitForAuthSettle", {
 	messages: [Message.CompletedWaitForAuthSettle],
 	execute: Effect.sleep(AUTH_SETTLE_TIMEOUT).pipe(Effect.as(Message.CompletedWaitForAuthSettle())),
+})
+
+/** The Clerk user menu's Log out: `signOut()`, after which Clerk emits the signed-out session. */
+export const SignOutOfClerk = Command.define("SignOutOfClerk", {
+	messages: [Message.CompletedSignOutOfClerk],
+	execute: signOutOfClerk.pipe(Effect.as(Message.CompletedSignOutOfClerk())),
+})
+
+/** `billingCustomerAtom`: `GET /internal/billing/customer`, for the org it was asked for. */
+export const LoadCustomer = Command.define("LoadCustomer", {
+	args: { orgId: Schema.String },
+	messages: [Message.SucceededLoadCustomer, Message.FailedLoadCustomer],
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			const customer = yield* client.billing.getCustomer()
+			return Message.SucceededLoadCustomer({ orgId, customer })
+		}).pipe(Effect.orElseSucceed(() => Message.FailedLoadCustomer({ orgId }))),
+})
+
+/** The plan settled: remember whether this org may render the app (`selectedPlanKnownAtomFor`). */
+export const SaveSelectedPlanKnown = Command.define("SaveSelectedPlanKnown", {
+	args: { orgId: Schema.String, mayRenderApp: Schema.Boolean },
+	messages: [Message.CompletedSaveSelectedPlanKnown],
+	execute: ({ orgId, mayRenderApp }) =>
+		saveSelectedPlanKnown(orgId, mayRenderApp).pipe(Effect.as(Message.CompletedSaveSelectedPlanKnown())),
 })

@@ -5,6 +5,7 @@ import type { Url } from "foldkit/url"
 import { CheckSession, LoadClerk } from "./command"
 import type { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
+import { initCustomer, readKnownToRenderApp } from "./page/onboarding/plan-gate"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { readSessionToken } from "./platform/auth-api"
@@ -27,11 +28,13 @@ export { view } from "./view"
 export const Flags = Schema.Struct({
 	hasStoredSession: Schema.Boolean,
 	timeZone: Schema.String,
+	knownToRenderApp: Schema.Record(Schema.String, Schema.Boolean),
 	shell: Schema.Struct({
 		isMobile: Schema.Boolean,
 		theme: Shell.Theme,
 		pinnedNamespaces: Schema.Record(Schema.String, Schema.String),
 		dashboardFavorites: Schema.Array(Schema.String),
+		isQuotaApproachingDismissed: Schema.optionalKey(Schema.Boolean),
 	}),
 })
 export type Flags = typeof Flags.Type
@@ -39,6 +42,7 @@ export type Flags = typeof Flags.Type
 export const flags: Effect.Effect<Flags> = Effect.all({
 	hasStoredSession: Effect.map(readSessionToken, Option.isSome),
 	timeZone: readEffectiveTimeZone,
+	knownToRenderApp: readKnownToRenderApp,
 	shell: Shell.readShellFlags,
 })
 
@@ -54,6 +58,10 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		toastActions: {},
 		chatSheet: ChatSheet.init(),
 		page: null,
+		onboarding: null,
+		clerkSnapshot: null,
+		customer: initCustomer(),
+		knownToRenderApp: flags.knownToRenderApp,
 		timeZone: flags.timeZone,
 	}
 

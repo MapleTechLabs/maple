@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
+import { initialsFrom } from "@maple/ui/lib/initials"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -9,10 +10,10 @@ import { icon, iconColor } from "../ui/icon"
 import { switchControl } from "../ui/switch"
 import { popupIdOf } from "./menus"
 import { Menu, Message } from "./message"
-import type { Model } from "./model"
+import type { Model, ShellClerk } from "./model"
 import { partitionSubItems } from "./nav"
 import { shellNavGroups, surfacesOf } from "./view-nav"
-import { pinnedNamespaceOf } from "./view-sidebar"
+import { pinnedNamespaceOf, userAvatar, userNameOf } from "./view-sidebar"
 
 // The open menu's content: GuestMenu, SupportMenu, the self-hosted org switcher's namespace list
 // and the collapsed rail's section menus (app-sidebar.tsx, namespace-scope-menu.tsx).
@@ -111,11 +112,15 @@ const guestMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu): ReadonlyA
 	),
 ]
 
-const supportMenu = (h: HtmlBuilder<Message>, menu: Menu): ReadonlyArray<Html> => [
+const supportMenu = (h: HtmlBuilder<Message>, menu: Menu, isClerk: boolean): ReadonlyArray<Html> => [
 	menuGroup(
 		h,
 		undefined,
 		items(h, menu, [
+			// The channel is created in Maple's Slack for a Clerk org; self-hosted has neither.
+			...(isClerk
+				? [{ content: [icon(h, "SlackIcon"), "Shared Slack channel"], onSelect: Message.ClickedSupportChannel() }]
+				: []),
 			{
 				content: [icon(h, "DiscordIcon"), "Community Discord"],
 				href: "https://discord.gg/BnXjKuwJqP",
@@ -205,8 +210,9 @@ const navSectionMenu = (
 	menu: Menu,
 	title: string,
 	currentPath: string,
+	clerk: ShellClerk | null,
 ): ReadonlyArray<Html> => {
-	const item = shellNavGroups()
+	const item = shellNavGroups(clerk)
 		.flatMap((group) => group.items)
 		.find((candidate) => candidate.title === title)
 	if (item?.subItems === undefined) return []
@@ -227,15 +233,62 @@ const navSectionMenu = (
 	]
 }
 
+/** `UserMenu` (Clerk): who is signed in, the theme, Account, Settings, shortcuts, Log out. */
+const clerkUserMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu, clerk: ShellClerk): ReadonlyArray<Html> => {
+	const name = userNameOf(clerk)
+	const email = Option.getOrElse(Option.flatMapNullishOr(clerk.maybeUser, (user) => user.email), () => "")
+	const labelId = `${popupIdOf(menu)}-label`
+	return [
+		menuGroup(h, labelId, [
+			menuLabel(h, labelId, [
+				h.div(
+					[h.Class("flex items-center gap-2 py-1 text-left text-sm")],
+					[
+						userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs"),
+						h.div(
+							[h.Class("grid flex-1 text-left text-sm leading-tight")],
+							[
+								h.span([h.Class("truncate font-medium"), h.Title(name)], [name]),
+								...(email === ""
+									? []
+									: [h.span([h.Class("truncate text-muted-foreground text-xs"), h.Title(email)], [email])]),
+							],
+						),
+					],
+				),
+			]),
+		]),
+		menuSeparator(h),
+		menuGroup(h, undefined, [themeToggle(h, model)]),
+		menuSeparator(h),
+		menuGroup(
+			h,
+			undefined,
+			items(h, menu, [
+				{ content: [icon(h, "UserIcon"), "Account"], href: "/account" },
+				{ content: [icon(h, "GearIcon"), "Settings"], href: "/settings" },
+				keyboardShortcuts(h),
+			]),
+		),
+		menuSeparator(h),
+		menuGroup(
+			h,
+			undefined,
+			items(h, menu, [{ content: [icon(h, "LogoutIcon"), "Log out"], onSelect: Message.ClickedLogOut() }], 3),
+		),
+	]
+}
+
 export const menuContent = (
 	h: HtmlBuilder<Message>,
 	model: Model,
 	menu: Menu,
 	currentPath: string,
+	clerk: ShellClerk | null = null,
 ): ReadonlyArray<Html> =>
 	Menu.match(menu, {
 		Org: () => orgMenu(h, model, menu),
-		User: () => guestMenu(h, model, menu),
-		Support: () => supportMenu(h, menu),
-		NavSection: ({ title }) => navSectionMenu(h, model, menu, title, currentPath),
+		User: () => (clerk === null ? guestMenu(h, model, menu) : clerkUserMenu(h, model, menu, clerk)),
+		Support: () => supportMenu(h, menu, clerk !== null),
+		NavSection: ({ title }) => navSectionMenu(h, model, menu, title, currentPath, clerk),
 	})

@@ -1,7 +1,7 @@
 import { Array, Effect, Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import type { ClerkEmailAddressResource, ClerkUserResource } from "../../../../platform/clerk"
-import { ClerkActionError, clerkTry } from "../../../../platform/clerk-resources"
+import { ClerkActionError, clerkTry } from "../../../../platform/clerk"
 import * as Dialog from "../../../../ui/dialog"
 import * as Menu from "../../../../ui/menu"
 import * as OtpField from "../../../../ui/otp-field"

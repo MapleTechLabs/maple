@@ -5,6 +5,9 @@ import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
 import { PopupPosition } from "../ui/anchor"
 import * as Tooltip from "../ui/tooltip"
+import * as ClerkOrgSwitcher from "./clerk-org-switcher"
+import * as Checklist from "./onboarding-checklist"
+import * as SupportChannel from "./support-channel"
 import { PinnedDashboardRow } from "./dashboards-shape"
 
 /** The shell's dropdown menus; a collapsed-rail section menu is keyed by its section title. */
@@ -61,6 +64,15 @@ export const Message = defineMessageUnion({
 	SucceededLoadNamespaces: { namespaces: Schema.Array(Schema.String) },
 	FailedLoadNamespaces: {},
 	GotRailTooltipMessage: { message: Tooltip.Message },
+	GotClerkOrgMenuMessage: { message: ClerkOrgSwitcher.Message },
+	GotChecklistMessage: { message: Checklist.Message },
+	GotSupportChannelMessage: { message: SupportChannel.Message },
+	ClickedSupportChannel: {},
+	ClickedUpdatePaymentMethod: {},
+	CompletedOpenCustomerPortal: {},
+	FailedOpenCustomerPortal: { message: Schema.String },
+	ClickedDismissQuotaBanner: {},
+	CompletedDismissQuotaBanner: {},
 })
 export type Message = typeof Message.Type
 
@@ -68,5 +80,13 @@ export type Message = typeof Message.Type
 export const OutMessage = defineMessageUnion({
 	/** The org-global namespace pin changed: pages rebuild their queries under the new scope. */
 	ChangedGlobalNamespace: { maybeNamespace: Schema.Option(Schema.String) },
+	/** Clerk: an org other than the active one was picked (`setActive`, then reload). */
+	RequestedOrganizationSwitch: { orgId: Schema.String },
+	/** Clerk: Log out in the user menu (`signOut()`). */
+	RequestedSignOut: {},
+	/** A failure the shell reports as an error toast (the billing portal not opening). */
+	RequestedErrorToast: { title: Schema.String },
+	/** A billing mutation succeeded: the Autumn customer is re-read. */
+	RequestedCustomerRefresh: {},
 })
 export type OutMessage = typeof OutMessage.Type

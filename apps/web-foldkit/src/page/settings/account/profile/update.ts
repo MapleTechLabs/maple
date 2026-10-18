@@ -1,6 +1,7 @@
 import { Effect, Option, Result, Schema } from "effect"
 import { Command, File } from "foldkit"
 import * as Dialog from "../../../../ui/dialog"
+import { signOutOfClerk } from "../../../../platform/clerk"
 import { PageOutMessage, type PageReturn } from "../../../contract"
 import { checkImage, clickFileInput } from "../../kit/image-dropzone"
 import { settled, withUser } from "../clerk-write"
@@ -43,7 +44,7 @@ const SetAvatar = Command.define("SetClerkProfileImage", {
 const DeleteAccount = Command.define("DeleteClerkUser", {
 	messages: [Message.CompletedDelete],
 	execute: withUser("Failed to delete account", (user) => user.delete()).pipe(
-		Effect.tap(() => Effect.tryPromise(() => window.Clerk?.signOut() ?? Promise.resolve()).pipe(Effect.ignore)),
+		Effect.tap(() => signOutOfClerk),
 		settled((result) => Message.CompletedDelete({ result })),
 	),
 })

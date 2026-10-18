@@ -15,7 +15,8 @@ export const FAULTS_HEADER = "x-parity-faults"
 
 /**
  * Deliberate slowness and failures, keyed by endpoint tag prefix (`queryEngine.executeBatch`,
- * `alerts.`); the longest matching prefix wins. HttpApi endpoints only, not Electric or raw routes.
+ * `alerts.`); the longest matching prefix wins, and a key ending in `$` matches one tag exactly.
+ * HttpApi endpoints only, not Electric or raw routes.
  */
 export interface Faults {
 	/** Milliseconds the backend holds a matching request (after logging it) before answering. */
@@ -46,6 +47,8 @@ export interface DatasetIdentity {
 	readonly orgName: string
 	readonly orgSlug: string
 	readonly role: "admin" | "member"
+	/** Clerk only: the organization's public metadata (rollout flags, regions). Empty when absent. */
+	readonly orgPublicMetadata?: Readonly<Record<string, unknown>>
 }
 
 export interface DatasetSummary {

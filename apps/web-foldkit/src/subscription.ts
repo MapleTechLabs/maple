@@ -1,5 +1,5 @@
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Option, Schedule, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import { Message } from "./message"
 import type { Resources } from "./platform/resources"
@@ -34,6 +34,23 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 						mapEvent: () => Message.ChangedSelfHostedSession(),
 					}),
 					Effect.sync(() => isSelfHosted),
+				),
+		},
+	),
+	/** `useLiveClock({ intervalMs: 1000 })`: the reward pill's countdown, while one is shown. */
+	checklistClock: entry(
+		{ isCounting: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({ isCounting: Shell.isChecklistCounting(model.shell) }),
+			dependenciesToStream: ({ isCounting }) =>
+				Stream.when(
+					Stream.fromSchedule(Schedule.spaced(Duration.seconds(1))).pipe(
+						Stream.mapEffect(() => Clock.currentTimeMillis),
+						Stream.map((nowMs) =>
+							Message.GotShellMessage({ message: Shell.checklistTicked(nowMs) }),
+						),
+					),
+					Effect.sync(() => isCounting),
 				),
 		},
 	),

@@ -1,12 +1,11 @@
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
-import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { Option } from "effect"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { bootSplash } from "./layout/boot-splash"
 import { Message } from "./message"
 import { type Model, Session } from "./model"
-import { pageContextOf } from "./update"
-import * as ClerkSignIn from "./page/clerk-sign-in"
+import { onboardingInputsOf, pageContextOf, planGateOf, shellClerkOf } from "./update"
+import * as OnboardingView from "./page/onboarding/view"
 import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
 import { isBarePageRoute, type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } from "./page/registry"
 import * as SignIn from "./page/sign-in"
@@ -36,15 +35,14 @@ const placeholder = (model: Model, h: HtmlBuilder<Message>, children: ReadonlyAr
 		],
 	)
 
-const signInView = (model: Model, h: HtmlBuilder<Message>, redirectUrl: string | undefined): Html =>
-	isClerkAuthEnabled
-		? ClerkSignIn.view(h, Option.fromNullishOr(validateInternalRedirect(redirectUrl)))
-		: h.submodel({
-				slotId: "sign-in",
-				model: model.signIn,
-				view: SignIn.view,
-				toParentMessage: (message) => Message.GotSignInMessage({ message }),
-			})
+/** Self-hosted: the root password form. Clerk's sign-in is an onboarding screen. */
+const signInView = (model: Model, h: HtmlBuilder<Message>): Html =>
+	h.submodel({
+		slotId: "sign-in",
+		model: model.signIn,
+		view: SignIn.view,
+		toParentMessage: (message) => Message.GotSignInMessage({ message }),
+	})
 
 const toShellMessage = (message: Shell.Message) => Message.GotShellMessage({ message })
 
@@ -69,6 +67,7 @@ const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
 /** A signed-in page inside the shell: the frame around the page, then the shell's overlay layers. */
 const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
 	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
+	const clerk = shellClerkOf(model)
 	return [
 		h.submodel({
 			slotId: "shell-frame",
@@ -77,30 +76,36 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 			toParentMessage: toShellMessage,
 			viewInputs: {
 				currentPath,
+				clerk,
 				breadcrumbs: model.page === null ? breadcrumbsOf(model.route) : pageBreadcrumbs(model.page),
 				page: () => pageView(model, h),
 				topbarActions: () => topbarActionsView(model, h),
 			},
 		}),
-		...shellOverlays(model, h, currentPath),
+		...shellOverlays(model, h, currentPath, clerk),
 	]
 }
 
-/** The shell's overlay layers (mobile nav sheet, open menu), after the frame. */
-const shellOverlays = (model: Model, h: HtmlBuilder<Message>, currentPath: string): ReadonlyArray<Html> => [
+/** The shell's overlay layers (mobile nav sheet, open menu, chat sheet), after the frame. */
+const shellOverlays = (
+	model: Model,
+	h: HtmlBuilder<Message>,
+	currentPath: string,
+	clerk: ReturnType<typeof shellClerkOf>,
+): ReadonlyArray<Html> => [
 	h.submodel({
 		slotId: "shell-sheet",
 		model: model.shell,
 		view: Shell.sheetLayerView,
 		toParentMessage: toShellMessage,
-		viewInputs: { currentPath },
+		viewInputs: { currentPath, clerk },
 	}),
 	h.submodel({
 		slotId: "shell-menu",
 		model: model.shell,
 		view: Shell.menuLayerView,
 		toParentMessage: toShellMessage,
-		viewInputs: { currentPath },
+		viewInputs: { currentPath, clerk },
 	}),
 	h.submodel({
 		slotId: "chat-sheet",
@@ -115,6 +120,7 @@ const shellOverlays = (model: Model, h: HtmlBuilder<Message>, currentPath: strin
 const bareShellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
 	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
 	const maybeContext = pageContextOf(model)
+	const clerk = shellClerkOf(model)
 	return [
 		h.submodel({
 			slotId: "shell-bare-frame",
@@ -123,29 +129,51 @@ const bareShellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Ht
 			toParentMessage: toShellMessage,
 			viewInputs: {
 				currentPath,
+				clerk,
 				page: () =>
 					model.page !== null && Option.isSome(maybeContext)
 						? viewPage(h, model.page, { context: maybeContext.value }, toPageMessage)
 						: h.empty,
 			},
 		}),
-		...shellOverlays(model, h, currentPath),
+		...shellOverlays(model, h, currentPath, clerk),
 	]
 }
+
+/** An onboarding screen open for this route, outside the shell. */
+const onboardingView = (model: Model, h: HtmlBuilder<Message>): Option.Option<Html> =>
+	Option.flatMap(Option.fromNullishOr(model.onboarding), (onboarding) =>
+		Option.map(onboardingInputsOf(model), (inputs) =>
+			h.submodel({
+				slotId: "onboarding",
+				model: onboarding,
+				view: OnboardingView.view,
+				viewInputs: inputs,
+				toParentMessage: (message) => Message.GotOnboardingMessage({ message }),
+			}),
+		),
+	)
 
 const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	AppRoute.matchOrElse<ReadonlyArray<Html>>(
 		model.route,
 		{
-			SignIn: ({ search }) => [signInView(model, h, search.redirect_url)],
+			SignIn: () =>
+				isClerkAuthEnabled
+					? Option.match(onboardingView(model, h), { onNone: () => [], onSome: (screen) => [screen] })
+					: [signInView(model, h)],
 			Chat: () => bareShellRoute(model, h),
 		},
 		() =>
-			rendersShell(model.route)
-				? shellRoute(model, h)
-				: isBarePageRoute(model.route) && model.page !== null
-					? [pageView(model, h)]
-					: [placeholder(model, h, [])],
+			Option.match(onboardingView(model, h), {
+				onSome: (screen) => [screen],
+				onNone: () =>
+					rendersShell(model.route)
+						? shellRoute(model, h)
+						: isBarePageRoute(model.route) && model.page !== null
+							? [pageView(model, h)]
+							: [placeholder(model, h, [])],
+			}),
 	)
 
 /** A protected route while signed out renders nothing: the redirect to `/sign-in` is in flight. */
@@ -153,7 +181,9 @@ const content = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	Session.match(model.session, {
 		Resolving: () => [bootSplash(h)],
 		SignedOut: () => (isPublicRoute(model.route) ? routeView(model, h) : []),
-		SignedIn: () => routeView(model, h),
+		// `ClerkReverseRedirects` holds the app on the splash until the plan is known.
+		SignedIn: () =>
+			Option.exists(planGateOf(model), (gate) => gate.isSplash) ? [bootSplash(h)] : routeView(model, h),
 	})
 
 const body = (model: Model, h: HtmlBuilder<Message>): Html =>

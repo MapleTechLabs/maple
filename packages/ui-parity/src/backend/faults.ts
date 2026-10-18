@@ -22,8 +22,12 @@ export const mergeFaults = (dataset: Faults | undefined, header: string | undefi
 		failures: { ...dataset?.failures, ...scenario.failures },
 	}))
 
+/** A key ending in `$` names one endpoint exactly, for a tag that prefixes another's. */
+const matchesKey = (key: string, tag: string): boolean =>
+	key.endsWith("$") ? tag === key.slice(0, -1) : tag.startsWith(key)
+
 const longestPrefix = <A>(table: Readonly<Record<string, A>> | undefined, tag: string): A | undefined => {
-	const entries = Object.entries(table ?? {}).filter(([prefix]) => tag.startsWith(prefix))
+	const entries = Object.entries(table ?? {}).filter(([prefix]) => matchesKey(prefix, tag))
 	const [best] = entries.sort(([a], [b]) => b.length - a.length)
 	return best?.[1]
 }

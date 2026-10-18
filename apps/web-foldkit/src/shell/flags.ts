@@ -1,5 +1,6 @@
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema } from "effect"
+import { readQuotaApproachingDismissed } from "./billing-banners"
 import { readDashboardFavorites } from "./favorites"
 import { NAMESPACE_STORAGE_PREFIX, THEME_STORAGE_KEY } from "./command"
 import { Theme } from "./message"
@@ -40,5 +41,6 @@ export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* ()
 		theme: readTheme(),
 		pinnedNamespaces,
 		dashboardFavorites: readDashboardFavorites(),
+		isQuotaApproachingDismissed: yield* readQuotaApproachingDismissed,
 	}
 })

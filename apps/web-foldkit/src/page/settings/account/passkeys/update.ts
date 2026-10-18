@@ -1,7 +1,7 @@
 import { Array, Effect, Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import type { ClerkPasskeyResource } from "../../../../platform/clerk"
-import { ClerkActionError } from "../../../../platform/clerk-resources"
+import { ClerkActionError } from "../../../../platform/clerk"
 import * as Dialog from "../../../../ui/dialog"
 import * as Menu from "../../../../ui/menu"
 import { PageOutMessage, type PageReturn } from "../../../contract"

@@ -15,13 +15,15 @@ import { leftSheet } from "../ui/sheet"
 import { sidebarContent, sidebarDesktop, sidebarInset, sidebarWrapper } from "../ui/sidebar"
 import * as Tooltip from "../ui/tooltip"
 import { placementOf, popupIdOf, triggerIdOf } from "./menus"
+import { billingBanners } from "./billing-banners"
+import * as SupportChannelView from "./support-channel-view"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { Model, ShellClerk } from "./model"
 import { PositionMenu } from "./mounts"
 import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
-import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader, userAvatar } from "./view-sidebar"
+import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader } from "./view-sidebar"
 import { type BreadcrumbEntry, topbar } from "./view-topbar"
 
 export type { BreadcrumbEntry } from "./view-topbar"
@@ -31,14 +33,15 @@ const sidebarRegions = (
 	h: HtmlBuilder<Message>,
 	model: Model,
 	currentPath: string,
+	clerk: ShellClerk | null,
 	tip: RailTip = NO_TIP,
 ): ReadonlyArray<Html> => [
-	shellSidebarHeader(h, model, tip),
+	shellSidebarHeader(h, model, clerk, tip),
 	sidebarContent(h, [
-		...navGroupSections(h, model, currentPath, tip),
+		...navGroupSections(h, model, currentPath, tip, clerk),
 		...pinnedGroup(h, model, currentPath),
 	]),
-	shellSidebarFooter(h, model, currentPath, userAvatar(h, "RT"), tip),
+	shellSidebarFooter(h, model, currentPath, clerk, tip),
 ]
 
 const RAIL_TIP_PREFIX = "shell-rail-tip-"
@@ -56,9 +59,10 @@ const desktopSidebar = (
 	h: HtmlBuilder<Message>,
 	model: Model,
 	currentPath: string,
+	clerk: ShellClerk | null,
 	isOpen = model.isSidebarOpen,
 ): Html => {
-	if (isOpen) return sidebarDesktop(h, "expanded", sidebarRegions(h, model, currentPath))
+	if (isOpen) return sidebarDesktop(h, "expanded", sidebarRegions(h, model, currentPath, clerk))
 	return h.submodel({
 		slotId: "shell-rail-tooltip",
 		model: model.railTooltip,
@@ -66,7 +70,7 @@ const desktopSidebar = (
 		viewInputs: {
 			toView: ({ trigger, portal }) =>
 				sidebarDesktop(h, "collapsed", [
-					...sidebarRegions(h, model, currentPath, (title) =>
+					...sidebarRegions(h, model, currentPath, clerk, (title) =>
 						trigger(`${RAIL_TIP_PREFIX}${title}`),
 					),
 					...(portal === null ? [] : [portal]),
@@ -80,12 +84,23 @@ const desktopSidebar = (
 
 export type FrameInputs = Readonly<{
 	currentPath: string
+	/** Clerk mode: the user, orgs and customer the sidebar and banners read. */
+	clerk?: ShellClerk | null
 	breadcrumbs: ReadonlyArray<BreadcrumbEntry>
 	/** `PageLayout.Body` itself (`page/kit/dashboard-page.ts`): the page's filters, content and right rail. */
 	page: () => Html
 	/** `DashboardPage`'s `topbarActions`, after the shell's own buttons. */
 	topbarActions: () => Html
 }>
+
+const supportChannelDialog = (h: HtmlBuilder<Message>, model: Model, clerk: ShellClerk): Html =>
+	h.submodel({
+		slotId: "shell-support-channel",
+		model: model.supportChannel,
+		view: SupportChannelView.view,
+		viewInputs: { email: Option.flatMapNullishOr(clerk.maybeUser, (user) => user.email) },
+		toParentMessage: (message) => Message.GotSupportChannelMessage({ message }),
+	})
 
 /** `AppUpdateBanner`: not dismissible, a stale bundle may not read what the new build writes. */
 const appUpdateBanner = (h: HtmlBuilder<Message>): Html =>
@@ -108,7 +123,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 	sidebarWrapper(
 		h,
 		[
-			...(model.isMobile ? [] : [desktopSidebar(h, model, inputs.currentPath)]),
+			...(model.isMobile ? [] : [desktopSidebar(h, model, inputs.currentPath, inputs.clerk ?? null)]),
 			sidebarInset(h, [
 				h.a(
 					[
@@ -124,9 +139,20 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 					[
 						topbar(h, model, inputs.breadcrumbs, inputs.topbarActions()),
 						...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
+						...(inputs.clerk === undefined || inputs.clerk === null
+							? []
+							: billingBanners(
+									h,
+									Option.fromNullishOr(inputs.clerk.customer),
+									model.isQuotaApproachingDismissed,
+								)),
 						inputs.page(),
 					],
 				),
+				// Clerk: the Support menu's shared Slack channel dialog (its portal moves to <body>).
+				...(inputs.clerk === undefined || inputs.clerk === null
+					? []
+					: [supportChannelDialog(h, model, inputs.clerk)]),
 			]),
 		],
 		// A modal sheet hides the page behind it from assistive tech, like Base UI's `aria-hidden` root.
@@ -134,7 +160,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 	),
 )
 
-export type BareFrameInputs = Readonly<{ currentPath: string; page: () => Html }>
+export type BareFrameInputs = Readonly<{ currentPath: string; clerk: ShellClerk | null; page: () => Html }>
 
 /**
  * `/chat`'s own `SidebarProvider open={false} className="h-svh overflow-hidden"`: the rail held
@@ -144,7 +170,7 @@ export const bareFrameView = Submodel.defineView<Model, Message, BareFrameInputs
 	sidebarWrapper(
 		h,
 		[
-			...(model.isMobile ? [] : [desktopSidebar(h, model, inputs.currentPath, false)]),
+			...(model.isMobile ? [] : [desktopSidebar(h, model, inputs.currentPath, inputs.clerk, false)]),
 			sidebarInset(h, [inputs.page()]),
 		],
 		model.isMobile && model.isMobileNavOpen ? [h.AriaHidden(true)] : [],
@@ -152,7 +178,7 @@ export const bareFrameView = Submodel.defineView<Model, Message, BareFrameInputs
 	),
 )
 
-const mobileNav =(h: HtmlBuilder<Message>, model: Model, currentPath: string): Html =>
+const mobileNav = (h: HtmlBuilder<Message>, model: Model, currentPath: string, clerk: ShellClerk | null): Html =>
 	leftSheet(
 		h,
 		{
@@ -169,11 +195,16 @@ const mobileNav =(h: HtmlBuilder<Message>, model: Model, currentPath: string): H
 			],
 			onDismiss: Message.DismissedMobileNav(),
 		},
-		[h.div([h.Class(sidebarMobileInnerStyles)], sidebarRegions(h, model, currentPath))],
+		[h.div([h.Class(sidebarMobileInnerStyles)], sidebarRegions(h, model, currentPath, clerk))],
 	)
 // OVERLAYS
 
-const openMenuPopup = (h: HtmlBuilder<Message>, model: Model, currentPath: string): ReadonlyArray<Html> =>
+const openMenuPopup = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	currentPath: string,
+	clerk: ShellClerk | null,
+): ReadonlyArray<Html> =>
 	Option.match(model.openMenu, {
 		onNone: () => [],
 		onSome: ({ menu, maybePosition }) => {
@@ -204,20 +235,20 @@ const openMenuPopup = (h: HtmlBuilder<Message>, model: Model, currentPath: strin
 						onKeyDown: (key) =>
 							isMenuKey(key) ? Option.some(Message.PressedMenuKey({ key })) : Option.none(),
 					},
-					menuContent(h, model, menu, currentPath),
+					menuContent(h, model, menu, currentPath, clerk),
 				),
 			]
 		},
 	})
 
-export type OverlayInputs = Readonly<{ currentPath: string }>
+export type OverlayInputs = Readonly<{ currentPath: string; clerk?: ShellClerk | null }>
 
 /** Base UI's sheet portal for the mobile nav, after the frame in the app root. */
 export const sheetLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
-	model.isMobile && model.isMobileNavOpen ? mobileNav(h, model, inputs.currentPath) : null,
+	model.isMobile && model.isMobileNavOpen ? mobileNav(h, model, inputs.currentPath, inputs.clerk ?? null) : null,
 )
 
 /** Base UI's menu portal for the open menu, last in the app root. */
 export const menuLayerView = Submodel.defineView<Model, Message, OverlayInputs>(
-	(model, inputs, h) => openMenuPopup(h, model, inputs.currentPath)[0] ?? null,
+	(model, inputs, h) => openMenuPopup(h, model, inputs.currentPath, inputs.clerk ?? null)[0] ?? null,
 )

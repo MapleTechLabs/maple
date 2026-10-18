@@ -7,7 +7,7 @@ import type {
 	ClerkMembershipResource,
 	ClerkOrganizationResource,
 } from "../../../platform/clerk"
-import { ClerkActionError, clerkTry, currentClerkOrganization } from "../../../platform/clerk-resources"
+import { ClerkActionError, clerkTry, currentClerkOrganization } from "../../../platform/clerk"
 import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 import * as Menu from "../../../ui/menu"

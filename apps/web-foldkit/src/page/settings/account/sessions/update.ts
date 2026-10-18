@@ -1,7 +1,7 @@
 import { Array, Effect, Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import type { ClerkSessionActivityResource } from "../../../../platform/clerk"
-import { ClerkActionError, currentClerkSessionId } from "../../../../platform/clerk-resources"
+import { ClerkActionError, currentClerkSessionId } from "../../../../platform/clerk"
 import * as Dialog from "../../../../ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../../contract"
 import { settled, withUser } from "../clerk-write"

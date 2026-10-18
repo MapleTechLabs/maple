@@ -30,6 +30,8 @@ export const Model = Schema.Struct({
 	/** `openOnHover`: the delay before a hover opens it, 0 for click only. */
 	hoverDelayMs: Schema.Number,
 	hoverGeneration: Schema.Number,
+	/** A press on the trigger opened it (Base UI's `trigger-press` open reason): `data-pressed`. */
+	isPressOpened: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -48,6 +50,7 @@ export const init = (
 	}),
 	hoverDelayMs: options.hoverDelayMs ?? 0,
 	hoverGeneration: 0,
+	isPressOpened: false,
 })
 
 // MESSAGE
@@ -99,7 +102,7 @@ export const close = transition.close
 
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
-		ClickedTrigger: () => (model.isOpen ? close(model) : open(model)),
+		ClickedTrigger: () => (model.isOpen ? close(model) : open({ ...model, isPressOpened: true })),
 		ClickedClose: () => close(model),
 		PressedEscape: () => close(model),
 		PressedOutside: () => close(model),
@@ -118,7 +121,7 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 			generation !== model.hoverGeneration
 				? { model }
 				: isOpening
-					? open(model)
+					? open({ ...model, isPressOpened: false })
 					: model.isOpen
 						? close(model)
 						: { model },
@@ -198,6 +201,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		h.AriaHasPopup("dialog"),
 		h.DataAttribute("base-ui-click-trigger", ""),
 		...(model.isOpen ? [h.DataAttribute("popup-open", "")] : []),
+		// Base UI marks a trigger pressed when a press opened it (`pressableTriggerOpenStateMapping`).
+		...(model.isOpen && model.isPressOpened ? [h.DataAttribute("pressed", "")] : []),
 		h.DataAttribute("slot", "popover-trigger"),
 		h.Id(triggerId(model.id)),
 		h.Tabindex(0),

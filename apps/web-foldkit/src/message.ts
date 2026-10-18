@@ -1,8 +1,10 @@
 import { OrgId } from "@maple/domain"
+import { BillingCustomer } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { UrlRequest } from "foldkit/navigation"
 import { Url } from "foldkit/url"
+import * as Onboarding from "./page/onboarding"
 import { PageMessage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { ClerkSnapshot } from "./platform/clerk"
@@ -28,12 +30,15 @@ export const Message = defineMessageUnion({
 	FailedLoadClerk: { message: Schema.String },
 	ChangedClerkSession: { snapshot: ClerkSnapshot },
 	CompletedWaitForAuthSettle: {},
-	CompletedMountClerkSignIn: {},
-	FailedMountClerkSignIn: { message: Schema.String },
+	SucceededLoadCustomer: { orgId: Schema.String, customer: BillingCustomer },
+	FailedLoadCustomer: { orgId: Schema.String },
+	CompletedSaveSelectedPlanKnown: {},
+	CompletedSignOutOfClerk: {},
 	GotSignInMessage: { message: SignIn.Message },
 	GotShellMessage: { message: Shell.Message },
 	GotToastMessage: { message: Toast.Message },
 	GotPageMessage: { message: PageMessage },
 	GotChatSheetMessage: { message: ChatSheet.Message },
+	GotOnboardingMessage: { message: Onboarding.Message },
 })
 export type Message = typeof Message.Type

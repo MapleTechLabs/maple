@@ -1,6 +1,14 @@
 import { OrgId, UserId } from "@maple/domain"
+import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
+import {
+	MapleRegion,
+	organizationHomeRegion,
+	organizationRegionOpen,
+	organizationServedIn,
+} from "@maple/domain/organization-regions"
+import { currentRegion } from "@maple/web/lib/region"
 import { purgeForeignClerkCookies } from "@maple/web/lib/services/common/clerk-cookie-guard"
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
 
 /** The slice of clerk-js this app reads. `window.Clerk` is what the parity harness stubs. */
 interface ClerkResources {
@@ -73,7 +81,11 @@ export interface ClerkUserResource {
 	readonly update: Write<{ firstName?: string; lastName?: string; primaryEmailAddressId?: string }>
 	readonly setProfileImage: Write<{ file: Blob | null }>
 	readonly delete: Write
-	readonly updatePassword: Write<{ newPassword: string; currentPassword?: string; signOutOfOtherSessions: boolean }>
+	readonly updatePassword: Write<{
+		newPassword: string
+		currentPassword?: string
+		signOutOfOtherSessions: boolean
+	}>
 	readonly createEmailAddress: Write<{ email: string }, ClerkEmailAddressResource>
 	readonly createPasskey: Write
 	readonly createTOTP: Write<void, { readonly uri?: string; readonly secret?: string }>
@@ -85,6 +97,10 @@ export interface ClerkUserResource {
 		ClerkExternalAccountResource
 	>
 	readonly leaveOrganization: Write<string>
+	readonly organizationMemberships?: ReadonlyArray<{
+		readonly organization: ClerkOrganizationResource
+		readonly role?: string
+	}>
 	readonly getOrganizationMemberships: () => Promise<
 		ClerkPage<{ readonly organization: { readonly id: string } }>
 	>
@@ -121,6 +137,7 @@ export interface ClerkOrganizationResource {
 	readonly imageUrl: string
 	readonly hasImage: boolean
 	readonly publicMetadata: unknown
+	readonly createdAt?: Date
 	readonly getMemberships: (params: {
 		initialPage?: number
 		pageSize?: number
@@ -140,7 +157,9 @@ interface ClerkGlobal extends ClerkResources {
 	readonly addListener: (listener: (resources: ClerkResources) => void) => () => void
 	readonly mountSignIn: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
 	readonly unmountSignIn: (element: HTMLDivElement) => void
-	readonly setActive: (params: { organization: string | null }) => Promise<void>
+	readonly mountSignUp: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
+	readonly unmountSignUp: (element: HTMLDivElement) => void
+	readonly setActive: (params: { readonly organization: string | null }) => Promise<void>
 	readonly signOut: () => Promise<void>
 }
 declare global {
@@ -157,17 +176,71 @@ export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()(
 	},
 ) {}
 
-/** What the app reads from a Clerk session (`useAuth()` in apps/web). */
+/**
+ * An organization as the app reads it (`useOrganization`, `useOrganizationList`): its public
+ * metadata decoded into the region (`useOrganizationRegion`) and rollout flags it decides.
+ */
+export const ClerkOrganization = Schema.Struct({
+	id: OrgId,
+	name: Schema.String,
+	imageUrl: Schema.String,
+	homeRegion: MapleRegion,
+	isServedHere: Schema.Boolean,
+	/** `organizationRegionOpen` at the time of the emit: onboarding may still ask for the region. */
+	isRegionOpen: Schema.Boolean,
+	flags: Schema.Struct({ aiAutoTriage: Schema.Boolean, releases: Schema.Boolean }),
+})
+export type ClerkOrganization = typeof ClerkOrganization.Type
+
+/** `useUser()`: what the user menu shows. */
+export const ClerkUser = Schema.Struct({
+	fullName: Schema.NullOr(Schema.String),
+	email: Schema.NullOr(Schema.String),
+	imageUrl: Schema.String,
+})
+export type ClerkUser = typeof ClerkUser.Type
+
+/** What the app reads from a Clerk session (`useAuth()`, `useUser()`, `useOrganization()`). */
 export const ClerkSnapshot = Schema.Struct({
 	maybeUserId: Schema.Option(UserId),
 	maybeOrgId: Schema.Option(OrgId),
+	maybeUser: Schema.Option(ClerkUser),
+	maybeOrganization: Schema.Option(ClerkOrganization),
+	/** `useOrganizationList({ userMemberships })`, the first page. */
+	memberships: Schema.Array(ClerkOrganization),
 })
 export type ClerkSnapshot = typeof ClerkSnapshot.Type
 
-const toSnapshot = (resources: ClerkResources): ClerkSnapshot => ({
-	maybeUserId: Option.map(Option.fromNullishOr(resources.user?.id), UserId.make),
-	maybeOrgId: Option.map(Option.fromNullishOr(resources.organization?.id), OrgId.make),
+const toOrganization = (organization: ClerkOrganizationResource, nowMs: number): ClerkOrganization => ({
+	id: OrgId.make(organization.id),
+	name: organization.name,
+	imageUrl: organization.imageUrl ?? "",
+	homeRegion: organizationHomeRegion(organization.publicMetadata),
+	isServedHere: organizationServedIn(organization.publicMetadata, currentRegion),
+	isRegionOpen: organizationRegionOpen(
+		organization.publicMetadata,
+		organization.createdAt?.getTime(),
+		nowMs,
+	),
+	flags: organizationFeatureFlagsFrom(organization.publicMetadata),
 })
+
+const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
+	Effect.map(Clock.currentTimeMillis, (nowMs) => ({
+		maybeUserId: Option.map(Option.fromNullishOr(resources.user?.id), UserId.make),
+		maybeOrgId: Option.map(Option.fromNullishOr(resources.organization?.id), OrgId.make),
+		maybeUser: Option.map(Option.fromNullishOr(resources.user), (user) => ({
+			fullName: user.fullName ?? null,
+			email: user.primaryEmailAddress?.emailAddress ?? null,
+			imageUrl: user.imageUrl ?? "",
+		})),
+		maybeOrganization: Option.map(Option.fromNullishOr(resources.organization), (organization) =>
+			toOrganization(organization, nowMs),
+		),
+		memberships: (resources.user?.organizationMemberships ?? []).map((membership) =>
+			toOrganization(membership.organization, nowMs),
+		),
+	}))
 
 const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? ""
 const signInUrl = import.meta.env.VITE_CLERK_SIGN_IN_URL?.trim() || "/sign-in"
@@ -216,20 +289,65 @@ export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.ge
 			}),
 		catch: (cause) => new ClerkLoadError({ message: "Clerk failed to load", cause }),
 	})
-	return toSnapshot(clerk)
+	return yield* toSnapshot(clerk)
 })
 
 /** Every Clerk emit (session touch, org switch, sign-out), as snapshots. */
-export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<ClerkSnapshot>((queue) =>
+export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<ClerkResources>((queue) =>
 	Option.match(Option.fromNullishOr(window.Clerk), {
 		onNone: () => Effect.void,
 		onSome: (clerk) =>
 			Effect.acquireRelease(
-				Effect.sync(() =>
-					clerk.addListener((resources) => Queue.offerUnsafe(queue, toSnapshot(resources))),
-				),
+				Effect.sync(() => clerk.addListener((resources) => Queue.offerUnsafe(queue, resources))),
 				(unsubscribe) => Effect.sync(unsubscribe),
 			),
+	}),
+).pipe(Stream.mapEffect(toSnapshot))
+
+/** `setActive({ organization })` then reload, as `ClerkOrgSwitcherMenu`'s `switchOrganization`. */
+export const setActiveOrganization = (orgId: string): Effect.Effect<void> =>
+	Effect.promise(() => window.Clerk?.setActive({ organization: orgId }) ?? Promise.resolve()).pipe(
+		Effect.catchDefect(() => Effect.void),
+	)
+
+/** `useClerk().signOut()`: Clerk then routes to `afterSignOutUrl`. */
+export const signOutOfClerk: Effect.Effect<void> = Effect.promise(
+	() => window.Clerk?.signOut() ?? Promise.resolve(),
+).pipe(Effect.catchDefect(() => Effect.void))
+
+/** The active org's handle for its own rename and invitations (`useOrganization().organization`). */
+export interface ClerkTeamOrganization {
+	readonly name: string
+	/** `useAuth().orgRole === "org:admin"`: the role of the user's membership in it. */
+	readonly isAdmin: boolean
+	readonly update: (input: { name: string }) => Promise<void>
+	readonly inviteMember: (input: { emailAddress: string; role: "org:member" }) => Promise<void>
+	readonly pendingInvitations: () => Promise<ReadonlyArray<string>>
+}
+
+export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganization>> = Effect.sync(() =>
+	Option.flatMap(Option.fromNullishOr(window.Clerk?.organization), (organization) => {
+		const { update, inviteMember, getInvitations } = organization
+		const missing = () => Promise.reject(new TypeError("Clerk organization method is missing"))
+		const membership = window.Clerk?.user?.organizationMemberships?.find(
+			(candidate) => candidate.organization.id === organization.id,
+		)
+		return Option.some<ClerkTeamOrganization>({
+			name: organization.name,
+			isAdmin: membership?.role === "org:admin",
+			update: (input) =>
+				update === undefined ? missing() : update.call(organization, input).then(() => undefined),
+			inviteMember: (input) =>
+				inviteMember === undefined
+					? missing()
+					: inviteMember.call(organization, input).then(() => undefined),
+			pendingInvitations: () =>
+				getInvitations === undefined
+					? Promise.resolve([])
+					: getInvitations
+							.call(organization, { status: ["pending"] })
+							.then((page) => page.data.map((invitation) => invitation.emailAddress)),
+		})
 	}),
 )
 
@@ -237,3 +355,77 @@ export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<Cler
 export const clerkSessionToken: Effect.Effect<Option.Option<string>> = Effect.tryPromise(
 	() => window.Clerk?.session?.getToken() ?? Promise.resolve(null),
 ).pipe(Effect.map(Option.fromNullishOr), Effect.orElseSucceed(Option.none))
+
+// clerk-js resources for the Clerk-only settings tabs and `/account`: ported markup over the
+// vanilla resource API (`useUser()`/`useOrganization()` in apps/web read the same objects).
+
+export class ClerkActionError extends Schema.TaggedError<ClerkActionError>()(
+	"@maple/web-foldkit/ClerkActionError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
+const stringField = (value: unknown, key: string): string | undefined =>
+	Predicate.hasProperty(value, key) && typeof value[key] === "string" ? value[key] : undefined
+
+/** `accountErrorMessage`: Clerk's own `longMessage`/`message`, else the error's, else `fallback`. */
+export const clerkErrorMessage = (cause: unknown, fallback: string): string => {
+	if (Predicate.hasProperty(cause, "errors") && Array.isArray(cause.errors)) {
+		const first: unknown = cause.errors[0]
+		return stringField(first, "longMessage") ?? stringField(first, "message") ?? fallback
+	}
+	return cause instanceof Error ? cause.message : fallback
+}
+
+const missing = (what: string) =>
+	new ClerkActionError({ message: `No ${what} is signed in`, cause: undefined })
+
+/** The signed-in Clerk user (`useUser().user`). */
+export const currentClerkUser: Effect.Effect<ClerkUserResource, ClerkActionError> = Effect.suspend(() =>
+	Option.match(Option.fromNullishOr(window.Clerk?.user), {
+		onNone: () => Effect.fail(missing("user")),
+		onSome: Effect.succeed,
+	}),
+)
+
+/** The active organization (`useOrganization().organization`). */
+export const currentClerkOrganization: Effect.Effect<ClerkOrganizationResource, ClerkActionError> =
+	Effect.suspend(() =>
+		Option.match(Option.fromNullishOr(window.Clerk?.organization), {
+			onNone: () => Effect.fail(missing("organization")),
+			onSome: Effect.succeed,
+		}),
+	)
+
+/** The current session's id (`useSession().session?.id`). */
+export const currentClerkSessionId: Effect.Effect<string | null> = Effect.sync(
+	() => window.Clerk?.session?.id ?? null,
+)
+
+/** A Clerk call, failing with Clerk's message or `fallback` (what `settleClerk` toasts). */
+export const clerkTry = <A>(fallback: string, run: () => Promise<A>): Effect.Effect<A, ClerkActionError> =>
+	Effect.tryPromise({
+		try: run,
+		catch: (cause) => new ClerkActionError({ message: clerkErrorMessage(cause, fallback), cause }),
+	})
+
+/** `setActive({ organization })` then home: after leaving or deleting the active organization. */
+export const switchAwayFrom = (orgId: string): Effect.Effect<void> =>
+	Effect.gen(function* () {
+		const clerk = window.Clerk
+		if (clerk === undefined) return
+		const user = clerk.user
+		const memberships =
+			user === null || user === undefined
+				? []
+				: yield* Effect.tryPromise(() => user.getOrganizationMemberships()).pipe(
+						Effect.map((page) => page.data),
+						Effect.orElseSucceed(() => []),
+					)
+		const next =
+			memberships.find((membership) => membership.organization.id !== orgId)?.organization.id ?? null
+		// A failed switch falls through to navigation; Clerk's session refreshes on next load.
+		yield* Effect.tryPromise(() => clerk.setActive({ organization: next })).pipe(Effect.ignore)
+	})
