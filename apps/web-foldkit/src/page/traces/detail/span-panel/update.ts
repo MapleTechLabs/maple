@@ -5,6 +5,7 @@ import { requestKey } from "../../../../data/request-key"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as Tabs from "../../../../ui/tabs"
+import * as InfraCorrelation from "../../../kit/infra-correlation"
 import type { SpanNodeData } from "../trace-data"
 import { FetchSpanDetail, FetchSpanLogs, LOG_LIMIT, WaitSpanCopyStatus, WriteSpanClipboard } from "./command"
 import { Message, OutMessage } from "./message"
@@ -53,6 +54,7 @@ export const init = (input: InitInput): Return => {
 			copies: {},
 			openIds: [],
 			isErrorExpanded: false,
+			infra: InfraCorrelation.init(`span-${span.spanId}-infra`, input.orgId),
 		},
 		commands: [
 			FetchSpanLogs({ key: logsKey, traceId: span.traceId, spanId: span.spanId }),
@@ -135,11 +137,19 @@ export const updateState = <S extends PanelState>(model: S, message: Message): S
 				url: attributeFilterUrl(scope, key, value, isExclude),
 			}),
 		}),
-		// The panel's own tab strip; a holder without one keeps its state.
+		// The panel's own tab strip and Infrastructure tab; a holder without them keeps its state.
 		GotTabsMessage: () => ({ model }),
+		GotInfraMessage: () => ({ model }),
 	})
 
 export const update = (model: Model, message: Message): Return => {
+	if (message._tag === "GotInfraMessage") {
+		const next = InfraCorrelation.update(model.infra, message.message)
+		return {
+			model: { ...model, infra: next.model },
+			commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotInfraMessage({ message: inner })),
+		}
+	}
 	if (message._tag !== "GotTabsMessage") return updateState(model, message)
 	const next = Tabs.update(model.tabs, message.message)
 	return {

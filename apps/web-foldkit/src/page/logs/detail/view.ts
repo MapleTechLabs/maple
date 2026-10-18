@@ -12,6 +12,7 @@ import type { LogRecord } from "../../../ui/logs/log-row-view"
 import { panel, panelBody, panelHeader } from "../../../ui/panel"
 import { scrollArea } from "../../../ui/scroll-area"
 import * as TabsView from "../../../ui/tabs-view"
+import * as InfraCorrelation from "../../kit/infra-correlation"
 import { buildLogJsonPayload, TAB_LABELS } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
@@ -20,8 +21,6 @@ import { metaStrip } from "./view-meta"
 import { contextPanel, errorBanner, showsErrorBanner, traceTimeline } from "./view-panels"
 
 // `LogDetailSheet`: hero, meta strip and the tabbed panels in a right-hand sheet.
-// TODO(log-detail): the Infrastructure tab's `InfraCorrelationPanel` charts are not ported (the
-// span panel's are not either); its trigger is.
 
 type H = HtmlBuilder<Message>
 
@@ -98,6 +97,19 @@ const panelOf = (h: H, model: Model, log: LogRecord, timeZone: string) => (value
 			return [contextPanel(h, model, log, timeZone)]
 		case "raw":
 			return scrolled(h, model, value, rawPanel(h, model, log))
+		case "infrastructure":
+			return scrolled(
+				h,
+				model,
+				value,
+				h.submodel({
+					slotId: `${model.id}-infra-panel`,
+					model: model.infra,
+					view: InfraCorrelation.view,
+					viewInputs: { resourceAttributes: log.resourceAttributes, anchor: log.timestamp, spanDurationMs: 0, timeZone },
+					toParentMessage: (message) => Message.GotInfraMessage({ message }),
+				}),
+			)
 		default:
 			return undefined
 	}
@@ -119,7 +131,7 @@ const tabs = (h: H, model: Model, log: LogRecord, timeZone: string): Html =>
 				` ${label}`,
 			],
 			panel: panelOf(h, model, log, timeZone),
-			hasPanel: (value) => value !== "infrastructure",
+			hasPanel: () => true,
 			panelClassNameFor: (value) => (value === "context" ? "p-3" : undefined),
 		},
 		toParentMessage: (message) => Message.GotTabsMessage({ message }),

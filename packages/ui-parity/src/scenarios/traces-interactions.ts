@@ -35,6 +35,19 @@ const spanOpen = (page: Page) => page.getByText("Span attributes").first().waitF
 const viewSpan = (page: Page) => page.getByRole("button", { name: "View span" }).click()
 const tracesTable = (page: Page) => page.getByRole("table", { name: "Traces" })
 
+const openSpanInfra = async (page: Page) => {
+	await page.getByRole("tab", { name: /Infrastructure/ }).click()
+	await page.getByText("View in Infrastructure").first().waitFor()
+}
+
+/** `infra-k8s` has no seeded trace id: open the list's first trace, then its storefront session span. */
+const spanInfraFromList = async (page: Page) => {
+	await tracesTable(page).getByRole("row").nth(1).getByRole("link").first().click()
+	await page.getByText("GET /session", { exact: true }).first().click()
+	await spanOpen(page)
+	await openSpanInfra(page)
+}
+
 export const traceInteractionsArea: AreaModule = {
 	area: "traces",
 	scenarios: [
@@ -104,6 +117,17 @@ export const traceInteractionsArea: AreaModule = {
 			await viewSpan(page)
 			await page.getByRole("tab", { name: /^Logs/ }).click()
 		}),
+		detail("span-infra-empty", "the span panel's Infrastructure tab, a pod with no metrics", async (page) => {
+			await viewSpan(page)
+			await openSpanInfra(page)
+		}),
+		{ ...list("span-infra", "a span's Infrastructure tab, with its pod's metrics", spanInfraFromList), dataset: "infra-k8s" },
+		{
+			...list("span-infra-loading", "a span's Infrastructure tab while its series load", spanInfraFromList),
+			dataset: "infra-k8s",
+			// Only the pod is held (six would fill the per-origin pool); "held" settles before the steps run.
+			faults: { delays: { "queryEngine.podInfraTimeseries": 60_000 } },
+		},
 		detail("span-parent", "the parent span selected from the span panel", async (page) => {
 			await viewSpan(page)
 			await page.getByTitle("Select the parent span").click()

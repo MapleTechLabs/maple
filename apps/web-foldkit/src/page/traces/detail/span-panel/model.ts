@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { KeyedSchema } from "../../../../data/keyed"
 import { LoadFailure } from "../../../../data/load-failure"
 import * as Tabs from "../../../../ui/tabs"
+import * as InfraCorrelation from "../../../kit/infra-correlation"
 import { SpanNodeData } from "../trace-data"
 
 // `SpanDetailPanel` (apps/web/src/components/traces/span-detail-panel.tsx) as a Submodel.
@@ -52,6 +53,8 @@ export const Model = Schema.Struct({
 	/** Open collapsibles by id (stack traces, JSON values, Maple internal). */
 	openIds: Schema.Array(Schema.String),
 	isErrorExpanded: Schema.Boolean,
+	/** The Infrastructure tab. */
+	infra: InfraCorrelation.Model,
 })
 export type Model = typeof Model.Type
 

@@ -8,6 +8,7 @@ import * as Tabs from "../../../ui/tabs"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
+import * as InfraCorrelation from "../../kit/infra-correlation"
 
 // `LogDetailSheet` (apps/web/src/components/logs/log-detail-sheet.tsx): the drawer for one log.
 
@@ -43,6 +44,8 @@ export const Model = Schema.Struct({
 	tabs: Tabs.Model,
 	/** Rebuilt per log, like legacy's `key={logKey}` remount (resets the attribute search). */
 	attributes: AttributesPanel.Model,
+	/** The Infrastructure tab, rebuilt per log. */
+	infra: InfraCorrelation.Model,
 	/** `LogHeroHeader`'s "Show full message". */
 	isHeroExpanded: Schema.Boolean,
 	/** The last copy from the hero or the meta strip, and its status. */
@@ -54,6 +57,7 @@ export const Message = defineMessageUnion({
 	GotDialogMessage: { message: Dialog.Message },
 	GotTabsMessage: { message: Tabs.Message },
 	GotAttributesMessage: { message: AttributesPanel.Message },
+	GotInfraMessage: { message: InfraCorrelation.Message },
 	ClickedShowFullMessage: {},
 	ClickedCopy: { copyId: Schema.String, text: Schema.String },
 	ClickedCopyPermalink: { copyId: Schema.String, logKey: Schema.String },

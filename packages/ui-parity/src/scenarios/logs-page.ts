@@ -42,6 +42,14 @@ const timed = (
 
 const stream = (page: Page) => page.getByRole("log")
 
+/** The first log's Infrastructure tab (acme logs carry their pod and node). */
+const openInfraTab = async (page: Page) => {
+	await stream(page).getByRole("listitem").first().click()
+	await page.getByRole("tab", { name: "Infrastructure" }).click()
+	await page.getByRole("dialog").getByText("View in Infrastructure").first().waitFor()
+	await page.mouse.move(5, 5)
+}
+
 export const logsPageArea: AreaModule = {
 	area: "logs",
 	scenarios: [
@@ -261,5 +269,14 @@ export const logsPageArea: AreaModule = {
 			await page.getByText("http.route", { exact: true }).first().waitFor()
 			await page.mouse.move(5, 5)
 		}),
+		// `infra-k8s` has the cluster's kubelet metrics; `default` has none, so its charts are empty.
+		{ ...logs("detail-infra", "the detail sheet's Infrastructure tab, with metrics", openInfraTab), dataset: "infra-k8s" },
+		logs("detail-infra-empty", "the Infrastructure tab of a pod with no metrics", openInfraTab),
+		{
+			...logs("detail-infra-loading", "the Infrastructure tab while its series load", openInfraTab),
+			dataset: "infra-k8s",
+			// Only the pod is held (six would fill the per-origin pool); "held" settles before the steps run.
+			faults: { delays: { "queryEngine.podInfraTimeseries": HELD_MS } },
+		},
 	],
 }

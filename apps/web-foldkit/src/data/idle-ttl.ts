@@ -29,6 +29,8 @@ export const IdleTtl = {
 	replayManifest: 240_000,
 	/** `getSessionTranscriptResultAtom`. */
 	sessionTranscript: 60_000,
+	/** The `*InfraTimeseriesResultAtom` families (host, pod, node, container). */
+	infraTimeseries: 30_000,
 	/** `getServicesFacetsResultAtom`. */
 	servicesFacets: 300_000,
 	/** `getReleasesResultAtom`. */
