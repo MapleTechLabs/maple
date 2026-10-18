@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { COPY_PATH, DOWNLOAD_PATH, LINE_CLASS } from "../../agent-sessions/session/message-response"
+import { COPY_PATH, DOWNLOAD_PATH, LINE_CLASS } from "../../kit/message-response"
 import { type HighlightedCode, highlightKey } from "./code-highlight"
 
 // Streamdown's full code block (`@streamdown/code`: Shiki tokens) and mermaid block

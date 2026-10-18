@@ -6,7 +6,7 @@ import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { button } from "../../../ui/button"
-import { type CodeActions, messageResponse } from "./message-response"
+import { type CodeActions, messageResponse } from "../../kit/message-response"
 
 // `ClampedText` and `firstLine` (session-detail/clamped-text.tsx): a body clamped with a "Show full" control.
 

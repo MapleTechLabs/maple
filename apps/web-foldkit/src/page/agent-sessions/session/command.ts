@@ -7,7 +7,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { detectModels } from "../kit/detected-models"
 import { Message, SpanScope } from "./message"
-import { parseMarkdownTexts } from "./message-response"
+import { parseMarkdownTexts } from "../../kit/message-response"
 
 export const SESSION_TOO_LARGE_TAG = "@maple/http/ai-sessions/AiSessionTooLargeError"
 

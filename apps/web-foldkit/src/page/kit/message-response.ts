@@ -8,7 +8,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 // TODO(markdown-table): Maple's `MarkdownTable` primitives are drawn with Streamdown's own table classes.
 
 // The parse is the shared one (`page/kit/markdown`), re-exported for the pages that import it here.
-export { ParsedMarkdown, parseMarkdownTexts } from "../../kit/markdown"
+export { ParsedMarkdown, parseMarkdownTexts } from "./markdown"
 
 const streamdown =
 	(slot: string, className: string) =>

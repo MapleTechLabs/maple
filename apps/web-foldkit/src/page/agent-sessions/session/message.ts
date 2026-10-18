@@ -10,7 +10,7 @@ import * as Tabs from "../../../ui/tabs"
 import * as Tooltip from "../../../ui/tooltip"
 import { DetectedModel } from "../kit/detected-models"
 import { VirtualWindow } from "../kit/virtualize"
-import { ParsedMarkdown } from "./message-response"
+import { ParsedMarkdown } from "../../kit/message-response"
 import { SESSION_VIEWS, SessionTotals, SpanDetailTab, SpansPage, ViewOption } from "./model"
 
 export const SpanScope = Schema.Literals(["ai", "app"])

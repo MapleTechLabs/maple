@@ -15,7 +15,7 @@ import type { ThemeColors } from "../../../charts/theme-colors"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
 import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import type { ViewOverrides } from "../../agent-sessions/session/message-response"
+import type { ViewOverrides } from "../../kit/message-response"
 import { hbarChart } from "../../../charts/hbar-chart"
 import { type CodeHost, codeBlock, mermaidBlock } from "./view-code"
 

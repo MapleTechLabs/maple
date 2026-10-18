@@ -14,7 +14,7 @@ import {
 } from "@maple/ui/styles/ui/message-scroller"
 import { markerVariants } from "@maple/ui/styles/ui/marker"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { messageResponse, type ViewOverrides } from "../../agent-sessions/session/message-response"
+import { messageResponse, type ViewOverrides } from "../../kit/message-response"
 import { bubble, bubbleContent } from "../../../ui/bubble"
 import { button } from "../../../ui/button"
 import * as CopyButton from "../../../ui/copy-button"
