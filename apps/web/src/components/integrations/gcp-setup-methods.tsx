@@ -204,7 +204,7 @@ export function GcpManualSteps({
 											<ExternalLinkIcon size={12} aria-hidden />
 										</a>
 									</p>
-									<dl className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2 text-xs/5">
+									<dl className="grid grid-cols-1 items-baseline gap-x-4 gap-y-1 text-xs/5 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-y-2">
 										{step.fields.map((field) => (
 											<div key={field.label} className="contents">
 												<dt className="text-muted-foreground">{field.label}</dt>
