@@ -197,6 +197,22 @@ export const anomalyDatasetEndpoints = (
 				threshold_value: seed.threshold,
 			}
 		}),
+	// The detail page's writes: nothing is persisted; each answers the incident as the server would.
+	"anomalies.resolveIncident": ({ dataset, params }) =>
+		Effect.map(findSeed(params), (seed) => ({
+			...incident(dataset, seed),
+			status: "resolved",
+			resolved_at: iso(epochMs(dataset.now)),
+			resolve_reason: "manual",
+		})),
+	"anomalies.setIncidentIssue": ({ dataset, params, payload }) =>
+		Effect.map(findSeed(params), (seed) => {
+			const issueId = str(payload, "issue_id")
+			return {
+				...incident(dataset, seed),
+				error_issue_id: issueId === undefined ? null : encodePublicId(PublicIdPrefixes.errorIssue, issueId),
+			}
+		}),
 	"anomalies.getSettings": () =>
 		Effect.succeed({
 			object: "anomaly_settings",

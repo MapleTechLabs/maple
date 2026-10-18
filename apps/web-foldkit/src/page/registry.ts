@@ -19,6 +19,8 @@ import * as AgentSession from "./agent-sessions/session"
 import * as AgentSessionTool from "./agent-sessions/tool"
 import * as AgentSessionTools from "./agent-sessions/tools"
 import * as AlertsHub from "./alerts/hub"
+import * as AnomaliesList from "./anomalies/list"
+import * as AnomalyDetail from "./anomalies/detail"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
 import * as DashboardsList from "./dashboards/list"
@@ -50,10 +52,15 @@ import * as InfraPlanetscale from "./infra-integrations/planetscale/list"
 import * as InfraRailway from "./infra-integrations/railway/list"
 import * as InfraRailwayService from "./infra-integrations/railway/service"
 import * as Integrations from "./integrations"
+import * as InvestigationDetail from "./investigations/detail"
+import * as InvestigationsList from "./investigations/list"
 import * as LogsList from "./logs/list"
 import * as MetricsBrowse from "./metrics/browse"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
+import * as Recommendation from "./recommendations"
+import * as ReleaseDetail from "./releases/detail"
+import * as ReleasesList from "./releases/list"
 import * as ServiceDetail from "./services/detail"
 import * as ServiceMap from "./service-map"
 import * as ServicesList from "./services/list"
@@ -110,6 +117,13 @@ export const pages = [
 	AgentSessionTool.page,
 	AgentSession.page,
 	Integrations.page,
+	Recommendation.page,
+	AnomaliesList.page,
+	AnomalyDetail.page,
+	ReleasesList.page,
+	ReleaseDetail.page,
+	InvestigationsList.page,
+	InvestigationDetail.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

@@ -282,6 +282,19 @@ export const ChartSpec = defineTaggedUnion({
 		markerColors: MarkerColors,
 		timeZone: Schema.String,
 	},
+	/** `AnomalyTimeseriesChart` (components/anomalies/): observed signal, baseline and threshold rules. */
+	AnomalySignal: {
+		points: Schema.Array(Schema.Struct({ bucket: Schema.String, value: Schema.Number })),
+		signalType: Schema.Literals(["error_rate", "latency_p95", "throughput", "error_spike", "log_volume"]),
+		baselineMedian: Schema.Number,
+		thresholdValue: Schema.Number,
+		firstTriggeredAt: Schema.String,
+		resolvedAt: Nullable(Schema.String),
+		/** `stroke`, `muted`, `threshold`, plus `border` / `background` chrome, resolved. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		gradientId: Schema.String,
+		timeZone: Schema.String,
+	},
 })
 export type ChartSpec = typeof ChartSpec.Type
 

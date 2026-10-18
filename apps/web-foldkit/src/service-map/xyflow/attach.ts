@@ -133,6 +133,8 @@ export const FlowGestures = Schema.Struct({
 	panOnScroll: Schema.Boolean,
 	zoomOnScroll: Schema.Boolean,
 	zoomOnDoubleClick: Schema.Boolean,
+	/** `preventScrolling`: `false` leaves the wheel to the page. */
+	preventScrolling: Schema.Boolean,
 	/** `translateExtent` as `[[x0, y0], [x1, y1]]`; `null` is unbounded. */
 	translateExtent: Schema.NullOr(Schema.Tuple([Point, Point])),
 })
@@ -142,6 +144,7 @@ export const DEFAULT_GESTURES: FlowGestures = {
 	panOnScroll: false,
 	zoomOnScroll: true,
 	zoomOnDoubleClick: true,
+	preventScrolling: true,
 	translateExtent: null,
 }
 
@@ -171,7 +174,7 @@ const attachPanZoom = (
 	panZoom.update({
 		noWheelClassName: "nowheel",
 		noPanClassName: "nopan",
-		preventScrolling: true,
+		preventScrolling: gestures.preventScrolling,
 		panOnScroll: gestures.panOnScroll,
 		panOnDrag: true,
 		panOnScrollMode: system.PanOnScrollMode.Free,

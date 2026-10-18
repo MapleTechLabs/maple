@@ -8,6 +8,8 @@
 		"./collections": "./src/collections/index.ts",
 		"./collections/*": "./src/collections/*.ts",
 		"./alerts/*": "./src/alerts/*.ts",
+		"./anomalies/*": "./src/anomalies/*.ts",
+		"./investigations/*": "./src/investigations/*.ts",
 		"./dashboards/*": "./src/dashboards/*.ts",
 		"./lib/*": "./src/lib/*.ts",
 		"./warehouse/*": "./src/warehouse/*.ts"

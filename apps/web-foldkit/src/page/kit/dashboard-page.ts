@@ -31,7 +31,11 @@ export type DashboardPageOptions = Readonly<{
 	/** `DashboardLayout.Tabs`'s children: page tabs pinned under the header. */
 	tabs?: Html
 	scrollClassName?: string
-	/** `header`: replaces the composed header (a page with its own title block). */
+	/** `DashboardLayout.Scroll`'s `width`: a centred capped column (`page-column`). */
+	width?: PageWidth
+	/** `DashboardLayout.Scroll`'s `gap` between the body's top-level blocks. */
+	gap?: PageGap
+	/** `header`:replaces the composed header (a page with its own title block). */
 	header?: Html
 	/** `DashboardLayout.RightPanel` as the inline rail (lg and up). TODO(lg): the sheet below lg. */
 	rightPanel?: Html
@@ -99,12 +103,40 @@ const stickyArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, isScrol
 const fillArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.DataAttribute("slot", "page-fill"), h.Class(pageFillStyles)], children)
 
-/** `PageLayout.ScrollArea` (`DashboardLayout.Scroll` with the default width and gap). */
-const scrollArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
-	h.div(
-		[h.DataAttribute("slot", "page-scroll-area"), h.Class(cn(pageScrollAreaStyles, className))],
-		children,
-	)
+// styles: apps/web/src/components/layout/dashboard-layout.tsx (PAGE_WIDTH, PAGE_GAP)
+const PAGE_WIDTH = { full: null, reading: "mx-auto max-w-4xl", narrow: "mx-auto max-w-3xl" } as const
+const PAGE_GAP = { none: null, sm: "gap-3", md: "gap-4", lg: "gap-6" } as const
+export type PageWidth = keyof typeof PAGE_WIDTH
+export type PageGap = keyof typeof PAGE_GAP
+
+/** `DashboardLayout.Scroll`: the scroll area, with a `page-column` unless the width is full. */
+const scrollArea = <M>(
+	h: HtmlBuilder<M>,
+	children: ReadonlyArray<Html>,
+	className?: string,
+	width: PageWidth = "full",
+	gap: PageGap = "none",
+): Html =>
+	width === "full"
+		? h.div(
+				[
+					h.DataAttribute("slot", "page-scroll-area"),
+					h.Class(cn(pageScrollAreaStyles, PAGE_GAP[gap], className)),
+				],
+				children,
+			)
+		: h.div(
+				[h.DataAttribute("slot", "page-scroll-area"), h.Class(cn(pageScrollAreaStyles, className))],
+				[
+					h.div(
+						[
+							h.DataAttribute("slot", "page-column"),
+							h.Class(cn("flex w-full flex-col", PAGE_WIDTH[width], PAGE_GAP[gap])),
+						],
+						children,
+					),
+				],
+			)
 
 /** The common page: optional filter rail, then the content column with header and scroll area. */
 export const dashboardPage = <M>(
@@ -126,7 +158,7 @@ export const dashboardPage = <M>(
 		...(options.filters === undefined ? [] : [filterRail(h, options.filters, options.filtersWidth)]),
 		pageContent(h, [
 			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled)] : []),
-			options.fill === true ? fillArea(h, children) : scrollArea(h, children, options.scrollClassName),
+			options.fill === true ? fillArea(h, children) : scrollArea(h, children, options.scrollClassName, options.width, options.gap),
 		]),
 		...(options.rightPanel === undefined
 			? []

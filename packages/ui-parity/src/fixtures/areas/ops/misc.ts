@@ -77,7 +77,34 @@ export const miscEndpoints = {
 	"integrations.vcsCommitRanges": vcsCommitRanges,
 } satisfies Readonly<Record<string, EndpointHandler>>
 
+/** The seeded recommendation a write names, in its new status (nothing is persisted). */
+const recommendationWrite =
+	(status: "open" | "dismissed"): EndpointHandler =>
+	(request) => {
+		const id = str(request.params, "id")
+		const row = RECOMMENDATIONS.find((candidate) => candidate.id === id) ?? RECOMMENDATIONS[0]
+		return Effect.succeed({ ...row, status, updated_at: iso(FROZEN_NOW_MS) })
+	}
+
+/** `attributeMappings.create` from the Apply button: the mapping the server would store. */
+const createMapping: EndpointHandler = (request) =>
+	Effect.succeed({
+		id: encodePublicId(PublicIdPrefixes.attributeMapping, fixtureUuid(0x63, 1)),
+		object: "attribute_mapping",
+		name: str(request.payload, "name") ?? "",
+		source_context: str(request.payload, "source_context") ?? "span",
+		source_key: str(request.payload, "source_key") ?? "",
+		target_key: str(request.payload, "target_key") ?? "",
+		operation: str(request.payload, "operation") ?? "copy",
+		enabled: true,
+		created_at: iso(FROZEN_NOW_MS),
+		updated_at: iso(FROZEN_NOW_MS),
+	})
+
 export const miscDatasetEndpoints = {
+	"instrumentationRecommendations.dismiss": recommendationWrite("dismissed"),
+	"instrumentationRecommendations.reopen": recommendationWrite("open"),
+	"attributeMappings.create": createMapping,
 	"instrumentationRecommendations.list": ({ query }) => {
 		const status = str(query, "status")
 		return Effect.succeed(

@@ -6,7 +6,7 @@ import {
 	filterChipPressedBorderStyles,
 	filterChipVariants,
 } from "@maple/ui/styles/ui/filter-chip"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "./status-dot"
 import { togglePrimitive } from "./toggle"
 
@@ -19,6 +19,9 @@ export type FilterChipOptions<Message> = Readonly<{
 	hasDot?: boolean
 	count?: string
 	className?: string
+	/** `data-slot` when a wrapper renders through it (`TooltipTrigger render={<FilterChip />}`). */
+	slot?: string
+	attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 }>
 
 /** `<FilterChip>`: an on/off filter toggle with an optional tone dot and trailing count. */
@@ -38,7 +41,8 @@ export const filterChip = <Message>(
 				filterChipPressedBorderStyles[tone],
 				options.className,
 			),
-			slot: "filter-chip",
+			slot: options.slot ?? "filter-chip",
+			attributes: options.attributes,
 		},
 		[
 			...(options.hasDot === true

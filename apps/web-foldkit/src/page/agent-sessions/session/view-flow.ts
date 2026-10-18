@@ -304,6 +304,7 @@ export const flow = (h: H, model: Model, data: SessionData): Html => {
 									panOnScroll: true,
 									zoomOnScroll: false,
 									zoomOnDoubleClick: false,
+									preventScrolling: true,
 									translateExtent: [
 										[extent[0][0], extent[0][1]],
 										[extent[1][0], extent[1][1]],

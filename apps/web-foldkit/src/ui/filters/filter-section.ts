@@ -73,6 +73,8 @@ export type FilterSectionConfig<M> = Readonly<{
 	onExclude?: (name: string) => M
 	/** `colorMap`: a swatch before the label (`serviceColorMap` for services). */
 	colorOf?: (name: string) => string | undefined
+	/** `renderOptionIcon`: a glyph after the swatch, before the label. */
+	optionIcon?: (name: string) => Html | null
 	getOptionLabel?: (name: string) => string
 	/** `getOptionIcon`: a mark before the label, tinted by `iconColorOf`. */
 	iconOf?: (name: string) => IconName | undefined
@@ -223,6 +225,7 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 				[
 					...swatch(h, config.colorOf?.(option.name), isExcluded),
 					...optionIcon(h, config, option.name, isExcluded),
+					...[config.optionIcon?.(option.name) ?? null].filter((node): node is Html => node !== null),
 					h.span([h.Class("truncate")], [text]),
 				],
 			),

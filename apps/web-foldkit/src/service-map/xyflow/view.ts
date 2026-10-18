@@ -110,6 +110,8 @@ export interface FlowCanvasView<M> {
 	readonly ariaLabel?: string
 	/** `panOnScroll`, `zoomOnScroll`, `zoomOnDoubleClick`, `translateExtent`. */
 	readonly gestures?: FlowGestures
+	/** `EdgeLabelRenderer` portals: absolutely placed labels in flow space. */
+	readonly edgeLabels?: ReadonlyArray<Html>
 }
 
 /** `<ReactFlow>`: wrapper, zoom pane, pane, viewport and the a11y descriptions. */
@@ -160,7 +162,7 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 								],
 								[
 									canvas.edges,
-									h.div([h.Class("react-flow__edgelabel-renderer")]),
+									h.div([h.Class("react-flow__edgelabel-renderer")], canvas.edgeLabels ?? []),
 									canvas.nodes,
 									h.div([
 										h.Class("react-flow__viewport-portal"),
