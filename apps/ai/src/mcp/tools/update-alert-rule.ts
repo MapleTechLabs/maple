@@ -1,15 +1,18 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Array as Arr, Effect, Schema } from "effect"
 import { UpdateAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { recoveryValueFits } from "@maple/backend/services/alerts/alert-thresholds"
 import {
 	AlertRuleUpsertRequest,
 	isRangeComparator,
 	QueryBuilderQueryDraftSchema,
+	type AlertComparator,
 	type AlertRuleDocument,
+	type AlertThreshold,
 } from "@maple/domain/http"
 import {
 	ALERT_COMPARATORS,
@@ -92,7 +95,7 @@ export const UpdateAlertRuleParameters = Schema.Struct({
  * signal type or comparator does not use is dropped rather than carried over, as v2 PATCH does,
  * because `normalizeRule` rejects it.
  */
-export function buildUpdatedRequest(
+export const buildUpdatedRequest = Effect.fnUntraced(function* (
 	current: AlertRuleDocument,
 	params: typeof UpdateAlertRuleParameters.Type,
 ) {
@@ -111,13 +114,13 @@ export function buildUpdatedRequest(
 	const signalType = params.signal_type ?? current.signalType
 	const comparator = params.comparator ?? current.comparator
 	const keepsRawQuery = signalType === "raw_query"
+	const thresholds = yield* mergeThresholds(current, params, comparator)
 
 	return {
 		name: params.name ?? current.name,
 		notes: current.notes,
 		notificationTemplate,
 		enabled: params.enabled ?? current.enabled,
-		severity: params.severity ?? current.severity,
 		serviceNames: [...(params.services ?? current.serviceNames)],
 		excludeServiceNames: [...current.excludeServiceNames],
 		environments: [...(params.environments ?? current.environments)],
@@ -132,8 +135,8 @@ export function buildUpdatedRequest(
 					: null,
 		signalType,
 		comparator,
-		threshold: params.threshold ?? current.threshold,
-		thresholdUpper: isRangeComparator(comparator) ? current.thresholdUpper : null,
+		thresholds,
+		breachesOutOf: current.breachesOutOf,
 		windowMinutes: params.window_minutes ?? current.windowMinutes,
 		minimumSampleCount: params.minimum_sample_count ?? current.minimumSampleCount,
 		consecutiveBreachesRequired: params.consecutive_breaches ?? current.consecutiveBreachesRequired,
@@ -145,8 +148,58 @@ export function buildUpdatedRequest(
 		rawQuerySql: keepsRawQuery ? (params.raw_query_sql ?? current.rawQuerySql) : null,
 		rawQueryReducer: keepsRawQuery ? (params.raw_query_reducer ?? current.rawQueryReducer) : null,
 		alertOnNoData: params.alert_on_no_data ?? current.noDataBehavior === "alert",
-		destinationIds: mergeDestinations(current.destinationIds, params),
 	}
+})
+
+/**
+ * Single-threshold params edit a one-tier rule's tier in place. On a two-tier rule they would
+ * collapse it, so they are rejected; added destinations join the warning tier, which every incident reaches.
+ */
+const mergeThresholds = (
+	current: AlertRuleDocument,
+	params: typeof UpdateAlertRuleParameters.Type,
+	comparator: AlertComparator,
+) => {
+	const fitBound = (tier: AlertThreshold) =>
+		isRangeComparator(comparator) ? tier : { ...tier, upper: null }
+	const [only, ...rest] = current.thresholds
+	if (rest.length === 0) {
+		const value = params.threshold ?? only.value
+		// MCP cannot set a recovery value yet, so one the edit invalidates is dropped, not a dead end.
+		const recoveryValue = recoveryValueFits(comparator, { value, recoveryValue: only.recoveryValue })
+			? only.recoveryValue
+			: null
+		return Effect.succeed(
+			Arr.of({
+				...fitBound(only),
+				severity: params.severity ?? only.severity,
+				value,
+				recoveryValue,
+				destinationIds: mergeDestinations(only.destinationIds, params),
+			}),
+		)
+	}
+	const collapsing = (["severity", "threshold", "destination_ids"] as const).find(
+		(key) => params[key] !== undefined,
+	)
+	if (collapsing !== undefined) {
+		return Effect.fail(
+			new McpInvalidInputError({
+				message: `"${current.name}" has warning and critical thresholds; ${collapsing} would merge them into one.`,
+				parameter: collapsing,
+			}),
+		)
+	}
+	return Effect.succeed(
+		Arr.map(current.thresholds, (tier, index) => ({
+			...fitBound(tier),
+			recoveryValue: recoveryValueFits(comparator, tier) ? tier.recoveryValue : null,
+			destinationIds: mergeDestinations(
+				tier.destinationIds,
+				index === 0 ? params : { remove_destination_ids: params.remove_destination_ids },
+			),
+		})),
+	)
 }
 
 /** `destination_ids` replaces; add/remove edit the current (or replaced) list in place. */
@@ -213,14 +266,18 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 
 			// Decode every merged request before writing any, so a bad overlay saves nothing.
 			const requests = yield* Effect.forEach(targets, (current) =>
-				decodeAlertRuleRequest(buildUpdatedRequest(current, params)).pipe(
-					Effect.map((request) => ({ current, request })),
-					Effect.mapError(
-						(error) =>
-							new McpInvalidInputError({
-								message: `Invalid alert rule${targets.length > 1 ? ` "${current.name}"` : ""}: ${String(error)}`,
-							}),
+				buildUpdatedRequest(current, params).pipe(
+					Effect.flatMap((merged) =>
+						decodeAlertRuleRequest(merged).pipe(
+							Effect.mapError(
+								(error) =>
+									new McpInvalidInputError({
+										message: `Invalid alert rule${targets.length > 1 ? ` "${current.name}"` : ""}: ${String(error)}`,
+									}),
+							),
+						),
 					),
+					Effect.map((request) => ({ current, request })),
 				),
 			)
 

@@ -7,6 +7,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"test": "vitest run --passWithNoTests",
+		"test:e2e": "cd e2e && e2e run",
 		"test:perf": "playwright test",
 		"test:perf:bundle": "bun run build && bun run check:bundle",
 		"check:bundle": "bun perf/check-bundle-budget.ts",
@@ -78,6 +79,8 @@
 		"web-vitals": "^6.2.3"
 	},
 	"devDependencies": {
+		"@ai-sdk/anthropic": "4.0.82",
+		"@e2e-dev/web": "0.15.2",
 		"@effect/language-service": "catalog:effect",
 		"@playwright/test": "^1.63.0",
 		"@tanstack/devtools-vite": "^0.8.5",
@@ -92,7 +95,9 @@
 		"@types/three": "^0.186.0",
 		"@vitejs/plugin-react": "^6.1.2",
 		"@vitest/browser-playwright": "catalog:",
+		"ai": "7.0.143",
 		"dialkit": "2.0.2",
+		"e2e": "0.21.2",
 		"playwright": "catalog:",
 		"typescript": "catalog:tooling",
 		"vite": "catalog:",

@@ -5,12 +5,17 @@ import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 import { useState, type Dispatch, type SetStateAction } from "react"
 import { useUser } from "@clerk/clerk-react"
 
-import { ALERT_TEMPLATE_VARIABLES, type AlertDestinationDocument } from "@maple/domain/http"
+import {
+	ALERT_TEMPLATE_VARIABLES,
+	type AlertDestinationDocument,
+	type AlertDestinationId,
+} from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Panel } from "@maple/ui/components/ui/panel"
+import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import {
 	DropdownMenu,
@@ -32,6 +37,7 @@ import {
 import { useChatConnectors, useChatWorkspaceConnect } from "@/components/alerts/use-chat-workspaces"
 import {
 	chatDestinationForm,
+	comparatorSupportsTiers,
 	defaultDestinationForm,
 	type DestinationFormState,
 	type RuleFormState,
@@ -101,23 +107,28 @@ export function NotificationsSection({
 	onAddDestination,
 	onQuickCreate,
 }: NotificationsSectionProps) {
-	const selected = destinations.filter((d) => form.destinationIds.includes(d.id))
-	const available = destinations.filter((d) => !form.destinationIds.includes(d.id))
-	// Saved ids the list does not hold (deleted, or the list failed to load) still get notified on
-	// save, so they stay on screen and removable rather than silently riding along.
-	const unresolved = form.destinationIds.filter((id) => !destinations.some((d) => d.id === id))
-	const canAdd = available.length > 0 || onAddDestination !== undefined
-
-	const select = (id: AlertDestinationDocument["id"]) =>
-		onChange((c) => ({ ...c, destinationIds: [...new Set([...c.destinationIds, id])] }))
-	const remove = (id: AlertDestinationDocument["id"]) =>
-		onChange((c) => ({ ...c, destinationIds: c.destinationIds.filter((existing) => existing !== id) }))
+	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
+	const anySelected = destinations.some(
+		(d) => form.destinationIds.includes(d.id) || (escalation?.destinationIds.includes(d.id) ?? false),
+	)
+	const list = (
+		ids: ReadonlyArray<AlertDestinationDocument["id"]>,
+		setIds: (update: (ids: AlertDestinationId[]) => AlertDestinationId[]) => void,
+	) => (
+		<DestinationList
+			ids={ids}
+			onSelect={(id) => setIds((current) => [...new Set([...current, id])])}
+			onRemove={(id) => setIds((current) => current.filter((existing) => existing !== id))}
+			destinations={destinations}
+			onAddDestination={onAddDestination}
+			onQuickCreate={onQuickCreate}
+		/>
+	)
 
 	return (
 		<Card className="p-4">
-			{selected.length > 0 && (
-			<div className="-mt-1 flex justify-end">
-				{(
+			{anySelected && (
+				<div className="-mt-1 flex justify-end">
 					<Tooltip>
 						<TooltipTrigger
 							render={
@@ -137,52 +148,122 @@ export function NotificationsSection({
 							Send a real test notification to every destination below
 						</TooltipContent>
 					</Tooltip>
-				)}
-			</div>
+				</div>
 			)}
 
-			<Panel className="mt-3 divide-y divide-border/60 border-border/60">
-				{selected.map((destination) => (
-					<SelectedDestination
-						key={destination.id}
-						destination={destination}
-						onRemove={() => remove(destination.id)}
-					/>
-				))}
-				{unresolved.map((id) => (
-					<div key={id} className="flex items-center gap-2.5 px-3 py-2">
-						<span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-							Destination unavailable
-						</span>
-						<IconButton
-							className="-my-1 shrink-0 text-muted-foreground"
-							label="Stop notifying this unavailable destination"
-							onClick={() => remove(id)}
-						>
-							<XmarkIcon />
-						</IconButton>
+			{escalation === null ? (
+				list(form.destinationIds, (update) =>
+					onChange((c) => ({ ...c, destinationIds: update(c.destinationIds) })),
+				)
+			) : (
+				<div className="mt-1 space-y-4">
+					<div className="space-y-1.5">
+						<TierHeading severity="warning">Warning</TierHeading>
+						{list(form.destinationIds, (update) =>
+							onChange((c) => ({ ...c, destinationIds: update(c.destinationIds) })),
+						)}
 					</div>
-				))}
-				{selected.length === 0 && unresolved.length === 0 && (
-					<p className="px-3 py-2.5 text-sm text-muted-foreground">
-						{canAdd
-							? "No one is notified yet."
-							: "No destinations exist yet, and only an org admin can add one."}
-					</p>
-				)}
-				{canAdd && (
-					<AddDestinationMenu
-						available={available}
-						destinations={destinations}
-						onSelect={select}
-						onAddDestination={onAddDestination}
-						onQuickCreate={onQuickCreate}
-					/>
-				)}
-			</Panel>
+					<div className="space-y-1.5">
+						<TierHeading severity="critical">
+							Critical, on top of the warning destinations
+						</TierHeading>
+						{list(escalation.destinationIds, (update) =>
+							onChange((c) =>
+								c.escalation === null
+									? c
+									: {
+											...c,
+											escalation: {
+												...c.escalation,
+												destinationIds: update(c.escalation.destinationIds),
+											},
+										},
+							),
+						)}
+					</div>
+				</div>
+			)}
 
 			<MessageTemplate form={form} onChange={onChange} />
 		</Card>
+	)
+}
+
+function TierHeading({ severity, children }: { severity: "warning" | "critical"; children: string }) {
+	return (
+		<p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+			<StatusDot
+				tone="custom"
+				className={severity === "critical" ? "bg-severity-error" : "bg-severity-warn"}
+			/>
+			{children}
+		</p>
+	)
+}
+
+/** One tier's destinations, plus the menu that adds an existing or new one. */
+function DestinationList({
+	ids,
+	onSelect,
+	onRemove,
+	destinations,
+	onAddDestination,
+	onQuickCreate,
+}: {
+	ids: ReadonlyArray<AlertDestinationDocument["id"]>
+	onSelect: (id: AlertDestinationDocument["id"]) => void
+	onRemove: (id: AlertDestinationDocument["id"]) => void
+	destinations: AlertDestinationDocument[]
+	onAddDestination?: (preset?: DestinationFormState) => void
+	onQuickCreate?: (form: DestinationFormState) => Promise<boolean>
+}) {
+	const selected = destinations.filter((d) => ids.includes(d.id))
+	const available = destinations.filter((d) => !ids.includes(d.id))
+	// Saved ids the list does not hold (deleted, or the list failed to load) still get notified on
+	// save, so they stay on screen and removable rather than silently riding along.
+	const unresolved = ids.filter((id) => !destinations.some((d) => d.id === id))
+	const canAdd = available.length > 0 || onAddDestination !== undefined
+
+	return (
+		<Panel className="mt-3 divide-y divide-border/60 border-border/60">
+			{selected.map((destination) => (
+				<SelectedDestination
+					key={destination.id}
+					destination={destination}
+					onRemove={() => onRemove(destination.id)}
+				/>
+			))}
+			{unresolved.map((id) => (
+				<div key={id} className="flex items-center gap-2.5 px-3 py-2">
+					<span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+						Destination unavailable
+					</span>
+					<IconButton
+						className="-my-1 shrink-0 text-muted-foreground"
+						label="Stop notifying this unavailable destination"
+						onClick={() => onRemove(id)}
+					>
+						<XmarkIcon />
+					</IconButton>
+				</div>
+			))}
+			{selected.length === 0 && unresolved.length === 0 && (
+				<p className="px-3 py-2.5 text-sm text-muted-foreground">
+					{canAdd
+						? "No one is notified yet."
+						: "No destinations exist yet, and only an org admin can add one."}
+				</p>
+			)}
+			{canAdd && (
+				<AddDestinationMenu
+					available={available}
+					destinations={destinations}
+					onSelect={onSelect}
+					onAddDestination={onAddDestination}
+					onQuickCreate={onQuickCreate}
+				/>
+			)}
+		</Panel>
 	)
 }
 

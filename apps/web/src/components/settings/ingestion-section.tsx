@@ -1,36 +1,49 @@
-import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
-
-import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Button } from "@maple/ui/components/ui/button"
+import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
+import { CopyIndicator } from "@maple/ui/components/ui/copy-button"
+import { maskKey } from "@maple/ui/components/ui/copyable-field"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
-import { cn } from "@maple/ui/lib/utils"
-import { ArrowPathIcon, ArrowRightIcon, EyeIcon, PaperPlaneIcon, PulseIcon } from "@/components/icons"
-import { CopyIndicator } from "@maple/ui/components/ui/copy-button"
 import { useCopy } from "@maple/ui/hooks/use-copy"
+import { cn } from "@maple/ui/lib/utils"
+import {
+	ArrowPathIcon,
+	ArrowRightIcon,
+	ChevronRightIcon,
+	EyeIcon,
+	PaperPlaneIcon,
+	PulseIcon,
+} from "@/components/icons"
+import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
+import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
+import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
+import { toastExit } from "@/lib/error-toast"
+import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { docsUrl } from "@/lib/docs"
-import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
-import { maskKey } from "@maple/ui/components/ui/copyable-field"
-import { ConnectInstructions, FrameworkPicker, useGuidedFramework } from "@/components/ingest/guided-setup"
+import {
+	ConnectInstructions,
+	FrameworkIconStrip,
+	FrameworkPicker,
+	useGuidedFramework,
+} from "@/components/ingest/guided-setup"
 import {
 	sendTestEvent,
 	useIngestConnection,
 	type IngestConnection,
 } from "@/components/ingest/use-ingest-connection"
-import { AttributeMappingsSection } from "./attribute-mappings-section"
-import { SettingsSection, SettingsSections } from "./settings-section"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
-import { toastExit } from "@/lib/error-toast"
+import { AdminOnlyNotice } from "./admin-only-notice"
+import { AttributeMappingsSection } from "./attribute-mappings-section"
 import { RecommendedMappingsSection } from "./recommended-mappings-section"
-import { REPLAY_BLOCK_CLASS } from "@/components/common/replay-privacy"
+import { SettingsSection, SettingsSections } from "./settings-section"
 
 /** Live ingest-health strip: green once telemetry lands, amber pulse while waiting. */
 function StatusBanner({ connection }: { connection: IngestConnection }) {
@@ -215,47 +228,72 @@ function CredentialRow({
 	)
 }
 
-export function IngestionSection() {
+/** The OTLP endpoint plus the org's ingest key pair. The pair is admin-only, so members see the endpoint. */
+function EndpointAndKeysSection() {
+	const isAdmin = useIsOrgAdmin()
+	return (
+		<SettingsSection
+			title={isAdmin ? "Endpoint & keys" : "Endpoint"}
+			description="Point your OTLP exporter at the endpoint and authenticate with an ingest key."
+			padded={false}
+			actions={
+				<a
+					href={docsUrl("instrumentation")}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors"
+				>
+					Docs ↗
+				</a>
+			}
+		>
+			<div className="divide-y">
+				<CredentialRow
+					label="OTLP endpoint"
+					badge="HTTP"
+					badgeClass="text-muted-foreground"
+					value={ingestUrl}
+				/>
+				{isAdmin ? <IngestKeyRows /> : null}
+			</div>
+		</SettingsSection>
+	)
+}
+
+function IngestKeyRows() {
 	const [publicKeyVisible, setPublicKeyVisible] = useState(false)
 	const [privateKeyVisible, setPrivateKeyVisible] = useState(false)
-	const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false)
-	const [regenerateKeyType, setRegenerateKeyType] = useState<"public" | "private" | null>(null)
+	const [rollOpen, setRollOpen] = useState(false)
+	const [rollType, setRollType] = useState<"public" | "private">("public")
 
 	const keysQueryAtom = retainedQueryV2("ingestKeys", "retrieve", {})
 	const keysResult = useAtomValue(keysQueryAtom)
 	const refreshKeys = useAtomRefresh(keysQueryAtom)
 
-	const connection = useIngestConnection()
-	const { framework, setFramework } = useGuidedFramework()
-
-	const rerollPublicMutation = useAtomSet(MapleApiV2AtomClient.mutation("ingestKeys", "rollPublic"), {
+	const rollPublic = useAtomSet(MapleApiV2AtomClient.mutation("ingestKeys", "rollPublic"), {
 		mode: "promiseExit",
 	})
-	const rerollPrivateMutation = useAtomSet(MapleApiV2AtomClient.mutation("ingestKeys", "rollPrivate"), {
+	const rollPrivate = useAtomSet(MapleApiV2AtomClient.mutation("ingestKeys", "rollPrivate"), {
 		mode: "promiseExit",
 	})
 
-	function openRegenerateDialog(keyType: "public" | "private") {
-		setRegenerateKeyType(keyType)
-		setRegenerateDialogOpen(true)
+	function openRoll(keyType: "public" | "private") {
+		setRollType(keyType)
+		setRollOpen(true)
 	}
 
-	const [handleRegenerate, regenerating] = useAsyncAction(async () => {
-		if (!regenerateKeyType) return
-		const result =
-			regenerateKeyType === "public" ? await rerollPublicMutation({}) : await rerollPrivateMutation({})
-		if (
-			toastExit(result, {
-				success: `${regenerateKeyType === "public" ? "Public" : "Private"} key regenerated. Previous key was revoked immediately.`,
-				error: "Unable to complete request",
-			})
-		) {
-			refreshKeys()
-		}
-		setRegenerateDialogOpen(false)
-		setRegenerateKeyType(null)
+	const [handleRoll, rolling] = useAsyncAction(async () => {
+		const isPublic = rollType === "public"
+		const result = isPublic ? await rollPublic({}) : await rollPrivate({})
+		const ok = toastExit(result, {
+			success: `${isPublic ? "Public" : "Private"} key regenerated. Previous key was revoked immediately.`,
+			error: "Unable to complete request",
+		})
+		if (ok) refreshKeys()
+		setRollOpen(false)
 	})
-	const isBusy = !Result.isSuccess(keysResult) || regenerating
+	const isBusy = !Result.isSuccess(keysResult) || rolling
+	const failed = Result.isFailure(keysResult)
 
 	const publicKey = Result.builder(keysResult)
 		.onSuccess((v): string | null => v.public_key)
@@ -266,95 +304,107 @@ export function IngestionSection() {
 
 	return (
 		<>
-			<SettingsSections>
-				<StatusBanner connection={connection} />
-
-				<SettingsSection
-					title="Endpoint & keys"
-					description="Point your OTLP exporter at the endpoint and authenticate with an ingest key."
-					padded={false}
-					actions={
-						<a
-							href={docsUrl("instrumentation")}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors"
-						>
-							Docs ↗
-						</a>
-					}
-				>
-					<div className="divide-y">
-						<CredentialRow
-							label="OTLP endpoint"
-							badge="HTTP"
-							badgeClass="text-muted-foreground"
-							value={ingestUrl}
-						/>
-						<CredentialRow
-							label="Public key"
-							badge="Client"
-							badgeClass="text-info"
-							value={publicKey}
-							failed={Result.isFailure(keysResult)}
-							masked
-							description="For browser and client-side telemetry SDKs"
-							isVisible={publicKeyVisible}
-							onToggleVisibility={() => setPublicKeyVisible((v) => !v)}
-							onRegenerate={() => openRegenerateDialog("public")}
-							disabled={isBusy}
-						/>
-						<CredentialRow
-							label="Private key"
-							badge="Server"
-							badgeClass="text-warning"
-							value={privateKey}
-							failed={Result.isFailure(keysResult)}
-							masked
-							description="For server-side ingestion and backend services"
-							isVisible={privateKeyVisible}
-							onToggleVisibility={() => setPrivateKeyVisible((v) => !v)}
-							onRegenerate={() => openRegenerateDialog("private")}
-							disabled={isBusy}
-						/>
-					</div>
-				</SettingsSection>
-
-				<SettingsSection
-					title="Send your first telemetry"
-					description="Point your OpenTelemetry SDK at Maple, or let Claude Code wire it up for you."
-					padded={false}
-					actions={<FrameworkPicker compact selected={framework} onSelect={setFramework} />}
-				>
-					<ConnectInstructions
-						framework={framework}
-						apiKey={connection.privateKey}
-						apiKeyStatus={connection.apiKeyStatus}
-						variant="flush"
-					/>
-				</SettingsSection>
-
-				<RecommendedMappingsSection />
-
-				<AttributeMappingsSection />
-			</SettingsSections>
-
+			<CredentialRow
+				label="Public key"
+				badge="Client"
+				badgeClass="text-info"
+				value={publicKey}
+				failed={failed}
+				masked
+				description="For browser and client-side telemetry SDKs"
+				isVisible={publicKeyVisible}
+				onToggleVisibility={() => setPublicKeyVisible((v) => !v)}
+				onRegenerate={() => openRoll("public")}
+				disabled={isBusy}
+			/>
+			<CredentialRow
+				label="Private key"
+				badge="Server"
+				badgeClass="text-warning"
+				value={privateKey}
+				failed={failed}
+				masked
+				description="For server-side ingestion and backend services"
+				isVisible={privateKeyVisible}
+				onToggleVisibility={() => setPrivateKeyVisible((v) => !v)}
+				onRegenerate={() => openRoll("private")}
+				disabled={isBusy}
+			/>
 			<ConfirmDialog
-				open={regenerateDialogOpen}
-				onOpenChange={setRegenerateDialogOpen}
-				title={`Regenerate ${regenerateKeyType === "public" ? "public" : "private"} key?`}
+				open={rollOpen}
+				onOpenChange={setRollOpen}
+				title={`Regenerate ${rollType} key?`}
 				description={
 					<>
 						This action cannot be undone. All existing integrations using this key will stop
 						working immediately. You will need to update your{" "}
-						{regenerateKeyType === "public" ? "client-side SDKs" : "server configurations"} with
-						the new key.
+						{rollType === "public" ? "client-side SDKs" : "server configurations"} with the new
+						key.
 					</>
 				}
 				confirmLabel="Regenerate key"
-				onConfirm={() => void handleRegenerate()}
-				pending={regenerating}
+				onConfirm={() => void handleRoll()}
+				pending={rolling}
 			/>
 		</>
+	)
+}
+
+/**
+ * Install steps for one more service. Once telemetry is arriving this folds into one row, since
+ * the steps are a reference by then, not the next thing to do.
+ */
+function AddServiceSection({ connection }: { connection: IngestConnection }) {
+	const { framework, setFramework } = useGuidedFramework()
+	const [expanded, setExpanded] = useState(false)
+	const connected = connection.status === "connected"
+	const open = !connected || expanded
+
+	return (
+		<SettingsSection
+			title={connected ? "Add another service" : "Send your first telemetry"}
+			description={
+				connected
+					? "Install steps for a new service, or let Claude Code wire it up for you."
+					: "Point your OpenTelemetry SDK at Maple, or let Claude Code wire it up for you."
+			}
+			padded={false}
+			actions={open ? <FrameworkPicker compact selected={framework} onSelect={setFramework} /> : null}
+		>
+			{open ? (
+				<ConnectInstructions
+					framework={framework}
+					apiKey={connection.privateKey}
+					apiKeyStatus={connection.apiKeyStatus}
+					variant="flush"
+				/>
+			) : (
+				<div className="flex items-center gap-3 px-4 py-3">
+					<FrameworkIconStrip />
+					<span className="text-muted-foreground min-w-0 grow truncate text-xs">
+						Next.js, Node.js, Python, Go, Effect and more
+					</span>
+					<Button variant="outline" size="sm" onClick={() => setExpanded(true)}>
+						Show setup
+						<ChevronRightIcon data-icon="inline-end" />
+					</Button>
+				</div>
+			)}
+		</SettingsSection>
+	)
+}
+
+export function IngestionSection() {
+	const connection = useIngestConnection()
+
+	return (
+		<SettingsSections>
+			<AdminOnlyNotice subject="ingestion settings" />
+			<StatusBanner connection={connection} />
+			<EndpointAndKeysSection />
+			<AddServiceSection connection={connection} />
+			<RecommendedMappingsSection />
+			<AttributeMappingsSection />
+		</SettingsSections>
 	)
 }

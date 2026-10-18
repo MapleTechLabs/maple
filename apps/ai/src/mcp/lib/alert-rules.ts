@@ -107,14 +107,26 @@ export const parseRuleId = (ruleId: string) =>
 		onSome: (id) => Effect.succeed(id),
 	})
 
+/**
+ * An invalid rule as the model reads it: the message and each detail once. A
+ * message that already folds in every detail is dropped as a repeat; any other
+ * message names the failure the details only qualify, so it stays.
+ */
+export const invalidRuleInput = (error: AlertValidationError) => {
+	const repeatsDetails =
+		error.details.length > 0 && error.details.every((detail) => error.message.includes(detail))
+	return new McpInvalidInputError({
+		message: [
+			repeatsDetails ? "Invalid alert rule:" : `Invalid alert rule: ${error.message}`,
+			...error.details.map((detail) => `- ${detail}`),
+		].join("\n"),
+	})
+}
+
 /** The write failures that are the caller's to fix, as input errors naming the parameter. */
 export const ruleWriteInputErrors = {
 	"@maple/http/errors/AlertValidationError": (error: AlertValidationError) =>
-		Effect.fail(
-			new McpInvalidInputError({
-				message: [`Invalid alert rule: ${error.message}`, ...error.details].join("\n"),
-			}),
-		),
+		Effect.fail(invalidRuleInput(error)),
 	"@maple/http/errors/AlertRuleDestinationNotFoundError": (error: AlertRuleDestinationNotFoundError) =>
 		Effect.fail(
 			new McpInvalidInputError({

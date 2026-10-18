@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { schemaApplyPlan } from "./schema-apply-plan"
+import { columnDriftResolvedByApply, schemaApplyPlan, schemaDiffCounts } from "./schema-apply-plan"
 
 describe("schemaApplyPlan", () => {
 	it("creates missing objects and adds only missing columns to drifted tables", () => {
@@ -45,5 +45,35 @@ describe("schemaApplyPlan", () => {
 			{ name: "errors_mv", reason: "exists as a table" },
 			{ name: "metrics_mv", reason: "view definition drifted" },
 		])
+	})
+})
+
+describe("schemaDiffCounts", () => {
+	it("counts every diff state, including wrong-kind objects", () => {
+		expect(
+			schemaDiffCounts([
+				{ status: "up_to_date", name: "logs", kind: "table" },
+				{ status: "up_to_date", name: "traces", kind: "table" },
+				{ status: "missing", name: "traces_mv", kind: "materialized_view" },
+				{ status: "wrong_kind", name: "errors_mv", kind: "materialized_view", actualKind: "table" },
+			]),
+		).toEqual({ up_to_date: 2, missing: 1, drifted: 0, wrong_kind: 1 })
+	})
+})
+
+describe("columnDriftResolvedByApply", () => {
+	it("adds missing columns to tables and leaves every other drift for a human", () => {
+		const missing = { kind: "missing", column: "SpanKind", expectedType: "String" } as const
+		const extra = { kind: "extra", column: "Legacy", actualType: "String" } as const
+		const mismatch = {
+			kind: "type_mismatch",
+			column: "Duration",
+			expectedType: "UInt64",
+			actualType: "Int64",
+		} as const
+		expect(columnDriftResolvedByApply("table", missing)).toBe(true)
+		expect(columnDriftResolvedByApply("materialized_view", missing)).toBe(false)
+		expect(columnDriftResolvedByApply("table", extra)).toBe(false)
+		expect(columnDriftResolvedByApply("table", mismatch)).toBe(false)
 	})
 })

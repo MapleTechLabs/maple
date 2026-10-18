@@ -24,11 +24,7 @@ import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { TimeRangePicker } from "@/components/time-range-picker/time-range-picker"
 import type { TimeRange } from "@/components/time-range-picker/types"
 import type { AlertIncidentDocument } from "@maple/domain/http"
-import {
-	displaySignalType,
-	formatSignalValue,
-	type RuleFormState,
-} from "@/lib/alerts/form-utils"
+import { displaySignalType, formatSignalValue, type RuleFormState } from "@/lib/alerts/form-utils"
 
 interface RuleLiveChartHeroProps {
 	form: RuleFormState
@@ -80,7 +76,7 @@ export function RuleLiveChartHero({
 }: RuleLiveChartHeroProps) {
 	// The preview plots domain units (error rate as a 0–1 ratio); the form's
 	// threshold goes through the same conversion the save does.
-	const { threshold, upper: thresholdUpper } = draftThresholds(form)
+	const { threshold, upper: thresholdUpper, critical: criticalThreshold } = draftThresholds(form)
 	const displaySignal = displaySignalType(form)
 
 	// The chart's domain is the exact window the preview query ran over, so the
@@ -163,6 +159,7 @@ export function RuleLiveChartHero({
 					showWouldFire
 					threshold={threshold}
 					thresholdUpper={thresholdUpper}
+					criticalThreshold={criticalThreshold}
 					comparator={form.comparator}
 					signalType={displaySignal}
 					window={window}

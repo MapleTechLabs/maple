@@ -13,9 +13,9 @@ import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { FormDialog } from "@maple/ui/components/ui/form-dialog"
-import { IconButton } from "@maple/ui/components/ui/icon-button"
+import { DropdownMenuItem } from "@maple/ui/components/ui/dropdown-menu"
+import { RowActionsMenu } from "@maple/ui/components/ui/row-actions-menu"
 import { Panel } from "@maple/ui/components/ui/panel"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
@@ -37,7 +37,6 @@ import {
 	PlusIcon,
 	TrashIcon,
 } from "@/components/icons"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import {
 	ingestAttributeMappingsListAtom,
@@ -48,7 +47,7 @@ import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
 import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { toastExit } from "@/lib/error-toast"
-import { AdminOnlyNote, SettingsSection } from "./settings-section"
+import { SettingsSection } from "./settings-section"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 
 const SOURCE_CONTEXT_LABELS: Record<IngestMappingSourceContext, string> = {
@@ -69,6 +68,11 @@ const OPERATION_BADGE: Record<
 	copy: { icon: CopyIcon, variant: "info", tone: TONE_TEXT.info },
 	move: { icon: ArrowRightFromLineIcon, variant: "warn", tone: TONE_TEXT.warn },
 } satisfies Record<IngestMappingOperation, { icon: IconComponent; variant: "info" | "warn"; tone: string }>
+
+const APPLIES_TO_LABELS: Record<IngestMappingSourceContext, string> = {
+	span: "Span attributes",
+	resource: "Resource attributes",
+} satisfies Record<IngestMappingSourceContext, string>
 
 const SOURCE_CONTEXT_ICON: Record<IngestMappingSourceContext, IconComponent> = {
 	span: BracketsCurlyIcon,
@@ -178,20 +182,14 @@ export function AttributeMappingsSection() {
 		if (toastExit(result, { error: "Failed to update attribute mapping" })) refreshMappings()
 	})
 
-	const mappingCount = Result.isSuccess(listResult) ? mappings.length : null
-
 	const PreviewOpIcon = OPERATION_BADGE[formOperation].icon
 	const showPreview = formSourceKey.trim().length > 0 && formTargetKey.trim().length > 0
 
 	return (
 		<>
 			<SettingsSection
-				title={
-					mappingCount !== null && mappingCount > 0
-						? `Attribute mappings · ${mappingCount}`
-						: "Attribute mappings"
-				}
-				description="Rename or promote span attribute keys at ingest. Applied only to spans received after a rule is saved."
+				title="Attribute mappings"
+				description="Copy or move attribute keys as data arrives. Applies to new data only."
 				padded={false}
 				actions={
 					isAdmin ? (
@@ -200,13 +198,6 @@ export function AttributeMappingsSection() {
 							Add mapping
 						</Button>
 					) : null
-				}
-				footer={
-					isAdmin ? null : (
-						<AdminOnlyNote>
-							Only org admins can add, edit, delete or turn off attribute mappings.
-						</AdminOnlyNote>
-					)
 				}
 			>
 				<div>
@@ -255,102 +246,92 @@ export function AttributeMappingsSection() {
 						</Empty>
 					) : (
 						<div>
-							{/* column header */}
 							<div className="flex items-center gap-3 px-4 py-1.5">
-								<Eyebrow variant="mono" className="w-28 shrink-0 md:w-44" as="div">
+								<Eyebrow variant="mono" className="w-28 shrink-0 md:w-40" as="div">
 									Name
 								</Eyebrow>
-								<Eyebrow variant="mono" className="flex-1" as="div">
+								<Eyebrow variant="mono" className="min-w-0 flex-1" as="div">
 									Rule
 								</Eyebrow>
-								<Eyebrow variant="mono" className="hidden w-24 shrink-0 md:block" as="div">
-									Operation
+								<Eyebrow variant="mono" className="hidden w-36 shrink-0 md:block" as="div">
+									Applies to
 								</Eyebrow>
-								<Eyebrow variant="mono" className="hidden w-20 shrink-0 md:block" as="div">
-									Context
+								<Eyebrow variant="mono" className="w-10 shrink-0" as="div">
+									On
 								</Eyebrow>
-								<div className="w-28 shrink-0" />
+								{isAdmin && <div className="w-7 shrink-0" />}
 							</div>
 
-							{mappings.map((mapping) => {
-								const operation = OPERATION_BADGE[mapping.operation]
-								return (
-									<div
-										key={mapping.id}
-										className={cn(
-											"group hover:bg-muted/20 flex items-center gap-3 border-t px-4 py-2.5 transition-colors",
-											!mapping.enabled && "opacity-55",
-										)}
-									>
-										<TruncatedText className="w-28 shrink-0 text-sm md:w-44">
-											{mapping.name}
-										</TruncatedText>
+							{mappings.map((mapping) => (
+								<div
+									key={mapping.id}
+									className={cn(
+										"hover:bg-muted/20 flex items-center gap-3 border-t px-4 py-2.5 transition-colors",
+										!mapping.enabled && "text-muted-foreground",
+									)}
+								>
+									<TruncatedText className="w-28 shrink-0 text-sm md:w-40">
+										{mapping.name}
+									</TruncatedText>
 
-										<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm">
-											<InlineCode variant="plain" className="min-w-0 break-all">
-												{mapping.source_key}
-											</InlineCode>
-											<ArrowRightIcon
-												size={12}
-												className="text-muted-foreground shrink-0"
-											/>
-											<InlineCode
-												variant="plain"
-												className="text-foreground min-w-0 break-all"
-											>
-												{mapping.target_key}
-											</InlineCode>
-										</div>
-
-										<Eyebrow
-											variant="mono"
-											className={cn("hidden w-24 shrink-0 md:block", operation.tone)}
-										>
+									<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm">
+										<Badge variant={OPERATION_BADGE[mapping.operation].variant} size="sm">
 											{OPERATION_LABELS[mapping.operation]}
-										</Eyebrow>
-
-										<span className="text-muted-foreground hidden w-20 shrink-0 text-xs md:block">
-											{mapping.source_context === "resource" ? "Resource" : "Spans"}
-										</span>
-
-										<div className="flex w-28 shrink-0 items-center justify-end gap-1.5">
-											{isAdmin && (
-												<div className="flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
-													<IconButton
-														className="text-muted-foreground hover:text-foreground"
-														onClick={() => openEditDialog(mapping)}
-														label="Edit mapping"
-													>
-														<PencilIcon />
-													</IconButton>
-													<IconButton
-														className="text-muted-foreground hover:text-destructive"
-														onClick={() => setDeleteConfirm(mapping)}
-														label="Delete mapping"
-													>
-														<TrashIcon />
-													</IconButton>
-												</div>
-											)}
-											<Tooltip>
-												<TooltipTrigger render={<span className="inline-flex" />}>
-													<Switch
-														aria-label={`${mapping.enabled ? "Disable" : "Enable"} ${mapping.name}`}
-														checked={mapping.enabled}
-														onCheckedChange={() =>
-															void toggle.run(mapping.id, mapping)
-														}
-														disabled={!isAdmin || toggle.isPending(mapping.id)}
-													/>
-												</TooltipTrigger>
-												<TooltipContent>
-													Added {formatRelativeTime(mapping.created_at)}
-												</TooltipContent>
-											</Tooltip>
-										</div>
+										</Badge>
+										<InlineCode
+											variant="plain"
+											className="text-muted-foreground min-w-0 break-all"
+										>
+											{mapping.source_key}
+										</InlineCode>
+										<ArrowRightIcon
+											size={12}
+											className="text-muted-foreground shrink-0"
+										/>
+										<InlineCode
+											variant="plain"
+											className="text-foreground min-w-0 break-all"
+										>
+											{mapping.target_key}
+										</InlineCode>
 									</div>
-								)
-							})}
+
+									<span className="text-muted-foreground hidden w-36 shrink-0 text-xs md:block">
+										{APPLIES_TO_LABELS[mapping.source_context]}
+									</span>
+
+									<div className="flex w-10 shrink-0 items-center">
+										{isAdmin ? (
+											<Switch
+												aria-label={`${mapping.enabled ? "Turn off" : "Turn on"} ${mapping.name}`}
+												checked={mapping.enabled}
+												onCheckedChange={() => void toggle.run(mapping.id, mapping)}
+												disabled={toggle.isPending(mapping.id)}
+											/>
+										) : (
+											<span className="text-xs">{mapping.enabled ? "On" : "Off"}</span>
+										)}
+									</div>
+
+									{isAdmin && (
+										<div className="flex w-7 shrink-0 justify-end">
+											<RowActionsMenu label={`Actions for ${mapping.name}`}>
+												<DropdownMenuItem onClick={() => openEditDialog(mapping)}>
+													<PencilIcon />
+													Edit mapping
+												</DropdownMenuItem>
+												<DropdownMenuItem
+													variant="destructive"
+													onClick={() => setDeleteConfirm(mapping)}
+												>
+													<TrashIcon />
+													Delete mapping
+												</DropdownMenuItem>
+											</RowActionsMenu>
+										</div>
+									)}
+								</div>
+							))}
 						</div>
 					)}
 				</div>

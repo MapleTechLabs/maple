@@ -14,6 +14,7 @@ import {
 	AlertRulePreviewResponse,
 	AlertRulesListResponse,
 	AlertRuleUpsertRequest,
+	AlertValidationError,
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
@@ -33,6 +34,7 @@ import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertRead
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { buildUpdatedRequest } from "../update-alert-rule"
+import { invalidRuleInput } from "../../lib/alert-rules"
 import type { McpToolResult } from "../types"
 
 const RULE_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
@@ -59,6 +61,10 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	windowMinutes: 5,
 	minimumSampleCount: 0,
 	consecutiveBreachesRequired: 1,
+	breachesOutOf: null,
+	thresholds: [
+		{ severity: "critical", value: 0.05, upper: null, recoveryValue: null, destinationIds: [DEST_ID] },
+	],
 	consecutiveHealthyRequired: 1,
 	renotifyIntervalMinutes: 60,
 	apdexThresholdMs: null,
@@ -111,6 +117,7 @@ const incident = (overrides: Record<string, unknown>) => ({
 	comparator: "gt",
 	threshold: 0.05,
 	thresholdUpper: null,
+	peakSeverity: null,
 	firstTriggeredAt: NOW,
 	lastTriggeredAt: NOW,
 	resolvedAt: null,
@@ -181,6 +188,15 @@ const layer = (seen: Seen) =>
 						windowMinutes: 5,
 						threshold: 0.05,
 						thresholdUpper: null,
+						thresholds: [
+							{
+								severity: "warning",
+								value: 0.05,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [],
+							},
+						],
 						comparator: "gt",
 						truncatedToStart: null,
 						series: [
@@ -208,7 +224,14 @@ const layer = (seen: Seen) =>
 				return Effect.succeed(
 					id === RULE_ID
 						? rule
-						: { ...rule, id, name: "Latency", destinationIds: request.destinationIds },
+						: {
+								...rule,
+								id,
+								name: "Latency",
+								destinationIds: (request.thresholds ?? []).flatMap(
+									(tier) => tier.destinationIds,
+								),
+							},
 				)
 			},
 			listDestinations: () =>
@@ -270,6 +293,7 @@ const layer = (seen: Seen) =>
 								consecutiveHealthy: 0,
 								incidentId: null,
 								incidentTransition: "none",
+								level: null,
 								evaluationDurationMs: 12,
 								errorMessage: "column Foo not found",
 								errorCategory: "validation",
@@ -293,6 +317,7 @@ const layer = (seen: Seen) =>
 								consecutiveHealthy: 0,
 								incidentId: null,
 								incidentTransition: "none",
+								level: null,
 								evaluationDurationMs: 9,
 								errorMessage: null,
 								errorCategory: null,
@@ -564,7 +589,7 @@ describe("alert tools", () => {
 		await ok("preview_alert_rule", { rule_id: RULE_ID, threshold: 0.2 }, seen)
 		expect(seen.previewed?.rule).toMatchObject({
 			name: "Checkout errors",
-			threshold: 0.2,
+			thresholds: [{ value: 0.2 }],
 			signalType: "error_rate",
 		})
 
@@ -580,7 +605,7 @@ describe("alert tools", () => {
 			seen,
 		)
 		expect(seen.updated).toMatchObject({
-			threshold: 0.1,
+			thresholds: [{ severity: "critical", value: 0.1 }],
 			name: "Checkout errors",
 			serviceNames: ["checkout"],
 			groupBy: ["service.name", "attr.http.route"],
@@ -606,9 +631,96 @@ describe("alert tools", () => {
 			...rule,
 			comparator: "between",
 			thresholdUpper: 10,
+			thresholds: [
+				{ severity: "critical", value: 0.05, upper: 10, recoveryValue: null, destinationIds: [] },
+			],
 		})
-		expect(buildUpdatedRequest(range, { comparator: "gt" }).thresholdUpper).toBeNull()
-		expect(buildUpdatedRequest(range, { threshold: 2 }).thresholdUpper).toBe(10)
+		const upperAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(range, params)).thresholds[0].upper
+		expect(upperAfter({ comparator: "gt" })).toBeNull()
+		expect(upperAfter({ threshold: 2 })).toBe(10)
+	})
+
+	it("update_alert_rule drops a recovery value the new threshold invalidates", () => {
+		const recovering = Schema.decodeUnknownSync(AlertRuleDocument)({
+			...rule,
+			comparator: "gt",
+			thresholds: [
+				{
+					severity: "critical",
+					value: 100,
+					upper: null,
+					recoveryValue: 80,
+					destinationIds: [DEST_ID],
+				},
+			],
+		})
+		const recoveryAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(recovering, params)).thresholds[0].recoveryValue
+		expect(recoveryAfter({ threshold: 120 })).toBe(80)
+		expect(recoveryAfter({ threshold: 70 })).toBeNull()
+		expect(recoveryAfter({ comparator: "lt" })).toBeNull()
+	})
+
+	it("update_alert_rule keeps a two-tier rule's tiers and refuses to merge them", () => {
+		const tiered = Schema.decodeUnknownSync(AlertRuleDocument)({
+			...rule,
+			breachesOutOf: 5,
+			thresholds: [
+				{
+					severity: "warning",
+					value: 0.02,
+					upper: null,
+					recoveryValue: 0.01,
+					destinationIds: ["00000000-0000-4000-8000-00000000d001"],
+				},
+				{
+					severity: "critical",
+					value: 0.05,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: ["00000000-0000-4000-8000-00000000d002"],
+				},
+			],
+		})
+		const renamed = Effect.runSync(buildUpdatedRequest(tiered, { name: "Renamed" }))
+		expect(renamed.thresholds).toEqual(tiered.thresholds)
+		expect(renamed.breachesOutOf).toBe(5)
+
+		const added = Effect.runSync(
+			buildUpdatedRequest(tiered, {
+				add_destination_ids: ["00000000-0000-4000-8000-00000000d003"],
+				remove_destination_ids: ["00000000-0000-4000-8000-00000000d002"],
+			}),
+		)
+		expect(added.thresholds.map((tier) => tier.destinationIds)).toEqual([
+			["00000000-0000-4000-8000-00000000d001", "00000000-0000-4000-8000-00000000d003"],
+			[],
+		])
+
+		const collapsing = Effect.runSync(Effect.flip(buildUpdatedRequest(tiered, { threshold: 0.1 })))
+		expect(collapsing.parameter).toBe("threshold")
+	})
+
+	it("names each invalid-rule detail once, though the domain message already carries them", () => {
+		const details = ["threshold must be a finite number", "at least one destination must be selected"]
+		const message = invalidRuleInput(
+			new AlertValidationError({ message: `Invalid alert rule: ${details.join("; ")}`, details }),
+		).message
+		for (const detail of details) {
+			expect(message.split(detail)).toHaveLength(2)
+		}
+	})
+
+	it("keeps an invalid-rule message that names a failure its details only qualify", () => {
+		const message = invalidRuleInput(
+			new AlertValidationError({
+				message: "Unsupported traces metric: p95",
+				details: ["Traces filter http.status_code supports only =; ignoring !="],
+			}),
+		).message
+		expect(message).toContain("Unsupported traces metric: p95")
+		expect(message).toContain("ignoring !=")
 	})
 
 	it("delete_alert_rule requires confirm and maps not-found to rule_id", async () => {
@@ -693,7 +805,7 @@ describe("alert tools", () => {
 			seen,
 		)
 		expect(seen.updatedIds).toEqual([RULE_ID, ALL_ID, RAW_ID, OTHER_RAW_ID])
-		expect(seen.updated?.destinationIds).toEqual([NEW_DEST])
+		expect(seen.updated?.thresholds?.[0]?.destinationIds).toEqual([NEW_DEST])
 		const output = Schema.decodeUnknownSync(UpdateAlertRuleOutput)(result.structuredContent)
 		expect(output.rules).toHaveLength(4)
 		expect(text(result)).toContain("Updated 4 Alert Rules")

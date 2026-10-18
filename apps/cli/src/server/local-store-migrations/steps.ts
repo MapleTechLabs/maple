@@ -1280,5 +1280,29 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
 		],
 	},
+	{
+		id: "local-0031-to-0032-alert-checks-level",
+		from: 31,
+		to: 32,
+		description: "Add Level to alert_checks",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [addColumns("alert_checks", [["Level", "LowCardinality(String) DEFAULT ''"]])],
+		plan: [
+			[
+				"widen-alert-checks",
+				"Add Level to alert_checks so checks record the severity tier they breached",
+			],
+		],
+		verifies: "Verify the v32 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "alert_checks",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing check rows are kept as written with an empty Level; only checks recorded after the migration carry one.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

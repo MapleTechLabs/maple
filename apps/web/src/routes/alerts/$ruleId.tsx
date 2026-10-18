@@ -264,6 +264,7 @@ function RuleDetailContent() {
 				consecutiveHealthy: 0,
 				incidentId: null,
 				incidentTransition: point.transitionCount > 0 ? "continued" : "none",
+				level: null,
 				evaluationDurationMs: 0,
 				errorMessage: null,
 				errorCategory: null,
@@ -514,7 +515,9 @@ function RuleDetailContent() {
 					title={rule.name}
 					meta={
 						<>
-							<AlertSeverityBadge severity={rule.severity} />
+							{rule.thresholds.map((tier) => (
+								<AlertSeverityBadge key={tier.severity} severity={tier.severity} />
+							))}
 							{isFiring ? (
 								<AlertStatusBadge
 									state={
@@ -622,6 +625,7 @@ function RuleDetailContent() {
 									incidents={ruleIncidents}
 									threshold={rule.threshold}
 									thresholdUpper={rule.thresholdUpper}
+									criticalThreshold={rule.thresholds[1]?.value ?? null}
 									comparator={rule.comparator}
 									signalType={rule.signalType}
 									window={timelineRange}
@@ -732,19 +736,23 @@ function RuleDetailContent() {
 													</div>
 												</ConfigRow>
 											)}
-											<ConfigRow label="Condition">
-												<span className="font-mono font-medium">
-													{comparatorLabels[rule.comparator]}{" "}
-													{formatSignalValue(rule.signalType, rule.threshold)} /{" "}
-													{rule.windowMinutes}min
-												</span>
-											</ConfigRow>
-											<ConfigRow label="Severity">
-												<AlertSeverityBadge severity={rule.severity} />
-											</ConfigRow>
-											<ConfigRow label="Consecutive breaches">
+											{rule.thresholds.map((tier) => (
+												<ConfigRow
+													key={tier.severity}
+													label={
+														tier.severity === "critical" ? "Critical" : "Warning"
+													}
+												>
+													<span className="font-mono font-medium">
+														{tierCondition(rule, tier)} / {rule.windowMinutes}min
+													</span>
+												</ConfigRow>
+											))}
+											<ConfigRow label="Breaches to fire">
 												<span className="font-medium tabular-nums">
-													{rule.consecutiveBreachesRequired}
+													{rule.breachesOutOf === null
+														? `${rule.consecutiveBreachesRequired} in a row`
+														: `${rule.consecutiveBreachesRequired} of last ${rule.breachesOutOf}`}
 												</span>
 											</ConfigRow>
 											<ConfigRow label="Healthy to resolve">
@@ -1071,8 +1079,7 @@ function RuleDetailContent() {
 																				)
 																			}
 																		>
-																			<ChatBubbleSparkleIcon
-																			/>
+																			<ChatBubbleSparkleIcon />
 																			Open investigation
 																		</DropdownMenuItem>
 																		<DropdownMenuItem
@@ -1114,8 +1121,24 @@ function RuleDetailContent() {
 	)
 }
 
+/** One tier's condition, e.g. "> 2.00% (recovers < 1.50%)". */
+function tierCondition(rule: AlertRuleDocument, tier: AlertRuleDocument["thresholds"][number]): string {
+	const value = (n: number) => formatSignalValue(rule.signalType, n)
+	const bound = tier.upper === null ? value(tier.value) : `${value(tier.value)} – ${value(tier.upper)}`
+	const healthy = rule.comparator === "gt" || rule.comparator === "gte" ? "<" : ">"
+	const recovery = tier.recoveryValue === null ? "" : ` (recovers ${healthy} ${value(tier.recoveryValue)})`
+	return `${comparatorLabels[rule.comparator]} ${bound}${recovery}`
+}
+
 function ruleSubtitle(rule: AlertRuleDocument): string {
-	return `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${formatSignalValue(rule.signalType, rule.threshold)} over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${rule.serviceNames.join(", ")}` : ""}${rule.environments?.length > 0 ? ` in ${rule.environments.join(", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${rule.excludeServiceNames.join(", ")})` : ""}`
+	const tiers = rule.thresholds
+		.map((tier) =>
+			rule.thresholds.length > 1
+				? `${tier.severity} ${formatSignalValue(rule.signalType, tier.value)}`
+				: formatSignalValue(rule.signalType, tier.value),
+		)
+		.join(", ")
+	return `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${tiers} over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${rule.serviceNames.join(", ")}` : ""}${rule.environments?.length > 0 ? ` in ${rule.environments.join(", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${rule.excludeServiceNames.join(", ")})` : ""}`
 }
 
 function ConfigRow({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {

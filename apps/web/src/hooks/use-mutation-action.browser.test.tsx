@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
-import { useAsyncAction, useKeyedAsyncAction } from "./use-mutation-action"
+import { useAsyncAction, useExclusiveAsyncAction, useKeyedAsyncAction } from "./use-mutation-action"
 
 describe("useAsyncAction", () => {
 	afterEach(cleanup)
@@ -25,6 +25,40 @@ describe("useAsyncAction", () => {
 			await expect(result.current[0]()).rejects.toThrow("popup blocked")
 		})
 		expect(result.current[1]).toBe(false)
+	})
+})
+
+describe("useExclusiveAsyncAction", () => {
+	afterEach(cleanup)
+
+	it("runs once for repeated calls before a re-render, then accepts the next call", async () => {
+		let release: () => void = () => {}
+		let calls = 0
+		const { result } = renderHook(() =>
+			useExclusiveAsyncAction(() => {
+				calls += 1
+				return new Promise<void>((resolve) => {
+					release = resolve
+				})
+			}),
+		)
+		const run = result.current[0]
+		let first: Promise<void | undefined> = Promise.resolve()
+		act(() => {
+			first = run()
+			void run()
+			void run()
+		})
+		expect(calls).toBe(1)
+
+		await act(async () => {
+			release()
+			await first
+		})
+		act(() => {
+			void result.current[0]()
+		})
+		expect(calls).toBe(2)
 	})
 })
 

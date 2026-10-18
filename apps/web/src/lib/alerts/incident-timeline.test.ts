@@ -21,6 +21,7 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		comparator: "gt",
 		threshold: 0.05,
 		thresholdUpper: null,
+		peakSeverity: null,
 		firstTriggeredAt: "2026-10-15T14:14:00.000Z",
 		lastTriggeredAt: "2026-10-15T14:30:00.000Z",
 		resolvedAt: null,

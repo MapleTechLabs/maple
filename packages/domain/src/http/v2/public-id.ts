@@ -42,6 +42,7 @@ export const PublicIdPrefixes = {
 	chatWorkspace: "chatw",
 	agentFeedback: "afb",
 	gcpConnector: "gcpc",
+	mcpConnection: "mcpc",
 	/** Synthetic identity for logs, which have no native OTel record id. */
 	log: "log",
 	/** Reserved for the future events/webhooks system. */

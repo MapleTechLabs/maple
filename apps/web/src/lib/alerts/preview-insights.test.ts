@@ -28,6 +28,9 @@ function preview(
 		windowMinutes: 5,
 		threshold: 0.05,
 		thresholdUpper: null,
+		thresholds: [
+			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
+		],
 		comparator: "gt",
 		truncatedToStart: null,
 		series: Object.entries(series).map(([groupKey, points]) => ({
@@ -44,6 +47,7 @@ function preview(
 			groupKey: span.groupKey,
 			start: at(span.start),
 			end: at(span.end),
+			severity: "warning",
 		})),
 	})
 }
@@ -60,6 +64,7 @@ function incident(groupKey: string | null, status = "open"): AlertIncidentDocume
 		comparator: "gt",
 		threshold: 0.05,
 		thresholdUpper: null,
+		peakSeverity: null,
 		firstTriggeredAt: at(0),
 		lastTriggeredAt: at(10),
 		resolvedAt: null,

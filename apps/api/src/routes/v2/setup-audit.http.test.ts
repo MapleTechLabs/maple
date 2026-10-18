@@ -21,6 +21,8 @@ import { PlanetScaleDiscoveryService } from "@maple/backend/services/integration
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
@@ -138,7 +140,20 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 			Layer.provide(planetScaleStubs),
 		),
 		Layer.effect(SetupAuditService, SetupAuditService.make).pipe(
-			Layer.provide(Layer.mergeAll(warehouseLive, IntegrationInventoryService.layer)),
+			Layer.provide(
+				Layer.mergeAll(
+					warehouseLive,
+					IntegrationInventoryService.layer,
+					OnboardingService.layer,
+					// An undatable org: the audit may stamp an existing row but never creates one.
+					Layer.succeed(OrganizationService, {
+						retrieve: () => Effect.die("org lookup not exercised"),
+					}),
+					Layer.effect(SignalPresenceService, SignalPresenceService.make).pipe(
+						Layer.provide(warehouseLive),
+					),
+				),
+			),
 		),
 		// Sibling group in `AllV2GroupLayersLive`; the stub bundle is deliberately
 		// unused here, so it needs its own (warehouse-only) layer.

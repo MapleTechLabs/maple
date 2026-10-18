@@ -27,6 +27,9 @@ const rule = (id: string) =>
 		notificationTemplate: null,
 		enabled: true,
 		severity: "warning",
+		thresholds: [
+			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
+		],
 		serviceNames: [`svc-${id}`],
 		excludeServiceNames: [],
 		environments: [],
@@ -39,6 +42,7 @@ const rule = (id: string) =>
 		windowMinutes: 15,
 		minimumSampleCount: 0,
 		consecutiveBreachesRequired: 1,
+		breachesOutOf: null,
 		consecutiveHealthyRequired: 1,
 		renotifyIntervalMinutes: 60,
 		apdexThresholdMs: null,

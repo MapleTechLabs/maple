@@ -40,6 +40,7 @@ export type ArtifactId =
 	| "k8s-heatmap"
 	| "alert-firing"
 	| "funnel"
+	| "pr-review"
 
 export type SectionId =
 	| "k8s-console"
@@ -47,6 +48,8 @@ export type SectionId =
 	| "k8s-correlation"
 	| "k8s-install"
 	| "product-events-sources"
+	| "github-ci"
+	| "github-after-merge"
 
 /**
  * A plate. `src` unset renders MediaFrame's placeholder, which prints the

@@ -3,7 +3,14 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { defaultRuleForm } from "./form-utils"
-import { blindSpots, fireLanes, ruleBucket, ruleConditionSummary, ruleHeadroom, ruleRibbon } from "./overview-derive"
+import {
+	blindSpots,
+	fireLanes,
+	ruleBucket,
+	ruleConditionSummary,
+	ruleHeadroom,
+	ruleRibbon,
+} from "./overview-derive"
 import { builtinToQueryDraft } from "./rule-modes"
 import type { DerivedRuleStatus } from "./rule-status"
 
@@ -35,6 +42,10 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		windowMinutes: 5,
 		minimumSampleCount: 0,
 		consecutiveBreachesRequired: 1,
+		breachesOutOf: null,
+		thresholds: [
+			{ severity: "critical", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
+		],
 		consecutiveHealthyRequired: 1,
 		renotifyIntervalMinutes: 30,
 		apdexThresholdMs: null,
@@ -66,6 +77,7 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		comparator: "gt",
 		threshold: 0.05,
 		thresholdUpper: null,
+		peakSeverity: null,
 		firstTriggeredAt: iso(6 * HOUR),
 		lastTriggeredAt: iso(5 * HOUR),
 		resolvedAt: iso(4 * HOUR),
