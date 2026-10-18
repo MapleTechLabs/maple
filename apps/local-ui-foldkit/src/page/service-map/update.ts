@@ -3,7 +3,7 @@ import { snapToMinute, WIDEST_RANGE } from "@maple/local-ui/lib/time"
 import * as ServiceMap from "@maple/web-foldkit/service-map/map/service-map"
 import { Option, Result } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import { accept, idle } from "../../data/slot"
+import { accept, acceptCached, idle } from "../../data/slot"
 import { type PageContext, PageOutMessage, withParams } from "../contract"
 import { updateCopy } from "../kit/copies"
 import { ReadClock, ReadRefreshClock, ReadStored } from "./command"
@@ -52,8 +52,17 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		CompletedReadStored: ({ stored }) => syncMap({ model: { ...model, maybeStored: Option.some(stored) } }, context),
 		SucceededFetchServiceMap: ({ key, data, fetchedAtMs }) => {
 			if (model.data.key !== key) return { model }
-			const next = { ...model, data: accept(model.data, key, Result.succeed(data)), dataUpdatedAtMs: fetchedAtMs }
+			const next = { ...model, data: accept(model.data, key, Result.succeed(data), fetchedAtMs), dataUpdatedAtMs: fetchedAtMs }
 			return syncMap({ model: settleRefresh(next) }, context)
+		},
+		FoundCachedServiceMap: ({ key, cached }) => {
+			if (model.data.key !== key) return { model }
+			const next = { ...model, data: acceptCached(model.data, key, cached, cached.isFresh), dataUpdatedAtMs: cached.updatedAtMs }
+			const shown = syncMap({ model: cached.isFresh ? settleRefresh(next) : next }, context)
+			if (cached.isFresh) return shown
+			// Shown while the window's own rows load (an older window, or a stale exact one).
+			const again = load(shown.model, context, true)
+			return { ...shown, model: again.model, commands: [...(shown.commands ?? []), ...(again.commands ?? [])] }
 		},
 		FailedFetchServiceMap: ({ key, failure }) => ({
 			model: settleRefresh({ ...model, data: accept(model.data, key, Result.fail(failure)) }),

@@ -6,7 +6,7 @@ import type { Command } from "foldkit"
 import { keyOf, request } from "../../data/slot"
 import { type PageContext, rangeOf } from "../contract"
 import { FetchServiceMap } from "./command"
-import type { LocalServiceMapData } from "./fetch"
+import { graphRowsOf, type LocalServiceMapData } from "./data"
 import type { Message } from "./message"
 import type { Model } from "./model"
 
@@ -18,14 +18,7 @@ export const boundsOf = (model: Model, context: PageContext): Option.Option<Time
 
 /** `buildGraph`: the flow graph and its focusable services from the rows. */
 export const sourceGraphOf = (data: LocalServiceMapData, durationSeconds: number): SourceGraph =>
-	buildSourceGraph({
-		edges: [...data.edges],
-		dbEdges: [...data.dbEdges],
-		serviceOverviews: [...data.overviews],
-		durationSeconds,
-		platforms: new Map(data.platforms),
-		runtimes: new Map(data.runtimes),
-	})
+	buildSourceGraph({ ...graphRowsOf(data), durationSeconds })
 
 /** Requests the map for the current window (`["local", "service-map", durationSeconds, boundsKey]`). */
 export const load = (
@@ -42,7 +35,10 @@ export const load = (
 				onNone: () => ({ model }),
 				onSome: (data) => ({
 					model: { ...model, data },
-					commands: [FetchServiceMap({ key, ...bounds, durationSeconds, apiBase: context.env.apiBase })],
+					// A new window reads the cache first; a refetch of the same one goes to the server.
+					commands: [
+						FetchServiceMap({ key, ...bounds, durationSeconds, apiBase: context.env.apiBase, readsCache: model.data.key !== key }),
+					],
 				}),
 			})
 		},

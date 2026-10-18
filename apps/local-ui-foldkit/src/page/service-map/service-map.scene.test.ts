@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest"
 import { type PageContext, PageOutMessage } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { FetchServiceMap, ReadClock, ReadStored, SaveViewPrefs } from "./command"
-import { LocalServiceMapData } from "./fetch"
+import type { LocalServiceMapData } from "./data"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -42,8 +42,15 @@ const edge = (sourceService: string, targetService: string) => ({
 	samplingWeight: 1,
 })
 
-const twoServices = new LocalServiceMapData([edge("storefront", "checkout-api")], [], [], new Map(), new Map())
-const noServices = new LocalServiceMapData([], [], [], new Map(), new Map())
+const mapData = (edges: LocalServiceMapData["edges"]): LocalServiceMapData => ({
+	edges,
+	dbEdges: [],
+	overviews: [],
+	platforms: new Map(),
+	runtimes: new Map(),
+})
+const twoServices = mapData([edge("storefront", "checkout-api")])
+const noServices = mapData([])
 
 /** Entered, anchored and the stored state read: the map request in flight. */
 const requested = (): Model => {
@@ -70,6 +77,26 @@ describe("local service map", () => {
 		const stale = pageUpdate(base, Message.SucceededFetchServiceMap({ key: "stale", data: twoServices, fetchedAtMs: NOW }))
 		expect(stale.model.data).toEqual(base.data)
 		expect(Option.isNone(stale.model.maybeMap)).toBe(true)
+	})
+
+	test("a new window reads the result cache first; an older window stands in while it refetches", () => {
+		const base = requested()
+		const anchored = pageUpdate(init(context).model, Message.CompletedReadClock({ nowMs: NOW }))
+		expect((anchored.commands ?? []).map(({ args }) => args)).toMatchObject([{ readsCache: true }])
+		const cached = { data: twoServices, updatedAtMs: NOW - 3_600_000, isStandIn: true, isFresh: false }
+		const found = pageUpdate(base, Message.FoundCachedServiceMap({ key: base.data.key ?? "", cached }))
+		expect(mapOf(found.model).source.services).toEqual(["checkout-api", "storefront"])
+		expect(found.model.data.isStandIn).toBe(true)
+		const refetches = (found.commands ?? []).filter(({ name }) => name === FetchServiceMap.name)
+		expect(refetches.map(({ args }) => args)).toMatchObject([{ key: base.data.key, readsCache: false }])
+	})
+
+	test("a fresh cached window is shown without a fetch", () => {
+		const base = requested()
+		const cached = { data: twoServices, updatedAtMs: NOW, isStandIn: false, isFresh: true }
+		const found = pageUpdate(base, Message.FoundCachedServiceMap({ key: base.data.key ?? "", cached }))
+		expect((found.commands ?? []).map(({ name }) => name)).not.toContain(FetchServiceMap.name)
+		expect(found.model.data.updatedAtMs).toBe(NOW)
 	})
 
 	test("rows build the graph: two services, one connection, no databases", () => {

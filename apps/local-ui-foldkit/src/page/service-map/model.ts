@@ -3,7 +3,7 @@ import { Snapshot, ViewPrefs } from "@maple/web-foldkit/service-map/map/state"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
 import { Copies } from "../kit/copies"
-import { LocalServiceMapDataSchema } from "./fetch"
+import { LocalServiceMapData } from "./data"
 
 // `ServiceMapView` (apps/local-ui/src/views/service-map-view.tsx).
 
@@ -15,7 +15,7 @@ export const Model = Schema.TaggedStruct("ServiceMapPage", {
 	/** `useTimeWindow`'s anchor, snapped to the minute; none until the clock is read. */
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	nowMs: Schema.Number,
-	data: SlotSchema(LocalServiceMapDataSchema),
+	data: SlotSchema(LocalServiceMapData),
 	/** `dataUpdatedAt` of the map query, for the "New data" pill. */
 	dataUpdatedAtMs: Schema.Number,
 	/** localStorage read on entry; the map is built once it and the rows are in. */
