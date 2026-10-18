@@ -491,6 +491,13 @@ const settingsIngestionRules: Dataset = {
 		...defaultDataset.endpoints,
 		"attributeMappings.list": () => Effect.succeed(list(MAPPINGS)),
 		"instrumentationRecommendations.list": () => Effect.succeed(list(RECOMMENDATIONS)),
+		// Dataset-scoped: the ops area answers these writes for its own recommendations.
+		"attributeMappings.create": echoMapping,
+		"attributeMappings.update": firstMapping,
+		"attributeMappings.delete": () =>
+			Effect.succeed({ id: MAPPINGS[0]?.id, object: "attribute_mapping", deleted: true }),
+		"instrumentationRecommendations.dismiss": firstRecommendation("dismissed"),
+		"instrumentationRecommendations.reopen": firstRecommendation("open"),
 	},
 	telemetry: emptyTelemetry,
 }
@@ -577,12 +584,6 @@ export const fixtureArea: FixtureArea = {
 			Effect.succeed({ ...openRouterKeyOf(request), configured: true, keyHint: "9Zq1" }),
 		"openRouterKey.remove": (request) =>
 			Effect.succeed({ ...openRouterKeyOf(request), configured: false, keyHint: null }),
-		"attributeMappings.create": echoMapping,
-		"attributeMappings.update": firstMapping,
-		"attributeMappings.delete": () =>
-			Effect.succeed({ id: MAPPINGS[0]?.id, object: "attribute_mapping", deleted: true }),
-		"instrumentationRecommendations.dismiss": firstRecommendation("dismissed"),
-		"instrumentationRecommendations.reopen": firstRecommendation("open"),
 		...clerkBillingEndpoints(warehouse),
 	}),
 	defaultSynced: { api_keys: API_KEYS },
