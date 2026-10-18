@@ -121,7 +121,9 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 						model.state,
 						(state) => Message.ClickedState({ state }),
 					),
-					toggleGroup(h, "Width", LAB_WIDTHS, model.width, (width) => Message.ClickedWidth({ width })),
+					toggleGroup(h, "Width", LAB_WIDTHS, model.width, (width) =>
+						Message.ClickedWidth({ width }),
+					),
 				],
 			),
 		},

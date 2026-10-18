@@ -88,7 +88,9 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: ChartRuntime.Ready() } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: ChartRuntime.Failed({ reason }) } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: ChartRuntime.Failed({ reason }) },
+		}),
 		CompletedMountLinkedCursor: () => ({ model }),
 	})
 

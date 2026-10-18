@@ -34,12 +34,16 @@ export const labSignals = (hub: HubModel, state: LabState): ReadonlyArray<ErrorS
 	const signals = buildErrorsLabFixture(hub.nowMs).signals.filter(
 		(signal) =>
 			viewCovers(view, signal.issue.workflowState) &&
-			(severity === "all" || (severity === "unset" ? signal.severity === null : signal.severity === severity)) &&
+			(severity === "all" ||
+				(severity === "unset" ? signal.severity === null : signal.severity === severity)) &&
 			// Mirrors the server's ILIKE over type, message, label and service.
 			(term === "" ||
-				[signal.issue.exceptionType, signal.issue.exceptionMessage, signal.issue.errorLabel, signal.issue.serviceName].some(
-					(field) => field.toLowerCase().includes(term),
-				)),
+				[
+					signal.issue.exceptionType,
+					signal.issue.exceptionMessage,
+					signal.issue.errorLabel,
+					signal.issue.serviceName,
+				].some((field) => field.toLowerCase().includes(term))),
 	)
 	return sortSignals(signals, sortOf(hub.search))
 }
@@ -70,7 +74,10 @@ export const hubStep = (hub: HubModel, message: HubMessage, signals: ReadonlyArr
 	const next = HubUpdate.update(hub, message, LAB_CONTEXT)
 	const out = next.outMessage
 	return {
-		hub: out !== undefined && out._tag === "RequestedNavigation" ? followNavigation(next.model, out.url) : next.model,
+		hub:
+			out !== undefined && out._tag === "RequestedNavigation"
+				? followNavigation(next.model, out.url)
+				: next.model,
 		commands: next.commands ?? [],
 	}
 }

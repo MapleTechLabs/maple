@@ -30,7 +30,9 @@ export const update = (model: Model, message: Message): Return =>
 			const next = hubStep(model.hub, inner, labSignals(model.hub, model.state))
 			return {
 				model: { ...model, hub: next.hub },
-				commands: Command.mapMessages(next.commands, (child) => Message.GotHubMessage({ message: child })),
+				commands: Command.mapMessages(next.commands, (child) =>
+					Message.GotHubMessage({ message: child }),
+				),
 			}
 		},
 		ClickedState: ({ state }) => ({ model: { ...model, state } }),
