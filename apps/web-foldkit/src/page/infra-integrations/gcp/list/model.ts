@@ -7,6 +7,7 @@ import { KeyedSchema } from "../../../../data/keyed"
 import { LoadFailure } from "../../../../data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { InfraGcpSearch } from "../../../../route/search"
+import * as Menu from "../../../../ui/menu"
 import * as Select from "../../../../ui/select"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { FleetRead, GcpStatus, Resources, SparkRead } from "../data"
@@ -26,6 +27,7 @@ export const Model = Schema.Struct({
 	resources: KeyedSchema(Resources, LoadFailure),
 	resourceTypeSelect: Select.Model,
 	resourceProjectSelect: Select.Model,
+	projectMenu: Menu.Model,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
 	timePicker: TimeRangePicker.Model,
@@ -72,5 +74,6 @@ export const Message = defineMessageUnion({
 	GotSparklineMessage: { message: Chart.Message },
 	GotResourceTypeSelectMessage: { message: Select.Message },
 	GotResourceProjectSelectMessage: { message: Select.Message },
+	GotProjectMenuMessage: { message: Menu.Message },
 })
 export type Message = typeof Message.Type
