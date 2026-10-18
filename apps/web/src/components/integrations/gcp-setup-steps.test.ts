@@ -104,6 +104,23 @@ describe("gcpManualSteps", () => {
 		)
 		expect(sink?.consoleUrl).toContain("organizationId=123456789012")
 	})
+
+	it("grants the quota role on the host project, the read roles on the scope", () => {
+		const steps = gcpManualSteps(plan(connector(ORGANIZATION)))
+		const scope = steps.find((step) => step.title === "Grant the read-only roles on the organization")
+		const host = steps.find((step) => step.title === "Grant Service Usage Consumer on acme-observability")
+		expect(scope?.consoleUrl).toContain("organizationId=123456789012")
+		expect(scope?.fields.map((field) => field.value)).not.toContain("Service Usage Consumer")
+		expect(host?.consoleUrl).toContain("project=acme-observability")
+		expect(host?.fields.map((field) => field.value)).toContain("Service Usage Consumer")
+	})
+
+	it("opens a folder's console pages on the folder", () => {
+		const steps = gcpManualSteps(plan(connector({ ...ORGANIZATION, scope_type: "folder" })))
+		expect(steps.find((step) => step.title === "Create the Log Router sink on the folder")?.consoleUrl).toContain(
+			"folder=123456789012",
+		)
+	})
 })
 
 describe("gcpRemovalList", () => {
@@ -121,7 +138,11 @@ describe("gcpRemovalList", () => {
 			"maple-push-018f2b3c4d5e6f70819@acme-observability.iam.gserviceaccount.com",
 		])
 		expect(gcpRemovalList(off)[0]?.what).toContain("then wait two minutes")
-		expect(gcpRemovalList(connector({ logs_enabled: false, applied_logs_enabled: null }))).toEqual([])
+		expect(gcpRemovalList(connector({ logs_enabled: false, applied_logs_enabled: false }))).toEqual([])
+		// Set up by hand or as code but never confirmed: listed, with nothing to confirm.
+		const unconfirmed = gcpRemovalList(connector({ logs_enabled: false, applied_logs_enabled: null }))
+		expect(unconfirmed.map((item) => item.name)).toHaveLength(4)
+		expect(unconfirmed.some((item) => item.confirmed)).toBe(false)
 		expect(
 			gcpRemovalList(connector({ metrics_enabled: false, applied_metrics_enabled: true })).map(
 				(item) => item.what,

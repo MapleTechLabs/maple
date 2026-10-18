@@ -53,11 +53,11 @@ type Scope = Pick<GcpSetupPlan, "scopeType" | "scopeId" | "projectId">
 const hostPage = (path: string, scope: Scope) =>
 	`${CONSOLE}/${path}?project=${encodeURIComponent(scope.projectId)}`
 
-/** A scope's console page. A folder's address is undocumented: its page opens on the host project. */
+/** A scope's console page: the same query the connection's Log Router link uses. */
 const scopePage = (path: string, scope: Scope) =>
-	scope.scopeType === "organization"
-		? `${CONSOLE}/${path}?organizationId=${encodeURIComponent(scope.scopeId)}`
-		: hostPage(path, scope)
+	scope.scopeType === "project"
+		? hostPage(path, scope)
+		: `${CONSOLE}/${path}?${scope.scopeType === "folder" ? "folder" : "organizationId"}=${encodeURIComponent(scope.scopeId)}`
 
 /** Where a step on the scope starts, and how to reach a folder or organization there. */
 const onScope = (where: string, scope: Scope) =>
@@ -221,26 +221,50 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 					"Before the roles: an organization policy that restricts members to your domain refuses this grant, and then nothing is left behind.",
 				],
 			},
-			{
-				title: "Grant the read-only roles",
-				summary: `${GCP_READER_SCOPE_ROLES.length + 1} roles`,
-				intro: `${onScope("IAM & Admin › IAM", plan)} grant the account access.`,
-				consoleUrl: scopePage("iam-admin/iam", plan),
-				fields: [
-					field("Principal", reader.serviceAccountEmail),
-					field(
-						"Roles",
-						[...GCP_READER_SCOPE_ROLES, GCP_READER_PROJECT_ROLE].map(roleName).join(", "),
-						false,
-					),
-				],
-				notes:
-					plan.scopeType === "project"
-						? []
-						: [
-								`${roleName(GCP_READER_PROJECT_ROLE)} goes on project ${host}, the others on the ${plan.scopeType}: granted on the host project only, Maple reads only that project.`,
+			plan.scopeType === "project"
+				? {
+						title: "Grant the read-only roles",
+						summary: `${GCP_READER_SCOPE_ROLES.length + 1} roles`,
+						intro: `${onScope("IAM & Admin › IAM", plan)} grant the account access.`,
+						consoleUrl: scopePage("iam-admin/iam", plan),
+						fields: [
+							field("Principal", reader.serviceAccountEmail),
+							field(
+								"Roles",
+								[...GCP_READER_SCOPE_ROLES, GCP_READER_PROJECT_ROLE].map(roleName).join(", "),
+								false,
+							),
+						],
+						notes: [],
+					}
+				: {
+						title: `Grant the read-only roles on the ${plan.scopeType}`,
+						summary: `${GCP_READER_SCOPE_ROLES.length} roles`,
+						intro: `${onScope("IAM & Admin › IAM", plan)} grant the account access.`,
+						consoleUrl: scopePage("iam-admin/iam", plan),
+						fields: [
+							field("Principal", reader.serviceAccountEmail),
+							field("Roles", GCP_READER_SCOPE_ROLES.map(roleName).join(", "), false),
+						],
+						notes: [
+							`Granted on project ${host} instead, Maple would read only that project.`,
+						],
+					},
+			...(plan.scopeType === "project"
+				? []
+				: [
+						{
+							title: `Grant ${roleName(GCP_READER_PROJECT_ROLE)} on ${host}`,
+							summary: "1 role",
+							intro: `In IAM & Admin › IAM on project ${host}, grant the account the role Maple's reads are billed through.`,
+							consoleUrl: hostPage("iam-admin/iam", plan),
+							fields: [
+								field("Principal", reader.serviceAccountEmail),
+								field("Role", roleName(GCP_READER_PROJECT_ROLE), false),
 							],
-			},
+							notes: [],
+						},
+					]),
 		)
 	}
 	return steps
@@ -252,12 +276,12 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
  */
 export function gcpRemovalList(
 	connector: V2GcpConnector,
-): ReadonlyArray<{ readonly what: string; readonly name: string }> {
+): ReadonlyArray<{ readonly what: string; readonly name: string; readonly confirmed: boolean }> {
 	const names = gcpConnectorResourceNames(connector.id)
 	const host = connector.project_id
 	const readerEmail = gcpServiceAccountEmail(names.serviceAccountId, host)
 	return [
-		...(!connector.logs_enabled && connector.applied_logs_enabled === true
+		...(!connector.logs_enabled && connector.applied_logs_enabled !== false
 			? [
 					{
 						what: `Log Router sink on the ${connector.scope_type}, then wait two minutes`,
@@ -271,7 +295,7 @@ export function gcpRemovalList(
 					},
 				]
 			: []),
-		...(!connector.metrics_enabled && connector.applied_metrics_enabled === true
+		...(!connector.metrics_enabled && connector.applied_metrics_enabled !== false
 			? [
 					{
 						what: `The read-only account's roles on the ${connector.scope_type} and ${host}`,
@@ -280,7 +304,13 @@ export function gcpRemovalList(
 					{ what: "Read-only service account", name: readerEmail },
 				]
 			: []),
-	]
+	].map((item) => ({
+		...item,
+		confirmed:
+			item.name === readerEmail
+				? connector.applied_metrics_enabled === true
+				: connector.applied_logs_enabled === true,
+	}))
 }
 
 /** Whether Alchemy can express the connection: it can't grant roles on a folder or organization. */
@@ -307,7 +337,7 @@ export function gcpAgentPrompt({
 	const host = plan.projectId
 	const file = flavour === "terraform" ? "maple.tf" : "maple.ts"
 	const removal = gcpRemovalList(connector)
-	const removing = removal.length > 0
+	const removing = removal.some((item) => item.confirmed)
 	const takesOver = connector.applied_logs_enabled === true || connector.applied_metrics_enabled === true
 	const scopeRoles = gcpScopeRoles(plan.scopeType, connector)
 	const place =

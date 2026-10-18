@@ -192,7 +192,7 @@ function connectionIssues({
 	const needed = gcpScriptNeeded(connector, nowMs)
 	const repairs = needed === null ? gcpRunAsked(connector, nowMs)[0] : undefined
 	const rerun = (capability: GcpCapability) =>
-		repairs === capability ? <RunScript label="Run the script again" onRun={onRunScript} /> : undefined
+		repairs === capability ? <RunScript label="Set up again" onRun={onRunScript} /> : undefined
 	const cleanedUp = connector.applied_logs_enabled === false && connector.applied_metrics_enabled === false
 	const issues: Array<Issue> = []
 
@@ -218,8 +218,10 @@ function connectionIssues({
 		const lines =
 			needed === "setup-pending"
 				? [
-						connector.setup_reported_at === null
-							? "Google Cloud has nothing of Maple's yet. Finish setup with the script, in the console or as code."
+						connector.setup_reported_at === null &&
+						connector.applied_logs_enabled === null &&
+						connector.applied_metrics_enabled === null
+							? "Maple hasn't confirmed any of the setup yet. Finish it with the script, in the console or as code."
 							: "Part of the setup isn't confirmed yet. A script run continues where it stopped; a setup in the console or as code is confirmed by its first data.",
 					]
 				: gcpPendingChanges(connector, nowMs)
@@ -616,8 +618,9 @@ export function GcpConnection({
 						<div>
 							<dt className="font-medium">In Google Cloud</dt>
 							<dd className="text-pretty text-muted-foreground">
-								Nothing should exist: Maple hasn&apos;t seen the setup script run. If it ran
-								part of the way, Maple offers the cleanup script afterwards.
+								Maple hasn&apos;t seen a setup finish or any data arrive. If you created
+								anything, in the console or as code, delete it there. Maple also offers the
+								cleanup script afterwards, which removes it however it was made.
 							</dd>
 						</div>
 					</dl>
@@ -718,8 +721,8 @@ export function GcpIntegrationCard() {
 				</h3>
 				<p className="text-xs/5 text-pretty text-muted-foreground">
 					{entry.reported
-						? "Google Cloud may still hold Maple's resources, billed by Google. Run the cleanup script, or remove them with Terraform or in the console, then dismiss this."
-						: "If a setup ran part of the way, the cleanup script removes what it created."}
+						? "Google Cloud may still hold Maple's resources, billed by Google. Run the cleanup script, or remove them with Terraform, Alchemy or in the console, then dismiss this."
+						: "If any of it was set up, Google bills for it until it is removed. The cleanup script removes it, however it was made."}
 				</p>
 			</div>
 			<div className="flex flex-wrap items-center gap-2">
@@ -778,8 +781,8 @@ export function GcpIntegrationCard() {
 						/>
 						<IntegrationEmptyFeature
 							label="Access"
-							title="One script, read-only"
-							description="You run it in Cloud Shell. No keys, no write access for Maple."
+							title="Read-only, your choice of setup"
+							description="A Cloud Shell script, the console or Terraform. No keys, no write access for Maple."
 						/>
 					</IntegrationEmptyFeatures>
 					<IntegrationEmptyCard>
@@ -797,8 +800,8 @@ export function GcpIntegrationCard() {
 							</>
 						) : (
 							<IntegrationEmptyHint>
-								A Maple organization admin connects Google Cloud by running a setup script in
-								Cloud Shell.
+								A Maple organization admin connects Google Cloud with a Cloud Shell script, in
+								the console or with Terraform.
 							</IntegrationEmptyHint>
 						)}
 					</IntegrationEmptyCard>

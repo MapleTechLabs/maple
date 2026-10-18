@@ -1890,6 +1890,8 @@ export function GcpMethodApplyView({
 					logFilter: setup.log_filter,
 				})
 	const removal = gcpRemovalList(connector)
+	// Parts Maple never saw working may not exist: listed, but there is nothing to confirm.
+	const confirmable = removal.some((item) => item.confirmed)
 	const flavour = method === "alchemy" ? "alchemy" : "terraform"
 	const iac = method === "manual" ? null : method === "terraform" ? "tf" : "ts"
 	const config = setup === null ? null : method === "alchemy" ? setup.alchemy : setup.terraform
@@ -1899,9 +1901,11 @@ export function GcpMethodApplyView({
 			<section className="flex flex-col gap-3">
 				<div className="flex flex-col gap-0.5">
 					<h3 className={GCP_TITLE}>
-						{iac === null
-							? "Delete these in the Google Cloud console"
-							: "If your file didn't create these, delete them in the console"}
+						{!confirmable
+							? "If you created these, delete them in the console"
+							: iac === null
+								? "Delete these in the Google Cloud console"
+								: "If your file didn't create these, delete them in the console"}
 					</h3>
 					<p className={SMALL}>
 						In this order: Google keeps routing to the topic for a while.{" "}
@@ -1916,6 +1920,7 @@ export function GcpMethodApplyView({
 						</li>
 					))}
 				</ol>
+				{!confirmable ? null : (
 				<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
 					<p className={SMALL}>Maple can&apos;t see a removal. Tell it once it is done.</p>
 					<Button
@@ -1927,6 +1932,7 @@ export function GcpMethodApplyView({
 						I&apos;ve removed them
 					</Button>
 				</div>
+				)}
 			</section>
 		)
 	return (
@@ -2301,7 +2307,7 @@ export function GcpDisconnectDialog({
 								) : (
 									<>
 										{`Run the cleanup script in Cloud Shell. Takes ${connector.applied_logs_enabled === true ? "one to two minutes" : "about a minute"}. `}
-										Set up with Terraform or in the console? Remove them there (
+										Set up as code or in the console? Remove them there (
 										<a href={`${IAC_DOCS}#change-or-remove`} target="_blank" rel="noreferrer" className="underline">
 											Terraform
 										</a>
@@ -2332,7 +2338,9 @@ export function GcpDisconnectDialog({
 										<GcpOpenCloudShellButton projectId={connector.project_id} />
 									</Script>
 									<p className={cn(SMALL, "text-foreground/80")}>
-										Waiting for the cleanup script. This updates on its own.
+										{connector.setup_reported_at === null
+											? "Maple sees the cleanup script finish. Removed them another way? Disconnect anyway."
+											: "Waiting for the cleanup script. This updates on its own."}
 									</p>
 								</>
 							)}
@@ -2352,8 +2360,8 @@ export function GcpDisconnectDialog({
 								aria-hidden
 							/>
 							{connector.applied_logs_enabled === false
-								? "Disconnecting before the cleanup leaves the read-only service account in Google Cloud."
-								: "Disconnecting before the cleanup leaves Google Cloud publishing logs to Pub/Sub, billed by Google."}
+								? "If they're still there, disconnecting leaves the read-only service account in Google Cloud."
+								: "If they're still there, disconnecting leaves Google Cloud publishing logs to Pub/Sub, billed by Google."}
 						</p>
 					)}
 				</DialogPanel>
