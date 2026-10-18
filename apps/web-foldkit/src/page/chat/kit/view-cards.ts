@@ -8,17 +8,13 @@ import { button } from "../../../ui/button"
 import { icon, type IconName } from "../../../ui/icon"
 import { item, itemContent, itemMedia, itemTitle } from "../../../ui/item"
 import { keyValue, keyValueList } from "../../../ui/key-value"
-import { trace, traceDescription, traceIcon, traceLine } from "../../../ui/trace"
-import { dotLoader } from "./dot-loader"
 import { toolLabel } from "./tool-metadata"
 import { inputRecord } from "./tool-output"
-import type { TaskPart } from "./ui-message"
 
 // `ApprovalCard` and `TaskCard` (apps/web components/chat): a proposal waiting on the user, and
 // a sub-agent run as a line.
 // TODO(chat-approval-dashboard): the dashboard tools' own summaries (approval-renderers/dashboard)
 // fall back to the key-value list.
-// TODO(chat-task-sheet): a task row's sheet (the question, the answer, its own steps) is not drawn.
 
 const stringify = (input: unknown): string => JSON.stringify(input, null, 2) ?? String(input)
 
@@ -133,45 +129,3 @@ export const agentPresentation = (agent: string): AgentPresentation =>
 		? { label: "Hypothesis", activity: "Testing", icon: "CompassIcon" }
 		: { label: humanize(agent), activity: "Working", icon: "FaceRobotIcon" })
 
-const taskGlyph = <M>(h: HtmlBuilder<M>, status: TaskPart["status"]): Html => {
-	if (status === "running") return dotLoader(h)
-	if (status === "error") return icon(h, "CircleXmarkIcon", { className: "size-3.5 text-severity-error" })
-	if (status === "aborted") return icon(h, "CircleWarningIcon", { className: "size-3.5 text-muted-foreground" })
-	return icon(h, "CircleCheckIcon", { className: "size-3.5 text-severity-info" })
-}
-
-/** One sub-agent run as a line: what it is doing (or who it was), its question, its outcome. */
-export const taskCard = <M>(h: HtmlBuilder<M>, part: TaskPart, triggerId: string): Html => {
-	const running = part.status === "running"
-	const agent = agentPresentation(part.agent)
-	return trace(h, [
-		h.button(
-			[
-				h.AriaExpanded(false),
-				h.AriaHasPopup("dialog"),
-				h.DataAttribute("base-ui-click-trigger", ""),
-				h.DataAttribute("slot", "sheet-trigger"),
-				h.Id(triggerId),
-				h.Tabindex(0),
-				h.Type("button"),
-			],
-			[
-				traceLine(h, running ? { status: "running" } : part.status === "error" ? { status: "error" } : {}, [
-					traceIcon(h, [taskGlyph(h, part.status)], running ? "size-5" : undefined),
-					...(running ? [] : [traceIcon(h, [icon(h, agent.icon, { className: "size-3.5 text-muted-foreground/70" })])]),
-					h.span(
-						[h.Class("min-w-0 truncate motion-reduce:shimmer-none shrink-0 font-medium text-foreground"), h.DataAttribute("slot", "trace-title")],
-						[running ? `${agent.activity}…` : agent.label],
-					),
-					traceDescription(h, [h.span([h.Class("mr-1 text-muted-foreground/40")], ["·"]), part.prompt], "min-w-0 shrink truncate text-2xs"),
-					...(part.status === "error"
-						? [h.span([h.Class(cn("shrink-0 text-2xs", TONE_TEXT.crit))], ["failed"])]
-						: part.budgetExhausted === true
-							? [h.span([h.Class(cn("shrink-0 text-2xs", TONE_TEXT.warn))], ["partial"])]
-							: []),
-					traceIcon(h, [icon(h, "ChevronRightIcon", { className: "size-3 text-muted-foreground/60" })]),
-				]),
-			],
-		),
-	])
-}

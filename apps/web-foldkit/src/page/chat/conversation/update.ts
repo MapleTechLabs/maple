@@ -7,6 +7,8 @@ import * as Chart from "../../../charts/chart"
 import { ChartRuntime, LoadChartRuntime } from "../../../charts/chart-runtime"
 import type { Resources } from "../../../platform/resources"
 import * as CopyButton from "../../../ui/copy-button"
+import * as Dialog from "../../../ui/dialog"
+import { taskSheetId } from "../kit/view-task"
 import { applyChatEvent, finalizeStreamingText, taskOf } from "../kit/fold"
 import { transcriptMarkdown } from "../kit/rich-text"
 import { initMinimap, updateMinimap } from "../kit/turn-minimap"
@@ -87,6 +89,7 @@ export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null
 		themeColors: null,
 		highlights: {},
 		minimap: initMinimap(),
+		taskSheets: {},
 		diagramMenu: null,
 		fullscreenDiagram: null,
 		markdown: {},
@@ -262,6 +265,14 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 		CompletedMermaidDiagram: () => ({ model }),
 		CompletedMountMath: () => ({ model }),
 		CompletedMountJump: () => ({ model }),
+		CompletedMountClock: () => ({ model }),
+		GotTaskSheetMessage: ({ toolCallId, message: child }) => {
+			const sheet = Dialog.update(model.taskSheets[toolCallId] ?? Dialog.init(taskSheetId(toolCallId), "sheet"), child)
+			return {
+				model: { ...model, taskSheets: { ...model.taskSheets, [toolCallId]: sheet.model } },
+				commands: Command.mapMessages(sheet.commands ?? [], (inner) => Message.GotTaskSheetMessage({ toolCallId, message: inner })),
+			}
+		},
 		CompletedHighlightCode: ({ key, highlighted }) => ({
 			model: { ...model, highlights: { ...model.highlights, [key]: highlighted } },
 		}),

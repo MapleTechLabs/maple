@@ -34,7 +34,7 @@ import {
 	toolPartsOf,
 } from "./transcript-rows"
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
-import { type PanelHost, toolNodes } from "./view-tool"
+import { type PanelHost, runningClock, toolNodes, toolStandalone } from "./view-tool"
 
 // `ChatTranscript` (apps/web components/chat/chat-transcript.tsx): the scrolling thread.
 
@@ -59,7 +59,11 @@ export type TranscriptHost<M> = PanelHost<M> &
 		minimapMount: Parameters<HtmlBuilder<M>["OnMount"]>[0]
 		inlineCard?: (segment: Exclude<AnnotationSegment, { type: "text" }>) => Html
 		ownCard?: (part: ToolPart, messageId: string) => Html | null
-		taskCard?: (part: Extract<UIMessagePart, { _tag: "task" }>) => Html
+		/** A sub-agent row; `draw` renders its answer and steps the way the thread does. */
+		taskCard?: (
+			part: Extract<UIMessagePart, { _tag: "task" }>,
+			draw: Readonly<{ richText: (text: string) => Html; tool: (part: ToolPart) => Html }>,
+		) => Html
 		markdownOverrides?: ViewOverrides
 		/** `fallbackDiagnosis`: the report card an investigation thread leads with until its own turn lands. */
 		fallback?: Html
@@ -102,7 +106,10 @@ const messageParts = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, message: UI
 				return { nodes: text === "" ? flushed : [...flushed, richText(h, host, text)], buffer: [] }
 			}
 			if (part._tag === "task")
-				return { nodes: host.taskCard === undefined ? flushed : [...flushed, host.taskCard(part)], buffer: [] }
+				return { nodes: host.taskCard === undefined ? flushed : [
+								...flushed,
+								host.taskCard(part, { richText: (text) => richText(h, host, text), tool: (leaf) => toolStandalone(h, leaf, host) }),
+							], buffer: [] }
 			if (!isToolPart(part)) return acc
 			if (rendersOwnCard(part)) {
 				const card = host.ownCard?.(part, `${message.id}:${index}`) ?? null
@@ -116,7 +123,7 @@ const messageParts = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, message: UI
 }
 
 /** `StatusMarker`: the live "Thinking…" row. */
-export const statusMarker = <M>(h: HtmlBuilder<M>, label = "Thinking…"): Html =>
+export const statusMarker = <M>(h: HtmlBuilder<M>, label = "Thinking…", clockMount?: PanelHost<M>["clockMount"]): Html =>
 	h.div(
 		[
 			h.Class(cn(markerVariants({ variant: "default", className: "text-xs" }))),
@@ -126,7 +133,7 @@ export const statusMarker = <M>(h: HtmlBuilder<M>, label = "Thinking…"): Html 
 		],
 		[
 			markerIcon(h, [dotLoader(h)], "size-5"),
-			markerContent(h, [h.span([h.Class("shimmer")], [label])], "flex items-center gap-2"),
+			markerContent(h, [h.span([h.Class("shimmer")], [label]), ...runningClock(h, clockMount)], "flex items-center gap-2"),
 		],
 	)
 
@@ -197,7 +204,7 @@ const messageItem = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, message: UIM
 						[
 							h.div(
 								[h.Class(PART_STACK)],
-								[...messageParts(h, host, message), ...(showThinking ? [statusMarker(h)] : [])],
+								[...messageParts(h, host, message), ...(showThinking ? [statusMarker(h, undefined, host.clockMount)] : [])],
 							),
 						],
 						isUser ? "rounded-lg px-3.5 py-2.5 text-sm" : "text-sm",
@@ -219,7 +226,7 @@ const toolRunItem = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, id: string, 
 						[
 							h.div(
 								[h.Class(PART_STACK)],
-								[...toolNodes(h, toolPartsOf(messages), id, host), ...(showThinking ? [statusMarker(h)] : [])],
+								[...toolNodes(h, toolPartsOf(messages), id, host), ...(showThinking ? [statusMarker(h, undefined, host.clockMount)] : [])],
 							),
 						],
 						"text-sm",
@@ -326,7 +333,7 @@ export const transcript = <M>(
 									showsThinkingRow(row.message, host.isLoading, row.message.id === last?.id),
 								)
 							}),
-							...(awaitingFirstToken ? [scrollerItem(h, "__status", false, [statusMarker(h)])] : []),
+							...(awaitingFirstToken ? [scrollerItem(h, "__status", false, [statusMarker(h, undefined, host.clockMount)])] : []),
 							h.keyed("div")("__spacer", [h.AriaHidden(true), h.DataAttribute("message-scroller-spacer", ""), h.Attribute("hidden", "")], []),
 						],
 					),

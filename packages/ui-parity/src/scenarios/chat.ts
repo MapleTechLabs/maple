@@ -388,6 +388,19 @@ export const chatArea: AreaModule = {
 			await page.getByRole("button", { name: /Inspect Trace/ }).click()
 			await page.getByText("Result").first().waitFor()
 		}),
+		lab("task-open", "a finished sub-agent's sheet", async (page) => {
+			await page.getByText("Find every trace where the entitlement lookup returned an empty body").first().click()
+			await page.getByRole("dialog").getByText("Its own steps").waitFor()
+		}),
+		lab("task-running-open", "a running sub-agent's sheet", async (page) => {
+			await page.getByText("Deep-dive the service").first().click()
+			await page.getByRole("dialog").getByText("Answer").waitFor()
+		}),
+		lab("task-closed", "a sub-agent's sheet opened and closed", async (page) => {
+			await page.getByText("Find every trace where the entitlement lookup returned an empty body").first().click()
+			await page.getByRole("dialog").getByRole("button", { name: "Close" }).click()
+			await page.getByRole("dialog").waitFor({ state: "detached" })
+		}),
 		lab("group-open", "a tool burst expanded", async (page) => {
 			await page.getByRole("button", { name: /List Services/ }).click()
 			await page.getByText("service=web-paywall-worker").first().waitFor()

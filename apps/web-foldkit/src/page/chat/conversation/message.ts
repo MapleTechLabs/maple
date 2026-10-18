@@ -5,6 +5,7 @@ import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { ParsedMarkdown } from "../../kit/markdown"
 import * as CopyButton from "../../../ui/copy-button"
+import * as Dialog from "../../../ui/dialog"
 import { HighlightedCode } from "../kit/code-highlight"
 import { MinimapMessage } from "../kit/turn-minimap"
 import { UIMessage } from "../kit/ui-message"
@@ -58,6 +59,8 @@ export const Message = defineMessageUnion({
 	CompletedMermaidDiagram: { isDrawn: Schema.Boolean },
 	CompletedMountMath: {},
 	CompletedMountJump: {},
+	CompletedMountClock: {},
+	GotTaskSheetMessage: { toolCallId: Schema.String, message: Dialog.Message },
 	GotChartMessage: { id: Schema.String, message: Chart.Message },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

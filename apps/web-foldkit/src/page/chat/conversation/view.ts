@@ -9,12 +9,15 @@ import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { skeleton } from "../../../ui/skeleton"
-import { approvalCard, taskCard } from "../kit/view-cards"
+import { approvalCard } from "../kit/view-cards"
+import { taskCard, taskSheetId } from "../kit/view-task"
+import * as Dialog from "../../../ui/dialog"
 import { composer, failureNotice } from "../kit/view-composer"
 import { MountTurnMinimap } from "../kit/turn-minimap-mount"
 import { MountDiagramFullscreen, MountDiagramMenu, MountMermaid } from "../kit/mermaid"
 import { MountMath } from "../kit/math"
 import { MountJumpToMessage } from "../kit/scroller"
+import { MountRunningClock } from "../kit/view-tool"
 import { findDiagnosisMessageId } from "../kit/transcript-rows"
 import { inlineCard } from "../kit/view-inline"
 import { chatMarkdownOverrides } from "../kit/view-markdown"
@@ -59,7 +62,18 @@ const cardsOf = <M>(
 	options: ConversationViewOptions<M>,
 ): Pick<TranscriptHost<M>, "inlineCard" | "ownCard" | "taskCard" | "markdownOverrides"> => ({
 	inlineCard: (segment) => inlineCard(h, segment, options.timeZone),
-	taskCard: (part) => taskCard(h, part, `chat-task-${part.toolCallId}`),
+	taskCard: (part, draw) =>
+		taskCard(
+			h,
+			{
+				dialog: (toolCallId) => model.taskSheets[toolCallId] ?? Dialog.init(taskSheetId(toolCallId), "sheet"),
+				onDialog: (toolCallId, message) => options.toMessage(Message.GotTaskSheetMessage({ toolCallId, message })),
+				richText: draw.richText,
+				tool: draw.tool,
+				clockMount: Mount.mapMessage(MountRunningClock(), () => options.toMessage(Message.CompletedMountClock())),
+			},
+			part,
+		),
 	ownCard:
 		options.ownCard ??
 		((part) => {
@@ -175,6 +189,7 @@ const emptyStateOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationV
 export const transcriptHostOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): TranscriptHost<M> => ({
 	isOpen: (id) => model.openPanels.includes(id),
 	onToggle: (id) => options.toMessage(Message.ToggledPanel({ id })),
+	clockMount: Mount.mapMessage(MountRunningClock(), () => options.toMessage(Message.CompletedMountClock())),
 	markdown: model.markdown,
 	timeZone: options.timeZone,
 	isLoading: isLoading(model),

@@ -1,4 +1,6 @@
-import { Option } from "effect"
+import { Effect, Option } from "effect"
+import { Mount } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 import { spinner } from "../../../ui/spinner"
@@ -10,15 +12,48 @@ import { deriveToolStatus, type ToolStatus } from "./transcript-rows"
 import type { ToolPart } from "./ui-message"
 
 // `Tool`, `ToolRow` and `ToolGroup` (apps/web components/ai-elements/tool.tsx, tool-group.tsx).
-// TODO(chat-running-clock): the elapsed clock beside a live call (`RunningClock`) is not drawn.
-
 /** What a tool row needs from its host: whether a panel is open, and the Message that toggles it. */
 export type PanelHost<M> = Readonly<{
 	isOpen: (id: string) => boolean
 	onToggle: (id: string) => M
 	/** The structured renderer for a `__maple_ui` payload (lab and page draw the same one). */
 	structured?: (payload: StructuredPayload) => Html
+	/** `MountRunningClock` lifted to the host's Message; without it no clock is drawn. */
+	clockMount?: Parameters<HtmlBuilder<M>["OnMount"]>[0]
 }>
+
+/** `useElapsedSeconds` + `formatElapsed`: `4s`, `1m 12s`; nothing under two seconds. */
+export const formatElapsed = (seconds: number): string =>
+	seconds < 2 ? "" : seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+
+export const CompletedMountClock = defineMessageUnion({ CompletedMountClock: {} }).CompletedMountClock
+
+/** `RunningClock`: its own one-second timer from when it appeared; hidden while it has nothing to say. */
+export const MountRunningClock = Mount.define("MountChatRunningClock", {
+	messages: [CompletedMountClock],
+	execute: ({ element }) =>
+		Effect.as(
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const startedAt = Date.now()
+					const id = setInterval(() => {
+						const text = formatElapsed(Math.floor((Date.now() - startedAt) / 1000))
+						element.textContent = text
+						element.toggleAttribute("hidden", text === "")
+					}, 1000)
+					return () => clearInterval(id)
+				}),
+				(release) => Effect.sync(release),
+			),
+			CompletedMountClock(),
+		),
+})
+
+/** The clock's span, drawn hidden; its Mount fills and shows it. */
+export const runningClock = <M>(h: HtmlBuilder<M>, mount: PanelHost<M>["clockMount"]): ReadonlyArray<Html> =>
+	mount === undefined
+		? []
+		: [h.span([h.Class("shrink-0 tabular-nums text-2xs text-muted-foreground/60"), h.Attribute("hidden", ""), h.OnMount(mount)], [])]
 
 const statusGlyph = <M>(h: HtmlBuilder<M>, status: ToolStatus, live: boolean, toolName: string): Html => {
 	if (status === "running")
@@ -111,6 +146,7 @@ export const toolRow = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>
 		...(summary === undefined
 			? []
 			: [traceDescription(h, [summary], "min-w-0 shrink truncate font-mono text-2xs text-muted-foreground/60")]),
+		...(status === "running" && live ? runningClock(h, host.clockMount) : []),
 	])
 	if (!hasPanel(part)) return line
 	const id = `tool:${part.toolCallId}`
@@ -154,6 +190,7 @@ export const toolGroup = <M>(h: HtmlBuilder<M>, parts: ReadonlyArray<ToolPart>, 
 					traceIcon(h, [dotLoader(h)], "size-5"),
 					traceTitle(h, [toolActivity(current?.toolName ?? "")], "font-medium"),
 					traceDescription(h, [`${parts.length - running.length}`, "/", `${parts.length}`]),
+					...runningClock(h, host.clockMount),
 				])
 			: traceLine(h, {}, [
 					...named.map((tool) => traceIcon(h, [icon(h, tool.icon, { className: "size-3.5" })])),
