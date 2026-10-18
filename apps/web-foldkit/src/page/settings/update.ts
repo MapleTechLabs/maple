@@ -18,6 +18,7 @@ import type * as IngestionModel from "./ingestion/model"
 import * as Ingestion from "./ingestion/update"
 import * as SetupHealth from "./setup-health/update"
 import * as Ai from "./ai/update"
+import * as DataPlatform from "./data-platform/update"
 import * as AuditLog from "./audit-log/update"
 import * as Automation from "./automation/update"
 import type * as KeysMessage from "./keys/message"
@@ -66,6 +67,7 @@ const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
 	["ai", "Ai"],
 	["automation", "Automation"],
 	["audit-log", "AuditLog"],
+	["data-platform", "DataPlatform"],
 ])
 const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
 
@@ -136,6 +138,13 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			return {
 				model: { ...model, tab: { _tag: "AuditLog", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAuditLogMessage({ message })),
+			}
+		}
+		case "DataPlatform": {
+			const step = DataPlatform.init()
+			return {
+				model: { ...model, tab: { _tag: "DataPlatform", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDataPlatformMessage({ message })),
 			}
 		}
 		case "Unported":
@@ -286,6 +295,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return {
 				model: { ...model, tab: { _tag: "AuditLog", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAuditLogMessage({ message: child })),
+				outMessage: step.outMessage,
+			}
+		},
+		GotDataPlatformMessage: ({ message: inner }) => {
+			if (model.tab === null || model.tab._tag !== "DataPlatform") return { model }
+			const step = DataPlatform.update(model.tab.model, inner)
+			return {
+				model: { ...model, tab: { _tag: "DataPlatform", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotDataPlatformMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},

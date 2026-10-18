@@ -495,6 +495,34 @@ const settingsIngestionRules: Dataset = {
 	telemetry: emptyTelemetry,
 }
 
+/** Acme's cluster behind Maple's schema: a missing view and a drifted table, so Apply has work. */
+const settingsDataPlatformDrift: Dataset = {
+	...defaultDataset,
+	name: "settings-data-platform-drift",
+	endpoints: {
+		...defaultDataset.endpoints,
+		"orgClickHouseSettings.schemaDiff": () =>
+			Effect.succeed({
+				expectedSchemaVersion: SCHEMA_VERSION,
+				appliedSchemaVersion: "2026-09-01.1",
+				entries: [
+					{ status: "missing", name: "service_usage_mv", kind: "materialized_view" },
+					{
+						status: "drifted",
+						name: "logs",
+						kind: "table",
+						columnDrifts: [
+							{ kind: "missing", column: "ScopeVersion", expectedType: "LowCardinality(String)" },
+							{ kind: "type_mismatch", column: "Body", expectedType: "String", actualType: "Nullable(String)" },
+						],
+					},
+					...TABLES.filter((name) => name !== "logs").map((name) => ({ status: "up_to_date", name, kind: "table" })),
+				],
+			}),
+	},
+	telemetry: emptyTelemetry,
+}
+
 /** Acme in Clerk mode: the Clerk-only settings tabs and /account. Shares Acme's warehouse org. */
 const settingsClerk: Dataset = {
 	name: "settings-clerk",
@@ -523,6 +551,16 @@ export const fixtureArea: FixtureArea = {
 		"apiKeys.roll": rollApiKey,
 		"ingestKeys.rollPublic": rolledIngestKeys,
 		"ingestKeys.rollPrivate": rolledIngestKeys,
+		"orgClickHouseSettings.upsert": (request) =>
+			Effect.map(clickhouseSettings(request), (current) => ({
+				...current,
+				configured: true,
+				chUrl: Predicate.hasProperty(request.payload, "url") ? request.payload.url : current.chUrl,
+				chUser: Predicate.hasProperty(request.payload, "user") ? request.payload.user : current.chUser,
+				chDatabase: Predicate.hasProperty(request.payload, "database") ? request.payload.database : current.chDatabase,
+			})),
+		"orgClickHouseSettings.delete": () => Effect.succeed({ configured: false }),
+		"orgClickHouseSettings.applySchema": () => Effect.succeed({ status: "started" }),
 		"errors.upsertEscalationPolicy": (request) =>
 			Effect.map(escalationPolicy(request), (current) => ({
 				...current,
@@ -548,5 +586,5 @@ export const fixtureArea: FixtureArea = {
 		...clerkBillingEndpoints(warehouse),
 	}),
 	defaultSynced: { api_keys: API_KEYS },
-	datasets: [settingsClerk, settingsMcpClients, settingsIngestionRules],
+	datasets: [settingsClerk, settingsMcpClients, settingsIngestionRules, settingsDataPlatformDrift],
 }

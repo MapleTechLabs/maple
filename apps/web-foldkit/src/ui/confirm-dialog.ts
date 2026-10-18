@@ -27,6 +27,10 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	isPending?: boolean
 	isConfirmDisabled?: boolean
 	className?: string
+	/** `icon`: replaces the warning glyph in the media tile. */
+	icon?: Html
+	/** `children`: content between the header and the footer. */
+	body?: ReadonlyArray<Html>
 }>
 
 /** The confirm-before-acting dialog, opened from code (no trigger), placed anywhere in the page. */
@@ -51,9 +55,10 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 							h.DataAttribute("slot", "alert-dialog-media"),
 						],
 						[
-							icon(h, "AlertWarningIcon", {
-								className: cn(tone === "destructive" && confirmDialogIconDestructiveStyles),
-							}),
+							options.icon ??
+								icon(h, "AlertWarningIcon", {
+									className: cn(tone === "destructive" && confirmDialogIconDestructiveStyles),
+								}),
 						],
 					),
 					DialogView.dialogTitle(h, "alert-dialog", id, options.title),
@@ -61,6 +66,8 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 						? []
 						: [DialogView.dialogDescription(h, "alert-dialog", id, options.description)]),
 				]),
+				// AlertDialog has no body slot, so the body pads itself to line up with the header.
+				...(options.body === undefined ? [] : [h.div([h.Class("px-6 py-2")], options.body)]),
 				DialogView.dialogFooter(h, "alert-dialog", [
 					button(
 						h,

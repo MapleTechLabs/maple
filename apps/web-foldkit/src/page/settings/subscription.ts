@@ -7,6 +7,8 @@ import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
 import { Message as IngestionMessage } from "./ingestion/message"
 import { Message } from "./message"
+import { Message as DataPlatformMessage } from "./data-platform/model"
+import { isRunActive } from "./data-platform/update"
 import { Message as AutomationMessage } from "./automation/model"
 import { destinationRows } from "../alerts/shared/collections"
 import { rowToAlertDestinationDocument } from "@maple/web-data/collections/alerts"
@@ -81,6 +83,22 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					? Stream.tick(INGEST_POLL).pipe(
 							Stream.drop(1),
 							Stream.map(() => Message.GotIngestionMessage({ message: IngestionMessage.TickedPoll() })),
+						)
+					: Stream.empty,
+		},
+	),
+	/** `useIntervalRefresh(refreshStatus, { intervalMs: 2_000, enabled: runActive })`. */
+	applyPoll: entry(
+		{ isPolling: Schema.Boolean },
+		{
+			modelToDependencies: ({ model }) => ({
+				isPolling: model.tab?._tag === "DataPlatform" && isRunActive(model.tab.model),
+			}),
+			dependenciesToStream: ({ isPolling }) =>
+				isPolling
+					? Stream.tick("2 seconds").pipe(
+							Stream.drop(1),
+							Stream.map(() => Message.GotDataPlatformMessage({ message: DataPlatformMessage.TickedApplyPoll() })),
 						)
 					: Stream.empty,
 		},

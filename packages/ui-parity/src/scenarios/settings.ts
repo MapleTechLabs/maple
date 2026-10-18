@@ -340,6 +340,42 @@ const auditInteractions: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+const DATA_PLATFORM = "/settings?tab=data-platform"
+const DRIFT = "settings-data-platform-drift"
+
+/** Data platform: save the connection, disconnect, read the diff, apply the schema. */
+const dataPlatformInteractions: ReadonlyArray<Scenario> = [
+	page("data-platform-save", "Data platform: save and test the connection", DATA_PLATFORM, {
+		steps: async (target) => {
+			await target.getByRole("textbox", { name: "Database" }).fill("maple_prod")
+			await target.getByRole("button", { name: "Save and test" }).click()
+			await target.getByText("Connection saved and tested").waitFor()
+		},
+	}),
+	page("data-platform-disconnect", "Data platform: disconnect", DATA_PLATFORM, {
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Disconnect" }).click()
+			await target.getByRole("alertdialog").getByRole("button", { name: "Disconnect" }).click()
+			await target.getByText("Disconnected", { exact: true }).waitFor()
+		},
+	}),
+	page("data-platform-up-to-date", "Data platform: refresh the diff, list up-to-date tables", DATA_PLATFORM, {
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Refresh diff" }).click()
+			await target.getByRole("button", { name: /up-to-date tables and views/ }).click()
+		},
+	}),
+	page("data-platform-drift", "Data platform: a cluster with drift", DATA_PLATFORM, { dataset: DRIFT }),
+	page("data-platform-apply", "Data platform: review and apply the schema", DATA_PLATFORM, {
+		dataset: DRIFT,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Review and apply" }).click()
+			await target.getByRole("alertdialog").getByRole("button", { name: "Apply schema" }).click()
+			await target.getByText("Schema apply started").waitFor()
+		},
+	}),
+]
+
 export const settingsArea: AreaModule = {
 	area: "settings",
 	scenarios: [
@@ -367,6 +403,7 @@ export const settingsArea: AreaModule = {
 		...aiInteractions,
 		...automationInteractions,
 		...auditInteractions,
+		...dataPlatformInteractions,
 		page("audit-log-denied", "Audit log: denied only", "/settings?tab=audit-log", {
 			// The outcome filter precedes the table's "Denied" badges in document order.
 			steps: (page) => page.getByText("Denied", { exact: true }).first().click(),
