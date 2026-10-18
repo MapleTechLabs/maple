@@ -34,8 +34,7 @@ import { plotFrame } from "../../../charts/plot-frame"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
-import { chartLoading } from "../../../ui/chart-skeleton"
-import { chartEmpty, chartError } from "../../../ui/chart-state"
+import { chartEmpty, chartError, chartLoading } from "../../../ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
 import { isoMs } from "./time"
 
@@ -175,7 +174,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 	)
 	const heldBands = clipToDomain(
 		incidents.flatMap((incident) =>
-			incident.status === "open" && incident.heldSince ? [{ x1: isoMs(incident.heldSince), x2: domain.max }] : [],
+			incident.status === "open" && incident.heldSince
+				? [{ x1: isoMs(incident.heldSince), x2: domain.max }]
+				: [],
 		),
 		domain,
 	)
@@ -205,7 +206,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 			muted: resolved("--muted-foreground"),
 			border: resolved("--border"),
 			background: resolved("--background"),
-			...Object.fromEntries(seriesKeys.map((key) => [key, resolved(seriesColors.get(key) ?? SIGNAL_TOKEN)])),
+			...Object.fromEntries(
+				seriesKeys.map((key) => [key, resolved(seriesColors.get(key) ?? SIGNAL_TOKEN)]),
+			),
 		},
 		domainMin: domain.min,
 		domainMax: domain.max,
@@ -240,7 +243,8 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 					...(isMultiSeries
 						? [
 								seriesLegend(h, {
-									className: "h-8 flex-nowrap justify-start overflow-x-auto whitespace-nowrap",
+									className:
+										"h-8 flex-nowrap justify-start overflow-x-auto whitespace-nowrap",
 									items: seriesKeys.map((key) => ({
 										key,
 										label: key,
@@ -275,7 +279,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 							],
 						),
 					])
-				: chartEmpty(h, { height: CHART_HEIGHT, hint: "Try widening the range." }, ["No data in this window."])
+				: chartEmpty(h, { height: CHART_HEIGHT, hint: "Try widening the range." }, [
+						"No data in this window.",
+					])
 
 	const thresholdCaption = h.div(
 		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-muted-foreground")],
@@ -309,7 +315,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 								[h.Class("font-mono font-medium text-foreground")],
 								[
 									formatSignalValue(signalType, threshold),
-									...(thresholdUpper != null ? [` – ${formatSignalValue(signalType, thresholdUpper)}`] : []),
+									...(thresholdUpper != null
+										? [` – ${formatSignalValue(signalType, thresholdUpper)}`]
+										: []),
 								],
 							),
 						],
@@ -323,7 +331,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 							[
 								h.span([
 									h.AriaHidden(true),
-									h.Class("inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-destructive"),
+									h.Class(
+										"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-destructive",
+									),
 								]),
 								h.span(
 									[],
@@ -354,7 +364,10 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 						[
 							"Showing",
 							" ",
-							h.span([h.Class("font-medium")], [source === "none" ? "" : SIGNAL_SOURCE_LABEL[source]]),
+							h.span(
+								[h.Class("font-medium")],
+								[source === "none" ? "" : SIGNAL_SOURCE_LABEL[source]],
+							),
 							" ",
 							"— ",
 							SIGNAL_SOURCE_LABEL[otherSource].toLowerCase(),
@@ -377,7 +390,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 				[
 					h.span([
 						h.AriaHidden(true),
-						h.Class("inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-muted-foreground"),
+						h.Class(
+							"inline-block h-0 w-4 shrink-0 border-t-[1.5px] border-dashed border-muted-foreground",
+						),
 					]),
 					SIGNAL_SOURCE_LABEL[otherSource],
 				],
@@ -406,15 +421,27 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 				? [
 						h.p(
 							[h.Class("text-2xs text-muted-foreground")],
-							["Shaded: rule would have fired (approximate — the live scheduler evaluates every minute)."],
+							[
+								"Shaded: rule would have fired (approximate — the live scheduler evaluates every minute).",
+							],
 						),
 					]
 				: []),
 			...(hasSignal && heldBands.length > 0
-				? [h.p([h.Class("text-2xs text-muted-foreground")], ["Grey tail: incident held, waiting on data."])]
+				? [
+						h.p(
+							[h.Class("text-2xs text-muted-foreground")],
+							["Grey tail: incident held, waiting on data."],
+						),
+					]
 				: []),
 			...(hasSignal && source === "preview" && noDataBands.length > 0
-				? [h.p([h.Class("text-2xs text-muted-foreground")], ["Hatched: no data received in these windows."])]
+				? [
+						h.p(
+							[h.Class("text-2xs text-muted-foreground")],
+							["Hatched: no data received in these windows."],
+						),
+					]
 				: []),
 			...(truncatedTo !== null
 				? [
@@ -433,8 +460,11 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 	)
 }
 
-const chartView = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ chartId: string; spec: ChartSpec }>>(
-	(model, inputs, h) =>
+const chartView = Submodel.defineView<
+	Chart.Model,
+	Chart.Message,
+	Readonly<{ chartId: string; spec: ChartSpec }>
+>((model, inputs, h) =>
 	plotFrame(h, {
 		chartId: inputs.chartId,
 		spec: inputs.spec,
@@ -442,7 +472,9 @@ const chartView = Submodel.defineView<Chart.Model, Chart.Message, Readonly<{ cha
 		className: "h-full w-full",
 		tooltipBody: (portal) =>
 			Option.flatMap(model.tooltip, (tooltip) =>
-				tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
+				tooltip._tag === "Bucket"
+					? Option.some(bucketTooltipBody(h, tooltip, portal))
+					: Option.none(),
 			),
 	}),
 )
@@ -458,25 +490,37 @@ const rail = <M>(
 	formatTime: (value: number, mode: "tick" | "tooltip") => string,
 ): Html => {
 	const range = Math.max(1, domain.max - domain.min)
-	const empty = () => ({ breached: 0, healthy: 0, skipped: 0, noData: 0, errored: 0, opened: false, errorMessage: null as string | null })
-	const buckets = checks.reduce((acc, check) => {
-		const t = new Date(normalizeTimestampInput(check.timestamp)).getTime()
-		if (!Number.isFinite(t)) return acc
-		const index = Math.floor(((t - domain.min) / range) * RAIL_CELLS)
-		const bucket = acc[index]
-		if (index < 0 || index >= RAIL_CELLS || bucket === undefined) return acc
-		if (check.status === "breached") bucket.breached += 1
-		else if (check.status === "healthy") bucket.healthy += 1
-		else if (check.status === "error") {
-			bucket.errored += 1
-			if (bucket.errorMessage == null && check.errorMessage != null) bucket.errorMessage = check.errorMessage
-		} else {
-			bucket.skipped += 1
-			if (check.skipReason === "no_data") bucket.noData += 1
-		}
-		if (check.incidentTransition === "opened") bucket.opened = true
-		return acc
-	}, Array.from({ length: RAIL_CELLS }, empty))
+	const empty = () => ({
+		breached: 0,
+		healthy: 0,
+		skipped: 0,
+		noData: 0,
+		errored: 0,
+		opened: false,
+		errorMessage: null as string | null,
+	})
+	const buckets = checks.reduce(
+		(acc, check) => {
+			const t = new Date(normalizeTimestampInput(check.timestamp)).getTime()
+			if (!Number.isFinite(t)) return acc
+			const index = Math.floor(((t - domain.min) / range) * RAIL_CELLS)
+			const bucket = acc[index]
+			if (index < 0 || index >= RAIL_CELLS || bucket === undefined) return acc
+			if (check.status === "breached") bucket.breached += 1
+			else if (check.status === "healthy") bucket.healthy += 1
+			else if (check.status === "error") {
+				bucket.errored += 1
+				if (bucket.errorMessage == null && check.errorMessage != null)
+					bucket.errorMessage = check.errorMessage
+			} else {
+				bucket.skipped += 1
+				if (check.skipReason === "no_data") bucket.noData += 1
+			}
+			if (check.incidentTransition === "opened") bucket.opened = true
+			return acc
+		},
+		Array.from({ length: RAIL_CELLS }, empty),
+	)
 	const cells = buckets.map((bucket, i) => {
 		const total = bucket.breached + bucket.healthy + bucket.skipped + bucket.errored
 		const status: RailStatus =
@@ -529,9 +573,11 @@ const rail = <M>(
 	const selected = inputs.selectedBucket ?? null
 	const onSelect = inputs.onSelectBucket
 	const gutter = (label: string) =>
-		eyebrow(h, { className: "shrink-0 pr-3 text-right", attributes: [h.Style({ width: `${Y_AXIS_WIDTH}px` })] }, [
-			label,
-		])
+		eyebrow(
+			h,
+			{ className: "shrink-0 pr-3 text-right", attributes: [h.Style({ width: `${Y_AXIS_WIDTH}px` })] },
+			[label],
+		)
 	return h.div(
 		[h.Class("space-y-1.5 pt-1"), h.Style({ "padding-right": `${PLOT_RIGHT}px` })],
 		[
@@ -549,7 +595,9 @@ const rail = <M>(
 									h.Title(cell.title),
 									h.AriaLabel(cell.title),
 									h.AriaPressed(isSelected ? "true" : "false"),
-									...(onSelect === undefined ? [h.Disabled(true)] : [h.OnClick(onSelect(isSelected ? null : i))]),
+									...(onSelect === undefined
+										? [h.Disabled(true)]
+										: [h.OnClick(onSelect(isSelected ? null : i))]),
 									h.Class(
 										cn(
 											"h-full flex-1 rounded-[1px] p-0",
@@ -574,7 +622,12 @@ const rail = <M>(
 						[h.Class("relative h-1 flex-1 rounded-[1px] bg-muted/60")],
 						spans.map((span) =>
 							h.div([
-								h.Class(cn("absolute inset-y-0 rounded-[1px] bg-severity-error", !span.open && "opacity-60")),
+								h.Class(
+									cn(
+										"absolute inset-y-0 rounded-[1px] bg-severity-error",
+										!span.open && "opacity-60",
+									),
+								),
 								h.Style({ left: `${span.left}%`, width: `${span.width}%` }),
 							]),
 						),
@@ -599,9 +652,21 @@ const rail = <M>(
 								value: totals.healthy,
 								color: "color-mix(in oklab, var(--color-chart-apdex) 70%, transparent)",
 							},
-							{ key: "breached", label: "Breached", value: totals.breached, color: TONE_COLOR.crit },
+							{
+								key: "breached",
+								label: "Breached",
+								value: totals.breached,
+								color: TONE_COLOR.crit,
+							},
 							...(totals.errored > 0
-								? [{ key: "errored", label: "Failed", value: totals.errored, color: TONE_COLOR.warn }]
+								? [
+										{
+											key: "errored",
+											label: "Failed",
+											value: totals.errored,
+											color: TONE_COLOR.warn,
+										},
+									]
 								: []),
 							...(totals.skipped > 0
 								? [
