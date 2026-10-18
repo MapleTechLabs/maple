@@ -4,8 +4,8 @@ import { load, pushUrl, replaceUrl } from "foldkit/navigation"
 import { Message } from "./message"
 import { clearSessionToken, MapleAuthApi, readSessionToken, saveSessionToken } from "./platform/auth-api"
 import { saveSelectedPlanKnown } from "./page/onboarding/plan-gate"
-import { MapleInternalApiClient } from "./platform/api-clients"
 import { loadClerk, signOutOfClerk } from "./platform/clerk"
+import { BillingCustomerCache } from "./data/billing-customer"
 
 /** How long a signed-out Clerk answer may still turn into a session on a hard refresh (main.tsx). */
 const AUTH_SETTLE_TIMEOUT = Duration.seconds(2)
@@ -77,12 +77,11 @@ export const SignOutOfClerk = Command.define("SignOutOfClerk", {
 
 /** `billingCustomerAtom`: `GET /internal/billing/customer`, for the org it was asked for. */
 export const LoadCustomer = Command.define("LoadCustomer", {
-	args: { orgId: Schema.String },
+	args: { orgId: Schema.String, refresh: Schema.Boolean },
 	messages: [Message.SucceededLoadCustomer, Message.FailedLoadCustomer],
-	execute: ({ orgId }) =>
+	execute: ({ orgId, refresh }) =>
 		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			const customer = yield* client.billing.getCustomer()
+			const customer = yield* (yield* BillingCustomerCache).get({ refresh })
 			return Message.SucceededLoadCustomer({ orgId, customer })
 		}).pipe(Effect.orElseSucceed(() => Message.FailedLoadCustomer({ orgId }))),
 })

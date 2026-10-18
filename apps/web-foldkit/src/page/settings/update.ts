@@ -245,7 +245,7 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 	)
 	return {
 		...entered,
-		commands: [ReadSettingsClock(), FetchSettingsSession(), FetchSettingsCustomer(), ...(entered.commands ?? [])],
+		commands: [ReadSettingsClock(), FetchSettingsSession(), FetchSettingsCustomer({ refresh: false }), ...(entered.commands ?? [])],
 	}
 }
 
@@ -365,7 +365,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					: next,
 				commands: [
 					...Command.mapMessages(step.commands ?? [], (child) => Message.GotBillingMessage({ message: child })),
-					...(isCustomerStale ? [FetchSettingsCustomer()] : []),
+					...(isCustomerStale ? [FetchSettingsCustomer({ refresh: true })] : []),
 				],
 				outMessage: step.outMessage,
 			}

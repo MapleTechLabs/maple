@@ -1,4 +1,5 @@
 import { Layer } from "effect"
+import { BillingCustomerCache } from "../data/billing-customer"
 import { OrgCollections } from "../data/collections/org-collections"
 import { IntegrationStatuses } from "../data/integration-statuses"
 import { ServicesFacetsProbe } from "../data/services-facets-probe"
@@ -16,6 +17,7 @@ export const ResourcesLive = Layer.mergeAll(
 	WarehouseLive,
 	OrgCollections.layer,
 	SessionTenant.layer,
+	BillingCustomerCache.layer,
 	ServicesFacetsProbe.layer.pipe(Layer.provide(WarehouseLive)),
 	IntegrationStatuses.layer.pipe(Layer.provide([MapleInternalApiClient.layer, MapleApiV2Client.layer])),
 )

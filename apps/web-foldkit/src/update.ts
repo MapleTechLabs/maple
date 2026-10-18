@@ -96,7 +96,7 @@ const shellFoldConfig = {
 		RequestedCustomerRefresh: () => (model) =>
 			model.customer.orgId === null
 				? { model }
-				: { model, commands: [LoadCustomer({ orgId: model.customer.orgId })] },
+				: { model, commands: [LoadCustomer({ orgId: model.customer.orgId, refresh: true })] },
 		RequestedErrorToast:
 			({ title }) =>
 			(model) =>
@@ -349,7 +349,7 @@ const onboardingOut =
 				const orgId = model.customer.orgId
 				return orgId === null
 					? toasted
-					: { ...toasted, commands: [...toasted.commands, LoadCustomer({ orgId })] }
+					: { ...toasted, commands: [...toasted.commands, LoadCustomer({ orgId, refresh: true })] }
 			},
 			FailedChangePlan: ({ message }) =>
 				showPageToast(
@@ -359,7 +359,7 @@ const onboardingOut =
 			RequestedCustomerRefresh: () =>
 				model.customer.orgId === null
 					? { model }
-					: { model, commands: [LoadCustomer({ orgId: model.customer.orgId })] },
+					: { model, commands: [LoadCustomer({ orgId: model.customer.orgId, refresh: true })] },
 			RequestedClearCheckoutMarker: () =>
 				Option.match(withoutCheckoutMarker(model.route), {
 					onNone: () => ({ model }),
@@ -531,7 +531,7 @@ const loadCustomer: Step = (model) => {
 		model: modifyFields(model, {
 			customer: () => ({ orgId: maybeOrgId.value, data: CustomerData.Loading() }),
 		}),
-		commands: [LoadCustomer({ orgId: maybeOrgId.value })],
+		commands: [LoadCustomer({ orgId: maybeOrgId.value, refresh: false })],
 	}
 }
 

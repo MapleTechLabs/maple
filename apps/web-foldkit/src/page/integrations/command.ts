@@ -6,6 +6,7 @@ import { IntegrationStatuses } from "../../data/integration-statuses"
 import { toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 import { Message } from "./message"
+import { BillingCustomerCache } from "../../data/billing-customer"
 
 const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
@@ -163,8 +164,7 @@ export const LoadCustomer = Command.define("LoadIntegrationsCustomer", {
 	messages: [Message.CompletedLoadCustomer],
 	execute: ({ key }) =>
 		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			return yield* client.billing.getCustomer()
+			return yield* (yield* BillingCustomerCache).get()
 		}).pipe(
 			settle,
 			Effect.map((result) => Message.CompletedLoadCustomer({ key, result })),
