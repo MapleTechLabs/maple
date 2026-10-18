@@ -76,8 +76,6 @@ export const exactDateTime64 = (value: string): CH.Expr<DateTime.Utc> | string =
 
 export const Traces = Datasources.traces
 
-export const TraceDetailSpans = Datasources.traceDetailSpans
-
 /** One row per (trace, service, 5-minute bucket) the trace's spans occupy in `traces`. */
 export const TraceIndex = Datasources.traceIndex
 

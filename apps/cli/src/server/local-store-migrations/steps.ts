@@ -1365,5 +1365,25 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// The view goes before its table, or inserts into traces fail on the missing target.
+		id: "local-0034-to-0035-drop-trace-detail-spans",
+		from: 34,
+		to: 35,
+		description: "Drop trace_detail_spans and its view; trace-id reads seek traces through trace_index",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [dropViews("trace_detail_spans_mv"), dropTables("trace_detail_spans")],
+		plan: [["drop-trace-detail-spans", "Drop trace_detail_spans and trace_detail_spans_mv"]],
+		verifies: "Verify the v35 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_detail_spans",
+				classification: "derived",
+				disposition: "invalidate",
+				guarantee:
+					"Dropped permanently with its view. Every trace-id read seeks traces through trace_index, and the rows were a copy of traces.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

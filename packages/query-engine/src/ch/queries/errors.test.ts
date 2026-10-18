@@ -227,7 +227,6 @@ describe("errorDetailTracesQuery", () => {
 		// The ranked error-trace query picks the trace ids inside the trace_index
 		// seek, which is what bounds the span read; the join only carries the span id.
 		expect(sql).toContain("FROM traces")
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).toContain(
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)

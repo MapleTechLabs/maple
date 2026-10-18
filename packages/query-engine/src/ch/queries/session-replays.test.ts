@@ -31,7 +31,6 @@ describe("sessionTraceSummariesQuery", () => {
 		const q = sessionTraceSummariesQuery({ traceIds: ["abc123"] })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).toContain("AS rootSpanName")
 		expect(sql).toContain("anyIf(traces.SpanKind, traces.ParentSpanId = '') AS rootSpanKind")
 		expect(sql).toContain(

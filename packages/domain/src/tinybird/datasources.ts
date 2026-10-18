@@ -1138,42 +1138,6 @@ export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
 export type TraceFacetsHourlyRow = InferRow<typeof traceFacetsHourly>
 
 /**
- * All spans for a given trace, re-sorted by TraceId for fast detail lookups.
- * Populated by materialized view, not direct ingestion.
- * Sorting key (OrgId, TraceId, SpanId) enables O(log N) primary-key lookup
- * instead of bloom-filter scanning across all partitions.
- */
-export const traceDetailSpans = defineDatasource("trace_detail_spans", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
-	tenantColumn: "OrgId",
-	description:
-		"All spans for a trace, sorted by TraceId for fast detail lookups. Populated by materialized view.",
-	jsonPaths: false,
-	schema: {
-		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: utcDateTime64(9),
-		TraceId: t.string(),
-		SpanId: t.string(),
-		ParentSpanId: t.string(),
-		SpanName: t.string().lowCardinality(),
-		SpanKind: t.string().lowCardinality(),
-		ServiceName: t.string().lowCardinality(),
-		Duration: t.uint64().default(0),
-		StatusCode: t.string().lowCardinality(),
-		StatusMessage: t.string(),
-		SpanAttributes: t.map(t.string().lowCardinality(), t.string()),
-		ResourceAttributes: t.map(t.string().lowCardinality(), t.string()),
-	},
-	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
-		sortingKey: ["OrgId", "TraceId", "SpanId"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
-	}),
-})
-
-export type TraceDetailSpansRow = InferRow<typeof traceDetailSpans>
-
-/**
  * Where each trace's spans live in `traces`: one row per (trace, service,
  * 5-minute bucket), the sort-key prefix a trace-id read seeks with
  * `(ServiceName, TRACE_BUCKET_EXPR, TraceId) IN (...)`. Replaced the full

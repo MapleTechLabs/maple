@@ -612,7 +612,6 @@ describe("aiSessionDetailsQuery", () => {
 		// The fan-out reads `traces`, and the page's id set is pushed into the
 		// trace_index seek by `IN` rather than joined, like `errorDetailTracesQuery`.
 		expect(sql).toContain("FROM traces")
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).toContain(
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)
@@ -1081,7 +1080,6 @@ describe("aiSessionSpansQuery", () => {
 
 		// The spans read and the session-id detection both read `traces`; the
 		// detection picks the trace ids inside the trace_index seek.
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql.split("FROM traces").length - 1).toBe(2)
 		expect(sql).toContain(
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
@@ -1309,7 +1307,6 @@ describe("aiTraceSpansQuery", () => {
 
 		// The id alone is a trace_index seek, so there is nothing left for a
 		// detection level to resolve.
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql.split("FROM traces").length - 1).toBe(1)
 		expect(sql).toContain(
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
@@ -1436,7 +1433,6 @@ describe("aiSessionSummaryQuery", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 
 		expect(sql).toContain("FROM traces")
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).toContain(
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)

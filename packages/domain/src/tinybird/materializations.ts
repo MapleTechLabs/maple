@@ -33,7 +33,6 @@ import {
 	aiTraceIndex,
 	aiCrawlerRequests,
 	TRACE_BUCKET_EXPR,
-	traceDetailSpans,
 	traceIndex,
 	traceListMv,
 	traceFacetsHourly,
@@ -1008,33 +1007,6 @@ export const errorFingerprintsMinutelyMv = defineMaterializedView("error_fingerp
           groupUniqArray(ServiceVersion) AS ServiceVersions
         FROM error_events
         GROUP BY OrgId, Minute, FingerprintHash
-      `,
-		}),
-	],
-})
-
-export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv", {
-	description: "Populates trace_detail_spans with all spans re-sorted by TraceId for fast detail lookups",
-	datasource: traceDetailSpans,
-	nodes: [
-		node({
-			name: "trace_detail_spans_mv_node",
-			sql: `
-        SELECT
-          OrgId,
-          Timestamp,
-          TraceId,
-          SpanId,
-          ParentSpanId,
-          SpanName,
-          SpanKind,
-          ServiceName,
-          Duration,
-          StatusCode,
-          StatusMessage,
-          SpanAttributes,
-          ResourceAttributes
-        FROM traces
       `,
 		}),
 	],

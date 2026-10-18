@@ -80,7 +80,6 @@ describe("traceSpanStatsByTraceIdsQuery", () => {
 	it("counts every span of the paged traces, seeked through trace_index", () => {
 		const { sql } = compileUnsafe(traceSpanStatsByTraceIdsQuery({ traceIds: ["t1", "t2"] }), baseParams)
 		expect(sql).toContain("FROM traces")
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).toContain("traces.OrgId = 'org_1'")
 		expect(sql).toContain(
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
@@ -398,7 +397,6 @@ describe("traceListQuery", () => {
 		const { sql } = compileUnsafe(traceListQuery({}), baseParams)
 
 		expect(sql).toContain("FROM traces")
-		expect(sql).not.toContain("trace_detail_spans")
 		// The page's trace ids pick the spans through the trace_index seek.
 		expect(sql).toContain(
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
@@ -662,7 +660,6 @@ describe("spanSearchQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 
 		expect(sql).toContain("FROM traces")
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).toContain(
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)

@@ -933,7 +933,6 @@ describe("converted queries", () => {
 		expect(sql).toMatch(
 			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId = 'abc123'\)/,
 		)
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).toContain("TraceId = 'abc123'")
 		expect(sql).toContain("SpanId = 'span1'")
 		expect(sql).toContain("OrgId = 'org_1'")
@@ -998,7 +997,6 @@ describe("converted queries", () => {
 		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
 		expect(sql).toContain("trace_index.MinTimestamp AS timestamp")
 		expect(sql).toContain("FROM trace_index")
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).toContain("TraceId = 'abc123'")
 		expect(sql).toContain("OrgId = 'org_1'")
 		// A trace spans several index rows; the earliest one wins.
