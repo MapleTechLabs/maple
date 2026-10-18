@@ -161,6 +161,7 @@ const accountTabValues = [
 	"passkeys",
 	"connections",
 	"sessions",
+	"email-preferences",
 ] as const
 
 const settingsTabValues = [

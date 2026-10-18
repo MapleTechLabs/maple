@@ -30,6 +30,76 @@ const scenario = (
 
 const click = (name: string | RegExp) => (page: Page) => page.getByRole("button", { name }).click()
 
+/**
+ * The MCP client's callback answers 204, so Chromium keeps the consent page (the harness would
+ * abort the off-origin navigation into an error page): the capture is the state up to the redirect.
+ */
+const decideMcp = (name: string) => async (page: Page) => {
+	await page.route("https://claude.ai/**", (route) => route.fulfill({ status: 204 }))
+	await click(name)(page)
+}
+
+const HELD_MS = 60_000
+
+const failure = (status: number, tag: string, message: string) => ({
+	status,
+	body: { _tag: `@maple/http/errors/${tag}`, message },
+})
+
+/** Loading and error states: a held or failing request (README "Timed and error states"). */
+const timed = (
+	base: Scenario,
+	id: string,
+	title: string,
+	faults: NonNullable<Scenario["faults"]>,
+	// A request held after a click: "held" would also wait before the click, with nothing in flight.
+	settle: Scenario["settle"] = faults.delays === undefined ? "quiet" : "held",
+): Scenario => ({ ...base, id: `onboarding-${id}`, title, faults, settle })
+
+const cliDevice = scenario("cli-login-device", "", `/cli-login?user_code=${CLI_USER_CODE}`, "default")
+const mcpConsent = scenario("mcp-authorize", "", `/mcp-authorize?request_id=${MCP_REQUEST_ID}`, "default")
+const unsubscribeConfirm = scenario(
+	"unsubscribe",
+	"",
+	"/unsubscribe?token=digest.parity-token",
+	"default",
+	click("Unsubscribe"),
+)
+
+const timedScenarios: ReadonlyArray<Scenario> = [
+	timed(cliDevice, "cli-login-loading", "CLI login: inspecting the code", {
+		delays: { "auth.cliDeviceInspect": HELD_MS },
+	}),
+	timed(
+		{ ...cliDevice, steps: click("Approve") },
+		"cli-login-approve-error",
+		"CLI login: approval refused",
+		{
+			failures: {
+				"auth.cliDeviceApprove": failure(409, "CliDeviceConflictError", "This CLI login was already used."),
+			},
+		},
+	),
+	timed(mcpConsent, "mcp-authorize-loading", "MCP authorize: inspecting the request", {
+		delays: { "auth.mcpOAuthAuthorizationInspect": HELD_MS },
+	}),
+	timed(
+		unsubscribeConfirm,
+		"unsubscribe-pending",
+		"Unsubscribe: request in flight",
+		{ delays: { "emailPublic.unsubscribe": HELD_MS } },
+		"quiet",
+	),
+	timed(unsubscribeConfirm, "unsubscribe-invalid-token", "Unsubscribe: token rejected", {
+		failures: {
+			"emailPublic.unsubscribe": failure(400, "DigestUnsubscribeTokenInvalidError", "Invalid token"),
+		},
+	}),
+	timed(unsubscribeConfirm, "unsubscribe-error", "Unsubscribe: server error", {
+		failures: { "emailPublic.unsubscribe": failure(503, "DigestPersistenceError", "Unavailable") },
+	}),
+]
+
 export const onboardingArea: AreaModule = {
 	area: "onboarding",
 	scenarios: [
@@ -66,6 +136,20 @@ export const onboardingArea: AreaModule = {
 			"MCP authorize: consent",
 			`/mcp-authorize?request_id=${MCP_REQUEST_ID}`,
 			"default",
+		),
+		scenario(
+			"mcp-authorize-approved",
+			"MCP authorize: approved, returning to the client",
+			`/mcp-authorize?request_id=${MCP_REQUEST_ID}`,
+			"default",
+			decideMcp("Approve"),
+		),
+		scenario(
+			"mcp-authorize-denied",
+			"MCP authorize: denied, returning to the client",
+			`/mcp-authorize?request_id=${MCP_REQUEST_ID}`,
+			"default",
+			decideMcp("Deny"),
 		),
 		scenario("mcp-authorize-incomplete", "MCP authorize: incomplete link", "/mcp-authorize", "default"),
 		scenario(
@@ -116,5 +200,6 @@ export const onboardingArea: AreaModule = {
 			click("Select or create organization"),
 		),
 		scenario("sign-up", "Sign up (signed out)", "/sign-up", "clerk-signed-out"),
+		...timedScenarios,
 	],
 }

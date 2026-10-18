@@ -48,10 +48,7 @@ const entry = (h: H, model: Model): Html => {
 	)
 }
 
-/** The workspace the credential is for; the Clerk switcher is the screen's to render. */
-export type WorkspaceView = (h: H) => Html
-
-const ready = (h: H, info: DeviceInfo, workspace: WorkspaceView): Html =>
+const ready = (h: H, info: DeviceInfo, workspace: Html): Html =>
 	h.div(
 		[h.Class("space-y-4")],
 		[
@@ -67,7 +64,7 @@ const ready = (h: H, info: DeviceInfo, workspace: WorkspaceView): Html =>
 					h.p([h.Class("text-xs text-muted-foreground")], ["Expires at ", info.expiresAtLabel]),
 				],
 			),
-			workspace(h),
+			workspace,
 			h.p(
 				[h.Class("text-sm text-muted-foreground")],
 				["The CLI will receive a revocable credential with your current workspace role."],
@@ -100,7 +97,7 @@ const outcome = (h: H, title: string, detail: string): Html =>
 		[h.p([h.Class("font-medium")], [title]), h.p([h.Class("mt-1 text-sm text-muted-foreground")], [detail])],
 	)
 
-const stateView = (h: H, model: Model, workspace: WorkspaceView): ReadonlyArray<Html> => {
+const stateView = (h: H, model: Model, workspace: Html): ReadonlyArray<Html> => {
 	switch (model.state._tag) {
 		case "Entry":
 		case "Failed":
@@ -118,7 +115,7 @@ const stateView = (h: H, model: Model, workspace: WorkspaceView): ReadonlyArray<
 	}
 }
 
-export const view = (h: H, model: Model, workspace: WorkspaceView): Html =>
+export const view = (h: H, model: Model, workspace: Html): Html =>
 	authLayout(h, "max-w-md", [
 		h.div(
 			[h.Class("space-y-5")],

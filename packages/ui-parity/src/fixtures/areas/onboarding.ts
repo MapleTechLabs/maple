@@ -152,6 +152,17 @@ export const fixtureArea: FixtureArea = {
 		"auth.cliDeviceApprove": () => Effect.succeed({ status: "approved" }),
 		"auth.cliDeviceDeny": () => Effect.succeed({ status: "denied" }),
 		"auth.mcpOAuthAuthorizationInspect": mcpInspect,
+		// Off-origin redirects back to the client: the harness aborts them, so the call is what counts.
+		"auth.mcpOAuthAuthorizationApprove": () =>
+			Effect.succeed({
+				status: "approved",
+				redirectUri: "https://claude.ai/api/mcp/auth_callback?code=parity-code",
+			}),
+		"auth.mcpOAuthAuthorizationDeny": () =>
+			Effect.succeed({
+				status: "denied",
+				redirectUri: "https://claude.ai/api/mcp/auth_callback?error=access_denied",
+			}),
 		"emailPublic.unsubscribe": ({ query }) =>
 			Effect.succeed({
 				kind: field(query, "token").startsWith("web-analytics.") ? "web-analytics" : "digest",
