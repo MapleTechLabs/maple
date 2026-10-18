@@ -15,6 +15,13 @@ export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) 
 	t.dateTime64(precision).brand(CH.dateTime64.schema)
 
 /**
+ * The time bucket in `traces`' sort key, and `trace_index.Bucket`. A trace-id
+ * read matches `(ServiceName, <this>, TraceId)` against the index, so the
+ * expression must stay byte-identical in both places.
+ */
+export const TRACE_BUCKET_EXPR = "toStartOfFiveMinutes(Timestamp)"
+
+/**
  * OpenTelemetry logs datasource
  * Matches the official OpenTelemetry Collector Tinybird exporter format
  */
@@ -1131,6 +1138,34 @@ export const traceDetailSpans = defineDatasource("trace_detail_spans", {
 })
 
 export type TraceDetailSpansRow = InferRow<typeof traceDetailSpans>
+
+/**
+ * Where each trace's spans live in `traces`: one row per (trace, service,
+ * 5-minute bucket), the sort-key prefix a trace-id read seeks with
+ * `(ServiceName, TRACE_BUCKET_EXPR, TraceId) IN (...)`. Replaced the full
+ * TraceId-sorted copy of `traces` (`trace_detail_spans`) at ~9% of its size.
+ */
+export const traceIndex = defineDatasource("trace_index", {
+	tenantColumn: "OrgId",
+	description:
+		"Where each trace's spans live in traces: one row per (trace, service, 5-minute bucket) with the bucket's first and last span start. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		TraceId: t.string(),
+		ServiceName: t.string().lowCardinality(),
+		Bucket: utcDateTime(),
+		MinTimestamp: t.simpleAggregateFunction("min", utcDateTime64(9)),
+		MaxTimestamp: t.simpleAggregateFunction("max", utcDateTime64(9)),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Bucket)",
+		sortingKey: ["OrgId", "TraceId", "ServiceName", "Bucket"],
+		ttl: "toDate(Bucket) + INTERVAL 30 DAY",
+	}),
+})
+
+export type TraceIndexRow = InferRow<typeof traceIndex>
 
 /**
  * Filtered projection of GenAI agent spans — every span the ingest gateway

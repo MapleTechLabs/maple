@@ -32,7 +32,9 @@ import {
 	errorFingerprintsMinutely,
 	aiTraceIndex,
 	aiCrawlerRequests,
+	TRACE_BUCKET_EXPR,
 	traceDetailSpans,
+	traceIndex,
 	traceListMv,
 	traceFacetsHourly,
 	attributeKeysHourly,
@@ -1033,6 +1035,33 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
           SpanAttributes,
           ResourceAttributes
         FROM traces
+      `,
+		}),
+	],
+})
+
+/**
+ * Populates `trace_index` with each (trace, service, bucket) a batch of spans
+ * lands in. Partial rows from separate inserts merge on `min`/`max`; readers
+ * only test membership, so an unmerged duplicate is harmless.
+ */
+export const traceIndexMv = defineMaterializedView("trace_index_mv", {
+	description:
+		"Populates trace_index with the (service, 5-minute bucket) ranges each trace's spans occupy in traces",
+	datasource: traceIndex,
+	nodes: [
+		node({
+			name: "trace_index_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          TraceId,
+          ServiceName,
+          ${TRACE_BUCKET_EXPR} AS Bucket,
+          min(Timestamp) AS MinTimestamp,
+          max(Timestamp) AS MaxTimestamp
+        FROM traces
+        GROUP BY OrgId, TraceId, ServiceName, Bucket
       `,
 		}),
 	],

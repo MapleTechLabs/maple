@@ -27,6 +27,12 @@ const TRACE_FACETS_HOURLY_BACKFILL = [
 	"INSERT INTO trace_facets_hourly (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, TraceCount, DurationMin, DurationMax, DurationQuantiles) SELECT OrgId, toStartOfHour(Timestamp) AS Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, count() AS TraceCount, min(Duration) AS DurationMin, max(Duration) AS DurationMax, quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles FROM trace_list_mv GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError",
 ] as const
 
+/** Indexes every retained span; the truncate makes a resumed step converge. */
+const TRACE_INDEX_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS trace_index",
+	"INSERT INTO trace_index (OrgId, TraceId, ServiceName, Bucket, MinTimestamp, MaxTimestamp) SELECT OrgId, TraceId, ServiceName, toStartOfFiveMinutes(Timestamp) AS Bucket, min(Timestamp) AS MinTimestamp, max(Timestamp) AS MaxTimestamp FROM traces GROUP BY OrgId, TraceId, ServiceName, Bucket",
+] as const
+
 /** Existing rollup rows keep what the old view bodies wrote and age out with their TTL. */
 const ERROR_RETENTION = {
 	preservationInterval: "error retention horizon",
@@ -1301,6 +1307,33 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				disposition: "preserve-exact",
 				guarantee:
 					"Existing check rows are kept as written with an empty Level; only checks recorded after the migration carry one.",
+			},
+		],
+	},
+	{
+		// Both objects are new; the backfill indexes the spans already retained.
+		id: "local-0032-to-0033-trace-index",
+		from: 32,
+		to: 33,
+		description: "Create trace_index and its view: where each trace's spans live in traces",
+		clonedBefore: "any DDL runs",
+		afterBootstrap: [backfill(...TRACE_INDEX_BACKFILL)],
+		plan: [
+			[
+				"create-trace-index",
+				"Create trace_index and trace_index_mv via the v33 bootstrap and index every retained span from traces",
+			],
+		],
+		verifies: "Verify the v33 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_index",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Rebuilt from every span traces retains; both keep 30 days.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
 			},
 		],
 	},
