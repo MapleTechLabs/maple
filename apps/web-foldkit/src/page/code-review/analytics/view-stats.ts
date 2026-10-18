@@ -87,7 +87,9 @@ const secondaryStatList = (current: CodeReviewTotals): ReadonlyArray<Stat> => {
 		{
 			label: "Fixed rate",
 			value:
-				current.findings === 0 ? EMPTY_VALUE : formatPercent(current.resolvedFindings / current.findings),
+				current.findings === 0
+					? EMPTY_VALUE
+					: formatPercent(current.resolvedFindings / current.findings),
 			hint: "Issues a later push resolved",
 		},
 		{

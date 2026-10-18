@@ -41,7 +41,11 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.analytics.data, {
 		onEmpty: () => loadingSkeleton(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load review analytics", onRetry: Message.ClickedRetry() }),
+			errorState(h, {
+				failure,
+				title: "Failed to load review analytics",
+				onRetry: Message.ClickedRetry(),
+			}),
 		onData: (analytics) => {
 			if (analytics.current.reviews === 0 && analytics.current.findings === 0) {
 				const filtered = isFiltered(model)
@@ -55,7 +59,8 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 			}
 			const theme = model.themeColors
 			if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return loadingSkeleton(h)
-			const windowLabel = model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
+			const windowLabel =
+				model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
 			return h.div(
 				[h.Class("flex flex-col gap-6")],
 				[

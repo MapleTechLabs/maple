@@ -43,7 +43,8 @@ export const filtersView = <M>(h: HtmlBuilder<M>, options: FiltersOptions<M>): H
 		...listed.map((value) => item(value, value)),
 	]
 	const preset =
-		options.search.timePreset ?? (options.search.startTime === undefined ? options.defaultPreset : undefined)
+		options.search.timePreset ??
+		(options.search.startTime === undefined ? options.defaultPreset : undefined)
 	return h.div(
 		[h.Class("flex flex-wrap items-center gap-2")],
 		[

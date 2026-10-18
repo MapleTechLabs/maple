@@ -44,5 +44,4 @@ export const getReview = (reviewId: PrReviewId) =>
 export const getCiAnalytics = (query: CodeReviewCiQuery) =>
 	call((api) => api.codeReview.ciAnalytics({ query }))
 
-export const listCiRuns = (query: CodeReviewCiRunsQuery) =>
-	call((api) => api.codeReview.ciRuns({ query }))
+export const listCiRuns = (query: CodeReviewCiRunsQuery) => call((api) => api.codeReview.ciRuns({ query }))

@@ -172,11 +172,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const current = chart === "volume" ? model.volumeChart : model.issuesChart
 			const next = Chart.update(current, inner)
 			return {
-				model: chart === "volume" ? { ...model, volumeChart: next.model } : { ...model, issuesChart: next.model },
-				commands: Command.mapMessages(next.commands, (m) => Message.GotChartMessage({ chart, message: m })),
+				model:
+					chart === "volume"
+						? { ...model, volumeChart: next.model }
+						: { ...model, issuesChart: next.model },
+				commands: Command.mapMessages(next.commands, (m) =>
+					Message.GotChartMessage({ chart, message: m }),
+				),
 			}
 		},
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 	})

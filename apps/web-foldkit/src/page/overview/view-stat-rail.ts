@@ -98,7 +98,9 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions)
 						className: "shrink-0",
 						valueClassName: cn(VALUE_TONE[options.tone ?? "neutral"], options.valueClassName),
 					}),
-					...(options.compact === true || isSmall ? [] : [h.div([h.Class("h-7 w-24 min-w-0 shrink")])]),
+					...(options.compact === true || isSmall
+						? []
+						: [h.div([h.Class("h-7 w-24 min-w-0 shrink")])]),
 				],
 			),
 			...(options.subline === undefined

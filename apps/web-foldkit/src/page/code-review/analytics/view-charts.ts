@@ -18,7 +18,12 @@ import { repositoryList } from "./view-lists"
 type H = HtmlBuilder<Message>
 
 const VOLUME_LABELS = { pullRequests: "PRs reviewed", reviews: "Reviews" } as const
-const SEVERITY_LABELS = { all: "All severities", critical: "Critical", warn: "Warning", info: "Note" } as const
+const SEVERITY_LABELS = {
+	all: "All severities",
+	critical: "Critical",
+	warn: "Warning",
+	info: "Note",
+} as const
 /** Series names the shared palette colours by severity. */
 export const SEVERITY_SERIES = { critical: "Critical", warn: "Warning", info: "Note" } as const
 
@@ -93,7 +98,10 @@ export const volumeCard = (
 ): Html => {
 	const metric = isVolumeMetric(model.volumeSelect.value) ? model.volumeSelect.value : "pullRequests"
 	const label = VOLUME_LABELS[metric]
-	const rows = analytics.series.map((point) => ({ bucket: bucketIso(point.bucket), [label]: point[metric] }))
+	const rows = analytics.series.map((point) => ({
+		bucket: bucketIso(point.bucket),
+		[label]: point[metric],
+	}))
 	return analyticsPanel(
 		h,
 		{

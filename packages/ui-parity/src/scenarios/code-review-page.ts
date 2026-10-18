@@ -19,7 +19,12 @@ type Options = Readonly<{
 	settle?: Scenario["settle"]
 }>
 
-export const codeReviewScenario = (id: string, title: string, path: string, options: Options = {}): Scenario => ({
+export const codeReviewScenario = (
+	id: string,
+	title: string,
+	path: string,
+	options: Options = {},
+): Scenario => ({
 	id: `code-review-${id}`,
 	title: `Code review: ${title}`,
 	path,
@@ -37,7 +42,10 @@ export const pick = async (page: Page, select: string, option: string) => {
 	await page.getByRole("option", { name: option }).click()
 }
 
-export const held = (prefix: string): Options => ({ faults: { delays: { [prefix]: HELD_MS } }, settle: "held" })
+export const held = (prefix: string): Options => ({
+	faults: { delays: { [prefix]: HELD_MS } },
+	settle: "held",
+})
 
 export const failing = (prefix: string): Options => ({
 	faults: {
@@ -56,6 +64,29 @@ export const failing = (prefix: string): Options => ({
 
 const analytics = (id: string, title: string, options: Options) =>
 	codeReviewScenario(`analytics-${id}`, `Analytics: ${title}`, "/code-review", options)
+
+const pullRequests = (id: string, title: string, options: Options) =>
+	codeReviewScenario(
+		`pull-requests-${id}`,
+		`Pull requests: ${title}`,
+		"/code-review/pull-requests",
+		options,
+	)
+
+const openReview = (page: Page) =>
+	page
+		.getByRole("button", { name: /Retry payment capture once/ })
+		.first()
+		.click()
+
+const reviewSheet = (id: string, title: string, steps: (page: Page) => Promise<void>, extra: Options = {}) =>
+	pullRequests(`sheet-${id}`, `review sheet ${title}`, {
+		...extra,
+		steps: async (page) => {
+			await openReview(page)
+			await steps(page)
+		},
+	})
 
 export const codeReviewPageArea: AreaModule = {
 	area: "code-review",
@@ -77,7 +108,11 @@ export const codeReviewPageArea: AreaModule = {
 				await page.getByRole("button", { name: "Last 1 week" }).click()
 			},
 		}),
-		codeReviewScenario("analytics-week", "Analytics: deep-linked one-week window", "/code-review?timePreset=1w"),
+		codeReviewScenario(
+			"analytics-week",
+			"Analytics: deep-linked one-week window",
+			"/code-review?timePreset=1w",
+		),
 		analytics("reload", "Reload clicked", {
 			steps: (page) => page.getByRole("button", { name: "Reload" }).click(),
 		}),
@@ -88,5 +123,41 @@ export const codeReviewPageArea: AreaModule = {
 				await page.getByRole("button", { name: "Clear filters" }).click()
 			},
 		}),
+		pullRequests("loading", "loading (list held)", held("codeReview.listReviews")),
+		pullRequests("error", "list failing", failing("codeReview.listReviews")),
+		pullRequests("repository", "filtered to one repository", {
+			steps: (page) => pick(page, "Repository", "acme-shop/payments"),
+		}),
+		pullRequests("author", "filtered to one author", {
+			steps: (page) => pick(page, "Author", "ada-l"),
+		}),
+		pullRequests("clear-filters", "queued only (empty), then cleared", {
+			steps: async (page) => {
+				await pick(page, "Status", "Queued")
+				await page.getByRole("button", { name: "Clear filters" }).click()
+			},
+		}),
+		pullRequests("time-range", "window switched to a week", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Last 30 days" }).click()
+				await page.getByRole("button", { name: "Last 1 week" }).click()
+			},
+		}),
+		reviewSheet("close", "opened, then closed", (page) =>
+			page.getByRole("button", { name: "Close" }).click(),
+		),
+		reviewSheet("escape", "opened, then dismissed with Escape", async (page) => {
+			await page.getByRole("heading", { name: "Summary" }).waitFor()
+			await page.keyboard.press("Escape")
+		}),
+		reviewSheet("history", "switched to an earlier review of the pull request", (page) =>
+			page.getByRole("button", { name: /Skipped/ }).click(),
+		),
+		reviewSheet("loading", "loading (review held)", async () => {}, {
+			faults: { delays: { "codeReview.getReview": HELD_MS } },
+			settle: "quiet",
+		}),
+		reviewSheet("error", "review failing", async () => {}, failing("codeReview.getReview")),
+		reviewSheet("ci-error", "CI runs failing", async () => {}, failing("codeReview.ciRuns")),
 	],
 }

@@ -14,7 +14,9 @@ export const analyticsPanel = <M>(
 	panel(h, {}, [
 		panelHeader(h, { title: options.title, action: options.control }),
 		panelBody(h, children, "px-4 py-4"),
-		...(options.footer === undefined ? [] : [h.footer([h.Class("border-t px-4 py-4")], [options.footer])]),
+		...(options.footer === undefined
+			? []
+			: [h.footer([h.Class("border-t px-4 py-4")], [options.footer])]),
 	])
 
 export const chartFrame = <M>(h: HtmlBuilder<M>, isEmpty: boolean, chart: () => Html): Html =>

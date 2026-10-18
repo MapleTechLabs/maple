@@ -64,10 +64,7 @@ export const initFrame = (
 	}
 	return {
 		frame,
-		commands: [
-			resolveCommand(search, defaultPreset, context, "Load"),
-			FetchGithubStatus({ key }),
-		],
+		commands: [resolveCommand(search, defaultPreset, context, "Load"), FetchGithubStatus({ key })],
 		out: null,
 	}
 }
@@ -116,13 +113,17 @@ export const updateFrame = (
 			const next = Select.update(frame.repoSelect, inner)
 			return {
 				frame: { ...frame, repoSelect: next.model },
-				commands: mapped(next.commands ?? [], (m) => FrameMessage.GotRepoSelectMessage({ message: m })),
+				commands: mapped(next.commands ?? [], (m) =>
+					FrameMessage.GotRepoSelectMessage({ message: m }),
+				),
 				out:
 					next.outMessage === undefined
 						? null
 						: {
 								_tag: "PickedRepository",
-								repo: isRepositoryId(next.outMessage.value) ? next.outMessage.value : undefined,
+								repo: isRepositoryId(next.outMessage.value)
+									? next.outMessage.value
+									: undefined,
 							},
 			}
 		},
@@ -130,7 +131,9 @@ export const updateFrame = (
 			const next = Select.update(frame.optionSelect, inner)
 			return {
 				frame: { ...frame, optionSelect: next.model },
-				commands: mapped(next.commands ?? [], (m) => FrameMessage.GotOptionSelectMessage({ message: m })),
+				commands: mapped(next.commands ?? [], (m) =>
+					FrameMessage.GotOptionSelectMessage({ message: m }),
+				),
 				out:
 					next.outMessage === undefined
 						? null
@@ -144,7 +147,9 @@ export const updateFrame = (
 			const next = TimeRangePicker.update(frame.timePicker, inner)
 			return {
 				frame: { ...frame, timePicker: next.model },
-				commands: mapped(next.commands ?? [], (m) => FrameMessage.GotTimePickerMessage({ message: m })),
+				commands: mapped(next.commands ?? [], (m) =>
+					FrameMessage.GotTimePickerMessage({ message: m }),
+				),
 				out:
 					next.outMessage === undefined
 						? null

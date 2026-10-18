@@ -31,7 +31,8 @@ const answered = (model: Model, reviews: number, authors: ReadonlyArray<string> 
 const navigated = (model: Model, search: Search) =>
 	pageUpdate(routeChanged(model, { search }, context).model, resolved)
 
-const themeResolved = () => Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+const themeResolved = () =>
+	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
 describe("code review analytics", () => {
 	test("entry resolves the window and reads GitHub, then sends one analytics read for page and authors", () => {

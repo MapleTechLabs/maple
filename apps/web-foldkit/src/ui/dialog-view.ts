@@ -272,9 +272,13 @@ export const dialogPanel = <M>(
 	kind: "dialog" | "sheet",
 	id: string,
 	children: ReadonlyArray<Html>,
+	className?: string,
 ): Html =>
 	scrollArea(h, { idPrefix: `${id}-panel`, scrollFade: true }, [
-		h.div([h.Class(cn(contentStyles[kind].panel)), h.DataAttribute("slot", `${kind}-panel`)], children),
+		h.div(
+			[h.Class(cn(contentStyles[kind].panel, className)), h.DataAttribute("slot", `${kind}-panel`)],
+			children,
+		),
 	])
 
 export const dialogFooter = <M>(h: HtmlBuilder<M>, kind: TitledKind, children: ReadonlyArray<Html>): Html =>

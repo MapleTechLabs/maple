@@ -18,7 +18,12 @@ export type CarriedSearch = WindowSearch & Readonly<{ repo?: string; author?: st
 
 const TABS: ReadonlyArray<{ tab: CodeReviewTab; path: string; label: string; icon: IconName }> = [
 	{ tab: "analytics", path: "/code-review", label: "Analytics", icon: "ChartBarIcon" },
-	{ tab: "pull-requests", path: "/code-review/pull-requests", label: "Pull requests", icon: "BranchForkIcon" },
+	{
+		tab: "pull-requests",
+		path: "/code-review/pull-requests",
+		label: "Pull requests",
+		icon: "BranchForkIcon",
+	},
 	{ tab: "ci", path: "/code-review/ci", label: "CI", icon: "PlayRotateClockwiseIcon" },
 	{ tab: "issues", path: "/code-review/issues", label: "Issues", icon: "CircleWarningIcon" },
 	{ tab: "settings", path: "/code-review/settings", label: "Settings", icon: "GearIcon" },
@@ -47,7 +52,9 @@ const fitsCi = (search: WindowSearch, nowMs: number, timeZone: string): boolean 
 /** Defined keys only, in the order given: TanStack drops `undefined` search values. */
 const defined = (search: Readonly<Record<string, string | undefined>>): Readonly<Record<string, string>> =>
 	Object.fromEntries(
-		Object.entries(search).flatMap(([key, value]) => (value === undefined ? [] : [[key, value] as const])),
+		Object.entries(search).flatMap(([key, value]) =>
+			value === undefined ? [] : [[key, value] as const],
+		),
 	)
 
 const hrefFor = (tab: CodeReviewTab, search: Readonly<Record<string, string | undefined>>): string => {

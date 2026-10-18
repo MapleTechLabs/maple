@@ -19,16 +19,25 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: Readon
 		[
 			h.span([h.Class("text-xs text-muted-foreground")], [title]),
 			rows.length === 0
-				? h.span([h.Class("py-1 text-sm text-muted-foreground/70")], ["No repositories in this window"])
+				? h.span(
+						[h.Class("py-1 text-sm text-muted-foreground/70")],
+						["No repositories in this window"],
+					)
 				: h.ul(
 						[h.Class("flex flex-col")],
 						rows.map((row) =>
 							h.li(
 								[h.Key(row.key), h.Class("flex items-center gap-2.5 py-1.5 text-sm")],
 								[
-									icon(h, "GithubIcon", { size: 15, className: "shrink-0 text-muted-foreground" }),
+									icon(h, "GithubIcon", {
+										size: 15,
+										className: "shrink-0 text-muted-foreground",
+									}),
 									h.span([h.Class("min-w-0 flex-1 truncate")], [row.name]),
-									h.span([h.Class("tabular-nums text-muted-foreground")], [formatCount(row.value)]),
+									h.span(
+										[h.Class("tabular-nums text-muted-foreground")],
+										[formatCount(row.value)],
+									),
 								],
 							),
 						),
@@ -123,8 +132,16 @@ export const authorsCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalytics
 							tableRow(
 								h,
 								[
-									tableCell(h, [authorLabel(h, row.author, "max-w-full")], "max-w-0 pl-0 text-sm"),
-									tableCell(h, [formatCount(row.pullRequests)], "text-right text-sm tabular-nums"),
+									tableCell(
+										h,
+										[authorLabel(h, row.author, "max-w-full")],
+										"max-w-0 pl-0 text-sm",
+									),
+									tableCell(
+										h,
+										[formatCount(row.pullRequests)],
+										"text-right text-sm tabular-nums",
+									),
 									tableCell(
 										h,
 										[formatCount(row.findings)],
