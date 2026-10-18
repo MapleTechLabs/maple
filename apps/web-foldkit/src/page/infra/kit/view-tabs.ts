@@ -34,7 +34,11 @@ export const linkTabStrip = <M>(
 					h.Key(tab.id),
 					h.Href(tab.href),
 					...(isActive
-						? [h.AriaCurrent("page"), h.DataAttribute("status", "active"), h.Class(cn(underlineTabClass(true), "active"))]
+						? [
+								h.AriaCurrent("page"),
+								h.DataAttribute("status", "active"),
+								h.Class(cn(underlineTabClass(true), "active")),
+							]
 						: [h.Class(underlineTabClass(false))]),
 				],
 				[tab.title],
@@ -60,7 +64,11 @@ export const hostsViewTabs = <M>(h: HtmlBuilder<M>, view: HostsView, search: Tim
 		"Hosts views",
 		[
 			{ id: "hosts", title: "Hosts", href: hrefOf(AppRoute.InfraHosts({ search: window })) },
-			{ id: "containers", title: "Containers", href: hrefOf(AppRoute.InfraContainers({ search: window })) },
+			{
+				id: "containers",
+				title: "Containers",
+				href: hrefOf(AppRoute.InfraContainers({ search: window })),
+			},
 		],
 		view,
 	)

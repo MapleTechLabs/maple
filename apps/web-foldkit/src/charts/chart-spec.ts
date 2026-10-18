@@ -124,6 +124,26 @@ export const ChartSpec = defineTaggedUnion({
 		color: Schema.String,
 		logScaleY: Schema.Boolean,
 	},
+	/** `InfraMetricChart` (apps/web/src/components/infra/primitives): the host and Kubernetes detail charts. */
+	InfraMetric: {
+		rows: Schema.Array(
+			Schema.Struct({ bucket: Schema.String, attributeValue: Schema.String, value: Schema.Number }),
+		),
+		unit: Schema.String,
+		seriesLabel: Nullable(Schema.String),
+		stacked: Schema.Boolean,
+		showThreshold: Schema.Boolean,
+		/** Bucket ISO strings the x axis spans (siblings sharing one axis); `null` domains over the rows. */
+		xDomain: Nullable(Schema.Array(Schema.String)),
+		gaps: Schema.Boolean,
+		/** Resolved colour per series name (`resolveSeriesColors`, then the call site's overrides). */
+		colors: Schema.Record(Schema.String, Schema.String),
+		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
+		/** The 80% rule's colour, `--severity-warn` resolved. */
+		thresholdColor: Schema.String,
+		gradientPrefix: Schema.String,
+		timeZone: Schema.String,
+	},
 	/** `ThroughputAreaChart`, `ErrorRateAreaChart`, `LatencyLineChart` (charts/area, charts/line). */
 	FixedMetric: {
 		chart: Schema.Literals(["Throughput", "ErrorRate", "Latency"]),

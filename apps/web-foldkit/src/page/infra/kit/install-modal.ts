@@ -88,7 +88,9 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	}
 	return {
 		model: isClosed ? { ...model, ...reset, dialog: result.model } : { ...model, dialog: result.model },
-		commands: Command.mapMessages(result.commands ?? [], (message) => Message.GotDialogMessage({ message })),
+		commands: Command.mapMessages(result.commands ?? [], (message) =>
+			Message.GotDialogMessage({ message }),
+		),
 	}
 }
 
@@ -104,14 +106,18 @@ export const update = (model: Model, message: Message): Return =>
 			const next = Tabs.update(model.tabs, inner)
 			return {
 				model: { ...model, tabs: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotTabsMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotTabsMessage({ message }),
+				),
 			}
 		},
 		GotCopyMessage: ({ snippet, message: inner }) => {
 			const next = CopyButton.update(model.copies[snippet], inner)
 			return {
 				model: { ...model, copies: { ...model.copies, [snippet]: next.model } },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotCopyMessage({ snippet, message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotCopyMessage({ snippet, message }),
+				),
 			}
 		},
 	})

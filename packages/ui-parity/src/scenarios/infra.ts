@@ -36,10 +36,18 @@ const scenario = (
 const HELD_MS = 60_000
 
 /** The loading and error states of a page whose data comes from `tag` (a tag prefix). */
-const timed = (id: string, title: string, path: string, dataset: string, tag: string): ReadonlyArray<Scenario> => [
+/** `loadingTag` narrows the held prefix: Chromium queues a seventh request per origin, which never settles. */
+const timed = (
+	id: string,
+	title: string,
+	path: string,
+	dataset: string,
+	tag: string,
+	loadingTag = tag,
+): ReadonlyArray<Scenario> => [
 	{
 		...scenario(`${id}-loading`, `${title}: loading`, path, dataset),
-		faults: { delays: { [tag]: HELD_MS } },
+		faults: { delays: { [loadingTag]: HELD_MS } },
 		settle: "held",
 	},
 	{
@@ -76,7 +84,16 @@ export const infraArea: AreaModule = {
 		scenario("hosts", "Hosts", "/infra/hosts", "default"),
 		scenario("hosts-empty", "Hosts (empty org)", "/infra/hosts", EMPTY),
 		scenario("host-detail", "Host detail", `/infra/hosts/${HOST}`, "default"),
-		scenario("host-legacy", "Legacy host URL redirects", `/infra/${HOST}`, "default"),
+		...timed("host-detail", "Host detail", `/infra/hosts/${HOST}`, "default", "queryEngine.host", "queryEngine.hostDetailSummary"),
+		scenario("host-detail-time-range", "Host detail: last 6 hours", `/infra/hosts/${HOST}`, "default", async (page) => {
+			await page.getByRole("button", { name: "Last 1 hour" }).click()
+			await page.getByRole("dialog").getByRole("button", { name: "Last 6 hours" }).click()
+			await page.getByRole("dialog").waitFor({ state: "detached" })
+		}),
+		scenario("host-detail-copy", "Host detail: copy host.name", `/infra/hosts/${HOST}`, "default", (page) =>
+			page.getByRole("button", { name: "Copy host.name" }).click(),
+		),
+		scenario("host-legacy","Legacy host URL redirects", `/infra/${HOST}`, "default"),
 		scenario("kubernetes", "Kubernetes overview", "/infra/kubernetes", K8S),
 		scenario("kubernetes-empty", "Kubernetes overview (empty org)", "/infra/kubernetes", EMPTY),
 		scenario("pods", "Pods", "/infra/kubernetes/pods", K8S),

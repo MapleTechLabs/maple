@@ -36,7 +36,13 @@ const HOST_SORT_ACCESSORS: SortAccessors<HostRow> = new Map<string, (row: HostRo
 
 const openInstall = Message.GotInstallMessage({ message: { _tag: "ClickedOpen" } })
 
-const hostList = (h: H, model: Model, hosts: ReadonlyArray<HostRow>, isWaiting: boolean, inputs: PageViewInputs): Html => {
+const hostList = (
+	h: H,
+	model: Model,
+	hosts: ReadonlyArray<HostRow>,
+	isWaiting: boolean,
+	inputs: PageViewInputs,
+): Html => {
 	const referenceTime = model.frame.window?.endTime ?? ""
 	const scope = model.search.scope
 	const filtered = filterHosts(hosts, scope, model.search.q ?? "", referenceTime)
@@ -61,9 +67,27 @@ const hostList = (h: H, model: Model, hosts: ReadonlyArray<HostRow>, isWaiting: 
 					{ key: "saturated", count: counts.saturated, className: TONE_FILL.crit },
 				],
 				cells: [
-					{ scope: "saturated", label: "Saturated", hint: "≥90%", value: counts.saturated, tone: "crit" },
-					{ scope: "elevated", label: "Elevated", hint: "≥60%", value: counts.elevated, tone: "warn" },
-					{ scope: "stale", label: "Stopped reporting", hint: ">5m", value: counts.stale, tone: "neutral" },
+					{
+						scope: "saturated",
+						label: "Saturated",
+						hint: "≥90%",
+						value: counts.saturated,
+						tone: "crit",
+					},
+					{
+						scope: "elevated",
+						label: "Elevated",
+						hint: "≥60%",
+						value: counts.elevated,
+						tone: "warn",
+					},
+					{
+						scope: "stale",
+						label: "Stopped reporting",
+						hint: ">5m",
+						value: counts.stale,
+						tone: "neutral",
+					},
 				],
 				activeScope: scope,
 				onScopeChange: (next) => Message.ChangedScope({ scope: next }),
@@ -112,19 +136,26 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 					tabs: hostsViewTabs(h, "hosts", model.search),
 					scrollClassName: "gap-6",
 				},
 				[
 					pageHero(h, {
 						title: "Hosts",
-						description: "Every machine sending CPU, memory, disk and network metrics, busiest first.",
+						description:
+							"Every machine sending CPU, memory, disk and network metrics, busiest first.",
 						actions: [
-							button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(openInstall)] }, [
-								icon(h, "PlusIcon"),
-								"Add host",
-							]),
+							button(
+								h,
+								{ size: "sm", variant: "outline", attributes: [h.OnClick(openInstall)] },
+								[icon(h, "PlusIcon"), "Add host"],
+							),
 						],
 					}),
 					body(h, model, inputs),
@@ -143,7 +174,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 const loading = (h: H): Html =>
 	h.div([h.Class("space-y-6")], [fleetBandLoading(h, 3, FLEET_BAND_BOXED), hostTableLoading(h)])
 
-const listOrEmpty = (h: H, model: Model, hosts: ReadonlyArray<HostRow>, isWaiting: boolean, inputs: PageViewInputs) =>
+const listOrEmpty = (
+	h: H,
+	model: Model,
+	hosts: ReadonlyArray<HostRow>,
+	isWaiting: boolean,
+	inputs: PageViewInputs,
+) =>
 	hosts.length === 0
 		? setupEmpty(h, {
 				icon: icon(h, "ServerIcon", { size: 16 }),

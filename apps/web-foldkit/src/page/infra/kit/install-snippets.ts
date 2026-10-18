@@ -21,7 +21,11 @@ export const helmCommand = (token: string): string => {
 	]
 	return (
 		isCustomEndpoint
-			? [...lines.slice(0, -1), `${lines[lines.length - 1]} \\`, `  --set-string maple.ingest.endpoint=${ingestUrl}`]
+			? [
+					...lines.slice(0, -1),
+					`${lines[lines.length - 1]} \\`,
+					`  --set-string maple.ingest.endpoint=${ingestUrl}`,
+				]
 			: lines
 	).join("\n")
 }

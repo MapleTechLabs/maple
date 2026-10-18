@@ -65,7 +65,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			Command.mapMessage(Frame.resolve(model.frame, scopeOf(model, context), "Load"), (message) =>
 				Message.GotFrameMessage({ message }),
 			),
-			Command.mapMessage(InstallModal.FetchIngestKey(), (message) => Message.GotInstallMessage({ message })),
+			Command.mapMessage(InstallModal.FetchIngestKey(), (message) =>
+				Message.GotInstallMessage({ message }),
+			),
 		],
 	}
 }
@@ -73,7 +75,11 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 const searchHref = (search: Search) => hrefOf(AppRoute.InfraHosts({ search }))
 
 /** Only a window change re-requests; `q` and `scope` filter the loaded list. */
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	const isSameWindow =
@@ -92,17 +98,21 @@ export const routeChanged = (model: Model, route: { readonly search: Search }, c
 			}
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	requestAll(model, context, "Load")
 
 const updateFrame = (model: Model, message: Frame.Message, context: PageContext): Return => {
 	const next = Frame.update(model.frame, message, scopeOf(model, context))
 	const lifted: Return = {
 		model: { ...model, frame: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotFrameMessage({ message: inner })),
+		commands: Command.mapMessages(next.commands ?? [], (inner) =>
+			Message.GotFrameMessage({ message: inner }),
+		),
 	}
 	const out = next.outMessage
 	if (out === undefined) return lifted
-	if (out._tag === "ChangedTimeSearch") return { ...navigate(lifted.model, { ...model.search, ...out.search }), commands: lifted.commands }
+	if (out._tag === "ChangedTimeSearch")
+		return { ...navigate(lifted.model, { ...model.search, ...out.search }), commands: lifted.commands }
 	const requested = requestAll(lifted.model, context, out.mode)
 	return { ...requested, commands: [...(lifted.commands ?? []), ...(requested.commands ?? [])] }
 }
@@ -112,10 +122,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchHosts: ({ key, result }) => ({
 			model: { ...model, hosts: Keyed.accept(model.hosts, key, result) },
 		}),
-		ChangedQuery: ({ value }) => navigate(model, { ...model.search, q: value === "" ? undefined : value }),
+		ChangedQuery: ({ value }) =>
+			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ChangedScope: ({ scope }) => navigate(model, { ...model.search, scope }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined, scope: undefined }),
 		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, ["hostName"]) } }),
 		GotFrameMessage: ({ message: inner }) => updateFrame(model, inner, context),
-		GotInstallMessage: ({ message: inner }) => liftInstall(model, InstallModal.update(model.install, inner)),
+		GotInstallMessage: ({ message: inner }) =>
+			liftInstall(model, InstallModal.update(model.install, inner)),
 	})

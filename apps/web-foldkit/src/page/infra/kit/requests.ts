@@ -23,10 +23,40 @@ export const keyed = <Model, Message, A, E>(
 		onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
 	})
 
+/** A record of slots (one per chart metric) requested together: the next record and its fetches. */
+export const seriesSteps = <A, E, Message>(
+	slots: Readonly<Record<string, Keyed.Keyed<A, E>>>,
+	requests: ReadonlyArray<
+		Readonly<{
+			id: string
+			key: string
+			fetch: (key: string) => Command.Command<Message, never, Resources>
+		}>
+	>,
+	mode: Keyed.RequestMode,
+) =>
+	requests.reduce<{
+		readonly slots: Readonly<Record<string, Keyed.Keyed<A, E>>>
+		readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>>
+	}>(
+		(acc, request) =>
+			Option.match(Keyed.request(acc.slots[request.id] ?? Keyed.idle<A, E>(), request.key, mode), {
+				onNone: () => acc,
+				onSome: (next) => ({
+					slots: { ...acc.slots, [request.id]: next },
+					commands: [...acc.commands, request.fetch(request.key)],
+				}),
+			}),
+		{ slots, commands: [] },
+	)
+
 export const applySteps = <Model, Message>(
 	model: Model,
 	steps: ReadonlyArray<Step<Model, Message>>,
-): { readonly model: Model; readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>> } => ({
+): {
+	readonly model: Model
+	readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>>
+} => ({
 	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
 	commands: steps.flatMap((step) => step.commands),
 })

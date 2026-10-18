@@ -23,7 +23,11 @@ export const severityDot = <M>(
 			),
 		],
 		[
-			h.span([h.Class(cn("relative rounded-full", isSmall ? "size-1.5" : "size-2", STATUS_DOT[options.status]))]),
+			h.span([
+				h.Class(
+					cn("relative rounded-full", isSmall ? "size-1.5" : "size-2", STATUS_DOT[options.status]),
+				),
+			]),
 			...(options.label ? [h.span([h.Class("sr-only")], [options.label])] : []),
 		],
 	)
@@ -38,7 +42,12 @@ const STATUS_TEXT = new Map<HostStatus, string>([
 /** `HostStatusBadge`; `quiet` renders nothing while active. `referenceMs` replaces `Date.now()`. */
 export const hostStatusBadge = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ lastSeen: string; referenceMs: number | string; quiet?: boolean; className?: string }>,
+	options: Readonly<{
+		lastSeen: string
+		referenceMs: number | string
+		quiet?: boolean
+		className?: string
+	}>,
 ): Html | null => {
 	const status = deriveHostStatus(options.lastSeen, options.referenceMs)
 	if (options.quiet === true && status === "active") return null

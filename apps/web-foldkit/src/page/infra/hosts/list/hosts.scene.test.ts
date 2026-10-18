@@ -34,26 +34,36 @@ const host = (hostName: string, cpuPct: number): HostRow => ({
 const resolved = (model: Model, at = window) =>
 	pageUpdate(
 		model,
-		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window: at, nowMs: NOW, mode: "Load" }) }),
+		Message.GotFrameMessage({
+			message: Frame.Message.CompletedResolveWindow({ window: at, nowMs: NOW, mode: "Load" }),
+		}),
 	)
 
 const loaded = (hosts: ReadonlyArray<HostRow>, search: Model["search"] = {}): Model => {
 	const windowed = resolved(init({ search }, context).model).model
-	return pageUpdate(windowed, Message.CompletedFetchHosts({ key: windowed.hosts.key ?? "", result: Result.succeed(hosts) }))
-		.model
+	return pageUpdate(
+		windowed,
+		Message.CompletedFetchHosts({ key: windowed.hosts.key ?? "", result: Result.succeed(hosts) }),
+	).model
 }
 
 describe("hosts list", () => {
 	test("entry resolves the window and fetches the ingest key; the window then fetches the hosts", () => {
 		const entered = init({ search: {} }, context)
-		expect((entered.commands ?? []).map(({ name }) => name)).toEqual(["ResolveInfraWindow", "FetchInstallIngestKey"])
+		expect((entered.commands ?? []).map(({ name }) => name)).toEqual([
+			"ResolveInfraWindow",
+			"FetchInstallIngestKey",
+		])
 		expect((resolved(entered.model).commands ?? []).map(({ name }) => name)).toEqual([FetchHosts.name])
 	})
 
 	test("an answer for a superseded window is dropped", () => {
 		const first = resolved(init({ search: {} }, context).model).model
 		const second = resolved(first, later).model
-		const late = pageUpdate(second, Message.CompletedFetchHosts({ key: first.hosts.key ?? "", result: Result.succeed([]) }))
+		const late = pageUpdate(
+			second,
+			Message.CompletedFetchHosts({ key: first.hosts.key ?? "", result: Result.succeed([]) }),
+		)
 		expect(late.model.hosts).toEqual(second.hosts)
 	})
 
@@ -72,7 +82,11 @@ describe("hosts list", () => {
 	})
 
 	test("an empty org shows the setup state; a search with no match shows the filtered state", () => {
-		scene({ update: pageUpdate, view }, given(loaded([])), expectView(text("No hosts reporting yet")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([])),
+			expectView(text("No hosts reporting yet")).toExist(),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([host("busy", 0.7)], { q: "nope" })),

@@ -12,7 +12,9 @@ export const FetchHosts = Command.define("FetchInfraHosts", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchHosts],
 	execute: ({ key, window }) =>
-		listHosts({ data: { startTime: window.startTime, endTime: window.endTime, limit: HOST_LIST_LIMIT } }).pipe(
+		listHosts({
+			data: { startTime: window.startTime, endTime: window.endTime, limit: HOST_LIST_LIMIT },
+		}).pipe(
 			Effect.map((response) => response.data),
 			Effect.mapError(toLoadFailure),
 			Effect.result,

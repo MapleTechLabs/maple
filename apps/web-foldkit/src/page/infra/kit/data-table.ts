@@ -108,7 +108,9 @@ export const dataTable = <M>(
 			h.div(
 				[
 					h.Class(cn("overflow-x-auto", scrolls && "overflow-y-auto overscroll-contain")),
-					...(options.maxHeight === undefined ? [] : [h.Style({ "max-height": options.maxHeight })]),
+					...(options.maxHeight === undefined
+						? []
+						: [h.Style({ "max-height": options.maxHeight })]),
 				],
 				[h.div([h.Class("min-w-fit")], [h.div([h.Class(headClass)], head), ...rows])],
 			),
@@ -127,5 +129,8 @@ export const skeletonRows = <M>(
 	cells: () => ReadonlyArray<Html>,
 ): ReadonlyArray<Html> =>
 	Array.from({ length: count }, () =>
-		h.div([h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0")], cells()),
+		h.div(
+			[h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0")],
+			cells(),
+		),
 	)

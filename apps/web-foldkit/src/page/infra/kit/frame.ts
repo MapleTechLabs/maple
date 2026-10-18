@@ -101,7 +101,10 @@ export const update = (model: Model, message: Message, scope: Scope): Return =>
 			const next = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
 				model: next,
-				commands: [resolve(next, scope, "Refresh"), CompleteReloadSpin({ version: next.refreshVersion })],
+				commands: [
+					resolve(next, scope, "Refresh"),
+					CompleteReloadSpin({ version: next.refreshVersion }),
+				],
 			}
 		},
 		CompletedReloadSpin: ({ version }) =>
@@ -116,7 +119,9 @@ export const update = (model: Model, message: Message, scope: Scope): Return =>
 			const next = TimeRangePicker.update(model.timePicker, inner)
 			const lifted = {
 				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) => Message.GotTimePickerMessage({ message: picker })),
+				commands: Command.mapMessages(next.commands, (picker) =>
+					Message.GotTimePickerMessage({ message: picker }),
+				),
 			}
 			// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
 			return next.outMessage === undefined
@@ -124,7 +129,12 @@ export const update = (model: Model, message: Message, scope: Scope): Return =>
 				: {
 						...lifted,
 						outMessage: OutMessage.ChangedTimeSearch({
-							search: { ...timeSearchOf(scope.search), startTime: undefined, endTime: undefined, timePreset: next.outMessage.presetValue },
+							search: {
+								...timeSearchOf(scope.search),
+								startTime: undefined,
+								endTime: undefined,
+								timePreset: next.outMessage.presetValue,
+							},
 						}),
 					}
 		},
@@ -149,15 +159,38 @@ export const controls = <M>(
 				slotId: "time-range-picker",
 				model: model.timePicker,
 				view: TimeRangePicker.view,
-				toParentMessage: (message: TimeRangePicker.Message) => toParent(Message.GotTimePickerMessage({ message })),
+				toParentMessage: (message: TimeRangePicker.Message) =>
+					toParent(Message.GotTimePickerMessage({ message })),
 				viewInputs: {
 					label,
 					selectedPreset:
-						scope.search.timePreset ?? (scope.search.startTime === undefined ? scope.defaultPreset : undefined),
+						scope.search.timePreset ??
+						(scope.search.startTime === undefined ? scope.defaultPreset : undefined),
 					presets: TimeRangePicker.PRESET_VALUES,
 				},
 			}),
 	})
+
+// copied: `WIDEN_TIME_PRESET` / `canWidenTimeRange` (time-range-picker/search.ts imports `@/` types).
+export const WIDEN_TIME_PRESET = "7d"
+const WIDE_TIME_PRESETS = new Set([
+	"7d",
+	"1w",
+	"10d",
+	"14d",
+	"2w",
+	"30d",
+	"6w",
+	"1mo",
+	"2mo",
+	"3mo",
+	"6mo",
+	"12mo",
+])
+
+/** Widening only helps from a short relative preset. */
+export const canWidenTimeRange = (search: TimeSearch, defaultPreset: string): boolean =>
+	search.startTime === undefined && !WIDE_TIME_PRESETS.has(search.timePreset ?? defaultPreset)
 
 /** Resolve for `scope`: snapped on entry, unsnapped after a Reload (`refreshVersion > 0`). */
 export const resolve = (model: Model, scope: Scope, mode?: RequestMode) =>

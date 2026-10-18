@@ -94,7 +94,10 @@ const scopeCell = <S extends string, M>(
 						unit: cell.hint,
 						size: "sm",
 						className: "shrink-0",
-						valueClassName: cn(VALUE_TONE[cell.tone], cell.value === 0 ? "text-muted-foreground" : undefined),
+						valueClassName: cn(
+							VALUE_TONE[cell.tone],
+							cell.value === 0 ? "text-muted-foreground" : undefined,
+						),
 					}),
 				],
 			),
@@ -112,8 +115,14 @@ const bandLead = <M>(
 			h.span(
 				[h.Class("flex items-baseline gap-1.5")],
 				[
-					h.span([h.Class("font-mono text-base font-semibold tabular-nums")], [formatNumber(options.total)]),
-					h.span([h.Class("text-2xs text-muted-foreground")], [pluralize(options.total, options.noun), " in scope"]),
+					h.span(
+						[h.Class("font-mono text-base font-semibold tabular-nums")],
+						[formatNumber(options.total)],
+					),
+					h.span(
+						[h.Class("text-2xs text-muted-foreground")],
+						[pluralize(options.total, options.noun), " in scope"],
+					),
 				],
 			),
 			options.total > 0
@@ -121,10 +130,16 @@ const bandLead = <M>(
 						className: "w-full gap-px bg-transparent",
 						total: options.total,
 						minVisible: 2,
-						label: options.segments.map((segment) => `${segment.count} ${segment.key}`).join(", "),
+						label: options.segments
+							.map((segment) => `${segment.count} ${segment.key}`)
+							.join(", "),
 						segments: options.segments
 							.filter((segment) => segment.count > 0)
-							.map((segment) => ({ key: segment.key, value: segment.count, className: segment.className })),
+							.map((segment) => ({
+								key: segment.key,
+								value: segment.count,
+								className: segment.className,
+							})),
 					})
 				: h.div([h.Class("h-1.5 w-full rounded-full bg-muted")]),
 			h.span([h.Class("text-3xs text-muted-foreground")], [options.caption]),
@@ -154,7 +169,11 @@ export const fleetBandLoading = <M>(h: HtmlBuilder<M>, cells: number, className?
 		[
 			h.div(
 				[h.Class(LEAD_CLASS)],
-				[skeleton(h, "h-4 w-28"), skeleton(h, "h-1.5 w-full rounded-full"), skeleton(h, "h-2.5 w-40")],
+				[
+					skeleton(h, "h-4 w-28"),
+					skeleton(h, "h-1.5 w-full rounded-full"),
+					skeleton(h, "h-2.5 w-40"),
+				],
 			),
 			...Array.from({ length: cells }, () =>
 				h.div(

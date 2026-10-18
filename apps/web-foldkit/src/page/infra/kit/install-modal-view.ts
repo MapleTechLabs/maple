@@ -58,13 +58,17 @@ const snippetPanel = (h: H, model: Model, panel: SnippetPanel): Html =>
 											h.OnClick(Message.ClickedToggleReveal()),
 										],
 									},
-									[icon(h, "EyeIcon", { size: 14 }), model.isRevealed ? "Hide key" : "Reveal key"],
+									[
+										icon(h, "EyeIcon", { size: 14 }),
+										model.isRevealed ? "Hide key" : "Reveal key",
+									],
 								),
 							]
 						: []),
 					CopyButton.view(h, {
 						model: model.copies[panel.snippet],
-						toParentMessage: (message) => Message.GotCopyMessage({ snippet: panel.snippet, message }),
+						toParentMessage: (message) =>
+							Message.GotCopyMessage({ snippet: panel.snippet, message }),
 						value: panel.value,
 						label: panel.copyLabel ?? "Install command",
 						// `render={<InputGroupButton />}`: CopyButton's own size and slot win the merge.
@@ -96,14 +100,24 @@ const panelFor = (h: H, model: Model, value: string): ReadonlyArray<Html> => {
 			note(h, [
 				"The Maple Helm chart deploys a DaemonSet for per-node host + kubelet metrics and a single-replica deployment for cluster-wide signals. Run the command against your cluster. For production, prefer an existing Secret over an inline value. See the docs.",
 			]),
-			snippetPanel(h, model, { snippet: "helm", ...keyed(model, helmCommand), rows: isCustomEndpoint ? 6 : 5, hasReveal: true }),
+			snippetPanel(h, model, {
+				snippet: "helm",
+				...keyed(model, helmCommand),
+				rows: isCustomEndpoint ? 6 : 5,
+				hasReveal: true,
+			}),
 		]
 	if (value === "docker")
 		return [
 			note(h, [
 				"The Maple Docker agent runs as a single container with read-only access to the Docker socket and streams per-container CPU, memory, network, and block I/O, plus container logs via the mounted log directory (drop that mount to skip logs). It also accepts app OTLP on 4317/4318.",
 			]),
-			snippetPanel(h, model, { snippet: "docker", ...keyed(model, dockerCommand), rows: isCustomEndpoint ? 10 : 9, hasReveal: true }),
+			snippetPanel(h, model, {
+				snippet: "docker",
+				...keyed(model, dockerCommand),
+				rows: isCustomEndpoint ? 10 : 9,
+				hasReveal: true,
+			}),
 		]
 	return [
 		note(h, [
@@ -165,7 +179,15 @@ const content = (h: H, model: Model, close: ReadonlyArray<ChildAttribute>): Read
 		button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
 		h.a(
 			[
-				h.Href(docsUrl(model.tabs.selected === "docker" ? "docker" : model.tabs.selected === "hosts" ? "hosts" : "kubernetes")),
+				h.Href(
+					docsUrl(
+						model.tabs.selected === "docker"
+							? "docker"
+							: model.tabs.selected === "hosts"
+								? "hosts"
+								: "kubernetes",
+					),
+				),
 				h.Target("_blank"),
 				h.Rel("noopener noreferrer"),
 				h.AriaLabel("View docs"),

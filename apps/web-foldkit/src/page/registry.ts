@@ -16,6 +16,7 @@ import type {
 } from "./contract"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
+import * as InfraHost from "./infra/hosts/detail"
 import * as InfraHosts from "./infra/hosts/list"
 import * as LogsList from "./logs/list"
 import * as MetricsBrowse from "./metrics/browse"
@@ -40,6 +41,7 @@ export const pages = [
 	TraceDetail.page,
 	LogsList.page,
 	InfraHosts.page,
+	InfraHost.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

@@ -73,8 +73,15 @@ export const platformLabel = <M>(h: HtmlBuilder<M>, kind: PlatformKind, value: s
 				? []
 				: [
 						known.color === undefined
-							? icon(h, known.icon, { size: 11, className: cn("shrink-0", "text-foreground/70") })
-							: icon(h, known.icon, { size: 11, className: cn("shrink-0"), style: { color: known.color } }),
+							? icon(h, known.icon, {
+									size: 11,
+									className: cn("shrink-0", "text-foreground/70"),
+								})
+							: icon(h, known.icon, {
+									size: 11,
+									className: cn("shrink-0"),
+									style: { color: known.color },
+								}),
 					]),
 			known.label,
 		],

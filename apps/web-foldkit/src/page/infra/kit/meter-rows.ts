@@ -22,15 +22,30 @@ const meterRow = <M>(h: HtmlBuilder<M>, row: MeterRow, hideLabel: boolean): Html
 						h.span(
 							[
 								h.Class(
-									cn("w-8", "shrink-0 font-mono text-3xs tracking-[0.06em] text-muted-foreground/70"),
+									cn(
+										"w-8",
+										"shrink-0 font-mono text-3xs tracking-[0.06em] text-muted-foreground/70",
+									),
 								),
 							],
 							[row.label],
 						),
 					]),
-			meter(h, { value: clamped, className: "h-[3px] flex-1 rounded-[1px]", fillClassName: BAR_FILL[level] }),
+			meter(h, {
+				value: clamped,
+				className: "h-[3px] flex-1 rounded-[1px]",
+				fillClassName: BAR_FILL[level],
+			}),
 			h.span(
-				[h.Class(cn("w-9", "shrink-0 text-right font-mono text-2xs tabular-nums", BAR_VALUE_TONE[level]))],
+				[
+					h.Class(
+						cn(
+							"w-9",
+							"shrink-0 text-right font-mono text-2xs tabular-nums",
+							BAR_VALUE_TONE[level],
+						),
+					),
+				],
 				[finite ? formatPercent(row.fraction) : EMPTY_VALUE],
 			),
 		],

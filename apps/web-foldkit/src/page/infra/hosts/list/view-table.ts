@@ -3,7 +3,14 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { middleTruncate } from "../../../../ui/middle-truncate"
 import { skeleton } from "../../../../ui/skeleton"
-import { columnHead, dataTable, dataTableEmpty, headSort, ROW_LINK_CLASS, skeletonRows } from "../../kit/data-table"
+import {
+	columnHead,
+	dataTable,
+	dataTableEmpty,
+	headSort,
+	ROW_LINK_CLASS,
+	skeletonRows,
+} from "../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine, platformLabel } from "../../kit/meta-line"
 import { relativeTime } from "../../kit/relative-time"
@@ -39,14 +46,22 @@ export const hostTableLoading = (h: H): Html =>
 		{ ariaLabel: "Hosts" },
 		columns(h, null),
 		skeletonRows(h, 6, () => [
-			h.div([h.Class("w-0 min-w-[260px] flex-1")], [skeleton(h, "h-4 w-40"), skeleton(h, "mt-1.5 h-3 w-32")]),
+			h.div(
+				[h.Class("w-0 min-w-[260px] flex-1")],
+				[skeleton(h, "h-4 w-40"), skeleton(h, "mt-1.5 h-3 w-32")],
+			),
 			skeleton(h, "h-9 w-[200px]"),
 			skeleton(h, "ml-auto hidden h-3 w-[80px] lg:block"),
 			skeleton(h, "h-3 w-[100px]"),
 		]),
 	)
 
-export type HostTableInputs = Readonly<{ nowMs: number; timeZone: string; isWaiting: boolean; sort: SortState }>
+export type HostTableInputs = Readonly<{
+	nowMs: number
+	timeZone: string
+	isWaiting: boolean
+	sort: SortState
+}>
 
 const hostRow = (h: H, host: HostRow, inputs: HostTableInputs): Html =>
 	h.a(
@@ -66,9 +81,14 @@ const hostRow = (h: H, host: HostRow, inputs: HostTableInputs): Html =>
 								text: host.hostName,
 								tail: 12,
 								mono: true,
-								className: "text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+								className:
+									"text-xs font-medium text-foreground transition-colors group-hover:text-primary",
 							}),
-							hostStatusBadge(h, { quiet: true, lastSeen: host.lastSeen, referenceMs: inputs.nowMs }),
+							hostStatusBadge(h, {
+								quiet: true,
+								lastSeen: host.lastSeen,
+								referenceMs: inputs.nowMs,
+							}),
 						],
 					),
 					metaLine(h, [
@@ -89,7 +109,11 @@ const hostRow = (h: H, host: HostRow, inputs: HostTableInputs): Html =>
 				],
 			),
 			h.div(
-				[h.Class("hidden w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80 lg:block")],
+				[
+					h.Class(
+						"hidden w-[80px] text-right font-mono text-xs tabular-nums text-foreground/80 lg:block",
+					),
+				],
 				[formatLoad(host.load15)],
 			),
 			h.div(

@@ -91,7 +91,12 @@ export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOption
 									inputGroupAddon(h, { align: "inline-end" }, [
 										inputGroupButton(
 											h,
-											{ attributes: [h.AriaLabel("Clear search"), h.OnClick(options.onChange(""))] },
+											{
+												attributes: [
+													h.AriaLabel("Clear search"),
+													h.OnClick(options.onChange("")),
+												],
+											},
 											[icon(h, "XmarkIcon")],
 										),
 									]),
@@ -129,7 +134,8 @@ export const filteredEmpty = <M>(
 					? []
 					: [
 							emptyDescription(h, [
-								options.description ?? "Everything in this time range was excluded by the current filters.",
+								options.description ??
+									"Everything in this time range was excluded by the current filters.",
 							]),
 						]),
 			]),
@@ -137,9 +143,11 @@ export const filteredEmpty = <M>(
 				? []
 				: [
 						emptyContent(h, [
-							button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(options.onClear)] }, [
-								options.clearLabel ?? "Clear filters",
-							]),
+							button(
+								h,
+								{ variant: "outline", size: "sm", attributes: [h.OnClick(options.onClear)] },
+								[options.clearLabel ?? "Clear filters"],
+							),
 						]),
 					]),
 		],
