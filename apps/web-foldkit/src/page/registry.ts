@@ -14,6 +14,7 @@ import type {
 	PageStep,
 	PageViewInputs,
 } from "./contract"
+import * as AgentSessionsList from "./agent-sessions/list"
 import * as AlertsHub from "./alerts/hub"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
@@ -46,6 +47,7 @@ export const pages = [
 	AlertsHub.page,
 	AlertIncident.page,
 	AlertRule.page,
+	AgentSessionsList.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))
