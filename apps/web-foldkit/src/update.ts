@@ -103,6 +103,9 @@ const shellFoldConfig = {
 						}
 			},
 		RequestedSignOut: () => (model) => ({ model, commands: [SignOutOfClerk()] }),
+		RequestedNavigation:
+			({ url }) =>
+			(model) => ({ model, commands: [NavigateInternal({ url })] }),
 		RequestedCustomerRefresh: () => (model) =>
 			model.customer.orgId === null
 				? { model }

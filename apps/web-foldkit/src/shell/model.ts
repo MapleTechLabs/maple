@@ -11,6 +11,8 @@ import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
 import * as SupportChannel from "./support-channel"
 import { PinnedDashboardRow } from "./dashboards-shape"
+import * as Palette from "./palette/model"
+import { Platform } from "./palette/shortcuts"
 import { Menu, Theme } from "./message"
 
 /** A loader that failed reads as legacy's `orElse` fallback; the reason is not shown anywhere. */
@@ -72,6 +74,11 @@ export const Model = Schema.Struct({
 	isQuotaApproachingDismissed: Schema.Boolean,
 	/** The server serves a newer build than this tab (`AppUpdateBanner`). */
 	isAppOutdated: Schema.Boolean,
+	/** `GlobalShortcuts`: the command palette and the shortcuts dialog, `null` while unmounted. */
+	palette: Schema.NullOr(Palette.Model),
+	shortcutsDialog: Schema.NullOr(Dialog.Model),
+	/** `detectPlatform`: how the shortcuts dialog spells modifiers. */
+	platform: Platform,
 })
 export type Model = typeof Model.Type
 
@@ -106,6 +113,7 @@ export type ShellFlags = Readonly<{
 	pinnedNamespaces: Readonly<Record<string, string>>
 	dashboardFavorites: ReadonlyArray<string>
 	isQuotaApproachingDismissed?: boolean
+	platform?: Platform
 }>
 
 export const init = (flags: ShellFlags): Model => ({
@@ -133,4 +141,7 @@ export const init = (flags: ShellFlags): Model => ({
 	checklist: Checklist.init(),
 	supportChannel: SupportChannel.init(),
 	isQuotaApproachingDismissed: flags.isQuotaApproachingDismissed ?? false,
+	palette: null,
+	shortcutsDialog: null,
+	platform: flags.platform ?? "mac",
 })

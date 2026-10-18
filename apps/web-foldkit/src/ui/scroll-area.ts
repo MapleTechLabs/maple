@@ -33,6 +33,50 @@ export const applyScrollOverflow = (viewport: HTMLElement): void => {
 	}
 }
 
+/** Base UI's `MIN_THUMB_SIZE`. */
+const MIN_THUMB_SIZE = 16
+
+/**
+ * For a viewport rendered with `hasMeasuredScrollbar`: the thumb height Base UI computes and the
+ * root's `data-hovering` while the pointer is over it, written onto the mounted elements.
+ */
+export const trackScrollbar = (viewport: HTMLElement): (() => void) => {
+	const root = viewport.parentElement
+	const scrollbar = root?.querySelector<HTMLElement>(':scope > [data-slot="scroll-area-scrollbar"]') ?? null
+	const measure = () => {
+		if (scrollbar === null || viewport.scrollHeight === 0) return
+		const track = Math.min(scrollbar.offsetHeight, viewport.clientHeight)
+		const thumb = Math.max(MIN_THUMB_SIZE, (track * viewport.clientHeight) / viewport.scrollHeight)
+		scrollbar.style.setProperty("--scroll-area-thumb-height", `${thumb}px`)
+		const max = viewport.scrollHeight - viewport.clientHeight
+		scrollbar.toggleAttribute("data-has-overflow-y", max > 0)
+		scrollbar.toggleAttribute("data-overflow-y-start", viewport.scrollTop > 0)
+		scrollbar.toggleAttribute("data-overflow-y-end", max - viewport.scrollTop > 0)
+	}
+	const hover = (event: PointerEvent) => {
+		const isOver = event.target instanceof Node && root?.contains(event.target) === true
+		const targets = [root, scrollbar]
+		targets.forEach((element) => element?.toggleAttribute("data-hovering", isOver))
+	}
+	const leave = () => {
+		[root, scrollbar].forEach((element) => element?.removeAttribute("data-hovering"))
+	}
+	measure()
+	const observer = new ResizeObserver(measure)
+	observer.observe(viewport)
+	viewport.addEventListener("scroll", measure, { passive: true })
+	root?.addEventListener("pointerenter", hover)
+	root?.addEventListener("pointermove", hover)
+	root?.addEventListener("pointerleave", leave)
+	return () => {
+		observer.disconnect()
+		viewport.removeEventListener("scroll", measure)
+		root?.removeEventListener("pointerenter", hover)
+		root?.removeEventListener("pointermove", hover)
+		root?.removeEventListener("pointerleave", leave)
+	}
+}
+
 export type ScrollAreaOptions<Message = never> = Readonly<{
 	className?: string
 	scrollFade?: boolean
@@ -41,6 +85,8 @@ export type ScrollAreaOptions<Message = never> = Readonly<{
 	idPrefix: string
 	/** Renders the vertical scrollbar Base UI shows once content overflows. */
 	overflowY?: ScrollAreaOverflowY
+	/** Renders the scrollbar for a Mount to size and show (`trackScrollbar`), with no static state. */
+	hasMeasuredScrollbar?: boolean
 	/** Extra viewport attributes, e.g. a Mount that measures the overflow (`MeasureScrollOverflow`). */
 	viewportAttributes?: ReadonlyArray<Attribute<Message>>
 }>
@@ -136,7 +182,11 @@ export const scrollArea = <Message>(
 				],
 				children,
 			),
-			...(overflowY === undefined ? [] : [verticalScrollbar(h, options.idPrefix, overflowY, state)]),
+			...(overflowY !== undefined
+				? [verticalScrollbar(h, options.idPrefix, overflowY, state)]
+				: options.hasMeasuredScrollbar === true
+					? [verticalScrollbar(h, options.idPrefix, { endPx: 0, thumbHeightPx: 0 }, [])]
+					: []),
 		],
 	)
 }

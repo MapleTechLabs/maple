@@ -8,6 +8,7 @@ import type { Resources } from "../platform/resources"
 import {
 	FocusElement,
 	FocusSiblingMenuItem,
+	FocusShortcutSearch,
 	LogOut,
 	OpenGlobalChat,
 	SaveNamespace,
@@ -29,6 +30,7 @@ import * as Checklist from "./onboarding-checklist"
 import * as SupportChannel from "./support-channel"
 import { isSameMenu, popupIdOf, triggerIdOf } from "./menus"
 import { BUILT_COMMIT, CheckDeployedCommit, ReloadPage } from "./version"
+import { openPalette, openShortcuts, paletteStep, shortcutsDialogStep, toggleTheme } from "./update-palette"
 import { Menu, Message, OutMessage } from "./message"
 import {
 	DashboardsData,
@@ -318,7 +320,7 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 		}),
 		ClickedReload: () => ({ model, commands: [ReloadPage()] }),
 		CompletedReloadPage: () => ({ model }),
-		ClickedAskMapleAi: () => ({ model, commands: [OpenGlobalChat()] }),
+		ClickedAskMapleAi: () => ({ model, commands: [OpenGlobalChat({ isFocusVisible: false })] }),
 		CompletedOpenGlobalChat: () => ({ model }),
 		SucceededLoadTenant: ({ orgId }) => ({
 			model: modifyFields(model, { tenant: () => TenantData.Success({ data: orgId }) }),
@@ -402,4 +404,15 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 		FailedLoadNamespaces: () => ({
 			model: modifyFields(model, { namespaces: () => NamespacesData.Failure({ error: "Failed" }) }),
 		}),
+		ClickedSearch: () => openPalette(model),
+		// Legacy's popup closes on Mod+K and its document listener reopens it in the same batch: a no-op.
+		PressedPaletteShortcut: () => openPalette(model),
+		PressedShortcutsKey: () => openShortcuts(model),
+		PressedThemeKey: () => toggleTheme(model),
+		PressedFocusSearchKey: () => ({ model, commands: [FocusShortcutSearch()] }),
+		CompletedFocusShortcutSearch: () => ({ model }),
+		GotPaletteMessage: ({ message: child }) => paletteStep(model, child),
+		GotShortcutsDialogMessage: ({ message: child }) => shortcutsDialogStep(model, child),
+		MeasuredShortcutsPanel: () => ({ model }),
+		ClickedKeyboardShortcuts: () => openShortcuts(closeMenu(model)),
 	})

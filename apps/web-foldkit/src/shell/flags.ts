@@ -6,6 +6,7 @@ import { NAMESPACE_STORAGE_PREFIX, THEME_STORAGE_KEY } from "./command"
 import { Theme } from "./message"
 import type { ShellFlags } from "./model"
 import { FILTER_COLLAPSED_QUERY, MOBILE_QUERY, SMALL_QUERY } from "./subscription"
+import { detectPlatform } from "./palette/shortcuts"
 
 const decodeTheme = Schema.decodeUnknownOption(Theme)
 
@@ -44,5 +45,6 @@ export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* ()
 		pinnedNamespaces,
 		dashboardFavorites: readDashboardFavorites(),
 		isQuotaApproachingDismissed: yield* readQuotaApproachingDismissed,
+		platform: detectPlatform(),
 	}
 })

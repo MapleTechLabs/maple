@@ -15,4 +15,13 @@ export { DASHBOARD_FAVORITES_EVENT, DASHBOARD_FAVORITES_KEY } from "./favorites"
 export { pinnedDashboardRows } from "./dashboards-shape"
 export { BUILT_COMMIT, versionChecks } from "./version"
 export { checklistTicked, enter, enterBare, isChecklistCounting, routeChanged, update } from "./update"
-export { type BreadcrumbEntry, bareFrameView, frameView, menuLayerView, sheetLayerView } from "./view"
+export {
+	type BreadcrumbEntry,
+	bareFrameView,
+	frameView,
+	menuLayerView,
+	paletteLayerView,
+	sheetLayerView,
+	shortcutsLayerView,
+} from "./view"
+export { globalShortcuts } from "./subscription"

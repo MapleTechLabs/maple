@@ -96,7 +96,7 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 		]),
 	])
 
-/** `SearchRow`: the ⌘K entry (the palette itself is not ported yet). */
+/** `SearchRow`: the ⌘K entry, the palette's only discoverable way in. */
 const searchRow = (h: HtmlBuilder<Message>, tip: RailTip): Html =>
 	sidebarMenu(h, undefined, [
 		sidebarMenuItem(h, undefined, [
@@ -106,7 +106,7 @@ const searchRow = (h: HtmlBuilder<Message>, tip: RailTip): Html =>
 					className:
 						"border border-sidebar-border bg-background text-muted-foreground hover:bg-background hover:text-foreground",
 					hasTooltip: true,
-					attributes: tip("Search"),
+					attributes: [...tip("Search"), h.OnClick(Message.ClickedSearch())],
 				},
 				[
 					icon(h, "MagnifierIcon", { size: 16 }),

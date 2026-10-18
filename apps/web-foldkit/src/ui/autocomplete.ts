@@ -31,6 +31,8 @@ export type FieldOptions<M = never> = Readonly<{
 	isListEmpty?: boolean
 	/** `Command inline={false}` inside a dialog: the inline layout, but with the dismiss button. */
 	hasDismissButton?: boolean
+	/** `filter={null}`: `items` are already the list (the command palette's fuse ranking). */
+	isUnfiltered?: boolean
 	/** `startAddon`: the magnifier (default) or none. */
 	hasStartAddon?: boolean
 	/** `showClear`: Base UI renders the clear button while the input holds a value. */
@@ -107,6 +109,7 @@ export const autocompleteField = <M>(
 								placeholder: options.placeholder,
 								items: options.items,
 								isInline: options.isInline,
+								isUnfiltered: options.isUnfiltered,
 							},
 							toMessage,
 						),

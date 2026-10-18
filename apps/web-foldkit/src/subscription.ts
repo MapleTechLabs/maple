@@ -110,13 +110,27 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				),
 		},
 	),
+	/** `GlobalShortcuts`: Mod+K, `?`, `T` and `/` while a shell page is open. */
+	shellGlobalShortcuts: entry(
+		{ isShellOpen: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({
+				isShellOpen: model.session._tag === "SignedIn" && rendersShell(model.route),
+			}),
+			dependenciesToStream: ({ isShellOpen }) =>
+				Stream.when(
+					Stream.map(Shell.globalShortcuts, (message) => Message.GotShellMessage({ message })),
+					Effect.sync(() => isShellOpen),
+				),
+		},
+	),
 	/** `useDashboardsRead` for the Pinned group: the org's live `dashboards` collection. */
 	shellDashboards: entry(
 		{ orgId: Schema.NullOr(Schema.String) },
 		{
 			modelToDependencies: (model) => ({
 				orgId:
-					model.session._tag === "SignedIn" && rendersShell(model.route) && model.shell.hasRequestedSidebarData
+					model.session._tag === "SignedIn" && rendersShell(model.route) && (model.shell.hasRequestedSidebarData || model.shell.palette !== null)
 						? Option.getOrNull(model.shell.maybeOrgId)
 						: null,
 			}),

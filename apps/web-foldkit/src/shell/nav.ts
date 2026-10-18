@@ -24,7 +24,9 @@ export interface NavSubItem {
 	readonly icon?: IconName
 	readonly iconColor?: string
 	readonly surfaces?: ReadonlyArray<NavSurface>
-	readonly views?: ReadonlyArray<{ readonly title: string; readonly href: string }>
+	readonly views?: ReadonlyArray<{ readonly title: string; readonly href: string; readonly paletteTitle?: string }>
+	/** The command palette's title, when the row's own reads ambiguously there. */
+	readonly paletteTitle?: string
 }
 
 export interface NavItem {
@@ -51,13 +53,13 @@ const infrastructureItem: NavItem = {
 	href: "/infra",
 	icon: "ComputerIcon",
 	subItems: [
-		{ title: "Overview", href: "/infra", icon: "GridIcon" },
+		{ title: "Overview", href: "/infra", icon: "GridIcon", paletteTitle: "Infrastructure overview" },
 		{
 			title: "Hosts",
 			href: "/infra/hosts",
 			icon: "ServerIcon",
 			surfaces: ["hosts", "containers"],
-			views: [{ title: "Containers", href: "/infra/containers" }],
+			views: [{ title: "Containers", href: "/infra/containers", paletteTitle: "Containers" }],
 		},
 		{
 			title: "Kubernetes",

@@ -9,7 +9,7 @@ import {
 	commandShortcutStyles,
 } from "@maple/ui/styles/ui/command"
 import { Array } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { autocompleteField } from "./autocomplete"
 import { filterItems, itemId, listId, Message, type Model } from "./combobox"
 import { hiddenInput } from "./combobox-view"
@@ -20,18 +20,35 @@ import { scrollArea } from "./scroll-area"
  * match highlighted) on the Combobox Model, inside a `command-dialog` Dialog. Rendered from the
  * parent's frame with `toMessage`, because its parts sit directly in the dialog popup.
  */
-export type CommandItem = Readonly<{ title: string; shortcut?: string }>
+export type CommandItem = Readonly<{
+	title: string
+	shortcut?: string
+	/** The item's value (default: its title), what a pick reports. */
+	value?: string
+	/** `render={<Link />}`: the item is an `<a>` to this href. */
+	href?: string
+	/** A glyph before the title (an icon, a service dot). */
+	leading?: Html
+}>
 export type CommandGroup = Readonly<{ label: string; items: ReadonlyArray<CommandItem> }>
 
-/** The groups' titles in list order: what the input filters and the highlight indexes. */
+const valueOf = (item: CommandItem): string => item.value ?? item.title
+
+/** The groups' values in list order: what the input filters and the highlight indexes. */
 export const commandTitles = (groups: ReadonlyArray<CommandGroup>): ReadonlyArray<string> =>
-	Array.flatMap(groups, (group) => group.items.map((item) => item.title))
+	Array.flatMap(groups, (group) => group.items.map(valueOf))
 
 /** `CommandInput`: the large borderless autocomplete input, focused when the dialog opens. */
 export const commandInput = <M>(
 	h: HtmlBuilder<M>,
 	model: Model,
-	options: Readonly<{ placeholder: string; groups: ReadonlyArray<CommandGroup>; hasDismissButton?: boolean }>,
+	options: Readonly<{
+		placeholder: string
+		groups: ReadonlyArray<CommandGroup>
+		hasDismissButton?: boolean
+		/** `filter={null}`: the groups are already what the query matched. */
+		isUnfiltered?: boolean
+	}>,
 	toMessage: (message: Message) => M,
 ): Html =>
 	h.div(
@@ -48,6 +65,7 @@ export const commandInput = <M>(
 					isInline: true,
 					isListEmpty: true,
 					hasDismissButton: options.hasDismissButton,
+					isUnfiltered: options.isUnfiltered,
 				},
 				toMessage,
 			),
@@ -60,18 +78,24 @@ const commandItem = <M>(
 	item: CommandItem,
 	index: number,
 	toMessage: (message: Message) => M,
-): Html =>
-	h.div(
-		[
-			h.Class(cn(A.autocompleteItemStyles, commandItemStyles)),
-			...(model.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
-			h.DataAttribute("slot", "command-item"),
-			h.Id(itemId(model.id, index)),
-			h.Role("option"),
-			h.OnMouseMove(toMessage(Message.HighlightedItem({ index }))),
-			h.OnClick(toMessage(Message.ClickedItem({ value: item.title }))),
-		],
-		[
+	options: ListOptions<M>,
+): Html => {
+	const attributes = [
+		h.Class(cn(A.autocompleteItemStyles, commandItemStyles, options.itemClassName)),
+		...(model.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
+		h.DataAttribute("slot", "command-item"),
+		...(item.href === undefined ? [] : [h.Href(item.href)]),
+		h.Id(itemId(model.id, index)),
+		h.Role("option"),
+		h.OnMouseMove(toMessage(Message.HighlightedItem({ index }))),
+		h.OnClick(
+			options.onClickItem === undefined
+				? toMessage(Message.ClickedItem({ value: valueOf(item) }))
+				: options.onClickItem(valueOf(item)),
+		),
+	]
+	const children = [
+			...(item.leading === undefined ? [] : [item.leading]),
 			h.span([h.Class("truncate text-sm")], [item.title]),
 			...(item.shortcut === undefined
 				? []
@@ -81,8 +105,24 @@ const commandItem = <M>(
 							[item.shortcut],
 						),
 					]),
-		],
-	)
+		]
+	return item.href === undefined ? h.div(attributes, children) : h.a(attributes, children)
+}
+
+export type ListOptions<M> = Readonly<{
+	/** `filter={null}`: the groups are already what the query matched. */
+	isUnfiltered?: boolean
+	/** Replaces the pick an item click reports (a link item navigates on its own). */
+	onClickItem?: (value: string) => M
+	/** `CommandItem className`. */
+	itemClassName?: string
+	/** `CommandEmpty`, shown in the list when no group has items. */
+	empty?: Html
+	/** On the ScrollArea viewport, e.g. a Mount that measures its overflow. */
+	viewportAttributes?: ReadonlyArray<Attribute<M>>
+	/** The scrollbar, sized and shown by that Mount (`trackScrollbar`). */
+	hasMeasuredScrollbar?: boolean
+}>
 
 /** `CommandList` in its ScrollArea: the groups whose items match the input, numbered in order. */
 export const commandList = <M>(
@@ -90,12 +130,15 @@ export const commandList = <M>(
 	model: Model,
 	groups: ReadonlyArray<CommandGroup>,
 	toMessage: (message: Message) => M,
+	options: ListOptions<M> = {},
 ): Html => {
-	const matches = new Set(filterItems(commandTitles(groups), model.inputValue))
+	const matches = new Set(
+		options.isUnfiltered === true ? commandTitles(groups) : filterItems(commandTitles(groups), model.inputValue),
+	)
 	const visible = Array.filter(
 		groups.map((group) => ({
 			...group,
-			items: Array.filter(group.items, (item) => matches.has(item.title)),
+			items: Array.filter(group.items, (item) => matches.has(valueOf(item))),
 		})),
 		(group) => group.items.length > 0,
 	)
@@ -121,13 +164,21 @@ export const commandList = <M>(
 						[group.label],
 					),
 					...group.items.map((item, offset) =>
-						commandItem(h, model, item, start + offset, toMessage),
+						commandItem(h, model, item, start + offset, toMessage, options),
 					),
 				],
 			),
 		]
 	})[1]
-	return scrollArea(h, { idPrefix: `${model.id}-scroll`, scrollFade: true, scrollbarGutter: true }, [
+	const body = rendered.length === 0 && options.empty !== undefined ? [options.empty] : rendered
+	const scroll = {
+		idPrefix: `${model.id}-scroll`,
+		scrollFade: true,
+		scrollbarGutter: true,
+		viewportAttributes: options.viewportAttributes,
+		hasMeasuredScrollbar: options.hasMeasuredScrollbar === true,
+	}
+	return scrollArea(h, scroll, [
 		h.div(
 			[
 				...(model.highlighted === null
@@ -140,7 +191,7 @@ export const commandList = <M>(
 				h.Role("listbox"),
 				h.Tabindex(-1),
 			],
-			rendered,
+			body,
 		),
 	])
 }
