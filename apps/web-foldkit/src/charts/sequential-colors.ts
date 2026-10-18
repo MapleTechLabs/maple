@@ -95,3 +95,11 @@ export const sequentialColorScale = (options: {
 		return colorAt(Math.max(0, Math.min(1, raw)), options.stops, parsed)
 	}
 }
+
+/** `muteColor` (color-scale.ts): a colour pushed `amount` of the way toward the background. */
+export const muteColor = (color: string, background: string, amount: number): string => {
+	const from = parseOklch(color)
+	const to = parseOklch(background)
+	if (!from || !to) return color
+	return formatOklch(mixOklch(from, to, Math.max(0, Math.min(1, amount))))
+}

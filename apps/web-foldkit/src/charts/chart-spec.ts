@@ -428,6 +428,8 @@ export const ChartTooltip = defineTaggedUnion({
 				value: Schema.String,
 			}),
 		),
+		/** A closing total row under the series (the lab's stacked bar). */
+		total: Schema.optionalKey(Schema.String),
 	},
 })
 export type ChartTooltip = typeof ChartTooltip.Type

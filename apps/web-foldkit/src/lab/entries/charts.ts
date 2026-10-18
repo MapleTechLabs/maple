@@ -31,7 +31,13 @@ import { chartEmpty } from "../../ui/chart-state"
 import { widgetShell } from "../../page/dashboards/kit/tile-shell"
 import { inlineCode } from "../../ui/inline-code"
 import { ARM_TITLES, type ChartsLabArm, SECTIONS } from "../charts/arms"
-import { histogramSpikeValues, histogramSpikeView, pieSpikeView, SPIKE_TOKENS } from "../charts/spikes"
+import {
+	histogramSpikeValues,
+	histogramSpikeView,
+	pieLegendSpikeView,
+	pieSpikeView,
+	SPIKE_TOKENS,
+} from "../charts/spikes"
 import { SPIKE_ARMS, SPIKE_TOKENS_ALL } from "../charts/spike-arms"
 import { spikeView } from "../charts/spike-view"
 import { defineLab } from "../define"
@@ -83,8 +89,8 @@ const productionTimeseriesOf = (arm: ChartsLabArm) => {
 	}
 }
 
-/** One chart instance per gallery position (`pie-production` renders in two sections). */
-const slotOf = (sectionIndex: number, arm: ChartsLabArm): string => `${sectionIndex}:${arm}`
+/** One chart instance per gallery position, section and row (an arm can repeat in a section). */
+const slotOf = (position: string, arm: ChartsLabArm): string => `${position}:${arm}`
 
 const PORTED_ARMS: ReadonlyArray<ChartsLabArm> = [
 	"heatmap-production",
@@ -96,10 +102,12 @@ const PORTED_ARMS: ReadonlyArray<ChartsLabArm> = [
 	"pie-production",
 	"pie-tanstack",
 	"pie-solid-tanstack",
+	"pie-legend-tanstack",
+	"pie-solid-legend-tanstack",
 	"histogram-production",
 	"histogram-tanstack",
 ]
-const isPorted = (arm: ChartsLabArm): boolean => PORTED_ARMS.includes(arm) || SPIKE_ARMS[arm] !== undefined
+const isPorted = (arm: ChartsLabArm): boolean => PORTED_ARMS.includes(arm) || SPIKE_ARMS.has(arm)
 
 const THEME_TOKENS: ReadonlyArray<string> = [
 	...new Set([
@@ -133,10 +141,9 @@ const init = (): Update.Return<Model, Message> => ({
 		nowMs: 0,
 		charts: Object.fromEntries(
 			SECTIONS.flatMap((section, sectionIndex) =>
-				section.rows
-					.flat()
-					.filter(isPorted)
-					.map((arm) => [slotOf(sectionIndex, arm), Chart.init()]),
+				section.rows.flatMap((row, rowIndex) =>
+					row.filter(isPorted).map((arm) => [slotOf(`${sectionIndex}.${rowIndex}`, arm), Chart.init()]),
+				),
 			),
 		),
 		toasts: initLabToasts(),
@@ -210,7 +217,7 @@ const chartNode = (
 	const chart = model.charts[slot]
 	if (chart === undefined) return []
 	const common = { slotId: slot, model: chart, toParentMessage: toChartMessage(slot) }
-	const chartId = slot.replace(":", "-")
+	const chartId = slot.replace(/[:.]/g, "-")
 	if (arm === "pie-production") {
 		const viewInputs = {
 			chartId,
@@ -253,7 +260,11 @@ const chartNode = (
 			? [h.submodel({ ...common, view: BarChart.view, viewInputs: { ...base, stacked: true } })]
 			: [h.submodel({ ...common, view: AreaChart.view, viewInputs: { ...base, mark: timeseries.kind } })]
 	}
-	const spike = SPIKE_ARMS[arm]
+	if (arm === "pie-legend-tanstack" || arm === "pie-solid-legend-tanstack") {
+		const viewInputs = { chartId, rows: pieRows, theme, donut: arm === "pie-legend-tanstack", className: "h-full w-full" }
+		return [h.submodel({ ...common, view: pieLegendSpikeView, viewInputs })]
+	}
+	const spike = SPIKE_ARMS.get(arm)
 	if (spike !== undefined) {
 		const legend = spike.legend
 		const viewInputs = {
@@ -263,6 +274,7 @@ const chartNode = (
 			tokens: spike.tokens,
 			ariaLabel: spike.ariaLabel,
 			className: "h-full w-full",
+			...(spike.footer === undefined ? undefined : { footer: spike.footer }),
 			...(legend === undefined ? undefined : { legend: { label: legend.label, series: legend.series(theme) } }),
 		}
 		return [h.submodel({ ...common, view: spikeView, viewInputs })]
@@ -278,7 +290,7 @@ const chartArm = (
 	model: Model,
 	h: HtmlBuilder<Message>,
 	theme: ThemeColors,
-	sectionIndex: number,
+	position: string,
 	arm: ChartsLabArm,
 ): Html =>
 	h.div(
@@ -290,7 +302,7 @@ const chartArm = (
 			),
 			h.div(
 				[h.Class("h-[320px] min-h-0 overflow-hidden p-2")],
-				chartNode(model, h, theme, slotOf(sectionIndex, arm), arm),
+				chartNode(model, h, theme, slotOf(position, arm), arm),
 			),
 		],
 	)
@@ -299,14 +311,14 @@ const sectionRow = (
 	model: Model,
 	h: HtmlBuilder<Message>,
 	theme: ThemeColors,
-	sectionIndex: number,
+	position: string,
 	arms: ReadonlyArray<ChartsLabArm>,
 ): Html => {
 	const [only] = arms
-	if (arms.length === 1 && only !== undefined) return chartArm(model, h, theme, sectionIndex, only)
+	if (arms.length === 1 && only !== undefined) return chartArm(model, h, theme, position, only)
 	return h.div(
 		[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
-		arms.map((arm) => chartArm(model, h, theme, sectionIndex, arm)),
+		arms.map((arm) => chartArm(model, h, theme, position, arm)),
 	)
 }
 
@@ -376,7 +388,7 @@ const gallery = (model: Model, h: HtmlBuilder<Message>, theme: ThemeColors): Rea
 		section(
 			h,
 			entry.title,
-			entry.rows.map((arms) => sectionRow(model, h, theme, sectionIndex, arms)),
+			entry.rows.map((arms, rowIndex) => sectionRow(model, h, theme, `${sectionIndex}.${rowIndex}`, arms)),
 		),
 	),
 	section(h, "Empty window — MetricsGrid", [h.div([h.DataAttribute("testid", "charts-lab-empty")], [emptyMetricsGrid(h)])]),

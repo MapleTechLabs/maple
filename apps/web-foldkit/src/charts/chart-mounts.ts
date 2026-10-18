@@ -19,6 +19,7 @@ type ChartMountMessage =
 	| typeof Message.RenderedPlot.Type
 	| typeof Message.ChangedChartFocus.Type
 	| typeof Message.ChangedChartTooltip.Type
+	| typeof Message.ToggledLegendSeries.Type
 
 const failed = (reason: string) => Message.FailedMountChart({ reason })
 
@@ -44,6 +45,7 @@ export const MountChart = Mount.defineStream("MountChart", {
 		Message.RenderedPlot,
 		Message.ChangedChartFocus,
 		Message.ChangedChartTooltip,
+		Message.ToggledLegendSeries,
 	],
 	execute: ({ element, chartId, ariaLabel, renderer, reportPlot, host: hostKind }) =>
 		Stream.callback<ChartMountMessage>((queue) =>
@@ -94,6 +96,8 @@ export const MountChart = Mount.defineStream("MountChart", {
 												queue,
 												Message.ChangedChartTooltip({ maybeTooltip }),
 											),
+										onLegendToggle: (key, keys) =>
+											Queue.offerUnsafe(queue, Message.ToggledLegendSeries({ key, keys })),
 										onRender: (bounds, timeAxis) => {
 											if (reportPlot) reportPlotOnce(bounds, timeAxis)
 											if (!anchor) return

@@ -61,6 +61,8 @@ export interface ChartHostCallbacks {
 	readonly onFocusChange: (maybeKey: Option.Option<string>) => void
 	readonly onTooltipChange: (maybeTooltip: Option.Option<ChartTooltip>) => void
 	readonly onRender: (bounds: ChartBounds, timeAxis: Option.Option<TimeAxis>) => void
+	/** A library-drawn legend (`interactiveColorLegend`) toggled `key` of `keys`. */
+	readonly onLegendToggle?: (key: string, keys: ReadonlyArray<string>) => void
 }
 
 export interface ChartHostOptions {
