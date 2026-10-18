@@ -71,7 +71,11 @@ export const attachNudge = (h: H): Html =>
 		),
 	])
 
-export const linkedInvestigationPanel = (h: H, investigation: V2Investigation | null): Html =>
+export const linkedInvestigationPanel = (
+	h: H,
+	investigation: V2Investigation | null,
+	isStarting: boolean,
+): Html =>
 	investigation === null
 		? panel(
 				h,
@@ -90,11 +94,16 @@ export const linkedInvestigationPanel = (h: H, investigation: V2Investigation | 
 							),
 						],
 					),
-					// TODO(start-investigation): legacy creates the investigation and opens it.
-					button(h, { size: "sm", variant: "outline" }, [
-						icon(h, "PulseIcon"),
-						"Start investigation",
-					]),
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled: isStarting,
+							attributes: [h.OnClick(Message.ClickedInvestigate())],
+						},
+						[icon(h, "PulseIcon"), "Start investigation"],
+					),
 				],
 			)
 		: panel(

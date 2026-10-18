@@ -1,4 +1,5 @@
-import { EMPTY, OPS, opsScenarios, SEEDED } from "./ops-kit.ts"
+import type { Locator, Page } from "playwright"
+import { EMPTY, OPS, opsScenarios, SEEDED, settlePointer } from "./ops-kit.ts"
 import type { AreaModule, Scenario } from "./types.ts"
 
 /** The error issues list (`/errors/issues`); the hub and one issue live in the routes area. */
@@ -28,6 +29,26 @@ const timed = (
 	settle,
 	area: "errors",
 })
+
+/** The in-progress issue, claimed by the dataset's user (a held lease). */
+const LEASED_PATH = "/errors/issues/0199a004-0000-7000-8000-000000000002"
+
+/** Picks `option` from the rail select whose trigger reads `current`, then waits for `toast`. */
+const pickInRail =
+	(trigger: (page: Page) => Locator, option: string, toast?: string) => async (page: Page) => {
+		await trigger(page).click()
+		await page.getByRole("option", { name: option }).click()
+		if (toast !== undefined) await page.getByText(toast, { exact: true }).waitFor()
+		await settlePointer(page)
+	}
+const statusTrigger = (page: Page) => page.getByRole("combobox").filter({ hasText: "Triage" })
+const severityTrigger = (page: Page) => page.getByRole("combobox", { name: "Severity" })
+
+const clickThen = (name: string, toast: string) => async (page: Page) => {
+	await page.getByRole("button", { name, exact: true }).click()
+	await page.getByText(toast, { exact: true }).waitFor()
+	await settlePointer(page)
+}
 
 const listFailure = (tag: string) => ({
 	failures: { [tag]: { status: 500, body: { message: "ui-parity: injected failure" } } },
@@ -79,6 +100,36 @@ export const errorsArea: AreaModule = {
 			steps: async (page) => {
 				await page.getByText("Show all severities").waitFor()
 			},
+		}),
+		errors("issue-status", "status moved to Todo", ISSUE_PATH, {
+			steps: pickInRail(statusTrigger, "Todo", "Moved to Todo"),
+		}),
+		errors("issue-severity-clear", "severity cleared", ISSUE_PATH, {
+			steps: pickInRail(severityTrigger, "Not set", "Severity cleared"),
+		}),
+		errors("issue-severity-escalate", "severity raise asks to notify", ISSUE_PATH, {
+			steps: async (page) => {
+				await pickInRail(severityTrigger, "High")(page)
+				await page.getByRole("alertdialog").getByText("Notify escalation destinations?").waitFor()
+			},
+		}),
+		errors("issue-severity-confirm", "severity raise confirmed", ISSUE_PATH, {
+			steps: async (page) => {
+				await pickInRail(severityTrigger, "High")(page)
+				await clickThen("Change severity and notify", "Severity set to high")(page)
+			},
+		}),
+		errors("issue-claim", "claimed", ISSUE_PATH, { steps: clickThen("Claim", "Claimed") }),
+		errors("issue-lease", "a held lease", LEASED_PATH, {
+			steps: async (page) => {
+				await page.getByText("Active lease").waitFor()
+			},
+		}),
+		errors("issue-lease-extend", "lease extended", LEASED_PATH, {
+			steps: clickThen("Extend", "Lease extended"),
+		}),
+		errors("issue-lease-release", "lease released", LEASED_PATH, {
+			steps: clickThen("Release", "Released"),
 		}),
 		errors("hub-sort-volume", "sorted by volume", "/errors", {
 			steps: async (page) => {

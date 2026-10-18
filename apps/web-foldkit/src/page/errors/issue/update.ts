@@ -1,5 +1,5 @@
-import type { ErrorIssueId } from "@maple/domain/http"
-import { Option } from "effect"
+import type { ErrorIssueId, IssueSeverity } from "@maple/domain/http"
+import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
@@ -8,11 +8,13 @@ import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as CopyButton from "../../../ui/copy-button"
+import * as Dialog from "../../../ui/dialog"
 import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReloadSpin,
+	CreateInvestigation,
 	FetchAnomalies,
 	FetchDetail,
 	FetchEscalations,
@@ -24,9 +26,18 @@ import {
 	FetchVerifications,
 	ResolveWindow,
 } from "./command"
-import { DEFAULT_PRESET, detailQueryOf, type Search } from "./derive"
+import { DEFAULT_PRESET, detailOf, detailQueryOf, investigationPayload, type Search } from "./derive"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
+import {
+	completedWrite,
+	confirmedSeverity,
+	evaluatedEscalation,
+	pickedSeverity,
+	pickedState,
+	severityConfirmStep,
+	startWrite,
+} from "./writes"
 
 export type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -219,6 +230,10 @@ export const init = (
 		issueIdCopy: CopyButton.init(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
+		busy: null,
+		isStartingInvestigation: false,
+		severityConfirm: Dialog.init("issue-severity-confirm", "alert-dialog"),
+		pendingSeverity: null,
 		refreshVersion: 0,
 		isReloading: false,
 	}
@@ -270,18 +285,68 @@ const lift = <Inner, M>(
 	commands: Command.mapMessages(next.commands ?? [], wrap),
 })
 
-/** TODO(mutations): picking a status or severity transitions the issue in legacy; here it snaps back. */
+/** A pick writes; the select stays controlled by the issue, so it shows the issue's value until a re-read. */
 const selectStep = (
 	model: Model,
 	select: Select.Model,
 	message: Select.Message,
 	write: (select: Select.Model) => Partial<Model>,
 	wrap: (message: Select.Message) => Message,
+	onPick: (model: Model, value: string) => Return,
 ): Return => {
 	const next = Select.update(select, message)
 	const stepped = lift(model, next, write, wrap)
-	return next.outMessage === undefined ? stepped : { ...stepped, model: syncSelects(stepped.model) }
+	if (next.outMessage === undefined) return stepped
+	const picked = onPick(syncSelects(stepped.model), next.outMessage.value)
+	return { ...picked, commands: [...(stepped.commands ?? []), ...(picked.commands ?? [])] }
 }
+
+const isSeverity = (value: string): value is IssueSeverity =>
+	value === "critical" || value === "high" || value === "medium" || value === "low"
+
+/** The reads a write invalidates (`invalidateKeys`): the detail, timeline, escalations, PRs, verifications. */
+const refreshAfterWrite =
+	(context: PageContext) =>
+	(model: Model): { readonly model: Model; readonly commands: ReadonlyArray<Cmd> } => {
+		const key = (operation: string) => requestKey(context.orgId, operation, model.issueId)
+		const issueId = model.issueId
+		const result = applySteps(model, [
+			...(model.window === null ? [] : [detailStep(context, model.window, "Refresh")]),
+			(m) =>
+				keyed(
+					m.events,
+					key("errors.listIssueEvents"),
+					"Refresh",
+					(events) => ({ events }),
+					(k) => FetchEvents({ key: k, issueId }),
+				),
+			(m) =>
+				keyed(
+					m.escalations,
+					key("errors.listIssueEscalations"),
+					"Refresh",
+					(escalations) => ({ escalations }),
+					(k) => FetchEscalations({ key: k, issueId }),
+				),
+			(m) =>
+				keyed(
+					m.pullRequests,
+					key("errors.listIssuePullRequests"),
+					"Refresh",
+					(pullRequests) => ({ pullRequests }),
+					(k) => FetchPullRequests({ key: k, issueId }),
+				),
+			(m) =>
+				keyed(
+					m.verifications,
+					key("errors.listIssueVerifications"),
+					"Refresh",
+					(verifications) => ({ verifications }),
+					(k) => FetchVerifications({ key: k, issueId }),
+				),
+		])
+		return { model: result.model, commands: result.commands ?? [] }
+	}
 
 const navigateSearch = (model: Model, search: Search): Return => ({
 	model,
@@ -390,6 +455,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				inner,
 				(statusSelect) => ({ statusSelect }),
 				(next) => Message.GotStatusSelectMessage({ message: next }),
+				pickedState,
 			),
 		GotSeveritySelectMessage: ({ message: inner }) =>
 			selectStep(
@@ -398,7 +464,45 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				inner,
 				(severitySelect) => ({ severitySelect }),
 				(next) => Message.GotSeveritySelectMessage({ message: next }),
+				(m, value) => pickedSeverity(m, isSeverity(value) ? value : null),
 			),
+		ClickedClaim: () => startWrite(model, { _tag: "Claim" }),
+		ClickedExtendLease: () => startWrite(model, { _tag: "Heartbeat" }),
+		ClickedReleaseLease: () => startWrite(model, { _tag: "Release" }),
+		CompletedIssueWrite: ({ write, result }) =>
+			completedWrite(model, write, result, refreshAfterWrite(context)),
+		CompletedEvaluateEscalation: ({ severity, result }) => evaluatedEscalation(model, severity, result),
+		GotSeverityConfirmMessage: ({ message: inner }) => severityConfirmStep(model, inner),
+		ClickedConfirmSeverity: () => confirmedSeverity(model),
+		ClickedInvestigate: () =>
+			Option.match(detailOf(model), {
+				onNone: () => ({ model }),
+				onSome: (detail) =>
+					model.isStartingInvestigation
+						? { model }
+						: {
+								model: { ...model, isStartingInvestigation: true },
+								commands: [CreateInvestigation({ payload: investigationPayload(detail) })],
+							},
+			}),
+		CompletedCreateInvestigation: ({ result }) =>
+			Result.match(result, {
+				onFailure: (failure) => ({
+					model: { ...model, isStartingInvestigation: false },
+					outMessage: PageOutMessage.RequestedToast({
+						type: "error",
+						title: failure.title,
+						description: failure.message,
+					}),
+				}),
+				onSuccess: (id) => ({
+					model: { ...model, isStartingInvestigation: false },
+					outMessage: PageOutMessage.RequestedNavigation({
+						url: hrefOf(AppRoute.Investigation({ id, search: {} })),
+						isReplace: false,
+					}),
+				}),
+			}),
 		GotFingerprintCopyMessage: ({ message: inner }) =>
 			lift(
 				model,

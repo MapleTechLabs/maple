@@ -91,3 +91,21 @@ export const actorAvatar = <M>(
 /** `ActorChip`'s empty form. */
 export const noActor = <M>(h: HtmlBuilder<M>): Html =>
 	h.span([h.Class("text-xs text-muted-foreground")], [EMPTY_VALUE])
+
+/** `ActorChip`: avatar and name; a person outside the directory has no detail, so no tooltip. */
+export const actorChip = <M>(h: HtmlBuilder<M>, actor: ActorDocument | null, className?: string): Html => {
+	if (actor === null) return noActor(h)
+	const identity = resolveActorIdentity(actor)
+	return h.span(
+		[
+			h.Class(
+				cn(
+					"inline-flex max-w-full items-center gap-1.5 align-middle text-xs",
+					identity.kind === "agent" ? AGENT_ACCENT.text : "text-muted-foreground",
+					className,
+				),
+			),
+		],
+		[identityAvatar(h, identity), h.span([h.Class("truncate font-medium")], [identity.name])],
+	)
+}

@@ -1,7 +1,7 @@
 import { DateTime, Effect, Predicate, Schema } from "effect"
 import { ErrorIssueNotFoundError, ErrorsByTypeRequest } from "@maple/domain/http"
 import { V2ErrorIssue, V2ErrorIssueDetail } from "@maple/domain/http/v2"
-import { ErrorIssueId } from "@maple/domain/primitives"
+import { ActorId, ErrorIssueId, UserId } from "@maple/domain/primitives"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { Queries } from "@maple/query-engine/registry"
 import { runQueryDefinition } from "@maple/query-engine/runtime"
@@ -17,6 +17,8 @@ import { parityOrgId, type FixtureWarehouse } from "../warehouse.ts"
 
 const DAY_MS = 24 * 3_600_000
 const decodeIssueId = Schema.decodeUnknownSync(ErrorIssueId)
+const decodeActorId = Schema.decodeUnknownSync(ActorId)
+const decodeUserId = Schema.decodeUnknownSync(UserId)
 const encodeIssue = Schema.encodeUnknownEffect(V2ErrorIssue)
 const encodeDetail = Schema.encodeUnknownEffect(V2ErrorIssueDetail)
 
@@ -51,6 +53,20 @@ const issueRows = (warehouse: FixtureWarehouse, dataset: Dataset) =>
 					{ profile: "list", context: "errorIssueSampleTraces" },
 				)
 				const state = WORKFLOW[Math.min(index, WORKFLOW.length - 1)] ?? "todo"
+				// The in-progress issue is claimed by the dataset's user, 3 minutes into a 15-minute lease.
+				const nowMs = parseWarehouseDateTime(dataset.now)
+				const holder =
+					state === "in_progress" && dataset.identity !== null
+						? {
+								id: decodeActorId(fixtureUuid(7, 1)),
+								type: "user" as const,
+								user_id: decodeUserId(dataset.identity.userId),
+								agent_name: null,
+								model: null,
+								capabilities: [],
+								last_active_at: null,
+							}
+						: null
 				return {
 					id: decodeIssueId(fixtureUuid(4, index + 1)),
 					object: "error_issue" as const,
@@ -66,10 +82,12 @@ const issueRows = (warehouse: FixtureWarehouse, dataset: Dataset) =>
 					severity: SEVERITY[Math.min(index, SEVERITY.length - 1)] ?? "medium",
 					severity_source: "detector" as const,
 					source_ref: null,
-					assigned_actor: null,
-					lease_holder: null,
-					lease_expires_at: null,
-					claimed_at: null,
+					assigned_actor: holder,
+					lease_holder: holder,
+					lease_expires_at:
+						holder === null ? null : DateTime.formatIso(DateTime.makeUnsafe(nowMs + 12 * 60_000)),
+					claimed_at:
+						holder === null ? null : DateTime.formatIso(DateTime.makeUnsafe(nowMs - 3 * 60_000)),
 					notes: null,
 					first_seen_at: DateTime.formatIso(row.firstSeen),
 					last_seen_at: DateTime.formatIso(row.lastSeen),
@@ -130,18 +148,22 @@ const ranked = (issues: ReadonlyArray<SeededIssue>, query: unknown) => {
 
 const list = (data: ReadonlyArray<unknown>) => ({ object: "list", data, has_more: false, next_cursor: null })
 
-export const errorIssueEndpoints = (
-	warehouse: FixtureWarehouse,
-): Readonly<Record<string, EndpointHandler>> => {
-	// Seeded once per dataset, like the Postgres rows they stand in for.
+/** The dataset's issue rows, seeded once per dataset like the Postgres rows they stand in for. */
+export const issueSeed = (warehouse: FixtureWarehouse) => {
 	const seeded = new Map<string, Effect.Effect<ReadonlyArray<SeededIssue>, unknown>>()
-	const issuesOf = (dataset: Dataset) => {
+	return (dataset: Dataset) => {
 		const existing = seeded.get(dataset.name)
 		if (existing !== undefined) return existing
 		const cached = Effect.runSync(Effect.cached(issueRows(warehouse, dataset)))
 		seeded.set(dataset.name, cached)
 		return cached
 	}
+}
+
+export const errorIssueEndpoints = (
+	warehouse: FixtureWarehouse,
+): Readonly<Record<string, EndpointHandler>> => {
+	const issuesOf = issueSeed(warehouse)
 	const find = (dataset: Dataset, params: unknown) =>
 		Effect.gen(function* () {
 			const id = str(params, "id") ?? str(params, "issueId")

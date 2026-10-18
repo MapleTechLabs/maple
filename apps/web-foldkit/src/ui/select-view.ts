@@ -22,7 +22,8 @@ import { portalId, triggerId } from "./overlay/popup-state"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { itemId, listId, Message, type Model, MountSelect } from "./select"
 
-export type SelectOption = Readonly<{ value: string; label: string }>
+/** `isDisabled`: `<SelectItem disabled>`, listed but not choosable. */
+export type SelectOption = Readonly<{ value: string; label: string; isDisabled?: boolean }>
 
 /** What the list shows: groups with a label, separators and loose items, in order. */
 export type SelectEntry =
@@ -65,19 +66,26 @@ export const selectedIndexOf = (entries: ReadonlyArray<SelectEntry>, value: stri
 
 const option = (h: H, model: Model, inputs: ViewInputs, item: SelectOption, index: number): Html => {
 	const isSelected = item.value === model.value
+	const isDisabled = item.isDisabled ?? false
 	const isHighlighted = model.highlighted === index
 	return h.div(
 		[
 			h.AriaSelected(isSelected),
+			...(isDisabled ? [h.AriaDisabled(true)] : []),
 			h.Class(cn(selectItemStyles)),
+			...(isDisabled ? [h.DataAttribute("disabled", "")] : []),
 			...(isHighlighted ? [h.DataAttribute("highlighted", "")] : []),
 			...(isSelected ? [h.DataAttribute("selected", "")] : []),
 			h.DataAttribute("slot", "select-item"),
 			h.Id(itemId(model.id, index)),
 			h.Role("option"),
 			h.Tabindex(isHighlighted ? 0 : -1),
-			h.OnMouseMove(Message.HoveredItem({ index })),
-			h.OnClick(Message.SelectedItem({ index, value: item.value })),
+			...(isDisabled
+				? []
+				: [
+						h.OnMouseMove(Message.HoveredItem({ index })),
+						h.OnClick(Message.SelectedItem({ index, value: item.value })),
+					]),
 		],
 		[
 			...(isSelected

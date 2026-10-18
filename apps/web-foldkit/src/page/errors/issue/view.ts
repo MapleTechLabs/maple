@@ -3,6 +3,7 @@ import { errorIssueDetailFromV2 } from "@maple/web/lib/services/error-issues"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { confirmDialog } from "../../../ui/confirm-dialog"
 import { errorState } from "../../../ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -29,6 +30,7 @@ import {
 	pullRequestsPanel,
 } from "./view-panels"
 import { issueSidebar } from "./view-sidebar"
+import { relatedAnomaliesOf, relatedAnomaliesSection } from "./view-anomalies"
 import { issueSkeleton, issueNotFound } from "./view-skeleton"
 
 // `IssueDetailContent`: skeleton, not-found and error states, then the loaded page.
@@ -64,7 +66,7 @@ const overview = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: 
 							inputs.context.timeZone,
 						),
 					]),
-			linkedInvestigationPanel(h, linkedInvestigationOf(model)),
+			linkedInvestigationPanel(h, linkedInvestigationOf(model), model.isStartingInvestigation),
 			...(issue.kind === "error"
 				? [
 						bodySection(
@@ -78,7 +80,10 @@ const overview = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: 
 						),
 					]
 				: []),
-			// TODO(anomalies): `RelatedAnomaliesSection` rows when detector incidents link here.
+			...relatedAnomaliesSection(h, relatedAnomaliesOf(model), {
+				nowMs: model.nowMs,
+				timeZone: inputs.context.timeZone,
+			}),
 		],
 	)
 }
@@ -129,7 +134,7 @@ const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: Pa
 	return dashboardPage(
 		h,
 		{
-			titleContent: headerTitle(h, detail.issue, investigation),
+			titleContent: headerTitle(h, detail.issue, investigation, relatedAnomaliesOf(model)),
 			actions: headerActions(h, model, investigation),
 			tabs: issueTabs(h, model.issueId, model.search, {
 				active: tab,
@@ -139,9 +144,33 @@ const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: Pa
 			}),
 			rightPanel: rightPanel(h, model, detail),
 		},
-		[tab === "overview" ? overview(h, model, detail, inputs) : otherTab(h, tab, detail)],
+		[
+			tab === "overview" ? overview(h, model, detail, inputs) : otherTab(h, tab, detail),
+			severityConfirmDialog(h, model),
+		],
 	)
 }
+
+/** "Notify escalation destinations?" before a manual severity raise that routes. */
+const severityConfirmDialog = (h: H, model: Model): Html =>
+	confirmDialog(h, {
+		slotId: "issue-severity-confirm",
+		model: model.severityConfirm,
+		toParentMessage: (message) => Message.GotSeverityConfirmMessage({ message }),
+		tone: "default",
+		hasIcon: false,
+		title: "Notify escalation destinations?",
+		description: [
+			"Changing severity to ",
+			model.pendingSeverity?.severity ?? "",
+			" will notify",
+			" ",
+			model.pendingSeverity?.destinationNames.join(", ") ?? "",
+			". Manual severity changes represent explicit human intent and bypass AI confidence gates.",
+		],
+		confirmLabel: "Change severity and notify",
+		onConfirm: Message.ClickedConfirmSeverity(),
+	})
 
 const isNotFound = (failure: { readonly _tag: string }) =>
 	failure._tag === "@maple/http/errors/ErrorIssueNotFoundError"

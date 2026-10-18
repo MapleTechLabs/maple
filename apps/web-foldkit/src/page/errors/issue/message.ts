@@ -4,7 +4,9 @@ import {
 	ErrorIssueVerificationsResponse,
 	GithubIntegrationStatus,
 	IssueEscalationAttemptsResponse,
+	IssueSeverity,
 	VcsPullRequestsResponse,
+	WorkflowState,
 } from "@maple/domain/http"
 import { V2AnomalyIncident, V2ErrorIssueDetail, V2Investigation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
@@ -14,6 +16,7 @@ import { ThemeColors } from "../../../charts/theme-colors"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as CopyButton from "../../../ui/copy-button"
+import * as Dialog from "../../../ui/dialog"
 import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DestinationName } from "./model"
@@ -25,6 +28,25 @@ export type RequestMode = typeof RequestMode.Type
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
 	result: Schema.Result(schema, LoadFailure),
+})
+
+/** The issue workflow writes the rail sends (`useMutationAction` in the route). */
+export const IssueWrite = Schema.Union([
+	Schema.TaggedStruct("Transition", { toState: WorkflowState }),
+	Schema.TaggedStruct("Claim", {}),
+	Schema.TaggedStruct("Heartbeat", {}),
+	Schema.TaggedStruct("Release", {}),
+	Schema.TaggedStruct("SetSeverity", { severity: Schema.NullOr(IssueSeverity) }),
+])
+export type IssueWrite = typeof IssueWrite.Type
+
+/** What the success toast reads off the written issue. */
+export const WriteOutcome = Schema.Struct({ severity: Schema.NullOr(Schema.String) })
+
+/** `evaluateEscalationPolicy`: whether the change would notify, and whom. */
+export const EscalationPreview = Schema.Struct({
+	outcome: Schema.String,
+	destinationIds: Schema.Array(Schema.String),
 })
 
 export const Message = defineMessageUnion({
@@ -53,5 +75,17 @@ export const Message = defineMessageUnion({
 	GotFingerprintCopyMessage: { message: CopyButton.Message },
 	GotIssueIdCopyMessage: { message: CopyButton.Message },
 	GotChartMessage: { message: Chart.Message },
+	ClickedClaim: {},
+	ClickedExtendLease: {},
+	ClickedReleaseLease: {},
+	CompletedIssueWrite: { write: IssueWrite, result: Schema.Result(WriteOutcome, LoadFailure) },
+	CompletedEvaluateEscalation: {
+		severity: IssueSeverity,
+		result: Schema.Result(EscalationPreview, LoadFailure),
+	},
+	GotSeverityConfirmMessage: { message: Dialog.Message },
+	ClickedConfirmSeverity: {},
+	ClickedInvestigate: {},
+	CompletedCreateInvestigation: { result: Schema.Result(Schema.String, LoadFailure) },
 })
 export type Message = typeof Message.Type
