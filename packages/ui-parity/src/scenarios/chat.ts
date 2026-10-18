@@ -55,6 +55,40 @@ const newTab = async (page: Page) => {
 	await conversations(page).getByText("New Chat", { exact: true }).nth(1).waitFor()
 }
 
+/** The global chat sheet (`GlobalChatSheet`), opened over the Overview from the top bar or with `C`. */
+const sheet = (id: string, title: string, steps: (page: Page) => Promise<void>): Scenario => ({
+	...scenario(`sheet-${id}`, `global sheet, ${title}`, "default", steps),
+	path: "/",
+})
+
+const openSheet = async (page: Page) => {
+	await page.getByRole("button", { name: "Ask Maple AI" }).click()
+	await page.getByRole("dialog").getByText("Or just start typing.", { exact: false }).waitFor()
+}
+
+const sheetScenarios: ReadonlyArray<Scenario> = [
+	sheet("open", "opened from the top bar", openSheet),
+	sheet("shortcut", "opened with C", async (page) => {
+		await page.getByRole("button", { name: "Ask Maple AI" }).waitFor()
+		await page.keyboard.press("c")
+		await page.getByRole("dialog").waitFor()
+	}),
+	sheet("send", "a suggestion sent and answered", async (page) => {
+		await openSheet(page)
+		await page.getByRole("dialog").getByRole("button", { name: "Show me the slowest traces" }).click()
+		await replied(page)
+	}),
+	sheet("new-chat", "a new conversation started in the sheet", async (page) => {
+		await openSheet(page)
+		await page.getByRole("dialog").getByRole("button", { name: "New chat" }).click()
+	}),
+	sheet("closed", "opened and closed again", async (page) => {
+		await openSheet(page)
+		await page.getByRole("dialog").getByRole("button", { name: "Close" }).click()
+		await page.getByRole("dialog").waitFor({ state: "detached" })
+	}),
+]
+
 export const chatArea: AreaModule = {
 	area: "chat",
 	scenarios: [
@@ -142,6 +176,7 @@ export const chatArea: AreaModule = {
 			...scenario("shared", "a teammate's shared conversation", "chat-conversation"),
 			path: "/chat?shared=default&title=Checkout%20incident",
 		},
+		...sheetScenarios,
 		lab("sheet-width", "at the sheet width", (page) => page.getByRole("button", { name: "Sheet (620px)" }).click()),
 		lab("narrow-width", "at the narrow width", (page) => page.getByRole("button", { name: "Narrow (420px)" }).click()),
 		lab("streaming", "streaming", async (page) => {

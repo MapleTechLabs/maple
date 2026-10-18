@@ -12,6 +12,7 @@ import { type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } fr
 import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
+import * as ChatSheet from "./page/chat/sheet"
 import * as ToastView from "./ui/toast-view"
 
 /** Placeholder for a route that is not ported yet: its tag and the session's org. */
@@ -100,6 +101,13 @@ const shellOverlays = (model: Model, h: HtmlBuilder<Message>, currentPath: strin
 		view: Shell.menuLayerView,
 		toParentMessage: toShellMessage,
 		viewInputs: { currentPath },
+	}),
+	h.submodel({
+		slotId: "chat-sheet",
+		model: model.chatSheet,
+		view: ChatSheet.view,
+		toParentMessage: (message: ChatSheet.Message) => Message.GotChatSheetMessage({ message }),
+		viewInputs: { timeZone: model.timeZone },
 	}),
 ]
 

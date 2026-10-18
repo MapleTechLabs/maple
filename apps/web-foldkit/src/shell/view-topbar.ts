@@ -28,7 +28,7 @@ const crumb = (h: HtmlBuilder<Message>, entry: BreadcrumbEntry): Html =>
 			: breadcrumbLink(h, { className: CRUMB_LABEL, href: entry.href }, [entry.label]),
 	])
 
-/** `IconButton variant="outline" label="Ask Maple AI" shortcut="C"` (the chat sheet is Phase 4). */
+/** `IconButton variant="outline" label="Ask Maple AI" shortcut="C"`: opens the global chat sheet. */
 const askMapleButton = (h: HtmlBuilder<Message>): Html =>
 	button(
 		h,
@@ -36,7 +36,11 @@ const askMapleButton = (h: HtmlBuilder<Message>): Html =>
 			size: "icon-sm",
 			variant: "outline",
 			slot: "icon-button",
-			attributes: [h.AriaLabel("Ask Maple AI"), h.DataAttribute("base-ui-tooltip-trigger", "")],
+			attributes: [
+				h.AriaLabel("Ask Maple AI"),
+				h.DataAttribute("base-ui-tooltip-trigger", ""),
+				h.OnClick(Message.ClickedAskMapleAi()),
+			],
 		},
 		[icon(h, "ChatBubbleSparkleIcon")],
 	)

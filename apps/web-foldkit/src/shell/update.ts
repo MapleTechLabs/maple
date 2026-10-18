@@ -7,6 +7,7 @@ import {
 	FocusElement,
 	FocusSiblingMenuItem,
 	LogOut,
+	OpenGlobalChat,
 	SaveNamespace,
 	SaveSidebarState,
 	SaveTheme,
@@ -182,6 +183,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		}),
 		ClickedReload: () => ({ model, commands: [ReloadPage()] }),
 		CompletedReloadPage: () => ({ model }),
+		ClickedAskMapleAi: () => ({ model, commands: [OpenGlobalChat()] }),
+		CompletedOpenGlobalChat: () => ({ model }),
 		SucceededLoadTenant: ({ orgId }) => ({
 			model: modifyFields(model, { tenant: () => TenantData.Success({ data: orgId }) }),
 		}),

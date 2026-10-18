@@ -2,6 +2,7 @@ import { writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { load } from "foldkit/navigation"
+import { openGlobalChat } from "../page/chat/sheet/subscription"
 import { clearSessionToken } from "../platform/auth-api"
 import { Message, Theme } from "./message"
 
@@ -86,4 +87,13 @@ export const SaveSidebarState = Command.define("SaveSidebarState", {
 export const LogOut = Command.define("LogOut", {
 	messages: [Message.CompletedLogOut],
 	execute: clearSessionToken.pipe(Effect.andThen(load("/sign-in")), Effect.as(Message.CompletedLogOut())),
+})
+
+/** `openGlobalChat()`: the root's chat sheet (`page/chat/sheet`) listens for its document event. */
+export const OpenGlobalChat = Command.define("OpenGlobalChat", {
+	messages: [Message.CompletedOpenGlobalChat],
+	execute: Effect.sync(() => {
+		openGlobalChat()
+		return Message.CompletedOpenGlobalChat()
+	}),
 })

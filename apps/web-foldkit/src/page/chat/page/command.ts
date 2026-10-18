@@ -1,50 +1,11 @@
 import { readChatReferrer } from "@maple/web/components/chat/auto-contexts"
-import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
-import { ServicesFacetsProbe } from "../../../data/services-facets-probe"
 import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message } from "./message"
-import { DEFAULT_TAB_ID, TabsState } from "./model"
-
-const storageKey = (orgId: string) => `maple-chat-tabs:${orgId}`
-
-const StoredTabs = Schema.fromJsonString(
-	Schema.Struct({
-		tabs: Schema.Array(
-			Schema.Struct({
-				id: Schema.String,
-				title: Schema.String,
-				createdAt: Schema.Number,
-				updatedAt: Schema.optionalKey(Schema.Number),
-			}),
-		),
-		activeTabId: Schema.String,
-	}),
-)
-const decodeStoredTabs = Schema.decodeUnknownOption(StoredTabs)
-const encodeTabs = Schema.encodeSync(Schema.fromJsonString(TabsState))
-
-/** `loadState`: the stored tabs (older ones lack `updatedAt`), else one fresh "New Chat". */
-const readTabs = (orgId: string, nowMs: number): TabsState =>
-	Option.getOrElse(
-		Option.filter(
-			Option.flatMap(Option.fromNullishOr(localStorage.getItem(storageKey(orgId))), decodeStoredTabs),
-			(stored) => stored.tabs.length > 0 && stored.activeTabId !== "",
-		).pipe(
-			Option.map(
-				(stored): TabsState => ({
-					activeTabId: stored.activeTabId,
-					tabs: stored.tabs.map((tab) => ({ ...tab, updatedAt: tab.updatedAt ?? tab.createdAt })),
-				}),
-			),
-		),
-		(): TabsState => ({
-			tabs: [{ id: DEFAULT_TAB_ID, title: "New Chat", createdAt: nowMs, updatedAt: nowMs }],
-			activeTabId: DEFAULT_TAB_ID,
-		}),
-	)
+import { loadKnownServices } from "../kit/known-services"
+import { readTabs, TabsState, writeTabs } from "../kit/tab-store"
 
 export const LoadTabs = Command.define("LoadChatTabs", {
 	args: { orgId: Schema.String },
@@ -52,13 +13,7 @@ export const LoadTabs = Command.define("LoadChatTabs", {
 	execute: ({ orgId }) =>
 		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
-			const state = yield* Effect.orElseSucceed(
-				Effect.try(() => readTabs(orgId, nowMs)),
-				(): TabsState => ({
-					tabs: [{ id: DEFAULT_TAB_ID, title: "New Chat", createdAt: nowMs, updatedAt: nowMs }],
-					activeTabId: DEFAULT_TAB_ID,
-				}),
-			)
+			const state = yield* readTabs(orgId, nowMs)
 			return Message.CompletedLoadTabs({
 				state,
 				nowMs,
@@ -72,10 +27,7 @@ export const SaveTabs = Command.define("SaveChatTabs", {
 	args: { orgId: Schema.String, state: TabsState },
 	messages: [Message.CompletedSaveTabs],
 	execute: ({ orgId, state }) =>
-		Effect.as(
-			Effect.ignore(Effect.try(() => localStorage.setItem(storageKey(orgId), encodeTabs(state)))),
-			Message.CompletedSaveTabs(),
-		),
+		Effect.as(writeTabs(orgId, state), Message.CompletedSaveTabs()),
 })
 
 export const CreateTab = Command.define("CreateChatTab", {
@@ -120,17 +72,7 @@ export const LoadPresence = Command.define("LoadChatSignalPresence", {
 /** `KnownServicesProvider`: the snapped 24 h services facets probe the overview also runs. */
 export const LoadKnownServices = Command.define("LoadChatKnownServices", {
 	messages: [Message.CompletedLoadKnownServices],
-	execute: Effect.gen(function* () {
-		const end = yield* Clock.currentTimeMillis
-		const range = snapRangeForCache({
-			startTime: formatWarehouseDateTime(end - 24 * 60 * 60 * 1000),
-			endTime: formatWarehouseDateTime(end),
-		})
-		const response = yield* (yield* ServicesFacetsProbe).load(range)
-		return Message.CompletedLoadKnownServices({
-			services: response.data.services.map((service) => service.name).filter((name) => name !== ""),
-		})
-	}).pipe(Effect.orElseSucceed(() => Message.CompletedLoadKnownServices({ services: [] }))),
+	execute: Effect.map(loadKnownServices, (services) => Message.CompletedLoadKnownServices({ services })),
 })
 
 /**

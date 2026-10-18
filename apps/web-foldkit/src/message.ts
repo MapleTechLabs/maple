@@ -7,6 +7,7 @@ import { PageMessage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { ClerkSnapshot } from "./platform/clerk"
 import * as Shell from "./shell"
+import * as ChatSheet from "./page/chat/sheet"
 import * as Toast from "./ui/toast"
 
 /** Why the stored self-hosted session did not resolve to a signed-in tenant. */
@@ -33,5 +34,6 @@ export const Message = defineMessageUnion({
 	GotShellMessage: { message: Shell.Message },
 	GotToastMessage: { message: Toast.Message },
 	GotPageMessage: { message: PageMessage },
+	GotChatSheetMessage: { message: ChatSheet.Message },
 })
 export type Message = typeof Message.Type

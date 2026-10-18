@@ -2,21 +2,12 @@ import { Schema } from "effect"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import { SignalPresenceData } from "../../kit/signal-presence"
+import { TabsState } from "../kit/tab-store"
 import * as Conversation from "../conversation/model"
 
 // `/chat` (apps/web routes/chat.tsx, components/chat/chat-page.tsx + `useChatTabs`).
 
-export const ChatTab = Schema.Struct({
-	id: Schema.String,
-	title: Schema.String,
-	createdAt: Schema.Number,
-	updatedAt: Schema.Number,
-})
-export type ChatTab = typeof ChatTab.Type
-
-/** `maple-chat-tabs:<orgId>` in localStorage. */
-export const TabsState = Schema.Struct({ tabs: Schema.Array(ChatTab), activeTabId: Schema.String })
-export type TabsState = typeof TabsState.Type
+export { ChatTab, DEFAULT_TAB_ID, TabsState } from "../kit/tab-store"
 
 /** `?shared=`: a teammate's conversation, read-only, never added to the viewer's own tabs. */
 export const SharedView = Schema.Struct({
@@ -53,5 +44,4 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const DEFAULT_TAB_ID = "default"
 export const DELETE_DIALOG_ID = "chat-delete-conversation"
