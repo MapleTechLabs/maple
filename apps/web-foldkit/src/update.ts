@@ -176,7 +176,9 @@ const shellRequestOf = (out: PageOutMessage): Option.Option<Shell.Message> =>
 		? Option.some(Shell.Message.ClickedNamespace({ maybeNamespace: out.maybeNamespace }))
 		: out._tag === "RequestedSidebarToggle"
 			? Option.some(Shell.Message.ClickedPageSidebarTrigger())
-			: Option.none()
+			: out._tag === "RequestedInfraSurfaces"
+				? Option.some(Shell.Message.RequestedInfraSurfaces())
+				: Option.none()
 
 /** Writes the page slot, lifts its Commands and follows its navigation and shell requests. */
 const applyPage =
@@ -254,6 +256,7 @@ const writePage =
 						],
 						RequestedNamespacePin: () => [],
 						RequestedSidebarToggle: () => [],
+						RequestedInfraSurfaces: () => [],
 						RequestedToast: () => [],
 					}),
 				}),

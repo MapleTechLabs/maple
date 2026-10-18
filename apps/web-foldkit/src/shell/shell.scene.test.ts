@@ -154,6 +154,20 @@ describe("sidebar collapse", () => {
 		)
 	})
 
+	test("below md a page's `useInfraSurfaces` sends the probe and statuses once, not the dashboards", () => {
+		const mobile = enter("org_parity")(init({ ...flags, isMobile: true })).model
+		const asked = update(mobile, Message.RequestedInfraSurfaces())
+		expectVitest((asked.commands ?? []).map((command) => command.name)).toEqual([
+			"LoadInfraPresence",
+			"LoadCloudflareStatus",
+			"LoadPlanetscaleStatus",
+			"LoadRailwayStatus",
+			"LoadGcpStatus",
+		])
+		expectVitest(asked.model.hasRequestedSidebarData).toBe(false)
+		expectVitest(update(asked.model, Message.RequestedInfraSurfaces()).commands ?? []).toEqual([])
+	})
+
 	test("entering an org below md defers the sidebar's reads; on desktop they go with the tenant", () => {
 		const mobile = enter("org_parity")(init({ ...flags, isMobile: true }))
 		const desktop = enter("org_parity")(init(flags))

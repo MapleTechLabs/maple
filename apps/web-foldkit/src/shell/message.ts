@@ -31,6 +31,8 @@ export const Message = defineMessageUnion({
 	PressedSidebarShortcut: {},
 	/** `/chat`'s own `SidebarTrigger`: its provider is held closed, so only the mobile sheet opens. */
 	ClickedPageSidebarTrigger: {},
+	/** A page reads `useInfraSurfaces` itself (the infra overview, Kubernetes workloads). */
+	RequestedInfraSurfaces: {},
 	ChangedViewport: { isMobile: Schema.Boolean },
 	DismissedMobileNav: {},
 	ChangedFilterViewport: { isCollapsed: Schema.Boolean },

@@ -48,6 +48,11 @@ export const PageOutMessage = defineMessageUnion({
 	/** A page's own `SidebarTrigger` (`/chat` renders its header without the shell's top bar). */
 	RequestedSidebarToggle: {},
 	/**
+	 * `useInfraSurfaces()` in the page: the sidebar's presence probe and integration statuses. The
+	 * shell owns those reads; below `md` its sidebar is unmounted, so the page is what asks for them.
+	 */
+	RequestedInfraSurfaces: {},
+	/**
 	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
 	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.
 	 */

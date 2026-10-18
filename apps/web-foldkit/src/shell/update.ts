@@ -61,6 +61,7 @@ export const enter =
 			maybeOrgId: () => Option.some(orgId),
 			tenant: () => TenantData.Loading(),
 			hasRequestedSidebarData: () => false,
+			infraPresence: () => InfraPresenceData.Idle(),
 		})
 		const sidebar = model.isMobile ? { model: entered } : requestSidebarData(entered)
 		return {
@@ -78,15 +79,24 @@ export const enter =
  * What `AppSidebar` reads once it mounts: always on desktop, but below `md` only when its sheet
  * first opens (legacy's closed sheet renders nothing). The live dashboards read follows the flag.
  */
-const requestSidebarData = (model: Model): UpdateReturn =>
-	model.hasRequestedSidebarData || Option.isNone(model.maybeOrgId)
+const requestSidebarData = (model: Model): UpdateReturn => {
+	if (model.hasRequestedSidebarData || Option.isNone(model.maybeOrgId)) return { model }
+	const surfaces = requestInfraSurfaces(model)
+	return {
+		model: modifyFields(surfaces.model, {
+			hasRequestedSidebarData: () => true,
+			dashboards: () => DashboardsData.Loading(),
+		}),
+		commands: surfaces.commands ?? [],
+	}
+}
+
+/** `useInfraSurfaces`: the last hour's presence probe and the four integration statuses, once. */
+const requestInfraSurfaces = (model: Model): UpdateReturn =>
+	!AsyncData.isIdle(model.infraPresence) || Option.isNone(model.maybeOrgId)
 		? { model }
 		: {
-				model: modifyFields(model, {
-					hasRequestedSidebarData: () => true,
-					infraPresence: () => InfraPresenceData.Loading(),
-					dashboards: () => DashboardsData.Loading(),
-				}),
+				model: modifyFields(model, { infraPresence: () => InfraPresenceData.Loading() }),
 				commands: [
 					LoadInfraPresence(),
 					LoadCloudflareStatus(),
@@ -249,6 +259,7 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 		ClickedSidebarTrigger: () => toggleSidebar(model),
 		PressedSidebarShortcut: () => toggleSidebar(model),
 		ClickedPageSidebarTrigger: () => (model.isMobile ? toggleSidebar(model) : { model }),
+		RequestedInfraSurfaces: () => requestInfraSurfaces(model),
 		ChangedViewport: ({ isMobile }) => {
 			const changed = modifyFields(closeMenu(model), { isMobile: () => isMobile, isMobileNavOpen: () => false })
 			return isMobile ? { model: changed } : requestSidebarData(changed)
