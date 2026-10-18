@@ -20,6 +20,7 @@ import * as LogsList from "./logs/list"
 import * as MetricsBrowse from "./metrics/browse"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
+import * as ServiceDetail from "./services/detail"
 import * as ServicesList from "./services/list"
 import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
@@ -38,6 +39,7 @@ export const pages = [
 	TracesList.page,
 	TraceDetail.page,
 	LogsList.page,
+	ServiceDetail.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

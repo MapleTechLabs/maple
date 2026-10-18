@@ -28,11 +28,11 @@ export type DashboardPageOptions = Readonly<{
 	titleContent?: Html
 	/** The header's right side: `headerActions` and the time controls, already composed. */
 	actions?: Html
+	/** `DashboardLayout.Tabs`'s children: page tabs pinned under the header. */
+	tabs?: Html
 	scrollClassName?: string
 	/** `header`: replaces the composed header (a page with its own title block). */
 	header?: Html
-	/** `DashboardLayout.Tabs`: page tabs pinned under the header. */
-	tabs?: Html
 	/** `DashboardLayout.RightPanel` as the inline rail (lg and up). TODO(lg): the sheet below lg. */
 	rightPanel?: Html
 	rightPanelWidth?: string

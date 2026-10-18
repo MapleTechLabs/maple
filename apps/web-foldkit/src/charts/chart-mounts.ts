@@ -1,7 +1,8 @@
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import { Message } from "./chart"
-import type { ChartHost } from "./chart-host"
+import type { ChartBounds } from "@tanstack/charts"
+import type { ChartHost, TimeAxis } from "./chart-host"
 import { CHART_SPEC_ATTRIBUTE, decodeChartSpec } from "./chart-spec"
 
 /** `PlotFrame`'s `FALLBACK_HEIGHT`: drawn at until the plot box has been measured. */
@@ -15,6 +16,7 @@ export type ChartRenderer = typeof ChartRenderer.Type
 type ChartMountMessage =
 	| typeof Message.CompletedMountChart.Type
 	| typeof Message.FailedMountChart.Type
+	| typeof Message.RenderedPlot.Type
 	| typeof Message.ChangedChartFocus.Type
 	| typeof Message.ChangedChartTooltip.Type
 
@@ -27,14 +29,21 @@ const failed = (reason: string) => Message.FailedMountChart({ reason })
  * part of React re-rendering with a new definition). Focus and tooltip changes become Messages.
  */
 export const MountChart = Mount.defineStream("MountChart", {
-	args: { chartId: Schema.String, ariaLabel: Schema.String, renderer: ChartRenderer },
+	args: {
+		chartId: Schema.String,
+		ariaLabel: Schema.String,
+		renderer: ChartRenderer,
+		/** Report the plot rect and time axis (`RenderedPlot`) for an overlay. */
+		reportPlot: Schema.Boolean,
+	},
 	messages: [
 		Message.CompletedMountChart,
 		Message.FailedMountChart,
+		Message.RenderedPlot,
 		Message.ChangedChartFocus,
 		Message.ChangedChartTooltip,
 	],
-	execute: ({ element, chartId, ariaLabel, renderer }) =>
+	execute: ({ element, chartId, ariaLabel, renderer, reportPlot }) =>
 		Stream.callback<ChartMountMessage>((queue) =>
 			Effect.acquireRelease(
 				Effect.tryPromise(() => import("./chart-host")).pipe(
@@ -49,6 +58,22 @@ export const MountChart = Mount.defineStream("MountChart", {
 								return () => undefined
 							}
 
+							// The last geometry sent: `onRender` runs on every pointer tick, a Message only on change.
+							const sent = { key: "" }
+							const reportPlotOnce = (bounds: ChartBounds, timeAxis: Option.Option<TimeAxis>) =>
+								Option.map(timeAxis, (axis) => {
+									const plot = {
+										x: bounds.x,
+										y: bounds.y,
+										width: bounds.width,
+										height: bounds.height,
+										...axis,
+									}
+									const key = JSON.stringify(plot)
+									if (key === sent.key) return
+									sent.key = key
+									Queue.offerUnsafe(queue, Message.RenderedPlot({ plot }))
+								})
 							const measured = Math.round(element.getBoundingClientRect().height)
 							const create = (spec: typeof initialSpec.value, height: number): ChartHost =>
 								createChartHost(surface, spec, height, {
@@ -63,7 +88,8 @@ export const MountChart = Mount.defineStream("MountChart", {
 												queue,
 												Message.ChangedChartTooltip({ maybeTooltip }),
 											),
-										onRender: (bounds) => {
+										onRender: (bounds, timeAxis) => {
+											if (reportPlot) reportPlotOnce(bounds, timeAxis)
 											if (!anchor) return
 											anchor.style.transform = `translate(${bounds.x}px, ${bounds.y}px)`
 											anchor.style.width = `${bounds.width}px`

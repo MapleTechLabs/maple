@@ -12,7 +12,22 @@ import { ChartTooltip } from "./chart-spec"
 
 // MODEL
 
+/** The plot rect and the x scale's domain-to-pixel mapping of the last render (`usePlotRect`, `usePlotScales`). */
+export const PlotGeometry = Schema.Struct({
+	x: Schema.Number,
+	y: Schema.Number,
+	width: Schema.Number,
+	height: Schema.Number,
+	domainStartMs: Schema.Number,
+	domainEndMs: Schema.Number,
+	rangeStart: Schema.Number,
+	rangeEnd: Schema.Number,
+})
+export type PlotGeometry = typeof PlotGeometry.Type
+
 export const Model = Schema.Struct({
+	/** Set once the chart rendered a time x scale; overlays (deploy markers) position against it. */
+	plot: Schema.Option(PlotGeometry),
 	/** `activeName`: the focused datum's key, shared by plot focus and legend hover. */
 	activeKey: Schema.Option(Schema.String),
 	/** `usePlotLegendHighlight`: a legend click pins one key until clicked again. */
@@ -27,6 +42,7 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 export const init = (): Model => ({
+	plot: Option.none(),
 	activeKey: Option.none(),
 	highlightedKey: Option.none(),
 	tooltip: Option.none(),
@@ -39,6 +55,7 @@ export const init = (): Model => ({
 export const Message = defineMessageUnion({
 	CompletedMountChart: {},
 	FailedMountChart: { reason: Schema.String },
+	RenderedPlot: { plot: PlotGeometry },
 	ChangedChartFocus: { maybeKey: Schema.Option(Schema.String) },
 	ChangedChartTooltip: { maybeTooltip: Schema.Option(ChartTooltip) },
 	CompletedPortalTooltipBody: {},
@@ -71,6 +88,7 @@ export const update = (model: Model, message: Message) =>
 	Message.match<Update.Return<Model, Message>>(message, {
 		CompletedMountChart: () => ({ model }),
 		FailedMountChart: () => ({ model }),
+		RenderedPlot: ({ plot }) => ({ model: modifyFields(model, { plot: () => Option.some(plot) }) }),
 		ChangedChartFocus: ({ maybeKey }) => ({ model: modifyFields(model, { activeKey: () => maybeKey }) }),
 		ChangedChartTooltip: ({ maybeTooltip }) => ({
 			model: modifyFields(model, { tooltip: () => maybeTooltip }),
