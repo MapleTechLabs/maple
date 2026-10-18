@@ -79,7 +79,7 @@ const servicesError = (h: H, failure: LoadFailure): Html =>
 const servicesLoading = (h: H): Html =>
 	h.div([h.Class("space-y-4")], [railwayFleetBandLoading(h), railwayTableLoading(h)])
 
-const servicesList = (
+export const servicesList = (
 	h: H,
 	model: Model,
 	status: RailwayStatus,

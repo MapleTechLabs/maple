@@ -3,6 +3,7 @@ import { encodePublicId, PublicIdPrefixes, V2GcpIntegration } from "@maple/domai
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../../data/load-failure"
+import * as Menu from "../../../../ui/menu"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import type { FleetRead } from "../data"
 import { Message, type Model } from "./model"
@@ -123,6 +124,24 @@ describe("google cloud list", () => {
 		const model = init({ search: { tab: "cloudRun", scope: "slow", q: "x" } }, context).model
 		expect(pageUpdate(model, Message.ClickedView({ view: "cloudSql" })).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/infra/gcp?view=cloudSql", isReplace: false }),
+		)
+	})
+
+	test("a project picked in the title menu closes it and writes ?project=, dropping the scope", () => {
+		const model = init({ search: { scope: "slow" } }, context).model
+		const opened = pageUpdate(
+			model,
+			Message.GotProjectMenuMessage({ message: Menu.Message.ClickedTrigger() }),
+		)
+		const picked = pageUpdate(
+			opened.model,
+			Message.GotProjectMenuMessage({
+				message: Menu.Message.ClickedItem({ index: 2, item: { kind: "Radio", value: "acme-data" } }),
+			}),
+		)
+		expect(picked.model.projectMenu.isOpen).toBe(false)
+		expect(picked.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/infra/gcp?project=acme-data", isReplace: false }),
 		)
 	})
 })

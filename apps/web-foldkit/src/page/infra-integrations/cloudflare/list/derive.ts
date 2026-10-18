@@ -82,8 +82,11 @@ export type ListScope = Readonly<{
 }>
 
 /** `CloudflareListPage`'s account scoping, counts, and the view fallback. */
-export const listScopeOf = (model: Model, data: ListData): ListScope => {
-	const accounts = accountsOf(model)
+export const listScopeOf = (
+	model: Model,
+	data: ListData,
+	accounts: ReadonlyArray<CloudflareAccount> = accountsOf(model),
+): ListScope => {
 	const multiAccount = accounts.length > 1
 	const accountId = multiAccount
 		? accounts.find((account) => account.accountId === model.search.account)?.accountId

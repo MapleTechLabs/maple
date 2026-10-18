@@ -14,37 +14,40 @@ import {
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine, platformLabel } from "../../kit/meta-line"
 import { relativeTime } from "../../../kit/relative-time"
-import type { SortState } from "../../../kit/table-sort"
+import type { SortDir, SortState } from "../../../kit/table-sort"
 import { hostStatusBadge } from "../../kit/status"
-import { type HostSortKey, Message } from "./message"
+import type { HostSortKey } from "./message"
 import type { HostRow } from "./model"
 
-// `HostTable` / `HostTableLoading` (apps/web/src/components/infra/host-table.tsx).
+// `HostTable` / `HostTableLoading` (apps/web/src/components/infra/host-table.tsx), generic over
+// the host's Message: /infra/hosts sorts through its Model, `/lab/worst-case` through its own.
 
-type H = HtmlBuilder<Message>
+type OnSort<M> = (key: HostSortKey) => M
 
-const sortOf = (sort: SortState | null, key: HostSortKey) =>
-	headSort(sort, key, (k) => Message.ClickedSort({ key: k }))
+const INERT_SORT = { isActive: false, dir: "desc" } satisfies Readonly<{ isActive: boolean; dir: SortDir }>
 
 /** `HostColumns`: interactive with `sort`, inert for the skeleton. */
-const columns = (h: H, sort: SortState | null): ReadonlyArray<Html> => [
-	columnHead(h, { label: "Host", sort: sortOf(sort, "hostName"), width: "w-0 flex-1 min-w-[260px]" }),
-	columnHead(h, { label: "Usage", width: "w-[200px]" }),
-	columnHead(h, {
-		label: "Load 15m",
-		sort: sortOf(sort, "load15"),
-		align: "right",
-		width: "w-[80px]",
-		hidden: "hidden lg:flex",
-	}),
-	columnHead(h, { label: "Last seen", sort: sortOf(sort, "lastSeen"), align: "right", width: "w-[100px]" }),
-]
+const columns = <M>(h: HtmlBuilder<M>, sort: SortState | null, onSort?: OnSort<M>): ReadonlyArray<Html> => {
+	const sortOf = (key: HostSortKey) => (onSort === undefined ? INERT_SORT : headSort(sort, key, onSort))
+	return [
+		columnHead(h, { label: "Host", sort: sortOf("hostName"), width: "w-0 flex-1 min-w-[260px]" }),
+		columnHead(h, { label: "Usage", width: "w-[200px]" }),
+		columnHead(h, {
+			label: "Load 15m",
+			sort: sortOf("load15"),
+			align: "right",
+			width: "w-[80px]",
+			hidden: "hidden lg:flex",
+		}),
+		columnHead(h, { label: "Last seen", sort: sortOf("lastSeen"), align: "right", width: "w-[100px]" }),
+	]
+}
 
-export const hostTableLoading = (h: H): Html =>
+export const hostTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Hosts" },
-		columns(h, null),
+		columns<M>(h, null),
 		skeletonRows(h, 6, () => [
 			h.div(
 				[h.Class("w-0 min-w-[260px] flex-1")],
@@ -56,14 +59,15 @@ export const hostTableLoading = (h: H): Html =>
 		]),
 	)
 
-export type HostTableInputs = Readonly<{
+export type HostTableInputs<M> = Readonly<{
 	nowMs: number
 	timeZone: string
 	isWaiting: boolean
 	sort: SortState
+	onSort: OnSort<M>
 }>
 
-const hostRow = (h: H, host: HostRow, inputs: HostTableInputs): Html =>
+const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>): Html =>
 	h.a(
 		[
 			h.Key(host.hostName),
@@ -131,11 +135,15 @@ const hostRow = (h: H, host: HostRow, inputs: HostTableInputs): Html =>
 		],
 	)
 
-export const hostTable = (h: H, hosts: ReadonlyArray<HostRow>, inputs: HostTableInputs): Html =>
+export const hostTable = <M>(
+	h: HtmlBuilder<M>,
+	hosts: ReadonlyArray<HostRow>,
+	inputs: HostTableInputs<M>,
+): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Hosts", isWaiting: inputs.isWaiting },
-		columns(h, inputs.sort),
+		columns(h, inputs.sort, inputs.onSort),
 		hosts.length === 0
 			? [dataTableEmpty(h, ["No hosts match your search."])]
 			: hosts.map((host) => hostRow(h, host, inputs)),

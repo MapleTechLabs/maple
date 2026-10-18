@@ -15,6 +15,7 @@ import {
 	buildCategoricalHistogram,
 	buildNumericHistogram,
 } from "./definitions/histogram"
+import { buildBenchOverview } from "./definitions/bench-overview"
 import { buildFixedMetric } from "./definitions/fixed-metric"
 import { buildInfraMetric } from "./definitions/infra-metric"
 import { buildPlanetScaleMetric } from "./definitions/planetscale-metric"
@@ -180,6 +181,8 @@ export const createChartHost = (
 			hostFor(container, volume, height, variant("LogsVolume"), buildLogsVolume, options),
 		BinnedHistogram: (histogram) =>
 			hostFor(container, histogram, height, variant("BinnedHistogram"), buildBinnedHistogram, options),
+		BenchOverview: (bench) =>
+			hostFor(container, bench, height, variant("BenchOverview"), buildBenchOverview, options),
 		FixedMetric: (metric) =>
 			hostFor(container, metric, height, variant("FixedMetric"), buildFixedMetric, options),
 		AlertRule: (rule) => hostFor(container, rule, height, variant("AlertRule"), buildAlertRule, options),

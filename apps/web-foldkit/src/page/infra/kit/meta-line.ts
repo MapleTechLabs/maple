@@ -54,8 +54,7 @@ const OS = new Map<string, Known>([
 const CLOUD = new Map<string, Known>([
 	["aws", { icon: "AwsIcon", label: "AWS" }],
 	["gcp", { icon: "GoogleCloudIcon", label: "GCP" }],
-	// TODO(azure-icon): `AzureIcon` renders `useId` gradient ids the icon generator cannot carry yet.
-	["azure", { label: "Azure" }],
+	["azure", { icon: "AzureIcon", label: "Azure" }],
 ])
 
 const resolve = (kind: PlatformKind, value: string): Known => {

@@ -55,7 +55,7 @@ const healthBar = <M>(h: HtmlBuilder<M>, segments: ReadonlyArray<HealthSegment>)
 	)
 }
 
-const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState, time: TimeSearch): Html =>
+export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState, time: TimeSearch): Html =>
 	h.a(
 		[h.Class(cn(ROW_CLASS, "py-3.5")), h.Href(sourceHref(id, time))],
 		[

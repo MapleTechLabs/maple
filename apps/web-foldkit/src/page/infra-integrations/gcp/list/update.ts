@@ -7,6 +7,7 @@ import { requestSlot } from "../../kit/slot"
 import { requestKey } from "../../../../data/request-key"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
+import * as Menu from "../../../../ui/menu"
 import * as Select from "../../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
@@ -21,6 +22,7 @@ import {
 	LoadStatus,
 	ResolveWindow,
 } from "./command"
+import { stepProjectMenu } from "./project-menu"
 import { fleetOf, listScopeOf, pageStateOf, sparksWindow, statusOf } from "./derive"
 import { Message, type Model, type RequestMode } from "./model"
 
@@ -122,6 +124,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		resources: Keyed.idle(),
 		resourceTypeSelect: Select.init("gcp-resource-type", { value: "all", selectedIndex: 0 }),
 		resourceProjectSelect: Select.init("gcp-resource-project", { value: "all", selectedIndex: 0 }),
+		projectMenu: Menu.init("gcp-project-menu"),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		timePicker: TimeRangePicker.init("gcp-time-range"),
@@ -276,6 +279,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return next.outMessage === undefined
 				? lifted
 				: { ...lifted, outMessage: resourceFilter(model, "type", next.outMessage.value).outMessage }
+		},
+		GotProjectMenuMessage: ({ message: inner }) => {
+			const step = stepProjectMenu(model.projectMenu, inner)
+			const next = { ...model, projectMenu: step.menu }
+			const pick = step.pick
+			if (pick === null) return { model: next, commands: step.commands }
+			const outMessage = PageOutMessage.RequestedNavigation({
+				url:
+					pick._tag === "Project"
+						? hrefOfSearch({ ...model.search, project: pick.project, scope: undefined })
+						: hrefOf(AppRoute.Integrations({ search: { integration: "gcp" } })),
+				isReplace: false,
+			})
+			return { model: next, commands: step.commands, outMessage }
 		},
 		GotResourceProjectSelectMessage: ({ message: inner }) => {
 			const next = Select.update(model.resourceProjectSelect, inner)

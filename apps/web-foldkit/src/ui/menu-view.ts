@@ -85,7 +85,14 @@ export type MenuEntry =
 	| Readonly<{
 			_tag: "RadioGroup"
 			items: ReadonlyArray<
-				Readonly<{ value: string; label: string; isChecked: boolean; hint?: string }>
+				Readonly<{
+					value: string
+					label: string
+					isChecked: boolean
+					hint?: string
+					/** The item's own children, in place of `label` and `hint`. */
+					content?: ReadonlyArray<Html | string>
+				}>
 			>
 			/** A `DropdownMenuLabel` inside the group, which then names it (`aria-labelledby`). */
 			label?: string
@@ -178,7 +185,8 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 			)
 		case "Group": {
 			const labelId = `${model.id}-group-${index}`
-			const labelChildren = entry.labelContent ?? (entry.label === undefined ? undefined : [entry.label])
+			const labelChildren =
+				entry.labelContent ?? (entry.label === undefined ? undefined : [entry.label])
 			return menuGroup(h, labelChildren === undefined ? undefined : labelId, [
 				...(labelChildren === undefined ? [] : [menuLabel(h, labelId, labelChildren)]),
 				...renderEntries(h, model, entry.entries, index),
@@ -215,7 +223,7 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 							kind: "radio",
 							isChecked: item.isChecked,
 						},
-						[
+						item.content ?? [
 							entry.isItemLabelWrapped === true ? h.span([], [item.label]) : item.label,
 							...(item.hint === undefined
 								? []
@@ -284,7 +292,9 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 						h.div(
 							[
 								h.AriaLabelledBy(itemId(model.id, submenu.index)),
-								h.Class(cn(dropdownMenuContentStyles, dropdownMenuSubContentStyles, subClassName)),
+								h.Class(
+									cn(dropdownMenuContentStyles, dropdownMenuSubContentStyles, subClassName),
+								),
 								...placement,
 								h.DataAttribute("base-ui-focusable", ""),
 								h.DataAttribute("slot", "dropdown-menu-sub-content"),

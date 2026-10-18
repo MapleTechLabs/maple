@@ -135,7 +135,8 @@ export const view = <ParentMessage>(
 	return h.div(
 		[
 			h.Role("group"),
-			h.AriaLabel(model.label),
+			// An empty label is a group with no accessible name, as a bare `<ToggleGroup>`.
+			...(model.label === "" ? [] : [h.AriaLabel(model.label)]),
 			h.Class(cn(toggleGroupStyles, toggleGroupHorizontalStyles, trackStyles, config.className)),
 			...(model.isMultiple ? [h.DataAttribute("multiple", "")] : []),
 			h.DataAttribute("orientation", "horizontal"),

@@ -14,6 +14,7 @@ import {
 	zoneHealth,
 	zoneInScope,
 } from "@maple/web/components/infra/cloudflare/list-model"
+import type { CloudflareAccount } from "@maple/web/components/infra/cloudflare/accounts"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -38,6 +39,7 @@ import { ingestBanner, ingestEmpty, notConnected } from "../ingest"
 import {
 	accountCounts,
 	accountShares,
+	accountsOf,
 	isNoTraffic,
 	isWaiting,
 	type ListData,
@@ -60,7 +62,7 @@ const VIEW_LABEL = { zones: "Zones", workers: "Workers", queues: "Queues" } as c
 	string
 >
 
-const THEME_TOKENS = ["--chart-2"]
+export const THEME_TOKENS = ["--chart-2"]
 
 const bandLoading = (h: H): Html => fleetBandLoading(h, 3, FLEET_BAND_BOXED)
 
@@ -261,15 +263,15 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 	])
 }
 
-const header = (h: H, model: Model, status: Status, scope: ListScope): Html => {
+const header = (h: H, model: Model, singleAccountName: string | null, scope: ListScope): Html => {
 	const options = CLOUDFLARE_VIEWS.filter((v) => v === scope.view || scope.counts[v] !== 0).map((v) => ({
 		value: v,
 		label: scope.counts[v] === null ? VIEW_LABEL[v] : `${VIEW_LABEL[v]} ${scope.counts[v]}`,
 	}))
 	const account = scope.multiAccount
 		? accountMenu(h, model.accountMenu, scope.accounts, scope.accountId)
-		: status.accountName
-			? heroChip(h, ["account ", status.accountName])
+		: singleAccountName
+			? heroChip(h, ["account ", singleAccountName])
 			: undefined
 	return pageHero(h, {
 		title: "Cloudflare",
@@ -289,10 +291,33 @@ const header = (h: H, model: Model, status: Status, scope: ListScope): Html => {
 	})
 }
 
+/** `CloudflareListPage`'s props: what the route reads, or the lab's fixtures. */
+export type ListFrame = Readonly<{
+	data: ListData
+	accounts: ReadonlyArray<CloudflareAccount>
+	singleAccountName: string | null
+	banner: Html | null
+}>
+
 const listPage = (h: H, model: Model, status: Status, data: ListData, spark: SparkContext): Html => {
-	const scope = listScopeOf(model, data)
 	const phase = phaseOf(model)
-	const banner = phase === null ? null : ingestBanner(h, phase)
+	return listBody(
+		h,
+		model,
+		{
+			data,
+			accounts: accountsOf(model),
+			singleAccountName: status.accountName,
+			banner: phase === null ? null : ingestBanner(h, phase),
+		},
+		spark,
+	)
+}
+
+/** `CloudflareListPage`: header, banner, accounts strip and the current view. */
+export const listBody = (h: H, model: Model, frame: ListFrame, spark: SparkContext): Html => {
+	const { data, banner } = frame
+	const scope = listScopeOf(model, data, frame.accounts)
 	const healthLine = scope.scopedAccount === undefined ? null : accountHealthLine(h, scope.scopedAccount)
 	const body =
 		scope.view === "zones"
@@ -311,7 +336,7 @@ const listPage = (h: H, model: Model, status: Status, data: ListData, spark: Spa
 	return h.div(
 		[h.Class("space-y-6")],
 		[
-			header(h, model, status, scope),
+			header(h, model, frame.singleAccountName, scope),
 			...(banner === null ? [] : [banner]),
 			...(scope.showAccountColumn
 				? [

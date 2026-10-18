@@ -136,7 +136,7 @@ export const metricsPanel = (h: H, model: Model, timeZone: string): Html =>
 	])
 
 /** `HostSeriesSummary`: the right-aligned last-value strip. */
-const hostSeriesSummary = (h: HtmlBuilder<Chart.Message>, info: InfraSeriesInfo): Html =>
+export const hostSeriesSummary = (h: HtmlBuilder<Chart.Message>, info: InfraSeriesInfo): Html =>
 	seriesLegend(h, {
 		className: "px-3 py-2",
 		maxItems: 8,

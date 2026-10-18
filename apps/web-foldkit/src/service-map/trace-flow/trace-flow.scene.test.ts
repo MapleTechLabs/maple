@@ -7,7 +7,7 @@ import { AttachFlowCanvas } from "../xyflow/attach"
 import * as Canvas from "../xyflow/canvas"
 import * as TraceFlow from "./trace-flow"
 import { view } from "./view"
-import * as FlowLab from "../../lab/entries/flow"
+import * as FlowLab from "../../lab/flow-lab"
 
 const graph = TraceFlow.buildFlowGraph({
 	rootSpans: FLOW_LAB_TRACE.rootSpans,
@@ -48,9 +48,8 @@ const start: TraceFlow.Model = {
 const authEdge = role("group", { name: "Edge from root to auth" })
 /** The lab header's "Selected: <span name>". */
 const selectedSpan = selector("p .font-mono")
-const labUpdate = (model: TraceFlow.Model, message: TraceFlow.Message) => ({
-	model: FlowLab.update(model, message),
-})
+const labView = (model: TraceFlow.Model, h: HtmlBuilder<TraceFlow.Message>) =>
+	FlowLab.pageBody(h, model, (message) => message)
 
 describe("trace flow view", () => {
 	test("cards stay hidden until the canvas Mount measures them, then their edges draw", () => {
@@ -67,7 +66,7 @@ describe("trace flow view", () => {
 
 	test("clicking a card selects its span; clicking another moves the selection", () => {
 		scene(
-			{ update: labUpdate, view: FlowLab.view },
+			{ update, view: labView },
 			given(start),
 			measured,
 			expect(selectedSpan).toHaveText("none"),

@@ -16,7 +16,7 @@
  * and `main.tsx` needs that before the router exists. The route-tree import is
  * type-only so a typo in `path` is a typecheck error, not a dead link.
  */
-import type { FileRoutesByTo } from "@/routeTree.gen"
+import type { FileRoutesByTo } from "../routeTree.gen"
 
 export const LAB_ROOT = "/lab"
 
