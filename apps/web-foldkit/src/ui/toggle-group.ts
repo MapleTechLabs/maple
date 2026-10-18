@@ -96,6 +96,8 @@ export type ToggleGroupViewConfig<ParentMessage> = Readonly<{
 	variant?: "default" | "outline"
 	size?: "xs" | "sm" | "default" | "lg"
 	isConnected?: boolean
+	/** Each `<ToggleGroupItem className>`. */
+	itemClassName?: string
 	className?: string
 }>
 
@@ -141,7 +143,7 @@ export const view = <ParentMessage>(
 				{
 					isPressed: model.values.includes(item.value),
 					onClick: toParentMessage(Message.ClickedItem({ value: item.value, index })),
-					className: cn(toggleVariants({ size, variant: itemVariant })),
+					className: cn(toggleVariants({ size, variant: itemVariant }), config.itemClassName),
 					slot: "toggle",
 					tabIndex: index === model.highlightedIndex ? 0 : -1,
 					attributes: [

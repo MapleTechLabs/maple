@@ -19,6 +19,7 @@ const scenario = (
 		readonly steps?: (page: Page) => Promise<void>
 		readonly faults?: Scenario["faults"]
 		readonly settle?: Scenario["settle"]
+		readonly fullPage?: boolean
 	} = {},
 ): Scenario => ({
 	id: `agent-sessions-${id}`,
@@ -30,6 +31,7 @@ const scenario = (
 	...(options.steps === undefined ? undefined : { steps: options.steps }),
 	...(options.faults === undefined ? undefined : { faults: options.faults }),
 	...(options.settle === undefined ? undefined : { settle: options.settle }),
+	...(options.fullPage === undefined ? undefined : { fullPage: options.fullPage }),
 	area: "agent-sessions",
 })
 
@@ -115,6 +117,64 @@ const listInteractions: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+const TOOLS = "/agent-sessions/tools"
+
+/** Every control of the Tools tab: search, facet selects, failing chip, tiles, percentile, sort, scope, time. */
+const toolsInteractions: ReadonlyArray<Scenario> = [
+	scenario("tools-search", "Tools, searched by name", TOOLS, {
+		steps: (page) => page.getByRole("textbox", { name: "Tool name…" }).fill("re"),
+	}),
+	scenario("tools-service", "Tools, a service picked", TOOLS, {
+		steps: async (page) => {
+			await page.getByRole("combobox", { name: "service" }).click()
+			await page.getByRole("option", { name: "support-agent" }).click()
+		},
+	}),
+	scenario("tools-metric", "Tools, the Error rate tile picked", TOOLS, {
+		steps: (page) => page.getByRole("button", { name: /^Error rate \d/ }).click(),
+	}),
+	scenario("tools-duration", "Tools, the Duration tile picked", TOOLS, {
+		steps: (page) => page.getByRole("button", { name: "P90 duration" }).click(),
+	}),
+	scenario("tools-percentile", "Tools, P95 picked", TOOLS, {
+		steps: (page) => page.getByRole("group", { name: "Percentile" }).getByRole("button", { name: "p95" }).click(),
+	}),
+	scenario("tools-sort", "Tools, the table sorted by errors", TOOLS, {
+		steps: (page) => page.getByRole("region", { name: "Tools" }).getByRole("button", { name: "Errors" }).click(),
+	}),
+	scenario("tools-scope", "Tools, scoped to a tool and model", `${TOOLS}?tool=Bash&model=claude-opus-4-1`),
+	scenario("tools-scope-remove", "Tools, the tool chip removed", `${TOOLS}?tool=Bash&model=claude-opus-4-1`, {
+		steps: (page) => page.getByRole("button", { name: "Remove tool Bash" }).click(),
+	}),
+	scenario("tools-scope-clear", "Tools, the scope cleared", `${TOOLS}?tool=Bash&model=claude-opus-4-1`, {
+		steps: (page) => page.getByRole("button", { name: "Clear all" }).click(),
+	}),
+	scenario("tools-time-range", "Tools, last 1 day from the picker", TOOLS, {
+		steps: async (page) => {
+			await page.getByRole("button", { name: "Last 7 days" }).click()
+			await page.getByRole("dialog").getByRole("button", { name: "Last 1 day" }).click()
+			await page.getByRole("dialog").waitFor({ state: "detached" })
+		},
+	}),
+	scenario("tools-reload", "Tools, reloaded", TOOLS, {
+		steps: (page) => page.getByRole("button", { name: "Reload" }).click(),
+	}),
+	scenario("tools-chart-hover", "Tools, the chart hovered", TOOLS, {
+		steps: (page) =>
+			page.getByRole("img", { name: "Tool calls" }).first().hover({ position: { x: 900, y: 100 } }),
+	}),
+	scenario("tools-loading", "Tools, the totals held", TOOLS, {
+		faults: held("aiSessionsInternal.toolsTotals"),
+		settle: "held",
+	}),
+	scenario("tools-error", "Tools, the totals failing", TOOLS, {
+		faults: failing("aiSessionsInternal.toolsTotals"),
+	}),
+	scenario("tools-breakdowns-error", "Tools, the table's read failing", TOOLS, {
+		faults: failing("aiSessionsInternal.toolsBreakdowns"),
+	}),
+]
+
 export const agentSessionsArea: AreaModule = {
 	area: "agent-sessions",
 	scenarios: [
@@ -134,6 +194,7 @@ export const agentSessionsArea: AreaModule = {
 			steps: (page) => page.getByRole("table").getByRole("button", { name: /^Cost/ }).click(),
 		}),
 		...listInteractions,
+		...toolsInteractions,
 		scenario("detail", "Session detail", `/agent-sessions/${NEWEST_SESSION}`),
 		scenario("detail-transcript", "Session detail, transcript", `/agent-sessions/${NEWEST_SESSION}`, {
 			steps: (page) => page.getByRole("tab", { name: "Transcript" }).click(),

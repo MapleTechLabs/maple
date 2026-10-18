@@ -3,7 +3,7 @@ import { Mount } from "foldkit"
 import { Message } from "./chart"
 import type { ChartBounds } from "@tanstack/charts"
 import type { ChartHost, TimeAxis } from "./chart-host"
-import { CHART_SPEC_ATTRIBUTE, decodeChartSpec } from "./chart-spec"
+import { CHART_LABEL_ATTRIBUTE, CHART_SPEC_ATTRIBUTE, decodeChartSpec } from "./chart-spec"
 
 /** `PlotFrame`'s `FALLBACK_HEIGHT`: drawn at until the plot box has been measured. */
 const FALLBACK_HEIGHT = 320
@@ -77,7 +77,7 @@ export const MountChart = Mount.defineStream("MountChart", {
 							const measured = Math.round(element.getBoundingClientRect().height)
 							const create = (spec: typeof initialSpec.value, height: number): ChartHost =>
 								createChartHost(surface, spec, height, {
-									ariaLabel,
+									ariaLabel: () => element.getAttribute(CHART_LABEL_ATTRIBUTE) ?? ariaLabel,
 									idPrefix: `ts-chart-${chartId}`,
 									renderer,
 									callbacks: {
@@ -135,7 +135,7 @@ export const MountChart = Mount.defineStream("MountChart", {
 							)
 							specObserver.observe(element, {
 								attributes: true,
-								attributeFilter: [CHART_SPEC_ATTRIBUTE],
+								attributeFilter: [CHART_SPEC_ATTRIBUTE, CHART_LABEL_ATTRIBUTE],
 							})
 
 							Queue.offerUnsafe(queue, Message.CompletedMountChart())

@@ -33,6 +33,17 @@ export const FixedMetricRow = Schema.Record(
 export type FixedMetricRow = typeof FixedMetricRow.Type
 
 export const ChartSpec = defineTaggedUnion({
+	/**
+	 * `ToolSeriesChart` and the tool detail grid (apps/web/src/components/agent-sessions/tools): one
+	 * monotone line per series over zero-filled buckets, colours resolved, ticks in the metric's unit.
+	 */
+	ToolSeries: {
+		rows: Schema.Array(FixedMetricRow),
+		series: Schema.Array(Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String })),
+		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
+		metric: Schema.Literals(["calls", "sessions", "error_rate", "duration"]),
+		timeZone: Schema.String,
+	},
 	/** `QueryBuilderPieChart`. */
 	Pie: {
 		rows: Schema.Array(PieSliceRow),
@@ -216,3 +227,6 @@ export type ChartTooltip = typeof ChartTooltip.Type
 
 /** The attribute the chart Mount watches. */
 export const CHART_SPEC_ATTRIBUTE = "data-chart-spec"
+
+/** The chart's accessible name, watched with the spec so a relabelled chart is relabelled in place. */
+export const CHART_LABEL_ATTRIBUTE = "data-chart-label"

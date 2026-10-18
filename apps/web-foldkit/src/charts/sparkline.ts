@@ -18,10 +18,12 @@ export interface SparklineInputs {
 	/** `PlotSparkline`'s `curve` and `fillOpacity` (the stat widget's monotone, `[0.35, 0]`). */
 	readonly curve?: "linear" | "monotone"
 	readonly fillOpacity?: readonly [start: number, end: number]
+	/** `PlotSparkline` frames an empty series too (the gradient `Sparkline` draws nothing). */
+	readonly isFramedWhenEmpty?: boolean
 }
 
 export const view = Submodel.defineView<Model, Message, SparklineInputs>((_model, inputs, h) =>
-	inputs.values.length === 0
+	inputs.values.length === 0 && inputs.isFramedWhenEmpty !== true
 		? h.div([h.Class(inputs.className ?? "")], [])
 		: plotFrame(h, {
 				chartId: inputs.chartId,
