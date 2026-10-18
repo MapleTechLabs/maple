@@ -4,10 +4,10 @@ import * as Chart from "@maple/web-foldkit/charts/chart"
 import { LoadChartRuntime } from "@maple/web-foldkit/charts/chart-runtime"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { accept, idle } from "../../data/slot"
+import { accept, acceptCached, idle } from "../../data/slot"
 import { hrefFor, queryOf } from "../../route"
 import { type PageContext, PageOutMessage, withParams } from "../contract"
-import { ReadClock, ReadRefreshClock } from "./command"
+import { FetchBreakdown, FetchEntry, FetchTimeseries, ReadClock, ReadRefreshClock } from "./command"
 import { load, loadDependents } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -81,7 +81,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			const isCurrent = model.entry.key === key
 			const next = {
 				...model,
-				entry: accept(model.entry, key, Result.succeed(entry)),
+				entry: accept(model.entry, key, Result.succeed(entry), fetchedAtMs),
 				entryUpdatedAtMs: isCurrent ? fetchedAtMs : model.entryUpdatedAtMs,
 			}
 			const dependents = loadDependents(next, context)
@@ -89,12 +89,33 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		},
 		FailedFetchEntry: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, entry: accept(model.entry, key, Result.fail(failure)) }) }),
-		SucceededFetchTimeseries: ({ key, points }) =>
-			({ model: settleRefresh({ ...model, timeseries: accept(model.timeseries, key, Result.succeed(points)) }) }),
+		SucceededFetchTimeseries: ({ key, points, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, timeseries: accept(model.timeseries, key, Result.succeed(points), fetchedAtMs) }) }),
 		FailedFetchTimeseries: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, timeseries: accept(model.timeseries, key, Result.fail(failure)) }) }),
-		SucceededFetchBreakdown: ({ key, rows }) =>
-			({ model: settleRefresh({ ...model, breakdown: accept(model.breakdown, key, Result.succeed(rows)) }) }),
+		SucceededFetchBreakdown: ({ key, rows, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, breakdown: accept(model.breakdown, key, Result.succeed(rows), fetchedAtMs) }) }),
+		FoundCachedEntry: ({ request, cached }) => {
+			if (model.entry.key !== request.key) return { model }
+			const next = { ...model, entry: acceptCached(model.entry, request.key, cached, cached.isFresh), entryUpdatedAtMs: cached.updatedAtMs }
+			const dependents = loadDependents(next, context)
+			const fetch = cached.isFresh ? [] : [FetchEntry({ ...request, readsCache: false })]
+			return { model: settleRefresh(dependents.model), commands: [...fetch, ...(dependents.commands ?? [])] }
+		},
+		FoundCachedTimeseries: ({ request, cached }) =>
+			model.timeseries.key === request.key
+				? {
+						model: settleRefresh({ ...model, timeseries: acceptCached(model.timeseries, request.key, cached, cached.isFresh) }),
+						commands: cached.isFresh ? [] : [FetchTimeseries({ ...request, readsCache: false })],
+					}
+				: { model },
+		FoundCachedBreakdown: ({ request, cached }) =>
+			model.breakdown.key === request.key
+				? {
+						model: settleRefresh({ ...model, breakdown: acceptCached(model.breakdown, request.key, cached, cached.isFresh) }),
+						commands: cached.isFresh ? [] : [FetchBreakdown({ ...request, readsCache: false })],
+					}
+				: { model },
 		FailedFetchBreakdown: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, breakdown: accept(model.breakdown, key, Result.fail(failure)) }) }),
 		ClickedBack: () => ({ model, outMessage: PageOutMessage.RequestedBack({ fallbackHash: backFallbackHash(context) }) }),

@@ -45,14 +45,14 @@ describe("local service detail", () => {
 		const base = anchored().model
 		const withOps = pageUpdate(
 			base,
-			Message.SucceededFetchOperations({ key: base.operations.key ?? "", operations: [operation("POST /checkout")] }),
+			Message.SucceededFetchOperations({ key: base.operations.key ?? "", operations: [operation("POST /checkout")], fetchedAtMs: 0 }),
 		)
 		expect(names(withOps.commands)).toEqual([FetchTimeseries.name])
 	})
 
 	test("an answer for a superseded key is dropped", () => {
 		const base = anchored().model
-		const stale = pageUpdate(base, Message.SucceededFetchOperations({ key: "stale", operations: [operation("x")] }))
+		const stale = pageUpdate(base, Message.SucceededFetchOperations({ key: "stale", operations: [operation("x")], fetchedAtMs: 0 }))
 		expect(stale.model.operations).toEqual(base.operations)
 	})
 
