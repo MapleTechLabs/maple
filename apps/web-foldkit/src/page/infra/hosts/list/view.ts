@@ -29,7 +29,7 @@ import { hostTable, hostTableLoading } from "./view-table"
 type H = HtmlBuilder<Message>
 
 /** `HostRow` columns `useTableSort` reads by key. */
-const HOST_SORT_ACCESSORS: SortAccessors<HostRow> = new Map<string, (row: HostRow) => string | number>([
+export const HOST_SORT_ACCESSORS: SortAccessors<HostRow> = new Map<string, (row: HostRow) => string | number>([
 	["cpuPct", (row) => row.cpuPct],
 	["hostName", (row) => row.hostName],
 	["load15", (row) => row.load15],
@@ -118,6 +118,7 @@ const hostList = (
 						timeZone: inputs.context.timeZone,
 						isWaiting,
 						sort: model.sort,
+						onSort: (key) => Message.ClickedSort({ key }),
 					}),
 		],
 	)

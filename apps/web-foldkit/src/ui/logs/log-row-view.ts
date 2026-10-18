@@ -76,7 +76,7 @@ const MAX_VALUE_CHARS = 24
 const SEVERITY_NUMBER_LABELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"] as const
 
 // packages/ui/src/components/logs/severity-badge.tsx `severityLabel` (a React module).
-const severityLabel = (severityText: string, severityNumber?: number): string => {
+export const severityLabel = (severityText: string, severityNumber?: number): string => {
 	if (severityText.trim() !== "") return severityText
 	if (severityNumber !== undefined && severityNumber >= 1 && severityNumber <= 24)
 		return SEVERITY_NUMBER_LABELS[Math.floor((severityNumber - 1) / 4)] ?? "UNSET"

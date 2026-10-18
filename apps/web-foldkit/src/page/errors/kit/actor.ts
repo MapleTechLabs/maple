@@ -6,6 +6,7 @@ import { gradientFor } from "@maple/ui/lib/replay"
 import { AGENT_ACCENT } from "@maple/ui/lib/tone"
 import { shortId as truncateId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
+import { avatarFallbackStyles, avatarStyles } from "@maple/ui/styles/ui/avatar"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 
@@ -19,6 +20,8 @@ export interface ActorIdentity {
 	readonly name: string
 	readonly initials: string
 	readonly seed: string
+	/** A directory member's photo (legacy `ActorIdentity.imageUrl`). */
+	readonly imageUrl?: string | null
 }
 
 /** `shortId` (hooks/use-actor-directory.ts). */
@@ -76,10 +79,26 @@ export const identityAvatar = <M>(
 			],
 		)
 	}
-	return h.span(
-		[h.AriaHidden(true), h.Class(cn(base, "bg-gradient-to-br text-white", gradientFor(identity.seed)))],
-		[identity.initials],
-	)
+	const gradient = cn("bg-gradient-to-br text-white", gradientFor(identity.seed))
+	// Legacy's `Avatar` shows the initials until the photo loads; photos are not loaded here yet.
+	if (identity.imageUrl !== undefined && identity.imageUrl !== null && identity.imageUrl !== "")
+		return h.span(
+			[
+				h.AriaHidden(true),
+				h.Class(cn(avatarStyles, cn(base, "ring-1 ring-border/60"))),
+				h.DataAttribute("slot", "avatar"),
+			],
+			[
+				h.span(
+					[
+						h.Class(cn(avatarFallbackStyles, gradient, SIZE_CLASS[size])),
+						h.DataAttribute("slot", "avatar-fallback"),
+					],
+					[identity.initials],
+				),
+			],
+		)
+	return h.span([h.AriaHidden(true), h.Class(cn(base, gradient))], [identity.initials])
 }
 
 export const actorAvatar = <M>(
