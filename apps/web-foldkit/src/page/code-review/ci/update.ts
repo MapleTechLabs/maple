@@ -10,7 +10,15 @@ import type { CodeReviewCiSearch } from "../../../route/search"
 import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { ALL, type FrameOut, type FrameReturn } from "../kit/frame"
-import { frameRouteChanged, initFrame, updateFrame } from "../kit/frame-update"
+import {
+	type Carried,
+	frameRetained,
+	frameRouteChanged,
+	initFrame,
+	noCarry,
+	updateFrame,
+} from "../kit/frame-update"
+import type { Retained } from "../kit/retained"
 import { remember } from "../kit/page-steps"
 import { Message, type Model } from "./model"
 import { followRuns, request, runsPageStep } from "./requests"
@@ -53,19 +61,23 @@ const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Ret
 	return { ...out, commands: [...commands, ...(out.commands ?? [])] }
 }
 
-export const init = (route: { readonly search: Search }, context: PageContext): Return => {
-	const frame = initFrame(FRAME_ID, route.search, route.search.pipeline, DEFAULT_PRESET, context)
+export const init = (
+	route: { readonly search: Search },
+	context: PageContext,
+	carried: Carried = noCarry,
+): Return => {
+	const frame = initFrame(FRAME_ID, route.search, route.search.pipeline, DEFAULT_PRESET, context, carried)
 	const model: Model = {
 		search: route.search,
 		frame: frame.frame,
 		analytics: Keyed.idle(),
 		pipelines: Keyed.idle(),
-		analyticsCache: {},
+		analyticsCache: carried.retained.ciAnalytics,
 		runsFilterKey: null,
 		runs: Keyed.idle(),
 		cursors: [],
 		pages: {},
-		runsCache: {},
+		runsCache: carried.retained.ciRuns,
 		resultSelect: Select.init(`${FRAME_ID}-result`, {
 			value: route.search.result ?? ALL,
 			selectedIndex: null,
@@ -199,3 +211,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 	})
+
+/** What this tab hands the next one. */
+export const retainedOf = (model: Model): Partial<Retained> => ({
+	...frameRetained(model.frame),
+	ciAnalytics: model.analyticsCache,
+	ciRuns: model.runsCache,
+})

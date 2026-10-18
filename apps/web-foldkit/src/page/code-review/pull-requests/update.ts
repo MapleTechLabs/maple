@@ -8,7 +8,15 @@ import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
 import { ALL, type FrameOut, type FrameReturn } from "../kit/frame"
-import { frameRouteChanged, initFrame, updateFrame } from "../kit/frame-update"
+import {
+	type Carried,
+	frameRetained,
+	frameRouteChanged,
+	initFrame,
+	noCarry,
+	updateFrame,
+} from "../kit/frame-update"
+import type { Retained } from "../kit/retained"
 import { cachedStep, mergeSteps, remember } from "../kit/page-steps"
 import type { SheetOut } from "../kit/review-sheet"
 import { initSheet, syncSheet, updateSheet, type SheetReturn } from "../kit/review-sheet-update"
@@ -133,21 +141,30 @@ const combine = (first: Return, second: (model: Model) => Return): Return => {
 
 // ENTRY POINTS
 
-export const init = (route: { readonly search: Search }, context: PageContext): Return => {
-	const frame = initFrame(FRAME_ID, route.search, route.search.author, DEFAULT_PRESET, context)
+export const init = (
+	route: { readonly search: Search },
+	context: PageContext,
+	carried: Carried = noCarry,
+): Return => {
+	const frame = initFrame(FRAME_ID, route.search, route.search.author, DEFAULT_PRESET, context, carried)
 	const model: Model = {
 		search: route.search,
 		frame: frame.frame,
 		reviews: Keyed.idle(),
-		reviewsCache: {},
+		reviewsCache: carried.retained.reviews,
 		authors: Keyed.idle(),
-		authorsCache: {},
+		authorsCache: carried.retained.analytics,
 		limit: PAGE,
 		statusSelect: Select.init(`${FRAME_ID}-status`, {
 			value: route.search.status ?? ALL,
 			selectedIndex: null,
 		}),
-		sheet: initSheet(`${FRAME_ID}-review`),
+		sheet: {
+			...initSheet(`${FRAME_ID}-review`),
+			detailCache: carried.retained.details,
+			ciCache: carried.retained.ciRuns,
+			nowMs: carried.nowMs,
+		},
 	}
 	return combine(liftFrame(model, frame, context), (next) =>
 		liftSheet(next, syncSheet(next.sheet, route.search.review, context, next.frame.nowMs)),
@@ -227,3 +244,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotSheetMessage: ({ message: inner }) => liftSheet(model, updateSheet(model.sheet, inner, context)),
 	})
+
+/** What this tab hands the next one. */
+export const retainedOf = (model: Model): Partial<Retained> => ({
+	...frameRetained(model.frame),
+	analytics: model.authorsCache,
+	reviews: model.reviewsCache,
+	details: model.sheet.detailCache,
+	ciRuns: model.sheet.ciCache,
+})

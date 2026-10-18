@@ -10,7 +10,15 @@ import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
 import { type FrameMessage, type FrameOut, type FrameReturn, type RequestMode } from "../kit/frame"
-import { frameRouteChanged, initFrame, updateFrame } from "../kit/frame-update"
+import {
+	type Carried,
+	frameRetained,
+	frameRouteChanged,
+	initFrame,
+	noCarry,
+	updateFrame,
+} from "../kit/frame-update"
+import type { Retained } from "../kit/retained"
 import { cachedStep, mergeSteps, remember } from "../kit/page-steps"
 import { FetchAnalytics } from "./command"
 import { Message } from "./message"
@@ -84,14 +92,18 @@ const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => 
 
 // ENTRY POINTS
 
-export const init = (route: { readonly search: Search }, context: PageContext): Return => {
-	const frame = initFrame(FRAME_ID, route.search, route.search.author, DEFAULT_PRESET, context)
+export const init = (
+	route: { readonly search: Search },
+	context: PageContext,
+	carried: Carried = noCarry,
+): Return => {
+	const frame = initFrame(FRAME_ID, route.search, route.search.author, DEFAULT_PRESET, context, carried)
 	const model: Model = {
 		search: route.search,
 		frame: frame.frame,
 		analytics: Keyed.idle(),
 		authors: Keyed.idle(),
-		cache: {},
+		cache: carried.retained.analytics,
 		volumeSelect: Select.init(`${FRAME_ID}-volume`, { value: "pullRequests", selectedIndex: null }),
 		severitySelect: Select.init(`${FRAME_ID}-severity`, { value: "all", selectedIndex: null }),
 		volumeChart: Chart.init(),
@@ -187,3 +199,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 	})
+
+/** What this tab hands the next one. */
+export const retainedOf = (model: Model): Partial<Retained> => ({
+	...frameRetained(model.frame),
+	analytics: model.cache,
+})

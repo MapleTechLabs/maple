@@ -17,11 +17,7 @@ import type {
 import * as AlertsHub from "./alerts/hub"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
-import * as CodeReviewAnalytics from "./code-review/analytics"
-import * as CodeReviewCi from "./code-review/ci"
-import * as CodeReviewIssues from "./code-review/issues"
-import * as CodeReviewSettings from "./code-review/settings"
-import * as CodeReviewPullRequests from "./code-review/pull-requests"
+import * as CodeReview from "./code-review"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
 import * as LogsList from "./logs/list"
@@ -53,11 +49,7 @@ export const pages = [
 	AlertIncident.page,
 	AlertRule.page,
 	ServiceMap.page,
-	CodeReviewAnalytics.page,
-	CodeReviewPullRequests.page,
-	CodeReviewIssues.page,
-	CodeReviewCi.page,
-	CodeReviewSettings.page,
+	CodeReview.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

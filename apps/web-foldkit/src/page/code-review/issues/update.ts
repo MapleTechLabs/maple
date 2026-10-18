@@ -10,7 +10,15 @@ import * as Tooltip from "../../../ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
 import { ALL, type FrameOut, type FrameReturn } from "../kit/frame"
-import { frameRouteChanged, initFrame, updateFrame } from "../kit/frame-update"
+import {
+	type Carried,
+	frameRetained,
+	frameRouteChanged,
+	initFrame,
+	noCarry,
+	updateFrame,
+} from "../kit/frame-update"
+import type { Retained } from "../kit/retained"
 import { cachedStep, mergeSteps, remember } from "../kit/page-steps"
 import type { SheetOut } from "../kit/review-sheet"
 import { initSheet, type SheetReturn, syncSheet, updateSheet } from "../kit/review-sheet-update"
@@ -144,23 +152,32 @@ const withSelects = (model: Model, search: Search): Model => ({
 
 // ENTRY POINTS
 
-export const init = (route: { readonly search: Search }, context: PageContext): Return => {
-	const frame = initFrame(FRAME_ID, route.search, route.search.author, DEFAULT_PRESET, context)
+export const init = (
+	route: { readonly search: Search },
+	context: PageContext,
+	carried: Carried = noCarry,
+): Return => {
+	const frame = initFrame(FRAME_ID, route.search, route.search.author, DEFAULT_PRESET, context, carried)
 	const select = (field: string) => Select.init(`${FRAME_ID}-${field}`, { value: ALL, selectedIndex: null })
 	const model: Model = withSelects(
 		{
 			search: route.search,
 			frame: frame.frame,
 			findings: Keyed.idle(),
-			findingsCache: {},
+			findingsCache: carried.retained.findings,
 			authors: Keyed.idle(),
-			authorsCache: {},
+			authorsCache: carried.retained.analytics,
 			limit: PAGE,
 			severitySelect: select("severity"),
 			categorySelect: select("category"),
 			stateSelect: select("state"),
 			timeTooltip: Tooltip.init(`${FRAME_ID}-time`),
-			sheet: initSheet(`${FRAME_ID}-review`),
+			sheet: {
+				...initSheet(`${FRAME_ID}-review`),
+				detailCache: carried.retained.details,
+				ciCache: carried.retained.ciRuns,
+				nowMs: carried.nowMs,
+			},
 		},
 		route.search,
 	)
@@ -250,3 +267,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotSheetMessage: ({ message: inner }) => liftSheet(model, updateSheet(model.sheet, inner, context)),
 	})
+
+/** What this tab hands the next one. */
+export const retainedOf = (model: Model): Partial<Retained> => ({
+	...frameRetained(model.frame),
+	analytics: model.authorsCache,
+	findings: model.findingsCache,
+	details: model.sheet.detailCache,
+	ciRuns: model.sheet.ciCache,
+})

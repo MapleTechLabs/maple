@@ -19,6 +19,8 @@ import { requestKey } from "../../../data/request-key"
 import * as Dialog from "../../../ui/dialog"
 import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { type Carried, noCarry } from "../kit/frame-update"
+import { type Retained, retainedStatus } from "../kit/retained"
 import * as RulesForm from "../rules-form/form"
 import {
 	FetchRepoConfig,
@@ -132,10 +134,14 @@ const combine = (first: Return, second: (model: Model) => Return): Return => {
 
 // ENTRY
 
-export const init = (_route: unknown, context: PageContext): Return => {
+export const init = (_route: unknown, context: PageContext, carried: Carried = noCarry): Return => {
+	const key = statusKey(context)
 	const model: Model = {
 		settings: Keyed.idle(),
-		githubStatus: Keyed.idle(),
+		githubStatus: Option.match(retainedStatus(carried.retained, key, carried.nowMs), {
+			onNone: () => Keyed.idle(),
+			onSome: (status) => ({ key, data: AsyncData.Success({ data: status }) }),
+		}),
 		isAdmin: !isClerkAuthEnabled,
 		modelSelect: Select.init("code-review-model", { value: DEFAULT_MODEL, selectedIndex: null }),
 		isSavingModel: false,
@@ -275,7 +281,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchSettings: ({ key, result }) => {
 			const next = settingsArrived({ ...model, settings: Keyed.accept(model.settings, key, result) })
 			// `RepositoriesSection` mounts with the settings: the repositories are read then.
-			return Option.isSome(settingsOf(next)) && next.githubStatus.key === null
+			return Option.isSome(settingsOf(next)) && AsyncData.isIdle(next.githubStatus.data)
 				? readStatus(next, context, "Load")
 				: { model: next }
 		},
@@ -443,4 +449,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				outMessage: toast("success", `Rules saved for ${fullName}`),
 			}
 		},
+	})
+
+/** What this tab hands the next one: the GitHub status, with no clock of its own to stamp it. */
+export const retainedOf = (model: Model, nowMs: number): Partial<Retained> =>
+	Option.match(AsyncData.getData(model.githubStatus.data), {
+		onNone: () => ({}),
+		onSome: (status) => ({
+			githubStatus: { [model.githubStatus.key ?? ""]: { value: status, usedAtMs: nowMs } },
+		}),
 	})

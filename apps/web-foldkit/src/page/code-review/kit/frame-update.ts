@@ -3,6 +3,7 @@ import type { LoadFailure } from "../../../data/load-failure"
 import { Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
+import { emptyRetained, type Retained, retainedStatus } from "./retained"
 import { requestKey } from "../../../data/request-key"
 import * as Select from "../../../ui/select"
 import type { PageContext } from "../../contract"
@@ -21,6 +22,19 @@ import {
 } from "./frame"
 
 // The frame's `init`, `routeChanged` and `update`; the page maps its Commands and acts on its out.
+
+/** What the shared page instance carries into a tab: retained answers and the last clock read. */
+export type Carried = Readonly<{ retained: Retained; nowMs: number }>
+export const noCarry: Carried = { retained: emptyRetained, nowMs: 0 }
+
+/** The frame's share of the retained answers: the GitHub status it read. */
+export const frameRetained = (frame: Frame): Partial<Retained> =>
+	Option.match(AsyncData.getData(frame.githubStatus.data), {
+		onNone: () => ({}),
+		onSome: (status) => ({
+			githubStatus: { [frame.githubStatus.key ?? ""]: { value: status, usedAtMs: frame.nowMs } },
+		}),
+	})
 
 export type FrameSearch = WindowSearch & Readonly<{ repo?: VcsRepositoryId }>
 
@@ -46,12 +60,18 @@ export const initFrame = (
 	option: string | undefined,
 	defaultPreset: string,
 	context: PageContext,
+	carried: Carried = noCarry,
 ): FrameReturn => {
 	const key = requestKey(context.orgId, "integrations.githubStatus", {})
-	const githubStatus = Option.getOrElse(
-		Keyed.request(Keyed.idle<GithubIntegrationStatus, LoadFailure>(), key, "Load"),
-		() => Keyed.idle<GithubIntegrationStatus, LoadFailure>(),
-	)
+	const retained = retainedStatus(carried.retained, key, carried.nowMs)
+	const githubStatus: Frame["githubStatus"] = Option.match(retained, {
+		onSome: (status) => ({ key, data: AsyncData.Success({ data: status }) }),
+		onNone: () =>
+			Option.getOrElse(
+				Keyed.request(Keyed.idle<GithubIntegrationStatus, LoadFailure>(), key, "Load"),
+				() => Keyed.idle<GithubIntegrationStatus, LoadFailure>(),
+			),
+	})
 	const frame: Frame = {
 		repoSelect: Select.init(`${id}-repository`, { value: search.repo ?? ALL, selectedIndex: null }),
 		optionSelect: Select.init(`${id}-option`, { value: option ?? ALL, selectedIndex: null }),
@@ -64,7 +84,10 @@ export const initFrame = (
 	}
 	return {
 		frame,
-		commands: [resolveCommand(search, defaultPreset, context, "Load"), FetchGithubStatus({ key })],
+		commands: [
+			resolveCommand(search, defaultPreset, context, "Load"),
+			...(Option.isSome(retained) ? [] : [FetchGithubStatus({ key })]),
+		],
 		out: null,
 	}
 }

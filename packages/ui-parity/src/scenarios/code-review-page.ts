@@ -140,6 +140,15 @@ export const codeReviewPageArea: AreaModule = {
 			"Analytics: deep-linked one-week window",
 			"/code-review?timePreset=1w",
 		),
+		analytics("tab-ci", "the CI tab followed with a month window (falls back to a week)", {
+			steps: (page) => page.getByRole("link", { name: "CI", exact: true }).click(),
+		}),
+		analytics("tab-issues", "the Issues tab followed with the author filter carried", {
+			steps: async (page) => {
+				await pick(page, "Author", "ada-l")
+				await page.getByRole("link", { name: "Issues", exact: true }).click()
+			},
+		}),
 		analytics("reload", "Reload clicked", {
 			steps: (page) => page.getByRole("button", { name: "Reload" }).click(),
 		}),
