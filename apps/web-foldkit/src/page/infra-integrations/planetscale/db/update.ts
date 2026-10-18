@@ -1,8 +1,8 @@
-import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "../../../../charts/chart"
 import { LoadChartRuntime } from "../../../../charts/chart-runtime"
 import * as Keyed from "../../../../data/keyed"
+import { requestSlot } from "../../kit/slot"
 import { requestKey } from "../../../../data/request-key"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
@@ -30,7 +30,6 @@ import { Message, type Model, type RequestMode } from "./model"
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
 type Route = { readonly dbName: string; readonly search: Search }
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 export const DEFAULT_PRESET = "12h"
 export const CHART_METRICS = [
@@ -59,16 +58,7 @@ const navigate = (model: Model, search: Search): Return => ({
 })
 
 /** One slot request: the next slot and its fetch, or nothing when the key is already in hand. */
-const slot = <A, E>(
-	current: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.RequestMode,
-	fetch: () => Command.Command<Message, never, Resources>,
-): readonly [Keyed.Keyed<A, E>, Commands] =>
-	Option.match(Keyed.request(current, key, mode), {
-		onNone: () => [current, []] as const,
-		onSome: (next) => [next, [fetch()]] as const,
-	})
+const slot = requestSlot
 
 /** The scoped reads (`PlanetScaleDatabaseData`): they re-key whenever the resolved branch moves. */
 const requestScoped = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {

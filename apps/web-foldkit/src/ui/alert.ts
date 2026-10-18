@@ -12,14 +12,18 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 
 type Children = ReadonlyArray<Html | string>
 
-export type AlertOptions = VariantProps<typeof alertVariants> & { readonly className?: string }
+export type AlertOptions = VariantProps<typeof alertVariants> & {
+	readonly className?: string
+	/** `role` override (`role="status"` for a progress or informational notice). */
+	readonly role?: string
+}
 
 export const alert = <M>(h: HtmlBuilder<M>, options: AlertOptions, children: Children): Html =>
 	h.div(
 		[
 			h.Class(cn(alertVariants({ size: options.size, variant: options.variant }), options.className)),
 			h.DataAttribute("slot", "alert"),
-			h.Role("alert"),
+			h.Role(options.role ?? "alert"),
 		],
 		children,
 	)

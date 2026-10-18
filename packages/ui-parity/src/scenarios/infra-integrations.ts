@@ -150,6 +150,25 @@ export const infraIntegrationsArea: AreaModule = {
 		}),
 		scenario("gcp-resources", "Google Cloud: Resources tab", "/infra/gcp", { steps: press("Resources") }),
 		scenario("gcp-empty", "Google Cloud: not connected", "/infra/gcp", { dataset: EMPTY }),
+		scenario("gcp-loading", "Google Cloud: workloads loading", "/infra/gcp", held("queryEngine.gcpInfraPresence")),
+		scenario("gcp-error", "Google Cloud: workloads failing", "/infra/gcp", failing("queryEngine.gcpInfraPresence")),
+		scenario("gcp-status-loading", "Google Cloud: status loading", "/infra/gcp", held("gcpIntegration.status")),
+		scenario("gcp-pubsub", "Google Cloud: Pub/Sub tab", "/infra/gcp", { steps: press("Pub/Sub 1") }),
+		scenario("gcp-compute", "Google Cloud: Compute Engine tab", "/infra/gcp", { steps: press("Compute Engine 1") }),
+		scenario("gcp-search", "Google Cloud: services filtered", "/infra/gcp", {
+			steps: async (page) => {
+				await page.getByRole("textbox", { name: "Filter 3 services" }).fill("checkout")
+				await page.getByText("1 of 3 services").waitFor()
+			},
+		}),
+		scenario("gcp-resources-type", "Google Cloud: resources of one type", "/infra/gcp", {
+			steps: async (page) => {
+				await press("Resources")(page)
+				await page.getByRole("combobox", { name: "Resource type" }).click()
+				await page.getByRole("option").nth(2).click()
+				await page.getByRole("combobox", { name: "Resource type" }).waitFor()
+			},
+		}),
 		scenario(
 			"gcp-workload",
 			"Google Cloud: checkout-api",
