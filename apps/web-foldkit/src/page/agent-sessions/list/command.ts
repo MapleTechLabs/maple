@@ -36,7 +36,9 @@ export const ResolveWindow = Command.define("ResolveAgentSessionsWindow", {
 })
 
 const fetchPage = (search: typeof AgentSessionsSearch.Type, window: TimeWindow, offset: number) =>
-	listAiSessions({ data: { ...presentInputs(filterInputs(search, window)), limit: PAGE_SIZE, offset } }).pipe(
+	listAiSessions({
+		data: { ...presentInputs(filterInputs(search, window)), limit: PAGE_SIZE, offset },
+	}).pipe(
 		Effect.map((response) => ({ data: response.data, ranked: response.data.length })),
 		Effect.mapError(toLoadFailure),
 		Effect.result,
@@ -48,7 +50,9 @@ export const FetchFirstPage = Command.define("FetchAgentSessionsFirstPage", {
 	args: pageArgs,
 	messages: [Message.CompletedFetchFirstPage],
 	execute: ({ key, search, window }) =>
-		Effect.map(fetchPage(search, window, 0), (result) => Message.CompletedFetchFirstPage({ key, result })),
+		Effect.map(fetchPage(search, window, 0), (result) =>
+			Message.CompletedFetchFirstPage({ key, result }),
+		),
 })
 
 /** The next page, at the offset the server ranked so far; `key` is the filter key it belongs to. */
@@ -56,7 +60,9 @@ export const FetchNextPage = Command.define("FetchAgentSessionsNextPage", {
 	args: { ...pageArgs, offset: Schema.Number },
 	messages: [Message.CompletedFetchNextPage],
 	execute: ({ key, search, window, offset }) =>
-		Effect.map(fetchPage(search, window, offset), (result) => Message.CompletedFetchNextPage({ key, result })),
+		Effect.map(fetchPage(search, window, offset), (result) =>
+			Message.CompletedFetchNextPage({ key, result }),
+		),
 })
 
 /** One page's details, over the page's own extent (fixed-width literals, so string order is time order). */
@@ -65,7 +71,9 @@ export const FetchDetails = Command.define("FetchAgentSessionDetails", {
 		detailsKey: Schema.String,
 		search: AgentSessionsSearch,
 		window: TimeWindow,
-		rows: Schema.Array(Schema.Struct({ sessionId: Schema.String, startTime: Schema.String, endTime: Schema.String })),
+		rows: Schema.Array(
+			Schema.Struct({ sessionId: Schema.String, startTime: Schema.String, endTime: Schema.String }),
+		),
 	},
 	messages: [Message.CompletedFetchDetails],
 	execute: ({ detailsKey, search, window, rows }) =>
@@ -81,7 +89,11 @@ export const FetchDetails = Command.define("FetchAgentSessionDetails", {
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) =>
-				Message.CompletedFetchDetails({ detailsKey, sessionIds: rows.map((row) => row.sessionId), result }),
+				Message.CompletedFetchDetails({
+					detailsKey,
+					sessionIds: rows.map((row) => row.sessionId),
+					result,
+				}),
 			),
 		),
 })
@@ -138,7 +150,8 @@ export const FetchTabTools = Command.define("FetchAgentSessionsTabTools", {
 export const DetectModels = Command.define("DetectAgentSessionsModels", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedDetectModels],
-	execute: ({ key }) => Effect.map(detectModels(key), (models) => Message.CompletedDetectModels({ key, models })),
+	execute: ({ key }) =>
+		Effect.map(detectModels(key), (models) => Message.CompletedDetectModels({ key, models })),
 })
 
 export const DebounceSearch = Command.define("DebounceAgentSessionsSearch", {
@@ -164,7 +177,9 @@ export const CompleteReloadSpin = Command.define("CompleteAgentSessionsReloadSpi
 
 const afterPaint = <A>(message: A) =>
 	Effect.callback<A>((resume) => {
-		const handle = requestAnimationFrame(() => requestAnimationFrame(() => resume(Effect.succeed(message))))
+		const handle = requestAnimationFrame(() =>
+			requestAnimationFrame(() => resume(Effect.succeed(message))),
+		)
 		return Effect.sync(() => cancelAnimationFrame(handle))
 	})
 

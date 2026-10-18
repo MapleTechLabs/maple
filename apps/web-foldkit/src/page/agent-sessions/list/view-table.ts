@@ -38,15 +38,75 @@ interface Column {
 
 const COLUMNS: ReadonlyArray<Column> = [
 	{ id: "session", header: "Session", skeleton: "w-40" },
-	{ id: "services", header: "Services", width: 170, skeleton: "w-24", responsive: "hidden @min-[1110px]/page:table-cell" },
-	{ id: "model", header: "Model", width: 160, skeleton: "w-24", responsive: "hidden @min-[1270px]/page:table-cell" },
-	{ id: "durationMs", header: "Duration", width: 100, skeleton: "w-12", responsive: "hidden @min-[500px]/page:table-cell", sort: { key: "durationMs", hint: true } },
-	{ id: "llmCalls", header: "LLM calls", width: 110, skeleton: "w-8", responsive: "hidden @min-[690px]/page:table-cell", sort: { key: "llmCalls", hint: true } },
-	{ id: "toolCalls", header: "Tool calls", width: 116, skeleton: "w-8", responsive: "hidden @min-[810px]/page:table-cell", sort: { key: "toolCalls", hint: true } },
-	{ id: "totalTokens", header: "Tokens", width: 130, skeleton: "w-20", responsive: "hidden @min-[940px]/page:table-cell", sort: { key: "totalTokens", hint: true } },
-	{ id: "cost", header: "Cost", width: 80, skeleton: "w-10", responsive: "hidden @min-[580px]/page:table-cell", sort: { key: "cost", hint: true } },
-	{ id: "errorSpanCount", header: "Errors", width: 100, skeleton: "w-12", sort: { key: "errorSpanCount", hint: true } },
-	{ id: "startTime", header: "Started", width: 96, skeleton: "w-14", responsive: "hidden @min-[400px]/page:table-cell", sort: { key: "startTime" } },
+	{
+		id: "services",
+		header: "Services",
+		width: 170,
+		skeleton: "w-24",
+		responsive: "hidden @min-[1110px]/page:table-cell",
+	},
+	{
+		id: "model",
+		header: "Model",
+		width: 160,
+		skeleton: "w-24",
+		responsive: "hidden @min-[1270px]/page:table-cell",
+	},
+	{
+		id: "durationMs",
+		header: "Duration",
+		width: 100,
+		skeleton: "w-12",
+		responsive: "hidden @min-[500px]/page:table-cell",
+		sort: { key: "durationMs", hint: true },
+	},
+	{
+		id: "llmCalls",
+		header: "LLM calls",
+		width: 110,
+		skeleton: "w-8",
+		responsive: "hidden @min-[690px]/page:table-cell",
+		sort: { key: "llmCalls", hint: true },
+	},
+	{
+		id: "toolCalls",
+		header: "Tool calls",
+		width: 116,
+		skeleton: "w-8",
+		responsive: "hidden @min-[810px]/page:table-cell",
+		sort: { key: "toolCalls", hint: true },
+	},
+	{
+		id: "totalTokens",
+		header: "Tokens",
+		width: 130,
+		skeleton: "w-20",
+		responsive: "hidden @min-[940px]/page:table-cell",
+		sort: { key: "totalTokens", hint: true },
+	},
+	{
+		id: "cost",
+		header: "Cost",
+		width: 80,
+		skeleton: "w-10",
+		responsive: "hidden @min-[580px]/page:table-cell",
+		sort: { key: "cost", hint: true },
+	},
+	{
+		id: "errorSpanCount",
+		header: "Errors",
+		width: 100,
+		skeleton: "w-12",
+		sort: { key: "errorSpanCount", hint: true },
+	},
+	{
+		id: "startTime",
+		header: "Started",
+		width: 96,
+		skeleton: "w-14",
+		responsive: "hidden @min-[400px]/page:table-cell",
+		sort: { key: "startTime" },
+	},
 ]
 
 export const listSkeleton = (h: H): Html =>
@@ -83,7 +143,12 @@ const sortableHeader = (h: H, column: Column, sort: Sort): Html => {
 	const isActive = sort.sortBy === key
 	return h.button(
 		[
-			h.Class(cn("inline-flex items-center gap-1 transition-colors", isActive ? "text-foreground" : "hover:text-foreground")),
+			h.Class(
+				cn(
+					"inline-flex items-center gap-1 transition-colors",
+					isActive ? "text-foreground" : "hover:text-foreground",
+				),
+			),
 			...(column.sort?.hint === true ? triggerAttributes(h) : []),
 			h.Type("button"),
 			h.OnClick(Message.ClickedSort({ key })),
@@ -115,7 +180,12 @@ const header = (h: H, sort: Sort): Html =>
 						cn("px-2", column.responsive),
 						[
 							...(column.sort?.key === sort.sortBy
-								? [h.Attribute("aria-sort", sort.sortDir === "asc" ? "ascending" : "descending")]
+								? [
+										h.Attribute(
+											"aria-sort",
+											sort.sortDir === "asc" ? "ascending" : "descending",
+										),
+									]
 								: []),
 							...(column.width === undefined ? [] : [h.Style({ width: `${column.width}px` })]),
 						],
@@ -126,7 +196,11 @@ const header = (h: H, sort: Sort): Html =>
 		{ sticky: true },
 	)
 
-export type RowContext = Readonly<{ nowMs: number; timeZone: string; detect: (model: string) => DetectedModel }>
+export type RowContext = Readonly<{
+	nowMs: number
+	timeZone: string
+	detect: (model: string) => DetectedModel
+}>
 
 export const sessionHref = (row: DisplayRow): string =>
 	hrefOf(AppRoute.AgentSession({ sessionId: row.sessionId, search: sessionLinkWindow(row) }))
@@ -147,7 +221,13 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext, open: Message):
 				[h.Class("flex min-w-0 items-center gap-2")],
 				[
 					h.span(
-						[h.AriaLabel(vendor), h.Class("flex shrink-0 items-center"), ...triggerAttributes(h), h.Role("img"), h.OnClick(open)],
+						[
+							h.AriaLabel(vendor),
+							h.Class("flex shrink-0 items-center"),
+							...triggerAttributes(h),
+							h.Role("img"),
+							h.OnClick(open),
+						],
 						[
 							icon(h, vendorIcon(row.vendorId), {
 								size: 15,
@@ -176,9 +256,16 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext, open: Message):
 				],
 			),
 			h.div(
-				[h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"), ...triggerAttributes(h), h.OnClick(open)],
 				[
-					h.span([h.Class("shrink-0 text-muted-foreground/70")], [id.kind === "trace" ? "Trace" : "Session"]),
+					h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"),
+					...triggerAttributes(h),
+					h.OnClick(open),
+				],
+				[
+					h.span(
+						[h.Class("shrink-0 text-muted-foreground/70")],
+						[id.kind === "trace" ? "Trace" : "Session"],
+					),
 					h.span([h.Class("min-w-0 truncate font-mono text-muted-foreground")], [id.short]),
 				],
 			),
@@ -191,16 +278,25 @@ const modelCell = (h: H, row: DisplayRow, context: RowContext, open: Message): H
 	return firstModel === undefined
 		? null
 		: hint(h, "block min-w-0 text-xs text-muted-foreground", open, [
-				modelLabel(h, { detected: context.detect(firstModel), moreCount: row.models.length - 1, title: null }),
+				modelLabel(h, {
+					detected: context.detect(firstModel),
+					moreCount: row.models.length - 1,
+					title: null,
+				}),
 			])
 }
 
 /** A count with the kind's glyph, in its hue. */
 const workCount = (h: H, iconName: IconName, tone: string, count: number, open: Message): Html =>
-	hint(h, cn("inline-flex items-center gap-1 text-xs tabular-nums", count > 0 ? tone : "text-muted-foreground"), open, [
-		icon(h, iconName, { size: 12, className: "shrink-0", attributes: [h.AriaHidden(true)] }),
-		formatCount(count),
-	])
+	hint(
+		h,
+		cn("inline-flex items-center gap-1 text-xs tabular-nums", count > 0 ? tone : "text-muted-foreground"),
+		open,
+		[
+			icon(h, iconName, { size: 12, className: "shrink-0", attributes: [h.AriaHidden(true)] }),
+			formatCount(count),
+		],
+	)
 
 const BUCKET_COVERAGE_MIN = 0.9
 
@@ -217,7 +313,11 @@ const tokenBar = (h: H, row: DisplayRow, open: Message): Html | null => {
 	}
 	const sides = [
 		{ label: "in", tone: "text-chart-tok-input", count: inputs.reduce((sum, value) => sum + value, 0) },
-		{ label: "out", tone: "text-chart-tok-reasoning", count: outputs.reduce((sum, value) => sum + value, 0) },
+		{
+			label: "out",
+			tone: "text-chart-tok-reasoning",
+			count: outputs.reduce((sum, value) => sum + value, 0),
+		},
 	]
 	return hint(
 		h,
@@ -228,7 +328,14 @@ const tokenBar = (h: H, row: DisplayRow, open: Message): Html | null => {
 				[h.Class("flex items-baseline gap-1.5")],
 				[
 					h.span(
-						[h.Class(cn("min-w-12 text-right", side.count > 0 ? side.tone : "text-muted-foreground/50"))],
+						[
+							h.Class(
+								cn(
+									"min-w-12 text-right",
+									side.count > 0 ? side.tone : "text-muted-foreground/50",
+								),
+							),
+						],
 						[side.count > 0 ? formatCount(side.count) : EMPTY_VALUE],
 					),
 					h.span([h.Class("text-muted-foreground")], [side.label]),
@@ -246,13 +353,20 @@ const errorChip = (
 	hint(h, cn(badgeVariants({ pill: true, size: "xs", mono: true }), options.className), open, [
 		options.iconName === undefined
 			? statusDot(h, { tone: "custom", size: "sm", className: "bg-current" })
-			: icon(h, options.iconName, { size: 10, className: "shrink-0", attributes: [h.AriaHidden(true)] }),
+			: icon(h, options.iconName, {
+					size: 10,
+					className: "shrink-0",
+					attributes: [h.AriaHidden(true)],
+				}),
 		h.span(
 			[],
 			[
 				h.span([h.Class("inline-block min-w-[2ch] text-right")], [String(options.count)]),
 				" ",
-				h.span([h.Class("inline-block min-w-[5ch]")], [options.count === 1 ? options.noun : `${options.noun}s`]),
+				h.span(
+					[h.Class("inline-block min-w-[5ch]")],
+					[options.count === 1 ? options.noun : `${options.noun}s`],
+				),
 			],
 		),
 	])
@@ -269,10 +383,32 @@ const errorChips = (h: H, row: DisplayRow, open: Message): Html => {
 		[h.Class("flex flex-col items-start gap-1")],
 		[
 			...(row.turnErrorCount > 0
-				? [errorChip(h, { iconName: "FaceRobotIcon", count: row.turnErrorCount, noun: "turn", className: TURN_CHIP }, open)]
+				? [
+						errorChip(
+							h,
+							{
+								iconName: "FaceRobotIcon",
+								count: row.turnErrorCount,
+								noun: "turn",
+								className: TURN_CHIP,
+							},
+							open,
+						),
+					]
 				: []),
 			...(row.toolErrorCount > 0
-				? [errorChip(h, { iconName: "GearIcon", count: row.toolErrorCount, noun: "tool", className: TOOL_CHIP }, open)]
+				? [
+						errorChip(
+							h,
+							{
+								iconName: "GearIcon",
+								count: row.toolErrorCount,
+								noun: "tool",
+								className: TOOL_CHIP,
+							},
+							open,
+						),
+					]
 				: []),
 			...(classified === 0 && other > 0
 				? [errorChip(h, { count: other, noun: "span", className: TURN_CHIP }, open)]
@@ -321,54 +457,63 @@ export const sessionsTable = (
 		hasMore: boolean
 		isLoadingMore: boolean
 		isCapped: boolean
-		onPainted: Attribute<Message>
-		onReachEnd: Attribute<Message>
+		/** The table's paint and list-end Mounts; a lab without a server leaves them off. */
+		onPainted?: Attribute<Message>
+		onReachEnd?: Attribute<Message>
 	}>,
 ): Html =>
-	h.div(
-		[options.onPainted],
-		[
-			h.div(
-				[h.Class("rounded-md border")],
-				[
-					table(h, { scroll: false, className: "table-fixed", ariaLabel: "Agent sessions" }, [
-						header(h, options.sort),
-						tableBody(h, [
-							spacer(h, "top"),
-							...options.rows.map((row, index) => sessionRow(h, row, index, options.context)),
-							spacer(h, "bottom"),
-							...(options.isLoadingMore
-								? [
-										h.tr(
-											[h.Key("loading")],
-											[
-												h.td(
-													[h.Attribute("colspan", String(COLUMNS.length)), h.Class("p-2")],
-													[loadingMoreRow(h, "Loading more sessions…")],
-												),
-											],
-										),
-									]
-								: []),
-						]),
+	h.div(options.onPainted === undefined ? [] : [options.onPainted], [
+		h.div(
+			[h.Class("rounded-md border")],
+			[
+				table(h, { scroll: false, className: "table-fixed", ariaLabel: "Agent sessions" }, [
+					header(h, options.sort),
+					tableBody(h, [
+						spacer(h, "top"),
+						...options.rows.map((row, index) => sessionRow(h, row, index, options.context)),
+						spacer(h, "bottom"),
+						...(options.isLoadingMore
+							? [
+									h.tr(
+										[h.Key("loading")],
+										[
+											h.td(
+												[
+													h.Attribute("colspan", String(COLUMNS.length)),
+													h.Class("p-2"),
+												],
+												[loadingMoreRow(h, "Loading more sessions…")],
+											),
+										],
+									),
+								]
+							: []),
 					]),
-				],
-			),
-			...(options.hasMore
-				? [h.div([h.AriaHidden(true), h.Class("h-px w-full"), options.onReachEnd], [])]
-				: []),
-			...(options.isCapped
-				? [
-						h.p(
-							[h.Class("py-3 text-sm text-muted-foreground")],
-							[
-								"Showing the ",
-								formatNumber(options.rows.length),
-								" most recent sessions — filter the list to see older ones",
-							],
-						),
-					]
-				: []),
-		],
-	)
-
+				]),
+			],
+		),
+		...(options.hasMore
+			? [
+					h.div(
+						[
+							h.AriaHidden(true),
+							h.Class("h-px w-full"),
+							...(options.onReachEnd === undefined ? [] : [options.onReachEnd]),
+						],
+						[],
+					),
+				]
+			: []),
+		...(options.isCapped
+			? [
+					h.p(
+						[h.Class("py-3 text-sm text-muted-foreground")],
+						[
+							"Showing the ",
+							formatNumber(options.rows.length),
+							" most recent sessions — filter the list to see older ones",
+						],
+					),
+				]
+			: []),
+	])

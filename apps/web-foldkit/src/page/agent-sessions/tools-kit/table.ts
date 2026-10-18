@@ -52,7 +52,11 @@ export const sortRows = <Row>(
 export const toolTable = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
 	h.div([h.Class(cn("overflow-x-auto", className))], [h.div([h.Class("min-w-fit")], children)])
 
-export const toolTableHead = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
+export const toolTableHead = <M>(
+	h: HtmlBuilder<M>,
+	children: ReadonlyArray<Html>,
+	className?: string,
+): Html =>
 	h.div(
 		[h.Class(cn("flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-2.5", className))],
 		children,
@@ -76,7 +80,12 @@ export const th = <M>(h: HtmlBuilder<M>, options: ThOptions<M>): Html => {
 	return h.div(
 		[
 			h.Class(
-				cn("flex items-center", options.align === "right" && "justify-end", options.width, options.hidden),
+				cn(
+					"flex items-center",
+					options.align === "right" && "justify-end",
+					options.width,
+					options.hidden,
+				),
 			),
 		],
 		[
@@ -85,7 +94,11 @@ export const th = <M>(h: HtmlBuilder<M>, options: ThOptions<M>): Html => {
 				: h.button(
 						[
 							h.Class(
-								cn("inline-flex items-center gap-1", text, isActive ? "text-foreground" : "hover:text-foreground"),
+								cn(
+									"inline-flex items-center gap-1",
+									text,
+									isActive ? "text-foreground" : "hover:text-foreground",
+								),
 							),
 							h.Type("button"),
 							h.OnClick(onSort(sortKey)),
@@ -138,13 +151,21 @@ export const toolTableFooter = <M>(h: HtmlBuilder<M>, subject: string, detail: s
 
 export const errorTone = (rate: number): Readonly<{ bar: string; text: string }> => {
 	const level = errorRateLevel(rate)
-	return { bar: ERROR_RATE_FILL[level], text: level === "neutral" ? "text-muted-foreground" : ERROR_RATE_TEXT[level] }
+	return {
+		bar: ERROR_RATE_FILL[level],
+		text: level === "neutral" ? "text-muted-foreground" : ERROR_RATE_TEXT[level],
+	}
 }
 
 /** `ShareCell`: a bar scaled against the worst row, and the number. */
 export const shareCell = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ ratio: number; max: number; label: string; tone: Readonly<{ bar: string; text: string }> }>,
+	options: Readonly<{
+		ratio: number
+		max: number
+		label: string
+		tone: Readonly<{ bar: string; text: string }>
+	}>,
 ): Html =>
 	h.span(
 		[h.Class("flex w-[150px] shrink-0 items-center justify-end gap-2.5")],
@@ -156,7 +177,10 @@ export const shareCell = <M>(
 				fillClassName: options.tone.bar,
 				className: "hidden w-[60px] shrink-0 rounded-xs bg-muted @min-[560px]/panel:block",
 			}),
-			h.span([h.Class(cn("w-[46px] text-right font-mono text-xs tabular-nums", options.tone.text))], [options.label]),
+			h.span(
+				[h.Class(cn("w-[46px] text-right font-mono text-xs tabular-nums", options.tone.text))],
+				[options.label],
+			),
 		],
 	)
 
@@ -177,9 +201,23 @@ export const relativeTime = <M>(
 				[
 					h.Datetime(new Date(value).toISOString()),
 					...(options.isTooltip === true
-						? [h.DataAttribute("base-ui-tooltip-trigger", ""), h.DataAttribute("slot", "tooltip-trigger")]
-						: [h.Title(formatTimestampInTimezone(value, { timeZone: options.timeZone, withYear: true }))]),
-					h.Class(options.isTooltip === true ? cn("cursor-default", options.className) : options.className),
+						? [
+								h.DataAttribute("base-ui-tooltip-trigger", ""),
+								h.DataAttribute("slot", "tooltip-trigger"),
+							]
+						: [
+								h.Title(
+									formatTimestampInTimezone(value, {
+										timeZone: options.timeZone,
+										withYear: true,
+									}),
+								),
+							]),
+					h.Class(
+						options.isTooltip === true
+							? cn("cursor-default", options.className)
+							: options.className,
+					),
 				],
 				[formatRelativeTimeOrDate(value, options.nowMs, options.timeZone)],
 			)

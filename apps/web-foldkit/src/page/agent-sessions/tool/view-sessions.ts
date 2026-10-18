@@ -21,17 +21,17 @@ import type { Message } from "./message"
 
 // `ToolDetailSessions` (agent-sessions/tools/tool-detail-sessions.tsx).
 
-
 type H = HtmlBuilder<Message>
 
 type SessionRow = typeof AiSessionListItem.Type
 
 /** `ErrorCountPill` (components/replays/session-pills.tsx). */
 const errorCountPill = (h: H, count: number): Html =>
-	badge(h, { pill: true, size: "xs", mono: true, className: cn("gap-1.5", TONE_SOFT.crit, TONE_BORDER.crit) }, [
-		statusDot(h, { tone: "crit", size: "sm" }),
-		countLabel(count, "error"),
-	])
+	badge(
+		h,
+		{ pill: true, size: "xs", mono: true, className: cn("gap-1.5", TONE_SOFT.crit, TONE_BORDER.crit) },
+		[statusDot(h, { tone: "crit", size: "sm" }), countLabel(count, "error")],
+	)
 
 const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, timeZone: string): Html => {
 	const hasErrors = session.errorSpanCount > 0
@@ -51,28 +51,56 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 			),
 		],
 		[
-			...(hasErrors ? [h.span([h.AriaHidden(true), h.Class(`absolute inset-y-0 left-0 w-[3px] ${TONE_FILL.crit}`)], [])] : []),
+			...(hasErrors
+				? [
+						h.span(
+							[
+								h.AriaHidden(true),
+								h.Class(`absolute inset-y-0 left-0 w-[3px] ${TONE_FILL.crit}`),
+							],
+							[],
+						),
+					]
+				: []),
 			h.span(
 				[h.Class("flex w-0 min-w-0 flex-1 flex-col gap-px")],
 				[
 					h.span(
-						[h.Class("truncate font-mono text-sm font-medium leading-4.5 text-foreground"), h.Title(session.sessionId)],
+						[
+							h.Class("truncate font-mono text-sm font-medium leading-4.5 text-foreground"),
+							h.Title(session.sessionId),
+						],
 						[sessionRowId(session.sessionId)],
 					),
-					h.span([h.Class("truncate text-xs text-muted-foreground")], [vendorLabel(session.vendorId)]),
+					h.span(
+						[h.Class("truncate text-xs text-muted-foreground")],
+						[vendorLabel(session.vendorId)],
+					),
 				],
 			),
 			h.span(
-				[h.Class("hidden w-[176px] shrink-0 truncate text-xs text-muted-foreground @min-[720px]/panel:block")],
+				[
+					h.Class(
+						"hidden w-[176px] shrink-0 truncate text-xs text-muted-foreground @min-[720px]/panel:block",
+					),
+				],
 				[[session.firstAgentName, ...session.serviceNames].filter((part) => part !== "").join(" · ")],
 			),
 			h.span(
 				[h.Class("hidden w-[216px] shrink-0 items-baseline gap-2 @min-[560px]/panel:flex")],
 				[
-					h.span([h.Class("font-mono text-ui font-semibold tabular-nums text-foreground")], [formatSessionDuration(session.durationMs)]),
+					h.span(
+						[h.Class("font-mono text-ui font-semibold tabular-nums text-foreground")],
+						[formatSessionDuration(session.durationMs)],
+					),
 					h.span(
 						[h.Class("truncate text-xs text-muted-foreground")],
-						[countLabel(session.traceCount, "trace"), " ·", " ", countLabel(session.spanCount, "span")],
+						[
+							countLabel(session.traceCount, "trace"),
+							" ·",
+							" ",
+							countLabel(session.spanCount, "span"),
+						],
 					),
 				],
 			),
@@ -103,7 +131,10 @@ export type SessionsPanelInputs = Readonly<{
 
 export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 	h.section(
-		[h.AriaLabel(`Sessions running ${inputs.tool}`), h.Class("@container/panel border-b border-border px-6 pt-5 pb-6")],
+		[
+			h.AriaLabel(`Sessions running ${inputs.tool}`),
+			h.Class("@container/panel border-b border-border px-6 pt-5 pb-6"),
+		],
 		[
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-4 pb-3")],
@@ -111,7 +142,10 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 					h.div(
 						[h.Class("flex min-w-0 items-baseline gap-2.5 font-mono")],
 						[
-							h.span([h.Class("text-xs font-medium text-foreground")], ["Sessions running ", inputs.tool]),
+							h.span(
+								[h.Class("text-xs font-medium text-foreground")],
+								["Sessions running ", inputs.tool],
+							),
 							h.span(
 								[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
 								[countLabel(inputs.rows.length, "session")],
@@ -125,19 +159,39 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 							),
 							h.Href(hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool] } }))),
 						],
-						["Open in Sessions", icon(h, "ExternalLinkIcon", { size: 11, className: "text-muted-foreground", attributes: [h.AriaHidden(true)] })],
+						[
+							"Open in Sessions",
+							icon(h, "ExternalLinkIcon", {
+								size: 11,
+								className: "text-muted-foreground",
+								attributes: [h.AriaHidden(true)],
+							}),
+						],
 					),
 				],
 			),
 			h.div(
 				[h.Class(refreshingClass(inputs.isWaiting)), ...(inputs.isWaiting ? [h.AriaBusy(true)] : [])],
 				inputs.failure !== undefined
-					? [errorState(h, { failure: inputs.failure, title: `Failed to load sessions running ${inputs.tool}` })]
+					? [
+							errorState(h, {
+								failure: inputs.failure,
+								title: `Failed to load sessions running ${inputs.tool}`,
+							}),
+						]
 					: inputs.isLoading
 						? [skeletonList(h, { rows: 3, rowClassName: "h-[46px]", className: "gap-1.5 py-3" })]
 						: inputs.rows.length === 0
-							? [emptyMessage(h, { className: "py-12 font-mono" }, ["No sessions called ", inputs.tool, " in the selected window."])]
-							: inputs.rows.map((session) => sessionRow(h, session, inputs.tool, inputs.nowMs, inputs.timeZone)),
+							? [
+									emptyMessage(h, { className: "py-12 font-mono" }, [
+										"No sessions called ",
+										inputs.tool,
+										" in the selected window.",
+									]),
+								]
+							: inputs.rows.map((session) =>
+									sessionRow(h, session, inputs.tool, inputs.nowMs, inputs.timeZone),
+								),
 			),
 			...(inputs.isCapped
 				? [

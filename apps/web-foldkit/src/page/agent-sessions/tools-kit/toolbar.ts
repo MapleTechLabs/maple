@@ -41,22 +41,25 @@ export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>):
 		viewInputs: {
 			entries: [
 				{ _tag: "Item", item: { value: ALL, label: "All" } },
-				...config.options.map(
-					(option): SelectView.SelectEntry => ({
-						_tag: "Item",
-						item: { value: option.name, label: option.name },
-					}),
-				),
+				...config.options.map((option): SelectView.SelectEntry => ({
+					_tag: "Item",
+					item: { value: option.name, label: option.name },
+				})),
 			],
 			ariaLabel: config.label,
 			size: "sm",
 			isDisabled: config.options.length === 0,
 			className: cn(
 				"h-[30px] gap-2 rounded-md px-2.5 font-mono text-xs",
-				isSet ? "border-primary/40 bg-primary/10 text-primary [&_svg]:text-primary" : "bg-card text-foreground",
+				isSet
+					? "border-primary/40 bg-primary/10 text-primary [&_svg]:text-primary"
+					: "bg-card text-foreground",
 			),
 			renderValue: () => [
-				h.span([h.Class(cn("text-2xs", isSet ? "text-primary/70" : "text-muted-foreground"))], [config.label]),
+				h.span(
+					[h.Class(cn("text-2xs", isSet ? "text-primary/70" : "text-muted-foreground"))],
+					[config.label],
+				),
 				" ",
 				config.value ?? "All",
 			],
@@ -87,9 +90,11 @@ const nameSearchInput = <M>(h: HtmlBuilder<M>, search: NonNullable<ToolbarConfig
 			? []
 			: [
 					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(h, { attributes: [h.AriaLabel("Clear search"), h.OnClick(search.onClear)] }, [
-							icon(h, "XmarkIcon"),
-						]),
+						inputGroupButton(
+							h,
+							{ attributes: [h.AriaLabel("Clear search"), h.OnClick(search.onClear)] },
+							[icon(h, "XmarkIcon")],
+						),
 					]),
 				]),
 	])

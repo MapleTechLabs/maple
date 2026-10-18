@@ -62,8 +62,11 @@ export const bucketSecondsOf = (window: TimeWindow): number =>
  * The tab counts read the bare window, which with no filter set is the page's own read: like two
  * atoms on one key, a slot asking for a key the other slot holds takes its answer (or its flight).
  */
-const sharedSlot = <A, E>(slot: Keyed.Keyed<A, E>, other: Keyed.Keyed<A, E>, key: string): Keyed.Keyed<A, E> =>
-	slot.key !== key && other.key === key ? other : slot
+const sharedSlot = <A, E>(
+	slot: Keyed.Keyed<A, E>,
+	other: Keyed.Keyed<A, E>,
+	key: string,
+): Keyed.Keyed<A, E> => (slot.key !== key && other.key === key ? other : slot)
 
 const requestAll = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	const { window } = model
@@ -133,12 +136,20 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 }
 
 /** An answer lands in every slot that asked for its key (the page's read and the tab counts'). */
-const acceptTotals = (model: Model, key: string, result: Parameters<typeof Keyed.accept<TotalsResult, LoadFailure>>[2]) => ({
+const acceptTotals = (
+	model: Model,
+	key: string,
+	result: Parameters<typeof Keyed.accept<TotalsResult, LoadFailure>>[2],
+) => ({
 	totals: Keyed.accept(model.totals, key, result),
 	tabTotals: Keyed.accept(model.tabTotals, key, result),
 })
 
-const acceptBreakdowns = (model: Model, key: string, result: Parameters<typeof Keyed.accept<Breakdowns, LoadFailure>>[2]) => ({
+const acceptBreakdowns = (
+	model: Model,
+	key: string,
+	result: Parameters<typeof Keyed.accept<Breakdowns, LoadFailure>>[2],
+) => ({
 	breakdowns: Keyed.accept(model.breakdowns, key, result),
 	tabBreakdowns: Keyed.accept(model.tabBreakdowns, key, result),
 })
@@ -214,7 +225,11 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 
 const searchHref = (search: Search) => hrefOf(AppRoute.AgentSessionTools({ search }))
 
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const query = route.search.q ?? ""
 	const isOutsideQuery = query !== (model.search.q ?? "") && query !== model.lastSentQuery
@@ -236,7 +251,8 @@ export const contextChanged = (model: Model, context: PageContext): Return => ({
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, nowMs, mode }) => requestAll({ ...model, window, nowMs }, context, mode),
+		CompletedResolveWindow: ({ window, nowMs, mode }) =>
+			requestAll({ ...model, window, nowMs }, context, mode),
 		CompletedFetchSeries: ({ key, result }) => ({
 			model: { ...model, series: Keyed.accept(model.series, key, result) },
 		}),
@@ -259,7 +275,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, ...acceptBreakdowns(model, key, result) },
 		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
@@ -318,7 +336,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						),
 						commands,
 					}
-				: { model: { ...model, percentileToggle: { ...next.model, values: model.percentileToggle.values } }, commands }
+				: {
+						model: {
+							...model,
+							percentileToggle: { ...next.model, values: model.percentileToggle.values },
+						},
+						commands,
+					}
 		},
 		GotTimePickerMessage: ({ message: inner }) => {
 			const next = TimeRangePicker.update(model.timePicker, inner)
@@ -346,7 +370,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotSparkMessage: () => ({ model }),
 		PaintedEmptyState: () =>
 			AsyncData.isIdle(model.presence)
-				? { model: { ...model, presence: SignalPresenceData.Loading() }, commands: [LoadSignalPresence()] }
+				? {
+						model: { ...model, presence: SignalPresenceData.Loading() },
+						commands: [LoadSignalPresence()],
+					}
 				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
@@ -355,7 +382,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = Chart.update(model.chart, inner)
 			return {
 				model: { ...model, chart: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (chart) => Message.GotChartMessage({ message: chart })),
+				commands: Command.mapMessages(next.commands ?? [], (chart) =>
+					Message.GotChartMessage({ message: chart }),
+				),
 			}
 		},
 	})

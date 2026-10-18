@@ -31,7 +31,11 @@ const chipButton = <M>(h: HtmlBuilder<M>, chip: ScopeChip, onRemove: M): Html =>
 		[
 			h.span([h.Class("text-2xs text-muted-foreground")], [chip.kind]),
 			h.span([h.Class("truncate text-2xs text-primary")], [chip.value]),
-			icon(h, "XmarkIcon", { size: 10, className: "shrink-0 text-muted-foreground", attributes: [h.AriaHidden(true)] }),
+			icon(h, "XmarkIcon", {
+				size: 10,
+				className: "shrink-0 text-muted-foreground",
+				attributes: [h.AriaHidden(true)],
+			}),
 		],
 	)
 

@@ -24,7 +24,13 @@ const PLOT_HEIGHT = 220
 const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
 
 /** The tokens the chart reads off the theme. */
-export const TOOL_CHART_TOKENS = ["--primary", "--color-severity-error", "--muted-foreground", "--border", "--background"]
+export const TOOL_CHART_TOKENS = [
+	"--primary",
+	"--color-severity-error",
+	"--muted-foreground",
+	"--border",
+	"--background",
+]
 
 const seriesFor = (metric: ToolMetric, percentile: ToolPercentile) =>
 	metric === "duration"
@@ -32,7 +38,11 @@ const seriesFor = (metric: ToolMetric, percentile: ToolPercentile) =>
 				key,
 				label: key.toUpperCase(),
 				token:
-					key === percentile ? "--primary" : key === "p95" ? "--color-severity-error" : "--muted-foreground",
+					key === percentile
+						? "--primary"
+						: key === "p95"
+							? "--color-severity-error"
+							: "--muted-foreground",
 			}))
 		: [{ key: metric, label: toolMetricLabel(metric, percentile), token: "--primary" }]
 
@@ -81,37 +91,40 @@ export type ToolPlotInputs = Readonly<{
 }>
 
 /** `CursorPlot` at a fixed height: the lines, the crosshair and the bucket tooltip. */
-export const toolPlotView = Submodel.defineView<Chart.Model, Chart.Message, ToolPlotInputs>((model, inputs, h) =>
-	h.div(
-		[h.Class("w-full"), h.Style({ height: `${inputs.height}px` })],
-		[
-			plotFrame(h, {
-				chartId: inputs.chartId,
-				className: "h-full w-full",
-				ariaLabel: inputs.ariaLabel,
-				spec: ChartSpec.ToolSeries({
-					rows: inputs.rows,
-					series: inputs.series.map((entry) => ({
-						key: entry.key,
-						label: entry.label,
-						color: resolveColor(inputs.theme, entry.token),
-					})),
-					chrome: {
-						border: resolveColor(inputs.theme, "--border"),
-						background: resolveColor(inputs.theme, "--background"),
-					},
-					format: inputs.format,
-					tickCount: inputs.tickCount,
-					marginTop: inputs.marginTop,
-					timeZone: inputs.timeZone,
+export const toolPlotView = Submodel.defineView<Chart.Model, Chart.Message, ToolPlotInputs>(
+	(model, inputs, h) =>
+		h.div(
+			[h.Class("w-full"), h.Style({ height: `${inputs.height}px` })],
+			[
+				plotFrame(h, {
+					chartId: inputs.chartId,
+					className: "h-full w-full",
+					ariaLabel: inputs.ariaLabel,
+					spec: ChartSpec.ToolSeries({
+						rows: inputs.rows,
+						series: inputs.series.map((entry) => ({
+							key: entry.key,
+							label: entry.label,
+							color: resolveColor(inputs.theme, entry.token),
+						})),
+						chrome: {
+							border: resolveColor(inputs.theme, "--border"),
+							background: resolveColor(inputs.theme, "--background"),
+						},
+						format: inputs.format,
+						tickCount: inputs.tickCount,
+						marginTop: inputs.marginTop,
+						timeZone: inputs.timeZone,
+					}),
+					tooltipBody: (portal) =>
+						Option.flatMap(model.tooltip, (tooltip) =>
+							tooltip._tag === "Bucket"
+								? Option.some(bucketTooltipBody(h, tooltip, portal))
+								: Option.none(),
+						),
 				}),
-				tooltipBody: (portal) =>
-					Option.flatMap(model.tooltip, (tooltip) =>
-						tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
-					),
-			}),
-		],
-	),
+			],
+		),
 )
 
 /** The chart card: the metric as its heading, the scope in the primary, the bucket note. */
@@ -128,7 +141,12 @@ export const seriesChart = <M>(
 	)
 	const scopeParts = [inputs.tool, inputs.model].filter((part): part is string => part !== undefined)
 	const plotted = seriesFor(inputs.metric, inputs.percentile)
-	const title = toolChartTitle({ metric: inputs.metric, percentile: inputs.percentile, tool: inputs.tool, model: inputs.model })
+	const title = toolChartTitle({
+		metric: inputs.metric,
+		percentile: inputs.percentile,
+		tool: inputs.tool,
+		model: inputs.model,
+	})
 	const bucketMs = axis.stepMs ?? null
 	return h.section(
 		[
@@ -153,7 +171,13 @@ export const seriesChart = <M>(
 									h.span(
 										[h.Key(part), h.Class("contents font-mono text-xs")],
 										[
-											h.span([h.AriaHidden(true), h.Class("text-xs text-muted-foreground/60")], ["·"]),
+											h.span(
+												[
+													h.AriaHidden(true),
+													h.Class("text-xs text-muted-foreground/60"),
+												],
+												["·"],
+											),
 											h.span([h.Class("text-primary")], [part]),
 										],
 									),

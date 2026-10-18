@@ -9,7 +9,15 @@ import { signalEmptyState } from "../../kit/signal-empty-state"
 import { detectLookup } from "../kit/detected-models"
 import { agentSessionsTabs } from "../kit/tabs"
 import { MountEmptyState, MountReachEnd, MountTable } from "./command"
-import { displayedRows, filterInputs, filterKeyOf, hasFilters, hasNextPage, MAX_RETAINED_SESSIONS, sortOf } from "./derive"
+import {
+	displayedRows,
+	filterInputs,
+	filterKeyOf,
+	hasFilters,
+	hasNextPage,
+	MAX_RETAINED_SESSIONS,
+	sortOf,
+} from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { filtersRail } from "./view-filters"
@@ -25,7 +33,11 @@ const listArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	return AsyncData.matchData(model.firstPage.data, {
 		onEmpty: () => listSkeleton(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load agent sessions", onRetry: Message.ClickedReload() }),
+			errorState(h, {
+				failure,
+				title: "Failed to load agent sessions",
+				onRetry: Message.ClickedReload(),
+			}),
 		onData: () => {
 			const filterKey = window === null ? "" : filterKeyOf(filterInputs(model.search, window))
 			const rows = displayedRows(model, filterKey)
@@ -38,7 +50,8 @@ const listArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 							presence: presenceOf(model.presence, "traces"),
 							nowMs: model.nowMs,
 							noun: "agent sessions",
-							purpose: "Replay each AI agent conversation, with its LLM and tool calls in order.",
+							purpose:
+								"Replay each AI agent conversation, with its LLM and tool calls in order.",
 							guideDocs: "agentSessions",
 							setupDocs: "agentSessions",
 							isFiltered: hasFilters(model.search),
@@ -50,7 +63,11 @@ const listArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 			return sessionsTable(h, {
 				rows,
 				sort: sortOf(model.search),
-				context: { nowMs: model.nowMs, timeZone: inputs.context.timeZone, detect: detectLookup(model.detections) },
+				context: {
+					nowMs: model.nowMs,
+					timeZone: inputs.context.timeZone,
+					detect: detectLookup(model.detections),
+				},
 				hasMore: hasNextPage(model, filterKey),
 				isLoadingMore: model.isFetchingNextPage,
 				isCapped: rows.length >= MAX_RETAINED_SESSIONS,
@@ -78,7 +95,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				className: "border-b border-border",
 			}),
 			sticky: toolbar(h, model, {
-				sessionCount: AsyncData.hasData(firstPage) ? displayedRows(model, filterKey).length : undefined,
+				sessionCount: AsyncData.hasData(firstPage)
+					? displayedRows(model, filterKey).length
+					: undefined,
 				isWaiting: AsyncData.isPending(firstPage) || AsyncData.isIdle(firstPage),
 			}),
 			scrollClassName: "pt-0",

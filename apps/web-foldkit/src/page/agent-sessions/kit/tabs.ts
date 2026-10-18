@@ -71,6 +71,8 @@ export const agentSessionsTabs = <M>(
 		search?: TimeRangeSearch
 		counts?: Readonly<{ sessions?: number; tools?: number }>
 		className?: string
+		/** `false` off the agent sessions routes (a lab): the router marks no link active. */
+		isOnRoute?: boolean
 	}>,
 ): Html =>
 	underlineTabStrip(
@@ -86,7 +88,7 @@ export const agentSessionsTabs = <M>(
 			tabLink(h, {
 				href: hrefOf(AppRoute.AgentSessions({ search: {} })),
 				isActive: options.active === "sessions",
-				isLinkActive: true,
+				isLinkActive: options.isOnRoute ?? true,
 				iconName: "LayersIcon",
 				label: "Sessions",
 				count: options.counts?.sessions,
@@ -94,7 +96,7 @@ export const agentSessionsTabs = <M>(
 			tabLink(h, {
 				href: hrefOf(AppRoute.AgentSessionTools({ search: pickWindow(options.search) })),
 				isActive: options.active === "tools",
-				isLinkActive: options.active === "tools",
+				isLinkActive: (options.isOnRoute ?? true) && options.active === "tools",
 				iconName: "GearIcon",
 				label: "Tools",
 				count: options.counts?.tools,

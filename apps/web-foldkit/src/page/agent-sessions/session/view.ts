@@ -63,7 +63,8 @@ const panel = (
 	}
 }
 
-const views = (h: H, model: Model, data: SessionData, timeZone: string): Html => {
+/** `SessionViews` in its page wrapper; the lab draws it outside the page frame. */
+export const views = (h: H, model: Model, data: SessionData, timeZone: string): Html => {
 	const view = viewOf(model.search.view)
 	return h.div(
 		[h.Class("flex min-h-64 shrink-0 grow flex-col")],

@@ -1,4 +1,9 @@
-import { AiSessionDetailsItem, AiSessionDistribution, AiSessionFacetItem, AiSessionListItem } from "@maple/domain/http"
+import {
+	AiSessionDetailsItem,
+	AiSessionDistribution,
+	AiSessionFacetItem,
+	AiSessionListItem,
+} from "@maple/domain/http"
 import { Schema } from "effect"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"

@@ -44,7 +44,11 @@ export const selectableTile = <M>(h: HtmlBuilder<M>, options: TileOptions<M>): H
 			h.AriaPressed(String(options.isSelected)),
 			h.Class(
 				cn(
-					cn("relative animate-in fade-in slide-in-from-bottom-1 duration-500", "px-5 py-4", options.className),
+					cn(
+						"relative animate-in fade-in slide-in-from-bottom-1 duration-500",
+						"px-5 py-4",
+						options.className,
+					),
 					"w-full text-left",
 					rowSelectedClass(options.isSelected),
 					"cursor-pointer hover:bg-muted/25",
@@ -131,7 +135,8 @@ export type MetricStripConfig<M> = Readonly<{
 export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>): Html => {
 	const { totals, previous, series, percentile } = config
 	const tile = (key: Exclude<ToolMetric, "duration">, eyebrow: string) => {
-		const share = key === "sessions" && config.allSessions > 0 ? totals.sessions / config.allSessions : undefined
+		const share =
+			key === "sessions" && config.allSessions > 0 ? totals.sessions / config.allSessions : undefined
 		return selectableTile(h, {
 			eyebrow,
 			value: formatToolMetric(metricValue(totals, key, percentile), key),
@@ -164,7 +169,11 @@ export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>):
 						eyebrow: "Duration",
 						value: formatToolMetric(totals[percentile], "duration"),
 						spark: metricSpark(series, "duration", percentile).slice(-SPARK_WINDOW),
-						subline: deltaSubline(h, toolDelta(totals, previous, "duration", percentile), config.windowLabel),
+						subline: deltaSubline(
+							h,
+							toolDelta(totals, previous, "duration", percentile),
+							config.windowLabel,
+						),
 						isSelected: config.metric === "duration",
 						onSelect: config.onSelectMetric("duration"),
 						ariaLabel: toolMetricLabel("duration", percentile),
@@ -177,7 +186,8 @@ export const metricStrip = <M>(h: HtmlBuilder<M>, config: MetricStripConfig<M>):
 						variant: "outline",
 						size: "sm",
 						className: "absolute top-3 right-5 p-px",
-						itemClassName: "h-5 min-w-0 px-1.5 font-mono text-3xs uppercase sm:h-5 sm:min-w-0 sm:text-3xs",
+						itemClassName:
+							"h-5 min-w-0 px-1.5 font-mono text-3xs uppercase sm:h-5 sm:min-w-0 sm:text-3xs",
 					}),
 				],
 			),

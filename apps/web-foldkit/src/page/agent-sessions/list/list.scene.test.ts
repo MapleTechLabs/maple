@@ -221,7 +221,10 @@ describe("agent sessions list", () => {
 			Message.ElapsedRangeDebounce({ range: "cost", version: typed.model.rangeDraftVersion }),
 		)
 		expect(committed.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/agent-sessions?costMin=0.1&costMax=0.5", isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: "/agent-sessions?costMin=0.1&costMax=0.5",
+				isReplace: false,
+			}),
 		)
 	})
 })

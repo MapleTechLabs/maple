@@ -1,8 +1,5 @@
 import { getAiSessionsFacets } from "@maple/web-data/warehouse/ai-sessions"
-import {
-	getAiToolBreakdowns,
-	getAiToolSeries,
-} from "@maple/web-data/warehouse/ai-session-tools"
+import { getAiToolBreakdowns, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -52,7 +49,9 @@ export const FetchTotals = Command.define("FetchAgentToolsTotals", {
 	messages: [Message.CompletedFetchTotals, Message.CompletedFetchTabTotals],
 	execute: ({ key, selection, isTab }) =>
 		Effect.map(fetchTotals(selection), (result) =>
-			isTab ? Message.CompletedFetchTabTotals({ key, result }) : Message.CompletedFetchTotals({ key, result }),
+			isTab
+				? Message.CompletedFetchTabTotals({ key, result })
+				: Message.CompletedFetchTotals({ key, result }),
 		),
 })
 

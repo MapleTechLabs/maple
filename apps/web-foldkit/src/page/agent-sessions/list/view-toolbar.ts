@@ -82,7 +82,10 @@ export const toolbar = (
 						? []
 						: [
 								h.span(
-									[h.Class("hidden sm:block"), ...tooltipTrigger(h, "agent-sessions-count")],
+									[
+										h.Class("hidden sm:block"),
+										...tooltipTrigger(h, "agent-sessions-count"),
+									],
 									[stat(h, options.sessionCount, "sessions")],
 								),
 							]),

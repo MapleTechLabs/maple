@@ -59,7 +59,15 @@ const SPARK_CHART = Chart.init()
 
 const head = (h: H, sort: SortState): Html => {
 	const sortable = (label: string, width: string, key: string, align?: "right", hidden?: string) =>
-		th(h, { label, width, sortKey: key, sort, onSort: (sortKey) => Message.ClickedTableSort({ key: sortKey }), align, hidden })
+		th(h, {
+			label,
+			width,
+			sortKey: key,
+			sort,
+			onSort: (sortKey) => Message.ClickedTableSort({ key: sortKey }),
+			align,
+			hidden,
+		})
 	return toolTableHead(h, [
 		sortable("Tool", "w-0 flex-1 min-w-0", "key"),
 		th(h, { label: "Volume", width: "w-[110px] shrink-0", hidden: "hidden @min-[720px]/panel:flex" }),
@@ -112,7 +120,9 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 				h.span(
 					[
 						h.AriaHidden(true),
-						h.Class(cn("size-2 shrink-0 rounded-xs", color === undefined && "bg-muted-foreground/50")),
+						h.Class(
+							cn("size-2 shrink-0 rounded-xs", color === undefined && "bg-muted-foreground/50"),
+						),
 						...(color === undefined ? [] : [h.Style({ "background-color": color })]),
 					],
 					[],
@@ -152,11 +162,19 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 				}),
 			],
 		),
-		h.span([h.Class("w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground")], [formatToolCount(row.calls)]),
+		h.span(
+			[h.Class("w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
+			[formatToolCount(row.calls)],
+		),
 		duration(h, row.p50, inputs.percentile === "p50", "hidden @min-[900px]/panel:block"),
 		duration(h, row.p90, inputs.percentile === "p90"),
 		duration(h, row.p95, inputs.percentile === "p95", "hidden @min-[900px]/panel:block"),
-		shareCell(h, { ratio: row.errorRate, max: maxErrorRate, label: formatErrorRate(row.errorRate), tone: errorTone(row.errorRate) }),
+		shareCell(h, {
+			ratio: row.errorRate,
+			max: maxErrorRate,
+			label: formatErrorRate(row.errorRate),
+			tone: errorTone(row.errorRate),
+		}),
 		h.span(
 			[
 				h.Class(
@@ -169,7 +187,11 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 			[formatToolCount(row.errors)],
 		),
 		h.span(
-			[h.Class("hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block")],
+			[
+				h.Class(
+					"hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block",
+				),
+			],
 			[formatToolCount(row.sessions)],
 		),
 		relativeTime(h, row.lastSeen, {
@@ -180,17 +202,24 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 		}),
 		h.span(
 			[h.Class("flex w-3.5 shrink-0 items-center justify-end text-muted-foreground/60")],
-			row.key === "" ? [] : [icon(h, "ChevronRightIcon", { size: 14, attributes: [h.AriaHidden(true)] })],
+			row.key === ""
+				? []
+				: [icon(h, "ChevronRightIcon", { size: 14, attributes: [h.AriaHidden(true)] })],
 		),
 	]
 }
 
 const body = (h: H, inputs: ToolsTableInputs): ReadonlyArray<Html> => {
-	if (inputs.failure !== undefined) return [errorState(h, { failure: inputs.failure, title: "Failed to load tools" })]
-	if (inputs.isLoading) return [skeletonList(h, { rows: 3, rowClassName: "h-[38px]", className: "gap-1.5 px-2.5 py-3" })]
+	if (inputs.failure !== undefined)
+		return [errorState(h, { failure: inputs.failure, title: "Failed to load tools" })]
+	if (inputs.isLoading)
+		return [skeletonList(h, { rows: 3, rowClassName: "h-[38px]", className: "gap-1.5 px-2.5 py-3" })]
 	if (inputs.rows.length === 0)
 		return [emptyMessage(h, { className: "py-12 font-mono" }, ["No tool calls in the selected window."])]
-	const prepared: ReadonlyArray<Prepared> = inputs.rows.map((row) => ({ ...row, errorRate: errorRate(row) }))
+	const prepared: ReadonlyArray<Prepared> = inputs.rows.map((row) => ({
+		...row,
+		errorRate: errorRate(row),
+	}))
 	const maxErrorRate = prepared.reduce((max, row) => Math.max(max, row.errorRate), 0)
 	const linkSearch = toolDetailLinkSearch(inputs.search)
 	return sortRows(prepared, inputs.sort, (row, key) => SORT_FIELDS.get(key)?.(row)).map((row) =>
@@ -222,11 +251,16 @@ export const toolsTable = (h: H, inputs: ToolsTableInputs): Html =>
 				[h.Class("flex items-baseline gap-2.5 pb-3 font-mono")],
 				[
 					h.span([h.Class("text-xs font-medium text-foreground")], ["Tools"]),
-					h.span([h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")], [formatToolCount(inputs.rows.length)]),
+					h.span(
+						[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
+						[formatToolCount(inputs.rows.length)],
+					),
 				],
 			),
-			toolTable(h, [head(h, inputs.sort), toolTableBody(h, body(h, inputs), { isWaiting: inputs.isWaiting })]),
+			toolTable(h, [
+				head(h, inputs.sort),
+				toolTableBody(h, body(h, inputs), { isWaiting: inputs.isWaiting }),
+			]),
 			...(inputs.failure === undefined && !inputs.isLoading ? [footerOf(h, inputs.rows)] : []),
 		],
 	)
-

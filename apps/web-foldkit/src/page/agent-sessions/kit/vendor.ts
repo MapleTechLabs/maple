@@ -28,7 +28,8 @@ const VENDOR_ICONS = new Map<string, IconName>([
 ])
 
 /** The mark beside `vendorLabel(vendorId)`. */
-export const vendorIcon = (vendorId: string): IconName => VENDOR_ICONS.get(vendorId) ?? "ChatBubbleSparkleIcon"
+export const vendorIcon = (vendorId: string): IconName =>
+	VENDOR_ICONS.get(vendorId) ?? "ChatBubbleSparkleIcon"
 
 const MODEL_VENDOR_ICONS = new Map<string, IconName>([
 	["aion-labs", "AionLabsIcon"],

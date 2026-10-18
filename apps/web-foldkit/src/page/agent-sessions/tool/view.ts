@@ -14,7 +14,12 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { chartBucketSeconds, DEFAULT_TOOL_PRESET, type ToolSeriesPoint, type TotalsResult } from "../tools-kit/model"
+import {
+	chartBucketSeconds,
+	DEFAULT_TOOL_PRESET,
+	type ToolSeriesPoint,
+	type TotalsResult,
+} from "../tools-kit/model"
 import { scopeRow } from "../tools-kit/scope-row"
 import { facetSelect, toolFilterToolbar } from "../tools-kit/toolbar"
 import { SESSIONS_LIMIT } from "./command"
@@ -41,8 +46,12 @@ const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, cont
 	const { current } = totals
 	const subtitle = [
 		`${formatToolCount(current.calls)} ${pluralize(current.calls, "call")} in ${formatToolCount(current.sessions)} ${pluralize(current.sessions, "session")}`,
-		totals.firstSeen > 0 ? `first seen ${formatTimestampInTimezone(totals.firstSeen, { timeZone })}` : undefined,
-		totals.lastSeen > 0 ? `last call ${formatRelativeTimeOrDate(totals.lastSeen, model.nowMs, timeZone)}` : undefined,
+		totals.firstSeen > 0
+			? `first seen ${formatTimestampInTimezone(totals.firstSeen, { timeZone })}`
+			: undefined,
+		totals.lastSeen > 0
+			? `last call ${formatRelativeTimeOrDate(totals.lastSeen, model.nowMs, timeZone)}`
+			: undefined,
 	].filter((part) => part !== undefined)
 	return h.header(
 		[h.Class("flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-5 pb-4")],
@@ -81,12 +90,20 @@ const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, cont
 
 const toolbar = (h: H, model: Model, isWaiting: boolean): Html => {
 	const facets = Option.getOrUndefined(AsyncData.getData(model.facets.data))
-	const select = (facet: "service" | "model" | "env", options: ReadonlyArray<{ name: string; count: number }>) =>
+	const select = (
+		facet: "service" | "model" | "env",
+		options: ReadonlyArray<{ name: string; count: number }>,
+	) =>
 		facetSelect(h, {
 			label: facet,
 			value: model.search[facet],
 			options,
-			model: facet === "service" ? model.serviceSelect : facet === "model" ? model.modelSelect : model.envSelect,
+			model:
+				facet === "service"
+					? model.serviceSelect
+					: facet === "model"
+						? model.modelSelect
+						: model.envSelect,
 			toMessage: (message) => Message.GotFacetSelectMessage({ facet, message }),
 		})
 	return toolFilterToolbar(h, {
@@ -120,7 +137,8 @@ const timeActions = (h: H, model: Model): Html =>
 				viewInputs: {
 					label,
 					selectedPreset:
-						model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_TOOL_PRESET : undefined),
+						model.search.timePreset ??
+						(model.search.startTime === undefined ? DEFAULT_TOOL_PRESET : undefined),
 					presets: TimeRangePicker.PRESET_VALUES,
 				},
 			}),
@@ -135,7 +153,12 @@ const loadedView = (h: H, model: Model, totals: TotalsResult, inputs: PageViewIn
 	const series = Option.match(AsyncData.getData(model.series.data), {
 		onNone: (): ReadonlyArray<ToolSeriesPoint> => [],
 		onSome: (value) =>
-			fillSeriesBuckets(value.data, range.startMs, range.endMs, chartBucketSeconds(range.startMs, range.endMs)),
+			fillSeriesBuckets(
+				value.data,
+				range.startMs,
+				range.endMs,
+				chartBucketSeconds(range.startMs, range.endMs),
+			),
 	})
 	const sessions = AsyncData.getOrElse(model.sessions.data, () => ({ data: [] })).data
 	return h.div(
@@ -202,4 +225,3 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		],
 	),
 )
-

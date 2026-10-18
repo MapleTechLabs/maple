@@ -28,7 +28,10 @@ const totals: TotalsResult = {
 }
 
 const windowed = (search: Model["search"] = {}) =>
-	pageUpdate(init({ search }, context).model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))
+	pageUpdate(
+		init({ search }, context).model,
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	)
 
 describe("agent tools", () => {
 	test("an unfiltered window reads totals and breakdowns once: the tab counts share them", () => {
@@ -37,7 +40,10 @@ describe("agent tools", () => {
 		expect(resolved.model.tabTotals.key).toBe(resolved.model.totals.key)
 		const answered = pageUpdate(
 			resolved.model,
-			Message.CompletedFetchTotals({ key: resolved.model.totals.key ?? "", result: Result.succeed(totals) }),
+			Message.CompletedFetchTotals({
+				key: resolved.model.totals.key ?? "",
+				result: Result.succeed(totals),
+			}),
 		)
 		expect(AsyncData.hasData(answered.model.tabTotals.data)).toBe(true)
 	})
@@ -47,7 +53,10 @@ describe("agent tools", () => {
 		expect(names(filtered.commands).filter((name) => name === "FetchAgentToolsTotals")).toHaveLength(2)
 		const answered = pageUpdate(
 			filtered.model,
-			Message.CompletedFetchTabTotals({ key: filtered.model.tabTotals.key ?? "", result: Result.succeed(totals) }),
+			Message.CompletedFetchTabTotals({
+				key: filtered.model.tabTotals.key ?? "",
+				result: Result.succeed(totals),
+			}),
 		)
 		const cleared = pageUpdate(answered.model, Message.ClickedClearScope())
 		expect(cleared.outMessage).toEqual(
@@ -57,20 +66,29 @@ describe("agent tools", () => {
 
 	test("a stale totals answer is dropped", () => {
 		const resolved = windowed().model
-		const late = pageUpdate(resolved, Message.CompletedFetchTotals({ key: "old", result: Result.succeed(totals) }))
+		const late = pageUpdate(
+			resolved,
+			Message.CompletedFetchTotals({ key: "old", result: Result.succeed(totals) }),
+		)
 		expect(AsyncData.isLoading(late.model.totals.data)).toBe(true)
 	})
 
 	test("tiles, failing chip and table sort write the URL or the sort", () => {
 		const model = windowed().model
 		expect(pageUpdate(model, Message.ClickedMetric({ metric: "error_rate" })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/agent-sessions/tools?metric=error_rate", isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: "/agent-sessions/tools?metric=error_rate",
+				isReplace: false,
+			}),
 		)
 		expect(pageUpdate(model, Message.ClickedMetric({ metric: "calls" })).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/agent-sessions/tools", isReplace: false }),
 		)
 		expect(pageUpdate(model, Message.ToggledFailingOnly()).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/agent-sessions/tools?failing=true", isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: "/agent-sessions/tools?failing=true",
+				isReplace: false,
+			}),
 		)
 		const sorted = pageUpdate(model, Message.ClickedTableSort({ key: "key" }))
 		expect(sorted.model.tableSort).toEqual({ key: "key", dir: "asc" })

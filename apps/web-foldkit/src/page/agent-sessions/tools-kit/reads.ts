@@ -24,16 +24,14 @@ export const toInput = (selection: Selection): AiToolsSelection => ({ ...selecti
 /** `aiToolTotalsResultAtom`; `periods` absent asks for the comparison window and the population too. */
 export const fetchTotals = (selection: Selection, periods?: ReadonlyArray<AiToolsPeriod>) =>
 	getAiToolTotals({ data: { ...toInput(selection), periods } }).pipe(
-		Effect.map(
-			(value): TotalsResult => ({
-				current: value.current,
-				previous: value.previous,
-				allSessions: value.allSessions,
-				firstSeen: value.firstSeen,
-				lastSeen: value.lastSeen,
-				description: value.description,
-			}),
-		),
+		Effect.map((value): TotalsResult => ({
+			current: value.current,
+			previous: value.previous,
+			allSessions: value.allSessions,
+			firstSeen: value.firstSeen,
+			lastSeen: value.lastSeen,
+			description: value.description,
+		})),
 		Effect.mapError(toLoadFailure),
 		Effect.result,
 	)

@@ -384,6 +384,58 @@ const detailInteractions: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+const labVariant = (
+	id: string,
+	title: string,
+	path: string,
+	steps?: (page: Page) => Promise<void>,
+): Scenario => ({
+	id,
+	title: `Lab: ${title}`,
+	path,
+	dataset: "default",
+	viewports: ["desktop"],
+	themes: ["light", "dark"],
+	area: "lab",
+	...(steps === undefined ? undefined : { steps }),
+})
+
+/** The agent labs' controls. Not exercised: `/lab/agent-tools`' detail view, which is not ported. */
+const labInteractions: ReadonlyArray<Scenario> = [
+	labVariant("lab-agent-session-clean", "Agent session, the clean fixture", "/lab/agent-session", (page) =>
+		page.getByRole("button", { name: "Clean" }).click(),
+	),
+	labVariant("lab-agent-session-capture-off", "Agent session, capture off", "/lab/agent-session", (page) =>
+		page.getByRole("button", { name: "Capture off" }).click(),
+	),
+	labVariant(
+		"lab-agent-session-transcript",
+		"Agent session, opened on the transcript",
+		"/lab/agent-session?view=transcript",
+	),
+	labVariant("lab-agent-sessions-width", "Agent sessions list at 700px", "/lab/agent-sessions", (page) =>
+		page.getByRole("button", { name: "700px" }).click(),
+	),
+	labVariant(
+		"lab-agent-sessions-sort",
+		"Agent sessions list, sorted by cost",
+		"/lab/agent-sessions",
+		(page) => page.getByRole("table").getByRole("button", { name: /^Cost/ }).click(),
+	),
+	labVariant(
+		"lab-agent-sessions-errors",
+		"Agent sessions list, with errors",
+		"/lab/agent-sessions",
+		(page) => page.getByRole("switch", { name: "With errors" }).click(),
+	),
+	labVariant("lab-agent-tools-width", "Agent tools at 820px", "/lab/agent-tools", (page) =>
+		page.getByRole("button", { name: "820px" }).click(),
+	),
+	labVariant("lab-agent-tools-failing", "Agent tools, failing only", "/lab/agent-tools", (page) =>
+		page.getByRole("button", { name: "Failing only" }).click(),
+	),
+]
+
 export const agentSessionsArea: AreaModule = {
 	area: "agent-sessions",
 	scenarios: [
@@ -406,6 +458,7 @@ export const agentSessionsArea: AreaModule = {
 		...toolsInteractions,
 		...toolDetailInteractions,
 		...detailInteractions,
+		...labInteractions,
 		scenario("detail", "Session detail", `/agent-sessions/${NEWEST_SESSION}`),
 		scenario("detail-transcript", "Session detail, transcript", `/agent-sessions/${NEWEST_SESSION}`, {
 			steps: (page) => page.getByRole("tab", { name: "Transcript" }).click(),

@@ -231,14 +231,22 @@ const navigate = (model: Model, search: Search): Return => ({
 	}),
 })
 
-const toggled = (values: ReadonlyArray<string> | undefined, name: string): ReadonlyArray<string> | undefined => {
+const toggled = (
+	values: ReadonlyArray<string> | undefined,
+	name: string,
+): ReadonlyArray<string> | undefined => {
 	const current = values ?? []
 	const next = current.includes(name) ? current.filter((value) => value !== name) : [...current, name]
 	return next.length > 0 ? next : undefined
 }
 
 /** `emit`: a reversed pair is a typo, so it is swapped rather than committed as-is. */
-const withRange = (search: Search, range: RangeKey, min: number | undefined, max: number | undefined): Search => {
+const withRange = (
+	search: Search,
+	range: RangeKey,
+	min: number | undefined,
+	max: number | undefined,
+): Search => {
 	const [minKey, maxKey] = RANGE_PARAMS[range]
 	const isReversed = min !== undefined && max !== undefined && min > max
 	return { ...search, [minKey]: isReversed ? max : min, [maxKey]: isReversed ? min : max }
@@ -261,7 +269,10 @@ const commitRange = (model: Model, range: RangeKey, canonical: boolean): Return 
 		...model,
 		rangeDraftVersion: model.rangeDraftVersion + 1,
 		rangeDrafts: canonical
-			? { ...model.rangeDrafts, [range]: { min: formatCompact(min, unit), max: formatCompact(max, unit) } }
+			? {
+					...model.rangeDrafts,
+					[range]: { min: formatCompact(min, unit), max: formatCompact(max, unit) },
+				}
 			: model.rangeDrafts,
 	}
 	return current.min === min && current.max === max
@@ -270,12 +281,20 @@ const commitRange = (model: Model, range: RangeKey, canonical: boolean): Return 
 }
 
 /** `applyRange`: a preset, the histogram or Clear, applied at once with the draft rewritten. */
-const applyRange = (model: Model, range: RangeKey, min: number | undefined, max: number | undefined): Return => {
+const applyRange = (
+	model: Model,
+	range: RangeKey,
+	min: number | undefined,
+	max: number | undefined,
+): Return => {
 	const unit = RANGE_UNITS[range]
 	const next: Model = {
 		...model,
 		rangeDraftVersion: model.rangeDraftVersion + 1,
-		rangeDrafts: { ...model.rangeDrafts, [range]: { min: formatCompact(min, unit), max: formatCompact(max, unit) } },
+		rangeDrafts: {
+			...model.rangeDrafts,
+			[range]: { min: formatCompact(min, unit), max: formatCompact(max, unit) },
+		},
 	}
 	return navigate(next, withRange(model.search, range, min, max))
 }
@@ -326,7 +345,11 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 const searchHref = (search: Search) => hrefOf(AppRoute.AgentSessions({ search }))
 
 /** A filter or sort change keeps the window: the unfiltered reads keep their keys. */
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const query = route.search.q ?? ""
 	const changedDrafts = Object.fromEntries(
@@ -365,7 +388,12 @@ const nextPage = (model: Model): Return => {
 		? {
 				model: { ...model, isFetchingNextPage: true },
 				commands: [
-					FetchNextPage({ key: filterKey, search: model.search, window, offset: rankedCount(model, filterKey) }),
+					FetchNextPage({
+						key: filterKey,
+						search: model.search,
+						window,
+						offset: rankedCount(model, filterKey),
+					}),
 				],
 			}
 		: { model }
@@ -399,7 +427,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 								...model.details,
 								bySession: {
 									...model.details.bySession,
-									...Object.fromEntries(result.success.map((item) => [item.sessionId, item])),
+									...Object.fromEntries(
+										result.success.map((item) => [item.sessionId, item]),
+									),
 								},
 							},
 						},
@@ -433,7 +463,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.hasPaintedTable ? { model } : follow({ model: { ...model, hasPaintedTable: true } }),
 		PaintedEmptyState: () =>
 			AsyncData.isIdle(model.presence)
-				? { model: { ...model, presence: SignalPresenceData.Loading() }, commands: [LoadSignalPresence()] }
+				? {
+						model: { ...model, presence: SignalPresenceData.Loading() },
+						commands: [LoadSignalPresence()],
+					}
 				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
@@ -465,7 +498,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return navigate({ ...model, lastSentQuery: q ?? "" }, { ...model.search, q })
 		},
 		ToggledErrorsOnly: () =>
-			navigate(model, { ...model.search, hasErrors: model.search.hasErrors === true ? undefined : true }),
+			navigate(model, {
+				...model.search,
+				hasErrors: model.search.hasErrors === true ? undefined : true,
+			}),
 		ClickedSort: ({ key }) => navigate(model, { ...model.search, ...sortPatch(model.search, key) }),
 		ClickedSessionRow: ({ url }) => ({
 			model,
@@ -484,7 +520,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedRangeDraft: ({ range, min, max }) => {
 			const rangeDraftVersion = model.rangeDraftVersion + 1
 			return {
-				model: { ...model, rangeDrafts: { ...model.rangeDrafts, [range]: { min, max } }, rangeDraftVersion },
+				model: {
+					...model,
+					rangeDrafts: { ...model.rangeDrafts, [range]: { min, max } },
+					rangeDraftVersion,
+				},
 				commands: [DebounceRange({ range, version: rangeDraftVersion })],
 			}
 		},

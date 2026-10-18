@@ -38,7 +38,10 @@ export const detectionKey = (models: ReadonlyArray<string>): string =>
 	JSON.stringify([...new Set(models)].toSorted().slice(0, MAX_MODELS))
 
 /** `Some(key)` when the set has not been asked for yet. */
-export const missingDetection = (detections: Detections, models: ReadonlyArray<string>): Option.Option<string> => {
+export const missingDetection = (
+	detections: Detections,
+	models: ReadonlyArray<string>,
+): Option.Option<string> => {
 	const key = detectionKey(models)
 	return Record.has(detections, key) ? Option.none() : Option.some(key)
 }
@@ -46,7 +49,9 @@ export const missingDetection = (detections: Detections, models: ReadonlyArray<s
 /** Every answer so far, as one lookup; an unanswered model renders its last path segment. */
 export const detectLookup = (detections: Detections) => {
 	const byModel = new Map(
-		Object.values(detections).flatMap((answer) => (answer ?? []).map((entry) => [entry.model, entry] as const)),
+		Object.values(detections).flatMap((answer) =>
+			(answer ?? []).map((entry) => [entry.model, entry] as const),
+		),
 	)
 	return (model: string): DetectedModel => byModel.get(model.trim()) ?? unresolved(model)
 }
@@ -65,14 +70,12 @@ export const detectModels = (key: string) =>
 		const response = yield* client.aiModelsInternal.detectMany({
 			payload: new DetectAiModelsRequest({ models }),
 		})
-		return response.map(
-			(entry): DetectedModel => ({
-				model: entry.model,
-				displayName: entry.displayName,
-				vendorSlug: entry.vendorSlug,
-				vendorName: entry.vendorName,
-				brandColor: entry.brandColor,
-				family: entry.family,
-			}),
-		)
+		return response.map((entry): DetectedModel => ({
+			model: entry.model,
+			displayName: entry.displayName,
+			vendorSlug: entry.vendorSlug,
+			vendorName: entry.vendorName,
+			brandColor: entry.brandColor,
+			family: entry.family,
+		}))
 	}).pipe(Effect.orElseSucceed((): ReadonlyArray<DetectedModel> => []))

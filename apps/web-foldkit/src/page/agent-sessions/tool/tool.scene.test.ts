@@ -37,14 +37,20 @@ describe("agent tool detail", () => {
 
 	test("a stale errors answer is dropped", () => {
 		const resolved = windowed().model
-		const late = pageUpdate(resolved, Message.CompletedFetchErrors({ key: "old", result: Result.succeed({ data: [] }) }))
+		const late = pageUpdate(
+			resolved,
+			Message.CompletedFetchErrors({ key: "old", result: Result.succeed({ data: [] }) }),
+		)
 		expect(AsyncData.isLoading(late.model.errors.data)).toBe(true)
 	})
 
 	test("an error row opens its group through the URL, dropping the last group's narrowing", () => {
 		const model = windowed({ session: "s1", variant: "v1" }).model
 		expect(pageUpdate(model, Message.ClickedErrorRow({ fingerprint: "42" })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/agent-sessions/tools/Bash?error=%2242%22", isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: "/agent-sessions/tools/Bash?error=%2242%22",
+				isReplace: false,
+			}),
 		)
 	})
 

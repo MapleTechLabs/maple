@@ -37,6 +37,10 @@ export const clampedBody = (
 		markdown: (shown) => model.markdown[textHash(shown)]?.document ?? null,
 		isMeasuredClamped: model.clampedBodies.includes(options.textKey),
 		onMeasured: (isClamped) => Message.MeasuredClamp({ key: options.textKey, isClamped }),
+		codeActions: {
+			onCopy: (code) => Message.ClickedCodeAction({ action: "copy", code, language: "" }),
+			onDownload: (code, language) => Message.ClickedCodeAction({ action: "download", code, language }),
+		},
 	})
 
 /** `MessageBody`: the chosen reading of a captured message, clamped. */

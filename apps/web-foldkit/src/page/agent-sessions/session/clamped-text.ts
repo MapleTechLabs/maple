@@ -6,7 +6,7 @@ import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { button } from "../../../ui/button"
-import { messageResponse } from "./message-response"
+import { type CodeActions, messageResponse } from "./message-response"
 
 // `ClampedText` and `firstLine` (session-detail/clamped-text.tsx): a body clamped with a "Show full" control.
 
@@ -84,6 +84,8 @@ export type ClampedTextOptions<M> = Readonly<{
 	/** A measured overflow, reported back by `MeasureClamp`. */
 	isMeasuredClamped: boolean
 	onMeasured: (isClamped: boolean) => M
+	/** A markdown body's code blocks: what their Copy and Download buttons send. */
+	codeActions?: CodeActions<M>
 }>
 
 export const clampedText = <M>(h: HtmlBuilder<M>, options: ClampedTextOptions<M>): Html => {
@@ -98,7 +100,15 @@ export const clampedText = <M>(h: HtmlBuilder<M>, options: ClampedTextOptions<M>
 	const proseClassName = options.proseClassName ?? "text-foreground text-sm leading-relaxed"
 	const body =
 		effective === "md"
-			? [messageResponse(h, options.markdown?.(shown) ?? null, shown, proseClassName)]
+			? [
+					messageResponse(
+						h,
+						options.markdown?.(shown) ?? null,
+						shown,
+						proseClassName,
+						options.codeActions,
+					),
+				]
 			: effective === "json"
 				? []
 				: [shown]

@@ -1,7 +1,11 @@
 import { formatErrorRate } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import type { ErrorPathPart, ErrorTextToken, FailureStatus } from "@maple/web/lib/agent-sessions/tool-error-display"
+import type {
+	ErrorPathPart,
+	ErrorTextToken,
+	FailureStatus,
+} from "@maple/web/lib/agent-sessions/tool-error-display"
 import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -32,7 +36,9 @@ export const maskChip = <M>(h: HtmlBuilder<M>, label: string, raw: string, class
 
 const pathParts = <M>(h: HtmlBuilder<M>, parts: ReadonlyArray<ErrorPathPart>, keyClassName: string): Html[] =>
 	parts.map((part) =>
-		part.kind === "key" ? h.span([h.Class(keyClassName)], [part.text]) : maskChip(h, part.label, part.raw),
+		part.kind === "key"
+			? h.span([h.Class(keyClassName)], [part.text])
+			: maskChip(h, part.label, part.raw),
 	)
 
 const lineToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): Html[] => {
@@ -56,9 +62,14 @@ const lineTokens = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>)
 	tokens.flatMap((token) => lineToken(h, token))
 
 /** `ErrorTextLine`: a message on one line; the error path never shrinks. */
-export const errorTextLine = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>, className?: string): Html => {
+export const errorTextLine = <M>(
+	h: HtmlBuilder<M>,
+	tokens: ReadonlyArray<ErrorTextToken>,
+	className?: string,
+): Html => {
 	const pathIndex = tokens.findIndex((token) => token.kind === "path")
-	if (pathIndex < 0) return h.span([h.Class(cn("min-w-0 truncate whitespace-pre", className))], lineTokens(h, tokens))
+	if (pathIndex < 0)
+		return h.span([h.Class(cn("min-w-0 truncate whitespace-pre", className))], lineTokens(h, tokens))
 	const atIndex = tokens[pathIndex - 1]?.kind === "at" ? pathIndex - 1 : pathIndex
 	const tail = tokens.slice(pathIndex + 1)
 	return h.span(
@@ -107,11 +118,16 @@ export const failureStatusLine = <M>(
 	const [lead, detail] =
 		status.kind === "stopped"
 			? [
-					scope === "tool" ? `No failures since ${dateTime(status.since)}` : `None since ${shortDate(status.since)}`,
+					scope === "tool"
+						? `No failures since ${dateTime(status.since)}`
+						: `None since ${shortDate(status.since)}`,
 					`· ${formatToolCount(status.callsSince)} call${status.callsSince === 1 ? "" : "s"} since`,
 				]
 			: status.kind === "quiet"
-				? [`No calls since ${scope === "tool" ? dateTime(status.since) : shortDate(status.since)}`, undefined]
+				? [
+						`No calls since ${scope === "tool" ? dateTime(status.since) : shortDate(status.since)}`,
+						undefined,
+					]
 				: scope === "tool"
 					? [
 							`Last failure ${formatRelativeTimeOrDate(status.lastSeen, options.nowMs, timeZone)}`,

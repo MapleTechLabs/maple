@@ -24,6 +24,7 @@ import {
 	PAGE_SIZE,
 	ParseMarkdown,
 	ResolveClock,
+	RunCodeAction,
 	ScrollToTools,
 } from "./command"
 import { loadedSpans, progressOf, sessionData, viewOf } from "./derive"
@@ -391,6 +392,11 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			return { model: { ...model, flowCanvas: Canvas.update(model.flowCanvas, inner, positions) } }
 		},
 		// "Top of the session at 1:1": a reset rather than a fit, which clamps unpredictably.
+		ClickedCodeAction: ({ action, code, language }) => ({
+			model,
+			commands: [RunCodeAction({ action, code, language })],
+		}),
+		CompletedCodeAction: () => ({ model }),
 		ClickedResetFlowView: () => ({
 			model: { ...model, flowCanvas: { ...model.flowCanvas, viewport: { x: 0, y: 0, zoom: 1 } } },
 		}),

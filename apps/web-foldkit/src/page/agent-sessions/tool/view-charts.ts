@@ -28,7 +28,12 @@ type CellSpec = Readonly<{
 }>
 
 const CELLS: ReadonlyArray<CellSpec> = [
-	{ id: "calls", title: "Tool calls", series: [{ key: "calls", label: "Calls", token: "--primary" }], format: "number" },
+	{
+		id: "calls",
+		title: "Tool calls",
+		series: [{ key: "calls", label: "Calls", token: "--primary" }],
+		format: "number",
+	},
 	{
 		id: "error-rate",
 		title: "Error rate",
@@ -54,7 +59,14 @@ const CELLS: ReadonlyArray<CellSpec> = [
 ]
 
 /** The tokens the grid reads off the theme. */
-export const GRID_TOKENS = ["--primary", "--color-severity-error", "--muted-foreground", "--chart-2", "--border", "--background"]
+export const GRID_TOKENS = [
+	"--primary",
+	"--color-severity-error",
+	"--muted-foreground",
+	"--chart-2",
+	"--border",
+	"--background",
+]
 
 const rowsOf = (series: ReadonlyArray<ToolSeriesPoint>) =>
 	series
@@ -93,7 +105,11 @@ const cell = (
 				action:
 					spec.series.length > 1
 						? seriesLegend(h, {
-								items: spec.series.map((entry) => ({ key: entry.key, label: entry.label, color: `var(${entry.token})` })),
+								items: spec.series.map((entry) => ({
+									key: entry.key,
+									label: entry.label,
+									color: `var(${entry.token})`,
+								})),
 								swatch: "square",
 							})
 						: undefined,

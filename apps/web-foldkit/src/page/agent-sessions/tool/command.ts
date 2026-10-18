@@ -47,14 +47,18 @@ export const FetchTotals = Command.define("FetchAgentToolTotals", {
 	args: { key: Schema.String, selection: Selection },
 	messages: [Message.CompletedFetchTotals],
 	execute: ({ key, selection }) =>
-		Effect.map(fetchTotals(selection, ["current"]), (result) => Message.CompletedFetchTotals({ key, result })),
+		Effect.map(fetchTotals(selection, ["current"]), (result) =>
+			Message.CompletedFetchTotals({ key, result }),
+		),
 })
 
 export const FetchErrors = Command.define("FetchAgentToolErrors", {
 	args: { key: Schema.String, selection: Selection, tool: Schema.String, bucketSeconds: Schema.Number },
 	messages: [Message.CompletedFetchErrors],
 	execute: ({ key, selection, tool, bucketSeconds }) =>
-		getAiToolErrors({ data: { ...toInput(selection), tool, bucketSeconds, limit: AI_TOOL_ERRORS_MAX } }).pipe(
+		getAiToolErrors({
+			data: { ...toInput(selection), tool, bucketSeconds, limit: AI_TOOL_ERRORS_MAX },
+		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchErrors({ key, result })),

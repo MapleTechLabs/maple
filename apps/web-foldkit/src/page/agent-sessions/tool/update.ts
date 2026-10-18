@@ -104,7 +104,13 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 	)
 	return {
 		model: { ...model, series, totals, errors, sessions, facets },
-		commands: [...seriesCommands, ...totalsCommands, ...errorsCommands, ...sessionsCommands, ...facetCommands],
+		commands: [
+			...seriesCommands,
+			...totalsCommands,
+			...errorsCommands,
+			...sessionsCommands,
+			...facetCommands,
+		],
 	}
 }
 
@@ -121,10 +127,16 @@ const hrefFor = (toolName: string, search: Search) => hrefOf(AppRoute.AgentSessi
 
 const navigate = (model: Model, search: Search): Return => ({
 	model,
-	outMessage: PageOutMessage.RequestedNavigation({ url: hrefFor(model.toolName, search), isReplace: false }),
+	outMessage: PageOutMessage.RequestedNavigation({
+		url: hrefFor(model.toolName, search),
+		isReplace: false,
+	}),
 })
 
-export const init = (route: { readonly toolName: string; readonly search: Search }, context: PageContext): Return => {
+export const init = (
+	route: { readonly toolName: string; readonly search: Search },
+	context: PageContext,
+): Return => {
 	const { search } = route
 	const model: Model = {
 		toolName: route.toolName,
@@ -174,7 +186,10 @@ export const routeChanged = (
 		modelSelect: { ...model.modelSelect, value: route.search.model ?? ALL },
 		envSelect: { ...model.envSelect, value: route.search.env ?? ALL },
 	}
-	return { model: next, commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+	return {
+		model: next,
+		commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
+	}
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => ({
@@ -196,16 +211,27 @@ const facetSelectStep = (model: Model, facet: FacetKey, message: Select.Message)
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, nowMs, mode }) => requestAll({ ...model, window, nowMs }, context, mode),
-		CompletedFetchSeries: ({ key, result }) => ({ model: { ...model, series: Keyed.accept(model.series, key, result) } }),
-		CompletedFetchTotals: ({ key, result }) => ({ model: { ...model, totals: Keyed.accept(model.totals, key, result) } }),
-		CompletedFetchErrors: ({ key, result }) => ({ model: { ...model, errors: Keyed.accept(model.errors, key, result) } }),
+		CompletedResolveWindow: ({ window, nowMs, mode }) =>
+			requestAll({ ...model, window, nowMs }, context, mode),
+		CompletedFetchSeries: ({ key, result }) => ({
+			model: { ...model, series: Keyed.accept(model.series, key, result) },
+		}),
+		CompletedFetchTotals: ({ key, result }) => ({
+			model: { ...model, totals: Keyed.accept(model.totals, key, result) },
+		}),
+		CompletedFetchErrors: ({ key, result }) => ({
+			model: { ...model, errors: Keyed.accept(model.errors, key, result) },
+		}),
 		CompletedFetchSessions: ({ key, result }) => ({
 			model: { ...model, sessions: Keyed.accept(model.sessions, key, result) },
 		}),
-		CompletedFetchFacets: ({ key, result }) => ({ model: { ...model, facets: Keyed.accept(model.facets, key, result) } }),
+		CompletedFetchFacets: ({ key, result }) => ({
+			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
+		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
@@ -220,14 +246,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		ClickedResetTimeRange: () =>
-			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: DEFAULT_TOOL_PRESET }),
+			navigate(model, {
+				...model.search,
+				startTime: undefined,
+				endTime: undefined,
+				timePreset: DEFAULT_TOOL_PRESET,
+			}),
 		ToggledFailingOnly: () =>
 			navigate(model, { ...model.search, failing: model.search.failing === true ? undefined : true }),
 		RemovedModelChip: () => navigate(model, { ...model.search, model: undefined }),
 		// Opening another group drops the session and variant the last one was narrowed to.
 		ClickedErrorRow: ({ fingerprint }) =>
 			navigate(model, { ...model.search, error: fingerprint, session: undefined, variant: undefined }),
-		ClickedErrorsSort: ({ key }) => ({ model: { ...model, errorsSort: nextSort(model.errorsSort, key, []) } }),
+		ClickedErrorsSort: ({ key }) => ({
+			model: { ...model, errorsSort: nextSort(model.errorsSort, key, []) },
+		}),
 		ToggledErrorsExpanded: () => ({ model: { ...model, isErrorsExpanded: !model.isErrorsExpanded } }),
 		GotFacetSelectMessage: ({ facet, message: inner }) => facetSelectStep(model, facet, inner),
 		GotTimePickerMessage: ({ message: inner }) => {

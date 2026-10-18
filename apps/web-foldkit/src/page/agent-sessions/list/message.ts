@@ -23,7 +23,12 @@ const result = <A extends Schema.Top>(schema: A) => ({
 })
 
 export const Message = defineMessageUnion({
-	CompletedResolveWindow: { window: TimeWindow, tabWindow: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedResolveWindow: {
+		window: TimeWindow,
+		tabWindow: TimeWindow,
+		nowMs: Schema.Number,
+		mode: RequestMode,
+	},
 	CompletedFetchFirstPage: result(SessionsPage),
 	CompletedFetchNextPage: result(SessionsPage),
 	CompletedFetchDetails: {

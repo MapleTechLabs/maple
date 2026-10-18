@@ -47,10 +47,16 @@ const distributionControls = (
 		? { presets: intents }
 		: {
 				histogram: toLogBuckets(
-					distribution.buckets.map((bucket) => ({ floor: bucket.floor * scale, count: bucket.count })),
+					distribution.buckets.map((bucket) => ({
+						floor: bucket.floor * scale,
+						count: bucket.count,
+					})),
 					stepsPerOctave,
 				),
-				presets: [...intents, ...percentilePresets(distribution.p50 * scale, distribution.p95 * scale, unit)],
+				presets: [
+					...intents,
+					...percentilePresets(distribution.p50 * scale, distribution.p95 * scale, unit),
+				],
 			}
 
 const RANGES: ReadonlyArray<{
@@ -72,7 +78,11 @@ const RANGES: ReadonlyArray<{
 		unitLabel: "priced sessions",
 		controls: (d) => distributionControls(d?.cost, "usd", 2, []),
 	},
-	{ range: "tokens", title: "Tokens", controls: (d) => distributionControls(d?.totalTokens, "count", 1, []) },
+	{
+		range: "tokens",
+		title: "Tokens",
+		controls: (d) => distributionControls(d?.totalTokens, "count", 1, []),
+	},
 	{
 		range: "llmCalls",
 		title: "LLM calls",
@@ -89,9 +99,15 @@ const RANGES: ReadonlyArray<{
 const toSections = (message: Parameters<typeof Message.GotFilterSectionsMessage>[0]["message"]) =>
 	Message.GotFilterSectionsMessage({ message })
 
-const numberOrUndefined = (value: unknown): number | undefined => (typeof value === "number" ? value : undefined)
+const numberOrUndefined = (value: unknown): number | undefined =>
+	typeof value === "number" ? value : undefined
 
-const rangeSection = (h: H, model: Model, distributions: Distributions | undefined, spec: (typeof RANGES)[number]) => {
+const rangeSection = (
+	h: H,
+	model: Model,
+	distributions: Distributions | undefined,
+	spec: (typeof RANGES)[number],
+) => {
 	const [minKey, maxKey] = RANGE_PARAMS[spec.range]
 	const { histogram, presets } = spec.controls(distributions)
 	const ids = `agent-sessions-range-${spec.range}`
@@ -170,14 +186,25 @@ const singleCheckbox = (h: H, title: string, isChecked: boolean, onToggle: Messa
 const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 	const { search } = model
 	const isFiltered = hasFilters(search)
-	if (facets.vendors.length === 0 && facets.services.length === 0 && !isFiltered) return filterSidebarEmpty(h)
+	if (facets.vendors.length === 0 && facets.services.length === 0 && !isFiltered)
+		return filterSidebarEmpty(h)
 	const detect = detectLookup(model.detections)
 	const distributions = Option.getOrUndefined(AsyncData.getData(model.distributions.data))
 	return filterSidebarFrame(h, { isWaiting: AsyncData.isRefreshing(model.facets.data) }, [
 		filterSidebarHeader(h, isFiltered ? { onClear: Message.ClickedClearAllFilters() } : {}),
 		...filterSidebarBody(h, "agent-sessions-filters", [
-			facetSection(h, model, { title: "Agent", facet: "agents", isSearchable: true, hasDescription: true }, facets.agents),
-			facetSection(h, model, { title: "Tool", facet: "tools", isSearchable: true, hasDescription: true }, facets.tools),
+			facetSection(
+				h,
+				model,
+				{ title: "Agent", facet: "agents", isSearchable: true, hasDescription: true },
+				facets.agents,
+			),
+			facetSection(
+				h,
+				model,
+				{ title: "Tool", facet: "tools", isSearchable: true, hasDescription: true },
+				facets.tools,
+			),
 			facetSection(
 				h,
 				model,
@@ -212,7 +239,12 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 			separator(h, "horizontal", "my-2"),
 			...RANGES.map((spec) => rangeSection(h, model, distributions, spec)),
 			separator(h, "horizontal", "my-2"),
-			singleCheckbox(h, "Hide single-trace sessions", search.grouped === true, Message.ToggledGrouped()),
+			singleCheckbox(
+				h,
+				"Hide single-trace sessions",
+				search.grouped === true,
+				Message.ToggledGrouped(),
+			),
 		]),
 	])
 }

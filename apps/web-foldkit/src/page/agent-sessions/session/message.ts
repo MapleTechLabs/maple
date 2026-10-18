@@ -40,6 +40,12 @@ export const Message = defineMessageUnion({
 	GotCopyMessage: { message: CopyButton.Message },
 	PressedBodyView: { key: Schema.String, isRaw: Schema.Boolean },
 	GotFlowCanvasMessage: { message: Canvas.Message },
+	ClickedCodeAction: {
+		action: Schema.Literals(["copy", "download"]),
+		code: Schema.String,
+		language: Schema.String,
+	},
+	CompletedCodeAction: {},
 	ClickedResetFlowView: {},
 	MeasuredClamp: { key: Schema.String, isClamped: Schema.Boolean },
 	CompletedParseMarkdown: { parsed: Schema.Array(ParsedMarkdown) },

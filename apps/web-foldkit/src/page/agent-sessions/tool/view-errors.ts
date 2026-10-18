@@ -53,7 +53,12 @@ const MASK_MEANINGS = new Map([
 type Range = Readonly<{ startMs: number; endMs: number }>
 
 type Prepared = ToolErrorRow &
-	Readonly<{ tokens: ReadonlyArray<ErrorTextToken>; display: string; share: number; spark: ReadonlyArray<number> }>
+	Readonly<{
+		tokens: ReadonlyArray<ErrorTextToken>
+		display: string
+		share: number
+		spark: ReadonlyArray<number>
+	}>
 
 /** `prepareToolErrors`: messages unwrapped, the shared prefix hoisted, trends filled over the window. */
 const prepare = (rows: ReadonlyArray<ToolErrorRow>, range: Range) => {
@@ -63,7 +68,9 @@ const prepare = (rows: ReadonlyArray<ToolErrorRow>, range: Range) => {
 	const prefix = commonErrorPrefix(
 		texts.filter((text, index) => text !== "" && rows[index]?.fingerprint !== UNGROUPED_FINGERPRINT),
 	)
-	const types = new Set(rows.flatMap((row) => (row.fingerprint === UNGROUPED_FINGERPRINT ? [] : [row.errorType])))
+	const types = new Set(
+		rows.flatMap((row) => (row.fingerprint === UNGROUPED_FINGERPRINT ? [] : [row.errorType])),
+	)
 	const [onlyType] = types
 	const errorType = rows.length > 1 && types.size === 1 && onlyType !== "" ? onlyType : undefined
 	return {
@@ -111,7 +118,13 @@ export type ErrorsTableInputs = Readonly<{
 	timeZone: string
 }>
 
-const errorRow = (h: H, row: Prepared, inputs: ErrorsTableInputs, maxShare: number, sharedType: string | undefined): Html =>
+const errorRow = (
+	h: H,
+	row: Prepared,
+	inputs: ErrorsTableInputs,
+	maxShare: number,
+	sharedType: string | undefined,
+): Html =>
 	h.button(
 		[
 			h.Key(row.fingerprint),
@@ -123,7 +136,11 @@ const errorRow = (h: H, row: Prepared, inputs: ErrorsTableInputs, maxShare: numb
 		],
 		[
 			h.span(
-				[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2.5 overflow-hidden font-mono text-xs leading-4")],
+				[
+					h.Class(
+						"flex w-0 min-w-0 flex-1 items-center gap-2.5 overflow-hidden font-mono text-xs leading-4",
+					),
+				],
 				[
 					groupTitle(h, row),
 					...(sharedType === undefined && row.errorType !== ""
@@ -142,7 +159,16 @@ const errorRow = (h: H, row: Prepared, inputs: ErrorsTableInputs, maxShare: numb
 							]
 						: []),
 					...(row.variants > 1
-						? [h.span([h.Class("shrink-0 pl-1.5 text-2xs leading-3.5 text-muted-foreground/70")], [String(row.variants), " variants"])]
+						? [
+								h.span(
+									[
+										h.Class(
+											"shrink-0 pl-1.5 text-2xs leading-3.5 text-muted-foreground/70",
+										),
+									],
+									[String(row.variants), " variants"],
+								),
+							]
 						: []),
 				],
 			),
@@ -166,9 +192,16 @@ const errorRow = (h: H, row: Prepared, inputs: ErrorsTableInputs, maxShare: numb
 				label: formatPercent(row.share, { floor: 0.01 }),
 				tone: { bar: TONE_FILL.crit, text: "text-muted-foreground" },
 			}),
-			h.span([h.Class("w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground")], [formatToolCount(row.calls)]),
 			h.span(
-				[h.Class("hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block")],
+				[h.Class("w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
+				[formatToolCount(row.calls)],
+			),
+			h.span(
+				[
+					h.Class(
+						"hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground @min-[640px]/panel:block",
+					),
+				],
 				[formatToolCount(row.sessions)],
 			),
 			relativeTime(h, row.lastSeen, {
@@ -195,12 +228,27 @@ const loadingRows = (h: H): ReadonlyArray<Html> =>
 				h.Style({ opacity: String(1 - index * 0.2) }),
 			],
 			[
-				h.span([h.Class("w-0 min-w-0 flex-1")], [skeleton(h, "h-2.5", { width: `${width}px`, "max-width": "100%" })]),
-				h.span([h.Class("hidden w-[96px] shrink-0 @min-[720px]/panel:block")], [skeleton(h, "h-2.5 w-[92px]")]),
-				h.span([h.Class("flex w-[150px] shrink-0 justify-end gap-2.5")], [skeleton(h, "h-1 w-[60px]"), h.span([h.Class("w-[46px]")], [])]),
+				h.span(
+					[h.Class("w-0 min-w-0 flex-1")],
+					[skeleton(h, "h-2.5", { width: `${width}px`, "max-width": "100%" })],
+				),
+				h.span(
+					[h.Class("hidden w-[96px] shrink-0 @min-[720px]/panel:block")],
+					[skeleton(h, "h-2.5 w-[92px]")],
+				),
+				h.span(
+					[h.Class("flex w-[150px] shrink-0 justify-end gap-2.5")],
+					[skeleton(h, "h-1 w-[60px]"), h.span([h.Class("w-[46px]")], [])],
+				),
 				h.span([h.Class("flex w-[76px] shrink-0 justify-end")], [skeleton(h, "h-2.5 w-7")]),
-				h.span([h.Class("hidden w-[76px] shrink-0 justify-end @min-[640px]/panel:flex")], [skeleton(h, "h-2.5 w-[22px]")]),
-				h.span([h.Class("hidden w-[96px] shrink-0 justify-end @min-[800px]/panel:flex")], [skeleton(h, "h-2.5 w-11")]),
+				h.span(
+					[h.Class("hidden w-[76px] shrink-0 justify-end @min-[640px]/panel:flex")],
+					[skeleton(h, "h-2.5 w-[22px]")],
+				),
+				h.span(
+					[h.Class("hidden w-[96px] shrink-0 justify-end @min-[800px]/panel:flex")],
+					[skeleton(h, "h-2.5 w-11")],
+				),
 				h.span([h.Class("w-3.5 shrink-0")], []),
 			],
 		),
@@ -262,7 +310,11 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 		[
 			icon(h, "ChevronDownIcon", {
 				size: 12,
-				className: cn("shrink-0 transition-transform", isExpanded && "rotate-180", "text-muted-foreground"),
+				className: cn(
+					"shrink-0 transition-transform",
+					isExpanded && "rotate-180",
+					"text-muted-foreground",
+				),
 				attributes: [h.AriaHidden(true)],
 			}),
 			h.span(
@@ -345,13 +397,19 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 							inputs.isLoading
 								? skeleton(h, "h-2.5 w-[150px] self-center")
 								: h.span(
-										[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
+										[
+											h.Class(
+												"text-2xs leading-3.5 tabular-nums text-muted-foreground/70",
+											),
+										],
 										[
 											formatToolCount(failures),
 											" failed ",
 											pluralize(failures, "call"),
 											...(inputs.rows.length > 0
-												? [` · ${formatToolCount(inputs.rows.length)} ${pluralize(inputs.rows.length, "error")}`]
+												? [
+														` · ${formatToolCount(inputs.rows.length)} ${pluralize(inputs.rows.length, "error")}`,
+													]
 												: []),
 										],
 									),
@@ -373,7 +431,11 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 			),
 			isEmpty
 				? h.div(
-						[h.Class("flex flex-col gap-2 border-t border-border px-2.5 pt-[22px] pb-5 font-mono")],
+						[
+							h.Class(
+								"flex flex-col gap-2 border-t border-border px-2.5 pt-[22px] pb-5 font-mono",
+							),
+						],
 						[
 							h.span(
 								[h.Class("flex items-center gap-2 text-xs text-foreground")],
@@ -402,12 +464,21 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 						toolTableBody(
 							h,
 							inputs.failure !== undefined
-								? [errorState(h, { failure: inputs.failure, title: `Failed to load ${inputs.tool} errors` })]
+								? [
+										errorState(h, {
+											failure: inputs.failure,
+											title: `Failed to load ${inputs.tool} errors`,
+										}),
+									]
 								: inputs.isLoading
 									? loadingRows(h)
 									: [
-											...visible.map((row) => errorRow(h, row, inputs, maxShare, prepared.errorType)),
-											...(hidden.length > 0 ? [showMore(h, hidden, inputs.isExpanded)] : []),
+											...visible.map((row) =>
+												errorRow(h, row, inputs, maxShare, prepared.errorType),
+											),
+											...(hidden.length > 0
+												? [showMore(h, hidden, inputs.isExpanded)]
+												: []),
 										],
 							{ isWaiting: inputs.isWaiting, maxHeight: inputs.isExpanded ? 760 : 460 },
 						),
@@ -420,7 +491,12 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 											),
 										],
 										[
-											h.span([], ["Calls with the same message are grouped; changing values are masked:"]),
+											h.span(
+												[],
+												[
+													"Calls with the same message are grouped; changing values are masked:",
+												],
+											),
 											...masks.map((label) =>
 												h.span(
 													[h.Key(label), h.Class("flex items-center gap-1.5")],
@@ -438,4 +514,3 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 		],
 	)
 }
-

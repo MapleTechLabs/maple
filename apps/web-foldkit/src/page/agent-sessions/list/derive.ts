@@ -49,7 +49,8 @@ export type Sort = Readonly<{ sortBy: AiSessionSortKey; sortDir: AiSessionSortDi
 
 const DEFAULT_SORT: Sort = { sortBy: "startTime", sortDir: "desc" }
 
-const isDefaultSort = (sort: Sort) => sort.sortBy === DEFAULT_SORT.sortBy && sort.sortDir === DEFAULT_SORT.sortDir
+const isDefaultSort = (sort: Sort) =>
+	sort.sortBy === DEFAULT_SORT.sortBy && sort.sortDir === DEFAULT_SORT.sortDir
 
 export const sortOf = (search: Search): Sort => ({
 	sortBy: search.sortBy ?? DEFAULT_SORT.sortBy,

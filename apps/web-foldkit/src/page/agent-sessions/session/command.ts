@@ -97,6 +97,32 @@ export const ParseMarkdown = Command.define("ParseAgentSessionMarkdown", {
 		Effect.map(parseMarkdownTexts(texts), (parsed) => Message.CompletedParseMarkdown({ parsed })),
 })
 
+const DOWNLOAD_EXTENSIONS = new Map([
+	["ts", "ts"],
+	["typescript", "ts"],
+	["js", "js"],
+	["json", "json"],
+	["py", "py"],
+])
+
+/** A code block's Copy (the clipboard) or Download (`file.<ext>`). */
+export const RunCodeAction = Command.define("RunAgentSessionCodeAction", {
+	args: { action: Schema.Literals(["copy", "download"]), code: Schema.String, language: Schema.String },
+	messages: [Message.CompletedCodeAction],
+	execute: ({ action, code, language }) =>
+		(action === "copy"
+			? Effect.ignore(Effect.tryPromise(() => navigator.clipboard.writeText(code)))
+			: Effect.sync(() => {
+					const url = URL.createObjectURL(new Blob([code], { type: "text/plain" }))
+					const anchor = document.createElement("a")
+					anchor.href = url
+					anchor.download = `file.${DOWNLOAD_EXTENSIONS.get(language) ?? "txt"}`
+					anchor.click()
+					URL.revokeObjectURL(url)
+				})
+		).pipe(Effect.as(Message.CompletedCodeAction())),
+})
+
 /** "Check the Tools section": brings the Overview's ledger into view. */
 export const ScrollToTools = Command.define("ScrollAgentSessionToTools", {
 	messages: [Message.CompletedScroll],
