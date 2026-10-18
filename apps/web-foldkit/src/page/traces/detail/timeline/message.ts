@@ -14,6 +14,8 @@ export const Message = defineMessageUnion({
 	ClickedRow: { spanId: Schema.String },
 	DoubleClickedRow: { spanId: Schema.String },
 	ClickedToggleCollapse: { spanId: Schema.String },
+	/** ⌥-click: the whole subtree opens or closes with the span. */
+	AltClickedToggleCollapse: { spanId: Schema.String },
 	HoveredRow: { spanId: Schema.NullOr(Schema.String) },
 	ClickedCollapseOneLevel: {},
 	ClickedExpandOneLevel: {},

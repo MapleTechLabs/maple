@@ -42,6 +42,18 @@ export const traceInteractionsArea: AreaModule = {
 			await page.getByText("GET /session", { exact: true }).first().click()
 			await spanOpen(page)
 		}),
+		detail("timeline-alt-collapse", "⌥-click folds a span's whole subtree", async (page) => {
+			await page.getByRole("button", { name: "Collapse all" }).click()
+			await page
+				.getByRole("button", { name: "Expand", exact: true })
+				.first()
+				.click({ modifiers: ["Alt"] })
+			await page.getByText("GET /session", { exact: true }).first().waitFor()
+		}),
+		detail("copy-trace-id", "the trace ID badge copies", async (page) => {
+			await page.getByRole("button", { name: "Copy trace ID" }).first().click()
+			await page.getByText("trace ID copied", { exact: true }).waitFor()
+		}),
 		detail("timeline-collapse-all", "timeline collapsed to the root", async (page) => {
 			await page.getByRole("button", { name: "Collapse all" }).click()
 		}),

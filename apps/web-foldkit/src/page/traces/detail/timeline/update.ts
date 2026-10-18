@@ -289,8 +289,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			const bar = barsOf(model).find((candidate) => candidate.span.spanId === spanId)
 			return { model: bar === undefined ? model : zoomToSpan(model, bar.startMs, bar.endMs) }
 		},
-		// TODO(alt-click): Foldkit's OnClick carries no modifiers, so ⌥ for the whole subtree is keyboard-free.
 		ClickedToggleCollapse: ({ spanId }) => ({ model: toggleCollapse(model, spanId, false) }),
+		AltClickedToggleCollapse: ({ spanId }) => ({ model: toggleCollapse(model, spanId, true) }),
 		HoveredRow: ({ spanId }) =>
 			spanId === model.hoveredSpanId ? { model } : { model: { ...model, hoveredSpanId: spanId } },
 		ClickedCollapseOneLevel: () => ({ model: collapseOneLevel(model) }),
