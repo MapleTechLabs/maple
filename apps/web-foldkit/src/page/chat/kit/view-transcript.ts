@@ -61,6 +61,8 @@ export type TranscriptHost<M> = PanelHost<M> &
 		ownCard?: (part: ToolPart, messageId: string) => Html | null
 		taskCard?: (part: Extract<UIMessagePart, { _tag: "task" }>) => Html
 		markdownOverrides?: ViewOverrides
+		/** `fallbackDiagnosis`: the report card an investigation thread leads with until its own turn lands. */
+		fallback?: Html
 	}>
 
 const TRANSCRIPT_ITEM = "[content-visibility:visible] [contain-intrinsic-size:none]"
@@ -255,7 +257,7 @@ export const transcript = <M>(
 	messages: ReadonlyArray<UIMessage>,
 	emptyState: () => Html,
 ): Html => {
-	if (messages.length === 0)
+	if (messages.length === 0 && host.fallback === undefined)
 		return h.keyed("div")("transcript-empty", [h.Class("flex min-h-0 flex-1 items-center justify-center px-4 py-6")], [
 			emptyState(),
 		])
@@ -290,6 +292,7 @@ export const transcript = <M>(
 						],
 						[
 							...(readOnlyLabel === undefined ? [] : [scrollerItem(h, "__read-only", false, [separator(h, readOnlyLabel)])]),
+							...(host.fallback === undefined ? [] : [scrollerItem(h, "__fallback-diagnosis", false, [host.fallback])]),
 							...rows.map((row) => {
 								if (row.kind === "tool-run") {
 									const lastOfRun = row.messages[row.messages.length - 1]

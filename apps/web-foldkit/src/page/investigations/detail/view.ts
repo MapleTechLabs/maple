@@ -2,13 +2,19 @@ import type { IssueSeverity } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { pageScrollAreaStyles } from "@maple/ui/styles/ui/page-layout"
 import { investigationHeadline, investigationScope } from "@maple/web-data/investigations/display"
-import { Submodel } from "foldkit"
+import { Mount, Submodel } from "foldkit"
+import { Message as ConversationMessageUnion, type Message as ConversationMessage } from "../../chat/conversation/message"
+import { conversationView, emptyNotice } from "../../chat/conversation/view"
+import { MountMessageScroller } from "../../chat/kit/scroller"
+import { findDiagnosisMessageId } from "../../chat/kit/transcript-rows"
+import { contextOf, placeholderOf, suggestionsOf } from "./conversation"
+import { investigationNoun } from "./investigation-context"
+import { diagnosisReportCard } from "./view-diagnosis-card"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { toLoadFailure } from "../../../data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
 import { button } from "../../../ui/button"
-import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import * as MenuView from "../../../ui/menu-view"
@@ -30,7 +36,6 @@ import { verdictCard } from "./view-verdict"
 
 // `InvestigationPage` (apps/web/src/routes/investigations/$id.tsx) and `InvestigationView`,
 // `InvestigationHeader`, `InvestigationTabs` (components/investigations/).
-// TODO(chat): the Chat and Transcript tabs mount `ChatConversation`, which is not ported yet.
 
 type H = HtmlBuilder<Message>
 
@@ -170,12 +175,58 @@ const documentTab = (
 	]
 }
 
-const conversationTab = (h: H): ReadonlyArray<Html> => [
-	h.div(
-		[h.DataAttribute("slot", "page-scroll-area"), h.Class(pageScrollAreaStyles)],
-		[emptyMessage(h, { className: "py-10 text-sm" }, ["The conversation view is not available here yet."])],
-	),
-]
+/** `InvestigationLead`: what a thread with no turns says, read off the subject's own status. */
+const investigationLead = (h: H, investigation: V2Investigation): Html =>
+	investigation.status === "investigating"
+		? emptyNotice(
+				h,
+				"Investigating",
+				"Maple is gathering evidence — the Transcript tab shows what it is doing as it goes. You can ask a question here without waiting for it to finish.",
+			)
+		: investigation.status === "failed"
+			? emptyNotice(
+					h,
+					"Autonomous pass failed",
+					"Maple couldn't complete the investigation. Retry it from the header, or ask a question to continue by hand.",
+				)
+			: emptyNotice(
+					h,
+					"Ready to investigate",
+					`This ${investigationNoun(contextOf(investigation).kind)} is attached to every message in the thread. Start with a suggestion or ask your own question.`,
+				)
+
+/** `ChatConversation mode="investigation"`: the thread, led by the report until its own turn lands. */
+const conversationTab = (
+	h: H,
+	model: Model,
+	investigation: V2Investigation,
+	timeZone: string,
+	trigger: TipTrigger,
+): ReadonlyArray<Html> => {
+	const { conversation } = model
+	if (conversation === null) return []
+	const toMessage = (message: ConversationMessage) => Message.GotConversationMessage({ message })
+	const hasDiagnosisTurn = findDiagnosisMessageId(conversation.messages) !== undefined
+	const report = investigation.report
+	return [
+		conversationView(h, conversation, {
+			toMessage,
+			timeZone,
+			textareaId: `investigation-chat-${model.id}`,
+			placeholder: placeholderOf(investigation),
+			emptyState: () => investigationLead(h, investigation),
+			chips: [],
+			scrollerMount: Mount.mapMessage(MountMessageScroller(), () => Message.CompletedMountScroller()),
+			knownServices: new Set(model.knownServices ?? []),
+			nowMs: model.nowMs,
+			fallback: report === null || hasDiagnosisTurn ? undefined : diagnosisReportCard(h, model, report, trigger),
+			suggestions: {
+				items: suggestionsOf(investigation),
+				onSelect: (text) => toMessage(ConversationMessageUnion.ClickedSuggestion({ text })),
+			},
+		}),
+	]
+}
 
 const readyPage = (h: H, model: Model, investigation: V2Investigation, timeZone: string): Html => {
 	const tab = tabOf(model)
@@ -200,7 +251,9 @@ const readyPage = (h: H, model: Model, investigation: V2Investigation, timeZone:
 						fill: true,
 					},
 					[
-						...(isConversation ? conversationTab(h) : documentTab(h, model, investigation, tab, timeZone, trigger)),
+						...(isConversation
+							? conversationTab(h, model, investigation, timeZone, trigger)
+							: documentTab(h, model, investigation, tab, timeZone, trigger)),
 						actionSheet(h, model, investigation, timeZone, trigger),
 						...(portal === null ? [] : [portal]),
 					],

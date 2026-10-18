@@ -16,6 +16,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import {
 	FetchEscalation,
 	FetchSignalLogs,
+	CheckTipFocus,
 	FetchSignalTraces,
 	PreloadTrace,
 	ReadInvestigationClock,
@@ -24,6 +25,7 @@ import {
 } from "./command"
 import { investigationOf, openActionIndexOf, signalServiceOf, signalWindowOf, tabOf } from "./derive"
 import { placeGraph } from "./graph"
+import { followConversation, openReportAction, stepConversation, stepReportSheet } from "./conversation"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -108,12 +110,18 @@ export const init = (route: InvestigationRoute, _context: PageContext): Return =
 		canvas: Canvas.init({ minZoom: 0.3, maxZoom: 1.4, fitOnInit: Option.none() }),
 		traceTooltip: Tooltip.init("investigation-trace-tooltip"),
 		preloadedTraces: [],
+		conversation: null,
+		reportActionIndex: null,
+		reportSheet: Dialog.init("investigation-report-sheet", "sheet", { isOpen: false }),
+		knownServices: null,
 	}
 	return { model, commands: [ReadInvestigationClock()] }
 }
 
 export const routeChanged = (model: Model, route: InvestigationRoute, context: PageContext): Return =>
-	chain(followOverview({ ...model, search: route.search }, context), sheetFor)
+	chain(chain(followOverview({ ...model, search: route.search }, context), sheetFor), (next) =>
+		followConversation(next, context),
+	)
 
 const navigateSearch = (model: Model, search: Model["search"], isReplace: boolean): Return => ({
 	model,
@@ -148,7 +156,7 @@ const primaryKind = (investigation: V2Investigation): "resolve" | "restart" =>
 
 /** The trace a chip's tooltip trigger names (`traceTipId`). */
 const traceOfTip = (triggerId: string): string | undefined =>
-	/^trace-tip-(?:sheet|evidence)-(.+)$/.exec(triggerId)?.[1]
+	/^trace-tip-(?:sheet|evidence|card)-(.+)$/.exec(triggerId)?.[1]
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -157,7 +165,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		SyncedInvestigation: ({ orgId, id, sync }) => {
 			if (orgId !== context.orgId || id !== model.id) return { model }
 			const next = { ...model, sync }
-			return chain(chain(followOverview(next, context), sheetFor), (placed) => ({ model: replace(placed, context.timeZone) }))
+			return chain(
+				chain(chain(followOverview(next, context), sheetFor), (placed) => ({ model: replace(placed, context.timeZone) })),
+				(placed) => followConversation(placed, context),
+			)
 		},
 		CompletedFetchLogs: ({ key, result }) => ({ model: { ...model, logs: Keyed.accept(model.logs, key, result) } }),
 		CompletedFetchTraces: ({ key, result }) => ({ model: { ...model, traces: Keyed.accept(model.traces, key, result) } }),
@@ -213,7 +224,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return { ...updated, outMessage: navigateSearch(model, { tab: tab === "overview" ? undefined : tab }, true).outMessage }
 		},
 		GotTraceTooltipMessage: ({ message: inner }) => {
-			const step = Tooltip.update(model.traceTooltip, inner)
+			// A focus opens the tip only once `:focus-visible` confirms it was the keyboard's.
+			const isFocus = inner._tag === "FocusedTrigger"
+			const step = isFocus ? { model: model.traceTooltip, commands: [] } : Tooltip.update(model.traceTooltip, inner)
 			const intent = inner._tag === "EnteredTrigger" || inner._tag === "FocusedTrigger" ? traceOfTip(inner.triggerId) : undefined
 			const isPreload = intent !== undefined && !model.preloadedTraces.includes(intent)
 			return {
@@ -224,11 +237,25 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				},
 				commands: [
 					...Command.mapMessages(step.commands ?? [], (tooltip) => Message.GotTraceTooltipMessage({ message: tooltip })),
+					...(inner._tag === "FocusedTrigger" ? [CheckTipFocus({ triggerId: inner.triggerId })] : []),
 					...(isPreload ? [PreloadTrace({ traceId: intent })] : []),
 				],
 			}
 		},
+		CheckedTipFocus: ({ triggerId, isFocusVisible }) => {
+			if (!isFocusVisible) return { model }
+			const step = Tooltip.update(model.traceTooltip, Tooltip.Message.FocusedTrigger({ triggerId }))
+			return {
+				model: { ...model, traceTooltip: step.model },
+				commands: Command.mapMessages(step.commands ?? [], (tooltip) => Message.GotTraceTooltipMessage({ message: tooltip })),
+			}
+		},
+		CompletedLoadKnownServices: ({ services }) => ({ model: { ...model, knownServices: services } }),
 		CompletedPreloadTrace: () => ({ model }),
+		GotConversationMessage: ({ message: inner }) => stepConversation(model, inner),
+		ClickedReportAction: ({ index }) => openReportAction(model, index),
+		GotReportSheetMessage: ({ message: inner }) => stepReportSheet(model, inner),
+		CompletedMountScroller: () => ({ model }),
 		GotCanvasMessage: ({ message: inner }) => {
 			const updated = Canvas.update(model.canvas, inner, [])
 			const isZoom = inner._tag === "ClickedZoomIn" || inner._tag === "ClickedZoomOut"

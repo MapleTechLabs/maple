@@ -79,7 +79,7 @@ export const signalServiceOf = (investigation: V2Investigation): string | null =
 }
 
 /** Where a trace chip sits; the tooltip trigger ids must stay unique across both. */
-export type ChipPlace = "sheet" | "evidence"
+export type ChipPlace = "sheet" | "evidence" | "card"
 
 export const traceTipId = (place: ChipPlace, traceId: string): string => `trace-tip-${place}-${traceId}`
 
@@ -88,7 +88,7 @@ export const traceTips = (investigation: V2Investigation): ReadonlyMap<string, s
 	new Map(
 		(investigation.report?.evidence ?? []).flatMap((evidence) =>
 			evidence.traceIds.flatMap((traceId) =>
-				(["sheet", "evidence"] as const).map((place) => [traceTipId(place, traceId), traceId] as const),
+				(["sheet", "evidence", "card"] as const).map((place) => [traceTipId(place, traceId), traceId] as const),
 			),
 		),
 	)

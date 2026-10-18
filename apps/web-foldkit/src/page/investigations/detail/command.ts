@@ -2,12 +2,32 @@ import { ErrorIssueId, InvestigationId } from "@maple/domain/http"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { getSpanHierarchy } from "@maple/web-data/warehouse/traces"
+import { loadKnownServices } from "../../chat/kit/known-services"
 import { TraceId } from "@maple/domain"
 import { Clock, Effect, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { Message } from "./message"
+
+/** `KnownServicesProvider`: the org's service names, read once a thread shows its scroller. */
+export const LoadKnownServices = Command.define("LoadInvestigationKnownServices", {
+	messages: [Message.CompletedLoadKnownServices],
+	execute: Effect.map(loadKnownServices, (services) => Message.CompletedLoadKnownServices({ services })),
+})
+
+/** Whether the focused element is keyboard-focused: Base UI opens a tooltip on keyboard focus only. */
+export const CheckTipFocus = Command.define("CheckInvestigationTipFocus", {
+	args: { triggerId: Schema.String },
+	messages: [Message.CheckedTipFocus],
+	execute: ({ triggerId }) =>
+		Effect.sync(() =>
+			Message.CheckedTipFocus({
+				triggerId,
+				isFocusVisible: document.getElementById(triggerId)?.matches(":focus-visible") === true,
+			}),
+		),
+})
 
 /**
  * TanStack's `defaultPreload: "intent"`: a trace link hovered or focused runs the trace route's
