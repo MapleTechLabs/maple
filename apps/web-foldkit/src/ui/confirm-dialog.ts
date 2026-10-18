@@ -17,7 +17,8 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	slotId: string
 	model: Dialog.Model
 	toParentMessage: (message: Dialog.Message) => M
-	title: string
+	/** Rich copy (a name kept on one line) as children. */
+	title: string | ReadonlyArray<Html | string>
 	/** Rich copy (a highlighted name) as children. */
 	description?: string | ReadonlyArray<Html | string>
 	/** Content between the header and the footer (`children`). */
@@ -33,6 +34,8 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	className?: string
 	/** `icon`: replaces the warning glyph in the media tile. */
 	icon?: Html
+	/** Opened from inside another dialog (`DialogView` `isNested`). */
+	isNested?: boolean
 }>
 
 /** The confirm-before-acting dialog, opened from code (no trigger), placed anywhere in the page. */
@@ -47,6 +50,7 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 		toParentMessage: options.toParentMessage,
 		viewInputs: {
 			hasTrigger: false,
+			isNested: options.isNested,
 			className: options.className,
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) => [
@@ -68,7 +72,8 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 										options.icon ??
 											icon(h, "AlertWarningIcon", {
 												className: cn(
-													tone === "destructive" && confirmDialogIconDestructiveStyles,
+													tone === "destructive" &&
+														confirmDialogIconDestructiveStyles,
 												),
 											}),
 									],
