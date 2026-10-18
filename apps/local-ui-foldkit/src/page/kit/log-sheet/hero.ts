@@ -6,10 +6,9 @@ import { badge } from "@maple/web-foldkit/ui/display"
 import { icon } from "@maple/web-foldkit/ui/icon"
 import { serviceDot } from "@maple/web-foldkit/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { severityLabel } from "./derive"
 import { Message } from "./message"
-import type { Detail, Model } from "./model"
-import { copyableValue, heroBody, heroToneStyle } from "./view-sheet-parts"
+import type { Model } from "./model"
+import { copyableValue, heroBody, heroToneStyle, severityLabel } from "./parts"
 
 /** `SeverityBadge`: the label in its colour on a 10% wash. */
 const severityBadge = (h: HtmlBuilder<Message>, label: string): Html => {
@@ -37,8 +36,8 @@ const message = (h: HtmlBuilder<Message>, hero: ReturnType<typeof heroBody>, isC
 			)
 
 /** `LogHeroHeader`: severity, service, close, and the (clamped) message. */
-export const heroHeader = (h: HtmlBuilder<Message>, model: Model, detail: Detail): Html => {
-	const { log } = detail
+export const heroHeader = (h: HtmlBuilder<Message>, model: Model): Html => {
+	const { log } = model
 	const severity = severityLabel(log.severityText, log.severityNumber)
 	const hero = heroBody(log)
 	const tone = heroToneStyle(severity)
@@ -59,7 +58,7 @@ export const heroHeader = (h: HtmlBuilder<Message>, model: Model, detail: Detail
 							variant: "ghost",
 							size: "icon",
 							className: "ml-auto shrink-0",
-							attributes: [h.AriaLabel("Close log details"), h.OnClick(Message.ClosedDetail())],
+							attributes: [h.AriaLabel("Close log details"), h.OnClick(Message.ClosedSheet())],
 						},
 						[icon(h, "XmarkIcon")],
 					),
@@ -69,7 +68,7 @@ export const heroHeader = (h: HtmlBuilder<Message>, model: Model, detail: Detail
 				[h.Class("mt-3")],
 				[
 					copyableValue(h, model.copies, { id: "detail-body", value: hero.copyValue }, [
-						message(h, hero, hero.isLong && !detail.isBodyExpanded),
+						message(h, hero, hero.isLong && !model.isBodyExpanded),
 					]),
 					...(hero.isLong
 						? [
@@ -82,8 +81,8 @@ export const heroHeader = (h: HtmlBuilder<Message>, model: Model, detail: Detail
 										),
 									],
 									[
-										detail.isBodyExpanded ? "Show less" : "Show full message",
-										icon(h, detail.isBodyExpanded ? "ChevronUpIcon" : "ChevronDownIcon", { size: 10 }),
+										model.isBodyExpanded ? "Show less" : "Show full message",
+										icon(h, model.isBodyExpanded ? "ChevronUpIcon" : "ChevronDownIcon", { size: 10 }),
 									],
 								),
 							]

@@ -5,7 +5,8 @@ import * as TraceFlow from "@maple/web-foldkit/service-map/trace-flow/trace-flow
 import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { accept, idle, keyOf, request } from "../../data/slot"
+import type { Cached } from "../../data/cached"
+import { accept, acceptCached, idle, keyOf, request } from "../../data/slot"
 import type { LoadFailure } from "../../data/local-query"
 import type { Resources } from "../../platform/resources"
 import { queryOf } from "../../route"
@@ -87,7 +88,7 @@ export const init = (
 			panel: null,
 			pointer: null,
 		},
-		commands: [FetchTrace({ key, traceId, apiBase: context.env.apiBase })],
+		commands: [FetchTrace({ key, traceId, apiBase: context.env.apiBase, readsCache: true })],
 	}
 }
 
@@ -121,9 +122,10 @@ const refresh = (model: Model, context: PageContext): UpdateReturn => {
 	return {
 		model: { ...model, trace, isRefreshing: true, panel: panel === null ? null : panel.panel },
 		commands: [
-			FetchTrace({ key: model.trace.key, traceId: model.traceId, apiBase: context.env.apiBase }),
+			FetchTrace({ key: model.trace.key, traceId: model.traceId, apiBase: context.env.apiBase, readsCache: false }),
 			...(panel?.commands ?? []),
 		],
+		outMessage: PageOutMessage.RefetchedInPlace(),
 	}
 }
 
@@ -136,13 +138,21 @@ const back = (model: Model, context: PageContext): UpdateReturn => {
 	return { model, outMessage: PageOutMessage.RequestedBack({ fallbackHash: `#/traces${search ? `?${search}` : ""}` }) }
 }
 
+/** The cache answered first: show it (a first load mounts the tab and panel), then fetch unless fresh. */
+const settleCached = (model: Model, context: PageContext, key: string, cached: Cached<Option.Option<TraceData>>): UpdateReturn => {
+	if (model.trace.key !== key) return { model }
+	const next: Model = { ...model, trace: acceptCached(model.trace, key, cached, cached.isFresh), traceUpdatedAtMs: cached.updatedAtMs }
+	const fetch: Commands = cached.isFresh ? [] : [FetchTrace({ key, traceId: model.traceId, apiBase: context.env.apiBase, readsCache: false })]
+	return chain({ model: next, commands: fetch }, (loaded) => onLoaded(loaded, context))
+}
+
 /** The trace answered: a first load mounts the tab and panel; a refetch keeps them. */
 const settleTrace = (model: Model, context: PageContext, key: string, result: Result.Result<Option.Option<TraceData>, LoadFailure>, fetchedAtMs: number): UpdateReturn => {
 	if (model.trace.key !== key) return { model }
 	const hadData = Option.isSome(AsyncData.getData(model.trace.data))
 	const next: Model = {
 		...model,
-		trace: accept(model.trace, key, result),
+		trace: accept(model.trace, key, result, Result.isSuccess(result) ? fetchedAtMs : null),
 		traceUpdatedAtMs: Result.isSuccess(result) ? fetchedAtMs : model.traceUpdatedAtMs,
 		isRefreshing: false,
 	}
@@ -161,6 +171,7 @@ const panelStep = (model: Model, context: PageContext, message: Message): Update
 
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
+		FoundCachedTrace: ({ key, cached }) => settleCached(model, context, key, cached),
 		SucceededFetchTrace: ({ key, trace, fetchedAtMs }) => settleTrace(model, context, key, Result.succeed(trace), fetchedAtMs),
 		FailedFetchTrace: ({ key, failure }) => settleTrace(model, context, key, Result.fail(failure), 0),
 		ClickedBack: () => back(model, context),
@@ -221,9 +232,13 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		SucceededFetchSpanDetail: () => panelStep(model, context, message),
 		FailedFetchSpanDetail: () => panelStep(model, context, message),
 		SucceededFetchSpanLogs: () => panelStep(model, context, message),
+		FoundCachedSpanDetail: () => panelStep(model, context, message),
+		FoundCachedSpanLogs: () => panelStep(model, context, message),
 		FailedFetchSpanLogs: () => panelStep(model, context, message),
 		GotSpanPanelMessage: () => panelStep(model, context, message),
 		GotPanelTabsMessage: () => panelStep(model, context, message),
+		ClickedSpanLog: () => panelStep(model, context, message),
+		GotLogSheetMessage: () => panelStep(model, context, message),
 		GotAttributesMessage: () => panelStep(model, context, message),
 		CompletedWriteClipboard: () => panelStep(model, context, message),
 		ElapsedCopyStatus: () => panelStep(model, context, message),

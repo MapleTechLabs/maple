@@ -62,6 +62,7 @@ export const appendPage = (model: Model, key: string, page: ReadonlyArray<Sessio
 			...model,
 			isFetchingNextPage: false,
 			sessions: {
+				...model.sessions,
 				key,
 				data: AsyncData.Success({ data: { pages: [...current.pages, page], hasNextPage: nextCursor(page) !== undefined } }),
 				isPlaceholder: false,

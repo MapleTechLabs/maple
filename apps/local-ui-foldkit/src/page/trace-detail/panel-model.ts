@@ -4,6 +4,7 @@ import { SpanNodeData } from "@maple/web-foldkit/page/traces/detail/trace-data"
 import { CopyState } from "@maple/web-foldkit/page/traces/detail/span-panel/model"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
+import * as LogSheet from "../kit/log-sheet/model"
 
 // apps/local-ui/src/components/span-detail-panel.tsx as Model data: the selected span, its lazily
 // loaded attribute maps and logs, the Details / Logs tabs and the copy and disclosure state.
@@ -17,13 +18,8 @@ export const SpanAttrs = Schema.NullOr(
 )
 export type SpanAttrs = typeof SpanAttrs.Type
 
-/** The `LocalLog` fields a Logs-tab row reads, plus its `logKey`. */
-export const SpanLog = Schema.Struct({
-	key: Schema.String,
-	timestamp: Schema.String,
-	severityText: Schema.String,
-	body: Schema.String,
-})
+/** A Logs-tab row: the whole `LocalLog` (the sheet opens on it) plus its `logKey`. */
+export const SpanLog = Schema.Struct({ ...LogSheet.LocalLog.fields, key: Schema.String })
 export type SpanLog = typeof SpanLog.Type
 
 /** Matches the query limit of `useLocalSpanLogs`; a full page means "at least". */
@@ -38,6 +34,8 @@ export const PanelModel = Schema.Struct({
 	copies: Schema.Record(Schema.String, CopyState),
 	isErrorExpanded: Schema.Boolean,
 	attributes: AttributesPanel.Model,
+	/** `SpanLogs`' own `LogDetailSheet`, once a log row was clicked. */
+	maybeLogSheet: Schema.Option(LogSheet.Model),
 })
 export type PanelModel = typeof PanelModel.Type
 

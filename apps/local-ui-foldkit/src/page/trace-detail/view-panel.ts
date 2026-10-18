@@ -1,4 +1,5 @@
 import * as Keyed from "@maple/web-foldkit/data/keyed"
+import type { TimeFormat } from "../kit/local-time"
 import type * as SpanPanelMessage from "@maple/web-foldkit/page/traces/detail/span-panel/message"
 import type * as SpanPanel from "@maple/web-foldkit/page/traces/detail/span-panel/model"
 import { getServiceColor } from "@maple/ui/lib/colors"
@@ -74,7 +75,7 @@ const TAB_ICONS = new Map([
 	["logs", "FileIcon"],
 ] as const)
 
-export type PanelViewInput = Readonly<{ traceStartTime: string; totalDurationMs: number; nowMs: number }>
+export type PanelViewInput = Readonly<{ traceStartTime: string; totalDurationMs: number; nowMs: number; timeFormat: TimeFormat }>
 
 /** The span's identity header, then everything under it scrolling as one (summary, error, tabs). */
 export const spanPanel = (h: H, panel: PanelModel, input: PanelViewInput): Html => {
@@ -116,13 +117,13 @@ export const spanPanel = (h: H, panel: PanelModel, input: PanelViewInput): Html 
 						],
 						panel: (value: string) =>
 							value === "logs"
-								? [spanLogs(h, panel, input.nowMs)]
+								? spanLogs(h, panel, input.nowMs, input.timeFormat)
 								: [
 										h.submodel({
 											slotId: "span-panel-details",
 											model: parts,
 											view: detailsView,
-											viewInputs: { color, attributes: () => attributeBlocks(h, panel) },
+											viewInputs: { color, attributes: () => attributeBlocks(h, panel), timeFormat: input.timeFormat },
 											toParentMessage: toParts,
 										}),
 									],

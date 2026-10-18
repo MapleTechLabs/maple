@@ -1,4 +1,5 @@
-import { formatLocalDateTime, formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatDateTime, type TimeFormat } from "../kit/local-time"
 import { isLocalSessionLive, localSessionDurationMs } from "@maple/local-ui/lib/session-liveness"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { gradientFor, isMobileDevice } from "@maple/ui/lib/replay"
@@ -18,7 +19,7 @@ import { statTile, statusBadge } from "./view-bits"
 
 export const SESSION_ID_COPY = "session-id"
 
-export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail, label: string): Html => {
+export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail, label: string, timeFormat: TimeFormat): Html => {
 	const copy = copyOf(model.copies, SESSION_ID_COPY)
 	return h.div(
 		[h.Class("flex flex-wrap items-center gap-4 border-b pb-5")],
@@ -62,7 +63,7 @@ export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 							h.span(
 								[
 									h.Class("inline-flex items-center gap-1.5"),
-									h.Title(`${formatLocalDateTime(session.startTime)} (${formatUtcTitle(session.startTime)})`),
+									h.Title(`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`),
 								],
 								[
 									icon(h, "ClockIcon", { className: "size-3.5 opacity-60" }),

@@ -1,9 +1,11 @@
+import { listFromCached, sparklinesFromCached, sparklinesToCached, summaryFromCached } from "./cache"
+import { withCache } from "../../data/cached"
 import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
-import { fetchMetricsList, fetchMetricsSummary, fetchSparklines, SparklineGroup } from "./fetch"
+import { fetchMetricsList, fetchMetricsSummary, fetchSparklines } from "./fetch"
 import { Message } from "./message"
+import { ListRequest, SparklinesRequest, SummaryRequest } from "./requests"
 
-const Window = { startTime: Schema.String, endTime: Schema.String, apiBase: Schema.String }
 
 export const ReadClock = Command.define("ReadMetricsClock", {
 	messages: [Message.CompletedReadClock],
@@ -15,35 +17,50 @@ export const ReadRefreshClock = Command.define("ReadMetricsRefreshClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadRefreshClock({ nowMs })),
 })
 
+
 export const FetchList = Command.define("FetchLocalMetricsList", {
-	args: { key: Schema.String, type: Schema.optional(Schema.String), search: Schema.optional(Schema.String), ...Window },
-	messages: [Message.SucceededFetchList, Message.FailedFetchList],
-	execute: ({ key, type, search, startTime, endTime, apiBase }) =>
-		Effect.gen(function* () {
-			const data = yield* fetchMetricsList({ type, search }, { startTime, endTime }, apiBase)
-			const fetchedAtMs = yield* Clock.currentTimeMillis
-			return Message.SucceededFetchList({ key, data, fetchedAtMs })
-		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchList({ key, failure })))),
+	args: { ...ListRequest.fields, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchList, Message.FailedFetchList, Message.FoundCachedList],
+	execute: ({ readsCache, ...request }) =>
+		withCache({
+			key: ["local", "metrics", "list", request.type ?? null, request.search ?? null, `${request.startTime}/${request.endTime}`],
+			readsCache,
+			fromCached: listFromCached,
+			toCached: (data) => data,
+			fetch: fetchMetricsList({ type: request.type, search: request.search }, request, request.apiBase),
+			found: (cached) => Message.FoundCachedList({ request, cached }),
+			succeeded: (data, fetchedAtMs) => Message.SucceededFetchList({ key: request.key, data, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchList({ key: request.key, failure })))),
 })
 
 export const FetchSummary = Command.define("FetchLocalMetricsSummary", {
-	args: { key: Schema.String, service: Schema.optional(Schema.String), ...Window },
-	messages: [Message.SucceededFetchSummary, Message.FailedFetchSummary],
-	execute: ({ key, service, startTime, endTime, apiBase }) =>
-		fetchMetricsSummary(service, { startTime, endTime }, apiBase).pipe(
-			Effect.map((rows) => Message.SucceededFetchSummary({ key, rows })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchSummary({ key, failure }))),
-		),
+	args: { ...SummaryRequest.fields, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchSummary, Message.FailedFetchSummary, Message.FoundCachedSummary],
+	execute: ({ readsCache, ...request }) =>
+		withCache({
+			key: ["local", "metrics", "summary", request.service ?? null, `${request.startTime}/${request.endTime}`],
+			readsCache,
+			fromCached: summaryFromCached,
+			toCached: (rows) => rows,
+			fetch: fetchMetricsSummary(request.service, request, request.apiBase),
+			found: (cached) => Message.FoundCachedSummary({ request, cached }),
+			succeeded: (rows, fetchedAtMs) => Message.SucceededFetchSummary({ key: request.key, rows, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSummary({ key: request.key, failure })))),
 })
 
 export const FetchSparklines = Command.define("FetchLocalMetricsSparklines", {
-	args: { key: Schema.String, groups: Schema.Array(SparklineGroup), bucketSeconds: Schema.Number, ...Window },
-	messages: [Message.SucceededFetchSparklines, Message.FailedFetchSparklines],
-	execute: ({ key, groups, bucketSeconds, startTime, endTime, apiBase }) =>
-		fetchSparklines(groups, { startTime, endTime }, bucketSeconds, apiBase).pipe(
-			Effect.map((sparklines) => Message.SucceededFetchSparklines({ key, sparklines })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchSparklines({ key, failure }))),
-		),
+	args: { ...SparklinesRequest.fields, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchSparklines, Message.FailedFetchSparklines, Message.FoundCachedSparklines],
+	execute: ({ readsCache, ...request }) =>
+		withCache({
+			key: ["local", "metrics", "sparklines", request.groups, request.bucketSeconds, `${request.startTime}/${request.endTime}`],
+			readsCache,
+			fromCached: sparklinesFromCached,
+			toCached: sparklinesToCached,
+			fetch: fetchSparklines(request.groups, request, request.bucketSeconds, request.apiBase),
+			found: (cached) => Message.FoundCachedSparklines({ request, cached }),
+			succeeded: (sparklines, fetchedAtMs) => Message.SucceededFetchSparklines({ key: request.key, sparklines, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSparklines({ key: request.key, failure })))),
 })
 
 export const WaitSearchDebounce = Command.define("WaitMetricsSearchDebounce", {

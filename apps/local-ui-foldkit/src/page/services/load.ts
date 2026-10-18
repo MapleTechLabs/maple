@@ -17,7 +17,7 @@ export const boundsOf = (model: Model, context: PageContext): Option.Option<Time
 const catalogKey = (env: string | undefined, ns: string | undefined, bounds: TimeBounds): string =>
 	keyOf("services-catalog", { env: env ?? null, ns: ns ?? null, bounds: `${bounds.startTime}/${bounds.endTime}` })
 
-type Step = Readonly<{ slot: Slot<Catalog>; fetch: boolean }>
+type Step = Readonly<{ slot: Slot<Catalog>; fetch: boolean; readsCache: boolean }>
 
 /**
  * One slot onto `key`: unchanged when it holds it, served from the React Query cache when the
@@ -25,10 +25,10 @@ type Step = Readonly<{ slot: Slot<Catalog>; fetch: boolean }>
  */
 const stepSlot = (slot: Slot<Catalog>, key: string, cache: ReadonlyArray<Slot<Catalog>>, force: boolean): Step => {
 	const cached = cache.find((other) => other.key === key && Option.isSome(AsyncData.getData(other.data)))
-	if (!force && slot.key !== key && cached !== undefined) return { slot: cached, fetch: false }
+	if (!force && slot.key !== key && cached !== undefined) return { slot: cached, fetch: false, readsCache: false }
 	return Option.match(request(slot, key, force), {
-		onNone: () => ({ slot, fetch: false }),
-		onSome: (next) => ({ slot: next, fetch: true }),
+		onNone: () => ({ slot, fetch: false, readsCache: false }),
+		onSome: (next) => ({ slot: next, fetch: true, readsCache: slot.key !== key }),
 	})
 }
 
@@ -48,14 +48,14 @@ export const load = (
 			// With no filter both hooks read one key: the rows slot serves the facets.
 			const isFiltered = activeFilterCount(filters) > 0
 			const unfilteredKey = catalogKey(undefined, undefined, bounds)
-			const facets = isFiltered ? stepSlot(model.unfiltered, unfilteredKey, cache, force) : { slot: model.unfiltered, fetch: false }
+			const facets = isFiltered ? stepSlot(model.unfiltered, unfilteredKey, cache, force) : { slot: model.unfiltered, fetch: false, readsCache: false }
 			return {
 				model: { ...model, catalog: rows.slot, unfiltered: facets.slot },
 				commands: Array.getSomes([
 					rows.fetch
-						? Option.some(FetchCatalog({ key: filteredKey, env: filters.env ?? null, ns: filters.ns ?? null, ...args }))
+						? Option.some(FetchCatalog({ key: filteredKey, env: filters.env ?? null, ns: filters.ns ?? null, ...args, readsCache: rows.readsCache }))
 						: Option.none(),
-					facets.fetch ? Option.some(FetchCatalog({ key: unfilteredKey, env: null, ns: null, ...args })) : Option.none(),
+					facets.fetch ? Option.some(FetchCatalog({ key: unfilteredKey, env: null, ns: null, ...args, readsCache: facets.readsCache })) : Option.none(),
 				]),
 			}
 		},

@@ -4,14 +4,14 @@ import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
 import { formatCompact, parseRange } from "@maple/web-foldkit/ui/filters/range-format"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { accept, idle } from "../../data/slot"
+import { accept, acceptCached, idle } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import { updateCopy } from "../kit/copies"
 import { FetchNextPage, ReadClock, ReadRefreshClock, WaitDurationDebounce, WaitSearchDebounce } from "./command"
 import { nextCursor } from "./fetch-traces"
 import { clearedFilters, filtersOf } from "./filters"
-import { boundsOf, load } from "./load"
+import { boundsOf, fetchAfterCache, load } from "./load"
 import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
 
@@ -132,7 +132,7 @@ const appendPage = (model: Model, key: string, page: ReadonlyArray<TraceRow>): M
 	}))
 	return Option.match(data, {
 		onNone: () => ({ ...model, isFetchingNextPage: false }),
-		onSome: (next) => ({ ...model, isFetchingNextPage: false, traces: { key, data: AsyncData.Success({ data: next }), isPlaceholder: false } }),
+		onSome: (next) => ({ ...model, isFetchingNextPage: false, traces: { ...model.traces, key, data: AsyncData.Success({ data: next }), isPlaceholder: false } }),
 	})
 }
 
@@ -144,13 +144,23 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
 		SucceededFetchTraces: ({ key, data, fetchedAtMs }) => {
 			const isCurrent = model.traces.key === key
-			const traces = accept(model.traces, key, Result.succeed(data))
+			const traces = accept(model.traces, key, Result.succeed(data), fetchedAtMs)
 			const tracesUpdatedAtMs = isCurrent ? fetchedAtMs : model.tracesUpdatedAtMs
 			const next = { model: settleRefresh({ ...model, traces, tracesUpdatedAtMs }) }
 			// An empty list renders `SignalEmptyState`, which reads the shared signal presence.
 			return isCurrent && data.pages.every((page) => page.length === 0)
 				? { ...next, outMessage: PageOutMessage.RequestedSignalPresence() }
 				: next
+		},
+		FoundCachedTraces: ({ key, cached }) => {
+			if (model.traces.key !== key) return { model }
+			const next = { ...model, traces: acceptCached(model.traces, key, cached, cached.isFresh), tracesUpdatedAtMs: cached.updatedAtMs }
+			return { model: settleRefresh(next), commands: fetchAfterCache(next, context, "traces", cached.isFresh) }
+		},
+		FoundCachedFacets: ({ key, cached }) => {
+			if (model.facets.key !== key) return { model }
+			const next = { ...model, facets: acceptCached(model.facets, key, cached, cached.isFresh) }
+			return { model: settleRefresh(next), commands: fetchAfterCache(next, context, "facets", cached.isFresh) }
 		},
 		FailedFetchTraces: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, traces: accept(model.traces, key, Result.fail(failure)) }) }),
@@ -159,8 +169,8 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		FailedFetchNextPage: ({ key, failure }) => ({
 			model: { ...model, isFetchingNextPage: false, traces: accept(model.traces, key, Result.fail(failure)) },
 		}),
-		SucceededFetchFacets: ({ key, facets }) =>
-			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets)) }) }),
+		SucceededFetchFacets: ({ key, facets, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }) }),
 		FailedFetchFacets: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.fail(failure)) }) }),
 		ClickedRefresh: () =>
@@ -171,7 +181,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
 				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return { model: settleRefresh(refetch.model), commands: refetch.commands }
+			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
 		},
 		ChangedSearch: ({ text }) => {
 			const version = model.search.version + 1

@@ -15,11 +15,12 @@ import {
 	DATASET_HEADER,
 	FAULTS_HEADER,
 	type DatasetSummary,
+	type Faults,
 	type FixtureBackend,
 } from "./contract.ts"
 import { normalizePayload } from "./backend/call-log.ts"
 import { clerkIdentityFor, installClerkStub } from "./runtime/clerk-stub.ts"
-import { installSelfHostedSession, installTheme, selfHostedTokenFor } from "./runtime/session.ts"
+import { installLocalStorage, installSelfHostedSession, installTheme, selfHostedTokenFor } from "./runtime/session.ts"
 import { BOX_STYLE_PROPS, collectSnapshot, serializeDom, TEXT_STYLE_PROPS } from "./runtime/snapshot.ts"
 import { installDeterminism, waitForVisualQuiet } from "./runtime/stabilize.ts"
 import {
@@ -186,9 +187,26 @@ interface RouteContext {
 	readonly captureKey: string
 	/** `Scenario.faults` as JSON for `FAULTS_HEADER`. */
 	readonly faults: string | undefined
+	/** `Faults.refusals`: local server tags aborted as `connectionrefused`. */
+	readonly refusals: ReadonlyArray<string>
 	readonly blocked: string[]
 	readonly localUnmocked: string[]
 }
+
+/** The call-log tag of a local server request (`src/backend/local.ts`). */
+const localTagOf = (method: string, url: URL) =>
+	method === "POST" && url.pathname === "/local/query"
+		? "local.query"
+		: method === "GET" && url.pathname === "/local/status"
+			? "local.status"
+			: url.pathname
+
+/** Chromium's console line for a request the capture refused. */
+const REFUSED_CONSOLE_LINE = "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+
+/** The faults the backend reads from `FAULTS_HEADER`: refusals never reach it. */
+const headerFaults = (faults: Faults | undefined): string | undefined =>
+	faults === undefined ? undefined : JSON.stringify({ delays: faults.delays, failures: faults.failures })
 
 /**
  * apps/local-ui calls its server same-origin (`/local/query`, `/local/status`, OTLP on `/v1/*`), as
@@ -208,6 +226,8 @@ const handleRoute = (context: RouteContext) => async (route: Route) => {
 	const request = route.request()
 	const url = new URL(request.url())
 	if (isLocalServerPath(context.build, url)) {
+		const tag = localTagOf(request.method(), url)
+		if (context.refusals.some((prefix) => tag.startsWith(prefix))) return route.abort("connectionrefused")
 		if (context.backend === null) {
 			context.localUnmocked.push(`${request.method()} ${url.pathname}`)
 			return route.fulfill({ status: 404, body: "" })
@@ -404,6 +424,7 @@ const captureVariant = async (
 	page.on("pageerror", (error) => consoleErrors.push(`pageerror: ${error.message.slice(0, 300)}`))
 	await page.clock.setFixedTime(dataset?.now ?? NO_DATASET_NOW)
 	await installSession(page, variant.theme, authMode, dataset)
+	if (variant.scenario.localStorage !== undefined) await page.addInitScript(installLocalStorage, variant.scenario.localStorage)
 	await page.route(
 		"**/*",
 		handleRoute({
@@ -411,8 +432,8 @@ const captureVariant = async (
 			backend: options.backend,
 			dataset,
 			captureKey,
-			faults:
-				variant.scenario.faults === undefined ? undefined : JSON.stringify(variant.scenario.faults),
+			faults: headerFaults(variant.scenario.faults),
+			refusals: variant.scenario.faults?.refusals ?? [],
 			blocked,
 			localUnmocked,
 		}),
@@ -489,7 +510,8 @@ const captureVariant = async (
 				!(options.backend === null && NULL_BACKEND_CONSOLE_ERRORS.test(line)) &&
 				!injectedFailureStatuses(variant.scenario).some((status) =>
 					line.startsWith(failedResourcePrefix(status)),
-				),
+				) &&
+				!((variant.scenario.faults?.refusals ?? []).length > 0 && line.startsWith(REFUSED_CONSOLE_LINE)),
 		),
 		blockedRequests: [...new Set(blocked)],
 		unmocked: [...new Set(unmocked)],

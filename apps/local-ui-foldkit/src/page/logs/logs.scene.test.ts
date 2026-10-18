@@ -6,17 +6,22 @@ import type { PageContext } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { FetchLogs, FetchServices, FetchSeverities, FetchNextPage } from "./command"
 import { PAGE_SIZE } from "./fetch"
+import { Message as LogSheetMessage } from "../kit/log-sheet/message"
 import { Message } from "./message"
 import type { LocalLog, Model } from "./model"
 import { init, locationChanged } from "./update"
 import { update } from "./update-main"
 import { view as pageView } from "./view"
 import { ObserveLogsViewport } from "./virtualize"
+import { logKey } from "./stream"
+import { WaitChipDelay } from "./update-chips"
+import { PlaceLocalChipCard } from "./view-chip-card"
 
 const context: PageContext = {
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
 	location: { path: "/logs", search: "" },
 	rememberedRange: "1h",
+	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 }
 const NOW = Date.parse("2026-10-01T12:00:30Z")
@@ -100,11 +105,11 @@ describe("local logs", () => {
 			expectView(role("listitem", { name: "INFO storefront: pool exhausted" })).toExist(),
 		)
 		const opened = pageUpdate(loaded([log(1, "pool exhausted")]), Message.ClickedLog({ log: log(1, "pool exhausted") }))
-		expect(Option.map(opened.model.maybeDetail, (detail) => [detail.isOpen, detail.log.body])).toEqual(
+		expect(Option.map(opened.model.maybeDetail, (sheet) => [sheet.dialog.isOpen, sheet.log.body])).toEqual(
 			Option.some([true, "pool exhausted"]),
 		)
-		const closed = pageUpdate(opened.model, Message.ClosedDetail())
-		expect(Option.map(closed.model.maybeDetail, (detail) => detail.isOpen)).toEqual(Option.some(false))
+		const closed = pageUpdate(opened.model, Message.GotLogSheetMessage({ message: LogSheetMessage.ClosedSheet() }))
+		expect(Option.map(closed.model.maybeDetail, (sheet) => sheet.dialog.isOpen)).toEqual(Option.some(false))
 	})
 
 	test("switching to patterns drops the list's sheet and requests the clusters", () => {
@@ -113,5 +118,35 @@ describe("local logs", () => {
 		expect(Option.isNone(patterns.model.maybeDetail)).toBe(true)
 		expect(names(patterns.commands)).toEqual(["FetchLocalLogPatterns"])
 		expect(AsyncData.isLoading(patterns.model.patterns.data)).toBe(true)
+	})
+
+	test("resting on a chip opens its card after the delay; leaving closes it after the grace period", () => {
+		const row = { ...log(1, "payment failed"), logAttributes: { "http.status_code": "503" } }
+		const model = pageUpdate(loaded([row]), Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })).model
+		const chip = { index: 0, logKey: logKey(row), key: "http.status_code" }
+		const entered = pageUpdate(model, Message.EnteredChip({ chip }))
+		expect(names(entered.commands)).toEqual([WaitChipDelay.name])
+		const generation = entered.model.chipCard.generation
+		const shown = pageUpdate(entered.model, Message.ElapsedChipDelay({ generation })).model
+		expect(shown.chipCard.visible).toEqual(Option.some(chip))
+		scene(
+			{ update: pageUpdate, view },
+			given(shown),
+			Mount.resolve(ObserveLogsViewport, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })),
+			Mount.resolve(PlaceLocalChipCard, Message.PlacedChipCard()),
+			expectView(text("Attribute")).toExist(),
+			expectView(role("button", { name: "Copy http.status_code" })).toExist(),
+		)
+		const left = pageUpdate(shown, Message.LeftChip({ chip }))
+		const closed = pageUpdate(left.model, Message.ElapsedChipDelay({ generation: left.model.chipCard.generation })).model
+		expect(closed.chipCard.visible).toEqual(Option.none())
+	})
+
+	test("a pending open is dropped when the pointer moves on first", () => {
+		const row = { ...log(1, "payment failed"), logAttributes: { "http.status_code": "503" } }
+		const chip = { index: 0, logKey: logKey(row), key: "http.status_code" }
+		const entered = pageUpdate(loaded([row]), Message.EnteredChip({ chip })).model
+		const left = pageUpdate(entered, Message.LeftChip({ chip })).model
+		expect(pageUpdate(left, Message.ElapsedChipDelay({ generation: entered.chipCard.generation })).model.chipCard.visible).toEqual(Option.none())
 	})
 })

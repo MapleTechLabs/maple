@@ -26,7 +26,7 @@ conditions), [S3 charts](foldkit-decisions/s3-charts.md), [S4 tables](foldkit-de
 | Shell       | identical (12 scenarios, Clerk-mode menus not ported)                                                                                                                |
 | Pages       | sign-in identical; `/services` in progress as the page template                                                                                                      |
 | Coverage    | 34/81 routes on the branch, about 80 with the infra and admin branch                                                                                                 |
-| Local UI    | `apps/local-ui-foldkit` on the web-foldkit kit (`@maple/web-foldkit/*`): all 12 routes, 148 `local-*` variants identical or 0 perceptual px; `local-*` parity targets |
+| Local UI    | `apps/local-ui-foldkit` on the web-foldkit kit (`@maple/web-foldkit/*`): all 12 routes and the saved query cache, 172 `local-*` variants identical or 0 perceptual px; mobile drawers, map drag and cutover open |
 
 Legacy bug found by the harness: the infra service lens fires `workloadInfraTimeseries` once
 with an empty workload name before the workload resolves (excluded via `pageCalls`).

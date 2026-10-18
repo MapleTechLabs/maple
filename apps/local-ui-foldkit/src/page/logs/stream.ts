@@ -1,12 +1,10 @@
-import * as AttributesPanel from "@maple/web-foldkit/ui/attributes/attributes-panel"
-import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { PageContext } from "../contract"
 import { FetchNextPage } from "./command"
 import { nextCursor } from "./fetch"
 import { boundsOf } from "./load"
-import type { Detail, LocalLog, Model } from "./model"
+import type { LocalLog, Model } from "./model"
 import type { UpdateReturn } from "./update"
 import { reachesEnd } from "./virtualize"
 
@@ -49,6 +47,7 @@ export const appendPage = (model: Model, key: string, page: ReadonlyArray<LocalL
 			...model,
 			isFetchingNextPage: false,
 			logs: {
+				...model.logs,
 				key,
 				data: AsyncData.Success({ data: { pages: [...current.pages, page], hasNextPage: nextCursor(page) !== undefined } }),
 				isPlaceholder: false,
@@ -57,32 +56,4 @@ export const appendPage = (model: Model, key: string, page: ReadonlyArray<LocalL
 	})
 }
 
-export const logKey = (log: LocalLog): string =>
-	`${log.timestamp}|${log.serviceName}|${log.traceId}|${log.spanId}|${log.recordIdentity}`
-
-/** The sheet's tabs: Trace only when the log carries a trace id. */
-export const detailTabValues = (log: LocalLog): ReadonlyArray<string> =>
-	log.traceId ? ["attributes", "trace", "raw"] : ["attributes", "raw"]
-
-/**
- * `openLog`: the clicked log in the sheet. The sheet stays mounted once a log was picked, so its
- * tab and body expansion carry over; the attributes panel is keyed by log and starts over.
- */
-export const openDetail = (maybeDetail: Option.Option<Detail>, log: LocalLog): Detail =>
-	Option.match(maybeDetail, {
-		onNone: () => ({
-			log,
-			isOpen: true,
-			isBodyExpanded: false,
-			tabs: Tabs.init({ idBase: 900, values: detailTabValues(log), selected: "attributes" }),
-			attributes: AttributesPanel.init("log-detail-attributes"),
-		}),
-		onSome: (detail) => ({
-			...detail,
-			log,
-			isOpen: true,
-			tabs: { ...detail.tabs, values: detailTabValues(log) },
-			attributes:
-				logKey(detail.log) === logKey(log) ? detail.attributes : AttributesPanel.init("log-detail-attributes"),
-		}),
-	})
+export { logKey } from "../kit/log-sheet/model"

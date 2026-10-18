@@ -2,7 +2,7 @@ import type { Resources } from "../../platform/resources"
 import { toCsv, toJson } from "@maple/local-ui/lib/query-console"
 import { Option, Result } from "effect"
 import type { Command, Update } from "foldkit"
-import { accept, idle, keyOf, request } from "../../data/slot"
+import { accept, acceptCached, idle, keyOf, request } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, type PageOutMessage, replaceParams } from "../contract"
 import { DownloadText, FetchTables, ReadPlatform, RunQuery } from "./command"
@@ -19,7 +19,7 @@ export const init = (context: PageContext): Readonly<{ model: Model; commands: C
 	const tables = Option.getOrElse(request(empty, TABLES_KEY), () => empty)
 	return {
 		model: { _tag: "QueryPage", isMac: false, tables, run: RunState.Idle(), nextRunId: 0 },
-		commands: [ReadPlatform(), FetchTables({ key: TABLES_KEY, apiBase: context.env.apiBase })],
+		commands: [ReadPlatform(), FetchTables({ key: TABLES_KEY, apiBase: context.env.apiBase, readsCache: true })],
 	}
 }
 
@@ -46,13 +46,26 @@ const rowsOf = (model: Model) => (model.run._tag === "Succeeded" ? model.run.row
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		CompletedReadPlatform: ({ isMac }) => ({ model: { ...model, isMac } }),
-		SucceededFetchTables: ({ key, tables }) => ({ model: { ...model, tables: accept(model.tables, key, Result.succeed(tables)) } }),
+		SucceededFetchTables: ({ key, tables, fetchedAtMs }) =>
+			({ model: { ...model, tables: accept(model.tables, key, Result.succeed(tables), fetchedAtMs) } }),
+		FoundCachedTables: ({ key, cached }) => ({
+			model: { ...model, tables: acceptCached(model.tables, key, cached, cached.isFresh) },
+			commands: cached.isFresh || model.tables.key !== key ? [] : [FetchTables({ key, apiBase: context.env.apiBase, readsCache: false })],
+		}),
 		FailedFetchTables: ({ key, failure }) => ({ model: { ...model, tables: accept(model.tables, key, Result.fail(failure)) } }),
 		ChangedSql: ({ text }) => ({ model, outMessage: replaceParams(context.location, { sql: text }) }),
 		ClickedPickSql: ({ sql }) => ({ model, outMessage: replaceParams(context.location, { sql }) }),
 		ClickedRun: () => run(model, context),
-		// Cancelling drops the submission; the request's late answer no longer matches.
-		ClickedCancel: () => ({ model: { ...model, run: RunState.Idle() } }),
+		// `cancelQueries`: the console goes idle and the request's fiber is interrupted (aborting it).
+		ClickedCancel: () => {
+			if (model.run._tag !== "Running") return { model }
+			const { id } = model.run
+			return {
+				model: { ...model, run: RunState.Idle() },
+				commands: [RunQuery.Interrupt({ id }, (outcome) => Message.CompletedCancelRunQuery({ id, outcome }))],
+			}
+		},
+		CompletedCancelRunQuery: () => ({ model }),
 		SucceededRunQuery: ({ id, rows, elapsedMs }) =>
 			model.run._tag === "Running" && isCurrentRun(model, id)
 				? { model: { ...model, run: RunState.Succeeded({ id, sql: model.run.sql, rows, elapsedMs }) } }

@@ -18,6 +18,24 @@ export const boundsOf = (model: Model, context: PageContext): Option.Option<Time
 const keyFor = (name: string, context: PageContext, bounds: TimeBounds): string =>
 	keyOf(name, { filters: filtersOf(queryOf(context.location)), bounds: `${bounds.startTime}/${bounds.endTime}` })
 
+/** A cached result is on screen: fetch the real one (`readsCache: false`), unless it is fresh. */
+export const fetchAfterCache = (
+	model: Model,
+	context: PageContext,
+	which: "traces" | "facets",
+	isFresh: boolean,
+): ReadonlyArray<Command.Command<Message, never, Resources>> =>
+	isFresh
+		? []
+		: Option.match(boundsOf(model, context), {
+				onNone: () => [],
+				onSome: (bounds) => {
+					const args = { search: context.location.search, ...bounds, apiBase: context.env.apiBase, readsCache: false }
+					const key = model[which].key ?? ""
+					return [which === "traces" ? FetchTraces({ key, ...args, pageCount: 1 }) : FetchFacets({ key, ...args })]
+				},
+			})
+
 /**
  * Requests whatever the current filters and window need: the list (and the facets, root scope
  * only). `force` refetches keys already held, as `invalidateQueries` does.
@@ -48,8 +66,8 @@ export const load = (
 					isFetchingNextPage: Option.isSome(traces) ? false : model.isFetchingNextPage,
 				},
 				commands: Array.getSomes([
-					Option.map(traces, () => FetchTraces({ key: tracesKey, ...args, pageCount })),
-					Option.map(facets, () => FetchFacets({ key: facetsKey, ...args })),
+					Option.map(traces, () => FetchTraces({ key: tracesKey, ...args, pageCount, readsCache: model.traces.key !== tracesKey })),
+					Option.map(facets, () => FetchFacets({ key: facetsKey, ...args, readsCache: model.facets.key !== facetsKey })),
 				]),
 			}
 		},

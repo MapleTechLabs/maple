@@ -3,13 +3,13 @@ import { snapToMinute, WIDEST_RANGE } from "@maple/local-ui/lib/time"
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
 import { Option, Result } from "effect"
 import { Command } from "foldkit"
-import { accept, idle } from "../../data/slot"
+import { accept, acceptCached, idle } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage } from "../contract"
 import { updateCopy } from "../kit/copies"
 import { ReadClock, ReadRefreshClock, WaitSearchDebounce } from "./command"
 import { filtersOf } from "./fetch"
-import { load } from "./load"
+import { fetchAfterCache, load } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { appendPage, loadMore, navigate, setRange, settleRefresh, type UpdateReturn } from "./update-helpers"
@@ -58,7 +58,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		CompletedReadClock: ({ nowMs }) => load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
 		SucceededFetchSessions: ({ key, data, fetchedAtMs }) => {
 			const isCurrent = model.sessions.key === key
-			const sessions = accept(model.sessions, key, Result.succeed(data))
+			const sessions = accept(model.sessions, key, Result.succeed(data), fetchedAtMs)
 			const sessionsUpdatedAtMs = isCurrent ? fetchedAtMs : model.sessionsUpdatedAtMs
 			const next = { model: settleRefresh({ ...model, sessions, sessionsUpdatedAtMs }) }
 			// An empty list renders `SignalEmptyState`, which reads the shared signal presence.
@@ -74,9 +74,19 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		FailedFetchNextPage: ({ key, failure }) => ({
 			model: { ...model, isFetchingNextPage: false, sessions: accept(model.sessions, key, Result.fail(failure)) },
 		}),
-		SucceededFetchFacets: ({ key, facets }) => ({
-			model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets)) }),
+		SucceededFetchFacets: ({ key, facets, fetchedAtMs }) => ({
+			model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }),
 		}),
+		FoundCachedSessions: ({ key, cached }) => {
+			if (model.sessions.key !== key) return { model }
+			const next = { ...model, sessions: acceptCached(model.sessions, key, cached, cached.isFresh), sessionsUpdatedAtMs: cached.updatedAtMs }
+			return { model: settleRefresh(next), commands: fetchAfterCache(next, context, "sessions", cached.isFresh) }
+		},
+		FoundCachedFacets: ({ key, cached }) => {
+			if (model.facets.key !== key) return { model }
+			const next = { ...model, facets: acceptCached(model.facets, key, cached, cached.isFresh) }
+			return { model: settleRefresh(next), commands: fetchAfterCache(next, context, "facets", cached.isFresh) }
+		},
 		FailedFetchFacets: ({ key, failure }) => ({
 			model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.fail(failure)) }),
 		}),
@@ -88,7 +98,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
 				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return { model: settleRefresh(refetch.model), commands: refetch.commands }
+			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
 		},
 		ChangedSearch: ({ text }) => typed(model, text),
 		ClickedClearSearch: () => typed(model, ""),

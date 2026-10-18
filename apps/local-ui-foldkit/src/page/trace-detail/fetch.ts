@@ -71,7 +71,7 @@ export const fetchSpanLogs = (
 		(rows) =>
 			rows.map((row): SpanLog => {
 				const log = normalizeLog(row)
-				return { key: logKey(log), timestamp: log.timestamp, severityText: log.severityText, body: log.body }
+				return { ...log, key: logKey(log) }
 			}),
 	)
 }

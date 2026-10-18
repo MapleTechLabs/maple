@@ -1,4 +1,5 @@
-import { formatLocalDateTime, formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatDateTime, type TimeFormat } from "../kit/local-time"
 import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { getHttpInfo } from "@maple/ui/lib/http"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
@@ -15,7 +16,7 @@ import type { TraceRow } from "./model"
 
 // `TraceListRow` (apps/local-ui/src/views/trace-list-view.tsx).
 
-export const traceRow = (h: HtmlBuilder<Message>, row: TraceRow, query: URLSearchParams, nowMs: number): Html => {
+export const traceRow = (h: HtmlBuilder<Message>, row: TraceRow, query: URLSearchParams, nowMs: number, timeFormat: TimeFormat): Html => {
 	const href = hrefFor(`/traces/${encodeURIComponent(row.traceId)}`, query)
 	const httpStatusCode = getHttpInfo({
 		spanName: row.rootSpanName,
@@ -59,7 +60,7 @@ export const traceRow = (h: HtmlBuilder<Message>, row: TraceRow, query: URLSearc
 			h,
 			[formatRelativeFrom(DateTime.toEpochMillis(row.startTime), nowMs)],
 			"text-right text-xs whitespace-nowrap text-muted-foreground",
-			[h.Title(`${formatLocalDateTime(row.startTime)} (${formatUtcTitle(row.startTime)})`)],
+			[h.Title(`${formatDateTime(timeFormat, row.startTime)} (${formatUtcTitle(row.startTime)})`)],
 		),
 	])
 }

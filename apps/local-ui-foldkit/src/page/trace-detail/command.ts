@@ -1,44 +1,64 @@
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import type { CacheValue } from "../../data/cache-store"
+import { LocalLog, logKey } from "../kit/log-sheet/model"
+import { SpanAttrs, type SpanLog } from "./panel-model"
+import { SpanDetailRequest, SpanLogsRequest } from "./requests"
+import { readCached, recordCached, cachedAs, withCache } from "../../data/cached"
+import { traceCacheKey, traceFromCached, traceToCached } from "./cache"
+import { Clock, Duration, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { fetchSpanDetail, fetchSpanLogs, fetchTrace } from "./fetch"
 import { Message } from "./message"
 
 export const FetchTrace = Command.define("FetchLocalTraceDetail", {
-	args: { key: Schema.String, traceId: Schema.String, apiBase: Schema.String },
-	messages: [Message.SucceededFetchTrace, Message.FailedFetchTrace],
-	execute: ({ key, traceId, apiBase }) =>
+	args: { key: Schema.String, traceId: Schema.String, apiBase: Schema.String, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchTrace, Message.FailedFetchTrace, Message.FoundCachedTrace],
+	execute: ({ key, traceId, apiBase, readsCache }) =>
 		Effect.gen(function* () {
+			const cacheKey = traceCacheKey(traceId)
+			const maybeCached = readsCache ? yield* readCached(cacheKey, traceFromCached(traceId)) : Option.none()
+			if (Option.isSome(maybeCached)) return Message.FoundCachedTrace({ key, cached: maybeCached.value })
 			const trace = yield* fetchTrace(traceId, apiBase)
 			const fetchedAtMs = yield* Clock.currentTimeMillis
+			yield* recordCached(cacheKey, traceToCached(trace), fetchedAtMs)
 			return Message.SucceededFetchTrace({ key, trace, fetchedAtMs })
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchTrace({ key, failure })))),
 })
 
 export const FetchSpanDetail = Command.define("FetchLocalSpanDetail", {
-	args: { key: Schema.String, traceId: Schema.String, spanId: Schema.String, apiBase: Schema.String },
-	messages: [Message.SucceededFetchSpanDetail, Message.FailedFetchSpanDetail],
-	execute: ({ key, traceId, spanId, apiBase }) =>
-		fetchSpanDetail(traceId, spanId, apiBase).pipe(
-			Effect.map((detail) => Message.SucceededFetchSpanDetail({ key, detail })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchSpanDetail({ key, failure }))),
-		),
+	args: { ...SpanDetailRequest.fields, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchSpanDetail, Message.FailedFetchSpanDetail, Message.FoundCachedSpanDetail],
+	execute: ({ readsCache, ...request }) =>
+		withCache({
+			key: ["local", "span-detail", request.traceId, request.spanId],
+			readsCache,
+			fromCached: cachedAs(SpanAttrs),
+			toCached: (detail: SpanAttrs) => detail,
+			fetch: fetchSpanDetail(request.traceId, request.spanId, request.apiBase),
+			found: (cached) => Message.FoundCachedSpanDetail({ request, cached }),
+			succeeded: (detail, fetchedAtMs) => Message.SucceededFetchSpanDetail({ key: request.key, detail, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSpanDetail({ key: request.key, failure })))),
 })
 
+/** Legacy caches the rows as `LocalLog`s; the panel keeps each with its `logKey`. */
+const spanLogsFromCached = (value: CacheValue): Option.Option<ReadonlyArray<SpanLog>> =>
+	Option.map(cachedAs(Schema.Array(LocalLog))(value), (logs) => logs.map((log) => ({ ...log, key: logKey(log) })))
+
 export const FetchSpanLogs = Command.define("FetchLocalSpanLogs", {
-	args: {
-		key: Schema.String,
-		traceId: Schema.String,
-		spanId: Schema.String,
-		spanStartTime: Schema.String,
-		spanDurationMs: Schema.Number,
-		apiBase: Schema.String,
-	},
-	messages: [Message.SucceededFetchSpanLogs, Message.FailedFetchSpanLogs],
-	execute: ({ key, traceId, spanId, spanStartTime, spanDurationMs, apiBase }) =>
-		fetchSpanLogs(traceId, spanId, spanStartTime, spanDurationMs, apiBase).pipe(
-			Effect.map((logs) => Message.SucceededFetchSpanLogs({ key, logs })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchSpanLogs({ key, failure }))),
-		),
+	args: { ...SpanLogsRequest.fields, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchSpanLogs, Message.FailedFetchSpanLogs, Message.FoundCachedSpanLogs],
+	execute: ({ readsCache, ...request }) =>
+		withCache({
+			key: ["local", "span-logs", request.traceId, request.spanId, request.spanStartTime, request.spanDurationMs],
+			readsCache,
+			fromCached: spanLogsFromCached,
+			toCached: (logs: ReadonlyArray<SpanLog>) => logs.map(({ key: _key, ...log }) => log),
+			fetch: Effect.map(
+				fetchSpanLogs(request.traceId, request.spanId, request.spanStartTime, request.spanDurationMs, request.apiBase),
+				(logs): ReadonlyArray<SpanLog> => logs,
+			),
+			found: (cached) => Message.FoundCachedSpanLogs({ request, cached }),
+			succeeded: (logs, fetchedAtMs) => Message.SucceededFetchSpanLogs({ key: request.key, logs, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSpanLogs({ key: request.key, failure })))),
 })
 
 /** `useCopy`: the clipboard write behind every copy control of the span panel. */

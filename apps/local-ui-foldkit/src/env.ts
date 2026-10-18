@@ -7,6 +7,7 @@ import {
 import { DEFAULT_RANGE, isRangeKey } from "@maple/local-ui/lib/time"
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema } from "effect"
+import type { TimeFormat } from "./page/kit/local-time"
 
 /**
  * Where this page reaches its server (apps/local-ui/src/lib/constants.ts), read once from
@@ -46,3 +47,9 @@ export type Theme = typeof Theme.Type
 export const readTheme: Effect.Effect<Theme> = Effect.sync(() =>
 	window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark",
 )
+
+/** The locale and zone the timestamps are shown in, read once with the other flags. */
+export const readTimeFormat: Effect.Effect<TimeFormat> = Effect.sync(() => {
+	const resolved = new Intl.DateTimeFormat().resolvedOptions()
+	return { locale: resolved.locale, timeZone: resolved.timeZone }
+})

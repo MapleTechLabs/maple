@@ -8,15 +8,7 @@ import type { LocalLog } from "./model"
 
 const VISIBLE_CHIPS = 3
 const MAX_VALUE_CHARS = 24
-const SEVERITY_NUMBER_LABELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"] as const
-
-/** copied: `severityLabel` (packages/ui/src/components/logs/severity-badge.tsx, a React module). */
-export const severityLabel = (severityText: string, severityNumber?: number): string => {
-	if (severityText.trim() !== "") return severityText
-	if (severityNumber !== undefined && severityNumber >= 1 && severityNumber <= 24)
-		return SEVERITY_NUMBER_LABELS[Math.floor((severityNumber - 1) / 4)] ?? "UNSET"
-	return "UNSET"
-}
+export { severityLabel } from "../kit/log-sheet/parts"
 
 export interface RowChip {
 	readonly key: string

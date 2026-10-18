@@ -7,6 +7,7 @@ import { LoadFailure } from "./data/local-query"
 import { PresenceResult } from "./data/signal-presence"
 import { Copies } from "./page/kit/copies"
 import { LocalEnv, Theme } from "./env"
+import { TimeFormat } from "./page/kit/local-time"
 import { PageModel } from "./page/registry"
 import { AppRoute, Location } from "./route"
 import { ServerState } from "./server/state"
@@ -29,6 +30,8 @@ export const Model = Schema.Struct({
 	/** `useRange`'s remembered range for pages opened without one. */
 	rememberedRange: Schema.String,
 	theme: Theme,
+	/** The locale and zone timestamps render in (Flags). */
+	timeFormat: TimeFormat,
 	isSidebarOpen: Schema.Boolean,
 	isSidebarOpenMobile: Schema.Boolean,
 	maybeServer: Schema.Option(ServerState),
@@ -40,6 +43,10 @@ export const Model = Schema.Struct({
 	installTabs: Tabs.Model,
 	/** `useSignalPresence`'s shared query (`["local", "signal-presence"]`). */
 	presence: AsyncData.Schema(PresenceResult, LoadFailure).schema,
+	/** A refresh invalidated the presence read: the next request fetches even inside `staleTime`. */
+	isPresenceStale: Schema.Boolean,
+	/** `useShownData().hasCache`: a result was saved or loaded, so a gone server keeps the views. */
+	hasCache: Schema.Boolean,
 	/** The connect popover's copy buttons. */
 	copies: Copies,
 	toasts: Toast.Model,

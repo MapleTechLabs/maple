@@ -1,4 +1,5 @@
-import { formatLocalDateTime, formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatDateTime, type TimeFormat } from "../kit/local-time"
 import { cacheResultStyles, getCacheInfo } from "@maple/ui/lib/cache"
 import { formatDuration } from "@maple/ui/lib/format"
 import { getSpanStatusBadgeClass } from "@maple/ui/lib/span-kind"
@@ -112,7 +113,7 @@ const heading = (h: H, text: string): Html => h.h4([h.Class("text-xs font-medium
 const idRow = (h: H, model: Model, label: string, id: string, value: string): Html =>
 	keyValue(h, { label, mono: true }, [copyableValue(h, model, { id, value }, [value])])
 
-export type DetailsInputs = Readonly<{ color: string; attributes: () => ReadonlyArray<Html> }>
+export type DetailsInputs = Readonly<{ color: string; attributes: () => ReadonlyArray<Html>; timeFormat: TimeFormat }>
 
 /** The Details tab: timing, identifiers, then the attribute sections the page builds. */
 export const detailsView = Submodel.defineView<Model, Message, DetailsInputs>((model, inputs, h) => {
@@ -129,7 +130,7 @@ export const detailsView = Submodel.defineView<Model, Message, DetailsInputs>((m
 						keyValue(h, { label: "Start time", mono: true }, [
 							h.span(
 								[h.Title(formatUtcTitle(span.startTime))],
-								[copyableValue(h, model, { id: "start-time", value: span.startTime }, [formatLocalDateTime(span.startTime)])],
+								[copyableValue(h, model, { id: "start-time", value: span.startTime }, [formatDateTime(inputs.timeFormat, span.startTime)])],
 							),
 						]),
 					]),

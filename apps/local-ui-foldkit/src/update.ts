@@ -5,25 +5,16 @@ import * as Toast from "@maple/web-foldkit/ui/toast"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { UrlRequest } from "foldkit/navigation"
-import { ApplyTheme, LoadExternal, Navigate, ProbeServer, SaveSidebarState, WaitBeforeProbe } from "./command"
+import { ApplyTheme, LoadExternal, Navigate, SaveSidebarState, WaitBeforeProbe } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hashOf, locationOf, routeOf, trackVisit } from "./navigation"
 import { updateCopy } from "./page/kit/copies"
 import { pageKeyOf } from "./page/registry"
 import { nextProbeDelayMs, nextServerState } from "./server/derive"
-import { enterLocation, type RootReturn, updatePageMessage } from "./update-page"
+import { enterLocation, probe, retryStaleData, type RootReturn, updatePageMessage } from "./update-page"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
-
-/** Start a probe now, retiring any pending timer. */
-const probe = (model: Model): RootReturn =>
-	model.probe.isInFlight
-		? { model }
-		: {
-				model: { ...model, probe: { isInFlight: true, version: model.probe.version + 1 } },
-				commands: [ProbeServer({ apiBase: model.env.apiBase })],
-			}
 
 const toggleSidebar = (model: Model): RootReturn => {
 	const isOpen = !model.isSidebarOpen
@@ -80,6 +71,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		},
 		ElapsedProbeDelay: ({ version }) => (version === model.probe.version ? probe(model) : { model }),
 		ClickedRetryConnection: () => probe(model),
+		ClickedRetryStaleData: () => retryStaleData(model),
 		ClickedToggleSidebar: () => toggleSidebar(model),
 		PressedSidebarShortcut: () => toggleSidebar(model),
 		CompletedSaveSidebarState: () => ({ model }),

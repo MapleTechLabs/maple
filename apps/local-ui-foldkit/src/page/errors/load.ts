@@ -39,7 +39,7 @@ export const loadCard = (model: Model, context: PageContext, fingerprintHash: st
 		onSome: (traces) => ({
 			model: { ...model, cards: Record.set(model.cards, fingerprintHash, { ...card, traces }) },
 			commands: [
-				FetchTraces({ key, fingerprintHash, search: context.location.search, ...bounds, apiBase: context.env.apiBase }),
+				FetchTraces({ key, fingerprintHash, search: context.location.search, ...bounds, apiBase: context.env.apiBase, readsCache: card.traces.key !== key }),
 			],
 		}),
 	})
@@ -67,9 +67,9 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 					facets: Option.getOrElse(facets, () => model.facets),
 				},
 				commands: Array.getSomes([
-					Option.map(summary, () => FetchSummary({ key: summaryKey, ...args })),
-					Option.map(byType, () => FetchByType({ key: byTypeKey, ...args })),
-					Option.map(facets, () => FetchFacets({ key: facetsKey, ...args })),
+					Option.map(summary, () => FetchSummary({ key: summaryKey, ...args, readsCache: model.summary.key !== summaryKey })),
+					Option.map(byType, () => FetchByType({ key: byTypeKey, ...args, readsCache: model.byType.key !== byTypeKey })),
+					Option.map(facets, () => FetchFacets({ key: facetsKey, ...args, readsCache: model.facets.key !== facetsKey })),
 				]),
 			}
 			return Object.keys(model.cards).reduce<Step>((step, fingerprintHash) => {

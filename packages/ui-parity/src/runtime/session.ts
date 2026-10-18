@@ -43,3 +43,8 @@ export const installSelfHostedSession = (token: string | null) => {
 export const installTheme = (theme: "light" | "dark") => {
 	window.localStorage.setItem("maple-theme", theme)
 }
+
+/** `Scenario.localStorage`, written before the app's first script runs. */
+export const installLocalStorage = (entries: Readonly<Record<string, string>>) => {
+	Object.entries(entries).forEach(([key, value]) => window.localStorage.setItem(key, value))
+}

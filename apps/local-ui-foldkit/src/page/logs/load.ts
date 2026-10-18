@@ -53,11 +53,32 @@ export const load = (
 					isFetchingNextPage: Option.isSome(logs) ? false : model.isFetchingNextPage,
 				},
 				commands: Array.getSomes([
-					Option.map(logs, () => FetchLogs({ key: logsKey, ...args, pageCount })),
-					Option.map(patterns, () => FetchPatterns({ key: patternsKey, ...args })),
-					Option.map(services, () => FetchServices({ key: servicesKey, ...args })),
-					Option.map(severities, () => FetchSeverities({ key: severitiesKey, ...args })),
+					Option.map(logs, () => FetchLogs({ key: logsKey, ...args, pageCount, readsCache: model.logs.key !== logsKey })),
+					Option.map(patterns, () => FetchPatterns({ key: patternsKey, ...args, readsCache: model.patterns.key !== patternsKey })),
+					Option.map(services, () => FetchServices({ key: servicesKey, ...args, readsCache: model.services.key !== servicesKey })),
+					Option.map(severities, () => FetchSeverities({ key: severitiesKey, ...args, readsCache: model.severities.key !== severitiesKey })),
 				]),
 			}
 		},
 	})
+
+type CachedSlot = "logs" | "patterns" | "services" | "severities"
+
+/** A cached result is on screen: fetch the real one (`readsCache: false`), unless it is fresh. */
+export const fetchAfterCache = (
+	model: Model,
+	context: PageContext,
+	which: CachedSlot,
+	isFresh: boolean,
+): ReadonlyArray<Command.Command<Message, never, Resources>> =>
+	isFresh
+		? []
+		: Option.match(boundsOf(model, context), {
+				onNone: () => [],
+				onSome: (bounds) => {
+					const args = { key: model[which].key ?? "", search: context.location.search, ...bounds, apiBase: context.env.apiBase, readsCache: false }
+					if (which === "logs") return [FetchLogs({ ...args, pageCount: 1 })]
+					if (which === "patterns") return [FetchPatterns(args)]
+					return [which === "services" ? FetchServices(args) : FetchSeverities(args)]
+				},
+			})
