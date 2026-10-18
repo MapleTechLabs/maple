@@ -122,7 +122,7 @@ const timeLabel = (model: Model): string =>
 export const toolbar = (h: H, model: Model, context: PageContext): Html => {
 	const timeZone = context.timeZone
 	const isEdit = isEditing(model)
-	const isReadOnly = model.persistenceError !== null
+	const isReadOnly = model.persistenceError !== null || model.history.previewed !== null
 	return h.div(
 		[h.Class("flex flex-wrap items-center justify-end gap-2 @min-[720px]/page:gap-3")],
 		[

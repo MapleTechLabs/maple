@@ -1,7 +1,7 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
+import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
@@ -26,6 +26,8 @@ import * as VariablesManagerView from "../kit/variables-manager/view"
 import { widgetPicker } from "./picker"
 import { toolbar } from "./view-toolbar"
 import { sectionDialogs } from "./view-sections"
+import { historyPanel, previewBanner } from "./view-history"
+import { errorState } from "../../../ui/error-state"
 
 // `DashboardViewPage` (apps/web/src/routes/dashboards/$dashboardId.tsx).
 
@@ -33,7 +35,7 @@ type H = HtmlBuilder<Message>
 
 /** `InlineEditableTitle`: the heading, or its input while renaming. */
 const title = (h: H, model: Model, name: string): Html => {
-	const isReadOnly = model.persistenceError !== null
+	const isReadOnly = model.persistenceError !== null || model.history.previewed !== null
 	if (model.titleDraft !== null && !isReadOnly)
 		return h.form(
 			[h.OnSubmit(Message.SubmittedTitle())],
@@ -218,8 +220,26 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 	if (model.status === "Missing" || model.document === null) return [notFound(h, model.dashboardId)]
 	const document = model.document
 	const isBlank = document.widgets.length === 0 && (document.sections?.length ?? 0) === 0
+	const banner = model.persistenceError === null ? [] : [persistenceBanner(h, model.persistenceError)]
+	const previewed = model.history.previewed
+	if (previewed !== null) {
+		const clock = { nowMs: model.nowMs ?? 0, timeZone }
+		// `PreviewedCanvas`: the snapshot through the sectioned canvas, read-only.
+		const snapshot = AsyncData.match(model.history.snapshot, {
+			onIdle: () => viewSkeleton(h),
+			onLoading: () => viewSkeleton(h),
+			onFailure: (failure) => errorState(h, { failure, title: "Couldn't load version snapshot" }),
+			onSuccess: (snap) =>
+				dashboardSections(h, { model: { ...model, document: snap }, timeZone, variables: variablesOf(model, context).values }, snap),
+			onRefreshing: (snap) =>
+				dashboardSections(h, { model: { ...model, document: snap }, timeZone, variables: variablesOf(model, context).values }, snap),
+			onStale: ({ data }) =>
+				dashboardSections(h, { model: { ...model, document: data }, timeZone, variables: variablesOf(model, context).values }, data),
+		})
+		return [...banner, h.div([], [...previewBanner(h, model, previewed, clock), snapshot])]
+	}
 	return [
-		...(model.persistenceError === null ? [] : [persistenceBanner(h, model.persistenceError)]),
+		...banner,
 		isBlank
 			? blankDashboard(h, model.persistenceError !== null)
 			: dashboardSections(h, { model, timeZone, variables: variablesOf(model, context).values }, document),
@@ -237,6 +257,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					: {
 							titleContent: title(h, model, model.document.name),
 							actions: toolbar(h, model, inputs.context),
+							...(model.history.isOpen
+								? {
+										rightPanel: historyPanel(h, model, {
+											nowMs: model.nowMs ?? 0,
+											timeZone: inputs.context.timeZone,
+										}),
+									}
+								: undefined),
 						},
 				body(h, model, inputs.context),
 			),

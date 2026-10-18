@@ -9,6 +9,7 @@ import { alertWriteEndpoints } from "./ops/alert-writes.ts"
 import { alertEndpoints } from "./ops/alerts.ts"
 import { anomalyDatasetEndpoints } from "./ops/anomalies.ts"
 import { dashboardEndpoints, opsDashboards } from "./ops/dashboards.ts"
+import { dashboardHistoryEndpoints } from "./ops/dashboard-history.ts"
 import { investigationDatasetEndpoints, investigationRows } from "./ops/investigations.ts"
 import { miscDatasetEndpoints, miscEndpoints } from "./ops/misc.ts"
 import { releaseEndpoints } from "./ops/releases.ts"
@@ -80,6 +81,7 @@ export const fixtureArea: FixtureArea = {
 			...webAnalyticsEndpoints(warehouse),
 			...replayEndpoints(warehouse),
 			...dashboardEndpoints(warehouse),
+			...dashboardHistoryEndpoints,
 			...releaseEndpoints(warehouse),
 			...miscEndpoints,
 			...onAcmeOps({

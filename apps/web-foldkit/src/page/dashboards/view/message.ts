@@ -13,6 +13,8 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as TagEditor from "../kit/tag-editor"
 import * as VariablesManager from "../kit/variables-manager/model"
 import { WidgetFailure } from "../kit/widget-data"
+import { LoadFailure } from "../../../data/load-failure"
+import { VersionRow } from "./history"
 
 /** A write's outcome: the failure is the message the persistence banner shows. */
 const WriteResult = Schema.Result(Schema.Void, Schema.String)
@@ -54,6 +56,15 @@ export const Message = defineMessageUnion({
 	ClickedChartStyle: { chartId: Schema.String },
 	GotTagEditorMessage: { message: TagEditor.Message },
 	GotVariablesManagerMessage: { message: VariablesManager.Message },
+	ClickedCloseHistory: {},
+	CompletedFetchVersions: { result: Schema.Result(Schema.Array(VersionRow), LoadFailure) },
+	ClickedVersion: { versionId: Schema.String },
+	CompletedFetchSnapshot: { versionId: Schema.String, result: Schema.Result(DashboardDocument, LoadFailure) },
+	ClickedCancelPreview: {},
+	ClickedRestoreVersion: {},
+	GotRestoreDialogMessage: { message: Dialog.Message },
+	ConfirmedRestore: {},
+	CompletedRestore: { versionNumber: Schema.Number, error: Schema.NullOr(Schema.String) },
 	UpdatedOrgTags: { tags: Schema.Array(Schema.String) },
 	GotPickerTabsMessage: { message: Tabs.Message },
 	PressedGrip: { widgetId: Schema.String, clientX: Schema.Number, clientY: Schema.Number },

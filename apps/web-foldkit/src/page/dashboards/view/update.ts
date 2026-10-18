@@ -41,6 +41,8 @@ import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
 import { sectionStep } from "./section-update"
 import { variableStep } from "./variable-update"
+import { historyStep, openHistory } from "./history-update"
+import { initHistory } from "./history"
 import * as VariablesManagerUpdate from "../kit/variables-manager/update"
 import { managerStep, openVariablesManager } from "./variables-manager"
 import { SectionEdit } from "./section-edit"
@@ -79,6 +81,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		pickerDialog: Dialog.init("dashboard-widget-picker", "dialog"),
 		tagEditor: TagEditor.init("dashboard-view-tags-dialog"),
 		variablesManager: VariablesManagerUpdate.init("dashboard-variables-dialog"),
+		history: initHistory(),
 		orgTags: [],
 		pickerTabs: Tabs.init({ idBase: 300, values: PICKER_TABS.map((tab) => tab.id), selected: "all" }),
 		gesture: null,
@@ -305,7 +308,7 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
 }
 
-/** The "More dashboard actions" menu. TODO(toolbar): share, history. */
+/** The "More dashboard actions" menu. TODO(toolbar): share. */
 const moreAction = (model: Model, context: PageContext, value: string): Return => {
 	switch (value) {
 		case "tags": {
@@ -316,6 +319,8 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 				commands: Command.mapMessages(opened.commands ?? [], wrapTagEditor),
 			}
 		}
+		case "history":
+			return openHistory(model)
 		case "variables":
 			return model.persistenceError === null ? openVariablesManager(model) : { model }
 		case "add-group":
@@ -538,7 +543,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedTitle: () =>
-			model.persistenceError !== null || model.document === null
+			model.persistenceError !== null || model.document === null || model.history.previewed !== null
 				? { model }
 				: { model: { ...model, titleDraft: model.document.name } },
 		ChangedTitleDraft: ({ value }) => ({ model: { ...model, titleDraft: value } }),
@@ -628,6 +633,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CommittedVariableDraft: (m) => variableStep(model, context, m),
 		ClickedManageVariables: () => openVariablesManager(model),
 		GotVariablesManagerMessage: ({ message: inner }) => managerStep(model, context, inner),
+		ClickedCloseHistory: (m) => historyStep(model, m),
+		CompletedFetchVersions: (m) => historyStep(model, m),
+		ClickedVersion: (m) => historyStep(model, m),
+		CompletedFetchSnapshot: (m) => historyStep(model, m),
+		ClickedCancelPreview: (m) => historyStep(model, m),
+		ClickedRestoreVersion: (m) => historyStep(model, m),
+		GotRestoreDialogMessage: (m) => historyStep(model, m),
+		ConfirmedRestore: (m) => historyStep(model, m),
+		CompletedRestore: (m) => historyStep(model, m),
 		ClickedSectionChevron: (m) => sectionStep(model, context, m),
 		ClickedSectionTab: (m) => sectionStep(model, context, m),
 		ClickedAddSectionWidget: (m) => sectionStep(model, context, m),
