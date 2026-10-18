@@ -2,6 +2,7 @@ import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "../../../data/load-failure"
 import type { PageContext } from "../../contract"
 import {
 	FetchDetail,
@@ -185,5 +186,20 @@ describe("replay detail", () => {
 			expectView(text("Maria Garcia")).toExist(),
 			expectView(text("on the page")).toExist(),
 		)
+	})
+
+	test("a trace whose spans failed asks again when it is reopened; loaded spans are kept", () => {
+		const traceId = "0af7651916cd43dd8448eb211c80319c"
+		const toggle = Message.ToggledTraceSpans({ traceId, startTime: "2026-10-01 12:00:00" })
+		const opened = pageUpdate(loaded(), toggle)
+		expect(names(opened.commands)).toEqual(["FetchReplayTraceSpans"])
+		const failed = pageUpdate(
+			opened.model,
+			Message.CompletedFetchSpans({ traceId, result: Result.fail(toLoadFailure(new Error("down"))) }),
+		).model
+		const reopened = pageUpdate(pageUpdate(failed, toggle).model, toggle)
+		expect(names(reopened.commands)).toEqual(["FetchReplayTraceSpans"])
+		const succeeded = pageUpdate(reopened.model, Message.CompletedFetchSpans({ traceId, result: Result.succeed([]) })).model
+		expect(names(pageUpdate(pageUpdate(succeeded, toggle).model, toggle).commands)).toEqual([])
 	})
 })

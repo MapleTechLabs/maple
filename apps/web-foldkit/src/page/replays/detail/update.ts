@@ -309,7 +309,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const expandedTraces = isOpen
 				? model.expandedTraces.filter((id) => id !== traceId)
 				: [...model.expandedTraces, traceId]
-			const needsSpans = !isOpen && model.spans[traceId] === undefined
+			// The lane remounts on open, so legacy's atom asks again after a failure.
+			const cached = model.spans[traceId]
+			const needsSpans = !isOpen && (cached === undefined || AsyncData.isFailure(cached))
 			return {
 				model: {
 					...model,
