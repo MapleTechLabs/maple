@@ -1,5 +1,6 @@
 import { Option } from "effect"
 import { Submodel } from "foldkit"
+import type { Html } from "foldkit/html"
 import type { Message, Model } from "./chart"
 import type { ChartSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
@@ -14,6 +15,8 @@ export interface FixedMetricChartInputs {
 	readonly ariaLabel: string
 	readonly spec: Extract<ChartSpec, { readonly _tag: "FixedMetric" }>
 	readonly className?: string
+	/** `legend="visible"`: the series row under the plot (`TimeseriesLegend`). */
+	readonly legend?: Html
 }
 
 export const view = Submodel.defineView<Model, Message, FixedMetricChartInputs>((model, inputs, h) =>
@@ -22,6 +25,7 @@ export const view = Submodel.defineView<Model, Message, FixedMetricChartInputs>(
 		spec: inputs.spec,
 		ariaLabel: inputs.ariaLabel,
 		className: inputs.className,
+		legend: inputs.legend,
 		tooltipBody: (portal) =>
 			Option.flatMap(model.tooltip, (tooltip) =>
 				tooltip._tag === "Bucket"
