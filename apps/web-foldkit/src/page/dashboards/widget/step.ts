@@ -1,42 +1,26 @@
 import { IsoDateTimeString, isPanelType, type PanelType } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import { toQueryBuilderDataSource } from "@maple/query-model"
 import { Option, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "../../../charts/chart"
 import * as Keyed from "../../../data/keyed"
-import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 import * as Select from "../../../ui/select"
 import type { PageContext } from "../../contract"
+import { applyQueryChange } from "../../kit/query-builder/change"
+import * as QueryPanel from "../../kit/query-builder/panel"
 import { GenerateId } from "./command"
-import { setAggregation, setDataSource, updateQuery, withRootOnly } from "./edits"
+import { removeQuery, setAggregation, setDataSource, updateQuery } from "./edits"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { editState, type Return } from "./update"
+import { editState, type Return, runPreview } from "./update"
 
-// The submodel steps: selects, group-by chips, the leave dialog, and the dashboard range picker.
+// The submodel steps: selects, the query panels, the leave dialog, and the dashboard range picker.
 
-/** A select's value written into the state, by which select it is (`<field>:<query id>`). */
+/** A rail select's value written into the state, by which select it is. */
 const applySelectValue = (state: EditorState, id: string, value: string): EditorState => {
-	const [field = "", queryId = ""] = id.split(":")
-	switch (field) {
-		case "source": {
-			const source = toQueryBuilderDataSource(value)
-			return source === null ? state : setDataSource(state, queryId, source)
-		}
-		case "spans":
-			return updateQuery(state, queryId, (query) => ({
-				...query,
-				whereClause: withRootOnly(query.whereClause, value === "root"),
-			}))
-		case "aggregation":
-			return setAggregation(state, queryId, value)
-		case "orderDirection":
-			return value === "asc" || value === "desc"
-				? updateQuery(state, queryId, (query) => ({ ...query, orderByDirection: value }))
-				: state
+	switch (id) {
 		case "unit":
 			return { ...state, unit: value === "duration" ? "duration_ms" : value }
 		case "comparison":
@@ -64,24 +48,29 @@ export const selectStep = (
 	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
 }
 
-export const groupByStep = (
-	model: Model,
-	context: PageContext,
-	queryId: string,
-	message: Combobox.Message,
-): Return => {
-	const current = model.groupBys[queryId] ?? Combobox.init(`group-by-${queryId}`, "multiple")
-	const next = Combobox.update(current, message)
-	const lifted: Model = { ...model, groupBys: { ...model.groupBys, [queryId]: next.model } }
+/** A query panel edit; source and aggregation also move the inferred unit. */
+const applyPanelEdit = (state: EditorState, queryId: string, change: QueryPanel.OutMessage): EditorState => {
+	if (change._tag !== "ChangedQuery") return change._tag === "ClickedRemove" ? removeQuery(state, queryId) : state
+	const inner = change.change
+	if (inner._tag === "SetSource") return setDataSource(state, queryId, inner.source)
+	if (inner._tag === "SetAggregation") return setAggregation(state, queryId, inner.aggregation)
+	return updateQuery(state, queryId, (query) => applyQueryChange(query, inner))
+}
+
+export const queryPanelStep = (model: Model, context: PageContext, message: QueryPanel.Message): Return => {
+	const next = QueryPanel.update(model.queryPanels, message)
+	const lifted: Model = { ...model, queryPanels: next.model }
 	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
-		Message.GotGroupByMessage({ queryId, message: inner }),
+		Message.GotQueryPanelMessage({ message: inner }),
 	)
-	if (next.outMessage === undefined || next.outMessage._tag !== "ChangedSelection")
-		return { model: lifted, commands }
-	const groupBy = [...next.outMessage.selected]
-	const edited = editState(lifted, context, (state) =>
-		updateQuery(state, queryId, (query) => ({ ...query, groupBy })),
-	)
+	const out = next.outMessage
+	if (out === undefined) return { model: lifted, commands }
+	if (out._tag === "PressedWhereEnter") {
+		const ran = runPreview(lifted, context)
+		return { ...ran, commands: [...commands, ...(ran.commands ?? [])] }
+	}
+	if (out._tag === "ClickedClone") return { model: lifted, commands: [...commands, ...(generate("cloneQuery", out.queryId) ?? [])] }
+	const edited = editState(lifted, context, (state) => applyPanelEdit(state, out.queryId, out))
 	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
 }
 

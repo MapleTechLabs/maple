@@ -6,10 +6,10 @@ import { ThemeColors } from "../../../charts/theme-colors"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import { DashboardWidgetSearch } from "../../../route/search"
-import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
+import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
@@ -50,11 +50,10 @@ export const Model = Schema.Struct({
 	chartRuntime: ChartRuntime,
 	timePicker: TimeRangePicker.Model,
 	sourceTabs: Tabs.Model,
-	/** Every select on the page, by id: a query's source, spans and aggregation; unit; comparison. */
+	/** The rail's selects, by id: unit and comparison. */
 	selects: Schema.Record(Schema.String, Select.Model),
-	/** A query's group-by chips, by query id. */
-	groupBys: Schema.Record(Schema.String, Combobox.Model),
-	collapsed: Schema.Array(Schema.String),
+	/** The query panels' selects, group-by chips and collapsed set. */
+	queryPanels: QueryPanel.Model,
 	/** `AutocompleteValuesProvider lazy`: the lookups start once the query editor takes focus. */
 	isAutocompleteActive: Schema.Boolean,
 	autocomplete: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), LoadFailure)),

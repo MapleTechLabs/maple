@@ -103,12 +103,16 @@ const arrowTarget = (
 
 export const labelId = labelIdOf
 
-/** `<Radio>`: the `role="radio"` span, its indicator while checked, and the hidden native radio. */
+/**
+ * `<Radio>`: the `role="radio"` span, its indicator while checked, and the hidden native radio.
+ * `primitive` is `RadioPrimitive.Root` with its own classes and children (no label, slot or indicator).
+ */
 export const radio = <ParentMessage>(
 	h: HtmlBuilder<ParentMessage>,
 	config: RadioGroupViewConfig<ParentMessage>,
 	value: string,
 	className?: string,
+	primitive?: Readonly<{ children: ReadonlyArray<Html | string> }>,
 ): ReadonlyArray<Html> => {
 	const item = config.items.find((candidate) => candidate.value === value)
 	if (item === undefined) return []
@@ -123,12 +127,12 @@ export const radio = <ParentMessage>(
 				h.Id(item.id),
 				h.Role("radio"),
 				h.AriaChecked(checked),
-				h.AriaLabelledBy(labelIdOf(item.inputId)),
+				...(primitive === undefined ? [h.AriaLabelledBy(labelIdOf(item.inputId))] : []),
 				...(isDisabled ? [h.AriaDisabled(true), h.DataAttribute("disabled", "")] : []),
-				h.Class(cn(radioStyles, className)),
+				h.Class(primitive === undefined ? cn(radioStyles, className) : (className ?? "")),
 				stateAttribute,
 				...(checked ? [h.DataAttribute("composite-item-active", "")] : []),
-				h.DataAttribute("slot", "radio"),
+				...(primitive === undefined ? [h.DataAttribute("slot", "radio")] : []),
 				h.Tabindex(isTabStop ? 0 : -1),
 				...(isDisabled
 					? []
@@ -145,7 +149,9 @@ export const radio = <ParentMessage>(
 							),
 						]),
 			],
-			checked
+			primitive !== undefined
+				? primitive.children
+				: checked
 				? [
 						h.span([
 							h.Class(radioIndicatorStyles),

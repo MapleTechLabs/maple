@@ -46,6 +46,11 @@ export type MenuItemEntry = Readonly<{
 	/** Base UI's `disabled`: shown, not highlightable or selectable. */
 	isDisabled?: boolean
 	className?: string
+	/**
+	 * The item's children when they are more than icon and label (a logo, a truncated name, a hint).
+	 * Static markup: built by the parent, with no handlers of its own.
+	 */
+	content?: ReadonlyArray<Html | string>
 }>
 
 /** The menu's content, as data: `update` addresses highlightable entries by document order. */
@@ -139,7 +144,9 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 					isDisabled: entry.isDisabled,
 					className: entry.className,
 				},
-				[...(entry.icon === undefined ? [] : [icon(h, entry.icon)]), entry.label, ...shortcutOf(h, entry)],
+				entry.content === undefined
+					? [...(entry.icon === undefined ? [] : [icon(h, entry.icon)]), entry.label, ...shortcutOf(h, entry)]
+					: entry.content,
 			)
 		case "Group": {
 			const labelId = `${model.id}-group-${index}`

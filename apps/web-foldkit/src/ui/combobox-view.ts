@@ -321,6 +321,11 @@ export type ChipsViewInputs = Readonly<{
 	placeholder: string
 	emptyText: string
 	className?: string
+	/**
+	 * `MultiSelectCombobox disabled`: the field stays mounted, dimmed and inert, so cards holding
+	 * several conditionally disabled pickers never reflow.
+	 */
+	isDisabled?: boolean
 	/** Places the chips field and, while open, the hidden input and the portal. */
 	toView: (parts: ReadonlyArray<Html>) => Html
 }>
@@ -356,10 +361,12 @@ const chip = (h: H, value: string, isOpen: boolean): Html =>
 export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((model, inputs, h) => {
 	const chipsSelector = `[data-slot=combobox-chips]:has(> #${inputId(model.id)})`
 	const isOpen = isMounted(model.isOpen, model.animation)
+	const isDisabled = inputs.isDisabled ?? false
 	const chips = h.div(
 		[
 			h.Key("chips"),
-			h.Class(cn(C.comboboxChipsStyles, inputs.className)),
+			...(isDisabled ? [h.AriaDisabled(true)] : []),
+			h.Class(cn(C.comboboxChipsStyles, isDisabled && "pointer-events-none opacity-60", inputs.className)),
 			h.DataAttribute("slot", "combobox-chips"),
 			// Base UI's chips are a toolbar once there is a chip to move between.
 			...(model.selected.length === 0 ? [] : [h.Role("toolbar")]),
@@ -370,6 +377,7 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 			h.input([
 				h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputDefaultStyles)),
 				h.DataAttribute("size", "default"),
+				...(isDisabled ? [h.Disabled(true)] : []),
 				...inputAttributes(
 					h,
 					model,

@@ -18,6 +18,7 @@ import * as AgentSessionsList from "./agent-sessions/list"
 import * as AgentSession from "./agent-sessions/session"
 import * as AgentSessionTool from "./agent-sessions/tool"
 import * as AgentSessionTools from "./agent-sessions/tools"
+import * as AlertEditor from "./alerts/editor"
 import * as AlertsHub from "./alerts/hub"
 import * as AnomaliesList from "./anomalies/list"
 import * as AnomalyDetail from "./anomalies/detail"
@@ -88,6 +89,7 @@ export const pages = [
 	AlertsHub.page,
 	AlertIncident.page,
 	AlertRule.page,
+	AlertEditor.page,
 	ServiceMap.page,
 	InfraHosts.page,
 	InfraHost.page,

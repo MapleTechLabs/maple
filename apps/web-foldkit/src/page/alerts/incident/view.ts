@@ -1,4 +1,5 @@
-import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import type { AlertIncidentDocument, AlertRulePreviewResponse, AlertRuleDocument } from "@maple/domain/http"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { decodeAlertContextFromSearchParam } from "@maple/web/components/chat/alert-context"
 import {
@@ -12,14 +13,16 @@ import {
 	conditionPhrase,
 	holdReasonLabel,
 	incidentGroup,
+	type IncidentTimelineEntry,
 	signalTitle,
 } from "@maple/web-data/alerts/incident-timeline"
 import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type * as Chart from "../../../charts/chart"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { ResolveThemeColors, type ThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -55,7 +58,7 @@ const statusLine = (incident: AlertIncidentDocument, now: number, timeZone: stri
 }
 
 /** `IncidentHeader`'s title side. */
-const headerTitle = (h: H, incident: AlertIncidentDocument, rule: AlertRuleDocument | null, now: number, timeZone: string) => {
+export const headerTitle = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, rule: AlertRuleDocument | null, now: number, timeZone: string) => {
 	const group = incidentGroup(incident)
 	const title = `${signalTitle(incident.signalType)} ${formatSignalValue(incident.signalType, incident.lastObservedValue)}${group != null ? ` on ${group}` : ""}`
 	const subline = [
@@ -99,24 +102,31 @@ const headerAction = (h: H, model: Model, investigation: V2Investigation | null)
 				[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
 			)
 
-const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: number): Html => {
-	const { incident, rule } = view
+/** What `IncidentBody` renders, from props (the page reads them off its Model, the lab off a fixture). */
+export type IncidentBodyInputs<M> = Readonly<{
+	incident: AlertIncidentDocument
+	rule: AlertRuleDocument | null
+	ruleIncidents: ReadonlyArray<AlertIncidentDocument>
+	states: ReadonlyArray<AlertRuleStateRow>
+	preview: AlertRulePreviewResponse | null
+	isPreviewLoading: boolean
+	previewError: string | null
+	range: Readonly<{ start: number; end: number }>
+	now: number
+	timeZone: string
+	entries: ReadonlyArray<IncidentTimelineEntry>
+	isEntriesLoading: boolean
+	isEntriesFailed: boolean
+	chartId: string
+	chart: Chart.Model
+	toChartMessage: (message: Chart.Message) => M
+	colors: ThemeColors
+}>
+
+/** `IncidentBody`: signal chart, timeline and rail. */
+export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>): Html => {
+	const { incident, rule } = inputs
 	const group = incidentGroup(incident)
-	const previewState = previewStateOf(
-		model.preview,
-		Option.isSome(view.payload),
-		previewIssue(rule === null ? null : ruleToFormState(rule)),
-	)
-	const deliveries = AsyncData.getOrElse(model.deliveries.data, () => [])
-	const investigation = AsyncData.getOrElse(model.investigation.data, () => null)
-	const entries = buildIncidentTimeline({
-		incident,
-		deliveries,
-		investigation,
-		renotifyIntervalMinutes: rule != null && rule.destinationIds.length > 0 ? rule.renotifyIntervalMinutes : null,
-		destinationTypeLabel: (type) => providerOf(type).label,
-	})
-	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
 	return h.div(
 		[h.Class("grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]")],
 		[
@@ -136,42 +146,79 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 										["The rule behind this incident was deleted, so its signal cannot be replayed."],
 									)
 								: ruleChart(h, {
-										chartId: "alert-incident-chart",
-										chart: model.chart,
-										toChartMessage: (message) => Message.GotChartMessage({ message }),
-										colors: model.themeColors ?? {},
-										timeZone,
-										preview: groupPreviewOf(previewState.preview, incident),
+										chartId: inputs.chartId,
+										chart: inputs.chart,
+										toChartMessage: inputs.toChartMessage,
+										colors: inputs.colors,
+										timeZone: inputs.timeZone,
+										preview: inputs.preview,
 										incidents: [incident],
 										threshold: incident.threshold,
 										thresholdUpper: incident.thresholdUpper,
 										comparator: incident.comparator,
 										signalType: incident.signalType,
-										window: { min: view.range.start, max: view.range.end },
+										window: { min: inputs.range.start, max: inputs.range.end },
 										source: "preview",
-										isLoading: previewState.isLoading || !isChartReady,
-										error: previewState.error,
+										isLoading: inputs.isPreviewLoading,
+										error: inputs.previewError,
 									}),
 						],
 					),
 					incidentTimeline(h, {
-						entries,
-						timeZone,
-						isLoading: AsyncData.isLoading(model.deliveries.data) || AsyncData.isIdle(model.deliveries.data),
-						isFailed: AsyncData.isFailure(model.deliveries.data),
+						entries: inputs.entries,
+						timeZone: inputs.timeZone,
+						isLoading: inputs.isEntriesLoading,
+						isFailed: inputs.isEntriesFailed,
 					}),
 				],
 			),
 			incidentRail(h, {
 				rule,
 				incident,
-				states: (model.states ?? []).filter((row) => row.rule_id === incident.ruleId),
-				ruleIncidents: view.ruleIncidents,
-				window: view.range,
-				now,
+				states: inputs.states,
+				ruleIncidents: inputs.ruleIncidents,
+				window: inputs.range,
+				now: inputs.now,
 			}),
 		],
 	)
+}
+
+const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: number): Html => {
+	const { incident, rule } = view
+	const previewState = previewStateOf(
+		model.preview,
+		Option.isSome(view.payload),
+		previewIssue(rule === null ? null : ruleToFormState(rule)),
+	)
+	const deliveries = AsyncData.getOrElse(model.deliveries.data, () => [])
+	const investigation = AsyncData.getOrElse(model.investigation.data, () => null)
+	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
+	return incidentBody(h, {
+		incident,
+		rule,
+		ruleIncidents: view.ruleIncidents,
+		states: (model.states ?? []).filter((row) => row.rule_id === incident.ruleId),
+		preview: groupPreviewOf(previewState.preview, incident),
+		isPreviewLoading: previewState.isLoading || !isChartReady,
+		previewError: previewState.error,
+		range: view.range,
+		now,
+		timeZone,
+		entries: buildIncidentTimeline({
+			incident,
+			deliveries,
+			investigation,
+			renotifyIntervalMinutes: rule != null && rule.destinationIds.length > 0 ? rule.renotifyIntervalMinutes : null,
+			destinationTypeLabel: (type) => providerOf(type).label,
+		}),
+		isEntriesLoading: AsyncData.isLoading(model.deliveries.data) || AsyncData.isIdle(model.deliveries.data),
+		isEntriesFailed: AsyncData.isFailure(model.deliveries.data),
+		chartId: "alert-incident-chart",
+		chart: model.chart,
+		toChartMessage: (message) => Message.GotChartMessage({ message }),
+		colors: model.themeColors ?? {},
+	})
 }
 
 const loading = (h: H): Html =>

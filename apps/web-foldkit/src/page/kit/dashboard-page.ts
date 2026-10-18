@@ -70,7 +70,7 @@ export const pageContent = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>)
 	)
 
 /** `PageLayout.Header` + `HeaderActions`. */
-const pageHeader = <M>(h: HtmlBuilder<M>, titleContent: Html | undefined, actions: Html | undefined): Html =>
+export const pageHeader = <M>(h: HtmlBuilder<M>, titleContent: Html | undefined, actions: Html | undefined): Html =>
 	h.div(
 		[h.DataAttribute("slot", "page-header"), h.Class(pageHeaderStyles)],
 		[
