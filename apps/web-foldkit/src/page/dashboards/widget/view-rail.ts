@@ -318,7 +318,8 @@ export const settingsRail = (h: H, model: Model): Html => {
 			),
 			nameField(h, state),
 			descriptionField(h, state),
-			timeRangeField(h, state),
+			// A note never queries, so it has no window of its own.
+			...(panel === "markdown" ? [] : [timeRangeField(h, state)]),
 			divider(h),
 			typePicker(h, state),
 			...(isTimeseries ? timeseriesSettings(h, model, state) : []),

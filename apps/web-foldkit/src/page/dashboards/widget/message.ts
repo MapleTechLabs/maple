@@ -64,6 +64,7 @@ export const Message = defineMessageUnion({
 	ClickedRemoveFormula: { formulaId: Schema.String },
 	ClickedRunPreview: {},
 	ChangedTitle: { value: Schema.String },
+	ChangedMarkdown: { value: Schema.String },
 	ChangedDescription: { value: Schema.String },
 	ChangedTimeRangeMode: { mode: Schema.Literals(["dashboard", "custom"]) },
 	ClickedPanelType: { panel: Schema.String },

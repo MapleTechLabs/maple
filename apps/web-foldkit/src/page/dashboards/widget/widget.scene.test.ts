@@ -7,8 +7,8 @@ import { expect as expectView, given, Mount, scene, text, withViewInputs } from 
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { FetchAutocomplete, FetchWidget, SaveWidget } from "./command"
-import { withRootOnly } from "./edits"
-import { buildDisplay, toInitialState } from "./lowering"
+import { setPanelType, withRootOnly } from "./edits"
+import { buildDataSource, buildDisplay, toInitialState, validationErrorOf } from "./lowering"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
@@ -154,6 +154,15 @@ describe("widget lowering", () => {
 	test("an untitled chart takes a title derived from its first query", () => {
 		const state = { ...toInitialState(stored), title: "  " }
 		expect(buildDisplay(stored, state).title).toBe("Count of traces by service.name")
+	})
+
+	test("a chart switched to a note lowers to a static note with its body, and nothing to validate", () => {
+		const note = setPanelType({ ...toInitialState(stored), markdownContent: "## Runbook" }, "markdown")
+		expect(buildDataSource(note)).toEqual({ kind: "static" })
+		const display = buildDisplay(stored, note)
+		expect(display.markdown).toEqual({ content: "## Runbook" })
+		expect(display.stacked).toBeUndefined()
+		expect(validationErrorOf(note)).toBeNull()
 	})
 
 	test("the spans select rewrites root_only in the where clause", () => {

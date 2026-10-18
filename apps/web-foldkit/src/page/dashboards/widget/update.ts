@@ -102,6 +102,7 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 		legendPosition: state.legendPosition,
 		seriesStatsEnabled: state.seriesStatsEnabled,
 		pointsMode: state.pointsMode,
+		markdownContent: state.markdownContent,
 	}
 	return {
 		...widget,

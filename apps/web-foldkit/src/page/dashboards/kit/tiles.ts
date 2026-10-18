@@ -17,7 +17,8 @@ import { skeletonList } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { chartCategoryOf } from "./chart-registry"
 import type { WidgetDataState } from "./data-state"
-import { widgetEmptyState, widgetFrame, type FrameOptions } from "./tile-shell"
+import { renderMarkdown } from "./markdown"
+import { widgetEmptyState, widgetFrame, widgetShell, type FrameOptions } from "./tile-shell"
 import type { ReadyData } from "./widget-data"
 
 // The tiles: `StatWidget`, `TableWidget`, `ListWidget` and the time-series `ChartWidget`
@@ -56,7 +57,7 @@ export type TileContext<M> = Readonly<{
 // VALUES
 
 /** `formatValue` (stat-widget.tsx). */
-const formatStatValue = (value: unknown, unit?: string, prefix?: string, suffix?: string): string => {
+export const formatStatValue = (value: unknown, unit?: string, prefix?: string, suffix?: string): string => {
 	if (value === null || value === undefined || typeof value === "object") return EMPTY_VALUE
 	const num = typeof value === "number" ? value : Number(value)
 	if (Number.isNaN(num)) return String(value)
@@ -76,7 +77,7 @@ const thresholdColor = (
 }
 
 /** `formatCellValue`: units format numbers; unitless cells stay raw. */
-const formatCell = (value: unknown, unit?: string): string => {
+export const formatCell = (value: unknown, unit?: string): string => {
 	if (value === null || value === undefined) return EMPTY_VALUE
 	const num = Number(value)
 	if (Number.isNaN(num) || unit === undefined || unit === "") return String(value)
@@ -484,6 +485,34 @@ const unsupportedTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widg
 		),
 	])
 
+/** `MarkdownWidget`: a static note, no data state; empty reads as a prompt to edit. */
+const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
+	const content = widget.display.markdown?.content ?? ""
+	return widgetShell(
+		h,
+		{
+			widgetId: widget.id,
+			title:
+				widget.display.title !== undefined && widget.display.title !== ""
+					? widget.display.title
+					: "Note",
+			isEdit: ctx.isEdit,
+			hasGrip: ctx.hasGrip,
+			menu: ctx.menu,
+			isMenuOpen: ctx.isMenuOpen,
+			contentClassName: "flex-1 min-h-0 overflow-auto p-2 @min-[220px]/widget:p-3",
+		},
+		[
+			content.trim() === ""
+				? h.div(
+						[h.Class("text-xs text-muted-foreground italic")],
+						["Empty note. Edit to add markdown content."],
+					)
+				: h.div([h.Class("text-xs text-foreground space-y-2")], renderMarkdown(h, content)),
+		],
+	)
+}
+
 /** `visualizationFor(widget.visualization)`. */
 export const widgetTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	switch (widget.visualization) {
@@ -495,6 +524,8 @@ export const widgetTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Wi
 			return listTile(h, ctx, widget)
 		case "chart":
 			return chartTile(h, ctx, widget)
+		case "markdown":
+			return markdownTile(h, ctx, widget)
 		default:
 			return unsupportedTile(h, ctx, widget)
 	}

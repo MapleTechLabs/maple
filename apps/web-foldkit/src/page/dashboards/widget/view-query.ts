@@ -7,6 +7,7 @@ import {
 import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { fieldErrorStyles } from "@maple/ui/styles/ui/field"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "../../../ui/alert"
@@ -17,8 +18,9 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import type { SelectOption } from "../../../ui/select-view"
 import * as TabsView from "../../../ui/tabs-view"
+import { textarea } from "../../../ui/textarea"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
-import { validationErrorOf } from "./lowering"
+import { isNote, isTimeseriesPanel, validationErrorOf } from "./lowering"
 import { autoIntervalLabel } from "./update"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -297,94 +299,154 @@ const sourceToggle = (h: H, model: Model): Html =>
 		],
 	)
 
+const MARKDOWN_PLACEHOLDER = "## Runbook\n\n- Check the error rate panel first\n- Escalate to #oncall"
+
+/** `MarkdownEditorPanel`: the note's body; the preview follows as you type. */
+const markdownEditor = (h: H, content: string): Html =>
+	h.div(
+		[h.Class("space-y-2")],
+		[
+			h.div(
+				[h.Class("flex items-baseline justify-between")],
+				[
+					h.p([h.Class(eyebrowVariants({})), h.DataAttribute("slot", "eyebrow")], ["Content"]),
+					h.p(
+						[h.Class("text-2xs text-muted-foreground")],
+						[
+							"Markdown: ",
+							h.code([], ["# heading"]),
+							", ",
+							h.code([], ["**bold**"]),
+							", ",
+							h.code([], ["- list"]),
+							",",
+							" ",
+							h.code([], ["[link](url)"]),
+						],
+					),
+				],
+			),
+			textarea(h, {
+				id: "widget-editor-markdown",
+				className: "min-h-56 font-mono text-xs leading-relaxed",
+				defaultValue: content,
+				attributes: [
+					h.Placeholder(MARKDOWN_PLACEHOLDER),
+					h.Spellcheck(true),
+					h.OnInput((value) => Message.ChangedMarkdown({ value })),
+				],
+			}),
+		],
+	)
+
 export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 	const state = model.state
 	if (state === null) return h.empty
 	const error = validationErrorOf(state)
+	// A note has neither a query nor SQL: its body editor replaces both.
+	const isNoteEditor = isNote(state)
+	if (!isNoteEditor && !isTimeseriesPanel(state))
+		return h.div(
+			[h.Class("p-6")],
+			[
+				// TODO(widget-editor): the stat, gauge, table, list, breakdown, funnel and paths editors.
+				h.p(
+					[h.Class("text-muted-foreground text-xs")],
+					[`Editing ${state.visualization} widgets is not ported yet.`],
+				),
+			],
+		)
 	return h.div(
 		[h.Class("p-6 space-y-6"), h.OnFocusEnter(Message.FocusedQueryEditor())],
 		[
-			sourceToggle(h, model),
-			...(model.sourceMode === "rawSql"
-				? [h.p([h.Class("text-muted-foreground text-xs")], ["The Raw SQL editor is not ported yet."])]
-				: [
-						...(error === null
-							? []
-							: [
-									h.div(
-										[
-											h.Class(cn(fieldErrorStyles, "font-medium")),
-											h.DataAttribute("slot", "field-error"),
-										],
-										[error],
+			...(isNoteEditor ? [] : [sourceToggle(h, model)]),
+			...(isNoteEditor
+				? [markdownEditor(h, state.markdownContent)]
+				: model.sourceMode === "rawSql"
+					? [
+							h.p(
+								[h.Class("text-muted-foreground text-xs")],
+								["The Raw SQL editor is not ported yet."],
+							),
+						]
+					: [
+							...(error === null
+								? []
+								: [
+										h.div(
+											[
+												h.Class(cn(fieldErrorStyles, "font-medium")),
+												h.DataAttribute("slot", "field-error"),
+											],
+											[error],
+										),
+									]),
+							h.div(
+								[h.Class("space-y-3")],
+								state.queries.map((query, index) =>
+									queryPanel(
+										h,
+										model,
+										query,
+										index,
+										state.queries.length > 1,
+										autoIntervalLabel(model, timeZone),
 									),
-								]),
-						h.div(
-							[h.Class("space-y-3")],
-							state.queries.map((query, index) =>
-								queryPanel(
-									h,
-									model,
-									query,
-									index,
-									state.queries.length > 1,
-									autoIntervalLabel(model, timeZone),
 								),
 							),
-						),
-						...(state.formulas.length === 0
-							? []
-							: [
-									h.div(
-										[h.Class("space-y-3")],
-										state.formulas.map((formula) => formulaPanel(h, formula)),
+							...(state.formulas.length === 0
+								? []
+								: [
+										h.div(
+											[h.Class("space-y-3")],
+											state.formulas.map((formula) => formulaPanel(h, formula)),
+										),
+									]),
+							h.div(
+								[h.Class("flex items-center gap-3")],
+								[
+									button(
+										h,
+										{
+											variant: "outline",
+											size: "sm",
+											attributes: [h.OnClick(Message.ClickedAddQuery())],
+										},
+										["+ Query"],
 									),
-								]),
-						h.div(
-							[h.Class("flex items-center gap-3")],
-							[
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedAddQuery())],
-									},
-									["+ Query"],
-								),
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedAddFormula())],
-									},
-									["+ Formula"],
-								),
-								button(
-									h,
-									{
-										size: "sm",
-										isDisabled: error !== null,
-										attributes: [h.OnClick(Message.ClickedRunPreview())],
-									},
-									["Run preview"],
-								),
-								// Two text nodes once there are formulas, as legacy renders them.
-								h.span(
-									[h.Class("text-2xs text-muted-foreground ml-auto")],
-									[
-										state.queries.map((query) => query.name).join(", "),
-										...(state.formulas.length === 0
-											? []
-											: [
-													`, ${state.formulas.map((formula) => formula.name).join(", ")}`,
-												]),
-									],
-								),
-							],
-						),
-					]),
+									button(
+										h,
+										{
+											variant: "outline",
+											size: "sm",
+											attributes: [h.OnClick(Message.ClickedAddFormula())],
+										},
+										["+ Formula"],
+									),
+									button(
+										h,
+										{
+											size: "sm",
+											isDisabled: error !== null,
+											attributes: [h.OnClick(Message.ClickedRunPreview())],
+										},
+										["Run preview"],
+									),
+									// Two text nodes once there are formulas, as legacy renders them.
+									h.span(
+										[h.Class("text-2xs text-muted-foreground ml-auto")],
+										[
+											state.queries.map((query) => query.name).join(", "),
+											...(state.formulas.length === 0
+												? []
+												: [
+														`, ${state.formulas.map((formula) => formula.name).join(", ")}`,
+													]),
+										],
+									),
+								],
+							),
+						]),
 		],
 	)
 }

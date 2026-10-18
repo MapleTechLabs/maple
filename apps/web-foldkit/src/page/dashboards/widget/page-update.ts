@@ -16,7 +16,7 @@ import {
 	updateQuery,
 } from "./edits"
 import type { EditorState } from "./editor-state"
-import { validationErrorOf } from "./lowering"
+import { isNote, isTimeseriesPanel, validationErrorOf } from "./lowering"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -93,6 +93,8 @@ const apply = (model: Model, context: PageContext): Return => {
 	const widget = widgetOf(model)
 	if (model.isSaving || widget === null || model.state === null) return { model }
 	if (validationErrorOf(model.state) !== null) return { model }
+	// TODO(widget-editor): the panel types this editor cannot configure yet keep Apply a no-op.
+	if (!isNote(model.state) && !isTimeseriesPanel(model.state)) return { model }
 	return {
 		model: { ...model, isSaving: true },
 		commands: [
@@ -183,6 +185,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: planPreview({ ...model, staged: model.state }, context),
 		ChangedTitle: ({ value }) => edit(model, context, (state) => ({ ...state, title: value })),
+		ChangedMarkdown: ({ value }) =>
+			edit(model, context, (state) => ({ ...state, markdownContent: value })),
 		ChangedDescription: ({ value }) =>
 			edit(model, context, (state) => ({ ...state, description: value })),
 		ChangedTimeRangeMode: ({ mode }) => timeRangeModeStep(model, context, mode),

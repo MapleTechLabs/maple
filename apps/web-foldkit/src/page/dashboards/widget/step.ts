@@ -123,7 +123,7 @@ const decodeIso = Schema.decodeUnknownOption(IsoDateTimeString)
 
 /** `TypePicker`. TODO(widget-editor): only the timeseries panels are configurable here yet. */
 export const isConfigurablePanel = (panel: string): panel is PanelType =>
-	isPanelType(panel) && (panel === "line" || panel === "bar" || panel === "area")
+	isPanelType(panel) && (panel === "line" || panel === "bar" || panel === "area" || panel === "markdown")
 
 export const chartStep = (model: Model, message: Chart.Message): Return => {
 	const next = Chart.update(model.chart, message)

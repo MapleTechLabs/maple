@@ -1,6 +1,6 @@
 import { type DashboardDocument, WIDGET_TYPES } from "@maple/domain/http"
 import { buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
-import { dataSourceQuerySet, makeQueryDataSource } from "@maple/widgets/dashboard"
+import { dataSourceQuerySet, makeQueryDataSource, makeStaticDataSource } from "@maple/widgets/dashboard"
 import { fromPanelType, toPanelType } from "../kit/chart-registry"
 import {
 	deriveDefaultWidgetTitle,
@@ -61,11 +61,17 @@ export const toInitialState = (widget: Widget): EditorState => {
 		seriesStatsEnabled: presentation?.seriesStats ?? false,
 		pointsMode: pointsModeFromShowPoints(presentation?.showPoints),
 		thresholds: (widget.display.thresholds ?? []).map(({ value, color }) => ({ value, color })),
+		markdownContent: widget.display.markdown?.content ?? "",
 	}
 }
 
+export const isNote = (state: Pick<EditorState, "visualization" | "chartId">): boolean =>
+	toPanelType(state.visualization, state.chartId) === "markdown"
+
 /** `timeseriesDataSource`: the query set, with hidden series dropped by the transform. */
 export const buildDataSource = (state: EditorState): Widget["dataSource"] => {
+	// A note never queries.
+	if (isNote(state)) return makeStaticDataSource()
 	const hidden = hiddenSeriesBaseNames(state.queries, state.formulas)
 	const comparison = { mode: state.comparisonMode, includePercentChange: state.includePercentChange }
 	const base = {
@@ -95,9 +101,10 @@ export const buildDisplay = (widget: Widget, state: EditorState): Display => {
 	const title = state.title.trim()
 	const description = state.description.trim()
 	// An absent preference is an `undefined` key here; the write's JSON round trip drops it.
-	return {
+	const base: Display = {
 		...kept,
-		title: title === "" ? deriveDefaultWidgetTitle(state.queries) : title,
+		// Query-driven widgets saved untitled get a derived title; a note has no query to derive from.
+		title: title !== "" ? title : isNote(state) ? undefined : deriveDefaultWidgetTitle(state.queries),
 		description: description === "" ? undefined : description,
 		chartPresentation: {
 			...widget.display.chartPresentation,
@@ -106,15 +113,21 @@ export const buildDisplay = (widget: Widget, state: EditorState): Display => {
 			showPoints,
 		},
 		chartId,
-		stacked: state.stacked,
-		curveType: state.curveType,
-		unit: state.unit,
-		thresholds: state.thresholds.length > 0 ? state.thresholds.map((t) => ({ ...t })) : undefined,
 	}
+	return isNote(state)
+		? { ...base, markdown: { content: state.markdownContent } }
+		: {
+				...base,
+				stacked: state.stacked,
+				curveType: state.curveType,
+				unit: state.unit,
+				thresholds: state.thresholds.length > 0 ? state.thresholds.map((t) => ({ ...t })) : undefined,
+			}
 }
 
 /** `validateQueries` for a query-builder panel: the message that blocks Apply, or `null`. */
 export const validationErrorOf = (state: EditorState): string | null => {
+	if (isNote(state)) return null
 	const active = state.queries.filter((query) => query.enabled !== false)
 	if (active.length === 0) return "Add at least one query"
 	const invalid = active

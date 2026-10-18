@@ -8,7 +8,7 @@ import {
 import { Schema } from "effect"
 
 // The widget editor's state (`QueryBuilderWidgetState`, apps/web/src/lib/query-builder/
-// widget-builder-shared.ts), cut to what the timeseries panels (line, bar, area) read.
+// widget-builder-shared.ts), cut to what the timeseries panels (line, bar, area) and notes read.
 // TODO(widget-editor): the stat/gauge/table/list/breakdown/funnel/paths/markdown fields.
 
 /** `QueryBuilderQueryDraftBase`: every field filled, unlike the stored draft. */
@@ -81,6 +81,8 @@ export const EditorState = Schema.Struct({
 	seriesStatsEnabled: Schema.Boolean,
 	pointsMode: PointsMode,
 	thresholds: Schema.Array(Threshold),
+	/** A note's body; static, it never reaches the warehouse. */
+	markdownContent: Schema.String,
 })
 export type EditorState = typeof EditorState.Type
 
