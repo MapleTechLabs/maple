@@ -20,6 +20,13 @@ const pickOption = (combobox: string, option: string) => async (page: Page) => {
 	await page.getByRole("option", { name: option }).click()
 }
 
+/** A click on the 3D canvas `dy` px above a sign's centre: its machine stands just behind it. */
+const clickAboveSign = (name: string, dy: number) => async (page: Page) => {
+	const box = await page.getByRole("button", { name }).boundingBox()
+	if (box === null) throw new Error(`no box for ${name}`)
+	await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 - dy)
+}
+
 /** The header's 2D / 3D switch. */
 const pickView = (name: "2D" | "3D") => (page: Page) =>
 	page.getByRole("group", { name: "Service map view" }).getByRole("button", { name }).click()
@@ -117,6 +124,16 @@ export const serviceMapArea: AreaModule = {
 		}),
 		map("3d-selected", "payment-svc selected from its 3D sign", "/service-map?view=3d", {
 			steps: act(clickButton("Select payment-svc")),
+		}),
+		map("3d-machine", "payment-svc selected by clicking its machine", "/service-map?view=3d", {
+			steps: act(clickAboveSign("Select payment-svc", 30)),
+		}),
+		map("3d-paper", "a selection cleared by clicking empty paper", "/service-map?view=3d", {
+			steps: act(clickButton("Select payment-svc"), (page) =>
+				page
+					.getByRole("region", { name: "Atlas 3D service map" })
+					.click({ position: { x: 40, y: 340 } }),
+			),
 		}),
 		map("3d-belt", "a belt tag picked, its target selected", "/service-map?view=3d", {
 			steps: act(clickButton(/^Inspect connection to /)),
