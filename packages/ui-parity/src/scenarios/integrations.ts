@@ -133,6 +133,78 @@ export const integrationsArea: AreaModule = {
 				steps: (page) => page.getByText("redis exporter").first().click(),
 			},
 		),
+		page(
+			"prometheus-add-dialog",
+			"Prometheus: the add-target dialog",
+			"/integrations?integration=prometheus",
+			{
+				steps: (page) => page.getByRole("button", { name: "Add target" }).first().click(),
+			},
+		),
+		page("prometheus-add", "Prometheus: add a target", "/integrations?integration=prometheus", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Add target" }).first().click()
+				const dialog = page.getByRole("dialog")
+				await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("node exporter")
+				await dialog
+					.getByRole("textbox", { name: "URL", exact: true })
+					.fill("https://node.shop.internal:9100/metrics")
+				await dialog.getByRole("button", { name: "Add target" }).click()
+			},
+		}),
+		page("prometheus-edit", "Prometheus: edit a target", "/integrations?integration=prometheus", {
+			steps: async (page) => {
+				await page.getByText("redis exporter").first().click()
+				await page.getByRole("button", { name: "Edit" }).click()
+				await page
+					.getByRole("dialog")
+					.getByRole("textbox", { name: "Service name" })
+					.fill("cache-svc")
+				await page.getByRole("dialog").getByRole("button", { name: "Save changes" }).click()
+			},
+		}),
+		page(
+			"prometheus-auth-basic",
+			"Prometheus: basic auth fields",
+			"/integrations?integration=prometheus",
+			{
+				steps: async (page) => {
+					await page.getByRole("button", { name: "Add target" }).first().click()
+					await page.getByRole("dialog").getByRole("combobox").click()
+					await page.getByRole("option", { name: "Basic Auth" }).click()
+				},
+			},
+		),
+		page("prometheus-probe", "Prometheus: test a target", "/integrations?integration=prometheus", {
+			steps: (page) => page.getByRole("button", { name: "Test" }).first().click(),
+		}),
+		page("prometheus-toggle", "Prometheus: disable a target", "/integrations?integration=prometheus", {
+			steps: (page) => page.getByRole("switch").first().click(),
+		}),
+		page(
+			"prometheus-row-menu",
+			"Prometheus: a target's actions menu",
+			"/integrations?integration=prometheus",
+			{
+				steps: (page) =>
+					page.getByRole("button", { name: "Actions for redis exporter", exact: true }).click(),
+			},
+		),
+		page("prometheus-delete", "Prometheus: delete a target", "/integrations?integration=prometheus", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Actions for redis exporter", exact: true }).click()
+				await page.getByRole("menuitem", { name: "Delete" }).click()
+				await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click()
+			},
+		}),
+		page("warpstream", "WarpStream (scrape targets)", "/integrations?integration=warpstream"),
+		timed(
+			"prometheus-loading",
+			"Prometheus: targets loading",
+			"/integrations?integration=prometheus",
+			{ delays: { "scrapeTargets.list": HELD_MS } },
+			"held",
+		),
 		page("prometheus-empty", "Prometheus (no targets)", "/integrations?integration=prometheus", {
 			dataset: "empty",
 		}),

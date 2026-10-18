@@ -45,9 +45,10 @@ export const outsidePresses = (
 				const onPointerDown = (event: PointerEvent) => {
 					const target = event.target
 					if (!(target instanceof Node) || root.contains(target)) return
+					const element = target instanceof Element ? target : target.parentElement
 					const isInside = Array.some(
 						insideSelectors,
-						(selector) => document.querySelector(selector)?.contains(target) ?? false,
+						(selector) => element?.closest(selector) != null,
 					)
 					if (!isInside) Queue.offerUnsafe(queue, { _tag: "PressedOutside" })
 				}

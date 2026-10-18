@@ -5,6 +5,7 @@ import {
 	GithubIntegrationStatus,
 	HazelIntegrationStatus,
 	RailwayIntegrationStatus,
+	ScrapeTargetId,
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import {
@@ -13,6 +14,7 @@ import {
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
 	V2ScrapeTarget,
+	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
 import { ChatWorkspaceId } from "@maple/domain/primitives"
 import { Schema } from "effect"
@@ -20,6 +22,10 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
 import * as Dialog from "../../ui/dialog"
 import * as Popover from "../../ui/popover"
+import * as Field from "../../ui/field"
+import * as Menu from "../../ui/menu"
+import * as Select from "../../ui/select"
+import { FormFieldName } from "./prometheus-form-field"
 import * as ToggleGroup from "../../ui/toggle-group"
 import * as Chart from "../../charts/chart"
 import { ConnectProvider } from "./connect"
@@ -115,6 +121,41 @@ export const Message = defineMessageUnion({
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	GotSparklineMessage: { message: Chart.Message },
+	ClickedTarget: { id: ScrapeTargetId },
+	/** A press inside a row's switch or menu cell, which legacy keeps from selecting the row. */
+	ClickedTargetControls: {},
+	CompletedFetchChecks: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(V2ScrapeTargetCheck), LoadFailure),
+	},
+	/** `useIntervalRefresh`: the target list every 30 s, the selected target's checks every 10 s. */
+	TickedTargetsRefresh: {},
+	TickedChecksRefresh: {},
+	ClickedProbe: { id: ScrapeTargetId },
+	CompletedProbe: {
+		id: ScrapeTargetId,
+		failure: Schema.NullOr(LoadFailure),
+		success: Schema.Boolean,
+		error: Schema.NullOr(Schema.String),
+	},
+	ClickedToggleTarget: { id: ScrapeTargetId },
+	CompletedToggle: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
+	ClickedAddTarget: {},
+	ClickedEditTarget: { id: ScrapeTargetId },
+	ClickedDeleteTarget: { id: ScrapeTargetId },
+	GotTargetMenuMessage: { id: ScrapeTargetId, message: Menu.Message },
+	GotFormDialogMessage: { message: Dialog.Message },
+	GotFormFieldMessage: { field: FormFieldName, message: Field.Message },
+	GotAuthSelectMessage: { message: Select.Message },
+	SubmittedTargetForm: {},
+	CompletedSave: {
+		isEdit: Schema.Boolean,
+		id: Schema.NullOr(ScrapeTargetId),
+		failure: Schema.NullOr(LoadFailure),
+	},
+	GotTargetDeleteDialogMessage: { message: Dialog.Message },
+	ConfirmedTargetDelete: {},
+	CompletedTargetDelete: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,
 		status: Schema.String,

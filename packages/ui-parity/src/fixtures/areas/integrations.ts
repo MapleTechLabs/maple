@@ -211,6 +211,19 @@ export const fixtureArea: FixtureArea = {
 		"integrations.cloudflareDisconnect": disconnected,
 		"scrapeTargets.list": (request) => Effect.succeed(list(scrapeTargetsOf(request))),
 		"scrapeTargets.listChecks": checks,
+		// Writes answer with the first listed target (the store is not mutated: the list re-read is unchanged).
+		"scrapeTargets.create": (request) =>
+			Effect.succeed(scrapeTargetsOf(request)[1] ?? scrapeTargetsOf(request)[0]),
+		"scrapeTargets.update": (request) => Effect.succeed(scrapeTargetsOf(request)[0]),
+		"scrapeTargets.delete": (request) =>
+			Effect.succeed({ id: scrapeTargetsOf(request)[0]?.id, object: "scrape_target", deleted: true }),
+		"scrapeTargets.probe": (request) =>
+			Effect.succeed({
+				object: "scrape_target.probe_result",
+				success: false,
+				last_scrape_at: iso(request, 0),
+				last_scrape_error: "GET /metrics: 503 Service Unavailable",
+			}),
 		"chatIntegration.connectors": connectors,
 		"integrations.hazelStatus": hazelStatus,
 	}),

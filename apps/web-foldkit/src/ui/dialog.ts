@@ -121,6 +121,11 @@ export const update = (model: Model, message: Message): UpdateReturn =>
  * On the portal root: moves it to `<body>`, hides the rest of the page from assistive tech,
  * locks scroll, traps focus and moves it in; releasing (unmount) undoes each and returns focus.
  */
+/** A popup opened from inside the dialog (a select, a menu): its portal is outside the popup but
+ * pressing in it is not a press outside the dialog (Base UI's floating tree). */
+const nestedPopups = (portal: Element) =>
+	`[data-base-ui-portal]:not([data-slot^="toast"])${portal.id === "" ? "" : `:not(#${CSS.escape(portal.id)})`}`
+
 export const MountDialog = Mount.defineStream("MountDialog", {
 	args: { id: Schema.String, hasTrigger: Schema.Boolean },
 	messages: [Message.CompletedMountDialog, Message.PressedOutside],
@@ -140,7 +145,9 @@ export const MountDialog = Mount.defineStream("MountDialog", {
 				})
 				return Stream.concat(
 					mounted,
-					outsidePresses(popup, []).pipe(Stream.map(() => Message.PressedOutside())),
+					outsidePresses(popup, [nestedPopups(element)]).pipe(
+						Stream.map(() => Message.PressedOutside()),
+					),
 				)
 			}),
 		),

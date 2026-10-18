@@ -140,6 +140,12 @@ const after = (millis: number, message: () => Message) =>
 
 const CLOUDFLARE_INGEST_MS = 30_000
 
+/** Prometheus and WarpStream share the scrape-target section. */
+const isScrapePage = (model: Model): boolean => {
+	const integration = integrationOfSearch(model.search.integration)
+	return integration === "prometheus" || integration === "warpstream"
+}
+
 const isCloudflareSettling = (model: Model): boolean => {
 	if (integrationOfSearch(model.search.integration) !== "cloudflare") return false
 	const status = Option.getOrNull(AsyncData.getData(model.statuses.cloudflare.data))
@@ -241,6 +247,25 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					isSettling
 						? every(CLOUDFLARE_INGEST_MS, () => Message.TickedCloudflareIngest())
 						: Stream.empty,
+			},
+		),
+		/** `ScrapeTargetsSection`: the list every 30 s; the selected target's checks every 10 s. */
+		scrapeTargetsRefresh: entry(
+			{ isShown: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isShown: isScrapePage(model) }),
+				dependenciesToStream: ({ isShown }) =>
+					isShown ? every(30_000, () => Message.TickedTargetsRefresh()) : Stream.empty,
+			},
+		),
+		scrapeChecksRefresh: entry(
+			{ selectedId: Schema.NullOr(Schema.String) },
+			{
+				modelToDependencies: ({ model }) => ({
+					selectedId: isScrapePage(model) ? model.prometheusCard.selectedId : null,
+				}),
+				dependenciesToStream: ({ selectedId }) =>
+					selectedId === null ? Stream.empty : every(10_000, () => Message.TickedChecksRefresh()),
 			},
 		),
 		connectCallback: entry(

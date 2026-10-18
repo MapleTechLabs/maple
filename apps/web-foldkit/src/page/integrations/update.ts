@@ -14,6 +14,8 @@ import * as Chat from "./update-chat"
 import * as Github from "./update-github"
 import * as CloudflareCard from "./update-cloudflare"
 import { initCloudflareCard } from "./cloudflare"
+import { initPrometheusCard } from "./prometheus"
+import * as Prometheus from "./update-prometheus"
 import { ChartRuntime } from "../../charts/chart-runtime"
 import { isMultiAccount } from "./view-cloudflare"
 import * as Connect from "./update-connect"
@@ -85,6 +87,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		chatCard: { busy: null, confirmId: null, identityBusy: false },
 		githubCard: initGithubCard(),
 		cloudflareCard: initCloudflareCard(),
+		prometheusCard: initPrometheusCard(),
 	}
 	const loaded = chain(model, [
 		...STATUS_NAMES.map((name) => (next: Model) => requestStatus(next, context, name, "Load")),
@@ -176,6 +179,37 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		FailedLoadChartRuntime: ({ reason }) =>
 			CloudflareCard.updateBoard(model, { chartRuntime: ChartRuntime.Failed({ reason }) }),
 		GotSparklineMessage: () => ({ model }),
+		ClickedTarget: ({ id }) => Prometheus.clickedTarget(model, context, id),
+		ClickedTargetControls: () => ({ model }),
+		CompletedFetchChecks: ({ key, result }) => ({
+			model: {
+				...model,
+				prometheusCard: {
+					...model.prometheusCard,
+					checks: Keyed.accept(model.prometheusCard.checks, key, result),
+				},
+			},
+		}),
+		TickedTargetsRefresh: () => requestStatus(model, context, "scrapeTargets", "Refresh"),
+		TickedChecksRefresh: () => Prometheus.requestChecks(model, context, "Refresh"),
+		ClickedProbe: ({ id }) => Prometheus.clickedProbe(model, id),
+		CompletedProbe: ({ id, failure, success, error }) =>
+			Prometheus.completedProbe(model, context, id, failure, success, error),
+		ClickedToggleTarget: ({ id }) => Prometheus.clickedToggle(model, id),
+		CompletedToggle: ({ id, failure }) => Prometheus.completedToggle(model, context, id, failure),
+		ClickedAddTarget: () => Prometheus.clickedAdd(model),
+		ClickedEditTarget: ({ id }) => Prometheus.clickedEdit(model, id),
+		ClickedDeleteTarget: ({ id }) => Prometheus.clickedDelete(model, id),
+		GotTargetMenuMessage: ({ id, message: child }) => Prometheus.gotTargetMenu(model, id, child),
+		GotFormDialogMessage: ({ message: child }) => Prometheus.gotFormDialog(model, child),
+		GotFormFieldMessage: ({ field, message: child }) => Prometheus.gotFormField(model, field, child),
+		GotAuthSelectMessage: ({ message: child }) => Prometheus.gotAuthSelect(model, child),
+		SubmittedTargetForm: () => Prometheus.submittedForm(model),
+		CompletedSave: ({ isEdit, id, failure }) =>
+			Prometheus.completedSave(model, context, isEdit, id, failure),
+		GotTargetDeleteDialogMessage: ({ message: child }) => Prometheus.gotDeleteDialog(model, child),
+		ConfirmedTargetDelete: () => Prometheus.confirmedDelete(model),
+		CompletedTargetDelete: ({ id, failure }) => Prometheus.completedDelete(model, context, id, failure),
 		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),
 		CompletedGithubRefreshSpin: ({ version }) => Github.completedRefreshSpin(model, version),
 		ToggledCiTraces: () => Github.toggledCiTraces(model),

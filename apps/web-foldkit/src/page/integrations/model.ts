@@ -20,6 +20,7 @@ import * as Dialog from "../../ui/dialog"
 import { ChatCardModel } from "./chat"
 import { CloudflareCardModel } from "./cloudflare"
 import { GithubCardModel } from "./github"
+import { PrometheusCardModel } from "./prometheus"
 import { ConnectModel } from "./connect"
 
 // `/integrations` (apps/web/src/routes/integrations.tsx): the hub and every integration's page.
@@ -54,5 +55,6 @@ export const Model = Schema.Struct({
 	chatCard: ChatCardModel,
 	githubCard: GithubCardModel,
 	cloudflareCard: CloudflareCardModel,
+	prometheusCard: PrometheusCardModel,
 })
 export type Model = typeof Model.Type
