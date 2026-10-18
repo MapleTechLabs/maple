@@ -55,6 +55,7 @@ export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
 	CompletedFetchDetail: result(V2ErrorIssueDetail),
 	CompletedFetchEvents: result(ErrorIssueEventsResponse),
+	MountedRightRail: {},
 	CompletedFetchInvestigations: result(Schema.Array(V2Investigation)),
 	CompletedFetchPullRequests: result(ErrorIssuePullRequestsResponse),
 	CompletedFetchVerifications: result(ErrorIssueVerificationsResponse),
