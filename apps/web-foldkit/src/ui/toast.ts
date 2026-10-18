@@ -26,6 +26,8 @@ export const Toast = Schema.Struct({
 	timeoutMs: Schema.Number,
 	height: Schema.NullOr(Schema.Number),
 	phase: Phase,
+	/** `actionProps.children`: the label of the toast's action button, if it has one. */
+	actionLabel: Schema.NullOr(Schema.String),
 })
 export type Toast = typeof Toast.Type
 
@@ -62,6 +64,8 @@ export const Message = defineMessageUnion({
 	MeasuredToast: { toastId: Schema.String, height: Schema.Number },
 	ElapsedToastTimeout: { toastId: Schema.String },
 	ClickedToastClose: { toastId: Schema.String },
+	/** The action button; the toast's owner runs the action (the app root, for a page's toast). */
+	ClickedToastAction: { toastId: Schema.String },
 	PressedToastEscape: { toastId: Schema.String },
 	EndedToastTransition: { toastId: Schema.String },
 	EnteredViewport: {},
@@ -146,11 +150,16 @@ export type AddOptions = Readonly<{
 	description: string
 	/** Milliseconds; 0 keeps the toast until it is closed. */
 	timeoutMs?: number
+	/** An action button (`actionProps`); its click is the owner's to handle (`ClickedToastAction`). */
+	actionLabel?: string
 }>
+
+/** The id `add` gives the next toast, so an owner can remember what its action does. */
+export const nextToastId = (model: Model): string => `${model.id}-${model.nextKey}`
 
 /** `toastManager.add`: the new toast goes first and starts its enter transition. */
 export const add = (model: Model, options: AddOptions): UpdateReturn => {
-	const toastId = `${model.id}-${model.nextKey}`
+	const toastId = nextToastId(model)
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
 	const toast: Toast = {
 		id: toastId,
@@ -160,6 +169,7 @@ export const add = (model: Model, options: AddOptions): UpdateReturn => {
 		timeoutMs,
 		height: null,
 		phase: "Starting",
+		actionLabel: options.actionLabel ?? null,
 	}
 	return {
 		model: modifyFields(model, { nextKey: Number.increment, toasts: Array.prepend(toast) }),
@@ -216,6 +226,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 					)
 				: close(model, toastId),
 		ClickedToastClose: ({ toastId }) => close(model, toastId),
+		ClickedToastAction: () => ({ model }),
 		PressedToastEscape: ({ toastId }) => close(model, toastId),
 		EndedToastTransition: ({ toastId }) => ({
 			model: modifyFields(model, { toasts: Array.filter((toast) => toast.id !== toastId) }),

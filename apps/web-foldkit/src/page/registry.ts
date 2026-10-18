@@ -15,6 +15,7 @@ import type {
 	PageViewInputs,
 } from "./contract"
 import * as DashboardsList from "./dashboards/list"
+import * as DashboardView from "./dashboards/view"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
 import * as MetricsBrowse from "./metrics/browse"
@@ -34,6 +35,7 @@ export const pages = [
 	ErrorsHub.page,
 	ErrorIssue.page,
 	DashboardsList.page,
+	DashboardView.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

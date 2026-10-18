@@ -98,6 +98,14 @@ export const ChartSpec = defineTaggedUnion({
 		containerWidth: Schema.Number,
 		gradientPrefix: Schema.String,
 		showTooltip: Schema.Boolean,
+		/** `QueryBuilderLineChart` draws lines over the same rows; absent is the area chart. */
+		mark: Schema.optionalKey(Schema.Literals(["area", "line"])),
+		/** `stacked`: bands on top of each other, flat fills, no closed-run edges. */
+		stacked: Schema.optionalKey(Schema.Boolean),
+		/** `curveType`; absent is linear. */
+		curve: Schema.optionalKey(Schema.Literals(["linear", "monotone"])),
+		/** `showPoints`: every point, none, or (absent) only isolated ones unless they fit. */
+		showPoints: Schema.optionalKey(Schema.Boolean),
 	},
 	/** `IssueOccurrenceChart` (apps/web/src/components/errors): bucketed counts as bars. */
 	Occurrences: {

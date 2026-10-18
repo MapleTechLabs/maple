@@ -15,6 +15,7 @@
 		"@fontsource-variable/geist": "^5.3.0",
 		"@fontsource-variable/geist-mono": "^5.3.0",
 		"@maple/domain": "workspace:*",
+		"@maple/grid-engine": "workspace:*",
 		"@maple/effect-db": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-model": "workspace:*",

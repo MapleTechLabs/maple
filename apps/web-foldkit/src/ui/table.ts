@@ -88,8 +88,17 @@ export const tableHead = <M>(
 		children,
 	)
 
-export const tableCell = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
+export const tableCell = <M>(
+	h: HtmlBuilder<M>,
+	children: Children,
+	className?: string,
+	attributes: ReadonlyArray<Attribute<M>> = [],
+): Html =>
 	h.td(
-		[h.Attribute("class", cn(tableCellStyles, className)), h.DataAttribute("slot", "table-cell")],
+		[
+			h.Attribute("class", cn(tableCellStyles, className)),
+			h.DataAttribute("slot", "table-cell"),
+			...attributes,
+		],
 		children,
 	)

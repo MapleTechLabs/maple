@@ -1,95 +1,23 @@
-import { Effect } from "effect"
 import type { DataSourceEndpoint } from "@/components/dashboard-builder/types"
-import type { BackendError, WarehouseApiError } from "@maple/web-data/warehouse/effect-utils"
-import type { WarehouseServices } from "@maple/web-data/warehouse/warehouse-services"
-
-import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import {
-	getServiceOverview,
-	getServiceApdexTimeSeries,
-	getServicesFacets,
-} from "@maple/web-data/warehouse/services"
-import { listTraces, getTracesFacets, getTracesDurationStats } from "@maple/web-data/warehouse/traces"
-import { listLogs, getLogsCount, getLogsFacets } from "@maple/web-data/warehouse/logs"
-import {
-	getErrorsByType,
-	getErrorsFacets,
-	getErrorsSummary,
-	getErrorDetailTraces,
-} from "@maple/web-data/warehouse/errors"
-import { getErrorRateByService } from "@maple/web-data/warehouse/error-rates"
-import { listMetrics, getMetricsSummary } from "@maple/web-data/warehouse/metrics"
-import {
-	getCustomChartTimeSeries,
-	getCustomChartBreakdown,
-	getCustomChartServiceSparklines,
-} from "@maple/web-data/warehouse/custom-charts"
-import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
-import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
-import { getQueryBuilderList } from "@maple/web-data/warehouse/query-builder-list"
-import { getRawSqlChart } from "@maple/web-data/warehouse/raw-sql-chart"
-import {
-	getProductEventsFunnelWidget,
-	getProductEventsPathsWidget,
-} from "@maple/web-data/warehouse/product-events"
+	getWidgetServerFunction,
+	widgetServerFunctions,
+	type WidgetServerFunction,
+} from "@maple/web-data/warehouse/widget-data-sources"
 
 /**
- * Error channel shared by every warehouse server function. They fail with the
- * `WarehouseApiError` union (decode / query / transform / invalid-input) or a
- * tagged `@maple/http/errors/*` backend error surfaced by the API client. They
- * require the `@maple/web-data` warehouse services; `use-widget-data` provides
- * them from `warehouseServicesLayer`.
+ * The widget data sources, one warehouse server function per stored `endpoint`. The table lives
+ * in `@maple/web-data` so the Foldkit app runs the same one; this checks it stays total over the
+ * web app's own `DataSourceEndpoint` union.
  */
-type ServerFunctionError = WarehouseApiError | BackendError
-
-// The success channel stays `any`: each endpoint resolves a distinct response
-// shape, and the registry is consumed through a single structural `{ data }`
-// accessor that does not depend on the concrete success type.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ServerFunction = (opts: { data: any }) => Effect.Effect<any, ServerFunctionError, WarehouseServices>
-
-const markdownStaticServerFn: ServerFunction = () => Effect.succeed({ data: null })
-
-export const serverFunctionMap: Record<DataSourceEndpoint, ServerFunction> = {
-	service_usage: getServiceUsage,
-	service_overview: getServiceOverview,
-	service_overview_time_series: getCustomChartServiceSparklines,
-	service_apdex_time_series: getServiceApdexTimeSeries,
-	services_facets: getServicesFacets,
-	list_traces: listTraces,
-	traces_facets: getTracesFacets,
-	traces_duration_stats: getTracesDurationStats,
-	list_logs: listLogs,
-	logs_count: getLogsCount,
-	logs_facets: getLogsFacets,
-	errors_summary: getErrorsSummary,
-	errors_by_type: getErrorsByType,
-	error_detail_traces: getErrorDetailTraces,
-	errors_facets: getErrorsFacets,
-	error_rate_by_service: getErrorRateByService,
-	list_metrics: listMetrics,
-	metrics_summary: getMetricsSummary,
-	custom_timeseries: getCustomChartTimeSeries,
-	custom_breakdown: getCustomChartBreakdown,
-	custom_query_builder_timeseries: getQueryBuilderTimeseries,
-	custom_query_builder_breakdown: getQueryBuilderBreakdown,
-	custom_query_builder_list: getQueryBuilderList,
-	raw_sql_chart: getRawSqlChart,
-	product_events_funnel: getProductEventsFunnelWidget,
-	product_events_paths: getProductEventsPathsWidget,
-	markdown_static: markdownStaticServerFn,
-} satisfies Record<DataSourceEndpoint, ServerFunction>
+export const serverFunctionMap: Record<DataSourceEndpoint, WidgetServerFunction> = widgetServerFunctions
 
 /**
  * Looks up a data-source server function by endpoint name. Accepts an
  * arbitrary string (e.g. an endpoint coming from a JSON-decoded widget config
  * whose type is only `string`) and returns `undefined` for unknown endpoints.
  */
-export function getServerFunction(endpoint: string): ServerFunction | undefined {
-	return Object.prototype.hasOwnProperty.call(serverFunctionMap, endpoint)
-		? serverFunctionMap[endpoint as DataSourceEndpoint]
-		: undefined
-}
+export const getServerFunction = getWidgetServerFunction
 
 // `toWidgetRequest` moved to `@maple/widgets/dashboard` so the share API lowers
 // a stored data source through the exact function the browser does. Re-exported

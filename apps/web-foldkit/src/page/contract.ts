@@ -5,6 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../platform/resources"
 import type { AppRoute, RouteTag } from "../route"
 import type { BreadcrumbEntry } from "../shell"
+import { ToastType } from "../ui/toast"
 
 /** The page contract: every routed page is a Submodel registered once in `registry.ts`. See s8-pages.md. */
 
@@ -35,6 +36,17 @@ export const PageOutMessage = defineMessageUnion({
 	RequestedNavigation: { url: Schema.String, isReplace: Schema.Boolean },
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
+	/**
+	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
+	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.
+	 */
+	RequestedToast: {
+		type: ToastType,
+		title: Schema.String,
+		description: Schema.String,
+		timeoutMs: Schema.NullOr(Schema.Number),
+		action: Schema.NullOr(Schema.Struct({ label: Schema.String, message: Schema.Unknown })),
+	},
 })
 export type PageOutMessage = typeof PageOutMessage.Type
 
@@ -118,6 +130,13 @@ export const definePage = <
 	const wrap = (message: Message): WrappedType => ({ _tag: id, message })
 	const keyOf = (route: RouteOf<Tags>) => (spec.key ? spec.key(route) : route._tag)
 
+	const isOwnPageMessage = Schema.is(schemas.Message)
+	/** A toast's action is the page's own Message; it travels wrapped, like every page Message. */
+	const wrapOut = (out: PageOutMessage): PageOutMessage =>
+		out._tag === "RequestedToast" && out.action !== null && isOwnPageMessage(out.action.message)
+			? { ...out, action: { ...out.action, message: wrap(out.action.message) } }
+			: out
+
 	const step = (
 		key: string,
 		context: PageContext,
@@ -125,7 +144,7 @@ export const definePage = <
 	): PageStep<SlotType, WrappedType> => ({
 		slot: { _tag: id, key, orgId: context.orgId, model: result.model },
 		commands: Command.mapMessages(result.commands ?? [], wrap),
-		outMessage: Option.fromNullishOr(result.outMessage),
+		outMessage: Option.map(Option.fromNullishOr(result.outMessage), wrapOut),
 	})
 
 	const lifted = Subscription.lift(spec.subscriptions ?? {})<PageHost, WrappedType>({

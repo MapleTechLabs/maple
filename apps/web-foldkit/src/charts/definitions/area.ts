@@ -6,7 +6,16 @@ import {
 	trimEmptyTrailingBuckets,
 } from "@maple/ui/components/plot/partial-buckets"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { areaY, defineChart, dot, lineY, type ChartLinearGradient, type ChartValue } from "@tanstack/charts"
+import {
+	areaY,
+	d3Curve,
+	defineChart,
+	dot,
+	lineY,
+	type ChartLinearGradient,
+	type ChartValue,
+} from "@tanstack/charts"
+import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import {
@@ -22,14 +31,17 @@ import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
-// Port of `QueryBuilderAreaChart` (packages/ui/src/components/charts/area/query-builder-area-chart.tsx),
-// definition half, for the unstacked, linear, threshold-free chart the metric explorer draws.
-// TODO(stacked): stacked bands, monotone curves, thresholds and hidden series are not ported.
+// Port of `QueryBuilderAreaChart` and `QueryBuilderLineChart` (packages/ui/src/components/charts/area/,
+// line/), definition half: bands or lines, stacked or not, linear or monotone.
+// TODO(thresholds): threshold rules, log scale and fitted or soft y bounds are not ported.
 
 type AreaSpec = Extract<ChartSpec, { readonly _tag: "QueryBuilderArea" }>
 
 const STROKE_WIDTH = 2
+const STACKED_STROKE_WIDTH = 1
 const AREA_FILL_OPACITY = 0.6
+const STACKED_FILL_OPACITY = 0.55
+const PARTIAL_STACKED_FILL_OPACITY = 0.2
 const FILL_GRADIENT = [0.8, 0.1] as const
 const PARTIAL_FILL_GRADIENT = [0.15, 0] as const
 
@@ -60,7 +72,28 @@ interface Series {
 	readonly color: string
 }
 
+/** `computeStackBases`: per row object, where each visible band starts. */
+const stackBases = (
+	rows: ReadonlyArray<TimeseriesRow>,
+	visible: ReadonlyArray<Series>,
+): ReadonlyMap<TimeseriesRow, Readonly<Record<string, number>>> =>
+	new Map(
+		rows.map((row) => {
+			const perKey = Object.fromEntries(
+				visible.map((entry, index) => [
+					entry.key,
+					visible
+						.slice(0, index)
+						.reduce((total, below) => total + asFiniteNumber(row[below.key]), 0),
+				]),
+			)
+			return [row, perKey]
+		}),
+	)
+
 export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
+	const isLine = spec.mark === "line"
+	const isStacked = !isLine && spec.stacked === true
 	const { definitions } = seriesDefinitionsOf(spec.data)
 	const unit = spec.unit ?? undefined
 	const keys = definitions.map((definition) => definition.chartKey)
@@ -79,33 +112,40 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 
 	const first = findFirstPartialIndex(rows, { now: spec.nowMs })
 	const plotRows = first === -1 ? rows : trimEmptyTrailingBuckets(rows, visibleKeys, first)
-	const yAxis = timeseriesYAxis({ rows: plotRows, visibleKeys, unit })
+	const yAxis = timeseriesYAxis({ rows: plotRows, visibleKeys, unit, stacked: isStacked })
 	const yDomainFloor = yAxis.domain[0]
-	const baseOf = () => Math.max(yDomainFloor, 0)
-	const topOf = (row: TimeseriesRow, key: string) => Math.max(yDomainFloor, asFiniteNumber(row[key]))
+	const bases = isStacked ? stackBases(plotRows, visible) : null
+	const baseOf = (row: TimeseriesRow, key: string) => Math.max(yDomainFloor, bases?.get(row)?.[key] ?? 0)
+	const topOf = (row: TimeseriesRow, key: string) =>
+		isLine
+			? asFiniteNumber(row[key])
+			: Math.max(yDomainFloor, (bases?.get(row)?.[key] ?? 0) + asFiniteNumber(row[key]))
 
-	const dotIndexes: ReadonlyMap<string, ReadonlySet<number>> = pointsFit(
-		spec.containerWidth,
-		plotRows.length,
-	)
-		? new Map(visibleKeys.map((key) => [key, new Set(plotRows.map((_, index) => index))]))
-		: isolatedPointIndexes(plotRows, visibleKeys)
+	const dotIndexes: ReadonlyMap<string, ReadonlySet<number>> = spec.showPoints === false
+		? new Map()
+		: spec.showPoints === true || pointsFit(spec.containerWidth, plotRows.length)
+			? new Map(visibleKeys.map((key) => [key, new Set(plotRows.map((_, index) => index))]))
+			: isolatedPointIndexes(plotRows, visibleKeys)
 
 	const { solid, dashed } = splitAtFirstPartial(plotRows, visibleKeys, { now: spec.nowMs })
-	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
+	const curve = spec.curve === "monotone" ? d3Curve(curveMonotoneX) : undefined
+	const partialDash = roundCapDasharray(4, 4, isStacked ? STACKED_STROKE_WIDTH : STROKE_WIDTH)
 	const gradientIdFor = (key: string, partial: boolean) =>
 		`${spec.gradientPrefix}-${key}${partial ? "-partial" : ""}`
 	const hasDashed = dashed.length > 0
+	const fillOpacityFor = (partial: boolean) =>
+		isStacked ? (partial ? PARTIAL_STACKED_FILL_OPACITY : STACKED_FILL_OPACITY) : AREA_FILL_OPACITY
 
 	const band = (rowSlice: ReadonlyArray<TimeseriesRow>, entry: Series, partial: boolean) =>
 		areaY(rowSlice, {
 			id: partial ? `${entry.key}-partial-area` : `${entry.key}-area`,
 			x: (row: TimeseriesRow) => row.date,
 			y: (row: TimeseriesRow) => topOf(row, entry.key),
-			y1: () => baseOf(),
-			fill: `url(#${gradientIdFor(entry.key, partial)})`,
-			fillOpacity: AREA_FILL_OPACITY,
+			y1: (row: TimeseriesRow) => baseOf(row, entry.key),
+			fill: isStacked ? entry.color : `url(#${gradientIdFor(entry.key, partial)})`,
+			fillOpacity: fillOpacityFor(partial),
 			stroke: "none",
+			curve,
 		})
 
 	const edge = (rowSlice: ReadonlyArray<TimeseriesRow>, entry: Series, partial: boolean) =>
@@ -114,30 +154,45 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 			x: (row: TimeseriesRow) => row.date,
 			y: (row: TimeseriesRow) => topOf(row, entry.key),
 			stroke: entry.color,
-			strokeWidth: STROKE_WIDTH,
+			strokeWidth: isStacked ? STACKED_STROKE_WIDTH : STROKE_WIDTH,
+			curve,
 			strokeDasharray: partial ? partialDash : undefined,
 		})
 
+	const gradients =
+		isLine || isStacked
+			? []
+			: [
+					...visible.map((entry) =>
+						verticalGradient(gradientIdFor(entry.key, false), entry.color, ...FILL_GRADIENT),
+					),
+					...(hasDashed
+						? visible.map((entry) =>
+								verticalGradient(
+									gradientIdFor(entry.key, true),
+									entry.color,
+									...PARTIAL_FILL_GRADIENT,
+								),
+							)
+						: []),
+				]
+
+	const paths = isLine
+		? [
+				...visible.map((entry) => edge(solid, entry, false)),
+				...(hasDashed ? visible.map((entry) => edge(dashed, entry, true)) : []),
+			]
+		: [
+				...visible.map((entry) => band(solid, entry, false)),
+				...(hasDashed ? visible.map((entry) => band(dashed, entry, true)) : []),
+				...(isStacked ? [] : visible.map((entry) => edge(solid, entry, false))),
+				...(hasDashed ? visible.map((entry) => edge(dashed, entry, true)) : []),
+			]
+
 	const definition = defineChart({
-		gradients: [
-			...visible.map((entry) =>
-				verticalGradient(gradientIdFor(entry.key, false), entry.color, ...FILL_GRADIENT),
-			),
-			...(hasDashed
-				? visible.map((entry) =>
-						verticalGradient(
-							gradientIdFor(entry.key, true),
-							entry.color,
-							...PARTIAL_FILL_GRADIENT,
-						),
-					)
-				: []),
-		],
+		gradients,
 		marks: [
-			...visible.map((entry) => band(solid, entry, false)),
-			...(hasDashed ? visible.map((entry) => band(dashed, entry, true)) : []),
-			...visible.map((entry) => edge(solid, entry, false)),
-			...(hasDashed ? visible.map((entry) => edge(dashed, entry, true)) : []),
+			...paths,
 			...visible.flatMap((entry) => {
 				const indexes = dotIndexes.get(entry.key)
 				if (!indexes || indexes.size === 0) return []
@@ -164,7 +219,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 		],
 		scales: { x: timeseriesXAxis(axisContext), y: yAxis.y },
 		focus: "group-x",
-		maxFocusDistance: UNBOUNDED_FOCUS_DISTANCE,
+		...(isLine ? undefined : { maxFocusDistance: UNBOUNDED_FOCUS_DISTANCE }),
 		focusRing: false,
 		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>("pointer") : false,
 	})

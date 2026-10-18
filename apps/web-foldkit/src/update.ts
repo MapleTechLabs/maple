@@ -1,7 +1,7 @@
 import type { OrgId } from "@maple/domain"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import { Command, Update } from "foldkit"
 import { UrlRequest } from "foldkit/navigation"
 import { Transition } from "foldkit/route"
@@ -19,7 +19,7 @@ import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { rendersShell } from "./page/chrome"
 import { type PageContext, PageOutMessage } from "./page/contract"
-import { changeContext, enterRoute, type PageTransition, updatePage } from "./page/registry"
+import { changeContext, enterRoute, PageMessage, type PageTransition, updatePage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import type { ClerkSnapshot } from "./platform/clerk"
@@ -67,6 +67,15 @@ const shellFoldConfig = {
 }
 
 const foldShell = Update.foldChild({ update: Shell.update, ...shellFoldConfig })
+
+/** A page Message for whatever page is open; another page's Message is dropped by the registry. */
+const toPage = (model: Model, message: PageMessage | undefined) =>
+	message === undefined
+		? { model }
+		: Option.match(pageContextOf(model), {
+				onNone: () => ({ model }),
+				onSome: (context) => applyPage(updatePage(model.page, message, context))(model),
+			})
 
 const foldShellStep = (
 	step: (
@@ -124,23 +133,62 @@ const applyPage =
 			},
 		)
 
+const isPageMessage = Schema.is(PageMessage)
+
+type PageToast = Extract<PageOutMessage, { readonly _tag: "RequestedToast" }>
+
+/** A page's `toastManager.add`; its action's page Message waits under the toast's id. */
+const showPageToast = (model: Model, request: PageToast) => {
+	const toastId = Toast.nextToastId(model.toasts)
+	const added = Toast.add(model.toasts, {
+		type: request.type,
+		title: request.title,
+		description: request.description,
+		...(request.timeoutMs === null ? undefined : { timeoutMs: request.timeoutMs }),
+		...(request.action === null ? undefined : { actionLabel: request.action.label }),
+	})
+	const action = request.action
+	return {
+		model: modifyFields(model, {
+			toasts: () => added.model,
+			toastActions: (actions) =>
+				action !== null && isPageMessage(action.message)
+					? { ...actions, [toastId]: action.message }
+					: actions,
+		}),
+		commands: (added.commands ?? []).map(
+			Command.mapMessage((message) => Message.GotToastMessage({ message })),
+		),
+	}
+}
+
 const writePage =
 	(transition: PageTransition): Step =>
-	(model) => ({
-		model: modifyFields(model, { page: () => transition.slot }),
-		commands: [
-			...transition.commands.map(Command.mapMessage((message) => Message.GotPageMessage({ message }))),
-			...Option.match(transition.outMessage, {
-				onNone: () => [],
-				onSome: PageOutMessage.match({
-					RequestedNavigation: ({ url, isReplace }) => [
-						isReplace ? ReplaceUrl({ url }) : NavigateInternal({ url }),
-					],
-					RequestedNamespacePin: () => [],
+	(model) => {
+		const toasted = Option.match(
+			Option.filter(transition.outMessage, (out): out is PageToast => out._tag === "RequestedToast"),
+			{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
+		)
+		return {
+			model: modifyFields(toasted.model, { page: () => transition.slot }),
+			commands: [
+				...transition.commands.map(
+					Command.mapMessage((message) => Message.GotPageMessage({ message })),
+				),
+				...Option.match(transition.outMessage, {
+					onNone: () => [],
+					onSome: PageOutMessage.match({
+						RequestedNavigation: ({ url, isReplace }) => [
+							isReplace ? ReplaceUrl({ url }) : NavigateInternal({ url }),
+						],
+						RequestedNamespacePin: () => [],
+						RequestedToast: () => [],
+					}),
 				}),
-			}),
-		],
-	})
+				...toasted.commands,
+			],
+		}
+	}
 
 /** Route entry or leave: the route's page is built, kept (same key) or dropped. */
 const loadPage: Step = (model) =>
@@ -297,10 +345,9 @@ export const update = (model: Model, message: Message) =>
 		FailedMountClerkSignIn: () => ({ model }),
 		GotSignInMessage: ({ message }) => foldSignIn(model, message),
 		GotShellMessage: ({ message }) => foldShell(model, message),
-		GotToastMessage: ({ message }) => foldToasts(model, message),
-		GotPageMessage: ({ message }) =>
-			Option.match(pageContextOf(model), {
-				onNone: () => ({ model }),
-				onSome: (context) => applyPage(updatePage(model.page, message, context))(model),
-			}),
+		GotToastMessage: ({ message }) =>
+			message._tag === "ClickedToastAction" && model.toastActions[message.toastId] !== undefined
+				? toPage(model, model.toastActions[message.toastId])
+				: foldToasts(model, message),
+		GotPageMessage: ({ message }) => toPage(model, message),
 	})

@@ -14,6 +14,7 @@ import {
 import { Array, Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { icon, type IconName } from "./icon"
 import {
 	descriptionId,
@@ -97,7 +98,8 @@ const toastRoot = (h: HtmlBuilder<Message>, model: Model, toast: Toast, placemen
 	return h.div(
 		[
 			h.Key(toast.id),
-			h.AriaDescribedBy(descriptionId(toast.id)),
+			// Base UI's `Toast.Description` renders nothing for a toast without one.
+			...(toast.description === "" ? [] : [h.AriaDescribedBy(descriptionId(toast.id))]),
 			h.AriaLabelledBy(titleId(toast.id)),
 			h.AriaModal(false),
 			h.Class(cn(...toastRootStyles)),
@@ -141,19 +143,37 @@ const toastRoot = (h: HtmlBuilder<Message>, model: Model, toast: Toast, placemen
 										],
 										[toast.title],
 									),
-									h.p(
-										[
-											h.Class(toastDescriptionStyles),
-											h.DataAttribute("slot", "toast-description"),
-											...typeAttribute(h, toast.type),
-											h.Id(descriptionId(toast.id)),
-										],
-										[toast.description],
-									),
+									...(toast.description === ""
+										? []
+										: [
+												h.p(
+													[
+														h.Class(toastDescriptionStyles),
+														h.DataAttribute("slot", "toast-description"),
+														...typeAttribute(h, toast.type),
+														h.Id(descriptionId(toast.id)),
+													],
+													[toast.description],
+												),
+											]),
 								],
 							),
 						],
 					),
+					...(toast.actionLabel === null
+						? []
+						: [
+								h.button(
+									[
+										h.Class(buttonVariants({ size: "xs" })),
+										h.DataAttribute("slot", "toast-action"),
+										h.Tabindex(0),
+										h.Type("button"),
+										h.OnClick(Message.ClickedToastAction({ toastId: toast.id })),
+									],
+									[toast.actionLabel],
+								),
+							]),
 				],
 			),
 		],

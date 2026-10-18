@@ -1,27 +1,43 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Schema } from "effect"
+import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { kbdStyles } from "@maple/ui/styles/ui/kbd"
+import { Option, Schema } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { button } from "../../ui/button"
 import { eyebrow } from "../../ui/eyebrow"
+import { icon } from "../../ui/icon"
 import * as Popover from "../../ui/popover"
 import { presetLabel, timeRangeTriggerContent } from "./time-controls"
 
 // `TimeRangePicker` (apps/web/src/components/time-range-picker/time-range-picker.tsx): the header
 // popover with the preset rail and quick select. Picking a range is an OutMessage; the page writes
 // it to its URL search (`applyTimeRangeSearch`).
-// TODO(picker): shorthand input, recently used, timezone select, custom range tab, the "D" hotkey
+// TODO(picker): recently used, the timezone list, custom range tab, the "D" hotkey
 // and `maxRangeSeconds` (only presets past a year can exceed it) are not ported yet.
 
-export const Model = Popover.Model
-export type Model = Popover.Model
+export const Model = Schema.Struct({
+	popover: Popover.Model,
+	/** `ShorthandInput`: the typed duration and whether Enter rejected it. */
+	shorthand: Schema.String,
+	isShorthandInvalid: Schema.Boolean,
+})
+export type Model = typeof Model.Type
 
-export const init = (id: string): Model => Popover.init(id, { align: "end" })
+export const init = (id: string): Model => ({
+	popover: Popover.init(id, { align: "end" }),
+	shorthand: "",
+	isShorthandInvalid: false,
+})
 
 export const Message = defineMessageUnion({
 	GotPopoverMessage: { message: Popover.Message },
 	ClickedPreset: { value: Schema.String },
+	ChangedShorthand: { value: Schema.String },
+	PressedShorthandEnter: {},
 })
 export type Message = typeof Message.Type
 
@@ -32,18 +48,34 @@ export type OutMessage = typeof OutMessage.Type
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
-const liftPopover = (result: Update.Return<Model, Popover.Message>): Return => ({
-	model: result.model,
+const liftPopover = (model: Model, result: Update.Return<Popover.Model, Popover.Message>): Return => ({
+	model: { ...model, popover: result.model },
 	commands: Command.mapMessages(result.commands, (message) => Message.GotPopoverMessage({ message })),
 })
 
+/** `relativeToAbsolute` resolves it: a duration (`2h`, `4d`, `2mo`) or `today`. */
+const isValidShorthand = (value: string): boolean => resolveRelativeRangeToWarehouse(value, 0, "UTC") !== null
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		GotPopoverMessage: ({ message: inner }) => liftPopover(Popover.update(model, inner)),
+		GotPopoverMessage: ({ message: inner }) => liftPopover(model, Popover.update(model.popover, inner)),
 		ClickedPreset: ({ value }) => ({
-			...liftPopover(Popover.close(model)),
+			...liftPopover(model, Popover.close(model.popover)),
 			outMessage: OutMessage.SelectedPreset({ presetValue: value }),
 		}),
+		ChangedShorthand: ({ value }) => ({
+			model: { ...model, shorthand: value, isShorthandInvalid: false },
+		}),
+		PressedShorthandEnter: () =>
+			isValidShorthand(model.shorthand)
+				? {
+						...liftPopover(
+							{ ...model, shorthand: "", isShorthandInvalid: false },
+							Popover.close(model.popover),
+						),
+						outMessage: OutMessage.SelectedPreset({ presetValue: model.shorthand.toLowerCase() }),
+					}
+				: { model: { ...model, isShorthandInvalid: true } },
 	})
 
 /** The list presets (`LONG_RANGE_PRESET_OPTIONS` for long-range pages, else `PRESET_OPTIONS`). */
@@ -133,12 +165,131 @@ export type ViewInputs = Readonly<{
 	label: string
 	selectedPreset: string | undefined
 	presets: ReadonlyArray<string>
+	/** `useTimezonePreference().effectiveTimezone` for the footer (default UTC). */
+	timeZone?: string
 }>
+
+/** `ShorthandInput`: type a duration, Enter applies it. */
+const shorthandInput = (h: HtmlBuilder<Message>, model: Model): Html =>
+	h.div(
+		[h.Class("space-y-1.5")],
+		[
+			h.div(
+				[
+					h.Class(
+						cn(
+							"group flex h-9 items-center gap-2 rounded-md border bg-background/40 pl-3 pr-1.5 transition-colors",
+							"focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
+							model.isShorthandInvalid
+								? "border-destructive/70"
+								: "border-border/70 hover:border-border",
+						),
+					),
+				],
+				[
+					h.span([h.Class("font-mono text-2xs text-muted-foreground/70 select-none")], ["›"]),
+					h.input([
+						h.Value(model.shorthand),
+						h.OnInput((value) => Message.ChangedShorthand({ value })),
+						h.OnKeyDownPreventDefault((key) =>
+							key === "Enter" ? Option.some(Message.PressedShorthandEnter()) : Option.none(),
+						),
+						h.Placeholder("1m · 2h · 4d · 6w · today"),
+						h.Class(
+							"flex-1 bg-transparent font-mono text-sm tracking-tight text-foreground placeholder:text-muted-foreground/50 focus:outline-none",
+						),
+						h.Spellcheck(false),
+						h.Autocomplete("off"),
+					]),
+					h.kbd(
+						[
+							h.Class(cn(kbdStyles, model.shorthand.length === 0 && "hidden")),
+							h.DataAttribute("slot", "kbd"),
+						],
+						["↵"],
+					),
+				],
+			),
+			h.p(
+				[
+					h.Class(
+						cn(
+							"px-1 font-mono text-3xs transition-colors",
+							model.isShorthandInvalid ? TONE_TEXT.crit : "text-muted-foreground/60",
+						),
+					),
+				],
+				[
+					model.isShorthandInvalid
+						? "Try 5m, 2h, 4d, 1w, 2mo, or today"
+						: "Type a duration and press enter",
+				],
+			),
+		],
+	)
+
+/** `formatUtcOffset`: `UTC+2`, `UTC-5:30`, `UTC`. */
+const formatUtcOffset = (timeZone: string): string => {
+	const part =
+		new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" })
+			.formatToParts(0)
+			.find((entry) => entry.type === "timeZoneName")?.value ?? "GMT"
+	const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(part)
+	if (match === null) return "UTC"
+	const [, sign, hours, minutes] = match
+	return `UTC${sign}${Number(hours)}${minutes !== undefined && minutes !== "00" ? `:${minutes}` : ""}`
+}
+
+/**
+ * `TimezoneSelect`'s closed trigger, on the system zone.
+ * TODO(timezone): the zone list (a searchable combobox) is not ported; the trigger is inert.
+ */
+const timezoneFooter = (h: HtmlBuilder<Message>, timeZone: string): Html =>
+	h.div(
+		[h.Class("flex items-center justify-between gap-3 border-t border-border/70 bg-muted/20 px-4 py-2")],
+		[
+			eyebrow(h, {}, ["Timezone"]),
+			h.button(
+				[
+					h.AriaLabel("Timezone"),
+					h.AriaExpanded(false),
+					h.AriaHasPopup("dialog"),
+					h.Class(
+						cn(
+							"-mr-1.5 inline-flex h-6 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5",
+							"text-2xs tracking-tight outline-none transition-colors",
+							"hover:bg-muted/60 focus-visible:ring-[3px] focus-visible:ring-ring/24 data-popup-open:bg-muted/60",
+						),
+					),
+					h.DataAttribute("slot", "combobox-trigger"),
+					h.Role("combobox"),
+					h.Tabindex(0),
+					h.Type("button"),
+				],
+				[
+					icon(h, "GlobeIcon", { className: "size-3 shrink-0 text-muted-foreground/70" }),
+					h.span([h.Class("truncate font-mono text-foreground/90")], [timeZone]),
+					h.span(
+						[h.Class("shrink-0 font-mono text-muted-foreground/70")],
+						[formatUtcOffset(timeZone)],
+					),
+					h.span(
+						[
+							h.Class(cn(badgeVariants({ variant: "tag", className: "shrink-0" }))),
+							h.DataAttribute("slot", "badge"),
+						],
+						["System"],
+					),
+					icon(h, "ChevronDownIcon", { size: 12, className: "shrink-0 text-muted-foreground" }),
+				],
+			),
+		],
+	)
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 	h.submodel({
 		slotId: "time-range-popover",
-		model,
+		model: model.popover,
 		view: Popover.view,
 		toParentMessage: (message) => Message.GotPopoverMessage({ message }),
 		viewInputs: {
@@ -175,9 +326,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 									],
 									[presetList(h, inputs.presets, inputs.selectedPreset)],
 								),
-								h.div([h.Class("min-w-0 flex-1 space-y-5 p-4")], [quickSelect(h)]),
+								h.div(
+									[h.Class("min-w-0 flex-1 space-y-5 p-4")],
+									[shorthandInput(h, model), quickSelect(h)],
+								),
 							],
 						),
+						timezoneFooter(h, inputs.timeZone ?? "UTC"),
 					],
 				),
 			],
