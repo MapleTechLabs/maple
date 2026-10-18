@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import {
 	selectGroupLabelStyles,
+	selectLabelStyles,
 	selectItemIndicatorIconStyles,
 	selectItemIndicatorStyles,
 	selectItemStyles,
@@ -23,11 +24,17 @@ import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay
 import { itemId, listId, Message, type Model, MountSelect } from "./select"
 
 /** `isDisabled`: `<SelectItem disabled>`, listed but not choosable. */
-export type SelectOption = Readonly<{ value: string; label: string; isDisabled?: boolean }>
+export type SelectOption = Readonly<{ value: string; label: string; isDisabled?: boolean; title?: string }>
 
 /** What the list shows: groups with a label, separators and loose items, in order. */
 export type SelectEntry =
-	| Readonly<{ _tag: "Group"; label: string; items: ReadonlyArray<SelectOption> }>
+	| Readonly<{
+			_tag: "Group"
+			label: string
+			items: ReadonlyArray<SelectOption>
+			/** `<SelectLabel>` in the group (not `SelectGroupLabel`): it labels the Select, not the group. */
+			isSelectLabel?: boolean
+	  }>
 	| Readonly<{ _tag: "Separator" }>
 	| Readonly<{ _tag: "Item"; item: SelectOption }>
 
@@ -61,6 +68,9 @@ export const optionsOf = (entries: ReadonlyArray<SelectEntry>): ReadonlyArray<Se
 		entry._tag === "Group" ? entry.items : entry._tag === "Item" ? [entry.item] : [],
 	)
 
+/** Base UI's `Select.Label` id: every `<SelectLabel>` renders it, and it names the trigger. */
+export const selectLabelId = (id: string): string => `${id}-label`
+
 export const selectedIndexOf = (entries: ReadonlyArray<SelectEntry>, value: string): number | null =>
 	Option.getOrNull(Array.findFirstIndex(optionsOf(entries), (option) => option.value === value))
 
@@ -80,6 +90,7 @@ const option = (h: H, model: Model, inputs: ViewInputs, item: SelectOption, inde
 			h.Id(itemId(model.id, index)),
 			h.Role("option"),
 			h.Tabindex(isHighlighted ? 0 : -1),
+			...(item.title === undefined ? [] : [h.Title(item.title)]),
 			...(isDisabled
 				? []
 				: [
@@ -123,20 +134,34 @@ const listChildren = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Htm
 				return [start + 1, option(h, model, inputs, entry.item, start)]
 			case "Group": {
 				const labelId = `${model.id}-group-${entryIndex}`
+				const isSelectLabel = entry.isSelectLabel ?? false
 				return [
 					start + entry.items.length,
 					h.div(
-						[h.AriaLabelledBy(labelId), h.DataAttribute("slot", "select-group"), h.Role("group")],
 						[
-							h.div(
-								[
-									h.AriaHidden(true),
-									h.Class(selectGroupLabelStyles),
-									h.DataAttribute("slot", "select-group-label"),
-									h.Id(labelId),
-								],
-								[entry.label],
-							),
+							...(isSelectLabel ? [] : [h.AriaLabelledBy(labelId)]),
+							h.DataAttribute("slot", "select-group"),
+							h.Role("group"),
+						],
+						[
+							isSelectLabel
+								? h.div(
+										[
+											h.Class(selectLabelStyles),
+											h.DataAttribute("slot", "select-label"),
+											h.Id(selectLabelId(model.id)),
+										],
+										[entry.label],
+									)
+								: h.div(
+										[
+											h.AriaHidden(true),
+											h.Class(selectGroupLabelStyles),
+											h.DataAttribute("slot", "select-group-label"),
+											h.Id(labelId),
+										],
+										[entry.label],
+									),
 							...entry.items.map((item, offset) =>
 								option(h, model, inputs, item, start + offset),
 							),

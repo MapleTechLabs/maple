@@ -54,6 +54,19 @@ export const traceInteractionsArea: AreaModule = {
 			await page.getByRole("button", { name: "Copy trace ID" }).first().click()
 			await page.getByText("trace ID copied", { exact: true }).waitFor()
 		}),
+		// Viewport only: growing the page to its full height resizes the window, which closes a Select.
+		{
+			...detail("timeline-color-by-open", "the colour-by list open", async (page) => {
+				await page.getByRole("combobox").filter({ hasText: "Color:" }).click()
+				await page.getByRole("option", { name: "Span kind" }).waitFor()
+			}),
+			fullPage: false,
+		},
+		detail("timeline-color-by", "timeline coloured by span kind", async (page) => {
+			await page.getByRole("combobox").filter({ hasText: "Color:" }).click()
+			await page.getByRole("option", { name: "Span kind" }).click()
+			await page.getByRole("combobox").filter({ hasText: "Span kind" }).waitFor()
+		}),
 		detail("timeline-collapse-all", "timeline collapsed to the root", async (page) => {
 			await page.getByRole("button", { name: "Collapse all" }).click()
 		}),

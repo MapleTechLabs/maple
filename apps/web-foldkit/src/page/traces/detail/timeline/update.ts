@@ -1,3 +1,4 @@
+import * as Select from "../../../../ui/select"
 import {
 	collectAllCollapsibleIds,
 	collectDescendantParentIds,
@@ -6,14 +7,19 @@ import {
 	computeExpandOneLevel,
 } from "@maple/ui/components/traces/auto-collapse"
 import { clampViewport, viewportBounds } from "@maple/ui/components/traces/clamp-viewport"
-import { colorByFromId, DEFAULT_COLOR_BY, type ColorByField } from "@maple/ui/components/traces/color-by"
+import {
+	colorByFieldId,
+	colorByFromId,
+	DEFAULT_COLOR_BY,
+	type ColorByField,
+} from "@maple/ui/components/traces/color-by"
 import {
 	SIDEBAR_WIDTH_DEFAULT,
 	SIDEBAR_WIDTH_MAX,
 	SIDEBAR_WIDTH_MIN,
 } from "@maple/ui/components/traces/trace-timeline-types"
 import { summarizeClockSkew } from "@maple/ui/lib/span-tree"
-import type { Command } from "foldkit"
+import { Command } from "foldkit"
 import { type SpanEvents, type SpanNodeData, type TraceData, toSpanNode } from "../trace-data"
 import { FocusSearch, ReadSidebarWidth, ScrollToRow } from "./command"
 import {
@@ -54,6 +60,10 @@ export type InitInput = Readonly<{
 }>
 
 /** `<TraceTimeline />` mounting: default expansion keeps the selected span visible, then scrolls to it. */
+/** The picker's value: `colorByFieldId`, the default when the stored one does not parse. */
+const colorBySelectValue = (colorBy: string): string =>
+	colorByFieldId(colorByFromId(colorBy) ?? DEFAULT_COLOR_BY)
+
 export const init = (input: InitInput): UpdateReturn => {
 	const { trace } = input
 	const { traceStartMs, traceEndMs } = traceBounds(
@@ -82,6 +92,10 @@ export const init = (input: InitInput): UpdateReturn => {
 		matchCursor: 0,
 		selectedSpanId: input.selectedSpanId,
 		colorBy: input.colorBy,
+		colorBySelect: Select.init("trace-timeline-color-by", {
+			value: colorBySelectValue(input.colorBy),
+			selectedIndex: null,
+		}),
 		spanEvents: input.spanEvents,
 		sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
 		scrollerWidth: 0,
@@ -112,7 +126,13 @@ export const setSpanEvents = (model: Model, spanEvents: SpanEvents | null): Upda
 	model: { ...model, spanEvents },
 })
 
-export const setColorBy = (model: Model, colorBy: string): UpdateReturn => ({ model: { ...model, colorBy } })
+export const setColorBy = (model: Model, colorBy: string): UpdateReturn => ({
+	model: {
+		...model,
+		colorBy,
+		colorBySelect: { ...model.colorBySelect, value: colorBySelectValue(colorBy) },
+	},
+})
 
 const setViewport = (model: Model, viewport: Viewport): Model => ({
 	...model,
@@ -303,6 +323,19 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		ClickedShortcuts: () => ({ model: { ...model, isShowingShortcuts: !model.isShowingShortcuts } }),
 		ClickedCloseShortcuts: () => ({ model: { ...model, isShowingShortcuts: false } }),
 		ClickedShortcutsSheet: () => ({ model }),
+		GotColorBySelectMessage: ({ message: inner }) => {
+			const next = Select.update(model.colorBySelect, inner)
+			const lifted: UpdateReturn = {
+				model: { ...model, colorBySelect: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotColorBySelectMessage({ message }),
+				),
+			}
+			const value = next.outMessage?.value
+			return value === undefined || value === model.colorBy || colorByFromId(value) === undefined
+				? lifted
+				: { ...lifted, outMessage: OutMessage.ChangedColorBy({ colorBy: value }) }
+		},
 		SelectedColorBy: ({ colorBy }) =>
 			colorBy === model.colorBy
 				? { model }
