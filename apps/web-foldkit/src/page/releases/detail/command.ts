@@ -47,16 +47,16 @@ export const FetchReleaseCommit = Command.define("FetchReleaseCommit", {
 /** `getReleasesResultAtom({ startTime, endTime, environments })`: the list's unfiltered read. */
 export const FetchDeployReleases = Command.define("FetchDeployReleases", {
 	args: {
-		key: Schema.String,
+		key: Schema.String, refresh: Schema.Boolean,
 		startTime: Schema.String,
 		endTime: Schema.String,
 		environments: Schema.optional(Schema.Array(Schema.String)),
 	},
 	messages: [Message.CompletedFetchReleases],
-	execute: ({ key, startTime, endTime, environments }) =>
+	execute: ({ key, refresh, startTime, endTime, environments }) =>
 		finish(
 			readThrough(
-				{ key, idleTtlMs: IdleTtl.releases, schema: ReleasesData },
+				{ key, refresh, idleTtlMs: IdleTtl.releases, schema: ReleasesData },
 				getReleases({
 					data: {
 						startTime,
@@ -104,7 +104,7 @@ export const FetchDeployIssues = Command.define("FetchDeployIssues", {
 /** `getReleaseDetailResultAtom`: this version on one service, and the version it replaced. */
 export const FetchReleaseDetail = Command.define("FetchReleaseDetail", {
 	args: {
-		key: Schema.String,
+		key: Schema.String, refresh: Schema.Boolean,
 		serviceName: Schema.String,
 		commitSha: Schema.String,
 		baselineCommitSha: Schema.UndefinedOr(Schema.String),
@@ -113,10 +113,10 @@ export const FetchReleaseDetail = Command.define("FetchReleaseDetail", {
 		environments: Schema.UndefinedOr(Schema.Array(Schema.String)),
 	},
 	messages: [Message.CompletedFetchDetail],
-	execute: ({ key, environments, ...input }) =>
+	execute: ({ key, refresh, environments, ...input }) =>
 		finish(
 			readThrough(
-				{ key, idleTtlMs: IdleTtl.releaseDetail, schema: ReleaseDetail },
+				{ key, refresh, idleTtlMs: IdleTtl.releaseDetail, schema: ReleaseDetail },
 				getReleaseDetail({
 					data: {
 						...input,

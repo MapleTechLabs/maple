@@ -67,7 +67,7 @@ const chain = (first: Return, next: (model: Model) => Return): Return => {
 const requestReleases = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const input = inputOf(model, window)
 	const key = requestKey(context.orgId, "getReleases", { data: input })
-	return slotStep({ ...model, window }, model.releases, (releases) => ({ releases }), key, mode, FetchReleases({ key, input }))
+	return slotStep({ ...model, window }, model.releases, (releases) => ({ releases }), key, mode, FetchReleases({ key, input, refresh: mode === "Refresh" }))
 }
 
 /**

@@ -67,11 +67,11 @@ export const ResolveWindow = Command.define("ResolveServicesWindow", {
 // Fetches carry their request key back so `update` drops a superseded answer (S6).
 
 export const FetchOverview = Command.define("FetchServiceOverview", {
-	args: { key: Schema.String, input: OverviewInput },
+	args: { key: Schema.String, refresh: Schema.Boolean, input: OverviewInput },
 	messages: [Message.CompletedFetchOverview],
-	execute: ({ key, input }) =>
+	execute: ({ key, refresh, input }) =>
 		readThrough(
-			{ key, idleTtlMs: IdleTtl.serviceOverview, schema: Schema.Array(ServiceRow) },
+			{ key, refresh, idleTtlMs: IdleTtl.serviceOverview, schema: Schema.Array(ServiceRow) },
 			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) => response.data),
 		).pipe(
 			Effect.mapError(toLoadFailure),
@@ -81,11 +81,11 @@ export const FetchOverview = Command.define("FetchServiceOverview", {
 })
 
 export const FetchSparklines = Command.define("FetchServiceSparklines", {
-	args: { key: Schema.String, input: OverviewInput },
+	args: { key: Schema.String, refresh: Schema.Boolean, input: OverviewInput },
 	messages: [Message.CompletedFetchSparklines],
-	execute: ({ key, input }) =>
+	execute: ({ key, refresh, input }) =>
 		readThrough(
-			{ key, idleTtlMs: IdleTtl.serviceSparklines, schema: Sparklines },
+			{ key, refresh, idleTtlMs: IdleTtl.serviceSparklines, schema: Sparklines },
 			Effect.map(getCustomChartServiceSparklines({ data: toWarehouseInput(input) }), (response) =>
 				Object.fromEntries(
 					Object.entries(response.data).map(([service, points]) => [

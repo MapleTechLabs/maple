@@ -30,11 +30,11 @@ export const ResolveClock = Command.define("ResolveReplayClock", {
 })
 
 export const FetchDetail = Command.define("FetchReplayDetail", {
-	args: { key: Schema.String, sessionId: Schema.String, ...Window },
+	args: { key: Schema.String, refresh: Schema.Boolean, sessionId: Schema.String, ...Window },
 	messages: [Message.CompletedFetchDetail],
-	execute: ({ key, sessionId, windowStart, windowEnd }) =>
+	execute: ({ key, refresh, sessionId, windowStart, windowEnd }) =>
 		readThrough(
-			{ key, idleTtlMs: IdleTtl.replay, schema: Schema.NullOr(ReplayDetail) },
+			{ key, refresh, idleTtlMs: IdleTtl.replay, schema: Schema.NullOr(ReplayDetail) },
 			Effect.map(
 				getReplay({ data: { sessionId, windowStart, windowEnd } }),
 				(response) => response.data,
@@ -47,11 +47,11 @@ export const FetchDetail = Command.define("FetchReplayDetail", {
 })
 
 export const FetchManifest = Command.define("FetchReplayManifest", {
-	args: { key: Schema.String, sessionId: Schema.String, ...Window },
+	args: { key: Schema.String, refresh: Schema.Boolean, sessionId: Schema.String, ...Window },
 	messages: [Message.CompletedFetchManifest],
-	execute: ({ key, sessionId, windowStart, windowEnd }) =>
+	execute: ({ key, refresh, sessionId, windowStart, windowEnd }) =>
 		readThrough(
-			{ key, idleTtlMs: IdleTtl.replayManifest, schema: Manifest },
+			{ key, refresh, idleTtlMs: IdleTtl.replayManifest, schema: Manifest },
 			Effect.map(getReplayManifest({ data: { sessionId, windowStart, windowEnd } }), (manifest) => ({
 				chunks: manifest.chunks,
 				maxBytesPerRequest: manifest.max_bytes_per_request,
@@ -65,11 +65,11 @@ export const FetchManifest = Command.define("FetchReplayManifest", {
 })
 
 export const FetchTranscript = Command.define("FetchReplayTranscript", {
-	args: { key: Schema.String, sessionId: Schema.String, ...Window },
+	args: { key: Schema.String, refresh: Schema.Boolean, sessionId: Schema.String, ...Window },
 	messages: [Message.CompletedFetchTranscript],
-	execute: ({ key, sessionId, windowStart, windowEnd }) =>
+	execute: ({ key, refresh, sessionId, windowStart, windowEnd }) =>
 		readThrough(
-			{ key, idleTtlMs: IdleTtl.sessionTranscript, schema: Schema.Array(EventRow) },
+			{ key, refresh, idleTtlMs: IdleTtl.sessionTranscript, schema: Schema.Array(EventRow) },
 			Effect.map(
 				getSessionTranscript({ data: { sessionId, windowStart, windowEnd } }),
 				(response) => response.data,

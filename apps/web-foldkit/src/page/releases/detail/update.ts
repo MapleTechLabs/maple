@@ -76,7 +76,7 @@ const requestReleases = (
 		(releases) => ({ releases }),
 		key,
 		mode,
-		FetchDeployReleases({ key, startTime: window.startTime, endTime: window.endTime, environments }),
+		FetchDeployReleases({ key, refresh: mode === "Refresh", startTime: window.startTime, endTime: window.endTime, environments }),
 	)
 }
 

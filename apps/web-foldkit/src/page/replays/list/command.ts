@@ -69,11 +69,11 @@ const fetchPage = (input: ListReplaysInput) =>
 const PageArgs = { key: Schema.String, search: ReplaysSearch, window: TimeWindow }
 
 export const FetchFirstPage = Command.define("FetchReplaysFirstPage", {
-	args: PageArgs,
+	args: { ...PageArgs, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFirstPage],
-	execute: ({ key, search, window }) =>
+	execute: ({ key, refresh, search, window }) =>
 		readThrough(
-			{ key, idleTtlMs: IdleTtl.listReplays, schema: ReplaysPage },
+			{ key, refresh, idleTtlMs: IdleTtl.listReplays, schema: ReplaysPage },
 			listPage({ ...filterInputs(search, window), limit: PAGE_SIZE }),
 		).pipe(
 			Effect.mapError(toLoadFailure),
@@ -93,11 +93,11 @@ export const FetchNextPage = Command.define("FetchReplaysNextPage", {
 })
 
 export const FetchFacets = Command.define("FetchReplaysFacets", {
-	args: PageArgs,
+	args: { ...PageArgs, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
-	execute: ({ key, search, window }) =>
+	execute: ({ key, refresh, search, window }) =>
 		readThrough(
-			{ key, idleTtlMs: IdleTtl.replaysFacets, schema: ReplaysFacets },
+			{ key, refresh, idleTtlMs: IdleTtl.replaysFacets, schema: ReplaysFacets },
 			getReplaysFacets({ data: filterInputs(search, window) }),
 		).pipe(
 			Effect.mapError(toLoadFailure),

@@ -43,11 +43,11 @@ export const ResolveReleasesWindow = Command.define("ResolveReleasesWindow", {
 })
 
 export const FetchReleases = Command.define("FetchReleases", {
-	args: { key: Schema.String, input: ReleasesInput },
+	args: { key: Schema.String, refresh: Schema.Boolean, input: ReleasesInput },
 	messages: [Message.CompletedFetchReleases],
-	execute: ({ key, input }) =>
+	execute: ({ key, refresh, input }) =>
 		readThrough(
-			{ key, idleTtlMs: IdleTtl.releases, schema: ReleasesData },
+			{ key, refresh, idleTtlMs: IdleTtl.releases, schema: ReleasesData },
 			getReleases({
 				data: {
 					startTime: input.startTime,
