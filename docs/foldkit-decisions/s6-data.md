@@ -95,6 +95,8 @@ page read (releases then services commit lookups, a trace chip then the trace) s
 - Preload is the same mechanism: a `preload`'s Commands read through the cache and their result
   Messages are dropped; the opening page's own reads join or reuse them. Every `preload` Command
   must be a cached read. `update` stays pure: the clock is read inside the cache's Effects.
+- Hand-offs are the same mechanism too: the traces peek runs the trace page's own cached reads,
+  so Open trace joins them, even mid-flight (no `HandedOff` out-message).
 - Not cached: reads no other page or revisit shares. Move a family on when parity shows a repeat.
 
 Refresh (`useAtomRefresh` 108 calls, `useRefreshableAtomValue` 103): one explicit page Message
