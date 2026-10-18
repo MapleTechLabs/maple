@@ -16,12 +16,13 @@ import type { DashboardWidgetSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Tabs from "../../../ui/tabs"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget } from "../kit/widget-data"
 import { FetchAutocomplete, FetchWidget, ReadClock } from "./command"
 import type { EditorState } from "./editor-state"
-import { buildDataSource, buildDisplay, toInitialState, type Widget } from "./lowering"
+import { buildDataSource, buildDisplay, toInitialState, validationErrorOf, type Widget } from "./lowering"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -54,8 +55,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		timePicker: TimeRangePicker.init("widget-editor-time-range"),
 		sourceTabs: Tabs.init({ idBase: 0, values: SOURCE_MODES, selected: "builder" }),
 		selects: {},
-		groupBys: {},
-		collapsed: [],
+		queryPanels: QueryPanel.init("widget-editor"),
 		isAutocompleteActive: false,
 		autocomplete: {},
 		isSaving: false,
@@ -141,6 +141,12 @@ export const planPreview = (model: Model, context: PageContext): Return => {
 		}),
 	})
 }
+
+/** Run preview: the editing state is staged, unless the query set is invalid. */
+export const runPreview = (model: Model, context: PageContext): Return =>
+	model.state === null || validationErrorOf(model.state) !== null
+		? { model }
+		: planPreview({ ...model, staged: model.state }, context)
 
 /** The stored widget arrived: the editor state is seeded once, the preview planned. */
 export const receiveDocument = (

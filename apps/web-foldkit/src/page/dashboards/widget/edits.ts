@@ -89,20 +89,7 @@ export const removeFormula = (state: EditorState, formulaId: string): EditorStat
 		.map((formula, index) => ({ ...formula, name: formulaLabel(index) })),
 })
 
-const ROOT_ONLY = /\s*AND\s*root_only\s*=\s*\w+/gi
-const ROOT_ONLY_LEADING = /root_only\s*=\s*\w+\s*AND\s*/gi
-const ROOT_ONLY_ALONE = /root_only\s*=\s*\w+/gi
-
-/** The All / Root Spans select: rewrites `root_only = true` in the where clause. */
-export const withRootOnly = (whereClause: string, isRootOnly: boolean): string => {
-	const stripped = whereClause
-		.replace(ROOT_ONLY, "")
-		.replace(ROOT_ONLY_LEADING, "")
-		.replace(ROOT_ONLY_ALONE, "")
-		.trim()
-	if (!isRootOnly) return stripped
-	return stripped === "" ? "root_only = true" : `${stripped} AND root_only = true`
-}
+export { withRootOnly } from "../../kit/query-builder/change"
 
 /** `TypePicker`: the panel's persisted pair, keeping a chart id already of that panel. */
 export const setPanelType = (state: EditorState, panel: PanelType): EditorState => {

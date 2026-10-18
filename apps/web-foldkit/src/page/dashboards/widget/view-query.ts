@@ -1,195 +1,28 @@
-import {
-	AGGREGATIONS_BY_SOURCE,
-	buildTimeseriesQuerySpec,
-	getMetricsAggregations,
-	queryBadgeColor,
-} from "@maple/query-engine/query-builder"
-import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import { fieldErrorStyles } from "@maple/ui/styles/ui/field"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../../ui/alert"
 import { button } from "../../../ui/button"
 import * as Checkbox from "../../../ui/checkbox"
 import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import type { SelectOption } from "../../../ui/select-view"
 import * as TabsView from "../../../ui/tabs-view"
 import { textarea } from "../../../ui/textarea"
+import { textInput } from "../../kit/query-builder/parts"
+import { queryPanelView } from "../../kit/query-builder/view"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
 import { isNote, isTimeseriesPanel, validationErrorOf } from "./lowering"
 import { autoIntervalLabel } from "./update"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { addOnSections, ADD_ON_KEYS, addOnToggles, textInput, whereClauseEditor } from "./view-query-parts"
-import { pageSelect } from "./view-select"
 
 // `WidgetQueryBuilderPage`'s query side: the source toggle, one `QueryPanel` per query,
 // `FormulaPanel`s, and the toolbar (query-panel.tsx, query-panel-shell.tsx, formula-panel.tsx).
 
 type H = HtmlBuilder<Message>
 
-const SOURCE_LABEL = {
-	traces: "Traces",
-	logs: "Logs",
-	metrics: "Metrics",
-	product_events: "Product events",
-}
-
-const aggregationOptions = (query: QueryDraft): ReadonlyArray<SelectOption> =>
-	query.dataSource === "metrics"
-		? getMetricsAggregations(query.metricType, query.isMonotonic)
-		: AGGREGATIONS_BY_SOURCE[query.dataSource]
-
-const header = (h: H, model: Model, query: QueryDraft, index: number, canRemove: boolean): Html => {
-	const isCollapsed = model.collapsed.includes(query.id)
-	const leading = [
-		iconButton(
-			h,
-			{
-				size: "icon-xs",
-				label: isCollapsed ? "Expand query" : "Collapse query",
-				hasTooltip: false,
-				className: "text-muted-foreground hover:text-foreground",
-				attributes: [h.OnClick(Message.ToggledQueryCollapsed({ queryId: query.id }))],
-			},
-			[icon(h, isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
-		),
-		...Checkbox.view(h, {
-			model: { isChecked: !query.hidden },
-			toParentMessage: () => Message.ToggledQueryVisible({ queryId: query.id }),
-			id: `query-visible-${query.id}-root`,
-			inputId: `query-visible-${query.id}`,
-			className: "shrink-0",
-		}),
-		h.span(
-			[
-				h.Class(
-					cn(
-						badgeVariants({
-							variant: "outline",
-							className: cn(
-								"font-mono text-2xs text-white border-0 shrink-0",
-								queryBadgeColor(index),
-							),
-						}),
-					),
-				),
-				h.DataAttribute("slot", "badge"),
-			],
-			[query.name],
-		),
-	]
-	const trailing = [
-		h.div([h.Class("flex-1")], []),
-		button(
-			h,
-			{
-				variant: "ghost",
-				size: "xs",
-				attributes: [h.OnClick(Message.ClickedCloneQuery({ queryId: query.id }))],
-			},
-			["Clone"],
-		),
-		button(
-			h,
-			{
-				variant: "ghost",
-				size: "xs",
-				isDisabled: !canRemove,
-				attributes: [h.OnClick(Message.ClickedRemoveQuery({ queryId: query.id }))],
-			},
-			["Remove"],
-		),
-	]
-	return pageSelect(
-		h,
-		model,
-		`source:${query.id}`,
-		query.dataSource,
-		QUERY_BUILDER_DATA_SOURCES.map((value) => ({ value, label: SOURCE_LABEL[value] })),
-		{
-			size: "sm",
-			className: "w-36 border-none bg-transparent shadow-none px-1",
-			ariaLabel: "Query source",
-			toView: (parts) =>
-				h.div(
-					[h.Class("flex items-center gap-2 px-3 py-2 bg-muted/30")],
-					[...leading, ...parts, ...trailing],
-				),
-		},
-	)
-}
-
-const SPAN_OPTIONS = [
-	{ value: "all", label: "All Spans" },
-	{ value: "root", label: "Root Spans" },
-]
-
-/** `TracesLogsBody` (metrics share it until the metric picker is ported). */
-const body = (h: H, model: Model, query: QueryDraft, intervalPlaceholder: string): ReadonlyArray<Html> => {
-	const whereRow = (parts: ReadonlyArray<Html>) =>
-		h.div([h.Class("flex items-start gap-2")], [whereClauseEditor(h, query), ...parts])
-	return [
-		query.dataSource === "traces"
-			? pageSelect(
-					h,
-					model,
-					`spans:${query.id}`,
-					query.whereClause.includes("root_only = true") ? "root" : "all",
-					SPAN_OPTIONS,
-					{ size: "sm", className: "w-[120px] shrink-0", toView: whereRow },
-				)
-			: whereRow([]),
-		pageSelect(h, model, `aggregation:${query.id}`, query.aggregation, aggregationOptions(query), {
-			size: "sm",
-			className: "w-[160px]",
-			toView: (parts) =>
-				h.div(
-					[h.Class("flex items-center gap-2 flex-wrap")],
-					[
-						...parts,
-						h.span([h.Class("text-xs text-muted-foreground")], ["every"]),
-						textInput(
-							h,
-							`step-${query.id}`,
-							query.stepInterval,
-							intervalPlaceholder,
-							"h-8 w-24 text-xs",
-							(value) =>
-								Message.ChangedQueryText({ queryId: query.id, field: "stepInterval", value }),
-						),
-						h.span([h.Class("text-xs text-muted-foreground")], ["seconds"]),
-					],
-				),
-		}),
-	]
-}
-
-/** `WarningList`: clauses the builder could not apply as written. */
-const warningList = (h: H, warnings: ReadonlyArray<string>): ReadonlyArray<Html> =>
-	warnings.length === 0
-		? []
-		: [
-				alert(h, { variant: "warn", size: "sm" }, [
-					icon(h, "CircleWarningIcon", { size: 14 }),
-					alertDescription(
-						h,
-						[
-							h.ul(
-								[h.Class("space-y-1")],
-								warnings.map((warning) => h.li([], [warning])),
-							),
-						],
-						"text-severity-warn",
-					),
-				]),
-			]
-
-export const queryPanel = (
+/** One `QueryPanel`, from the shared query builder. */
+const queryPanel = (
 	h: H,
 	model: Model,
 	query: QueryDraft,
@@ -197,26 +30,20 @@ export const queryPanel = (
 	canRemove: boolean,
 	intervalPlaceholder: string,
 ): Html =>
-	h.div(
-		[h.Class("border rounded-md")],
-		[
-			header(h, model, query, index, canRemove),
-			...(model.collapsed.includes(query.id)
-				? []
-				: [
-						h.div(
-							[h.Class("p-3 space-y-3")],
-							[
-								...body(h, model, query, intervalPlaceholder),
-								// TODO(widget-editor): the product-events setup hint (`SignalEmptyState`).
-								...warningList(h, buildTimeseriesQuerySpec(query).warnings),
-								addOnToggles(h, query, ADD_ON_KEYS),
-								...addOnSections(h, model, query),
-							],
-						),
-					]),
-		],
-	)
+	h.submodel({
+		slotId: `widget-editor-query-${query.id}`,
+		model: model.queryPanels,
+		view: queryPanelView,
+		viewInputs: {
+			query,
+			index,
+			canRemove,
+			intervalPlaceholder,
+			hasHeaderActions: true,
+			hasVisibilityToggle: true,
+		},
+		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
+	})
 
 /** `FormulaPanel`. */
 const formulaPanel = (h: H, formula: FormulaDraft): Html =>
