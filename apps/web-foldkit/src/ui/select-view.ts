@@ -202,7 +202,8 @@ const scrollArrow = (h: H, model: Model, direction: "up" | "down"): Html =>
 		],
 		[
 			icon(h, direction === "up" ? "ChevronUpIcon" : "ChevronDownIcon", {
-				className: direction === "up" ? selectScrollUpArrowIconStyles : selectScrollDownArrowIconStyles,
+				className:
+					direction === "up" ? selectScrollUpArrowIconStyles : selectScrollDownArrowIconStyles,
 			}),
 		],
 	)

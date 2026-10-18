@@ -41,6 +41,11 @@ export const PageOutMessage = defineMessageUnion({
 			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
 		),
 	},
+	/**
+	 * Answers this page already holds that another page will ask for, as that page's wrapped
+	 * Messages (legacy's shared atom cache): the root keeps them as preloads (`page/preload.ts`).
+	 */
+	HandedOff: { messages: Schema.Array(Schema.Unknown) },
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
 	/**
@@ -160,7 +165,10 @@ export const definePage = <
 	const isOwnPageMessage = Schema.is(schemas.Message)
 	/** A toast's action is the page's own Message; it travels wrapped, like every page Message. */
 	const wrapOut = (out: PageOutMessage): PageOutMessage =>
-		out._tag === "RequestedToast" && out.action !== null && out.action !== undefined && isOwnPageMessage(out.action.message)
+		out._tag === "RequestedToast" &&
+		out.action !== null &&
+		out.action !== undefined &&
+		isOwnPageMessage(out.action.message)
 			? { ...out, action: { ...out.action, message: wrap(out.action.message) } }
 			: out
 

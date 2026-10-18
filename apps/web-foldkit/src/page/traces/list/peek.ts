@@ -1,3 +1,4 @@
+import { Result } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
@@ -154,10 +155,30 @@ export const syncPeek = (model: Model, context: PageContext): Return => {
 	return { ...lifted, commands: [...opened.commands, ...(lifted.commands ?? [])] }
 }
 
-export const peekStep = (model: Model, message: DetailMessage, context: PageContext): Return =>
-	model.peek === null
-		? { model }
-		: liftDetail(model, TraceDetail.update(model.peek, message, context), context)
+/** The reads the trace page repeats on open; legacy's atoms serve them from the peek's cache. */
+const handsOff = (message: DetailMessage): boolean => {
+	switch (message._tag) {
+		case "CompletedFetchHierarchy":
+			return Result.isSuccess(message.result)
+		case "CompletedFetchReplays":
+			return Result.isSuccess(message.result)
+		case "CompletedFetchLogsCount":
+			return Result.isSuccess(message.result)
+		default:
+			return false
+	}
+}
+
+export const peekStep = (model: Model, message: DetailMessage, context: PageContext): Return => {
+	if (model.peek === null) return { model }
+	const lifted = liftDetail(model, TraceDetail.update(model.peek, message, context), context)
+	return lifted.outMessage === undefined && handsOff(message)
+		? {
+				...lifted,
+				outMessage: PageOutMessage.HandedOff({ messages: [{ _tag: "TraceDetail", message }] }),
+			}
+		: lifted
+}
 
 /** Escape, the backdrop or the close button: the peek params leave the URL. */
 export const peekDialogStep = (model: Model, message: Dialog.Message): Return => {

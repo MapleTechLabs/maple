@@ -177,7 +177,8 @@ const listScrolls = (root: Element, id: string) =>
 				}
 				const onScroll = () => Queue.offerUnsafe(queue, scrollArrowsOf(scroller))
 				const onMouseMove = (event: Event) => {
-					const arrow = event.target instanceof Element ? event.target.closest("[data-direction]") : null
+					const arrow =
+						event.target instanceof Element ? event.target.closest("[data-direction]") : null
 					if (arrow === null || scroller === null || timer.handle !== 0) return
 					const step = arrow.getAttribute("data-direction") === "up" ? -1 : 1
 					timer.handle = window.setInterval(() => {
@@ -188,8 +189,12 @@ const listScrolls = (root: Element, id: string) =>
 					}, 40)
 				}
 				const onMouseOut = (event: Event) => {
-					const from = event.target instanceof Element ? event.target.closest("[data-direction]") : null
-					const to = event instanceof MouseEvent && event.relatedTarget instanceof Element ? event.relatedTarget : null
+					const from =
+						event.target instanceof Element ? event.target.closest("[data-direction]") : null
+					const to =
+						event instanceof MouseEvent && event.relatedTarget instanceof Element
+							? event.relatedTarget
+							: null
 					if (from !== null && (to === null || !from.contains(to))) stop()
 				}
 				scroller?.addEventListener("scroll", onScroll, { passive: true })

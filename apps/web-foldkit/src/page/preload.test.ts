@@ -65,6 +65,15 @@ describe("intent preload", () => {
 		expect(Preload.expired(entered.model, [keyOf()]).entries).toEqual(entered.model.entries)
 	})
 
+	test("an answer handed over by another page is delivered on entry and never preloaded again", () => {
+		const handed = Preload.handedOff(Preload.init(), [answer(keyOf())])
+		expect(handed.keys).toEqual([keyOf()])
+		expect(Preload.started(handed.model, preloaded()).commands).toEqual([])
+		const entered = Preload.seeded(handed.model, holder, preloaded())
+		expect(entered.commands).toEqual([])
+		expect(entered.delivered).toEqual([answer(keyOf())])
+	})
+
 	test("an unused preload is released after the hold", () => {
 		const started = Preload.started(Preload.init(), preloaded()).model
 		expect(Preload.expired(started, [keyOf()]).entries).toEqual({})

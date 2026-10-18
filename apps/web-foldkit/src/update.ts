@@ -127,7 +127,7 @@ const applyPage =
 		Option.match(
 			Option.filter(transition.outMessage, (out) => out._tag === "RequestedNamespacePin"),
 			{
-				onNone: () => writePage(transition)(model),
+				onNone: () => Update.combine([handOff(transition), writePage(transition)])(model),
 				onSome: (out) =>
 					Update.combine([
 						writePage(transition),
@@ -156,8 +156,12 @@ const showPageToast = (model: Model, request: PageToast) => {
 		type: request.type,
 		title: request.title,
 		description: request.description,
-		...(request.timeoutMs === null || request.timeoutMs === undefined ? undefined : { timeoutMs: request.timeoutMs }),
-		...(request.action === null || request.action === undefined ? undefined : { actionLabel: request.action.label }),
+		...(request.timeoutMs === null || request.timeoutMs === undefined
+			? undefined
+			: { timeoutMs: request.timeoutMs }),
+		...(request.action === null || request.action === undefined
+			? undefined
+			: { actionLabel: request.action.label }),
 	})
 	const action = request.action ?? null
 	return {
@@ -193,7 +197,11 @@ const writePage =
 			),
 			{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
 		)
-		const seeded = Preload.seeded(toasted.model.preload, pageIdentity(transition.slot), transition.commands)
+		const seeded = Preload.seeded(
+			toasted.model.preload,
+			pageIdentity(transition.slot),
+			transition.commands,
+		)
 		return {
 			model: modifyFields(toasted.model, { page: () => transition.slot, preload: () => seeded.model }),
 			commands: [
@@ -207,12 +215,32 @@ const writePage =
 						],
 						RequestedNamespacePin: () => [],
 						RequestedToast: () => [],
+						HandedOff: () => [],
 					}),
 				}),
 				...toasted.commands,
 			],
 		}
 	}
+
+/** `HandedOff`: the page's answers for another page join the preloads, held like warmed ones. */
+const handOff =
+	(transition: PageTransition): Step =>
+	(model) =>
+		Option.match(
+			Option.filter(transition.outMessage, (out) => out._tag === "HandedOff"),
+			{
+				onNone: () => ({ model, commands: [] }),
+				onSome: (out) => {
+					const messages = out._tag === "HandedOff" ? out.messages.filter(isPageMessage) : []
+					const handed = Preload.handedOff(model.preload, messages)
+					return {
+						model: modifyFields(model, { preload: () => handed.model }),
+						commands: handed.keys.length === 0 ? [] : [HoldPreloads({ keys: handed.keys })],
+					}
+				},
+			},
+		)
 
 /** Route entry or leave: the route's page is built, kept (same key) or dropped. */
 const loadPage: Step = (model) =>
@@ -354,7 +382,9 @@ const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 				return {
 					model: withPreload(model, started.model),
 					commands: [
-						...started.commands.map(Command.mapMessage((message) => Message.GotPreloadMessage({ message }))),
+						...started.commands.map(
+							Command.mapMessage((message) => Message.GotPreloadMessage({ message })),
+						),
 						...(started.keys.length === 0 ? [] : [HoldPreloads({ keys: started.keys })]),
 					],
 				}
@@ -408,7 +438,11 @@ export const update = (model: Model, message: Message) =>
 				onSome: (next) => ({
 					model: withPreload(model, next.model),
 					commands: [
-						WaitPreloadDelay({ href, version: next.version, delayMs: isImmediate ? 0 : Preload.PRELOAD_DELAY_MS }),
+						WaitPreloadDelay({
+							href,
+							version: next.version,
+							delayMs: isImmediate ? 0 : Preload.PRELOAD_DELAY_MS,
+						}),
 					],
 				}),
 			}),

@@ -58,12 +58,19 @@ export const intended = (model: Model, href: string): Option.Option<{ model: Mod
 	model.intents[href] !== undefined
 		? Option.none()
 		: Option.some({
-				model: { ...model, version: model.version + 1, intents: { ...model.intents, [href]: model.version + 1 } },
+				model: {
+					...model,
+					version: model.version + 1,
+					intents: { ...model.intents, [href]: model.version + 1 },
+				},
 				version: model.version + 1,
 			})
 
 /** `cancelPreload` on mouse leave or blur. */
-export const ended = (model: Model, href: string): Model => ({ ...model, intents: without(model.intents, href) })
+export const ended = (model: Model, href: string): Model => ({
+	...model,
+	intents: without(model.intents, href),
+})
 
 /** The delay elapsed: `Some` when the link is still intended (the timer was not cancelled). */
 export const elapsed = (model: Model, href: string, version: number): Option.Option<Model> =>
@@ -87,11 +94,30 @@ export const answered = (model: Model, message: PageMessage) =>
 			entry.isAwaited
 				? { model: { ...model, entries: without(model.entries, key) }, forward: Option.some(message) }
 				: {
-						model: { ...model, entries: { ...model.entries, [key]: { ...entry, result: message } } },
+						model: {
+							...model,
+							entries: { ...model.entries, [key]: { ...entry, result: message } },
+						},
 						forward: Option.none<PageMessage>(),
 					},
 		),
 	)
+
+/** Answers handed over by a page: kept like settled preloads, except keys the open page holds. */
+export const handedOff = (model: Model, messages: ReadonlyArray<PageMessage>) => {
+	const fresh = messages.flatMap((message) =>
+		Option.toArray(
+			Option.map(
+				Option.filter(keyOfMessage(message), (key) => !model.heldKeys.includes(key)),
+				(key) => [key, { result: message, isAwaited: false }] as const,
+			),
+		),
+	)
+	return {
+		model: { ...model, entries: { ...model.entries, ...Object.fromEntries(fresh) } },
+		keys: fresh.map(([key]) => key),
+	}
+}
 
 /** The hold elapsed: unused answers are dropped; one the page awaits stays until it lands. */
 export const expired = (model: Model, keys: ReadonlyArray<string>): Model => ({
@@ -122,7 +148,12 @@ export const seeded = (model: Model, holder: string, commands: ReadonlyArray<Pag
 		}),
 	)
 	return {
-		model: { ...model, entries, holder, heldKeys: [...heldKeys, ...keys.filter((key) => !heldKeys.includes(key))] },
+		model: {
+			...model,
+			entries,
+			holder,
+			heldKeys: [...heldKeys, ...keys.filter((key) => !heldKeys.includes(key))],
+		},
 		commands: commands.filter((command) => Option.isNone(entryOf(command))),
 		delivered,
 	}
@@ -176,7 +207,8 @@ export const linkIntents: Stream.Stream<LinkIntent> = Stream.mergeAll(
 		Dom.streamFromEventFilterMap({
 			target: () => document,
 			type: "focusin",
-			filterMapEvent: (event) => Option.map(internalLink(event.target), (link) => intent(link.href, false)),
+			filterMapEvent: (event) =>
+				Option.map(internalLink(event.target), (link) => intent(link.href, false)),
 		}),
 		Dom.streamFromEventFilterMap({
 			target: () => document,
@@ -186,7 +218,8 @@ export const linkIntents: Stream.Stream<LinkIntent> = Stream.mergeAll(
 		Dom.streamFromEventFilterMap({
 			target: () => document,
 			type: "touchstart",
-			filterMapEvent: (event) => Option.map(internalLink(event.target), (link) => intent(link.href, true)),
+			filterMapEvent: (event) =>
+				Option.map(internalLink(event.target), (link) => intent(link.href, true)),
 		}),
 	],
 	{ concurrency: "unbounded" },
