@@ -12,7 +12,8 @@ import { emptyMessage } from "../../../ui/empty"
 import { panel, panelHeader } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
-import { ciResultBadge, relativeTime } from "../kit/parts"
+import { ciResultBadge } from "../kit/parts"
+import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 
 // `WorkflowsTable`, `RedStreakLine` and `JobsTable` (ci-analytics.tsx).
@@ -66,7 +67,7 @@ const redStreakLine = (h: H, red: CodeReviewCiRedStreak, time: TimeContext): Htm
 				],
 				[truncatedId(h, { value: red.firstFailedRevision, kind: "sha" })],
 			),
-			relativeTime(h, { epochMs: red.since, variant: "short", ...time }),
+			relativeTime(h, { tooltip: "title", value: red.since, variant: "short", ...time }),
 			h.span([h.AriaHidden(true)], ["·"]),
 			red.lastGreenRevision === null
 				? h.span([], ["no green run in this window"])
@@ -164,7 +165,8 @@ const workflowRow = (
 						[
 							ciResultBadge(h, row.lastResult),
 							relativeTime(h, {
-								epochMs: row.lastStartedAt,
+								tooltip: "title",
+								value: row.lastStartedAt,
 								variant: "short",
 								className: "text-xs text-muted-foreground",
 								...time,

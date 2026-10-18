@@ -11,7 +11,7 @@ import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { authorLabel } from "../kit/author"
-import { relativeTime } from "../kit/parts"
+import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 
 // `ReviewTable` (routes/code-review/pull-requests.tsx).
@@ -156,7 +156,8 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				h,
 				[
 					relativeTime(h, {
-						epochMs: review.createdAt,
+						tooltip: "title",
+						value: review.createdAt,
 						nowMs: context.nowMs,
 						timeZone: context.timeZone,
 					}),

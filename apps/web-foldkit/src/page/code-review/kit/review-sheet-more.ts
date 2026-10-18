@@ -9,7 +9,8 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { skeleton } from "../../../ui/skeleton"
 import { truncatedId } from "../../../ui/truncated-id"
-import { bulletList, ciResultBadge, relativeTime, section, traceLink } from "./parts"
+import { relativeTime } from "../../kit/relative-time"
+import { bulletList, ciResultBadge, section, traceLink } from "./parts"
 import { type ReviewSheet, SheetMessage } from "./review-sheet"
 import { CI_RUNS_SHOWN } from "./review-sheet-update"
 
@@ -206,7 +207,8 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 									[countLabel(entry.findings, "issue")],
 								),
 								relativeTime(h, {
-									epochMs: entry.createdAt,
+									tooltip: "title",
+									value: entry.createdAt,
 									nowMs: sheet.nowMs,
 									timeZone,
 									className: "w-20 text-right text-xs text-muted-foreground",

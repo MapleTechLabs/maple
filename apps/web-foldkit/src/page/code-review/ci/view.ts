@@ -6,7 +6,7 @@ import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { LINE_CHART_TOKENS } from "../../../charts/line-chart"
+import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
@@ -20,7 +20,7 @@ import { epochWindow } from "../kit/api"
 import { seriesTokens } from "../kit/analytics-panel"
 import { CI_PRESETS, filtersView } from "../kit/filters-view"
 import { codeReviewLayout, nothingInWindow } from "../kit/layout"
-import { sectionHeading } from "../kit/parts"
+import { sectionHeading } from "../../kit/section-heading"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { runsList } from "./view-runs"
@@ -31,7 +31,7 @@ import { jobsTable, workflowsTable } from "./view-tables"
 
 type H = HtmlBuilder<Message>
 
-const THEME_TOKENS = [...seriesTokens([...Object.values(RESULT_SERIES), "p50", "p95"]), ...LINE_CHART_TOKENS]
+const THEME_TOKENS = [...seriesTokens([...Object.values(RESULT_SERIES), "p50", "p95"]), ...AREA_CHART_TOKENS]
 
 const RESULT_ENTRIES: ReadonlyArray<SelectEntry> = Object.entries({
 	all: "All results",
@@ -143,7 +143,7 @@ const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, tim
 				[
 					h.div(
 						[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2")],
-						[sectionHeading(h, "Runs", "h2"), runsActions(h, model)],
+						[sectionHeading(h, { title: "Runs" }), runsActions(h, model)],
 					),
 					runsList(
 						h,

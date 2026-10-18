@@ -124,23 +124,6 @@ export const ChartSpec = defineTaggedUnion({
 		stacked: Schema.Boolean,
 		showTooltip: Schema.Boolean,
 	},
-	/**
-	 * `QueryBuilderLineChart` (linear, threshold-free): the rows as returned, the resolved colour per
-	 * series key (`s1..sN`), the focus chrome, and the width the point dots are judged against.
-	 */
-	QueryBuilderLine: {
-		data: Schema.Array(
-			Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
-		),
-		colors: Schema.Record(Schema.String, Schema.String),
-		fallbackColor: Schema.String,
-		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
-		unit: Nullable(Schema.String),
-		timeZone: Nullable(Schema.String),
-		nowMs: Schema.Number,
-		containerWidth: Schema.Number,
-		showTooltip: Schema.Boolean,
-	},
 	/** `IssueOccurrenceChart` (apps/web/src/components/errors): bucketed counts as bars. */
 	Occurrences: {
 		points: Schema.Array(Schema.Struct({ bucket: Schema.String, count: Schema.Number })),

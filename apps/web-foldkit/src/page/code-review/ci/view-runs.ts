@@ -16,7 +16,8 @@ import { skeletonList } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
 import { nothingInWindow } from "../kit/layout"
-import { ciResultBadge, relativeTime, traceLink } from "../kit/parts"
+import { ciResultBadge, traceLink } from "../kit/parts"
+import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 
 // `CiRunsList`, `RunRows` and the paging footers (ci-runs-list.tsx).
@@ -145,7 +146,7 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			),
 			tableCell(
 				h,
-				[relativeTime(h, { epochMs: run.startedAt, variant: "short", ...time })],
+				[relativeTime(h, { tooltip: "title", value: run.startedAt, variant: "short", ...time })],
 				"hidden px-3 text-right align-top text-muted-foreground tabular-nums md:table-cell",
 			),
 			tableCell(

@@ -1,27 +1,19 @@
 import type { CodeReviewCiRun } from "@maple/domain/http"
 import { ciResultLabel, ciResultTone } from "@maple/web/components/code-review/ci/ci-format"
-import { formatRelativeShortFrom, formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
 import { badge } from "../../../ui/display"
+import { sectionHeading } from "../../kit/section-heading"
 
-// Small pieces the Code Review tabs share: `SectionHeading` (title variant), `BulletList`,
-// `RelativeTime tooltip="title"`, `CiResultBadge` and `TraceLink`.
-
-/** `<SectionHeading title as>` without actions. */
-export const sectionHeading = <M>(h: HtmlBuilder<M>, title: string, as: "h2" | "h3" = "h2"): Html =>
-	h.div(
-		[h.Class("flex items-baseline gap-2.5")],
-		[(as === "h2" ? h.h2 : h.h3)([h.Class("text-sm font-medium text-foreground")], [title])],
-	)
+// Small pieces the Code Review tabs share: the sheet `Section`, `BulletList`, `CiResultBadge` and
+// `TraceLink`.
 
 /** The sheet's `Section`. */
 export const section = <M>(h: HtmlBuilder<M>, title: string, children: ReadonlyArray<Html>): Html =>
-	h.section([h.Class("flex flex-col gap-2.5")], [sectionHeading(h, title, "h3"), ...children])
+	h.section([h.Class("flex flex-col gap-2.5")], [sectionHeading(h, { title, as: "h3" }), ...children])
 
 export const bulletList = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<string>): Html =>
 	h.ul(
@@ -31,31 +23,6 @@ export const bulletList = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<string>): 
 			),
 		],
 		items.map((item) => h.li([], [item])),
-	)
-
-export type RelativeTimeOptions = Readonly<{
-	epochMs: number
-	nowMs: number
-	timeZone: string
-	variant?: "long" | "short"
-	className?: string
-}>
-
-/** `<RelativeTime tooltip="title">`: the relative label, the absolute time as its native title. */
-export const relativeTime = <M>(h: HtmlBuilder<M>, options: RelativeTimeOptions): Html =>
-	h.time(
-		[
-			...(options.className === undefined ? [] : [h.Class(options.className)]),
-			h.Attribute("datetime", new Date(options.epochMs).toISOString()),
-			h.Title(
-				formatTimestampInTimezone(options.epochMs, { timeZone: options.timeZone, withYear: true }),
-			),
-		],
-		[
-			options.variant === "short"
-				? formatRelativeShortFrom(options.epochMs, options.nowMs)
-				: formatRelativeFrom(options.epochMs, options.nowMs),
-		],
 	)
 
 /** A run's result; a rerun says which attempt it was. */
