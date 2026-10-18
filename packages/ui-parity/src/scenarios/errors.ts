@@ -30,6 +30,9 @@ const timed = (
 	area: "errors",
 })
 
+/** An alert-backed issue, served by id only. */
+const ALERT_PATH = "/errors/issues/0199a004-0000-7000-8000-000000000050"
+
 /** The in-progress issue, claimed by the dataset's user (a held lease). */
 const LEASED_PATH = "/errors/issues/0199a004-0000-7000-8000-000000000002"
 
@@ -202,6 +205,19 @@ export const errorsArea: AreaModule = {
 		errors("issue-not-found", "an unknown issue", "/errors/issues/0199a004-0000-7000-8000-0000000000ff", {
 			steps: async (page) => {
 				await page.getByText("Issue not found").waitFor()
+			},
+		}),
+		errors("issue-alert", "an alert-backed issue", ALERT_PATH, {
+			steps: async (page) => {
+				await page.getByText("Alert source").waitFor()
+			},
+		}),
+		errors("issue-alert-overflow", "an alert issue's overflow menu", ALERT_PATH, {
+			steps: async (page) => {
+				await page.getByText("Alert source").waitFor()
+				await page.getByRole("button", { name: "More issue actions" }).click()
+				await page.getByRole("menuitem", { name: "View alert rule" }).waitFor()
+				await settlePointer(page)
 			},
 		}),
 		errors("hub-sort-volume", "sorted by volume", "/errors", {

@@ -1,4 +1,6 @@
-import type { ErrorIssuePullRequestDocument } from "@maple/domain/http"
+import type { ErrorIssueDocument, ErrorIssuePullRequestDocument } from "@maple/domain/http"
+import { AlertRuleId } from "@maple/domain/primitives"
+import { Option, Schema } from "effect"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -241,3 +243,36 @@ export const bodySection = (
 			...children,
 		],
 	)
+
+const decodeRuleId = Schema.decodeUnknownOption(AlertRuleId)
+
+/** `AlertSourceCard`: an alert-backed issue links back to the rule that feeds it. */
+export const alertSourceCard = (h: H, issue: ErrorIssueDocument): Html => {
+	const sourceRef = issue.sourceRef
+	const ruleId = Option.getOrNull(decodeRuleId(sourceRef?.ruleId))
+	const signalType = typeof sourceRef?.signalType === "string" ? sourceRef.signalType : null
+	const groupKey = typeof sourceRef?.groupKey === "string" ? sourceRef.groupKey : null
+	return panel(h, { className: "shrink-0 gap-2 px-5 py-4" }, [
+		sectionHeading(h, { title: "Alert source" }),
+		h.p(
+			[h.Class("text-sm text-muted-foreground")],
+			[
+				"This issue is fed by alert rule incidents",
+				...(signalType ? [` (${signalType})`] : []),
+				...(groupKey && groupKey !== "__total__" ? [` for group "${groupKey}"`] : []),
+				".",
+			],
+		),
+		...(ruleId === null
+			? []
+			: [
+					h.a(
+						[
+							h.Href(hrefOf(AppRoute.AlertRule({ ruleId, search: {} }))),
+							h.Class("text-sm text-primary underline-offset-4 hover:underline"),
+						],
+						["View alert rule →"],
+					),
+				]),
+	])
+}

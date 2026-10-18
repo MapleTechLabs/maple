@@ -68,7 +68,7 @@ const issueRows = (warehouse: FixtureWarehouse, dataset: Dataset) =>
 								last_active_at: null,
 							}
 						: null
-				return {
+				const issue: V2ErrorIssue = {
 					id: decodeIssueId(fixtureUuid(4, index + 1)),
 					object: "error_issue" as const,
 					kind: "error" as const,
@@ -105,6 +105,7 @@ const issueRows = (warehouse: FixtureWarehouse, dataset: Dataset) =>
 					open_pull_request_count: 0,
 					merged_pull_request_count: 0,
 				}
+				return issue
 			}),
 		)
 	})
@@ -165,6 +166,36 @@ const incidentsOf = (issue: SeededIssue) =>
 			]
 		: []
 
+/** An alert-backed issue, readable by id only (the hub lists warehouse fingerprints). */
+export const ALERT_ISSUE_ID = fixtureUuid(4, 0x50)
+const alertIssueOf = (
+	issues: ReadonlyArray<SeededIssue>,
+	id: string | undefined,
+): SeededIssue | undefined => {
+	const base = issues[0]
+	if (id !== ALERT_ISSUE_ID || base === undefined) return undefined
+	return {
+		...base,
+		id: decodeIssueId(ALERT_ISSUE_ID),
+		kind: "alert",
+		exception_type: "",
+		exception_message: "",
+		error_label: "Payment error rate above 5%",
+		severity: "high",
+		severity_source: "detector",
+		source_ref: {
+			ruleId: "0199a002-0000-7000-8000-000000000002",
+			signalType: "error_rate",
+			groupKey: "__total__",
+		},
+		has_open_incident: false,
+		assigned_actor: null,
+		lease_holder: null,
+		lease_expires_at: null,
+		claimed_at: null,
+	}
+}
+
 const list = (data: ReadonlyArray<unknown>) => ({ object: "list", data, has_more: false, next_cursor: null })
 
 /** The dataset's issue rows, seeded once per dataset like the Postgres rows they stand in for. */
@@ -186,7 +217,8 @@ export const errorIssueEndpoints = (
 	const find = (dataset: Dataset, params: unknown) =>
 		Effect.gen(function* () {
 			const id = str(params, "id") ?? str(params, "issueId")
-			const issue = (yield* issuesOf(dataset)).find((candidate) => candidate.id === id)
+			const issues = yield* issuesOf(dataset)
+			const issue = issues.find((candidate) => candidate.id === id) ?? alertIssueOf(issues, id)
 			if (issue === undefined || id === undefined)
 				return yield* new ErrorIssueNotFoundError({
 					message: "Issue not found",

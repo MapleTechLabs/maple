@@ -23,7 +23,13 @@ import type { Model } from "./model"
 import { occurrencePanel, OCCURRENCE_TOKENS } from "./view-chart"
 import { headerActions, headerTitle, issueTabs } from "./view-header"
 import { culpritPanel, issueFactStrip } from "./view-overview"
-import { attachNudge, bodySection, linkedInvestigationPanel, pullRequestsPanel } from "./view-panels"
+import {
+	alertSourceCard,
+	attachNudge,
+	bodySection,
+	linkedInvestigationPanel,
+	pullRequestsPanel,
+} from "./view-panels"
 import { issueSidebar } from "./view-sidebar"
 import { attachDialog } from "./attach"
 import { verificationCard } from "./view-verification"
@@ -53,19 +59,20 @@ const overview = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: 
 				timeZone: inputs.context.timeZone,
 				nowMs: model.nowMs,
 			}),
-			// TODO(alert-source): alert-kind issues show `AlertSourceCard` instead of the chart.
-			...(chartWindow === null || model.themeColors === null || model.chartRuntime._tag === "Loading"
-				? []
-				: [
-						occurrencePanel(
-							h,
-							timeseries,
-							issue.severity,
-							chartWindow,
-							model.themeColors,
-							inputs.context.timeZone,
-						),
-					]),
+			...(issue.kind === "alert"
+				? [alertSourceCard(h, issue)]
+				: chartWindow === null || model.themeColors === null || model.chartRuntime._tag === "Loading"
+					? []
+					: [
+							occurrencePanel(
+								h,
+								timeseries,
+								issue.severity,
+								chartWindow,
+								model.themeColors,
+								inputs.context.timeZone,
+							),
+						]),
 			linkedInvestigationPanel(h, linkedInvestigationOf(model), model.isStartingInvestigation),
 			...(issue.kind === "error"
 				? [
