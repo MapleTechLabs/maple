@@ -131,6 +131,7 @@ const tooltipBody = (
 			),
 		NumericBin: () => Option.none(),
 		CategoricalBin: () => Option.none(),
+		HeatmapSlot: () => Option.none(),
 		Bucket: () => Option.none(),
 	})
 

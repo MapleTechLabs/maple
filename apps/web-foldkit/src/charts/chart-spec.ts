@@ -26,6 +26,13 @@ export type NumericBin = typeof NumericBin.Type
 export const CategoricalBin = Schema.Struct({ name: Schema.String, value: Schema.Number })
 export type CategoricalBin = typeof CategoricalBin.Type
 
+/** One heatmap slot: a cell, or a hole when `value` is null. */
+export const HeatmapSlotSchema = Schema.Struct({
+	x: Schema.String,
+	y: Schema.String,
+	value: Schema.NullOr(Schema.Number),
+})
+
 /** One bucket of a fixed-metric chart: the bucket plus its primitive columns. */
 export const FixedMetricRow = Schema.Record(
 	Schema.String,
@@ -317,6 +324,27 @@ export const ChartSpec = defineTaggedUnion({
 		yMax: Schema.Number,
 		currency: Schema.String,
 	},
+	/** `QueryBuilderHeatmapChart`: band cells and focusable holes over a sequential ramp. */
+	Heatmap: {
+		cells: Schema.Array(HeatmapSlotSchema),
+		holes: Schema.Array(HeatmapSlotSchema),
+		xDomain: Schema.Array(Schema.String),
+		yDomain: Schema.Array(Schema.String),
+		/** The y tick text per category, already shortened and truncated into the gutter. */
+		yLabels: Schema.Record(Schema.String, Schema.String),
+		margin: Nullable(
+			Schema.Struct({ top: Schema.Number, right: Schema.Number, bottom: Schema.Number, left: Schema.Number }),
+		),
+		paddingInnerX: Schema.Number,
+		paddingInnerY: Schema.Number,
+		radius: Schema.Number,
+		stops: Schema.Array(Schema.String),
+		domain: Schema.Tuple([Schema.Number, Schema.Number]),
+		scaleType: Schema.Literals(["linear", "log"]),
+		grout: Schema.String,
+		foreground: Schema.String,
+		showTooltip: Schema.Boolean,
+	},
 })
 export type ChartSpec = typeof ChartSpec.Type
 
@@ -336,6 +364,7 @@ export const ChartTooltip = defineTaggedUnion({
 	},
 	NumericBin: { x1: Schema.Number, x2: Schema.Number, value: Schema.Number },
 	CategoricalBin: { name: Schema.String, value: Schema.Number },
+	HeatmapSlot: { x: Schema.String, y: Schema.String, value: Schema.NullOr(Schema.Number) },
 	/** `PlotTooltipBody` for a fixed-metric chart: the bucket heading and one formatted row per series. */
 	Bucket: {
 		heading: Schema.String,

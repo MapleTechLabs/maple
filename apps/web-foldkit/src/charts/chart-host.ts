@@ -25,6 +25,7 @@ import { buildSparkline } from "./definitions/sparkline"
 import { buildStackedBreakdown } from "./definitions/stacked-breakdown"
 import { buildToolSeries } from "./definitions/tool-series"
 import { buildSpendCumulative } from "./definitions/spend"
+import { buildHeatmap } from "./definitions/heatmap"
 
 /**
  * What `RendererChartImplementation` (`@tanstack/charts/react`) does with a `CanvasChart` or SVG
@@ -198,4 +199,5 @@ export const createChartHost = (
 			),
 		ToolSeries: (series) =>
 			hostFor(container, series, height, variant("ToolSeries"), buildToolSeries, options),
+		Heatmap: (heatmap) => hostFor(container, heatmap, height, variant("Heatmap"), buildHeatmap, options),
 	})

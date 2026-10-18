@@ -16,6 +16,7 @@ import {
 	type TimeseriesAxisContext,
 	type TimeseriesRow,
 } from "./timeseries-rows"
+import { resolveColor, type ThemeColors } from "./theme-colors"
 
 // The React-free half of `Timeseries` (packages/ui/src/components/plot/timeseries.tsx): row
 // normalisation, series keys and colour tokens, and the shared x and y axes. Copied, as that
@@ -90,6 +91,24 @@ export const seriesColorTokens = (
 			byRawKey.get(definition.rawKey) ?? SERIES_FALLBACK_COLOR,
 		]),
 	)
+}
+
+/** What a hoisting `TimeseriesLegend` hands the tile header: every series, colour resolved. */
+export const hoistedSeries = (
+	data: ReadonlyArray<Readonly<Record<string, unknown>>>,
+	theme: ThemeColors,
+): ReadonlyArray<{ readonly key: string; readonly label: string; readonly color: string }> => {
+	const { definitions } = seriesDefinitionsOf(data)
+	const tokens = seriesColorTokens(definitions)
+	return definitions.map((definition) => ({
+		key: definition.chartKey,
+		label: definition.rawKey,
+		color: resolveColor(
+			theme,
+			tokens.get(definition.chartKey) ?? SERIES_FALLBACK_COLOR,
+			SERIES_FALLBACK_COLOR,
+		),
+	}))
 }
 
 export const axisContextOf = (

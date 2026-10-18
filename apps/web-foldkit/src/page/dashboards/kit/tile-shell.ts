@@ -26,7 +26,63 @@ export type ShellOptions = Readonly<{
 	isMenuOpen: boolean
 	contentClassName: string | undefined
 	footer?: string | undefined
+	/** The series a chart with a hidden legend hoists into the header (`usePlotLegendSlot`). */
+	legendItems?: ReadonlyArray<LegendItem> | undefined
+	/** `widgetTimeRangeLabel`: the tile follows its own window, not the board's. */
+	timeRangeLabel?: string | undefined
 }>
+
+export type LegendItem = Readonly<{ key: string; label: string; color: string; dashed?: boolean }>
+
+const MAX_HEADER_ITEMS = 5
+
+/** The header legend: a few chips, then "+N" with the full list on hover. */
+const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): Html => {
+	const visible = items.slice(0, MAX_HEADER_ITEMS)
+	const overflow = items.length - visible.length
+	return h.div(
+		[
+			h.Class(
+				"ml-auto hidden min-w-0 flex-1 items-center justify-end gap-x-3 overflow-hidden @min-[380px]/widget:flex",
+			),
+		],
+		[
+			...visible.map((item) =>
+				h.span(
+					[h.Class("flex min-w-0 shrink items-center gap-1.5 text-3xs text-muted-foreground")],
+					[
+						h.span([
+							h.Class(cn("size-2 shrink-0 rounded-xs", item.dashed === true && "border border-dashed")),
+							h.Style(
+								item.dashed === true ? { "border-color": item.color } : { "background-color": item.color },
+							),
+						]),
+						h.span([h.Class("truncate")], [item.label]),
+					],
+				),
+			),
+			...(overflow > 0
+				? [
+						h.span(
+							[h.Class("shrink-0 text-3xs text-muted-foreground"), h.Title(items.map((i) => i.label).join(", "))],
+							[`+${overflow}`],
+						),
+					]
+				: []),
+		],
+	)
+}
+
+const timeRangeChip = <M>(h: HtmlBuilder<M>, label: string): Html =>
+	h.span(
+		[
+			h.Class(
+				"flex shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-3xs font-medium text-muted-foreground",
+			),
+			h.Title(`This widget uses its own time range (${label}) instead of the dashboard's`),
+		],
+		[icon(h, "ClockIcon", { size: 10 }), label],
+	)
 
 /** The grip a tile is dragged by (edit mode); the press starts the grid gesture. */
 const grip = <M>(h: HtmlBuilder<M>, title: string): Html =>
@@ -68,6 +124,10 @@ export const widgetShell = <M>(
 								},
 								[options.title],
 							),
+							...(options.timeRangeLabel === undefined ? [] : [timeRangeChip(h, options.timeRangeLabel)]),
+							...(options.legendItems !== undefined && options.legendItems.length >= 2
+								? [headerLegend(h, options.legendItems)]
+								: []),
 						],
 					),
 					...(options.menu === null
@@ -156,8 +216,12 @@ const mutedError = <M>(
 		],
 	)
 
-/** The red block. TODO(error-details): the Details popover and "Fix with AI" are not ported. */
-const failedState = <M>(h: HtmlBuilder<M>, state: Extract<WidgetDataState, { _tag: "Error" }>): Html =>
+/** The red block, its "Details" popover and (decode errors) "Fix with AI". */
+const failedState = <M>(
+	h: HtmlBuilder<M>,
+	state: Extract<WidgetDataState, { _tag: "Error" }>,
+	options: Pick<FrameOptions<M>, "fix" | "errorDetails">,
+): Html =>
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
 		[
@@ -178,11 +242,34 @@ const failedState = <M>(h: HtmlBuilder<M>, state: Extract<WidgetDataState, { _ta
 							[state.message],
 						),
 					]),
+			...(state.message === null || state.message === "" || options.errorDetails === undefined || options.errorDetails === null
+				? []
+				: [options.errorDetails(state.message)]),
+			...(state.kind === "decode" && options.fix !== undefined && options.fix !== null
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "xs",
+								className: "mt-1 h-6 gap-1 text-3xs",
+								attributes: [h.OnClick(options.fix)],
+							},
+							[icon(h, "ChatBubbleSparkleIcon"), "Fix with AI"],
+						),
+					]
+				: []),
 		],
 	)
 
 export type FrameOptions<M> = ShellOptions &
-	Readonly<{ state: WidgetDataState; loadingSkeleton: Html; configure: M | null }>
+	Readonly<{
+		state: WidgetDataState
+		loadingSkeleton: Html
+		configure: M | null
+		fix?: M | null | undefined
+		errorDetails?: ((message: string) => Html) | null | undefined
+	}>
 
 /** `WidgetFrame`: loading, the three error shapes, or the tile's own content. */
 export const widgetFrame = <M>(
@@ -199,7 +286,7 @@ export const widgetFrame = <M>(
 					? [widgetEmptyState(h)]
 					: state.kind === "range" || state.kind === "config"
 						? [mutedError(h, state, options.configure)]
-						: [failedState(h, state)]
+						: [failedState(h, state, options)]
 				: content()
 	return widgetShell(h, { ...options, footer: state._tag === "Ready" ? options.footer : undefined }, body)
 }

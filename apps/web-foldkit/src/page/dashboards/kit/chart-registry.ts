@@ -1,4 +1,16 @@
 import { type PanelType, WIDGET_TYPES, type WidgetVisualization } from "@maple/domain/http"
+import {
+	apdexTimeSeriesData,
+	errorRateTimeSeriesData,
+	funnelSampleData,
+	hbarSampleData,
+	heatmapSampleData,
+	histogramSampleData,
+	latencyTimeSeriesData,
+	pathsSampleData,
+	pieSampleData,
+	throughputTimeSeriesData,
+} from "@maple/ui/components/charts/_shared/sample-data"
 
 // The id-to-category half of `chartRegistry` (packages/ui/src/components/charts/registry.ts), which
 // also lazily imports every React chart. `toPanelType` (apps/web/src/lib/query-builder/panel-types.ts).
@@ -29,6 +41,34 @@ const CATEGORY_BY_ID = new Map<string, ChartCategory>([
 	["query-builder-funnel", "funnel"],
 	["query-builder-paths", "paths"],
 ])
+
+/** `chartRegistry`'s entries without their components: id, name, category and bundled sample rows. */
+export const CHART_GALLERY: ReadonlyArray<
+	Readonly<{
+		id: string
+		name: string
+		category: ChartCategory
+		sampleData: ReadonlyArray<Record<string, unknown>>
+	}>
+> = [
+	{ id: "query-builder-bar", name: "Bar", category: "bar", sampleData: latencyTimeSeriesData },
+	{ id: "query-builder-hbar", name: "Horizontal Bar", category: "hbar", sampleData: hbarSampleData },
+	{ id: "query-builder-area", name: "Area", category: "area", sampleData: latencyTimeSeriesData },
+	{ id: "query-builder-line", name: "Line", category: "line", sampleData: latencyTimeSeriesData },
+	{ id: "latency-line", name: "Latency Line", category: "line", sampleData: latencyTimeSeriesData },
+	{ id: "throughput-area", name: "Throughput Area", category: "area", sampleData: throughputTimeSeriesData },
+	{ id: "apdex-area", name: "Apdex Area", category: "area", sampleData: apdexTimeSeriesData },
+	{ id: "error-rate-area", name: "Error Rate Area", category: "area", sampleData: errorRateTimeSeriesData },
+	{ id: "query-builder-pie", name: "Pie", category: "pie", sampleData: pieSampleData },
+	{ id: "query-builder-histogram", name: "Histogram", category: "histogram", sampleData: histogramSampleData },
+	{ id: "query-builder-heatmap", name: "Heatmap", category: "heatmap", sampleData: heatmapSampleData },
+	{ id: "query-builder-funnel", name: "Funnel", category: "funnel", sampleData: funnelSampleData },
+	{ id: "query-builder-paths", name: "Paths", category: "paths", sampleData: pathsSampleData },
+]
+
+/** `getChartById(id)?.sampleData`. */
+export const sampleDataOf = (chartId: string): ReadonlyArray<Record<string, unknown>> =>
+	CHART_GALLERY.find((entry) => entry.id === chartId)?.sampleData ?? []
 
 /** `REMOVED_CHART_IDS`: retired styles redirect to the chart that replaced them. */
 const REMOVED_CHART_IDS = new Map([

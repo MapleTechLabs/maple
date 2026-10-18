@@ -56,6 +56,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 				PieSlice: () => Option.none(),
 				NumericBin: () => Option.none(),
 				CategoricalBin: () => Option.none(),
+				HeatmapSlot: () => Option.none(),
 			}),
 		)
 	return h.div(

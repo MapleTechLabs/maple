@@ -1,11 +1,32 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import {
+	dropoffGhost,
+	funnelGhost,
+	gaugeGhost,
+	hbarGhost,
+	heatmapGhost,
+	pathsGhost,
+	pieGhost,
+	statGhost,
+} from "./chart-skeleton-shapes"
 
-// Port of `ChartSkeleton` (packages/ui/src/components/charts/_shared/chart-skeleton.tsx): the
-// line, area, bar and histogram variants. `ChartLoading` is in `chart-state.ts`.
-// TODO(variants): heatmap, hbar, funnel, paths, pie, gauge and stat ghosts.
+// Port of `ChartSkeleton` (packages/ui/src/components/charts/_shared/chart-skeleton.tsx), every
+// ghost shape. `ChartLoading` is in `chart-state.ts`; the newer ghosts are in `chart-skeleton-shapes.ts`.
 
-export type ChartSkeletonVariant = "line" | "area" | "bar" | "histogram"
+export type ChartSkeletonVariant =
+	| "line"
+	| "area"
+	| "bar"
+	| "histogram"
+	| "heatmap"
+	| "hbar"
+	| "funnel"
+	| "funnel-dropoff"
+	| "paths"
+	| "pie"
+	| "gauge"
+	| "stat"
 
 const STROKE = "var(--muted-foreground)"
 const TREND = "M 2 72 L 20 52 L 38 64 L 56 30 L 74 46 L 98 16"
@@ -97,6 +118,33 @@ const barGhost = <M>(h: HtmlBuilder<M>, variant: "bar" | "histogram"): Html =>
 				),
 			)
 
+const ghostOf = <M>(h: HtmlBuilder<M>, variant: ChartSkeletonVariant): Html => {
+	switch (variant) {
+		case "line":
+		case "area":
+			return trendGhost(h, variant)
+		case "bar":
+		case "histogram":
+			return barGhost(h, variant)
+		case "heatmap":
+			return heatmapGhost(h)
+		case "hbar":
+			return hbarGhost(h)
+		case "funnel":
+			return funnelGhost(h)
+		case "funnel-dropoff":
+			return dropoffGhost(h)
+		case "paths":
+			return pathsGhost(h)
+		case "pie":
+			return pieGhost(h)
+		case "gauge":
+			return gaugeGhost(h)
+		case "stat":
+			return statGhost(h)
+	}
+}
+
 /** `ChartSkeleton`: the ghost shape matching what will replace it. */
 export const chartSkeleton = <M>(
 	h: HtmlBuilder<M>,
@@ -109,5 +157,5 @@ export const chartSkeleton = <M>(
 			h.DataAttribute("slot", "chart-skeleton"),
 			h.AriaHidden(true),
 		],
-		[variant === "line" || variant === "area" ? trendGhost(h, variant) : barGhost(h, variant)],
+		[ghostOf(h, variant)],
 	)

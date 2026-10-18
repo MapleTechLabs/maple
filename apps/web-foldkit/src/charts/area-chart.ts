@@ -261,6 +261,7 @@ const tooltipBody = (
 		PieSlice: () => Option.none(),
 		NumericBin: () => Option.none(),
 		CategoricalBin: () => Option.none(),
+		HeatmapSlot: () => Option.none(),
 	})
 
 export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model, inputs, h) => {
