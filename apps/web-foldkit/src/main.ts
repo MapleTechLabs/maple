@@ -12,6 +12,7 @@ import { readEffectiveTimeZone } from "./platform/time-zone"
 import * as Toast from "./ui/toast"
 import { urlToAppRoute } from "./route"
 import * as Shell from "./shell"
+import * as ChatSheet from "./page/chat/sheet"
 import { settle } from "./update"
 
 export { Message } from "./message"
@@ -51,6 +52,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		shell: Shell.init(flags.shell),
 		toasts: Toast.init("toasts"),
 		toastActions: {},
+		chatSheet: ChatSheet.init(),
 		page: null,
 		timeZone: flags.timeZone,
 	}

@@ -10,6 +10,7 @@ import { pageSubscriptions } from "./page/registry"
 import { pageContextOf } from "./update"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
+import * as ChatSheet from "./page/chat/sheet"
 
 const selfHostedAuthTarget: Dom.TypedEventTarget<{ [SELF_HOSTED_AUTH_EVENT]: Event }> = window
 
@@ -119,4 +120,16 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 	),
 }))
 
-export const subscriptions = Subscription.aggregate(root, pages)
+/** The global chat sheet's open event, `C`, and its conversation's live tail. */
+const chatSheet = Subscription.lift(ChatSheet.subscriptions)<Model, Message>({
+	read: (model) =>
+		Option.some({
+			sheet: model.chatSheet,
+			isSignedIn: model.session._tag === "SignedIn" && rendersShell(model.route),
+			isTypeAnywhere:
+				model.route._tag === "Chat" && (model.route.search.shared === undefined || model.route.search.shared === ""),
+		}),
+	toParentMessage: (message) => Message.GotChatSheetMessage({ message }),
+})
+
+export const subscriptions = Subscription.aggregate(root, pages, chatSheet)

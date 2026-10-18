@@ -12,6 +12,7 @@ import { isBarePageRoute, type PageMessage, pageBreadcrumbs, viewPage, viewPageT
 import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
+import * as ChatSheet from "./page/chat/sheet"
 import * as ToastView from "./ui/toast-view"
 
 /** Placeholder for a route that is not ported yet: its tag and the session's org. */
@@ -81,27 +82,64 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 				topbarActions: () => topbarActionsView(model, h),
 			},
 		}),
+		...shellOverlays(model, h, currentPath),
+	]
+}
+
+/** The shell's overlay layers (mobile nav sheet, open menu), after the frame. */
+const shellOverlays = (model: Model, h: HtmlBuilder<Message>, currentPath: string): ReadonlyArray<Html> => [
+	h.submodel({
+		slotId: "shell-sheet",
+		model: model.shell,
+		view: Shell.sheetLayerView,
+		toParentMessage: toShellMessage,
+		viewInputs: { currentPath },
+	}),
+	h.submodel({
+		slotId: "shell-menu",
+		model: model.shell,
+		view: Shell.menuLayerView,
+		toParentMessage: toShellMessage,
+		viewInputs: { currentPath },
+	}),
+	h.submodel({
+		slotId: "chat-sheet",
+		model: model.chatSheet,
+		view: ChatSheet.view,
+		toParentMessage: (message: ChatSheet.Message) => Message.GotChatSheetMessage({ message }),
+		viewInputs: { timeZone: model.timeZone },
+	}),
+]
+
+/** `/chat`: the shell's rail held collapsed around the page, no top bar (the page's own layout). */
+const bareShellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
+	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
+	const maybeContext = pageContextOf(model)
+	return [
 		h.submodel({
-			slotId: "shell-sheet",
+			slotId: "shell-bare-frame",
 			model: model.shell,
-			view: Shell.sheetLayerView,
+			view: Shell.bareFrameView,
 			toParentMessage: toShellMessage,
-			viewInputs: { currentPath },
+			viewInputs: {
+				currentPath,
+				page: () =>
+					model.page !== null && Option.isSome(maybeContext)
+						? viewPage(h, model.page, { context: maybeContext.value }, toPageMessage)
+						: h.empty,
+			},
 		}),
-		h.submodel({
-			slotId: "shell-menu",
-			model: model.shell,
-			view: Shell.menuLayerView,
-			toParentMessage: toShellMessage,
-			viewInputs: { currentPath },
-		}),
+		...shellOverlays(model, h, currentPath),
 	]
 }
 
 const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	AppRoute.matchOrElse<ReadonlyArray<Html>>(
 		model.route,
-		{ SignIn: ({ search }) => [signInView(model, h, search.redirect_url)] },
+		{
+			SignIn: ({ search }) => [signInView(model, h, search.redirect_url)],
+			Chat: () => bareShellRoute(model, h),
+		},
 		() =>
 			rendersShell(model.route)
 				? shellRoute(model, h)

@@ -197,7 +197,7 @@ winning: `delays: { "queryEngine.executeBatch": 60_000 }` holds matching request
 them), `failures: { "queryEngine.executeBatch": { status: 502, body: { _tag, message } } }` answers
 with that encoded error, which the app decodes when the endpoint declares it. A dataset's `faults`
 apply to every scenario on it; `Scenario.faults` travel in the `x-parity-faults` header and override
-them per prefix. Electric shapes and raw routes are not covered.
+them per prefix. Raw routes are matched by their tag (`chat.history`); a raw route's request body is part of its logged payload. Electric shapes are not covered.
 
 - `settle: "held"` captures a loading state: before each settle point the capture waits until every
   request in flight to the API is one the backend is holding (`FixtureBackend.held`), then settles

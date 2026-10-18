@@ -6,6 +6,7 @@ import * as SignIn from "./page/sign-in"
 import * as Toast from "./ui/toast"
 import { AppRoute } from "./route"
 import * as Shell from "./shell"
+import * as ChatSheet from "./page/chat/sheet"
 
 /** The router's `auth` context in apps/web: unknown until resolved (`<BootSplash>`), then settled. */
 export const Session = defineTaggedUnion({
@@ -35,6 +36,8 @@ export const Model = Schema.Struct({
 	toasts: Toast.Model,
 	/** A page toast's action, by toast id: the page Message its button sends (`actionProps.onClick`). */
 	toastActions: Schema.Record(Schema.String, PageMessage),
+	/** `GlobalChatSheet`: the app-wide chat slide-over, above whichever page is open. */
+	chatSheet: ChatSheet.Model,
 	/** The routed page (`page/registry.ts`): built on route entry, dropped on leave. */
 	page: Schema.NullOr(PageSlot),
 	/** `useTimezonePreference().effectiveTimezone`, read at boot. */

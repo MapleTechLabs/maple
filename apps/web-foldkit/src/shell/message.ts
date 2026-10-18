@@ -45,6 +45,9 @@ export const Message = defineMessageUnion({
 	BecameTabVisible: {},
 	CheckedDeployedCommit: { maybeCommit: Schema.Option(Schema.String) },
 	ClickedReload: {},
+	/** The top bar's "Ask Maple AI" (`openGlobalChat`). */
+	ClickedAskMapleAi: {},
+	CompletedOpenGlobalChat: {},
 	CompletedReloadPage: {},
 	SucceededLoadTenant: { orgId: OrgId },
 	FailedLoadTenant: {},

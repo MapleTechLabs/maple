@@ -6,14 +6,13 @@ import { pageBody } from "./kit/dashboard-page"
 
 /**
  * Signed-in routes legacy renders without `DashboardLayout`: onboarding and auth handoffs with
- * their own layouts, the chat page (its own sidebar layout, Phase 4) and the not-found screen.
+ * their own layouts and the not-found screen. `/chat` keeps the shell, without its top bar (`view.ts`).
  */
 const isBareRoute = AppRoute.isAnyOf([
 	"CliLogin",
 	"McpAuthorize",
 	"QuickStart",
 	"SelectPlan",
-	"Chat",
 	"NotFound",
 ])
 

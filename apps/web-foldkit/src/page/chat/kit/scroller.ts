@@ -1,0 +1,178 @@
+import { Effect } from "effect"
+import { Mount } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
+
+// `MessageScroller` (`@shadcn/react/message-scroller`, `autoScroll`, `defaultScrollPosition="end"`),
+// its scrolling half: open at the end and follow it; a new user turn is anchored near the top (a
+// spacer below the thread makes room) with 64 px of the previous turn peeking above, and held there
+// while the reply streams; a wheel, touch or key scroll frees it. The jump button shows while the
+// end is out of view. Pure DOM bookkeeping on the viewport, so it lives in a Mount.
+
+export const ScrollerMessage = defineMessageUnion({ CompletedMountScroller: {} })
+export const CompletedMountScroller = ScrollerMessage.CompletedMountScroller
+
+const EDGE_THRESHOLD = 8
+const PREVIOUS_PEEK = 64
+const HALF_PIXEL = 0.5
+const SCROLL_KEYS = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "])
+
+type Mode = "following-bottom" | "anchored-to-message" | "free-scrolling"
+
+const px = (value: string): number => {
+	const parsed = Number.parseFloat(value)
+	return Number.isFinite(parsed) ? parsed : 0
+}
+
+/** Wires one scroller; returns its teardown. Mutable locals are the DOM glue's own bookkeeping. */
+const attach = (root: Element): (() => void) => {
+	const viewport = root.querySelector("[data-slot=message-scroller-viewport]")
+	const content = root.querySelector("[data-slot=message-scroller-content]")
+	const button = root.querySelector("[data-slot=message-scroller-button]")
+	if (!(viewport instanceof HTMLElement) || !(content instanceof HTMLElement)) return () => {}
+	// Read each time: the element is the view's, and a re-render may replace it.
+	const spacerOf = (): HTMLElement | null => {
+		const found = content.querySelector(":scope > [data-message-scroller-spacer]")
+		return found instanceof HTMLElement ? found : null
+	}
+	let mode: Mode = "following-bottom"
+	let anchored: HTMLElement | null = null
+	let count = 0
+	const handled = new WeakSet<Element>()
+
+	const items = (): ReadonlyArray<HTMLElement> =>
+		Array.from(content.children).filter(
+			(child): child is HTMLElement => child instanceof HTMLElement && !child.hasAttribute("data-message-scroller-spacer"),
+		)
+	const paddings = () => {
+		const style = getComputedStyle(content)
+		return { start: px(style.paddingTop), end: px(style.paddingBottom) }
+	}
+	const contentBottom = (): number => {
+		const top = viewport.getBoundingClientRect().top
+		const pad = paddings()
+		return items().reduce(
+			(bottom, item) => Math.max(bottom, item.getBoundingClientRect().bottom - top + viewport.scrollTop + pad.end),
+			pad.start + pad.end,
+		)
+	}
+	const setSpacer = (height: number) => {
+		const spacer = spacerOf()
+		if (spacer === null) return
+		const value = Math.max(0, Math.ceil(height))
+		const gap = px(getComputedStyle(content).rowGap)
+		spacer.hidden = value === 0
+		spacer.style.height = `${value}px`
+		spacer.style.marginTop = value > 0 ? `${-gap}px` : ""
+	}
+	const syncButton = () => {
+		const isEnd = mode !== "following-bottom" && contentBottom() - viewport.scrollTop - viewport.clientHeight > EDGE_THRESHOLD
+		if (!(button instanceof HTMLElement)) return
+		button.dataset.active = String(isEnd)
+		button.toggleAttribute("inert", !isEnd)
+		button.tabIndex = isEnd ? 0 : -1
+	}
+	const scrollTo = (top: number, behavior: ScrollBehavior) => {
+		const target = Math.max(0, top)
+		if (Math.abs(viewport.scrollTop - target) <= HALF_PIXEL) viewport.scrollTop = target
+		else viewport.scrollTo({ top: target, behavior })
+		syncButton()
+	}
+	const toEnd = (behavior: ScrollBehavior) => {
+		setSpacer(0)
+		anchored = null
+		mode = "following-bottom"
+		scrollTo(viewport.scrollHeight - viewport.clientHeight, behavior)
+	}
+	/** `scrollToElement(…, { align: "start" }, { keepPreviousPeek: true })`. */
+	const anchorTo = (element: HTMLElement) => {
+		const offset = element.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
+		const target = offset - paddings().start - PREVIOUS_PEEK
+		setSpacer(target + viewport.clientHeight - contentBottom())
+		anchored = element
+		mode = "anchored-to-message"
+		scrollTo(target, "auto")
+	}
+	const isAnchor = (element: HTMLElement) => element.dataset.scrollAnchor === "true"
+
+	const onContentChange = () => {
+		const list = items()
+		const previous = count
+		count = list.length
+		// The turns already there when the thread loads are history, never re-anchored to later
+		// (legacy leaves them unmarked and only its frame batching keeps it from re-anchoring).
+		if (previous === 0) {
+			list.filter(isAnchor).forEach((item) => handled.add(item))
+			return toEnd("auto")
+		}
+		if (list.length > previous) {
+			const added = list.slice(previous).filter(isAnchor)
+			const first = added[0]
+			if (first !== undefined) {
+				if (mode === "following-bottom" && added.length > 1) return toEnd("auto")
+				handled.add(first)
+				return anchorTo(first)
+			}
+		} else if (list.length === previous) {
+			const pending = list.find((item) => isAnchor(item) && !handled.has(item))
+			if (pending !== undefined) {
+				handled.add(pending)
+				return anchorTo(pending)
+			}
+		}
+		return mode === "following-bottom" ? toEnd("auto") : syncButton()
+	}
+	const onResize = () => {
+		if (mode === "following-bottom") return toEnd("auto")
+		if (mode === "anchored-to-message" && anchored !== null && anchored.isConnected) return anchorTo(anchored)
+		return syncButton()
+	}
+	const onUserScroll = () => {
+		if (mode !== "free-scrolling") {
+			anchored = null
+			mode = "free-scrolling"
+		}
+	}
+	const onKey = (event: KeyboardEvent) => {
+		if (SCROLL_KEYS.has(event.key)) onUserScroll()
+	}
+	const onClick = () => toEnd("smooth")
+
+	const mutation = new MutationObserver(onContentChange)
+	let frame = 0
+	const resize = new ResizeObserver(() => {
+		cancelAnimationFrame(frame)
+		frame = requestAnimationFrame(onResize)
+	})
+	mutation.observe(content, { childList: true })
+	resize.observe(viewport)
+	resize.observe(content)
+	viewport.addEventListener("scroll", syncButton, { passive: true })
+	viewport.addEventListener("wheel", onUserScroll, { passive: true })
+	viewport.addEventListener("touchmove", onUserScroll, { passive: true })
+	viewport.addEventListener("keydown", onKey)
+	button?.addEventListener("click", onClick)
+	onContentChange()
+	return () => {
+		mutation.disconnect()
+		resize.disconnect()
+		cancelAnimationFrame(frame)
+		viewport.removeEventListener("scroll", syncButton)
+		viewport.removeEventListener("wheel", onUserScroll)
+		viewport.removeEventListener("touchmove", onUserScroll)
+		viewport.removeEventListener("keydown", onKey)
+		button?.removeEventListener("click", onClick)
+	}
+}
+
+/** On the `message-scroller` root: its viewport, content, spacer and jump button are its children. */
+export const MountMessageScroller = Mount.define("MountChatMessageScroller", {
+	messages: [CompletedMountScroller],
+	execute: ({ element }) =>
+		Effect.as(
+			Effect.acquireRelease(
+				Effect.sync(() => attach(element)),
+				(release) => Effect.sync(release),
+			),
+			CompletedMountScroller(),
+		),
+})

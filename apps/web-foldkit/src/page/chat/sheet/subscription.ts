@@ -1,0 +1,58 @@
+import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
+import { Option, Schema, Stream } from "effect"
+import { Dom, Subscription } from "foldkit"
+import type { Resources } from "../../../platform/resources"
+import { Tail, tailOf, tailsMessages } from "../conversation/subscription"
+import { Message, type Model } from "./model"
+
+// `GlobalChatSheet`'s listeners: `openGlobalChat()`'s document event, and `C` outside a field.
+// The open sheet's conversation tails its live turn here too.
+
+/** `OPEN_CHAT_EVENT`: whoever wants the sheet (the top bar, the command palette) dispatches it. */
+export const OPEN_CHAT_EVENT = "maple:open-chat-sheet"
+
+/** `openGlobalChat()`. */
+export const openGlobalChat = (): void => {
+	document.dispatchEvent(new CustomEvent(OPEN_CHAT_EVENT))
+}
+
+const openTarget = (): Dom.TypedEventTarget<{ [OPEN_CHAT_EVENT]: Event }> => document
+
+const openEvents: Stream.Stream<Message> = Dom.streamFromEvent({
+	target: openTarget,
+	type: OPEN_CHAT_EVENT,
+	mapEvent: () => Message.RequestedOpen({ viaKeyboard: false }),
+})
+
+const shortcut: Stream.Stream<Message> = Dom.streamFromEventFilterMapPreventDefault({
+	target: () => document,
+	type: "keydown",
+	filterMapEvent: (event) =>
+		event.key.toLowerCase() !== "c" || event.metaKey || event.ctrlKey || event.altKey
+			? Option.none()
+			: isEditableTarget(event.target) || isDialogOpen()
+				? Option.none()
+				: Option.some(Message.RequestedOpen({ viaKeyboard: true })),
+})
+
+/** `isTypeAnywhere`: `/chat`'s composer takes printable keys first (`useTypeAnywhereFocus`, capture phase). */
+export type SheetHost = Readonly<{ sheet: Model; isSignedIn: boolean; isTypeAnywhere: boolean }>
+
+export const subscriptions = Subscription.make<SheetHost, Message, Resources>()((entry) => ({
+	open: entry(
+		{ isSignedIn: Schema.Boolean, isTypeAnywhere: Schema.Boolean },
+		{
+			modelToDependencies: ({ isSignedIn, isTypeAnywhere }) => ({ isSignedIn, isTypeAnywhere }),
+			dependenciesToStream: ({ isSignedIn, isTypeAnywhere }) =>
+				!isSignedIn ? Stream.empty : isTypeAnywhere ? openEvents : Stream.merge(openEvents, shortcut),
+		},
+	),
+	tail: entry(
+		{ tails: Schema.Array(Tail) },
+		{
+			modelToDependencies: ({ sheet }) => ({ tails: sheet.conversation === null ? [] : tailOf(sheet.conversation) }),
+			dependenciesToStream: ({ tails }) =>
+				tails.length === 0 ? Stream.empty : tailsMessages(tails, (_tabId, message) => Message.GotConversationMessage({ message })),
+		},
+	),
+}))

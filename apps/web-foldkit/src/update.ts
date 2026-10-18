@@ -32,6 +32,7 @@ import type { Resources } from "./platform/resources"
 import type { ClerkSnapshot } from "./platform/clerk"
 import { AppRoute, hrefOf, isPublicRoute, type Redirect, routeRedirect, urlToAppRoute } from "./route"
 import * as Shell from "./shell"
+import * as ChatSheet from "./page/chat/sheet"
 import * as Toast from "./ui/toast"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
@@ -224,6 +225,24 @@ const writePage =
 		}
 	}
 
+/** The chat sheet's step: its Commands lifted, its toast shown like a page's. */
+const foldChatSheet = (model: Model, message: ChatSheet.Message) => {
+	const orgId = Session.match(model.session, {
+		Resolving: () => null,
+		SignedOut: () => null,
+		SignedIn: ({ maybeOrgId }) => Option.getOrNull(maybeOrgId),
+	})
+	const step = ChatSheet.update(model.chatSheet, message, orgId)
+	const next = modifyFields(model, { chatSheet: () => step.model })
+	const commands = Command.mapMessages(step.commands ?? [], (child) => Message.GotChatSheetMessage({ message: child }))
+	if (step.outMessage === undefined) return { model: next, commands }
+	const toasted = showPageToast(
+		next,
+		PageOutMessage.RequestedToast({ type: step.outMessage.type, title: step.outMessage.title, description: "", timeoutMs: null, action: null }),
+	)
+	return { model: toasted.model, commands: [...commands, ...toasted.commands] }
+}
+
 /** Route entry or leave: the route's page is built, kept (same key) or dropped. */
 const loadPage: Step = (model) =>
 	Option.match(pageContextOf(model), {
@@ -384,4 +403,5 @@ export const update = (model: Model, message: Message) =>
 				? toPage(model, model.toastActions[message.toastId])
 				: foldToasts(model, message),
 		GotPageMessage: ({ message }) => toPage(model, message),
+		GotChatSheetMessage: ({ message }) => foldChatSheet(model, message),
 	})
