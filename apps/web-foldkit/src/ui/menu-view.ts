@@ -67,7 +67,13 @@ export type MenuSubmenuEntry = Readonly<{
 /** The menu's content, as data: `update` addresses highlightable entries by document order. */
 export type MenuEntry =
 	| MenuItemEntry
-	| Readonly<{ _tag: "Group"; label?: string; entries: ReadonlyArray<MenuEntry> }>
+	| Readonly<{
+			_tag: "Group"
+			label?: string
+			/** The label's own children (an avatar and a name), in place of `label`. */
+			labelContent?: ReadonlyArray<Html | string>
+			entries: ReadonlyArray<MenuEntry>
+	  }>
 	| MenuSubmenuEntry
 	| Readonly<{ _tag: "Checkbox"; value: string; label: string; isChecked: boolean }>
 	| Readonly<{
@@ -166,8 +172,9 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 			)
 		case "Group": {
 			const labelId = `${model.id}-group-${index}`
-			return menuGroup(h, entry.label === undefined ? undefined : labelId, [
-				...(entry.label === undefined ? [] : [menuLabel(h, labelId, [entry.label])]),
+			const labelChildren = entry.labelContent ?? (entry.label === undefined ? undefined : [entry.label])
+			return menuGroup(h, labelChildren === undefined ? undefined : labelId, [
+				...(labelChildren === undefined ? [] : [menuLabel(h, labelId, labelChildren)]),
 				...renderEntries(h, model, entry.entries, index),
 			])
 		}

@@ -1,17 +1,25 @@
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
-import { Option, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import { load } from "foldkit/navigation"
+import { clearSessionToken } from "../../platform/auth-api"
+import { signOutOfClerk } from "../../platform/clerk"
 import type { Resources } from "../../platform/resources"
 import { AppRoute } from "../../route"
 import * as OrgSwitcher from "../../shell/clerk-org-switcher"
+import * as Menu from "../../ui/menu"
 import * as CliLogin from "./cli-login"
 import * as ClerkScreens from "./clerk-screens"
 import * as ClerkSignIn from "./clerk-sign-in"
 import type { Inputs } from "./inputs"
 import * as McpAuthorize from "./mcp-authorize"
+import * as QuickStart from "./quick-start"
+import { storageKeyOf } from "./quick-start-state"
+import * as SelectPlan from "./select-plan"
 import * as Unsubscribe from "./unsubscribe"
+import * as PricingCards from "./pricing-cards"
 
 export type { Inputs } from "./inputs"
 
@@ -30,11 +38,19 @@ export const Screen = Schema.Union([
 	ClerkSignIn.Model,
 	ClerkScreens.OrgRequired,
 	ClerkScreens.SignUp,
+	QuickStart.Model,
+	SelectPlan.Model,
 ])
 export type Screen = typeof Screen.Type
 
 /** The open screen, the route key it was built for, and its Clerk org switcher ("Switch"). */
-export const Model = Schema.Struct({ key: Schema.String, screen: Screen, switcher: OrgSwitcher.Model })
+export const Model = Schema.Struct({
+	key: Schema.String,
+	screen: Screen,
+	switcher: OrgSwitcher.Model,
+	/** The onboarding header's account menu (`OnboardingUserMenu`). */
+	userMenu: Menu.Model,
+})
 export type Model = typeof Model.Type
 
 // MESSAGE
@@ -45,13 +61,22 @@ export const Message = defineMessageUnion({
 	GotUnsubscribeMessage: { message: Unsubscribe.Message },
 	GotSwitcherMessage: { message: OrgSwitcher.Message },
 	GotClerkSignInMessage: { message: ClerkSignIn.Message },
+	GotQuickStartMessage: { message: QuickStart.Message },
+	GotSelectPlanMessage: { message: SelectPlan.Message },
+	GotUserMenuMessage: { message: Menu.Message },
+	CompletedLogOut: {},
 	CompletedMountClerkCard: {},
 })
 export type Message = typeof Message.Type
 
+/** What the root does for a screen: a changed plan refreshes the customer, a failure toasts. */
+export const OutMessage = PricingCards.OutMessage
+export type OutMessage = PricingCards.OutMessage
+
 export interface Step {
 	readonly model: Model
 	readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>>
+	readonly outMessage?: OutMessage
 }
 
 export const toCliLogin = (message: CliLogin.Message) => Message.GotCliLoginMessage({ message })
@@ -59,6 +84,9 @@ export const toMcpAuthorize = (message: McpAuthorize.Message) => Message.GotMcpA
 export const toUnsubscribe = (message: Unsubscribe.Message) => Message.GotUnsubscribeMessage({ message })
 export const toSwitcher = (message: OrgSwitcher.Message) => Message.GotSwitcherMessage({ message })
 export const toClerkSignIn = (message: ClerkSignIn.Message) => Message.GotClerkSignInMessage({ message })
+export const toQuickStart = (message: QuickStart.Message) => Message.GotQuickStartMessage({ message })
+export const toSelectPlan = (message: SelectPlan.Message) => Message.GotSelectPlanMessage({ message })
+export const toUserMenu = (message: Menu.Message) => Message.GotUserMenuMessage({ message })
 
 type ScreenResult<ScreenModel, ScreenMessage> = {
 	readonly model: ScreenModel
@@ -86,6 +114,8 @@ export const keyOf = (route: AppRoute, inputs: Inputs): Option.Option<string> =>
 		{
 			CliLogin: () => withOrg("CliLogin"),
 			McpAuthorize: () => withOrg("McpAuthorize"),
+			QuickStart: () => withOrg("QuickStart"),
+			SelectPlan: () => (isClerkAuthEnabled ? withOrg("SelectPlan") : Option.none()),
 			Unsubscribe: ({ search }) => Option.some(Unsubscribe.keyOf(search.token)),
 			SignIn: () => (isClerkAuthEnabled && isSignedOut ? Option.some("ClerkSignIn") : Option.none()),
 			SignUp: () => (isClerkAuthEnabled && isSignedOut ? Option.some("SignUp") : Option.none()),
@@ -103,14 +133,16 @@ const fresh = <ScreenModel extends Screen, ScreenMessage>(
 	result: ScreenResult<ScreenModel, ScreenMessage>,
 	wrap: (message: ScreenMessage) => Message,
 ): Option.Option<Step> =>
-	Option.some(withScreen({ key, screen: result.model, switcher: OrgSwitcher.init("onboarding-org-switcher") }, result, wrap))
+	Option.some(withScreen({ key, screen: result.model, switcher: OrgSwitcher.init("onboarding-org-switcher"), userMenu: Menu.init("onboarding-user-menu") }, result, wrap))
 
-export const init = (route: AppRoute, key: string): Option.Option<Step> =>
+export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Option<Step> =>
 	AppRoute.matchOrElse<Option.Option<Step>>(
 		route,
 		{
 			CliLogin: ({ search }) => fresh(key, CliLogin.init(search.user_code), toCliLogin),
 			McpAuthorize: ({ search }) => fresh(key, McpAuthorize.init(search.request_id), toMcpAuthorize),
+			QuickStart: () => fresh(key, QuickStart.init(storageKeyOf(inputs.maybeOrgId)), toQuickStart),
+			SelectPlan: () => fresh(key, SelectPlan.init(), toSelectPlan),
 			Unsubscribe: ({ search }) => fresh(key, { model: Unsubscribe.init(search.token) }, toUnsubscribe),
 			SignIn: ({ search }) =>
 				fresh(key, ClerkSignIn.init(validateInternalRedirect(search.redirect_url ?? null)), toClerkSignIn),
@@ -133,6 +165,24 @@ export const init = (route: AppRoute, key: string): Option.Option<Step> =>
 // UPDATE
 
 const unchanged = (model: Model): Step => ({ model, commands: [] })
+
+/** `signOut()` (Clerk routes to its sign-in), or the self-hosted token cleared and `/sign-in`. */
+export const LogOut = Command.define("OnboardingLogOut", {
+	messages: [Message.CompletedLogOut],
+	execute: (isClerkAuthEnabled ? signOutOfClerk : Effect.andThen(clearSessionToken, load("/sign-in"))).pipe(
+		Effect.as(Message.CompletedLogOut()),
+	),
+})
+
+/** The account menu's only item logs out. */
+const updateUserMenu = (model: Model, message: Menu.Message): Step => {
+	const next = Menu.update(model.userMenu, message)
+	const isLogOut = next.outMessage !== undefined && next.outMessage._tag === "SelectedItem"
+	return {
+		model: { ...model, userMenu: next.model },
+		commands: [...Command.mapMessages(next.commands ?? [], toUserMenu), ...(isLogOut ? [LogOut()] : [])],
+	}
+}
 
 /** A picked org other than the active one: `setActive`, then its region's app or a reload. */
 const updateSwitcher = (model: Model, message: OrgSwitcher.Message, inputs: Inputs): Step => {
@@ -176,5 +226,15 @@ export const update = (model: Model, message: Message, inputs: Inputs): Step => 
 				? withScreen(model, ClerkSignIn.update(screen, child), toClerkSignIn)
 				: unchanged(model),
 		CompletedMountClerkCard: () => unchanged(model),
+		GotQuickStartMessage: ({ message: child }) =>
+			screen._tag === "QuickStart" ? withScreen(model, QuickStart.update(screen, child), toQuickStart) : unchanged(model),
+		GotSelectPlanMessage: ({ message: child }) => {
+			if (screen._tag !== "SelectPlan") return unchanged(model)
+			const next = SelectPlan.update(screen, child)
+			const step = withScreen(model, next, toSelectPlan)
+			return next.outMessage === undefined ? step : { ...step, outMessage: next.outMessage }
+		},
+		GotUserMenuMessage: ({ message: child }) => updateUserMenu(model, child),
+		CompletedLogOut: () => unchanged(model),
 	})
 }

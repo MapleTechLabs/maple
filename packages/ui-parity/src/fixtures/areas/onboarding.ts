@@ -166,6 +166,8 @@ export const fixtureArea: FixtureArea = {
 				status: "denied",
 				redirectUri: "https://claude.ai/api/mcp/auth_callback?error=access_denied",
 			}),
+		// Autumn answers a new subscription with Stripe Checkout; the harness keeps the page (204).
+		"billing.attach": () => Effect.succeed({ paymentUrl: "https://checkout.stripe.com/c/pay/cs_parity" }),
 		"emailPublic.unsubscribe": ({ query }) =>
 			Effect.succeed({
 				kind: field(query, "token").startsWith("web-analytics.") ? "web-analytics" : "digest",

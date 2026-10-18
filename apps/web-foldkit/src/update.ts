@@ -238,12 +238,13 @@ const toOnboardingCommands = (step: Onboarding.Step) =>
 
 /** Route entry: the screen is kept while its key holds, rebuilt on a new one, dropped on leave. */
 const loadOnboarding: Step = (model) => {
-	const maybeKey = Option.flatMap(onboardingInputsOf(model), (inputs) => Onboarding.keyOf(model.route, inputs))
-	if (Option.isNone(maybeKey)) {
+	const maybeInputs = onboardingInputsOf(model)
+	const maybeKey = Option.flatMap(maybeInputs, (inputs) => Onboarding.keyOf(model.route, inputs))
+	if (Option.isNone(maybeKey) || Option.isNone(maybeInputs)) {
 		return { model: model.onboarding === null ? model : modifyFields(model, { onboarding: () => null }) }
 	}
 	if (model.onboarding !== null && model.onboarding.key === maybeKey.value) return { model }
-	return Option.match(Onboarding.init(model.route, maybeKey.value), {
+	return Option.match(Onboarding.init(model.route, maybeKey.value, maybeInputs.value), {
 		onNone: () => ({ model: modifyFields(model, { onboarding: () => null }) }),
 		onSome: (step) => ({
 			model: modifyFields(model, { onboarding: () => step.model }),
@@ -252,6 +253,30 @@ const loadOnboarding: Step = (model) => {
 	})
 }
 
+/** A plan change re-reads the customer (`refreshCustomer()`) and toasts, as `PricingCards` does. */
+const onboardingOut =
+	(out: Onboarding.OutMessage): Step =>
+	(model) =>
+		Onboarding.OutMessage.match(out, {
+			ChangedPlan: ({ isLeavingForCheckout }) => {
+				const toasted = isLeavingForCheckout
+					? { model, commands: [] }
+					: showPageToast(
+							model,
+							PageOutMessage.RequestedToast({ type: "success", title: "Plan updated successfully", description: "" }),
+						)
+				const orgId = model.customer.orgId
+				return orgId === null
+					? toasted
+					: { ...toasted, commands: [...toasted.commands, LoadCustomer({ orgId })] }
+			},
+			FailedChangePlan: ({ message }) =>
+				showPageToast(
+					model,
+					PageOutMessage.RequestedToast({ type: "error", title: "Failed to update your plan", description: message }),
+				),
+		})
+
 const updateOnboarding = (model: Model, message: Onboarding.Message): UpdateReturn => {
 	const onboarding = model.onboarding
 	return Option.match(onboardingInputsOf(model), {
@@ -259,10 +284,8 @@ const updateOnboarding = (model: Model, message: Onboarding.Message): UpdateRetu
 		onSome: (inputs) => {
 			if (onboarding === null) return { model }
 			const step = Onboarding.update(onboarding, message, inputs)
-			return {
-				model: modifyFields(model, { onboarding: () => step.model }),
-				commands: toOnboardingCommands(step),
-			}
+			const next = { model: modifyFields(model, { onboarding: () => step.model }), commands: toOnboardingCommands(step) }
+			return step.outMessage === undefined ? next : Update.combine([() => next, onboardingOut(step.outMessage)])(model)
 		},
 	})
 }

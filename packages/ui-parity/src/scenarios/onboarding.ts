@@ -188,7 +188,22 @@ export const onboardingArea: AreaModule = {
 			await page.getByText("DevOps / SRE / Platform", { exact: true }).click()
 			await page.getByRole("button", { name: /Continue/ }).click()
 		}),
+		scenario("quick-start-account-menu", "Quick start: account menu open", "/quick-start", "clerk", click("Account menu")),
+		scenario("quick-start-org-menu", "Quick start: org switcher open", "/quick-start", "clerk", click(/Orbit Labs/)),
+		scenario("quick-start-intent-picked", "Quick start: intents chosen", "/quick-start", "clerk", async (page) => {
+			await page.getByText("Backend engineer", { exact: true }).click()
+			await page.getByRole("button", { name: /Continue/ }).click()
+			await page.getByText("Traces", { exact: true }).click()
+			await page.getByText("Logs", { exact: true }).click()
+		}),
 		{ ...scenario("select-plan", "Select plan: free trial", "/select-plan", "clerk"), fullPage: true },
+		{
+			...scenario("select-plan-trial-start", "Select plan: trial started, leaving for Stripe", "/select-plan", "clerk", async (page) => {
+				await page.route("https://checkout.stripe.com/**", (route) => route.fulfill({ status: 204 }))
+				await click("Start 14-day trial")(page)
+			}),
+			fullPage: true,
+		},
 		{
 			...scenario(
 				"select-plan-lapsed",

@@ -8,9 +8,16 @@ import { button } from "../../ui/button"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 import { clerkCard } from "./clerk-card"
 import * as ClerkSignInView from "./clerk-sign-in-view"
+import * as AccountMenu from "./account-menu"
+import { accessOf, customerOf, needsRegion } from "./plan-gate"
+import * as SelectPlan from "./select-plan"
+import type * as QuickStart from "./quick-start"
+import * as QuickStartView from "./quick-start-view"
+import { bootSplash } from "../../layout/boot-splash"
+import * as MenuView from "../../ui/menu-view"
 import type * as CliLogin from "./cli-login"
 import * as CliLoginView from "./cli-login-view"
-import { type Message, type Model, type Screen, toClerkSignIn, toCliLogin, toMcpAuthorize, toSwitcher, toUnsubscribe } from "./index"
+import { type Message, type Model, type Screen, toClerkSignIn, toCliLogin, toMcpAuthorize, toQuickStart, toSelectPlan, toSwitcher, toUnsubscribe, toUserMenu } from "./index"
 import type { Inputs } from "./inputs"
 import type * as McpAuthorize from "./mcp-authorize"
 import * as McpAuthorizeView from "./mcp-authorize-view"
@@ -60,6 +67,70 @@ const clerkWorkspace = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): 
 		),
 	)
 
+/** `OnboardingOrgSwitcher` and `OnboardingUserMenu`: the header's account actions. */
+const accountCluster = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, label: Html): Html => {
+	const orgName = Option.match(inputs.maybeOrganization, { onNone: () => "Select organization", onSome: (org) => org.name })
+	// Nested so both menus' triggers and guards land as siblings in the one cluster `div`.
+	const userMenu = (before: ReadonlyArray<Html>): Html =>
+		h.submodel({
+			slotId: "onboarding-user-menu",
+			model: model.userMenu,
+			view: MenuView.view,
+			viewInputs: {
+				entries: AccountMenu.userMenuEntries(h, inputs.maybeUser),
+				className: isClerkAuthEnabled ? "min-w-56" : "min-w-44",
+				side: "bottom",
+				align: "end",
+				sideOffset: 4,
+				toView: ({ trigger, withTrigger }) =>
+					QuickStartView.accountClusterOf(h, [
+						label,
+						...before,
+						...withTrigger(
+							button(
+								h,
+								{ variant: "outline", size: "sm", className: "pl-1 pr-2", attributes: [h.AriaLabel("Account menu"), ...trigger] },
+								AccountMenu.userTriggerChildren(h, inputs.maybeUser),
+							),
+						),
+					]),
+			},
+			toParentMessage: toUserMenu,
+		})
+	if (!isClerkAuthEnabled) return userMenu([])
+	return switcher(h, model, inputs, "end", ({ trigger, withTrigger }) =>
+		userMenu(
+			withTrigger(
+				button(
+					h,
+					{ variant: "outline", size: "sm", className: "pl-1.5 text-xs", attributes: trigger },
+					AccountMenu.orgTriggerChildren(h, orgName),
+				),
+			),
+		),
+	)
+}
+
+/** `QuickStartPage`: the splash until the progress and the plan are known, then the step. */
+const quickStartView = Submodel.defineView<
+	QuickStart.Model,
+	QuickStart.Message,
+	ScreenInputs & Readonly<{ accountCluster: (label: Html) => Html }>
+>((model, inputs, h) =>
+	model.state === null || (!needsRegion(inputs.maybeOrganization) && accessOf(inputs.customer) === "loading")
+		? bootSplash(h)
+		: QuickStartView.view(h, model, {
+				accountCluster: inputs.accountCluster,
+				teamStep: () => h.empty,
+				planStep: h.empty,
+			}),
+)
+
+/** `SelectPlanPageInner`: the splash until the customer is known. */
+const selectPlanView = Submodel.defineView<SelectPlan.Model, SelectPlan.Message, ScreenInputs>((model, inputs, h) =>
+	accessOf(inputs.customer) === "loading" ? bootSplash(h) : SelectPlan.view(h, model, customerOf(inputs.customer)),
+)
+
 /** `OrgRequiredPageClerk`. */
 const orgRequiredView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): Html =>
 	authLayout(h, "max-w-lg", [
@@ -94,6 +165,16 @@ const screenView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): Html
 			return accountLayout(h, [clerkCard(h, "SignUp", screen.target)])
 		case "OrgRequired":
 			return orgRequiredView(h, model, inputs)
+		case "SelectPlan":
+			return h.submodel({ slotId, model: screen, view: selectPlanView, viewInputs, toParentMessage: toSelectPlan })
+		case "QuickStart":
+			return h.submodel({
+				slotId,
+				model: screen,
+				view: quickStartView,
+				viewInputs: { ...viewInputs, accountCluster: (label) => accountCluster(h, model, inputs, label) },
+				toParentMessage: toQuickStart,
+			})
 	}
 }
 
