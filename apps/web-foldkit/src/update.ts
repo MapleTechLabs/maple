@@ -85,6 +85,10 @@ const shellFoldConfig = {
 						}
 			},
 		RequestedSignOut: () => (model) => ({ model, commands: [SignOutOfClerk()] }),
+		RequestedCustomerRefresh: () => (model) =>
+			model.customer.orgId === null
+				? { model }
+				: { model, commands: [LoadCustomer({ orgId: model.customer.orgId })] },
 		RequestedErrorToast:
 			({ title }) =>
 			(model) =>

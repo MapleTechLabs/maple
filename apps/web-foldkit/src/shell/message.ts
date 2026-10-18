@@ -83,5 +83,7 @@ export const OutMessage = defineMessageUnion({
 	RequestedSignOut: {},
 	/** A failure the shell reports as an error toast (the billing portal not opening). */
 	RequestedErrorToast: { title: Schema.String },
+	/** A billing mutation succeeded: the Autumn customer is re-read. */
+	RequestedCustomerRefresh: {},
 })
 export type OutMessage = typeof OutMessage.Type

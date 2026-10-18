@@ -18,6 +18,7 @@ export interface ClerkStubIdentity {
 	readonly orgName: string
 	readonly orgSlug: string
 	readonly role: "org:admin" | "org:member"
+	readonly orgPublicMetadata: Readonly<Record<string, unknown>>
 }
 
 /** The stub identity for a dataset, `null` when it is signed out. */
@@ -36,6 +37,7 @@ export const clerkIdentityFor = (dataset: DatasetSummary): ClerkStubIdentity | n
 		orgName: identity.orgName,
 		orgSlug: identity.orgSlug,
 		role: identity.role === "admin" ? "org:admin" : "org:member",
+		orgPublicMetadata: identity.orgPublicMetadata ?? {},
 	}
 }
 
@@ -60,7 +62,7 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 					slug: id.orgSlug,
 					imageUrl: "",
 					hasImage: false,
-					publicMetadata: {},
+					publicMetadata: id.orgPublicMetadata,
 					createdAt,
 					updatedAt: createdAt,
 					membersCount: 1,

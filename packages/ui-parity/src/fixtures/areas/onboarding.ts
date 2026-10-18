@@ -104,6 +104,28 @@ const newCustomer =
 	() =>
 		Effect.succeed({ id: identity.orgId, subscriptions: [] })
 
+/** An active Startup subscription, past due or with metered balances. */
+const activeCustomer =
+	(
+		identity: DatasetIdentity,
+		options: { readonly pastDue?: boolean; readonly balances?: Readonly<Record<string, unknown>> },
+	): EndpointHandler =>
+	() =>
+		Effect.succeed({
+			id: identity.orgId,
+			subscriptions: [
+				{
+					planId: "startup",
+					plan: { id: "startup", name: "Startup" },
+					status: "active",
+					pastDue: options.pastDue ?? false,
+					currentPeriodStart: FROZEN_NOW_MS - 10 * DAY,
+					currentPeriodEnd: FROZEN_NOW_MS + 20 * DAY,
+				},
+			],
+			...(options.balances === undefined ? {} : { balances: options.balances }),
+		})
+
 /** A Startup subscription that expired a week ago: the reactivation framing. */
 const lapsedCustomer =
 	(identity: DatasetIdentity): EndpointHandler =>
@@ -209,6 +231,8 @@ export const fixtureArea: FixtureArea = {
 		// The Clerk top bar's reward pill: in progress, and claimed once an admin claims it.
 		"onboardingChecklist.retrieve": () => Effect.succeed(checklist("in_progress")),
 		"onboardingChecklist.claim": () => Effect.succeed(checklist("claimed")),
+		// The Clerk org switcher's create dialog: the server creates the org with its region.
+		"organizationCreation.create": () => Effect.succeed({ orgId: "org_parity_created", region: "us" }),
 		// The Clerk Support menu's shared Slack channel: none yet; the button creates it and invites.
 		"supportChannel.retrieve": () => Effect.succeed(supportChannel("not_created", null)),
 		"supportChannel.invite": () => Effect.succeed(supportChannel("active", "ada@acme.test")),
@@ -231,6 +255,19 @@ export const fixtureArea: FixtureArea = {
 		}),
 		// Acme on Clerk with the generic Startup customer: an org already in the app.
 		clerkDataset("clerk-acme", acmeAdmin),
+		// Acme with the `releases` rollout on in its Clerk metadata: the Releases nav row.
+		clerkDataset("clerk-flags", { ...acmeAdmin, orgPublicMetadata: { releases: true } }),
+		// Acme whose last invoice failed: the payment banner and its customer portal.
+		clerkDataset("clerk-past-due", acmeAdmin, {
+			"billing.getCustomer": activeCustomer(acmeAdmin, { pastDue: true }),
+			"billing.openCustomerPortal": () => Effect.succeed({ url: "https://billing.stripe.com/p/session/parity" }),
+		}),
+		// Acme at 85% of its included logs: the dismissible usage banner.
+		clerkDataset("clerk-quota", acmeAdmin, {
+			"billing.getCustomer": activeCustomer(acmeAdmin, {
+				balances: { logs: { granted: 100, usage: 85, unlimited: false, overageAllowed: false } },
+			}),
+		}),
 		// Acme with every checklist step done: the pill offers the credit.
 		clerkDataset("clerk-reward", acmeAdmin, {
 			"onboardingChecklist.retrieve": () => Effect.succeed(checklist("claimable")),

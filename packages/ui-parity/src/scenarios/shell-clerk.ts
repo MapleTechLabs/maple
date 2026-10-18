@@ -79,6 +79,15 @@ export const shellClerkArea: AreaModule = {
 			await openOrgSwitcher(page)
 			await page.getByRole("menuitem", { name: "Create Organization" }).click()
 		}),
+		shell("create-org-submit", "Create organization: submitted, reloading onto it", "clerk-acme", async (page) => {
+			await openOrgSwitcher(page)
+			await page.getByRole("menuitem", { name: "Create Organization" }).click()
+			await page.getByPlaceholder("Organization name").fill("Orbit Labs")
+			// Clerk's `setActive` then a reload: the page comes back on the (stubbed) active org.
+			await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Create" }).click()])
+			await page.getByRole("button", { name: /Acme Shop/ }).waitFor()
+			await hidePage(page)
+		}),
 		shell("user-menu", "User menu open", "clerk-acme", (page) =>
 			page.getByRole("button", { name: /Ada Lovelace/ }).click(),
 		),
@@ -92,6 +101,22 @@ export const shellClerkArea: AreaModule = {
 			await page.getByText("Invite sent to").waitFor()
 		}),
 		shell("lapsed", "Subscription ended banner", "clerk-lapsed"),
+		shell("flags", "Rollout flags from org metadata", "clerk-flags"),
+		shell("past-due", "Payment failed banner", "clerk-past-due"),
+		shell("past-due-portal", "Payment failed: opening the billing portal", "clerk-past-due", async (page) => {
+			await page.route("https://billing.stripe.com/**", (route) => route.fulfill({ status: 204 }))
+			// The reward pointer sits over the banner's action until it is closed.
+			await page.getByRole("button", { name: "Got it" }).click()
+			await page.getByRole("button", { name: "Update payment method" }).click()
+		}),
+		shell("quota", "Usage approaching banner", "clerk-quota"),
+		shell("quota-dismissed", "Usage banner dismissed", "clerk-quota", (page) =>
+			page.getByRole("alert").getByRole("button", { name: "Dismiss" }).click(),
+		),
+		shell("user-menu-log-out", "User menu: log out", "clerk-acme", async (page) => {
+			await page.getByRole("button", { name: /Ada Lovelace/ }).click()
+			await page.getByRole("menuitem", { name: "Log out" }).click()
+		}),
 		shell("checklist-pointer-closed", "Onboarding pointer closed", "clerk-acme", (page) =>
 			page.getByRole("button", { name: "Got it" }).click(),
 		),

@@ -313,7 +313,8 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 			}
 		},
 		ClickedUpdatePaymentMethod: () => ({ model, commands: [OpenCustomerPortal()] }),
-		CompletedOpenCustomerPortal: () => ({ model }),
+		// The portal mutation's reactivity keys re-read the customer.
+		CompletedOpenCustomerPortal: () => ({ model, outMessage: OutMessage.RequestedCustomerRefresh() }),
 		FailedOpenCustomerPortal: ({ message: title }) => ({
 			model,
 			outMessage: OutMessage.RequestedErrorToast({ title }),
