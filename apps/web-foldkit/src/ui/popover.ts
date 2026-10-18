@@ -13,6 +13,7 @@ import { Mount, Submodel, type Update } from "foldkit"
 import { type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
+import { fitPositionerToPopup } from "./overlay/auto-resize"
 import { initPopup, makeTransition, PopupState, popupId, portalId, triggerId } from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
@@ -98,7 +99,10 @@ export const MountPopover = Mount.defineStream("MountPopover", {
 			markOutside: Option.some({ mark: true, ariaHidden: false }),
 			lockScroll: false,
 			focus: Option.some({ returnFocusId: Option.some(triggerId(id)), initialFocus: "popup" }),
-			afterPlace: (positioner, popup) => {
+			afterPlace: (positioner, popup, placedSide) => {
+				// Top and left popups anchor to the trigger-facing edge, measured as Base UI does.
+				if (placedSide === "top" || placedSide === "left")
+					return fitPositionerToPopup(positioner, popup, placedSide)
 				positioner.style.setProperty("--positioner-width", `${popup.offsetWidth}px`)
 				positioner.style.setProperty("--positioner-height", `${popup.offsetHeight}px`)
 			},
