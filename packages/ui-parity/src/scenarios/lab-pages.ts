@@ -100,5 +100,31 @@ export const labPagesArea: AreaModule = {
 				await page.getByRole("button", { name: "Last 1 hour" }).click()
 			},
 		),
+		variant("lab-gcp-dashboard-tab", "Lab: Google Cloud dashboard, GKE tab", "/lab/gcp-dashboard", async (page) => {
+			await page.getByRole("tab", { name: "GKE" }).click()
+		}),
+		variant(
+			"lab-gcp-dashboard-project",
+			"Lab: Google Cloud dashboard, one project picked",
+			"/lab/gcp-dashboard",
+			async (page) => {
+				await page.getByRole("combobox", { name: "Project" }).click()
+				await page.getByRole("option", { name: "acme-staging" }).first().click()
+			},
+		),
+		variant(
+			"lab-gcp-dashboard-variables",
+			"Lab: Google Cloud dashboard, variables dialog",
+			"/lab/gcp-dashboard",
+			async (page) => {
+				await page.getByRole("button", { name: "Manage dashboard variables" }).click()
+			},
+		),
+		variant("lab-service-map-3d-inspect", "Lab: Service map 3D, a node inspected", "/lab/service-map-3d", async (page) => {
+			await page.getByRole("button", { name: "Inspect checkout-api", exact: true }).click()
+		}),
+		variant("lab-service-map-3d-search", "Lab: Service map 3D, inventory filtered", "/lab/service-map-3d", async (page) => {
+			await page.getByRole("textbox", { name: "Find a service" }).fill("api")
+		}),
 	],
 }
