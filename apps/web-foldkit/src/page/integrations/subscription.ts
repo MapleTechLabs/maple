@@ -1,5 +1,6 @@
 import { Effect, Option, Queue, Schema, Stream } from "effect"
-import { Subscription } from "foldkit"
+import { AsyncData, Subscription } from "foldkit"
+import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
 import { integrationOfSearch } from "./catalog"
@@ -137,6 +138,17 @@ const after = (millis: number, message: () => Message) =>
 		).pipe(Effect.andThen(Effect.never)),
 	)
 
+const CLOUDFLARE_INGEST_MS = 30_000
+
+const isCloudflareSettling = (model: Model): boolean => {
+	if (integrationOfSearch(model.search.integration) !== "cloudflare") return false
+	const status = Option.getOrNull(AsyncData.getData(model.statuses.cloudflare.data))
+	const usageData = model.cloudflareCard.usage.data
+	const usage = AsyncData.isSuccess(usageData) || AsyncData.isRefreshing(usageData) ? usageData.data : null
+	const phase = ingestPhaseOf(status, usage, model.nowMs)
+	return phase !== null && phase.kind !== "live"
+}
+
 /** The popup (and its grace) is out, a branch change settles, or a repository is still syncing. */
 const isGithubPolling = (model: Model): boolean => {
 	if (integrationOfSearch(model.search.integration) !== "github") return false
@@ -218,6 +230,17 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					version === null
 						? Stream.empty
 						: after(FORCE_POLL_WINDOW_MS, () => Message.EndedGithubForcePoll({ version })),
+			},
+		),
+		/** `useCloudflareIngestPhase`: status and usage every 30 s while a fresh connection settles. */
+		cloudflareIngest: entry(
+			{ isSettling: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isSettling: isCloudflareSettling(model) }),
+				dependenciesToStream: ({ isSettling }) =>
+					isSettling
+						? every(CLOUDFLARE_INGEST_MS, () => Message.TickedCloudflareIngest())
+						: Stream.empty,
 			},
 		),
 		connectCallback: entry(

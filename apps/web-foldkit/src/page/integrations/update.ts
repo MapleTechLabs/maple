@@ -13,6 +13,8 @@ import { initGithubCard } from "./github"
 import * as Chat from "./update-chat"
 import * as Github from "./update-github"
 import * as CloudflareCard from "./update-cloudflare"
+import { initCloudflareCard } from "./cloudflare"
+import { ChartRuntime } from "../../charts/chart-runtime"
 import { isMultiAccount } from "./view-cloudflare"
 import * as Connect from "./update-connect"
 import { LoadCustomer, ReadClock, StripChatParams } from "./command"
@@ -82,7 +84,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: { busy: null, confirmId: null, identityBusy: false },
 		githubCard: initGithubCard(),
-		cloudflareCard: { usage: Keyed.idle(), isPrimed: false, isPriming: false },
+		cloudflareCard: initCloudflareCard(),
 	}
 	const loaded = chain(model, [
 		...STATUS_NAMES.map((name) => (next: Model) => requestStatus(next, context, name, "Load")),
@@ -108,7 +110,7 @@ export const routeChanged = (
 /** The reads an integration's card mounts (Cloudflare's usage). */
 const enterIntegration = (model: Model, context: PageContext): Return =>
 	integrationOfSearch(model.search.integration) === "cloudflare"
-		? CloudflareCard.requestUsage(model, context, "Load")
+		? CloudflareCard.enterCloudflare(model, context)
 		: { model }
 
 export const contextChanged = (model: Model): Return => ({ model })
@@ -164,6 +166,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedCloudflarePrime: ({ isOk, isConnected }) =>
 			CloudflareCard.completedPrime(model, context, isOk, isConnected),
 		TickedCloudflareIngest: () => CloudflareCard.refreshCloudflare(model, context),
+		GotZoneFilterMessage: ({ message: child }) => CloudflareCard.gotZoneFilter(model, child),
+		ChangedZoneSearch: ({ value }) => CloudflareCard.updateBoard(model, { zoneSearch: value }),
+		ClickedZoneSort: ({ key }) => CloudflareCard.clickedZoneSort(model, key),
+		ClickedWorkersExpand: () =>
+			CloudflareCard.updateBoard(model, { workersExpanded: !model.cloudflareCard.workersExpanded }),
+		CompletedLoadChartRuntime: () =>
+			CloudflareCard.updateBoard(model, { chartRuntime: ChartRuntime.Ready() }),
+		FailedLoadChartRuntime: ({ reason }) =>
+			CloudflareCard.updateBoard(model, { chartRuntime: ChartRuntime.Failed({ reason }) }),
+		GotSparklineMessage: () => ({ model }),
 		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),
 		CompletedGithubRefreshSpin: ({ version }) => Github.completedRefreshSpin(model, version),
 		ToggledCiTraces: () => Github.toggledCiTraces(model),

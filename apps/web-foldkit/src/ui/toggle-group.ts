@@ -87,7 +87,13 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 
 // VIEW
 
-export type ToggleGroupItem = Readonly<{ value: string; label: string }>
+/** `children` replaces the plain label (a dot and a count); `className` is the item's own. */
+export type ToggleGroupItem = Readonly<{
+	value: string
+	label: string
+	children?: ReadonlyArray<Html | string>
+	className?: string
+}>
 
 export type ToggleGroupViewConfig<ParentMessage> = Readonly<{
 	model: Model
@@ -141,7 +147,7 @@ export const view = <ParentMessage>(
 				{
 					isPressed: model.values.includes(item.value),
 					onClick: toParentMessage(Message.ClickedItem({ value: item.value, index })),
-					className: cn(toggleVariants({ size, variant: itemVariant })),
+					className: cn(toggleVariants({ size, variant: itemVariant, className: item.className })),
 					slot: "toggle",
 					tabIndex: index === model.highlightedIndex ? 0 : -1,
 					attributes: [
@@ -155,7 +161,7 @@ export const view = <ParentMessage>(
 						),
 					],
 				},
-				[item.label],
+				item.children ?? [item.label],
 			),
 		),
 	)

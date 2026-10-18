@@ -20,6 +20,8 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
 import * as Dialog from "../../ui/dialog"
 import * as Popover from "../../ui/popover"
+import * as ToggleGroup from "../../ui/toggle-group"
+import * as Chart from "../../charts/chart"
 import { ConnectProvider } from "./connect"
 
 export const StatusName = Schema.Literals([
@@ -106,6 +108,13 @@ export const Message = defineMessageUnion({
 	CompletedCloudflarePrime: { isConnected: Schema.Boolean, isOk: Schema.Boolean },
 	/** Every 30 s while a fresh Cloudflare connection settles (`useCloudflareIngestPhase`). */
 	TickedCloudflareIngest: {},
+	GotZoneFilterMessage: { message: ToggleGroup.Message },
+	ChangedZoneSearch: { value: Schema.String },
+	ClickedZoneSort: { key: Schema.Literals(["name", "status", "requests"]) },
+	ClickedWorkersExpand: {},
+	CompletedLoadChartRuntime: {},
+	FailedLoadChartRuntime: { reason: Schema.String },
+	GotSparklineMessage: { message: Chart.Message },
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,
 		status: Schema.String,

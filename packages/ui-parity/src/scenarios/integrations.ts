@@ -202,6 +202,28 @@ export const integrationsArea: AreaModule = {
 			dataset: "infra-integrations",
 			steps: (page) => page.getByRole("button", { name: "Reconnect" }).click(),
 		}),
+		page(
+			"cloudflare-zone-filter",
+			"Cloudflare: filter zones to Live",
+			"/integrations?integration=cloudflare",
+			{
+				dataset: "infra-integrations",
+				steps: (page) => page.getByRole("button", { name: /^Live/ }).click(),
+			},
+		),
+		page(
+			"cloudflare-zone-sort",
+			"Cloudflare: sort zones by name",
+			"/integrations?integration=cloudflare",
+			{
+				dataset: "infra-integrations",
+				steps: (page) => page.getByRole("button", { name: "Zone", exact: true }).click(),
+			},
+		),
+		page("cloudflare-zone-search", "Cloudflare: search zones", "/integrations?integration=cloudflare", {
+			dataset: "infra-integrations",
+			steps: (page) => page.getByRole("textbox", { name: "Filter zones by name" }).fill("nomatch"),
+		}),
 		page("hub-infra", "Hub with infrastructure connected", "/integrations", {
 			dataset: "infra-integrations",
 		}),

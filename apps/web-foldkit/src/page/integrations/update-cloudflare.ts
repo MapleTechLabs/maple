@@ -1,9 +1,17 @@
 import { Option } from "effect"
+import { Command } from "foldkit"
+import { LoadChartRuntime } from "../../charts/chart-runtime"
+import * as ToggleGroup from "../../ui/toggle-group"
 import * as Keyed from "../../data/keyed"
 import { requestKey } from "../../data/request-key"
 import type { PageContext, PageReturn } from "../contract"
-import { type CloudflareCardModel, LoadCloudflareUsage, PrimeCloudflare } from "./cloudflare"
-import type { Message } from "./message"
+import {
+	type CloudflareCardModel,
+	LoadCloudflareUsage,
+	PrimeCloudflare,
+	type ZoneSortKey,
+} from "./cloudflare"
+import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
 
@@ -43,6 +51,55 @@ export const completedPrime = (
 	isOk: boolean,
 	isConnected: boolean,
 ): Return => refreshCloudflare(withCard(model, { isPriming: false, isPrimed: isOk && isConnected }), context)
+
+/** The card's entry: the usage read and the chart runtime its sparklines draw with. */
+export const enterCloudflare = (model: Model, context: PageContext): Return => {
+	const usage = requestUsage(model, context, "Load")
+	const loadsRuntime = model.cloudflareCard.chartRuntime._tag !== "Ready"
+	return loadsRuntime
+		? {
+				...usage,
+				commands: [
+					...(usage.commands ?? []),
+					Command.mapMessage(LoadChartRuntime(), (message) =>
+						message._tag === "CompletedLoadChartRuntime"
+							? Message.CompletedLoadChartRuntime()
+							: Message.FailedLoadChartRuntime({ reason: message.reason }),
+					),
+				],
+			}
+		: usage
+}
+
+export const gotZoneFilter = (model: Model, message: ToggleGroup.Message): Return => {
+	const next = ToggleGroup.update(model.cloudflareCard.zoneFilter, message)
+	return {
+		// Controlled like legacy's `value={[filter]}`: unpressing the active chip falls back to "All".
+		model: withCard(model, {
+			zoneFilter: next.model.values.length === 0 ? { ...next.model, values: ["all"] } : next.model,
+		}),
+		commands: Command.mapMessages(next.commands ?? [], (inner) =>
+			Message.GotZoneFilterMessage({ message: inner }),
+		),
+	}
+}
+
+/** `handleSort`: the active column flips; a new one starts high-to-low for traffic, else low-to-high. */
+export const clickedZoneSort = (model: Model, key: ZoneSortKey): Return => {
+	const sort = model.cloudflareCard.zoneSort
+	return {
+		model: withCard(model, {
+			zoneSort:
+				key === sort.key
+					? { key, dir: sort.dir === "asc" ? "desc" : "asc" }
+					: { key, dir: key === "requests" ? "desc" : "asc" },
+		}),
+	}
+}
+
+export const updateBoard = (model: Model, card: Partial<CloudflareCardModel>): Return => ({
+	model: withCard(model, card),
+})
 
 /** A new attempt primes again (`primedRef.current = false` in `start`). */
 export const resetPrime = (model: Model): Model => withCard(model, { isPrimed: false })
