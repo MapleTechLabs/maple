@@ -196,6 +196,12 @@ export const CompleteReloadSpin = Command.define("CompleteErrorsReloadSpin", {
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
 })
 
+/** The filter rail is in the DOM; legacy's sidebar reads as it renders, so no paint wait. */
+export const MountFilterRail = Mount.define("MountErrorsFilterRail", {
+	messages: [Message.MountedFilterRail],
+	execute: () => Effect.succeed(Message.MountedFilterRail()),
+})
+
 /** The empty list is on screen: `useSignalPresence` mounts with it. */
 export const MountEmptyList = Mount.define("MountErrorsEmptyList", {
 	messages: [Message.PaintedEmptyList],

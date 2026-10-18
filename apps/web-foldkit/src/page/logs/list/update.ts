@@ -181,14 +181,16 @@ const requestAll = (
 				(key) => FetchFirstPage({ key, ...listArgs }),
 			),
 		(step) =>
-			keyed(
-				step,
-				(m) => m.facets,
-				requestKey(org, "getLogsFacets", facetsInput),
-				facetsMode,
-				(m, facets) => ({ ...m, facets }),
-				(key) => FetchFacets({ key, ...facetsInput }),
-			),
+			!step.model.isFilterRailMounted
+				? step
+				: keyed(
+						step,
+						(m) => m.facets,
+						requestKey(org, "getLogsFacets", facetsInput),
+						facetsMode,
+						(m, facets) => ({ ...m, facets }),
+						(key) => FetchFacets({ key, ...facetsInput }),
+					),
 		(step) =>
 			keyed(
 				step,
@@ -347,6 +349,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		themeColors: null,
 		refreshVersion: 0,
 		isReloading: false,
+		isFilterRailMounted: false,
 	}
 	return {
 		model,
@@ -496,6 +499,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		// `useSignalPresence` mounts with the empty state, so its "unknown" copy paints first.
+		MountedFilterRail: () => {
+			if (model.isFilterRailMounted) return { model }
+			const mounted = { ...model, isFilterRailMounted: true }
+			return mounted.window === null ? { model: mounted } : requestAll(mounted, context, mounted.window, "Load")
+		},
 		PaintedEmptyState: () =>
 			AsyncData.isIdle(model.presence)
 				? {

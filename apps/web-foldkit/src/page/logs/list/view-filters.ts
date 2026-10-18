@@ -15,6 +15,7 @@ import {
 	filterSidebarLoading,
 } from "../../../ui/filters/filter-sidebar"
 import type * as Popover from "../../../ui/popover"
+import { MountFilterRail } from "./command"
 import { searchHelp } from "./view-search-help"
 import { pinnedNamespaceNotice } from "../../kit/pinned-namespace-notice"
 import type { Search } from "./derive"
@@ -131,9 +132,15 @@ const loadedRail = (
 	])
 }
 
+/** `LogsFilterSidebar`; its Mount asks for the facets once the rail is actually rendered. */
 export const filtersRail = (h: HtmlBuilder<Message>, model: Model, pinnedNamespace: string | null): Html =>
-	AsyncData.matchData(model.facets.data, {
-		onEmpty: () => filterSidebarLoading(h, 3),
-		onFailure: (failure) => filterSidebarError(h, failure, Message.ClickedRetryFacets()),
-		onData: (facets) => loadedRail(h, model, facets, pinnedNamespace),
-	})
+	h.div(
+		[h.Class("contents"), h.OnMount(MountFilterRail())],
+		[
+			AsyncData.matchData(model.facets.data, {
+				onEmpty: () => filterSidebarLoading(h, 3),
+				onFailure: (failure) => filterSidebarError(h, failure, Message.ClickedRetryFacets()),
+				onData: (facets) => loadedRail(h, model, facets, pinnedNamespace),
+			}),
+		],
+	)

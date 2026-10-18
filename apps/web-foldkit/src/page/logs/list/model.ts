@@ -71,6 +71,8 @@ export const Model = Schema.Struct({
 	firstPage: KeyedSchema(LogsPage, LoadFailure),
 	pagination: Pagination,
 	facets: KeyedSchema(LogsFacets, LoadFailure),
+	/** The filter rail has mounted: until then its facets are not requested. */
+	isFilterRailMounted: Schema.Boolean,
 	volume: KeyedSchema(Schema.Array(VolumeBucket), LoadFailure),
 	attributeKeys: KeyedSchema(Schema.Array(AttributeKey), LoadFailure),
 	volumeChart: Chart.Model,

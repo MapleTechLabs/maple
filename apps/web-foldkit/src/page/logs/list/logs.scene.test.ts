@@ -25,6 +25,7 @@ import {
 	FetchFirstPage,
 	FetchNextPage,
 	FetchVolume,
+	MountFilterRail,
 	WaitSearchDebounce,
 } from "./command"
 import { listInput } from "./derive"
@@ -66,7 +67,10 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 /** Entered and windowed: every query in flight. */
 const windowed = (search = {}): Model => {
 	const entered = init({ search }, context).model
-	return pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
+	return pageUpdate(
+		pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model,
+		Message.MountedFilterRail(),
+	).model
 }
 
 /** The first page has arrived (100 rows and a cursor, so more pages exist). */
@@ -92,18 +96,16 @@ const streamWindow = (from: number, to: number) =>
 const windowOf = (from: number, to: number) => Message.GotStreamMessage({ message: streamWindow(from, to) })
 
 describe("logs list", () => {
-	test("entry resolves the window, then asks the first page, facets, volume and keys", () => {
+	test("entry resolves the window, asks the first page, volume and keys, and the facets once the rail mounts", () => {
 		expect(names(init({ search: {} }, context).commands)).toContain("ResolveLogsWindow")
 		const resolved = pageUpdate(
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([
-			FetchFirstPage.name,
-			FetchFacets.name,
-			FetchVolume.name,
-			FetchAttributeKeys.name,
-		])
+		expect(names(resolved.commands)).toEqual([FetchFirstPage.name, FetchVolume.name, FetchAttributeKeys.name])
+		const mounted = pageUpdate(resolved.model, Message.MountedFilterRail())
+		expect(names(mounted.commands)).toEqual([FetchFacets.name])
+		expect(names(pageUpdate(mounted.model, Message.MountedFilterRail()).commands)).toEqual([])
 		expect(resolved.model.firstPage.key).toBe(
 			requestKey(orgId, "listLogs", { data: listInput({}, window, null) }),
 		)
@@ -173,6 +175,7 @@ describe("logs list", () => {
 			given(withFirstPage()),
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 			Mount.resolve(VirtualizeLogStream, streamWindow(0, 20)),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
 			expectView(role("log")).toExist(),
 			expectView(text("GET /cart/3 200")).toExist(),
 			expectView(text("Showing 100 logs, more available")).toExist(),
@@ -210,6 +213,7 @@ describe("logs list", () => {
 			given(withFacets),
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 			Mount.resolve(VirtualizeLogStream, streamWindow(0, 20)),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
 			type(placeholder("Text or trace id"), traceId),
 			Command.resolve(WaitSearchDebounce, Message.ElapsedSearchDebounce({ generation: 1 })),
 			expectOutMessage(
