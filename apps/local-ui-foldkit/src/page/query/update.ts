@@ -51,8 +51,16 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		ChangedSql: ({ text }) => ({ model, outMessage: replaceParams(context.location, { sql: text }) }),
 		ClickedPickSql: ({ sql }) => ({ model, outMessage: replaceParams(context.location, { sql }) }),
 		ClickedRun: () => run(model, context),
-		// Cancelling drops the submission; the request's late answer no longer matches.
-		ClickedCancel: () => ({ model: { ...model, run: RunState.Idle() } }),
+		// `cancelQueries`: the console goes idle and the request's fiber is interrupted (aborting it).
+		ClickedCancel: () => {
+			if (model.run._tag !== "Running") return { model }
+			const { id } = model.run
+			return {
+				model: { ...model, run: RunState.Idle() },
+				commands: [RunQuery.Interrupt({ id }, (outcome) => Message.CompletedCancelRunQuery({ id, outcome }))],
+			}
+		},
+		CompletedCancelRunQuery: () => ({ model }),
 		SucceededRunQuery: ({ id, rows, elapsedMs }) =>
 			model.run._tag === "Running" && isCurrentRun(model, id)
 				? { model: { ...model, run: RunState.Succeeded({ id, sql: model.run.sql, rows, elapsedMs }) } }

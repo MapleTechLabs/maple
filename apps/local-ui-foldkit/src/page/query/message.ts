@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/local-query"
 import { LocalTable, ResultRow } from "./model"
@@ -14,6 +15,7 @@ export const Message = defineMessageUnion({
 	ClickedPickSql: { sql: Schema.String },
 	ClickedRun: {},
 	ClickedCancel: {},
+	CompletedCancelRunQuery: { id: Schema.Number, outcome: Command.Interruptible.Outcome },
 	SucceededRunQuery: { id: Schema.Number, rows: Schema.Array(ResultRow), elapsedMs: Schema.Number },
 	FailedRunQuery: { id: Schema.Number, title: Schema.String, detail: Schema.String },
 	ClickedDownload: { format: DownloadFormat },

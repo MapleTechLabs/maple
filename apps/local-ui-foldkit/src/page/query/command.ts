@@ -24,10 +24,11 @@ export const FetchTables = Command.define("FetchQueryConsoleTables", {
 		),
 })
 
-/** One submission, timed like `performance.now()` around the request (`retry: false`). */
+/** One submission, timed like `performance.now()` around the request (`retry: false`); Cancel interrupts it. */
 export const RunQuery = Command.define("RunQueryConsoleQuery", {
 	args: { id: Schema.Number, sql: Schema.String, apiBase: Schema.String },
 	messages: [Message.SucceededRunQuery, Message.FailedRunQuery],
+	interrupt: { keyFields: ["id"], toKey: ({ id }) => String(id) },
 	execute: ({ id, sql, apiBase }) =>
 		executeLocalQuery(sql, apiBase).pipe(
 			Effect.timed,
