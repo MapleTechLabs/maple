@@ -1,15 +1,21 @@
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { readCached, recordCached } from "../../data/cached"
+import { traceCacheKey, traceFromCached, traceToCached } from "./cache"
+import { Clock, Duration, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { fetchSpanDetail, fetchSpanLogs, fetchTrace } from "./fetch"
 import { Message } from "./message"
 
 export const FetchTrace = Command.define("FetchLocalTraceDetail", {
-	args: { key: Schema.String, traceId: Schema.String, apiBase: Schema.String },
-	messages: [Message.SucceededFetchTrace, Message.FailedFetchTrace],
-	execute: ({ key, traceId, apiBase }) =>
+	args: { key: Schema.String, traceId: Schema.String, apiBase: Schema.String, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchTrace, Message.FailedFetchTrace, Message.FoundCachedTrace],
+	execute: ({ key, traceId, apiBase, readsCache }) =>
 		Effect.gen(function* () {
+			const cacheKey = traceCacheKey(traceId)
+			const maybeCached = readsCache ? yield* readCached(cacheKey, traceFromCached(traceId)) : Option.none()
+			if (Option.isSome(maybeCached)) return Message.FoundCachedTrace({ key, cached: maybeCached.value })
 			const trace = yield* fetchTrace(traceId, apiBase)
 			const fetchedAtMs = yield* Clock.currentTimeMillis
+			yield* recordCached(cacheKey, traceToCached(trace), fetchedAtMs)
 			return Message.SucceededFetchTrace({ key, trace, fetchedAtMs })
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchTrace({ key, failure })))),
 })

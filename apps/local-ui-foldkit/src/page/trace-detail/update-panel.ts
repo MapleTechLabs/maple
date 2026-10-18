@@ -41,8 +41,8 @@ const fetches = (span: SpanNodeData, apiBase: string): Commands => [
 export const initPanel = (span: SpanNodeData, apiBase: string): PanelReturn => ({
 	panel: {
 		span,
-		detail: span.isMissing === true ? idle() : { key: detailKey(span), data: AsyncData.Loading(), isPlaceholder: false },
-		logs: { key: logsKey(span), data: AsyncData.Loading(), isPlaceholder: false },
+		detail: span.isMissing === true ? idle() : { ...idle(), key: detailKey(span), data: AsyncData.Loading() },
+		logs: { ...idle(), key: logsKey(span), data: AsyncData.Loading() },
 		tabs: Tabs.init({ idBase: 40, values: PANEL_TABS, selected: "details" }),
 		copies: {},
 		isErrorExpanded: false,

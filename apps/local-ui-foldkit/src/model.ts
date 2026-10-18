@@ -45,6 +45,8 @@ export const Model = Schema.Struct({
 	presence: AsyncData.Schema(PresenceResult, LoadFailure).schema,
 	/** A refresh invalidated the presence read: the next request fetches even inside `staleTime`. */
 	isPresenceStale: Schema.Boolean,
+	/** `useShownData().hasCache`: a result was saved or loaded, so a gone server keeps the views. */
+	hasCache: Schema.Boolean,
 	/** The connect popover's copy buttons. */
 	copies: Copies,
 	toasts: Toast.Model,

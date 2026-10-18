@@ -47,6 +47,7 @@ export const appendPage = (model: Model, key: string, page: ReadonlyArray<LocalL
 			...model,
 			isFetchingNextPage: false,
 			logs: {
+				...model.logs,
 				key,
 				data: AsyncData.Success({ data: { pages: [...current.pages, page], hasNextPage: nextCursor(page) !== undefined } }),
 				isPlaceholder: false,

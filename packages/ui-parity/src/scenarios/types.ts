@@ -37,6 +37,8 @@ export interface Scenario {
 	readonly app?: AppName
 	/** Delays and failures on top of the dataset's (`contract.ts`), e.g. a held or failing execute-batch. */
 	readonly faults?: Faults
+	/** localStorage entries written before the app loads (a saved query cache, a remembered pick). */
+	readonly localStorage?: Readonly<Record<string, string>>
 	/**
 	 * `"quiet"` (default): visual quiet after every settle point. `"held"`: first wait until every
 	 * API request still in flight is one `faults.delays` holds, to capture a loading state.

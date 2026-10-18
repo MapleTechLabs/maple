@@ -5,8 +5,9 @@ import { FetchSignalPresence, GoBack, Navigate, ProbeServer, RememberRange } fro
 import { Message } from "./message"
 import type { Model } from "./model"
 import { canGoBack } from "./navigation"
+import { shownDataOf } from "./data/shown"
 import { type PageContext, PageOutMessage } from "./page/contract"
-import { initPage, locationChanged, pageKeyOf, type PageMessage, updatePage } from "./page/registry"
+import { initPage, locationChanged, pageKeyOf, type PageMessage, refreshPage, updatePage } from "./page/registry"
 
 export type RootReturn = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }>
 
@@ -63,7 +64,7 @@ const applyPage = (
 	model: Model,
 	step: Readonly<{ model: Model["page"]; commands?: ReadonlyArray<Command.Command<PageMessage, never, Resources>>; outMessage?: PageOutMessage }>,
 ): RootReturn => {
-	const withPage = { ...model, page: step.model }
+	const withPage = { ...model, page: step.model, hasCache: model.hasCache || shownDataOf(step.model, 0).hasData }
 	const pageCommands = Command.mapMessages(step.commands ?? [], toPageMessage)
 	if (step.outMessage === undefined) return { model: withPage, commands: pageCommands }
 	const folded = foldPageOut(withPage, step.outMessage)
@@ -80,3 +81,10 @@ export const enterLocation = (model: Model, previousKey: string | null): RootRet
 
 export const updatePageMessage = (model: Model, message: PageMessage): RootReturn =>
 	applyPage(model, updatePage(model.page, message, pageContextOf(model)))
+
+/** The notice's Try again: probe now and refetch the open page (`refetchQueries(["local"])`). */
+export const retryStaleData = (model: Model): RootReturn => {
+	const probed = probe(model)
+	const refreshed = applyPage(probed.model, refreshPage(probed.model.page, pageContextOf(probed.model)))
+	return { model: refreshed.model, commands: [...(probed.commands ?? []), ...(refreshed.commands ?? [])] }
+}

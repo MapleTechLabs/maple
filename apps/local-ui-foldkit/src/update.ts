@@ -12,7 +12,7 @@ import { hashOf, locationOf, routeOf, trackVisit } from "./navigation"
 import { updateCopy } from "./page/kit/copies"
 import { pageKeyOf } from "./page/registry"
 import { nextProbeDelayMs, nextServerState } from "./server/derive"
-import { enterLocation, probe, type RootReturn, updatePageMessage } from "./update-page"
+import { enterLocation, probe, retryStaleData, type RootReturn, updatePageMessage } from "./update-page"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 
@@ -71,6 +71,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		},
 		ElapsedProbeDelay: ({ version }) => (version === model.probe.version ? probe(model) : { model }),
 		ClickedRetryConnection: () => probe(model),
+		ClickedRetryStaleData: () => retryStaleData(model),
 		ClickedToggleSidebar: () => toggleSidebar(model),
 		PressedSidebarShortcut: () => toggleSidebar(model),
 		CompletedSaveSidebarState: () => ({ model }),

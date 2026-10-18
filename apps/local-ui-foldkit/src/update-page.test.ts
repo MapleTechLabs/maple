@@ -14,6 +14,7 @@ const flags = {
 	isSidebarOpen: true,
 	theme: "dark" as const,
 	timeFormat: { locale: "en-US", timeZone: "UTC" },
+	hasSavedResults: false,
 }
 const url = Option.getOrThrow(fromString("http://localhost/#/traces"))
 

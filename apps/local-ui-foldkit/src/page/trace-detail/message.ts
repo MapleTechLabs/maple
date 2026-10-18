@@ -7,6 +7,7 @@ import * as AttributesPanel from "@maple/web-foldkit/ui/attributes/attributes-pa
 import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "../../data/local-query"
 import { Message as LogSheetMessage } from "../kit/log-sheet/message"
 import { LocalLog } from "../kit/log-sheet/model"
@@ -14,6 +15,8 @@ import { SpanAttrs, SpanLog } from "./panel-model"
 
 export const Message = defineMessageUnion({
 	SucceededFetchTrace: { key: Schema.String, trace: Schema.Option(TraceData), fetchedAtMs: Schema.Number },
+	/** The result cache held this trace before the fetch ran. */
+	FoundCachedTrace: { key: Schema.String, cached: CachedOf(Schema.Option(TraceData)) },
 	FailedFetchTrace: { key: Schema.String, failure: LoadFailure },
 	ClickedBack: {},
 	ClickedRefresh: {},

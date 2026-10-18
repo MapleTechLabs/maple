@@ -55,6 +55,29 @@ describe("local traces list", () => {
 		expect((anchored().commands ?? []).map(({ name }) => name)).toEqual([FetchTraces.name, FetchFacets.name])
 	})
 
+	test("a new key opens on the cached older window, then fetches its own rows", () => {
+		const base = anchored()
+		const args = (base.commands ?? []).map(({ args }) => args)
+		expect(args[0]).toEqual(expect.objectContaining({ readsCache: true }))
+		const cached = { data: { pages: [[row("old")]], hasNextPage: false }, updatedAtMs: NOW - 3_600_000, isStandIn: true, isFresh: false }
+		const found = pageUpdate(base.model, Message.FoundCachedTraces({ key: base.model.traces.key ?? "", cached }))
+		expect([found.model.traces.isStandIn, found.model.traces.isPlaceholder, found.model.traces.updatedAtMs]).toEqual([true, false, NOW - 3_600_000])
+		expect((found.commands ?? []).map(({ name, args }) => [name, args])).toEqual([
+			[FetchTraces.name, expect.objectContaining({ readsCache: false, pageCount: 1 })],
+		])
+		const fetched = pageUpdate(
+			found.model,
+			Message.SucceededFetchTraces({ key: found.model.traces.key ?? "", data: { pages: [[row("new")]], hasNextPage: false }, fetchedAtMs: NOW }),
+		)
+		expect([fetched.model.traces.isStandIn, fetched.model.traces.updatedAtMs]).toEqual([false, NOW])
+	})
+
+	test("a fresh exact result is shown without a fetch", () => {
+		const base = anchored().model
+		const cached = { data: { pages: [[row("t")]], hasNextPage: false }, updatedAtMs: NOW - 5_000, isStandIn: false, isFresh: true }
+		expect(pageUpdate(base, Message.FoundCachedTraces({ key: base.traces.key ?? "", cached })).commands).toEqual([])
+	})
+
 	test("an answer for a superseded key is dropped", () => {
 		const base = anchored().model
 		const stale = pageUpdate(

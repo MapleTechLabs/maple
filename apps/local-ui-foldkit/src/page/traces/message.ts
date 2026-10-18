@@ -2,6 +2,7 @@ import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "../../data/local-query"
 import { TraceFacets, TracePages, TraceRow } from "./model"
 
@@ -13,11 +14,14 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
 	SucceededFetchTraces: { key: Schema.String, data: TracePages, fetchedAtMs: Schema.Number },
 	FailedFetchTraces: { key: Schema.String, failure: LoadFailure },
+	/** The result cache held this key (or an older window of its view) before the fetch ran. */
+	FoundCachedTraces: { key: Schema.String, cached: CachedOf(TracePages) },
 	ClickedLoadMore: {},
 	SucceededFetchNextPage: { key: Schema.String, page: Schema.Array(TraceRow) },
 	FailedFetchNextPage: { key: Schema.String, failure: LoadFailure },
-	SucceededFetchFacets: { key: Schema.String, facets: TraceFacets },
+	SucceededFetchFacets: { key: Schema.String, facets: TraceFacets, fetchedAtMs: Schema.Number },
 	FailedFetchFacets: { key: Schema.String, failure: LoadFailure },
+	FoundCachedFacets: { key: Schema.String, cached: CachedOf(TraceFacets) },
 	ClickedRefresh: {},
 	CompletedReadRefreshClock: { nowMs: Schema.Number },
 	ChangedSearch: { text: Schema.String },

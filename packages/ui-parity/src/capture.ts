@@ -20,7 +20,7 @@ import {
 } from "./contract.ts"
 import { normalizePayload } from "./backend/call-log.ts"
 import { clerkIdentityFor, installClerkStub } from "./runtime/clerk-stub.ts"
-import { installSelfHostedSession, installTheme, selfHostedTokenFor } from "./runtime/session.ts"
+import { installLocalStorage, installSelfHostedSession, installTheme, selfHostedTokenFor } from "./runtime/session.ts"
 import { BOX_STYLE_PROPS, collectSnapshot, serializeDom, TEXT_STYLE_PROPS } from "./runtime/snapshot.ts"
 import { installDeterminism, waitForVisualQuiet } from "./runtime/stabilize.ts"
 import {
@@ -424,6 +424,7 @@ const captureVariant = async (
 	page.on("pageerror", (error) => consoleErrors.push(`pageerror: ${error.message.slice(0, 300)}`))
 	await page.clock.setFixedTime(dataset?.now ?? NO_DATASET_NOW)
 	await installSession(page, variant.theme, authMode, dataset)
+	if (variant.scenario.localStorage !== undefined) await page.addInitScript(installLocalStorage, variant.scenario.localStorage)
 	await page.route(
 		"**/*",
 		handleRoute({
