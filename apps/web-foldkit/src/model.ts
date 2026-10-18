@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
-import { PageSlot } from "./page/registry"
+import { PageMessage, PageSlot } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import * as Toast from "./ui/toast"
 import { AppRoute } from "./route"
@@ -33,6 +33,8 @@ export const Model = Schema.Struct({
 	shell: Shell.Model,
 	/** The app-wide toasts (`ToastProvider` at the root in apps/web). */
 	toasts: Toast.Model,
+	/** A page toast's action, by toast id: the page Message its button sends (`actionProps.onClick`). */
+	toastActions: Schema.Record(Schema.String, PageMessage),
 	/** The routed page (`page/registry.ts`): built on route entry, dropped on leave. */
 	page: Schema.NullOr(PageSlot),
 	/** `useTimezonePreference().effectiveTimezone`, read at boot. */

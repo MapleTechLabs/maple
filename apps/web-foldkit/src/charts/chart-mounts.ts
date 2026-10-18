@@ -186,16 +186,18 @@ export const MeasureChartContainer = Mount.defineStream("MeasureChartContainer",
 		Stream.callback<typeof Message.ResizedChartContainer.Type>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
-					const last = { width: -1 }
-					const apply = (width: number) => {
-						const rounded = Math.round(width)
-						if (rounded === last.width) return
-						last.width = rounded
-						Queue.offerUnsafe(queue, Message.ResizedChartContainer({ width: rounded }))
+					const last = { width: -1, height: -1 }
+					const apply = (width: number, height: number) => {
+						const size = { width: Math.round(width), height: Math.round(height) }
+						if (size.width === last.width && size.height === last.height) return
+						last.width = size.width
+						last.height = size.height
+						Queue.offerUnsafe(queue, Message.ResizedChartContainer(size))
 					}
-					apply(element.getBoundingClientRect().width)
+					const box = element.getBoundingClientRect()
+					apply(box.width, box.height)
 					const observer = new ResizeObserver((entries) =>
-						apply(entries[0]?.contentRect.width ?? 0),
+						apply(entries[0]?.contentRect.width ?? 0, entries[0]?.contentRect.height ?? 0),
 					)
 					observer.observe(element)
 					return observer

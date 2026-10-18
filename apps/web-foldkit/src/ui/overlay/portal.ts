@@ -163,6 +163,14 @@ export const manageFocus = (
 		}),
 		(previous) =>
 			Effect.sync(() => {
+				// Like FloatingFocusManager, focus that has moved on (a dialog a menu item opened) stays.
+				const active = document.activeElement
+				const hasMovedOn =
+					active !== null &&
+					active !== document.body &&
+					active.isConnected &&
+					!popup.contains(active)
+				if (hasMovedOn) return
 				const returnTo = Option.flatMapNullishOr(options.returnFocusId, (id) =>
 					document.getElementById(id),
 				)

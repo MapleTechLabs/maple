@@ -17,6 +17,10 @@ import type {
 import * as AlertsHub from "./alerts/hub"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
+import * as DashboardsList from "./dashboards/list"
+import * as DashboardTemplates from "./dashboards/templates"
+import * as DashboardView from "./dashboards/view"
+import * as DashboardWidget from "./dashboards/widget"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
 import * as InfraContainer from "./infra/containers/detail"
@@ -90,6 +94,10 @@ export const pages = [
 	InfraCloudflare.page,
 	InfraCloudflareWorker.page,
 	InfraCloudflareZone.page,
+	DashboardsList.page,
+	DashboardView.page,
+	DashboardTemplates.page,
+	DashboardWidget.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))
@@ -179,6 +187,25 @@ export const viewPage = <ParentMessage>(
 				slotId: `page:${slot._tag}:${slot.key}`,
 				model: slot,
 				view: page.hostView,
+				viewInputs: inputs,
+				toParentMessage,
+			}),
+	})
+
+/** The active page's top-bar actions (`DashboardPage topbarActions`), or nothing. */
+export const viewPageTopbarActions = <ParentMessage>(
+	h: HtmlBuilder<ParentMessage>,
+	slot: PageSlotBase,
+	inputs: PageViewInputs,
+	toParentMessage: (message: PageMessage) => ParentMessage,
+): Html =>
+	Option.match(pageById(slot._tag), {
+		onNone: () => h.empty,
+		onSome: (page) =>
+			h.submodel({
+				slotId: `page-topbar:${slot._tag}:${slot.key}`,
+				model: slot,
+				view: page.hostTopbarActions,
 				viewInputs: inputs,
 				toParentMessage,
 			}),

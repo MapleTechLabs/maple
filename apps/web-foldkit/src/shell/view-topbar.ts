@@ -64,6 +64,7 @@ export const topbar = (
 	h: HtmlBuilder<Message>,
 	model: Model,
 	breadcrumbs: ReadonlyArray<BreadcrumbEntry>,
+	pageActions: Html,
 ): Html =>
 	h.header(
 		[
@@ -89,7 +90,7 @@ export const topbar = (
 			]),
 			h.div(
 				[h.Class("ml-auto flex shrink-0 items-center gap-2")],
-				[askMapleButton(h), connectButton(h)],
+				[askMapleButton(h), connectButton(h), pageActions],
 			),
 		],
 	)

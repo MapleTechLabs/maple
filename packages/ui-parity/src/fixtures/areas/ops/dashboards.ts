@@ -19,9 +19,14 @@ import {
 } from "@maple/domain/http"
 import {
 	paginateArray,
+	V2DashboardCreateParams,
+	V2DashboardDeleteResponse,
+	V2DashboardMutation,
+	V2DashboardPersesImportResponse,
 	V2DashboardTemplate,
 	V2DashboardTemplatePreview,
 	V2DashboardTemplatePreviewParams,
+	V2DashboardUpdateParams,
 } from "@maple/domain/http/v2"
 import { DashboardTemplateId, OrgId } from "@maple/domain/primitives"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
@@ -124,11 +129,94 @@ const failedWidget =
 	(error: { readonly message: string }) =>
 		Effect.succeed({ widgetId, ok: false as const, reason, message: error.message })
 
+/** The id a fixture `create` hands out; the shape stream never carries it (no live sync). */
+export const CREATED_DASHBOARD_ID = "dash_parity_created"
+/**
+ * Every write answers with this txid. The fixture Electric server never streams it back, so the
+ * app keeps its optimistic state until TanStack DB's 15 s txid wait, long after the screenshot.
+ */
+const FIXTURE_TXID = "4242"
+
+const encodeMutation = Schema.encodeUnknownEffect(V2DashboardMutation)
+const encodeDeleted = Schema.encodeUnknownEffect(V2DashboardDeleteResponse)
+const encodePersesImport = Schema.encodeUnknownEffect(V2DashboardPersesImportResponse)
+// Handlers receive the request already decoded, so it is checked against the Type side.
+const decodeCreateParams = Schema.decodeUnknownEffect(Schema.toType(V2DashboardCreateParams))
+const decodeUpdateParams = Schema.decodeUnknownEffect(Schema.toType(V2DashboardUpdateParams))
+
+type MutationFields = {
+	readonly name: string
+	readonly description?: string | null
+	readonly tags?: ReadonlyArray<string>
+	readonly timeRange?: unknown
+	readonly widgets?: ReadonlyArray<unknown>
+	readonly sections?: ReadonlyArray<unknown>
+	readonly variables?: ReadonlyArray<unknown>
+	readonly refreshIntervalSeconds?: number | null
+}
+
+/** The committed object a write returns, stamped at the dataset's frozen `now`. */
+const mutation = (id: string, fields: MutationFields) => {
+	const now = isoBefore(0)
+	return encodeMutation({
+		id,
+		object: "dashboard",
+		name: fields.name,
+		description: fields.description ?? null,
+		tags: fields.tags ?? [],
+		timeRange: fields.timeRange ?? { type: "relative", value: "12h" },
+		widgets: fields.widgets ?? [],
+		sections: fields.sections ?? [],
+		variables: fields.variables ?? [],
+		refreshIntervalSeconds: fields.refreshIntervalSeconds ?? null,
+		createdAt: now,
+		updatedAt: now,
+		txid: FIXTURE_TXID,
+	})
+}
+
+/** `dashboards.create` / `update` / `delete` / `importPerses`, answered without persisting. */
+const writeEndpoints: Readonly<Record<string, EndpointHandler>> = {
+	"dashboards.create": ({ payload }) =>
+		Effect.flatMap(decodeCreateParams(payload), (params) => mutation(CREATED_DASHBOARD_ID, params)),
+	"dashboards.update": ({ params, payload }) =>
+		Effect.flatMap(decodeUpdateParams(payload), (update) =>
+			mutation(str(params, "id") ?? "", { ...update, name: update.name ?? "" }),
+		),
+	// The API's `instantiateTemplate`: the template's own build, answered as the created board.
+	"dashboards.instantiateTemplate": ({ params, payload }) => {
+		const built = getTemplate(str(params, "template_id") ?? "")?.build(templateParameters(payload))
+		return mutation(CREATED_DASHBOARD_ID, {
+			name: built?.name ?? "Untitled Dashboard",
+			description: built?.description ?? null,
+			timeRange: built?.timeRange,
+			widgets: built?.widgets ?? [],
+			variables: built?.variables ?? [],
+		})
+	},
+	"dashboards.delete": ({ params }) =>
+		encodeDeleted({
+			id: str(params, "id") ?? "",
+			object: "dashboard",
+			deleted: true,
+			txid: FIXTURE_TXID,
+		}),
+	"dashboards.importPerses": () =>
+		Effect.flatMap(
+			Effect.flatMap(
+				mutation(CREATED_DASHBOARD_ID, { name: "Imported from Perses" }),
+				Schema.decodeUnknownEffect(V2DashboardMutation),
+			),
+			(dashboard) => encodePersesImport({ object: "dashboard_import", dashboard, warnings: [] }),
+		),
+}
+
 export const dashboardEndpoints = (
 	warehouse: FixtureWarehouse,
 ): Readonly<Record<string, EndpointHandler>> => {
 	const service = makeWidgetData(warehouse)
 	return {
+		...writeEndpoints,
 		"dashboards.listTemplates": ({ query }) =>
 			Effect.map(
 				paginateArray(

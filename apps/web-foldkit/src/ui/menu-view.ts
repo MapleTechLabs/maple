@@ -45,6 +45,7 @@ export type MenuItemEntry = Readonly<{
 	icon?: IconName
 	/** Base UI's `disabled`: shown, not highlightable or selectable. */
 	isDisabled?: boolean
+	className?: string
 }>
 
 /** The menu's content, as data: `update` addresses highlightable entries by document order. */
@@ -55,7 +56,9 @@ export type MenuEntry =
 	| Readonly<{ _tag: "Checkbox"; value: string; label: string; isChecked: boolean }>
 	| Readonly<{
 			_tag: "RadioGroup"
-			items: ReadonlyArray<Readonly<{ value: string; label: string; isChecked: boolean }>>
+			items: ReadonlyArray<
+				Readonly<{ value: string; label: string; isChecked: boolean; hint?: string }>
+			>
 			/** A `DropdownMenuLabel` inside the group, which then names it (`aria-labelledby`). */
 			label?: string
 			/** Each item's text in its own `<span>` (`<DropdownMenuRadioItem><span>...</span>`). */
@@ -134,6 +137,7 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 					...row(model, index, { kind: "Item", value: entry.value }),
 					variant: entry.variant,
 					isDisabled: entry.isDisabled,
+					className: entry.className,
 				},
 				[...(entry.icon === undefined ? [] : [icon(h, entry.icon)]), entry.label, ...shortcutOf(h, entry)],
 			)
@@ -175,7 +179,12 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 							kind: "radio",
 							isChecked: item.isChecked,
 						},
-						[entry.isItemLabelWrapped === true ? h.span([], [item.label]) : item.label],
+						[
+							entry.isItemLabelWrapped === true ? h.span([], [item.label]) : item.label,
+							...(item.hint === undefined
+								? []
+								: [h.span([h.Class("text-muted-foreground text-3xs")], [item.hint])]),
+						],
 					),
 				),
 			])

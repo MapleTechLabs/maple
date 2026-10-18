@@ -13,7 +13,6 @@ import {
 } from "./command"
 import {
 	LoadCloudflareStatus,
-	LoadDashboards,
 	LoadGcpStatus,
 	LoadInfraPresence,
 	LoadNamespaces,
@@ -63,7 +62,6 @@ export const enter =
 				LoadPlanetscaleStatus(),
 				LoadRailwayStatus(),
 				LoadGcpStatus(),
-				LoadDashboards({ orgId }),
 			],
 		}
 	}
@@ -217,6 +215,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 						}),
 					}
 				: { model },
+		ChangedDashboardFavorites: ({ favorites }) => ({
+			model: modifyFields(model, { dashboardFavorites: () => favorites }),
+		}),
 		FailedLoadDashboards: ({ orgId }) =>
 			Option.contains(model.maybeOrgId, orgId)
 				? {

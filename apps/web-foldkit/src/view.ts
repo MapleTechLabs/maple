@@ -8,7 +8,7 @@ import { type Model, Session } from "./model"
 import { pageContextOf } from "./update"
 import * as ClerkSignIn from "./page/clerk-sign-in"
 import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
-import { type PageMessage, pageBreadcrumbs, viewPage } from "./page/registry"
+import { type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
@@ -57,6 +57,14 @@ const pageView = (model: Model, h: HtmlBuilder<Message>): Html => {
 		: placeholderContent(h, model.route)
 }
 
+/** The routed page's own top-bar actions, if it has any. */
+const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
+	const maybeContext = pageContextOf(model)
+	return model.page !== null && Option.isSome(maybeContext)
+		? viewPageTopbarActions(h, model.page, { context: maybeContext.value }, toPageMessage)
+		: h.empty
+}
+
 /** A signed-in page inside the shell: the frame around the page, then the shell's overlay layers. */
 const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
 	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
@@ -70,6 +78,7 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 				currentPath,
 				breadcrumbs: model.page === null ? breadcrumbsOf(model.route) : pageBreadcrumbs(model.page),
 				page: () => pageView(model, h),
+				topbarActions: () => topbarActionsView(model, h),
 			},
 		}),
 		h.submodel({

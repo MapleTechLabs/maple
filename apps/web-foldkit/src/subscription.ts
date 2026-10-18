@@ -2,6 +2,7 @@ import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { Effect, Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import { Message } from "./message"
+import type { Resources } from "./platform/resources"
 import type { Model } from "./model"
 import { SELF_HOSTED_AUTH_EVENT } from "./platform/auth-api"
 import { rendersShell } from "./page/chrome"
@@ -18,7 +19,7 @@ const pages = Subscription.lift(pageSubscriptions)<Model, Message>({
 	toParentMessage: (message) => Message.GotPageMessage({ message }),
 })
 
-const root = Subscription.make<Model, Message>()((entry) => ({
+const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 	/** `subscribeSelfHostedAuthChanges`: a renewal elsewhere ended or replaced the session. */
 	selfHostedSession: entry(
 		{ isSelfHosted: Schema.Boolean },
@@ -56,6 +57,35 @@ const root = Subscription.make<Model, Message>()((entry) => ({
 					Stream.map(Shell.sidebarShortcut, (message) => Message.GotShellMessage({ message })),
 					Effect.sync(() => isShellOpen),
 				),
+		},
+	),
+	/** `useDashboardsRead` for the Pinned group: the org's live `dashboards` collection. */
+	shellDashboards: entry(
+		{ orgId: Schema.NullOr(Schema.String) },
+		{
+			modelToDependencies: (model) => ({
+				orgId:
+					model.session._tag === "SignedIn" && rendersShell(model.route)
+						? Option.getOrNull(model.shell.maybeOrgId)
+						: null,
+			}),
+			dependenciesToStream: ({ orgId }) =>
+				orgId === null
+					? Stream.empty
+					: Shell.pinnedDashboardRows(orgId, (dashboards) =>
+							Message.GotShellMessage({
+								message: Shell.Message.SucceededLoadDashboards({ orgId, dashboards }),
+							}),
+						),
+		},
+	),
+	/** The dashboards list starred or unstarred one (`dashboardFavoritesAtom`). */
+	shellDashboardFavorites: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () =>
+				Stream.map(Shell.favoritesChanges, (message) => Message.GotShellMessage({ message })),
 		},
 	),
 	/** `useAppVersionChanged`: only for a build that knows its commit, until it is known stale. */

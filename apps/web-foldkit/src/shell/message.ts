@@ -54,6 +54,7 @@ export const Message = defineMessageUnion({
 	FailedLoadIntegration: { integration: Integration },
 	SucceededLoadDashboards: { orgId: Schema.String, dashboards: Schema.Array(PinnedDashboardRow) },
 	FailedLoadDashboards: { orgId: Schema.String },
+	ChangedDashboardFavorites: { favorites: Schema.Array(Schema.String) },
 	SucceededLoadNamespaces: { namespaces: Schema.Array(Schema.String) },
 	FailedLoadNamespaces: {},
 	GotRailTooltipMessage: { message: Tooltip.Message },

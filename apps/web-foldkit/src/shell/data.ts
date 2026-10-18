@@ -1,12 +1,11 @@
 import { InfraPresenceRequest } from "@maple/domain/http"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../data/integration-statuses"
 import { ServicesFacetsProbe } from "../data/services-facets-probe"
 import { SessionTenant } from "../data/session-tenant"
 import { MapleInternalApiClient } from "../platform/api-clients"
-import { fetchDashboardRows } from "./dashboards-shape"
 import { Message } from "./message"
 
 /**
@@ -89,17 +88,6 @@ export const LoadGcpStatus = Command.define("LoadGcpStatus", {
 })
 
 // DASHBOARDS AND NAMESPACES
-
-/** `useDashboardsRead` for the Pinned group: one snapshot of the `dashboards` shape. */
-export const LoadDashboards = Command.define("LoadDashboards", {
-	args: { orgId: Schema.String },
-	messages: [Message.SucceededLoadDashboards, Message.FailedLoadDashboards],
-	execute: ({ orgId }) =>
-		fetchDashboardRows(orgId).pipe(
-			Effect.map((dashboards) => Message.SucceededLoadDashboards({ orgId, dashboards })),
-			failed(Message.FailedLoadDashboards({ orgId })),
-		),
-})
 
 /**
  * `NamespaceScopeList`: the same snapped 24 h services facets probe the overview runs, read through

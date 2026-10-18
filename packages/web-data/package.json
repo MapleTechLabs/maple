@@ -8,6 +8,7 @@
 		"./collections": "./src/collections/index.ts",
 		"./collections/*": "./src/collections/*.ts",
 		"./alerts/*": "./src/alerts/*.ts",
+		"./dashboards/*": "./src/dashboards/*.ts",
 		"./lib/*": "./src/lib/*.ts",
 		"./warehouse/*": "./src/warehouse/*.ts"
 	},
@@ -20,6 +21,7 @@
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/ui": "workspace:*",
+		"@maple/widgets": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

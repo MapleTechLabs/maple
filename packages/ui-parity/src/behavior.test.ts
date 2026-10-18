@@ -26,3 +26,18 @@ describe("diffCallLogs ignore", () => {
 		)
 	})
 })
+
+describe("diffCallLogs app-minted ids", () => {
+	const write = (id: string) =>
+		call("dashboards.update", { body: { widgets: [{ id, title: "Total Logs" }] } })
+
+	test("widget ids minted from the clock and a random suffix compare equal", () => {
+		expect(diffCallLogs([write("1790856000000-k3j9x2a")], [write("1790856000000-p0q8r1s")])).toEqual([])
+	})
+
+	test("a fixture widget id is still compared", () => {
+		expect(diffCallLogs([write("total-logs")], [write("total-errors")])).toEqual([
+			"dashboards.update payload differs at .body.widgets[0].id",
+		])
+	})
+})

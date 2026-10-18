@@ -25,7 +25,7 @@ export type DashboardPageOptions = Readonly<{
 	filters?: Html
 	filtersWidth?: string
 	/** `DashboardLayout.Header`'s `titleContent`. */
-	titleContent?: Html
+	titleContent?: Html | undefined
 	/** The header's right side: `headerActions` and the time controls, already composed. */
 	actions?: Html
 	/** `DashboardLayout.Tabs`'s children: page tabs pinned under the header. */
@@ -36,9 +36,9 @@ export type DashboardPageOptions = Readonly<{
 	/** `DashboardLayout.RightPanel` as the inline rail (lg and up). TODO(lg): the sheet below lg. */
 	rightPanel?: Html
 	rightPanelWidth?: string
-	/** `sticky`: pinned under the header (a chart, a toolbar). */
+	/** `DashboardPage`'s `sticky`: pinned under the header and tabs (a chart, a toolbar, a banner). */
 	sticky?: Html
-	/** The body owns its scrolling (a virtualized list): `Fill` instead of `Scroll`. */
+	/** `DashboardPage fill`: the body owns its scrolling (`DashboardLayout.Fill`, not `Scroll`). */
 	fill?: boolean
 	/** A scroller below has left the top: the sticky area raises its shadow. */
 	isScrolled?: boolean
@@ -120,7 +120,7 @@ export const dashboardPage = <M>(
 		...(options.tabs === undefined
 			? []
 			: [h.div([h.DataAttribute("slot", "page-tabs"), h.Class("min-w-0")], [options.tabs])]),
-		...(options.sticky === undefined ? [] : [options.sticky]),
+		...(options.sticky === undefined || options.sticky === null ? [] : [options.sticky]),
 	]
 	return pageBody(h, [
 		...(options.filters === undefined ? [] : [filterRail(h, options.filters, options.filtersWidth)]),

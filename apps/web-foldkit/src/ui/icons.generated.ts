@@ -143,6 +143,40 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	ArrowLeftIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M21 12H6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 6L6 12L12 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	ArrowRightIcon: [
 		"svg",
 		[
@@ -1366,6 +1400,150 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	BracketsCurlyIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M12 16.01V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 16.01V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 16.01V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 3H6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 3H18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 21H6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 21H18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 12H1"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 12H23"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 10V5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 10V5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 19V14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 19V14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	BranchForkIcon: [
 		"svg",
 		[
@@ -1503,6 +1681,234 @@ export const ICON_TREES = {
 				"path",
 				[
 					["d", "M8 16H17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
+	ChartBarIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M2 20H22"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 8L4 8.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 11L20 11.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 3L12 3.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 10V16H6V10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 13V16H22V13"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 5V16H14V5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
+	ChartBarTrendUpIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M10 14V20H14V14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 10V20H22V10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 18V20H6V18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4.01001 16L4.00001 16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12.01 12L12 12"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2.01001 8L2.00001 8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4.01001 6L4.00001 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6.01001 4L6.00001 4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8.01001 6L8.00001 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10.01 8L10 8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12.01 6L12 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14.01 4L14 4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20.01 8L20 8"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4581,6 +4987,50 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	DownloadIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M12 3V14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 10L12 15L17 10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 18V21H20V18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	EnvelopeIcon: [
 		"svg",
 		[
@@ -6440,6 +6890,80 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	GripDotsIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M9 6L9 6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "3"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 12L9 12.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "3"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 18L9 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "3"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 6L15 6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "3"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 12L15 12.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "3"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 18L15 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "3"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	HistoryIcon: [
 		"svg",
 		[
@@ -6827,6 +7351,30 @@ export const ICON_TREES = {
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
+	KafkaIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "currentColor"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					[
+						"d",
+						"M9.71 2.136a1.43 1.43 0 0 0-2.047 0h-.007a1.48 1.48 0 0 0-.421 1.042c0 .41.161.777.422 1.039l.007.007c.257.264.616.426 1.019.426.404 0 .766-.162 1.027-.426l.003-.007c.261-.262.421-.629.421-1.039 0-.408-.159-.777-.421-1.042H9.71zM8.683 22.295c.404 0 .766-.167 1.027-.429l.003-.008c.261-.261.421-.631.421-1.036 0-.41-.159-.778-.421-1.044H9.71a1.42 1.42 0 0 0-1.027-.432 1.4 1.4 0 0 0-1.02.432h-.007c-.26.266-.422.634-.422 1.044 0 .406.161.775.422 1.036l.007.008c.258.262.617.429 1.02.429zm7.89-4.462c.359-.096.683-.33.882-.684l.027-.052a1.47 1.47 0 0 0 .114-1.067 1.454 1.454 0 0 0-.675-.896l-.021-.014a1.425 1.425 0 0 0-1.078-.132c-.36.091-.684.335-.881.686-.2.349-.241.75-.146 1.119.099.363.33.691.675.896h.002c.346.203.737.239 1.101.144zm-6.405-7.342a2.083 2.083 0 0 0-1.485-.627c-.58 0-1.103.242-1.482.627-.378.385-.612.916-.612 1.507s.233 1.124.612 1.514a2.08 2.08 0 0 0 2.967 0c.379-.39.612-.923.612-1.514s-.233-1.122-.612-1.507zm-.835-2.51c.843.141 1.6.552 2.178 1.144h.004c.092.093.182.196.265.299l1.446-.851a3.176 3.176 0 0 1-.047-1.808 3.149 3.149 0 0 1 1.456-1.926l.025-.016a3.062 3.062 0 0 1 2.345-.306c.77.21 1.465.721 1.898 1.482v.002c.431.757.518 1.626.313 2.408a3.145 3.145 0 0 1-1.456 1.928l-.198.118h-.02a3.095 3.095 0 0 1-2.154.201 3.127 3.127 0 0 1-1.514-.944l-1.444.848a4.162 4.162 0 0 1 0 2.879l1.444.846c.413-.47.939-.789 1.514-.944a3.041 3.041 0 0 1 2.371.319l.048.023v.002a3.17 3.17 0 0 1 1.408 1.906 3.215 3.215 0 0 1-.313 2.405l-.026.053-.003-.005a3.147 3.147 0 0 1-1.867 1.436 3.096 3.096 0 0 1-2.371-.318v-.006a3.156 3.156 0 0 1-1.456-1.927 3.175 3.175 0 0 1 .047-1.805l-1.446-.848a3.905 3.905 0 0 1-.265.294l-.004.005a3.938 3.938 0 0 1-2.178 1.138v1.699a3.09 3.09 0 0 1 1.56.862l.002.004c.565.572.914 1.368.914 2.243 0 .873-.35 1.664-.914 2.239l-.002.009a3.1 3.1 0 0 1-2.21.931 3.1 3.1 0 0 1-2.206-.93h-.002v-.009a3.186 3.186 0 0 1-.916-2.239c0-.875.35-1.672.916-2.243v-.004h.002a3.1 3.1 0 0 1 1.558-.862v-1.699a3.926 3.926 0 0 1-2.176-1.138l-.006-.005a4.098 4.098 0 0 1-1.173-2.874c0-1.122.452-2.136 1.173-2.872h.006a3.947 3.947 0 0 1 2.176-1.144V6.289a3.137 3.137 0 0 1-1.558-.864h-.002v-.004a3.192 3.192 0 0 1-.916-2.243c0-.871.35-1.669.916-2.243l.002-.002A3.084 3.084 0 0 1 8.683 0c.861 0 1.641.355 2.21.932v.002h.002c.565.574.914 1.372.914 2.243 0 .876-.35 1.667-.914 2.243l-.002.005a3.142 3.142 0 0 1-1.56.864v1.692zm8.121-1.129l-.012-.019a1.452 1.452 0 0 0-.87-.668 1.43 1.43 0 0 0-1.103.146h.002c-.347.2-.58.529-.677.896-.095.365-.054.768.146 1.119l.007.009c.2.347.519.579.874.673.357.103.755.059 1.098-.144l.019-.009a1.47 1.47 0 0 0 .657-.885 1.493 1.493 0 0 0-.141-1.118",
+					],
 				],
 				[],
 			],
@@ -7590,6 +8138,50 @@ export const ICON_TREES = {
 				[
 					["d", "M12 2V5"],
 					["opacity", "1"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
+	LockIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M16 10V6C16 3.79086 14.2091 2 12 2C9.79086 2 8 3.79086 8 6V10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 10H21V21H3V10Z"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 15V16"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -8449,6 +9041,30 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	NatsIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "#27AAE1"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					[
+						"d",
+						"M12.004 0H.404v18.807h9.938l1.714 1.602v-.026L15.966 24v-5.193h7.63V0H12.003zm7.578 14.45H15.38L6.898 6.519v7.93H4.116V4.376h4.349l8.344 7.784V4.375h2.773V14.45z",
+					],
+				],
+				[],
+			],
+		],
+	],
 	NetworkNodesIcon: [
 		"svg",
 		[
@@ -8653,6 +9269,30 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	NodejsIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "#5FA04E"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					[
+						"d",
+						"M11.998,24c-0.321,0-0.641-0.084-0.922-0.247l-2.936-1.737c-0.438-0.245-0.224-0.332-0.08-0.383 c0.585-0.203,0.703-0.25,1.328-0.604c0.065-0.037,0.151-0.023,0.218,0.017l2.256,1.339c0.082,0.045,0.197,0.045,0.272,0l8.795-5.076 c0.082-0.047,0.134-0.141,0.134-0.238V6.921c0-0.099-0.053-0.192-0.137-0.242l-8.791-5.072c-0.081-0.047-0.189-0.047-0.271,0 L3.075,6.68C2.99,6.729,2.936,6.825,2.936,6.921v10.15c0,0.097,0.054,0.189,0.139,0.235l2.409,1.392 c1.307,0.654,2.108-0.116,2.108-0.89V7.787c0-0.142,0.114-0.253,0.256-0.253h1.115c0.139,0,0.255,0.112,0.255,0.253v10.021 c0,1.745-0.95,2.745-2.604,2.745c-0.508,0-0.909,0-2.026-0.551L2.28,18.675c-0.57-0.329-0.922-0.945-0.922-1.604V6.921 c0-0.659,0.353-1.275,0.922-1.603l8.795-5.082c0.557-0.315,1.296-0.315,1.848,0l8.794,5.082c0.57,0.329,0.924,0.944,0.924,1.603 v10.15c0,0.659-0.354,1.273-0.924,1.604l-8.794,5.078C12.643,23.916,12.324,24,11.998,24z M19.099,13.993 c0-1.9-1.284-2.406-3.987-2.763c-2.731-0.361-3.009-0.548-3.009-1.187c0-0.528,0.235-1.233,2.258-1.233 c1.807,0,2.473,0.389,2.747,1.607c0.024,0.115,0.129,0.199,0.247,0.199h1.141c0.071,0,0.138-0.031,0.186-0.081 c0.048-0.054,0.074-0.123,0.067-0.196c-0.177-2.098-1.571-3.076-4.388-3.076c-2.508,0-4.004,1.058-4.004,2.833 c0,1.925,1.488,2.457,3.895,2.695c2.88,0.282,3.103,0.703,3.103,1.269c0,0.983-0.789,1.402-2.642,1.402 c-2.327,0-2.839-0.584-3.011-1.742c-0.02-0.124-0.126-0.215-0.253-0.215h-1.137c-0.141,0-0.254,0.112-0.254,0.253 c0,1.482,0.806,3.248,4.655,3.248C17.501,17.007,19.099,15.91,19.099,13.993z",
+					],
+				],
+				[],
+			],
+		],
+	],
 	NodejsMonoIcon: [
 		"svg",
 		[
@@ -8671,6 +9311,30 @@ export const ICON_TREES = {
 					[
 						"d",
 						"M11.998,24c-0.321,0-0.641-0.084-0.922-0.247l-2.936-1.737c-0.438-0.245-0.224-0.332-0.08-0.383 c0.585-0.203,0.703-0.25,1.328-0.604c0.065-0.037,0.151-0.023,0.218,0.017l2.256,1.339c0.082,0.045,0.197,0.045,0.272,0l8.795-5.076 c0.082-0.047,0.134-0.141,0.134-0.238V6.921c0-0.099-0.053-0.192-0.137-0.242l-8.791-5.072c-0.081-0.047-0.189-0.047-0.271,0 L3.075,6.68C2.99,6.729,2.936,6.825,2.936,6.921v10.15c0,0.097,0.054,0.189,0.139,0.235l2.409,1.392 c1.307,0.654,2.108-0.116,2.108-0.89V7.787c0-0.142,0.114-0.253,0.256-0.253h1.115c0.139,0,0.255,0.112,0.255,0.253v10.021 c0,1.745-0.95,2.745-2.604,2.745c-0.508,0-0.909,0-2.026-0.551L2.28,18.675c-0.57-0.329-0.922-0.945-0.922-1.604V6.921 c0-0.659,0.353-1.275,0.922-1.603l8.795-5.082c0.557-0.315,1.296-0.315,1.848,0l8.794,5.082c0.57,0.329,0.924,0.944,0.924,1.603 v10.15c0,0.659-0.354,1.273-0.924,1.604l-8.794,5.078C12.643,23.916,12.324,24,11.998,24z M19.099,13.993 c0-1.9-1.284-2.406-3.987-2.763c-2.731-0.361-3.009-0.548-3.009-1.187c0-0.528,0.235-1.233,2.258-1.233 c1.807,0,2.473,0.389,2.747,1.607c0.024,0.115,0.129,0.199,0.247,0.199h1.141c0.071,0,0.138-0.031,0.186-0.081 c0.048-0.054,0.074-0.123,0.067-0.196c-0.177-2.098-1.571-3.076-4.388-3.076c-2.508,0-4.004,1.058-4.004,2.833 c0,1.925,1.488,2.457,3.895,2.695c2.88,0.282,3.103,0.703,3.103,1.269c0,0.983-0.789,1.402-2.642,1.402 c-2.327,0-2.839-0.584-3.011-1.742c-0.02-0.124-0.126-0.215-0.253-0.215h-1.137c-0.141,0-0.254,0.112-0.254,0.253 c0,1.482,0.806,3.248,4.655,3.248C17.501,17.007,19.099,15.91,19.099,13.993z",
+					],
+				],
+				[],
+			],
+		],
+	],
+	OpenjdkIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "#437291"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					[
+						"d",
+						"M11.915 0 11.7.215C9.515 2.4 7.47 6.39 6.046 10.483c-1.064 1.024-3.633 2.81-3.711 3.551-.093.87 1.746 2.611 1.55 3.235-.198.625-1.304 1.408-1.014 1.939.1.188.823.011 1.277-.491a13.389 13.389 0 0 0-.017 2.14c.076.906.27 1.668.643 2.232.372.563.956.911 1.667.911.397 0 .727-.114 1.024-.264.298-.149.571-.33.91-.5.68-.34 1.634-.666 3.53-.604 1.903.062 2.872.39 3.559.704.687.314 1.15.664 1.925.664.767 0 1.395-.336 1.807-.9.412-.563.631-1.33.72-2.24.06-.623.055-1.32 0-2.066.454.45 1.117.604 1.213.424.29-.53-.816-1.314-1.013-1.937-.198-.624 1.642-2.366 1.549-3.236-.08-.748-2.707-2.568-3.748-3.586C16.428 6.374 14.308 2.394 12.13.215zm.175 6.038a2.95 2.95 0 0 1 2.943 2.942 2.95 2.95 0 0 1-2.943 2.943A2.95 2.95 0 0 1 9.148 8.98a2.95 2.95 0 0 1 2.942-2.942zM8.685 7.983a3.515 3.515 0 0 0-.145.997c0 1.951 1.6 3.55 3.55 3.55 1.95 0 3.55-1.598 3.55-3.55 0-.329-.046-.648-.132-.951.334.095.64.208.915.336a42.699 42.699 0 0 1 2.042 5.829c.678 2.545 1.01 4.92.846 6.607-.082.844-.29 1.51-.606 1.94-.315.431-.713.651-1.315.651-.593 0-.932-.27-1.673-.61-.741-.338-1.825-.694-3.792-.758-1.974-.064-3.073.293-3.821.669-.375.188-.659.373-.911.5s-.466.2-.752.2c-.53 0-.876-.209-1.16-.64-.285-.43-.474-1.101-.545-1.948-.141-1.693.176-4.069.823-6.614a43.155 43.155 0 0 1 1.934-5.783c.348-.167.749-.31 1.192-.425zm-3.382 4.362a.216.216 0 0 1 .13.031c-.166.56-.323 1.116-.463 1.665a33.849 33.849 0 0 0-.547 2.555 3.9 3.9 0 0 0-.2-.39c-.58-1.012-.914-1.642-1.16-2.08.315-.24 1.679-1.755 2.24-1.781zm13.394.01c.562.027 1.926 1.543 2.24 1.783-.246.438-.58 1.068-1.16 2.08a4.428 4.428 0 0 0-.163.309 32.354 32.354 0 0 0-.562-2.49 40.579 40.579 0 0 0-.482-1.652.216.216 0 0 1 .127-.03z",
 					],
 				],
 				[],
@@ -8869,140 +9533,6 @@ export const ICON_TREES = {
 			],
 		],
 	],
-	PixelTriangleWarningIcon: [
-		"svg",
-		[
-			["xmlns", "http://www.w3.org/2000/svg"],
-			["viewBox", "0 0 24 24"],
-			["width", "7777"],
-			["height", "7777"],
-			["class", "__icon_class__"],
-			["fill", "none"],
-			["aria-hidden", "true"],
-		],
-		[
-			[
-				"path",
-				[
-					["d", "M4 21H20"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M22 17L22 19"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M12 17H12.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M2 17L2 19"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M20 13L20 15"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M4 13L4 15"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M18 9L18 11"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M12 13V9"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M6 9L6 11"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M16 5L16 7"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M8 5L8 7"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M10 3H14"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-		],
-	],
 	PencilIcon: [
 		"svg",
 		[
@@ -9189,6 +9719,140 @@ export const ICON_TREES = {
 				"path",
 				[
 					["d", "M15 9H15.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
+	PixelTriangleWarningIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M4 21H20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 17L22 19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 17H12.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 17L2 19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 13L20 15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 13L4 15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 9L18 11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 13V9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 9L6 11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 5L16 7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 5L8 7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 3H14"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -9735,6 +10399,30 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	RabbitmqIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "#FF6600"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					[
+						"d",
+						"M23.035 9.601h-7.677a.956.956 0 01-.962-.962V.962a.956.956 0 00-.962-.956H10.56a.956.956 0 00-.962.956V8.64a.956.956 0 01-.962.962H5.762a.956.956 0 01-.961-.962V.962A.956.956 0 003.839 0H.959a.956.956 0 00-.956.962v22.076A.956.956 0 00.965 24h22.07a.956.956 0 00.962-.962V10.58a.956.956 0 00-.962-.98zm-3.86 8.152a1.437 1.437 0 01-1.437 1.443h-1.924a1.437 1.437 0 01-1.436-1.443v-1.917a1.437 1.437 0 011.436-1.443h1.924a1.437 1.437 0 011.437 1.443z",
+					],
+				],
+				[],
+			],
+		],
+	],
 	RailwayIcon: [
 		"svg",
 		[
@@ -10171,6 +10859,150 @@ export const ICON_TREES = {
 				"path",
 				[
 					["d", "M3 5V8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
+	ShieldIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M6 3H18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8.01001 20L8.00001 20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6.01001 18L6.00001 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16.01 20L16 20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18.01 18L18 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 16V5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 16V5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 22H14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 14.01V14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 12.01V12"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 10.01V10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 8.01V8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 12.01V12"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -10749,6 +11581,184 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	StarFilledIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "currentColor"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M12 2L14.9 8.6L22 9.3L16.8 14L18.2 21L12 17.3L5.8 21L7.2 14L2 9.3L9.1 8.6L12 2Z"],
+					["stroke", "currentColor"],
+					["stroke-width", "1.5"],
+					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+		],
+	],
+	StarIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M12 2.01001L12 2.00001"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 19.01L9 19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 19.01L15 19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 12.01L4 12"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 12.01L20 12"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 17V21H7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 17V21H17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M11 17H13"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 8H2V10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 8L22 8V10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 14V15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 14V15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 4V6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 4V6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	SunIcon: [
 		"svg",
 		[
@@ -11063,6 +12073,40 @@ export const ICON_TREES = {
 					["stroke-width", "2"],
 					["stroke-linecap", "round"],
 					["stroke-linejoin", "round"],
+				],
+				[],
+			],
+		],
+	],
+	TagIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M3 3H11L21 13L13 21L3 11V3Z"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 7H7.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
@@ -11714,6 +12758,50 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	UploadIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M12 17V6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 11L12 6L17 11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 18V21H20V18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	UserIcon: [
 		"svg",
 		[
@@ -12120,150 +13208,6 @@ export const ICON_TREES = {
 			],
 		],
 	],
-	ChartBarTrendUpIcon: [
-		"svg",
-		[
-			["xmlns", "http://www.w3.org/2000/svg"],
-			["viewBox", "0 0 24 24"],
-			["width", "7777"],
-			["height", "7777"],
-			["class", "__icon_class__"],
-			["fill", "none"],
-			["aria-hidden", "true"],
-		],
-		[
-			[
-				"path",
-				[
-					["d", "M10 14V20H14V14"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M18 10V20H22V10"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M2 18V20H6V18"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M4.01001 16L4.00001 16"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M12.01 12L12 12"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M2.01001 8L2.00001 8"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M4.01001 6L4.00001 6"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M6.01001 4L6.00001 4"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M8.01001 6L8.00001 6"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M10.01 8L10 8"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M12.01 6L12 6"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M14.01 4L14 4"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M20.01 8L20 8"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-		],
-	],
 	IdBadgeIcon: [
 		"svg",
 		[
@@ -12528,150 +13472,6 @@ export const ICON_TREES = {
 				"path",
 				[
 					["d", "M5 3H19"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-		],
-	],
-	BracketsCurlyIcon: [
-		"svg",
-		[
-			["xmlns", "http://www.w3.org/2000/svg"],
-			["viewBox", "0 0 24 24"],
-			["width", "7777"],
-			["height", "7777"],
-			["class", "__icon_class__"],
-			["fill", "none"],
-			["aria-hidden", "true"],
-		],
-		[
-			[
-				"path",
-				[
-					["d", "M12 16.01V16"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M16 16.01V16"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M8 16.01V16"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M7 3H6"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M17 3H18"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M7 21H6"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M17 21H18"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M2 12H1"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M22 12H23"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M4 10V5"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M20 10V5"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M4 19V14"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M20 19V14"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -13474,40 +14274,6 @@ export const ICON_TREES = {
 				"path",
 				[
 					["d", "M8 12.01V12"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-		],
-	],
-	TagIcon: [
-		"svg",
-		[
-			["xmlns", "http://www.w3.org/2000/svg"],
-			["viewBox", "0 0 24 24"],
-			["width", "7777"],
-			["height", "7777"],
-			["class", "__icon_class__"],
-			["fill", "none"],
-			["aria-hidden", "true"],
-		],
-		[
-			[
-				"path",
-				[
-					["d", "M3 3H11L21 13L13 21L3 11V3Z"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M7 7H7.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],

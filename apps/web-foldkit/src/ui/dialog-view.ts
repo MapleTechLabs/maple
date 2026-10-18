@@ -280,7 +280,10 @@ export const dialogPanel = <M>(
 	className?: string,
 ): Html =>
 	scrollArea(h, { idPrefix: `${id}-panel`, scrollFade: true }, [
-		h.div([h.Class(cn(contentStyles[kind].panel, className)), h.DataAttribute("slot", `${kind}-panel`)], children),
+		h.div(
+			[h.Class(cn(contentStyles[kind].panel, className)), h.DataAttribute("slot", `${kind}-panel`)],
+			children,
+		),
 	])
 
 export const dialogFooter = <M>(

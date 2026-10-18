@@ -50,6 +50,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		signIn: SignIn.init(),
 		shell: Shell.init(flags.shell),
 		toasts: Toast.init("toasts"),
+		toastActions: {},
 		page: null,
 		timeZone: flags.timeZone,
 	}

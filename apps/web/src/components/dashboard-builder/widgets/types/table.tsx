@@ -10,6 +10,7 @@ import {
 	type WidgetTypeDefinition,
 } from "@/components/dashboard-builder/widgets/widget-type-registry"
 import { rowsPresetPreview } from "@/components/dashboard-builder/widgets/types/preset-preview"
+import { TABLE_PRESET_SAMPLE_ROWS } from "@maple/web-data/dashboards/widget-preset-samples"
 import {
 	hasActiveGroupBy,
 	inferDisplayUnitForQuery,
@@ -32,23 +33,7 @@ export const tableWidgetType: WidgetTypeDefinition = {
 		</>
 	),
 	presets: tablePresets,
-	PresetPreview: rowsPresetPreview({
-		"table-traces": [
-			{ serviceName: "api-gw", spanName: "GET /api/users", durationMs: 142, hasError: false },
-			{ serviceName: "order-svc", spanName: "POST /api/orders", durationMs: 891, hasError: true },
-			{ serviceName: "api-gw", spanName: "GET /api/health", durationMs: 3, hasError: false },
-		],
-		"table-errors": [
-			{ errorType: "ConnectionTimeout", count: 342, affectedServicesCount: 5 },
-			{ errorType: "NullPointerException", count: 128, affectedServicesCount: 3 },
-			{ errorType: "RateLimitExceeded", count: 87, affectedServicesCount: 2 },
-		],
-		"table-services": [
-			{ serviceName: "api-gateway", p95LatencyMs: 245, errorRate: 2.1, throughput: 1250 },
-			{ serviceName: "user-service", p95LatencyMs: 89, errorRate: 0.4, throughput: 830 },
-			{ serviceName: "order-service", p95LatencyMs: 412, errorRate: 5.2, throughput: 340 },
-		],
-	}),
+	PresetPreview: rowsPresetPreview(TABLE_PRESET_SAMPLE_ROWS),
 
 	initialState: (widget) => ({
 		tableLimit: ((limit) => (typeof limit === "number" ? String(limit) : ""))(

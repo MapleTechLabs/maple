@@ -5,6 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../platform/resources"
 import type { AppRoute, RouteTag } from "../route"
 import type { BreadcrumbEntry } from "../shell"
+import { ToastType } from "../ui/toast"
 
 /** The page contract: every routed page is a Submodel registered once in `registry.ts`. See s8-pages.md. */
 
@@ -32,14 +33,28 @@ export interface PageSubscriptionInput<Model> {
 /** Facts a page reports to the root; the root owns the URL. */
 export const PageOutMessage = defineMessageUnion({
 	/** `navigate({ search })` / `<Link>`: the root pushes (or replaces) the URL, which re-enters the route. */
-	RequestedNavigation: { url: Schema.String, isReplace: Schema.Boolean },
+	RequestedNavigation: {
+		url: Schema.String,
+		isReplace: Schema.Boolean,
+		/** A toast raised with the navigation (`navigate(...)` then `toastManager.add(...)`). */
+		toast: Schema.optionalKey(
+			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
+		),
+	},
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
-	/** `toastManager.add`: the root owns the app-wide toast list. */
+	/**
+	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
+	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.
+	 */
 	RequestedToast: {
-		type: Schema.Literals(["default", "success", "error", "info", "warning"]),
+		type: ToastType,
 		title: Schema.String,
 		description: Schema.String,
+		timeoutMs: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		action: Schema.optionalKey(
+			Schema.NullOr(Schema.Struct({ label: Schema.String, message: Schema.Unknown })),
+		),
 	},
 })
 export type PageOutMessage = typeof PageOutMessage.Type
@@ -74,6 +89,8 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly subscriptions?: Subscription.Subscriptions<PageSubscriptionInput<Model>, Message, Resources>
 	/** `DashboardPage`'s `breadcrumbs`. */
 	readonly breadcrumbs: (model: Model) => ReadonlyArray<BreadcrumbEntry>
+	/** `DashboardPage`'s `topbarActions`: the page's own controls after the shell's top-bar buttons. */
+	readonly topbarActions?: Submodel.View<Model, Message, PageViewInputs>
 }
 
 // ERASED PAGE (what the registry and root consume)
@@ -124,6 +141,13 @@ export const definePage = <
 	const wrap = (message: Message): WrappedType => ({ _tag: id, message })
 	const keyOf = (route: RouteOf<Tags>) => (spec.key ? spec.key(route) : route._tag)
 
+	const isOwnPageMessage = Schema.is(schemas.Message)
+	/** A toast's action is the page's own Message; it travels wrapped, like every page Message. */
+	const wrapOut = (out: PageOutMessage): PageOutMessage =>
+		out._tag === "RequestedToast" && out.action !== null && out.action !== undefined && isOwnPageMessage(out.action.message)
+			? { ...out, action: { ...out.action, message: wrap(out.action.message) } }
+			: out
+
 	const step = (
 		key: string,
 		context: PageContext,
@@ -131,7 +155,7 @@ export const definePage = <
 	): PageStep<SlotType, WrappedType> => ({
 		slot: { _tag: id, key, orgId: context.orgId, model: result.model },
 		commands: Command.mapMessages(result.commands ?? [], wrap),
-		outMessage: Option.fromNullishOr(result.outMessage),
+		outMessage: Option.map(Option.fromNullishOr(result.outMessage), wrapOut),
 	})
 
 	const lifted = Subscription.lift(spec.subscriptions ?? {})<PageHost, WrappedType>({
@@ -177,6 +201,21 @@ export const definePage = <
 						toParentMessage: wrap,
 					})
 				: null,
+		),
+		/** The page's top-bar actions, embedded by the shell's top bar; nothing for most pages. */
+		hostTopbarActions: Submodel.defineView<PageSlotBase, WrappedType, PageViewInputs>(
+			(slot, inputs, h) => {
+				const actions = spec.topbarActions
+				return isOwnSlot(slot) && actions !== undefined
+					? h.submodel({
+							slotId: `${id}:topbar`,
+							model: slot.model,
+							view: actions,
+							viewInputs: { context: inputs.context },
+							toParentMessage: wrap,
+						})
+					: null
+			},
 		),
 		/** Keys are prefixed with the page id: Subscription keys share one namespace. */
 		subscriptions: Object.fromEntries(

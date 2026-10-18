@@ -36,6 +36,8 @@ export const Model = Schema.Struct({
 	tooltip: Schema.Option(ChartTooltip),
 	/** `useContainerSize(containerRef).width`, rounded; 0 before the first measurement. */
 	containerWidth: Schema.Number,
+	/** `useContainerSize(containerRef).height`: a side legend's height cap; 0 before measured. */
+	containerHeight: Schema.Number,
 	/** `useSeriesVisibility`: series keys a time-series legend has hidden. */
 	hiddenKeys: Schema.Array(Schema.String),
 })
@@ -47,6 +49,7 @@ export const init = (): Model => ({
 	highlightedKey: Option.none(),
 	tooltip: Option.none(),
 	containerWidth: 0,
+	containerHeight: 0,
 	hiddenKeys: [],
 })
 
@@ -59,7 +62,7 @@ export const Message = defineMessageUnion({
 	ChangedChartFocus: { maybeKey: Schema.Option(Schema.String) },
 	ChangedChartTooltip: { maybeTooltip: Schema.Option(ChartTooltip) },
 	CompletedPortalTooltipBody: {},
-	ResizedChartContainer: { width: Schema.Number },
+	ResizedChartContainer: { width: Schema.Number, height: Schema.Number },
 	EnteredLegendItem: { key: Schema.String },
 	LeftLegend: {},
 	ClickedLegendItem: { key: Schema.String },
@@ -94,8 +97,8 @@ export const update = (model: Model, message: Message) =>
 			model: modifyFields(model, { tooltip: () => maybeTooltip }),
 		}),
 		CompletedPortalTooltipBody: () => ({ model }),
-		ResizedChartContainer: ({ width }) => ({
-			model: modifyFields(model, { containerWidth: () => width }),
+		ResizedChartContainer: ({ width, height }) => ({
+			model: modifyFields(model, { containerWidth: () => width, containerHeight: () => height }),
 		}),
 		EnteredLegendItem: ({ key }) => ({
 			model: modifyFields(model, { activeKey: () => Option.some(key) }),

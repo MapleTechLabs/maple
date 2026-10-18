@@ -12,6 +12,7 @@ export type RefreshButtonOptions<Message> = Readonly<{
 	size?: "xs" | "sm" | "default"
 	variant?: "default" | "secondary" | "outline" | "ghost"
 	isDisabled?: boolean
+	className?: string
 	/** Base UI's `useId` for the tooltip trigger of the icon-only form. */
 	triggerId?: string
 }>
@@ -51,8 +52,15 @@ export const refreshButton = <Message>(
 			[glyph],
 		)
 	}
-	return button(h, { size, variant: options.variant ?? "outline", isDisabled, attributes: common }, [
-		glyph,
-		h.span([], [label]),
-	])
+	return button(
+		h,
+		{
+			size,
+			variant: options.variant ?? "outline",
+			isDisabled,
+			className: options.className,
+			attributes: common,
+		},
+		[glyph, h.span([], [label])],
+	)
 }

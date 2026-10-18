@@ -75,7 +75,7 @@ export const labShellView = <Message>(
 		model: shell,
 		view: Shell.frameView,
 		toParentMessage,
-		viewInputs: frame,
+		viewInputs: { ...frame, topbarActions: () => null },
 	}),
 	h.submodel({
 		slotId: "shell-sheet",

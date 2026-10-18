@@ -14,6 +14,7 @@ import {
 import { Array, Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { icon, type IconName } from "./icon"
 import {
 	descriptionId,
@@ -159,6 +160,20 @@ const toastRoot = (h: HtmlBuilder<Message>, model: Model, toast: Toast, placemen
 							),
 						],
 					),
+					...(toast.actionLabel === null
+						? []
+						: [
+								h.button(
+									[
+										h.Class(buttonVariants({ size: "xs" })),
+										h.DataAttribute("slot", "toast-action"),
+										h.Tabindex(0),
+										h.Type("button"),
+										h.OnClick(Message.ClickedToastAction({ toastId: toast.id })),
+									],
+									[toast.actionLabel],
+								),
+							]),
 				],
 			),
 		],
