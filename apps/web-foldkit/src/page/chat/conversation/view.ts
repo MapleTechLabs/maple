@@ -163,8 +163,13 @@ const notices = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOp
 export const conversationView = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): Html => {
 	const loading = isLoading(model)
 	return h.div(
-		[h.Class("flex h-full min-h-0 flex-col"), h.OnMount(themeMount(options.toMessage))],
+		[h.Class("flex h-full min-h-0 flex-col")],
 		[
+			// Chart colours are read once a chart fence appears, from an empty `display: contents`
+			// probe that inherits the page's tokens; it is its own element so its Mount runs on insert.
+			...(model.chartRuntime === null
+				? []
+				: [h.keyed("span")("chat-theme-probe", [h.Class("contents"), h.OnMount(themeMount(options.toMessage))], [])]),
 			transcript(h, transcriptHostOf(h, model, options), model.messages, () => emptyStateOf(h, model, options)),
 			...(model.readOnly !== null
 				? []
