@@ -540,7 +540,7 @@ const labVariant = (
 	...(steps === undefined ? undefined : { steps }),
 })
 
-/** The agent labs' controls. Not exercised: `/lab/agent-tools`' detail view, which is not ported. */
+/** The agent labs' controls, the tools lab's detail view and its error modal among them. */
 const labInteractions: ReadonlyArray<Scenario> = [
 	labVariant("lab-agent-session-clean", "Agent session, the clean fixture", "/lab/agent-session", (page) =>
 		page.getByRole("button", { name: "Clean" }).click(),
@@ -580,6 +580,30 @@ const labInteractions: ReadonlyArray<Scenario> = [
 	labVariant("lab-agent-tools-failing", "Agent tools, failing only", "/lab/agent-tools", (page) =>
 		page.getByRole("button", { name: "Failing only" }).click(),
 	),
+	labVariant("lab-agent-tools-detail", "Agent tools, the detail view", "/lab/agent-tools", (page) =>
+		page.getByRole("button", { name: "detail", exact: true }).click(),
+	),
+	labVariant("lab-agent-tools-detail-tool", "Agent tools, the detail view on sandbox_exec", "/lab/agent-tools", async (page) => {
+		await page.getByRole("button", { name: "detail", exact: true }).click()
+		await page.getByRole("button", { name: "sandbox_exec", exact: true }).click()
+	}),
+	labVariant("lab-agent-tools-detail-loading", "Agent tools, the detail view's errors loading", "/lab/agent-tools", async (page) => {
+		await page.getByRole("button", { name: "detail", exact: true }).click()
+		await page.getByRole("button", { name: "errors loading", exact: true }).click()
+	}),
+	labVariant("lab-agent-tools-detail-modal", "Agent tools, an error group opened from the detail view", "/lab/agent-tools", async (page) => {
+		await page.getByRole("button", { name: "detail", exact: true }).click()
+		await page.getByRole("region", { name: "Errors" }).getByRole("button")
+			.filter({ has: page.getByRole("time") })
+			.first()
+			.click()
+		await page.getByRole("dialog").waitFor()
+	}),
+	labVariant("lab-agent-tools-detail-variant", "Agent tools, the samples narrowed to a variant", "/lab/agent-tools", async (page) => {
+		await page.getByRole("button", { name: "detail", exact: true }).click()
+		await page.getByRole("region", { name: "Errors" }).getByRole("button", { name: /2 variants/ }).click()
+		await page.getByRole("dialog").getByRole("complementary").getByRole("button", { name: /logPatterns/ }).first().click()
+	}),
 ]
 
 export const agentSessionsArea: AreaModule = {

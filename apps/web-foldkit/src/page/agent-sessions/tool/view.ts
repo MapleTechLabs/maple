@@ -43,7 +43,7 @@ const failureOf = <A>(data: AsyncData.AsyncData<A, LoadFailure>): LoadFailure | 
 const isPendingFirst = <A>(data: AsyncData.AsyncData<A, LoadFailure>): boolean =>
 	!AsyncData.hasData(data) && failureOf(data) === undefined
 
-const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, controls: Html): Html => {
+const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, controls: Html | undefined): Html => {
 	const { current } = totals
 	const subtitle = [
 		`${formatToolCount(current.calls)} ${pluralize(current.calls, "call")} in ${formatToolCount(current.sessions)} ${pluralize(current.sessions, "session")}`,
@@ -84,7 +84,7 @@ const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, cont
 					h.p([h.Class("font-mono text-ui text-muted-foreground")], [subtitle.join(" · ")]),
 				],
 			),
-			h.div([h.Class("flex shrink-0 items-center gap-2 pt-1")], [controls]),
+			...(controls === undefined ? [] : [h.div([h.Class("flex shrink-0 items-center gap-2 pt-1")], [controls])]),
 		],
 	)
 }
@@ -145,27 +145,30 @@ const timeActions = (h: H, model: Model): Html =>
 			}),
 	})
 
-const loadedView = (h: H, model: Model, totals: TotalsResult, inputs: PageViewInputs): Html => {
+const loadedView = (
+	h: H,
+	model: Model,
+	totals: TotalsResult,
+	timeZone: string,
+	isRoute: boolean,
+): Html => {
 	const { window, themeColors } = model
 	if (window === null || themeColors === null) return h.empty
-	const timeZone = inputs.context.timeZone
 	const isWaiting = AsyncData.isRefreshing(model.totals.data)
 	const range = rangeOf(window)
 	const series = Option.match(AsyncData.getData(model.series.data), {
 		onNone: (): ReadonlyArray<ToolSeriesPoint> => [],
+		// The route fills empty buckets; the lab hands the view its fixture's series as they are.
 		onSome: (value) =>
-			fillSeriesBuckets(
-				value.data,
-				range.startMs,
-				range.endMs,
-				chartBucketSeconds(range.startMs, range.endMs),
-			),
+			isRoute
+				? fillSeriesBuckets(value.data, range.startMs, range.endMs, chartBucketSeconds(range.startMs, range.endMs))
+				: value.data,
 	})
 	const sessions = AsyncData.getOrElse(model.sessions.data, () => ({ data: [] })).data
 	return h.div(
 		[h.Class("flex flex-col")],
 		[
-			header(h, model, totals, timeZone, timeActions(h, model)),
+			header(h, model, totals, timeZone, isRoute ? timeActions(h, model) : undefined),
 			toolbar(h, model, isWaiting),
 			scopeRow(h, {
 				chips: model.search.model === undefined ? [] : [{ kind: "model", value: model.search.model }],
@@ -246,20 +249,27 @@ const loadingView = (h: H): Html =>
 		[skeleton(h, "h-14 w-full max-w-2xl"), skeleton(h, "h-64"), skeleton(h, "h-64")],
 	)
 
+/** `ResultView` over the totals read; the lab draws it without the route's time controls. */
+export const toolDetailBody = (
+	h: H,
+	model: Model,
+	options: Readonly<{ timeZone: string; isRoute: boolean }>,
+): Html =>
+	AsyncData.matchData(model.totals.data, {
+		onEmpty: () => loadingView(h),
+		onFailure: (failure) => errorState(h, { failure, title: `Failed to load ${model.toolName}` }),
+		onData: (totals) =>
+			model.themeColors === null || model.chartRuntime._tag === "Loading"
+				? loadingView(h)
+				: loadedView(h, model, totals, options.timeZone, options.isRoute),
+	})
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: GRID_TOKENS }))],
 		[
 			dashboardPage(h, { scrollClassName: "p-0" }, [
-				AsyncData.matchData(model.totals.data, {
-					onEmpty: () => loadingView(h),
-					onFailure: (failure) =>
-						errorState(h, { failure, title: `Failed to load ${model.toolName}` }),
-					onData: (totals) =>
-						model.themeColors === null || model.chartRuntime._tag === "Loading"
-							? loadingView(h)
-							: loadedView(h, model, totals, inputs),
-				}),
+				toolDetailBody(h, model, { timeZone: inputs.context.timeZone, isRoute: true }),
 			]),
 		],
 	),
