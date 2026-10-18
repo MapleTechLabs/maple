@@ -67,6 +67,25 @@ export const metricsArea: AreaModule = {
 		metric("browse-open-card", "a preview card opened", "/metrics", {
 			steps: act(clickButton(/^system\.memory\.utilization/)),
 		}),
+		metric("add-dialog", "the Add to dashboard dialog open", HISTOGRAM, {
+			steps: act(clickButton("Add to dashboard"), (page) => page.getByRole("dialog").waitFor()),
+		}),
+		metric("add-existing", "the query added to an existing dashboard", HISTOGRAM, {
+			steps: act(
+				clickButton("Add to dashboard"),
+				clickButton(/^Checkout health/),
+				(page) => page.waitForURL(/\/dashboards\//),
+			),
+		}),
+		metric("add-create", "the query added to a new dashboard", HISTOGRAM, {
+			steps: act(
+				clickButton("Add to dashboard"),
+				(page) => page.getByRole("dialog").getByRole("textbox").fill("Request latency"),
+				clickButton("Create & add"),
+				// The fixture never syncs the create's txid back, so both apps hold on "creating".
+				(page) => page.waitForTimeout(500),
+			),
+		}),
 		metric(
 			"histogram-grouped",
 			"Request duration grouped by service",

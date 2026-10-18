@@ -1,5 +1,6 @@
 import { Option } from "effect"
-import { AsyncData, Command } from "foldkit"
+import { AsyncData, Command, type Update } from "foldkit"
+import * as AddToDashboard from "./add-to-dashboard"
 import * as Chart from "../../../charts/chart"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
@@ -224,6 +225,33 @@ export const backToMetricsHref = (search: Search): string =>
 const isSameWindow = (a: Search, b: Search) =>
 	a.startTime === b.startTime && a.endTime === b.endTime && a.timePreset === b.timePreset
 
+/** The dialog's step; a widget that landed opens its dashboard. */
+const liftAddToDashboard = (
+	model: Model,
+	step: Update.ReturnWithOutMessage<
+		AddToDashboard.Model,
+		AddToDashboard.Message,
+		AddToDashboard.OutMessage,
+		Resources
+	>,
+): Return => {
+	const lifted: Return = {
+		model: { ...model, addToDashboard: step.model },
+		commands: Command.mapMessages(step.commands ?? [], (message) =>
+			Message.GotAddToDashboardMessage({ message }),
+		),
+	}
+	if (step.outMessage === undefined) return lifted
+	const dashboardId = AppRoute.Dashboard.fields.dashboardId.make(step.outMessage.dashboardId)
+	return {
+		...lifted,
+		outMessage: PageOutMessage.RequestedNavigation({
+			url: hrefOf(AppRoute.Dashboard({ dashboardId, search: {} })),
+			isReplace: false,
+		}),
+	}
+}
+
 // ENTRY POINTS
 
 export const AGGREGATION_SELECT_ID = "metric-aggregation"
@@ -250,6 +278,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			selected: [breakdownKeyOf(route.search)],
 		}),
 		copyLink: CopyButton.init(),
+		addToDashboard: AddToDashboard.init(),
 		chart: Chart.init(),
 		timePicker: TimeRangePicker.init("metric-time-range"),
 		chartRuntime: { _tag: "Loading" },
@@ -439,8 +468,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
 		}),
-		// TODO(add-to-dashboard): the dialog needs the dashboards store (`useDashboardStore`) and its mutations.
-		ClickedAddToDashboard: () => ({ model }),
+		ClickedAddToDashboard: () => liftAddToDashboard(model, AddToDashboard.open(model.addToDashboard)),
+		GotAddToDashboardMessage: ({ message: inner }) => {
+			const summary = summaryOf(model)
+			return liftAddToDashboard(
+				model,
+				AddToDashboard.update(model.addToDashboard, inner, {
+					orgId: context.orgId,
+					draft: summary === null ? null : draftOf(model, summary),
+				}),
+			)
+		},
 		ClickedCopyLink: () => ({ model, commands: [ReadLocation()] }),
 		ReadLocationHref: ({ href }) => liftCopyLink(model, CopyButton.Message.ClickedCopy({ text: href })),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),

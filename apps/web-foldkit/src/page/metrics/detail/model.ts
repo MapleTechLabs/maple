@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import * as AddToDashboard from "./add-to-dashboard"
 import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
@@ -50,6 +51,8 @@ export const Model = Schema.Struct({
 	groupByCombobox: Combobox.Model,
 	breakdownCombobox: Combobox.Model,
 	copyLink: CopyButton.Model,
+	/** `AddToDashboardDialog`. */
+	addToDashboard: AddToDashboard.Model,
 	chart: Chart.Model,
 	timePicker: TimeRangePicker.Model,
 	chartRuntime: ChartRuntime,
