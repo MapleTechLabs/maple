@@ -1,5 +1,7 @@
+import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import type { GcpResource } from "@maple/domain/http"
 import { windowDurationSeconds } from "@maple/query-engine"
-import { gcpWindowPoints } from "@maple/web/components/infra/gcp/charts"
+import { type GcpBucketPoint, gcpWindowPoints } from "@maple/web/components/infra/gcp/charts"
 import {
 	gcpCloudSqlView,
 	gcpQueryInsightsUnavailable,
@@ -7,14 +9,21 @@ import {
 	type GcpStatement,
 } from "@maple/web/components/infra/gcp/cloud-sql-signals"
 import {
+	type GcpCloudSqlInstance,
 	gcpCloudSqlInstances,
 	gcpMatchResource,
 	gcpWorkloadTelemetry,
 } from "@maple/web/components/infra/gcp/inventory"
-import { gcpDatabaseRows, gcpSqlEngineOf, NO_GCP_SPARKS } from "@maple/web/components/infra/gcp/list-model"
+import {
+	gcpDatabaseRows,
+	type GcpReplica,
+	gcpSqlEngineOf,
+	NO_GCP_SPARKS,
+} from "@maple/web/components/infra/gcp/list-model"
 import { gcpWorkload, gcpWorkloadTone } from "@maple/web/components/infra/gcp/tabs"
 import { gcpRailFacts, gcpTraceGap, gcpTracedErrors } from "@maple/web/components/infra/gcp/workload-signals"
 import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
+import type { TraceSide } from "../data"
 import { successOf } from "../list/derive"
 import type { Model } from "./model"
 import { keysOf } from "./update"
@@ -46,9 +55,6 @@ export const pageOf = (model: Model) => {
 					windowDurationSeconds(window.startTime, window.endTime),
 				)
 			: null
-	const tracedService = tracedErrors === null ? null : telemetry.serviceName
-	const gap = gcpTraceGap(model.service, points, bucketSeconds, tracedErrors)
-	const isCloudSql = model.service === "cloudSql"
 	const inventory = successOf(model.sqlInventory.data)
 	const instances = inventory === null ? undefined : gcpCloudSqlInstances(inventory.resources)
 	const instance = instances?.find((candidate) => candidate.id === model.name)
@@ -61,6 +67,44 @@ export const pageOf = (model: Model) => {
 	const traceSide = successOf(model.traceSide.data) ?? undefined
 	const statementsRaw = successOf(model.topQueries.data)
 	const statements = statementsRaw === null ? NO_STATEMENTS : gcpStatements(statementsRaw, points)
+	return workloadData({
+		service: model.service,
+		keys,
+		points,
+		bucketSeconds,
+		resource,
+		overviewLoaded: overview !== null,
+		tracedErrors,
+		instance,
+		traceSide,
+		statements,
+		replicas,
+	})
+}
+
+/** What `GcpWorkloadPage` is handed, read off the slots by the route and off fixtures by the lab. */
+export type WorkloadInputs = Readonly<{
+	service: GcpInfraServiceId
+	keys: ReadonlyArray<string>
+	points: ReadonlyArray<GcpBucketPoint>
+	bucketSeconds: number
+	resource: GcpResource | undefined
+	overviewLoaded: boolean
+	/** Errors on the traced service's entry spans; null when nothing of this name sends spans. */
+	tracedErrors: number | null
+	instance: GcpCloudSqlInstance | undefined
+	traceSide: TraceSide | undefined
+	statements: ReadonlyArray<GcpStatement>
+	replicas: ReadonlyArray<GcpReplica>
+}>
+
+export const workloadData = (input: WorkloadInputs) => {
+	const { service, keys, points, bucketSeconds, resource, instance, traceSide, statements } = input
+	const telemetry = gcpWorkloadTelemetry(service, keys)
+	const tracedService = input.tracedErrors === null ? null : telemetry.serviceName
+	const gap = gcpTraceGap(service, points, bucketSeconds, input.tracedErrors)
+	const isCloudSql = service === "cloudSql"
+	const replicas = input.replicas
 	const sql = isCloudSql
 		? gcpCloudSqlView({
 				instance,
@@ -72,19 +116,17 @@ export const pageOf = (model: Model) => {
 				bucketSeconds,
 			})
 		: undefined
-	const facts = sql?.facts ?? gcpRailFacts(model.service, points, bucketSeconds)
+	const facts = sql?.facts ?? gcpRailFacts(service, points, bucketSeconds)
 	const databaseVersion = isCloudSql ? (instance?.databaseVersion ?? gcpSqlEngineOf(points)) : undefined
 	const health =
-		points.length === 0
-			? null
-			: gcpWorkloadTone(gcpWorkload(model.service, keys, gcpWindowPoints(points)))
+		points.length === 0 ? null : gcpWorkloadTone(gcpWorkload(service, keys, gcpWindowPoints(points)))
 	return {
 		keys,
 		points,
 		bucketSeconds,
 		resource,
 		telemetry,
-		overviewLoaded: overview !== null,
+		overviewLoaded: input.overviewLoaded,
 		tracedService,
 		gap,
 		isCloudSql,
@@ -99,4 +141,4 @@ export const pageOf = (model: Model) => {
 	}
 }
 
-export type PageData = ReturnType<typeof pageOf>
+export type PageData = ReturnType<typeof workloadData>

@@ -69,20 +69,24 @@ const instancesOf = (inventory: Resources | null) =>
 /** `gcpListScope` over every row: what the header, band and table show. */
 export const listScopeOf = (model: Model, collecting: boolean) => {
 	const fleet = fleetOf(model)
-	const requested = requestedViewOf(model)
-	const scoped = gcpListScope(
-		fleet === null ? null : gcpListRows(fleet, NO_GCP_SPARKS),
-		{ view: requested, project: model.search.project, region: model.search.region },
-		collecting,
-	)
-	const instances =
-		scoped.view === "cloudSql" ? instancesOf(successOf(model.cloudSqlInventory.data)) : undefined
-	const allRows = fleet === null ? null : gcpListRows(fleet, sparksOf(model), instances)
+	const allRows =
+		fleet === null ? null : gcpListRows(fleet, sparksOf(model), cloudSqlInstancesOf(model, collecting))
 	return gcpListScope(
 		allRows,
-		{ view: requested, project: model.search.project, region: model.search.region },
+		{ view: requestedViewOf(model), project: model.search.project, region: model.search.region },
 		collecting,
 	)
+}
+
+/** The Cloud SQL inventory's instances, read only while that view shows. */
+export const cloudSqlInstancesOf = (model: Model, collecting: boolean) => {
+	const fleet = fleetOf(model)
+	const scoped = gcpListScope(
+		fleet === null ? null : gcpListRows(fleet, NO_GCP_SPARKS),
+		{ view: requestedViewOf(model), project: model.search.project, region: model.search.region },
+		collecting,
+	)
+	return scoped.view === "cloudSql" ? instancesOf(successOf(model.cloudSqlInventory.data)) : undefined
 }
 
 /** What the connections say, above the lists; `null` while the fleet loads. */

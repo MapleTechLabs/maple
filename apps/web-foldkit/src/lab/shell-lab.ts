@@ -27,7 +27,11 @@ export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFl
 	view: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
 	subscriptions?: Subscription.Subscriptions<PageModel, PageMessage, Resources>
 	currentPath: string
-	breadcrumbs: ReadonlyArray<Shell.BreadcrumbEntry>
+	breadcrumbs:
+		| ReadonlyArray<Shell.BreadcrumbEntry>
+		| ((model: PageModel) => ReadonlyArray<Shell.BreadcrumbEntry>)
+	/** A floating lab control rendered before the shell, as legacy's fragment sibling. */
+	overlay?: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
 }>
 
 export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, PageFlags>(
@@ -46,6 +50,8 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 	const toPage = (message: PageMessage): Message => Message.GotPageMessage({ message })
 	const foldShell = foldLabShell<Model, Message>(toShell)
 	const pageView = Submodel.defineView<PageModel, PageMessage>(page.view)
+	const overlayView =
+		page.overlay === undefined ? undefined : Submodel.defineView<PageModel, PageMessage>(page.overlay)
 	const own = Subscription.lift(page.subscriptions ?? {})<Model, Message>({
 		read: (model: Model) => Option.some(model.page),
 		toParentMessage: toPage,
@@ -79,17 +85,32 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 		view: (model: Model, h: HtmlBuilder<Message>) =>
 			h.div(
 				[h.Id("app")],
-				labShellView(h, model.shell, toShell, {
-					currentPath: page.currentPath,
-					breadcrumbs: page.breadcrumbs,
-					page: () =>
-						h.submodel({
-							slotId: "lab-page",
-							model: model.page,
-							view: pageView,
-							toParentMessage: toPage,
-						}),
-				}),
+				[
+					...(overlayView === undefined
+						? []
+						: [
+								h.submodel({
+									slotId: "lab-overlay",
+									model: model.page,
+									view: overlayView,
+									toParentMessage: toPage,
+								}),
+							]),
+					...labShellView(h, model.shell, toShell, {
+						currentPath: page.currentPath,
+						breadcrumbs:
+							typeof page.breadcrumbs === "function"
+								? page.breadcrumbs(model.page)
+								: page.breadcrumbs,
+						page: () =>
+							h.submodel({
+								slotId: "lab-page",
+								model: model.page,
+								view: pageView,
+								toParentMessage: toPage,
+							}),
+					}),
+				],
 			),
 		subscriptions: Subscription.aggregate<Model, Message, Resources>()(
 			labShellSubscriptions<Model, Message>(toShell),

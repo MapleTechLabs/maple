@@ -1,0 +1,27 @@
+import { PAGES } from "@maple/web/lab/gcp-workload-fixture"
+import { Schema } from "effect"
+import { defineMessageUnion } from "foldkit/message"
+import * as Workload from "../../page/infra-integrations/gcp/workload/model"
+
+// `/lab/gcp-workload` (apps/web `lab/gcp-workload-lab.tsx`): the workload page over fixture series,
+// a Cloud Run burst and a Cloud SQL instance, picked from the floating lab bar.
+
+export const LabPage = Schema.Literals(PAGES)
+export type LabPage = typeof LabPage.Type
+
+export const Model = Schema.Struct({
+	page: LabPage,
+	timeZone: Schema.String,
+	/** The page's own Model; its slots hold the fixture, so it never fetches. */
+	workload: Workload.Model,
+})
+export type Model = typeof Model.Type
+
+export const Message = defineMessageUnion({
+	ClickedLabPage: { page: Schema.String },
+	GotWorkloadMessage: { message: Workload.Message },
+})
+export type Message = typeof Message.Type
+
+export const GcpWorkloadLabFlags = Schema.Struct({ timeZone: Schema.String })
+export type GcpWorkloadLabFlags = typeof GcpWorkloadLabFlags.Type
