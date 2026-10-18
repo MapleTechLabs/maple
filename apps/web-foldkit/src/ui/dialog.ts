@@ -117,6 +117,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 // MOUNT
 
+/** Popups a dialog's content opens into their own portals: a press in one stays inside the dialog. */
+const NESTED_POPUPS = [
+	"[data-slot=select-positioner]",
+	"[data-slot=popover-positioner]",
+	"[data-slot=menu-positioner]",
+]
+
 /**
  * On the portal root: moves it to `<body>`, hides the rest of the page from assistive tech,
  * locks scroll, traps focus and moves it in; releasing (unmount) undoes each and returns focus.
@@ -140,7 +147,7 @@ export const MountDialog = Mount.defineStream("MountDialog", {
 				})
 				return Stream.concat(
 					mounted,
-					outsidePresses(popup, []).pipe(Stream.map(() => Message.PressedOutside())),
+					outsidePresses(popup, NESTED_POPUPS).pipe(Stream.map(() => Message.PressedOutside())),
 				)
 			}),
 		),

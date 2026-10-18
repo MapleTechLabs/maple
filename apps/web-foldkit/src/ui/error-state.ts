@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { isAutomaticRetryError } from "@maple/web-data/lib/error-messages"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../data/load-failure"
 import { button } from "./button"
 
@@ -13,6 +14,11 @@ export type ErrorStateOptions<M> = Readonly<{
 	onRetry?: M
 	variant?: "panel" | "row" | "inline"
 	className?: string
+	/**
+	 * `useNetworkAutoRetry`'s probe: a Mount the caller defines that dispatches `onRetry` on its
+	 * backoff. Given, a retryable failure says it retries automatically and the root mounts it.
+	 */
+	autoRetry?: Attribute<M>
 }>
 
 const attr = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>>) =>
@@ -126,10 +132,15 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					]),
 				]
 	const variant = options.variant ?? "panel"
+	const autoRetry =
+		options.autoRetry !== undefined && canRetry && isAutomaticRetryError(failure)
+			? [options.autoRetry]
+			: []
+	const description = autoRetry.length > 0 ? `${failure.message} Retrying automatically…` : failure.message
 
 	if (variant === "inline") {
 		return h.div(
-			[h.Class(cn("flex flex-col gap-1.5 py-4", options.className)), ...alertRegion(h)],
+			[h.Class(cn("flex flex-col gap-1.5 py-4", options.className)), ...alertRegion(h), ...autoRetry],
 			[
 				h.div(
 					[h.Class("flex items-center gap-2")],
@@ -146,7 +157,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 						h.p([h.Class("text-xs font-medium text-foreground")], [heading]),
 					],
 				),
-				h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [failure.message]),
+				h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [description]),
 				...retry("ghost", "-ml-2 h-6 w-fit px-2 text-xs text-muted-foreground hover:text-foreground"),
 			],
 		)
@@ -162,6 +173,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					),
 				),
 				...alertRegion(h),
+				...autoRetry,
 			],
 			[
 				droppedSignalGlyph(h, true),
@@ -169,7 +181,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					[h.Class("min-w-0 flex-1 basis-56 space-y-0.5")],
 					[
 						h.p([h.Class("text-sm font-medium text-foreground")], [heading]),
-						h.p([h.Class("line-clamp-2 text-xs text-muted-foreground")], [failure.message]),
+						h.p([h.Class("line-clamp-2 text-xs text-muted-foreground")], [description]),
 					],
 				),
 				...retry("outline", "shrink-0"),
@@ -186,6 +198,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 				),
 			),
 			...alertRegion(h),
+			...autoRetry,
 		],
 		[
 			h.div([h.Class("rounded-md border bg-card/50 px-3 py-2.5")], [droppedSignalGlyph(h, false)]),
@@ -193,7 +206,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 				[h.Class("max-w-xs space-y-1")],
 				[
 					h.p([h.Class("text-sm font-medium text-foreground")], [heading]),
-					h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [failure.message]),
+					h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [description]),
 				],
 			),
 			...retry("outline"),
