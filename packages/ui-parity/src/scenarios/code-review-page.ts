@@ -73,6 +73,9 @@ const pullRequests = (id: string, title: string, options: Options) =>
 		options,
 	)
 
+const issues = (id: string, title: string, options: Options) =>
+	codeReviewScenario(`issues-${id}`, `Issues: ${title}`, "/code-review/issues", options)
+
 const openReview = (page: Page) =>
 	page
 		.getByRole("button", { name: /Retry payment capture once/ })
@@ -159,5 +162,34 @@ export const codeReviewPageArea: AreaModule = {
 		}),
 		reviewSheet("error", "review failing", async () => {}, failing("codeReview.getReview")),
 		reviewSheet("ci-error", "CI runs failing", async () => {}, failing("codeReview.ciRuns")),
+		issues("loading", "loading (findings held)", held("codeReview.listFindings")),
+		issues("error", "findings failing", failing("codeReview.listFindings")),
+		issues("repository", "filtered to one repository", {
+			steps: (page) => pick(page, "Repository", "acme-shop/payments"),
+		}),
+		issues("author", "filtered to one author", { steps: (page) => pick(page, "Author", "linus-t") }),
+		issues("category", "filtered to one category", {
+			steps: (page) => pick(page, "Category", "Observability"),
+		}),
+		issues("state", "filtered to one state", { steps: (page) => pick(page, "State", "Resolved") }),
+		issues("clear-filters", "filtered to nothing, then cleared", {
+			steps: async (page) => {
+				await pick(page, "Severity", "Critical")
+				await pick(page, "State", "Dismissed")
+				await page.getByRole("button", { name: "Clear filters" }).click()
+			},
+		}),
+		issues("time-tooltip", "a finding's time hovered", {
+			steps: async (page) => {
+				await page.getByText("2h ago").first().hover()
+				await page.getByText(/^Oct 1, 2026, /).waitFor()
+			},
+		}),
+		issues("sheet-close", "review sheet opened, then closed", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: /Index built without CONCURRENTLY/ }).click()
+				await page.getByRole("button", { name: "Close" }).click()
+			},
+		}),
 	],
 }

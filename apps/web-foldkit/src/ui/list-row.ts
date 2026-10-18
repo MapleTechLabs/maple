@@ -23,20 +23,29 @@ export interface ListRowOptions {
 	readonly title: Child
 	/** Secondary line under the title. */
 	readonly meta?: Child
-	readonly trailing?: Child
+	/** One child, or several (a fragment) laid out by the trailing slot. */
+	readonly trailing?: Child | ReadonlyArray<Child>
 	readonly className?: string
 	/** `render={<Link />}`: the row is a link to this URL. */
 	readonly href?: string
 }
 
+/** `render={<button type="button" onClick />}`: the row is a button dispatching `onClick`. */
+export interface ListRowButtonOptions<M> extends ListRowOptions {
+	readonly onClick: M
+}
+
 const leadingSlot = <M>(h: HtmlBuilder<M>, leading: Child): Html =>
 	h.span([h.Class(listRowLeadingStyles), h.DataAttribute("slot", "list-row-leading")], [leading])
 
-const trailingSlot = <M>(h: HtmlBuilder<M>, trailing: Child): Html =>
-	h.span([h.Class(listRowTrailingStyles), h.DataAttribute("slot", "list-row-trailing")], [trailing])
+const trailingSlot = <M>(h: HtmlBuilder<M>, trailing: Child | ReadonlyArray<Child>): Html =>
+	h.span(
+		[h.Class(listRowTrailingStyles), h.DataAttribute("slot", "list-row-trailing")],
+		typeof trailing === "string" || !Array.isArray(trailing) ? [trailing] : trailing,
+	)
 
 /** One class attribute per row (S4: rows are repeated). */
-export const listRow = <M>(h: HtmlBuilder<M>, options: ListRowOptions): Html => {
+export const listRow = <M>(h: HtmlBuilder<M>, options: ListRowOptions | ListRowButtonOptions<M>): Html => {
 	const attributes = [
 		...(options.selected === true ? [h.AriaCurrent("true"), h.DataAttribute("selected", "")] : []),
 		h.Attribute(
@@ -73,6 +82,8 @@ export const listRow = <M>(h: HtmlBuilder<M>, options: ListRowOptions): Html => 
 		),
 		...(options.trailing === undefined ? [] : [trailingSlot(h, options.trailing)]),
 	]
+	if ("onClick" in options)
+		return h.button([...attributes, h.Type("button"), h.OnClick(options.onClick)], children)
 	return options.href === undefined
 		? h.div(attributes, children)
 		: h.a([h.Href(options.href), ...attributes], children)
