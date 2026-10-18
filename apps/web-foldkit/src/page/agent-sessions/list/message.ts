@@ -31,7 +31,8 @@ export const Message = defineMessageUnion({
 		mode: RequestMode,
 	},
 	CompletedFetchFirstPage: result(SessionsPage),
-	CompletedFetchNextPage: result(SessionsPage),
+	/** `offset` is where the page starts; an answer for an offset already filled is dropped. */
+	CompletedFetchNextPage: { ...result(SessionsPage), offset: Schema.Number },
 	CompletedFetchDetails: {
 		detailsKey: Schema.String,
 		sessionIds: Schema.Array(Schema.String),

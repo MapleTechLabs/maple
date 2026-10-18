@@ -411,8 +411,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			requestAll({ ...model, window, tabWindow, nowMs }, context, mode),
 		CompletedFetchFirstPage: ({ key, result }) =>
 			follow({ model: { ...model, firstPage: Keyed.accept(model.firstPage, key, result) } }),
-		CompletedFetchNextPage: ({ key, result }) => {
-			if (key !== model.morePages.filterKey) return { model }
+		CompletedFetchNextPage: ({ key, offset, result }) => {
+			if (key !== model.morePages.filterKey || offset !== rankedCount(model, key)) return { model }
 			const settled = { ...model, isFetchingNextPage: false }
 			return result._tag === "Success"
 				? follow({

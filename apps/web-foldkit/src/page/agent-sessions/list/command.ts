@@ -62,7 +62,7 @@ export const FetchNextPage = Command.define("FetchAgentSessionsNextPage", {
 	messages: [Message.CompletedFetchNextPage],
 	execute: ({ key, search, window, offset }) =>
 		Effect.map(fetchPage(search, window, offset), (result) =>
-			Message.CompletedFetchNextPage({ key, result }),
+			Message.CompletedFetchNextPage({ key, offset, result }),
 		),
 })
 
