@@ -47,7 +47,12 @@ export const held = (prefix: string): Options => ({
 	settle: "held",
 })
 
-export const failing = (prefix: string): Options => ({
+/** Fails `prefix` and waits for `shown` (the error state, after the GET retries give up). */
+export const failing = (prefix: string, shown?: string): Options => ({
+	steps:
+		shown === undefined
+			? undefined
+			: (page) => page.getByText(shown).first().waitFor({ timeout: 10_000 }),
 	faults: {
 		failures: {
 			[prefix]: {
@@ -73,6 +78,9 @@ const pullRequests = (id: string, title: string, options: Options) =>
 		options,
 	)
 
+const ci = (id: string, title: string, options: Options) =>
+	codeReviewScenario(`ci-${id}`, `CI: ${title}`, "/code-review/ci", options)
+
 const issues = (id: string, title: string, options: Options) =>
 	codeReviewScenario(`issues-${id}`, `Issues: ${title}`, "/code-review/issues", options)
 
@@ -95,7 +103,11 @@ export const codeReviewPageArea: AreaModule = {
 	area: "code-review",
 	scenarios: [
 		analytics("loading", "loading (analytics held)", held("codeReview.analytics")),
-		analytics("error", "analytics failing", failing("codeReview.analytics")),
+		analytics(
+			"error",
+			"analytics failing",
+			failing("codeReview.analytics", "Failed to load review analytics"),
+		),
 		analytics("repository", "filtered to one repository", {
 			steps: (page) => pick(page, "Repository", "acme-shop/payments"),
 		}),
@@ -127,7 +139,7 @@ export const codeReviewPageArea: AreaModule = {
 			},
 		}),
 		pullRequests("loading", "loading (list held)", held("codeReview.listReviews")),
-		pullRequests("error", "list failing", failing("codeReview.listReviews")),
+		pullRequests("error", "list failing", failing("codeReview.listReviews", "Failed to load reviews")),
 		pullRequests("repository", "filtered to one repository", {
 			steps: (page) => pick(page, "Repository", "acme-shop/payments"),
 		}),
@@ -160,10 +172,63 @@ export const codeReviewPageArea: AreaModule = {
 			faults: { delays: { "codeReview.getReview": HELD_MS } },
 			settle: "quiet",
 		}),
-		reviewSheet("error", "review failing", async () => {}, failing("codeReview.getReview")),
-		reviewSheet("ci-error", "CI runs failing", async () => {}, failing("codeReview.ciRuns")),
+		reviewSheet(
+			"error",
+			"review failing",
+			async (page) => {
+				await page.getByText("Failed to load the review").waitFor({ timeout: 10_000 })
+			},
+			failing("codeReview.getReview"),
+		),
+		reviewSheet(
+			"ci-error",
+			"CI runs failing",
+			async (page) => {
+				await page.getByText("CI runs could not be loaded").waitFor({ timeout: 10_000 })
+			},
+			failing("codeReview.ciRuns"),
+		),
+		ci("loading", "loading (analytics held)", held("codeReview.ciAnalytics")),
+		ci("error", "analytics failing", failing("codeReview.ciAnalytics", "Failed to load CI analytics")),
+		ci("runs-error", "runs failing", failing("codeReview.ciRuns", "Failed to load CI runs")),
+		ci("repository", "filtered to one repository", {
+			steps: (page) => pick(page, "Repository", "acme-shop/payments"),
+		}),
+		ci("workflow", "filtered to one workflow from the select", {
+			steps: (page) => pick(page, "Workflow", "E2E"),
+		}),
+		ci("workflow-row", "a workflow row clicked, then clicked again", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: /^E2E/ }).click()
+				await page
+					.getByRole("button", { name: /^E2E/ })
+					.and(page.locator("[aria-pressed=true]"))
+					.click()
+			},
+		}),
+		ci("branch", "runs narrowed to a branch", {
+			steps: (page) => page.getByRole("button", { name: "feat/checkout-retries" }).first().click(),
+		}),
+		ci("branch-cleared", "a branch filter cleared", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "feat/checkout-retries" }).first().click()
+				await page.getByRole("button", { name: "Clear branch feat/checkout-retries" }).click()
+			},
+		}),
+		ci("runs-clear-filters", "runs filtered to nothing, then cleared", {
+			steps: async (page) => {
+				await pick(page, "Result", "Timed out")
+				await page.getByRole("button", { name: "Clear filters" }).click()
+			},
+		}),
+		ci("time-range", "window switched to a day", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Last 7 days" }).click()
+				await page.getByRole("button", { name: "Last 1 day" }).click()
+			},
+		}),
 		issues("loading", "loading (findings held)", held("codeReview.listFindings")),
-		issues("error", "findings failing", failing("codeReview.listFindings")),
+		issues("error", "findings failing", failing("codeReview.listFindings", "Failed to load issues")),
 		issues("repository", "filtered to one repository", {
 			steps: (page) => pick(page, "Repository", "acme-shop/payments"),
 		}),

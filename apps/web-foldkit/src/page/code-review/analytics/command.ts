@@ -1,3 +1,5 @@
+import { Mount } from "foldkit"
+import { autoRetryStream } from "../kit/auto-retry"
 import { CodeReviewAnalyticsQuery } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
@@ -13,4 +15,10 @@ export const FetchAnalytics = Command.define("FetchCodeReviewAnalytics", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchAnalytics({ key, result })),
 		),
+})
+
+/** `ErrorState`'s auto retry while a retryable failure is on screen. */
+export const MountAnalyticsAutoRetry = Mount.defineStream("MountAnalyticsAutoRetry", {
+	messages: [Message.ClickedRetry],
+	execute: () => autoRetryStream(() => Message.ClickedRetry()),
 })

@@ -18,6 +18,7 @@ import * as AlertsHub from "./alerts/hub"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
 import * as CodeReviewAnalytics from "./code-review/analytics"
+import * as CodeReviewCi from "./code-review/ci"
 import * as CodeReviewIssues from "./code-review/issues"
 import * as CodeReviewPullRequests from "./code-review/pull-requests"
 import * as ErrorsHub from "./errors/hub"
@@ -54,6 +55,7 @@ export const pages = [
 	CodeReviewAnalytics.page,
 	CodeReviewPullRequests.page,
 	CodeReviewIssues.page,
+	CodeReviewCi.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

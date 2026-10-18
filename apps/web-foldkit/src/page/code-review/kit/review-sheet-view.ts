@@ -1,3 +1,4 @@
+import { MountReviewAutoRetry } from "./review-sheet"
 import type { CodeReviewDetail } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import * as SheetStyles from "@maple/ui/styles/ui/sheet"
@@ -120,6 +121,7 @@ const body = (h: H, sheet: ReviewSheet, timeZone: string): ReadonlyArray<Html> =
 					failure,
 					title: "Failed to load the review",
 					onRetry: SheetMessage.ClickedRetry(),
+					autoRetry: h.OnMount(MountReviewAutoRetry()),
 				}),
 			]),
 		],

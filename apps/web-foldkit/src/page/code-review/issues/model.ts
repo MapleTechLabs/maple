@@ -1,3 +1,5 @@
+import { Mount } from "foldkit"
+import { autoRetryStream } from "../kit/auto-retry"
 import {
 	CodeReviewAnalytics,
 	CodeReviewAnalyticsQuery,
@@ -77,4 +79,10 @@ export const FetchFindingAuthors = Command.define("FetchCodeReviewFindingAuthors
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchAuthors({ key, result })),
 		),
+})
+
+/** `ErrorState`'s auto retry while a retryable failure is on screen. */
+export const MountFindingsAutoRetry = Mount.defineStream("MountFindingsAutoRetry", {
+	messages: [Message.ClickedRetry],
+	execute: () => autoRetryStream(() => Message.ClickedRetry()),
 })

@@ -1,3 +1,4 @@
+import { MountReviewsAutoRetry } from "./command"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -32,7 +33,12 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.reviews.data, {
 		onEmpty: () => skeletonList(h, { rows: 6, rowClassName: "h-14", gap: "2" }),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load reviews", onRetry: Message.ClickedRetry() }),
+			errorState(h, {
+				failure,
+				title: "Failed to load reviews",
+				onRetry: Message.ClickedRetry(),
+				autoRetry: h.OnMount(MountReviewsAutoRetry()),
+			}),
 		onData: (response) => {
 			if (response.reviews.length === 0) {
 				const filtered = isFiltered(model)

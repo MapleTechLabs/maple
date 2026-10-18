@@ -1,3 +1,4 @@
+import { MountFindingsAutoRetry } from "./model"
 import { PrReviewCategory, PrReviewFindingStatus, PrReviewSeverity } from "@maple/domain/http"
 import {
 	CATEGORY_LABELS,
@@ -102,7 +103,12 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.findings.data, {
 		onEmpty: () => skeletonList(h, { rows: 6, rowClassName: "h-16", gap: "2" }),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load issues", onRetry: Message.ClickedRetry() }),
+			errorState(h, {
+				failure,
+				title: "Failed to load issues",
+				onRetry: Message.ClickedRetry(),
+				autoRetry: h.OnMount(MountFindingsAutoRetry()),
+			}),
 		onData: (response) => {
 			if (response.findings.length === 0) {
 				const filtered = isFiltered(model)
