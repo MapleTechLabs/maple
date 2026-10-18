@@ -11,14 +11,13 @@ import {
 } from "@maple/web/components/releases/release-model"
 import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { panel, panelHeader } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
 import { truncatedText } from "../../../ui/truncated-text"
 import { serviceDot } from "../../../ui/values"
-import { RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL, releaseHealthFigure } from "../kit"
+import { RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL, releaseHealthFigure, releaseHref } from "../kit"
 import { MeasureReleasesTrack } from "./command"
 import type { Message } from "./message"
 
@@ -29,8 +28,6 @@ export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePr
 
 const MAX_SHOWN = 16
 
-const releaseHref = (commitSha: string, search: Readonly<Record<string, unknown>>) =>
-	hrefOf(AppRoute.Release({ commitSha, search }))
 
 export const liveNow = (h: H, live: ReadonlyArray<LiveVersion>, timeSearch: TimeSearch, environments: ReadonlyArray<string> | undefined): Html | null => {
 	if (live.length === 0) return null

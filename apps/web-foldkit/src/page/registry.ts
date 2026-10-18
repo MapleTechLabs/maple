@@ -51,6 +51,7 @@ import * as MetricsBrowse from "./metrics/browse"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as Recommendation from "./recommendations"
+import * as ReleaseDetail from "./releases/detail"
 import * as ReleasesList from "./releases/list"
 import * as ServiceDetail from "./services/detail"
 import * as ServiceMap from "./service-map"
@@ -106,6 +107,7 @@ export const pages = [
 	AnomaliesList.page,
 	AnomalyDetail.page,
 	ReleasesList.page,
+	ReleaseDetail.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

@@ -53,7 +53,16 @@ export const releasesArea: AreaModule = {
 			steps: act((page) => page.getByPlaceholder("Search service...").fill("pay")),
 		}),
 		release("list-service-filter", "Filtered to cart-svc", "/releases", { steps: act(checkBox("cart-svc")) }),
-		release("list-time-picker", "Time range picker open", "/releases", {
+		release("detail-loading", "Detail, releases held", `/releases/${SEEDED.paymentRelease}`, {
+			faults: { delays: { "queryEngine.releasesList": 60_000 } },
+			settle: "held",
+		}),
+		release("detail-error", "Detail, releases failing", `/releases/${SEEDED.paymentRelease}`, failing("queryEngine.releasesList")),
+		release("detail-no-traffic", "Detail, a sha with no traffic", `/releases/${"ab".repeat(20)}`),
+		release("detail-time-preset", "Detail, Last 1 month from the picker", `/releases/${SEEDED.paymentRelease}`, {
+			steps: act(clickButton("Last 7 days"), (page) => page.getByRole("dialog").getByRole("button", { name: "Last 1 month" }).click()),
+		}),
+		release("list-time-picker","Time range picker open", "/releases", {
 			steps: act(clickButton("Last 7 days")),
 		}),
 		release("list-time-preset", "Last 1 month from the picker", "/releases", {

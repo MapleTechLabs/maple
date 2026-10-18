@@ -13,14 +13,13 @@ import {
 } from "@maple/web/components/releases/release-model"
 import { tableCellStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AppRoute, hrefOf } from "../../../route"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
-import { commitAvatar, commitTrigger, isResolvableSha, firstLine, releaseHealthFigure, releaseHealthPill } from "../kit"
+import { commitAvatar, commitTrigger, isResolvableSha, firstLine, releaseHealthFigure, releaseHealthPill, releaseHref } from "../kit"
 import { MountReleasesTable } from "./command"
 import { Message } from "./message"
 import type { TimeSearch } from "./view-overview"
@@ -162,7 +161,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 		...input.timeSearch,
 	})
 	const href = (commitSha: string, service: string, environment: string) =>
-		hrefOf(AppRoute.Release({ commitSha, search: linkSearch(service, environment) }))
+		releaseHref(commitSha, linkSearch(service, environment))
 	const time = (value: string) =>
 		relativeTime(h, { value, nowMs: input.nowMs, timeZone: input.timeZone, variant: "orDate", tooltip: "title" })
 	const rows = input.groups.flatMap((group, index): ReadonlyArray<Html> => {

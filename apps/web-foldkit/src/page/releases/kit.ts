@@ -3,6 +3,7 @@ import { TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { ReleaseHealth } from "@maple/web/components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { AppRoute, hrefOf } from "../../route"
 import { badge } from "../../ui/display"
 
 // The React-free halves of components/releases/release-health.tsx and the commit helpers of
@@ -134,3 +135,25 @@ export const commitTrigger = <M>(h: HtmlBuilder<M>, sha: string, className: stri
 	isResolvableSha(sha)
 		? h.span([h.Class(cn("cursor-default", className)), h.DataAttribute("slot", "hover-card-trigger")], children)
 		: h.span([h.Class(className)], children)
+
+/**
+ * `<Link search={...}>` writes the query in the object's key order; `hrefOf` writes it in the
+ * schema's. Reorders `href`'s query to `keys` (the rest after), keeping each value's encoding.
+ */
+export const withQueryOrder = (href: string, keys: ReadonlyArray<string>): string => {
+	const [path, query] = href.split("?", 2)
+	if (query === undefined) return href
+	const pairs = query.split("&").map((pair) => [pair.split("=", 1)[0] ?? "", pair] as const)
+	const rank = (key: string) => {
+		const index = keys.indexOf(key)
+		return index === -1 ? keys.length : index
+	}
+	return `${path}?${pairs
+		.toSorted((a, b) => rank(a[0]) - rank(b[0]))
+		.map(([, pair]) => pair)
+		.join("&")}`
+}
+
+/** `<Link to="/releases/$commitSha" search={search}>`: the query in `search`'s key order. */
+export const releaseHref = (commitSha: string, search: Readonly<Record<string, unknown>>): string =>
+	withQueryOrder(hrefOf(AppRoute.Release({ commitSha, search })), Object.keys(search))
