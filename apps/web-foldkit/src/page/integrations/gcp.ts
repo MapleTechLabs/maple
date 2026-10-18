@@ -46,6 +46,10 @@ export const GcpCardModel = Schema.Struct({
 	copies: Schema.Record(Schema.String, CopyButton.Model),
 	/** `GcpConfigure`, null while closed. */
 	configure: Schema.NullOr(ConfigureModel),
+	/** Bumped on every open: a write's result only drives the wizard it was sent from. */
+	configureOpens: Schema.Number,
+	/** A create or save in flight outlives a close, so a reopened wizard cannot send a second. */
+	pendingWrite: Schema.NullOr(Schema.Literals(["create", "update"])),
 })
 export type GcpCardModel = typeof GcpCardModel.Type
 
@@ -66,6 +70,8 @@ export const initGcpCard = (): GcpCardModel => ({
 	dismissDialog: Dialog.init("gcp-dismiss-cleanup", "alert-dialog"),
 	copies: {},
 	configure: null,
+	configureOpens: 0,
+	pendingWrite: null,
 })
 
 /** What marks a log entry as forwarded by this integration (`GCP_LOG_SOURCE`). */

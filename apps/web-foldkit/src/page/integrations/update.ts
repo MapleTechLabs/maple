@@ -348,12 +348,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedGcpForwardOutput: () => Configure.clickedForwardOutput(model),
 		ClickedGcpUseOpenTelemetry: () => Configure.clickedUseOpenTelemetry(model),
 		ToggledGcpRuntime: ({ runtime }) => Configure.toggledRuntime(model, runtime),
-		CompletedGcpCreate: ({ connector, failure }) =>
-			Configure.completedCreate(model, context, connector, failure),
+		CompletedGcpCreate: ({ opens, connector, failure }) =>
+			Configure.completedCreate(model, context, opens, connector, failure),
 		ClickedGcpChooseApply: () => Configure.clickedChooseApply(model, context),
 		GotGcpConfirmDialogMessage: ({ message: child }) => Configure.gotConfirmDialog(model, child),
 		ConfirmedGcpSave: () => Configure.confirmedSave(model),
-		CompletedGcpUpdate: ({ flags, failure }) => Configure.completedUpdate(model, context, flags, failure),
+		CompletedGcpUpdate: ({ opens, flags, failure }) =>
+			Configure.completedUpdate(model, context, opens, flags, failure),
 		ClickedGcpRunEdit: () => Configure.clickedRunEdit(model),
 		CompletedGcpConfigureScripts: ({ key, result }) => Configure.completedScripts(model, key, result),
 		ClickedGcpConfigureScriptRetry: () => Configure.retriedScripts(model, context),

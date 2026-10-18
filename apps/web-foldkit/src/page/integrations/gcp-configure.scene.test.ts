@@ -110,7 +110,7 @@ describe("google cloud wizard: a new connection", () => {
 				setup_reported_at: null,
 			}),
 		)
-		const done = step(sent.model, Message.CompletedGcpCreate({ connector: created, failure: null }))
+		const done = step(sent.model, Message.CompletedGcpCreate({ opens: 1, connector: created, failure: null }))
 		expect(configureOf(done.model).target).toEqual({ _tag: "Connection", id: created.id, stage: "apply" })
 		expect(configureOf(done.model).opened?.rerun).toBe(false)
 		expect(names(done.commands)).toEqual(
@@ -118,11 +118,23 @@ describe("google cloud wizard: a new connection", () => {
 		)
 	})
 
+	test("a reopen mid-create sends no second create, and the late result leaves the new wizard", () => {
+		const scoped: ReadonlyArray<Message> = [...typed("scopeId", "acme-prod"), Message.SubmittedGcpScope()]
+		const sent = run(openNew(loaded([])), [...scoped, Message.SubmittedGcpCreate()])
+		const reopened = run(openNew(run(sent, [Message.ClosedGcpConfigure()])), scoped)
+		expect(names(step(reopened, Message.SubmittedGcpCreate()).commands)).toEqual([])
+		const created = Schema.decodeUnknownSync(V2GcpConnector)(connector({ id: createdId }))
+		const late = step(reopened, Message.CompletedGcpCreate({ opens: 1, connector: created, failure: null }))
+		expect(configureOf(late.model).target).toEqual({ _tag: "New" })
+		expect(configureOf(late.model).isCreating).toBe(false)
+		expect(names(late.commands)).toEqual(["LoadIntegrationsGcpStatus"])
+	})
+
 	test("a refused create keeps its message until the next edit", () => {
 		const data = run(openNew(loaded([])), [...typed("scopeId", "acme-prod"), Message.SubmittedGcpScope()])
 		const failed = run(data, [
 			Message.SubmittedGcpCreate(),
-			Message.CompletedGcpCreate({ connector: null, failure: toLoadFailure("nope") }),
+			Message.CompletedGcpCreate({ opens: 1, connector: null, failure: toLoadFailure("nope") }),
 		])
 		expect(configureOf(failed).isCreating).toBe(false)
 		expect(configureOf(failed).createError).not.toBeNull()
@@ -169,7 +181,7 @@ describe("google cloud wizard: a connection", () => {
 		const sent = run(metricsOff(), [Message.ClickedGcpChooseApply(), Message.ConfirmedGcpSave()])
 		const id = Schema.decodeUnknownSync(V2GcpConnector)(connector()).id
 		const flags = { logs_enabled: true, metrics_enabled: false }
-		const saved = step(sent, Message.CompletedGcpUpdate({ id, flags, failure: null }))
+		const saved = step(sent, Message.CompletedGcpUpdate({ opens: 1, id, flags, failure: null }))
 		expect(configureOf(saved.model).asked).toEqual(flags)
 		expect(configureOf(saved.model).opened?.rerun).toBe(false)
 		expect(names(saved.commands)).toEqual(expect.arrayContaining(["LoadIntegrationsGcpStatus"]))
@@ -187,6 +199,7 @@ describe("google cloud wizard: a connection", () => {
 		const failed = step(
 			sent,
 			Message.CompletedGcpUpdate({
+				opens: 1,
 				id,
 				flags: { logs_enabled: true, metrics_enabled: false },
 				failure: toLoadFailure("nope"),
