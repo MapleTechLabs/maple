@@ -1,5 +1,6 @@
 import type { Resources } from "./platform/resources"
 import * as Popover from "@maple/web-foldkit/ui/popover"
+import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import * as Toast from "@maple/web-foldkit/ui/toast"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
@@ -82,6 +83,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		ClickedToggleSidebar: () => toggleSidebar(model),
 		PressedSidebarShortcut: () => toggleSidebar(model),
 		CompletedSaveSidebarState: () => ({ model }),
+		GotInstallTabsMessage: ({ message: child }) => {
+			const next = Tabs.update(model.installTabs, child)
+			return {
+				model: { ...model, installTabs: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (tabs) => Message.GotInstallTabsMessage({ message: tabs })),
+			}
+		},
 		GotConnectMessage: ({ message: child }) => {
 			const next = Popover.update(model.connect, child)
 			return {

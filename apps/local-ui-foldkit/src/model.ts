@@ -1,4 +1,5 @@
 import * as Popover from "@maple/web-foldkit/ui/popover"
+import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import * as Toast from "@maple/web-foldkit/ui/toast"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
@@ -35,6 +36,8 @@ export const Model = Schema.Struct({
 	/** `ConnectButton`'s latch: loud until the first telemetry lands, quiet after. */
 	hasIngested: Schema.Boolean,
 	connect: Popover.Model,
+	/** `InstallCommands` on the disconnected screen. */
+	installTabs: Tabs.Model,
 	/** `useSignalPresence`'s shared query (`["local", "signal-presence"]`). */
 	presence: AsyncData.Schema(PresenceResult, LoadFailure).schema,
 	/** The connect popover's copy buttons. */

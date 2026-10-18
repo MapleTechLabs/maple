@@ -1,4 +1,5 @@
 import * as Popover from "@maple/web-foldkit/ui/popover"
+import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import * as Toast from "@maple/web-foldkit/ui/toast"
 import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
 import { Schema } from "effect"
@@ -23,6 +24,7 @@ export const Message = defineMessageUnion({
 	PressedSidebarShortcut: {},
 	CompletedSaveSidebarState: {},
 	GotConnectMessage: { message: Popover.Message },
+	GotInstallTabsMessage: { message: Tabs.Message },
 	ChangedColorScheme: { theme: Theme },
 	CompletedApplyTheme: {},
 	SucceededFetchSignalPresence: { result: PresenceResult },

@@ -1,5 +1,7 @@
 import type { Resources } from "./platform/resources"
 import * as Popover from "@maple/web-foldkit/ui/popover"
+import { INSTALL_METHODS } from "@maple/local-ui/lib/links"
+import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import * as Toast from "@maple/web-foldkit/ui/toast"
 import { Effect, Option, Schema } from "effect"
 import { AsyncData, type Runtime } from "foldkit"
@@ -51,6 +53,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		probe: { isInFlight: true, version: 0 },
 		hasIngested: false,
 		connect: Popover.init(CONNECT_POPOVER_ID, { side: "right", align: "end" }),
+		installTabs: Tabs.init({ idBase: 0, values: INSTALL_METHODS.map((method) => method.id), selected: INSTALL_METHODS[0]?.id ?? "" }),
 		presence: AsyncData.Idle(),
 		copies: {},
 		toasts: Toast.init("toasts"),
