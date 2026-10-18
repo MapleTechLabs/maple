@@ -6,6 +6,7 @@ import { ThemeColors } from "../../../charts/theme-colors"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import { DashboardWidgetSearch } from "../../../route/search"
+import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
@@ -16,6 +17,7 @@ import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 import { EditorState } from "./editor-state"
 import { RawSqlState } from "./raw-sql"
 import { MetricOptionSchema } from "./metric-option"
+import { Suggestion } from "./suggestions"
 
 // The widget editor (apps/web/src/routes/dashboards/$dashboardId_.widgets.$widgetId.tsx and
 // dashboard-builder/config/widget-query-builder-page.tsx).
@@ -72,6 +74,15 @@ export const Model = Schema.Struct({
 	metricKeysRequested: Schema.Array(Schema.String),
 	isAutocompleteActive: Schema.Boolean,
 	autocomplete: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), LoadFailure)),
+	/** `useFunnelSuggestions`: event names, page paths and facets, by lookup. */
+	suggestions: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Suggestion), LoadFailure)),
+	/** The step inputs' comboboxes, by id. */
+	stepCombos: Schema.Record(Schema.String, Combobox.Model),
+	/** The list column whose field input shows its suggestions. */
+	listFieldFocus: Schema.NullOr(Schema.Number),
+	/** The funnel or paths panel's own collapse toggle (`QueryPanelShell`'s state). */
+	isProductPanelCollapsed: Schema.Boolean,
+	breakdownAttribute: Schema.Struct({ isActive: Schema.Boolean, key: Schema.String }),
 	isSaving: Schema.Boolean,
 	/** The unsaved-changes confirmation (`useBlocker`). */
 	leaveDialog: Dialog.Model,

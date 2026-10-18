@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
+import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
@@ -13,6 +14,8 @@ import { AutocompleteLookup } from "../../kit/autocomplete-lookups"
 import { WidgetFailure } from "../kit/widget-data"
 import { LegendPosition, PointsMode } from "./editor-state"
 import { MetricOptionSchema } from "./metric-option"
+import { ProductEdit } from "./product-edit"
+import { Suggestion, SuggestionLookup } from "./suggestions"
 
 export const FormulaTextField = Schema.Literals(["expression", "legend"])
 export type FormulaTextField = typeof FormulaTextField.Type
@@ -77,6 +80,22 @@ export const Message = defineMessageUnion({
 	GotLeaveDialogMessage: { message: Dialog.Message },
 	ClickedDiscard: {},
 	FocusedQueryEditor: {},
+	/** An edit of the list, funnel or paths panel. */
+	ChangedProduct: { edit: ProductEdit },
+	/** A step's suggesting input (`SuggestingInput`), by combobox id. */
+	GotStepComboMessage: { id: Schema.String, message: Combobox.Message },
+	FocusedListField: { index: Schema.Number },
+	/** Enter in a where clause: swallowed, a where clause is single-line. */
+	PressedWhereEnter: {},
+	ToggledProductPanel: {},
+	BlurredListField: {},
+	/** The key typed under `BreakdownPicker`'s "Attribute..." mode. */
+	ChangedBreakdownAttribute: { value: Schema.String },
+	CompletedFetchSuggestions: {
+		key: Schema.String,
+		lookup: SuggestionLookup,
+		result: Schema.Result(Schema.Array(Suggestion), LoadFailure),
+	},
 	CompletedFetchMetricOptions: {
 		search: Schema.String,
 		result: Schema.Result(Schema.Array(MetricOptionSchema), LoadFailure),

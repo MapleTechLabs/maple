@@ -15,6 +15,23 @@ const fillNumber = (name: string, value: string) => async (page: Page) => {
 	await field.fill(value)
 }
 
+/** Types into a labelled field, then moves on so a suggestion list it opened closes. */
+const fillText = (label: string, value: string) => async (page: Page) => {
+	await page.getByRole("combobox", { name: label }).fill(value)
+	await page.keyboard.press("Escape")
+}
+
+const pickOption = (label: string, option: string) => async (page: Page) => {
+	await page.getByRole("combobox", { name: label }).first().click()
+	await page.getByRole("option", { name: option, exact: true }).click()
+}
+
+/**
+ * The paths panel and the funnel's product-event step editor crash legacy-head on render (Base UI
+ * error #28, a Field part outside its root), so they cannot be compared; Foldkit captures them alone.
+ */
+const foldkitOnly = (scenario: Scenario): Scenario => ({ ...scenario, targets: ["foldkit"] })
+
 export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 	dashboard("widget-stat", "Widget editor: a stat", editorOf("traces-stat")),
 	dashboard("widget-stat-sparkline", "Widget editor: a stat's sparkline turned on, then Apply", editorOf("traces-stat"), {
@@ -48,8 +65,8 @@ export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 		steps: act((page) => page.getByRole("tab", { name: "Raw SQL" }).click(), clickButton("Collapse SQL")),
 	}),
 	dashboard("widget-metric", "Widget editor: a metrics query and its metric picker", editorOf("cpu-line")),
-	// The list opens near the fold: legacy keeps the side it flipped to before the capture grows the
-	// viewport, foldkit re-places it below, so these two differ in the popup's position only.
+	// The list opens near the fold and flips above; the capture then grows the viewport, and the
+	// combobox keeps the flipped side (Base UI's `lazyFlip`).
 	dashboard("widget-metric-open", "Widget editor: the metric list open", editorOf("cpu-line"), {
 		steps: act((page) => page.getByPlaceholder("Search metrics...").click()),
 	}),
@@ -66,4 +83,50 @@ export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 	dashboard("widget-to-stat", "Widget editor: a chart switched to a stat, then Apply", throughput, {
 		steps: act(clickButton("Stat"), clickButton("Apply")),
 	}),
+	dashboard("widget-to-list", "Widget editor: a chart switched to a list, its config panel", throughput, {
+		steps: act(clickButton("List")),
+	}),
+	dashboard("widget-list-logs", "Widget editor: a list on logs with a column added, then Apply", throughput, {
+		steps: act(
+			clickButton("List"),
+			clickButton("Logs"),
+			clickButton("+ Column"),
+			(page) => page.getByPlaceholder("Header", { exact: true }).nth(4).fill("Trace"),
+			clickButton("Apply"),
+		),
+	}),
+	foldkitOnly(dashboard("widget-to-paths", "Widget editor: a chart switched to paths, its anchor panel", throughput, {
+		steps: act(clickButton("Paths")),
+	})),
+	foldkitOnly(dashboard("widget-paths-applied", "Widget editor: paths anchored on an event, looking back four steps, then Apply", throughput, {
+		steps: act(
+			clickButton("Paths"),
+			fillText("Step 1 event name", "checkout_started"),
+			clickButton("Before"),
+			(page) => page.getByRole("button", { name: "4", exact: true }).first().click(),
+			clickButton("Apply"),
+		),
+	})),
+	dashboard("widget-funnel", "Widget editor: a query-set funnel and its view settings", editorOf("traces-funnel")),
+	dashboard("widget-funnel-dropoff", "Widget editor: a funnel switched to drop-off, then Apply", editorOf("traces-funnel"), {
+		steps: act(clickButton("Drop-off"), clickButton("Conversion"), clickButton("Apply")),
+	}),
+	foldkitOnly(dashboard("widget-funnel-steps", "Widget editor: a funnel on product events, two steps", editorOf("traces-funnel"), {
+		steps: act(
+			pickOption("Query source", "Product events"),
+			fillText("Step 1 event name", "product_viewed"),
+			clickButton("Add step"),
+			fillText("Step 2 event name", "checkout_started"),
+			clickButton("Window"),
+		),
+	})),
+	foldkitOnly(dashboard("widget-funnel-steps-applied", "Widget editor: a product-event funnel, then Apply", editorOf("traces-funnel"), {
+		steps: act(
+			pickOption("Query source", "Product events"),
+			fillText("Step 1 event name", "product_viewed"),
+			clickButton("Add step"),
+			fillText("Step 2 event name", "checkout_started"),
+			clickButton("Apply"),
+		),
+	})),
 ]

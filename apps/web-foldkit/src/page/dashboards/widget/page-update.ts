@@ -16,7 +16,9 @@ import {
 	setPanelType,
 } from "./edits"
 import type { EditorState } from "./editor-state"
-import { isNote, isBuilderPanel, validationErrorOf } from "./lowering"
+import { validationErrorOf } from "./lowering"
+import { ProductEdit } from "./product-edit"
+import { applyEdit, stepComboStep } from "./product-step"
 import { rawSqlErrorOf, reseedForType } from "./raw-sql"
 import { withDefaultMetric } from "./metric-options"
 import { runSqlPreview, sqlStep } from "./sql-step"
@@ -46,6 +48,9 @@ import {
 	runPreview,
 	widgetOf,
 } from "./update"
+
+/** `emitAttribute`: only a non-empty key becomes a breakdown. */
+const breakdownValueOf = (key: string): string | null => (key.trim() === "" ? null : `attribute:${key.trim()}`)
 
 const timePickerStep = (model: Model, context: PageContext, message: TimeRangePicker.Message): Return => {
 	const next = TimeRangePicker.update(model.timePicker, message)
@@ -99,8 +104,6 @@ const sortStep = (model: Model, field: string, isText: boolean): Return => {
 const apply = (model: Model, context: PageContext): Return => {
 	const widget = widgetOf(model)
 	if (model.isSaving || widget === null || model.state === null) return { model }
-	// TODO(widget-editor): list, funnel and paths cannot be configured yet; Apply stays a no-op.
-	if (!isNote(model.state) && !isBuilderPanel(model.state)) return { model }
 	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
 	if (rawSql === null ? validationErrorOf(model.state) !== null : rawSqlErrorOf(rawSql) !== null) return { model }
 	return {
@@ -117,6 +120,21 @@ const apply = (model: Model, context: PageContext): Return => {
 
 const edit = (model: Model, context: PageContext, change: (state: EditorState) => EditorState): Return =>
 	editState(model, context, change)
+
+const productEdit = (model: Model, context: PageContext, change: ProductEdit): Return =>
+	planPreview(applyEdit(model, change), context)
+
+const acceptSuggestions = (model: Model, message: Message & { _tag: "CompletedFetchSuggestions" }): Return => {
+	const slot = model.suggestions[message.lookup]
+	return slot === undefined
+		? { model }
+		: {
+				model: {
+					...model,
+					suggestions: { ...model.suggestions, [message.lookup]: Keyed.accept(slot, message.key, message.result) },
+				},
+			}
+}
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -276,6 +294,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
+		ChangedProduct: ({ edit: change }) => productEdit(model, context, change),
+		GotStepComboMessage: ({ id, message: inner }) => stepComboStep(model, context, id, inner, productEdit),
+		FocusedListField: ({ index }) => ({ model: { ...model, listFieldFocus: index } }),
+		BlurredListField: () => ({ model: { ...model, listFieldFocus: null } }),
+		PressedWhereEnter: () => ({ model }),
+		ToggledProductPanel: () => ({ model: { ...model, isProductPanelCollapsed: !model.isProductPanelCollapsed } }),
+		ChangedBreakdownAttribute: ({ value }) =>
+			productEdit(
+				{ ...model, breakdownAttribute: { isActive: true, key: value } },
+				context,
+				ProductEdit.SetBreakdown({ value: breakdownValueOf(value) }),
+			),
+		CompletedFetchSuggestions: (fetched) => acceptSuggestions(model, fetched),
 		FocusedQueryEditor: () =>
 			model.isAutocompleteActive
 				? { model }

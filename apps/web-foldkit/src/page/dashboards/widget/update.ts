@@ -26,6 +26,7 @@ import type { EditorState } from "./editor-state"
 import { buildDataSource, buildDisplay, toInitialState, validationErrorOf, type Widget } from "./lowering"
 import { initRawSql, type RawSqlDraft, rawSqlDataSourceOf } from "./raw-sql"
 import { askMetricOptions } from "./metric-options"
+import { eventNamesKeyOf, requestSuggestions } from "./product-step"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -71,6 +72,11 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		metricKeysRequested: [],
 		isAutocompleteActive: false,
 		autocomplete: {},
+		suggestions: {},
+		stepCombos: {},
+		listFieldFocus: null,
+		isProductPanelCollapsed: false,
+		breakdownAttribute: { isActive: false, key: "" },
 		isSaving: false,
 		leaveDialog: Dialog.init("widget-editor-leave-dialog", "alert-dialog"),
 	},
@@ -116,6 +122,9 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 		seriesStatsEnabled: state.seriesStatsEnabled,
 		pointsMode: state.pointsMode,
 		markdownContent: state.markdownContent,
+		// The funnel's view and step labels are presentation too; its steps stay staged.
+		funnel: { ...model.staged.funnel, variant: state.funnel.variant, showStepPercent: state.funnel.showStepPercent },
+		queries: listPreviewQueries(model.staged.queries, state, model.staged, widget),
 	}
 	return {
 		...widget,
@@ -130,14 +139,36 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 	}
 }
 
-/** The preview's request against the board's window; a key already held is not asked again. */
+/** FNV-1a over a string: a short, pure revision tag. */
+const revisionOf = (text: string): string =>
+	Array.from(text)
+		.reduce((hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261)
+		.toString(36)
+
+/**
+ * Legacy's list builds its engine query from a fresh `createQueryDraft(0)` each time the preview
+ * recomputes (any edit, or the stored widget changing), so each recompute is a new request.
+ */
+const listPreviewQueries = (
+	queries: EditorState["queries"],
+	state: EditorState,
+	staged: EditorState,
+	widget: Widget,
+): EditorState["queries"] => {
+	const [first, ...rest] = queries
+	if (state.visualization !== "list" || first === undefined) return queries
+	return [{ ...first, id: `${first.id}:${revisionOf(JSON.stringify([state, staged, widget]))}` }, ...rest]
+}
+
 /** The preview's requests, and the metric list while a query reads metrics. */
 export const planPreview = (model: Model, context: PageContext): Return => {
 	const metrics = askMetricOptions(model)
 	const planned = planWidgetPreview(metrics.model, context)
-	return metrics.commands.length === 0
-		? planned
-		: { ...planned, commands: [...metrics.commands, ...(planned.commands ?? [])] }
+	const suggested = requestSuggestions(planned.model, context)
+	return {
+		model: suggested.model,
+		commands: [...metrics.commands, ...(planned.commands ?? []), ...(suggested.commands ?? [])],
+	}
 }
 
 const planWidgetPreview = (model: Model, context: PageContext): Return => {
@@ -322,6 +353,9 @@ export const requestAutocomplete = (model: Model, context: PageContext): Return 
 	const range = { startTime: window.startTime, endTime: window.endTime }
 	return AUTOCOMPLETE_LOOKUPS.reduce<Return>(
 		(step, lookup) => {
+			// The suggestions already asked for these names over this window: legacy reads one atom.
+			if (lookup === "productEventNames" && step.model.suggestions.eventNames?.key === eventNamesKeyOf(context.orgId, range))
+				return step
 			const key = requestKey(context.orgId, `autocomplete.${lookup}`, range)
 			return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {
 				onNone: () => step,

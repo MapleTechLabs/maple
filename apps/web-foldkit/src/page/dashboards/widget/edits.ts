@@ -36,7 +36,9 @@ export const setDataSource = (
 	queryId: string,
 	dataSource: QueryBuilderDataSource,
 ): EditorState =>
-	withInferredUnit(updateQuery(state, queryId, (query) => resetQueryForDataSource(query, dataSource)))
+	reconcileFunnelSource(
+		withInferredUnit(updateQuery(state, queryId, (query) => resetQueryForDataSource(query, dataSource))),
+	)
 
 /** `addQuery`: a default draft under the next letter. */
 export const addQuery = (state: EditorState, id: string): EditorState => ({
@@ -91,8 +93,41 @@ export const removeFormula = (state: EditorState, formulaId: string): EditorStat
 
 export { withRootOnly } from "../../kit/query-builder/change"
 
+/**
+ * `reconcileFunnelSource` (funnel-source.ts): on a funnel, a product-event query A means the step
+ * editor; leaving the funnel type turns those steps back into a product-event count query.
+ */
+export const reconcileFunnelSource = (state: EditorState): EditorState => {
+	const first = state.queries[0]
+	if (state.visualization === "funnel") {
+		if (first?.dataSource !== "product_events")
+			return state.funnel.source === "product_events"
+				? { ...state, funnel: { ...state.funnel, source: "query_set" } }
+				: state
+		if (state.funnel.source === "product_events") return state
+		return {
+			...state,
+			funnel: {
+				...state.funnel,
+				source: "product_events",
+				steps: state.funnel.steps.length > 0 ? state.funnel.steps : [{ kind: "event", eventName: "" }],
+			},
+		}
+	}
+	if (state.funnel.source !== "product_events") return state
+	return {
+		...state,
+		funnel: { ...state.funnel, source: "query_set" },
+		queries: state.queries.map((query, index) =>
+			index === 0 && query.dataSource !== "product_events"
+				? resetQueryForDataSource(query, "product_events")
+				: query,
+		),
+	}
+}
+
 /** `TypePicker`: the panel's persisted pair, keeping a chart id already of that panel. */
 export const setPanelType = (state: EditorState, panel: PanelType): EditorState => {
 	const { visualization, chartId } = fromPanelType(panel, state.chartId)
-	return { ...state, visualization, chartId: chartId ?? state.chartId }
+	return reconcileFunnelSource({ ...state, visualization, chartId: chartId ?? state.chartId })
 }

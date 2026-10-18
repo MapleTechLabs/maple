@@ -4,6 +4,7 @@ import { input } from "../../../ui/input"
 import { toSeriesFieldOptions } from "./drafts"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
+import { ProductEdit } from "./product-edit"
 import type { Model } from "./model"
 import { checkboxRow, divider, legendField, queryOptions, railSetting, segments, unitField } from "./view-rail"
 import { thresholds } from "./view-rail-thresholds"
@@ -133,6 +134,39 @@ const heatmapColors = (h: H, model: Model, state: EditorState): ReadonlyArray<Ht
 	]),
 ]
 
+const product = (edit: ProductEdit): Message => Message.ChangedProduct({ edit })
+
+/** `FunnelVariant`: bars, or the step-by-step drop-off view. */
+const funnelVariant = (h: H, state: EditorState): Html =>
+	railSetting(h, "funnel-variant", "View", false, [
+		segments(
+			h,
+			state.funnel.variant,
+			[
+				{ value: "bars", label: "Bars" },
+				{ value: "dropoff", label: "Drop-off" },
+			],
+			(variant) => product(ProductEdit.SetFunnelVariant({ variant })),
+		),
+	])
+
+/** `FunnelStepPercent`: the chart's tri-state label mode. */
+const funnelStepPercent = (h: H, state: EditorState): Html => {
+	const value = state.funnel.showStepPercent
+	return railSetting(h, "funnel-step-percent", "Step labels", false, [
+		segments(
+			h,
+			value === null ? "auto" : value ? "conversion" : "off",
+			[
+				{ value: "auto", label: "Auto" },
+				{ value: "conversion", label: "Conversion" },
+				{ value: "off", label: "Off" },
+			],
+			(next) => product(ProductEdit.SetFunnelStepPercent({ value: next })),
+		),
+	])
+}
+
 /** The `ConfigPanel` of a panel type other than line, bar and area. */
 export const typeSettings = (h: H, model: Model, state: EditorState, panel: PanelType): ReadonlyArray<Html> => {
 	switch (panel) {
@@ -163,6 +197,10 @@ export const typeSettings = (h: H, model: Model, state: EditorState, panel: Pane
 		case "hbar":
 		case "histogram":
 			return queryOptions(h, model, state)
+		case "funnel":
+			return [divider(h), funnelVariant(h, state), funnelStepPercent(h, state), ...queryOptions(h, model, state)]
+		case "paths":
+			return [divider(h), ...queryOptions(h, model, state)]
 		default:
 			return []
 	}

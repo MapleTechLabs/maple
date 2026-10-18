@@ -5,13 +5,21 @@ import {
 	TimeRangeSchema,
 	WIDGET_VISUALIZATIONS,
 } from "@maple/domain/http"
-import { QUERY_COMPARISON_MODES } from "@maple/query-model"
+import {
+	FunnelBreakdownBy,
+	FunnelKeyBy,
+	FunnelPageStep,
+	FunnelSessionStep,
+	FunnelVariant,
+	PathsDirection,
+	PathsInclude,
+	QUERY_COMPARISON_MODES,
+} from "@maple/query-model"
 import { Schema } from "effect"
 import { QueryDraft } from "../../kit/query-builder/draft"
 
 // The widget editor's state (`QueryBuilderWidgetState`, apps/web/src/lib/query-builder/
-// widget-builder-shared.ts), cut to what the query-builder panels and notes read.
-// TODO(widget-editor): the list, funnel and paths fields.
+// widget-builder-shared.ts).
 
 export { QueryDraft } from "../../kit/query-builder/draft"
 
@@ -32,6 +40,72 @@ export const PointsMode = Schema.Literals(["auto", "always", "never"])
 export type PointsMode = typeof PointsMode.Type
 
 export const Threshold = Schema.Struct({ value: Schema.Number, color: Schema.String })
+
+/** `ListColumnDraft` (list-widget-config.ts). */
+export const ListColumn = Schema.Struct({
+	field: Schema.String,
+	header: Schema.String,
+	unit: Schema.optionalKey(Schema.String),
+	align: Schema.optionalKey(Schema.Literals(["left", "center", "right"])),
+})
+export type ListColumn = typeof ListColumn.Type
+
+export const ListDataSource = Schema.Literals(["traces", "logs", "product_events"])
+export type ListDataSource = typeof ListDataSource.Type
+
+/** `FunnelStepDraft` (funnel-filters.ts): the wire step plus an event step's filter as typed. */
+export const StepDraft = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("event"),
+		eventName: Schema.String,
+		attributeEquals: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+		filterClause: Schema.optionalKey(Schema.String),
+	}),
+	FunnelPageStep,
+	FunnelSessionStep,
+])
+export type StepDraft = typeof StepDraft.Type
+
+export const FunnelAddOns = Schema.Struct({ keyBy: Schema.Boolean, window: Schema.Boolean, breakdown: Schema.Boolean })
+export type FunnelAddOnKey = keyof typeof FunnelAddOns.Type
+
+/** `FunnelWidgetDraft`. */
+export const FunnelDraft = Schema.Struct({
+	source: Schema.Literals(["product_events", "query_set"]),
+	steps: Schema.Array(StepDraft),
+	keyBy: FunnelKeyBy,
+	windowSeconds: Schema.Number,
+	breakdownBy: Schema.optionalKey(FunnelBreakdownBy),
+	filterClause: Schema.String,
+	/** `undefined` in legacy: Auto. */
+	showStepPercent: Schema.NullOr(Schema.Boolean),
+	variant: FunnelVariant,
+	addOns: FunnelAddOns,
+})
+export type FunnelDraft = typeof FunnelDraft.Type
+
+export const PathsAddOns = Schema.Struct({
+	keyBy: Schema.Boolean,
+	window: Schema.Boolean,
+	include: Schema.Boolean,
+	exclude: Schema.Boolean,
+})
+export type PathsAddOnKey = keyof typeof PathsAddOns.Type
+
+/** `PathsWidgetDraft`. */
+export const PathsDraft = Schema.Struct({
+	anchor: StepDraft,
+	direction: PathsDirection,
+	depth: Schema.Number,
+	branches: Schema.Number,
+	keyBy: FunnelKeyBy,
+	windowSeconds: Schema.Number,
+	include: PathsInclude,
+	excludeText: Schema.String,
+	filterClause: Schema.String,
+	addOns: PathsAddOns,
+})
+export type PathsDraft = typeof PathsDraft.Type
 
 export const EditorState = Schema.Struct({
 	visualization: Schema.Literals(WIDGET_VISUALIZATIONS),
@@ -63,6 +137,13 @@ export const EditorState = Schema.Struct({
 	heatmapScaleType: Schema.Literals(HEATMAP_SCALE_TYPES),
 	/** A note's body; static, it never reaches the warehouse. */
 	markdownContent: Schema.String,
+	listDataSource: ListDataSource,
+	listWhereClause: Schema.String,
+	listLimit: Schema.String,
+	listColumns: Schema.Array(ListColumn),
+	listRootOnly: Schema.Boolean,
+	funnel: FunnelDraft,
+	paths: PathsDraft,
 })
 export type EditorState = typeof EditorState.Type
 
