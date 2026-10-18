@@ -22,6 +22,7 @@ import { label } from "../../../ui/label"
 import { detectLookup } from "../kit/detected-models"
 import { modelVendorColor, modelVendorIcon, vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
 import { hasFilters, RANGE_PARAMS } from "./derive"
+import { MountFilterRail } from "./command"
 import { type ListFacet, Message } from "./message"
 import type { Distributions, Facets, Model, RangeKey } from "./model"
 import { RANGE_UNITS } from "./update"
@@ -250,9 +251,15 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 	])
 }
 
+/** `AgentSessionsFilterSidebar`; its Mount starts the rail's model detection. */
 export const filtersRail = (h: H, model: Model): Html =>
-	AsyncData.matchData(model.facets.data, {
-		onEmpty: () => filterSidebarLoading(h, 4),
-		onFailure: (failure) => filterSidebarError(h, failure),
-		onData: (facets) => loadedRail(h, model, facets),
-	})
+	h.div(
+		[h.Class("contents"), h.OnMount(MountFilterRail())],
+		[
+			AsyncData.matchData(model.facets.data, {
+				onEmpty: () => filterSidebarLoading(h, 4),
+				onFailure: (failure) => filterSidebarError(h, failure),
+				onData: (facets) => loadedRail(h, model, facets),
+			}),
+		],
+	)

@@ -14,7 +14,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { LoadSignalPresence, MountEmptyState, MountTable, VirtualizeSessions } from "./command"
+import { LoadSignalPresence, MountEmptyState, MountFilterRail, MountTable, VirtualizeSessions } from "./command"
 import { Message } from "./message"
 import type { Facets, Model, SessionRow } from "./model"
 import { init, update } from "./update"
@@ -70,9 +70,10 @@ const facets: Facets = {
 	tools: [],
 }
 
+/** Entered with the rail mounted (it renders with the page), then windowed. */
 const windowed = (search: Model["search"] = {}): Model =>
 	pageUpdate(
-		init({ search }, context).model,
+		pageUpdate(init({ search }, context).model, Message.MountedFilterRail()).model,
 		Message.CompletedResolveWindow({ window, tabWindow: window, nowMs: NOW, mode: "Load" }),
 	).model
 
@@ -93,13 +94,15 @@ const painted = (rows: ReadonlyArray<SessionRow>): Model =>
 	pageUpdate(loaded(rows), Message.PaintedTable()).model
 
 describe("agent sessions list", () => {
-	test("entry detects the rail's empty model set, then the week's reads go out under their keys", () => {
+	test("the rail detects its empty model set as it mounts, then the week's reads go out under their keys", () => {
 		const entered = init({ search: {} }, context)
 		expect(names(entered.commands)).toEqual([
 			"ResolveAgentSessionsWindow",
-			"DetectAgentSessionsModels",
 			"ReadRememberedFilterSections",
 		])
+		const mounted = pageUpdate(entered.model, Message.MountedFilterRail())
+		expect(names(mounted.commands)).toEqual(["DetectAgentSessionsModels"])
+		expect(names(pageUpdate(mounted.model, Message.MountedFilterRail()).commands)).toEqual([])
 		const resolved = pageUpdate(
 			entered.model,
 			Message.CompletedResolveWindow({ window, tabWindow: window, nowMs: NOW, mode: "Load" }),
@@ -168,6 +171,7 @@ describe("agent sessions list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(painted([session("conv_a")])),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
 			expectView(role("table", { name: "Agent sessions" })).toExist(),
@@ -186,6 +190,7 @@ describe("agent sessions list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(painted([session("conv_a")])),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
 			click(role("checkbox", { name: "support-triage" })),
@@ -203,6 +208,7 @@ describe("agent sessions list", () => {
 			{ update: pageUpdate, view },
 			given(loaded([])),
 			expectView(text("No agent sessions found")).toExist(),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
 			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
 			Command.resolve(
 				LoadSignalPresence,
