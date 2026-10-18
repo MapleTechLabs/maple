@@ -11,7 +11,8 @@ import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
 import { Clock, Duration, Effect, Predicate, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
-import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
+import { readCommitDetail } from "../../kit/commit-card"
+import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message, RequestMode } from "./message"
 
 const Names = Schema.optional(Schema.Array(Schema.String))
@@ -215,12 +216,11 @@ const errorTag = (error: unknown): string =>
 
 /** `commitQueryAtom(sha)`: one commit, its failure kept by tag (not-connected gets a CTA). */
 export const FetchCommit = Command.define("FetchServiceDeployCommit", {
-	args: { sha: Schema.String },
+	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchCommit],
-	execute: ({ sha }) =>
+	execute: ({ key, sha }) =>
 		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			const commit = yield* client.integrations.vcsCommitDetail({ params: { sha } })
+			const commit = yield* readCommitDetail(key, sha)
 			return {
 				sha: commit.sha,
 				message: commit.message,

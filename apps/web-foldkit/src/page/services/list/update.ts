@@ -3,6 +3,7 @@ import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
+import { commitDetailsKey } from "../../kit/commit-card"
 import { resolveWindow, type TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import * as FilterSections from "../../../ui/filters/filter-sections"
@@ -180,15 +181,11 @@ const followData =
 			shas === ""
 				? Option.none()
 				: Option.map(
-						Keyed.request(
-							model.commitMessages,
-							requestKey(context.orgId, "vcsCommitDetails", shas),
-							"Load",
-						),
+						Keyed.request(model.commitMessages, commitDetailsKey(context.orgId, shas), "Load"),
 						(commitMessages) => ({
 							patch: { commitMessages },
 							command: FetchCommitMessages({
-								key: requestKey(context.orgId, "vcsCommitDetails", shas),
+								key: commitDetailsKey(context.orgId, shas),
 								shas,
 							}),
 						}),
@@ -479,7 +476,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotSparklineMessage: () => ({ model }),
 		GotRowTooltipMessage: ({ tooltip, message }) => rowTooltipMessage(model, tooltip, message),
 		GotCommitCardMessage: ({ message }) => commitCardMessage(model, message),
-		ElapsedCommitArm: ({ sha, generation }) => elapsedCommitArm(model, sha, generation),
+		ElapsedCommitArm: ({ sha, generation }) => elapsedCommitArm(model, context.orgId, sha, generation),
 		CompletedFetchCommitDetail: ({ sha, result }) => completedCommitDetail(model, sha, result),
 		ClickedCopyCommitSha: ({ sha, serviceName, environment }) =>
 			clickedCopySha(model, sha, serviceHref(model, serviceName, environment)),

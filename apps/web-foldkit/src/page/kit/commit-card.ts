@@ -5,6 +5,10 @@ import { copyableBadgeStyles } from "@maple/ui/styles/ui/copyable-badge"
 import { Effect, Predicate, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { VcsCommitDetailResponse, VcsCommitDetailsResponse } from "@maple/domain/http"
+import { IdleTtl } from "../../data/idle-ttl"
+import { ReadCache } from "../../data/read-cache"
+import { requestKey, type RequestKey } from "../../data/request-key"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { skeleton } from "../../ui/skeleton"
 import { relativeTime } from "./relative-time"
@@ -41,11 +45,40 @@ export type CommitDetailData = AsyncData.AsyncData<CommitDetail, CommitFailure>
 const errorTag = (error: unknown): string =>
 	Predicate.hasProperty(error, "_tag") && typeof error._tag === "string" ? error._tag : ""
 
-/** `commitQueryAtom(sha)`: `integrations.vcsCommitDetail`. */
-export const loadCommitDetail = (sha: string) =>
+/** `commitQueryAtom(sha)`'s identity: every page reading one commit shares its read. */
+export const commitDetailKey = (orgId: string, sha: string): RequestKey =>
+	requestKey(orgId, "vcsCommitDetail", { sha })
+
+/** `commitsQueryAtom(shasKey)`'s identity (`commitsQueryKey`: deduped, sorted, comma-joined). */
+export const commitDetailsKey = (orgId: string, shasKey: string): RequestKey =>
+	requestKey(orgId, "vcsCommitDetails", { shas: shasKey })
+
+/** `integrations.vcsCommitDetail` through the read cache, under `commitDetailKey`. */
+export const readCommitDetail = (key: RequestKey, sha: string) =>
 	Effect.gen(function* () {
+		const cache = yield* ReadCache
 		const client = yield* MapleInternalApiClient
-		const commit = yield* client.integrations.vcsCommitDetail({ params: { sha } })
+		return yield* cache.read(
+			{ key, idleTtlMs: IdleTtl.commitDetail, schema: VcsCommitDetailResponse },
+			client.integrations.vcsCommitDetail({ params: { sha } }),
+		)
+	})
+
+/** `integrations.vcsCommitDetails` through the read cache, under `commitDetailsKey`. */
+export const readCommitDetails = (key: RequestKey, shas: string, refresh = false) =>
+	Effect.gen(function* () {
+		const cache = yield* ReadCache
+		const client = yield* MapleInternalApiClient
+		return yield* cache.read(
+			{ key, idleTtlMs: IdleTtl.commitDetail, schema: VcsCommitDetailsResponse, refresh },
+			client.integrations.vcsCommitDetails({ query: { shas } }),
+		)
+	})
+
+/** `commitQueryAtom(sha)` as the hover card reads it. */
+export const loadCommitDetail = (key: RequestKey, sha: string) =>
+	Effect.gen(function* () {
+		const commit = yield* readCommitDetail(key, sha)
 		return {
 			provider: commit.provider,
 			sha: commit.sha,

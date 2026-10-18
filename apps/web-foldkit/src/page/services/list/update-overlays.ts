@@ -4,7 +4,7 @@ import * as CopyButton from "../../../ui/copy-button"
 import * as HoverCard from "../../../ui/hover-card"
 import * as Tooltip from "../../../ui/tooltip"
 import { PageOutMessage, type PageReturn } from "../../contract"
-import { type CommitDetail, type CommitFailure, OPEN_DELAY_MS } from "../../kit/commit-card"
+import { type CommitDetail, type CommitFailure, commitDetailKey, OPEN_DELAY_MS } from "../../kit/commit-card"
 import { ArmCommitLookup, FetchCommitDetail } from "./command"
 import { Message, type RowTooltip } from "./message"
 import type { Model } from "./model"
@@ -72,12 +72,12 @@ export const commitCardMessage = (model: Model, message: HoverCard.Message): Ret
 }
 
 /** Once armed it stays armed: the lookup survives the pointer leaving. */
-export const elapsedCommitArm = (model: Model, sha: string, generation: number): Return =>
+export const elapsedCommitArm = (model: Model, orgId: string, sha: string, generation: number): Return =>
 	generation !== model.commitArm || model.commitDetails[sha] !== undefined
 		? { model }
 		: {
 				model: { ...model, commitDetails: { ...model.commitDetails, [sha]: AsyncData.Loading() } },
-				commands: [FetchCommitDetail({ sha })],
+				commands: [FetchCommitDetail({ key: commitDetailKey(orgId, sha), sha })],
 			}
 
 export const completedCommitDetail = (

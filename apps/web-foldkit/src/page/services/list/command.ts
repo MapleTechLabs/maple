@@ -6,14 +6,16 @@ import {
 } from "@maple/web-data/warehouse/services"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
+import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "../../../data/load-failure"
+import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
-import { MapleInternalApiClient } from "../../../platform/api-clients"
-import { ARM_DELAY_MS, loadCommitDetail } from "../../kit/commit-card"
+import { ARM_DELAY_MS, loadCommitDetail, readCommitDetails } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
-import { AnomalyServiceCounts } from "../../../data/anomaly-service-counts"
-import { ServicesFacetsProbe } from "../../../data/services-facets-probe"
+import { loadAnomalyServiceCounts } from "../../../data/anomaly-service-counts"
+import { loadServicesFacets } from "../../../data/services-facets-probe"
 import { Message, RequestMode } from "./message"
+import { ServiceRow, Sparklines } from "./model"
 
 /** The overview, sparklines and baseline input: the window plus the URL filters, pin applied. */
 export const OverviewInput = Schema.Struct({
@@ -68,8 +70,10 @@ export const FetchOverview = Command.define("FetchServiceOverview", {
 	args: { key: Schema.String, input: OverviewInput },
 	messages: [Message.CompletedFetchOverview],
 	execute: ({ key, input }) =>
-		getServiceOverview({ data: toWarehouseInput(input) }).pipe(
-			Effect.map((response) => response.data),
+		readThrough(
+			{ key, idleTtlMs: IdleTtl.serviceOverview, schema: Schema.Array(ServiceRow) },
+			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) => response.data),
+		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
@@ -80,8 +84,9 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 	args: { key: Schema.String, input: OverviewInput },
 	messages: [Message.CompletedFetchSparklines],
 	execute: ({ key, input }) =>
-		getCustomChartServiceSparklines({ data: toWarehouseInput(input) }).pipe(
-			Effect.map((response) =>
+		readThrough(
+			{ key, idleTtlMs: IdleTtl.serviceSparklines, schema: Sparklines },
+			Effect.map(getCustomChartServiceSparklines({ data: toWarehouseInput(input) }), (response) =>
 				Object.fromEntries(
 					Object.entries(response.data).map(([service, points]) => [
 						service,
@@ -92,6 +97,7 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 					]),
 				),
 			),
+		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSparklines({ key, result })),
@@ -103,10 +109,7 @@ export const FetchFacets = Command.define("FetchServicesFacets", {
 	args: { key: Schema.String, window: TimeWindow, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
-		Effect.gen(function* () {
-			const probe = yield* ServicesFacetsProbe
-			return yield* probe.load(window, { refresh })
-		}).pipe(
+		loadServicesFacets(window, { refresh, key }).pipe(
 			Effect.map(({ data }) => ({
 				environments: data.environments,
 				namespaces: data.namespaces,
@@ -149,10 +152,7 @@ export const FetchAnomalies = Command.define("FetchOpenAnomalyServiceCounts", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchAnomalies],
 	execute: ({ key }) =>
-		Effect.gen(function* () {
-			const counts = yield* AnomalyServiceCounts
-			return yield* counts.load()
-		}).pipe(
+		loadAnomalyServiceCounts(key).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchAnomalies({ key, result })),
@@ -165,8 +165,7 @@ export const FetchCommitMessages = Command.define("FetchCommitMessages", {
 	messages: [Message.CompletedFetchCommitMessages],
 	execute: ({ key, shas }) =>
 		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			const response = yield* client.integrations.vcsCommitDetails({ query: { shas } })
+			const response = yield* readCommitDetails(key, shas)
 			return Object.fromEntries(
 				response.commits.map((commit) => [commit.sha, firstLine(commit.message)]),
 			)
@@ -187,10 +186,12 @@ export const ArmCommitLookup = Command.define("ArmServicesCommitLookup", {
 
 /** `commitQueryAtom(sha)`, for the hover card. */
 export const FetchCommitDetail = Command.define("FetchServicesCommitDetail", {
-	args: { sha: Schema.String },
+	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchCommitDetail],
-	execute: ({ sha }) =>
-		Effect.map(loadCommitDetail(sha), (result) => Message.CompletedFetchCommitDetail({ sha, result })),
+	execute: ({ key, sha }) =>
+		Effect.map(loadCommitDetail(key, sha), (result) =>
+			Message.CompletedFetchCommitDetail({ sha, result }),
+		),
 })
 
 // copied: `firstLine` (commit-sha-hover-card.tsx, a React module).

@@ -5,6 +5,7 @@ import { AsyncData, Command } from "foldkit"
 import { ChartRuntime, LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
+import { commitDetailKey } from "../../kit/commit-card"
 import type { Resources } from "../../../platform/resources"
 import type { PageContext, PageReturn } from "../../contract"
 import { commitMarkers, markerShas } from "../../services/detail/derive-markers"
@@ -176,7 +177,7 @@ export const followLoaded = (
 		[
 			...Option.match(issues, { onNone: () => [], onSome: ({ command }) => [command] }),
 			...Option.match(changeset, { onNone: () => [], onSome: ({ command }) => [command] }),
-			...shas.map((sha) => FetchMarkerCommit({ sha })),
+			...shas.map((sha) => FetchMarkerCommit({ key: commitDetailKey(context.orgId, sha), sha })),
 		],
 	)
 }
