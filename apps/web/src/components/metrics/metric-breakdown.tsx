@@ -22,6 +22,8 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { MetricsQueryDraft } from "@maple/query-engine/query-builder"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
+export { appendWhereFilter } from "./where-filter"
+
 const SERVICE_KEY = "service.name"
 const BREAKDOWN_LIMIT = 10
 
@@ -31,29 +33,6 @@ function breakdownAggregation(aggregation: string): "avg" | "sum" | "count" {
 		return aggregation
 	}
 	return "count"
-}
-
-function quoteFilterValue(value: string): string {
-	return `"${value.replaceAll('"', '\\"')}"`
-}
-
-/**
- * Adds `key = "value"` to a where clause. An existing clause for the same key
- * is replaced instead of appended — the metrics path honors only a single
- * attr.* equality filter, so stacking two would silently drop the second.
- */
-export function appendWhereFilter(where: string, key: string, value: string): string {
-	const clause = `${key} = ${quoteFilterValue(value)}`
-	const trimmed = where.trim()
-	if (!trimmed) return clause
-
-	const escapedKey = key.replaceAll(".", "\\.")
-	const sameKeyClause = new RegExp(`${escapedKey}\\s*=\\s*"(?:[^"\\\\]|\\\\.)*"`)
-	if (sameKeyClause.test(trimmed)) {
-		return trimmed.replace(sameKeyClause, clause)
-	}
-
-	return `${trimmed} AND ${clause}`
 }
 
 interface MetricBreakdownProps {
