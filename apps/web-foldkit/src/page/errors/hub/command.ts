@@ -229,6 +229,9 @@ export const MountRowSelect = Mount.defineStream("MountErrorsRowSelect", {
 					const laneOf = (event: Event) =>
 						event.target instanceof Element ? event.target.closest("[data-row-select]") : null
 					const onClick = (event: Event) => {
+						// A picker trigger inside the row's link opens its popover, never the issue.
+						if (event.target instanceof Element && event.target.closest("[data-picker]") !== null)
+							event.preventDefault()
 						const id = laneOf(event)?.getAttribute("data-row-select")
 						if (!(event instanceof MouseEvent) || id === null || id === undefined) return
 						event.preventDefault()

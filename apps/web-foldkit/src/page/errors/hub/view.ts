@@ -47,6 +47,7 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 					timeZone: inputs.context.timeZone,
 					nowMs: model.nowMs,
 					sparkWindow,
+					picker: model.picker !== null && model.picker.issueId === signal.id ? model.picker : null,
 				}),
 			}),
 		],

@@ -42,7 +42,15 @@ import {
 	warehouseFiltersOf,
 } from "./derive"
 import { type FilterParam, Message, type RequestMode } from "./message"
-import { bulkMenuStep, bulkWrite, completedHubWrite, pressedListKey, toggledSelection } from "./selection"
+import {
+	bulkMenuStep,
+	bulkWrite,
+	completedHubWrite,
+	openedPicker,
+	pickerStep,
+	pressedListKey,
+	toggledSelection,
+} from "./selection"
 import { SOURCES } from "../kit/source"
 import type { IssuePage, Model, PageSlot } from "./model"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -343,6 +351,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		bulkSeverityMenu: Menu.init("errors-bulk-severity"),
 		bulkMoveMenu: Menu.init("errors-bulk-move"),
 		writingIds: [],
+		picker: null,
 		searchDraft: search.q ?? "",
 		searchGeneration: 0,
 		tabs: Tabs.init({ idBase: 0, values: HUB_VIEWS, selected: viewOf(search) }),
@@ -562,8 +571,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedShowAllSeverities: () => navigate(model, { severity: undefined }),
 		ToggledRow: ({ id }) => ({ model: toggledSelection(model, id, false) }),
 		ClickedRowSelect: ({ id, isShift }) => ({ model: toggledSelection(model, id, isShift) }),
-		PressedListKey: ({ key, isShift }) =>
-			pressedListKey(model, key, isShift, (m: Model) => ({ model: m })),
+		PressedListKey: ({ key, isShift }) => pressedListKey(model, key, isShift, openedPicker),
+		ClickedPickerTrigger: ({ id, kind }) => openedPicker(model, id, kind),
+		GotPickerMessage: ({ message: inner }) => pickerStep(model, inner),
 		ClickedBulkClaim: () => bulkWrite(model, { _tag: "Claim" }),
 		ClickedClearSelection: () => ({ model: { ...model, selectedIds: [], selectionAnchor: null } }),
 		GotBulkSeverityMenuMessage: ({ message: inner }) => bulkMenuStep(model, "bulkSeverityMenu", inner),

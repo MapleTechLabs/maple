@@ -6,6 +6,7 @@ import { TimeWindow } from "../../../data/time-range"
 import { ErrorsSearch } from "../../../route/search"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as Menu from "../../../ui/menu"
+import * as QuickPick from "../kit/quick-pick"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
 import { SignalPresenceData } from "../../kit/signal-presence"
@@ -79,6 +80,14 @@ export const Model = Schema.Struct({
 	bulkMoveMenu: Menu.Model,
 	/** Rows with a write in flight; another write on them waits. */
 	writingIds: Schema.Array(Schema.String),
+	/** The one quick-pick open across the list (`openPicker`). */
+	picker: Schema.NullOr(
+		Schema.Struct({
+			issueId: Schema.String,
+			kind: Schema.Literals(["severity", "state"]),
+			quickPick: QuickPick.Model,
+		}),
+	),
 	/** `ToolbarSearch`'s input and its debounce generation. */
 	searchDraft: Schema.String,
 	searchGeneration: Schema.Number,

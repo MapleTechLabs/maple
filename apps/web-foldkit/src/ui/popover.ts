@@ -30,6 +30,10 @@ export const Model = Schema.Struct({
 	/** `openOnHover`: the delay before a hover opens it, 0 for click only. */
 	hoverDelayMs: Schema.Number,
 	hoverGeneration: Schema.Number,
+	/** The Positioner's `sideOffset` (4 for `PopoverContent`). */
+	sideOffset: Schema.Number,
+	/** A bare `PopoverPrimitive.Positioner` + `Popup` (no `PopoverContent`): translate placement. */
+	isBare: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -39,7 +43,14 @@ export const descriptionId = (id: string): string => `${id}-description`
 /** `align` and `side` are `PopoverContent`'s; `hoverDelayMs` is the trigger's `openOnHover` delay. */
 export const init = (
 	id: string,
-	options: Readonly<{ isOpen?: boolean; align?: Align; side?: Side; hoverDelayMs?: number }> = {},
+	options: Readonly<{
+		isOpen?: boolean
+		align?: Align
+		side?: Side
+		hoverDelayMs?: number
+		sideOffset?: number
+		isBare?: boolean
+	}> = {},
 ): Model => ({
 	...initPopup(id, {
 		isOpen: options.isOpen,
@@ -48,6 +59,8 @@ export const init = (
 	}),
 	hoverDelayMs: options.hoverDelayMs ?? 0,
 	hoverGeneration: 0,
+	sideOffset: options.sideOffset ?? 4,
+	isBare: options.isBare ?? false,
 })
 
 // MESSAGE
@@ -128,9 +141,9 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 
 /** Portal, marker on the page outside, placement under the trigger and outside presses. */
 export const MountPopover = Mount.defineStream("MountPopover", {
-	args: { id: Schema.String, align: Align, side: Side },
+	args: { id: Schema.String, align: Align, side: Side, sideOffset: Schema.Number, isBare: Schema.Boolean },
 	messages: [Message.CompletedMountPopover, Message.ChangedPlacement, Message.PressedOutside],
-	execute: ({ element, id, align, side }) =>
+	execute: ({ element, id, align, side, sideOffset, isBare }) =>
 		anchoredPopup(element, {
 			positionerSelector: "[data-slot=popover-positioner]",
 			popupSelector: `#${CSS.escape(popupId(id))}`,
@@ -139,14 +152,15 @@ export const MountPopover = Mount.defineStream("MountPopover", {
 				anchor: { _tag: "Element", id: triggerId(id) },
 				side,
 				align,
-				sideOffset: 4,
-				adaptiveOrigin: true,
+				sideOffset,
+				adaptiveOrigin: !isBare,
 			},
 			insideSelectors: [`#${CSS.escape(triggerId(id))}`],
 			markOutside: Option.some({ mark: true, ariaHidden: false }),
 			lockScroll: false,
 			focus: Option.some({ returnFocusId: Option.some(triggerId(id)), initialFocus: "popup" }),
 			afterPlace: (positioner, popup, placedSide) => {
+				if (isBare) return
 				// Top and left popups anchor to the trigger-facing edge, measured as Base UI does.
 				if (placedSide === "top" || placedSide === "left")
 					return fitPositionerToPopup(positioner, popup, placedSide)
@@ -185,6 +199,8 @@ export type ViewInputs = Readonly<{
 	toView: (render: RenderInfo) => Html
 	toContent: (close: ReadonlyArray<ChildAttribute>) => ReadonlyArray<Html>
 	className?: string
+	/** With `isBare`: the Positioner's and the Popup's own classes. */
+	bare?: Readonly<{ positionerClassName: string; popupClassName: string }>
 }>
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
@@ -211,7 +227,15 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.Key(portalId(model.id)),
 			h.DataAttribute("base-ui-portal", ""),
 			h.Id(portalId(model.id)),
-			h.OnMount(MountPopover({ id: model.id, align: model.align, side: model.side })),
+			h.OnMount(
+				MountPopover({
+					id: model.id,
+					align: model.align,
+					side: model.side,
+					sideOffset: model.sideOffset,
+					isBare: model.isBare,
+				}),
+			),
 			h.OnKeyDownPreventDefault((key) =>
 				key === "Escape" ? Option.some(Message.PressedEscape()) : Option.none(),
 			),
@@ -219,7 +243,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		[
 			h.div(
 				[
-					h.Class(popoverPositionerStyles),
+					h.Class(inputs.bare?.positionerClassName ?? popoverPositionerStyles),
 					...placement,
 					...state,
 					...side,
@@ -230,9 +254,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 					focusGuard(h, "inside"),
 					h.div(
 						[
-							h.AriaDescribedBy(descriptionId(model.id)),
-							h.AriaLabelledBy(titleId(model.id)),
-							h.Class(cn(popoverPopupStyles, inputs.className)),
+							...(inputs.bare === undefined
+								? [
+										h.AriaDescribedBy(descriptionId(model.id)),
+										h.AriaLabelledBy(titleId(model.id)),
+									]
+								: []),
+							h.Class(inputs.bare?.popupClassName ?? cn(popoverPopupStyles, inputs.className)),
 							...placement,
 							h.DataAttribute("base-ui-focusable", ""),
 							...state,
@@ -246,25 +274,29 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 										h.OnMouseLeave(Message.LeftHoverArea()),
 									]
 								: []),
-							h.Style({ "--popup-width": "auto", "--popup-height": "auto" }),
+							...(inputs.bare === undefined
+								? [h.Style({ "--popup-width": "auto", "--popup-height": "auto" })]
+								: []),
 							h.Tabindex(-1),
 						],
-						[
-							h.div(
-								[
-									h.Class(cn(popoverViewportStyles, popoverViewportScrollStyles)),
-									h.DataAttribute("slot", "popover-viewport"),
-								],
-								[
+						inputs.bare !== undefined
+							? inputs.toContent(childAttributes([h.OnClick(Message.ClickedClose())]))
+							: [
 									h.div(
-										[h.DataAttribute("current", "true")],
-										inputs.toContent(
-											childAttributes([h.OnClick(Message.ClickedClose())]),
-										),
+										[
+											h.Class(cn(popoverViewportStyles, popoverViewportScrollStyles)),
+											h.DataAttribute("slot", "popover-viewport"),
+										],
+										[
+											h.div(
+												[h.DataAttribute("current", "true")],
+												inputs.toContent(
+													childAttributes([h.OnClick(Message.ClickedClose())]),
+												),
+											),
+										],
 									),
 								],
-							),
-						],
 					),
 					focusGuard(h, "inside"),
 				],

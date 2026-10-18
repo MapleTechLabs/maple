@@ -5,6 +5,7 @@ import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Menu from "../../../ui/menu"
+import * as QuickPick from "../kit/quick-pick"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SEVERITY_ORDER } from "../kit/severity"
 import { FetchPage, FetchServiceCounts, RunHubWrite } from "./command"
@@ -210,4 +211,49 @@ export const bulkMenuStep = (
 	if (write === null) return lifted
 	const written = bulkWrite(lifted.model, write)
 	return { ...written, commands: [...(lifted.commands ?? []), ...(written.commands ?? [])] }
+}
+
+/** `openPicker`: one picker across the list, on this row; a second press of its trigger closes it. */
+export const openedPicker = (model: Model, id: string, kind: "state" | "severity"): Return =>
+	model.picker !== null && model.picker.issueId === id && model.picker.kind === kind
+		? { model: { ...model, picker: null } }
+		: {
+				model: {
+					...model,
+					picker: { issueId: id, kind, quickPick: QuickPick.init(`errors-picker-${kind}-${id}`) },
+				},
+			}
+
+/** A pick writes that row (when it changed); closing drops the picker. */
+export const pickerStep = (model: Model, message: QuickPick.Message): Return => {
+	const picker = model.picker
+	if (picker === null) return { model }
+	const next = QuickPick.update(picker.quickPick, message)
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotPickerMessage({ message: inner }),
+	)
+	if (next.outMessage === undefined)
+		return { model: { ...model, picker: { ...picker, quickPick: next.model } }, commands }
+	const closed = { ...model, picker: null }
+	if (next.outMessage._tag === "Closed") return { model: closed, commands }
+	const value = next.outMessage.value
+	const signal = signalsOf(model).find((candidate) => candidate.id === picker.issueId)
+	if (signal === undefined) return { model: closed, commands }
+	const write: HubWrite | null =
+		picker.kind === "severity"
+			? value === (signal.severity ?? "none")
+				? null
+				: {
+						_tag: "SetSeverity",
+						severity: SEVERITY_ORDER.find((severity) => severity === value) ?? null,
+					}
+			: value === signal.issue.workflowState
+				? null
+				: Option.match(Option.fromNullishOr(WORKFLOW_STATE_ORDER.find((state) => state === value)), {
+						onNone: () => null,
+						onSome: (toState) => ({ _tag: "Transition", toState }),
+					})
+	if (write === null) return { model: closed, commands }
+	const written = startHubWrite(closed, [signal.id], write, false)
+	return { ...written, commands: [...commands, ...(written.commands ?? [])] }
 }

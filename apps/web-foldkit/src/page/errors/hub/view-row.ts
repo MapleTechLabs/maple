@@ -10,7 +10,15 @@ import { AppRoute, hrefOf } from "../../../route"
 import { truncatedText } from "../../../ui/truncated-text"
 import { serviceDot } from "../../../ui/values"
 import { actorAvatar } from "../kit/actor"
-import { severityPickerTrigger, statePickerTrigger } from "../kit/pickers"
+import {
+	PICKER_HOTKEY,
+	type PickerKind,
+	severityItems,
+	severityPickerTrigger,
+	stateItems,
+	statePickerTrigger,
+} from "../kit/pickers"
+import * as QuickPick from "../kit/quick-pick"
 import { Message } from "./message"
 import {
 	formatLastSeen,
@@ -116,6 +124,8 @@ export type RowState = Readonly<{
 	timeZone: string
 	nowMs: number
 	sparkWindow: SparkWindow
+	/** This row's open quick-pick, if any. */
+	picker: Readonly<{ kind: PickerKind; quickPick: QuickPick.Model }> | null
 }>
 
 /** `ErrorSignalRow`: the row is the link; the checkbox and pickers sit inside it. */
@@ -172,7 +182,7 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 					),
 					h.span(
 						[h.Class(cn(LANE.severity, "flex items-center justify-center"))],
-						[severityPickerTrigger(h, signal.severity)],
+						[severityPicker(h, signal, state)],
 					),
 					h.span(
 						[h.Class(cn(LANE.identity, "flex items-baseline gap-2"))],
@@ -254,7 +264,7 @@ const trailingLanes = (h: H, signal: ErrorSignal, state: RowState): ReadonlyArra
 			h.span([h.Class("truncate")], [signal.serviceName]),
 		],
 	),
-	h.span([h.Class(LANE.state)], [statePickerTrigger(h, signal.issue.workflowState)]),
+	h.span([h.Class(LANE.state)], [statePicker(h, signal, state)]),
 	h.span([h.Class(LANE.actor)], signal.assignee === null ? [] : [actorAvatar(h, signal.assignee)]),
 	h.span(
 		[
@@ -264,3 +274,47 @@ const trailingLanes = (h: H, signal: ErrorSignal, state: RowState): ReadonlyArra
 		[formatLastSeen(signal.lastSeenAt, state.timeZone, state.nowMs)],
 	),
 ]
+
+const pickerMessage = (message: QuickPick.Message) => Message.GotPickerMessage({ message })
+
+/** `SeverityPicker`: the closed trigger, or the open popover around it. */
+const severityPicker = (h: H, signal: ErrorSignal, state: RowState): Html =>
+	state.picker?.kind === "severity"
+		? QuickPick.view(h, {
+				model: state.picker.quickPick,
+				items: severityItems(h),
+				current: signal.severity ?? "none",
+				placeholder: "Change severity…",
+				hotkey: PICKER_HOTKEY.severity,
+				label: "Severity",
+				toMessage: pickerMessage,
+				trigger: (attributes) =>
+					severityPickerTrigger(h, signal.severity, undefined, { isOpen: true, attributes }),
+				toView: (parts) => h.span([h.Class("contents")], parts),
+			})
+		: severityPickerTrigger(h, signal.severity, undefined, {
+				isOpen: false,
+				onClick: Message.ClickedPickerTrigger({ id: signal.id, kind: "severity" }),
+			})
+
+/** `StatePicker`. */
+const statePicker = (h: H, signal: ErrorSignal, state: RowState): Html => {
+	const current = signal.issue.workflowState
+	return state.picker?.kind === "state"
+		? QuickPick.view(h, {
+				model: state.picker.quickPick,
+				items: stateItems(h, current),
+				current,
+				placeholder: "Change status…",
+				hotkey: PICKER_HOTKEY.state,
+				label: "Status",
+				toMessage: pickerMessage,
+				trigger: (attributes) =>
+					statePickerTrigger(h, current, undefined, { isOpen: true, attributes }),
+				toView: (parts) => h.span([h.Class("contents")], parts),
+			})
+		: statePickerTrigger(h, current, undefined, {
+				isOpen: false,
+				onClick: Message.ClickedPickerTrigger({ id: signal.id, kind: "state" }),
+			})
+}

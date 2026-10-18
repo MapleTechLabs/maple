@@ -5,6 +5,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as Menu from "../../../ui/menu"
+import * as QuickPick from "../kit/quick-pick"
 import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
 import { SignalPresences } from "../../kit/signal-presence"
@@ -53,6 +54,8 @@ export const Message = defineMessageUnion({
 	ClickedRowSelect: { id: Schema.String, isShift: Schema.Boolean },
 	PressedListKey: { key: Schema.String, isShift: Schema.Boolean },
 	ClickedBulkClaim: {},
+	ClickedPickerTrigger: { id: Schema.String, kind: Schema.Literals(["severity", "state"]) },
+	GotPickerMessage: { message: QuickPick.Message },
 	ClickedClearSelection: {},
 	GotBulkSeverityMenuMessage: { message: Menu.Message },
 	GotBulkMoveMenuMessage: { message: Menu.Message },
