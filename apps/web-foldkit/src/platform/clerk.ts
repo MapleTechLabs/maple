@@ -4,15 +4,144 @@ import { Effect, Option, Queue, Schema, Stream } from "effect"
 
 /** The slice of clerk-js this app reads. `window.Clerk` is what the parity harness stubs. */
 interface ClerkResources {
-	readonly user?: { readonly id: string } | null
-	readonly session?: { readonly getToken: () => Promise<string | null> } | null
-	readonly organization?: { readonly id: string } | null
+	readonly user?: ClerkUserResource | null
+	readonly session?: { readonly id: string; readonly getToken: () => Promise<string | null> } | null
+	readonly organization?: ClerkOrganizationResource | null
+}
+
+// The resources `/settings` (organization, members) and `/account` read and write.
+
+type Write<P = void, A = unknown> = (params: P) => Promise<A>
+type Verification = { readonly status: string | null } | null
+
+export interface ClerkEmailAddressResource {
+	readonly id: string
+	readonly emailAddress: string
+	readonly verification: Verification
+	readonly destroy: Write
+	readonly prepareVerification: Write<{ strategy: "email_code" }>
+	readonly attemptVerification: Write<{ code: string }>
+}
+export interface ClerkPasskeyResource {
+	readonly id: string
+	readonly name: string | null
+	readonly createdAt: Date
+	readonly lastUsedAt: Date | null
+	readonly update: Write<{ name: string }>
+	readonly delete: Write
+}
+export interface ClerkExternalAccountResource {
+	readonly id: string
+	readonly provider: string
+	readonly emailAddress: string
+	readonly username: string | null
+	readonly verification: (Verification & { readonly externalVerificationRedirectURL?: URL | null }) | null
+	readonly destroy: Write
+	readonly reauthorize: Write<{ redirectUrl: string }, ClerkExternalAccountResource>
+}
+export interface ClerkSessionActivityResource {
+	readonly id: string
+	readonly lastActiveAt: Date
+	readonly latestActivity: {
+		readonly browserName?: string
+		readonly browserVersion?: string
+		readonly deviceType?: string
+		readonly isMobile?: boolean
+		readonly city?: string
+		readonly country?: string
+		readonly ipAddress?: string
+	}
+	readonly revoke: Write
+}
+export interface ClerkUserResource {
+	readonly id: string
+	readonly firstName: string | null
+	readonly lastName: string | null
+	readonly fullName: string | null
+	readonly imageUrl: string
+	readonly hasImage: boolean
+	readonly primaryEmailAddress: ClerkEmailAddressResource | null
+	readonly primaryEmailAddressId: string | null
+	readonly emailAddresses: ReadonlyArray<ClerkEmailAddressResource>
+	readonly passkeys: ReadonlyArray<ClerkPasskeyResource>
+	readonly externalAccounts: ReadonlyArray<ClerkExternalAccountResource>
+	readonly passwordEnabled: boolean
+	readonly totpEnabled: boolean
+	readonly backupCodeEnabled: boolean
+	readonly deleteSelfEnabled: boolean
+	readonly getSessions: () => Promise<ReadonlyArray<ClerkSessionActivityResource>>
+	readonly update: Write<{ firstName?: string; lastName?: string; primaryEmailAddressId?: string }>
+	readonly setProfileImage: Write<{ file: Blob | null }>
+	readonly delete: Write
+	readonly updatePassword: Write<{ newPassword: string; currentPassword?: string; signOutOfOtherSessions: boolean }>
+	readonly createEmailAddress: Write<{ email: string }, ClerkEmailAddressResource>
+	readonly createPasskey: Write
+	readonly createTOTP: Write<void, { readonly uri?: string; readonly secret?: string }>
+	readonly verifyTOTP: Write<{ code: string }, { readonly backupCodes?: ReadonlyArray<string> }>
+	readonly disableTOTP: Write
+	readonly createBackupCode: Write<void, { readonly codes: ReadonlyArray<string> }>
+	readonly createExternalAccount: Write<
+		{ strategy: "oauth_google" | "oauth_github"; redirectUrl: string },
+		ClerkExternalAccountResource
+	>
+	readonly leaveOrganization: Write<string>
+	readonly getOrganizationMemberships: () => Promise<
+		ClerkPage<{ readonly organization: { readonly id: string } }>
+	>
+}
+export interface ClerkPublicUserData {
+	readonly userId?: string
+	readonly firstName: string | null
+	readonly lastName: string | null
+	readonly identifier: string
+	readonly imageUrl: string
+}
+export interface ClerkMembershipResource {
+	readonly id: string
+	readonly role: string
+	readonly createdAt: Date
+	readonly publicUserData?: ClerkPublicUserData | null
+	readonly update: Write<{ role: string }>
+	readonly destroy: Write
+}
+export interface ClerkInvitationResource {
+	readonly id: string
+	readonly emailAddress: string
+	readonly role: string
+	readonly createdAt: Date
+	readonly revoke: Write
+}
+interface ClerkPage<A> {
+	readonly data: ReadonlyArray<A>
+	readonly total_count: number
+}
+export interface ClerkOrganizationResource {
+	readonly id: string
+	readonly name: string
+	readonly imageUrl: string
+	readonly hasImage: boolean
+	readonly publicMetadata: unknown
+	readonly getMemberships: (params: {
+		initialPage?: number
+		pageSize?: number
+		role?: ReadonlyArray<string>
+	}) => Promise<ClerkPage<ClerkMembershipResource>>
+	readonly getInvitations: (params: {
+		initialPage?: number
+		pageSize?: number
+		status?: ReadonlyArray<string>
+	}) => Promise<ClerkPage<ClerkInvitationResource>>
+	readonly update: Write<{ name: string }>
+	readonly setLogo: Write<{ file: Blob | null }>
+	readonly inviteMember: Write<{ emailAddress: string; role: string }>
 }
 interface ClerkGlobal extends ClerkResources {
 	readonly load: (options: Readonly<Record<string, unknown>>) => Promise<void>
 	readonly addListener: (listener: (resources: ClerkResources) => void) => () => void
 	readonly mountSignIn: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
 	readonly unmountSignIn: (element: HTMLDivElement) => void
+	readonly setActive: (params: { organization: string | null }) => Promise<void>
+	readonly signOut: () => Promise<void>
 }
 declare global {
 	interface Window {

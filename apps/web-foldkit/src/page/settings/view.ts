@@ -10,6 +10,7 @@ import * as IngestionView from "./ingestion/view"
 import * as KeysView from "./keys/view"
 import * as McpView from "./mcp/view"
 import * as AiView from "./ai/view"
+import * as GeneralView from "./general/view"
 import * as DataPlatformView from "./data-platform/view"
 import * as AuditLogView from "./audit-log/view"
 import * as AutomationView from "./automation/view"
@@ -123,6 +124,16 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					view: DataPlatformView.view,
 					toParentMessage: (message) => Message.GotDataPlatformMessage({ message }),
 					viewInputs: { nowMs: model.nowMs, timeZone: inputs.context.timeZone },
+				}),
+			]
+		case "General":
+			return [
+				h.submodel({
+					slotId: "settings-general",
+					model: tab.model,
+					view: GeneralView.view,
+					toParentMessage: (message) => Message.GotGeneralMessage({ message }),
+					viewInputs: {},
 				}),
 			]
 		case "Unported":

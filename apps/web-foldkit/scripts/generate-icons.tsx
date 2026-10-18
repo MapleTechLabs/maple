@@ -162,6 +162,7 @@ const NAMES = [
 	"LockIcon",
 	"MobileIcon",
 	"ShieldIcon",
+	"UploadIcon",
 	"FrameworkNextjsIcon",
 	"FrameworkNodejsIcon",
 	"FrameworkPythonIcon",

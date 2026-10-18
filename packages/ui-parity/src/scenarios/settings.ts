@@ -344,6 +344,27 @@ const DATA_PLATFORM = "/settings?tab=data-platform"
 const DRIFT = "settings-data-platform-drift"
 
 /** Data platform: save the connection, disconnect, read the diff, apply the schema. */
+const ORGANIZATION = "/settings?tab=organization"
+
+/** Clerk-only tabs: each write goes through the Clerk stub, which logs it as a `clerk:` call. */
+const clerkInteractions: ReadonlyArray<Scenario> = [
+	page("clerk-organization-rename", "Organization: rename and save", ORGANIZATION, {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("textbox", { name: "Name" }).fill("Acme Retail")
+			await target.getByRole("button", { name: "Save", exact: true }).click()
+			await target.getByText("Organization renamed").waitFor()
+		},
+	}),
+	page("clerk-organization-delete", "Organization: delete dialog with the name typed", ORGANIZATION, {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Delete organization" }).click()
+			await target.getByRole("alertdialog").getByRole("textbox").fill("Acme Shop")
+		},
+	}),
+]
+
 const dataPlatformInteractions: ReadonlyArray<Scenario> = [
 	page("data-platform-save", "Data platform: save and test the connection", DATA_PLATFORM, {
 		steps: async (target) => {
@@ -404,6 +425,7 @@ export const settingsArea: AreaModule = {
 		...automationInteractions,
 		...auditInteractions,
 		...dataPlatformInteractions,
+		...clerkInteractions,
 		page("audit-log-denied", "Audit log: denied only", "/settings?tab=audit-log", {
 			// The outcome filter precedes the table's "Denied" badges in document order.
 			steps: (page) => page.getByText("Denied", { exact: true }).first().click(),
