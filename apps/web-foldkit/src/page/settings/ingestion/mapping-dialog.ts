@@ -26,6 +26,8 @@ export const Model = Schema.Struct({
 	targetKey: Combobox.Model,
 	operation: Select.Model,
 	isSaving: Schema.Boolean,
+	/** An Escape that closed a key's suggestions: the same keydown reaching the dialog is dropped. */
+	isEscapeConsumed: Schema.Boolean,
 	spanKeys: KeysData.schema,
 	resourceKeys: KeysData.schema,
 })
@@ -40,6 +42,7 @@ export const init = (id: string): Model => ({
 	targetKey: Combobox.init(`${id}-target-key`, "autocomplete"),
 	operation: Select.init(`${id}-operation`, { value: "copy", selectedIndex: 0 }),
 	isSaving: false,
+	isEscapeConsumed: false,
 	spanKeys: AsyncData.Idle(),
 	resourceKeys: AsyncData.Idle(),
 })
@@ -167,8 +170,11 @@ const save = (model: Model): Return => {
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		GotDialogMessage: ({ message: child }) =>
-			model.isSaving ? { model } : liftDialog(model, Dialog.update(model.dialog, child)),
+		GotDialogMessage: ({ message: child }) => {
+			if (child._tag === "PressedEscape" && model.isEscapeConsumed)
+				return { model: { ...model, isEscapeConsumed: false } }
+			return model.isSaving ? { model } : liftDialog(model, Dialog.update(model.dialog, child))
+		},
 		GotNameMessage: ({ message: child }) => ({ model: { ...model, name: Field.update(model.name, child).model } }),
 		GotSelectMessage: ({ field, message: child }) => {
 			const step = Select.update(model[field], child)
@@ -180,8 +186,10 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		GotKeyMessage: ({ field, message: child }) => {
 			const step = Combobox.update(model[field], child)
+			// Base UI's floating tree: Escape in an open popup closes only the popup, not the dialog.
+			const isEscapeConsumed = child._tag === "PressedInputKey" && child.key === "Escape" && model[field].isOpen
 			return {
-				model: { ...model, [field]: step.model },
+				model: { ...model, [field]: step.model, isEscapeConsumed },
 				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotKeyMessage({ field, message: inner })),
 			}
 		},
