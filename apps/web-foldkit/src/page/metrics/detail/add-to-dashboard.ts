@@ -32,6 +32,8 @@ export const Model = Schema.Struct({
 	dashboards: Schema.Array(DashboardChoice),
 	newName: Schema.String,
 	isCreating: Schema.Boolean,
+	/** The dashboard a widget add is in flight for: one add, and one navigation, per pick. */
+	addingTo: Schema.NullOr(Schema.String),
 	error: Schema.NullOr(Schema.Struct({ title: Schema.String, failure: LoadFailure })),
 })
 export type Model = typeof Model.Type
@@ -41,6 +43,7 @@ export const init = (): Model => ({
 	dashboards: [],
 	newName: "",
 	isCreating: false,
+	addingTo: null,
 	error: null,
 })
 
@@ -155,16 +158,16 @@ export const update = (model: Model, message: Message, context: Context): Return
 			orgId === context.orgId ? { model: { ...model, dashboards } } : { model },
 		ChangedNewName: ({ value }) => ({ model: { ...model, newName: value } }),
 		ClickedDashboard: ({ dashboardId }) =>
-			context.draft === null
+			context.draft === null || model.addingTo !== null || model.isCreating
 				? { model }
 				: {
-						model,
+						model: { ...model, addingTo: dashboardId },
 						commands: [AddWidget({ orgId: context.orgId, dashboardId, draft: context.draft })],
 					},
 		// `handleCreate`: a blank name or a create in flight does nothing.
 		ClickedCreate: () => {
 			const name = model.newName.trim()
-			return name === "" || model.isCreating || context.draft === null
+			return name === "" || model.isCreating || model.addingTo !== null || context.draft === null
 				? { model }
 				: {
 						model: { ...model, isCreating: true, error: null },
@@ -172,12 +175,14 @@ export const update = (model: Model, message: Message, context: Context): Return
 					}
 		},
 		CompletedAddWidget: ({ dashboardId, result }) =>
-			Result.match(result, {
-				onSuccess: () => closedTo(model, dashboardId),
-				onFailure: (failure) => ({
-					model: { ...model, error: { title: "Failed to add widget", failure } },
-				}),
-			}),
+			dashboardId !== model.addingTo
+				? { model }
+				: Result.match(result, {
+						onSuccess: () => closedTo({ ...model, addingTo: null }, dashboardId),
+						onFailure: (failure) => ({
+							model: { ...model, addingTo: null, error: { title: "Failed to add widget", failure } },
+						}),
+					}),
 		CompletedCreateDashboard: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (dashboardId) => closedTo({ ...model, isCreating: false }, dashboardId),
