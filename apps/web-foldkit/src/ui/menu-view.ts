@@ -60,8 +60,10 @@ export type MenuSubmenuEntry = Readonly<{
 	content?: ReadonlyArray<Html | string>
 	/** `<DropdownMenuSubContent className>`. */
 	className?: string
-	/** Wraps the rendered items (a scroller), or shows rows that are not items (loading, empty). */
-	body?: (items: ReadonlyArray<Html>) => ReadonlyArray<Html>
+	/** A `div` with this class around the items (a scroller). */
+	itemsClassName?: string
+	/** Rows that are not items (loading, an empty notice), shown when there are no entries. */
+	placeholder?: ReadonlyArray<Html>
 }>
 
 /** The menu's content, as data: `update` addresses highlightable entries by document order. */
@@ -242,10 +244,16 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 	if (submenu === null) return []
 	const maybeEntry = findSubmenu(inputs.entries, submenu.value)
 	const items = Option.match(maybeEntry, { onNone: () => [], onSome: (entry) => entry.entries })
-	const body = Option.match(maybeEntry, {
-		onNone: () => (rows: ReadonlyArray<Html>) => rows,
-		onSome: (entry) => entry.body ?? ((rows: ReadonlyArray<Html>) => rows),
-	})
+	const body = (rows: ReadonlyArray<Html>): ReadonlyArray<Html> =>
+		Option.match(maybeEntry, {
+			onNone: () => rows,
+			onSome: (entry) =>
+				rows.length === 0
+					? (entry.placeholder ?? [])
+					: entry.itemsClassName === undefined
+						? rows
+						: [h.div([h.Class(entry.itemsClassName)], rows)],
+		})
 	const subClassName = Option.getOrUndefined(Option.flatMapNullishOr(maybeEntry, (entry) => entry.className))
 	const placement = [
 		h.DataAttribute("align", submenu.align),

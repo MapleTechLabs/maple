@@ -4,7 +4,7 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { bootSplash } from "./layout/boot-splash"
 import { Message } from "./message"
 import { type Model, Session } from "./model"
-import { onboardingInputsOf, pageContextOf, planGateOf } from "./update"
+import { onboardingInputsOf, pageContextOf, planGateOf, shellClerkOf } from "./update"
 import * as OnboardingView from "./page/onboarding/view"
 import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
 import { type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } from "./page/registry"
@@ -66,6 +66,7 @@ const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
 /** A signed-in page inside the shell: the frame around the page, then the shell's overlay layers. */
 const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
 	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
+	const clerk = shellClerkOf(model)
 	return [
 		h.submodel({
 			slotId: "shell-frame",
@@ -74,6 +75,7 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 			toParentMessage: toShellMessage,
 			viewInputs: {
 				currentPath,
+				clerk,
 				breadcrumbs: model.page === null ? breadcrumbsOf(model.route) : pageBreadcrumbs(model.page),
 				page: () => pageView(model, h),
 				topbarActions: () => topbarActionsView(model, h),
@@ -84,14 +86,14 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 			model: model.shell,
 			view: Shell.sheetLayerView,
 			toParentMessage: toShellMessage,
-			viewInputs: { currentPath },
+			viewInputs: { currentPath, clerk },
 		}),
 		h.submodel({
 			slotId: "shell-menu",
 			model: model.shell,
 			view: Shell.menuLayerView,
 			toParentMessage: toShellMessage,
-			viewInputs: { currentPath },
+			viewInputs: { currentPath, clerk },
 		}),
 	]
 }

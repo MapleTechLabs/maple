@@ -33,6 +33,7 @@ export const Flags = Schema.Struct({
 		theme: Shell.Theme,
 		pinnedNamespaces: Schema.Record(Schema.String, Schema.String),
 		dashboardFavorites: Schema.Array(Schema.String),
+		isQuotaApproachingDismissed: Schema.optionalKey(Schema.Boolean),
 	}),
 })
 export type Flags = typeof Flags.Type

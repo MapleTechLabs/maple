@@ -14,6 +14,7 @@ import {
 	NavigateInternal,
 	ReplaceUrl,
 	SaveSelectedPlanKnown,
+	SignOutOfClerk,
 	SaveSessionToken,
 	WaitForAuthSettle,
 } from "./command"
@@ -21,7 +22,7 @@ import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { rendersShell } from "./page/chrome"
 import * as Onboarding from "./page/onboarding"
-import { accessOf, CustomerData, type CustomerSlot, type Gate, planGate } from "./page/onboarding/plan-gate"
+import { accessOf, CustomerData, customerOf, type CustomerSlot, type Gate, planGate } from "./page/onboarding/plan-gate"
 import { type PageContext, PageOutMessage } from "./page/contract"
 import { changeContext, enterRoute, PageMessage, type PageTransition, updatePage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
@@ -29,6 +30,7 @@ import type { Resources } from "./platform/resources"
 import type { ClerkSnapshot } from "./platform/clerk"
 import { AppRoute, hrefOf, isPublicRoute, type Redirect, routeRedirect, urlToAppRoute } from "./route"
 import * as Shell from "./shell"
+import * as OrgSwitcher from "./shell/clerk-org-switcher"
 import * as Toast from "./ui/toast"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
@@ -67,6 +69,26 @@ const shellFoldConfig = {
 				onNone: () => ({ model }),
 				onSome: (context) => applyPage(changeContext(model.page, context))(model),
 			}),
+		RequestedOrganizationSwitch:
+			({ orgId }) =>
+			(model) => {
+				const picked = model.clerkSnapshot?.memberships.find((organization) => organization.id === orgId)
+				return picked === undefined
+					? { model }
+					: {
+							model,
+							commands: [
+								Command.mapMessage((message: OrgSwitcher.Message) =>
+									Message.GotShellMessage({ message: Shell.Message.GotClerkOrgMenuMessage({ message }) }),
+								)(OrgSwitcher.SwitchOrganization({ orgId, targetUrl: OrgSwitcher.switchTargetOf(picked) })),
+							],
+						}
+			},
+		RequestedSignOut: () => (model) => ({ model, commands: [SignOutOfClerk()] }),
+		RequestedErrorToast:
+			({ title }) =>
+			(model) =>
+				showPageToast(model, PageOutMessage.RequestedToast({ type: "error", title, description: "" })),
 	}),
 }
 
@@ -232,6 +254,20 @@ export const onboardingInputsOf = (model: Model): Option.Option<Onboarding.Input
 			Option.some({ session: "SignedIn", maybeOrgId, ...clerk }),
 	})
 }
+
+/** The Clerk user, orgs and customer the shell reads; `null` self-hosted. */
+export const shellClerkOf = (model: Model): Shell.ShellClerk | null =>
+	isClerkAuthEnabled
+		? Option.match(onboardingInputsOf(model), {
+				onNone: () => null,
+				onSome: (inputs) => ({
+					maybeUser: inputs.maybeUser,
+					maybeOrganization: inputs.maybeOrganization,
+					memberships: inputs.memberships,
+					customer: customerOf(model.customer),
+				}),
+			})
+		: null
 
 const toOnboardingCommands = (step: Onboarding.Step) =>
 	step.commands.map(Command.mapMessage((message) => Message.GotOnboardingMessage({ message })))
@@ -514,6 +550,7 @@ export const update = (model: Model, message: Message) =>
 			settledCustomer(model, orgId, CustomerData.Success({ data: customer })),
 		FailedLoadCustomer: ({ orgId }) => settledCustomer(model, orgId, CustomerData.Failure({ error: "Failed" })),
 		CompletedSaveSelectedPlanKnown: () => ({ model }),
+		CompletedSignOutOfClerk: () => ({ model }),
 		GotSignInMessage: ({ message }) => foldSignIn(model, message),
 		GotShellMessage: ({ message }) => foldShell(model, message),
 		GotToastMessage: ({ message }) =>

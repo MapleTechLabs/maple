@@ -130,17 +130,21 @@ const namespaceSubmenu = (h: H, scope: NamespaceScope): MenuView.MenuSubmenuEntr
 			),
 		],
 		entries: isLoadingEmpty || isEmpty ? [] : entries,
-		body: (items) =>
-			isLoadingEmpty
-				? [
-						h.div(
-							[h.Class("flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground")],
-							[icon(h, "LoaderIcon", { className: cn(spinnerStyles, "size-3.5"), attributes: [h.AriaLabel("Loading"), h.Role("status")] }), " Loading namespaces…"],
-						),
-					]
-				: isEmpty
-					? []
-					: [h.div([h.Class("max-h-72 overflow-y-auto")], items)],
+		itemsClassName: "max-h-72 overflow-y-auto",
+		placeholder: isLoadingEmpty
+			? [
+					h.div(
+						[h.Class("flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground")],
+						[
+							icon(h, "LoaderIcon", {
+								className: cn(spinnerStyles, "size-3.5"),
+								attributes: [h.AriaLabel("Loading"), h.Role("status")],
+							}),
+							" Loading namespaces…",
+						],
+					),
+				]
+			: [],
 	}
 }
 

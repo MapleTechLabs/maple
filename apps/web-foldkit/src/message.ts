@@ -32,6 +32,7 @@ export const Message = defineMessageUnion({
 	SucceededLoadCustomer: { orgId: Schema.String, customer: BillingCustomer },
 	FailedLoadCustomer: { orgId: Schema.String },
 	CompletedSaveSelectedPlanKnown: {},
+	CompletedSignOutOfClerk: {},
 	GotSignInMessage: { message: SignIn.Message },
 	GotShellMessage: { message: Shell.Message },
 	GotToastMessage: { message: Toast.Message },

@@ -120,6 +120,46 @@ const lapsedCustomer =
 			],
 		})
 
+const step = (id: string, title: string, href: string, completed: boolean, optional = false) => ({
+	object: "onboarding_checklist_step",
+	id,
+	title,
+	completed,
+	href,
+	optional,
+})
+
+/** The onboarding reward checklist (`GET /v2/onboarding/checklist`): one of four steps done. */
+const checklist = (status: "in_progress" | "claimable" | "claimed") => {
+	const isDone = status !== "in_progress"
+	return {
+		object: "onboarding_checklist",
+		status,
+		reward_amount_usd: 30,
+		deadline_at: new Date(FROZEN_NOW_MS + 20 * 60 * MINUTE).toISOString(),
+		claimed_at: status === "claimed" ? FROZEN_NOW : null,
+		completed_count: isDone ? 4 : 1,
+		total_count: 4,
+		steps: [
+			step("send_telemetry", "Send your first telemetry", "/settings?tab=ingestion", true),
+			step("connect_github", "Connect GitHub", "/integrations?integration=github", isDone),
+			step("create_alert_rule", "Create an alert with a destination", "/alerts", isDone),
+			step("connect_mcp_agent", "Connect an MCP agent", "/settings?tab=mcp", isDone),
+			step("invite_teammate", "Invite a teammate", "/settings?tab=members", false, true),
+			step("join_slack_channel", "Join a shared Slack channel", "/?support=slack_channel", false, true),
+		],
+	}
+}
+
+const supportChannel = (status: "not_created" | "active", invitedEmail: string | null) => ({
+	object: "support_channel",
+	status,
+	channel_name: status === "active" ? "maple-acme" : null,
+	slack_url: status === "active" ? "https://slack.com/app_redirect?channel=C0PARITY" : null,
+	created_at: status === "active" ? FROZEN_NOW : null,
+	invited_email: invitedEmail,
+})
+
 /** A Clerk sign-up whose organization has no plan yet: the onboarding wizard and plan picker. */
 const orbitAdmin: DatasetIdentity = {
 	orgId: "org_parity_orbit",
@@ -166,6 +206,12 @@ export const fixtureArea: FixtureArea = {
 				status: "denied",
 				redirectUri: "https://claude.ai/api/mcp/auth_callback?error=access_denied",
 			}),
+		// The Clerk top bar's reward pill: in progress, and claimed once an admin claims it.
+		"onboardingChecklist.retrieve": () => Effect.succeed(checklist("in_progress")),
+		"onboardingChecklist.claim": () => Effect.succeed(checklist("claimed")),
+		// The Clerk Support menu's shared Slack channel: none yet; the button creates it and invites.
+		"supportChannel.retrieve": () => Effect.succeed(supportChannel("not_created", null)),
+		"supportChannel.invite": () => Effect.succeed(supportChannel("active", "ada@acme.test")),
 		// Autumn answers a new subscription with Stripe Checkout; the harness keeps the page (204).
 		"billing.attach": () => Effect.succeed({ paymentUrl: "https://checkout.stripe.com/c/pay/cs_parity" }),
 		"emailPublic.unsubscribe": ({ query }) =>
@@ -185,6 +231,10 @@ export const fixtureArea: FixtureArea = {
 		}),
 		// Acme on Clerk with the generic Startup customer: an org already in the app.
 		clerkDataset("clerk-acme", acmeAdmin),
+		// Acme with every checklist step done: the pill offers the credit.
+		clerkDataset("clerk-reward", acmeAdmin, {
+			"onboardingChecklist.retrieve": () => Effect.succeed(checklist("claimable")),
+		}),
 		clerkDataset("clerk-no-org", orglessUser),
 		clerkDataset("clerk-signed-out", null),
 		// A PR preview deploy: Clerk's sign-in plus the shared reviewer's access-key form.
