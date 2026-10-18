@@ -86,7 +86,10 @@ const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 				],
 			)
 		case "failing":
-			return h.span([h.Class("truncate text-severity-error"), h.Title(sync.error)], ["sync failing: ", sync.error])
+			return h.span(
+				[h.Class("truncate text-severity-error"), h.Title(sync.error)],
+				["sync failing: ", sync.error],
+			)
 	}
 }
 
@@ -129,11 +132,23 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 			),
 			h.div(
 				[h.Class("w-[150px] text-right")],
-				[avgPeak(h, { avg: view.memoryAvg, peak: view.memoryMax, format: formatBytes, note: NOTE }, trigger(ids.memory))],
+				[
+					avgPeak(
+						h,
+						{ avg: view.memoryAvg, peak: view.memoryMax, format: formatBytes, note: NOTE },
+						trigger(ids.memory),
+					),
+				],
 			),
 			h.div(
 				[h.Class("w-[140px] text-right")],
-				[avgPeak(h, { avg: view.cpuAvg, peak: view.cpuMax, format: formatVcpu, note: NOTE }, trigger(ids.cpu))],
+				[
+					avgPeak(
+						h,
+						{ avg: view.cpuAvg, peak: view.cpuMax, format: formatVcpu, note: NOTE },
+						trigger(ids.cpu),
+					),
+				],
 			),
 			...(showLimits
 				? [
@@ -185,7 +200,11 @@ export const railwayTable = (h: H, inputs: RailwayTableInputs): Html =>
 		columns(h, inputs.showLimits, inputs.sort),
 		groupedRows(inputs.services, inputs.environments, inputs.authFailed, inputs.sort).flatMap((group) => [
 			h.div(
-				[h.Class("flex items-center gap-2.5 border-b border-border/40 bg-muted/30 px-4 py-2 font-mono text-2xs")],
+				[
+					h.Class(
+						"flex items-center gap-2.5 border-b border-border/40 bg-muted/30 px-4 py-2 font-mono text-2xs",
+					),
+				],
 				[
 					h.span([h.Class("font-medium text-foreground")], [group.projectName]),
 					h.span([h.Class("text-muted-foreground")], ["/ ", group.environmentName]),

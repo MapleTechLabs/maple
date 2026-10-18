@@ -38,16 +38,21 @@ const service: RailwayServiceRow = {
 	lastSeen: "2026-10-01 12:00:00",
 }
 
-const themeResolved = () => Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+const themeResolved = () =>
+	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
 const windowed = (): Model =>
-	pageUpdate(init(route, context).model, Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" })).model
+	pageUpdate(init(route, context).model, Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }))
+		.model
 
 describe("railway service", () => {
 	test("the window brings the fleet read and the service's series, bucketed for ~100 points", () => {
 		const entered = init(route, context)
 		expect(names(entered.commands)).toEqual(["ResolveRailwayServiceWindow", "LoadChartRuntime"])
-		const resolved = pageUpdate(entered.model, Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }))
+		const resolved = pageUpdate(
+			entered.model,
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+		)
 		expect(names(resolved.commands)).toEqual(["FetchRailwayServiceRows", "FetchRailwayServiceTimeseries"])
 		expect(timeseriesInput(resolved.model, window)).toEqual({
 			...window,
@@ -62,15 +67,26 @@ describe("railway service", () => {
 		expect(titleOf(model)).toBe("svc_api")
 		const loaded = pageUpdate(
 			model,
-			Message.CompletedFetchServices({ key: model.services.key ?? "", result: Result.succeed([service]) }),
+			Message.CompletedFetchServices({
+				key: model.services.key ?? "",
+				result: Result.succeed([service]),
+			}),
 		).model
 		expect(titleOf(loaded)).toBe("api")
-		scene({ update: pageUpdate, view }, given(loaded), themeResolved(), expectView(text("1.5 vCPU")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(text("1.5 vCPU")).toExist(),
+		)
 	})
 
 	test("a series answer for a superseded window is dropped", () => {
 		const first = windowed()
-		const second = pageUpdate(first, Message.CompletedResolveWindow({ window: later, nowMs: 0, mode: "Load" })).model
+		const second = pageUpdate(
+			first,
+			Message.CompletedResolveWindow({ window: later, nowMs: 0, mode: "Load" }),
+		).model
 		const late = pageUpdate(
 			second,
 			Message.CompletedFetchTimeseries({ key: first.timeseries.key ?? "", result: Result.succeed([]) }),

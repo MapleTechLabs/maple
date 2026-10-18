@@ -29,7 +29,10 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 const hrefOfSearch = (search: Search) => hrefOf(AppRoute.InfraPlanetscale({ search }))
 
 const isConnected = (model: Model): boolean =>
-	Option.match(AsyncData.getData(model.status.data), { onNone: () => false, onSome: (status) => status.connected })
+	Option.match(AsyncData.getData(model.status.data), {
+		onNone: () => false,
+		onSome: (status) => status.connected,
+	})
 
 /** Whether nothing was ever scraped: the table hides its metric columns and sorts by name. */
 export const neverCollected = (model: Model): boolean =>
@@ -93,10 +96,17 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return { model, commands: [resolveCommand(model, context, "Load"), LoadStatus({ key, refresh: false })] }
 }
 
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	if (hrefOfSearch(model.search) === hrefOfSearch(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return { model: next, commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+	return {
+		model: next,
+		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
+	}
 }
 
 export const contextChanged = (model: Model): Return => ({ model })
@@ -110,20 +120,28 @@ const withWindow = (model: Model, window: TimeWindow, nowMs: number): Model => (
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, nowMs, mode }) => requestData(withWindow(model, window, nowMs), context, mode),
+		CompletedResolveWindow: ({ window, nowMs, mode }) =>
+			requestData(withWindow(model, window, nowMs), context, mode),
 		CompletedLoadStatus: ({ key, result }) =>
 			requestData({ ...model, status: Keyed.accept(model.status, key, result) }, context, "Load"),
 		CompletedFetchDatabases: ({ key, result }) => ({
 			model: { ...model, databases: Keyed.accept(model.databases, key, result) },
 		}),
-		CompletedFetchStats: ({ key, result }) => ({ model: { ...model, stats: Keyed.accept(model.stats, key, result) } }),
+		CompletedFetchStats: ({ key, result }) => ({
+			model: { ...model, stats: Keyed.accept(model.stats, key, result) },
+		}),
 		ClickedRetryStats: () => merge([statsStep(context, "Refresh")], model),
-		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(sortOf(model), key, { stringKeys: ["name"] }) } }),
+		ClickedSort: ({ key }) => ({
+			model: { ...model, sort: nextSort(sortOf(model), key, { stringKeys: ["name"] }) },
+		}),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
 				model: reloaded,
-				commands: [resolveCommand(reloaded, context, "Refresh"), CompleteReloadSpin({ version: reloaded.refreshVersion })],
+				commands: [
+					resolveCommand(reloaded, context, "Refresh"),
+					CompleteReloadSpin({ version: reloaded.refreshVersion }),
+				],
 			}
 		},
 		ClickedResetTimeRange: () => navigate(model, withPreset(model.search, DEFAULT_PRESET)),
@@ -136,6 +154,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(picker) => Message.GotTimePickerMessage({ message: picker }),
 				(preset) => hrefOfSearch(withPreset(model.search, preset)),
 			)
-			return { model: { ...model, timePicker: step.timePicker }, commands: step.commands, outMessage: step.outMessage }
+			return {
+				model: { ...model, timePicker: step.timePicker },
+				commands: step.commands,
+				outMessage: step.outMessage,
+			}
 		},
 	})

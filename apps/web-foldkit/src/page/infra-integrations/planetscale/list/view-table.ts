@@ -5,7 +5,13 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { badge } from "../../../../ui/display"
 import { skeleton } from "../../../../ui/skeleton"
-import { columnHead, dataTable, dataTableEmpty, dataTableSkeletonRows, ROW_LINK_CLASS } from "../../kit/data-table"
+import {
+	columnHead,
+	dataTable,
+	dataTableEmpty,
+	dataTableSkeletonRows,
+	ROW_LINK_CLASS,
+} from "../../kit/data-table"
 import { type Sort, sortRows } from "../../kit/table-sort"
 import type { DatabaseStat } from "../data"
 import {
@@ -74,7 +80,11 @@ const headerCells = (h: H, sort: Sort<SortKey> | undefined, metricsPaused: boole
 			sort:
 				sort === undefined
 					? undefined
-					: { onSort: Message.ClickedSort({ key: column.key }), isActive: sort.key === column.key, dir: sort.dir },
+					: {
+							onSort: Message.ClickedSort({ key: column.key }),
+							isActive: sort.key === column.key,
+							dir: sort.dir,
+						},
 		}),
 	)
 
@@ -116,7 +126,10 @@ const toRow = (db: V2PlanetScaleDatabase, statsByName: ReadonlyMap<string, Datab
 const CELL = "text-right font-mono text-xs tabular-nums text-foreground/80"
 
 const metaChip = (h: H, text: string): Html =>
-	h.span([h.Class("hidden shrink-0 xl:inline-flex")], [h.span([h.Class("font-mono text-3xs text-muted-foreground/80")], [text])])
+	h.span(
+		[h.Class("hidden shrink-0 xl:inline-flex")],
+		[h.span([h.Class("font-mono text-3xs text-muted-foreground/80")], [text])],
+	)
 
 const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [
 	h.div([h.Class(cn("w-[96px]", CELL))], [row.hasStats ? formatNumber(row.connectionsAvg) : EMPTY_VALUE]),
@@ -125,11 +138,23 @@ const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [
 		[row.hasStats ? formatWholePercent(row.cpuMaxPercent / 100) : EMPTY_VALUE],
 	),
 	h.div(
-		[h.Class(cn("hidden w-[104px]", CELL, "md:block", row.hasStats && utilizationClass(row.memMaxPercent)))],
+		[
+			h.Class(
+				cn("hidden w-[104px]", CELL, "md:block", row.hasStats && utilizationClass(row.memMaxPercent)),
+			),
+		],
 		[row.hasStats ? formatWholePercent(row.memMaxPercent / 100) : EMPTY_VALUE],
 	),
 	h.div(
-		[h.Class(cn("w-[80px]", CELL, row.storageUsedPercent !== MISSING && utilizationClass(row.storageUsedPercent)))],
+		[
+			h.Class(
+				cn(
+					"w-[80px]",
+					CELL,
+					row.storageUsedPercent !== MISSING && utilizationClass(row.storageUsedPercent),
+				),
+			),
+		],
 		[row.storageUsedPercent === MISSING ? EMPTY_VALUE : formatStoragePercent(row.storageUsedPercent)],
 	),
 	h.div(
@@ -141,7 +166,10 @@ const metricCells = (h: H, row: DatabaseRow): ReadonlyArray<Html> => [
 const databaseRow = (h: H, row: DatabaseRow, metricsPaused: boolean): Html => {
 	const state = abnormalState(row.state)
 	return h.a(
-		[h.Class(ROW_LINK_CLASS), h.Href(hrefOf(AppRoute.InfraPlanetscaleDatabase({ dbName: row.name, search: {} })))],
+		[
+			h.Class(ROW_LINK_CLASS),
+			h.Href(hrefOf(AppRoute.InfraPlanetscaleDatabase({ dbName: row.name, search: {} }))),
+		],
 		[
 			h.div(
 				[h.Class("flex w-0 min-w-[220px] flex-1 items-center gap-2 overflow-hidden")],
@@ -155,8 +183,12 @@ const databaseRow = (h: H, row: DatabaseRow, metricsPaused: boolean): Html => {
 						],
 						[row.name],
 					),
-					badge(h, { variant: "outline", className: "shrink-0" }, [row.kind === "postgresql" ? "Postgres" : "MySQL"]),
-					...(state === null ? [] : [badge(h, { variant: "warn", className: "shrink-0" }, [state])]),
+					badge(h, { variant: "outline", className: "shrink-0" }, [
+						row.kind === "postgresql" ? "Postgres" : "MySQL",
+					]),
+					...(state === null
+						? []
+						: [badge(h, { variant: "warn", className: "shrink-0" }, [state])]),
 					...(row.region ? [metaChip(h, row.region)] : []),
 					...(row.plan ? [metaChip(h, row.plan)] : []),
 				],

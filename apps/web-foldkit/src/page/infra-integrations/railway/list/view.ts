@@ -42,7 +42,14 @@ const tooltipContent = (
 	services.flatMap((row): ReadonlyArray<Html | string> => {
 		const ids = triggerIds(row)
 		if (triggerId === ids.memory)
-			return [avgPeakContent(h, { avg: row.memoryAvg, peak: row.memoryMax, format: formatBytes, note: NOTE })]
+			return [
+				avgPeakContent(h, {
+					avg: row.memoryAvg,
+					peak: row.memoryMax,
+					format: formatBytes,
+					note: NOTE,
+				}),
+			]
 		if (triggerId === ids.cpu)
 			return [avgPeakContent(h, { avg: row.cpuAvg, peak: row.cpuMax, format: formatVcpu, note: NOTE })]
 		if (triggerId === ids.seen) return [formatAbsolute(toEpochMs(row.lastSeen), clock.timeZone)]
@@ -105,7 +112,10 @@ const servicesList = (
 			toContent: (triggerId) => tooltipContent(h, filtered, clock, triggerId),
 			toView: ({ trigger, portal }) =>
 				h.div(
-					[h.Class(cn("space-y-4", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+					[
+						h.Class(cn("space-y-4", refreshingClass(isWaiting))),
+						...(isWaiting ? [h.AriaBusy(true)] : []),
+					],
 					[
 						railwayFleetBand(h, {
 							services,
@@ -125,7 +135,10 @@ const servicesList = (
 									: `${filtered.length} of ${services.length} services`,
 						}),
 						filtered.length === 0
-							? filteredEmpty(h, { noun: "services", description: "Clear the search to see them all." })
+							? filteredEmpty(h, {
+									noun: "services",
+									description: "Clear the search to see them all.",
+								})
 							: railwayTable(h, {
 									services: filtered,
 									environments: status.environments,

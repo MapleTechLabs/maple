@@ -33,7 +33,8 @@ export const LoadStatus = Command.define("LoadPlanetscaleStatus", {
 export const FetchDatabases = Command.define("FetchPlanetscaleDatabases", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchDatabases],
-	execute: ({ key }) => Effect.map(loadDatabases, (result) => Message.CompletedFetchDatabases({ key, result })),
+	execute: ({ key }) =>
+		Effect.map(loadDatabases, (result) => Message.CompletedFetchDatabases({ key, result })),
 })
 
 export const FetchStats = Command.define("FetchPlanetscaleDatabaseStats", {

@@ -69,7 +69,9 @@ export const ConnectRailway = Command.define("ConnectRailway", {
 				const presentation = displayError(error)
 				return Effect.succeed(
 					Message.FailedConnect({
-						error: isUnexpectedError(presentation) ? "Failed to connect Railway." : presentation.message,
+						error: isUnexpectedError(presentation)
+							? "Failed to connect Railway."
+							: presentation.message,
 					}),
 				)
 			}),

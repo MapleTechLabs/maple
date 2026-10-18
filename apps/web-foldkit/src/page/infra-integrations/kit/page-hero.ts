@@ -50,16 +50,22 @@ export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =
 		],
 	)
 
-/** `HeroChip` with plain-text children: the text is also its title. */
-export const heroChip = <M>(h: HtmlBuilder<M>, text: string, title?: string): Html =>
-	badge(
+/** `HeroChip` with plain-text children (several parts stay several text nodes): the text is its title. */
+export const heroChip = <M>(
+	h: HtmlBuilder<M>,
+	text: string | ReadonlyArray<string>,
+	title?: string,
+): Html => {
+	const parts = typeof text === "string" ? [text] : text
+	return badge(
 		h,
 		{
 			variant: "meta",
 			size: "xs",
 			mono: true,
 			className: "min-w-0",
-			attributes: [h.Title(title ?? text)],
+			attributes: [h.Title(title ?? parts.join(""))],
 		},
-		[h.span([h.Class("min-w-0 truncate")], [text])],
+		[h.span([h.Class("min-w-0 truncate")], parts)],
 	)
+}

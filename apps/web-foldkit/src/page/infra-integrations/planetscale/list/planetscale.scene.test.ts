@@ -51,17 +51,29 @@ const stat = (database: string, storageUsedPercent: number): DatabaseStat => ({
 
 const withStatus = (connected: boolean) => {
 	const entered = init({ search: {} }, context)
-	const windowed = pageUpdate(entered.model, Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" })).model
+	const windowed = pageUpdate(
+		entered.model,
+		Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+	).model
 	return pageUpdate(
 		windowed,
-		Message.CompletedLoadStatus({ key: windowed.status.key ?? "", result: Result.succeed(status(connected)) }),
+		Message.CompletedLoadStatus({
+			key: windowed.status.key ?? "",
+			result: Result.succeed(status(connected)),
+		}),
 	)
 }
 
 describe("planetscale list", () => {
 	test("a connected status brings the inventory and the window's stats", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual(["ResolvePlanetscaleWindow", "LoadPlanetscaleStatus"])
-		expect(names(withStatus(true).commands)).toEqual(["FetchPlanetscaleDatabases", "FetchPlanetscaleDatabaseStats"])
+		expect(names(init({ search: {} }, context).commands)).toEqual([
+			"ResolvePlanetscaleWindow",
+			"LoadPlanetscaleStatus",
+		])
+		expect(names(withStatus(true).commands)).toEqual([
+			"FetchPlanetscaleDatabases",
+			"FetchPlanetscaleDatabaseStats",
+		])
 	})
 
 	test("a disconnected org asks for nothing more and offers the connection", () => {
@@ -79,10 +91,16 @@ describe("planetscale list", () => {
 
 	test("stats for a superseded window are dropped", () => {
 		const first = withStatus(true).model
-		const second = pageUpdate(first, Message.CompletedResolveWindow({ window: later, nowMs: 0, mode: "Load" })).model
+		const second = pageUpdate(
+			first,
+			Message.CompletedResolveWindow({ window: later, nowMs: 0, mode: "Load" }),
+		).model
 		const late = pageUpdate(
 			second,
-			Message.CompletedFetchStats({ key: first.stats.key ?? "", result: Result.succeed([stat("a", 50)]) }),
+			Message.CompletedFetchStats({
+				key: first.stats.key ?? "",
+				result: Result.succeed([stat("a", 50)]),
+			}),
 		)
 		expect(late.model.stats).toEqual(second.stats)
 	})
@@ -91,15 +109,25 @@ describe("planetscale list", () => {
 		const model = withStatus(true).model
 		const loaded = pageUpdate(
 			model,
-			Message.CompletedFetchDatabases({ key: model.databases.key ?? "", result: Result.succeed(inventory) }),
+			Message.CompletedFetchDatabases({
+				key: model.databases.key ?? "",
+				result: Result.succeed(inventory),
+			}),
 		).model
-		scene({ update: pageUpdate, view }, given(loaded), expectView(text("No databases discovered yet")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			expectView(text("No databases discovered yet")).toExist(),
+		)
 	})
 
 	test("before any scrape the table sorts by name; a head click re-sorts it", () => {
 		const model = withStatus(true).model
 		expect(sortOf(model)).toEqual({ key: "name", dir: "desc" })
-		expect(sortOf(pageUpdate(model, Message.ClickedSort({ key: "name" })).model)).toEqual({ key: "name", dir: "asc" })
+		expect(sortOf(pageUpdate(model, Message.ClickedSort({ key: "name" })).model)).toEqual({
+			key: "name",
+			dir: "asc",
+		})
 		const byStorage = pageUpdate(model, Message.ClickedSort({ key: "storageUsedPercent" })).model
 		expect(sortOf(byStorage)).toEqual({ key: "storageUsedPercent", dir: "desc" })
 	})
@@ -107,7 +135,10 @@ describe("planetscale list", () => {
 	test("picking a preset writes it to the URL", () => {
 		const model = withStatus(true).model
 		expect(pageUpdate(model, Message.ClickedResetTimeRange()).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/infra/planetscale?timePreset=12h", isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/planetscale?timePreset=12h",
+				isReplace: false,
+			}),
 		)
 	})
 })

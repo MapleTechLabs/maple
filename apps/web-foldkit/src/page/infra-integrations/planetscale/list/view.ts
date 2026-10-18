@@ -39,7 +39,11 @@ type Clock = Readonly<{ nowMs: number; timeZone: string }>
 const NO_STATS: ReadonlyArray<DatabaseStat> = []
 
 const statRailLoading = (h: H): Html =>
-	statRail(h, { isBusy: true }, Array.from({ length: 4 }, () => statRailItemSkeleton(h)))
+	statRail(
+		h,
+		{ isBusy: true },
+		Array.from({ length: 4 }, () => statRailItemSkeleton(h)),
+	)
 
 const loading = (h: H): Html => h.div([h.Class("space-y-4")], [statRailLoading(h), databaseTableLoading(h)])
 
@@ -60,7 +64,8 @@ const totalsOf = (stats: ReadonlyArray<DatabaseStat>): Totals =>
 			...(row.replicaLagMaxSeconds > acc.lagMax
 				? { lagMax: row.replicaLagMaxSeconds, lagOwner: row.database }
 				: { lagMax: acc.lagMax, lagOwner: acc.lagOwner }),
-			...(row.storageUsedPercent !== null && (acc.storageMax === null || row.storageUsedPercent > acc.storageMax)
+			...(row.storageUsedPercent !== null &&
+			(acc.storageMax === null || row.storageUsedPercent > acc.storageMax)
 				? { storageMax: row.storageUsedPercent, storageOwner: row.database }
 				: { storageMax: acc.storageMax, storageOwner: acc.storageOwner }),
 		}),
@@ -94,7 +99,13 @@ const noDatabases = (h: H): Html =>
 		"py-16",
 	)
 
-const content = (h: H, model: Model, status: PlanetscaleStatus, inventory: DatabaseList, clock: Clock): Html => {
+const content = (
+	h: H,
+	model: Model,
+	status: PlanetscaleStatus,
+	inventory: DatabaseList,
+	clock: Clock,
+): Html => {
 	// `Result.builder(...).onSuccess(...).orElse(NO_STATS)`: a failed read shows no numbers.
 	const statsData = model.stats.data
 	const stats =
@@ -130,7 +141,11 @@ const content = (h: H, model: Model, status: PlanetscaleStatus, inventory: Datab
 			),
 			...(never ? [setupState(h, derivePlanetScaleSetup(status, clock.nowMs).steps)] : []),
 			statRail(h, {}, [
-				statRailItem(h, { compact: true, eyebrow: "Databases", value: String(inventory.databases.length) }),
+				statRailItem(h, {
+					compact: true,
+					eyebrow: "Databases",
+					value: String(inventory.databases.length),
+				}),
 				statRailItem(h, { compact: true, eyebrow: "Branches", value: String(branchTotal) }),
 				...(never
 					? []
@@ -138,14 +153,25 @@ const content = (h: H, model: Model, status: PlanetscaleStatus, inventory: Datab
 							statRailItem(h, {
 								compact: true,
 								eyebrow: "Worst storage",
-								value: totals.storageMax === null ? EMPTY_VALUE : formatStoragePercent(totals.storageMax),
-								tone: totals.storageMax === null ? "neutral" : utilizationTone(totals.storageMax),
-								subline: metricsPaused ? METRICS_PAUSED_SHORT : (totals.storageOwner ?? undefined),
+								value:
+									totals.storageMax === null
+										? EMPTY_VALUE
+										: formatStoragePercent(totals.storageMax),
+								tone:
+									totals.storageMax === null
+										? "neutral"
+										: utilizationTone(totals.storageMax),
+								subline: metricsPaused
+									? METRICS_PAUSED_SHORT
+									: (totals.storageOwner ?? undefined),
 							}),
 							statRailItem(h, {
 								compact: true,
 								eyebrow: "Worst replica lag",
-								value: metricsPaused && stats.length === 0 ? EMPTY_VALUE : formatLag(totals.lagMax),
+								value:
+									metricsPaused && stats.length === 0
+										? EMPTY_VALUE
+										: formatLag(totals.lagMax),
 								tone: lagTone(totals.lagMax),
 								subline: metricsPaused
 									? METRICS_PAUSED_SHORT
@@ -163,7 +189,9 @@ const content = (h: H, model: Model, status: PlanetscaleStatus, inventory: Datab
 						sort: sortOf(model),
 						isWaiting: AsyncData.isRefreshing(statsData) || AsyncData.isLoading(statsData),
 						metricsPaused: never,
-						emptyMessage: metricsPaused ? METRICS_PAUSED_MESSAGE : "No databases in the inventory.",
+						emptyMessage: metricsPaused
+							? METRICS_PAUSED_MESSAGE
+							: "No databases in the inventory.",
 					}),
 		],
 	)

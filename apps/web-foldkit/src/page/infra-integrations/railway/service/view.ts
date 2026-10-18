@@ -33,21 +33,37 @@ const CHARTS: ReadonlyArray<{
 	readonly unit: ChartUnit
 	readonly series: ReadonlyArray<readonly [string, Pick]>
 }> = [
-	{ title: "CPU", unit: "cores", series: [["Average", (row) => row.cpuAvg], ["Peak", (row) => row.cpuMax]] },
+	{
+		title: "CPU",
+		unit: "cores",
+		series: [
+			["Average", (row) => row.cpuAvg],
+			["Peak", (row) => row.cpuMax],
+		],
+	},
 	{
 		title: "Memory",
 		unit: "bytes",
-		series: [["Average", (row) => row.memoryAvg], ["Peak", (row) => row.memoryMax]],
+		series: [
+			["Average", (row) => row.memoryAvg],
+			["Peak", (row) => row.memoryMax],
+		],
 	},
 	{
 		title: "Network (as reported by Railway)",
 		unit: "bytes",
-		series: [["Received", (row) => row.networkRx], ["Sent", (row) => row.networkTx]],
+		series: [
+			["Received", (row) => row.networkRx],
+			["Sent", (row) => row.networkTx],
+		],
 	},
 	{
 		title: "Disk",
 		unit: "bytes",
-		series: [["Volume", (row) => row.diskVolume], ["Ephemeral", (row) => row.diskEphemeral]],
+		series: [
+			["Volume", (row) => row.diskVolume],
+			["Ephemeral", (row) => row.diskEphemeral],
+		],
 	},
 ]
 
@@ -55,14 +71,19 @@ const toRows = (
 	buckets: ReadonlyArray<RailwayServiceTimeseriesRow>,
 	series: ReadonlyArray<readonly [string, Pick]>,
 ): ReadonlyArray<LongRow> =>
-	buckets.flatMap((row) => series.map(([label, pick]) => ({ bucket: row.bucket, attributeValue: label, value: pick(row) })))
+	buckets.flatMap((row) =>
+		series.map(([label, pick]) => ({ bucket: row.bucket, attributeValue: label, value: pick(row) })),
+	)
 
 /** The service's row in the fleet read, once loaded. */
 export const serviceOf = (model: Model): RailwayServiceRow | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(model.services.data), (rows) =>
 			Option.fromNullishOr(
-				rows.find((row) => row.serviceId === model.serviceId && row.environmentId === model.search.environmentId),
+				rows.find(
+					(row) =>
+						row.serviceId === model.serviceId && row.environmentId === model.search.environmentId,
+				),
 			),
 		),
 	)
@@ -80,14 +101,19 @@ const stats = (h: H, service: RailwayServiceRow): Html => {
 			compact: true,
 			eyebrow: "Avg CPU",
 			value: formatCores(service.cpuAvg),
-			subline: cpuShare === null ? undefined : `${formatPercent(cpuShare / 100)} of ${formatCores(service.cpuLimit)}`,
+			subline:
+				cpuShare === null
+					? undefined
+					: `${formatPercent(cpuShare / 100)} of ${formatCores(service.cpuLimit)}`,
 		}),
 		statRailItem(h, {
 			compact: true,
 			eyebrow: "Avg memory",
 			value: formatBytes(service.memoryAvg),
 			subline:
-				memoryShare === null ? undefined : `${formatPercent(memoryShare / 100)} of ${formatBytes(service.memoryLimit)}`,
+				memoryShare === null
+					? undefined
+					: `${formatPercent(memoryShare / 100)} of ${formatBytes(service.memoryLimit)}`,
 		}),
 		statRailItem(h, { compact: true, eyebrow: "Peak memory", value: formatBytes(service.memoryMax) }),
 		statRailItem(h, { compact: true, eyebrow: "Replicas", value: String(service.replicas) }),
@@ -97,7 +123,10 @@ const stats = (h: H, service: RailwayServiceRow): Html => {
 const GRID = "grid grid-cols-1 gap-4 lg:grid-cols-2"
 
 const loadingGrid = (h: H): Html =>
-	h.div([h.Class(GRID)], CHARTS.map(() => chartLoading(h, { variant: "line", height: 256 })))
+	h.div(
+		[h.Class(GRID)],
+		CHARTS.map(() => chartLoading(h, { variant: "line", height: 256 })),
+	)
 
 const chartGrid = (
 	h: H,
@@ -116,7 +145,8 @@ const chartGrid = (
 					slotId: `railway-chart-${index}`,
 					model: model.charts[chart.title] ?? Chart.init(),
 					view: InfraMetricChart.view,
-					toParentMessage: (message: Chart.Message) => Message.GotChartMessage({ chartId: chart.title, message }),
+					toParentMessage: (message: Chart.Message) =>
+						Message.GotChartMessage({ chartId: chart.title, message }),
 					viewInputs: {
 						chartId: `railway-${index}`,
 						spec: InfraMetricChart.infraMetricSpec({
@@ -142,7 +172,11 @@ const chartsView = (h: H, model: Model, timeZone: string): Html => {
 	const grid = (buckets: ReadonlyArray<RailwayServiceTimeseriesRow>, isWaiting: boolean) =>
 		isReady ? chartGrid(h, model, buckets, theme, timeZone, isWaiting) : loadingGrid(h)
 	const failed = (failure: Parameters<typeof errorState>[1]["failure"]) =>
-		errorState(h, { failure, title: "Failed to load service metrics", onRetry: Message.ClickedRetryTimeseries() })
+		errorState(h, {
+			failure,
+			title: "Failed to load service metrics",
+			onRetry: Message.ClickedRetryTimeseries(),
+		})
 	return AsyncData.match(model.timeseries.data, {
 		onIdle: () => loadingGrid(h),
 		onLoading: () => loadingGrid(h),

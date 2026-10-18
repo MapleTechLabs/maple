@@ -85,12 +85,19 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		isReloading: false,
 	}
 	const status = requestStatus(model, context, "Load")
-	return { model: status.model, commands: [resolveCommand(model, context, "Load"), ...(status.commands ?? [])] }
+	return {
+		model: status.model,
+		commands: [resolveCommand(model, context, "Load"), ...(status.commands ?? [])],
+	}
 }
 
 const searchHref = (search: Search) => hrefOf(AppRoute.InfraRailway({ search }))
 
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	const windowChanged =
@@ -98,7 +105,10 @@ export const routeChanged = (model: Model, route: { readonly search: Search }, c
 		next.search.endTime !== model.search.endTime ||
 		next.search.timePreset !== model.search.timePreset
 	return windowChanged
-		? { model: next, commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+		? {
+				model: next,
+				commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
+			}
 		: { model: next }
 }
 
@@ -127,11 +137,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const services = requestServices(model, context, "Refresh")
 			if (!includeStatus) return services
 			const status = requestStatus(services.model, context, "Refresh")
-			return { model: status.model, commands: [...(services.commands ?? []), ...(status.commands ?? [])] }
+			return {
+				model: status.model,
+				commands: [...(services.commands ?? []), ...(status.commands ?? [])],
+			}
 		},
 		ClickedRetryServices: () => requestServices(model, context, "Refresh"),
 		ClickedRetryStatus: () => requestStatus(model, context, "Refresh"),
-		ChangedSearch: ({ value }) => navigate(model, { ...model.search, q: value === "" ? undefined : value }),
+		ChangedSearch: ({ value }) =>
+			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined }),
 		ClickedSort: ({ key }) => ({
 			model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["displayName"] }) },
@@ -147,14 +161,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		ClickedResetTimeRange: () =>
-			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: DEFAULT_PRESET }),
+			navigate(model, {
+				...model.search,
+				startTime: undefined,
+				endTime: undefined,
+				timePreset: DEFAULT_PRESET,
+			}),
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		GotTimePickerMessage: ({ message: inner }) => {
 			const next = TimeRangePicker.update(model.timePicker, inner)
 			const lifted: Return = {
 				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) => Message.GotTimePickerMessage({ message: picker })),
+				commands: Command.mapMessages(next.commands, (picker) =>
+					Message.GotTimePickerMessage({ message: picker }),
+				),
 			}
 			return next.outMessage === undefined
 				? lifted
@@ -175,7 +196,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = Tooltip.update(model.rowTooltip, inner)
 			return {
 				model: { ...model, rowTooltip: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tip) => Message.GotRowTooltipMessage({ message: tip })),
+				commands: Command.mapMessages(next.commands ?? [], (tip) =>
+					Message.GotRowTooltipMessage({ message: tip }),
+				),
 			}
 		},
 		GotTokenFieldMessage: ({ message: inner }) => fieldStep(model, inner),

@@ -9,7 +9,13 @@ import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { CompleteReloadSpin, FetchServices, FetchTimeseries, ResolveWindow, type TimeseriesInput } from "./command"
+import {
+	CompleteReloadSpin,
+	FetchServices,
+	FetchTimeseries,
+	ResolveWindow,
+	type TimeseriesInput,
+} from "./command"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
 
@@ -100,14 +106,18 @@ const searchHref = (model: Model, search: Search) =>
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	if (searchHref(model, model.search) === searchHref(model, route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return { model: next, commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+	return {
+		model: next,
+		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
+	}
 }
 
 export const contextChanged = (model: Model): Return => ({ model })
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, nowMs, mode }) => requestAll({ ...model, nowMs }, context, window, mode),
+		CompletedResolveWindow: ({ window, nowMs, mode }) =>
+			requestAll({ ...model, nowMs }, context, window, mode),
 		CompletedFetchServices: ({ key, result }) => ({
 			model: { ...model, services: Keyed.accept(model.services, key, result) },
 		}),
@@ -115,7 +125,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, timeseries: Keyed.accept(model.timeseries, key, result) },
 		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		ClickedRetryTimeseries: () =>
 			model.window === null ? { model } : requestAll(model, context, model.window, "Refresh"),
@@ -130,14 +142,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		ClickedResetTimeRange: () =>
-			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: DEFAULT_PRESET }),
+			navigate(model, {
+				...model.search,
+				startTime: undefined,
+				endTime: undefined,
+				timePreset: DEFAULT_PRESET,
+			}),
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		GotTimePickerMessage: ({ message: inner }) => {
 			const next = TimeRangePicker.update(model.timePicker, inner)
 			const lifted: Return = {
 				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) => Message.GotTimePickerMessage({ message: picker })),
+				commands: Command.mapMessages(next.commands, (picker) =>
+					Message.GotTimePickerMessage({ message: picker }),
+				),
 			}
 			return next.outMessage === undefined
 				? lifted

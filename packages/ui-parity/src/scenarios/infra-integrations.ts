@@ -71,6 +71,45 @@ export const infraIntegrationsArea: AreaModule = {
 			steps: press("Queues 1"),
 		}),
 		scenario("cloudflare-empty", "Cloudflare: not connected", "/infra/cloudflare", { dataset: EMPTY }),
+		scenario(
+			"cloudflare-list-loading",
+			"Cloudflare: zones loading",
+			"/infra/cloudflare",
+			held("queryEngine.cloudflareInfraZones"),
+		),
+		scenario(
+			"cloudflare-list-status-loading",
+			"Cloudflare: status loading",
+			"/infra/cloudflare",
+			held("integrations.cloudflareStatus"),
+		),
+		scenario(
+			"cloudflare-list-status-error",
+			"Cloudflare: status failing",
+			"/infra/cloudflare",
+			failing("integrations.cloudflareStatus"),
+		),
+		scenario("cloudflare-list-sort-zone", "Cloudflare: zones sorted by name", "/infra/cloudflare", {
+			steps: press("Zone"),
+		}),
+		scenario("cloudflare-list-search", "Cloudflare: zones searched", "/infra/cloudflare", {
+			steps: async (page) => {
+				await page.getByRole("textbox", { name: "Filter 2 zones" }).fill("docs")
+				await page.getByText("1 of 2 zones").waitFor()
+			},
+		}),
+		scenario("cloudflare-list-scope", "Cloudflare: zones scoped to serving 5xx", "/infra/cloudflare", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: /Serving 5xx/ }).click()
+				await page.getByRole("button", { name: /Serving 5xx/, pressed: true }).waitFor()
+			},
+		}),
+		scenario("cloudflare-list-queues-sort", "Cloudflare: queues sorted by name", "/infra/cloudflare", {
+			steps: async (page) => {
+				await press("Queues 1")(page)
+				await press("Queue")(page)
+			},
+		}),
 		scenario("cloudflare-zone", "Cloudflare zone: acme.test", "/infra/cloudflare/acme.test"),
 		scenario("cloudflare-zone-dns", "Cloudflare zone: DNS tab", "/infra/cloudflare/acme.test", {
 			steps: press("DNS"),

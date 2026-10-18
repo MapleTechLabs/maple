@@ -11,7 +11,14 @@ import { RailwayServiceRow, RailwayStatus } from "../model"
 
 // `/infra/railway` (apps/web/src/routes/infra/railway/index.tsx).
 
-export const SortKey = Schema.Literals(["displayName", "cpuMax", "memoryMax", "peakOfLimit", "replicas", "lastSeen"])
+export const SortKey = Schema.Literals([
+	"displayName",
+	"cpuMax",
+	"memoryMax",
+	"peakOfLimit",
+	"replicas",
+	"lastSeen",
+])
 export type SortKey = typeof SortKey.Type
 
 /** `RailwayTokenForm` in connect mode. */

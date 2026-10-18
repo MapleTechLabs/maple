@@ -80,17 +80,27 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 					h.span(
 						[h.Class("flex items-baseline gap-1.5")],
 						[
-							h.span([h.Class("font-mono text-base font-semibold tabular-nums")], [formatBytes(total)]),
+							h.span(
+								[h.Class("font-mono text-base font-semibold tabular-nums")],
+								[formatBytes(total)],
+							),
 							h.span(
 								[h.Class("text-2xs text-muted-foreground")],
-								["summed average memory across ", String(count), " ", pluralize(count, "service")],
+								[
+									"summed average memory across ",
+									String(count),
+									" ",
+									pluralize(count, "service"),
+								],
 							),
 						],
 					),
 					segmentedBar(h, {
 						className: "w-full gap-px bg-transparent",
 						minVisible: 1,
-						label: ranked.map((row) => `${row.serviceName} ${formatBytes(row.memoryAvg)}`).join(", "),
+						label: ranked
+							.map((row) => `${row.serviceName} ${formatBytes(row.memoryAvg)}`)
+							.join(", "),
 						segments,
 					}),
 					h.span(
@@ -99,10 +109,18 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 							...ranked
 								.slice(0, LEGEND_NAMES)
 								.map((row) =>
-									h.span([h.Class("truncate font-mono")], [nameOf(row), " ", formatBytes(row.memoryAvg)]),
+									h.span(
+										[h.Class("truncate font-mono")],
+										[nameOf(row), " ", formatBytes(row.memoryAvg)],
+									),
 								),
 							...(ranked.length > LEGEND_NAMES
-								? [h.span([h.Class("font-mono")], ["+", String(ranked.length - LEGEND_NAMES), " more"])]
+								? [
+										h.span(
+											[h.Class("font-mono")],
+											["+", String(ranked.length - LEGEND_NAMES), " more"],
+										),
+									]
 								: []),
 						],
 					),
@@ -126,7 +144,11 @@ export const railwayFleetBandLoading = <M>(h: HtmlBuilder<M>): Html =>
 		[
 			h.div(
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-[26rem] md:shrink-0")],
-				[skeleton(h, "h-4 w-48"), skeleton(h, "h-1.5 w-full rounded-full"), skeleton(h, "h-2.5 w-56")],
+				[
+					skeleton(h, "h-4 w-48"),
+					skeleton(h, "h-1.5 w-full rounded-full"),
+					skeleton(h, "h-2.5 w-56"),
+				],
 			),
 			h.div(
 				[h.Class("flex flex-1 flex-col justify-center gap-1.5 border-l px-4 py-3")],

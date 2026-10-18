@@ -45,7 +45,9 @@ export const FetchTimeseries = Command.define("FetchRailwayServiceTimeseries", {
 	args: { key: Schema.String, input: TimeseriesInput },
 	messages: [Message.CompletedFetchTimeseries],
 	execute: ({ key, input }) =>
-		Effect.map(loadRailwayTimeseries(input), (result) => Message.CompletedFetchTimeseries({ key, result })),
+		Effect.map(loadRailwayTimeseries(input), (result) =>
+			Message.CompletedFetchTimeseries({ key, result }),
+		),
 })
 
 const RELOAD_SPIN = Duration.millis(600)

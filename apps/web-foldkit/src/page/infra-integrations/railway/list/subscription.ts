@@ -30,7 +30,10 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ isEmpty: empty, includeStatus }) =>
 					empty
 						? Stream.fromEffectRepeat(
-								Effect.as(Effect.sleep(EMPTY_REFRESH), Message.TickedEmptyRefresh({ includeStatus })),
+								Effect.as(
+									Effect.sleep(EMPTY_REFRESH),
+									Message.TickedEmptyRefresh({ includeStatus }),
+								),
 							)
 						: Stream.empty,
 			},

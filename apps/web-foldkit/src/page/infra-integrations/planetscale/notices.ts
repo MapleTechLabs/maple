@@ -36,7 +36,11 @@ export const metricsNotice = <M>(h: HtmlBuilder<M>): Html =>
 		alertDescription(h, [
 			"Databases and branches are up to date, and query insights still work. Connections, CPU, memory, storage, and replica lag need a PlanetScale service token with the read_metrics_endpoints permission.",
 		]),
-		alertAction(h, [linkButton(h, { size: "sm", variant: "outline", href: INTEGRATION_HREF }, ["Add a metrics token"])]),
+		alertAction(h, [
+			linkButton(h, { size: "sm", variant: "outline", href: INTEGRATION_HREF }, [
+				"Add a metrics token",
+			]),
+		]),
 	])
 
 export const revokedNotice = <M>(h: HtmlBuilder<M>): Html =>
@@ -51,7 +55,12 @@ export const revokedNotice = <M>(h: HtmlBuilder<M>): Html =>
 
 export const inventoryNotice = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ lastInventoryAt: string | null; lastInventoryError: string | null; nowMs: number; timeZone: string }>,
+	options: Readonly<{
+		lastInventoryAt: string | null
+		lastInventoryError: string | null
+		nowMs: number
+		timeZone: string
+	}>,
 ): Html => {
 	const failing = options.lastInventoryError !== null
 	return alert(h, { variant: "warn" }, [
@@ -66,7 +75,11 @@ export const inventoryNotice = <M>(
 						" ",
 						options.lastInventoryAt === null
 							? "never"
-							: relativeTime(h, { value: options.lastInventoryAt, nowMs: options.nowMs, timeZone: options.timeZone }),
+							: relativeTime(h, {
+									value: options.lastInventoryAt,
+									nowMs: options.nowMs,
+									timeZone: options.timeZone,
+								}),
 						".",
 					],
 		),
@@ -91,7 +104,8 @@ const stepMarker = <M>(h: HtmlBuilder<M>, step: SetupStep, number: number): Html
 			className: "mt-0.5 shrink-0 text-severity-error",
 			attributes: [h.AriaHidden(true)],
 		})
-	if (step.state === "current" && step.waitingOnMaple) return spinner(h, "mt-0.5 shrink-0 text-muted-foreground")
+	if (step.state === "current" && step.waitingOnMaple)
+		return spinner(h, "mt-0.5 shrink-0 text-muted-foreground")
 	return h.span(
 		[
 			h.AriaHidden(true),
@@ -122,13 +136,27 @@ const setupChecklist = <M>(h: HtmlBuilder<M>, steps: ReadonlyArray<SetupStep>, c
 									h.span(
 										[
 											h.Class(
-												cn("text-xs font-medium", step.state === "pending" ? "text-muted-foreground" : "text-foreground"),
+												cn(
+													"text-xs font-medium",
+													step.state === "pending"
+														? "text-muted-foreground"
+														: "text-foreground",
+												),
 											),
 										],
 										[step.title],
 									),
 									h.span(
-										[h.Class(cn("text-xs", step.state === "blocked" ? "text-severity-error" : "text-muted-foreground"))],
+										[
+											h.Class(
+												cn(
+													"text-xs",
+													step.state === "blocked"
+														? "text-severity-error"
+														: "text-muted-foreground",
+												),
+											),
+										],
 										[step.detail],
 									),
 								],
@@ -146,8 +174,16 @@ const BRAND = { icon: "PlanetScaleIcon", accent: PLANETSCALE_COLOR } as const
 export const setupState = <M>(h: HtmlBuilder<M>, steps: ReadonlyArray<SetupStep>): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, [
-			{ label: "Utilization", title: "CPU, memory, connections", description: "Per branch, scraped from PlanetScale on a schedule." },
-			{ label: "Storage", title: "Disk headroom over time", description: "The slow-moving number nothing else in Maple reveals." },
+			{
+				label: "Utilization",
+				title: "CPU, memory, connections",
+				description: "Per branch, scraped from PlanetScale on a schedule.",
+			},
+			{
+				label: "Storage",
+				title: "Disk headroom over time",
+				description: "The slow-moving number nothing else in Maple reveals.",
+			},
 			{
 				label: "Replication",
 				title: "Replica lag per branch",

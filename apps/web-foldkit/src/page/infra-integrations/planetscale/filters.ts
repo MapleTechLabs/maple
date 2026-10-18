@@ -72,7 +72,8 @@ export const activeFilterChips = (filters: PlanetScaleFilters): ReadonlyArray<Ac
 		: []),
 ]
 
-export const hasActiveFilters = (filters: PlanetScaleFilters): boolean => activeFilterChips(filters).length > 0
+export const hasActiveFilters = (filters: PlanetScaleFilters): boolean =>
+	activeFilterChips(filters).length > 0
 
 export const toggleFilterValue = (
 	current: ReadonlyArray<string> | undefined,

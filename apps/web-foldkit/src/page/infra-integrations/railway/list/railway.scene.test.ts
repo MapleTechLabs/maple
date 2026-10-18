@@ -71,13 +71,18 @@ const withStatus = (connected: boolean): Model => {
 	const entered = init({ search: {} }, context).model
 	const windowed = steps(entered, [Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })])
 	return steps(windowed, [
-		Message.CompletedLoadStatus({ key: windowed.status.key ?? "", result: Result.succeed(status(connected)) }),
+		Message.CompletedLoadStatus({
+			key: windowed.status.key ?? "",
+			result: Result.succeed(status(connected)),
+		}),
 	])
 }
 
 const loaded = (rows: ReadonlyArray<RailwayServiceRow>): Model => {
 	const model = withStatus(true)
-	return steps(model, [Message.CompletedFetchServices({ key: model.services.key ?? "", result: Result.succeed(rows) })])
+	return steps(model, [
+		Message.CompletedFetchServices({ key: model.services.key ?? "", result: Result.succeed(rows) }),
+	])
 }
 
 describe("railway list", () => {
@@ -91,7 +96,10 @@ describe("railway list", () => {
 		expect(names(windowed.commands)).toEqual([])
 		const connected = pageUpdate(
 			windowed.model,
-			Message.CompletedLoadStatus({ key: windowed.model.status.key ?? "", result: Result.succeed(status(true)) }),
+			Message.CompletedLoadStatus({
+				key: windowed.model.status.key ?? "",
+				result: Result.succeed(status(true)),
+			}),
 		)
 		expect(names(connected.commands)).toEqual(["FetchRailwayServices"])
 	})
@@ -108,10 +116,16 @@ describe("railway list", () => {
 
 	test("a services answer for a superseded window is dropped", () => {
 		const first = withStatus(true)
-		const second = pageUpdate(first, Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }))
+		const second = pageUpdate(
+			first,
+			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }),
+		)
 		const late = pageUpdate(
 			second.model,
-			Message.CompletedFetchServices({ key: first.services.key ?? "", result: Result.succeed([row("old", 1)]) }),
+			Message.CompletedFetchServices({
+				key: first.services.key ?? "",
+				result: Result.succeed([row("old", 1)]),
+			}),
 		)
 		expect(late.model.services).toEqual(second.model.services)
 	})
@@ -157,15 +171,22 @@ describe("railway list", () => {
 
 	test("connect sends a valid token once and shows the rejection inline", () => {
 		const model = withStatus(false)
-		const short = steps(model, [Message.GotTokenFieldMessage({ message: Field.Message.ChangedValue({ value: "abc" }) })])
+		const short = steps(model, [
+			Message.GotTokenFieldMessage({ message: Field.Message.ChangedValue({ value: "abc" }) }),
+		])
 		expect(names(pageUpdate(short, Message.SubmittedConnect()).commands)).toEqual([])
 		const typed = steps(model, [
-			Message.GotTokenFieldMessage({ message: Field.Message.ChangedValue({ value: " rw_token_0001 " }) }),
+			Message.GotTokenFieldMessage({
+				message: Field.Message.ChangedValue({ value: " rw_token_0001 " }),
+			}),
 		])
 		const submitted = pageUpdate(typed, Message.SubmittedConnect())
 		expect(names(submitted.commands)).toEqual(["ConnectRailway"])
 		expect(names(pageUpdate(submitted.model, Message.SubmittedConnect()).commands)).toEqual([])
-		const rejected = pageUpdate(submitted.model, Message.FailedConnect({ error: "Railway rejected the token." }))
+		const rejected = pageUpdate(
+			submitted.model,
+			Message.FailedConnect({ error: "Railway rejected the token." }),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(rejected.model),

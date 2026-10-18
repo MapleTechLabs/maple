@@ -54,7 +54,8 @@ export const filterServices = (
 	const q = query.trim().toLowerCase()
 	return services.filter(
 		(row) =>
-			q === "" || `${row.serviceName} ${row.projectName} ${row.environmentName}`.toLowerCase().includes(q),
+			q === "" ||
+			`${row.serviceName} ${row.projectName} ${row.environmentName}`.toLowerCase().includes(q),
 	)
 }
 

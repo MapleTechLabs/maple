@@ -50,7 +50,13 @@ const tokenForm = (h: H, form: ConnectForm): Html => {
 		: form.error !== null
 			? [Field.fieldError(h, { ids, state, attributes: [h.Role("alert")] }, form.error)]
 			: isTokenInvalid
-				? [Field.fieldDescription(h, { ids, state }, "A Railway token is between 8 and 512 characters.")]
+				? [
+						Field.fieldDescription(
+							h,
+							{ ids, state },
+							"A Railway token is between 8 and 512 characters.",
+						),
+					]
 				: []
 	return h.form(
 		[h.Class("flex w-full flex-col gap-2 text-left"), h.OnSubmit(Message.SubmittedConnect())],
@@ -73,11 +79,10 @@ const tokenForm = (h: H, form: ConnectForm): Html => {
 								...(hasError ? [h.AriaInvalid(true)] : []),
 							],
 						}),
-						button(
-							h,
-							{ type: "submit", isDisabled: !isValid, isLoading: form.isSubmitting },
-							[icon(h, "RailwayIcon"), "Connect Railway"],
-						),
+						button(h, { type: "submit", isDisabled: !isValid, isLoading: form.isSubmitting }, [
+							icon(h, "RailwayIcon"),
+							"Connect Railway",
+						]),
 					],
 				),
 				...note,
@@ -118,7 +123,9 @@ export const railwayConnectCard = (h: H, form: ConnectForm): Html =>
 			integrationEmptyFooter(h, [
 				h.a(
 					[
-						h.Class("inline-flex items-center gap-1 underline underline-offset-2 hover:no-underline"),
+						h.Class(
+							"inline-flex items-center gap-1 underline underline-offset-2 hover:no-underline",
+						),
 						h.Href(TOKENS_URL),
 						h.Target("_blank"),
 						h.Rel("noreferrer"),

@@ -21,10 +21,7 @@ export const loadRailwayStatus = (refresh: boolean) =>
 	Effect.gen(function* () {
 		const statuses = yield* IntegrationStatuses
 		return yield* statuses.railway({ refresh })
-	}).pipe(
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-	)
+	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 export const loadRailwayTimeseries = (
 	input: TimeWindow & {
