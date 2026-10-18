@@ -1,4 +1,5 @@
 import type { Page } from "playwright"
+import { gcpConfigureScenarios } from "./integrations-gcp-configure.ts"
 import type { AreaModule, Scenario } from "./types.ts"
 
 /** The /integrations hub, one card per connected kind, and the /connectors redirect. */
@@ -504,5 +505,6 @@ export const integrationsArea: AreaModule = {
 					.click(),
 		}),
 		page("connectors", "Connectors (redirects to the hub)", "/connectors?tab=prometheus"),
+		...gcpConfigureScenarios,
 	],
 }

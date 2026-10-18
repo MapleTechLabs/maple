@@ -4,7 +4,7 @@ import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import type { FixtureArea } from "../areas.ts"
 import type { EndpointHandler, EndpointRequest } from "../dataset.ts"
 import { acmeAdmin, DAY, fixtureUuid, MINUTE } from "../identity.ts"
-import { planetscaleStatus } from "./infra-integrations.ts"
+import { gcpConnector, planetscaleStatus } from "./infra-integrations.ts"
 
 /**
  * The /integrations hub's Postgres-backed reads, canned: Acme scrapes two Prometheus targets (one
@@ -172,6 +172,43 @@ const startConnect =
 
 const disconnected: EndpointHandler = () => Effect.succeed({ disconnected: true })
 
+const stringField = (value: unknown, key: string): string | null =>
+	Predicate.hasProperty(value, key) && typeof value[key] === "string" ? value[key] : null
+const booleanField = (value: unknown, key: string): boolean | null =>
+	Predicate.hasProperty(value, key) && typeof value[key] === "boolean" ? value[key] : null
+
+/** A connection made a moment ago: nothing reported, nothing received. */
+const createdGcpConnector: EndpointHandler = (request) => {
+	const scopeId = stringField(request.payload, "scope_id") ?? ""
+	return Effect.succeed({
+		id: encodePublicId(PublicIdPrefixes.gcpConnector, fixtureUuid(40, 9)),
+		object: "gcp_connector",
+		scope_type: stringField(request.payload, "scope_type") ?? "project",
+		scope_id: scopeId,
+		project_id: stringField(request.payload, "project_id") ?? scopeId,
+		logs_enabled: booleanField(request.payload, "logs_enabled") ?? true,
+		metrics_enabled: booleanField(request.payload, "metrics_enabled") ?? false,
+		created_at: iso(request, 0),
+		last_log_received_at: null,
+		last_log_error: null,
+		applied_logs_enabled: null,
+		applied_metrics_enabled: null,
+		setup_reported_at: null,
+		last_metrics_received_at: null,
+		last_metrics_error: null,
+		discovered_project_count: 0,
+		last_resources_error: null,
+	})
+}
+
+/** The connected org's one connection with the changed flags; omitted ones stay. */
+const updatedGcpConnector: EndpointHandler = (request) =>
+	Effect.succeed({
+		...gcpConnector,
+		logs_enabled: booleanField(request.payload, "logs_enabled") ?? gcpConnector.logs_enabled,
+		metrics_enabled: booleanField(request.payload, "metrics_enabled") ?? gcpConnector.metrics_enabled,
+	})
+
 export const fixtureArea: FixtureArea = {
 	area: "integrations",
 	endpoints: () => ({
@@ -220,6 +257,8 @@ export const fixtureArea: FixtureArea = {
 				setup_script: "#!/usr/bin/env bash\necho 'setting up Maple'\n",
 				cleanup_script: "#!/usr/bin/env bash\necho 'removing Maple'\n",
 			}),
+		"gcpIntegration.createConnector": createdGcpConnector,
+		"gcpIntegration.updateConnector": updatedGcpConnector,
 		"gcpIntegration.deleteConnector": (request) =>
 			Effect.succeed({
 				// The decoded param is the internal id; the answer carries the public one.

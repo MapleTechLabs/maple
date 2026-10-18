@@ -28,12 +28,12 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { gcpConnectors } from "./update-gcp"
 import { gcpConnection } from "./view-gcp-connection"
+import { gcpConfigure } from "./view-gcp-configure"
 import { gcpDialogs } from "./view-gcp-dialogs"
 import { copyScriptButton, GCP_TITLE, openCloudShellButton } from "./view-gcp-parts"
 import { usageBand } from "./view-gcp-workloads"
 
 // `GcpIntegrationCard` and `GcpHeaderStatus` (components/integrations/gcp-integration-card.tsx).
-// TODO(gcp-configure): the `GcpConfigure` wizard is not ported; its buttons set the target only.
 
 type H = HtmlBuilder<Message>
 
@@ -117,7 +117,7 @@ const emptyState = (h: H): Html =>
 
 const byStatus = (h: H, model: Model, status: V2GcpIntegration, timeZone: string): Html => {
 	const connectors = status.connectors
-	const dialogs = gcpDialogs(h, model, timeZone)
+	const dialogs = [...gcpDialogs(h, model, timeZone), ...gcpConfigure(h, model, timeZone)]
 	if (connectors.length === 0)
 		return h.div(
 			[h.Class("flex flex-col gap-4")],

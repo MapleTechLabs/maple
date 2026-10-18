@@ -16,7 +16,8 @@ import * as Menu from "../../ui/menu"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { FleetRead, loadFleet, loadResources } from "../infra-integrations/gcp/data"
 import { Message } from "./message"
-import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
+import { ConfigureModel } from "./gcp-configure-schema"
+import { LogVolume, RemovedConnector } from "./gcp-schema"
 
 // `GcpIntegrationCard` and `GcpUsageBand` (components/integrations/gcp-*.tsx): state and reads.
 
@@ -43,8 +44,8 @@ export const GcpCardModel = Schema.Struct({
 	dismissDialog: Dialog.Model,
 	/** The cleanup scripts' copy buttons, by removed connection. */
 	copies: Schema.Record(Schema.String, CopyButton.Model),
-	/** What Configure is open on (`target`), null while closed. */
-	configureTarget: Schema.NullOr(ConfigureTarget),
+	/** `GcpConfigure`, null while closed. */
+	configure: Schema.NullOr(ConfigureModel),
 })
 export type GcpCardModel = typeof GcpCardModel.Type
 
@@ -64,7 +65,7 @@ export const initGcpCard = (): GcpCardModel => ({
 	dismissingId: null,
 	dismissDialog: Dialog.init("gcp-dismiss-cleanup", "alert-dialog"),
 	copies: {},
-	configureTarget: null,
+	configure: null,
 })
 
 /** What marks a log entry as forwarded by this integration (`GCP_LOG_SOURCE`). */

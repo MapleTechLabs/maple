@@ -144,30 +144,31 @@ const planetscaleDatabases = {
 	last_inventory_at: iso(FROZEN_NOW_MS - 10 * MINUTE),
 }
 
+/** The connected org's one connection: set up, reported and delivering. */
+export const gcpConnector = {
+	id: encodePublicId(PublicIdPrefixes.gcpConnector, fixtureUuid(40, 2)),
+	object: "gcp_connector",
+	scope_type: "project",
+	scope_id: GCP_PROJECT,
+	project_id: GCP_PROJECT,
+	logs_enabled: true,
+	metrics_enabled: true,
+	created_at: iso(connectedAt),
+	last_log_received_at: iso(FROZEN_NOW_MS - MINUTE),
+	last_log_error: null,
+	applied_logs_enabled: true,
+	applied_metrics_enabled: true,
+	setup_reported_at: iso(connectedAt + 5 * MINUTE),
+	last_metrics_received_at: iso(FROZEN_NOW_MS - MINUTE),
+	last_metrics_error: null,
+	discovered_project_count: 1,
+	last_resources_error: null,
+}
+
 const gcpStatus = {
 	object: "gcp_integration",
 	metrics_available: true,
-	connectors: [
-		{
-			id: encodePublicId(PublicIdPrefixes.gcpConnector, fixtureUuid(40, 2)),
-			object: "gcp_connector",
-			scope_type: "project",
-			scope_id: GCP_PROJECT,
-			project_id: GCP_PROJECT,
-			logs_enabled: true,
-			metrics_enabled: true,
-			created_at: iso(connectedAt),
-			last_log_received_at: iso(FROZEN_NOW_MS - MINUTE),
-			last_log_error: null,
-			applied_logs_enabled: true,
-			applied_metrics_enabled: true,
-			setup_reported_at: iso(connectedAt + 5 * MINUTE),
-			last_metrics_received_at: iso(FROZEN_NOW_MS - MINUTE),
-			last_metrics_error: null,
-			discovered_project_count: 1,
-			last_resources_error: null,
-		},
-	],
+	connectors: [gcpConnector],
 }
 
 const gcpResource = (

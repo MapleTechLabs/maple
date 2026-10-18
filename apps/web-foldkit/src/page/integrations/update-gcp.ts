@@ -27,6 +27,7 @@ import {
 } from "./gcp"
 import { Message } from "./message"
 import type { Model } from "./model"
+import type { ConfigureTarget } from "./gcp-schema"
 import { chain, requestStatus } from "./update-status"
 
 // `GcpIntegrationCard`'s state changes.
@@ -159,6 +160,8 @@ export const gotMenu = (
 	context: PageContext,
 	id: GcpConnectorId,
 	message: Menu.Message,
+	/** `GcpConfigure` on the connection (`update-gcp-configure.ts`, which reads this module). */
+	openConfigure: (model: Model, target: ConfigureTarget) => Return,
 ): Return => {
 	const menuId = `gcp-connection-menu-${id}`
 	const step = Menu.update(model.gcpCard.menus[menuId] ?? Menu.init(menuId), message)
@@ -174,10 +177,7 @@ export const gotMenu = (
 		commands: [...commands, ...(other.commands ?? [])],
 	})
 	if (picked === "disconnect") return merge(openDisconnect(next, context, connector))
-	if (picked === "configure")
-		return merge({
-			model: withCard(next, { configureTarget: { _tag: "Connection", id, stage: "choose" } }),
-		})
+	if (picked === "configure") return merge(openConfigure(next, { _tag: "Connection", id, stage: "choose" }))
 	if (picked === "logs" || picked === "infra")
 		return merge({
 			model: next,
@@ -260,7 +260,7 @@ export const completedDisconnect = (
 	])
 }
 
-const refreshInventory = (model: Model): Return => {
+export const refreshInventory = (model: Model): Return => {
 	const key = model.gcpCard.inventory.key
 	if (key === null) return { model }
 	return Option.match(Keyed.request(model.gcpCard.inventory, key, "Refresh"), {

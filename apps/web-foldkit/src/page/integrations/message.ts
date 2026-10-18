@@ -11,6 +11,7 @@ import {
 } from "@maple/domain/http"
 import {
 	V2ChatConnectorList,
+	V2GcpConnector,
 	V2GcpIntegration,
 	V2GcpSetupScripts,
 	V2PlanetScaleDatabaseList,
@@ -20,7 +21,7 @@ import {
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
-import { ChatWorkspaceId, GcpConnectorId } from "@maple/domain/primitives"
+import { ChatWorkspaceId, GcpConnectorId, GcpLogRuntime } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
@@ -35,6 +36,7 @@ import * as ToggleGroup from "../../ui/toggle-group"
 import * as Chart from "../../charts/chart"
 import { ConnectProvider } from "./connect"
 import { FleetRead } from "../infra-integrations/gcp/data"
+import { Capability, GcpFlags } from "./gcp-configure-schema"
 import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
 
 export const StatusName = Schema.Literals([
@@ -216,7 +218,34 @@ export const Message = defineMessageUnion({
 	ClickedGcpScriptToggle: {},
 	ClickedGcpScriptRetry: {},
 	ClickedGcpConfigure: { target: ConfigureTarget },
+	/** Cancel, Close and Done: the wizard unmounts at once, as legacy's `target = null`. */
 	ClosedGcpConfigure: {},
+	GotGcpConfigureDialogMessage: { message: Dialog.Message },
+	GotGcpScopeTypeMessage: { message: ToggleGroup.Message },
+	GotGcpScopeFieldMessage: { field: Schema.Literals(["scopeId", "hostProjectId"]), message: Field.Message },
+	/** The scope step's form submit (Continue or Enter). */
+	SubmittedGcpScope: {},
+	SubmittedGcpCreate: {},
+	ClickedGcpConfigureBack: {},
+	ToggledGcpCollect: { capability: Capability },
+	ClickedGcpLogFilter: {},
+	GotGcpFilterModeMessage: { message: Select.Message },
+	ClickedGcpForwardOutput: {},
+	ClickedGcpUseOpenTelemetry: {},
+	ToggledGcpRuntime: { runtime: GcpLogRuntime },
+	CompletedGcpCreate: { connector: Schema.NullOr(V2GcpConnector), failure: Schema.NullOr(LoadFailure) },
+	/** The data step's Continue, Save or "Save and continue". */
+	ClickedGcpChooseApply: {},
+	GotGcpConfirmDialogMessage: { message: Dialog.Message },
+	ConfirmedGcpSave: {},
+	CompletedGcpUpdate: { id: GcpConnectorId, flags: GcpFlags, failure: Schema.NullOr(LoadFailure) },
+	ClickedGcpRunEdit: {},
+	CompletedGcpConfigureScripts: {
+		key: Schema.String,
+		result: Schema.Result(V2GcpSetupScripts, LoadFailure),
+	},
+	ClickedGcpConfigureScriptRetry: {},
+	ClickedGcpScriptExpand: {},
 	/** The status poll: 10 s while a connection settles, else every minute (`useIntervalRefresh`). */
 	TickedGcpRefresh: {},
 	ReceivedConnectMessage: {

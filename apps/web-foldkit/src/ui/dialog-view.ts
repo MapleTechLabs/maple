@@ -124,6 +124,10 @@ export type ViewInputs = Readonly<{
 	hasTitle?: boolean
 	/** `bottomStickOnMobile={false}`: the dialog stays centred on narrow screens. */
 	isBottomStickOnMobile?: boolean
+	/** Open dialogs nested in this one: Base UI fades and scales the parent popup behind them. */
+	nestedDialogs?: number
+	/** Opened from inside another dialog: no backdrop of its own, `data-nested` on its parts. */
+	isNested?: boolean
 }>
 
 const slotPrefix = (kind: Kind) => kind
@@ -132,7 +136,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const parts = partsOf(model.kind, inputs.side ?? "right", inputs.className, inputs.isBottomStickOnMobile)
 	const slot = slotPrefix(model.kind)
 	const isVisible = isMounted(model.isOpen, model.animation)
+	const nestedDialogs = inputs.nestedDialogs ?? 0
+	const isNested = inputs.isNested ?? false
 	const state = stateAttributes(h, model.isOpen, model.animation)
+	const nesting = [
+		...(isNested ? [h.DataAttribute("nested", "")] : []),
+		...(nestedDialogs > 0 ? [h.DataAttribute("nested-dialog-open", "")] : []),
+	]
 	const trigger = childAttributes([
 		...(isVisible ? [h.AriaControls(popupId(model.id))] : []),
 		h.AriaExpanded(model.isOpen),
@@ -177,19 +187,25 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						h.Role("presentation"),
 						h.Style({ position: "fixed", inset: "0px", userSelect: "none" }),
 					]),
-					h.div([
-						h.AriaHidden(true),
-						h.DataAttribute("base-ui-inert", ""),
-						h.Class(parts.backdrop),
-						...state,
-						h.DataAttribute("slot", `${slot}-backdrop`),
-						h.Role("presentation"),
-						h.Style({ userSelect: "none" }),
-					]),
+					...(isNested
+						? []
+						: [
+								h.div([
+									h.AriaHidden(true),
+									h.DataAttribute("base-ui-inert", ""),
+									h.Class(parts.backdrop),
+									...state,
+									h.DataAttribute("slot", `${slot}-backdrop`),
+									h.Role("presentation"),
+									h.Style({ userSelect: "none" }),
+								]),
+							]),
 					h.div(
 						[
+							...(nestedDialogs > 0 ? [h.AriaHidden(true)] : []),
 							h.Class(parts.viewport),
 							...state,
+							...nesting,
 							h.DataAttribute("slot", `${slot}-viewport`),
 							h.Role("presentation"),
 						],
@@ -208,10 +224,11 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 									h.Class(parts.popup),
 									h.DataAttribute("base-ui-focusable", ""),
 									...state,
+									...nesting,
 									h.DataAttribute("slot", `${slot}-popup`),
 									h.Id(popupId(model.id)),
 									h.Role(parts.role),
-									h.Style({ "--nested-dialogs": "0" }),
+									h.Style({ "--nested-dialogs": String(nestedDialogs) }),
 									h.Tabindex(-1),
 								],
 								[...inputs.toContent(close), ...Option.toArray(closeButton)],
