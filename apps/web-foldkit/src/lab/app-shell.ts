@@ -1,5 +1,5 @@
-import { Effect, Option, Schema } from "effect"
-import { Update } from "foldkit"
+import { Effect, Option, Schema, Stream } from "effect"
+import { Subscription, Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { readSessionToken } from "../platform/auth-api"
 import type { Resources } from "../platform/resources"
@@ -92,3 +92,36 @@ export const labShellView = <Message>(
 		viewInputs: { currentPath: frame.currentPath },
 	}),
 ]
+
+/** The root's shell Subscriptions: `useIsMobile`, the sidebar shortcut and the Pinned group's shape. */
+export const labShellSubscriptions = <Model extends { readonly shell: Shell.Model }, Message>(
+	toParentMessage: (message: Shell.Message) => Message,
+) =>
+	Subscription.make<Model, Message, Resources>()((entry) => ({
+		shellViewport: entry(
+			{},
+			{
+				modelToDependencies: () => ({}),
+				dependenciesToStream: () => Stream.map(Shell.viewportChanges, toParentMessage),
+			},
+		),
+		shellSidebarShortcut: entry(
+			{},
+			{
+				modelToDependencies: () => ({}),
+				dependenciesToStream: () => Stream.map(Shell.sidebarShortcut, toParentMessage),
+			},
+		),
+		shellDashboards: entry(
+			{ orgId: Schema.NullOr(Schema.String) },
+			{
+				modelToDependencies: (model) => ({ orgId: Option.getOrNull(model.shell.maybeOrgId) }),
+				dependenciesToStream: ({ orgId }) =>
+					orgId === null
+						? Stream.empty
+						: Shell.pinnedDashboardRows(orgId, (dashboards) =>
+								toParentMessage(Shell.Message.SucceededLoadDashboards({ orgId, dashboards })),
+							),
+			},
+		),
+	}))
