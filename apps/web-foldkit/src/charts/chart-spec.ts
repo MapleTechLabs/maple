@@ -216,6 +216,28 @@ export const ChartSpec = defineTaggedUnion({
 		bucketSeconds: Nullable(Schema.Number),
 		gradientId: Schema.String,
 	},
+	/**
+	 * `SpendChart` (apps/web/src/components/settings/spend-chart.tsx): cumulative spend by band, day
+	 * by day (`buildCumulativeSeries`), and the dashed projection to the end of the cycle.
+	 */
+	SpendCumulative: {
+		points: Schema.Array(
+			Schema.Struct({
+				date: Schema.String,
+				dayMs: Schema.Number,
+				/** Cumulative dollars per band (`base`, then each feature); `null` on days to come. */
+				bands: Schema.Record(Schema.String, Schema.NullOr(Schema.Number)),
+				projected: Nullable(Schema.Number),
+				future: Schema.Boolean,
+			}),
+		),
+		bands: Schema.Array(Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String })),
+		primary: Schema.String,
+		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
+		projected: Schema.Number,
+		yMax: Schema.Number,
+		currency: Schema.String,
+	},
 })
 export type ChartSpec = typeof ChartSpec.Type
 

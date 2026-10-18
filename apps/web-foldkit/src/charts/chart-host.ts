@@ -20,6 +20,7 @@ import { buildLogsVolume } from "./definitions/logs-volume"
 import { buildPie, buildPieSpike } from "./definitions/pie"
 import { buildOccurrences } from "./definitions/occurrences"
 import { buildSparkline } from "./definitions/sparkline"
+import { buildSpendCumulative } from "./definitions/spend"
 
 /**
  * What `RendererChartImplementation` (`@tanstack/charts/react`) does with a `CanvasChart` or SVG
@@ -173,6 +174,8 @@ export const createChartHost = (
 		FixedMetric: (metric) =>
 			hostFor(container, metric, height, variant("FixedMetric"), buildFixedMetric, options),
 		AlertRule: (rule) => hostFor(container, rule, height, variant("AlertRule"), buildAlertRule, options),
+		SpendCumulative: (spend) =>
+			hostFor(container, spend, height, variant("SpendCumulative"), buildSpendCumulative, options),
 		InfraMetric: (metric) =>
 			hostFor(container, metric, height, variant("InfraMetric"), buildInfraMetric, options),
 	})
