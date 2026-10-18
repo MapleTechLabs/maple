@@ -1,5 +1,48 @@
 import type { Page } from "playwright"
+import { chatArea } from "./chat.ts"
+import { dashboardsArea } from "./dashboards.ts"
+import { errorsArea } from "./errors.ts"
+import { logsPageArea } from "./logs-page.ts"
+import { overviewPageArea } from "./overview-page.ts"
+import { servicesPageArea } from "./services-page.ts"
+import { tracesPageArea } from "./traces-page.ts"
 import type { AreaModule, Scenario } from "./types.ts"
+
+/** The most used pages' loading and error states (their own faults), at the mobile width. */
+const TIMED_STATES = [
+	"overview-loading",
+	"overview-error",
+	"services-loading",
+	"services-error",
+	"traces-list-loading",
+	"traces-list-error",
+	"logs-loading",
+	"logs-error",
+	"errors-hub-loading",
+	"errors-hub-error",
+	"dashboards-view-loading",
+	"chat-loading",
+	"chat-history-error",
+]
+
+const timedStates: ReadonlyArray<Scenario> = [
+	chatArea,
+	dashboardsArea,
+	errorsArea,
+	logsPageArea,
+	overviewPageArea,
+	servicesPageArea,
+	tracesPageArea,
+]
+	.flatMap((area) => area.scenarios)
+	.filter((scenario) => TIMED_STATES.includes(scenario.id))
+	.map((scenario) => ({
+		...scenario,
+		id: `mobile-${scenario.id}`,
+		title: `Mobile: ${scenario.title}`,
+		viewports: ["mobile"],
+		area: "mobile",
+	}))
 
 /**
  * Pages at the mobile viewport (390 px, below `md` and `lg`): the sidebar is an off-canvas sheet
@@ -91,6 +134,7 @@ export const mobileArea: AreaModule = {
 					: []),
 			]
 		}),
+		...timedStates,
 		mobile("services-empty", "Services (empty org)", "/services", { dataset: "empty" }),
 		mobile("services-nav", "Services, sidebar sheet open", "/services", { steps: openNav }),
 		mobile("services-time-picker", "Services, time range picker open", "/services", {
