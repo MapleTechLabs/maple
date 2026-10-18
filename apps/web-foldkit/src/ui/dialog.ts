@@ -117,12 +117,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 // MOUNT
 
-/** Popups a dialog's content opens into their own portals: a press in one stays inside the dialog. */
-const NESTED_POPUPS = [
-	"[data-slot=select-positioner]",
-	"[data-slot=popover-positioner]",
-	"[data-slot=menu-positioner]",
-]
+/** A popup opened from inside the dialog (a select, a menu): its portal is outside the popup but
+ * pressing in it is not a press outside the dialog (Base UI's floating tree). */
+const nestedPopups = (portal: Element) =>
+	`[data-base-ui-portal]:not([data-slot^="toast"])${portal.id === "" ? "" : `:not(#${CSS.escape(portal.id)})`}`
 
 /**
  * On the portal root: moves it to `<body>`, hides the rest of the page from assistive tech,
@@ -147,7 +145,9 @@ export const MountDialog = Mount.defineStream("MountDialog", {
 				})
 				return Stream.concat(
 					mounted,
-					outsidePresses(popup, NESTED_POPUPS).pipe(Stream.map(() => Message.PressedOutside())),
+					outsidePresses(popup, [nestedPopups(element)]).pipe(
+						Stream.map(() => Message.PressedOutside()),
+					),
 				)
 			}),
 		),

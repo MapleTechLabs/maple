@@ -19,12 +19,16 @@ export type IntegrationBrand = Readonly<{
 	accent: string
 	/** Monochrome marks: the glyph tints by class and the wash goes neutral. */
 	iconClassName?: string
+	/** A mark outside the generated set (a chat connector manifest's paths), drawn at `size`. */
+	glyph?: (size: number) => Html
+	/** The backer plates' mark when `glyph` is set (its monochrome twin). */
+	backerGlyph?: (size: number) => Html
 }>
 
 export const integrationIconPlate = <M>(
 	h: HtmlBuilder<M>,
 	brand: IntegrationBrand,
-	options: Readonly<{ size?: number; plateClassName?: string }> = {},
+	options: Readonly<{ size?: number; plateClassName?: string; overlay?: Html }> = {},
 ): Html =>
 	h.span(
 		[
@@ -52,8 +56,13 @@ export const integrationIconPlate = <M>(
 					h.Class(cn("relative", brand.iconClassName)),
 					...(brand.iconClassName === undefined ? [h.Style({ color: brand.accent })] : []),
 				],
-				[icon(h, brand.icon, { size: options.size ?? 22 })],
+				[
+					brand.glyph === undefined
+						? icon(h, brand.icon, { size: options.size ?? 22 })
+						: brand.glyph(options.size ?? 22),
+				],
 			),
+			...(options.overlay === undefined ? [] : [options.overlay]),
 		],
 	)
 
@@ -99,11 +108,11 @@ export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBr
 		[
 			h.span(
 				[h.Class(cn(BACKER, "origin-bottom -translate-x-8 -rotate-10"))],
-				[icon(h, backerIcon, { size: 20 })],
+				[brand.backerGlyph === undefined ? icon(h, backerIcon, { size: 20 }) : brand.backerGlyph(20)],
 			),
 			h.span(
 				[h.Class(cn(BACKER, "origin-bottom translate-x-8 rotate-10"))],
-				[icon(h, backerIcon, { size: 20 })],
+				[brand.backerGlyph === undefined ? icon(h, backerIcon, { size: 20 }) : brand.backerGlyph(20)],
 			),
 			integrationIconPlate(h, brand, {
 				size: 28,

@@ -73,8 +73,18 @@ export const itemContent = part(itemContentStyles, "item-content")
 export const itemTitle = part(itemTitleStyles, "item-title")
 export const itemActions = part(itemActionsStyles, "item-actions")
 
-export const itemDescription = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
+/** `title`: the native tooltip a truncated description carries. */
+export const itemDescription = <M>(
+	h: HtmlBuilder<M>,
+	children: Children,
+	className?: string,
+	title?: string,
+): Html =>
 	h.p(
-		[h.DataAttribute("slot", "item-description"), h.Class(cn(itemDescriptionStyles, className))],
+		[
+			h.DataAttribute("slot", "item-description"),
+			h.Class(cn(itemDescriptionStyles, className)),
+			...(title === undefined ? [] : [h.Title(title)]),
+		],
 		children,
 	)

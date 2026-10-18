@@ -20,7 +20,19 @@ import type { ConnectForm } from "./model"
 // `RailwayIntegrationCard`'s not-connected branch and `RailwayTokenForm` in connect mode
 // (apps/web/src/components/integrations/railway-integration-card.tsx).
 
-type H = HtmlBuilder<Message>
+/** The form's Messages, so the infra page and the integration card share it. */
+export type TokenFormConfig<M> = Readonly<{
+	mode: "connect" | "rotate"
+	onField: (message: Field.Message) => M
+	onSubmit: M
+	onCancel?: M
+}>
+
+export const LIST_TOKEN_FORM: TokenFormConfig<Message> = {
+	mode: "connect",
+	onField: (message) => Message.GotTokenFieldMessage({ message }),
+	onSubmit: Message.SubmittedConnect(),
+}
 
 const TOKENS_URL = "https://railway.com/account/tokens"
 const LABEL_ID = "railway-token-label"
@@ -29,9 +41,12 @@ const DESCRIPTION_ID = "railway-token-description"
 
 const decodeConnectRequest = Schema.decodeUnknownOption(RailwayConnectRequest)
 
-const toField = (message: Field.Message) => Message.GotTokenFieldMessage({ message })
-
-const tokenForm = (h: H, form: ConnectForm): Html => {
+/** `RailwayTokenForm`: connect, or rotate with an optional Cancel. */
+export const railwayTokenForm = <M>(
+	h: HtmlBuilder<M>,
+	form: ConnectForm,
+	config: TokenFormConfig<M>,
+): Html => {
 	const trimmed = form.token.value.trim()
 	const isValid = Option.isSome(decodeConnectRequest({ token: trimmed }))
 	const isTokenInvalid = trimmed.length > 0 && !isValid
@@ -59,7 +74,7 @@ const tokenForm = (h: H, form: ConnectForm): Html => {
 					]
 				: []
 	return h.form(
-		[h.Class("flex w-full flex-col gap-2 text-left"), h.OnSubmit(Message.SubmittedConnect())],
+		[h.Class("flex w-full flex-col gap-2 text-left"), h.OnSubmit(config.onSubmit)],
 		[
 			Field.field(h, { className: "items-stretch gap-2", state }, [
 				Field.fieldLabel(h, { ids, state }, "Account or workspace token"),
@@ -74,14 +89,27 @@ const tokenForm = (h: H, form: ConnectForm): Html => {
 							attributes: [
 								h.Autocomplete("off"),
 								h.Placeholder("Paste a Railway API token"),
-								...Field.controlAttributes(h, form.token, toField),
+								...Field.controlAttributes(h, form.token, config.onField),
 								h.AriaLabelledBy(LABEL_ID),
 								...(hasError ? [h.AriaInvalid(true)] : []),
 							],
 						}),
+						...(config.onCancel === undefined
+							? []
+							: [
+									button(
+										h,
+										{
+											variant: "outline",
+											isDisabled: form.isSubmitting,
+											attributes: [h.OnClick(config.onCancel)],
+										},
+										["Cancel"],
+									),
+								]),
 						button(h, { type: "submit", isDisabled: !isValid, isLoading: form.isSubmitting }, [
 							icon(h, "RailwayIcon"),
-							"Connect Railway",
+							config.mode === "rotate" ? "Update token" : "Connect Railway",
 						]),
 					],
 				),
@@ -111,7 +139,11 @@ const FEATURES = [
 
 const BRAND = { icon: "RailwayIcon", accent: RAILWAY_ACCENT, iconClassName: "text-foreground" } as const
 
-export const railwayConnectCard = (h: H, form: ConnectForm): Html =>
+export const railwayConnectCard = <M>(
+	h: HtmlBuilder<M>,
+	form: ConnectForm,
+	config: TokenFormConfig<M>,
+): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, FEATURES),
 		integrationEmptyCard(h, [
@@ -119,7 +151,7 @@ export const railwayConnectCard = (h: H, form: ConnectForm): Html =>
 			integrationEmptyHint(h, [
 				"Connecting pulls the last hour of metrics right away, then Maple keeps it fresh every 5 minutes.",
 			]),
-			tokenForm(h, form),
+			railwayTokenForm(h, form, config),
 			integrationEmptyFooter(h, [
 				h.a(
 					[

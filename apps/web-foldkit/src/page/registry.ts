@@ -49,6 +49,7 @@ import * as InfraPlanetscaleDatabase from "./infra-integrations/planetscale/db"
 import * as InfraPlanetscale from "./infra-integrations/planetscale/list"
 import * as InfraRailway from "./infra-integrations/railway/list"
 import * as InfraRailwayService from "./infra-integrations/railway/service"
+import * as Integrations from "./integrations"
 import * as LogsList from "./logs/list"
 import * as MetricsBrowse from "./metrics/browse"
 import * as MetricDetail from "./metrics/detail"
@@ -108,6 +109,7 @@ export const pages = [
 	AgentSessionTools.page,
 	AgentSessionTool.page,
 	AgentSession.page,
+	Integrations.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

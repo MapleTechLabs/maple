@@ -4,6 +4,7 @@ import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import type { FixtureArea } from "../areas.ts"
 import type { EndpointHandler, EndpointRequest } from "../dataset.ts"
 import { acmeAdmin, DAY, fixtureUuid, MINUTE } from "../identity.ts"
+import { planetscaleStatus } from "./infra-integrations.ts"
 
 /**
  * The /integrations hub's Postgres-backed reads, canned: Acme scrapes two Prometheus targets (one
@@ -160,11 +161,127 @@ const checks: EndpointHandler = (request) => {
 	)
 }
 
+/** An OAuth start answers an authorize URL off the fixture origin: the harness blocks the redirect. */
+const startConnect =
+	(provider: string): EndpointHandler =>
+	() =>
+		Effect.succeed({
+			redirectUrl: `https://oauth.${provider}.example/authorize?state=parity`,
+			state: "parity-oauth-state",
+		})
+
+const disconnected: EndpointHandler = () => Effect.succeed({ disconnected: true })
+
 export const fixtureArea: FixtureArea = {
 	area: "integrations",
 	endpoints: () => ({
+		"chatIntegration.install": () =>
+			Effect.succeed({
+				object: "chat_connector.install",
+				url: "/integrations?integration=chat-slack&chat=connected&chat_workspace=Acme%20Ops",
+			}),
+		"chatIntegration.startChatIdentityLink": () =>
+			Effect.succeed({
+				object: "chat_connector.identity_link",
+				url: "/integrations?integration=chat-slack&chat_identity=linked&chat_identity_name=ada",
+			}),
+		"chatIntegration.deleteChatIdentity": () =>
+			Effect.succeed({ object: "chat_connector.identity", deleted: true }),
+		"chatIntegration.deleteWorkspace": (request) =>
+			Effect.succeed({ id: slackWorkspace(request).id, object: "chat_workspace", deleted: true }),
+		"planetscaleIntegration.connect": () =>
+			Effect.succeed({
+				object: "planetscale_integration.connect",
+				redirect_url: "https://oauth.planetscale.example/authorize?state=parity",
+				state: "parity-oauth-state",
+			}),
+		"planetscaleIntegration.organizations": () =>
+			Effect.succeed({
+				object: "planetscale_integration.organization_list",
+				organizations: [
+					{ id: "organization/acme", name: "acme" },
+					{ id: "organization/acme-labs", name: "acme-labs" },
+				],
+			}),
+		"planetscaleIntegration.selectOrganization": () => Effect.succeed(planetscaleStatus),
+		"planetscaleIntegration.setMetricsToken": () => Effect.succeed(planetscaleStatus),
+		"planetscaleIntegration.disconnect": () =>
+			Effect.succeed({ object: "planetscale_integration", connected: false }),
+		"planetscaleIntegration.webhookConfig": () =>
+			Effect.succeed({
+				object: "planetscale_integration.webhook_config",
+				configured: true,
+				url: "https://api.maple.dev/api/integrations/planetscale/webhook/parity",
+				secret: "whsec_parity_0000000000000000",
+			}),
+		"gcpIntegration.setupScripts": () =>
+			Effect.succeed({
+				object: "gcp_connector.setup_scripts",
+				setup_script: "#!/usr/bin/env bash\necho 'setting up Maple'\n",
+				cleanup_script: "#!/usr/bin/env bash\necho 'removing Maple'\n",
+			}),
+		"gcpIntegration.deleteConnector": (request) =>
+			Effect.succeed({
+				// The decoded param is the internal id; the answer carries the public one.
+				id: encodePublicId(
+					PublicIdPrefixes.gcpConnector,
+					Predicate.hasProperty(request.params, "id") && typeof request.params.id === "string"
+						? request.params.id
+						: fixtureUuid(40, 2),
+				),
+				object: "gcp_connector",
+				deleted: true,
+				cleanup_script: "#!/usr/bin/env bash\necho 'removing Maple'\n",
+			}),
+		"integrations.railwayDisconnect": disconnected,
+		// The sync answers a refreshed status; the card re-reads the status itself, so its shape is all that matters.
+		"integrations.railwaySync": (request) =>
+			Effect.succeed({
+				connected: true,
+				workspaceNames: null,
+				connectedByUserId: null,
+				connectedAt: null,
+				authFailed: false,
+				lastSyncedAt: parseWarehouseDateTime(request.dataset.now),
+				lastError: null,
+				environments: [],
+			}),
+		"integrations.hazelStart": startConnect("hazel"),
+		"integrations.hazelDisconnect": disconnected,
+		"integrations.githubStart": startConnect("github"),
+		"integrations.githubDisconnect": disconnected,
+		"integrations.githubSetCiTraces": (request) =>
+			Effect.succeed({
+				enabled:
+					Predicate.hasProperty(request.payload, "enabled") && request.payload.enabled === true,
+			}),
+		"integrations.githubSetTrackedBranch": (request) =>
+			Effect.succeed({
+				trackedBranch:
+					Predicate.hasProperty(request.payload, "trackedBranch") &&
+					typeof request.payload.trackedBranch === "string"
+						? request.payload.trackedBranch
+						: "main",
+				backfillQueued: true,
+			}),
+		"integrations.githubDeleteRepository": () => Effect.succeed({ deleted: true }),
+		"integrations.cloudflareStart": startConnect("cloudflare"),
+		"integrations.cloudflareDisconnect": disconnected,
 		"scrapeTargets.list": (request) => Effect.succeed(list(scrapeTargetsOf(request))),
 		"scrapeTargets.listChecks": checks,
+		// Writes answer with the first listed target (the store is not mutated: the list re-read is unchanged).
+		"scrapeTargets.create": (request) =>
+			Effect.succeed(scrapeTargetsOf(request)[1] ?? scrapeTargetsOf(request)[0]),
+		"scrapeTargets.update": (request) => Effect.succeed(scrapeTargetsOf(request)[0]),
+		"scrapeTargets.delete": (request) =>
+			Effect.succeed({ id: scrapeTargetsOf(request)[0]?.id, object: "scrape_target", deleted: true }),
+		"scrapeTargets.probe": (request) =>
+			Effect.succeed({
+				object: "scrape_target.probe_result",
+				success: false,
+				last_scrape_at: iso(request, 0),
+				last_scrape_error: "GET /metrics: 503 Service Unavailable",
+			}),
 		"chatIntegration.connectors": connectors,
 		"integrations.hazelStatus": hazelStatus,
 	}),
