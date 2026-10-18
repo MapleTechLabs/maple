@@ -212,7 +212,7 @@ export type PopupOptions = Readonly<{
 	renderItem?: (value: string) => ReadonlyArray<Html | string>
 	isUnfiltered?: boolean
 	/** `<ComboboxContent>` under a `<ComboboxTrigger>`: a dialog popup with its search input on top. */
-	trigger?: Readonly<{ returnFocusId: string; header: Html; sideOffset?: number }>
+	trigger?: Readonly<{ returnFocusId: string; header: Html; footer?: ReadonlyArray<Html>; sideOffset?: number }>
 	/** `<ComboboxItem className>`. */
 	itemClassName?: (value: string) => string | undefined
 	listClassName?: string
@@ -314,6 +314,7 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 											),
 										],
 									),
+									...(options.trigger?.footer ?? []),
 								],
 							),
 							...(options.trigger === undefined ? [] : [focusGuard(h, "inside")]),
@@ -453,11 +454,20 @@ export type SingleViewInputs = Readonly<{
 	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html
 }>
 
-/** `<Combobox>` with `<ComboboxInput startAddon>`: input group, chevron trigger and its popup. */
-export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model, inputs, h) => {
+export type InputFieldOptions = Pick<
+	SingleViewInputs,
+	"items" | "ariaLabel" | "placeholder" | "startAddon" | "size" | "showTrigger" | "isUnfiltered" | "className"
+> &
+	Readonly<{
+		/** Inside a trigger's popup the input carries no dismiss button of its own. */
+		hasDismiss?: boolean
+	}>
+
+/** `<ComboboxInput startAddon>`: the input group, also the search field atop a trigger's popup. */
+export const inputField = (h: H, model: Model, inputs: InputFieldOptions): Html => {
 	const hasAddon = inputs.startAddon !== undefined
 	const size = inputs.size ?? "default"
-	const field = h.div(
+	return h.div(
 		[
 			h.Key("input-group"),
 			h.Class(C.comboboxInputGroupStyles),
@@ -478,7 +488,7 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 						),
 					]),
 			// `ComboboxInput` renders its dismiss button before itself while open (`focusManagerModal`).
-			...(model.isOpen ? [dismissButton(h)] : []),
+			...(model.isOpen && inputs.hasDismiss !== false ? [dismissButton(h)] : []),
 			h.span(
 				[
 					h.Class(
@@ -513,8 +523,12 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 			...(inputs.showTrigger === false ? [] : [triggerButton(h, model, size)]),
 		],
 	)
-	return inputs.toView({
-		field,
+}
+
+/** `<Combobox>` with `<ComboboxInput startAddon>`: input group, chevron trigger and its popup. */
+export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model, inputs, h) =>
+	inputs.toView({
+		field: inputField(h, model, inputs),
 		rest: [
 			hiddenInput(h, model),
 			...(isMounted(model.isOpen, model.animation)
@@ -532,8 +546,8 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 					]
 				: []),
 		],
-	})
-})
+	}),
+)
 
 /** `ComboboxTrigger` with its chevron. */
 const triggerButton = (h: H, model: Model, size: "sm" | "default"): Html =>

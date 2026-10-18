@@ -223,15 +223,18 @@ const board = (
 
 export const widgetsDashboard = board(WIDGETS_DASHBOARD_ID, "Widget gallery", "Every breakdown widget over the warehouse.", {
 	widgets: WIDGETS,
+	tags: ["lab", "gallery"],
 })
 
 export const sectionsDashboard = board(SECTIONS_DASHBOARD_ID, "Grouped board", "Groups, tabs and a pinned group.", {
 	widgets: SECTION_WIDGETS,
 	sections: SECTIONS,
+	tags: ["slo", "checkout"],
 })
 
 export const variablesDashboard = board(VARIABLES_DASHBOARD_ID, "Variables board", "Widgets filtered by dashboard variables.", {
 	widgets: VARIABLE_WIDGETS,
 	variables: VARIABLES,
+	tags: ["checkout"],
 })
 

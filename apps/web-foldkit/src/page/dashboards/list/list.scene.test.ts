@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { CreateDashboard, DeleteDashboard, SavePreferences, SaveTags } from "./command"
 import * as TagEditor from "../kit/tag-editor"
+import * as Combobox from "../../../ui/combobox"
 import { Message } from "./message"
 import type { ListDashboard, Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -169,5 +170,16 @@ describe("dashboards list", () => {
 		const saved = pageUpdate(committed, tagKey(TagEditor.Message.ClickedSaveTags()))
 		expect(names(saved.commands)).toContain(SaveTags.name)
 		expect(saved.model.pendingTags).toBeNull()
+	})
+
+	test("a picked tag filters through the URL; Clear tags drops the filter", () => {
+		const tag = (message: Combobox.Message) => Message.GotTagFilterMessage({ message })
+		const opened = pageUpdate(loaded(), tag(Combobox.Message.ClickedTriggerOf({ items: ["slo"] }))).model
+		const picked = pageUpdate(opened, tag(Combobox.Message.ClickedItem({ value: "slo" })))
+		const url = picked.outMessage?._tag === "RequestedNavigation" ? picked.outMessage.url : ""
+		expect(decodeURIComponent(url)).toContain("tags")
+		expect(decodeURIComponent(url)).toContain("slo")
+		const cleared = pageUpdate(picked.model, tag(Combobox.Message.ClearedSelection()))
+		expect(cleared.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/dashboards", isReplace: true }))
 	})
 })

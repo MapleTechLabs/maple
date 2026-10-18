@@ -1,4 +1,5 @@
 import { Option, Result } from "effect"
+import { behindToast } from "../kit/store"
 import { Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardsSearch } from "../../../route/search"
@@ -18,9 +19,11 @@ import {
 	SavePreferences,
 	SaveTags,
 	WaitSearchDebounce,
+	FocusTagSearch,
 } from "./command"
 import * as TagEditor from "../kit/tag-editor"
-import { displayName, queryOf } from "./derive"
+import { displayName, queryOf, tagsOf } from "./derive"
+import * as Combobox from "../../../ui/combobox"
 import { Message } from "./message"
 import type { ListDashboard, Model } from "./model"
 
@@ -29,6 +32,7 @@ type Search = typeof DashboardsSearch.Type
 type Route = Readonly<{ search: Search }>
 
 export const SORT_MENU_ID = "dashboards-sort-menu"
+export const TAG_FILTER_ID = "dashboards-tag-filter"
 export const rowMenuIdOf = (id: string): string => `dashboard-row-menu-${id}`
 
 export const init = (route: Route, _context: PageContext): Return => ({
@@ -48,6 +52,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		deleteDialog: Dialog.init("dashboard-delete-dialog", "alert-dialog"),
 		pendingTags: null,
 		tagEditor: TagEditor.init("dashboard-tags-dialog"),
+		tagFilter: Combobox.init(TAG_FILTER_ID, "multiple", { selected: tagsOf(route.search) }),
 		persistenceError: null,
 		isCreating: false,
 	},
@@ -62,6 +67,7 @@ export const routeChanged = (model: Model, route: Route): Return => {
 			...model,
 			search: route.search,
 			searchDraft: query === model.searchDraft.trim() ? model.searchDraft : query,
+			tagFilter: { ...model.tagFilter, selected: tagsOf(route.search) },
 		},
 	}
 }
@@ -337,6 +343,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedSaveTags: ({ result }) =>
 			Result.match(result, {
 				onFailure: (error) => failedWrite(model, error),
-				onSuccess: () => ({ model: { ...model, persistenceError: null } }),
+				onSuccess: (sync) =>
+					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
 			}),
+		GotTagFilterMessage: ({ message: inner }) => {
+			const next = Combobox.update(model.tagFilter, inner)
+			const commands = Command.mapMessages(next.commands ?? [], (message) =>
+				Message.GotTagFilterMessage({ message }),
+			)
+			if (next.outMessage?._tag !== "ChangedSelection") return { model: { ...model, tagFilter: next.model }, commands }
+			const tags = next.outMessage.selected
+			// The pick re-renders the list under the popup: nothing stays highlighted; the search keeps focus.
+			const updated = { ...model, tagFilter: { ...next.model, highlighted: null } }
+			const refocus = inner._tag === "ClickedItem" ? [FocusTagSearch({ id: Combobox.inputId(TAG_FILTER_ID) })] : []
+			return { ...navigateSearch(updated, { tags: tags.length === 0 ? undefined : tags }), commands: [...commands, ...refocus] }
+		},
+		CompletedFocusTagSearch: () => ({ model }),
 	})

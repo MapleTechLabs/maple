@@ -122,6 +122,7 @@ const renameWidget = (name: string) => async (page: Page) => {
 	await page.getByRole("textbox", { name: "Name" }).fill(name)
 }
 
+const openTagFilter = (page: Page) => page.getByRole("combobox", { name: "Tags" }).click()
 const typeTag = (tag: string) => async (page: Page) => {
 	await page.getByRole("textbox", { name: "Add a tag" }).fill(tag)
 	await page.keyboard.press("Enter")
@@ -167,6 +168,22 @@ export const dashboardsArea: AreaModule = {
 		}),
 		dashboard("list-duplicate", "List: Platform overview duplicated", "/dashboards", {
 			steps: act(rowMenu("Platform overview"), clickMenuItem("Duplicate")),
+		}),
+		dashboard("list-tag-filter", "List: the tag filter open", "/dashboards", {
+			steps: act(openTagFilter),
+		}),
+		dashboard("list-tag-filter-picked", "List: filtered by a tag", "/dashboards", {
+			steps: act(openTagFilter, (page) => page.getByRole("option", { name: "checkout" }).click()),
+		}),
+		dashboard("list-tag-filter-search", "List: the tag filter searched", "/dashboards", {
+			steps: act(openTagFilter, (page) => page.getByPlaceholder("Filter tags…").fill("sl")),
+		}),
+		dashboard("list-tag-filter-cleared", "List: a tag picked, then Clear tags", "/dashboards", {
+			steps: act(
+				openTagFilter,
+				(page) => page.getByRole("option", { name: "slo" }).click(),
+				clickButton("Clear tags"),
+			),
 		}),
 		dashboard("list-tags-dialog", "List: tag editor with a typed tag", "/dashboards", {
 			steps: act(rowMenu("Platform overview"), clickMenuItem("Edit tags…"), typeTag("slo")),

@@ -78,6 +78,8 @@ export const Message = defineMessageUnion({
 	},
 	ClickedItem: { value: Schema.String },
 	RemovedChip: { value: Schema.String },
+	/** `MultiSelectCombobox`'s clear button: `onValueChange([])`. */
+	ClearedSelection: {},
 	PressedEscape: {},
 	PressedOutside: {},
 	CompletedMountCombobox: {},
@@ -165,6 +167,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			const selected = Array.filter(model.selected, (item) => item !== value)
 			return { model: { ...model, selected }, outMessage: OutMessage.ChangedSelection({ selected }) }
 		},
+		ClearedSelection: () => ({
+			model: { ...model, selected: [] },
+			outMessage: OutMessage.ChangedSelection({ selected: [] }),
+		}),
 		PressedEscape: () => closed(model),
 		PressedOutside: () => closed(model),
 		CompletedMountCombobox: () => ({ model }),
