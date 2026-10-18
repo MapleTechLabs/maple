@@ -37,14 +37,14 @@ describe("destination dialog", () => {
 			click(role("button", { name: "Add Webhook destination" })),
 			Command.resolve(
 				CreateDestination,
-				Message.CompletedSave({ isCreate: true, result: Result.fail({ title: "Bad", message: "nope" }) }),
+				Message.CompletedSave({ openCount: 1, isCreate: true, result: Result.fail({ title: "Bad", message: "nope" }) }),
 			),
 			expectOutMessage(
 				OutMessage.RequestedToast({ type: "error", title: "Failed to save destination", description: "nope" }),
 			),
 		)
 		const saving = update({ ...opened(), form: { ...opened().form, type: "webhook" } }, Message.ClickedSave()).model
-		const created = update(saving, Message.CompletedSave({ isCreate: true, result: Result.succeed(CREATED) }))
+		const created = update(saving, Message.CompletedSave({ openCount: 1, isCreate: true, result: Result.succeed(CREATED) }))
 		expect(created.outMessage).toEqual(OutMessage.CreatedDestination({ id: CREATED }))
 		expect(created.model.dialog.isOpen).toBe(false)
 	})
@@ -55,11 +55,22 @@ describe("destination dialog", () => {
 		expect(update(saving.model, Message.ClickedSave()).commands ?? []).toHaveLength(0)
 		const failed = update(
 			saving.model,
-			Message.CompletedSave({ isCreate: true, result: Result.fail({ title: "Bad", message: "nope" }) }),
+			Message.CompletedSave({ openCount: 1, isCreate: true, result: Result.fail({ title: "Bad", message: "nope" }) }),
 		)
 		expect(failed.model.dialog.isOpen).toBe(true)
 		expect(failed.outMessage).toEqual(
 			OutMessage.RequestedToast({ type: "error", title: "Failed to save destination", description: "nope" }),
 		)
+	})
+
+	test("a reopen mid-save allows no second submit, and the late result leaves the new form open", () => {
+		const saving = update({ ...opened(), form: { ...opened().form, type: "webhook" } }, Message.ClickedSave()).model
+		const reopened = openNew(update(saving, Message.ClickedCancel()).model).model
+		const onB = { ...reopened, form: { ...reopened.form, type: "webhook" as const } }
+		expect(update(onB, Message.ClickedSave()).commands ?? []).toHaveLength(0)
+		const late = update(onB, Message.CompletedSave({ openCount: 1, isCreate: true, result: Result.succeed(CREATED) }))
+		expect(late.model.dialog.isOpen).toBe(true)
+		expect(late.model.isSaving).toBe(false)
+		expect(late.outMessage).toEqual(OutMessage.CreatedDestination({ id: CREATED }))
 	})
 })

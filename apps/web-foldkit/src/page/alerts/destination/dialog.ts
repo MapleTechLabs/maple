@@ -34,6 +34,8 @@ export const Model = Schema.Struct({
 	/** Opened on a provider picked elsewhere: the grid is folded behind "Change". */
 	isProviderLocked: Schema.Boolean,
 	isSaving: Schema.Boolean,
+	/** Bumped on every open: a save's result only settles the form it was sent from. */
+	openCount: Schema.Number,
 	/** `chatIntegration.connectors`, `null` until it answers (`orElse(() => [])`). */
 	connectors: Schema.NullOr(Schema.Array(V2ChatConnector)),
 	telegramChats: Schema.NullOr(Schema.Array(V2TelegramChat)),
@@ -49,6 +51,7 @@ export const init = (id: string): Model => ({
 	editingId: null,
 	isProviderLocked: false,
 	isSaving: false,
+	openCount: 0,
 	connectors: null,
 	telegramChats: null,
 	telegramError: null,
@@ -70,6 +73,7 @@ export const Message = defineMessageUnion({
 	ClickedCancel: {},
 	ClickedSave: {},
 	CompletedSave: {
+		openCount: Schema.Number,
 		isCreate: Schema.Boolean,
 		result: Schema.Result(AlertDestinationId, Schema.Struct({ title: Schema.String, message: Schema.String })),
 	},
@@ -121,9 +125,9 @@ const failure = (error: unknown) => {
 }
 
 export const CreateDestination = Command.define("CreateAlertDestination", {
-	args: { payload: V2AlertDestinationCreateParams },
+	args: { openCount: Schema.Number, payload: V2AlertDestinationCreateParams },
 	messages: [Message.CompletedSave],
-	execute: ({ payload }) =>
+	execute: ({ openCount, payload }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			// `as never`, as apps/web: the generated client collapses this union payload to one member.
@@ -132,14 +136,14 @@ export const CreateDestination = Command.define("CreateAlertDestination", {
 		}).pipe(
 			Effect.mapError(failure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedSave({ isCreate: true, result })),
+			Effect.map((result) => Message.CompletedSave({ openCount, isCreate: true, result })),
 		),
 })
 
 const UpdateDestination = Command.define("UpdateAlertDestinationFromDialog", {
-	args: { id: AlertDestinationId, payload: V2AlertDestinationUpdateParams },
+	args: { openCount: Schema.Number, id: AlertDestinationId, payload: V2AlertDestinationUpdateParams },
 	messages: [Message.CompletedSave],
-	execute: ({ id, payload }) =>
+	execute: ({ openCount, id, payload }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const updated = yield* client.alertDestinations.update({ params: { id }, payload: payload as never })
@@ -147,7 +151,7 @@ const UpdateDestination = Command.define("UpdateAlertDestinationFromDialog", {
 		}).pipe(
 			Effect.mapError(failure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedSave({ isCreate: false, result })),
+			Effect.map((result) => Message.CompletedSave({ openCount, isCreate: false, result })),
 		),
 })
 
@@ -183,8 +187,9 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	commands: Command.mapMessages(result.commands ?? [], (message) => Message.GotDialogMessage({ message })),
 })
 
+/** A save in flight stays in flight across a reopen (legacy's `useAsyncAction`): no second submit. */
 const open = (model: Model, patch: Partial<Model>): Return => {
-	const next = { ...model, ...patch, isSaving: false, telegramChats: null, telegramError: null }
+	const next = { ...model, ...patch, openCount: model.openCount + 1, telegramChats: null, telegramError: null }
 	const opened = liftDialog(next, Dialog.open(model.dialog))
 	// `ProviderPicker` reads the connectors; it renders only for a new, unlocked destination.
 	const needsConnectors = next.editingId === null && !next.isProviderLocked && next.connectors === null
@@ -207,12 +212,18 @@ const save = (model: Model): Return => {
 	if (model.editingId !== null)
 		return {
 			model: { ...model, isSaving: true },
-			commands: [UpdateDestination({ id: model.editingId, payload: buildDestinationUpdateParamsV2(form) })],
+			commands: [
+				UpdateDestination({
+					openCount: model.openCount,
+					id: model.editingId,
+					payload: buildDestinationUpdateParamsV2(form),
+				}),
+			],
 		}
 	const named = form.name.trim().length > 0 ? form : { ...form, name: suggestedDestinationName(form) }
 	return {
 		model: { ...model, isSaving: true },
-		commands: [CreateDestination({ payload: buildDestinationCreateParamsV2(named) })],
+		commands: [CreateDestination({ openCount: model.openCount, payload: buildDestinationCreateParamsV2(named) })],
 	}
 }
 
@@ -261,10 +272,12 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedTelegramChat: ({ chatId }) => ({ model: { ...model, form: { ...model.form, telegramChatId: chatId } } }),
 		ClickedCancel: () => close(model),
 		ClickedSave: () => save(model),
-		CompletedSave: ({ isCreate, result }) =>
+		CompletedSave: ({ openCount, isCreate, result }) =>
 			Result.match(result, {
 				onSuccess: (id) => {
-					const closed = close({ ...model, isSaving: false })
+					// A form opened since the save was sent stays open; the outcome is still reported.
+					const settled = { ...model, isSaving: false }
+					const closed = openCount === model.openCount ? close(settled) : { model: settled }
 					return {
 						...closed,
 						outMessage: isCreate
