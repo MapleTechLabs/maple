@@ -15,7 +15,7 @@ import { chatEmptyState } from "../kit/view-empty"
 import { MountEmptyState, shareUrl } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { activeContexts, composerId, subjectFor, suggestionsOf } from "./update"
+import { activeContexts, activeTabId, composerId, subjectFor, suggestionsOf } from "./update"
 import { Message as ConversationMessage } from "../conversation/message"
 import { emptyNotice } from "../conversation/view"
 import { investigationNoun } from "../../investigations/detail/investigation-context"
@@ -70,7 +70,7 @@ const conversation = (
 						),
 		chips: subject === null ? contextChips(h, activeContexts(model), (id) => Message.DismissedContext({ id })) : [],
 		permalinkFor: (messageId) => shareUrl(model.origin, tab, messageId),
-		scrollerMount: MountMessageScroller(),
+		scrollerMount: MountMessageScroller({ focusMessageId: tab.id === activeTabId(model) ? (model.search.m ?? null) : null }),
 		knownServices: new Set(model.knownServices),
 		nowMs: model.nowMs,
 		...(subject === null
@@ -144,7 +144,7 @@ const sharedView = (h: H, model: Model, timeZone: string): Html => {
 										placeholder: "Ask about your system…",
 										emptyState: () => h.empty,
 										chips: [],
-										scrollerMount: MountMessageScroller(),
+										scrollerMount: MountMessageScroller({ focusMessageId: shared.focusMessageId }),
 										knownServices: new Set(model.knownServices),
 										nowMs: model.nowMs,
 										permalinkFor: (messageId) =>

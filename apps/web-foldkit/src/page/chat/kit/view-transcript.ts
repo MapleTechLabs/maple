@@ -23,7 +23,7 @@ import { marker, markerContent, markerIcon } from "../../../ui/marker"
 import { message as messageRow, messageContent, messageFooter } from "../../../ui/message"
 import { dotLoader } from "./dot-loader"
 import { type MinimapState, turnMinimap } from "./turn-minimap"
-import { richTextSegments } from "./rich-text"
+import { richTextSegments, transcriptMarkdown } from "./rich-text"
 import {
 	buildTranscriptRows,
 	isMachineTurn,
@@ -265,6 +265,7 @@ export const transcript = <M>(
 	const awaitingFirstToken = host.isLoading && last?.role === "user"
 	const rows = buildTranscriptRows(messages)
 	const readOnlyLabel = host.readOnly === null ? undefined : READ_ONLY_LABEL.get(host.readOnly)
+	const isMarkdownPending = transcriptMarkdown(messages).some((text) => (host.markdown[text] ?? null) === null)
 	// Keyed apart from the empty state: patched in place, the scroller's Mount would never run.
 	return h.keyed("div")(
 		"transcript-scroller",
@@ -288,6 +289,7 @@ export const transcript = <M>(
 							h.Attribute("aria-relevant", "additions"),
 							h.Class(cn(messageScrollerContentStyles, "mx-auto w-full max-w-3xl gap-4 px-4 py-6")),
 							h.DataAttribute("slot", "message-scroller-content"),
+							...(isMarkdownPending ? [h.DataAttribute("markdown-pending", "")] : []),
 							h.Role("log"),
 						],
 						[

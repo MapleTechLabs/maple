@@ -216,7 +216,7 @@ const conversationTab = (
 			placeholder: placeholderOf(investigation),
 			emptyState: () => investigationLead(h, investigation),
 			chips: [],
-			scrollerMount: Mount.mapMessage(MountMessageScroller(), () => Message.CompletedMountScroller()),
+			scrollerMount: Mount.mapMessage(MountMessageScroller({ focusMessageId: null }), () => Message.CompletedMountScroller()),
 			knownServices: new Set(model.knownServices ?? []),
 			nowMs: model.nowMs,
 			fallback: report === null || hasDiagnosisTurn ? undefined : diagnosisReportCard(h, model, report, trigger),

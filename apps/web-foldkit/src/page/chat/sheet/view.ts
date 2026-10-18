@@ -149,7 +149,7 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: SheetViewInputs)
 								mount: MountEmptyState(),
 							}),
 						chips: [],
-						scrollerMount: MountMessageScroller(),
+						scrollerMount: MountMessageScroller({ focusMessageId: null }),
 						knownServices: new Set(model.knownServices),
 						nowMs: model.nowMs,
 					}),

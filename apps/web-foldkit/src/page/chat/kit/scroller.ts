@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 
@@ -16,7 +16,7 @@ const PREVIOUS_PEEK = 64
 const HALF_PIXEL = 0.5
 const SCROLL_KEYS = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "])
 
-type Mode = "following-bottom" | "anchored-to-message" | "free-scrolling"
+type Mode = "following-bottom" | "anchored-to-message" | "settling-jump" | "free-scrolling"
 
 const px = (value: string): number => {
 	const parsed = Number.parseFloat(value)
@@ -24,7 +24,7 @@ const px = (value: string): number => {
 }
 
 /** Wires one scroller; returns its teardown. Mutable locals are the DOM glue's own bookkeeping. */
-const attach = (root: Element): (() => void) => {
+const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 	const viewport = root.querySelector("[data-slot=message-scroller-viewport]")
 	const content = root.querySelector("[data-slot=message-scroller-content]")
 	const button = root.querySelector("[data-slot=message-scroller-button]")
@@ -92,7 +92,27 @@ const attach = (root: Element): (() => void) => {
 		mode = "anchored-to-message"
 		scrollTo(target, "auto")
 	}
+	/** `scrollToMessage(id, { align: "start" })`: a permalink's message at the top, left where it lands. */
+	const jumpTo = (element: HTMLElement) => {
+		const offset = element.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
+		const target = offset - paddings().start
+		setSpacer(target + viewport.clientHeight - contentBottom())
+		anchored = null
+		mode = "settling-jump"
+		scrollTo(target, "auto")
+	}
 	const isAnchor = (element: HTMLElement) => element.dataset.scrollAnchor === "true"
+	// Legacy's thread is laid out on its first paint; here replies are laid out once their markdown
+	// parses (`data-markdown-pending` clears), so the permalink waits for that, as a queued jump.
+	let pendingFocus = focusMessageId
+	const flushFocus = (): boolean => {
+		if (pendingFocus === null || content.hasAttribute("data-markdown-pending")) return false
+		const target = items().find((item) => item.dataset.messageId === pendingFocus)
+		pendingFocus = null
+		if (target === undefined) return false
+		jumpTo(target)
+		return true
+	}
 
 	const onContentChange = () => {
 		const list = items()
@@ -102,8 +122,9 @@ const attach = (root: Element): (() => void) => {
 		// (legacy leaves them unmarked and only its frame batching keeps it from re-anchoring).
 		if (previous === 0) {
 			list.filter(isAnchor).forEach((item) => handled.add(item))
-			return toEnd("auto")
+			return flushFocus() ? undefined : toEnd("auto")
 		}
+		if (flushFocus()) return
 		if (list.length > previous) {
 			const added = list.slice(previous).filter(isAnchor)
 			const first = added[0]
@@ -138,12 +159,16 @@ const attach = (root: Element): (() => void) => {
 	const onClick = () => toEnd("smooth")
 
 	const mutation = new MutationObserver(onContentChange)
+	const markdownSettled = new MutationObserver(() => {
+		flushFocus()
+	})
 	let frame = 0
 	const resize = new ResizeObserver(() => {
 		cancelAnimationFrame(frame)
 		frame = requestAnimationFrame(onResize)
 	})
 	mutation.observe(content, { childList: true })
+	markdownSettled.observe(content, { attributeFilter: ["data-markdown-pending"] })
 	resize.observe(viewport)
 	resize.observe(content)
 	viewport.addEventListener("scroll", syncButton, { passive: true })
@@ -154,6 +179,7 @@ const attach = (root: Element): (() => void) => {
 	onContentChange()
 	return () => {
 		mutation.disconnect()
+		markdownSettled.disconnect()
 		resize.disconnect()
 		cancelAnimationFrame(frame)
 		viewport.removeEventListener("scroll", syncButton)
@@ -164,13 +190,14 @@ const attach = (root: Element): (() => void) => {
 	}
 }
 
-/** On the `message-scroller` root: its viewport, content, spacer and jump button are its children. */
+/** On the `message-scroller` root; `focusMessageId` is a `?m=` permalink to open on. */
 export const MountMessageScroller = Mount.define("MountChatMessageScroller", {
+	args: { focusMessageId: Schema.NullOr(Schema.String) },
 	messages: [CompletedMountScroller],
-	execute: ({ element }) =>
+	execute: ({ element, focusMessageId }) =>
 		Effect.as(
 			Effect.acquireRelease(
-				Effect.sync(() => attach(element)),
+				Effect.sync(() => attach(element, focusMessageId)),
 				(release) => Effect.sync(release),
 			),
 			CompletedMountScroller(),

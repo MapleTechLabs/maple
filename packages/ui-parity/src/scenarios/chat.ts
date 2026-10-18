@@ -115,6 +115,22 @@ const subjectScenarios: ReadonlyArray<Scenario> = [
 	{ ...scenario("widget-fix", "a broken widget's fix prompt sent on arrival", "default", replied), path: WIDGET_FIX_PATH },
 ]
 
+/** `?m=` permalinks open the transcript on their message; the link itself is copied from the row. */
+const permalinkScenarios: ReadonlyArray<Scenario> = [
+	{
+		...scenario("permalink", "a message permalink opened on its own conversation", "chat-conversation"),
+		path: "/chat?tab=default&m=msg_parity_assistant_1",
+	},
+	{
+		...scenario("shared-permalink", "a shared conversation opened on one message", "chat-conversation"),
+		path: "/chat?shared=default&title=Checkout%20incident&m=msg_parity_assistant_1",
+	},
+	scenario("copy-permalink", "a message's permalink copied", "chat-conversation", async (page) => {
+		await page.getByText("payment-svc 3.5.0 is exhausting its Postgres connection pool.").hover()
+		await page.getByRole("button", { name: "Copy Link to message" }).first().click()
+	}),
+]
+
 const sheetScenarios: ReadonlyArray<Scenario> = [
 	sheet("open", "opened from the top bar", openSheet),
 	sheet("shortcut", "opened with C", async (page) => {
@@ -229,6 +245,7 @@ export const chatArea: AreaModule = {
 			path: "/chat?shared=default&title=Checkout%20incident",
 		},
 		...subjectScenarios,
+		...permalinkScenarios,
 		...sheetScenarios,
 		lab("sheet-width", "at the sheet width", (page) => page.getByRole("button", { name: "Sheet (620px)" }).click()),
 		lab("narrow-width", "at the narrow width", (page) => page.getByRole("button", { name: "Narrow (420px)" }).click()),
