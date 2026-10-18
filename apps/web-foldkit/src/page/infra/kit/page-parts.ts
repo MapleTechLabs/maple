@@ -3,7 +3,7 @@ import { countLabel as nounCount } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
 
@@ -207,6 +207,10 @@ export const setupEmpty = <M>(
 		],
 		"py-16",
 	)
+
+/** `NoMetricsMessage` (primitives/no-metrics-message.tsx). */
+export const noMetricsMessage = <M>(h: HtmlBuilder<M>, noun: string): Html =>
+	emptyMessage(h, { dashed: true, className: "py-12" }, [`No metrics arrived for this ${noun} in the selected window.`])
 
 /** `countLabel`: "Top 50 of 541 pods" for a slice, "541 pods" for the whole list. */
 export const countLabel = (shown: number, total: number, noun: string): string => {

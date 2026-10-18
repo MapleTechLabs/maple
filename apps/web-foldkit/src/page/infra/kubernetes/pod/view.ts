@@ -3,7 +3,6 @@ import { formatPercent } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
-import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { segmentedSelect } from "../../../../ui/segmented-select"
 import type { PageViewInputs } from "../../../contract"
@@ -12,7 +11,7 @@ import * as Frame from "../../kit/frame"
 import { heroChip } from "../../kit/hero-chip"
 import { k8sChart } from "../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "../../kit/metric-chart"
-import { pageHero } from "../../kit/page-parts"
+import { noMetricsMessage, pageHero } from "../../kit/page-parts"
 import { metaRow, resourceAttributesCard, resourceAttributesCardSkeleton } from "../../kit/resource-attributes"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
 import { kubernetesViewTabs } from "../../kit/view-tabs"
@@ -74,10 +73,6 @@ const stats = (h: H, model: Model, summary: Summary): Html =>
 		statRailItem(h, { eyebrow: "Memory vs request", value: formatPercent(summary.memoryRequestPct), compact: true }),
 		podRestartsStat(h, model.restarts.data),
 	])
-
-/** `NoMetricsMessage`. */
-export const noMetricsMessage = <M>(h: HtmlBuilder<M>, noun: string): Html =>
-	emptyMessage(h, { dashed: true, className: "py-12" }, [`No metrics arrived for this ${noun} in the selected window.`])
 
 const summaryArea = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.summary.data, {

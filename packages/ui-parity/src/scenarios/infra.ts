@@ -196,6 +196,24 @@ export const infraArea: AreaModule = {
 			K8S,
 			clickText("Mem / limit"),
 		),
+		...timed("nodes", "Nodes", "/infra/kubernetes/nodes", K8S, "queryEngine.listNodes"),
+		scenario("nodes-sort-uptime", "Nodes: sorted by uptime", "/infra/kubernetes/nodes", K8S, (page) =>
+			page.getByRole("button", { name: "Uptime", exact: true }).click(),
+		),
+		scenario("nodes-search", "Nodes: searched with no match", "/infra/kubernetes/nodes", K8S, (page) =>
+			page.getByRole("textbox", { name: "Search nodes…" }).fill("nope"),
+		),
+		scenario("nodes-facet", "Nodes: one node ticked", "/infra/kubernetes/nodes", K8S, (page) =>
+			page.getByRole("checkbox", { name: HOST }).click(),
+		),
+		...timed(
+			"node-detail",
+			"Node detail",
+			`/infra/kubernetes/nodes/${HOST}`,
+			K8S,
+			"queryEngine.node",
+			"queryEngine.nodeDetailSummary",
+		),
 		scenario(
 			"node-detail-memory",
 			"Node detail: memory vs allocatable",
