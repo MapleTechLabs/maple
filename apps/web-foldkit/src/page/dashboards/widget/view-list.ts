@@ -19,6 +19,7 @@ import type { Model } from "./model"
 import { ProductEdit } from "./product-edit"
 import { product } from "./view-product"
 import { listColumnRow } from "./view-list-column"
+import { lookupField } from "../../kit/autocomplete-lookups"
 
 // `ListConfigPanel` (dashboard-builder/config/list-config-panel.tsx) and its Run preview row.
 
@@ -73,7 +74,10 @@ const ATTRIBUTE_PREFIX = {
 } as const
 
 const lookupNames = (model: Model, lookup: string): ReadonlyArray<string> =>
-	Option.getOrElse(AsyncData.getData(model.autocomplete[lookup]?.data ?? AsyncData.Idle()), () => [])
+	lookupField(
+		Option.getOrUndefined(AsyncData.getData(model.autocomplete[lookup]?.data ?? AsyncData.Idle())),
+		"keys",
+	)
 
 /** The known columns, then the source's attribute keys under their map prefix. */
 export const suggestedFieldsOf = (model: Model, source: ListDataSource): ReadonlyArray<string> => {

@@ -152,6 +152,11 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 								expanded: model.expanded,
 								nowMs: model.nowMs,
 								timeZone,
+								overlays: {
+									model: model.overlays,
+									toParent: (message) => Message.GotOverlaysMessage({ message }),
+									clock: { nowMs: model.nowMs, timeZone },
+								},
 							}),
 							...(issues?.hasMore === true
 								? [

@@ -7,8 +7,9 @@ import {
 } from "@maple/web-data/collections/alerts"
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
+import { lookupField } from "../../kit/autocomplete-lookups"
 import { isoMs } from "../shared/time"
-import type { Model } from "./model"
+import type { Model, TraceFacets } from "./model"
 
 // The live rows as the documents the editor reads.
 
@@ -30,14 +31,16 @@ export const openIncidentsOf = (model: Model): ReadonlyArray<AlertIncidentDocume
 				.map(rowToAlertIncidentDocument)
 				.filter((incident) => incident.ruleId === model.editingRuleId && incident.status === "open")
 
-/** The traces facets once answered (`autocompleteValues.traces.services` / `.environments`). */
-export const traceFacetsOf = (model: Model): { services: ReadonlyArray<string>; environments: ReadonlyArray<string> } =>
+const NO_FACETS: TraceFacets = { services: [], environments: [], spanNames: [], httpMethods: [], httpStatusCodes: [] }
+
+/** The traces facets once answered (`autocompleteValues.traces`). */
+export const traceFacetsOf = (model: Model): TraceFacets =>
 	AsyncData.match(model.traceFacets.data, {
-		onIdle: () => ({ services: [], environments: [] }),
-		onLoading: () => ({ services: [], environments: [] }),
+		onIdle: () => NO_FACETS,
+		onLoading: () => NO_FACETS,
 		onRefreshing: (facets) => facets,
 		onSuccess: (facets) => facets,
-		onFailure: () => ({ services: [], environments: [] }),
+		onFailure: () => NO_FACETS,
 		onStale: ({ data }) => data,
 	})
 
@@ -48,10 +51,10 @@ export const spanAttributeKeysOf = (model: Model): ReadonlyArray<string> => {
 	return AsyncData.match(slot.data, {
 		onIdle: () => [],
 		onLoading: () => [],
-		onRefreshing: (keys) => keys,
-		onSuccess: (keys) => keys,
+		onRefreshing: (answer) => lookupField(answer, "keys"),
+		onSuccess: (answer) => lookupField(answer, "keys"),
 		onFailure: () => [],
-		onStale: ({ data }) => data,
+		onStale: ({ data }) => lookupField(data, "keys"),
 	})
 }
 

@@ -5,6 +5,7 @@ import { QueryChange, type QueryTextField } from "../../page/kit/query-builder/c
 import type { QueryDraft } from "../../page/kit/query-builder/draft"
 import { textInput } from "../../page/kit/query-builder/parts"
 import { view as comboboxView } from "../../ui/combobox-view"
+import { lookupField } from "../../page/kit/autocomplete-lookups"
 import { groupByOptionsOf } from "./derive"
 import { Message, type Model } from "./model"
 import { groupByModelOf } from "./update-controls"
@@ -18,11 +19,13 @@ const GROUP_BY_PLACEHOLDER = "service.name | span.name | none | attr.http.route"
 
 /** `autocompleteValues.attributeKeys`: the span attribute keys, empty until they load. */
 const spanAttributeKeysOf = (model: Model): ReadonlyArray<string> =>
-	Option.getOrElse(
-		Option.flatMap(Option.fromNullishOr(model.autocomplete["spanAttributeKeys"]), (slot) =>
-			AsyncData.getData(slot.data),
+	lookupField(
+		Option.getOrUndefined(
+			Option.flatMap(Option.fromNullishOr(model.autocomplete["spanAttributeKeys"]), (slot) =>
+				AsyncData.getData(slot.data),
+			),
 		),
-		() => [],
+		"keys",
 	)
 
 /** `GroupByAutocomplete`. TODO(lab-query-builder): items lack `font-mono` (the item class). */

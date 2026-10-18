@@ -5,6 +5,7 @@ import {
 	queryBadgeColor,
 } from "@maple/query-engine/query-builder"
 import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
+import type { WhereClauseAutocompleteValues } from "@maple/web/lib/query-builder/where-clause-autocomplete"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { Submodel } from "foldkit"
@@ -40,6 +41,8 @@ export type QueryPanelInputs = Readonly<{
 	metricSearch?: string
 	/** The picked metric's attribute keys, offered as `attr.<key>` breakdowns. */
 	metricBreakdownKeys?: ReadonlyArray<string>
+	/** `autocompleteValues[query.dataSource]`: what the where editor completes from. */
+	autocompleteValues?: WhereClauseAutocompleteValues
 }>
 
 const SOURCE_LABEL = {
@@ -134,9 +137,13 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 			searchTerm: inputs.metricSearch ?? "",
 			breakdownKeys: inputs.metricBreakdownKeys ?? [],
 			intervalPlaceholder,
+			autocompleteValues: inputs.autocompleteValues ?? {},
 		})
 	const whereRow = (parts: ReadonlyArray<Html>) =>
-		h.div([h.Class("flex items-start gap-2")], [whereClauseEditor(h, query), ...parts])
+		h.div(
+			[h.Class("flex items-start gap-2")],
+			[whereClauseEditor(h, model, query, inputs.autocompleteValues ?? {}), ...parts],
+		)
 	return [
 		query.dataSource === "traces"
 			? panelSelect(

@@ -2,8 +2,8 @@ import { MetricsQueryDraftSchema, QUERY_BUILDER_METRIC_TYPES } from "@maple/quer
 import { getMetricAttributeKeys, getMetricAttributeValues, listMetrics } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
-import { Clock, Duration, Effect, Option, Schema, Stream } from "effect"
-import { Command, Dom, Mount } from "foldkit"
+import { Clock, Duration, Effect, Schema, Stream } from "effect"
+import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
@@ -11,6 +11,7 @@ import { Message, RequestMode } from "./message"
 import { AutocompleteLookup } from "./model"
 import { autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { caretEvents, placeCaret, WHERE_TEXTAREA_ID } from "./where-editor"
+import { listboxEvents } from "../../kit/where-autocomplete"
 
 export const ResolveWindow = Command.define("ResolveMetricWindow", {
 	args: {
@@ -195,18 +196,11 @@ export const MountWhereCaret = Mount.defineStream("MountMetricWhereCaret", {
 	execute: ({ element }) => Stream.map(caretEvents(element), (message) => Message.GotCaretMessage({ message })),
 })
 
-/** `onMouseDown={(e) => e.preventDefault()}` on the list: picking a suggestion keeps the focus. */
+/** The open list: the textarea keeps focus while a row is pressed, and the list follows it. */
 export const MountKeepWhereFocus = Mount.defineStream("MountMetricKeepWhereFocus", {
-	messages: [Message.CompletedPlaceWhereCaret],
+	messages: [Message.GotCaretMessage],
 	execute: ({ element }) =>
-		Dom.streamFromEventFilterMap({
-			target: element,
-			type: "mousedown",
-			filterMapEvent: (event): Option.Option<typeof Message.CompletedPlaceWhereCaret.Type> => {
-				event.preventDefault()
-				return Option.none()
-			},
-		}),
+		Stream.map(listboxEvents(element, WHERE_TEXTAREA_ID), (message) => Message.GotCaretMessage({ message })),
 })
 
 export const PlaceWhereCaret = Command.define("PlaceMetricWhereCaret", {

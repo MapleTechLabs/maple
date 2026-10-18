@@ -71,7 +71,7 @@ describe("query builder lab", () => {
 			Message.CompletedFetchAutocomplete({
 				key: requestKey(orgId, "autocomplete.spanAttributeKeys", HOUR),
 				lookup: "spanAttributeKeys",
-				result: Result.succeed(["http.route"]),
+				result: Result.succeed({ keys: ["http.route"] }),
 			}),
 		).model
 		expect(stale.autocomplete["spanAttributeKeys"]?.data._tag).toBe("Loading")

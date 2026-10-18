@@ -16,7 +16,7 @@ import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as RadioGroup from "../../../ui/radio-group"
 import * as Select from "../../../ui/select"
-import { AutocompleteLookup } from "../../kit/autocomplete-lookups"
+import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
@@ -65,7 +65,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchAutocomplete: {
 		key: Schema.String,
 		lookup: AutocompleteLookup,
-		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+		result: Schema.Result(LookupNames, LoadFailure),
 	},
 	CompletedFetchPreview: {
 		key: Schema.String,

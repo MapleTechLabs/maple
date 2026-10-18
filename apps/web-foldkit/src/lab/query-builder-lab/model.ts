@@ -5,7 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../data/keyed"
 import { LoadFailure } from "../../data/load-failure"
 import { TimeWindow } from "../../data/time-range"
-import { AutocompleteLookup } from "../../page/kit/autocomplete-lookups"
+import { AutocompleteLookup, LookupNames } from "../../page/kit/autocomplete-lookups"
 import { QueryChange } from "../../page/kit/query-builder/change"
 import { QueryDraft } from "../../page/kit/query-builder/draft"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
@@ -88,7 +88,7 @@ export const Model = Schema.Struct({
 	noQueriesError: Schema.NullOr(Schema.String),
 	results: KeyedSchema(RunResult, LoadFailure),
 	metrics: KeyedSchema(Schema.Array(MetricRow), LoadFailure),
-	autocomplete: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), LoadFailure)),
+	autocomplete: Schema.Record(Schema.String, KeyedSchema(LookupNames, LoadFailure)),
 	selects: Schema.Record(Schema.String, Select.Model),
 	groupBys: Schema.Record(Schema.String, Combobox.Model),
 	scroll: Schema.NullOr(ScrollMetrics),
@@ -102,7 +102,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchAutocomplete: {
 		key: Schema.String,
 		lookup: AutocompleteLookup,
-		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+		result: Schema.Result(LookupNames, LoadFailure),
 	},
 	CompletedFetchMetrics: {
 		key: Schema.String,

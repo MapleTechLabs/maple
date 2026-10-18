@@ -19,7 +19,8 @@ import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
-import { commitAvatar, commitTrigger, isResolvableSha, firstLine, releaseHealthFigure, releaseHealthPill, releaseHref } from "../kit"
+import { commitAvatar, isResolvableSha, firstLine, releaseHealthFigure, releaseHref } from "../kit"
+import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { MountReleasesTable } from "./command"
 import { Message } from "./message"
 import type { TimeSearch } from "./view-overview"
@@ -95,6 +96,7 @@ const releaseTitle = (
 	commit: VcsCommitDetailResponse | undefined,
 	figure: string | undefined,
 	range: VcsCommitRangeResponse | undefined,
+	overlays: Overlays<Message>,
 ): Html => {
 	const author = commit?.authorLogin ?? commit?.authorName ?? undefined
 	const count = commitCount(h, range)
@@ -111,10 +113,12 @@ const releaseTitle = (
 					h.div(
 						[h.Class("flex min-w-0 items-center gap-2")],
 						[
-							commitTrigger(h, group.commitSha, cn("min-w-0 truncate text-sm text-foreground", commit === undefined && "font-mono text-xs"), [
+							commitTrigger(h, overlays, "releases-list", group.commitSha, cn("min-w-0 truncate text-sm text-foreground", commit === undefined && "font-mono text-xs"), [
 								(commit ? firstLine(commit.message) : "") || shortReleaseLabel(group.commitSha),
 							]),
-							...(group.health === "healthy" ? [] : [releaseHealthPill(h, group.health, figure)]),
+							...(group.health === "healthy"
+								? []
+								: [releaseHealthPill(h, overlays, pillId(group.commitSha), group.health, figure)]),
 						],
 					),
 					h.div(
@@ -143,7 +147,12 @@ export type TableInput = Readonly<{
 	expanded: ReadonlyArray<string>
 	nowMs: number
 	timeZone: string
+	overlays: Overlays<Message>
 }>
+
+/** A DOM-safe id for one health pill's tooltip trigger. */
+const pillId = (...parts: ReadonlyArray<string>): string =>
+	`releases-pill-${parts.join("-").replace(/[^A-Za-z0-9_-]/g, "_")}`
 
 const HEADERS: ReadonlyArray<readonly [string, string | undefined]> = [
 	["Release", "w-[46%] min-w-[260px]"],
@@ -223,6 +232,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 												input.commits.get(group.commitSha),
 												releaseHealthFigure(worst),
 												input.ranges.get(group.commitSha),
+												input.overlays,
 											),
 										],
 									),
@@ -279,7 +289,16 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 													: []),
 												...(service.health === "healthy"
 													? []
-													: [releaseHealthPill(h, service.health, releaseHealthFigure(service), "shrink-0")]),
+													: [
+															releaseHealthPill(
+																h,
+																input.overlays,
+																pillId(group.commitSha, service.serviceName, service.environment),
+																service.health,
+																releaseHealthFigure(service),
+																"shrink-0",
+															),
+														]),
 											],
 										),
 									],

@@ -11,10 +11,10 @@ import * as Tooltip from "../../../ui/tooltip"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { LoadFailure } from "../../../data/load-failure"
-import { AutocompleteLookup } from "../../kit/autocomplete-lookups"
+import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 import { WidgetFailure } from "../kit/widget-data"
 import { LegendPosition, PointsMode } from "./editor-state"
-import { MetricOptionSchema } from "./metric-option"
+import { MetricPageSchema } from "./metric-option"
 import { ProductEdit } from "./product-edit"
 import { Suggestion, SuggestionLookup } from "./suggestions"
 
@@ -100,13 +100,16 @@ export const Message = defineMessageUnion({
 	},
 	CompletedFetchMetricOptions: {
 		search: Schema.String,
-		result: Schema.Result(Schema.Array(MetricOptionSchema), LoadFailure),
+		result: Schema.Result(MetricPageSchema, LoadFailure),
 	},
-	CompletedFetchMetricKeys: { metric: Schema.String, result: Schema.Result(Schema.Array(Schema.String), LoadFailure) },
+	CompletedFetchMetricKeys: {
+		metric: Schema.String,
+		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+	},
 	CompletedFetchAutocomplete: {
 		key: Schema.String,
 		lookup: AutocompleteLookup,
-		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+		result: Schema.Result(LookupNames, LoadFailure),
 	},
 })
 export type Message = typeof Message.Type

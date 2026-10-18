@@ -36,6 +36,9 @@ const ALERT_PATH = "/errors/issues/0199a004-0000-7000-8000-000000000050"
 /** The in-progress issue, claimed by the dataset's user (a held lease). */
 const LEASED_PATH = "/errors/issues/0199a004-0000-7000-8000-000000000002"
 
+/** `default` with a busy worked issue and a GitHub App on two repositories (`fixtures/areas/errors.ts`). */
+const ERRORS_BUSY = "errors-busy"
+
 /** Picks `option` from the rail select whose trigger reads `current`, then waits for `toast`. */
 const pickInRail =
 	(trigger: (page: Page) => Locator, option: string, toast?: string) => async (page: Page) => {
@@ -201,6 +204,30 @@ export const errorsArea: AreaModule = {
 		}),
 		errors("issue-detach", "a pull request detached", LEASED_PATH, {
 			steps: clickThen("Detach acme/storefront#491", "Pull request detached"),
+		}),
+		// `errors-busy`: the worked issue past the timeline's 50 recent rows, and two GitHub repositories.
+		errors("issue-activity-capped", "a busy timeline shows its latest 50 rows", `${LEASED_PATH}?tab=activity`, {
+			dataset: ERRORS_BUSY,
+			steps: async (page) => {
+				await page.getByRole("button", { name: /^Show \d+ earlier events$/ }).waitFor()
+			},
+		}),
+		errors("issue-activity-earlier", "Show earlier reveals the rest of a busy timeline", `${LEASED_PATH}?tab=activity`, {
+			dataset: ERRORS_BUSY,
+			steps: async (page) => {
+				await page.getByRole("button", { name: /^Show \d+ earlier events$/ }).click()
+				await settlePointer(page)
+			},
+		}),
+		errors("issue-attach-repository", "the attach dialog's repository select, another one picked", ISSUE_PATH, {
+			dataset: ERRORS_BUSY,
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Attach", exact: true }).click()
+				await page.getByRole("dialog").getByRole("combobox", { name: "Repository" }).click()
+				await page.getByRole("option", { name: "acme-shop/storefront" }).click()
+				await page.waitForTimeout(300)
+				await settlePointer(page)
+			},
 		}),
 		errors("issue-investigate", "Investigate opens a new investigation", ISSUE_PATH, {
 			steps: async (page) => {

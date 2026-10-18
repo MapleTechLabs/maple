@@ -23,14 +23,8 @@ import { skeleton, skeletonList } from "../../../ui/skeleton"
 import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { CHART_TOKENS, metricsGridOf } from "../../services/detail/view-charts"
-import {
-	commitRangesKey,
-	commitTrigger,
-	isResolvableSha,
-	releaseHealthFigure,
-	releaseHealthPill,
-	withQueryOrder,
-} from "../kit"
+import { commitRangesKey, isResolvableSha, releaseHealthFigure, withQueryOrder } from "../kit"
+import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -108,11 +102,22 @@ const bodySkeleton = (h: H): Html =>
 		],
 	)
 
+/** The release pages' overlays as this page's view passes them on. */
+export const overlaysOf = (model: Model, clock: Clock): Overlays<Message> => ({
+	model: model.overlays,
+	toParent: (message) => Message.GotOverlaysMessage({ message }),
+	clock,
+})
+
 /** `ReleaseMeta`: author, repo and the provider link once the sha resolves. */
-const releaseMeta = (h: H, model: Model): ReadonlyArray<Html> => {
+const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 	if (!isResolvableSha(model.commitSha)) return [h.span([], ["deployment reference"])]
 	return Option.match(AsyncData.getData(model.commit.data), {
-		onNone: () => [commitTrigger(h, model.commitSha, "font-mono", [shortReleaseLabel(model.commitSha)])],
+		onNone: () => [
+			commitTrigger(h, overlaysOf(model, clock), "release-meta", model.commitSha, "font-mono", [
+				shortReleaseLabel(model.commitSha),
+			]),
+		],
 		onSome: (commit) => [
 			h.span([h.Class("truncate")], [commit.authorLogin ?? commit.authorName ?? "Unknown author"]),
 			h.span([h.Class("truncate text-muted-foreground/70")], [commit.repoFullName]),
@@ -139,7 +144,7 @@ const metaLine = (
 	h.div(
 		[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-xs text-muted-foreground")],
 		[
-			...releaseMeta(h, model),
+			...releaseMeta(h, model, clock),
 			h.span(
 				[],
 				[
@@ -163,7 +168,7 @@ const metaLine = (
 				: [h.span([], [formatPercent(impact.share), " of the latest traffic"])]),
 			...(impact.health === "healthy"
 				? []
-				: [releaseHealthPill(h, impact.health, releaseHealthFigure(impact))]),
+				: [releaseHealthPill(h, overlaysOf(model, clock), "release-meta-pill", impact.health, releaseHealthFigure(impact))]),
 		],
 	)
 
@@ -315,6 +320,7 @@ const seriesBar = (h: H, model: Model, serviceName: string): Html => {
 
 const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: string, clock: Clock): Html => {
 	const rail = releaseVersionsRail(h, {
+		overlays: overlaysOf(model, clock),
 		impacts: derived.impacts,
 		currentSha: model.commitSha,
 		serviceName,
@@ -343,7 +349,7 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 		[h.Class("flex flex-col gap-3")],
 		[
 			metaLine(h, model, impact, serviceName, clock),
-			h.div([h.Class("grid gap-3 lg:grid-cols-2")], [releaseComparison(h, impact), rail]),
+			h.div([h.Class("grid gap-3 lg:grid-cols-2")], [releaseComparison(h, impact, overlaysOf(model, clock)), rail]),
 			releaseChangeset(h, changesetState(model, impact.baseline?.commitSha), clock),
 			seriesBar(h, model, serviceName),
 			metricsGridOf(

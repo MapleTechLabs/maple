@@ -4,7 +4,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as Dialog from "../../../ui/dialog"
-import { AutocompleteLookup } from "../../kit/autocomplete-lookups"
+import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 import { SignalPresences } from "../../kit/signal-presence"
 import { Message as DetailMessage } from "../detail/message"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -88,7 +88,7 @@ export const Message = defineMessageUnion({
 	CompletedAdvancedLookup: {
 		key: Schema.String,
 		lookup: AutocompleteLookup,
-		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+		result: Schema.Result(LookupNames, LoadFailure),
 	},
 	CompletedPlaceAdvancedCursor: {},
 })

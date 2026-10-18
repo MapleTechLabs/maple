@@ -9,7 +9,8 @@ import { AsyncData } from "foldkit"
 import { Option } from "effect"
 import { QueryChange, type AddOnKey } from "../../page/kit/query-builder/change"
 import type { QueryDraft } from "../../page/kit/query-builder/draft"
-import { textInput, whereClauseField } from "../../page/kit/query-builder/parts"
+import { textInput } from "../../page/kit/query-builder/parts"
+import { whereEditor } from "../../page/kit/query-builder/where-editor"
 import { button } from "../../ui/button"
 import { card, cardHeader, cardPanel } from "../../ui/card"
 import * as Checkbox from "../../ui/checkbox"
@@ -176,9 +177,10 @@ const whereSection = (h: H, query: QueryDraft): Html => {
 						size: 12,
 						className: "pointer-events-none absolute left-2 top-2.5 text-muted-foreground",
 					}),
-					whereClauseField(h, {
-						query,
-						className: "relative",
+					whereEditor(h, {
+						id: `where-${query.id}`,
+						value: query.whereClause,
+						ariaLabel: `Where clause for query ${query.name}`,
 						textareaClassName: "pl-7",
 						placeholder: WHERE_PLACEHOLDER,
 						rows: 2,

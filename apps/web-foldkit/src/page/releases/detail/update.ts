@@ -2,6 +2,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { NEW_ISSUE_SLACK_MS, previousSha } from "@maple/web/components/releases/release-model"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
+import * as Overlays from "../overlays"
 import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
@@ -148,6 +149,7 @@ export const init = (route: ReleaseRoute, context: PageContext): Return => {
 		changeset: Keyed.idle(),
 		issues: Keyed.idle(),
 		timePicker: TimeRangePicker.init("release-time-range"),
+		overlays: Overlays.init("release-detail"),
 		detail: Keyed.idle(),
 		series: "version",
 		serviceIssues: Keyed.idle(),
@@ -186,6 +188,13 @@ const navigate = (model: Model, search: Model["search"]): Return => ({
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
+		GotOverlaysMessage: ({ message: inner }) => {
+			const next = Overlays.update(model.overlays, inner, context.orgId)
+			return {
+				model: { ...model, overlays: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (overlay) => Message.GotOverlaysMessage({ message: overlay })),
+			}
+		},
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			chain(requestReleases({ ...model, nowMs }, context, window, mode), (next) =>
 				followDeploy(next, context, mode),

@@ -7,6 +7,7 @@ import { HostSortKey } from "../../page/infra/hosts/list/message"
 import { SortState } from "../../page/kit/table-sort"
 import * as AttributesPanel from "../../ui/attributes/attributes-panel"
 import * as LogsStream from "../../ui/logs/logs-stream"
+import * as ReleaseOverlays from "../../page/releases/overlays"
 import * as Toast from "../../ui/toast"
 import * as TraceBox from "./trace-box"
 
@@ -43,6 +44,8 @@ export const Model = Schema.Struct({
 	/** The open tool rows, by `tool:<toolCallId>`. */
 	openTools: Schema.Array(Schema.String),
 	/** The root `ToastProvider`'s two Notifications regions. */
+	/** The release comparison's commit hover card. */
+	releaseOverlays: ReleaseOverlays.Model,
 	toasts: Toast.Model,
 })
 export type Model = typeof Model.Type
@@ -61,5 +64,6 @@ export const Message = defineMessageUnion({
 	GotAttributesMessage: { message: AttributesPanel.Message },
 	ToggledTool: { id: Schema.String },
 	GotToastMessage: { message: Toast.Message },
+	GotReleaseOverlaysMessage: { message: ReleaseOverlays.Message },
 })
 export type Message = typeof Message.Type

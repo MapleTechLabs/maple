@@ -8,11 +8,21 @@ import { saveSelectedPlanKnown } from "./page/onboarding/plan-gate"
 import { loadClerk, signOutOfClerk } from "./platform/clerk"
 import { BillingCustomerCache } from "./data/billing-customer"
 import { ReadCache } from "./data/read-cache"
+import { OrgCollections } from "./data/collections/org-collections"
 import { readSessionTimeRange, writeSessionTimeRange } from "./platform/session-time-range"
 import { SessionTimeRange } from "./route/session-time-range"
 
 /** How long a signed-out Clerk answer may still turn into a session on a hard refresh (main.tsx). */
 const AUTH_SETTLE_TIMEOUT = Duration.seconds(2)
+
+/** `retryOrgCollections`: a fresh collection set; every live query moves onto it. */
+export const ReconnectOrgCollections = Command.define("ReconnectOrgCollections", {
+	messages: [Message.CompletedReconnectOrgCollections],
+	execute: Effect.gen(function* () {
+		yield* (yield* OrgCollections).recreate
+		return Message.CompletedReconnectOrgCollections()
+	}),
+})
 
 export const NavigateInternal = Command.define("NavigateInternal", {
 	args: { url: Schema.String },

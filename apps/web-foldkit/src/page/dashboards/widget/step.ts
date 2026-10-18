@@ -23,8 +23,9 @@ import type { EditorState } from "./editor-state"
 import { applyProductEdit } from "./product-apply"
 import { BREAKDOWN_ATTRIBUTE, BREAKDOWN_SELECT_ID, breakdownPicked, productSelectEdit } from "./product-selects"
 import { Message } from "./message"
+import { panelInputsOf } from "./where-inputs"
 import type { Model } from "./model"
-import { editState, type Return, runPreview } from "./update"
+import { editState, type Return } from "./update"
 
 // The submodel steps: selects, the query panels, the leave dialog, and the dashboard range picker.
 
@@ -95,17 +96,13 @@ const applyPanelEdit = (state: EditorState, queryId: string, change: QueryPanel.
 }
 
 export const queryPanelStep = (model: Model, context: PageContext, message: QueryPanel.Message): Return => {
-	const next = QueryPanel.update(model.queryPanels, message)
+	const next = QueryPanel.update(model.queryPanels, message, panelInputsOf(model, context))
 	const lifted: Model = { ...model, queryPanels: next.model }
 	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
 		Message.GotQueryPanelMessage({ message: inner }),
 	)
 	const out = next.outMessage
 	if (out === undefined) return { model: lifted, commands }
-	if (out._tag === "PressedWhereEnter") {
-		const ran = runPreview(lifted, context)
-		return { ...ran, commands: [...commands, ...(ran.commands ?? [])] }
-	}
 	if (out._tag === "ChangedMetricSearch") {
 		const asked = askMetricOptions({ ...lifted, metricSearch: out.search })
 		return { model: asked.model, commands: [...commands, ...asked.commands] }

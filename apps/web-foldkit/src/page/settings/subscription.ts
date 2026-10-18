@@ -1,7 +1,7 @@
 import type { ApiKeyRow } from "@maple/web-data/collections/api-keys"
-import { Effect, Schema, Stream } from "effect"
+import { Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
-import { OrgCollections } from "../../data/collections/org-collections"
+import { type OrgCollections, orgLive } from "../../data/collections/org-collections"
 import { liveQueryStream } from "../../data/live-query"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
@@ -41,14 +41,11 @@ export const apiKeyRows = <M>(
 	orgId: string,
 	toMessage: (rows: ReadonlyArray<ApiKeyRow>) => M,
 ): Stream.Stream<M, never, OrgCollections> =>
-	Stream.unwrap(
-		Effect.gen(function* () {
-			const set = yield* (yield* OrgCollections).forOrg(orgId)
-			return liveQueryStream(
-				(q) => q.from({ key: set.apiKeys }).orderBy(({ key }) => key.created_at, "desc"),
-				(rows) => toMessage(rows),
-			)
-		}),
+	orgLive(orgId, (set) =>
+		liveQueryStream(
+			(q) => q.from({ key: set.apiKeys }).orderBy(({ key }) => key.created_at, "desc"),
+			(rows) => toMessage(rows),
+		),
 	)
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({

@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { LookupNames } from "../../kit/autocomplete-lookups"
 import * as AddToDashboard from "./add-to-dashboard"
 import { WhereEditor } from "./where-editor"
 import * as Chart from "../../../charts/chart"
@@ -38,7 +39,7 @@ export const Model = Schema.Struct({
 	/** `listMetricsResultAtom({ search: metricName, limit: 1000 })`. */
 	catalog: KeyedSchema(Schema.Array(MetricRow), LoadFailure),
 	/** Each provider lookup's slot; the values are the names the editor suggests. */
-	autocomplete: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), LoadFailure)),
+	autocomplete: Schema.Record(Schema.String, KeyedSchema(LookupNames, LoadFailure)),
 	/** `getMetricAttributeKeysResultAtom` scoped to the metric (controls, breakdown, metadata). */
 	attributeKeys: KeyedSchema(Schema.Array(AttributeKeyRow), LoadFailure),
 	timeseries: KeyedSchema(TimeseriesRows, LoadFailure),

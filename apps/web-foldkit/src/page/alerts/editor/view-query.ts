@@ -12,6 +12,7 @@ import * as RadioGroup from "../../../ui/radio-group"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { queryPanelView } from "../../kit/query-builder/view"
 import { spanAttributeKeysOf, traceFacetsOf } from "./derive-rows"
+import { baseValuesOf } from "./where-inputs"
 import type { RuleForm } from "./form"
 import { Message, type SignalKind } from "./message"
 import type { Model } from "./model"
@@ -263,6 +264,7 @@ const builderPanel = (h: H, model: Model, form: RuleForm): Html =>
 					intervalPlaceholder: "Auto",
 					hasHeaderActions: false,
 					hasVisibilityToggle: false,
+					autocompleteValues: baseValuesOf(model, form.queryBuilderDraft),
 				},
 				toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 			}),

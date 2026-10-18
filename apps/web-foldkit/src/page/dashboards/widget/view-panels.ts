@@ -24,6 +24,7 @@ import {
 	windowRow,
 } from "./view-product"
 import { FUNNEL_MAX_STEPS, stepBuilder } from "./view-steps"
+import { lookupField } from "../../kit/autocomplete-lookups"
 
 // `FunnelQueryPanel` (funnel-query-panel.tsx) and `PathsQueryPanel` (paths-query-panel.tsx), each
 // with the Run preview row the editor page puts under it.
@@ -35,10 +36,13 @@ const suggestionsOf = (model: Model, lookup: SuggestionLookup): ReadonlyArray<Su
 	const own = Option.getOrUndefined(AsyncData.getData(model.suggestions[lookup]?.data ?? AsyncData.Idle()))
 	if (own !== undefined) return own
 	if (lookup !== "eventNames") return []
-	const names = Option.getOrUndefined(
-		AsyncData.getData(model.autocomplete.productEventNames?.data ?? AsyncData.Idle()),
+	const names = lookupField(
+		Option.getOrUndefined(
+			AsyncData.getData(model.autocomplete.productEventNames?.data ?? AsyncData.Idle()),
+		),
+		"keys",
 	)
-	return (names ?? []).map((name) => ({ name, count: null, field: null }))
+	return names.map((name) => ({ name, count: null, field: null }))
 }
 
 const FUNNEL_ADD_ONS = [

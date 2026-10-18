@@ -1,6 +1,7 @@
 import { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
 import { V2ErrorIssue } from "@maple/domain/http/v2"
 import { Schema } from "effect"
+import * as Overlays from "../overlays"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -45,6 +46,8 @@ export const Model = Schema.Struct({
 	/** `DeployIssues`: issues introduced since the deploy. */
 	issues: KeyedSchema(Schema.Array(V2ErrorIssue), LoadFailure),
 	timePicker: TimeRangePicker.Model,
+	/** The health pills' tooltip and the commit hover card. */
+	overlays: Overlays.Model,
 	/** `ReleaseBody` (`?service=`): this version on one service, against the one it replaced. */
 	detail: KeyedSchema(ReleaseDetail, LoadFailure),
 	series: Schema.Literals(["version", "others"]),

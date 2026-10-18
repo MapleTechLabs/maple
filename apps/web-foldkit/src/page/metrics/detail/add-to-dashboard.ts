@@ -13,12 +13,13 @@ import { defineMessageUnion } from "foldkit/message"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { liveQueryStream } from "../../../data/live-query"
+import { orgLive } from "../../../data/collections/org-collections"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Dialog from "../../../ui/dialog"
 import { generateWidgetId, withAddedWidget } from "../../dashboards/kit/layout"
 import { createPayload } from "../../dashboards/kit/portable"
-import { awaitTxid, dashboardsOf, mutateDashboard, readDocument } from "../../dashboards/kit/store"
+import { awaitTxid, mutateDashboard, readDocument } from "../../dashboards/kit/store"
 
 // `AddToDashboardDialog` (apps/web/src/components/metrics/metric-graduation-actions.tsx): the
 // explorer's query as a chart widget on an existing dashboard, or on a new one created with it.
@@ -116,24 +117,22 @@ export const CreateDashboard = Command.define("CreateDashboardWithMetricWidget",
 
 /** The org's dashboards, as the dialog lists them. */
 export const dashboardChoices = (orgId: string): Stream.Stream<Message, never, Resources> =>
-	Stream.unwrap(
-		Effect.map(dashboardsOf(orgId), (collection) =>
-			liveQueryStream(
-				(q) => q.from({ d: collection }).orderBy(({ d }) => d.updated_at, "desc"),
-				(rows) =>
-					Message.UpdatedDashboards({
-						orgId,
-						dashboards: rows.flatMap((row) =>
-							Option.toArray(
-								Option.map(rowToDocument(row), (document) => ({
-									id: document.id,
-									name: document.name,
-									widgetCount: document.widgets.length,
-								})),
-							),
+	orgLive(orgId, ({ dashboards: collection }) =>
+		liveQueryStream(
+			(q) => q.from({ d: collection }).orderBy(({ d }) => d.updated_at, "desc"),
+			(rows) =>
+				Message.UpdatedDashboards({
+					orgId,
+					dashboards: rows.flatMap((row) =>
+						Option.toArray(
+							Option.map(rowToDocument(row), (document) => ({
+								id: document.id,
+								name: document.name,
+								widgetCount: document.widgets.length,
+							})),
 						),
-					}),
-			),
+					),
+				}),
 		),
 	)
 

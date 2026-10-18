@@ -39,18 +39,7 @@ const widgetMenuEntries = (model: Model, widget: Widget): ReadonlyArray<MenuView
 		...(isAlertable(widget)
 			? [{ _tag: "Item", value: "alert", label: "Create alert", icon: "BellIcon" } as const]
 			: []),
-		// TODO(tooltip): a disabled item's "can't be shown in shared views" tooltip is not drawn.
-		...(model.shares === "Loaded"
-			? [
-					{
-						_tag: "Item",
-						value: "embed",
-						label: "Embed chart",
-						icon: "CodeIcon",
-						isDisabled: !isShareSupported(widget.dataSource),
-					} as const,
-				]
-			: []),
+		...(model.shares === "Loaded" ? [embedEntry(widget)] : []),
 		...(isEdit
 			? [
 					{ _tag: "Separator" } as const,
@@ -66,6 +55,19 @@ const widgetMenuEntries = (model: Model, widget: Widget): ReadonlyArray<MenuView
 	]
 	return entries
 }
+
+/** "Embed chart"; a widget a shared view cannot render keeps it, disabled, with the reason. */
+const embedEntry = (widget: Widget): MenuView.MenuItemEntry =>
+	isShareSupported(widget.dataSource)
+		? { _tag: "Item", value: "embed", label: "Embed chart", icon: "CodeIcon" }
+		: {
+				_tag: "Item",
+				value: "embed",
+				label: "Embed chart",
+				icon: "CodeIcon",
+				isDisabled: true,
+				tooltip: { content: ["This widget can't be shown in shared views"], side: "left" },
+			}
 
 /** `MoveWidgetToSectionMenu`: Ungrouped, then every `Group · Tab`; where it lives now is disabled. */
 const moveToEntry = (model: Model, widget: Widget): MenuView.MenuEntry => {

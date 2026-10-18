@@ -41,7 +41,15 @@ import {
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
 import { overflowStep } from "./overflow"
-import { attachComboboxStep, attachDialogStep, completedAttach, openAttach, submittedAttach } from "./attach"
+import {
+	attachComboboxStep,
+	attachDialogStep,
+	clearedAttach,
+	completedAttach,
+	githubOf,
+	openAttach,
+	submittedAttach,
+} from "./attach"
 import { copyToast } from "../../kit/clipboard"
 import {
 	completedWrite,
@@ -182,17 +190,7 @@ const detailStep =
 		)
 	}
 
-/** The attach dialog's repository: the suggestion while the org still has it, else the first. */
-const selectedRepository = (model: Model): string | null => {
-	const status = Option.getOrNull(AsyncData.getData(model.githubStatus.data))
-	if (status === null) return null
-	const repositories = status.repositories.filter((repo) => repo.status === "active")
-	const suggested =
-		Option.getOrNull(AsyncData.getData(model.pullRequests.data))?.suggestedRepository ?? null
-	return suggested !== null && repositories.some((repo) => repo.fullName === suggested)
-		? suggested
-		: (repositories[0]?.fullName ?? null)
-}
+const selectedRepository = (model: Model): string | null => githubOf(model).repository
 
 /** `vcsPullRequests` for the selected repository; a query without one is never sent. */
 const vcsStep =
@@ -254,6 +252,9 @@ export const init = (
 		overflowMenu: Menu.init("issue-overflow"),
 		attachDialog: Dialog.init("issue-attach-pr", "dialog"),
 		attachDraft: "",
+		attachRepository: null,
+		repositorySelect: Select.init("issue-attach-repository", { value: "", selectedIndex: null }),
+		isShowingEarlier: false,
 		attachCombobox: Combobox.init("issue-attach-pr-picker", "single"),
 		isAttaching: false,
 		isDetaching: false,
@@ -517,6 +518,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		ClickedAttach: () => openAttach(model),
+		ClickedShowEarlier: () => ({ model: { ...model, isShowingEarlier: true } }),
+		// `onValueChange`: the picked repository's pull requests, with the search cleared.
+		GotRepositorySelectMessage: ({ message: inner }) =>
+			selectStep(
+				model,
+				model.repositorySelect,
+				inner,
+				(repositorySelect) => ({ repositorySelect }),
+				(next) => Message.GotRepositorySelectMessage({ message: next }),
+				(picked, value) =>
+					applySteps({ ...clearedAttach(picked), attachRepository: value }, [vcsStep(context)]),
+			),
 		GotAttachDialogMessage: ({ message: inner }) => attachDialogStep(model, inner),
 		GotAttachComboboxMessage: ({ message: inner }) => attachComboboxStep(model, inner),
 		ChangedAttachDraft: ({ value }) => ({ model: { ...model, attachDraft: value } }),

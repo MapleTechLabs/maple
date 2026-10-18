@@ -2,6 +2,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { isReleaseHealth } from "@maple/web/components/releases/release-model"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
+import * as Overlays from "../overlays"
 import * as Keyed from "../../../data/keyed"
 import type { LoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
@@ -117,6 +118,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		expanded: [],
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("releases-time-range"),
+		overlays: Overlays.init("releases-list"),
 	}
 	return {
 		model,
@@ -155,6 +157,13 @@ const toggled = (selected: ReadonlyArray<string> | undefined, excluded: Readonly
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
+		GotOverlaysMessage: ({ message: inner }) => {
+			const next = Overlays.update(model.overlays, inner, context.orgId)
+			return {
+				model: { ...model, overlays: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (overlay) => Message.GotOverlaysMessage({ message: overlay })),
+			}
+		},
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			chain(requestReleases({ ...model, nowMs }, context, window, mode), (next) => followTable(next, context, mode)),
 		CompletedFetchReleases: ({ key, result }) =>

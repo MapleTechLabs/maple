@@ -20,6 +20,7 @@ import {
 import {
 	type ItemRef,
 	itemId,
+	itemTooltipTriggerId,
 	Message,
 	type Model,
 	MountMenu,
@@ -29,6 +30,7 @@ import {
 	subPortalId,
 } from "./menu"
 import { icon, type IconName } from "./icon"
+import * as Tooltip from "./tooltip"
 import { popupId, portalId, triggerId } from "./overlay/popup-state"
 import type { Align, Side } from "./overlay/position"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
@@ -48,6 +50,11 @@ export type MenuItemEntry = Readonly<{
 	className?: string
 	/** The item's own children (an avatar, a badge), in place of `icon`, `label` and `shortcut`. */
 	content?: ReadonlyArray<Html | string>
+	/**
+	 * A tooltip on a wrapper `div` around the item (`<TooltipTrigger render={<div />}>`): a disabled
+	 * item swallows pointer events, so the wrapper takes the hover.
+	 */
+	tooltip?: Readonly<{ content: ReadonlyArray<Html | string>; side?: Side }>
 }>
 
 /** `<DropdownMenuSub>`: its trigger row, then the items of its popup. */
@@ -170,10 +177,34 @@ const row = (model: Model, index: number, item: ItemRef) => ({
 	onSelect: Message.ClickedItem({ index, item }),
 })
 
+/** The item inside its tooltip trigger; the tooltip's portal rides along while it is this item's. */
+const withItemTooltip = (
+	h: H,
+	model: Model,
+	index: number,
+	tooltip: NonNullable<MenuItemEntry["tooltip"]>,
+	item: Html,
+): Html => {
+	const id = itemTooltipTriggerId(model.id, index)
+	const side = tooltip.side ?? "left"
+	return h.submodel({
+		slotId: `${model.id}-item-tooltip-${index}`,
+		model: model.itemTooltip,
+		view: Tooltip.view,
+		toParentMessage: (message) => Message.GotItemTooltipMessage({ message, side }),
+		viewInputs: {
+			triggerIds: [id],
+			toContent: () => tooltip.content,
+			toView: ({ trigger, portal }) =>
+				h.div([...trigger(id)], [item, ...(portal !== null && model.itemTooltip.triggerId === id ? [portal] : [])]),
+		},
+	})
+}
+
 const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html => {
 	switch (entry._tag) {
-		case "Item":
-			return menuItem(
+		case "Item": {
+			const item = menuItem(
 				h,
 				{
 					...row(model, index, { kind: "Item", value: entry.value }),
@@ -183,6 +214,8 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 				},
 				itemContent(h, entry),
 			)
+			return entry.tooltip === undefined ? item : withItemTooltip(h, model, index, entry.tooltip, item)
+		}
 		case "Group": {
 			const labelId = `${model.id}-group-${index}`
 			const labelChildren =

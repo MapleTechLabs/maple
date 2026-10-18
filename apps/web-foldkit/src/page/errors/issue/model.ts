@@ -64,6 +64,11 @@ export const Model = Schema.Struct({
 	overflowMenu: Menu.Model,
 	attachDialog: Dialog.Model,
 	attachDraft: Schema.String,
+	/** `overrideRepository`: the repository picked in the attach dialog, over the suggestion. */
+	attachRepository: Schema.NullOr(Schema.String),
+	repositorySelect: Select.Model,
+	/** `showEarlier`: the timeline mounts its rows before the latest 50 once asked. */
+	isShowingEarlier: Schema.Boolean,
 	attachCombobox: Combobox.Model,
 	isAttaching: Schema.Boolean,
 	isDetaching: Schema.Boolean,

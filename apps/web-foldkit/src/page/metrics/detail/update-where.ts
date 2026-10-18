@@ -95,6 +95,8 @@ export const caretMessage = (
 			)
 		case "BlurredEditor":
 			return { model: { ...model, whereEditor: { ...editor, isFocused: false } } }
+		case "MeasuredAnchor":
+			return { model: { ...model, whereEditor: { ...editor, anchor: message.anchor } } }
 		case "MovedCaret": {
 			// `onKeyUp`: arrows that moved through an open list leave the caret alone.
 			const isArrow = message.keyUp === "ArrowDown" || message.keyUp === "ArrowUp"
