@@ -68,7 +68,12 @@ export const Message = defineMessageUnion({
 	ClickedTrigger: {},
 	HighlightedItem: { index: Schema.NullOr(Schema.Number) },
 	/** `items` unfiltered: `update` filters by the current input, so a key typed in the same frame counts. */
-	PressedInputKey: { key: Schema.String, items: Schema.Array(Schema.String) },
+	PressedInputKey: {
+		key: Schema.String,
+		items: Schema.Array(Schema.String),
+		/** The list shows every item whatever is typed (see `SingleViewInputs.isUnfiltered`). */
+		isUnfiltered: Schema.optional(Schema.Boolean),
+	},
 	ClickedItem: { value: Schema.String },
 	RemovedChip: { value: Schema.String },
 	PressedEscape: {},
@@ -132,8 +137,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		ClickedInput: () => transition.open(model),
 		ClickedTrigger: () => (model.isOpen ? closed(model) : transition.open(model)),
 		HighlightedItem: ({ index }) => ({ model: { ...model, highlighted: index } }),
-		PressedInputKey: ({ key, items }) => {
-			const values = visibleItems(model, items)
+		PressedInputKey: ({ key, items, isUnfiltered }) => {
+			const values = isUnfiltered === true ? items : visibleItems(model, items)
 			if (key === "Escape") return closed(model)
 			if (isRovingKey(key)) {
 				const next = nextIndex(
@@ -165,15 +170,20 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 /** Portal, inert marker and placement under the anchor (the chips field or the input group). */
 export const MountCombobox = Mount.defineStream("MountCombobox", {
-	args: { slot: Schema.String, anchorSelector: Schema.String },
+	args: {
+		slot: Schema.String,
+		anchorSelector: Schema.String,
+		/** Where the popup is placed when not under `anchorSelector` (which still counts as inside). */
+		positionSelector: Schema.optional(Schema.String),
+	},
 	messages: [Message.CompletedMountCombobox, Message.ChangedPlacement, Message.PressedOutside],
-	execute: ({ element, slot, anchorSelector }) =>
+	execute: ({ element, slot, anchorSelector, positionSelector }) =>
 		anchoredPopup(element, {
 			positionerSelector: `[data-slot=${slot}-positioner]`,
 			popupSelector: `[data-slot=${slot}-popup]`,
 			config: {
 				...positionDefaults,
-				anchor: { _tag: "Selector", selector: anchorSelector },
+				anchor: { _tag: "Selector", selector: positionSelector ?? anchorSelector },
 				side: "bottom",
 				align: "start",
 				sideOffset: 4,

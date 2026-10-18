@@ -81,6 +81,8 @@ const focusCombobox = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>): Html =>
 			emptyText: "No services found.",
 			size: "sm",
 			showTrigger: false,
+			isUnfiltered: true,
+			anchorsInput: true,
 			className: "w-full",
 			startAddon: icon(h, "MagnifierIcon", {
 				size: 14,
