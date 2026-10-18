@@ -3,8 +3,9 @@ import * as BarChart from "../../charts/bar-chart"
 import * as Chart from "../../charts/chart"
 import { ChartSpec } from "../../charts/chart-spec"
 import * as FixedMetricChart from "../../charts/fixed-metric-chart"
+import { fixedMetricLegend, latencySeries, linkedCursorOverlay } from "../../charts/fixed-metric-legend"
 import { LATENCY_SERIES } from "../../charts/fixed-metric-series"
-import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
+import { resolveColor } from "../../charts/theme-colors"
 import { Message } from "./message"
 import type { DbSummary, Model } from "./model"
 
@@ -24,41 +25,6 @@ export const DB_CHART_TOKENS = [
 
 const VOLUME_ID = "db-query-volume"
 const LATENCY_ID = "db-query-latency"
-
-/** `LinkedCursorOverlay`: hidden until a sibling chart is hovered. */
-const linkedCursorOverlay = (h: H, id: string): Html =>
-	h.div(
-		[
-			h.AriaHidden(true),
-			h.Class("pointer-events-none absolute"),
-			h.DataAttribute("linked-cursor-overlay", id),
-			h.Style({ "container-type": "inline-size", opacity: "var(--linked-cursor-visible)" }),
-		],
-		[
-			h.div([
-				h.Class("absolute inset-y-0 left-0 w-px bg-muted-foreground/45 will-change-transform"),
-				h.Style({ transform: "translateX(calc(var(--linked-cursor-ratio) * (100cqw - 1px)))" }),
-			]),
-		],
-	)
-
-/** `LatencyLineChart legend="visible"`: the percentile swatches under the plot. */
-const latencyLegend = (h: H, theme: ThemeColors): Html =>
-	h.div(
-		[h.Class("flex flex-wrap gap-x-3 gap-y-0.5 pt-2 text-xs")],
-		LATENCY_SERIES.map((entry) =>
-			h.span(
-				[h.Class("flex items-center gap-1.5 px-1 py-0.5")],
-				[
-					h.span([
-						h.Class("size-2 shrink-0 rounded-xs"),
-						h.Style({ "background-color": resolveColor(theme, entry.token) }),
-					]),
-					h.span([h.Class("truncate")], [entry.label]),
-				],
-			),
-		),
-	)
 
 const plotBox = (h: H, id: string, children: ReadonlyArray<Html>): Html =>
 	h.div(
@@ -124,7 +90,7 @@ export const queryActivityCharts = (
 									chartId: LATENCY_ID,
 									ariaLabel: "Latency percentiles",
 									className: "h-full w-full",
-									legend: latencyLegend(h, theme),
+									legend: fixedMetricLegend(h, latencySeries(theme)),
 									spec: ChartSpec.FixedMetric({
 										chart: "Latency",
 										rows: latencyRows,

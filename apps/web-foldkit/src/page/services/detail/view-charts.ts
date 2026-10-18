@@ -8,8 +8,8 @@ import * as Chart from "../../../charts/chart"
 import { chartSkeleton, type ChartSkeletonVariant } from "../../../ui/chart-skeleton"
 import { ChartSpec, type FixedMetricRow } from "../../../charts/chart-spec"
 import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
+import { fixedMetricLegend, latencySeries, linkedCursorOverlay } from "../../../charts/fixed-metric-legend"
 import {
-	type FixedMetricSeries,
 	fixedMetricModel,
 	LATENCY_SERIES,
 	throughputLegend,
@@ -140,37 +140,6 @@ const specOf = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, context
 		showTooltip: true,
 	})
 
-/** `FixedMetricLegend`: the latency card's always-on strip under the plot. */
-const fixedMetricLegend = <M>(h: HtmlBuilder<M>, series: ReadonlyArray<FixedMetricSeries>): Html =>
-	h.div(
-		[h.Class("flex flex-wrap gap-x-3 gap-y-0.5 pt-2 text-xs")],
-		series.map((entry) =>
-			h.span(
-				[h.Key(entry.key), h.Class("flex items-center gap-1.5 px-1 py-0.5")],
-				[
-					h.span([
-						h.Class(
-							cn("size-2 shrink-0 rounded-xs", entry.dashed === true && "border border-dashed"),
-						),
-						h.Style(
-							entry.dashed === true
-								? { "border-color": entry.color }
-								: { "background-color": entry.color },
-						),
-					]),
-					h.span([h.Class("truncate")], [entry.label]),
-				],
-			),
-		),
-	)
-
-const latencySeries = (theme: ThemeColors): ReadonlyArray<FixedMetricSeries> =>
-	LATENCY_SERIES.map((entry) => ({
-		key: entry.key,
-		label: entry.label,
-		color: resolveColor(theme, entry.token),
-	}))
-
 /** The hoisted header chips (`usePlotLegendSlot`): only the throughput card has two series. */
 const headerChips = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, context: GridContext) =>
 	chart.kind !== "Throughput"
@@ -181,22 +150,6 @@ const headerChips = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, co
 			})
 
 /** `LinkedCursorOverlay`: positioned and shown by `MountLinkedCursor`. */
-const linkedCursorOverlay = (h: HtmlBuilder<Message>, id: string): Html =>
-	h.div(
-		[
-			h.AriaHidden(true),
-			h.Class("pointer-events-none absolute"),
-			h.DataAttribute("linked-cursor-overlay", id),
-			h.Style({ "container-type": "inline-size", opacity: "var(--linked-cursor-visible)" }),
-		],
-		[
-			h.div([
-				h.Class("absolute inset-y-0 left-0 w-px bg-muted-foreground/45 will-change-transform"),
-				h.Style({ transform: "translateX(calc(var(--linked-cursor-ratio) * (100cqw - 1px)))" }),
-			]),
-		],
-	)
-
 export type GridState = Readonly<{
 	/** No overview yet (`Result.isInitial`), or the chart runtime and theme are still loading. */
 	isLoading: boolean

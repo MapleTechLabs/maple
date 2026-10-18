@@ -9,6 +9,7 @@ import * as Chart from "../../charts/chart"
 import { chartSkeleton, type ChartSkeletonVariant } from "../../ui/chart-skeleton"
 import * as FixedMetricChart from "../../charts/fixed-metric-chart"
 import type { FixedMetricChartInputs } from "../../charts/fixed-metric-chart"
+import { linkedCursorOverlay } from "../../charts/fixed-metric-legend"
 import {
 	fixedMetricModel,
 	type FixedMetricSeries,
@@ -235,24 +236,7 @@ export const gridItems = <M>(
 	]
 }
 
-/** `LinkedCursorOverlay`: the shared hover cursor, hidden until a sibling chart is hovered. */
 // TODO(linked-cursor): the grid's pointer tracking (`useLinkedCursor`) is not ported; the cursor stays hidden.
-const linkedCursorOverlay = (h: HtmlBuilder<Message>, id: string): Html =>
-	h.div(
-		[
-			h.AriaHidden(true),
-			h.Class("pointer-events-none absolute"),
-			h.DataAttribute("linked-cursor-overlay", id),
-			h.Style({ "container-type": "inline-size", opacity: "var(--linked-cursor-visible)" }),
-		],
-		[
-			h.div([
-				h.Class("absolute inset-y-0 left-0 w-px bg-muted-foreground/45 will-change-transform"),
-				h.Style({ transform: "translateX(calc(var(--linked-cursor-ratio) * (100cqw - 1px)))" }),
-			]),
-		],
-	)
-
 const cardContent = (h: HtmlBuilder<Message>, model: Model, item: GridItem): Html => {
 	switch (item.body._tag) {
 		case "Loading":
