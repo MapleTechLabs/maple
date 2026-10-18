@@ -2,12 +2,12 @@ import type { V2Recommendation } from "@maple/domain/http/v2"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../ui/copy-button"
-import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import { inlineCode } from "../../ui/inline-code"
 import { panel } from "../../ui/panel"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { sectionHeading } from "../kit/section-heading"
 
 // The body of `RecommendationDetailPage`: Summary, ChangeBreakdown, CautionCallout and the fix block.
 
@@ -15,8 +15,6 @@ type H = HtmlBuilder<Message>
 
 export const code = (h: H, value: string | null): Html => inlineCode(h, { variant: "plain" }, [value ?? ""])
 
-/** `SectionHeading variant="eyebrow"`. */
-const eyebrowHeading = (h: H, title: string): Html => eyebrow(h, { as: "h2", className: "mb-3 block" }, [title])
 
 export const isApplyable = (issue: V2Recommendation) => issue.kind === "rename" && Boolean(issue.canonical_key)
 export const isLive = (issue: V2Recommendation) => issue.status === "applied" || issue.status === "resolved"
@@ -69,7 +67,7 @@ const changeBreakdown = (h: H, issue: V2Recommendation): Html => {
 	return h.section(
 		[],
 		[
-			eyebrowHeading(h, "What changes"),
+			sectionHeading(h, { title: "What changes", variant: "eyebrow" }),
 			panel(h, {}, [
 				h.div(
 					[h.Class("flex items-start gap-3 px-4 py-3")],
@@ -151,7 +149,7 @@ const mappingBlock = (h: H, model: Model, issue: V2Recommendation): Html => {
 	return h.section(
 		[],
 		[
-			eyebrowHeading(h, live ? "Active ingest mapping" : "What Apply does"),
+			sectionHeading(h, { title: live ? "Active ingest mapping" : "What Apply does", variant: "eyebrow" }),
 			panel(h, { tone: "muted" }, [
 				h.div(
 					[h.Class("flex items-center justify-between border-b border-border/60 px-3 py-2")],
@@ -207,7 +205,7 @@ const sdkFixBlock = (h: H, issue: V2Recommendation): Html =>
 	h.section(
 		[],
 		[
-			eyebrowHeading(h, "How to fix"),
+			sectionHeading(h, { title: "How to fix", variant: "eyebrow" }),
 			panel(h, { tone: "muted", className: "px-4 py-3" }, [
 				h.p(
 					[h.Class("text-sm leading-relaxed text-muted-foreground")],

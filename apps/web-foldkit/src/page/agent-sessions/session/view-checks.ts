@@ -14,7 +14,8 @@ import { icon } from "../../../ui/icon"
 import { statusDot } from "../../../ui/status-dot"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { disclosureChevron, eyebrowHeading } from "./view-kit"
+import { disclosureChevron } from "./view-kit"
+import { sectionHeading } from "../../kit/section-heading"
 
 // `SessionChecks` (session-detail/session-checks.tsx): the verdict, what needs attention, the rest.
 // TODO(tooltip): the coverage signals' explanations are drawn as their triggers.
@@ -357,7 +358,7 @@ export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): 
 			h.section(
 				[h.Class("flex flex-col gap-2")],
 				[
-					eyebrowHeading(h, { title: "Needs attention", className: "mb-0" }),
+					sectionHeading(h, { variant: "eyebrow", as: "h3", title: "Needs attention", className: "mb-0" }),
 					isClean
 						? h.p(
 								[h.Class("flex items-center gap-2 py-2 text-ui")],

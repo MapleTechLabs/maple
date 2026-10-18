@@ -17,7 +17,7 @@ import {
 	AGENT_TIME_TEXT,
 	type TimeBandKind,
 } from "./span-visuals"
-import { eyebrowHeading } from "./view-kit"
+import { sectionHeading } from "../../kit/section-heading"
 
 // `Rail` and `TimeComposition` (session-detail/session-overview.tsx): where the time, cost and tokens went.
 
@@ -26,7 +26,7 @@ type H = HtmlBuilder<Message>
 const railSection = (h: H, title: string, aside: Html | undefined, children: ReadonlyArray<Html>): Html =>
 	h.section(
 		[h.Class("flex flex-col gap-3 border-border border-t pt-6 first:border-t-0 first:pt-0")],
-		[eyebrowHeading(h, { title, actions: aside, className: "mb-0" }), ...children],
+		[sectionHeading(h, { variant: "eyebrow", as: "h3", title, actions: aside, className: "mb-0" }), ...children],
 	)
 
 const sharePercent = (value: number, total: number): number => (total <= 0 ? 0 : (value / total) * 100)

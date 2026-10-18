@@ -20,7 +20,8 @@ import type { LoadProgress, SessionData } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { sessionChecks } from "./view-checks"
-import { disclosureChevron, eyebrowHeading } from "./view-kit"
+import { disclosureChevron } from "./view-kit"
+import { sectionHeading } from "../../kit/section-heading"
 import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
 
@@ -57,7 +58,7 @@ const ledgerHeader = (h: H, summary: SessionSummary): Html => {
 	return h.div(
 		[h.Class("flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2")],
 		[
-			eyebrowHeading(h, { title: "Tools", className: "mb-0" }),
+			sectionHeading(h, { variant: "eyebrow", as: "h3", title: "Tools", className: "mb-0" }),
 			...(summary.tools.length > 0
 				? [
 						h.div(
