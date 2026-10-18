@@ -47,6 +47,7 @@ import * as InfraRailway from "./infra-integrations/railway/list"
 import * as InfraRailwayService from "./infra-integrations/railway/service"
 import * as LogsList from "./logs/list"
 import * as MetricsBrowse from "./metrics/browse"
+import * as Analytics from "./analytics"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as ServiceDetail from "./services/detail"
@@ -106,6 +107,7 @@ export const pages = [
 	ReplaysList.page,
 	ReplayDetail.page,
 	Share.page,
+	Analytics.page,
 ]
 
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */

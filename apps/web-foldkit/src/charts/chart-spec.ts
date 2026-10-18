@@ -252,6 +252,28 @@ export const ChartSpec = defineTaggedUnion({
 		timeZone: Schema.String,
 		gradientPrefix: Schema.String,
 	},
+	/**
+	 * `AnalyticsTrafficChart` (components/analytics/analytics-traffic-chart.tsx): the selected metric
+	 * and its companion per bucket, painted largest total first, ticks in the metric's format.
+	 */
+	AnalyticsTraffic: {
+		points: Schema.Array(
+			Schema.Struct({
+				bucket: Schema.String,
+				primary: Schema.optionalKey(Nullable(Schema.Number)),
+				companion: Schema.optionalKey(Nullable(Schema.Number)),
+			}),
+		),
+		/** The metric keys behind `primary` and (when paired) `companion`, in paint order. */
+		series: Schema.Array(Schema.Struct({ key: Schema.Literals(["primary", "companion"]), metric: Schema.String })),
+		/** The metric whose format the y ticks use. */
+		tickMetric: Schema.String,
+		/** Resolved `primary` / `companion` colours plus `border` / `background` chrome. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		timeZone: Schema.String,
+		gradientPrefix: Schema.String,
+		isNarrow: Schema.Boolean,
+	},
 	/** `PlanetScaleChart` (components/infra/planetscale/planetscale-chart.tsx): one gauge, gaps kept. */
 	PlanetScaleMetric: {
 		metric: Schema.Literals([

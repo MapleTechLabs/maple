@@ -94,6 +94,8 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	presence: SignalPresence
 	nowMs: number
 	noun?: string
+	/** The setup button's label in place of the signal's. */
+	action?: string
 	/** The page's own sentence in place of the signal's, and its guide. */
 	purpose?: string
 	guideDocs?: DocsPage
@@ -186,7 +188,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 					emptyActions(h, [
 						linkButton(h, { size: "sm", className: "gap-2", href: "/settings?tab=ingestion" }, [
 							icon(h, "ConnectionIcon"),
-							copy.action,
+							options.action ?? copy.action,
 						]),
 						docsLink(h, copy.setupDocs, "Setup guide"),
 					]),

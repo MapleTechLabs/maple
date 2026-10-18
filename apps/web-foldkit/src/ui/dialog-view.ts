@@ -255,20 +255,32 @@ export const dialogHeader = <M>(
 ): Html =>
 	h.div([h.Class(cn(contentStyles[kind].header, className)), h.DataAttribute("slot", `${kind}-header`)], children)
 
-export const dialogTitle = <M>(h: HtmlBuilder<M>, kind: TitledKind, id: string, text: string): Html =>
+export const dialogTitle = <M>(
+	h: HtmlBuilder<M>,
+	kind: TitledKind,
+	id: string,
+	text: string,
+	className?: string,
+): Html =>
 	h.h2(
-		[h.Class(cn(contentStyles[kind].title)), h.DataAttribute("slot", `${kind}-title`), h.Id(titleId(id))],
+		[h.Class(cn(contentStyles[kind].title, className)), h.DataAttribute("slot", `${kind}-title`), h.Id(titleId(id))],
 		[text],
 	)
 
-export const dialogDescription = <M>(h: HtmlBuilder<M>, kind: TitledKind, id: string, text: string): Html =>
+/** `text` as runs where the JSX interpolates, so the text nodes split the same. */
+export const dialogDescription = <M>(
+	h: HtmlBuilder<M>,
+	kind: TitledKind,
+	id: string,
+	text: string | ReadonlyArray<string>,
+): Html =>
 	h.p(
 		[
 			h.Class(cn(contentStyles[kind].description)),
 			h.DataAttribute("slot", `${kind}-description`),
 			h.Id(descriptionId(id)),
 		],
-		[text],
+		typeof text === "string" ? [text] : text,
 	)
 
 /** `DialogPanel` / `SheetPanel`: the scrolling body, inside a fading ScrollArea. */
