@@ -1,7 +1,7 @@
 import { Option, Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import { INITIAL_VIEWPORT, MeasuredNode, type PlacedNode, Viewport } from "./geometry"
+import { INITIAL_VIEWPORT, MeasuredNode, type PlacedNode, Point, Viewport } from "./geometry"
 import { fitViewport, scaleViewport } from "./viewport"
 
 /**
@@ -14,6 +14,8 @@ export const FitRequest = Schema.Struct({
 	padding: Schema.Number,
 	minZoom: Schema.Number,
 	maxZoom: Schema.Number,
+	/** `fitView({ duration })`: animated by d3 in the Mount; 0 or absent snaps. */
+	duration: Schema.optionalKey(Schema.Number),
 })
 export type FitRequest = typeof FitRequest.Type
 
@@ -31,6 +33,10 @@ export const Model = Schema.Struct({
 	fitsApplied: Schema.Number,
 	/** A change asks the Mount to re-measure every node at the current zoom (see {@link remeasure}). */
 	measureEpoch: Schema.Number,
+	/** An animated camera move for the Mount to run through d3 (`setViewport({ duration })`). */
+	animation: Schema.Option(
+		Schema.Struct({ seq: Schema.Number, target: Viewport, duration: Schema.Number }),
+	),
 })
 export type Model = typeof Model.Type
 
@@ -55,6 +61,7 @@ export const init = (config: {
 	maxZoom: config.maxZoom,
 	fitsApplied: 0,
 	measureEpoch: 0,
+	animation: Option.none(),
 })
 
 export const Message = defineMessageUnion({
@@ -64,6 +71,11 @@ export const Message = defineMessageUnion({
 	ClickedZoomIn: {},
 	ClickedZoomOut: {},
 	ClickedFitView: {},
+	/** A node drag moved (`XYDrag`); the parent owns positions. */
+	DraggedNode: { id: Schema.String, position: Point },
+	EndedNodeDrag: { id: Schema.String, position: Point },
+	/** A pan or zoom gesture ended (`onMoveEnd`). */
+	EndedViewportMove: {},
 })
 export type Message = typeof Message.Type
 
@@ -81,6 +93,18 @@ export const requestFit = (model: Model, nodes: ReadonlyArray<PlacedNode>, reque
 		model.pane.width > 0 && nodes.length > 0 && nodes.every((node) => node.measured !== undefined)
 	if (!ready) return modifyFields(model, { pendingFit: () => Option.some(request) })
 	const viewport = fitViewport(nodes, model.pane, request)
+	const duration = request.duration ?? 0
+	if (duration > 0 && viewport !== undefined)
+		return modifyFields(model, {
+			animation: (animation) =>
+				Option.some({
+					seq: Option.match(animation, { onNone: () => 1, onSome: (a) => a.seq + 1 }),
+					target: viewport,
+					duration,
+				}),
+			pendingFit: () => Option.none(),
+			fitsApplied: (count) => count + 1,
+		})
 	return modifyFields(model, {
 		viewport: () => viewport ?? model.viewport,
 		pendingFit: () => Option.none(),
@@ -103,7 +127,7 @@ type NodePositions = ReadonlyArray<{
 }>
 
 export const update = (model: Model, message: Message, nodes: NodePositions): Model =>
-	Message.match(message, {
+	Message.match<Model>(message, {
 		ChangedViewport: ({ viewport }) =>
 			modifyFields(model, { viewport: () => viewport, movedByUser: () => true }),
 		ResizedPane: ({ width, height }) => {
@@ -130,4 +154,8 @@ export const update = (model: Model, message: Message, nodes: NodePositions): Mo
 				minZoom: model.minZoom,
 				maxZoom: model.maxZoom,
 			}),
+		// The parent owns node positions and the persisted camera.
+		DraggedNode: () => model,
+		EndedNodeDrag: () => model,
+		EndedViewportMove: () => model,
 	})

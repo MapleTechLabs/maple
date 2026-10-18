@@ -20,7 +20,7 @@ const FALLBACK_NODE_HEIGHT = 70
 
 const nsGroupId = (namespace: string) => `nsgroup:${encodeURIComponent(namespace)}`
 
-const box = <M>(h: HtmlBuilder<M>, label: string, hue: number): Html =>
+const box = <M>(h: HtmlBuilder<M>, label: string, hue: number, onCollapse: M): Html =>
 	h.div(
 		[
 			h.Class("pointer-events-none h-full w-full rounded-xl border-[1.5px] border-dashed"),
@@ -47,6 +47,7 @@ const box = <M>(h: HtmlBuilder<M>, label: string, hue: number): Html =>
 						[
 							h.Type("button"),
 							h.Title(`Collapse ${label} into one node`),
+							h.OnClick(onCollapse, { propagation: "Stop" }),
 							h.Class("shrink-0 opacity-60 transition-opacity hover:opacity-100"),
 						],
 						[icon(h, "MinimizeIcon", { size: 10 })],
@@ -62,6 +63,7 @@ export const namespaceBoxes = <M>(
 	graph: EffectiveGraph,
 	positions: Positions,
 	measured: Readonly<Record<string, MeasuredNode>>,
+	onCollapse: (namespace: string) => M,
 ): ReadonlyArray<Html> => {
 	const extents = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
 	for (const node of graph.nodes) {
@@ -88,7 +90,7 @@ export const namespaceBoxes = <M>(
 			measured: true,
 			focusable: false,
 			style: { width: `${width}px`, height: `${height}px`, "pointer-events": "none" },
-			children: [box(h, ns, getValueHue(ns) ?? 0)],
+			children: [box(h, ns, getValueHue(ns) ?? 0, onCollapse(ns))],
 		})
 	})
 }

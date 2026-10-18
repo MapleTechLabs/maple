@@ -29,6 +29,9 @@ export const MeasuredNode = Schema.Struct({
 })
 export type MeasuredNode = typeof MeasuredNode.Type
 
+/** A flow-space point as a Schema (`XY` for Messages). */
+export const Point = Schema.Struct({ x: Schema.Number, y: Schema.Number })
+
 export interface XY {
 	readonly x: number
 	readonly y: number

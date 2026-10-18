@@ -1,7 +1,7 @@
 import { Effect, Queue, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import { Message } from "./canvas"
-import type { HandleBounds, MeasuredNode, Viewport } from "./geometry"
+import type { HandleBounds, MeasuredNode, Viewport, XY } from "./geometry"
 
 /** The renderer carries the Model's camera here so d3-zoom can be synced before a gesture. */
 export const VIEWPORT_ATTRIBUTE = "data-viewport"
@@ -11,6 +11,16 @@ export const MEASURE_EPOCH_ATTRIBUTE = "data-measure-epoch"
 
 export const viewportAttribute = (viewport: Viewport): string =>
 	`${viewport.x},${viewport.y},${viewport.zoom}`
+
+/** An animated camera move the Model asks for (`fitView({ duration })`), run by d3 in the Mount. */
+export const ANIMATION_ATTRIBUTE = "data-camera-animation"
+
+export const animationAttribute = (animation: {
+	readonly seq: number
+	readonly target: Viewport
+	readonly duration: number
+}): string =>
+	`${animation.seq},${animation.target.x},${animation.target.y},${animation.target.zoom},${animation.duration}`
 
 /**
  * The Model's camera, written on the empty `.react-flow__viewport-portal` leaf: an attribute that
@@ -25,7 +35,18 @@ export const readViewport = (renderer: Element): Viewport | undefined => {
 }
 
 /** What the Mount reports; the zoom buttons are view events. */
-type MountMessage = Extract<Message, { readonly _tag: "ChangedViewport" | "ResizedPane" | "MeasuredNodes" }>
+type MountMessage = Extract<
+	Message,
+	{
+		readonly _tag:
+			| "ChangedViewport"
+			| "ResizedPane"
+			| "MeasuredNodes"
+			| "DraggedNode"
+			| "EndedNodeDrag"
+			| "EndedViewportMove"
+	}
+>
 
 const HANDLE_SIDES = new Set(["top", "right", "bottom", "left"])
 
@@ -119,6 +140,7 @@ const attachPanZoom = (
 		translateExtent: system.infiniteExtent,
 		viewport: readViewport(renderer) ?? { x: 0, y: 0, zoom: 1 },
 		onDraggingChange: () => {},
+		onPanZoomEnd: () => emit(Message.EndedViewportMove()),
 	})
 	panZoom.update({
 		noWheelClassName: "nowheel",
@@ -146,10 +168,81 @@ const attachPanZoom = (
 	}
 	const gestures = ["wheel", "mousedown", "touchstart", "dblclick"] as const
 	for (const type of gestures) renderer.addEventListener(type, sync, { capture: true })
+	// An animated fit runs as React Flow's does: one d3 transition, every frame back as a Message.
+	const started = { seq: Number.NaN }
+	const animations = new MutationObserver(() => {
+		const leaf = renderer.querySelector(".react-flow__viewport-portal")
+		const parts = (leaf?.getAttribute(ANIMATION_ATTRIBUTE) ?? "").split(",").map(Number)
+		if (parts.length !== 5 || !parts.every(Number.isFinite) || parts[0] === started.seq) return
+		started.seq = parts[0]
+		sync()
+		void panZoom.setViewport({ x: parts[1], y: parts[2], zoom: parts[3] }, { duration: parts[4] })
+	})
+	animations.observe(renderer, { attributes: true, subtree: true, attributeFilter: [ANIMATION_ATTRIBUTE] })
 	return () => {
+		animations.disconnect()
 		for (const type of gestures) renderer.removeEventListener(type, sync, { capture: true })
 		panZoom.destroy()
 	}
+}
+
+/** A node wrapper's flow position, read back from its `translate(x, y)`. */
+const nodeOrigin = (node: HTMLElement): XY => {
+	const match = node.style.transform.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)/)
+	return match === null ? { x: 0, y: 0 } : { x: Number(match[1]), y: Number(match[2]) }
+}
+
+/**
+ * `XYDrag` on `.react-flow__node.draggable`: React Flow's pointer math (the pointer in flow space
+ * minus where the node was grabbed), its 1 px start threshold, and d3-drag's click suppression
+ * once the mouse moved, so a drag never also selects the node.
+ */
+const attachNodeDrag = (renderer: HTMLElement, emit: (message: MountMessage) => void) => {
+	const container = renderer.parentElement ?? renderer
+	const pointerAt = (event: MouseEvent): XY => {
+		const viewport = readViewport(renderer) ?? { x: 0, y: 0, zoom: 1 }
+		const bounds = container.getBoundingClientRect()
+		return {
+			x: (event.clientX - bounds.left - viewport.x) / viewport.zoom,
+			y: (event.clientY - bounds.top - viewport.y) / viewport.zoom,
+		}
+	}
+	const swallowClick = (event: MouseEvent) => {
+		event.stopPropagation()
+		event.preventDefault()
+	}
+	const onDown = (event: MouseEvent) => {
+		if (event.button !== 0 || !(event.target instanceof Element)) return
+		if (event.target.closest(".nodrag") !== null) return
+		const node = event.target.closest<HTMLElement>(".react-flow__node.draggable")
+		const id = node?.getAttribute("data-id")
+		if (node === null || node === undefined || id === null || id === undefined) return
+		const origin = nodeOrigin(node)
+		const start = pointerAt(event)
+		const grab = { x: start.x - origin.x, y: start.y - origin.y }
+		const state = { moved: false, dragging: false, position: origin }
+		const move = (moveEvent: MouseEvent) => {
+			const pointer = pointerAt(moveEvent)
+			state.moved =
+				state.moved || moveEvent.clientX !== event.clientX || moveEvent.clientY !== event.clientY
+			if (!state.dragging && Math.hypot(pointer.x - start.x, pointer.y - start.y) <= 1) return
+			state.dragging = true
+			state.position = { x: pointer.x - grab.x, y: pointer.y - grab.y }
+			emit(Message.DraggedNode({ id, position: state.position }))
+		}
+		const up = () => {
+			window.removeEventListener("mousemove", move)
+			window.removeEventListener("mouseup", up)
+			if (state.dragging) emit(Message.EndedNodeDrag({ id, position: state.position }))
+			if (!state.moved) return
+			window.addEventListener("click", swallowClick, { capture: true, once: true })
+			setTimeout(() => window.removeEventListener("click", swallowClick, { capture: true }), 0)
+		}
+		window.addEventListener("mousemove", move)
+		window.addEventListener("mouseup", up)
+	}
+	renderer.addEventListener("mousedown", onDown)
+	return () => renderer.removeEventListener("mousedown", onDown)
 }
 
 /** Pane size from the renderer, which fills the `.react-flow` wrapper. */
@@ -167,7 +260,14 @@ const observePane = (renderer: HTMLElement, emit: (message: MountMessage) => voi
  */
 export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
 	args: { minZoom: Schema.Number, maxZoom: Schema.Number },
-	messages: [Message.ChangedViewport, Message.ResizedPane, Message.MeasuredNodes],
+	messages: [
+		Message.ChangedViewport,
+		Message.ResizedPane,
+		Message.MeasuredNodes,
+		Message.DraggedNode,
+		Message.EndedNodeDrag,
+		Message.EndedViewportMove,
+	],
 	execute: ({ element, minZoom, maxZoom }) =>
 		Stream.callback<MountMessage>((queue) =>
 			Effect.acquireRelease(
@@ -179,6 +279,7 @@ export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
 							observePane(element, emit),
 							observeNodes(element, emit),
 							attachPanZoom(system, element, { minZoom, maxZoom }, emit),
+							attachNodeDrag(element, emit),
 						]
 						return () => releases.forEach((release) => release())
 					}),

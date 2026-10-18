@@ -37,14 +37,17 @@ export const renderNodes = <M>(
 	selectedId: Option.Option<string>,
 	colorMode: ColorMode,
 	toMessage: (message: Message) => M,
+	draggingId: string | null,
 ): Html =>
 	nodesLayer(h, [
-		...namespaceBoxes(h, graph, positions, measured),
+		...namespaceBoxes(h, graph, positions, measured, (namespace) =>
+			toMessage(Message.ClickedCollapseNamespace({ namespace })),
+		),
 		...graph.nodes.map((node) =>
 			flowNode(h, {
 				id: node.id,
 				type: "serviceNode",
-				className: "nopan draggable",
+				className: node.id === draggingId ? "nopan draggable dragging" : "nopan draggable",
 				position: positionOf(positions, node),
 				measured: measured[node.id] !== undefined,
 				onClick: toMessage(Message.ClickedNode({ nodeId: node.id })),
