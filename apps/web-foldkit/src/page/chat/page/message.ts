@@ -24,6 +24,8 @@ export const Message = defineMessageUnion({
 	CommittedRename: {},
 	CancelledRename: {},
 	StampedRename: { id: Schema.String, title: Schema.String, nowMs: Schema.Number },
+	/** The clock for `ensureTab` of a subject the route brought after the tabs were read. */
+	StampedSubjectTab: { nowMs: Schema.Number },
 	GotTabMenuMessage: { tabId: Schema.String, message: Menu.Message },
 	GotDeleteDialogMessage: { message: Dialog.Message },
 	ClickedConfirmDelete: {},

@@ -66,6 +66,55 @@ const openSheet = async (page: Page) => {
 	await page.getByRole("dialog").getByText("Or just start typing.", { exact: false }).waitFor()
 }
 
+/** `toBase64Url(JSON.stringify(ctx))`, the encoding alert links and the widget menu write. */
+const base64Url = (value: unknown) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url")
+
+/** An alert notification's "Investigate in chat" link (`?mode=alert`). */
+const ALERT_PATH = `/chat?mode=alert&alert=${base64Url({
+	ruleId: "rule_parity_checkout_p95",
+	ruleName: "Checkout p95 latency over budget",
+	incidentId: "0199b0aa-0000-7000-8000-00000000a1e7",
+	eventType: "trigger",
+	signalType: "p95_latency",
+	severity: "critical",
+	comparator: "gt",
+	threshold: 800,
+	value: 1840,
+	windowMinutes: 5,
+	groupKey: "checkout-api",
+	sampleCount: 120,
+})}`
+
+/** A broken widget's "Fix with AI" (`?mode=widget-fix`). */
+const WIDGET_FIX_PATH = `/chat?mode=widget-fix&widget=${base64Url({
+	dashboardId: "0199c0de-0000-7000-8000-0000000d45b0",
+	widgetId: "w-checkout-p95",
+	widgetTitle: "Checkout p95 latency",
+	widgetJson: JSON.stringify({ id: "w-checkout-p95", visualization: "chart", dataSource: { endpoint: "custom_timeseries" } }),
+	errorTitle: "Invalid widget config",
+	errorMessage: "dataSource.params is missing: a custom timeseries needs a metric and an aggregation.",
+})}`
+
+const subjectScenarios: ReadonlyArray<Scenario> = [
+	{ ...scenario("alert", "an alert attached from its notification", "default"), path: ALERT_PATH },
+	{
+		...scenario("alert-send", "an alert suggestion sent with its context", "default", async (page) => {
+			await page.getByRole("button", { name: "Slowest operations in checkout-api right now" }).click()
+			await replied(page)
+		}),
+		path: ALERT_PATH,
+	},
+	{
+		...scenario("alert-typed", "a typed question about the attached alert", "default", async (page) => {
+			await page.getByPlaceholder("Ask about this alert…").fill("Is this the deploy?")
+			await page.getByPlaceholder("Ask about this alert…").press("Enter")
+			await replied(page)
+		}),
+		path: ALERT_PATH,
+	},
+	{ ...scenario("widget-fix", "a broken widget's fix prompt sent on arrival", "default", replied), path: WIDGET_FIX_PATH },
+]
+
 const sheetScenarios: ReadonlyArray<Scenario> = [
 	sheet("open", "opened from the top bar", openSheet),
 	sheet("shortcut", "opened with C", async (page) => {
@@ -179,6 +228,7 @@ export const chatArea: AreaModule = {
 			...scenario("shared", "a teammate's shared conversation", "chat-conversation"),
 			path: "/chat?shared=default&title=Checkout%20incident",
 		},
+		...subjectScenarios,
 		...sheetScenarios,
 		lab("sheet-width", "at the sheet width", (page) => page.getByRole("button", { name: "Sheet (620px)" }).click()),
 		lab("narrow-width", "at the narrow width", (page) => page.getByRole("button", { name: "Narrow (420px)" }).click()),

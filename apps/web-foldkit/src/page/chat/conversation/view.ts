@@ -18,8 +18,6 @@ import { Message } from "./message"
 import { isLoading, type Model } from "./model"
 
 // `ChatConversation` (apps/web components/chat/chat-conversation.tsx): transcript, notices, composer.
-// TODO(chat-investigation-mode): the investigation and widget-fix subjects (attachment cards, their
-// suggestions and empty notices, the widget-fix auto-send) are not ported.
 
 export type ConversationViewOptions<M> = Readonly<{
 	toMessage: (message: Message) => M
@@ -43,6 +41,8 @@ export type ConversationViewOptions<M> = Readonly<{
 	fallback?: Html
 	/** The subject's starter prompts above the composer of an empty thread (investigation mode). */
 	suggestions?: Readonly<{ items: ReadonlyArray<string>; onSelect: (text: string) => M }>
+	/** The subject pinned above the thread (`InvestigationAttachmentCard`, `WidgetFixAttachmentCard`). */
+	header?: ReadonlyArray<Html>
 }>
 
 /** Approvals, sub-agent rows, inline cards and the chat's tables and charts. */
@@ -213,6 +213,7 @@ export const conversationView = <M>(h: HtmlBuilder<M>, model: Model, options: Co
 			...(model.chartRuntime === null
 				? []
 				: [h.keyed("span")("chat-theme-probe", [h.Class("contents"), h.OnMount(themeMount(options.toMessage))], [])]),
+			...(options.header ?? []),
 			transcript(h, transcriptHostOf(h, model, options), model.messages, () => emptyStateOf(h, model, options)),
 			...(model.readOnly !== null
 				? []

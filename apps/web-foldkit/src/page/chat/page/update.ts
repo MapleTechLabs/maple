@@ -9,12 +9,22 @@ import * as Menu from "../../../ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as ConversationModel from "../conversation/model"
-import { OutMessage as ConversationOut } from "../conversation/message"
+import { Message as ConversationMessage, OutMessage as ConversationOut } from "../conversation/message"
 import * as Conversation from "../conversation/update"
-import { pageContextPreamble } from "../kit/preamble"
+import { investigationSuggestions } from "../../investigations/detail/investigation-context"
+import { investigationPreamble, pageContextPreamble, widgetFixPreamble } from "../kit/preamble"
+import {
+	type ChatSubject,
+	subjectOfSearch,
+	subjectTabId,
+	subjectTabTitle,
+	WIDGET_FIX_AUTO_PROMPT,
+	WIDGET_FIX_SUGGESTIONS,
+} from "../kit/subject"
 import {
 	CopyShareLink,
 	CreateTab,
+	StampSubjectTab,
 	TypeIntoComposer,
 	LoadKnownServices,
 	LoadPresence,
@@ -50,12 +60,28 @@ export const activeContexts = (model: Model): ReadonlyArray<AutoContext> =>
 		? []
 		: deriveAutoContexts(model.referrerPath).filter((context) => !model.dismissedContexts.includes(context.id))
 
-export const suggestionsOf = (model: Model): ReadonlyArray<string> =>
-	suggestionsForContexts([...activeContexts(model)]) ?? DEFAULT_SUGGESTIONS
+/** The subject when `tabId` is its tab (`isInvestigationTab` / `isWidgetFixTab`). */
+export const subjectFor = (model: Model, tabId: string): ChatSubject | null =>
+	model.subject !== null && model.shared === null && subjectTabId(model.subject) === tabId ? model.subject : null
 
-const sendContext = (model: Model): Conversation.SendContext => ({
-	preamble: pageContextPreamble(model.referrerPath, activeContexts(model)),
-})
+export const suggestionsOf = (model: Model, tabId: string): ReadonlyArray<string> => {
+	const subject = subjectFor(model, tabId)
+	if (subject === null) return suggestionsForContexts([...activeContexts(model)]) ?? DEFAULT_SUGGESTIONS
+	return subject._tag === "Investigation" ? investigationSuggestions(subject.context) : WIDGET_FIX_SUGGESTIONS
+}
+
+/** `buildContextPreamble`: an explicit subject supersedes the page context. */
+const sendContext = (model: Model, tabId: string): Conversation.SendContext => {
+	const subject = subjectFor(model, tabId)
+	return {
+		preamble:
+			subject === null
+				? pageContextPreamble(model.referrerPath, activeContexts(model))
+				: subject._tag === "Investigation"
+					? investigationPreamble(subject.context)
+					: widgetFixPreamble(subject.context),
+	}
+}
 
 export const activeTabId = (model: Model): string | null => model.tabs?.activeTabId ?? null
 
@@ -109,14 +135,35 @@ const saveTabs = (model: Model, tabs: TabsState, context: PageContext): Return =
 	commands: [SaveTabs({ orgId: context.orgId, state: tabs })],
 })
 
-/** `writeTabToUrl`: the active tab in `?tab=`, replacing the history entry. */
-const tabUrl = (tabId: string): PageOutMessage =>
-	PageOutMessage.RequestedNavigation({ url: `/chat?tab=${encodeURIComponent(tabId)}`, isReplace: true })
+const KEPT_SEARCH = ["mode", "alert", "widget", "shared", "title", "m"] as const
+
+/** `writeTabToUrl`: the active tab in `?tab=`, the other params kept, replacing the history entry. */
+const tabUrl = (model: Model, tabId: string): PageOutMessage => {
+	const kept = KEPT_SEARCH.flatMap((key) => {
+		const value = model.search[key]
+		return value === undefined ? [] : [[key, value]]
+	})
+	const params = new URLSearchParams([...kept, ["tab", tabId]])
+	return PageOutMessage.RequestedNavigation({ url: `/chat?${params.toString()}`, isReplace: true })
+}
 
 const setActive = (model: Model, id: string, context: PageContext): Return => {
 	const tabs = model.tabs
 	if (tabs === null || tabs.activeTabId === id || !tabs.tabs.some((tab) => tab.id === id)) return { model }
-	return { ...saveTabs(model, { ...tabs, activeTabId: id }, context), outMessage: tabUrl(id) }
+	return { ...saveTabs(model, { ...tabs, activeTabId: id }, context), outMessage: tabUrl(model, id) }
+}
+
+/** `ensureTab(subjectTabId, subjectTabTitle)`: registered if new, activated, stamped. */
+const ensureSubjectTab = (model: Model, nowMs: number, context: PageContext): Return => {
+	const { tabs, subject } = model
+	if (tabs === null || subject === null || model.shared !== null) return { model }
+	const id = subjectTabId(subject)
+	const exists = tabs.tabs.some((tab) => tab.id === id)
+	if (exists && tabs.activeTabId === id) return { model }
+	const next: TabsState = exists
+		? { activeTabId: id, tabs: tabs.tabs.map((tab) => (tab.id === id ? { ...tab, updatedAt: nowMs } : tab)) }
+		: { activeTabId: id, tabs: [...tabs.tabs, { id, title: subjectTabTitle(subject), createdAt: nowMs, updatedAt: nowMs }] }
+	return saveTabs(model, next, context)
 }
 
 const renameTab = (model: Model, id: string, title: string, nowMs: number, context: PageContext): Return =>
@@ -139,7 +186,7 @@ const closeTab = (model: Model, id: string, context: PageContext): Return => {
 		tabs.activeTabId === id ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? tabs.activeTabId) : tabs.activeTabId
 	const { [id]: _closed, ...conversations } = model.conversations
 	const result = saveTabs({ ...model, conversations }, { tabs: remaining, activeTabId }, context)
-	return activeTabId === tabs.activeTabId ? result : { ...result, outMessage: tabUrl(activeTabId) }
+	return activeTabId === tabs.activeTabId ? result : { ...result, outMessage: tabUrl(model, activeTabId) }
 }
 
 const tabById = (model: Model, id: string): Option.Option<ChatTab> =>
@@ -213,17 +260,25 @@ export const init = (route: ChatRoute, context: PageContext): Return => {
 		isPresenceRequested: false,
 		knownServices: [],
 		isKnownServicesRequested: false,
+		subject: subjectOfSearch(route.search),
+		search: route.search,
 	}
 	const loaded = withCommands({ model }, [LoadTabs({ orgId: context.orgId })])
 	return shared === null ? loaded : withCommands(startConversations(model, [shared.tabId], context, "shared"), loaded.commands ?? [])
 }
 
-/** Back/forward lands a new `?tab=`; a changed `?shared=` is a different view. */
+const sameSubject = (a: ChatSubject | null, b: ChatSubject | null): boolean =>
+	a === null || b === null ? a === b : subjectTabId(a) === subjectTabId(b) && JSON.stringify(a) === JSON.stringify(b)
+
+/** Back/forward lands a new `?tab=`; a changed `?shared=` is a different view; a new subject gets its tab. */
 export const routeChanged = (model: Model, route: ChatRoute, context: PageContext): Return => {
 	const shared = sharedOf(route)
 	if (shared?.tabId !== model.shared?.tabId) return init(route, context)
+	const subject = subjectOfSearch(route.search)
+	const next: Model = { ...model, search: route.search, subject }
+	if (!sameSubject(subject, model.subject) && subject !== null) return { model: next, commands: [StampSubjectTab()] }
 	const tab = route.search.tab
-	return tab === undefined ? { model } : setActive(model, tab, context)
+	return tab === undefined ? { model: next } : setActive(next, tab, context)
 }
 
 // UPDATE
@@ -233,7 +288,7 @@ const createTab = (model: Model, id: string, nowMs: number, context: PageContext
 	const tab: ChatTab = { id, title: "New Chat", createdAt: nowMs, updatedAt: nowMs }
 	const saved = saveTabs(model, { tabs: [...model.tabs.tabs, tab], activeTabId: id }, context)
 	const started = startConversations(saved.model, [id], context)
-	return { ...started, commands: [...(saved.commands ?? []), ...(started.commands ?? [])], outMessage: tabUrl(id) }
+	return { ...started, commands: [...(saved.commands ?? []), ...(started.commands ?? [])], outMessage: tabUrl(model, id) }
 }
 
 const commitRename = (model: Model): Return => {
@@ -250,7 +305,7 @@ const commitRename = (model: Model): Return => {
 	})
 }
 
-export const update = (model: Model, message: Message, context: PageContext): Return =>
+const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedLoadTabs: ({ state, nowMs, origin, referrerPath }) => {
 			const urlTab = model.urlTabId
@@ -258,8 +313,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				urlTab !== null && state.tabs.some((tab) => tab.id === urlTab) ? { ...state, activeTabId: urlTab } : state
 			const loaded: Model = { ...model, tabs, nowMs, origin, referrerPath }
 			if (model.shared !== null) return { model: loaded }
-			const started = startConversations(loaded, tabs.tabs.map((tab) => tab.id), context)
-			return urlTab === tabs.activeTabId ? started : { ...started, outMessage: tabUrl(tabs.activeTabId) }
+			const ensured = ensureSubjectTab(loaded, nowMs, context)
+			const active = ensured.model.tabs?.activeTabId ?? tabs.activeTabId
+			const started = withCommands(
+				startConversations(ensured.model, (ensured.model.tabs ?? tabs).tabs.map((tab) => tab.id), context),
+				ensured.commands ?? [],
+			)
+			return urlTab === active ? started : { ...started, outMessage: tabUrl(ensured.model, active) }
+		},
+		StampedSubjectTab: ({ nowMs }) => {
+			const ensured = ensureSubjectTab(model, nowMs, context)
+			const active = ensured.model.tabs?.activeTabId
+			if (active === undefined || active === model.tabs?.activeTabId) return ensured
+			const started = withCommands(startConversations(ensured.model, [active], context), ensured.commands ?? [])
+			return { ...started, outMessage: tabUrl(ensured.model, active) }
 		},
 		ClickedNewChat: () => ({ model, commands: [CreateTab()] }),
 		PressedNewChatKey: () => (model.shared === null ? { model, commands: [CreateTab()] } : { model }),
@@ -301,7 +368,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const conversation = model.conversations[tabId]
 			return conversation === undefined
 				? { model }
-				: liftConversation(model, tabId, Conversation.update(conversation, child, sendContext(model)))
+				: liftConversation(model, tabId, Conversation.update(conversation, child, sendContext(model, tabId)))
 		},
 		DismissedContext: ({ id }) =>
 			model.dismissedContexts.includes(id) ? { model } : { model: { ...model, dismissedContexts: [...model.dismissedContexts, id] } },
@@ -330,4 +397,33 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedMountStopClick: () => ({ model }),
 		CompletedMountRenameInput: () => ({ model }),
 	})
+
+/**
+ * `WidgetFixAutoSendTrigger`: a ready, empty, active widget-fix thread sends its fix prompt once.
+ * A send that never reached the server leaves the thread empty again, so it does not retry.
+ */
+const followWidgetFix = (result: Return): Return => {
+	const model = result.model
+	const subject = model.subject
+	if (subject?._tag !== "WidgetFix" || model.shared !== null) return result
+	const id = subjectTabId(subject)
+	const conversation = model.conversations[id]
+	if (conversation === undefined || activeTabId(model) !== id) return result
+	const isReady =
+		conversation.readOnly === null &&
+		conversation.historyReady &&
+		!ConversationModel.isLoading(conversation) &&
+		conversation.messages.length === 0 &&
+		conversation.failedSend === null
+	if (!isReady) return result
+	const sent = liftConversation(
+		model,
+		id,
+		Conversation.update(conversation, ConversationMessage.ClickedSuggestion({ text: WIDGET_FIX_AUTO_PROMPT }), sendContext(model, id)),
+	)
+	return { ...sent, commands: [...(result.commands ?? []), ...(sent.commands ?? [])], outMessage: result.outMessage ?? sent.outMessage }
+}
+
+export const update = (model: Model, message: Message, context: PageContext): Return =>
+	followWidgetFix(step(model, message, context))
 
