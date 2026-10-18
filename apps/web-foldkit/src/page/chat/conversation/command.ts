@@ -2,6 +2,8 @@ import { ChatApplyRequest } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { MapleAiClient } from "../../../platform/api-clients"
+import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
+import { highlight } from "../kit/code-highlight"
 import { parseChatMarkdown } from "../kit/markdown-parse"
 import { abortTurn, loadHistory, postMessage } from "../kit/chat-api"
 import { historyMessageToUIMessage } from "../kit/fold"
@@ -48,6 +50,82 @@ export const ParseMarkdown = Command.define("ParseChatMarkdown", {
 	messages: [Message.CompletedParseMarkdown],
 	execute: ({ texts }) =>
 		Effect.map(parseChatMarkdown(texts), (parsed) => Message.CompletedParseMarkdown({ parsed })),
+})
+
+/** One fence coloured by Shiki (loaded on first use); a failure leaves it plain. */
+export const HighlightCode = Command.define("HighlightChatCode", {
+	args: { key: Schema.String, language: Schema.String, code: Schema.String },
+	messages: [Message.CompletedHighlightCode],
+	execute: ({ key, language, code }) =>
+		highlight(language, code).pipe(
+			Effect.map((highlighted) => Message.CompletedHighlightCode({ key, highlighted })),
+			Effect.orElseSucceed(() => Message.CompletedHighlightCode({ key, highlighted: null })),
+		),
+})
+
+/** Streamdown's file names: `file.<ext>` by the fence's language. */
+const EXTENSIONS = new Map([
+	["typescript", "ts"],
+	["ts", "ts"],
+	["javascript", "js"],
+	["js", "js"],
+	["python", "py"],
+	["py", "py"],
+	["bash", "sh"],
+	["shell", "sh"],
+	["sh", "sh"],
+	["yaml", "yaml"],
+	["yml", "yml"],
+	["json", "json"],
+	["sql", "sql"],
+	["go", "go"],
+	["rust", "rs"],
+	["markdown", "md"],
+])
+
+const saveFile = (name: string, contents: string, type: string) =>
+	Effect.sync(() => {
+		const url = URL.createObjectURL(new Blob([contents], { type }))
+		const anchor = document.createElement("a")
+		anchor.href = url
+		anchor.download = name
+		document.body.appendChild(anchor)
+		anchor.click()
+		document.body.removeChild(anchor)
+		URL.revokeObjectURL(url)
+	})
+
+export const CopyCode = Command.define("CopyChatCode", {
+	args: { code: Schema.String },
+	messages: [Message.CompletedCodeAction],
+	execute: ({ code }) =>
+		Effect.tryPromise(() => navigator.clipboard.writeText(code)).pipe(
+			Effect.catch(() => Effect.try(() => writeClipboardFallback(code))),
+			Effect.ignore,
+			Effect.as(Message.CompletedCodeAction()),
+		),
+})
+
+export const DownloadCode = Command.define("DownloadChatCode", {
+	args: { code: Schema.String, language: Schema.String },
+	messages: [Message.CompletedCodeAction],
+	execute: ({ code, language }) =>
+		Effect.as(saveFile(`file.${EXTENSIONS.get(language.toLowerCase()) ?? "txt"}`, code, "text/plain"), Message.CompletedCodeAction()),
+})
+
+/** The diagram as drawn: the SVG mermaid renders for its source. */
+export const DownloadDiagram = Command.define("DownloadChatDiagram", {
+	args: { code: Schema.String },
+	messages: [Message.CompletedCodeAction],
+	execute: ({ code }) =>
+		Effect.promise(() => import("mermaid")).pipe(
+			Effect.flatMap(({ default: mermaid }) =>
+				Effect.tryPromise(() => mermaid.render(`mermaid-download-${crypto.randomUUID().slice(0, 8)}`, code)),
+			),
+			Effect.flatMap(({ svg }) => saveFile("diagram.svg", svg, "image/svg+xml")),
+			Effect.ignore,
+			Effect.as(Message.CompletedCodeAction()),
+		),
 })
 
 /** `MapleAiAtomClient.mutation("chat", "apply")`: the session runs (or declines) the proposal. */

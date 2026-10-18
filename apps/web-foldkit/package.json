@@ -33,7 +33,9 @@
 		"d3-scale": "^4.0.2",
 		"d3-shape": "^3.2.0",
 		"effect": "catalog:effect",
-		"foldkit": "0.168.0"
+		"foldkit": "0.168.0",
+		"mermaid": "11.17.2",
+		"shiki": "4.4.3"
 	},
 	"devDependencies": {
 		"@effect/language-service": "catalog:effect",

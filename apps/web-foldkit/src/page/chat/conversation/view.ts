@@ -8,6 +8,7 @@ import { skeleton } from "../../../ui/skeleton"
 import { approvalCard, taskCard } from "../kit/view-cards"
 import { composer, failureNotice } from "../kit/view-composer"
 import { MountTurnMinimap } from "../kit/turn-minimap-mount"
+import { MountMermaid } from "../kit/mermaid"
 import { inlineCard } from "../kit/view-inline"
 import { chatMarkdownOverrides } from "../kit/view-markdown"
 import { type TranscriptHost, transcript } from "../kit/view-transcript"
@@ -61,14 +62,28 @@ const cardsOf = <M>(
 						onApprove: options.toMessage(Message.ClickedApprove({ toolCallId: part.toolCallId, tool: part.toolName })),
 						onDeny: options.toMessage(Message.ClickedDeny({ toolCallId: part.toolCallId })),
 					})),
-	markdownOverrides: chatMarkdownOverrides(h, options.knownServices, {
-		charts: model.charts,
-		theme: model.themeColors,
-		isRuntimeReady: model.chartRuntime !== null && isChartRuntimeReady(model.chartRuntime),
-		nowMs: options.nowMs,
-		timeZone: options.timeZone,
-		onChart: (id, message) => options.toMessage(Message.GotChartMessage({ id, message })),
-	}),
+	markdownOverrides: chatMarkdownOverrides(
+		h,
+		options.knownServices,
+		{
+			charts: model.charts,
+			theme: model.themeColors,
+			isRuntimeReady: model.chartRuntime !== null && isChartRuntimeReady(model.chartRuntime),
+			nowMs: options.nowMs,
+			timeZone: options.timeZone,
+			onChart: (id, message) => options.toMessage(Message.GotChartMessage({ id, message })),
+		},
+		{
+			highlights: model.highlights,
+			onCopy: (code) => options.toMessage(Message.ClickedCopyCode({ code })),
+			onDownload: (code, language) => options.toMessage(Message.ClickedDownloadCode({ code, language })),
+			onDownloadDiagram: (code) => options.toMessage(Message.ClickedDownloadDiagram({ code })),
+			mermaidMount: (code) =>
+				Mount.mapMessage(MountMermaid({ code }), (message) =>
+					options.toMessage(Message.CompletedMermaidDiagram({ isDrawn: message._tag === "CompletedMountMermaid" })),
+				),
+		},
+	),
 })
 
 /** Reads the chart colours off the page, again on every light/dark flip. */

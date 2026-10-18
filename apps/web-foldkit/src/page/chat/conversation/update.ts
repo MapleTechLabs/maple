@@ -11,7 +11,18 @@ import { applyChatEvent, finalizeStreamingText, taskOf } from "../kit/fold"
 import { transcriptMarkdown } from "../kit/rich-text"
 import { initMinimap, updateMinimap } from "../kit/turn-minimap"
 import { TextPart } from "../kit/ui-message"
-import { AbortTurn, DecideApproval, LoadHistory, ParseMarkdown, PostMessage } from "./command"
+import { highlightedFences, highlightKey } from "../kit/code-highlight"
+import {
+	AbortTurn,
+	CopyCode,
+	DecideApproval,
+	DownloadCode,
+	DownloadDiagram,
+	HighlightCode,
+	LoadHistory,
+	ParseMarkdown,
+	PostMessage,
+} from "./command"
 import { Message, OutMessage } from "./message"
 import { isLoading, type Model, type ReadOnly } from "./model"
 
@@ -74,6 +85,7 @@ export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null
 		charts: {},
 		chartRuntime: null,
 		themeColors: null,
+		highlights: {},
 		minimap: initMinimap(),
 		markdown: {},
 	},
@@ -112,6 +124,24 @@ const foldEvent = (model: Model, event: ChatEvent, nowMs: number): Model => {
 	return event.reason === "error"
 		? { ...next, status: "error", error: event.error ?? "The chat turn failed.", stream: null }
 		: { ...next, status: "ready", stream: null }
+}
+
+/** Each fence not coloured yet, marked in flight and handed to Shiki. */
+const requestHighlights = (
+	model: Model,
+	fences: ReadonlyArray<{ readonly language: string; readonly code: string }>,
+): Return => {
+	const missing = fences.filter((fence, index) => {
+		const key = highlightKey(fence.language, fence.code)
+		return !(key in model.highlights) && fences.findIndex((other) => highlightKey(other.language, other.code) === key) === index
+	})
+	return {
+		model: {
+			...model,
+			highlights: { ...model.highlights, ...Object.fromEntries(missing.map((fence) => [highlightKey(fence.language, fence.code), null])) },
+		},
+		commands: missing.map((fence) => HighlightCode({ key: highlightKey(fence.language, fence.code), ...fence })),
+	}
 }
 
 const toggle = (ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> =>
@@ -200,14 +230,24 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 				commands: Command.mapMessages(result.commands ?? [], (inner) => Message.GotCopyMessage({ id, message: inner })),
 			}
 		},
-		CompletedParseMarkdown: ({ parsed }) => ({
-			model: {
-				...model,
-				markdown: {
-					...model.markdown,
-					...Object.fromEntries(parsed.map(({ text, document }) => [text, { document }])),
+		CompletedParseMarkdown: ({ parsed }) =>
+			requestHighlights(
+				{
+					...model,
+					markdown: {
+						...model.markdown,
+						...Object.fromEntries(parsed.map(({ text, document }) => [text, { document }])),
+					},
 				},
-			},
+				parsed.flatMap(({ document }) => (document === null ? [] : highlightedFences(document.blocks))),
+			),
+		ClickedCopyCode: ({ code }) => ({ model, commands: [CopyCode({ code })] }),
+		ClickedDownloadCode: ({ code, language }) => ({ model, commands: [DownloadCode({ code, language })] }),
+		ClickedDownloadDiagram: ({ code }) => ({ model, commands: [DownloadDiagram({ code })] }),
+		CompletedCodeAction: () => ({ model }),
+		CompletedMermaidDiagram: () => ({ model }),
+		CompletedHighlightCode: ({ key, highlighted }) => ({
+			model: { ...model, highlights: { ...model.highlights, [key]: highlighted } },
 		}),
 		GotChartMessage: ({ id, message: child }) => {
 			const chart = Chart.update(model.charts[id] ?? Chart.init(), child)

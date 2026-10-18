@@ -4,6 +4,7 @@ import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
 import * as CopyButton from "../../../ui/copy-button"
+import { HighlightedCode } from "../kit/code-highlight"
 import { MinimapState } from "../kit/turn-minimap"
 import { ChatStatus, UIMessage } from "../kit/ui-message"
 
@@ -52,6 +53,8 @@ export const Model = Schema.Struct({
 	chartRuntime: Schema.NullOr(ChartRuntime),
 	themeColors: Schema.NullOr(ThemeColors),
 	minimap: MinimapState,
+	/** Shiki tokens by fence (`highlightKey`); `null` while in flight or when it could not colour it. */
+	highlights: Schema.Record(Schema.String, Schema.NullOr(HighlightedCode)),
 	/** Markdown parses by text; `null` while in flight. */
 	markdown: Schema.Record(Schema.String, Schema.NullOr(Schema.Struct({ document: Schema.NullOr(MarkdownDocument) }))),
 })

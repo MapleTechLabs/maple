@@ -5,6 +5,7 @@ import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { ParsedMarkdown } from "../../agent-sessions/session/message-response"
 import * as CopyButton from "../../../ui/copy-button"
+import { HighlightedCode } from "../kit/code-highlight"
 import { MinimapMessage } from "../kit/turn-minimap"
 import { UIMessage } from "../kit/ui-message"
 
@@ -41,6 +42,12 @@ export const Message = defineMessageUnion({
 	ToggledPanel: { id: Schema.String },
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 	CompletedParseMarkdown: { parsed: Schema.Array(ParsedMarkdown) },
+	CompletedHighlightCode: { key: Schema.String, highlighted: Schema.NullOr(HighlightedCode) },
+	ClickedCopyCode: { code: Schema.String },
+	ClickedDownloadCode: { code: Schema.String, language: Schema.String },
+	ClickedDownloadDiagram: { code: Schema.String },
+	CompletedCodeAction: {},
+	CompletedMermaidDiagram: { isDrawn: Schema.Boolean },
 	GotChartMessage: { id: Schema.String, message: Chart.Message },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

@@ -94,6 +94,9 @@ export const chatArea: AreaModule = {
 	scenarios: [
 		scenario("empty", "New conversation", "default"),
 		scenario("conversation", "Incident investigation", "chat-conversation"),
+		scenario("code", "a reply with a SQL block and a mermaid diagram", "chat-code", async (page) => {
+			await page.getByRole("button", { name: "Copy Code" }).first().waitFor()
+		}),
 		scenario(
 			"conversation-tool-open",
 			"Incident investigation, a tool call expanded",

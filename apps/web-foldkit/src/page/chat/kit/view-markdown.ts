@@ -17,12 +17,12 @@ import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { ViewOverrides } from "../../agent-sessions/session/message-response"
 import { hbarChart } from "../../../charts/hbar-chart"
+import { type CodeHost, codeBlock, mermaidBlock } from "./view-code"
 
 // The chat's own markdown elements over Streamdown's (apps/web components/ai-elements/
 // markdown-table.tsx, markdown-chart.tsx): tables on Maple's `Table` with recognised cells, and
 // ```chart fences as the query builder's plots.
-// TODO(chat-code-highlight): other fences keep the plain code block; Shiki, KaTeX and Mermaid are
-// not loaded.
+// TODO(chat-katex): math (`$…$`) is plain text: `@foldkit/markdown`'s parser has no remark-math.
 
 export type ChartHost<M> = Readonly<{
 	charts: Readonly<Record<string, ChartModel.Model>>
@@ -182,9 +182,13 @@ const chartView = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, code: string): Html
 	})
 
 export const chatMarkdownOverrides =
-	<M>(h: HtmlBuilder<M>, knownServices: ReadonlySet<string>, charts: ChartHost<M>): ViewOverrides =>
+	<M>(h: HtmlBuilder<M>, knownServices: ReadonlySet<string>, charts: ChartHost<M>, code: CodeHost<M>): ViewOverrides =>
 	(views) => ({
 		Table: (node) => tableView(h, knownServices)(views)(node),
-		CodeBlock: (block, occurrence) =>
-			Option.contains(block.maybeLanguage, "chart") ? chartView(h, charts, block.value) : views.CodeBlock(block, occurrence),
+		CodeBlock: (block) => {
+			const language = Option.getOrElse(block.maybeLanguage, () => "")
+			if (language === "chart") return chartView(h, charts, block.value)
+			if (language === "mermaid") return mermaidBlock(h, code, block.value.replace(/\n+$/, ""))
+			return codeBlock(h, code, block.value, language)
+		},
 	})

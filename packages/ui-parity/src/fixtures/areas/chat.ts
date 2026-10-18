@@ -72,14 +72,45 @@ const conversation = (nowMs: number) => {
 	]
 }
 
+export const CHAT_CODE_DATASET = "chat-code"
+
+/** A reply with a fenced query and a mermaid diagram: the highlighted code block and the chart. */
+const codeConversation = (nowMs: number) => {
+	const at = (minutesAgo: number) => nowMs - minutesAgo * MINUTE
+	const answer = [
+		"The slow authorizations all run this query:",
+		"",
+		"```sql",
+		"SELECT id, status FROM payments",
+		"WHERE merchant_id = $1 AND created_at > now() - interval '1 hour'",
+		"ORDER BY created_at DESC;",
+		"```",
+		"",
+		"and the request path looks like this:",
+		"",
+		"```mermaid",
+		"flowchart LR",
+		"  checkout --> payment-svc",
+		"  payment-svc --> postgres",
+		"```",
+	].join("\n")
+	return [
+		{ id: "msg_code_user", role: "user", text: "Which query is slow?", toolCalls: [], createdAt: at(6), startSeq: 1 },
+		{ id: "msg_code_assistant", role: "assistant", text: answer, toolCalls: [], createdAt: at(5), startSeq: 2 },
+	]
+}
+
 const history: RawRoute = {
 	tag: "chat.history",
 	answer: ({ dataset, url, method }) => {
 		if (method !== "GET" || !HISTORY_PATH.test(url.pathname)) return undefined
+		const nowMs = parseWarehouseDateTime(dataset.now)
 		const messages =
 			dataset.name === CHAT_CONVERSATION_DATASET
-				? conversation(parseWarehouseDateTime(dataset.now))
-				: []
+				? conversation(nowMs)
+				: dataset.name === CHAT_CODE_DATASET
+					? codeConversation(nowMs)
+					: []
 		return Response.json({ messages, cursor: messages.length === 0 ? 0 : 40, running: false })
 	},
 }
@@ -152,9 +183,10 @@ const abort: RawRoute = {
 }
 
 const chatConversationDataset: Dataset = { ...defaultDataset, name: CHAT_CONVERSATION_DATASET }
+const chatCodeDataset: Dataset = { ...defaultDataset, name: CHAT_CODE_DATASET }
 
 export const fixtureArea: FixtureArea = {
 	area: "chat",
 	rawRoutes: [history, send, events, abort],
-	datasets: [chatConversationDataset],
+	datasets: [chatConversationDataset, chatCodeDataset],
 }
