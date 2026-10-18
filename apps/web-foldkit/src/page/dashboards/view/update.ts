@@ -1,5 +1,6 @@
 import { pickDashboardControlParams } from "@maple/web/lib/dashboard-controls/search-params"
-import { Option, Result } from "effect"
+import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
+import { Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "../../../charts/chart"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
@@ -8,6 +9,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import { popupId } from "../../../ui/overlay/popup-state"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -19,6 +21,7 @@ import {
 	RemoveWidget,
 	RenameDashboard,
 	RestoreWidget,
+	SaveRefreshInterval,
 	SaveTimeRange,
 } from "./command"
 import { gestureStep } from "./gesture"
@@ -96,6 +99,49 @@ const toggleEdit = (model: Model): Return => {
 	return navigate(model, dashboardHref(model, isEditing(model) ? controls : { ...controls, mode: "edit" }))
 }
 
+/** `PageRefreshProvider.reload`: a new clock, an unsnapped window and the Reload spinner. */
+const reload = (model: Model): Return => {
+	const refreshVersion = model.refreshVersion + 1
+	return {
+		model: { ...model, refreshVersion, isReloading: true },
+		commands: [ReadClock(), CompleteReloadSpin({ version: refreshVersion })],
+	}
+}
+
+const decodeInterval = (value: string) =>
+	Schema.decodeUnknownOption(DashboardRefreshIntervalSeconds)(Number(value))
+
+/**
+ * `handleRefreshIntervalChange`: the cadence rides in `?refresh=` for this viewer, and in edit
+ * mode it is also saved as the board's default.
+ */
+const pickRefreshInterval = (
+	model: Model,
+	context: PageContext,
+	refreshIntervalSeconds: DashboardRefreshIntervalSeconds,
+): Return => {
+	const controls = pickDashboardControlParams(model.search)
+	const search = isEditing(model)
+		? { ...controls, mode: "edit" as const, refresh: refreshIntervalSeconds }
+		: { ...controls, refresh: refreshIntervalSeconds }
+	return {
+		model,
+		commands: isEditing(model)
+			? [
+					SaveRefreshInterval({
+						orgId: context.orgId,
+						dashboardId: model.dashboardId,
+						refreshIntervalSeconds,
+					}),
+				]
+			: [],
+		outMessage: PageOutMessage.RequestedNavigation({
+			url: dashboardHref(model, search),
+			isReplace: true,
+		}),
+	}
+}
+
 const withReplan = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const planned = replan(model, context, mode)
 	return { model: planned.model, commands: planned.commands }
@@ -119,12 +165,32 @@ const receiveDocument = (
 				// The toolbar's share dialog reads the shares too, so they load for an empty board as well.
 				shares: model.shares === "Idle" ? "Loading" : model.shares,
 			}
-			const planned = withReplan(next, context, "Load")
+			// A new saved default re-renders the open cadence rows: Base UI drops their highlight and
+			// focus falls back to the popup.
+			const isDefaultChanged =
+				model.refreshMenu.isOpen &&
+				model.document !== null &&
+				model.document.refreshIntervalSeconds !== document.refreshIntervalSeconds
+			const refocus = isDefaultChanged
+				? [
+						Command.mapMessage(
+							Menu.FocusMenuItem({ id: popupId(model.refreshMenu.id) }),
+							(message) => Message.GotRefreshMenuMessage({ message }),
+						),
+					]
+				: []
+			const planned = withReplan(
+				isDefaultChanged
+					? { ...next, refreshMenu: { ...next.refreshMenu, highlighted: null } }
+					: next,
+				context,
+				"Load",
+			)
 			const shares =
 				model.shares === "Idle" && next.shares === "Loading"
 					? [FetchShares({ dashboardId: model.dashboardId })]
 					: []
-			return { ...planned, commands: [...(planned.commands ?? []), ...shares] }
+			return { ...planned, commands: [...(planned.commands ?? []), ...shares, ...refocus] }
 		},
 	})
 
@@ -317,19 +383,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedSortColumn: ({ widgetId, field, isText }) => sortStep(model, widgetId, field, isText),
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, context, inner),
 		GotRefreshMenuMessage: ({ message: inner }) => {
-			// TODO(auto-refresh): the cadence menu opens and closes; picking an interval is not wired.
 			const next = menuStep(model.refreshMenu, inner, (menu) =>
 				Message.GotRefreshMenuMessage({ message: menu }),
 			)
-			return { model: { ...model, refreshMenu: next.model }, commands: next.commands }
+			const updated = { ...model, refreshMenu: next.model }
+			return Option.match(Option.flatMap(next.picked, decodeInterval), {
+				onNone: () => ({ model: updated, commands: next.commands }),
+				onSome: (seconds) => {
+					const picked = pickRefreshInterval(updated, context, seconds)
+					return { ...picked, commands: [...next.commands, ...(picked.commands ?? [])] }
+				},
+			})
 		},
-		ClickedReload: () => {
-			const refreshVersion = model.refreshVersion + 1
-			return {
-				model: { ...model, refreshVersion, isReloading: true },
-				commands: [ReadClock(), CompleteReloadSpin({ version: refreshVersion })],
-			}
-		},
+		TickedAutoRefresh: () => reload(model),
+		ClickedReload: () => reload(model),
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		ClickedToggleEdit: () => toggleEdit(model),

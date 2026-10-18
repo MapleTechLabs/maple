@@ -1,4 +1,9 @@
-import { DashboardId, DashboardWidgetSchema, TimeRangeSchema } from "@maple/domain/http"
+import {
+	DashboardId,
+	DashboardRefreshIntervalSeconds,
+	DashboardWidgetSchema,
+	TimeRangeSchema,
+} from "@maple/domain/http"
 import { Clock, Duration, Effect, Queue, Random, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -251,5 +256,19 @@ export const WatchWidget = Mount.defineStream("WatchDashboardWidget", {
 						intersections.disconnect()
 					}),
 			).pipe(Effect.flatMap(() => Effect.never)),
+		),
+})
+
+/** `updateDashboardRefreshInterval`: in edit mode the picked cadence is the board's default. */
+export const SaveRefreshInterval = Command.define("SaveDashboardRefreshInterval", {
+	args: { ...Target, refreshIntervalSeconds: DashboardRefreshIntervalSeconds },
+	messages: [Message.CompletedWrite],
+	execute: ({ orgId, dashboardId, refreshIntervalSeconds }) =>
+		toWriteMessage(
+			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({
+				...document,
+				refreshIntervalSeconds,
+				updatedAt: nowIso,
+			})),
 		),
 })

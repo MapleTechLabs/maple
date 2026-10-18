@@ -155,6 +155,9 @@ export const dashboardsArea: AreaModule = {
 		dashboard("view-refresh-menu", "Platform overview: auto-refresh menu", platform, {
 			steps: act(clickButton("Auto-refresh off")),
 		}),
+		dashboard("view-refresh-30s", "Platform overview: auto-refresh every 30s for this viewer", platform, {
+			steps: act(clickButton("Auto-refresh off"), clickMenuRadio("30s")),
+		}),
 		dashboard("view-more-menu", "Platform overview: more actions menu", platform, {
 			steps: act(clickButton("More dashboard actions")),
 		}),
@@ -189,6 +192,9 @@ export const dashboardsArea: AreaModule = {
 		dashboard("edit-widget-restored", "Edit mode: a deleted tile restored with Undo", platform, {
 			steps: act(enterEdit, widgetActions(0), clickMenuItem("Delete"), clickButton("Undo")),
 			fullPage: true,
+		}),
+		dashboard("edit-refresh-30s", "Edit mode: 30s saved as the board's auto-refresh", platform, {
+			steps: act(enterEdit, clickButton("Auto-refresh off"), clickMenuRadio("30s")),
 		}),
 		dashboard("edit-more-menu", "Edit mode: more actions menu", platform, {
 			steps: act(enterEdit, clickButton("More dashboard actions")),

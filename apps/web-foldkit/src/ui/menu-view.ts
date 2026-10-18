@@ -56,7 +56,12 @@ export type MenuEntry =
 			_tag: "RadioGroup"
 			/** `<DropdownMenuLabel>` inside the radio group (`Menu.GroupLabel`). */
 			label?: string
-			items: ReadonlyArray<Readonly<{ value: string; label: string; isChecked: boolean }>>
+			/** `<span>{label}</span>` rather than bare text, as the refresh menu writes it. */
+			isLabelWrapped?: boolean
+			/** `hint`: a muted note after the label (the refresh menu's "default"). */
+			items: ReadonlyArray<
+				Readonly<{ value: string; label: string; isChecked: boolean; hint?: string }>
+			>
 	  }>
 	| Readonly<{ _tag: "Separator" }>
 
@@ -180,7 +185,12 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 								kind: "radio",
 								isChecked: item.isChecked,
 							},
-							[item.label],
+							[
+								entry.isLabelWrapped === true ? h.span([], [item.label]) : item.label,
+								...(item.hint === undefined
+									? []
+									: [h.span([h.Class("text-muted-foreground text-3xs")], [item.hint])]),
+							],
 						),
 					),
 				],

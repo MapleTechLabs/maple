@@ -4,7 +4,14 @@ import { Option, Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { FetchShares, FetchWidget, RemoveWidget, RenameDashboard, SaveTimeRange } from "./command"
+import {
+	FetchShares,
+	FetchWidget,
+	RemoveWidget,
+	RenameDashboard,
+	SaveRefreshInterval,
+	SaveTimeRange,
+} from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -127,5 +134,21 @@ describe("dashboard view", () => {
 		)
 		expect(names(deleted.commands)).toContain(RemoveWidget.name)
 		expect(deleted.outMessage?._tag).toBe("RequestedToast")
+	})
+
+	test("an auto-refresh pick rides in the URL, and in edit mode becomes the board's default", () => {
+		const pick = Message.GotRefreshMenuMessage({
+			message: { _tag: "ClickedItem", index: 3, item: { kind: "Radio", value: "30" } },
+		})
+		const viewing = pageUpdate(ready(), pick)
+		expect(names(viewing.commands)).not.toContain(SaveRefreshInterval.name)
+		expect(viewing.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/dashboards/dash_platform?refresh=30",
+				isReplace: true,
+			}),
+		)
+		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model
+		expect(names(pageUpdate(editing, pick).commands)).toContain(SaveRefreshInterval.name)
 	})
 })

@@ -27,6 +27,8 @@ export const Message = defineMessageUnion({
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotRefreshMenuMessage: { message: Menu.Message },
 	ClickedReload: {},
+	/** `useIntervalRefresh`: one auto-refresh tick, fanned out to every tile like a Reload. */
+	TickedAutoRefresh: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedToggleEdit: {},
 	GotMoreMenuMessage: { message: Menu.Message },

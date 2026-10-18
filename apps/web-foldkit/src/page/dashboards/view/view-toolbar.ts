@@ -49,10 +49,14 @@ const refreshControls = (h: H, model: Model): Html => {
 						{
 							_tag: "RadioGroup",
 							label: "Auto-refresh",
+							isLabelWrapped: true,
 							items: REFRESH_INTERVAL_OPTIONS.map((option) => ({
 								value: String(option),
 								label: formatInterval(option),
 								isChecked: option === seconds,
+								...(model.document?.refreshIntervalSeconds === option
+									? { hint: "default" }
+									: undefined),
 							})),
 						},
 					],
