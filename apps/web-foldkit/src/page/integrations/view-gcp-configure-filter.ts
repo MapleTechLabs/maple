@@ -1,8 +1,10 @@
 import type { GcpLogRuntime } from "@maple/domain/primitives"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import { GCP_LOG_RUNTIMES, gcpLogFilterChoice } from "@maple/web/components/integrations/gcp-connector-state"
+import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
+import { type FieldState, field, fieldLabel } from "../../ui/field"
 import { icon } from "../../ui/icon"
 import { DOCS, OTEL_DOCS } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
@@ -112,13 +114,45 @@ const summaryRow = (h: H, mark: Html, term: string, detail: string): Html =>
 		],
 	)
 
-/** `GcpLogFilterField` inside the disclosure (no label): whose application output comes along. */
-const filterField = (
+export type FilterFieldOptions = Readonly<{
+	sinkExists: boolean
+	logRouter?: string
+	/** `showLabel`: the field's own "Log filter" label, by this id; the disclosure names it otherwise. */
+	labelId?: string
+	/** The runtime fieldset's id, unique per field on a page. */
+	forwardId?: string
+}>
+
+// styles: apps/web/src/components/integrations/gcp-configure.tsx (LABEL)
+const LABEL = "text-xs font-medium text-muted-foreground"
+
+/** `GcpLogFilterField`: whose application output comes along. */
+export const filterField = (
 	h: H,
-	configure: ConfigureModel,
-	options: Readonly<{ sinkExists: boolean; logRouter?: string }>,
+	configure: Pick<ConfigureModel, "filter" | "filterMode">,
+	options: FilterFieldOptions,
 ): Html => {
 	const choice = gcpLogFilterChoice(configure.filter, options.sinkExists)
+	// Base UI's field is filled once its Select holds a value.
+	const state: FieldState = {
+		isInvalid: false,
+		isDirty: false,
+		isFilled: options.sinkExists,
+		isFocused: false,
+		isTouched: false,
+	}
+	const label =
+		options.labelId === undefined
+			? h.span([], [])
+			: fieldLabel(
+					h,
+					{
+						ids: { control: `${options.labelId}-control`, label: options.labelId, error: "" },
+						className: cn(LABEL, "sm:text-xs/4"),
+						state,
+					},
+					"Log filter",
+				)
 	const newFilter = h.div(
 		[h.Class("flex flex-col gap-2.5")],
 		[
@@ -152,25 +186,24 @@ const filterField = (
 					externalLink(h, OTEL_DOCS, "Set up OpenTelemetry"),
 				],
 			),
-			choice.forwardsOutput ? runtimeFields(h, choice.runtimes) : forwardOutputPrompt(h),
+			choice.forwardsOutput
+				? runtimeFields(h, choice.runtimes, options.forwardId)
+				: forwardOutputPrompt(h),
 		],
 	)
-	return h.div(
-		[h.Class("flex flex-col items-stretch gap-2.5"), h.DataAttribute("slot", "field")],
-		[
-			h.div(
-				[h.Class("flex items-baseline justify-between gap-4 text-xs text-muted-foreground")],
-				[
-					h.span([], []),
-					choice.keep && options.logRouter !== undefined
-						? externalLink(h, options.logRouter, "Current filter in Log Router")
-						: externalLink(h, `${DOCS}#log-filter`, "Custom filter"),
-				],
-			),
-			...(options.sinkExists ? filterModeSelect(h, configure, choice.keep) : []),
-			...(choice.keep ? [] : [newFilter]),
-		],
-	)
+	return field(h, { className: "items-stretch gap-2.5", state }, [
+		h.div(
+			[h.Class("flex items-baseline justify-between gap-4 text-xs text-muted-foreground")],
+			[
+				label,
+				choice.keep && options.logRouter !== undefined
+					? externalLink(h, options.logRouter, "Current filter in Log Router")
+					: externalLink(h, `${DOCS}#log-filter`, "Custom filter"),
+			],
+		),
+		...(options.sinkExists ? filterModeSelect(h, configure, choice.keep, options.labelId) : []),
+		...(choice.keep ? [] : [newFilter]),
+	])
 }
 
 /** The ticks are an escape hatch: a workload sending over OpenTelemetry would store each line twice. */

@@ -28,13 +28,20 @@ const filterMode = (h: H, value: string): ReadonlyArray<Html> => {
 	]
 }
 
-export const filterModeSelect = (h: H, configure: ConfigureModel, keep: boolean): ReadonlyArray<Html> => [
+/** Slotted by the Select's id, so several fields can share a page (the lab). */
+export const filterModeSelect = (
+	h: H,
+	configure: Pick<ConfigureModel, "filterMode">,
+	keep: boolean,
+	labelledBy?: string,
+): ReadonlyArray<Html> => [
 	h.submodel({
-		slotId: "gcp-filter-mode",
+		slotId: configure.filterMode.id,
 		model: { ...configure.filterMode, value: keep ? "keep" : "set" },
 		view: SelectView.view,
 		viewInputs: {
 			entries: ENTRIES,
+			labelledBy,
 			className: "w-full",
 			renderValue: (value) => filterMode(h, value),
 			renderItem: (option) => filterMode(h, option.value),

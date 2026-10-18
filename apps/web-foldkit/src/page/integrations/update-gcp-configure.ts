@@ -260,15 +260,18 @@ export const clickedForwardOutput = (model: Model): Return => withFilter(model, 
 
 export const clickedUseOpenTelemetry = (model: Model): Return => withFilter(model, () => ({ runtimes: null }))
 
+/** A runtime's tick flipped in the draft (shared with `/lab/gcp`). */
+export const runtimeToggled = (filter: LogFilterDraft, runtime: GcpLogRuntime): Partial<LogFilterDraft> => {
+	const runtimes = filter.runtimes ?? []
+	return {
+		runtimes: runtimes.includes(runtime)
+			? runtimes.filter((entry) => entry !== runtime)
+			: [...runtimes, runtime],
+	}
+}
+
 export const toggledRuntime = (model: Model, runtime: GcpLogRuntime): Return =>
-	withFilter(model, (filter) => {
-		const runtimes = filter.runtimes ?? []
-		return {
-			runtimes: runtimes.includes(runtime)
-				? runtimes.filter((entry) => entry !== runtime)
-				: [...runtimes, runtime],
-		}
-	})
+	withFilter(model, (filter) => runtimeToggled(filter, runtime))
 
 /** Keep or replace an existing sink's filter. */
 export const gotFilterMode = (model: Model, message: Select.Message): Return => {
