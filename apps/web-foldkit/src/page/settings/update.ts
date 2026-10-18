@@ -1,4 +1,5 @@
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { rowToV2ApiKey } from "@maple/web-data/collections/api-keys"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../route"
@@ -12,6 +13,10 @@ import type { Model, TabModel } from "./model"
 import type * as McpMessage from "./mcp/message"
 import type * as McpModel from "./mcp/model"
 import * as Mcp from "./mcp/update"
+import type * as KeysMessage from "./keys/message"
+import { Message as KeysMessageValue } from "./keys/message"
+import type * as KeysModel from "./keys/model"
+import * as Keys from "./keys/update"
 import {
 	type LegacySettingsRedirect,
 	resolveActiveSettingsTab,
@@ -46,20 +51,39 @@ export const activeTabOf = (model: Model): SettingsTab =>
 
 // TABS
 
-const tabTag = (tab: SettingsTab): TabModel["_tag"] => (tab === "mcp" ? "Mcp" : "Unported")
+const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
+	["mcp", "Mcp"],
+	["keys", "Keys"],
+])
+const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
 
 const isTabCurrent = (current: TabModel | null, tab: SettingsTab): boolean =>
 	current !== null && current._tag === tabTag(tab) && (current._tag !== "Unported" || current.tab === tab)
 
+const sessionOf = (model: Model) => ({
+	isAdmin: visibilityOf(model).isAdmin,
+	userId: AsyncData.getOrElse(AsyncData.map(model.session, (session) => session.userId), () => null),
+})
+
 const initTab = (model: Model, tab: SettingsTab): Return => {
-	if (tab === "mcp") {
-		const step = Mcp.init()
-		return {
-			model: { ...model, tab: { _tag: "Mcp", model: step.model } },
-			commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMcpMessage({ message })),
+	switch (tabTag(tab)) {
+		case "Mcp": {
+			const step = Mcp.init()
+			return {
+				model: { ...model, tab: { _tag: "Mcp", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMcpMessage({ message })),
+			}
 		}
+		case "Keys": {
+			const step = Keys.init(sessionOf(model))
+			return {
+				model: { ...model, tab: { _tag: "Keys", model: { ...step.model, apiKeys: model.apiKeys } } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotKeysMessage({ message })),
+			}
+		}
+		case "Unported":
+			return { model: { ...model, tab: { _tag: "Unported", tab } } }
 	}
-	return { model: { ...model, tab: { _tag: "Unported", tab } } }
 }
 
 /** Mounts the active tab's section once the nav can resolve it, dropping the previous one. */
@@ -110,6 +134,7 @@ export const init = (route: SettingsRoute, _context: PageContext): Return => {
 		nowMs: 0,
 		session: AsyncData.Loading(),
 		customer: AsyncData.Loading(),
+		apiKeys: null,
 		tab: null,
 	})
 	return {
@@ -130,7 +155,16 @@ const liftMcp = (model: Model, current: McpModel.Model, message: McpMessage.Mess
 	}
 }
 
-export const update = (model: Model, message: Message, _context: PageContext): Return =>
+const liftKeys = (model: Model, current: KeysModel.Model, message: KeysMessage.Message): Return => {
+	const step = Keys.update(current, message)
+	return {
+		model: { ...model, tab: { _tag: "Keys", model: step.model } },
+		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotKeysMessage({ message: inner })),
+		outMessage: step.outMessage,
+	}
+}
+
+export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		CompletedFetchSession: ({ result }) => syncTab({ ...model, session: AsyncData.settle(model.session, result) }),
@@ -144,4 +178,14 @@ export const update = (model: Model, message: Message, _context: PageContext): R
 		}),
 		GotMcpMessage: ({ message: inner }) =>
 			model.tab !== null && model.tab._tag === "Mcp" ? liftMcp(model, model.tab.model, inner) : { model },
+		GotKeysMessage: ({ message: inner }) =>
+			model.tab !== null && model.tab._tag === "Keys" ? liftKeys(model, model.tab.model, inner) : { model },
+		UpdatedApiKeys: ({ orgId, rows }) => {
+			if (orgId !== context.orgId) return { model }
+			const apiKeys = rows.map(rowToV2ApiKey)
+			const next = { ...model, apiKeys }
+			return next.tab !== null && next.tab._tag === "Keys"
+				? liftKeys(next, next.tab.model, KeysMessageValue.UpdatedApiKeys({ rows: apiKeys }))
+				: { model: next }
+		},
 	})

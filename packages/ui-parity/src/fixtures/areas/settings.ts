@@ -355,6 +355,71 @@ const API_KEYS: ReadonlyArray<SyncedRow> = [
 	}),
 ]
 
+// KEY AND CONNECTION WRITES (the Keys and MCP tabs click every one through)
+
+const wireApiKey = (row: SyncedRow, overrides: Readonly<Record<string, unknown>> = {}) => ({
+	...row,
+	id: encodePublicId(PublicIdPrefixes.apiKey, String(row.id)),
+	object: "api_key",
+	...overrides,
+})
+const paramId = (params: unknown): string | undefined =>
+	Predicate.hasProperty(params, "id") && typeof params.id === "string" ? params.id : undefined
+const keyById = (params: unknown) => API_KEYS.find((row) => row.id === paramId(params)) ?? API_KEYS[0]
+
+/** Echoes the payload into a new key with a fixed secret, as `createApiKey` would. */
+const createApiKey: EndpointHandler = ({ payload }) => {
+	const field = (key: string) => (Predicate.hasProperty(payload, key) ? payload[key] : undefined)
+	const kind = field("kind") === "mcp" ? "mcp" : "standard"
+	const row = apiKey(9, {
+		name: typeof field("name") === "string" ? String(field("name")) : "New key",
+		kind,
+		scopes: Array.isArray(field("scopes")) ? field("scopes") : null,
+		usedAgoMs: null,
+		ageMs: 0,
+	})
+	return Effect.succeed({ ...wireApiKey(row), secret: `maple_${kind === "mcp" ? "mcp" : "ak"}_parity_secret_0009` })
+}
+
+const revokeApiKey: EndpointHandler = ({ params }) =>
+	Effect.succeed(wireApiKey(keyById(params), { revoked: true, revoked_at: isoBefore(0) }))
+
+const rollApiKey: EndpointHandler = ({ params }) =>
+	Effect.succeed({ ...wireApiKey(keyById(params)), secret: "maple_ak_parity_rolled_0001" })
+
+const rolledIngestKeys: EndpointHandler = ({ dataset }) =>
+	Effect.succeed({
+		object: "ingest_keys",
+		public_key: `maple_pk_parity_${dataset.name}_rolled`,
+		private_key: `maple_sk_parity_${dataset.name}_rolled`,
+		public_rotated_at: isoBefore(0),
+		private_rotated_at: isoBefore(0),
+	})
+
+const mcpConnection = {
+	id: encodePublicId(PublicIdPrefixes.mcpConnection, fixtureUuid(0xd4, 1)),
+	object: "mcp_connection",
+	client_name: "Claude Code",
+	user_id: acmeAdmin.userId,
+	user_email: acmeAdmin.email,
+	scopes: ["mcp:tools"],
+	connected_at: isoBefore(18 * DAY),
+	last_refreshed_at: isoBefore(40 * MINUTE),
+	expires_at: isoBefore(-72 * DAY),
+}
+
+/** Acme with one OAuth client connected, so the MCP tab's revoke can be clicked through. */
+const settingsMcpClients: Dataset = {
+	...defaultDataset,
+	name: "settings-mcp-clients",
+	endpoints: {
+		...defaultDataset.endpoints,
+		"mcpConnections.list": () => Effect.succeed(list([mcpConnection])),
+		"mcpConnections.revoke": () => Effect.succeed(mcpConnection),
+	},
+	telemetry: emptyTelemetry,
+}
+
 /** Acme in Clerk mode: the Clerk-only settings tabs and /account. Shares Acme's warehouse org. */
 const settingsClerk: Dataset = {
 	name: "settings-clerk",
@@ -378,8 +443,13 @@ export const fixtureArea: FixtureArea = {
 		"aiTriage.getSettings": aiTriageSettings,
 		"openRouterKey.get": openRouterKey,
 		"instrumentationAudit.retrieve": setupAuditEndpoint(warehouse),
+		"apiKeys.create": createApiKey,
+		"apiKeys.revoke": revokeApiKey,
+		"apiKeys.roll": rollApiKey,
+		"ingestKeys.rollPublic": rolledIngestKeys,
+		"ingestKeys.rollPrivate": rolledIngestKeys,
 		...clerkBillingEndpoints(warehouse),
 	}),
 	defaultSynced: { api_keys: API_KEYS },
-	datasets: [settingsClerk],
+	datasets: [settingsClerk, settingsMcpClients],
 }

@@ -1,19 +1,23 @@
+import { V2ApiKey } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { LoadFailure } from "../../data/load-failure"
 import { SettingsSearch } from "../../route/search"
+import * as Keys from "./keys/model"
 import * as Mcp from "./mcp/model"
 
 // `/settings` (apps/web/src/routes/settings.tsx): the nav rail and the active tab's section.
 
 /** What `useVisibleSettingsSections` reads from the session: whether the member administers the org. */
-export const SessionData = AsyncData.Schema(Schema.Struct({ isAdmin: Schema.Boolean }), LoadFailure)
+export const SessionInfo = Schema.Struct({ isAdmin: Schema.Boolean, userId: Schema.NullOr(Schema.String) })
+export const SessionData = AsyncData.Schema(SessionInfo, LoadFailure)
 /** `useMapleCustomer()`: whether the org bought the bring-your-own-cloud add-on. */
 export const CustomerData = AsyncData.Schema(Schema.Struct({ hasByoc: Schema.Boolean }), LoadFailure)
 
 /** The active tab's state; a tab switch drops the old one (React unmounts the section). */
 export const TabModel = Schema.Union([
 	Schema.TaggedStruct("Mcp", { model: Mcp.Model }),
+	Schema.TaggedStruct("Keys", { model: Keys.Model }),
 	/** A tab whose section is not ported yet. */
 	Schema.TaggedStruct("Unported", { tab: Schema.String }),
 ])
@@ -25,6 +29,8 @@ export const Model = Schema.Struct({
 	nowMs: Schema.Number,
 	session: SessionData.schema,
 	customer: CustomerData.schema,
+	/** The `api_keys` shape while a tab reads it, `null` before its first answer. */
+	apiKeys: Schema.NullOr(Schema.Array(V2ApiKey)),
 	/** `null` until the active tab is known (the session gates it in Clerk mode). */
 	tab: Schema.NullOr(TabModel),
 })

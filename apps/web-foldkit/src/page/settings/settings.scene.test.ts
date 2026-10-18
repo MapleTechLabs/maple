@@ -37,7 +37,7 @@ const connection = Schema.decodeUnknownSync(V2McpConnection)({
 
 const mcpLoaded = (): Model =>
 	[
-		Message.CompletedFetchSession({ result: Result.succeed({ isAdmin: true }) }),
+		Message.CompletedFetchSession({ result: Result.succeed({ isAdmin: true, userId: null }) }),
 		Message.CompletedFetchCustomer({ result: Result.succeed({ hasByoc: false }) }),
 		mcp(McpMessage.Message.CompletedFetchConnections({ result: Result.succeed([connection]) })),
 		mcp(McpMessage.Message.CompletedFetchTools({ result: Result.succeed(tools) })),

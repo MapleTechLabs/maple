@@ -6,6 +6,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Tabs from "../../../ui/tabs"
+import * as CreateKey from "../keys/create-dialog"
 
 export const Message = defineMessageUnion({
 	CompletedFetchConnections: { result: Schema.Result(Schema.Array(V2McpConnection), LoadFailure) },
@@ -14,6 +15,7 @@ export const Message = defineMessageUnion({
 	GotServerUrlCopyMessage: { message: CopyButton.Message },
 	GotSnippetCopyMessage: { snippet: Schema.String, message: CopyButton.Message },
 	ClickedCreateMcpKey: {},
+	GotCreateKeyMessage: { message: CreateKey.Message },
 	ClickedRevoke: { connectionId: McpConnectionPublicId },
 	GotRevokeDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRevoke: {},

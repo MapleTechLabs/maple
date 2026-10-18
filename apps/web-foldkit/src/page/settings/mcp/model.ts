@@ -7,6 +7,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Tabs from "../../../ui/tabs"
+import * as CreateKey from "../keys/create-dialog"
 
 // `McpSection` (apps/web/src/components/settings/mcp-section.tsx): connect a client, the connected
 // OAuth clients and the tool catalog. Shared by `/settings?tab=mcp` and `/mcp`.
@@ -21,6 +22,7 @@ export const Model = Schema.Struct({
 	snippetCopies: Schema.Record(Schema.String, CopyButton.Model),
 	/** The MCP key the dialog created, spliced into the snippets. */
 	createdSecret: Schema.NullOr(Schema.String),
+	createKey: CreateKey.Model,
 	connections: ConnectionsData.schema,
 	revoking: Schema.NullOr(V2McpConnection),
 	revokeDialog: Dialog.Model,

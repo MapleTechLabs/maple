@@ -167,6 +167,12 @@ export const manageFocus = (
 					document.getElementById(id),
 				)
 				const fallback = previous instanceof HTMLElement && previous.isConnected ? previous : null
-				Option.getOrElse(returnTo, () => fallback)?.focus({ preventScroll: true })
+				const target = Option.getOrElse(returnTo, () => fallback)
+				// Floating UI returns focus only from the body or the popup: focus another popup took
+				// on the way out (a dialog opened from a menu item) stays where it is.
+				const active = document.activeElement
+				const isFocusLeftBehind =
+					active === null || active === document.body || active === target || popup.contains(active)
+				if (isFocusLeftBehind) target?.focus({ preventScroll: true })
 			}),
 	).pipe(Effect.asVoid)

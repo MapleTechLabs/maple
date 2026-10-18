@@ -13,6 +13,7 @@ import * as CopyButton from "../../../ui/copy-button"
 import { copyableField } from "../../../ui/copyable-field"
 import { inlineCode } from "../../../ui/inline-code"
 import * as TabsView from "../../../ui/tabs-view"
+import * as CreateKeyView from "../keys/create-dialog-view"
 import { codeBlock } from "../kit/code-block"
 import { settingsSection, settingsSections } from "../kit/section"
 import { Message } from "./message"
@@ -169,8 +170,18 @@ const connectSection = (h: H, model: Model): Html =>
 					),
 				],
 			),
+			createKeyDialog(h, model),
 		],
 	)
+
+const createKeyDialog = (h: H, model: Model): Html =>
+	h.submodel({
+		slotId: "mcp-create-key",
+		model: model.createKey,
+		view: CreateKeyView.view,
+		toParentMessage: (message) => Message.GotCreateKeyMessage({ message }),
+		viewInputs: { slotId: "mcp-create-key-popup" },
+	})
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 	settingsSections(h, "standard", [

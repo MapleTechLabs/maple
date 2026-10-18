@@ -16,7 +16,10 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 	messages: [Message.CompletedFetchSession],
 	execute: Effect.gen(function* () {
 		const session = yield* (yield* SessionTenant).get
-		return { isAdmin: session.roles.some((role) => role === "root" || role === "org:admin") }
+		return {
+			isAdmin: session.roles.some((role) => role === "root" || role === "org:admin"),
+			userId: session.userId,
+		}
 	}).pipe(
 		Effect.mapError(toLoadFailure),
 		Effect.result,

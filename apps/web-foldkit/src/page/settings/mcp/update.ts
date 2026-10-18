@@ -4,6 +4,7 @@ import { PageOutMessage, type PageReturn } from "../../contract"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Tabs from "../../../ui/tabs"
+import * as CreateKey from "../keys/create-dialog"
 import { FetchConnections, FetchTools, RevokeConnection } from "./command"
 import { Message } from "./message"
 import { CLIENT_VALUES, type Model } from "./model"
@@ -19,6 +20,7 @@ export const init = (): Return => ({
 		serverUrlCopy: CopyButton.init(),
 		snippetCopies: {},
 		createdSecret: null,
+		createKey: CreateKey.init("mcp-create-key"),
 		connections: AsyncData.Loading(),
 		revoking: null,
 		revokeDialog: Dialog.init("mcp-revoke", "alert-dialog"),
@@ -38,6 +40,23 @@ const liftRevokeDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 	model: { ...model, revokeDialog: step.model },
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRevokeDialogMessage({ message })),
 })
+
+/** `onCreated`: the new secret goes into every snippet. */
+const liftCreateKey = (model: Model, step: ReturnType<typeof CreateKey.update>): Return => {
+	const out = step.outMessage
+	return {
+		model: {
+			...model,
+			createKey: step.model,
+			createdSecret: out?._tag === "CreatedKey" ? out.secret : model.createdSecret,
+		},
+		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotCreateKeyMessage({ message: inner })),
+		outMessage:
+			out?._tag === "RequestedToast"
+				? PageOutMessage.RequestedToast({ type: out.type, title: out.title, description: out.description })
+				: undefined,
+	}
+}
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
@@ -70,8 +89,8 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		// TODO(settings-keys): opens `CreateApiKeyDialog kind="mcp"` once the Keys tab ports it.
-		ClickedCreateMcpKey: () => ({ model }),
+		ClickedCreateMcpKey: () => liftCreateKey(model, CreateKey.open(model.createKey, "mcp")),
+		GotCreateKeyMessage: ({ message: child }) => liftCreateKey(model, CreateKey.update(model.createKey, child)),
 		ClickedRevoke: ({ connectionId }) =>
 			Option.match(
 				Option.flatMap(AsyncData.getData(model.connections), (rows) =>

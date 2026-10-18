@@ -6,6 +6,7 @@ import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import type { BreadcrumbEntry } from "../../shell"
 import { navShell } from "./kit/nav-shell"
+import * as KeysView from "./keys/view"
 import * as McpView from "./mcp/view"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -41,6 +42,16 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 						nowMs: model.nowMs,
 						timeZone: inputs.context.timeZone,
 					},
+				}),
+			]
+		case "Keys":
+			return [
+				h.submodel({
+					slotId: "settings-keys",
+					model: tab.model,
+					view: KeysView.view,
+					toParentMessage: (message) => Message.GotKeysMessage({ message }),
+					viewInputs: { nowMs: model.nowMs, timeZone: inputs.context.timeZone },
 				}),
 			]
 		case "Unported":

@@ -8,6 +8,7 @@ import {
 	AlertRuleRowSchema,
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
+import { ApiKeyRowSchema } from "@maple/web-data/collections/api-keys"
 import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
 
 /** `getOrgCollections`'s 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
@@ -40,6 +41,18 @@ const makeSet = (
 	fetchClient: typeof globalThis.fetch,
 ) => ({
 	orgId,
+	apiKeys: createEffectCollection({
+		id: `api_keys:${orgId}`,
+		runtime,
+		schema: ApiKeyRowSchema,
+		getKey: (row) => row.id,
+		shapeOptions: {
+			url: syncProxyUrl,
+			params: { shape: "api_keys", org: orgId },
+			fetchClient,
+			parser: timestamptzParser,
+		},
+	}),
 	// `createSyncedCollection`'s shape: id `<shape>:<org>`, `org=` param for URL cache keying only.
 	alertRules: createEffectCollection({
 		id: `alert_rules:${orgId}`,
@@ -93,6 +106,7 @@ const makeSet = (
 })
 export type OrgCollectionSet = ReturnType<typeof makeSet>
 type SyncedCollection =
+	| OrgCollectionSet["apiKeys"]
 	| OrgCollectionSet["alertRules"]
 	| OrgCollectionSet["alertRuleStates"]
 	| OrgCollectionSet["alertIncidents"]
@@ -138,6 +152,7 @@ function makeOrgCollections(): Effect.Effect<OrgCollections["Service"], never, S
 			Effect.asVoid(
 				Effect.forkIn(
 					Effect.all([
+						cleanupWhenIdle(set.apiKeys),
 						cleanupWhenIdle(set.alertRules),
 						cleanupWhenIdle(set.alertRuleStates),
 						cleanupWhenIdle(set.alertIncidents),
