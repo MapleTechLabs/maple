@@ -26,12 +26,16 @@ const sourceOf = <M>(h: HtmlBuilder<M>, signal: TelemetrySignal): ReadonlyArray<
 	if (signal === "logs")
 		return ["Logs come from an OTLP log bridge under your logger. Printing to stdout alone never reaches Maple."]
 	if (signal === "metrics") return ["Metrics come from an OpenTelemetry metric reader exporting to this endpoint."]
+	// The JSX's text nodes, `{" "}` separators included: they decide where the line breaks.
 	return [
-		"Sessions come from the browser SDK: install ",
+		"Sessions come from the browser SDK: install",
+		" ",
 		code(h, "@maple-dev/browser"),
-		" and call ",
+		" and call",
+		" ",
 		code(h, "MapleBrowser.init()"),
-		" with this endpoint.",
+		" ",
+		"with this endpoint.",
 	]
 }
 

@@ -20,7 +20,8 @@
 			"@maple/ui/styles/ui/*": ["../../packages/ui/src/components/ui/*.styles.ts"],
 			"@maple/ui/*": ["../../packages/ui/src/*"],
 			"@maple/web-foldkit/*": ["../web-foldkit/src/*"],
-			"@maple/local-ui/*": ["../local-ui/src/*"]
+			"@maple/local-ui/*": ["../local-ui/src/*"],
+			"@maple/web/*": ["../web/src/*"]
 		},
 		"plugins": [
 			{

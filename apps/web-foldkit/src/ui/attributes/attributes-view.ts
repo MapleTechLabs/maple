@@ -207,7 +207,7 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
  * `AttributesSection`: the raw table with `maple_*` keys lifted into a collapsed "Maple internal"
  * table. TODO(gen-ai): `GenAiSection` for `gen_ai.*` groups is not ported; those keys are dropped.
  */
-const attributesSection = (h: H, context: RowContext, options: TableOptions): Html => {
+export const attributesSection = (h: H, context: RowContext, options: TableOptions): Html => {
 	const { groups, rest } = splitGenAiAttributes({ ...options.attributes })
 	const entries = Object.entries(rest)
 	const standard = Object.fromEntries(entries.filter(([key]) => !key.startsWith("maple_")))
