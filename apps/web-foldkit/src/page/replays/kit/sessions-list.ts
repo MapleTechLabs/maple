@@ -1,0 +1,97 @@
+import { countLabel, pluralize } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
+import { SESSION_TAG_DOTS, SESSION_TAG_LABELS } from "@maple/web/components/replays/session-tags"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { icon } from "../../../ui/icon"
+import { skeleton } from "../../../ui/skeleton"
+import { statusDot } from "../../../ui/status-dot"
+import type { SessionListItem } from "./session-row"
+import { sessionListRow } from "./session-list-row"
+import { COLUMNS, columnHeader, type SessionsListOptions } from "./sessions-parts"
+
+// `SessionsList` (components/replays/sessions-list.tsx). Rows render in flow: the virtualizer's
+// absolute rows stack to the same offsets once every row is in view.
+
+/** `DisclosureChevron` (components/common/disclosure-chevron.tsx), direction right. */
+const disclosureChevron = <M>(h: HtmlBuilder<M>, isOpen: boolean, size: number): Html =>
+	icon(h, "ChevronRightIcon", {
+		size,
+		attributes: [h.AriaHidden(true)],
+		className: cn("shrink-0 transition-transform", isOpen && "rotate-90"),
+	})
+
+/** `QuietRunRow`: stands in for a run of low-signal sessions. */
+const quietRunRow = <M>(
+	h: HtmlBuilder<M>,
+	item: Extract<SessionListItem, { kind: "quiet" }>,
+	onToggle: M,
+): Html =>
+	h.button(
+		[
+			h.Type("button"),
+			h.OnClick(onToggle),
+			h.AriaExpanded(item.expanded),
+			h.Class(
+				"flex w-full items-center gap-3 border-b border-border bg-muted/30 px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @2xl:gap-4",
+			),
+		],
+		[
+			h.span([h.Class("shrink-0 whitespace-nowrap font-medium tabular-nums")], [
+				countLabel(item.count, "low-signal session"),
+			]),
+			h.span(
+				[h.Class("flex min-w-0 items-center gap-3 overflow-hidden"), h.Title(item.summary)],
+				item.tiers.map(({ tag, count }) =>
+					h.span([h.Class("flex shrink-0 items-center gap-1.5")], [
+						statusDot(h, { tone: "custom", className: SESSION_TAG_DOTS[tag] }),
+						h.span([h.Class("tabular-nums")], [String(count)]),
+						" ",
+						pluralize(count, SESSION_TAG_LABELS[tag].toLowerCase()),
+					]),
+				),
+			),
+			h.span([h.Class("ml-auto flex shrink-0 items-center gap-1")], [
+				item.expanded ? "Hide" : "Show",
+				disclosureChevron(h, item.expanded, 14),
+			]),
+		],
+	)
+
+/** The rows under the column header. The caller renders the empty state and the footer. */
+export const sessionsList = <M>(h: HtmlBuilder<M>, options: SessionsListOptions<M>, footer: ReadonlyArray<Html> = []): Html =>
+	h.div([h.Class("@container")], [
+		columnHeader(h),
+		h.div(
+			[h.Class("relative w-full")],
+			options.items.map((item) =>
+				item.kind === "quiet"
+					? h.div([h.Key(`quiet:${item.key}`), h.Class("w-full")], [quietRunRow(h, item, options.onToggleRun(item.key))])
+					: h.div([h.Key(item.session.sessionId), h.Class("w-full")], [
+							sessionListRow(h, options, item.session, item.lowSignal),
+						]),
+			),
+		),
+		...footer,
+	])
+
+const SKELETON_NAME_WIDTHS = ["w-40", "w-28", "w-48", "w-32", "w-36", "w-24", "w-44", "w-32"]
+
+/** `SessionsListSkeleton`: same header, columns and row height. */
+export const sessionsListSkeleton = <M>(h: HtmlBuilder<M>, rows = 8): Html =>
+	h.div([h.Class("@container"), h.AriaBusy(true)], [
+		columnHeader(h),
+		...Array.from({ length: rows }, (_, i) =>
+			h.div([h.Class("flex h-[65px] items-center gap-3 border-b border-border px-3 @2xl:gap-4")], [
+				h.div([h.Class("min-w-0 flex-1 space-y-2")], [
+					skeleton(h, cn("h-3.5", SKELETON_NAME_WIDTHS[i % SKELETON_NAME_WIDTHS.length])),
+					skeleton(h, "h-3 w-56 max-w-full"),
+				]),
+				h.span([h.Class(COLUMNS.org)], [skeleton(h, "h-5 w-24 rounded-md")]),
+				h.span([h.Class(COLUMNS.tags)], [skeleton(h, "h-5 w-20 rounded-md")]),
+				h.span([h.Class(COLUMNS.activity)], [skeleton(h, "h-3 w-full")]),
+				h.span([h.Class(COLUMNS.device)], [skeleton(h, "h-3.5 w-14")]),
+				h.span([h.Class(COLUMNS.signals)], [skeleton(h, "h-3.5 w-20")]),
+				h.span([h.Class(COLUMNS.time)], [skeleton(h, "h-3 w-14")]),
+			]),
+		),
+	])
