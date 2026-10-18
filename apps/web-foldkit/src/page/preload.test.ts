@@ -45,6 +45,12 @@ describe("intent preload", () => {
 		expect(next.released).toEqual([])
 	})
 
+	test("a link under a resting pointer is not an entry; one the pointer moved onto is", () => {
+		expect(Preload.isPointerEntry(Option.none(), 10, 20)).toBe(true)
+		expect(Preload.isPointerEntry(Option.some({ x: 10, y: 20 }), 10, 20)).toBe(false)
+		expect(Preload.isPointerEntry(Option.some({ x: 10, y: 19 }), 10, 20)).toBe(true)
+	})
+
 	test("after the hold, only preloads the open page does not hold are released", () => {
 		expect(Preload.expired(Preload.init(), [keyOf()])).toEqual([keyOf()])
 		const entered = Preload.held(Preload.init(), holder, preloaded()).model

@@ -1,10 +1,23 @@
-import { ErrorIssueId } from "@maple/domain/http"
+import {
+	ErrorIssueClaimRequest,
+	ErrorIssueCommentRequest,
+	ErrorIssueId,
+	ErrorIssueLinkPullRequestRequest,
+	ErrorIssuePullRequestId,
+	ErrorIssueReleaseRequest,
+	ErrorIssueSetSeverityRequest,
+	ErrorIssueTransitionRequest,
+	EscalationPolicyEvaluationRequest,
+	IssueSeverity,
+} from "@maple/domain/http"
+import { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { Clock, Duration, Effect, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
-import { Message, RequestMode } from "./message"
+import { writeClipboard } from "../../kit/clipboard"
+import { IssueWrite, Message, RequestMode } from "./message"
 
 /** The fetch's outcome, its error already the `displayError` body. */
 const settle = <A, E, R>(
@@ -170,4 +183,136 @@ export const CompleteReloadSpin = Command.define("CompleteIssueReloadSpin", {
 	messages: [Message.CompletedReloadSpin],
 	execute: ({ version }) =>
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
+})
+
+const runWrite = (issueId: ErrorIssueId, write: IssueWrite) =>
+	Effect.gen(function* () {
+		const client = yield* MapleInternalApiClient
+		const params = { issueId }
+		switch (write._tag) {
+			case "Transition":
+				return yield* client.errors.transitionIssue({
+					params,
+					payload: new ErrorIssueTransitionRequest({ toState: write.toState }),
+				})
+			case "Claim":
+				return yield* client.errors.claimIssue({ params, payload: new ErrorIssueClaimRequest({}) })
+			case "Heartbeat":
+				return yield* client.errors.heartbeatIssue({ params })
+			case "Release":
+				return yield* client.errors.releaseIssue({
+					params,
+					payload: new ErrorIssueReleaseRequest({}),
+				})
+			case "SetSeverity":
+				return yield* client.errors.setIssueSeverity({
+					params,
+					payload: new ErrorIssueSetSeverityRequest({ severity: write.severity }),
+				})
+		}
+	})
+
+/** One rail write; the page toasts its outcome and re-reads what it invalidates. */
+export const RunIssueWrite = Command.define("RunErrorIssueWrite", {
+	args: { issueId: ErrorIssueId, write: IssueWrite },
+	messages: [Message.CompletedIssueWrite],
+	execute: ({ issueId, write }) =>
+		runWrite(issueId, write).pipe(
+			Effect.map((issue) => ({ severity: issue.severity })),
+			settle,
+			Effect.map((result) => Message.CompletedIssueWrite({ write, result })),
+		),
+})
+
+/** `startInvestigation`: opens one over the issue; the page then navigates to it. */
+export const CreateInvestigation = Command.define("CreateErrorIssueInvestigation", {
+	args: { payload: V2InvestigationCreateParams },
+	messages: [Message.CompletedCreateInvestigation],
+	execute: ({ payload }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			const investigation = yield* client.investigations.create({ payload })
+			return String(investigation.id)
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedCreateInvestigation({ result })),
+		),
+})
+
+/** `attachPullRequest`: links a pull request by URL. */
+export const LinkPullRequest = Command.define("LinkErrorIssuePullRequest", {
+	args: { issueId: ErrorIssueId, url: Schema.String },
+	messages: [Message.CompletedLinkPullRequest],
+	execute: ({ issueId, url }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.errors.linkIssuePullRequest({
+				params: { issueId },
+				payload: new ErrorIssueLinkPullRequestRequest({ url }),
+			})
+			return null
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedLinkPullRequest({ result })),
+		),
+})
+
+/** `submitComment`. */
+export const CommentOnIssue = Command.define("CommentOnErrorIssue", {
+	args: { issueId: ErrorIssueId, body: Schema.String },
+	messages: [Message.CompletedComment],
+	execute: ({ issueId, body }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.errors.commentOnIssue({
+				params: { issueId },
+				payload: new ErrorIssueCommentRequest({ body }),
+			})
+			return null
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedComment({ result })),
+		),
+})
+
+/** `detachPullRequest`. */
+export const UnlinkPullRequest = Command.define("UnlinkErrorIssuePullRequest", {
+	args: { issueId: ErrorIssueId, pullRequestId: ErrorIssuePullRequestId },
+	messages: [Message.CompletedUnlinkPullRequest],
+	execute: ({ issueId, pullRequestId }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.errors.unlinkIssuePullRequest({ params: { issueId, pullRequestId } })
+			return null
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedUnlinkPullRequest({ result })),
+		),
+})
+
+/** `useCopy({ label })`; `path` copies as an absolute link on this origin. */
+export const CopyText = Command.define("CopyErrorIssueText", {
+	args: { label: Schema.String, text: Schema.String, isPath: Schema.Boolean },
+	messages: [Message.CompletedCopy],
+	execute: ({ label, text, isPath }) =>
+		Effect.map(writeClipboard(isPath ? `${window.location.origin}${text}` : text), (isOk) =>
+			Message.CompletedCopy({ label, isOk }),
+		),
+})
+
+/** The escalation preview a manual severity raise asks for before it writes. */
+export const EvaluateEscalation = Command.define("EvaluateErrorIssueEscalation", {
+	args: { severity: IssueSeverity },
+	messages: [Message.CompletedEvaluateEscalation],
+	execute: ({ severity }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			const preview = yield* client.errors.evaluateEscalationPolicy({
+				payload: new EscalationPolicyEvaluationRequest({ severity, source: "manual" }),
+			})
+			return { outcome: preview.outcome, destinationIds: preview.destinationIds }
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedEvaluateEscalation({ severity, result })),
+		),
 })

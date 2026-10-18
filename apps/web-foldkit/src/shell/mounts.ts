@@ -1,6 +1,7 @@
-import { Schema, Stream } from "effect"
+import { Effect, Queue, Schema, Stream } from "effect"
 import { Dom, Mount } from "foldkit"
 import { Align, measurePosition, Side } from "../ui/anchor"
+import { applyScrollOverflow } from "../ui/scroll-area"
 import { Menu, Message } from "./message"
 
 /**
@@ -36,4 +37,30 @@ export const PositionMenu = Mount.defineStream("PositionMenu", {
 		}).pipe(Stream.flatMap(measure))
 		return Stream.concat(initial, resized)
 	},
+})
+
+/** The sidebar nav's `ScrollArea` overflow (its bottom fade), kept current on scroll and resize. */
+export const MeasureSidebarOverflow = Mount.defineStream("MeasureSidebarOverflow", {
+	messages: [Message.MeasuredSidebarOverflow],
+	execute: ({ element }) =>
+		Stream.callback<typeof Message.MeasuredSidebarOverflow.Type>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					if (!(element instanceof HTMLElement)) return undefined
+					const measure = () => applyScrollOverflow(element)
+					const observer = new ResizeObserver(measure)
+					observer.observe(element)
+					if (element.firstElementChild !== null) observer.observe(element.firstElementChild)
+					element.addEventListener("scroll", measure, { passive: true })
+					measure()
+					Queue.offerUnsafe(queue, Message.MeasuredSidebarOverflow())
+					return { observer, measure }
+				}),
+				(handles) =>
+					Effect.sync(() => {
+						handles?.observer.disconnect()
+						if (handles !== undefined) element.removeEventListener("scroll", handles.measure)
+					}),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
 })

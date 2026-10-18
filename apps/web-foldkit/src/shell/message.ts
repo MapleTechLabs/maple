@@ -33,6 +33,8 @@ export const Message = defineMessageUnion({
 	ClickedMenuTrigger: { menu: Menu },
 	DismissedMenu: {},
 	MeasuredMenuPopup: { menu: Menu, position: PopupPosition },
+	/** The sidebar nav's overflow was measured (the Mount keeps it current itself). */
+	MeasuredSidebarOverflow: {},
 	PressedMenuKey: { key: Schema.String },
 	HoveredMenuItem: { itemId: Schema.String },
 	ClickedMenuAction: {},

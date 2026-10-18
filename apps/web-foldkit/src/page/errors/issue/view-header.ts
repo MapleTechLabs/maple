@@ -1,4 +1,4 @@
-import type { ErrorIssueDocument, ErrorIssueId } from "@maple/domain/http"
+import type { AnomalyIncidentDocument, ErrorIssueDocument, ErrorIssueId } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
@@ -15,6 +15,9 @@ import { severityBadge } from "../kit/severity"
 import { signalStateChip } from "../kit/state-chip"
 import { DEFAULT_PRESET, headlineOf, type Search, type Tab } from "./derive"
 import { Message } from "./message"
+import { overflowEntries } from "./overflow"
+import * as MenuView from "../../../ui/menu-view"
+import { openAnomalyBadge } from "./view-anomalies"
 import type { Model } from "./model"
 
 // `IssueHeader` (components/errors/issue-header.tsx) over `DetailHeader`, and `IssueTabs`.
@@ -35,10 +38,14 @@ const detailEyebrow = (h: H, segments: ReadonlyArray<string | null>): Html => {
 }
 
 /** The header's left side: eyebrow, the one `<h1>`, severity and status. */
-export const headerTitle = (h: H, issue: ErrorIssueDocument, investigation: V2Investigation | null): Html => {
+export const headerTitle = (
+	h: H,
+	issue: ErrorIssueDocument,
+	investigation: V2Investigation | null,
+	anomalies: ReadonlyArray<AnomalyIncidentDocument> = [],
+): Html => {
 	const headline = headlineOf(issue)
 	const state = resolveSignalState(issue, liveInvestigationSummary(investigation))
-	// TODO(anomalies): `OpenAnomalyBadge` for an open detector incident on this issue.
 	return h.div(
 		[h.Class("min-w-0 space-y-2.5")],
 		[
@@ -56,6 +63,7 @@ export const headerTitle = (h: H, issue: ErrorIssueDocument, investigation: V2In
 							id: state.kind === "investigation" ? state.investigationId : "",
 						}),
 					}),
+					...openAnomalyBadge(h, anomalies),
 				],
 			),
 		],
@@ -87,30 +95,41 @@ const windowControls = (h: H, model: Model): Html =>
 			}),
 	})
 
-/** `DropdownMenuTrigger` closed. TODO(overflow-menu): copy prompt, fingerprint, link; view rule. */
-const overflowTrigger = (h: H): Html =>
-	button(
-		h,
-		{
-			variant: "outline",
-			size: "icon-sm",
-			slot: "dropdown-menu-trigger",
-			attributes: [
-				h.AriaExpanded(false),
-				h.AriaHasPopup("menu"),
-				h.AriaLabel("More issue actions"),
-				h.Tabindex(0),
-			],
+/** `IssueOverflowMenu`: an outline icon trigger, the menu aligned to its end. */
+const overflowMenu = (h: H, model: Model, issue: ErrorIssueDocument): Html =>
+	h.submodel({
+		slotId: model.overflowMenu.id,
+		model: model.overflowMenu,
+		view: MenuView.view,
+		viewInputs: {
+			entries: overflowEntries(issue),
+			align: "end",
+			toView: ({ trigger, withTrigger }) =>
+				h.span(
+					[h.Class("contents")],
+					withTrigger(
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "icon-sm",
+								slot: "dropdown-menu-trigger",
+								attributes: [h.AriaLabel("More issue actions"), ...trigger],
+							},
+							[icon(h, "DotsVerticalIcon")],
+						),
+					),
+				),
 		},
-		[icon(h, "DotsVerticalIcon")],
-	)
+		toParentMessage: (message) => Message.GotOverflowMenuMessage({ message }),
+	})
 
-/** The header's actions. TODO(start-investigation): Investigate creates one in legacy (a mutation). */
+/** The header's actions: the window, Investigate (or the linked one) and the overflow menu. */
 export const headerActions = (
 	h: H,
 	model: Model,
 	investigation: V2Investigation | null,
-	isLoading = false,
+	issue: ErrorIssueDocument | null,
 ): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2")],
@@ -125,8 +144,16 @@ export const headerActions = (
 						},
 						[icon(h, "PulseIcon"), "Open investigation"],
 					)
-				: button(h, { size: "sm", isDisabled: isLoading }, [icon(h, "PulseIcon"), "Investigate"]),
-			...(isLoading ? [] : [overflowTrigger(h)]),
+				: button(
+						h,
+						{
+							size: "sm",
+							isDisabled: issue === null || model.isStartingInvestigation,
+							attributes: [h.OnClick(Message.ClickedInvestigate())],
+						},
+						[icon(h, "PulseIcon"), "Investigate"],
+					),
+			...(issue === null ? [] : [overflowMenu(h, model, issue)]),
 		],
 	)
 

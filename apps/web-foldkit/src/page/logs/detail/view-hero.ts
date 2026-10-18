@@ -146,7 +146,8 @@ export const heroHeader = (
 	h: H,
 	model: Model,
 	log: LogRecord,
-	close: ReadonlyArray<ChildAttribute>,
+	/** `null`: `showClose={false}` on `/logs/$logId`. */
+	close: ReadonlyArray<ChildAttribute> | null,
 ): Html => {
 	const body = log.body ?? ""
 	const parsed = tryParseJson(body)
@@ -164,17 +165,21 @@ export const heroHeader = (
 						serviceDot(h, { serviceName: log.serviceName, size: "sm" }),
 						copyable(h, model, "hero-service", log.serviceName, [log.serviceName]),
 					]),
-					button(
-						h,
-						{
-							variant: "ghost",
-							size: "icon",
-							className: "ml-auto shrink-0",
-							slot: "sheet-close",
-							attributes: [h.AriaLabel("Close"), h.Tabindex(0), ...close],
-						},
-						[icon(h, "XmarkIcon", { size: 16 })],
-					),
+					...(close === null
+						? []
+						: [
+								button(
+									h,
+									{
+										variant: "ghost",
+										size: "icon",
+										className: "ml-auto shrink-0",
+										slot: "sheet-close",
+										attributes: [h.AriaLabel("Close"), h.Tabindex(0), ...close],
+									},
+									[icon(h, "XmarkIcon", { size: 16 })],
+								),
+							]),
 				],
 			),
 			h.div(

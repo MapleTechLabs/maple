@@ -70,11 +70,11 @@ export const servicePills = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<strin
 				],
 			)
 
-/** `TraceIdBadge` (`CopyableBadge` + id glyph). TODO(copy): the click does not copy yet. */
+/** `TraceIdBadge` (`CopyableBadge` + id glyph); `onCopy` is the page's copy of the id. */
 export const traceIdBadge = <M>(
 	h: HtmlBuilder<M>,
 	traceId: string,
-	options: Readonly<{ size?: "default" | "lg"; className?: string }> = {},
+	options: Readonly<{ size?: "default" | "lg" | "sm"; className?: string; onCopy?: M }> = {},
 ): Html =>
 	h.button(
 		[
@@ -89,6 +89,7 @@ export const traceIdBadge = <M>(
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),
 			h.Type("button"),
+			...(options.onCopy === undefined ? [] : [h.OnClick(options.onCopy)]),
 		],
 		[
 			icon(h, "IdBadgeIcon", { className: "text-muted-foreground" }),

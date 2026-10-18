@@ -1,31 +1,106 @@
-import type { ErrorIncidentDocument, ErrorIssuePullRequestDocument } from "@maple/domain/http"
+import type { ErrorIssueDocument, ErrorIssuePullRequestDocument } from "@maple/domain/http"
+import { AlertRuleId } from "@maple/domain/primitives"
+import { Option, Schema } from "effect"
 import type { V2Investigation } from "@maple/domain/http/v2"
+import { TONE_SOFT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
 import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
+import { iconButton } from "../../../ui/icon-button"
+import { item, itemContent, itemDescription, itemMedia } from "../../../ui/item"
 import { panel, panelHeader } from "../../../ui/panel"
 import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import { sectionHeading } from "../../kit/section-heading"
 
-// `IssuePullRequestsPanel`, `LinkedInvestigationPanel`, `IssueIncidentsTable` and `BodySection`.
-// TODO(attach-dialog): Attach opens `AttachPullRequestDialog` in legacy (picker and link mutation).
-// TODO(pull-request-rows): linked pull requests list as rows; only the empty panel is ported.
-// TODO(incident-rows): incidents render as a table in legacy; only the empty state is ported.
+// `IssuePullRequestsPanel`, the attach nudge, `LinkedInvestigationPanel`, `IssueIncidentsTable`.
 
 type H = HtmlBuilder<Message>
 
-export const pullRequestsPanel = (h: H, pullRequests: ReadonlyArray<ErrorIssuePullRequestDocument>): Html =>
+const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
+
+/** `PULL_REQUEST_STATE_TONE`: open is work under way; merged is done. */
+const PULL_REQUEST_STATE_TONE = {
+	open: IN_FLIGHT_SOFT,
+	merged: TONE_SOFT.done,
+	closed: TONE_SOFT.neutral,
+} satisfies Record<ErrorIssuePullRequestDocument["state"], string>
+
+const SOURCE_HINT = {
+	user: null,
+	agent: "attached by an agent",
+	auto: "found in the pull request description",
+} satisfies Record<ErrorIssuePullRequestDocument["linkSource"], string | null>
+
+const pullRequestRow = (h: H, pr: ErrorIssuePullRequestDocument, isBusy: boolean): Html => {
+	const hint = SOURCE_HINT[pr.linkSource]
+	return item(h, { tag: "li", variant: "flush", size: "lg", className: "group flex-nowrap items-start" }, [
+		itemMedia(h, { variant: "icon", className: "text-muted-foreground" }, [
+			icon(h, "GithubIcon", { className: "size-4" }),
+		]),
+		itemContent(h, [
+			h.div(
+				[h.Class("flex flex-wrap items-center gap-2")],
+				[
+					h.a(
+						[
+							h.Href(pr.url),
+							h.Target("_blank"),
+							h.Rel("noreferrer"),
+							h.Class("truncate text-sm font-medium text-foreground hover:underline"),
+						],
+						[pr.repoFullName, "#", String(pr.number)],
+					),
+					badge(
+						h,
+						{
+							variant: "outline",
+							className: cn("shrink-0 capitalize", PULL_REQUEST_STATE_TONE[pr.state]),
+						},
+						[pr.state],
+					),
+				],
+			),
+			...(pr.title ? [itemDescription(h, [pr.title], "line-clamp-1")] : []),
+			...(hint ? [itemDescription(h, [hint], "text-muted-foreground/80")] : []),
+		]),
+		iconButton(
+			h,
+			{
+				size: "icon",
+				label: `Detach ${pr.repoFullName}#${pr.number}`,
+				className:
+					"size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
+				isDisabled: isBusy,
+				attributes: [h.OnClick(Message.ClickedDetachPullRequest({ id: pr.id }))],
+			},
+			[icon(h, "TrashIcon")],
+		),
+	])
+}
+
+export const pullRequestsPanel = (
+	h: H,
+	pullRequests: ReadonlyArray<ErrorIssuePullRequestDocument>,
+	isBusy: boolean,
+): Html =>
 	panel(h, {}, [
 		panelHeader(h, {
 			title: "Pull requests",
-			action: button(h, { size: "sm", variant: "ghost", className: "h-7 gap-1 px-2 text-xs" }, [
-				icon(h, "PlusIcon"),
-				"Attach",
-			]),
+			action: button(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					className: "h-7 gap-1 px-2 text-xs",
+					isDisabled: isBusy,
+					attributes: [h.OnClick(Message.ClickedAttach())],
+				},
+				[icon(h, "PlusIcon"), "Attach"],
+			),
 		}),
 		pullRequests.length === 0
 			? h.div(
@@ -42,12 +117,7 @@ export const pullRequestsPanel = (h: H, pullRequests: ReadonlyArray<ErrorIssuePu
 				)
 			: h.ul(
 					[h.Class("divide-y")],
-					pullRequests.map((pr) =>
-						h.li(
-							[h.Class("px-4 py-3 text-sm text-foreground")],
-							[`${pr.repoFullName}#${pr.number}`],
-						),
-					),
+					pullRequests.map((pr) => pullRequestRow(h, pr, isBusy)),
 				),
 	])
 
@@ -66,12 +136,17 @@ export const attachNudge = (h: H): Html =>
 				size: "sm",
 				variant: "outline",
 				className: "mt-2 h-auto w-full whitespace-normal py-1.5 text-xs",
+				attributes: [h.OnClick(Message.ClickedAttach())],
 			},
 			["Attach the PR that fixes this"],
 		),
 	])
 
-export const linkedInvestigationPanel = (h: H, investigation: V2Investigation | null): Html =>
+export const linkedInvestigationPanel = (
+	h: H,
+	investigation: V2Investigation | null,
+	isStarting: boolean,
+): Html =>
 	investigation === null
 		? panel(
 				h,
@@ -90,11 +165,16 @@ export const linkedInvestigationPanel = (h: H, investigation: V2Investigation | 
 							),
 						],
 					),
-					// TODO(start-investigation): legacy creates the investigation and opens it.
-					button(h, { size: "sm", variant: "outline" }, [
-						icon(h, "PulseIcon"),
-						"Start investigation",
-					]),
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled: isStarting,
+							attributes: [h.OnClick(Message.ClickedInvestigate())],
+						},
+						[icon(h, "PulseIcon"), "Start investigation"],
+					),
 				],
 			)
 		: panel(
@@ -164,13 +244,35 @@ export const bodySection = (
 		],
 	)
 
-export const incidentsTable = (h: H, incidents: ReadonlyArray<ErrorIncidentDocument>): Html =>
-	incidents.length === 0
-		? empty(h, [
-				emptyHeader(h, [
-					emptyTitle(h, ["No incidents yet"]),
-					emptyDescription(h, ["Incidents open on first-seen or regression events."]),
+const decodeRuleId = Schema.decodeUnknownOption(AlertRuleId)
+
+/** `AlertSourceCard`: an alert-backed issue links back to the rule that feeds it. */
+export const alertSourceCard = (h: H, issue: ErrorIssueDocument): Html => {
+	const sourceRef = issue.sourceRef
+	const ruleId = Option.getOrNull(decodeRuleId(sourceRef?.ruleId))
+	const signalType = typeof sourceRef?.signalType === "string" ? sourceRef.signalType : null
+	const groupKey = typeof sourceRef?.groupKey === "string" ? sourceRef.groupKey : null
+	return panel(h, { className: "shrink-0 gap-2 px-5 py-4" }, [
+		sectionHeading(h, { title: "Alert source" }),
+		h.p(
+			[h.Class("text-sm text-muted-foreground")],
+			[
+				"This issue is fed by alert rule incidents",
+				...(signalType ? [` (${signalType})`] : []),
+				...(groupKey && groupKey !== "__total__" ? [` for group "${groupKey}"`] : []),
+				".",
+			],
+		),
+		...(ruleId === null
+			? []
+			: [
+					h.a(
+						[
+							h.Href(hrefOf(AppRoute.AlertRule({ ruleId, search: {} }))),
+							h.Class("text-sm text-primary underline-offset-4 hover:underline"),
+						],
+						["View alert rule →"],
+					),
 				]),
-				docsLink(h, "errors"),
-			])
-		: h.div([h.Class("text-sm text-muted-foreground")], [`${incidents.length} incidents`])
+	])
+}

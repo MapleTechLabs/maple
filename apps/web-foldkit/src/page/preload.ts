@@ -101,18 +101,48 @@ const isInside = (link: Element, node: EventTarget | null) => node instanceof No
 const intent = (href: string, isImmediate: boolean): LinkIntent => ({ _tag: "Intended", href, isImmediate })
 const end = (href: string): LinkIntent => ({ _tag: "Ended", href })
 
-/** `onMouseEnter`/`onFocus` start a link's timer, `onMouseLeave`/`onBlur` cancel it, `onTouchStart` preloads now. */
-export const linkIntents: Stream.Stream<LinkIntent> = Stream.mergeAll(
+type Position = Readonly<{ x: number; y: number }>
+type PointerSample = Readonly<{ x: number; y: number; href: string | null }>
+
+/**
+ * `onMouseEnter` needs a pointer that moved onto the link: one appearing under a resting pointer
+ * (an overlay unmounting) gets a `mouseover` at the last position, which React's link ignores.
+ */
+export const isPointerEntry = (last: Option.Option<Position>, x: number, y: number): boolean =>
+	!Option.exists(last, (position) => position.x === x && position.y === y)
+
+const pointerEntries: Stream.Stream<LinkIntent> = Stream.mergeAll(
 	[
+		Dom.streamFromEventFilterMap({
+			target: () => document,
+			type: "mousemove",
+			filterMapEvent: (event) => Option.some<PointerSample>({ x: event.clientX, y: event.clientY, href: null }),
+		}),
 		Dom.streamFromEventFilterMap({
 			target: () => document,
 			type: "mouseover",
 			filterMapEvent: (event) =>
 				Option.map(
 					Option.filter(internalLink(event.target), (link) => !isInside(link, event.relatedTarget)),
-					(link) => intent(link.href, false),
+					(link): PointerSample => ({ x: event.clientX, y: event.clientY, href: link.href }),
 				),
 		}),
+	],
+	{ concurrency: "unbounded" },
+).pipe(
+	Stream.mapAccum(
+		() => Option.none<Position>(),
+		(last, sample): readonly [Option.Option<Position>, ReadonlyArray<LinkIntent>] => [
+			Option.some({ x: sample.x, y: sample.y }),
+			sample.href !== null && isPointerEntry(last, sample.x, sample.y) ? [intent(sample.href, false)] : [],
+		],
+	),
+)
+
+/** `onMouseEnter`/`onFocus` start a link's timer, `onMouseLeave`/`onBlur` cancel it, `onTouchStart` preloads now. */
+export const linkIntents: Stream.Stream<LinkIntent> = Stream.mergeAll(
+	[
+		pointerEntries,
 		Dom.streamFromEventFilterMap({
 			target: () => document,
 			type: "mouseout",

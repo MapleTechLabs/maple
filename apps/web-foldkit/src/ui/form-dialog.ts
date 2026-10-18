@@ -17,12 +17,15 @@ export type FormDialogOptions<M> = Readonly<{
 	model: Dialog.Model
 	toParentMessage: (message: Dialog.Message) => M
 	title: string
-	description?: string
+	/** Rich copy (a `<Kbd>` inside) as children. */
+	description?: string | ReadonlyArray<Html | string>
 	onSubmit: M
 	submitLabel: string
 	cancelLabel?: string
 	isPending?: boolean
 	isSubmitDisabled?: boolean
+	/** See `DialogView`'s `isReturningFocus`. */
+	isReturningFocus?: boolean
 	submitVariant?: "default" | "destructive"
 	footerStart?: Html
 	className?: string
@@ -40,6 +43,7 @@ export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>):
 		toParentMessage: options.toParentMessage,
 		viewInputs: {
 			hasTrigger: false,
+			isReturningFocus: options.isReturningFocus,
 			className: options.className,
 			hasDescription: options.description !== undefined,
 			toView: ({ portal }) => portal ?? h.empty,
@@ -48,7 +52,9 @@ export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>):
 					[
 						h.Class(formDialogFormStyles),
 						// Submit is ignored while pending or invalid, as `FormDialog`'s handler.
-						...(isPending || (options.isSubmitDisabled ?? false) ? [] : [h.OnSubmit(options.onSubmit)]),
+						...(isPending || (options.isSubmitDisabled ?? false)
+							? []
+							: [h.OnSubmit(options.onSubmit)]),
 					],
 					[
 						DialogView.dialogHeader(h, "dialog", [
@@ -74,7 +80,11 @@ export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>):
 								: [h.div([h.Class(formDialogFooterStartStyles)], [options.footerStart])]),
 							button(
 								h,
-								{ variant: "outline", isDisabled: isPending, attributes: isPending ? [] : close },
+								{
+									variant: "outline",
+									isDisabled: isPending,
+									attributes: isPending ? [] : close,
+								},
 								[options.cancelLabel ?? "Cancel"],
 							),
 							button(

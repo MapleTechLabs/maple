@@ -1,6 +1,7 @@
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { activeFilterChips } from "../../../ui/filters/active-filter-chips"
+import { isMounted } from "../../../ui/overlay/transition"
 import { refreshButton } from "../../../ui/refresh-button"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -47,6 +48,13 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 					timeZone: inputs.context.timeZone,
 					nowMs: model.nowMs,
 					sparkWindow,
+					picker: model.picker !== null && model.picker.issueId === signal.id ? model.picker : null,
+					// Only a showing menu swaps the row for its trigger: a press alone must keep the row's
+					// DOM (and the focused checkbox in it).
+					rowMenu:
+						model.rowMenuTarget === signal.id && isMounted(model.rowMenu.isOpen, model.rowMenu.animation)
+							? model.rowMenu
+							: null,
 				}),
 			}),
 		],

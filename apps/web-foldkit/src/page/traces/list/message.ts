@@ -3,7 +3,10 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as Dialog from "../../../ui/dialog"
+import { AutocompleteLookup } from "../../kit/autocomplete-lookups"
 import { SignalPresences } from "../../kit/signal-presence"
+import { Message as DetailMessage } from "../detail/message"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { TracesFacets, TracesPage, VirtualRow } from "./model"
 
@@ -66,5 +69,27 @@ export const Message = defineMessageUnion({
 	ClickedWidenRange: {},
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
+	ClickedPeekRow: { index: Schema.Number },
+	ClickedPeekStep: { step: Schema.Literals([1, -1]) },
+	ClickedOpenTrace: {},
+	PressedListKey: { key: Schema.String },
+	GotPeekMessage: { message: DetailMessage },
+	GotPeekDialogMessage: { message: Dialog.Message },
+	ClickedAdvancedFilter: {},
+	GotAdvancedDialogMessage: { message: Dialog.Message },
+	EditedAdvanced: { value: Schema.String, cursor: Schema.Number },
+	FocusedAdvanced: { cursor: Schema.Number },
+	BlurredAdvanced: {},
+	MovedAdvancedCursor: { cursor: Schema.Number },
+	PressedAdvancedKey: { key: Schema.String },
+	ClickedAdvancedSuggestion: { index: Schema.Number },
+	SubmittedAdvanced: {},
+	ClickedClearAdvanced: {},
+	CompletedAdvancedLookup: {
+		key: Schema.String,
+		lookup: AutocompleteLookup,
+		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+	},
+	CompletedPlaceAdvancedCursor: {},
 })
 export type Message = typeof Message.Type

@@ -1,3 +1,4 @@
+import { ErrorIssueId } from "@maple/domain/http"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
 import {
 	getErrorsByType,
@@ -5,13 +6,15 @@ import {
 	getErrorsSpark,
 	getErrorsSummary,
 } from "@maple/web-data/warehouse/errors"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message, RequestMode } from "./message"
+import { HubWrite, runHubWrite } from "./writes"
+import { writeClipboard } from "../../kit/clipboard"
 
 /** The warehouse side's filters: the trend window plus the sidebar's service and environment. */
 export const WarehouseFilters = Schema.Struct({
@@ -202,5 +205,74 @@ export const MountEmptyList = Mount.define("MountErrorsEmptyList", {
 				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyList()))),
 			)
 			return Effect.sync(() => cancelAnimationFrame(handle))
+		}),
+})
+
+/** A row's or the selection's workflow write. */
+export const RunHubWrite = Command.define("RunErrorsHubWrite", {
+	args: { ids: Schema.Array(ErrorIssueId), write: HubWrite, isBulk: Schema.Boolean },
+	messages: [Message.CompletedHubWrite],
+	execute: ({ ids, write, isBulk }) =>
+		runHubWrite(ids, write, (outcome) => Message.CompletedHubWrite({ ids, write, isBulk, outcome })),
+})
+
+/**
+ * The row checkbox's click: Base UI hands the modifier keys to `onCheckedChange`, Foldkit's click
+ * does not, so the list listens (capture) and reports the row and Shift. The click never reaches
+ * the row's link, and a Shift press does not start a text selection.
+ */
+export const MountRowSelect = Mount.defineStream("MountErrorsRowSelect", {
+	messages: [Message.ClickedRowSelect],
+	execute: ({ element }) =>
+		Stream.callback<typeof Message.ClickedRowSelect.Type>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const laneOf = (event: Event) =>
+						event.target instanceof Element ? event.target.closest("[data-row-select]") : null
+					const onClick = (event: Event) => {
+						// A picker trigger inside the row's link opens its popover, never the issue.
+						if (event.target instanceof Element && event.target.closest("[data-picker]") !== null)
+							event.preventDefault()
+						const id = laneOf(event)?.getAttribute("data-row-select")
+						if (!(event instanceof MouseEvent) || id === null || id === undefined) return
+						event.preventDefault()
+						event.stopPropagation()
+						Queue.offerUnsafe(queue, Message.ClickedRowSelect({ id, isShift: event.shiftKey }))
+					}
+					const onMouseDown = (event: Event) => {
+						if (event instanceof MouseEvent && event.shiftKey && laneOf(event) !== null)
+							event.preventDefault()
+					}
+					element.addEventListener("click", onClick, true)
+					element.addEventListener("mousedown", onMouseDown, true)
+					return { onClick, onMouseDown }
+				}),
+				({ onClick, onMouseDown }) =>
+					Effect.sync(() => {
+						element.removeEventListener("click", onClick, true)
+						element.removeEventListener("mousedown", onMouseDown, true)
+					}),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
+})
+
+/** `useCopy({ label })` for a row; `isPath` copies an absolute link on this origin. */
+export const CopyRowText = Command.define("CopyErrorsRowText", {
+	args: { label: Schema.String, text: Schema.String, isPath: Schema.Boolean },
+	messages: [Message.CompletedCopy],
+	execute: ({ label, text, isPath }) =>
+		Effect.map(writeClipboard(isPath ? `${window.location.origin}${text}` : text), (isOk) =>
+			Message.CompletedCopy({ label, isOk }),
+		),
+})
+
+/** "Open in new tab": `window.open(href, "_blank", "noopener,noreferrer")`. */
+export const OpenInNewTab = Command.define("OpenErrorsRowInNewTab", {
+	args: { path: Schema.String },
+	messages: [Message.CompletedOpenInNewTab],
+	execute: ({ path }) =>
+		Effect.sync(() => {
+			window.open(path, "_blank", "noopener,noreferrer")
+			return Message.CompletedOpenInNewTab()
 		}),
 })

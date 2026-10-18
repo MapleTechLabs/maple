@@ -1,3 +1,4 @@
+import * as Select from "../../../../ui/select"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 
@@ -14,6 +15,9 @@ export const Message = defineMessageUnion({
 	ClickedRow: { spanId: Schema.String },
 	DoubleClickedRow: { spanId: Schema.String },
 	ClickedToggleCollapse: { spanId: Schema.String },
+	/** ⌥-click: the whole subtree opens or closes with the span. */
+	AltClickedToggleCollapse: { spanId: Schema.String },
+	GotColorBySelectMessage: { message: Select.Message },
 	HoveredRow: { spanId: Schema.NullOr(Schema.String) },
 	ClickedCollapseOneLevel: {},
 	ClickedExpandOneLevel: {},

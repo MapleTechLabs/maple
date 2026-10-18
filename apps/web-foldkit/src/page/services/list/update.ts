@@ -139,14 +139,14 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			requestKey(org, "getServiceOverview", { data: input }),
 			mode,
 			(overview) => ({ overview }),
-			(key) => FetchOverview({ key, input }),
+			(key) => FetchOverview({ key, input, refresh: mode === "Refresh" }),
 		),
 		keyed(
 			model.sparklines,
 			requestKey(org, "getCustomChartServiceSparklines", { data: input }),
 			mode,
 			(sparklines) => ({ sparklines }),
-			(key) => FetchSparklines({ key, input }),
+			(key) => FetchSparklines({ key, input, refresh: mode === "Refresh" }),
 		),
 		facetsStep(model, context, window, mode),
 		// Reload refreshes the overview, sparklines and facets only (`useRefreshableAtomValue`).

@@ -51,5 +51,7 @@ export const Model = Schema.Struct({
 	waterfall: Schema.NullOr(Waterfall.Model),
 	flow: Schema.NullOr(Schema.Struct({ graph: FlowGraphData, model: TraceFlow.Model })),
 	spanPanel: Schema.NullOr(SpanPanel.Model),
+	/** Inside the list's peek sheet: no span or product events are read (`TracePeekLoaded`). */
+	isPeek: Schema.Boolean,
 })
 export type Model = typeof Model.Type

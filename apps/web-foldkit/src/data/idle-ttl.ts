@@ -5,6 +5,14 @@
 export const IdleTtl = {
 	/** `getSpanHierarchyResultAtom`. */
 	spanHierarchy: 60_000,
+	/** `getTraceSpanEventsResultAtom`. */
+	traceSpanEvents: 60_000,
+	/** `getLogsCountResultAtom`. */
+	logsCount: 60_000,
+	/** `productEventsForTraceResultAtom`. */
+	productEventsForTrace: 60_000,
+	/** `getReplaysForTraceResultAtom`. */
+	replaysForTrace: 60_000,
 	/** `getTracesFacetsResultAtom`. */
 	tracesFacets: 30_000,
 	/** `getServiceOverviewResultAtom`. */

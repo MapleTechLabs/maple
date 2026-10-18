@@ -124,6 +124,10 @@ export type ViewInputs = Readonly<{
 	hasTitle?: boolean
 	/** `bottomStickOnMobile={false}`: the dialog stays centred on narrow screens. */
 	isBottomStickOnMobile?: boolean
+	/** `initialFocus={popupRef}`: focus lands on the popup itself, not its first control. */
+	isPopupFocused?: boolean
+	/** `false`: closing does not hand focus back (legacy's controlled dialog ends on the body). */
+	isReturningFocus?: boolean
 }>
 
 const slotPrefix = (kind: Kind) => kind
@@ -165,7 +169,14 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 					h.Key(`${model.id}-portal`),
 					h.DataAttribute("base-ui-portal", ""),
 					h.Id(`${model.id}-portal`),
-					h.OnMount(MountDialog({ id: model.id, hasTrigger: inputs.hasTrigger ?? true })),
+					h.OnMount(
+						MountDialog({
+							id: model.id,
+							hasTrigger: inputs.hasTrigger ?? true,
+							isPopupFocused: inputs.isPopupFocused ?? false,
+							isReturningFocus: inputs.isReturningFocus ?? true,
+						}),
+					),
 					h.OnKeyDownPreventDefault((key) =>
 						key === "Escape" ? Option.some(Message.PressedEscape()) : Option.none(),
 					),
@@ -289,10 +300,11 @@ export const dialogDescription = <M>(
 	kind: TitledKind,
 	id: string,
 	text: string | ReadonlyArray<Html | string>,
+	className?: string,
 ): Html =>
 	h.p(
 		[
-			h.Class(cn(contentStyles[kind].description)),
+			h.Class(cn(contentStyles[kind].description, className)),
 			h.DataAttribute("slot", `${kind}-description`),
 			h.Id(descriptionId(id)),
 		],
