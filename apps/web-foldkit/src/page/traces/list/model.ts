@@ -5,6 +5,7 @@ import { TimeWindow } from "../../../data/time-range"
 import { TracesSearch } from "../../../route/search"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as Dialog from "../../../ui/dialog"
+import { AdvancedFilter } from "./advanced-model"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import { Model as TraceDetailModel } from "../detail/model"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -95,5 +96,6 @@ export const Model = Schema.Struct({
 	/** The peek sheet and the trace page running inside it while `peek` is in the URL. */
 	peekDialog: Dialog.Model,
 	peek: Schema.NullOr(TraceDetailModel),
+	advanced: AdvancedFilter,
 })
 export type Model = typeof Model.Type

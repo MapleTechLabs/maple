@@ -1,4 +1,5 @@
 import { peekSheet } from "./view-peek"
+import { advancedFilterDialog, suggestionList } from "./view-advanced"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
@@ -23,7 +24,6 @@ import { tracesTable } from "./view-table"
 
 /**
  * `AdvancedFilterDialog`'s trigger.
- * TODO(advanced-filter): the dialog and its where-clause editor (autocomplete) are not ported.
  */
 const advancedFilterButton = (h: HtmlBuilder<Message>, model: Model): Html => {
 	const isActive = (model.search.whereClause ?? "").trim().length > 0
@@ -32,7 +32,10 @@ const advancedFilterButton = (h: HtmlBuilder<Message>, model: Model): Html => {
 		{
 			variant: isActive ? "secondary" : "outline",
 			className: "gap-2",
-			attributes: [h.DataAttribute("shortcut-focus", "search")],
+			attributes: [
+				h.DataAttribute("shortcut-focus", "search"),
+				h.OnClick(Message.ClickedAdvancedFilter()),
+			],
 		},
 		[
 			icon(h, "MagnifierIcon", { className: isActive ? "text-primary" : "text-muted-foreground" }),
@@ -123,6 +126,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			}),
 			tracesTable(h, model, inputs.context.timeZone),
 			peekSheet(h, model, inputs.context.timeZone),
+			advancedFilterDialog(h, model),
+			...suggestionList(h, model),
 		],
 	)
 })

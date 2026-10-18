@@ -22,6 +22,8 @@ import {
 import type { Search } from "./derive"
 import { sidebarHandlers, tableHandlers } from "./handlers"
 import * as Dialog from "../../../ui/dialog"
+import { advancedDialogStep, advancedHandlers, openedAdvanced } from "./advanced"
+import { initAdvanced } from "./advanced-model"
 import { openPeekedTrace, peekDialogStep, peekRow, peekStep, steppedPeek, syncPeek } from "./peek"
 import { Message, type RequestMode } from "./message"
 import type { Model, Pagination, TraceRow } from "./model"
@@ -190,6 +192,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		focusedIndex: null,
 		peekDialog: Dialog.init("traces-peek", "sheet"),
 		peek: null,
+		advanced: initAdvanced(),
 	}
 	const peeked = syncPeek(model, context)
 	return {
@@ -254,7 +257,7 @@ const lift = <A>(
 const settled = (model: Model, context: PageContext): Return => reachEnd(model, context)
 
 /** `useListNavigation` over the rows, and the peek's own keys while it is open. */
-const pressedListKey = (model: Model, key: string): Return => {
+const pressedListKey = (model: Model, key: string, context: PageContext): Return => {
 	const isDown = key === "j" || key === "J" || key === "ArrowDown"
 	const isUp = key === "k" || key === "K" || key === "ArrowUp"
 	if (model.search.peek !== undefined) {
@@ -275,6 +278,7 @@ const pressedListKey = (model: Model, key: string): Return => {
 	}
 	if (key === "Enter" && model.focusedIndex !== null) return peekRow(model, model.focusedIndex)
 	if (key === "Escape") return { model: { ...model, focusedIndex: null } }
+	if (key === "f" || key === "F") return openedAdvanced(model, context)
 	return { model }
 }
 
@@ -350,9 +354,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		...sidebarHandlers(model),
 		...tableHandlers(model),
 		ClickedPeekRow: ({ index }) => peekRow(model, index),
+		ClickedAdvancedFilter: () => openedAdvanced(model, context),
+		GotAdvancedDialogMessage: ({ message: inner }) => advancedDialogStep(model, inner),
+		...advancedHandlers(model),
 		ClickedPeekStep: ({ step }) => steppedPeek(model, step),
 		ClickedOpenTrace: () => openPeekedTrace(model),
-		PressedListKey: ({ key }) => pressedListKey(model, key),
+		PressedListKey: ({ key }) => pressedListKey(model, key, context),
 		GotPeekMessage: ({ message: inner }) => peekStep(model, inner, context),
 		GotPeekDialogMessage: ({ message: inner }) => peekDialogStep(model, inner),
 		GotFilterSectionsMessage: ({ message: inner }) => {

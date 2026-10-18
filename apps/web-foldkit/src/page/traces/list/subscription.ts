@@ -9,7 +9,7 @@ import { allRows } from "./update"
 // `useListNavigation` over the rows and `TracePeekSheet`'s keys (↑/↓/J/K step, Enter opens the
 // page): document keys while no field has focus. The peek's keys work with its sheet open.
 
-const KEYS = new Set(["j", "J", "k", "K", "ArrowDown", "ArrowUp", "Enter", "Escape"])
+const KEYS = new Set(["j", "J", "k", "K", "ArrowDown", "ArrowUp", "Enter", "Escape", "f", "F"])
 
 /** A focused control keeps its own Enter (`keepsEnter`). */
 const keepsEnter = (target: EventTarget | null): boolean => {

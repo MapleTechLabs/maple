@@ -165,6 +165,38 @@ export const tracesPageArea: AreaModule = {
 				await page.getByRole("dialog").getByText("Spans and timing", { exact: false }).waitFor()
 			},
 		}),
+		list("advanced-filter", "the advanced filter dialog", {
+			steps: async (page) => {
+				await firstRowSettled(page)
+				await page.getByRole("button", { name: /Advanced filter/ }).click()
+				await page.getByRole("dialog").getByText("Apply filter").waitFor()
+				await page.mouse.move(2, 2)
+			},
+		}),
+		list("advanced-filter-apply", "a where clause applied", {
+			steps: async (page) => {
+				await firstRowSettled(page)
+				await page.getByRole("button", { name: /Advanced filter/ }).click()
+				await page
+					.getByRole("textbox", { name: "Advanced traces where clause" })
+					.fill('service.name = "storefront"')
+				await page.getByRole("button", { name: "Apply filter" }).click()
+				await page.getByRole("button", { name: "Clear filter" }).first().waitFor()
+				await firstRowSettled(page)
+				await page.mouse.move(2, 2)
+			},
+		}),
+		list("advanced-filter-typed", "a where clause typed, not applied", {
+			steps: async (page) => {
+				await firstRowSettled(page)
+				await page.getByRole("button", { name: /Advanced filter/ }).click()
+				await page
+					.getByRole("textbox", { name: "Advanced traces where clause" })
+					.fill('service.name = "storefront" AND foo')
+				await page.getByRole("dialog").getByText("Apply filter").waitFor()
+				await page.mouse.move(2, 2)
+			},
+		}),
 		list("duration-preset", "the > 1s duration preset", {
 			steps: async (page) => {
 				await page.getByRole("button", { name: "> 1s" }).click()
