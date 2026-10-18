@@ -27,8 +27,8 @@ import {
 } from "./timeseries"
 
 // Port of `QueryBuilderAreaChart` + `Timeseries.Frame` (packages/ui/src/components/charts/area/,
-// plot/timeseries.tsx) for an unstacked chart with a hidden or compact bottom legend.
-// TODO(legend): `legend="right"` and the hoisted header legend are not ported.
+// plot/timeseries.tsx) with a hidden, bottom or right legend.
+// TODO(legend): the hoisted header legend is not ported.
 
 /** The tokens a chart's series and chrome can resolve to; a page reads them with `ResolveThemeColors`. */
 export const AREA_CHART_TOKENS = [
@@ -54,8 +54,8 @@ export interface AreaChartInputs {
 	readonly nowMs: number
 	readonly className?: string
 	readonly showTooltip?: boolean
-	/** `legend="visible"`: the compact strip under the plot; otherwise the legend hoists (nothing here). */
-	readonly legend?: "hidden" | "visible"
+	/** `visible` under the plot, `right` beside it; otherwise the legend hoists (nothing here). */
+	readonly legend?: "hidden" | "visible" | "right"
 	/** `QueryBuilderLineChart`: lines instead of bands. */
 	readonly mark?: "area" | "line"
 	readonly stacked?: boolean
@@ -71,15 +71,30 @@ interface LegendSeries {
 	readonly color: string
 }
 
-/** `QueryBuilderLegend variant="compact" layout="bottom"`: a row per series, click to hide it. */
+type LegendLayout = Readonly<{ isRight: boolean; maxHeight: number | null }>
+
+/** `heightStyle(maxHeight)`: a side legend is capped at the container's height. */
+const maxHeightStyle = (h: HtmlBuilder<Message>, layout: LegendLayout) =>
+	layout.maxHeight === null ? [] : [h.Style({ "max-height": `${layout.maxHeight}px` })]
+
+/** `QueryBuilderLegend variant="compact"`: a row per series, click to hide it. */
 const compactLegend = (
 	h: HtmlBuilder<Message>,
 	series: ReadonlyArray<LegendSeries>,
 	hidden: ReadonlyArray<string>,
+	layout: LegendLayout,
 ): Html => {
 	const keys = series.map((entry) => entry.key)
 	return h.div(
-		[h.Class("h-full overflow-auto text-xs flex flex-wrap gap-x-3 gap-y-0.5 pt-2")],
+		[
+			...maxHeightStyle(h, layout),
+			h.Class(
+				cn(
+					"h-full overflow-auto text-xs",
+					layout.isRight ? "flex flex-col gap-0.5 pl-3" : "flex flex-wrap gap-x-3 gap-y-0.5 pt-2",
+				),
+			),
+		],
 		series.map((entry) =>
 			h.button(
 				[
@@ -113,17 +128,21 @@ const STAT_COLUMNS: ReadonlyArray<{ label: string; field: keyof SeriesStats; cla
 	{ label: "Last", field: "last" },
 ]
 
-/** `QueryBuilderLegend variant="stats" layout="bottom"`: swatch, label and four figures per series. */
+/** `QueryBuilderLegend variant="stats"`: swatch, label and four figures per series. */
 const statsTable = (
 	h: HtmlBuilder<Message>,
 	series: ReadonlyArray<LegendSeries>,
 	stats: SeriesStatsMap,
 	hidden: ReadonlyArray<string>,
 	unit: string | undefined,
+	layout: LegendLayout,
 ): Html => {
 	const keys = series.map((entry) => entry.key)
 	return h.div(
-		[h.Class("@container h-full overflow-auto text-xs pt-2")],
+		[
+			...maxHeightStyle(h, layout),
+			h.Class(cn("@container h-full overflow-auto text-xs", layout.isRight ? "pl-3" : "pt-2")),
+		],
 		[
 			h.table(
 				[h.Class("w-full table-fixed border-collapse")],
@@ -263,7 +282,7 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 		color: colors[definition.chartKey] ?? SERIES_FALLBACK_COLOR,
 	}))
 	const legend = (() => {
-		if (inputs.legend !== "visible" || series.length === 0) return h.empty
+		if ((inputs.legend !== "visible" && inputs.legend !== "right") || series.length === 0) return h.empty
 		// Stats over the closed buckets only, so all-zero series sink to the bottom (`TimeseriesLegend`).
 		const keys = series.map((entry) => entry.key)
 		const normalised = normaliseRows(inputs.data, definitions)
@@ -271,9 +290,13 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 		const first = findFirstPartialIndex(rows, { now: inputs.nowMs })
 		const stats = computeSeriesStats(first <= 0 ? rows : rows.slice(0, first), keys)
 		const sorted = sortZeroSeriesLast(series, stats)
+		const layout: LegendLayout = {
+			isRight: inputs.legend === "right",
+			maxHeight: inputs.legend === "right" && model.containerHeight > 0 ? model.containerHeight : null,
+		}
 		return inputs.seriesStats === true
-			? statsTable(h, sorted, stats, model.hiddenKeys, inputs.unit)
-			: compactLegend(h, sorted, model.hiddenKeys)
+			? statsTable(h, sorted, stats, model.hiddenKeys, inputs.unit, layout)
+			: compactLegend(h, sorted, model.hiddenKeys, layout)
 	})()
 	return h.div(
 		[h.Class(cn("h-full w-full", inputs.className)), h.OnMount(MeasureChartContainer())],
@@ -304,6 +327,7 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 				}),
 				// A hoisting `TimeseriesLegend` renders nothing, but `PlotFrame` still gets an element.
 				legend,
+				legendPlacement: inputs.legend === "right" ? "right" : "bottom",
 				tooltipBody: (portal) =>
 					Option.flatMap(model.tooltip, (tooltip) => tooltipBody(h, tooltip, portal)),
 			}),

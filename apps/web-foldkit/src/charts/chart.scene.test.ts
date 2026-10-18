@@ -53,7 +53,7 @@ const expectPieSpec = (expected: { activeName: string | null; highlighted: strin
 
 const resolveMounts = (mountChartResult: Chart.Message) =>
 	Mount.resolveAll(
-		[MeasureChartContainer, Chart.Message.ResizedChartContainer({ width: CARD_WIDTH })],
+		[MeasureChartContainer, Chart.Message.ResizedChartContainer({ width: CARD_WIDTH, height: 0 })],
 		[MountChart, mountChartResult],
 	)
 

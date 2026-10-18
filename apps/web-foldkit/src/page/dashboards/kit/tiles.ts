@@ -459,7 +459,10 @@ const chartTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): H
 					nowMs: ctx.nowMs,
 					className: "h-full w-full aspect-auto",
 					showTooltip: presentation?.tooltip !== "hidden",
-					legend: presentation?.legend === "visible" ? "visible" : "hidden",
+					legend:
+						presentation?.legend === "visible" || presentation?.legend === "right"
+							? presentation.legend
+							: "hidden",
 					mark: category === "line" ? "line" : "area",
 					stacked: widget.display.stacked === true,
 					curveType: widget.display.curveType === "monotone" ? "monotone" : "linear",
