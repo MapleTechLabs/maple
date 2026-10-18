@@ -1,17 +1,28 @@
-import { PrReviewId } from "@maple/domain/http"
+import { CodeReviewDetail, PrReviewId } from "@maple/domain/http"
 import { Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 import { FrameMessage } from "../kit/frame"
 import { SheetMessage } from "../kit/review-sheet"
-import { context, names, NOW, window } from "../kit/test-fixtures"
+import { context, names, NOW, PAYMENTS, window } from "../kit/test-fixtures"
 import { Message, type Model } from "./model"
 import { init, routeChanged, update } from "./update"
 
 type Search = Parameters<typeof init>[0]["search"]
 
 const REVIEW = Schema.decodeSync(PrReviewId)("00000c02-0000-4000-8000-000000000001")
+const OTHER = Schema.decodeSync(PrReviewId)("00000c02-0000-4000-8000-000000000002")
+
+const review = {
+	id: REVIEW, repositoryId: PAYMENTS, repositoryFullName: "acme-shop/payments", number: 7, title: "Fix", url: "https://github.com/acme-shop/payments/pull/7",
+	authorLogin: null, headSha: "a".repeat(40), status: "completed", skipReason: null, verdict: null, score: null, confidence: null, findings: 0,
+	criticalFindings: 0, commentUrl: null, publishError: null, error: null, model: null, createdAt: NOW, finishedAt: null, mergedAt: null,
+}
+const detailOf = Schema.decodeUnknownSync(CodeReviewDetail)({
+	review, report: null, checkRunUrl: null, reviewUrl: null, inputTokens: null, outputTokens: null, startedAt: null, history: [], findings: [],
+})
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const resolved = Message.GotFrameMessage({
@@ -68,5 +79,15 @@ describe("code review pull requests", () => {
 			),
 		)
 		expect(stale.model.sheet.detail).toEqual(open.sheet.detail)
+	})
+
+	test("opening another review shows its skeleton, then its own error, never the previous review", () => {
+		const open = init({ search: { review: REVIEW } }, context).model
+		const loaded = pageUpdate(open, sheet(SheetMessage.CompletedFetchDetail({ key: open.sheet.detail.key ?? "", result: Result.succeed(detailOf) }))).model
+		expect(AsyncData.isSuccess(loaded.sheet.detail.data)).toBe(true)
+		const moved = routeChanged(loaded, { search: { review: OTHER } }, context).model
+		expect(moved.sheet.detail.data._tag).toBe("Loading")
+		const failed = pageUpdate(moved, sheet(SheetMessage.CompletedFetchDetail({ key: moved.sheet.detail.key ?? "", result: Result.fail(toLoadFailure("boom")) }))).model
+		expect(failed.sheet.detail.data._tag).toBe("Failure")
 	})
 })
