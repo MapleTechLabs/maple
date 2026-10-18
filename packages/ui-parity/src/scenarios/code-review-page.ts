@@ -10,9 +10,6 @@ const DATASET = "code-review"
 /** Held far past any capture, so the screenshot is the loading state. */
 const HELD_MS = 60_000
 
-/** `payments` in the fixture (`repoId(2)`). */
-export const PAYMENTS_REPO = "00000c01-0000-4000-8000-000000000002"
-
 type Options = Readonly<{
 	steps?: (page: Page) => Promise<void>
 	faults?: Scenario["faults"]
@@ -80,6 +77,21 @@ const pullRequests = (id: string, title: string, options: Options) =>
 
 const ci = (id: string, title: string, options: Options) =>
 	codeReviewScenario(`ci-${id}`, `CI: ${title}`, "/code-review/ci", options)
+
+/** `/lab/code-review-repos`: the repository picker over 246 fixture repositories. */
+const reposLab = (id: string, title: string, steps: (page: Page) => Promise<void>): Scenario => ({
+	id: `lab-code-review-repos-${id}`,
+	title: `Lab: code review repositories, ${title}`,
+	path: "/lab/code-review-repos",
+	dataset: "default",
+	viewports: ["desktop"],
+	themes: ["light", "dark"],
+	steps,
+	area: "code-review",
+})
+
+const settings = (id: string, title: string, options: Options) =>
+	codeReviewScenario(`settings-${id}`, `Settings: ${title}`, "/code-review/settings", options)
 
 const issues = (id: string, title: string, options: Options) =>
 	codeReviewScenario(`issues-${id}`, `Issues: ${title}`, "/code-review/issues", options)
@@ -226,6 +238,78 @@ export const codeReviewPageArea: AreaModule = {
 				await page.getByRole("button", { name: "Last 7 days" }).click()
 				await page.getByRole("button", { name: "Last 1 day" }).click()
 			},
+		}),
+		settings("loading", "loading (settings held)", held("integrations.githubGetPrReviewSettings")),
+		settings(
+			"error",
+			"settings failing",
+			failing("integrations.githubGetPrReviewSettings", "Failed to load review settings"),
+		),
+		settings("model", "review model changed (saved)", {
+			steps: async (page) => {
+				await pick(page, "Review model", "Claude Haiku 5.5")
+				await page.getByText("Reviews now run on Claude Haiku 5.5").waitFor()
+			},
+		}),
+		settings("defaults-save", "default rules edited and saved", {
+			steps: async (page) => {
+				await page
+					.getByRole("textbox", { name: "Instructions" })
+					.fill("Flag any query without OrgId.")
+				await page.getByRole("checkbox", { name: "Tests" }).click()
+				await page.getByRole("switch", { name: "Review drafts" }).click()
+				await pick(page, "Inline comments", "Every issue")
+				await page.getByRole("spinbutton", { name: "Reviews per pull request" }).fill("3")
+				await page.getByRole("button", { name: "Save" }).click()
+				await page.getByText("Default review rules saved").waitFor()
+			},
+		}),
+		settings("defaults-reset", "default rules edited, then reset", {
+			steps: async (page) => {
+				await page.getByRole("textbox", { name: "Ignored paths" }).fill("vendor/")
+				await page.getByRole("button", { name: "Reset" }).click()
+			},
+		}),
+		settings("defaults-invalid", "default rules with a bad limit", {
+			steps: (page) =>
+				page.getByRole("spinbutton", { name: "Daily limit per repository" }).fill("9000"),
+		}),
+		settings("repo-toggle", "reviews turned on for a repository", {
+			steps: async (page) => {
+				await page.getByRole("switch", { name: "Review pull requests on acme-shop/infra" }).click()
+				await page.getByText("Maple will review pull requests on acme-shop/infra").waitFor()
+			},
+		}),
+		settings("repo-rules-save", "a repository's rules edited and saved", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Configure" }).nth(1).click()
+				const dialog = page.getByRole("dialog")
+				await dialog.getByRole("spinbutton", { name: "Daily limit per repository" }).fill("12")
+				await pick(page, "Draft pull requests", "Review drafts")
+				await dialog.getByRole("switch", { name: "Use the organization's" }).click()
+				await page.getByRole("dialog").getByRole("button", { name: "Save" }).click()
+				await page.getByText("Rules saved for acme-shop/shop").waitFor()
+			},
+		}),
+		settings("repo-rules-escape", "a repository's rules dialog dismissed", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Configure" }).first().click()
+				await page.getByRole("dialog").getByText("Repository rules").waitFor()
+				await page.keyboard.press("Escape")
+			},
+		}),
+		reposLab("search", "searched", (page) =>
+			page.getByRole("textbox", { name: "Search repositories" }).fill("sdk"),
+		),
+		reposLab("reviewed", "reviewed only", (page) =>
+			page
+				.getByRole("group", { name: "Review status" })
+				.getByRole("button", { name: /^Reviewed/ })
+				.click(),
+		),
+		reposLab("no-match", "a search with no match, then everything shown", async (page) => {
+			await page.getByRole("textbox", { name: "Search repositories" }).fill("nothing-matches")
+			await page.getByRole("button", { name: "Show all repositories" }).click()
 		}),
 		issues("loading", "loading (findings held)", held("codeReview.listFindings")),
 		issues("error", "findings failing", failing("codeReview.listFindings", "Failed to load issues")),

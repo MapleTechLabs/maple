@@ -265,6 +265,12 @@ const prReviewConfig: EndpointHandler = (request) =>
 				: {},
 	})
 
+/** Writes are logged and answered; nothing is stored, so a refetch reads the canned rows again. */
+const setPrReview: EndpointHandler = (request) =>
+	Effect.succeed({
+		enabled: Predicate.hasProperty(request.payload, "enabled") && request.payload.enabled === true,
+	})
+
 const githubStatus: EndpointHandler = () =>
 	Effect.succeed({
 		connected: true,
@@ -297,6 +303,9 @@ export const fixtureArea: FixtureArea = {
 		"codeReview.getReview": getReview,
 		"integrations.githubGetPrReviewSettings": prReviewSettings,
 		"integrations.githubGetPrReviewConfig": prReviewConfig,
+		"integrations.githubSetPrReviewSettings": prReviewSettings,
+		"integrations.githubSetPrReview": setPrReview,
+		"integrations.githubSetPrReviewConfig": prReviewConfig,
 		...codeReviewCiEndpoints(warehouse),
 	}),
 	datasets: [codeReviewDataset],
