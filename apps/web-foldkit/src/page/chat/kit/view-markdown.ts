@@ -16,7 +16,7 @@ import { chartSkeleton } from "../../../ui/chart-skeleton"
 import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { ViewOverrides } from "../../kit/message-response"
-import { hbarChart } from "../../../charts/hbar-chart"
+import * as HbarChart from "../../../charts/hbar-chart"
 import { type CodeHost, codeBlock, mermaidBlock } from "./view-code"
 
 // The chat's own markdown elements over Streamdown's (apps/web components/ai-elements/
@@ -146,7 +146,17 @@ const timeseriesRows = (spec: Extract<ChartSpec, { readonly data: ReadonlyArray<
 const plot = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, id: string, spec: ChartSpec): Html => {
 	const unit = normalizeUnit(spec.unit)
 	if (spec.type === "ranked")
-		return hbarChart(h, { rows: spec.data.map((point) => ({ name: point.name, value: point.value })), height: 160, unit, className: PLOT_HEIGHT })
+		return h.submodel({
+			slotId: `chat-chart:${id}`,
+			model: host.charts[id] ?? ChartModel.init(),
+			view: HbarChart.view,
+			viewInputs: {
+				data: spec.data.map((point) => ({ name: point.name, value: point.value })),
+				unit,
+				className: PLOT_HEIGHT,
+			},
+			toParentMessage: (message) => host.onChart(id, message),
+		})
 	if (!host.isRuntimeReady || host.theme === null)
 		return chartSkeleton(h, spec.type === "bar" ? "bar" : spec.type, PLOT_HEIGHT)
 	// TODO(chat-chart-bar): a `bar` fence draws as an area until the bar chart takes chat rows.

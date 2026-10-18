@@ -4,13 +4,15 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Dialog from "../../../ui/dialog"
 import * as TagEditor from "../kit/tag-editor"
 import * as Menu from "../../../ui/menu"
+import * as Combobox from "../../../ui/combobox"
 import { ListDashboard, Scope } from "./model"
+import { WriteSync } from "../kit/store"
 
 /** A created dashboard: its id to open and its name for the toast. */
 const Created = Schema.Struct({ id: Schema.String, name: Schema.String, isPerses: Schema.Boolean })
 
 /** A write's outcome: the failure is the message `getErrorMessage` would show. */
-const WriteResult = Schema.Result(Schema.Void, Schema.String)
+const WriteResult = Schema.Result(WriteSync, Schema.String)
 
 export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
@@ -39,5 +41,7 @@ export const Message = defineMessageUnion({
 	CompletedDeleteDashboard: { result: WriteResult },
 	GotTagEditorMessage: { message: TagEditor.Message },
 	CompletedSaveTags: { result: WriteResult },
+	GotTagFilterMessage: { message: Combobox.Message },
+	CompletedFocusTagSearch: {},
 })
 export type Message = typeof Message.Type

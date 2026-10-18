@@ -49,10 +49,14 @@ const autoScroll = (scroller: HTMLElement, clientY: number): boolean => {
  * The gesture's window listeners and its per-frame step: each frame auto-scrolls if the pointer
  * is near the edge and reports the pointer with the grid's position, so the tile stays under it.
  */
-const pointerEvents = Stream.callback<PointerMessage>((queue) =>
+export const pointerEvents = (widgetId: string) => Stream.callback<PointerMessage>((queue) =>
 	Effect.acquireRelease(
 		Effect.sync(() => {
-			const grid = document.querySelector<HTMLElement>("[data-dashboard-grid]")
+			// The gesture's own grid: a sectioned board has one per container.
+			const grid =
+				document
+					.querySelector<HTMLElement>(`[data-grid-item="${CSS.escape(widgetId)}"]`)
+					?.closest<HTMLElement>("[data-dashboard-grid]") ?? null
 			const scroller = grid === null ? null : nearestScroller(grid)
 			const pointer = { x: 0, y: 0, frame: 0 }
 			const step = () => {
@@ -125,10 +129,10 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		),
 		/** `useGridInteraction`'s window listeners, attached for the life of a pointer gesture. */
 		gesturePointer: entry(
-			{ isActive: Schema.Boolean },
+			{ widgetId: Schema.NullOr(Schema.String) },
 			{
-				modelToDependencies: ({ model }) => ({ isActive: model.gesture !== null }),
-				dependenciesToStream: ({ isActive }) => (isActive ? pointerEvents : Stream.empty),
+				modelToDependencies: ({ model }) => ({ widgetId: model.gesture?.widgetId ?? null }),
+				dependenciesToStream: ({ widgetId }) => (widgetId === null ? Stream.empty : pointerEvents(widgetId)),
 			},
 		),
 		/** `useIntervalRefresh`: paused in edit mode, and a hidden tab skips its ticks. */

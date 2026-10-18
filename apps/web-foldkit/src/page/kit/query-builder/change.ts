@@ -1,5 +1,5 @@
-import { resetQueryForDataSource } from "@maple/query-engine/query-builder"
-import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
+import { resetAggregationForMetricType, resetQueryForDataSource } from "@maple/query-engine/query-builder"
+import { QUERY_BUILDER_DATA_SOURCES, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import type { QueryDraft } from "./draft"
@@ -23,6 +23,14 @@ export const QueryChange = defineMessageUnion({
 	ToggledAddOn: { key: AddOnKey },
 	ToggledHidden: {},
 	SetGroupBy: { groupBy: Schema.Array(Schema.String) },
+	/** `onMetricSelectionChange`: a picked metric, its aggregation reset to one its type has. */
+	SetMetric: {
+		metricName: Schema.String,
+		metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES),
+		isMonotonic: Schema.Boolean,
+	},
+	/** `MetricsBody`'s "by" combobox: one breakdown field, or `__none__` for no breakdown. */
+	SetMetricBreakdown: { value: Schema.String },
 })
 export type QueryChange = typeof QueryChange.Type
 
@@ -52,4 +60,19 @@ export const applyQueryChange = (query: QueryDraft, change: QueryChange): QueryD
 		ToggledAddOn: ({ key }) => ({ ...query, addOns: { ...query.addOns, [key]: !query.addOns[key] } }),
 		ToggledHidden: () => ({ ...query, hidden: !query.hidden }),
 		SetGroupBy: ({ groupBy }) => ({ ...query, groupBy: [...groupBy] }),
+		SetMetric: ({ metricName, metricType, isMonotonic }) =>
+			query.dataSource !== "metrics"
+				? query
+				: {
+						...query,
+						metricName,
+						metricType,
+						isMonotonic,
+						aggregation: resetAggregationForMetricType(query.aggregation, metricType, isMonotonic),
+					},
+		SetMetricBreakdown: ({ value }) => ({
+			...query,
+			groupBy: value === "__none__" ? [] : [value],
+			addOns: { ...query.addOns, groupBy: value !== "__none__" },
+		}),
 	})

@@ -13,7 +13,8 @@ import * as QueryPanel from "../../kit/query-builder/panel"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
-import { init, previewWidgetOf } from "./update"
+import { init, isDirty, previewWidgetOf } from "./update"
+import * as Tabs from "../../../ui/tabs"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -169,6 +170,15 @@ describe("widget lowering", () => {
 		expect(display.markdown).toEqual({ content: "## Runbook" })
 		expect(display.stacked).toBeUndefined()
 		expect(validationErrorOf(note)).toBeNull()
+	})
+
+	test("the Raw SQL tab is an unsaved change; Apply writes the SQL only once it scopes to the org", () => {
+		const sqlTab = pageUpdate(opened().model, Message.GotSourceTabsMessage({ message: Tabs.Message.ClickedTab({ index: 1 }) })).model
+		expect(isDirty(sqlTab)).toBe(true)
+		expect(previewWidgetOf(sqlTab)?.dataSource).toMatchObject({ kind: "raw_sql" })
+		const unscoped = pageUpdate(sqlTab, Message.ChangedSql({ value: "SELECT 1 AS value" })).model
+		expect(names(pageUpdate(unscoped, Message.ClickedApply()).commands)).toEqual([])
+		expect(names(pageUpdate(sqlTab, Message.ClickedApply()).commands)).toEqual([SaveWidget.name])
 	})
 
 	test("the spans select rewrites root_only in the where clause", () => {

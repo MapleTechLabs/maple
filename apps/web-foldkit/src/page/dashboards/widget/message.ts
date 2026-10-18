@@ -1,4 +1,4 @@
-import { DashboardDocument } from "@maple/domain/http"
+import { DashboardDocument, HEATMAP_SCALE_TYPES } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../charts/chart"
@@ -12,6 +12,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { AutocompleteLookup } from "../../kit/autocomplete-lookups"
 import { WidgetFailure } from "../kit/widget-data"
 import { LegendPosition, PointsMode } from "./editor-state"
+import { MetricOptionSchema } from "./metric-option"
 
 export const FormulaTextField = Schema.Literals(["expression", "legend"])
 export type FormulaTextField = typeof FormulaTextField.Type
@@ -25,6 +26,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	GotChartMessage: { message: Chart.Message },
+	GotSparklineChartMessage: { message: Chart.Message },
 	ClickedSortColumn: { field: Schema.String, isText: Schema.Boolean },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	CompletedSaveTimeRange: { error: Schema.NullOr(Schema.String) },
@@ -43,6 +45,12 @@ export const Message = defineMessageUnion({
 	ChangedFormulaText: { formulaId: Schema.String, field: FormulaTextField, value: Schema.String },
 	ClickedRemoveFormula: { formulaId: Schema.String },
 	ClickedRunPreview: {},
+	ChangedSql: { value: Schema.String },
+	ChangedSqlBucket: { value: Schema.String },
+	ClickedSqlToken: { token: Schema.String },
+	CompletedInsertSqlToken: { sql: Schema.String, caret: Schema.Number },
+	CompletedFocusSql: {},
+	ToggledSqlCollapsed: {},
 	ChangedTitle: { value: Schema.String },
 	ChangedMarkdown: { value: Schema.String },
 	ChangedDescription: { value: Schema.String },
@@ -59,12 +67,21 @@ export const Message = defineMessageUnion({
 	ClickedRemoveThreshold: { index: Schema.Number },
 	ToggledPercentChange: {},
 	ChangedUnit: { unit: Schema.String },
+	ToggledSparkline: {},
+	ChangedGaugeBound: { bound: Schema.Literals(["min", "max"]), value: Schema.String },
+	ChangedTableLimit: { value: Schema.String },
+	ChangedHeatmapScaleType: { scaleType: Schema.Literals(HEATMAP_SCALE_TYPES) },
 	ClickedApply: {},
 	CompletedSave: { error: Schema.NullOr(Schema.String) },
 	ClickedCancel: {},
 	GotLeaveDialogMessage: { message: Dialog.Message },
 	ClickedDiscard: {},
 	FocusedQueryEditor: {},
+	CompletedFetchMetricOptions: {
+		search: Schema.String,
+		result: Schema.Result(Schema.Array(MetricOptionSchema), LoadFailure),
+	},
+	CompletedFetchMetricKeys: { metric: Schema.String, result: Schema.Result(Schema.Array(Schema.String), LoadFailure) },
 	CompletedFetchAutocomplete: {
 		key: Schema.String,
 		lookup: AutocompleteLookup,

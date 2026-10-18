@@ -10,10 +10,11 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
+import { variableSelects } from "./view-variables"
+import type { PageContext } from "../../contract"
 
 // `DashboardToolbar` (dashboard-builder/toolbar/dashboard-toolbar.tsx) and `RefreshControls`
 // (components/time-range-picker/refresh-controls.tsx).
-// TODO(variables): `VariableSelects` renders its empty strip only; boards with variables lack it.
 
 type H = HtmlBuilder<Message>
 
@@ -111,27 +112,6 @@ const moreMenu = (h: H, model: Model): Html =>
 		toParentMessage: (message) => Message.GotMoreMenuMessage({ message }),
 	})
 
-/**
- * `VariableSelects` in edit mode on a board without variables: the "+ Variable" chip.
- * TODO(variables): it opens `VariablesManagerDialog`, which is not ported; the chip is inert.
- */
-const variableManageChip = (h: H): Html =>
-	h.div(
-		[h.Class("flex items-center gap-1.5")],
-		[
-			button(
-				h,
-				{
-					variant: "ghost",
-					size: "sm",
-					className: "text-muted-foreground",
-					attributes: [h.AriaLabel("Add dashboard variable")],
-				},
-				[icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Variable"],
-			),
-		],
-	)
-
 const timeLabel = (model: Model): string =>
 	model.timeRange === null
 		? ""
@@ -139,15 +119,16 @@ const timeLabel = (model: Model): string =>
 			? presetLabel(model.timeRange.value)
 			: `${model.timeRange.startTime} - ${model.timeRange.endTime}`
 
-export const toolbar = (h: H, model: Model, timeZone: string): Html => {
+export const toolbar = (h: H, model: Model, context: PageContext): Html => {
+	const timeZone = context.timeZone
 	const isEdit = isEditing(model)
-	const isReadOnly = model.persistenceError !== null
+	const isReadOnly = model.persistenceError !== null || model.history.previewed !== null
 	return h.div(
 		[h.Class("flex flex-wrap items-center justify-end gap-2 @min-[720px]/page:gap-3")],
 		[
 			h.div(
 				[h.Class("flex min-w-0 max-w-full items-center overflow-x-auto")],
-				isEdit && !isReadOnly ? [variableManageChip(h)] : [],
+				variableSelects(h, model, context, isEdit && !isReadOnly),
 			),
 			h.submodel({
 				slotId: "dashboard-time-picker",

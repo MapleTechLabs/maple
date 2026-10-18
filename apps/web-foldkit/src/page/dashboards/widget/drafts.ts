@@ -1,5 +1,6 @@
 import {
 	createQueryDraft,
+	formatFiltersAsWhereClause,
 	formulaLabel,
 	queryLabel,
 	type QueryBuilderMetricType,
@@ -10,6 +11,7 @@ import {
 	toQueryBuilderDataSource,
 	toQueryBuilderMetricType,
 } from "@maple/query-model"
+import { Option, Schema } from "effect"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
 
 // Stored query sets read back into editor drafts, and the predicates over them
@@ -85,7 +87,7 @@ export const hasActiveGroupBy = (query: QueryDraft): boolean =>
 	query.addOns.groupBy && query.groupBy.some((g) => g.trim() !== "" && g.trim().toLowerCase() !== "none")
 
 /** `inferDisplayUnitForQuery`. */
-const inferDisplayUnitForQuery = (query: QueryDraft): string | undefined => {
+export const inferDisplayUnitForQuery = (query: QueryDraft): string | undefined => {
 	if (query.dataSource === "traces") {
 		if (query.aggregation === "error_rate") return "percent"
 		if (["avg_duration", "p50_duration", "p95_duration", "p99_duration"].includes(query.aggregation))
@@ -149,6 +151,65 @@ export const deriveDefaultWidgetTitle = (queries: ReadonlyArray<QueryDraft>): st
 		return `${PRODUCT_EVENTS_AGGREGATION_TITLES.get(query.aggregation) ?? query.aggregation}${bySuffix}`
 	const base = TRACES_AGGREGATION_TITLES.get(query.aggregation) ?? `${query.aggregation} of traces`
 	return `${base}${bySuffix}`
+}
+
+const uniqueName = (taken: ReadonlyArray<string>, base: string): string => {
+	if (!taken.includes(base)) return base
+	const suffix = Array.from({ length: taken.length + 1 }, (_, index) => index + 2).find(
+		(candidate) => !taken.includes(`${base} (${candidate})`),
+	)
+	return `${base} (${suffix ?? taken.length + 2})`
+}
+
+/** `toSeriesFieldOptions`: the visible series a stat can reduce, named as the chart names them. */
+export const toSeriesFieldOptions = (
+	state: Readonly<{ queries: ReadonlyArray<QueryDraft>; formulas: ReadonlyArray<FormulaDraft> }>,
+): ReadonlyArray<string> =>
+	[...state.queries, ...state.formulas]
+		.filter((entry) => !entry.hidden)
+		.map((entry) => entry.legend.trim() || entry.name)
+		.reduce<ReadonlyArray<string>>((options, base) => [...options, uniqueName(options, base)], [])
+
+/** A pre-query-builder widget's route params, the fields `legacyQueryDraft` reads. */
+const LegacyParams = Schema.Struct({
+	source: Schema.optional(Schema.Unknown),
+	metric: Schema.optional(Schema.Unknown),
+	bucketSeconds: Schema.optional(Schema.Unknown),
+	groupBy: Schema.optional(Schema.Unknown),
+	filters: Schema.optional(
+		Schema.Struct({ metricName: Schema.optional(Schema.Unknown), metricType: Schema.optional(Schema.Unknown) }),
+	),
+})
+const decodeLegacyParams = Schema.decodeUnknownOption(LegacyParams)
+const NO_PARAMS: typeof LegacyParams.Type = {}
+
+/** `legacyQueryDraft`: query A read out of a route widget's params (`custom_timeseries` and friends). */
+export const legacyQueryDraft = (raw: Readonly<Record<string, unknown>>): QueryDraft => {
+	const params = Option.getOrElse(decodeLegacyParams(raw), () => NO_PARAMS)
+	const fallback = createQueryDraft(0)
+	const groupBy = Array.isArray(params.groupBy)
+		? params.groupBy.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+		: ["service.name"]
+	const base = {
+		...fallback,
+		whereClause: formatFiltersAsWhereClause({ ...raw }),
+		aggregation: typeof params.metric === "string" ? params.metric : fallback.aggregation,
+		stepInterval: typeof params.bucketSeconds === "number" ? String(params.bucketSeconds) : fallback.stepInterval,
+		addOns: { ...fallback.addOns, groupBy: Array.isArray(params.groupBy) && params.groupBy.length > 0 },
+		groupBy,
+	}
+	if (params.source === "metrics") {
+		const metricName = params.filters?.metricName
+		return {
+			...base,
+			dataSource: "metrics",
+			signalSource: "default",
+			metricName: typeof metricName === "string" ? metricName : "",
+			metricType: toQueryBuilderMetricType(params.filters?.metricType) ?? "gauge",
+			isMonotonic: false,
+		}
+	}
+	return params.source === "logs" ? { ...base, dataSource: "logs" } : { ...base, dataSource: "traces" }
 }
 
 /** `toHiddenSeriesBaseNames`: hidden queries and formulas, by their legend or name. */

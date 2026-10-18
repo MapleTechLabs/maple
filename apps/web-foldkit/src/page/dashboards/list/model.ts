@@ -3,6 +3,7 @@ import { DashboardsSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as TagEditor from "../kit/tag-editor"
 import * as Menu from "../../../ui/menu"
+import * as Combobox from "../../../ui/combobox"
 
 // The dashboards list (apps/web/src/routes/dashboards/index.tsx, dashboard-builder/list/*).
 
@@ -56,6 +57,8 @@ export const Model = Schema.Struct({
 	deleteDialog: Dialog.Model,
 	pendingTags: Schema.NullOr(ListDashboard),
 	tagEditor: TagEditor.Model,
+	/** `TagFilterMenu`: the multi-select tag combobox; its selection is the URL's `tags`. */
+	tagFilter: Combobox.Model,
 	/** `persistenceErrorAtom`: a failed write turns the list read-only with this reason. */
 	persistenceError: Schema.NullOr(Schema.String),
 	isCreating: Schema.Boolean,

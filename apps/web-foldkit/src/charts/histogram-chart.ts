@@ -128,6 +128,7 @@ const histogramTooltipBody = (
 				),
 			),
 		CategoricalBin: (bin) => Option.some(countTooltipBody(h, bin.name, bin.value, color, portal)),
+		HeatmapSlot: () => Option.none(),
 		PieSlice: () => Option.none(),
 		Bucket: () => Option.none(),
 	})

@@ -6,24 +6,27 @@ import { cn } from "@maple/ui/lib/utils"
 import { dataSourceTransform } from "@maple/widgets/dashboard"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as AreaChart from "../../../charts/area-chart"
 import type * as Chart from "../../../charts/chart"
-import { type ChartRuntime, isChartRuntimeReady } from "../../../charts/chart-runtime"
+import type { ChartRuntime } from "../../../charts/chart-runtime"
+import type { VariableValues } from "@maple/query-engine"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
 import { icon } from "../../../ui/icon"
 import { skeletonList } from "../../../ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { chartCategoryOf } from "./chart-registry"
 import type { WidgetDataState } from "./data-state"
 import { renderMarkdown } from "./markdown"
-import { widgetEmptyState, widgetFrame, widgetShell, type FrameOptions } from "./tile-shell"
-import type { ReadyData } from "./widget-data"
+import { widgetEmptyState, widgetFrame, widgetShell } from "./tile-shell"
+import { chartWidgetTile, CHART_WIDGETS } from "./tiles-chart"
+import { frame, titleOf } from "./tiles-frame"
+import { gaugeDial } from "./gauge-view"
+import { statTile, thresholdColor } from "./tiles-stat"
 
-// The tiles: `StatWidget`, `TableWidget`, `ListWidget` and the time-series `ChartWidget`
-// (dashboard-builder/widgets/*). TODO(widget-types): gauge, pie, bar, histogram, heatmap, funnel,
-// paths and markdown tiles render their frame with a "not ported" note.
+export { formatStatValue } from "./tiles-stat"
+
+// The tiles (dashboard-builder/widgets/*): stat, gauge, table, list and note here, every registry
+// chart through `chartWidgetTile` (./tiles-chart.ts).
 
 /** What a tile reads of its widget; a share's redacted widget satisfies it too. */
 export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "display"> &
@@ -55,29 +58,20 @@ export type TileContext<M> = Readonly<{
 	tableSort: TableSort
 	onChart: (message: Chart.Message) => M
 	onSort: (field: string, isText: boolean) => M
+	/** A stat's trend series (`display.sparkline.dataSource`), or `null` when it has none yet. */
+	sparkline?: WidgetDataState | null
+	/** The sparkline's own chart slot. */
+	sparklineChart?: Chart.Model
+	onSparklineChart?: (message: Chart.Message) => M
+	/** The board's resolved variables: titles read `$service` as its value (`interpolateDisplayText`). */
+	variables?: VariableValues
+	/** "Fix with AI" on a decode error, when the surface offers it. */
+	fix?: M | null
+	/** The "Details" popover under a failed tile's message, when the surface renders one. */
+	errorDetails?: ((message: string) => Html) | null
 }>
 
 // VALUES
-
-/** `formatValue` (stat-widget.tsx). */
-export const formatStatValue = (value: unknown, unit?: string, prefix?: string, suffix?: string): string => {
-	if (value === null || value === undefined || typeof value === "object") return EMPTY_VALUE
-	const num = typeof value === "number" ? value : Number(value)
-	if (Number.isNaN(num)) return String(value)
-	return `${prefix ?? ""}${formatValueByUnit(num, unit)}${suffix ?? ""}`
-}
-
-/** `getThresholdColor`: the highest threshold the value reaches. */
-const thresholdColor = (
-	value: unknown,
-	thresholds: ReadonlyArray<{ readonly value: number; readonly color: string }> | undefined,
-): string | undefined => {
-	if (thresholds === undefined || thresholds.length === 0) return undefined
-	if (value === null || value === undefined || typeof value === "object") return undefined
-	const num = typeof value === "number" ? value : Number(value)
-	if (Number.isNaN(num)) return undefined
-	return thresholds.toSorted((a, b) => b.value - a.value).find((threshold) => num >= threshold.value)?.color
-}
 
 /** `formatCellValue`: units format numbers; unitless cells stay raw. */
 export const formatCell = (value: unknown, unit?: string): string => {
@@ -147,69 +141,6 @@ const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
 
 // TILES
 
-const frame = <M>(
-	ctx: TileContext<M>,
-	widget: Widget,
-	overrides: Partial<FrameOptions<M>>,
-): FrameOptions<M> => ({
-	widgetId: widget.id,
-	title:
-		widget.display.title !== undefined && widget.display.title !== "" ? widget.display.title : "Untitled",
-	isEdit: ctx.isEdit,
-	hasGrip: ctx.hasGrip,
-	menu: ctx.menu,
-	isMenuOpen: ctx.isMenuOpen,
-	contentClassName: undefined,
-	state: ctx.state,
-	loadingSkeleton: chartSkeleton(ctx.h, "line"),
-	configure: ctx.configure,
-	...overrides,
-})
-
-/** `StatWidget` without a sparkline. TODO(sparkline): the stat trend line is not ported. */
-const statTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
-	const options = frame(ctx, widget, {
-		contentClassName: "flex-1 min-h-0 flex items-center justify-center p-2 @min-[200px]/widget:p-4",
-		loadingSkeleton: statSkeleton(h),
-	})
-	return widgetFrame(h, options, () => {
-		const data = options.state._tag === "Ready" ? options.state.data : null
-		const value = data === null ? undefined : data._tag === "Value" ? data.value : data.rows
-		const formatted = formatStatValue(
-			value,
-			widget.display.unit,
-			widget.display.prefix,
-			widget.display.suffix,
-		)
-		const color = thresholdColor(value, widget.display.thresholds)
-		return [
-			h.span(
-				[
-					h.Class(
-						"min-w-0 max-w-full truncate text-base font-semibold tabular-nums @min-[150px]/widget:text-2xl @min-[280px]/widget:text-3xl",
-					),
-					...(color === undefined ? [] : [h.Style({ color })]),
-					h.Title(formatted),
-				],
-				[formatted],
-			),
-		]
-	})
-}
-
-/** `ChartSkeleton variant="stat"`. */
-const statSkeleton = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[
-			h.Class("flex h-full w-full flex-col items-center justify-center gap-2"),
-			h.DataAttribute("slot", "chart-skeleton"),
-			h.AriaHidden(true),
-		],
-		[
-			h.div([h.Class("h-8 w-24 animate-pulse rounded-md bg-muted")]),
-			h.div([h.Class("h-3 w-16 animate-pulse rounded-md bg-muted/70")]),
-		],
-	)
 
 const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Column, isText: boolean): Html => {
 	const sort = ctx.tableSort
@@ -418,76 +349,6 @@ const listTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Ht
 	})
 }
 
-const chartRows = (
-	data: ReadyData | null,
-): ReadonlyArray<Readonly<Record<string, string | number | boolean>>> =>
-	data === null || data._tag !== "Rows"
-		? []
-		: data.rows.map((row) =>
-				Object.fromEntries(
-					Object.entries(row).flatMap(([key, value]) =>
-						typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-							? [[key, value] as const]
-							: [],
-					),
-				),
-			)
-
-/** `ChartWidget` for the line and area charts; the legend hoist (`legend="hidden"`) is not ported. */
-const chartTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
-	const category = chartCategoryOf(widget.display.chartId ?? "query-builder-line") ?? "line"
-	const isSupported = category === "line" || category === "area"
-	const options = frame(ctx, widget, {
-		loadingSkeleton: chartSkeleton(h, category === "area" ? "area" : "line"),
-	})
-	return widgetFrame(h, options, () => {
-		const data = options.state._tag === "Ready" ? options.state.data : null
-		const rows = chartRows(data)
-		if (rows.length === 0) return [widgetEmptyState(h)]
-		const theme = ctx.themeColors
-		if (!isSupported || theme === null || !isChartRuntimeReady(ctx.chartRuntime) || ctx.nowMs === null)
-			return [chartSkeleton(h, category === "area" ? "area" : "line")]
-		const presentation = widget.display.chartPresentation
-		return [
-			h.submodel({
-				slotId: `chart-${widget.id}`,
-				model: ctx.chart,
-				view: AreaChart.view,
-				toParentMessage: ctx.onChart,
-				viewInputs: {
-					chartId: widget.id,
-					data: rows,
-					theme,
-					unit: widget.display.unit,
-					timeZone: ctx.timeZone,
-					nowMs: ctx.nowMs,
-					className: "h-full w-full aspect-auto",
-					showTooltip: presentation?.tooltip !== "hidden",
-					legend:
-						presentation?.legend === "visible" || presentation?.legend === "right"
-							? presentation.legend
-							: "hidden",
-					mark: category === "line" ? "line" : "area",
-					stacked: widget.display.stacked === true,
-					curveType: widget.display.curveType === "monotone" ? "monotone" : "linear",
-					...(presentation?.showPoints === undefined
-						? undefined
-						: { showPoints: presentation.showPoints }),
-					seriesStats: presentation?.seriesStats === true,
-				},
-			}),
-		]
-	})
-}
-
-const unsupportedTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html =>
-	widgetFrame(h, frame(ctx, widget, {}), () => [
-		h.div(
-			[h.Class("flex h-full items-center justify-center text-xs text-muted-foreground")],
-			[`${widget.visualization} tiles are not ported yet`],
-		),
-	])
-
 /** `MarkdownWidget`: a static note, no data state; empty reads as a prompt to edit. */
 const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	const content = widget.display.markdown?.content ?? ""
@@ -495,10 +356,7 @@ const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget)
 		h,
 		{
 			widgetId: widget.id,
-			title:
-				widget.display.title !== undefined && widget.display.title !== ""
-					? widget.display.title
-					: "Note",
+			title: titleOf(ctx, widget.display.title, "Note"),
 			isEdit: ctx.isEdit,
 			hasGrip: ctx.hasGrip,
 			menu: ctx.menu,
@@ -516,20 +374,50 @@ const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget)
 	)
 }
 
+/** `GaugeWidget`: the segmented dial; one `glowId` per tile, as `useId` gives. */
+const gaugeTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
+	const options = frame(ctx, widget, {
+		contentClassName: "flex-1 min-h-0 flex items-center justify-center p-1 @min-[200px]/widget:p-2",
+		loadingSkeleton: chartSkeleton(h, "gauge"),
+	})
+	return widgetFrame(h, options, () => {
+		const data = options.state._tag === "Ready" ? options.state.data : null
+		const value = data === null ? undefined : data._tag === "Value" ? data.value : data.rows
+		return [
+			gaugeDial(h, `gauge-${widget.id}`, value, {
+				min: widget.display.gauge?.min,
+				max: widget.display.gauge?.max,
+				unit: widget.display.unit,
+				prefix: widget.display.prefix,
+				suffix: widget.display.suffix,
+				thresholds: widget.display.thresholds,
+			}),
+		]
+	})
+}
+
 /** `visualizationFor(widget.visualization)`. */
 export const widgetTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	switch (widget.visualization) {
 		case "stat":
 			return statTile(h, ctx, widget)
+		case "gauge":
+			return gaugeTile(h, ctx, widget)
 		case "table":
 			return tableTile(h, ctx, widget)
 		case "list":
 			return listTile(h, ctx, widget)
-		case "chart":
-			return chartTile(h, ctx, widget)
 		case "markdown":
 			return markdownTile(h, ctx, widget)
+		case "pie":
+		case "histogram":
+		case "heatmap":
+		case "funnel":
+		case "paths":
+		case "hbar":
+			return chartWidgetTile(h, ctx, widget, CHART_WIDGETS[widget.visualization])
 		default:
-			return unsupportedTile(h, ctx, widget)
+			return chartWidgetTile(h, ctx, widget, CHART_WIDGETS.chart)
 	}
 }
+

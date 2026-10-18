@@ -1,6 +1,11 @@
 import type { Locator, Page } from "playwright"
 import { clickButton, EMPTY, opsScenarios, SEEDED, act } from "./ops-kit.ts"
 import type { AreaModule, Scenario } from "./types.ts"
+import { groupedScenarios } from "./dashboards-sections.ts"
+import { variableScenarios } from "./dashboards-variables.ts"
+import { historyScenarios } from "./dashboards-history.ts"
+import { shareScenarios } from "./dashboards-share.ts"
+import { widgetTypeScenarios } from "./dashboards-widget-types.ts"
 
 /**
  * Dashboards built from the API's templates: stat, table, chart and list widgets, the builder in
@@ -8,6 +13,7 @@ import type { AreaModule, Scenario } from "./types.ts"
  */
 const dashboard = opsScenarios("dashboards", "Dashboards")
 const platform = `/dashboards/${SEEDED.platformDashboard}`
+const gallery = `/dashboards/${SEEDED.widgetsDashboard}`
 
 const clickMenuItem = (name: string | RegExp) => (page: Page) =>
 	page.getByRole("menuitem", { name }).first().click()
@@ -117,6 +123,7 @@ const renameWidget = (name: string) => async (page: Page) => {
 	await page.getByRole("textbox", { name: "Name" }).fill(name)
 }
 
+const openTagFilter = (page: Page) => page.getByRole("combobox", { name: "Tags" }).click()
 const typeTag = (tag: string) => async (page: Page) => {
 	await page.getByRole("textbox", { name: "Add a tag" }).fill(tag)
 	await page.keyboard.press("Enter")
@@ -162,6 +169,22 @@ export const dashboardsArea: AreaModule = {
 		}),
 		dashboard("list-duplicate", "List: Platform overview duplicated", "/dashboards", {
 			steps: act(rowMenu("Platform overview"), clickMenuItem("Duplicate")),
+		}),
+		dashboard("list-tag-filter", "List: the tag filter open", "/dashboards", {
+			steps: act(openTagFilter),
+		}),
+		dashboard("list-tag-filter-picked", "List: filtered by a tag", "/dashboards", {
+			steps: act(openTagFilter, (page) => page.getByRole("option", { name: "checkout" }).click()),
+		}),
+		dashboard("list-tag-filter-search", "List: the tag filter searched", "/dashboards", {
+			steps: act(openTagFilter, (page) => page.getByPlaceholder("Filter tags…").fill("sl")),
+		}),
+		dashboard("list-tag-filter-cleared", "List: a tag picked, then Clear tags", "/dashboards", {
+			steps: act(
+				openTagFilter,
+				(page) => page.getByRole("option", { name: "slo" }).click(),
+				clickButton("Clear tags"),
+			),
 		}),
 		dashboard("list-tags-dialog", "List: tag editor with a typed tag", "/dashboards", {
 			steps: act(rowMenu("Platform overview"), clickMenuItem("Edit tags…"), typeTag("slo")),
@@ -280,6 +303,33 @@ export const dashboardsArea: AreaModule = {
 		dashboard("edit-picker-notes", "Edit mode: the widget picker's Notes tab", platform, {
 			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Notes")),
 		}),
+		...["Horizontal Bars", "Pies", "Histograms", "Heatmaps", "Funnels", "Paths", "Charts", "All"].map((tab) =>
+			dashboard(
+				`edit-picker-${tab.toLowerCase().replace(" ", "-")}`,
+				`Edit mode: the widget picker's ${tab} tab`,
+				platform,
+				{ steps: act(enterEdit, clickButton("Add widget"), pickerTab(tab)) },
+			),
+		),
+		dashboard("widgets", "Widget gallery: every breakdown widget, a gauge and a stat sparkline", gallery, {
+			fullPage: true,
+		}),
+		timed(
+			"widgets-loading",
+			"Widget gallery: widget queries held",
+			gallery,
+			{ delays: { "queryEngine.": HELD_MS } },
+			"held",
+		),
+		dashboard("widgets-edit", "Widget gallery in edit mode", gallery, {
+			steps: act(enterEdit),
+			fullPage: true,
+		}),
+		...groupedScenarios,
+		...variableScenarios,
+		...historyScenarios,
+		...shareScenarios,
+		...widgetTypeScenarios,
 		dashboard("edit-widget-added", "Edit mode: the Total Logs stat added from the picker", platform, {
 			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Stats"), clickButton(/Sum of logs/)),
 			fullPage: true,

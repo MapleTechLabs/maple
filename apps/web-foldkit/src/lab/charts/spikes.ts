@@ -63,6 +63,7 @@ const pieSpikeTooltip = (
 			),
 		NumericBin: () => Option.none(),
 		CategoricalBin: () => Option.none(),
+		HeatmapSlot: () => Option.none(),
 		Bucket: () => Option.none(),
 	})
 
@@ -139,6 +140,7 @@ export const histogramSpikeView = Submodel.defineView<Model, Message, HistogramS
 								countTooltipBody(h, formatInterval(bin.x1, bin.x2), bin.value, color, portal),
 							),
 						CategoricalBin: () => Option.none(),
+						HeatmapSlot: () => Option.none(),
 						PieSlice: () => Option.none(),
 						Bucket: () => Option.none(),
 					}),

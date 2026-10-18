@@ -17,7 +17,7 @@ export type FormDialogOptions<M> = Readonly<{
 	model: Dialog.Model
 	toParentMessage: (message: Dialog.Message) => M
 	title: string
-	description?: string
+	description?: string | ReadonlyArray<Html | string>
 	onSubmit: M
 	submitLabel: string
 	cancelLabel?: string

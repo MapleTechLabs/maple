@@ -111,7 +111,7 @@ describe("dashboard view", () => {
 	})
 
 	test("Edit flips mode=edit in the URL and keeps the view params", () => {
-		const model = routeChanged(ready(), { ...ROUTE, search: { tab: "a" } }).model
+		const model = routeChanged(ready(), { ...ROUTE, search: { tab: "a" } }, context).model
 		expect(pageUpdate(model, Message.ClickedToggleEdit()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
 				url: "/dashboards/dash_platform?mode=edit&tab=a",
@@ -128,7 +128,7 @@ describe("dashboard view", () => {
 	})
 
 	test("deleting a tile writes it away and offers Undo", () => {
-		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model
+		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model
 		const deleted = pageUpdate(
 			editing,
 			Message.GotWidgetMenuMessage({
@@ -142,7 +142,7 @@ describe("dashboard view", () => {
 
 	test("a grip dragged past the threshold writes the tiles that moved, once, on release", () => {
 		const editing = pageUpdate(
-			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model,
+			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,
 			Message.MeasuredGrid({ width: 1200 }),
 		).model
 		const pressed = pageUpdate(
@@ -165,7 +165,7 @@ describe("dashboard view", () => {
 
 	test("a tile picked up with Space moves with the arrows; Escape puts it back without a write", () => {
 		const editing = pageUpdate(
-			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model,
+			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,
 			Message.MeasuredGrid({ width: 1200 }),
 		).model
 		const key = (value: string, isShift = false) =>
@@ -182,7 +182,7 @@ describe("dashboard view", () => {
 
 	test("a picked preset is added and closes the picker; from view mode it also enters edit mode", () => {
 		const pick = Message.ClickedWidgetPreset({ presetId: "stat-total-logs" })
-		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model
+		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model
 		const opened = pageUpdate(editing, Message.ClickedAddWidget()).model
 		expect(opened.pickerDialog.isOpen).toBe(true)
 		const added = pageUpdate(opened, pick)
@@ -199,7 +199,7 @@ describe("dashboard view", () => {
 	})
 
 	test("Tags opens the editor on the board's tags; Save writes what it holds", () => {
-		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model
+		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model
 		const opened = pageUpdate(
 			editing,
 			Message.GotMoreMenuMessage({
@@ -226,7 +226,15 @@ describe("dashboard view", () => {
 				isReplace: true,
 			}),
 		)
-		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model
+		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model
 		expect(names(pageUpdate(editing, pick).commands)).toContain(SaveRefreshInterval.name)
+	})
+
+	test("a write that saved but never synced back says so, and keeps editing on", () => {
+		const behind = pageUpdate(ready(), Message.CompletedWrite({ result: Result.succeed("Behind") }))
+		expect(behind.outMessage?._tag === "RequestedToast" ? behind.outMessage.title : null).toBe(
+			"Saved, but this tab is behind",
+		)
+		expect(behind.model.persistenceError).toBeNull()
 	})
 })

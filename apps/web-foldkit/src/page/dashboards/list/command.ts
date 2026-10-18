@@ -1,6 +1,6 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Clock, Duration, Effect, Option, Result, Schema } from "effect"
-import { Command } from "foldkit"
+import { Command, Dom } from "foldkit"
 import { File as FoldkitFile } from "foldkit/file"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import {
@@ -26,6 +26,14 @@ const decodeStoredSort = Schema.decodeUnknownOption(Schema.fromJsonString(Schema
 export const ReadClock = Command.define("ReadDashboardsListClock", {
 	messages: [Message.CompletedReadClock],
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
+})
+
+/** A picked tag keeps focus in the filter's search, as Base UI's items do. */
+export const FocusTagSearch = Command.define("FocusDashboardsTagSearch", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocusTagSearch],
+	execute: ({ id }) =>
+		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusTagSearch())),
 })
 
 /** `useDashboardPreferences`' first read of both localStorage entries. */

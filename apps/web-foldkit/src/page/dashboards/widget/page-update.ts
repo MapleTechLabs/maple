@@ -1,5 +1,7 @@
 import type { TimeRange } from "@maple/domain/http"
+import { Result } from "effect"
 import { Command } from "foldkit"
+import * as Chart from "../../../charts/chart"
 import * as Keyed from "../../../data/keyed"
 import * as Dialog from "../../../ui/dialog"
 import * as Tabs from "../../../ui/tabs"
@@ -14,7 +16,10 @@ import {
 	setPanelType,
 } from "./edits"
 import type { EditorState } from "./editor-state"
-import { isNote, isTimeseriesPanel, validationErrorOf } from "./lowering"
+import { isNote, isBuilderPanel, validationErrorOf } from "./lowering"
+import { rawSqlErrorOf, reseedForType } from "./raw-sql"
+import { withDefaultMetric } from "./metric-options"
+import { runSqlPreview, sqlStep } from "./sql-step"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -30,6 +35,7 @@ import {
 import {
 	backHref,
 	editedWidget,
+	isSqlSource,
 	editState,
 	leave,
 	navigate,
@@ -61,17 +67,19 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
 }
 
-const tabsStep = (model: Model, message: Tabs.Message): Return => {
+/** The Source tabs: the preview switches to what the picked source runs. */
+const tabsStep = (model: Model, context: PageContext, message: Tabs.Message): Return => {
 	const next = Tabs.update(model.sourceTabs, message)
+	const planned = planPreview(
+		{ ...model, sourceTabs: next.model, sourceMode: next.model.selected === "rawSql" ? "rawSql" : "builder" },
+		context,
+	)
 	return {
-		model: {
-			...model,
-			sourceTabs: next.model,
-			sourceMode: next.model.selected === "rawSql" ? "rawSql" : "builder",
-		},
-		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotSourceTabsMessage({ message: inner }),
-		),
+		...planned,
+		commands: [
+			...Command.mapMessages(next.commands ?? [], (inner) => Message.GotSourceTabsMessage({ message: inner })),
+			...(planned.commands ?? []),
+		],
 	}
 }
 
@@ -91,16 +99,17 @@ const sortStep = (model: Model, field: string, isText: boolean): Return => {
 const apply = (model: Model, context: PageContext): Return => {
 	const widget = widgetOf(model)
 	if (model.isSaving || widget === null || model.state === null) return { model }
-	if (validationErrorOf(model.state) !== null) return { model }
-	// TODO(widget-editor): the panel types this editor cannot configure yet keep Apply a no-op.
-	if (!isNote(model.state) && !isTimeseriesPanel(model.state)) return { model }
+	// TODO(widget-editor): list, funnel and paths cannot be configured yet; Apply stays a no-op.
+	if (!isNote(model.state) && !isBuilderPanel(model.state)) return { model }
+	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
+	if (rawSql === null ? validationErrorOf(model.state) !== null : rawSqlErrorOf(rawSql) !== null) return { model }
 	return {
 		model: { ...model, isSaving: true },
 		commands: [
 			SaveWidget({
 				orgId: context.orgId,
 				dashboardId: model.dashboardId,
-				widget: editedWidget(widget, model.state),
+				widget: editedWidget(widget, model.state, rawSql),
 			}),
 		],
 	}
@@ -117,7 +126,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			widthPx === model.previewWidth
 				? { model }
 				: planPreview({ ...model, previewWidth: widthPx }, context),
-		CompletedFetchWidget: (fetched) => ({ model: acceptFetch(model, fetched.key, fetched) }),
+		// A stat that just got its value asks for its sparkline series next.
+		CompletedFetchWidget: (fetched) => planPreview(acceptFetch(model, fetched.key, fetched), context),
+		GotSparklineChartMessage: ({ message: inner }) => {
+			const next = Chart.update(model.sparklineChart, inner)
+			return {
+				model: { ...model, sparklineChart: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotSparklineChartMessage({ message })),
+			}
+		},
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
@@ -127,7 +144,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedSortColumn: ({ field, isText }) => sortStep(model, field, isText),
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, context, inner),
 		CompletedSaveTimeRange: () => ({ model }),
-		GotSourceTabsMessage: ({ message: inner }) => tabsStep(model, inner),
+		GotSourceTabsMessage: ({ message: inner }) => tabsStep(model, context, inner),
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, context, id, inner),
 		GotQueryPanelMessage: ({ message: inner }) => queryPanelStep(model, context, inner),
 		ClickedAddQuery: () => ({ model, commands: generate("addQuery", "") }),
@@ -156,7 +173,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})),
 		ClickedRemoveFormula: ({ formulaId }) =>
 			edit(model, context, (state) => removeFormula(state, formulaId)),
-		ClickedRunPreview: () => runPreview(model, context),
+		ClickedRunPreview: () => (isSqlSource(model) ? runSqlPreview(model, context) : runPreview(model, context)),
+		ChangedSql: (m) => sqlStep(model, m),
+		ChangedSqlBucket: (m) => sqlStep(model, m),
+		ClickedSqlToken: (m) => sqlStep(model, m),
+		CompletedInsertSqlToken: (m) => sqlStep(model, m),
+		CompletedFocusSql: (m) => sqlStep(model, m),
+		ToggledSqlCollapsed: (m) => sqlStep(model, m),
 		ChangedTitle: ({ value }) => edit(model, context, (state) => ({ ...state, title: value })),
 		ChangedMarkdown: ({ value }) =>
 			edit(model, context, (state) => ({ ...state, markdownContent: value })),
@@ -165,7 +188,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedTimeRangeMode: ({ mode }) => timeRangeModeStep(model, context, mode),
 		ClickedPanelType: ({ panel }) =>
 			isConfigurablePanel(panel)
-				? edit(model, context, (state) => setPanelType(state, panel))
+				? edit(
+						model.state === null || model.rawSql === null
+							? model
+							: { ...model, rawSql: reseedForType(model.rawSql, model.state, setPanelType(model.state, panel)) },
+						context,
+						(state) => setPanelType(state, panel),
+					)
 				: { model },
 		ChangedStacked: ({ isStacked }) =>
 			edit(model, context, (state) => ({ ...state, stacked: isStacked })),
@@ -207,6 +236,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				thresholds: state.thresholds.filter((_, i) => i !== index),
 			})),
 		ChangedUnit: ({ unit }) => edit(model, context, (state) => ({ ...state, unit })),
+		ToggledSparkline: () =>
+			edit(model, context, (state) => ({ ...state, sparklineEnabled: !state.sparklineEnabled })),
+		ChangedGaugeBound: ({ bound, value }) =>
+			edit(model, context, (state) => (bound === "min" ? { ...state, gaugeMin: value } : { ...state, gaugeMax: value })),
+		ChangedTableLimit: ({ value }) => edit(model, context, (state) => ({ ...state, tableLimit: value })),
+		ChangedHeatmapScaleType: ({ scaleType }) =>
+			edit(model, context, (state) => ({ ...state, heatmapScaleType: scaleType })),
 		ToggledPercentChange: () =>
 			edit(model, context, (state) => ({
 				...state,
@@ -244,6 +280,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.isAutocompleteActive
 				? { model }
 				: requestAutocomplete({ ...model, isAutocompleteActive: true }, context),
+		CompletedFetchMetricKeys: ({ metric, result }) =>
+			Result.isSuccess(result)
+				? { model: { ...model, metricKeys: { ...model.metricKeys, [metric]: result.success } } }
+				: { model },
+		CompletedFetchMetricOptions: ({ search, result }) => {
+			if (search !== model.metricSearch || !Result.isSuccess(result)) return { model }
+			const listed = { ...model, metricOptions: { search, options: result.success } }
+			// A metrics query without a metric yet takes the first one listed.
+			return listed.state !== null && listed.state.queries.some((query) => query.dataSource === "metrics" && query.metricName === "")
+				? edit(listed, context, (state) => withDefaultMetric(state, result.success))
+				: { model: listed }
+		},
 		CompletedFetchAutocomplete: ({ key, lookup, result }) => {
 			const slot = model.autocomplete[lookup]
 			return slot === undefined

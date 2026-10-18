@@ -1,9 +1,9 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
+import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
+import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { alert, alertDescription } from "../../../ui/alert"
@@ -13,7 +13,8 @@ import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTi
 import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
 import { skeleton } from "../../../ui/skeleton"
-import type { PageViewInputs } from "../../contract"
+import type { PageContext, PageViewInputs } from "../../contract"
+import { variablesOf } from "./plan"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
@@ -21,8 +22,14 @@ import type { Model } from "./model"
 import { isEditing } from "./update"
 import { dashboardSections } from "./view-grid"
 import * as TagEditor from "../kit/tag-editor"
+import * as VariablesManagerView from "../kit/variables-manager/view"
 import { widgetPicker } from "./picker"
 import { toolbar } from "./view-toolbar"
+import { sectionDialogs } from "./view-sections"
+import { historyPanel, previewBanner } from "./view-history"
+import { shareDialog } from "./view-share"
+import { embedDialog } from "./view-embed"
+import { errorState } from "../../../ui/error-state"
 
 // `DashboardViewPage` (apps/web/src/routes/dashboards/$dashboardId.tsx).
 
@@ -30,7 +37,7 @@ type H = HtmlBuilder<Message>
 
 /** `InlineEditableTitle`: the heading, or its input while renaming. */
 const title = (h: H, model: Model, name: string): Html => {
-	const isReadOnly = model.persistenceError !== null
+	const isReadOnly = model.persistenceError !== null || model.history.previewed !== null
 	if (model.titleDraft !== null && !isReadOnly)
 		return h.form(
 			[h.OnSubmit(Message.SubmittedTitle())],
@@ -209,22 +216,41 @@ const persistenceBanner = (h: H, error: string): Html =>
 		alertDescription(h, [error, ". Dashboard editing is temporarily disabled."], TONE_TEXT.crit),
 	])
 
-const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
+const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => {
+	const timeZone = context.timeZone
 	if (model.status === "Loading") return [viewSkeleton(h)]
 	if (model.status === "Missing" || model.document === null) return [notFound(h, model.dashboardId)]
 	const document = model.document
 	const isBlank = document.widgets.length === 0 && (document.sections?.length ?? 0) === 0
+	const banner = model.persistenceError === null ? [] : [persistenceBanner(h, model.persistenceError)]
+	const previewed = model.history.previewed
+	if (previewed !== null) {
+		const clock = { nowMs: model.nowMs ?? 0, timeZone }
+		// `PreviewedCanvas`: the snapshot through the sectioned canvas, read-only.
+		const snapshot = AsyncData.match(model.history.snapshot, {
+			onIdle: () => viewSkeleton(h),
+			onLoading: () => viewSkeleton(h),
+			onFailure: (failure) => errorState(h, { failure, title: "Couldn't load version snapshot" }),
+			onSuccess: (snap) =>
+				dashboardSections(h, { model: { ...model, document: snap }, timeZone, variables: variablesOf(model, context).values }, snap),
+			onRefreshing: (snap) =>
+				dashboardSections(h, { model: { ...model, document: snap }, timeZone, variables: variablesOf(model, context).values }, snap),
+			onStale: ({ data }) =>
+				dashboardSections(h, { model: { ...model, document: data }, timeZone, variables: variablesOf(model, context).values }, data),
+		})
+		return [...banner, h.div([], [...previewBanner(h, model, previewed, clock), snapshot])]
+	}
 	return [
-		...(model.persistenceError === null ? [] : [persistenceBanner(h, model.persistenceError)]),
+		...banner,
 		isBlank
 			? blankDashboard(h, model.persistenceError !== null)
-			: dashboardSections(h, { model, timeZone }, document),
+			: dashboardSections(h, { model, timeZone, variables: variablesOf(model, context).values }, document),
 	]
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
-		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }))],
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))],
 		[
 			dashboardPage(
 				h,
@@ -232,9 +258,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					? {}
 					: {
 							titleContent: title(h, model, model.document.name),
-							actions: toolbar(h, model, inputs.context.timeZone),
+							actions: toolbar(h, model, inputs.context),
+							...(model.history.isOpen
+								? {
+										rightPanel: historyPanel(h, model, {
+											nowMs: model.nowMs ?? 0,
+											timeZone: inputs.context.timeZone,
+										}),
+									}
+								: undefined),
 						},
-				body(h, model, inputs.context.timeZone),
+				body(h, model, inputs.context),
 			),
 			widgetPicker(h, model),
 			h.submodel({
@@ -244,6 +278,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				viewInputs: { allTags: model.orgTags },
 				toParentMessage: (message) => Message.GotTagEditorMessage({ message }),
 			}),
+			h.submodel({
+				slotId: "dashboard-view-variables-manager",
+				model: model.variablesManager,
+				view: VariablesManagerView.view,
+				viewInputs: { slotId: "dashboard-variables-dialog" },
+				toParentMessage: (message) => Message.GotVariablesManagerMessage({ message }),
+			}),
+			shareDialog(h, model),
+			embedDialog(h, model, inputs.context),
+			...sectionDialogs(h, model),
 		],
 	),
 )

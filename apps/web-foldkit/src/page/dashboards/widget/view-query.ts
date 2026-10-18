@@ -11,8 +11,9 @@ import { textarea } from "../../../ui/textarea"
 import { textInput } from "../../kit/query-builder/parts"
 import { queryPanelView } from "../../kit/query-builder/view"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
-import { isNote, isTimeseriesPanel, validationErrorOf } from "./lowering"
-import { autoIntervalLabel } from "./update"
+import { isNote, isBuilderPanel, validationErrorOf } from "./lowering"
+import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
+import { rawSqlEditor } from "./view-sql"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -41,6 +42,10 @@ const queryPanel = (
 			intervalPlaceholder,
 			hasHeaderActions: true,
 			hasVisibilityToggle: true,
+			metricOptions: model.metricOptions?.options ?? [],
+			metricSearch: model.metricSearch,
+			metricBreakdownKeys:
+				query.dataSource === "metrics" ? (model.metricKeys[`${query.metricName}::${query.metricType}`] ?? []) : [],
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 	})
@@ -172,7 +177,7 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 	const error = validationErrorOf(state)
 	// A note has neither a query nor SQL: its body editor replaces both.
 	const isNoteEditor = isNote(state)
-	if (!isNoteEditor && !isTimeseriesPanel(state))
+	if (!isNoteEditor && !isBuilderPanel(state))
 		return h.div(
 			[h.Class("p-6")],
 			[
@@ -186,16 +191,11 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 	return h.div(
 		[h.Class("p-6 space-y-6"), h.OnFocusEnter(Message.FocusedQueryEditor())],
 		[
-			...(isNoteEditor ? [] : [sourceToggle(h, model)]),
+			...(showsSourceToggle(state) ? [sourceToggle(h, model)] : []),
 			...(isNoteEditor
 				? [markdownEditor(h, state.markdownContent)]
-				: model.sourceMode === "rawSql"
-					? [
-							h.p(
-								[h.Class("text-muted-foreground text-xs")],
-								["The Raw SQL editor is not ported yet."],
-							),
-						]
+				: isSqlSource(model) && model.rawSql !== null
+					? rawSqlEditor(h, model, model.rawSql)
 					: [
 							...(error === null
 								? []

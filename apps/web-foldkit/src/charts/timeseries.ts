@@ -6,6 +6,8 @@ import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
 import {
 	integerTickValues,
 	linearYDomain,
+	logYDomain,
+	logYScale,
 	NICE_TICK_COUNT,
 	niceLinearDomain,
 } from "@maple/ui/components/plot/plot-scales"
@@ -16,6 +18,7 @@ import {
 	type TimeseriesAxisContext,
 	type TimeseriesRow,
 } from "./timeseries-rows"
+import { resolveColor, type ThemeColors } from "./theme-colors"
 
 // The React-free half of `Timeseries` (packages/ui/src/components/plot/timeseries.tsx): row
 // normalisation, series keys and colour tokens, and the shared x and y axes. Copied, as that
@@ -92,6 +95,24 @@ export const seriesColorTokens = (
 	)
 }
 
+/** What a hoisting `TimeseriesLegend` hands the tile header: every series, colour resolved. */
+export const hoistedSeries = (
+	data: ReadonlyArray<Readonly<Record<string, unknown>>>,
+	theme: ThemeColors,
+): ReadonlyArray<{ readonly key: string; readonly label: string; readonly color: string }> => {
+	const { definitions } = seriesDefinitionsOf(data)
+	const tokens = seriesColorTokens(definitions)
+	return definitions.map((definition) => ({
+		key: definition.chartKey,
+		label: definition.rawKey,
+		color: resolveColor(
+			theme,
+			tokens.get(definition.chartKey) ?? SERIES_FALLBACK_COLOR,
+			SERIES_FALLBACK_COLOR,
+		),
+	}))
+}
+
 export const axisContextOf = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	timeZone: string | undefined,
@@ -113,19 +134,24 @@ export interface YAxisOptions {
 	readonly softMax?: number
 	/** Tick labels; defaults to `formatValueByUnit(value, unit)`. */
 	readonly format?: (value: number) => string
+	readonly logScale?: boolean
+	readonly fitYAxisToData?: boolean
+	readonly thresholds?: ReadonlyArray<{ readonly value: number }>
 }
 
-/** `timeseriesYAxis`, linear, without log scale or thresholds. */
+/** `timeseriesYAxis`: the shared y axis, domain included (log axes pin their own floor at 1). */
 export const timeseriesYAxis = (options: YAxisOptions) => {
+	const logScale = options.logScale === true
 	const dataDomain = linearYDomain({
 		rows: options.rows,
 		keys: options.visibleKeys,
 		stacked: options.stacked,
 		softMin: options.softMin,
 		softMax: options.softMax,
-		fitYAxisToData: false,
+		fitYAxisToData: options.fitYAxisToData === true && options.softMin == null && !logScale,
+		thresholds: options.thresholds === undefined ? undefined : [...options.thresholds],
 	})
-	const domain: [number, number] = niceLinearDomain(dataDomain)
+	const domain: [number, number] = logScale ? logYDomain(dataDomain[1]) : niceLinearDomain(dataDomain)
 	const integerOnly =
 		hasOnlyIntegerValues(options.rows, options.visibleKeys) &&
 		options.unit == null &&
@@ -134,14 +160,14 @@ export const timeseriesYAxis = (options: YAxisOptions) => {
 		domain,
 		y: {
 			grid: DASHED_Y_GRID,
-			scale: scaleLinear().domain(domain),
-			nice: NICE_TICK_COUNT,
+			scale: logScale ? logYScale(dataDomain[1]) : scaleLinear().domain(domain),
+			nice: logScale ? false : NICE_TICK_COUNT,
 			axis: {
 				line: false,
 				ticks: {
 					size: 0,
 					padding: 6,
-					values: integerOnly ? integerTickValues(domain) : undefined,
+					values: integerOnly && !logScale ? integerTickValues(domain) : undefined,
 					format: options.format ?? ((value: number) => formatValueByUnit(value, options.unit)),
 				},
 			},

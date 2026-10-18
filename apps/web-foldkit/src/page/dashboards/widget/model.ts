@@ -14,6 +14,8 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 import { EditorState } from "./editor-state"
+import { RawSqlState } from "./raw-sql"
+import { MetricOptionSchema } from "./metric-option"
 
 // The widget editor (apps/web/src/routes/dashboards/$dashboardId_.widgets.$widgetId.tsx and
 // dashboard-builder/config/widget-query-builder-page.tsx).
@@ -37,12 +39,18 @@ export const Model = Schema.Struct({
 	/** `WidgetBuilderPreview`: the queries the preview runs, staged by Run preview. */
 	staged: Schema.NullOr(EditorState),
 	sourceMode: SourceMode,
+	/** The source the widget was opened in: switching tabs is an unsaved change. */
+	initialSourceMode: SourceMode,
+	rawSql: Schema.NullOr(RawSqlState),
 	/** `DashboardTimeRange`: the board's range, which the preview follows. */
 	timeRange: Schema.NullOr(TimeRangeSchema),
 	nowMs: Schema.NullOr(Schema.Number),
 	/** The preview pane's quantized width (`useWidgetMaxDataPoints`); `null` until measured. */
 	previewWidth: Schema.NullOr(Schema.Number),
 	gate: Schema.NullOr(WidgetGate),
+	/** A stat preview's trend series, planned once the stat has its value. */
+	sparkGate: Schema.NullOr(WidgetGate),
+	sparklineChart: Chart.Model,
 	requests: Schema.Record(Schema.String, KeyedSchema(Schema.Unknown, WidgetFailure)),
 	chart: Chart.Model,
 	tableSort: TableSort,
@@ -55,6 +63,13 @@ export const Model = Schema.Struct({
 	/** The query panels' selects, group-by chips and collapsed set. */
 	queryPanels: QueryPanel.Model,
 	/** `AutocompleteValuesProvider lazy`: the lookups start once the query editor takes focus. */
+	/** `listMetricsResultAtom`: the metric picker's page for `metricSearch`, once a query reads metrics. */
+	metricSearch: Schema.String,
+	metricOptions: Schema.NullOr(Schema.Struct({ search: Schema.String, options: Schema.Array(MetricOptionSchema) })),
+	metricRequested: Schema.NullOr(Schema.String),
+	/** `useMetricScopedAutocomplete`: each picked metric's attribute keys (`name::type`), the "by" choices. */
+	metricKeys: Schema.Record(Schema.String, Schema.Array(Schema.String)),
+	metricKeysRequested: Schema.Array(Schema.String),
 	isAutocompleteActive: Schema.Boolean,
 	autocomplete: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), LoadFailure)),
 	isSaving: Schema.Boolean,

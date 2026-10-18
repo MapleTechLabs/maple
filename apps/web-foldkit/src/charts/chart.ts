@@ -40,6 +40,8 @@ export const Model = Schema.Struct({
 	containerHeight: Schema.Number,
 	/** `useSeriesVisibility`: series keys a time-series legend has hidden. */
 	hiddenKeys: Schema.Array(Schema.String),
+	/** A grouped DOM chart's hovered group (a funnel breakdown), beside the hovered row. */
+	activeGroup: Schema.Option(Schema.String),
 })
 export type Model = typeof Model.Type
 
@@ -51,6 +53,7 @@ export const init = (): Model => ({
 	containerWidth: 0,
 	containerHeight: 0,
 	hiddenKeys: [],
+	activeGroup: Option.none(),
 })
 
 // MESSAGE
@@ -68,6 +71,9 @@ export const Message = defineMessageUnion({
 	ClickedLegendItem: { key: Schema.String },
 	/** A hiding legend's row: `keys` are every series, so the last visible one cannot be hidden. */
 	ToggledLegendSeries: { key: Schema.String, keys: Schema.Array(Schema.String) },
+	ChangedActiveGroup: { maybeGroup: Schema.Option(Schema.String) },
+	/** The pointer left a DOM chart: no row and no group is hovered. */
+	LeftChart: {},
 })
 export type Message = typeof Message.Type
 
@@ -106,6 +112,12 @@ export const update = (model: Model, message: Message) =>
 		LeftLegend: () => ({ model: modifyFields(model, { activeKey: () => Option.none() }) }),
 		ClickedLegendItem: ({ key }) => ({
 			model: modifyFields(model, { highlightedKey: (current) => toggled(current, key) }),
+		}),
+		ChangedActiveGroup: ({ maybeGroup }) => ({
+			model: modifyFields(model, { activeGroup: () => maybeGroup }),
+		}),
+		LeftChart: () => ({
+			model: modifyFields(model, { activeKey: () => Option.none(), activeGroup: () => Option.none() }),
 		}),
 		ToggledLegendSeries: ({ key, keys }) => ({
 			model: modifyFields(model, { hiddenKeys: (current) => toggledHidden(current, key, keys) }),

@@ -17,6 +17,7 @@ import { iconButton } from "../../../ui/icon-button"
 import type { SelectOption } from "../../../ui/select-view"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
+import { type MetricOption, metricsBody } from "./metrics-body"
 import { addOnSections, ADD_ON_KEYS, addOnToggles, panelSelect, textInput, whereClauseEditor } from "./parts"
 
 // `QueryPanel` and `QueryPanelShell` (dashboard-builder/config/query-panel.tsx, query-panel-shell.tsx).
@@ -33,6 +34,12 @@ export type QueryPanelInputs = Readonly<{
 	hasHeaderActions: boolean
 	/** The "include in the chart" checkbox (`showVisibilityToggle`). */
 	hasVisibilityToggle: boolean
+	/** `metricSelectionOptions`: the metric list page for a metrics query; none until fetched. */
+	metricOptions?: ReadonlyArray<MetricOption>
+	/** What the metric picker last searched for (`MetricOptionsEmpty`). */
+	metricSearch?: string
+	/** The picked metric's attribute keys, offered as `attr.<key>` breakdowns. */
+	metricBreakdownKeys?: ReadonlyArray<string>
 }>
 
 const SOURCE_LABEL = {
@@ -118,8 +125,16 @@ const SPAN_OPTIONS = [
 	{ value: "root", label: "Root Spans" },
 ]
 
-/** `TracesLogsBody`. TODO(query-builder): metrics share it until `MetricsBody` is ported. */
-const body = (h: H, model: Model, query: QueryDraft, intervalPlaceholder: string): ReadonlyArray<Html> => {
+/** `TracesLogsBody`, or `MetricsBody` for a metrics query. */
+const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html> => {
+	const { query, intervalPlaceholder } = inputs
+	if (query.dataSource === "metrics")
+		return metricsBody(h, model, query, {
+			options: inputs.metricOptions ?? [],
+			searchTerm: inputs.metricSearch ?? "",
+			breakdownKeys: inputs.metricBreakdownKeys ?? [],
+			intervalPlaceholder,
+		})
 	const whereRow = (parts: ReadonlyArray<Html>) =>
 		h.div([h.Class("flex items-start gap-2")], [whereClauseEditor(h, query), ...parts])
 	return [
@@ -171,7 +186,7 @@ const warningList = (h: H, warnings: ReadonlyArray<string>): ReadonlyArray<Html>
 export const queryPanelView = Submodel.defineView<Model, Message, QueryPanelInputs>((model, inputs, h) => {
 	const { query } = inputs
 	const content = () => [
-		...body(h, model, query, inputs.intervalPlaceholder),
+		...body(h, model, inputs),
 		// TODO(query-builder): the product-events setup hint (`SignalEmptyState`).
 		...warningList(h, buildTimeseriesQuerySpec(query).warnings),
 		addOnToggles(h, query, ADD_ON_KEYS),

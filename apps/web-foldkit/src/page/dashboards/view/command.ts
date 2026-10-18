@@ -2,6 +2,7 @@ import {
 	DashboardId,
 	defaultWidgetLayout,
 	DashboardRefreshIntervalSeconds,
+	DashboardVariableSchema,
 	DashboardWidgetSchema,
 	TimeRangeSchema,
 } from "@maple/domain/http"
@@ -19,11 +20,15 @@ import {
 	withLayouts,
 	withoutWidget,
 } from "../kit/layout"
-import { errorMessageOf, mutateDashboard, readDocument } from "../kit/store"
+import { errorMessageOf, mutateDashboard, readDocument, type WriteSync } from "../kit/store"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
+import { fetchVariableOptions } from "../kit/variables"
 import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
+import { ShareMessage } from "./share"
+import { toLoadFailure } from "../../../data/load-failure"
 import { presetById } from "./picker-catalog"
+import { applySectionEdit, SectionEdit } from "./section-edit"
 
 export const ReadClock = Command.define("ReadDashboardClock", {
 	messages: [Message.CompletedReadClock],
@@ -46,18 +51,40 @@ export const FetchWidget = Command.define("FetchDashboardWidget", {
 		),
 })
 
+/** A query variable's option list for the window (`variableOptionsAtomFamily`). */
+export const FetchVariableOptions = Command.define("FetchDashboardVariableOptions", {
+	args: {
+		name: Schema.String,
+		key: Schema.String,
+		variable: DashboardVariableSchema,
+		window: Schema.Struct({ startTime: Schema.String, endTime: Schema.String }),
+	},
+	messages: [Message.CompletedFetchVariableOptions],
+	execute: ({ name, key, variable, window }) =>
+		fetchVariableOptions(variable, window).pipe(
+			Effect.mapError(toWidgetFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchVariableOptions({ name, key, result })),
+		),
+})
+
 const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 
 /** `dashboardSharesAtom`: loaded means every widget menu offers "Embed chart". */
 export const FetchShares = Command.define("FetchDashboardShares", {
 	args: { dashboardId: Schema.String },
-	messages: [Message.CompletedFetchShares],
+	messages: [Message.GotShareMessage],
 	execute: ({ dashboardId }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
-			yield* client.dashboards.listShares({ params: { id } })
-		}).pipe(Effect.ignore, Effect.as(Message.CompletedFetchShares({ dashboardId }))),
+			const shares = yield* client.dashboards.listShares({ params: { id } })
+			return shares.map((share) => ({ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }))
+		}).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ result }) })),
+		),
 })
 
 /** `PageRefreshProvider`: how long Reload shows its pending spinner. */
@@ -68,7 +95,7 @@ export const CompleteReloadSpin = Command.define("CompleteDashboardReloadSpin", 
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
 })
 
-const toWriteMessage = <E, R>(effect: Effect.Effect<void, E, R>) =>
+const toWriteMessage = <E, R>(effect: Effect.Effect<WriteSync, E, R>) =>
 	effect.pipe(
 		Effect.mapError((error) => errorMessageOf(error)),
 		Effect.result,
@@ -408,12 +435,18 @@ const pickedWidget = (pick: { readonly presetId: string | null; readonly chartId
 
 /** `addWidget` from the picker: a new id, the type's default size, the next free slot. */
 export const AddWidget = Command.define("AddDashboardWidget", {
-	args: { ...Target, presetId: Schema.NullOr(Schema.String), chartId: Schema.NullOr(Schema.String) },
+	args: {
+		...Target,
+		presetId: Schema.NullOr(Schema.String),
+		chartId: Schema.NullOr(Schema.String),
+		/** Which grid the widget lands in (a group's own "+"); `null` is the root canvas. */
+		target: Schema.NullOr(Schema.Struct({ sectionId: Schema.String, tabId: Schema.String })),
+	},
 	messages: [Message.CompletedWrite],
-	execute: ({ orgId, dashboardId, presetId, chartId }) =>
+	execute: ({ orgId, dashboardId, presetId, chartId, target }) =>
 		Effect.gen(function* () {
 			const picked = pickedWidget({ presetId, chartId })
-			if (picked === null) return Message.CompletedWrite({ result: Result.succeed(undefined) })
+			if (picked === null) return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
 			const id = generateWidgetId(yield* Clock.currentTimeMillis, yield* Random.next)
 			return yield* toWriteMessage(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
@@ -421,6 +454,7 @@ export const AddWidget = Command.define("AddDashboardWidget", {
 						document,
 						{ id, ...picked, layout: defaultWidgetLayout(picked.visualization) },
 						nowIso,
+						target,
 					),
 				),
 			)
@@ -457,4 +491,42 @@ export const SaveTags = Command.define("SaveDashboardViewTags", {
 				updatedAt: nowIso,
 			})),
 		),
+})
+
+/** `VariablesManagerDialog`'s save: `updateDashboardVariables(id, variables)`. */
+export const SaveVariables = Command.define("SaveDashboardVariables", {
+	args: { ...Target, variables: Schema.Array(DashboardVariableSchema) },
+	messages: [Message.CompletedWrite],
+	execute: ({ orgId, dashboardId, variables }) =>
+		toWriteMessage(
+			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({ ...document, variables, updatedAt: nowIso })),
+		),
+})
+
+/** How many fresh ids an edit mints: a new group and its tab, or a new tab. */
+const idsNeeded = (edit: SectionEdit): number =>
+	edit._tag === "AddSection" ? 2 : edit._tag === "AddTab" ? 1 : 0
+
+/** A group or tab write (`DashboardActionsProvider`'s section actions). */
+export const EditSections = Command.define("EditDashboardSections", {
+	args: { ...Target, edit: SectionEdit },
+	messages: [Message.CompletedWrite],
+	execute: ({ orgId, dashboardId, edit }) =>
+		Effect.gen(function* () {
+			const nowMs = yield* Clock.currentTimeMillis
+			const ids = yield* Effect.forEach(Array.from({ length: idsNeeded(edit) }), () =>
+				Effect.map(Random.next, (random) => generateWidgetId(nowMs, random)),
+			)
+			const queue = { next: 0 }
+			const nextId = () => {
+				const id = ids[queue.next] ?? generateWidgetId(nowMs, 0)
+				queue.next += 1
+				return id
+			}
+			return yield* toWriteMessage(
+				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
+					applySectionEdit(edit, document, nowIso, nextId),
+				),
+			)
+		}),
 })

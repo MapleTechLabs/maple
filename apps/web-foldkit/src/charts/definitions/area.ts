@@ -17,6 +17,7 @@ import {
 } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
+import { thresholdMarks } from "./threshold-marks"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import {
 	axisContextOf,
@@ -112,7 +113,22 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 
 	const first = findFirstPartialIndex(rows, { now: spec.nowMs })
 	const plotRows = first === -1 ? rows : trimEmptyTrailingBuckets(rows, visibleKeys, first)
-	const yAxis = timeseriesYAxis({ rows: plotRows, visibleKeys, unit, stacked: isStacked })
+	const axis = spec.axis
+	const yAxis = timeseriesYAxis({
+		rows: plotRows,
+		visibleKeys,
+		unit,
+		stacked: isStacked,
+		...(axis === undefined
+			? undefined
+			: {
+					logScale: axis.logScale,
+					fitYAxisToData: axis.fitYAxisToData,
+					...(axis.softMin === null ? undefined : { softMin: axis.softMin }),
+					...(axis.softMax === null ? undefined : { softMax: axis.softMax }),
+					thresholds: axis.thresholds,
+				}),
+	})
 	const yDomainFloor = yAxis.domain[0]
 	const bases = isStacked ? stackBases(plotRows, visible) : null
 	const baseOf = (row: TimeseriesRow, key: string) => Math.max(yDomainFloor, bases?.get(row)?.[key] ?? 0)
@@ -192,6 +208,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 	const definition = defineChart({
 		gradients,
 		marks: [
+			...thresholdMarks(axis?.thresholds ?? [], plotRows.at(-1)?.date),
 			...paths,
 			...visible.flatMap((entry) => {
 				const indexes = dotIndexes.get(entry.key)

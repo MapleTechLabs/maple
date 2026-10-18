@@ -1,7 +1,7 @@
 import { AsyncData, Submodel } from "foldkit"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
+import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { button } from "../../../ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
@@ -77,7 +77,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const isFailed = AsyncData.isFailure(model.templates.data)
 	const selected = selectedOf(model)
 	return h.div(
-		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }))],
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))],
 		[
 			dashboardPage(
 				h,

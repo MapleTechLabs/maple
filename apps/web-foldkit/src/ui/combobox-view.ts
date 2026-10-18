@@ -17,7 +17,7 @@ import {
 } from "./combobox"
 import { icon } from "./icon"
 import { portalId } from "./overlay/popup-state"
-import { isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
+import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { inputControlClassName } from "./input"
 import { scrollArea } from "./scroll-area"
 
@@ -57,6 +57,8 @@ export const inputAttributes = <M>(
 		/** An inline list (the command palette) has no popup side. */
 		isInline?: boolean
 		isUnfiltered?: boolean
+		/** Opening highlights the selected item, as a single Base UI combobox with a value does. */
+		highlightsSelected?: boolean
 	}>,
 	toMessage: (message: Message) => M,
 ): ReadonlyArray<Attribute<M>> => {
@@ -85,7 +87,11 @@ export const inputAttributes = <M>(
 		h.Spellcheck(false),
 		h.Value(model.inputValue),
 		h.OnInput((value) => toMessage(Message.ChangedInput({ value }))),
-		h.OnClick(toMessage(Message.ClickedInput())),
+		h.OnClick(
+			toMessage(
+				options.highlightsSelected === true ? Message.ClickedInputOf({ items: options.items, selected: model.selected[0] ?? null }) : Message.ClickedInput(),
+			),
+		),
 		h.OnKeyDownPreventDefault((key) =>
 			INPUT_KEYS.has(key) && !(options.isInline === true && key === "Escape")
 				? Option.some(
@@ -137,12 +143,13 @@ const comboboxItem = (
 	value: string,
 	index: number,
 	renderItem?: (value: string) => ReadonlyArray<Html | string>,
+	className?: string,
 ): Html => {
 	const isSelected = model.selected.includes(value)
 	return h.div(
 		[
 			h.AriaSelected(isSelected),
-			h.Class(cn(C.comboboxItemStyles)),
+			h.Class(cn(C.comboboxItemStyles, className)),
 			...(model.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
 			...(isSelected ? [h.DataAttribute("selected", "")] : []),
 			h.DataAttribute("slot", "combobox-item"),
@@ -210,6 +217,11 @@ export type PopupOptions = Readonly<{
 	/** A `<ComboboxItem>`'s children when they are more than its value. */
 	renderItem?: (value: string) => ReadonlyArray<Html | string>
 	isUnfiltered?: boolean
+	/** `<ComboboxContent>` under a `<ComboboxTrigger>`: a dialog popup with its search input on top. */
+	trigger?: Readonly<{ returnFocusId: string; header: Html; footer?: ReadonlyArray<Html>; sideOffset?: number }>
+	/** `<ComboboxItem className>`. */
+	itemClassName?: (value: string) => string | undefined
+	listClassName?: string
 }>
 
 /** `ComboboxPopup` / `AutocompletePopup` with `Empty` and `List` (in a ScrollArea) inside. */
@@ -229,6 +241,8 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 					slot: options.slot,
 					anchorSelector: options.anchorSelector,
 					positionSelector: options.positionSelector,
+					returnFocusId: options.trigger?.returnFocusId,
+					sideOffset: options.trigger?.sideOffset,
 				}),
 			),
 		],
@@ -244,6 +258,7 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 					h.span(
 						[h.Class(cn(styles.frame, options.className))],
 						[
+							...(options.trigger === undefined ? [] : [focusGuard(h, "inside")]),
 							h.div(
 								[
 									h.Class(styles.popup),
@@ -253,10 +268,11 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 									h.DataAttribute("side", model.side),
 									h.DataAttribute("slot", `${options.slot}-popup`),
 									h.Id(`${model.id}-popup`),
-									h.Role("presentation"),
+									h.Role(options.trigger === undefined ? "presentation" : "dialog"),
 									h.Tabindex(-1),
 								],
 								[
+									...(options.trigger === undefined ? [] : [options.trigger.header]),
 									h.div(
 										[
 											h.AriaAtomic(true),
@@ -280,7 +296,10 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 													...(model.mode === "multiple"
 														? [h.AriaMultiSelectable(true)]
 														: []),
-													h.Class(styles.list),
+													...(options.trigger !== undefined && model.highlighted !== null
+														? [h.AriaActiveDescendant(itemId(model.id, model.highlighted))]
+														: []),
+													h.Class(cn(styles.list, options.listClassName)),
 													h.DataAttribute("slot", `${options.slot}-list`),
 													h.Id(listId(model.id)),
 													h.Role("listbox"),
@@ -294,17 +313,20 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 																value,
 																index,
 																options.renderItem,
+																options.itemClassName?.(value),
 															)
 														: autocompleteItem(h, model, value, index),
 												),
 											),
 										],
 									),
+									...(options.trigger?.footer ?? []),
 								],
 							),
+							...(options.trigger === undefined ? [] : [focusGuard(h, "inside")]),
 						],
 					),
-					dismissButton(h),
+					...(options.trigger === undefined ? [dismissButton(h)] : []),
 				],
 			),
 		],
@@ -427,6 +449,8 @@ export type SingleViewInputs = Readonly<{
 	 * list keeps every item, and reports Empty as soon as something is typed.
 	 */
 	isUnfiltered?: boolean
+	/** Opening highlights the selected item (Base UI's single combobox with a value). */
+	highlightsSelected?: boolean
 	/**
 	 * Place the popup under the input instead of the input group. Measured on the service map's
 	 * toolbar combobox, whose Base UI positioner resolves no input group and falls back to the input.
@@ -438,11 +462,20 @@ export type SingleViewInputs = Readonly<{
 	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html
 }>
 
-/** `<Combobox>` with `<ComboboxInput startAddon>`: input group, chevron trigger and its popup. */
-export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model, inputs, h) => {
+export type InputFieldOptions = Pick<
+	SingleViewInputs,
+	"items" | "ariaLabel" | "placeholder" | "startAddon" | "size" | "showTrigger" | "isUnfiltered" | "className" | "highlightsSelected"
+> &
+	Readonly<{
+		/** Inside a trigger's popup the input carries no dismiss button of its own. */
+		hasDismiss?: boolean
+	}>
+
+/** `<ComboboxInput startAddon>`: the input group, also the search field atop a trigger's popup. */
+export const inputField = (h: H, model: Model, inputs: InputFieldOptions): Html => {
 	const hasAddon = inputs.startAddon !== undefined
 	const size = inputs.size ?? "default"
-	const field = h.div(
+	return h.div(
 		[
 			h.Key("input-group"),
 			h.Class(C.comboboxInputGroupStyles),
@@ -463,7 +496,7 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 						),
 					]),
 			// `ComboboxInput` renders its dismiss button before itself while open (`focusManagerModal`).
-			...(model.isOpen ? [dismissButton(h)] : []),
+			...(model.isOpen && inputs.hasDismiss !== false ? [dismissButton(h)] : []),
 			h.span(
 				[
 					h.Class(
@@ -489,6 +522,7 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 								placeholder: inputs.placeholder,
 								items: inputs.items,
 								isUnfiltered: inputs.isUnfiltered,
+								highlightsSelected: inputs.highlightsSelected,
 							},
 							(message) => message,
 						),
@@ -498,8 +532,12 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 			...(inputs.showTrigger === false ? [] : [triggerButton(h, model, size)]),
 		],
 	)
-	return inputs.toView({
-		field,
+}
+
+/** `<Combobox>` with `<ComboboxInput startAddon>`: input group, chevron trigger and its popup. */
+export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model, inputs, h) =>
+	inputs.toView({
+		field: inputField(h, model, inputs),
 		rest: [
 			hiddenInput(h, model),
 			...(isMounted(model.isOpen, model.animation)
@@ -517,8 +555,8 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 					]
 				: []),
 		],
-	})
-})
+	}),
+)
 
 /** `ComboboxTrigger` with its chevron. */
 const triggerButton = (h: H, model: Model, size: "sm" | "default"): Html =>

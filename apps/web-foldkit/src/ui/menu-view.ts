@@ -58,6 +58,10 @@ export type MenuSubmenuEntry = Readonly<{
 	entries: ReadonlyArray<MenuItemEntry>
 	/** The trigger's own children, in place of `label` (the chevron is always appended). */
 	content?: ReadonlyArray<Html | string>
+	/** A leading icon on the trigger row. */
+	icon?: IconName
+	/** A separator drawn after this item's index (`<DropdownMenuSeparator />` between items). */
+	separatorAfter?: number
 	/** `<DropdownMenuSubContent className>`. */
 	className?: string
 	/** A `div` with this class around the items (a scroller). */
@@ -187,7 +191,7 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 					...row(model, index, { kind: "Submenu", value: entry.value }),
 					isSubmenuOpen: model.submenu !== null && model.submenu.index === index,
 				},
-				entry.content ?? [entry.label],
+				entry.content ?? [...(entry.icon === undefined ? [] : [icon(h, entry.icon)]), entry.label],
 			)
 		case "Checkbox":
 			return menuCheckableItem(
@@ -255,6 +259,7 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 						: [h.div([h.Class(entry.itemsClassName)], rows)],
 		})
 	const subClassName = Option.getOrUndefined(Option.flatMapNullishOr(maybeEntry, (entry) => entry.className))
+	const separatorAfter = Option.match(maybeEntry, { onNone: () => undefined, onSome: (entry) => entry.separatorAfter })
 	const placement = [
 		h.DataAttribute("align", submenu.align),
 		h.DataAttribute("open", ""),
@@ -290,19 +295,21 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 								),
 							],
 							body(
-								items.map((item, index) =>
+								items.flatMap((item, index) => [
 									menuItem(
 										h,
 										{
 											id: subItemId(model.id, index),
 											variant: item.variant,
+											isDisabled: item.isDisabled,
 											isHighlighted: submenu.highlighted === index,
 											onHighlight: Message.HoveredSubmenuItem({ index }),
 											onSelect: Message.ClickedSubmenuItem({ value: item.value }),
 										},
 										item.content ?? [item.label, ...shortcutOf(h, item)],
 									),
-								),
+									...(separatorAfter === index ? [menuSeparator(h)] : []),
+								]),
 							),
 						),
 					],

@@ -1,6 +1,14 @@
 import { pickValueField, toBreakdownRows } from "@maple/ui/components/charts/_shared/breakdown-rows"
-import { pieSampleData } from "@maple/ui/components/charts/_shared/sample-data"
-import { Option, Schema } from "effect"
+import { heatmapSampleData, pieSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import {
+	STACKED_BAR_SPIKE_ROWS,
+	TIMESERIES_PARTIAL_ROWS,
+	TIMESERIES_SPIKE_ROWS,
+	toLatencyProductionRows,
+	toStackedBarProductionRows,
+	toThroughputProductionRows,
+} from "@maple/web/lab/charts/timeseries-data"
+import { Clock, Effect, Option, Schema } from "effect"
 import { Command, Mount, Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -12,10 +20,15 @@ import {
 	isChartRuntimeReady,
 	LoadChartRuntime,
 } from "../../charts/chart-runtime"
+import * as AreaChart from "../../charts/area-chart"
+import * as BarChart from "../../charts/bar-chart"
+import * as HeatmapChart from "../../charts/heatmap-chart"
 import * as HistogramChart from "../../charts/histogram-chart"
 import * as PieChart from "../../charts/pie-chart"
 import { ResolveThemeColors, ThemeColors, ThemeMessage } from "../../charts/theme-colors"
 import { eyebrow } from "../../ui/eyebrow"
+import { chartEmpty } from "../../ui/chart-state"
+import { widgetShell } from "../../page/dashboards/kit/tile-shell"
 import { inlineCode } from "../../ui/inline-code"
 import { ARM_TITLES, type ChartsLabArm, SECTIONS } from "../charts/arms"
 import { histogramSpikeValues, histogramSpikeView, pieSpikeView, SPIKE_TOKENS } from "../charts/spikes"
@@ -34,10 +47,50 @@ const histogramProductionRows: ReadonlyArray<Record<string, unknown>> = histogra
 	value,
 }))
 
+type ChartRow = Readonly<Record<string, string | number | boolean>>
+
+/** The production rows narrowed to the scalar cells the timeseries charts read. */
+const scalarRows = (rows: ReadonlyArray<Record<string, unknown>>): ReadonlyArray<ChartRow> =>
+	rows.map((row) =>
+		Object.fromEntries(
+			Object.entries(row).flatMap(([key, value]) =>
+				typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? [[key, value]] : [],
+			),
+		),
+	)
+
+/** The production timeseries arms: `QueryBuilderLineChart`, `QueryBuilderAreaChart`, stacked bars. */
+const PRODUCTION_TIMESERIES = {
+	"line-production": { kind: "line", rows: scalarRows(toLatencyProductionRows(TIMESERIES_SPIKE_ROWS)) },
+	"line-incomplete-production": { kind: "line", rows: scalarRows(toLatencyProductionRows(TIMESERIES_PARTIAL_ROWS)) },
+	"area-production": { kind: "area", rows: scalarRows(toThroughputProductionRows(TIMESERIES_SPIKE_ROWS)) },
+	"area-incomplete-production": { kind: "area", rows: scalarRows(toThroughputProductionRows(TIMESERIES_PARTIAL_ROWS)) },
+	"stacked-bar-production": { kind: "bar", rows: scalarRows(toStackedBarProductionRows(STACKED_BAR_SPIKE_ROWS)) },
+} satisfies Partial<Record<ChartsLabArm, Readonly<{ kind: "line" | "area" | "bar"; rows: ReadonlyArray<ChartRow> }>>>
+
+const productionTimeseriesOf = (arm: ChartsLabArm) => {
+	switch (arm) {
+		case "line-production":
+		case "line-incomplete-production":
+		case "area-production":
+		case "area-incomplete-production":
+		case "stacked-bar-production":
+			return PRODUCTION_TIMESERIES[arm]
+		default:
+			return undefined
+	}
+}
+
 /** One chart instance per gallery position (`pie-production` renders in two sections). */
 const slotOf = (sectionIndex: number, arm: ChartsLabArm): string => `${sectionIndex}:${arm}`
 
 const PORTED_ARMS: ReadonlyArray<ChartsLabArm> = [
+	"heatmap-production",
+	"line-production",
+	"area-production",
+	"stacked-bar-production",
+	"line-incomplete-production",
+	"area-incomplete-production",
 	"pie-production",
 	"pie-tanstack",
 	"pie-solid-tanstack",
@@ -51,6 +104,9 @@ const THEME_TOKENS: ReadonlyArray<string> = [
 		...PieChart.pieChartTokens(pieSampleData),
 		...SPIKE_TOKENS,
 		HistogramChart.HISTOGRAM_BAR_TOKEN,
+		...AreaChart.AREA_CHART_TOKENS,
+		...BarChart.BAR_CHART_TOKENS,
+		...HeatmapChart.HEATMAP_TOKENS,
 		"--border",
 	]),
 ]
@@ -61,6 +117,8 @@ const Model = Schema.Struct({
 	maybeTheme: Schema.Option(ThemeColors),
 	chartRuntime: ChartRuntime,
 	charts: Schema.Record(Schema.String, Chart.Model),
+	/** The capture clock the production charts judge an in-flight tail against. */
+	nowMs: Schema.Number,
 	toasts: Toast.Model,
 })
 type Model = typeof Model.Type
@@ -69,6 +127,7 @@ const init = (): Update.Return<Model, Message> => ({
 	model: {
 		maybeTheme: Option.none(),
 		chartRuntime: ChartRuntime.Loading(),
+		nowMs: 0,
 		charts: Object.fromEntries(
 			SECTIONS.flatMap((section, sectionIndex) =>
 				section.rows
@@ -79,9 +138,10 @@ const init = (): Update.Return<Model, Message> => ({
 		),
 		toasts: initLabToasts(),
 	},
-	commands: Command.mapMessages([LoadChartRuntime()], (message) =>
-		Message.GotChartRuntimeMessage({ message }),
-	),
+	commands: [
+		...Command.mapMessages([LoadChartRuntime()], (message) => Message.GotChartRuntimeMessage({ message })),
+		ReadClock(),
+	],
 })
 
 // MESSAGE
@@ -91,8 +151,14 @@ const Message = defineMessageUnion({
 	GotChartRuntimeMessage: { message: ChartRuntimeMessage },
 	GotChartMessage: { slot: Schema.String, message: Chart.Message },
 	GotToastMessage: { message: Toast.Message },
+	CompletedReadClock: { nowMs: Schema.Number },
 })
 type Message = typeof Message.Type
+
+const ReadClock = Command.define("ReadChartsLabClock", {
+	messages: [Message.CompletedReadClock],
+	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
+})
 
 // UPDATE
 
@@ -122,6 +188,7 @@ const update = (model: Model, message: Message) =>
 		}),
 		GotChartMessage: ({ slot, message }) => foldChart(model, slot, message),
 		GotToastMessage: ({ message }) => foldToasts(model, message),
+		CompletedReadClock: ({ nowMs }) => ({ model: modifyFields(model, { nowMs: () => nowMs }) }),
 	})
 
 // VIEW
@@ -171,6 +238,17 @@ const chartNode = (
 			className: PRODUCTION_CHART_CLASS,
 		} as const
 		return [h.submodel({ ...common, view: HistogramChart.view, viewInputs })]
+	}
+	if (arm === "heatmap-production") {
+		const viewInputs = { chartId, data: heatmapSampleData, theme, tooltip: "visible", className: PRODUCTION_CHART_CLASS } as const
+		return [h.submodel({ ...common, view: HeatmapChart.view, viewInputs })]
+	}
+	const timeseries = productionTimeseriesOf(arm)
+	if (timeseries !== undefined) {
+		const base = { chartId, data: timeseries.rows, theme, nowMs: model.nowMs, showTooltip: true, className: PRODUCTION_CHART_CLASS }
+		return timeseries.kind === "bar"
+			? [h.submodel({ ...common, view: BarChart.view, viewInputs: { ...base, stacked: true } })]
+			: [h.submodel({ ...common, view: AreaChart.view, viewInputs: { ...base, mark: timeseries.kind } })]
 	}
 	if (arm === "histogram-tanstack") {
 		const viewInputs = { chartId, values: histogramSpikeValues, theme, className: "h-full w-full" }
@@ -242,6 +320,24 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 		}),
 	)
 
+/** `MetricsGrid` handed no rows: each card says so over bare axes (the service-detail grid, empty). */
+const emptyMetricsGrid = (h: HtmlBuilder<Message>): Html =>
+	h.div(
+		[h.DataAttribute("metrics-grid", ""), h.Class("grid grid-cols-1 md:grid-cols-2 gap-3")],
+		["Latency", "Throughput", "Apdex", "Error Rate"].map((title) =>
+			h.div(
+				[h.Class("h-[240px] md:h-[280px]")],
+				[
+					widgetShell(
+						h,
+						{ widgetId: title, hasGrip: false, title, isEdit: false, menu: null, isMenuOpen: false, contentClassName: undefined },
+						[chartEmpty(h, { hint: "Try a wider time range" }, ["No data in this window"])],
+					),
+				],
+			),
+		),
+	)
+
 /** The page itself, painted in one go once the theme is read and the chart library is loaded. */
 const gallery = (model: Model, h: HtmlBuilder<Message>, theme: ThemeColors): ReadonlyArray<Html> => [
 	h.header(
@@ -266,11 +362,11 @@ const gallery = (model: Model, h: HtmlBuilder<Message>, theme: ThemeColors): Rea
 			entry.rows.map((arms) => sectionRow(model, h, theme, sectionIndex, arms)),
 		),
 	),
-	section(h, "Empty window — MetricsGrid", [h.div([h.DataAttribute("testid", "charts-lab-empty")])]),
+	section(h, "Empty window — MetricsGrid", [h.div([h.DataAttribute("testid", "charts-lab-empty")], [emptyMetricsGrid(h)])]),
 ]
 
 const readyTheme = (model: Model): Option.Option<ThemeColors> =>
-	Option.filter(model.maybeTheme, () => isChartRuntimeReady(model.chartRuntime))
+	Option.filter(model.maybeTheme, () => isChartRuntimeReady(model.chartRuntime) && model.nowMs > 0)
 
 const toThemeMessage = (message: ThemeMessage): Message =>
 	ThemeMessage.match(message, {

@@ -5,13 +5,21 @@ import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Combobox from "../../../ui/combobox"
+import * as Popover from "../../../ui/popover"
+import * as CopyButton from "../../../ui/copy-button"
 import * as Tabs from "../../../ui/tabs"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as TagEditor from "../kit/tag-editor"
+import * as VariablesManager from "../kit/variables-manager/model"
 import { WidgetFailure } from "../kit/widget-data"
+import { WriteSync } from "../kit/store"
+import { LoadFailure } from "../../../data/load-failure"
+import { VersionRow } from "./history"
+import { ShareMessage } from "./share"
 
 /** A write's outcome: the failure is the message the persistence banner shows. */
-const WriteResult = Schema.Result(Schema.Void, Schema.String)
+const WriteResult = Schema.Result(WriteSync, Schema.String)
 
 export const Message = defineMessageUnion({
 	UpdatedDashboard: { orgId: Schema.String, maybeDocument: Schema.Option(DashboardDocument) },
@@ -20,7 +28,12 @@ export const Message = defineMessageUnion({
 	MeasuredWidget: { widgetId: Schema.String, widthPx: Schema.Number },
 	RevealedWidget: { widgetId: Schema.String },
 	CompletedFetchWidget: { key: Schema.String, result: Schema.Result(Schema.Unknown, WidgetFailure) },
-	CompletedFetchShares: { dashboardId: Schema.String },
+	CompletedFetchVariableOptions: {
+		name: Schema.String,
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(Schema.String), WidgetFailure),
+	},
+	GotShareMessage: { message: ShareMessage },
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
@@ -44,6 +57,16 @@ export const Message = defineMessageUnion({
 	ClickedWidgetPreset: { presetId: Schema.String },
 	ClickedChartStyle: { chartId: Schema.String },
 	GotTagEditorMessage: { message: TagEditor.Message },
+	GotVariablesManagerMessage: { message: VariablesManager.Message },
+	ClickedCloseHistory: {},
+	CompletedFetchVersions: { result: Schema.Result(Schema.Array(VersionRow), LoadFailure) },
+	ClickedVersion: { versionId: Schema.String },
+	CompletedFetchSnapshot: { versionId: Schema.String, result: Schema.Result(DashboardDocument, LoadFailure) },
+	ClickedCancelPreview: {},
+	ClickedRestoreVersion: {},
+	GotRestoreDialogMessage: { message: Dialog.Message },
+	ConfirmedRestore: {},
+	CompletedRestore: { versionNumber: Schema.Number, error: Schema.NullOr(Schema.String) },
 	UpdatedOrgTags: { tags: Schema.Array(Schema.String) },
 	GotPickerTabsMessage: { message: Tabs.Message },
 	PressedGrip: { widgetId: Schema.String, clientX: Schema.Number, clientY: Schema.Number },
@@ -70,6 +93,31 @@ export const Message = defineMessageUnion({
 	CompletedWrite: { result: WriteResult },
 	/** "Undo" on the "Widget removed" toast: the removed tile, as it was stored. */
 	ClickedUndoRemoveWidget: { widget: DashboardWidgetSchema },
+	/** "Undo" after a group was deleted with its widgets: they come back on the board, the group does not. */
+	ClickedUndoDeleteSection: { widgets: Schema.Array(DashboardWidgetSchema) },
 	CompletedExport: {},
+	/** A group's chevron: this viewer's collapse, in the URL. */
+	ClickedSectionChevron: { sectionId: Schema.String, collapsed: Schema.Boolean },
+	ClickedSectionTab: { sectionId: Schema.String, tabId: Schema.String },
+	/** A group's "+" or its empty state's "Add widget": the picker, targeting that tab. */
+	ClickedAddSectionWidget: { sectionId: Schema.String, tabId: Schema.String },
+	GotSectionMenuMessage: { sectionId: Schema.String, message: Menu.Message },
+	/** Double-click, Enter or F2 on a group or tab title. */
+	StartedRename: { sectionId: Schema.String, tabId: Schema.NullOr(Schema.String) },
+	ChangedRenameDraft: { value: Schema.String },
+	SubmittedRename: {},
+	CancelledRename: {},
+	ClickedAddTab: { sectionId: Schema.String },
+	ClickedDeleteTab: { sectionId: Schema.String, tabId: Schema.String },
+	GotSectionDialogMessage: { message: Dialog.Message },
+	GotTabDialogMessage: { message: Dialog.Message },
+	ConfirmedDeleteSection: { action: Schema.Literals(["ungroup", "delete"]) },
+	ConfirmedDeleteTab: { action: Schema.Literals(["move", "delete"]) },
+	GotVariableComboMessage: { name: Schema.String, message: Combobox.Message },
+	ChangedVariableDraft: { name: Schema.String, value: Schema.String },
+	CommittedVariableDraft: { name: Schema.String },
+	ClickedManageVariables: {},
+	GotErrorDetailsMessage: { widgetId: Schema.String, message: Popover.Message },
+	GotErrorCopyMessage: { widgetId: Schema.String, message: CopyButton.Message },
 })
 export type Message = typeof Message.Type

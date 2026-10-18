@@ -1,4 +1,5 @@
-import { pickDashboardControlParams } from "@maple/web/lib/dashboard-controls/search-params"
+import { pickDashboardControlParams, variableValuesFromSearch } from "@maple/web/lib/dashboard-controls/search-params"
+import { behindToast } from "../kit/store"
 import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
@@ -9,12 +10,16 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Combobox from "../../../ui/combobox"
+import * as Popover from "../../../ui/popover"
+import * as CopyButton from "../../../ui/copy-button"
 import * as Tabs from "../../../ui/tabs"
 import { popupId } from "../../../ui/overlay/popup-state"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CloneWidget,
+	EditSections,
 	CompleteReloadSpin,
 	ExportDashboard,
 	FetchShares,
@@ -34,6 +39,17 @@ import type { Model } from "./model"
 import { replan, slotOf, withCharts } from "./plan"
 import { isEditing } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
+import { menuStep } from "./menu-step"
+import { sectionStep } from "./section-update"
+import { variableStep } from "./variable-update"
+import { historyStep, openHistory } from "./history-update"
+import { openEmbed, openShare, shareStep } from "./share-update"
+import { initHistory } from "./history"
+import { initSharing } from "./share"
+import * as VariablesManagerUpdate from "../kit/variables-manager/update"
+import { managerStep, openVariablesManager } from "./variables-manager"
+import { SectionEdit } from "./section-edit"
+import { moveTargetOf } from "./move-target"
 import * as TagEditor from "../kit/tag-editor"
 import { createAlertSearch } from "./widget-actions"
 
@@ -67,13 +83,31 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		titleDraft: null,
 		pickerDialog: Dialog.init("dashboard-widget-picker", "dialog"),
 		tagEditor: TagEditor.init("dashboard-view-tags-dialog"),
+		variablesManager: VariablesManagerUpdate.init("dashboard-variables-dialog"),
+		history: initHistory(),
+		sharing: initSharing(),
 		orgTags: [],
 		pickerTabs: Tabs.init({ idBase: 300, values: PICKER_TABS.map((tab) => tab.id), selected: "all" }),
 		gesture: null,
 		keyboardMove: null,
 		gridAnnouncement: "",
 		droppedLayout: null,
+		droppedKey: null,
 		persistenceError: null,
+		pickerTarget: null,
+		sectionMenuId: null,
+		sectionMenu: Menu.init("dashboard-section-menu"),
+		rename: null,
+		sectionDialog: Dialog.init("dashboard-delete-section", "alert-dialog"),
+		pendingSectionDelete: null,
+		tabDialog: Dialog.init("dashboard-delete-tab", "alert-dialog"),
+		pendingTabDelete: null,
+		errorDetails: {},
+		errorCopies: {},
+		variableOptions: {},
+		variableCombo: Combobox.init("dashboard-variable", "single"),
+		variableComboName: null,
+		variableDrafts: {},
 	},
 	commands: [
 		ReadClock(),
@@ -85,9 +119,16 @@ export const init = (route: Route, _context: PageContext): Return => ({
 	],
 })
 
-export const routeChanged = (model: Model, route: Route): Return => ({
-	model: { ...model, search: route.search },
-})
+const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean =>
+	Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value)
+
+/** A `var-*` change re-plans the tiles that read the variable (their request keys move). */
+export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
+	const next = { ...model, search: route.search }
+	return sameValues(variableValuesFromSearch(model.search), variableValuesFromSearch(route.search))
+		? { model: next }
+		: withReplan(next, context, "Load")
+}
 
 export { isEditing } from "./mode"
 
@@ -134,9 +175,9 @@ const addPicked = (
 		...Command.mapMessages(closed.commands ?? [], (dialog) =>
 			Message.GotPickerDialogMessage({ message: dialog }),
 		),
-		AddWidget({ orgId: context.orgId, dashboardId: model.dashboardId, ...pick }),
+		AddWidget({ orgId: context.orgId, dashboardId: model.dashboardId, ...pick, target: model.pickerTarget }),
 	]
-	const updated = { ...model, pickerDialog: closed.model }
+	const updated = { ...model, pickerDialog: closed.model, pickerTarget: null }
 	return isEditing(model)
 		? { model: updated, commands }
 		: {
@@ -205,6 +246,7 @@ const receiveDocument = (
 				document,
 				// The store caught up with a drop (or moved on): the grid draws what it holds.
 				droppedLayout: null,
+				droppedKey: null,
 				timeRange: model.timeRange ?? document.timeRange,
 				charts: withCharts(model, document.widgets),
 				// The toolbar's share dialog reads the shares too, so they load for an empty board as well.
@@ -270,28 +312,7 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
 }
 
-const menuStep = (
-	menu: Menu.Model,
-	message: Menu.Message,
-	wrap: (message: Menu.Message) => Message,
-): {
-	model: Menu.Model
-	commands: ReadonlyArray<Command.Command<Message>>
-	picked: Option.Option<string>
-} => {
-	const next = Menu.update(menu, message)
-	const out = next.outMessage
-	return {
-		model: next.model,
-		commands: Command.mapMessages(next.commands ?? [], wrap),
-		picked:
-			out === undefined
-				? Option.none()
-				: Option.some(out._tag === "SelectedSubmenuItem" ? out.value : out.value),
-	}
-}
-
-/** The "More dashboard actions" menu. TODO(toolbar): share, history, variables, tags, groups. */
+/** The "More dashboard actions" menu. TODO(toolbar): share. */
 const moreAction = (model: Model, context: PageContext, value: string): Return => {
 	switch (value) {
 		case "tags": {
@@ -302,10 +323,29 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 				commands: Command.mapMessages(opened.commands ?? [], wrapTagEditor),
 			}
 		}
+		case "history":
+			return openHistory(model)
+		case "variables":
+			return model.persistenceError === null ? openVariablesManager(model) : { model }
+		case "add-group":
+			return model.persistenceError === null
+				? {
+						model,
+						commands: [
+							EditSections({
+								orgId: context.orgId,
+								dashboardId: model.dashboardId,
+								edit: SectionEdit.AddSection(),
+							}),
+						],
+					}
+				: { model }
 		case "auto-layout":
 			return model.persistenceError === null
 				? { model, commands: [AutoLayout({ orgId: context.orgId, dashboardId: model.dashboardId })] }
 				: { model }
+		case "share":
+			return openShare(model)
 		case "export":
 			return {
 				model,
@@ -319,6 +359,20 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 /** A widget menu pick: configure, clone, create alert, delete. */
 const widgetAction = (model: Model, context: PageContext, widgetId: string, value: string): Return => {
 	const target = { orgId: context.orgId, dashboardId: model.dashboardId, widgetId }
+	const move = moveTargetOf(value)
+	if (move !== undefined)
+		return model.persistenceError !== null
+			? { model }
+			: {
+					model,
+					commands: [
+						EditSections({
+							orgId: context.orgId,
+							dashboardId: model.dashboardId,
+							edit: SectionEdit.MoveWidget({ widgetId, target: move.target }),
+						}),
+					],
+				}
 	switch (value) {
 		case "edit":
 			return navigate(
@@ -363,6 +417,8 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 						),
 					)
 		}
+		case "embed":
+			return openEmbed(model, widgetId)
 		default:
 			return { model }
 	}
@@ -410,19 +466,27 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						"Load",
 					)
 		},
+		CompletedFetchVariableOptions: ({ name, key, result }) => {
+			const slot = model.variableOptions[name]
+			if (slot === undefined) return { model }
+			// The options settle the variables, which may unblock tiles waiting on them.
+			return withReplan(
+				{ ...model, variableOptions: { ...model.variableOptions, [name]: Keyed.accept(slot, key, result) } },
+				context,
+				"Load",
+			)
+		},
 		CompletedFetchWidget: ({ key, result }) => {
 			const slot = model.requests[key]
-			return slot === undefined
-				? { model }
-				: {
-						model: {
-							...model,
-							requests: { ...model.requests, [key]: Keyed.accept(slot, key, result) },
-						},
-					}
+			if (slot === undefined) return { model }
+			// A stat that just got its value asks for its sparkline series next.
+			return withReplan(
+				{ ...model, requests: { ...model.requests, [key]: Keyed.accept(slot, key, result) } },
+				context,
+				"Load",
+			)
 		},
-		CompletedFetchShares: ({ dashboardId }) =>
-			dashboardId === model.dashboardId ? { model: { ...model, shares: "Loaded" } } : { model },
+		GotShareMessage: ({ message: inner }) => shareStep(model, context, inner),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
@@ -486,7 +550,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedTitle: () =>
-			model.persistenceError !== null || model.document === null
+			model.persistenceError !== null || model.document === null || model.history.previewed !== null
 				? { model }
 				: { model: { ...model, titleDraft: model.document.name } },
 		ChangedTitleDraft: ({ value }) => ({ model: { ...model, titleDraft: value } }),
@@ -495,7 +559,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddWidget: () => {
 			const next = Dialog.open(model.pickerDialog)
 			return {
-				model: { ...model, pickerDialog: next.model },
+				model: { ...model, pickerDialog: next.model, pickerTarget: null },
 				commands: Command.mapMessages(next.commands ?? [], (dialog) =>
 					Message.GotPickerDialogMessage({ message: dialog }),
 				),
@@ -504,7 +568,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotPickerDialogMessage: ({ message: inner }) => {
 			const next = Dialog.update(model.pickerDialog, inner)
 			return {
-				model: { ...model, pickerDialog: next.model },
+				model: { ...model, pickerDialog: next.model, pickerTarget: next.model.isOpen ? model.pickerTarget : null },
 				commands: Command.mapMessages(next.commands ?? [], (dialog) =>
 					Message.GotPickerDialogMessage({ message: dialog }),
 				),
@@ -550,13 +614,68 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedWrite: ({ result }) =>
 			Result.match(result, {
 				onFailure: (error) => ({ model: { ...model, persistenceError: error } }),
-				onSuccess: () => ({ model: { ...model, persistenceError: null } }),
+				onSuccess: (sync) =>
+					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
 			}),
 		CompletedExport: () => ({ model }),
+		GotErrorDetailsMessage: ({ widgetId, message: inner }) => {
+			const next = Popover.update(model.errorDetails[widgetId] ?? Popover.init(errorDetailsIdOf(widgetId)), inner)
+			return {
+				model: { ...model, errorDetails: { ...model.errorDetails, [widgetId]: next.model } },
+				commands: Command.mapMessages(next.commands ?? [], (popover) =>
+					Message.GotErrorDetailsMessage({ widgetId, message: popover }),
+				),
+			}
+		},
+		GotErrorCopyMessage: ({ widgetId, message: inner }) => {
+			const next = CopyButton.update(model.errorCopies[widgetId] ?? CopyButton.init(), inner)
+			return {
+				model: { ...model, errorCopies: { ...model.errorCopies, [widgetId]: next.model } },
+				commands: Command.mapMessages(next.commands ?? [], (copy) =>
+					Message.GotErrorCopyMessage({ widgetId, message: copy }),
+				),
+			}
+		},
+		GotVariableComboMessage: (m) => variableStep(model, context, m),
+		ChangedVariableDraft: (m) => variableStep(model, context, m),
+		CommittedVariableDraft: (m) => variableStep(model, context, m),
+		ClickedManageVariables: () => openVariablesManager(model),
+		GotVariablesManagerMessage: ({ message: inner }) => managerStep(model, context, inner),
+		ClickedCloseHistory: (m) => historyStep(model, m),
+		CompletedFetchVersions: (m) => historyStep(model, m),
+		ClickedVersion: (m) => historyStep(model, m),
+		CompletedFetchSnapshot: (m) => historyStep(model, m),
+		ClickedCancelPreview: (m) => historyStep(model, m),
+		ClickedRestoreVersion: (m) => historyStep(model, m),
+		GotRestoreDialogMessage: (m) => historyStep(model, m),
+		ConfirmedRestore: (m) => historyStep(model, m),
+		CompletedRestore: (m) => historyStep(model, m),
+		ClickedSectionChevron: (m) => sectionStep(model, context, m),
+		ClickedSectionTab: (m) => sectionStep(model, context, m),
+		ClickedAddSectionWidget: (m) => sectionStep(model, context, m),
+		GotSectionMenuMessage: (m) => sectionStep(model, context, m),
+		StartedRename: (m) => sectionStep(model, context, m),
+		ChangedRenameDraft: (m) => sectionStep(model, context, m),
+		SubmittedRename: (m) => sectionStep(model, context, m),
+		CancelledRename: (m) => sectionStep(model, context, m),
+		ClickedAddTab: (m) => sectionStep(model, context, m),
+		ClickedDeleteTab: (m) => sectionStep(model, context, m),
+		GotSectionDialogMessage: (m) => sectionStep(model, context, m),
+		GotTabDialogMessage: (m) => sectionStep(model, context, m),
+		ConfirmedDeleteSection: (m) => sectionStep(model, context, m),
+		ConfirmedDeleteTab: (m) => sectionStep(model, context, m),
+		ClickedUndoDeleteSection: ({ widgets }) => ({
+			model,
+			commands: widgets.map((widget) =>
+				RestoreWidget({ orgId: context.orgId, dashboardId: model.dashboardId, widget }),
+			),
+		}),
 		ClickedUndoRemoveWidget: ({ widget }) => ({
 			model,
 			commands: [RestoreWidget({ orgId: context.orgId, dashboardId: model.dashboardId, widget })],
 		}),
 	})
+
+export const errorDetailsIdOf = (widgetId: string): string => `dashboard-error-details-${widgetId}`
 
 export const widgetMenuIdOf = (widgetId: string): string => `dashboard-widget-menu-${widgetId}`
