@@ -33,7 +33,13 @@ const podsHref = (workload: ServiceWorkload, kind: KnownKind | null): string => 
 				: kind === "daemonset"
 					? { daemonsets: [workload.workloadName] }
 					: {}
-	return hrefOf(AppRoute.InfraKubernetesPods({ search: { ...byKind, namespaces } }))
+	const href = hrefOf(AppRoute.InfraKubernetesPods({ search: { ...byKind, namespaces } }))
+	// Legacy's router prints search keys in insertion order: the kind filter, then namespaces.
+	const [path, query] = href.split("?")
+	if (query === undefined) return href
+	const pairs = query.split("&")
+	const isNamespaces = (pair: string) => pair.startsWith("namespaces=")
+	return `${path}?${[...pairs.filter((pair) => !isNamespaces(pair)), ...pairs.filter(isNamespaces)].join("&")}`
 }
 
 const utilization = (value: number | null): string => (value == null ? EMPTY_VALUE : formatPercent(value))
