@@ -78,6 +78,52 @@ export const integrationsArea: AreaModule = {
 			"held",
 		),
 		page("github", "GitHub card", "/integrations?integration=github"),
+		page("github-refresh", "GitHub: refresh", "/integrations?integration=github", {
+			steps: (page) => page.getByRole("button", { name: "Refresh" }).click(),
+		}),
+		page("github-ci-traces", "GitHub: turn CI traces off", "/integrations?integration=github", {
+			steps: (page) => page.getByRole("switch").click(),
+		}),
+		page("github-branch-popover", "GitHub: open the branch picker", "/integrations?integration=github", {
+			steps: (page) => page.getByRole("button", { name: /branch/ }).click(),
+		}),
+		page("github-branch-change", "GitHub: track another branch", "/integrations?integration=github", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: /branch/ }).click()
+				await page.getByRole("button", { name: "release" }).click()
+				await page.getByRole("alertdialog").getByRole("button", { name: "Track branch" }).click()
+			},
+		}),
+		page("github-manage", "GitHub: manage (OAuth popup)", "/integrations?integration=github", {
+			steps: (page) => page.getByRole("button", { name: "Manage" }).click(),
+		}),
+		page("github-disconnect", "GitHub: disconnect", "/integrations?integration=github", {
+			steps: async (page) => {
+				await page.getByRole("button", { name: "Disconnect" }).click()
+				await page.getByRole("alertdialog").getByRole("button", { name: "Disconnect" }).click()
+			},
+		}),
+		page("github-empty", "GitHub (not connected)", "/integrations?integration=github", {
+			dataset: "empty",
+		}),
+		page("github-connect", "GitHub: connect", "/integrations?integration=github", {
+			dataset: "empty",
+			steps: (page) => page.getByRole("button", { name: "Connect GitHub" }).last().click(),
+		}),
+		timed(
+			"github-error",
+			"GitHub: status failing",
+			"/integrations?integration=github",
+			{ failures: { "integrations.githubStatus": persistenceFailure } },
+			"quiet",
+		),
+		timed(
+			"github-loading",
+			"GitHub: status loading",
+			"/integrations?integration=github",
+			{ delays: { "integrations.githubStatus": HELD_MS } },
+			"held",
+		),
 		page("prometheus", "Prometheus scrape targets", "/integrations?integration=prometheus"),
 		page(
 			"prometheus-checks",

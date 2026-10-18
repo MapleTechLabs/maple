@@ -28,6 +28,18 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 			refresh: ["hazel"],
 		},
 	],
+	[
+		"github",
+		{
+			title: "Disconnect GitHub",
+			description:
+				"This removes the Maple GitHub App connection and permanently deletes all synced repositories and their commit history from Maple. This cannot be undone. You can reconnect later, but everything will be re-synced from scratch.",
+			confirmLabel: "Disconnect",
+			success: "GitHub disconnected",
+			error: "Failed to disconnect GitHub",
+			refresh: ["github"],
+		},
+	],
 ])
 
 const mutation = (integration: string) =>
@@ -36,6 +48,8 @@ const mutation = (integration: string) =>
 		switch (integration) {
 			case "hazel":
 				return yield* Effect.asVoid(internal.integrations.hazelDisconnect())
+			case "github":
+				return yield* Effect.asVoid(internal.integrations.githubDisconnect())
 			default:
 				return yield* Effect.void
 		}

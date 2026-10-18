@@ -51,7 +51,10 @@ const status: EndpointHandler = () =>
 				lastSyncedAt: FROZEN_NOW_MS - 5 * MINUTE,
 				lastSyncError: null,
 				trackedBranch: "main",
-				branches: [{ name: "main", isDefault: true }],
+				branches: [
+					{ name: "main", isDefault: true },
+					{ name: "release", isDefault: false },
+				],
 				prReviewEnabled: false,
 			},
 		],

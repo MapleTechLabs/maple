@@ -28,7 +28,7 @@ export type IntegrationBrand = Readonly<{
 export const integrationIconPlate = <M>(
 	h: HtmlBuilder<M>,
 	brand: IntegrationBrand,
-	options: Readonly<{ size?: number; plateClassName?: string }> = {},
+	options: Readonly<{ size?: number; plateClassName?: string; overlay?: Html }> = {},
 ): Html =>
 	h.span(
 		[
@@ -62,6 +62,7 @@ export const integrationIconPlate = <M>(
 						: brand.glyph(options.size ?? 22),
 				],
 			),
+			...(options.overlay === undefined ? [] : [options.overlay]),
 		],
 	)
 

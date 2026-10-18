@@ -18,6 +18,7 @@ import { LoadFailure } from "../../data/load-failure"
 import { IntegrationsSearch } from "../../route/search"
 import * as Dialog from "../../ui/dialog"
 import { ChatCardModel } from "./chat"
+import { GithubCardModel } from "./github"
 import { ConnectModel } from "./connect"
 
 // `/integrations` (apps/web/src/routes/integrations.tsx): the hub and every integration's page.
@@ -50,5 +51,6 @@ export const Model = Schema.Struct({
 	/** The page's disconnect confirmation and its in-flight flag (one integration shows at a time). */
 	disconnect: Schema.Struct({ dialog: Dialog.Model, isPending: Schema.Boolean }),
 	chatCard: ChatCardModel,
+	githubCard: GithubCardModel,
 })
 export type Model = typeof Model.Type

@@ -6,6 +6,7 @@ import { integrationOfSearch } from "./catalog"
 import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startConnect } from "./connect"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { githubStatusOf } from "./update-github"
 
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
 
@@ -116,6 +117,36 @@ const popupFlow = ({ provider, attempt }: ConnectAttempt) =>
 
 /** After the popup closed, a provider with a grace keeps polling until it ends. */
 
+const GITHUB_POLL_MS = 3_000
+const FORCE_POLL_WINDOW_MS = 10_000
+
+/** A `setInterval` as a stream (legacy's timers; the parity clock clamps them, not Effect sleeps). */
+const every = (millis: number, message: () => Message) =>
+	Stream.callback<Message>((queue) =>
+		Effect.acquireRelease(
+			Effect.sync(() => setInterval(() => Queue.offerUnsafe(queue, message()), millis)),
+			(interval) => Effect.sync(() => clearInterval(interval)),
+		).pipe(Effect.andThen(Effect.never)),
+	)
+
+const after = (millis: number, message: () => Message) =>
+	Stream.callback<Message>((queue) =>
+		Effect.acquireRelease(
+			Effect.sync(() => setTimeout(() => Queue.offerUnsafe(queue, message()), millis)),
+			(timeout) => Effect.sync(() => clearTimeout(timeout)),
+		).pipe(Effect.andThen(Effect.never)),
+	)
+
+/** The popup (and its grace) is out, a branch change settles, or a repository is still syncing. */
+const isGithubPolling = (model: Model): boolean => {
+	if (integrationOfSearch(model.search.integration) !== "github") return false
+	const status = githubStatusOf(model)
+	const syncing =
+		status?.connected === true &&
+		status.repositories.some((repo) => repo.syncStatus === "pending" || repo.syncStatus === "backfilling")
+	return model.connect.active !== null || model.githubCard.isForcePolling || syncing
+}
+
 /** The provider whose callback messages this page listens for (`useIntegrationMessage`). */
 const listeningProvider = (model: Model): ConnectProvider | null => {
 	const integration = integrationOfSearch(model.search.integration)
@@ -165,6 +196,28 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: phase === "popup"
 							? popupFlow(attempt)
 							: grace(attempt),
+			},
+		),
+		/** `useIntervalRefresh(refreshStatus, { intervalMs: 3_000, enabled: shouldPoll })` on the GitHub card. */
+		githubPoll: entry(
+			{ isPolling: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isPolling: isGithubPolling(model) }),
+				dependenciesToStream: ({ isPolling }) =>
+					isPolling ? every(GITHUB_POLL_MS, () => Message.TickedGithubPoll()) : Stream.empty,
+			},
+		),
+		/** `FORCE_POLL_WINDOW_MS`: the poll after a branch change stops on its own. */
+		githubForcePoll: entry(
+			{ version: Schema.NullOr(Schema.Number) },
+			{
+				modelToDependencies: ({ model }) => ({
+					version: model.githubCard.isForcePolling ? model.githubCard.forcePollVersion : null,
+				}),
+				dependenciesToStream: ({ version }) =>
+					version === null
+						? Stream.empty
+						: after(FORCE_POLL_WINDOW_MS, () => Message.EndedGithubForcePoll({ version })),
 			},
 		),
 		connectCallback: entry(

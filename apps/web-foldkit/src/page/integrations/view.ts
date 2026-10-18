@@ -11,6 +11,7 @@ import type { Model } from "./model"
 import { settingsNav } from "./settings-nav"
 import { entryGlyph } from "./view-entry"
 import { chatCard } from "./view-chat-card"
+import { githubCard } from "./view-github"
 import { hazelCard } from "./view-hazel"
 import { integrationHeader } from "./view-header"
 import { integrationCatalog, integrationsSummary } from "./view-hub"
@@ -43,6 +44,8 @@ const cardView = (h: H, model: Model, integration: IntegrationId, timeZone: stri
 	switch (integration) {
 		case "hazel":
 			return [hazelCard(h, model)]
+		case "github":
+			return githubCard(h, model, timeZone)
 		default:
 			return []
 	}

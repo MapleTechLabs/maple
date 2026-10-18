@@ -261,14 +261,19 @@ export const dialogTitle = <M>(h: HtmlBuilder<M>, kind: TitledKind, id: string, 
 		[text],
 	)
 
-export const dialogDescription = <M>(h: HtmlBuilder<M>, kind: TitledKind, id: string, text: string): Html =>
+export const dialogDescription = <M>(
+	h: HtmlBuilder<M>,
+	kind: TitledKind,
+	id: string,
+	text: string | ReadonlyArray<Html | string>,
+): Html =>
 	h.p(
 		[
 			h.Class(cn(contentStyles[kind].description)),
 			h.DataAttribute("slot", `${kind}-description`),
 			h.Id(descriptionId(id)),
 		],
-		[text],
+		typeof text === "string" ? [text] : text,
 	)
 
 /** `DialogPanel` / `SheetPanel`: the scrolling body, inside a fading ScrollArea. */

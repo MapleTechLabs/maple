@@ -9,7 +9,9 @@ import { chatConnectorOf, integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
 import { initConnect } from "./connect"
 import { Disconnect, DISCONNECTS } from "./disconnect"
+import { initGithubCard } from "./github"
 import * as Chat from "./update-chat"
+import * as Github from "./update-github"
 import * as Connect from "./update-connect"
 import { LoadCustomer, ReadClock, StripChatParams } from "./command"
 import { chain, requestStatus, STATUS_NAMES } from "./update-status"
@@ -77,6 +79,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		connect: initConnect(),
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: { busy: null, confirmId: null, identityBusy: false },
+		githubCard: initGithubCard(),
 	}
 	const loaded = chain(model, [
 		...STATUS_NAMES.map((name) => (next: Model) => requestStatus(next, context, name, "Load")),
@@ -132,6 +135,28 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedConnect: () => Connect.clickedConnect(model),
 		ClickedChatInstall: () => Chat.clickedInstall(model),
+		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),
+		CompletedGithubRefreshSpin: ({ version }) => Github.completedRefreshSpin(model, version),
+		ToggledCiTraces: () => Github.toggledCiTraces(model),
+		CompletedCiTraces: ({ enabled, failure }) =>
+			Github.completedCiTraces(model, context, enabled, failure),
+		TickedGithubPoll: () => requestStatus(model, context, "github", "Refresh"),
+		EndedGithubForcePoll: ({ version }) => Github.endedForcePoll(model, version),
+		ClickedRepoDelete: ({ repoId }) => Github.clickedRepoDelete(model, repoId),
+		GotRepoDeleteDialogMessage: ({ message: child }) => Github.gotRepoDeleteDialog(model, child),
+		ConfirmedRepoDelete: () => Github.confirmedRepoDelete(model),
+		CompletedRepoDelete: ({ repoId, failure }) =>
+			Github.completedRepoDelete(model, context, repoId, failure),
+		GotBranchPopoverMessage: ({ repoId, message: child }) =>
+			Github.gotBranchPopover(model, repoId, child),
+		ChangedBranchQuery: ({ value }) => ({
+			model: { ...model, githubCard: { ...model.githubCard, branchQuery: value } },
+		}),
+		ClickedBranch: ({ repoId, branch }) => Github.clickedBranch(model, repoId, branch),
+		GotBranchDialogMessage: ({ message: child }) => Github.gotBranchDialog(model, child),
+		ConfirmedBranch: () => Github.confirmedBranch(model),
+		CompletedTrackedBranch: ({ branch, backfillQueued, failure }) =>
+			Github.completedTrackedBranch(model, context, branch, backfillQueued, failure),
 		CompletedChatInstall: ({ failure }) => Chat.completedInstall(model, context, failure),
 		ClickedChatIdentity: () => Chat.clickedIdentity(model),
 		CompletedChatIdentity: ({ kind, failure }) => Chat.completedIdentity(model, context, kind, failure),

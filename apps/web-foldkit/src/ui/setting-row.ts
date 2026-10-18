@@ -27,7 +27,7 @@ export interface SettingRowIds {
 export interface SettingRowOptions {
 	readonly ids: SettingRowIds
 	readonly label: string
-	readonly description?: string
+	readonly description?: string | ReadonlyArray<Html | string>
 	readonly icon?: Html
 	/** The control, with its hidden form input when it has one (a Base UI Switch renders two nodes). */
 	readonly control: ReadonlyArray<Html>
@@ -93,7 +93,7 @@ export const settingRow = <M>(
 														...fieldState,
 														h.Id(options.ids.description),
 													],
-													[options.description],
+													typeof options.description === "string" ? [options.description] : options.description,
 												),
 											]),
 								],

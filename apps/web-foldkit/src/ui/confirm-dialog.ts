@@ -18,8 +18,11 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	model: Dialog.Model
 	toParentMessage: (message: Dialog.Message) => M
 	title: string
-	description?: string
+	/** Rich copy (a highlighted name) as children. */
+	description?: string | ReadonlyArray<Html | string>
 	confirmLabel: string
+	/** `icon={null}`: drops the warning media block. */
+	hasIcon?: boolean
 	cancelLabel?: string
 	tone?: "destructive" | "default"
 	onConfirm: M
@@ -44,6 +47,9 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) => [
 				DialogView.dialogHeader(h, "alert-dialog", [
+					...(options.hasIcon === false
+						? []
+						: [
 					h.div(
 						[
 							h.Class(cn(alertDialogMediaStyles, tone === "destructive" && confirmDialogMediaDestructiveStyles)),
@@ -55,6 +61,7 @@ export const confirmDialog = <M>(h: HtmlBuilder<M>, options: ConfirmDialogOption
 							}),
 						],
 					),
+							]),
 					DialogView.dialogTitle(h, "alert-dialog", id, options.title),
 					...(options.description === undefined
 						? []

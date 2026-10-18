@@ -192,6 +192,21 @@ export const fixtureArea: FixtureArea = {
 		"integrations.hazelDisconnect": disconnected,
 		"integrations.githubStart": startConnect("github"),
 		"integrations.githubDisconnect": disconnected,
+		"integrations.githubSetCiTraces": (request) =>
+			Effect.succeed({
+				enabled:
+					Predicate.hasProperty(request.payload, "enabled") && request.payload.enabled === true,
+			}),
+		"integrations.githubSetTrackedBranch": (request) =>
+			Effect.succeed({
+				trackedBranch:
+					Predicate.hasProperty(request.payload, "trackedBranch") &&
+					typeof request.payload.trackedBranch === "string"
+						? request.payload.trackedBranch
+						: "main",
+				backfillQueued: true,
+			}),
+		"integrations.githubDeleteRepository": () => Effect.succeed({ deleted: true }),
 		"integrations.cloudflareStart": startConnect("cloudflare"),
 		"integrations.cloudflareDisconnect": disconnected,
 		"scrapeTargets.list": (request) => Effect.succeed(list(scrapeTargetsOf(request))),

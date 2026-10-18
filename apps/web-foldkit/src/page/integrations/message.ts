@@ -4,6 +4,7 @@ import {
 	GithubIntegrationStatus,
 	HazelIntegrationStatus,
 	RailwayIntegrationStatus,
+	VcsRepositoryId,
 } from "@maple/domain/http"
 import {
 	V2ChatConnectorList,
@@ -17,6 +18,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
 import * as Dialog from "../../ui/dialog"
+import * as Popover from "../../ui/popover"
 import { ConnectProvider } from "./connect"
 
 export const StatusName = Schema.Literals([
@@ -77,6 +79,28 @@ export const Message = defineMessageUnion({
 	CompletedChatIdentity: { kind: Schema.Literals(["link", "unlink"]), failure: Schema.NullOr(LoadFailure) },
 	ClickedChatDisconnect: { workspaceId: ChatWorkspaceId },
 	CompletedChatDisconnect: { failure: Schema.NullOr(LoadFailure) },
+	ClickedGithubRefresh: {},
+	CompletedGithubRefreshSpin: { version: Schema.Number },
+	ToggledCiTraces: {},
+	CompletedCiTraces: { enabled: Schema.Boolean, failure: Schema.NullOr(LoadFailure) },
+	/** The 3 s status poll while the popup is out, a branch change settles or a repo syncs. */
+	TickedGithubPoll: {},
+	EndedGithubForcePoll: { version: Schema.Number },
+	ClickedRepoDelete: { repoId: VcsRepositoryId },
+	GotRepoDeleteDialogMessage: { message: Dialog.Message },
+	ConfirmedRepoDelete: {},
+	CompletedRepoDelete: { repoId: VcsRepositoryId, failure: Schema.NullOr(LoadFailure) },
+	GotBranchPopoverMessage: { repoId: VcsRepositoryId, message: Popover.Message },
+	ChangedBranchQuery: { value: Schema.String },
+	ClickedBranch: { repoId: VcsRepositoryId, branch: Schema.String },
+	GotBranchDialogMessage: { message: Dialog.Message },
+	ConfirmedBranch: {},
+	CompletedTrackedBranch: {
+		repoId: VcsRepositoryId,
+		branch: Schema.String,
+		backfillQueued: Schema.Boolean,
+		failure: Schema.NullOr(LoadFailure),
+	},
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,
 		status: Schema.String,
