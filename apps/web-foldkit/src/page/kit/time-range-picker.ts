@@ -231,7 +231,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model): Html =>
 	)
 
 /** `formatUtcOffset`: `UTC+2`, `UTC-5:30`, `UTC`. */
-const formatUtcOffset = (timeZone: string): string => {
+export const formatUtcOffset = (timeZone: string): string => {
 	const part =
 		new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" })
 			.formatToParts(0)
