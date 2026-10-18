@@ -1,6 +1,6 @@
 import type { AlertComparator, AlertSignalType } from "@maple/domain/http"
 import { formatPercent } from "@maple/ui/lib/format"
-import { formatSignalValue } from "@/lib/alerts/form-utils"
+import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 
 /**
  * Runtime-narrow a string (e.g. from the base64 alert-link context, where the

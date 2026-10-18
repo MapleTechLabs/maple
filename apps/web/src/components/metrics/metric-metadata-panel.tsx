@@ -8,7 +8,7 @@ import { KeyValue, KeyValueList } from "@maple/ui/components/ui/key-value"
 import { MetricTypeBadge } from "./metric-type-badge"
 import type { MetricCatalogSummary } from "./metric-detail"
 import { getMetricAttributeKeysResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 interface MetricMetadataPanelProps {

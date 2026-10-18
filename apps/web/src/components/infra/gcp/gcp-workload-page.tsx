@@ -14,7 +14,7 @@ import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { SectionHeading } from "@/components/common/section-heading"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimeInTimezone } from "@/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 
 import { CorrelationStrips, type StripSeries } from "../service-lens/correlation-strips"
 import { GCP_INFRA_CHARTS, type GcpBucketPoint, type GcpChartWindow } from "./charts"

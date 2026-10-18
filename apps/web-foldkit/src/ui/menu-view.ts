@@ -28,6 +28,7 @@ import {
 	subPopupId,
 	subPortalId,
 } from "./menu"
+import { icon, type IconName } from "./icon"
 import { popupId, portalId, triggerId } from "./overlay/popup-state"
 import type { Align, Side } from "./overlay/position"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
@@ -40,6 +41,10 @@ export type MenuItemEntry = Readonly<{
 	label: string
 	shortcut?: string
 	variant?: "default" | "destructive"
+	/** A leading icon (`<DropdownMenuItem><PencilIcon />Edit</DropdownMenuItem>`). */
+	icon?: IconName
+	/** Base UI's `disabled`: shown, not highlightable or selectable. */
+	isDisabled?: boolean
 }>
 
 /** The menu's content, as data: `update` addresses highlightable entries by document order. */
@@ -125,8 +130,12 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 		case "Item":
 			return menuItem(
 				h,
-				{ ...row(model, index, { kind: "Item", value: entry.value }), variant: entry.variant },
-				[entry.label, ...shortcutOf(h, entry)],
+				{
+					...row(model, index, { kind: "Item", value: entry.value }),
+					variant: entry.variant,
+					isDisabled: entry.isDisabled,
+				},
+				[...(entry.icon === undefined ? [] : [icon(h, entry.icon)]), entry.label, ...shortcutOf(h, entry)],
 			)
 		case "Group": {
 			const labelId = `${model.id}-group-${index}`

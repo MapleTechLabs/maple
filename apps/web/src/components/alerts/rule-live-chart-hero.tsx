@@ -12,19 +12,19 @@ import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { RuleEditImpact } from "@/components/alerts/rule-edit-impact"
 import { CheckIcon, CircleWarningIcon, EyeIcon, FireIcon } from "@/components/icons"
-import { breachStatsFromPreview, formatBreachDuration, type BreachStats } from "@/lib/alerts/breach-stats"
+import { breachStatsFromPreview, formatBreachDuration, type BreachStats } from "@maple/web-data/alerts/breach-stats"
 import {
 	countSkippedWindows,
 	draftThresholds,
 	focusPreviewOnClosestGroups,
 	type RuleFieldChange,
 	type SkippedWindows,
-} from "@/lib/alerts/preview-insights"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+} from "@maple/web-data/alerts/preview-insights"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { TimeRangePicker } from "@/components/time-range-picker/time-range-picker"
 import type { TimeRange } from "@/components/time-range-picker/types"
 import type { AlertIncidentDocument } from "@maple/domain/http"
-import { displaySignalType, formatSignalValue, type RuleFormState } from "@/lib/alerts/form-utils"
+import { displaySignalType, formatSignalValue, type RuleFormState } from "@maple/web-data/alerts/form-utils"
 
 interface RuleLiveChartHeroProps {
 	form: RuleFormState

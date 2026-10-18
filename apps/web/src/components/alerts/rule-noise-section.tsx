@@ -12,7 +12,7 @@ import {
 import { SettingRow } from "@maple/ui/components/ui/setting-row"
 import { Switch } from "@maple/ui/components/ui/switch"
 
-import { ruleFormIsGrouped, type RuleFormState } from "@/lib/alerts/form-utils"
+import { ruleFormIsGrouped, type RuleFormState } from "@maple/web-data/alerts/form-utils"
 
 interface RuleNoiseSectionProps {
 	form: RuleFormState

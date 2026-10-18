@@ -83,7 +83,7 @@ export const docsLink = <M>(h: HtmlBuilder<M>, page: DocsPage, label = "Read the
 	)
 
 /** `EmptyActions`. */
-const emptyActions = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+export const emptyActions = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class("flex flex-wrap items-center justify-center gap-x-4 gap-y-2")], children)
 
 const iconMedia = <M>(h: HtmlBuilder<M>, name: IconName): Html =>

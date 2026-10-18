@@ -29,7 +29,7 @@ import { SampledValue } from "./sampled-value"
 import { useSortState } from "@/hooks/use-table-sort"
 import { ENDPOINTS_LIMIT, isTruncated, serviceEndpointsQueryInput } from "./service-endpoints"
 import { callsPerSecond, operationTraceSearch, windowSeconds } from "./service-operations"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { groupEndpoints, leafLabel, type EndpointGroup, type EndpointSort } from "./endpoint-grouping"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 

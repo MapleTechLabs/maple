@@ -8,8 +8,9 @@ import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { InboxTab } from "@/components/alerts/overview/inbox-tab"
 import { RulesTab } from "@/components/alerts/overview/rules-tab"
 import { ErrorState } from "@/components/common/error-state"
-import type { RuleBucket } from "@/lib/alerts/overview-derive"
-import { AlertsOverviewModel, type AlertsOverviewReady } from "@/lib/models/alerts-overview-model"
+import type { RuleBucket } from "@maple/web-data/alerts/overview-derive"
+import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
+import { AlertsOverviewModel } from "@/lib/models/alerts-overview-model"
 import { unitflowRuntime } from "@/lib/models/runtime"
 
 export interface AlertsTabCounts {

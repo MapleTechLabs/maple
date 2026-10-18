@@ -8,7 +8,7 @@ import { Textarea } from "@maple/ui/components/ui/textarea"
 
 import { TagInput } from "@/components/alerts/tag-input"
 import { PlusIcon } from "@/components/icons"
-import type { RuleFormState } from "@/lib/alerts/form-utils"
+import type { RuleFormState } from "@maple/web-data/alerts/form-utils"
 
 interface DetailsSectionProps {
 	form: RuleFormState

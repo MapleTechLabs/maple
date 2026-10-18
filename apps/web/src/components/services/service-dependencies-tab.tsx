@@ -8,7 +8,7 @@ import { getServiceDependenciesBundleResultAtom } from "@/lib/services/atoms/war
 import { toSingleDeploymentEnv } from "@/lib/services/environments"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
 import { SampledValue } from "./sampled-value"
 import type { DependencyKind } from "./dependency-type-badge"

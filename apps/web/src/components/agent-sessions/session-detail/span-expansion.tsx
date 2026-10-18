@@ -33,7 +33,7 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { getSpanDetailResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import {
 	callMetaLine,
 	classifyAiSpan,

@@ -1,5 +1,5 @@
 import { Option, Schema } from "effect"
-import { fromBase64Url } from "@/lib/base64url"
+import { fromBase64Url } from "../../lib/base64url"
 
 const AlertContextSchema = Schema.Struct({
 	ruleId: Schema.String,

@@ -12,8 +12,8 @@ import { AlertsEmptyState } from "@/components/alerts/overview/alerts-empty-stat
 import { HeadroomList } from "@/components/alerts/overview/headroom-list"
 import { sortIncidents } from "@/components/alerts/overview/shared"
 import { ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
-import { formatAlertDuration, formatResolutionDuration, formatSignalValue } from "@/lib/alerts/form-utils"
-import { quietForMs, ruleHeadroom } from "@/lib/alerts/headroom"
+import { formatAlertDuration, formatResolutionDuration, formatSignalValue } from "@maple/web-data/alerts/form-utils"
+import { quietForMs, ruleHeadroom } from "@maple/web-data/alerts/headroom"
 import {
 	type BlindSpot,
 	type BlindSpotKind,
@@ -21,8 +21,8 @@ import {
 	type FireLane,
 	fireLanes,
 	incidentTitle,
-} from "@/lib/alerts/overview-derive"
-import type { AlertsOverviewReady } from "@/lib/models/alerts-overview-model"
+} from "@maple/web-data/alerts/overview-derive"
+import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 
 const HOUR_MS = 60 * 60 * 1000
 

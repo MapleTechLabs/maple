@@ -6,7 +6,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
 import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 
 /** Absolute start in the viewer's timezone (what you correlate against), with the age beside it. */
 function TraceStartedAt({ startTime }: { startTime: string }) {

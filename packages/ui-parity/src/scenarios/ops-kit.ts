@@ -37,6 +37,8 @@ export interface OpsOptions {
 	readonly steps?: (page: Page) => Promise<void>
 	readonly fullPage?: boolean
 	readonly mask?: (page: Page) => ReadonlyArray<Locator>
+	readonly faults?: Scenario["faults"]
+	readonly settle?: Scenario["settle"]
 }
 
 /** Desktop, light and dark, on `acme-ops` unless the scenario says otherwise. */
@@ -53,6 +55,8 @@ export const opsScenarios =
 		...(options.steps === undefined ? undefined : { steps: options.steps }),
 		...(options.fullPage === undefined ? undefined : { fullPage: options.fullPage }),
 		...(options.mask === undefined ? undefined : { mask: options.mask }),
+		...(options.faults === undefined ? undefined : { faults: options.faults }),
+		...(options.settle === undefined ? undefined : { settle: options.settle }),
 	})
 
 export const clickButton = (name: string | RegExp) => (page: Page) =>

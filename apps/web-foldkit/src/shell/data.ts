@@ -3,7 +3,8 @@ import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { ServicesFacetsProbe } from "../data/services-facets-probe"
-import { MapleApiClient, MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
+import { SessionTenant } from "../data/session-tenant"
+import { MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
 import { fetchDashboardRows } from "./dashboards-shape"
 import { Message } from "./message"
 
@@ -26,8 +27,7 @@ const failed =
 export const LoadTenant = Command.define("LoadTenant", {
 	messages: [Message.SucceededLoadTenant, Message.FailedLoadTenant],
 	execute: Effect.gen(function* () {
-		const client = yield* MapleApiClient
-		const tenant = yield* client.auth.session()
+		const tenant = yield* (yield* SessionTenant).get
 		return Message.SucceededLoadTenant({ orgId: tenant.orgId })
 	}).pipe(failed(Message.FailedLoadTenant())),
 })

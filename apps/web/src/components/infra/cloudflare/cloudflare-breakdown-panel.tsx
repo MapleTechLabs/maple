@@ -47,7 +47,7 @@ import { ListFooter } from "@maple/ui/components/ui/list-footer"
 import { Panel, PanelHeader, PanelTitle } from "@maple/ui/components/ui/panel"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatBytes, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { formatDateInTimezone } from "@/lib/timezone-format"
+import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { PanelScope } from "./panel-scope"
 import type { CloudflareFilterKey, CloudflareFilters } from "./filters"
 

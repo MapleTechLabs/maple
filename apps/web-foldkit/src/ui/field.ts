@@ -100,7 +100,7 @@ export type FieldIds = Readonly<{ control: string; label: string; error: string;
 export const fieldLabel = <Message>(
 	h: HtmlBuilder<Message>,
 	options: Readonly<{ ids: FieldIds; className?: string; state: FieldState }>,
-	text: string,
+	text: string | ReadonlyArray<Html | string>,
 ): Html =>
 	h.label(
 		[
@@ -110,7 +110,7 @@ export const fieldLabel = <Message>(
 			h.Class(cn(fieldLabelStyles, options.className)),
 			...fieldStateAttributes(h, options.state),
 		],
-		[text],
+		typeof text === "string" ? [text] : text,
 	)
 
 /** The ids Base UI lists in the control's `aria-describedby`: the description, then a shown error. */
@@ -122,12 +122,19 @@ const describedBy = (ids: FieldIds, state: FieldState): ReadonlyArray<string> =>
 /** `<Input>` inside a Base UI field: the control wrapper and the labelled native input. */
 export const input = <Message>(
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ ids: FieldIds; state: FieldState; attributes: ReadonlyArray<Attribute<Message>> }>,
+	options: Readonly<{
+		ids: FieldIds
+		state: FieldState
+		attributes: ReadonlyArray<Attribute<Message>>
+		/** `<Input className>`: on the control wrapper, as @maple/ui puts it. */
+		className?: string
+	}>,
 ): Html => {
 	const described = describedBy(options.ids, options.state)
 	return inputControl(h, {
 		id: options.ids.control,
 		fieldState: options.state,
+		className: options.className,
 		attributes: [
 			...options.attributes,
 			h.AriaLabelledBy(options.ids.label),
@@ -141,7 +148,7 @@ export const input = <Message>(
 export const fieldDescription = <Message>(
 	h: HtmlBuilder<Message>,
 	options: Readonly<{ ids: FieldIds; className?: string; state: FieldState }>,
-	text: string,
+	text: string | ReadonlyArray<Html | string>,
 ): Html =>
 	h.p(
 		[
@@ -150,7 +157,7 @@ export const fieldDescription = <Message>(
 			h.Class(cn(fieldDescriptionStyles, options.className)),
 			...fieldStateAttributes(h, options.state),
 		],
-		[text],
+		typeof text === "string" ? [text] : text,
 	)
 
 /** Base UI `Field.Error` with `match`: always shown while rendered. Callers add `role="alert"`. */

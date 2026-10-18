@@ -21,7 +21,7 @@ import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { CorrelationStrips, type StripSeries } from "../service-lens/correlation-strips"
 import type { ChartEventMarker } from "../primitives/chart-event-markers"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimeInTimezone } from "@/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import { workerHealth, type WorkerHealth, type WorkerListRow } from "./list-model"
 import {
 	DURABLE_OBJECT_COLORS,

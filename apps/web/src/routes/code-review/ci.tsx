@@ -27,7 +27,7 @@ import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 
 const searchSchema = Schema.Struct(CodeReviewCiSearchFields)
 

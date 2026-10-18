@@ -26,11 +26,11 @@ import {
 	ruleToFormState,
 	signalLabels,
 	v2DeliveryToDocument,
-} from "@/lib/alerts/form-utils"
+} from "@maple/web-data/alerts/form-utils"
 import {
 	buildIncidentTimeline,
 	incidentGroup,
-} from "@/lib/alerts/incident-timeline"
+} from "@maple/web-data/alerts/incident-timeline"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { toastExit } from "@/lib/error-toast"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"

@@ -7,7 +7,7 @@ import { StatRail, StatRailItem, StatRailLoading } from "@/components/common/sta
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { ServiceUsageResponse, ServiceUsageTotals } from "@maple/web-data/warehouse/service-usage"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 

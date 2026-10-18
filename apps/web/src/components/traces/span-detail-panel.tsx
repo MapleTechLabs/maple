@@ -37,7 +37,7 @@ import {
 import { TraceAttributeFilterProvider } from "./trace-attribute-filter-provider"
 import { SpanEventsSection } from "./span-events-section"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { getActiveInfraCorrelations } from "@/components/infra/infra-correlations"
 import { InfraCorrelationPanel, infraCorrelationWindow } from "@/components/infra/infra-correlation-panel"

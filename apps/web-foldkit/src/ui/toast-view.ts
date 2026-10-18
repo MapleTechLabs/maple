@@ -97,7 +97,8 @@ const toastRoot = (h: HtmlBuilder<Message>, model: Model, toast: Toast, placemen
 	return h.div(
 		[
 			h.Key(toast.id),
-			h.AriaDescribedBy(descriptionId(toast.id)),
+			// Base UI's `Toast.Description` renders nothing for a toast without one.
+			...(toast.description === "" ? [] : [h.AriaDescribedBy(descriptionId(toast.id))]),
 			h.AriaLabelledBy(titleId(toast.id)),
 			h.AriaModal(false),
 			h.Class(cn(...toastRootStyles)),
@@ -141,15 +142,19 @@ const toastRoot = (h: HtmlBuilder<Message>, model: Model, toast: Toast, placemen
 										],
 										[toast.title],
 									),
-									h.p(
-										[
-											h.Class(toastDescriptionStyles),
-											h.DataAttribute("slot", "toast-description"),
-											...typeAttribute(h, toast.type),
-											h.Id(descriptionId(toast.id)),
-										],
-										[toast.description],
-									),
+									...(toast.description === ""
+										? []
+										: [
+												h.p(
+													[
+														h.Class(toastDescriptionStyles),
+														h.DataAttribute("slot", "toast-description"),
+														...typeAttribute(h, toast.type),
+														h.Id(descriptionId(toast.id)),
+													],
+													[toast.description],
+												),
+											]),
 								],
 							),
 						],

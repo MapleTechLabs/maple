@@ -17,7 +17,7 @@ import { AlertsEmptyState } from "@/components/alerts/overview/alerts-empty-stat
 import { FilteredEmpty } from "@/components/common/filtered-empty"
 import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 import { MagnifierIcon } from "@/components/icons"
-import { formatSignalValue } from "@/lib/alerts/form-utils"
+import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import {
 	type RibbonCell,
 	type RuleBucket,
@@ -25,10 +25,10 @@ import {
 	ruleConditionSummary,
 	ruleHeadroom,
 	ruleRibbon,
-} from "@/lib/alerts/overview-derive"
-import { type DerivedRuleStatus, worstState } from "@/lib/alerts/rule-status"
-import { groupByTag, type TagGroup, UNTAGGED_KEY } from "@/lib/alerts/tag-grouping"
-import type { AlertsOverviewReady } from "@/lib/models/alerts-overview-model"
+} from "@maple/web-data/alerts/overview-derive"
+import { type DerivedRuleStatus, worstState } from "@maple/web-data/alerts/rule-status"
+import { groupByTag, type TagGroup, UNTAGGED_KEY } from "@maple/web-data/alerts/tag-grouping"
+import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const RIBBON_DAYS = 7

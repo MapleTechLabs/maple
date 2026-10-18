@@ -11,7 +11,7 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import type { TrialStatus } from "@/lib/billing/plan-gating"
 import { sentenceCasePlanName } from "@/lib/billing/plans"
 import type { SpendModel } from "@/lib/billing/spend"
-import { formatDateInTimezone } from "@/lib/timezone-format"
+import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { CostBreakdown } from "./cost-breakdown"
 
 const dollars = (cents: number, currency: string) => formatCurrency(cents / 100, currency)

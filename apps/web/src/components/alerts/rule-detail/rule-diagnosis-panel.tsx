@@ -19,8 +19,8 @@ import {
 	diagnosisVerdict,
 	type DiagnosisStage,
 	type DiagnosisStageStatus,
-} from "@/lib/alerts/diagnosis"
-import { worstState } from "@/lib/alerts/rule-status"
+} from "@maple/web-data/alerts/diagnosis"
+import { worstState } from "@maple/web-data/alerts/rule-status"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import { formatTimeInTimezone, formatTimestampInTimezone } from "./timezone-format"
+import { formatTimeInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 
 describe("timezone-format", () => {
 	it("treats Tinybird datetime strings without timezone as UTC", () => {

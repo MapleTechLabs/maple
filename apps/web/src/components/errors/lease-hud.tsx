@@ -5,7 +5,7 @@ import * as React from "react"
 import type { ActorDocument } from "@maple/domain/http"
 import { formatCountdown } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { ActorChip } from "./actor-chip"
 
 interface LeaseHudProps {

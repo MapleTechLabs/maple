@@ -15,16 +15,16 @@ import { IncidentRail } from "@/components/alerts/incident-detail/incident-rail"
 import { IncidentTimeline } from "@/components/alerts/incident-detail/incident-timeline"
 import { ChatBubbleSparkleIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { formatAlertDuration, formatSignalValue, signalLabels } from "@/lib/alerts/form-utils"
+import { formatAlertDuration, formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
 import {
 	conditionPhrase,
 	holdReasonLabel,
 	incidentGroup,
 	type IncidentTimelineEntry,
 	signalTitle,
-} from "@/lib/alerts/incident-timeline"
+} from "@maple/web-data/alerts/incident-timeline"
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
-import { formatDateInTimezone, formatTimeInTimezone } from "@/lib/timezone-format"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 
 function statusLine(incident: AlertIncidentDocument, now: number, timeZone: string): string {
 	const at = (iso: string) =>

@@ -23,7 +23,7 @@ import {
 	type ActionKind,
 	type ActionTarget,
 } from "./action-target"
-import { formatTimeInTimezone } from "@/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 
 /* -------------------------------------------------------------------------------------------------
  * Geometry

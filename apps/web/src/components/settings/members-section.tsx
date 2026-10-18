@@ -41,7 +41,7 @@ import {
 	UserIcon,
 } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatDateInTimezone } from "@/lib/timezone-format"
+import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { useAsyncAction, useKeyedAsyncAction } from "@/hooks/use-mutation-action"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 

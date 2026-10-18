@@ -7,6 +7,7 @@
 		".": "./src/index.ts",
 		"./collections": "./src/collections/index.ts",
 		"./collections/*": "./src/collections/*.ts",
+		"./alerts/*": "./src/alerts/*.ts",
 		"./lib/*": "./src/lib/*.ts",
 		"./warehouse/*": "./src/warehouse/*.ts"
 	},

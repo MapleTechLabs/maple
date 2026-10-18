@@ -195,6 +195,8 @@ export type MenuItemOptions<Message> = Readonly<{
 	variant?: "default" | "destructive"
 	/** Base UI's `data-highlighted`, for a Model that tracks the highlight (`menu.ts`). */
 	isHighlighted?: boolean
+	/** Base UI's `disabled`: `aria-disabled` and `data-disabled`, no hover or select. */
+	isDisabled?: boolean
 }>
 
 /** `<DropdownMenuItem>`: a `menuitem` focused on hover, so `focus:` styles mark the highlight. */
@@ -211,8 +213,12 @@ export const menuItem = <Message>(
 		h.Id(options.id),
 		h.Role("menuitem"),
 		h.Tabindex(options.isHighlighted === true ? 0 : -1),
-		h.OnMouseEnter(options.onHighlight),
-		...(options.onSelect === undefined ? [] : [h.OnClick(options.onSelect)]),
+		...(options.isDisabled === true
+			? [h.AriaDisabled(true), h.DataAttribute("disabled", "")]
+			: [
+					h.OnMouseEnter(options.onHighlight),
+					...(options.onSelect === undefined ? [] : [h.OnClick(options.onSelect)]),
+				]),
 		...(options.attributes ?? []),
 	]
 	return options.href === undefined
