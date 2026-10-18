@@ -21,6 +21,11 @@ const mobile = (
 	area: "mobile",
 })
 
+/** Seeded ids (as in `routes.ts` and `ops-kit.ts`, kept out of the capture side's imports). */
+const ERROR_TRACE_ID = "6843a8853182b32339b2dd5120d423f2"
+const TRIAGE_ISSUE_ID = "0199a004-0000-7000-8000-000000000001"
+const PLATFORM_DASHBOARD = "dash_parity_ops_platform"
+
 const openFilters = async (page: Page) => {
 	await page.getByRole("button", { name: "Open filters" }).click()
 	await page.getByRole("dialog", { name: "Filters" }).waitFor()
@@ -37,7 +42,9 @@ const openTimePicker = async (page: Page) => {
 }
 
 /** The pages legacy renders responsively, most used first, each with its filter sheet if it has one. */
-const pages: ReadonlyArray<Readonly<{ id: string; title: string; path: string; filters: boolean }>> = [
+const pages: ReadonlyArray<
+	Readonly<{ id: string; title: string; path: string; filters: boolean; dataset?: string }>
+> = [
 	{ id: "overview", title: "Overview", path: "/", filters: false },
 	{ id: "services", title: "Services", path: "/services", filters: true },
 	{ id: "traces", title: "Traces", path: "/traces", filters: true },
@@ -49,17 +56,41 @@ const pages: ReadonlyArray<Readonly<{ id: string; title: string; path: string; f
 	{ id: "service-map", title: "Service map", path: "/service-map", filters: false },
 	{ id: "metrics", title: "Metrics", path: "/metrics", filters: false },
 	{ id: "settings", title: "Settings", path: "/settings", filters: true },
+	{ id: "service-detail", title: "Service detail", path: "/services/payment-svc", filters: false },
+	{ id: "trace-detail", title: "Trace detail", path: `/traces/${ERROR_TRACE_ID}`, filters: false },
+	{ id: "error-issue", title: "Error issue", path: `/errors/issues/${TRIAGE_ISSUE_ID}`, filters: false },
+	{ id: "dashboard", title: "Dashboard", path: `/dashboards/${PLATFORM_DASHBOARD}`, filters: false },
+	{ id: "infra", title: "Infrastructure", path: "/infra", filters: false, dataset: "infra-k8s" },
+	{ id: "infra-hosts", title: "Hosts", path: "/infra/hosts", filters: false },
+	{ id: "infra-containers", title: "Containers", path: "/infra/containers", filters: true },
+	{ id: "infra-pods", title: "Kubernetes pods", path: "/infra/kubernetes/pods", filters: true, dataset: "infra-k8s" },
+	{ id: "replays", title: "Replays", path: "/replays", filters: true, dataset: "acme-web" },
+	{ id: "analytics", title: "Analytics", path: "/analytics", filters: true, dataset: "acme-web" },
+	{ id: "releases", title: "Releases", path: "/releases", filters: true },
+	{ id: "anomalies", title: "Anomalies", path: "/anomalies", filters: true },
+	{ id: "investigations", title: "Investigations", path: "/investigations", filters: false },
+	{ id: "agent-sessions", title: "Agent sessions", path: "/agent-sessions", filters: true, dataset: "agent-sessions" },
+	{ id: "integrations", title: "Integrations", path: "/integrations", filters: true },
+	{ id: "code-review", title: "Code review", path: "/code-review", filters: false, dataset: "code-review" },
 ]
 
 export const mobileArea: AreaModule = {
 	area: "mobile",
 	scenarios: [
-		...pages.flatMap((entry) => [
-			mobile(entry.id, entry.title, entry.path),
-			...(entry.filters
-				? [mobile(`${entry.id}-filters`, `${entry.title}, filter sheet open`, entry.path, { steps: openFilters })]
-				: []),
-		]),
+		...pages.flatMap((entry) => {
+			const dataset = entry.dataset ?? "default"
+			return [
+				mobile(entry.id, entry.title, entry.path, { dataset }),
+				...(entry.filters
+					? [
+							mobile(`${entry.id}-filters`, `${entry.title}, filter sheet open`, entry.path, {
+								dataset,
+								steps: openFilters,
+							}),
+						]
+					: []),
+			]
+		}),
 		mobile("services-empty", "Services (empty org)", "/services", { dataset: "empty" }),
 		mobile("services-nav", "Services, sidebar sheet open", "/services", { steps: openNav }),
 		mobile("services-time-picker", "Services, time range picker open", "/services", {
