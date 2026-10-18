@@ -3,8 +3,9 @@ import { Subscription } from "foldkit"
 import * as LogsStream from "../../ui/logs/logs-stream"
 import { ViewerFlags, viewerFlags } from "../../ui/logs/viewer"
 import * as Shell from "../../shell"
-import { LabShellFlags, labShellFlags } from "../app-shell"
+import { LabShellFlags, labShellFlags, labShellSubscriptions } from "../app-shell"
 import { defineLabWithFlags } from "../define"
+import type { Resources } from "../../platform/resources"
 import { Message, Model } from "../logs-lab/model"
 import { init, update } from "../logs-lab/update"
 import { view } from "../logs-lab/view"
@@ -15,22 +16,7 @@ import { view } from "../logs-lab/view"
  */
 const toShell = (message: Shell.Message) => Message.GotShellMessage({ message })
 
-const subscriptions = Subscription.make<Model, Message>()((entry) => ({
-	/** The shell's `useIsMobile` and its ⌘B toggle, as in the app root. */
-	shellViewport: entry(
-		{},
-		{
-			modelToDependencies: () => ({}),
-			dependenciesToStream: () => Stream.map(Shell.viewportChanges, toShell),
-		},
-	),
-	shellSidebarShortcut: entry(
-		{},
-		{
-			modelToDependencies: () => ({}),
-			dependenciesToStream: () => Stream.map(Shell.sidebarShortcut, toShell),
-		},
-	),
+const own = Subscription.make<Model, Message, Resources>()((entry) => ({
 	navigationKeys: entry(
 		{ hasRows: Schema.Boolean },
 		{
@@ -60,6 +46,11 @@ const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 		},
 	),
 }))
+
+const subscriptions = Subscription.aggregate<Model, Message, Resources>()(
+	labShellSubscriptions<Model, Message>(toShell),
+	own,
+)
 
 export const lab = defineLabWithFlags("Logs stream", {
 	Model,

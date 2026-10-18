@@ -45,7 +45,8 @@ export const panelSelect = (
 	}>,
 ): Html => {
 	const index = options.findIndex((option) => option.value === value)
-	const current = model.selects[id] ?? Select.init(id, { value, selectedIndex: index === -1 ? null : index })
+	const current =
+		model.selects[id] ?? Select.init(id, { value, selectedIndex: index === -1 ? null : index })
 	return h.submodel({
 		slotId: `${model.slotPrefix}-select-${id}`,
 		model: { ...current, value },
@@ -78,23 +79,47 @@ export const whereClauseEditor = (
 	h: H,
 	query: QueryDraft,
 	options: Readonly<{ placeholder?: string; className?: string }> = {},
-): Html => {
+): Html =>
+	whereClauseField(h, {
+		query,
+		className: options.className ?? "relative flex-1",
+		textareaClassName: WHERE_TEXTAREA_CLASS,
+		placeholder: options.placeholder ?? WHERE_PLACEHOLDER[query.dataSource],
+		rows: 1,
+		onInput: (value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value }),
+		onEnter: Message.PressedWhereEnter(),
+	})
+
+export type WhereClauseFieldOptions<M> = Readonly<{
+	query: QueryDraft
+	/** `WhereClauseEditor`'s `className` (its root) and `textareaClassName` (textarea and overlay). */
+	className: string
+	textareaClassName: string
+	placeholder: string
+	rows: number
+	onInput: (value: string) => M
+	onEnter: M
+}>
+
+/** `WhereClauseEditor` for any host Message. */
+export const whereClauseField = <M>(h: HtmlBuilder<M>, options: WhereClauseFieldOptions<M>): Html => {
+	const { query, textareaClassName } = options
 	const isHighlighting = query.whereClause.length > 0
 	return h.div(
-		[h.Class(options.className ?? "relative flex-1")],
+		[h.Class(options.className)],
 		[
 			textarea(h, {
 				id: `where-${query.id}`,
-				className: cn(WHERE_TEXTAREA_CLASS, isHighlighting && "text-transparent caret-foreground"),
+				className: cn(textareaClassName, isHighlighting && "text-transparent caret-foreground"),
 				defaultValue: query.whereClause,
 				attributes: [
 					h.AriaLabel(`Where clause for query ${query.name}`),
-					h.Placeholder(options.placeholder ?? WHERE_PLACEHOLDER[query.dataSource]),
-					h.Rows(1),
-					h.OnInput((value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value })),
+					h.Placeholder(options.placeholder),
+					h.Rows(options.rows),
+					h.OnInput(options.onInput),
 					// Where clauses are single-line.
 					h.OnKeyDownPreventDefault((key) =>
-						key === "Enter" ? Option.some(Message.PressedWhereEnter()) : Option.none(),
+						key === "Enter" ? Option.some(options.onEnter) : Option.none(),
 					),
 				],
 			}),
@@ -106,7 +131,7 @@ export const whereClauseEditor = (
 								h.Class(
 									cn(
 										"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
-										WHERE_TEXTAREA_CLASS,
+										textareaClassName,
 									),
 								),
 							],

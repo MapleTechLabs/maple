@@ -220,6 +220,17 @@ export const ChartSpec = defineTaggedUnion({
 		markers: Schema.Array(ChartEventMarker),
 		markerColors: MarkerColors,
 	},
+	/**
+	 * The `/lab/bench/tanstack` overview charts (apps/web `lab/bench/tanstack/*.tsx`): point-scaled
+	 * buckets, y pinned at 0, no legend. Rows are `overviewBenchRows`.
+	 */
+	BenchOverview: {
+		chart: Schema.Literals(["Throughput", "ErrorRate", "Latency"]),
+		rows: Schema.Array(FixedMetricRow),
+		/** Resolved series colours by series key; `border`/`background` are the chrome. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		gradientId: Schema.String,
+	},
 	/** `ThroughputAreaChart`, `ErrorRateAreaChart`, `ApdexAreaChart`, `LatencyLineChart` (charts/area, charts/line). */
 	FixedMetric: {
 		chart: Schema.Literals(["Throughput", "ErrorRate", "Latency", "Apdex"]),

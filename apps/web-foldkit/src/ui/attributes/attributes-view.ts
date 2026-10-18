@@ -283,6 +283,17 @@ const sectionOf = (h: H, model: Model, inputs: PanelInputs, source: AttributeSou
 		},
 	)
 
+export type TableInputs = Readonly<{ attributes: Readonly<Record<string, string>>; title: string }>
+
+/** A bare `<AttributesTable attributes title />`: ungrouped, unsearched, copy only. */
+export const tableView = Submodel.defineView<Model, Message, TableInputs>((model, inputs, h) =>
+	attributesTable(
+		h,
+		{ model, source: "log", canFilter: false, idPrefix: "table" },
+		{ attributes: inputs.attributes, title: inputs.title, section: "table", isGrouped: false },
+	),
+)
+
 /** `LogAttributesPanel`: the search box, then the log and resource attribute sections. */
 export const view = Submodel.defineView<Model, Message, PanelInputs>((model, inputs, h) =>
 	h.div(

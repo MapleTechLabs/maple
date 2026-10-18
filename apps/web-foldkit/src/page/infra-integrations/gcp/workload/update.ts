@@ -169,28 +169,7 @@ const serviceOf = (service: string): GcpInfraServiceId | undefined =>
 
 export const init = (route: Route, context: PageContext): Return => {
 	const service = serviceOf(route.service)
-	const model: Model = {
-		service: service ?? "cloudRun",
-		name: route.name,
-		search: route.search,
-		window: null,
-		nowMs: 0,
-		timeseries: Keyed.idle(),
-		resource: Keyed.idle(),
-		overview: Keyed.idle(),
-		nodes: Keyed.idle(),
-		sqlInventory: Keyed.idle(),
-		topQueries: Keyed.idle(),
-		traceSide: Keyed.idle(),
-		fleet: Keyed.idle(),
-		showAllQueries: false,
-		charts: {},
-		chartRuntime: { _tag: "Loading" },
-		themeColors: null,
-		timePicker: TimeRangePicker.init("gcp-workload-time-range"),
-		refreshVersion: 0,
-		isReloading: false,
-	}
+	const model = initialModel(service ?? "cloudRun", route.name, route.search)
 	// A mistyped service has no page: the list falls back to its first view.
 	if (service === undefined) {
 		return {
@@ -213,6 +192,30 @@ export const init = (route: Route, context: PageContext): Return => {
 		],
 	}
 }
+
+/** The page before any read: every slot idle, the chart runtime and theme still to come. */
+export const initialModel = (service: GcpInfraServiceId, name: string, search: Search): Model => ({
+	service,
+	name,
+	search,
+	window: null,
+	nowMs: 0,
+	timeseries: Keyed.idle(),
+	resource: Keyed.idle(),
+	overview: Keyed.idle(),
+	nodes: Keyed.idle(),
+	sqlInventory: Keyed.idle(),
+	topQueries: Keyed.idle(),
+	traceSide: Keyed.idle(),
+	fleet: Keyed.idle(),
+	showAllQueries: false,
+	charts: {},
+	chartRuntime: { _tag: "Loading" },
+	themeColors: null,
+	timePicker: TimeRangePicker.init("gcp-workload-time-range"),
+	refreshVersion: 0,
+	isReloading: false,
+})
 
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	if (hrefOfSearch(model, model.search) === hrefOfSearch(model, route.search)) return { model }

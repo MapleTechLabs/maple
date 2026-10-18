@@ -301,7 +301,10 @@ const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: C
 					h.section(
 						[h.Class("space-y-3")],
 						[
-							sectionHeading(h, { title: "All charts", hint: "each opens in the metrics explorer" }),
+							sectionHeading(h, {
+								title: "All charts",
+								hint: "each opens in the metrics explorer",
+							}),
 							workloadCharts(
 								h,
 								model,
@@ -341,7 +344,7 @@ const nodesSection = (
 			[h.Class(cn("space-y-3", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
 			[
 				sectionHeading(h, {
- title: `Nodes of ${keys[0] ?? ""}`,
+					title: `Nodes of ${keys[0] ?? ""}`,
 					hint: "share of allocatable, averaged over the cluster's nodes",
 				}),
 				workloadCharts(
@@ -362,8 +365,20 @@ const nodesSection = (
 	]
 }
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
-	const data = pageOf(model)
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
+	workloadPageView(h, model, pageOf(model), {
+		timeZone: inputs.context.timeZone,
+		defaultPreset: DEFAULT_PRESET,
+	}),
+)
+
+/** `GcpWorkloadPage` over its derived data: the route reads it off its slots, the lab off fixtures. */
+export const workloadPageView = (
+	h: H,
+	model: Model,
+	data: PageData,
+	options: Readonly<{ timeZone: string; defaultPreset: string }>,
+): Html => {
 	const timeSearch = {
 		startTime: model.search.startTime,
 		endTime: model.search.endTime,
@@ -371,7 +386,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	}
 	const theme = model.themeColors
 	const isReady = theme !== null && model.chartRuntime._tag !== "Loading"
-	const ctx = theme === null ? null : { theme, timeZone: inputs.context.timeZone }
+	const ctx = theme === null ? null : { theme, timeZone: options.timeZone }
 	const service = model.service
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
@@ -383,7 +398,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					titleContent: header(h, model, data),
 					actions: pageTime(h, {
 						search: model.search,
-						defaultPreset: DEFAULT_PRESET,
+						defaultPreset: options.defaultPreset,
 						window: model.window,
 						picker: model.timePicker,
 						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
@@ -418,4 +433,4 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			),
 		],
 	)
-})
+}

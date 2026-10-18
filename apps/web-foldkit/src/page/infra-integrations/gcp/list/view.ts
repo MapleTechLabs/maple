@@ -6,11 +6,16 @@ import {
 	gcpProjectCounts,
 	gcpProjectHealth,
 	gcpProjectShares,
+	gcpListRows,
+	gcpListScope,
 	gcpViewFailed,
 	sortByAttention,
+	type GcpFleetRead,
 	type GcpProjectHealth,
+	type GcpSparks,
 	type RowRules,
 } from "@maple/web/components/infra/gcp/list-model"
+import type { GcpCloudSqlInstance } from "@maple/web/components/infra/gcp/inventory"
 import {
 	GCP_RESOURCES_TAB,
 	GCP_VIEW_SERVICES,
@@ -24,10 +29,11 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
+import { ResolveThemeColors, type ThemeColors } from "../../../../charts/theme-colors"
 import { button } from "../../../../ui/button"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
+import type * as Menu from "../../../../ui/menu"
 import { segmentedSelect } from "../../../../ui/segmented-select"
 import { skeleton } from "../../../../ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
@@ -36,7 +42,15 @@ import { integrationNotConnected } from "../../kit/empty-states"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHero, searchToolbar } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
-import { listScopeOf, metricsConnectors, noticeOf, pageStateOf, statusOf } from "./derive"
+import {
+	cloudSqlInstancesOf,
+	metricsConnectors,
+	noticeOf,
+	pageStateOf,
+	requestedViewOf,
+	sparksOf,
+	statusOf,
+} from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import {
@@ -50,7 +64,8 @@ import {
 } from "./view-band"
 import { gcpNotice } from "./view-notice"
 import { resourcesView } from "./view-resources"
-import type { H, RowsContext } from "./view-rows"
+import { projectMenu } from "./view-project-menu"
+import type { H, RowsContext, TimeSearch } from "./view-rows"
 import {
 	databasesTable,
 	serviceTable,
@@ -60,9 +75,7 @@ import {
 } from "./view-tables"
 
 // `GcpPage`, `GcpInfra` and `GcpListPage` (apps/web/src/routes/infra/gcp/index.tsx,
-// components/infra/gcp/gcp-list-page.tsx).
-// TODO(project-menu): with several projects legacy titles the page with a project dropdown
-// (`GcpProjectMenu`); the fixtures connect one project, so the menu is not ported yet.
+// components/infra/gcp/gcp-list-page.tsx). `gcpListPage` is the presentational page the lab reuses.
 
 const VIEW_LABEL = {
 	services: "Services",
@@ -89,7 +102,7 @@ const GENERIC_BAND = {
 	loadBalancing: gcpWorkloadBand("URL map"),
 } as const
 
-const THEME_TOKENS = ["--chart-2", "--severity-error", "--muted-foreground"]
+export const THEME_TOKENS = ["--chart-2", "--severity-error", "--muted-foreground"]
 
 const hero = (h: H): Html =>
 	pageHero(h, {
@@ -101,7 +114,7 @@ const hero = (h: H): Html =>
 /** `ListBody`: one view's band, search and table; the band counts every row, the table what is left. */
 const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends string>(
 	h: H,
-	model: Model,
+	state: ListState,
 	options: Readonly<{
 		rows: ReadonlyArray<R>
 		rules: RowRules<R, S>
@@ -115,8 +128,8 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 	}>,
 ): ReadonlyArray<Html> => {
 	const { rows, rules } = options
-	const scope = rules.scopes.find((candidate) => candidate === model.search.scope)
-	const query = model.search.q ?? ""
+	const scope = rules.scopes.find((candidate) => candidate === state.scope)
+	const query = state.q ?? ""
 	const needle = query.trim().toLowerCase()
 	const shown = sortByAttention(
 		rules,
@@ -307,19 +320,72 @@ const infraView = (
 			),
 		]
 	}
-	const { projects, project, region, inRegion, rows, counts, views, view } = listScopeOf(model, collecting)
+	const notice = noticeOf(model, connectors)
+	return [
+		gcpListPage(h, {
+			fleet,
+			sparks: sparksOf(model),
+			cloudSqlInstances: cloudSqlInstancesOf(model, collecting),
+			projectHealth: gcpProjectHealth(connectors, model.nowMs),
+			collecting,
+			notice: notice === null ? [] : [gcpNotice(h, notice)],
+			resources: (timeSearch) => resourcesView(h, model, timeSearch, gcpResourcesError(connectors)),
+			state: { ...model.search, view: requestedViewOf(model) },
+			timeSearch: {
+				startTime: model.search.startTime,
+				endTime: model.search.endTime,
+				timePreset: model.search.timePreset,
+			},
+			theme: model.themeColors,
+			isChartReady: model.chartRuntime._tag !== "Loading",
+			isWaiting: AsyncData.isRefreshing(fleetData),
+			projectMenu: model.projectMenu,
+		}),
+	]
+}
+
+/** `GcpListState`: the route's search, or the lab's state. */
+export type ListState = Readonly<{
+	view?: GcpView | undefined
+	q?: string | undefined
+	scope?: string | undefined
+	project?: string | undefined
+	region?: string | undefined
+}>
+
+export type ListPageInput = Readonly<{
+	/** Null while loading. */
+	fleet: ReadonlyArray<GcpFleetRead> | null
+	sparks: GcpSparks
+	cloudSqlInstances: ReadonlyArray<GcpCloudSqlInstance> | undefined
+	projectHealth: ReadonlyMap<string, GcpProjectHealth>
+	collecting: boolean
+	notice: ReadonlyArray<Html>
+	resources: (timeSearch: TimeSearch) => Html
+	state: ListState
+	timeSearch: TimeSearch
+	theme: ThemeColors | null
+	isChartReady: boolean
+	isWaiting: boolean
+	projectMenu: Menu.Model
+}>
+
+/** `GcpListPage`: header, projects strip, and the current view's band, search and table. */
+export const gcpListPage = (h: H, input: ListPageInput): Html => {
+	const { fleet, state, isWaiting } = input
+	const allRows = fleet === null ? null : gcpListRows(fleet, input.sparks, input.cloudSqlInstances)
+	const { projects, project, region, inRegion, rows, counts, views, view } = gcpListScope(
+		allRows,
+		{ view: state.view, project: state.project, region: state.region },
+		input.collecting,
+	)
 	const multiProject = projects.length > 1
 	const projectCounts = (name: string) => gcpProjectCounts(inRegion, name, view)
-	const isWaiting = AsyncData.isRefreshing(fleetData)
 	const ctx: RowsContext = {
-		timeSearch: {
-			startTime: model.search.startTime,
-			endTime: model.search.endTime,
-			timePreset: model.search.timePreset,
-		},
+		timeSearch: input.timeSearch,
 		showProject: multiProject && project === undefined,
-		theme: model.themeColors,
-		isChartReady: model.chartRuntime._tag !== "Loading",
+		theme: input.theme,
+		isChartReady: input.isChartReady,
 	}
 	const section = (children: ReadonlyArray<Html>) =>
 		h.div(
@@ -327,8 +393,7 @@ const infraView = (
 			children,
 		)
 	const body = (): Html => {
-		if (view === GCP_RESOURCES_TAB)
-			return resourcesView(h, model, ctx.timeSearch, gcpResourcesError(connectors))
+		if (view === GCP_RESOURCES_TAB) return input.resources(ctx.timeSearch)
 		if (fleet === null) {
 			return section([
 				gcpBandLoading(h),
@@ -339,7 +404,7 @@ const infraView = (
 		switch (view) {
 			case "services":
 				return section(
-					listBody(h, model, {
+					listBody(h, state, {
 						rows: rows.services,
 						rules: GCP_SERVICE_RULES,
 						spec: GCP_SERVICE_BAND,
@@ -352,7 +417,7 @@ const infraView = (
 				)
 			case "pubsub":
 				return section(
-					listBody(h, model, {
+					listBody(h, state, {
 						rows: rows.pubsub,
 						rules: GCP_SUBSCRIPTION_RULES,
 						spec: GCP_SUBSCRIPTION_BAND,
@@ -365,7 +430,7 @@ const infraView = (
 				)
 			case "cloudSql":
 				return section(
-					listBody(h, model, {
+					listBody(h, state, {
 						rows: rows.cloudSql,
 						rules: GCP_DATABASE_RULES,
 						spec: GCP_DATABASE_BAND,
@@ -379,7 +444,7 @@ const infraView = (
 				)
 			default:
 				return section(
-					listBody(h, model, {
+					listBody(h, state, {
 						rows: rows[view],
 						rules: GCP_WORKLOAD_RULES,
 						spec: GENERIC_BAND[view],
@@ -393,45 +458,49 @@ const infraView = (
 				)
 		}
 	}
-	const health = gcpProjectHealth(connectors, model.nowMs)
-	const notice = noticeOf(model, connectors)
-	return [
-		h.div(
-			[h.Class("space-y-6")],
-			[
-				pageHero(h, {
-					title: "Google Cloud",
-					trailing:
-						!multiProject && projects.length === 1
-							? heroChip(h, `project ${projects[0] ?? ""}`)
-							: undefined,
-					actions:
-						views.length > 1
-							? [
-									segmentedSelect(h, {
-										size: "xs",
-										ariaLabel: "Google Cloud view",
-										options: views.map((option) => ({
-											value: option,
-											label:
-												option === GCP_RESOURCES_TAB || counts === null
-													? VIEW_LABEL[option]
-													: `${VIEW_LABEL[option]} ${counts[option]}`,
-										})),
-										value: view,
-										onChange: (next) => Message.ClickedView({ view: next }),
-									}),
-								]
-							: undefined,
-				}),
-				...(notice === null ? [] : [gcpNotice(h, notice)]),
-				...(multiProject && project === undefined && view !== GCP_RESOURCES_TAB
-					? [projectsStrip(h, projects, gcpProjectShares(inRegion, view), projectCounts, health)]
-					: []),
-				body(),
-			],
-		),
-	]
+	const health = input.projectHealth
+	return h.div(
+		[h.Class("space-y-6")],
+		[
+			pageHero(h, {
+				title: "Google Cloud",
+				trailing: multiProject
+					? projectMenu(h, {
+							model: input.projectMenu,
+							projects,
+							counts: projectCounts,
+							health,
+							value: project,
+						})
+					: projects.length === 1
+						? heroChip(h, `project ${projects[0] ?? ""}`)
+						: undefined,
+				actions:
+					views.length > 1
+						? [
+								segmentedSelect(h, {
+									size: "xs",
+									ariaLabel: "Google Cloud view",
+									options: views.map((option) => ({
+										value: option,
+										label:
+											option === GCP_RESOURCES_TAB || counts === null
+												? VIEW_LABEL[option]
+												: `${VIEW_LABEL[option]} ${counts[option]}`,
+									})),
+									value: view,
+									onChange: (next) => Message.ClickedView({ view: next }),
+								}),
+							]
+						: undefined,
+			}),
+			...input.notice,
+			...(multiProject && project === undefined && view !== GCP_RESOURCES_TAB
+				? [projectsStrip(h, projects, gcpProjectShares(inRegion, view), projectCounts, health)]
+				: []),
+			body(),
+		],
+	)
 }
 
 const content = (h: H, model: Model): ReadonlyArray<Html> =>

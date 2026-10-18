@@ -2,6 +2,7 @@ import { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import * as Combobox from "../../../ui/combobox"
+import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 import { PageOutMessage } from "../../contract"
 import * as MappingDialog from "./mapping-dialog"
@@ -102,5 +103,25 @@ describe("ingestion tab", () => {
 			name: "SaveAttributeMapping",
 			args: { editingId: null, payload: { name: "Status", source_context: "span", source_key: "a.b", target_key: "c.d", operation: "copy" } },
 		})
+	})
+
+	test("Escape in an open key popup closes the popup only; the next Escape closes the dialog", () => {
+		const dialog = (message: MappingDialog.Message) => Message.GotMappingDialogMessage({ message })
+		const escape = Combobox.Message.PressedInputKey({ key: "Escape", items: [], isUnfiltered: false })
+		const isOpen = (model: Model) => model.mappingDialog.dialog.isOpen
+		// One keydown is two Messages: the input's, then the dialog portal's as it bubbles.
+		const pressEscape = (model: Model) =>
+			[
+				dialog(MappingDialog.Message.GotKeyMessage({ field: "sourceKey", message: escape })),
+				dialog(MappingDialog.Message.GotDialogMessage({ message: Dialog.Message.PressedEscape() })),
+			].reduce((current, message) => step(current, message).model, model)
+		const typed = [
+			Message.ClickedAddMapping(),
+			dialog(MappingDialog.Message.GotKeyMessage({ field: "sourceKey", message: Combobox.Message.ChangedInput({ value: "http" }) })),
+		].reduce((model, message) => step(model, message).model, loaded())
+		expect(typed.mappingDialog.sourceKey.isOpen).toBe(true)
+		const once = pressEscape(typed)
+		expect([once.mappingDialog.sourceKey.isOpen, isOpen(once)]).toEqual([false, true])
+		expect(isOpen(pressEscape(once))).toBe(false)
 	})
 })

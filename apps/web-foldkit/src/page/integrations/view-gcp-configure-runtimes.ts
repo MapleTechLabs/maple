@@ -19,8 +19,15 @@ type H = HtmlBuilder<Message>
 
 const FORWARD_ID = "gcp-forward"
 
-const runtimeRow = (h: H, value: GcpLogRuntime, label: string, hint: string, checked: boolean): Html => {
-	const inputId = `${FORWARD_ID}-${value}`
+const runtimeRow = (
+	h: H,
+	forwardId: string,
+	value: GcpLogRuntime,
+	label: string,
+	hint: string,
+	checked: boolean,
+): Html => {
+	const inputId = `${forwardId}-${value}`
 	return h.div(
 		[
 			h.Class(
@@ -58,15 +65,20 @@ const runtimeRow = (h: H, value: GcpLogRuntime, label: string, hint: string, che
 	)
 }
 
-export const runtimeFields = (h: H, runtimes: ReadonlyArray<GcpLogRuntime>): Html =>
+/** `forwardId` names the fieldset and prefixes its checkboxes: unique per field on a page. */
+export const runtimeFields = (
+	h: H,
+	runtimes: ReadonlyArray<GcpLogRuntime>,
+	forwardId: string = FORWARD_ID,
+): Html =>
 	h.fieldset(
-		[h.AriaLabelledBy(FORWARD_ID), h.Class("flex flex-col gap-2.5 pt-1")],
+		[h.AriaLabelledBy(forwardId), h.Class("flex flex-col gap-2.5 pt-1")],
 		[
 			h.div(
 				[h.Class("flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs/5")],
 				[
 					h.span(
-						[h.Class("font-medium"), h.Id(FORWARD_ID)],
+						[h.Class("font-medium"), h.Id(forwardId)],
 						["Forward application output from Google Cloud"],
 					),
 					button(
@@ -87,7 +99,7 @@ export const runtimeFields = (h: H, runtimes: ReadonlyArray<GcpLogRuntime>): Htm
 			h.div(
 				[h.Class("divide-y rounded-md border")],
 				GCP_LOG_RUNTIMES.map(({ value, label, hint }) =>
-					runtimeRow(h, value, label, hint, runtimes.includes(value)),
+					runtimeRow(h, forwardId, value, label, hint, runtimes.includes(value)),
 				),
 			),
 			// Maple does not know which workloads send their logs another way: the call is the admin's.

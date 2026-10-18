@@ -24,11 +24,16 @@ const browserZone: Effect.Effect<string> = Effect.try(
 	Effect.orElseSucceed(() => DEFAULT_TIMEZONE),
 )
 
-/** The stored zone preference resolved like legacy: system, or an invalid zone, means the browser's. */
-export const readEffectiveTimeZone: Effect.Effect<string> = Effect.gen(function* () {
+/** `useTimezonePreference().selectedTimezone`: a valid stored zone, none for system. */
+export const readSelectedTimeZone: Effect.Effect<Option.Option<string>> = Effect.gen(function* () {
 	const stored = Option.map(readLocalStorage(TIMEZONE_STORAGE_KEY), (raw) =>
 		Option.getOrElse(decodeStored(raw), () => raw),
 	)
-	if (Option.isNone(stored) || stored.value === SYSTEM_VALUE) return yield* browserZone
-	return (yield* isValidZone(stored.value)) ? stored.value : yield* browserZone
+	if (Option.isNone(stored) || stored.value === SYSTEM_VALUE) return Option.none()
+	return (yield* isValidZone(stored.value)) ? stored : Option.none()
 })
+
+/** The stored zone preference resolved like legacy: system, or an invalid zone, means the browser's. */
+export const readEffectiveTimeZone: Effect.Effect<string> = Effect.flatMap(readSelectedTimeZone, (selected) =>
+	Option.match(selected, { onNone: () => browserZone, onSome: Effect.succeed }),
+)

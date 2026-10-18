@@ -31,6 +31,33 @@ export type ActionKind =
 	| "service"
 	| "task"
 
+/** Each kind's name, in the order the glyph lane lists them (`ACTION_GLYPH`'s labels). */
+export const ACTION_KIND_LABEL = {
+	rollback: "Deploy or rollback",
+	alert: "Alerting",
+	dashboard: "Dashboard",
+	traces: "Traces",
+	logs: "Logs",
+	issue: "Error issue",
+	config: "Configuration",
+	code: "Code change",
+	service: "Service setup",
+	task: "Action",
+} as const satisfies Record<ActionKind, string>
+
+export const ACTION_KINDS: ReadonlyArray<ActionKind> = [
+	"rollback",
+	"alert",
+	"dashboard",
+	"traces",
+	"logs",
+	"issue",
+	"config",
+	"code",
+	"service",
+	"task",
+]
+
 export interface ActionTarget {
 	/** Uppercase CTA text, e.g. `CREATE ALERT`. */
 	readonly label: string

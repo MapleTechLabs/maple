@@ -12,11 +12,9 @@ import { statFigure } from "../../../ui/stat-figure"
 import { statusDot } from "../../../ui/status-dot"
 import { confidenceMeter } from "../kit"
 import { elapsedBetween } from "./derive"
-import type { Message } from "./message"
 
 // `VerdictCard` and `RunProgress` (components/investigations/verdict-card.tsx, run-progress.tsx).
 
-type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>
 
 const HEADING = "font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]"
@@ -29,7 +27,7 @@ const SEVERITY_TEXT_TONE = {
 	low: "neutral",
 } as const satisfies Record<keyof typeof SEVERITY_LABEL, Tone>
 
-const shell = (h: H, accent: string, children: ReadonlyArray<Html | null>, stats: ReadonlyArray<Html>): Html =>
+const shell = <M>(h: HtmlBuilder<M>, accent: string, children: ReadonlyArray<Html | null>, stats: ReadonlyArray<Html>): Html =>
 	h.div(
 		[h.Class("flex shrink-0 overflow-hidden rounded-r-xl border bg-card max-lg:flex-col max-lg:rounded-b-xl max-lg:rounded-tr-none")],
 		[
@@ -42,7 +40,7 @@ const shell = (h: H, accent: string, children: ReadonlyArray<Html | null>, stats
 		],
 	)
 
-const stat = (h: H, label: string, children: Children, isLast = false): Html =>
+const stat = <M>(h: HtmlBuilder<M>, label: string, children: Children, isLast = false): Html =>
 	h.div(
 		[
 			h.Class(
@@ -55,9 +53,9 @@ const stat = (h: H, label: string, children: Children, isLast = false): Html =>
 		[eyebrow(h, {}, [label]), h.div([h.Class("text-sm")], children)],
 	)
 
-const muted = (h: H, text: string): Html => h.span([h.Class("text-muted-foreground")], [text])
+const muted = <M>(h: HtmlBuilder<M>, text: string): Html => h.span([h.Class("text-muted-foreground")], [text])
 
-const bigStat = (h: H, elapsed: { value: string; unit: string } | null): Html =>
+const bigStat = <M>(h: HtmlBuilder<M>, elapsed: { value: string; unit: string } | null): Html =>
 	elapsed === null
 		? muted(h, EMPTY_VALUE)
 		: statFigure(h, { value: elapsed.value, unit: elapsed.unit, mono: false, valueClassName: "text-foreground" })
@@ -65,10 +63,10 @@ const bigStat = (h: H, elapsed: { value: string; unit: string } | null): Html =>
 const repeatsHeading = (heading: string | null, text: string): boolean =>
 	text.trim().length === 0 || text.trim() === heading?.trim()
 
-const body = (h: H, heading: string | null, text: string): Html | null =>
+const body = <M>(h: HtmlBuilder<M>, heading: string | null, text: string): Html | null =>
 	repeatsHeading(heading, text) ? null : h.p([h.Class("text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]")], [text])
 
-const mechanism = (h: H, heading: string | null, text: string): Html | null =>
+const mechanism = <M>(h: HtmlBuilder<M>, heading: string | null, text: string): Html | null =>
 	repeatsHeading(heading, text)
 		? null
 		: h.div(
@@ -76,7 +74,7 @@ const mechanism = (h: H, heading: string | null, text: string): Html | null =>
 				[h.p([h.Class("whitespace-pre-line text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]")], [text])],
 			)
 
-const nextActions = (h: H, actions: ReadonlyArray<string>): Html | null =>
+const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html | null =>
 	actions.length === 0
 		? null
 		: h.div(
@@ -99,7 +97,7 @@ const nextActions = (h: H, actions: ReadonlyArray<string>): Html | null =>
 				],
 			)
 
-const diagnosed = (h: H, investigation: V2Investigation): Html => {
+const diagnosed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Html => {
 	const report = investigation.report
 	if (report === null)
 		return shell(
@@ -143,7 +141,7 @@ const silenceLabel = (ms: number): string => {
 }
 
 /** `RunProgress`: the pass's steps, the last one live; a silent run goes still and says so. */
-const runProgress = (h: H, investigation: V2Investigation, nowMs: number, className: string): Html | null => {
+const runProgress = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: number, className: string): Html | null => {
 	const progress = investigation.progress
 	const isRunning = investigation.status === "investigating"
 	const silentFor = progress === null ? 0 : Math.max(0, nowMs - progress.updatedAt)
@@ -199,7 +197,7 @@ const runProgress = (h: H, investigation: V2Investigation, nowMs: number, classN
 	)
 }
 
-const investigating = (h: H, investigation: V2Investigation, nowMs: number): Html => {
+const investigating = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: number): Html => {
 	const start = toEpochMs(investigation.created_at)
 	return shell(
 		h,
@@ -225,7 +223,7 @@ const investigating = (h: H, investigation: V2Investigation, nowMs: number): Htm
 const ranForOf = (investigation: V2Investigation) =>
 	elapsedBetween(investigation.started_at ?? investigation.created_at, investigation.updated_at)
 
-const failed = (h: H, investigation: V2Investigation, nowMs: number): Html =>
+const failed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: number): Html =>
 	shell(
 		h,
 		"bg-severity-error",
@@ -249,7 +247,7 @@ const failed = (h: H, investigation: V2Investigation, nowMs: number): Html =>
 
 const PARTIAL_VISIBLE_MAX = 5
 
-const partialList = (h: H, label: string, items: ReadonlyArray<string>, iconName: "CircleXmarkIcon" | "CircleQuestionIcon", tone: string): Html | null => {
+const partialList = <M>(h: HtmlBuilder<M>, label: string, items: ReadonlyArray<string>, iconName: "CircleXmarkIcon" | "CircleQuestionIcon", tone: string): Html | null => {
 	if (items.length === 0) return null
 	const visible = items.slice(0, PARTIAL_VISIBLE_MAX)
 	const hidden = items.length - visible.length
@@ -271,7 +269,7 @@ const partialList = (h: H, label: string, items: ReadonlyArray<string>, iconName
 	)
 }
 
-const inconclusive = (h: H, investigation: V2Investigation): Html => {
+const inconclusive = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Html => {
 	const report = investigation.report
 	const ruledOut = report?.ruledOut ?? []
 	const unchecked = report?.unchecked ?? []
@@ -301,7 +299,7 @@ const inconclusive = (h: H, investigation: V2Investigation): Html => {
 	)
 }
 
-export const verdictCard = (h: H, investigation: V2Investigation, nowMs: number): Html => {
+export const verdictCard = <M>(h: HtmlBuilder<M>, investigation: V2Investigation, nowMs: number): Html => {
 	switch (investigation.status) {
 		case "investigating":
 			return investigating(h, investigation, nowMs)
