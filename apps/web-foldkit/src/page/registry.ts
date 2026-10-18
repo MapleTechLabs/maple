@@ -39,6 +39,7 @@ import * as ServiceDetail from "./services/detail"
 import * as ServiceMap from "./service-map"
 import * as ServicesList from "./services/list"
 import * as Settings from "./settings"
+import * as Account from "./settings/account"
 import * as McpPage from "./settings/mcp-page"
 import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
@@ -76,6 +77,7 @@ export const pages = [
 	InfraOverview.page,
 	Settings.page,
 	McpPage.page,
+	Account.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

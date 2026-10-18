@@ -367,6 +367,14 @@ const clerkInteractions: ReadonlyArray<Scenario> = [
 			await target.getByText("Invitation sent to grace@acme.test").waitFor()
 		},
 	}),
+	page("account-profile-save", "Account: rename and save", "/account?tab=profile", {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("textbox", { name: "First name" }).fill("Augusta")
+			await target.getByRole("button", { name: "Save", exact: true }).click()
+			await target.getByText("Profile updated").waitFor()
+		},
+	}),
 	page("clerk-organization-delete", "Organization: delete dialog with the name typed", ORGANIZATION, {
 		dataset: CLERK,
 		steps: async (target) => {
