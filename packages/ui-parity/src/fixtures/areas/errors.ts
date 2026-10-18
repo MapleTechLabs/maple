@@ -7,6 +7,8 @@ import type { FixtureWarehouse } from "../../backend/warehouse.ts"
 import type { FixtureArea } from "../areas.ts"
 import type { Dataset, EndpointHandler } from "../dataset.ts"
 import { fixtureUuid } from "../identity.ts"
+import { acmeGithubEndpoints } from "../datasets/acme-github.ts"
+import { defaultDataset } from "../datasets/default.ts"
 
 /**
  * The issue workflow writes the errors pages send (transition, claim, heartbeat, release,
@@ -239,6 +241,13 @@ const eventsOf = (dataset: Dataset) => {
 			windowMs: 8 * HOUR_MS,
 			ratePerHour: 3.5,
 		}),
+		...(dataset.name === ERRORS_BUSY_DATASET
+			? Array.from({ length: BUSY_COMMENTS }, (_, offset) =>
+					event(100 + offset, 4 * HOUR_MS - offset * 60_000, "comment", ADA(dataset), {
+						body: `Load test run ${offset + 1}: p99 still above the budget.`,
+					}),
+				)
+			: []),
 	]
 }
 
@@ -304,7 +313,35 @@ const reads = {
 		}),
 } satisfies Readonly<Record<string, EndpointHandler>>
 
+/**
+ * `default` with a busy worked issue (past the timeline's 50 recent rows, so "Show earlier"
+ * shows) and a GitHub App on two repositories (the attach dialog's repository select).
+ */
+export const ERRORS_BUSY_DATASET = "errors-busy"
+const BUSY_COMMENTS = 56
+
+const twoRepositories: EndpointHandler = (request) =>
+	Effect.map(acmeGithubEndpoints["integrations.githubStatus"](request), (status) => ({
+		...status,
+		repositories: [
+			...status.repositories,
+			...status.repositories.map((repo) => ({
+				...repo,
+				id: fixtureUuid(5, 2),
+				fullName: "acme-shop/storefront",
+				htmlUrl: "https://github.com/acme-shop/storefront",
+			})),
+		],
+	}))
+
+const errorsBusy: Dataset = {
+	...defaultDataset,
+	name: ERRORS_BUSY_DATASET,
+	endpoints: { ...defaultDataset.endpoints, "integrations.githubStatus": twoRepositories },
+}
+
 export const fixtureArea: FixtureArea = {
 	area: "errors",
 	endpoints: (warehouse) => ({ ...writes(warehouse), ...reads }),
+	datasets: [errorsBusy],
 }

@@ -89,6 +89,8 @@ export const Message = defineMessageUnion({
 	ClickedConfirmSeverity: {},
 	ClickedInvestigate: {},
 	ClickedAttach: {},
+	ClickedShowEarlier: {},
+	GotRepositorySelectMessage: { message: Select.Message },
 	ChangedCommentDraft: { value: Schema.String },
 	ClickedComment: {},
 	ClickedRetryEvents: {},

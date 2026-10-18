@@ -7,6 +7,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Combobox from "../../../ui/combobox"
 import * as ComboboxView from "../../../ui/combobox-view"
+import * as SelectView from "../../../ui/select-view"
 import * as Dialog from "../../../ui/dialog"
 import { badge } from "../../../ui/display"
 import { field, fieldLabel } from "../../../ui/field"
@@ -19,8 +20,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 
 // `AttachPullRequestDialog` (components/errors/attach-pull-request-dialog.tsx): pick a pull request
-// of the connected repository, or paste a link. TODO(attach-repository): the repository Select
-// shown when the org has more than one.
+// of the connected repository (a Select picks it when the org has several), or paste a link.
 
 type Return = PageReturn<Model, Message>
 type H = HtmlBuilder<Message>
@@ -39,10 +39,11 @@ export const githubOf = (model: Model) => {
 	const suggested =
 		Option.getOrNull(AsyncData.getData(model.pullRequests.data))?.suggestedRepository ?? null
 	const repository =
-		suggested !== null && repositories.some((repo) => repo.fullName === suggested)
+		model.attachRepository ??
+		(suggested !== null && repositories.some((repo) => repo.fullName === suggested)
 			? suggested
-			: (repositories[0]?.fullName ?? null)
-	return { isConnected: status?.state === "connected", repository }
+			: (repositories[0]?.fullName ?? null))
+	return { isConnected: status?.state === "connected", repository, repositories }
 }
 
 /** `resolveTypedReference`: `#123`, `123` (with a repository) or a full PR URL. */
@@ -87,7 +88,7 @@ const liftDialog = (
 
 export const openAttach = (model: Model): Return => liftDialog(model, Dialog.open(model.attachDialog))
 
-const cleared = (model: Model): Model => ({
+export const clearedAttach = (model: Model): Model => ({
 	...model,
 	attachDraft: "",
 	attachCombobox: Combobox.init(model.attachCombobox.id, "single"),
@@ -97,7 +98,7 @@ const cleared = (model: Model): Model => ({
 export const attachDialogStep = (model: Model, message: Dialog.Message): Return => {
 	const step = Dialog.update(model.attachDialog, message)
 	const lifted = liftDialog(model, step)
-	return step.outMessage?._tag === "Closed" ? { ...lifted, model: cleared(lifted.model) } : lifted
+	return step.outMessage?._tag === "Closed" ? { ...lifted, model: clearedAttach(lifted.model) } : lifted
 }
 
 const attach = (model: Model, url: string | null): Return =>
@@ -141,7 +142,7 @@ export const completedAttach = (
 				description: failure?.message ?? "",
 			}),
 		}
-	const closed = liftDialog(cleared(settled), Dialog.close(settled.attachDialog))
+	const closed = liftDialog(clearedAttach(settled), Dialog.close(settled.attachDialog))
 	return {
 		...closed,
 		outMessage: PageOutMessage.RequestedToast({
@@ -256,8 +257,37 @@ const pickerField = (h: H, model: Model): Html => {
 	])
 }
 
+const REPOSITORY_IDS = {
+	control: "issue-attach-repository-trigger",
+	label: "issue-attach-repository-label",
+	error: "issue-attach-repository-error",
+}
+
+/** The repository `Select`, shown when the org has more than one. */
+const repositoryField = (h: H, model: Model, repositories: ReadonlyArray<string>, value: string | null): Html => {
+	const state = { isInvalid: false, isDirty: false, isFilled: value !== null, isFocused: false, isTouched: false }
+	return field(h, { className: "items-stretch gap-1.5", state }, [
+		fieldLabel(h, { ids: REPOSITORY_IDS, className: "text-xs text-muted-foreground", state }, "Repository"),
+		h.submodel({
+			slotId: model.repositorySelect.id,
+			model: { ...model.repositorySelect, value: value ?? "" },
+			view: SelectView.view,
+			viewInputs: {
+				entries: repositories.map((name) => ({ _tag: "Item" as const, item: { value: name, label: name } })),
+				labelledBy: REPOSITORY_IDS.label,
+				size: "sm",
+				className: "w-full text-xs",
+				renderValue: (picked) => [picked === "" ? "Pick a repository" : picked],
+				toView: (parts) => h.div([h.Class("contents")], parts),
+			},
+			toParentMessage: (message) => Message.GotRepositorySelectMessage({ message }),
+		}),
+	])
+}
+
 export const attachDialog = (h: H, model: Model): Html => {
-	const { isConnected } = githubOf(model)
+	const { isConnected, repositories, repository } = githubOf(model)
+	const names = repositories.map((repo) => repo.fullName)
 	return formDialog(h, {
 		slotId: "issue-attach-pr",
 		model: model.attachDialog,
@@ -272,6 +302,8 @@ export const attachDialog = (h: H, model: Model): Html => {
 		// Legacy's attach dialog closes without handing focus back to the Attach button.
 		isReturningFocus: false,
 		panelClassName: "space-y-3",
-		fields: [isConnected ? pickerField(h, model) : pasteField(h, model)],
+		fields: isConnected
+			? [...(names.length > 1 ? [repositoryField(h, model, names, repository)] : []), pickerField(h, model)]
+			: [pasteField(h, model)],
 	})
 }

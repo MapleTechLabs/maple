@@ -162,7 +162,8 @@ const otherTab = (
 					variant: "inline",
 					onRetry: Message.ClickedRetryEvents(),
 				}),
-			onData: (value) => issueTimeline(h, value.events, escalationsOf(model), clock),
+			onData: (value) =>
+				issueTimeline(h, value.events, escalationsOf(model), clock, model.isShowingEarlier),
 		}),
 		commentComposer(h, { draft: model.commentDraft, isPosting: model.isCommenting, participants }),
 	])
