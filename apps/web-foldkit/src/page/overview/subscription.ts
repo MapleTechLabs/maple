@@ -1,7 +1,7 @@
 import { rowToAlertIncidentDocument } from "@maple/web-data/collections/alerts"
-import { Effect, Schema, Stream } from "effect"
+import { Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
-import { type OrgCollectionSet, OrgCollections } from "../../data/collections/org-collections"
+import { type OrgCollectionSet, type OrgCollections, orgLive } from "../../data/collections/org-collections"
 import { liveQueryStream } from "../../data/live-query"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
@@ -11,13 +11,7 @@ import type { Model } from "./model"
 const withSet = (
 	orgId: string,
 	stream: (set: OrgCollectionSet) => Stream.Stream<Message>,
-): Stream.Stream<Message, never, OrgCollections> =>
-	Stream.unwrap(
-		Effect.gen(function* () {
-			const collections = yield* OrgCollections
-			return stream(yield* collections.forOrg(orgId))
-		}),
-	)
+): Stream.Stream<Message, never, OrgCollections> => orgLive(orgId, stream)
 
 /** `useAlertIncidentsList()`: newest trigger first, reduced to what the banner and health read. */
 const incidents = (orgId: string) =>

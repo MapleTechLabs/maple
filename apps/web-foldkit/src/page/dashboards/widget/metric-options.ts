@@ -20,8 +20,8 @@ export const FetchMetricOptions = Command.define("FetchWidgetEditorMetricOptions
 	messages: [Message.CompletedFetchMetricOptions],
 	execute: ({ search }) =>
 		listMetrics({ data: { limit: 100, ...(search === "" ? undefined : { search }) } }).pipe(
-			Effect.map((response) =>
-				response.data
+			Effect.map((response) => ({
+				options: response.data
 					.filter((row) => toQueryBuilderMetricType(row.metricType) !== undefined)
 					.map((row) => ({
 						value: `${row.metricName}::${row.metricType}`,
@@ -29,7 +29,11 @@ export const FetchMetricOptions = Command.define("FetchWidgetEditorMetricOptions
 						isMonotonic: row.isMonotonic,
 					}))
 					.filter((option, index, all) => all.findIndex((other) => other.value === option.value) === index),
-			),
+				// `toNames`: trimmed, non-empty, each once.
+				services: response.data
+					.map((row) => row.serviceName.trim())
+					.filter((name, index, all) => name !== "" && all.indexOf(name) === index),
+			})),
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchMetricOptions({ search, result })),

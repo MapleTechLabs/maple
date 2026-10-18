@@ -19,6 +19,7 @@ import { funnelPanel, pathsPanel } from "./view-panels"
 import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
 import { rawSqlEditor } from "./view-sql"
 import { Message } from "./message"
+import { baseValuesOf } from "./where-inputs"
 import type { Model } from "./model"
 
 // `WidgetQueryBuilderPage`'s query side: the source toggle, one `QueryPanel` per query,
@@ -52,6 +53,7 @@ const queryPanel = (
 				query.dataSource === "metrics"
 					? (model.metricKeys[`${query.metricName}::${query.metricType}`] ?? [])
 					: [],
+			autocompleteValues: baseValuesOf(model, query),
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 	})

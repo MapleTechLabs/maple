@@ -71,4 +71,8 @@ export const verdictSection = (h: H, model: Model): Html =>
 	])
 
 export const releaseNarrow = (h: H, model: Model): Html =>
-	narrow(h, [releaseComparison(h, releaseImpact(model.mode))], 420)
+	narrow(h, [releaseComparison(h, releaseImpact(model.mode), {
+			model: model.releaseOverlays,
+			toParent: (message) => Message.GotReleaseOverlaysMessage({ message }),
+			clock: { nowMs: model.nowMs, timeZone: model.timeZone },
+		})], 420)

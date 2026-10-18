@@ -27,7 +27,10 @@ import {
 import { Message } from "./message"
 
 // `IssueTimeline` and `IssueCommentComposer` (components/errors/issue-timeline.tsx and
-// issue-comment-composer.tsx). TODO(show-earlier): legacy mounts only the latest 50 rows at first.
+// issue-comment-composer.tsx).
+
+/** Rows mounted before "Show earlier" (`RECENT_ITEMS`). */
+const RECENT_ITEMS = 50
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -246,6 +249,7 @@ export const issueTimeline = (
 	events: ReadonlyArray<ErrorIssueEventDocument>,
 	escalations: ReadonlyArray<IssueEscalationAttemptDocument>,
 	clock: Clock,
+	isShowingEarlier: boolean,
 ): Html => {
 	const items: ReadonlyArray<Item> = [
 		...events.map((event): Item => ({ kind: "event", createdAt: event.createdAt, event })),
@@ -263,13 +267,33 @@ export const issueTimeline = (
 				["Comments from your team and notes from agents working this issue land here."],
 			),
 		])
+	// A busy thread mounts its recent rows; the earlier ones wait behind one button.
+	const hiddenCount = isShowingEarlier ? 0 : Math.max(0, items.length - RECENT_ITEMS)
 	return h.ol(
 		[h.Class("flex flex-col")],
-		items.map((item, index) =>
-			item.kind === "escalation"
-				? escalationRow(h, item.escalation, clock)
-				: eventRow(h, item.event, items[index - 1], clock),
-		),
+		[
+			...(hiddenCount > 0
+				? [
+						h.li(
+							[h.Class("flex justify-center pb-2")],
+							[
+								button(
+									h,
+									{ variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedShowEarlier())] },
+									["Show ", countLabel(hiddenCount, "earlier event")],
+								),
+							],
+						),
+					]
+				: []),
+			...items
+				.slice(hiddenCount)
+				.map((item, offset) =>
+					item.kind === "escalation"
+						? escalationRow(h, item.escalation, clock)
+						: eventRow(h, item.event, items[hiddenCount + offset - 1], clock),
+				),
+		],
 	)
 }
 

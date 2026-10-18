@@ -4,6 +4,7 @@ import {
 	tokenizeWhereClause,
 	WHERE_CLAUSE_TOKEN_COLOR,
 } from "@maple/web/lib/query-builder/where-clause-highlight"
+import type { WhereClauseAutocompleteValues } from "@maple/web/lib/query-builder/where-clause-autocomplete"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "../../../ui/combobox"
@@ -16,6 +17,10 @@ import { textarea } from "../../../ui/textarea"
 import type { AddOnKey } from "./change"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
+import { MountWhereCaret, MountWhereListbox } from "./where-command"
+import { caretOf, whereAutocompleteOf, whereTextareaId } from "./where"
+import { isOpenOf } from "../where-autocomplete"
+import { suggestionListbox, whereKeyHandler } from "../where-autocomplete-view"
 
 // The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
 
@@ -71,24 +76,55 @@ const WHERE_PLACEHOLDER = {
 
 const WHERE_TEXTAREA_CLASS = "min-h-[32px] resize-y text-xs"
 
-/**
- * `WhereClauseEditor`: the textarea under its highlight overlay.
- * TODO(widget-editor): the autocomplete listbox (`useWhereClauseAutocomplete`).
- */
+/** `WhereClauseEditor`: the textarea under its highlight overlay, and its suggestion list. */
 export const whereClauseEditor = (
 	h: H,
+	model: Model,
 	query: QueryDraft,
+	values: WhereClauseAutocompleteValues,
 	options: Readonly<{ placeholder?: string; className?: string }> = {},
-): Html =>
-	whereClauseField(h, {
-		query,
-		className: options.className ?? "relative flex-1",
-		textareaClassName: WHERE_TEXTAREA_CLASS,
-		placeholder: options.placeholder ?? WHERE_PLACEHOLDER[query.dataSource],
-		rows: 1,
-		onInput: (value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value }),
-		onEnter: Message.PressedWhereEnter(),
-	})
+): Html => {
+	const caret = caretOf(model, query)
+	const autocomplete = whereAutocompleteOf(model, query, values)
+	const isOpen = isOpenOf(caret, autocomplete)
+	return h.div(
+		[h.Class(options.className ?? "relative flex-1")],
+		[
+			textarea(h, {
+				id: whereTextareaId(query.id),
+				className: cn(WHERE_TEXTAREA_CLASS, query.whereClause.length > 0 && "text-transparent caret-foreground"),
+				defaultValue: query.whereClause,
+				attributes: [
+					h.AriaLabel(`Where clause for query ${query.name}`),
+					h.Placeholder(options.placeholder ?? WHERE_PLACEHOLDER[query.dataSource]),
+					h.Rows(1),
+					h.OnInput((value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value })),
+					h.OnKeyDownPreventDefault(
+						whereKeyHandler<Message>(isOpen, {
+							enter: Message.PressedWhereEnter({ queryId: query.id }),
+							move: (step) => Message.MovedWhereSuggestion({ queryId: query.id, step }),
+							tab: Message.PressedWhereTab({ queryId: query.id }),
+							dismiss: Message.DismissedWhereSuggestions({ queryId: query.id }),
+						}),
+					),
+					h.OnMount(MountWhereCaret({ queryId: query.id })),
+				],
+			}),
+			...highlightOverlay(h, query.whereClause, WHERE_TEXTAREA_CLASS),
+			...(isOpen
+				? [
+						suggestionListbox(h, {
+							suggestions: autocomplete.suggestions,
+							activeIndex: caret.activeIndex,
+							anchor: caret.anchor,
+							onApply: (index) => Message.AppliedWhereSuggestion({ queryId: query.id, index }),
+							keepFocus: h.OnMount(MountWhereListbox({ queryId: query.id })),
+						}),
+					]
+				: []),
+		],
+	)
+}
 
 export type WhereClauseFieldOptions<M> = Readonly<{
 	query: QueryDraft
@@ -101,16 +137,15 @@ export type WhereClauseFieldOptions<M> = Readonly<{
 	onEnter: M
 }>
 
-/** `WhereClauseEditor` for any host Message. */
+/** `WhereClauseEditor` without suggestions, for any host Message. */
 export const whereClauseField = <M>(h: HtmlBuilder<M>, options: WhereClauseFieldOptions<M>): Html => {
 	const { query, textareaClassName } = options
-	const isHighlighting = query.whereClause.length > 0
 	return h.div(
 		[h.Class(options.className)],
 		[
 			textarea(h, {
-				id: `where-${query.id}`,
-				className: cn(textareaClassName, isHighlighting && "text-transparent caret-foreground"),
+				id: whereTextareaId(query.id),
+				className: cn(textareaClassName, query.whereClause.length > 0 && "text-transparent caret-foreground"),
 				defaultValue: query.whereClause,
 				attributes: [
 					h.AriaLabel(`Where clause for query ${query.name}`),
@@ -123,39 +158,36 @@ export const whereClauseField = <M>(h: HtmlBuilder<M>, options: WhereClauseField
 					),
 				],
 			}),
-			...(isHighlighting
-				? [
-						h.div(
-							[
-								h.AriaHidden(true),
-								h.Class(
-									cn(
-										"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
-										textareaClassName,
-									),
-								),
-							],
-							[
-								h.div(
-									[
-										h.Class(
-											"px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap",
-										),
-									],
-									tokenizeWhereClause(query.whereClause).map((token) =>
-										h.span(
-											[h.Style({ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] })],
-											[token.text],
-										),
-									),
-								),
-							],
-						),
-					]
-				: []),
+			...highlightOverlay(h, query.whereClause, textareaClassName),
 		],
 	)
 }
+
+/** The colored tokens drawn over a transparent textarea, matching its box. */
+const highlightOverlay = <M>(h: HtmlBuilder<M>, whereClause: string, textareaClassName: string): ReadonlyArray<Html> =>
+	whereClause.length === 0
+		? []
+		: [
+				h.div(
+					[
+						h.AriaHidden(true),
+						h.Class(
+							cn(
+								"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
+								textareaClassName,
+							),
+						),
+					],
+					[
+						h.div(
+							[h.Class("px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap")],
+							tokenizeWhereClause(whereClause).map((token) =>
+								h.span([h.Style({ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] })], [token.text]),
+							),
+						),
+					],
+				),
+			]
 
 /** A controlled `<Input>` that reports each keystroke. */
 export const textInput = <M>(

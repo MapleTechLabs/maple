@@ -8,6 +8,7 @@ import type { Resources } from "../../platform/resources"
 import { OrgId } from "@maple/domain"
 import * as AttributesPanel from "../../ui/attributes/attributes-panel"
 import * as LogsStream from "../../ui/logs/logs-stream"
+import * as ReleaseOverlays from "../../page/releases/overlays"
 import { foldLabToasts, initLabToasts } from "../toasts"
 import { logRows, traceOf } from "./fixture"
 import { type Flags, Message, type Model, type WorstCaseMode } from "./model"
@@ -84,6 +85,7 @@ export const init = (flags: Flags): Return => {
 			attributes: AttributesPanel.init("wc-attributes"),
 			openTools: [],
 			toasts: initLabToasts(),
+			releaseOverlays: ReleaseOverlays.init("wc-release"),
 		},
 		commands,
 	}
@@ -193,4 +195,13 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		ToggledTool: ({ id }) => ({ model: { ...model, openTools: toggled(model.openTools, id) } }),
 		GotToastMessage: ({ message: inner }) => foldToasts(model, inner),
+		GotReleaseOverlaysMessage: ({ message: inner }) => {
+			const next = ReleaseOverlays.update(model.releaseOverlays, inner, LAB_CONTEXT.orgId)
+			return {
+				model: { ...model, releaseOverlays: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (child) =>
+					Message.GotReleaseOverlaysMessage({ message: child }),
+				),
+			}
+		},
 	})

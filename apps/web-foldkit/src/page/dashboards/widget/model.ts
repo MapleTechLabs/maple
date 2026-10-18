@@ -1,5 +1,6 @@
 import { DashboardDocument, TimeRangeSchema } from "@maple/domain/http"
 import { Schema } from "effect"
+import { LookupNames } from "../../kit/autocomplete-lookups"
 import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
@@ -17,7 +18,7 @@ import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 import { EditorState } from "./editor-state"
 import { RawSqlState } from "./raw-sql"
-import { MetricOptionSchema } from "./metric-option"
+import { MetricPageSchema } from "./metric-option"
 import { Suggestion } from "./suggestions"
 
 // The widget editor (apps/web/src/routes/dashboards/$dashboardId_.widgets.$widgetId.tsx and
@@ -68,13 +69,13 @@ export const Model = Schema.Struct({
 	/** `AutocompleteValuesProvider lazy`: the lookups start once the query editor takes focus. */
 	/** `listMetricsResultAtom`: the metric picker's page for `metricSearch`, once a query reads metrics. */
 	metricSearch: Schema.String,
-	metricOptions: Schema.NullOr(Schema.Struct({ search: Schema.String, options: Schema.Array(MetricOptionSchema) })),
+	metricOptions: Schema.NullOr(Schema.Struct({ search: Schema.String, ...MetricPageSchema.fields })),
 	metricRequested: Schema.NullOr(Schema.String),
 	/** `useMetricScopedAutocomplete`: each picked metric's attribute keys (`name::type`), the "by" choices. */
 	metricKeys: Schema.Record(Schema.String, Schema.Array(Schema.String)),
 	metricKeysRequested: Schema.Array(Schema.String),
 	isAutocompleteActive: Schema.Boolean,
-	autocomplete: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), LoadFailure)),
+	autocomplete: Schema.Record(Schema.String, KeyedSchema(LookupNames, LoadFailure)),
 	/** `useFunnelSuggestions`: event names, page paths and facets, by lookup. */
 	suggestions: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Suggestion), LoadFailure)),
 	/** The step inputs' comboboxes, by id. */

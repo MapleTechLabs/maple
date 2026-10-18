@@ -1,6 +1,7 @@
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Option } from "effect"
+import { lookupField } from "../../page/kit/autocomplete-lookups"
 import { QueryChange, type QueryTextField } from "../../page/kit/query-builder/change"
 import type { QueryDraft } from "../../page/kit/query-builder/draft"
 import { textInput } from "../../page/kit/query-builder/parts"
@@ -18,11 +19,13 @@ const GROUP_BY_PLACEHOLDER = "service.name | span.name | none | attr.http.route"
 
 /** `autocompleteValues.attributeKeys`: the span attribute keys, empty until they load. */
 const spanAttributeKeysOf = (model: Model): ReadonlyArray<string> =>
-	Option.getOrElse(
-		Option.flatMap(Option.fromNullishOr(model.autocomplete["spanAttributeKeys"]), (slot) =>
-			AsyncData.getData(slot.data),
+	lookupField(
+		Option.getOrUndefined(
+			Option.flatMap(Option.fromNullishOr(model.autocomplete["spanAttributeKeys"]), (slot) =>
+				AsyncData.getData(slot.data),
+			),
 		),
-		() => [],
+		"keys",
 	)
 
 /** `GroupByAutocomplete`. TODO(lab-query-builder): items lack `font-mono` (the item class). */

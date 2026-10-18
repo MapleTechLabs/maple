@@ -102,6 +102,31 @@ export const releasesArea: AreaModule = {
 			SERVICE,
 			failing("queryEngine.releaseDetail"),
 		),
+		release("list-health-tooltip", "A health pill's description tooltip", "/releases", {
+			steps: act(
+				// The pill, not the health facet's "errors up" option in the rail.
+				(page) => page.getByText("errors from 0", { exact: true }).first().hover(),
+				(page) => page.getByText(/^Errors at least twice as often/).waitFor(),
+			),
+		}),
+		release("list-commit-card", "A release title's commit hover card", "/releases", {
+			steps: act(
+				(page) => page.getByText("release(payment-svc): 3.5.0", { exact: true }).first().hover(),
+				(page) => page.waitForTimeout(800),
+			),
+		}),
+		release("detail-replaced-card", "The replaced version's commit hover card", SERVICE, {
+			steps: act(
+				(page) => page.getByText(/^replaced /).first().hover(),
+				(page) => page.waitForTimeout(800),
+			),
+		}),
+		release("detail-service-health-tooltip", "The service meta line's health tooltip", SERVICE, {
+			steps: act(
+				(page) => page.getByText(/^errors /).first().hover(),
+				(page) => page.getByText(/^Errors at least twice as often/).waitFor(),
+			),
+		}),
 		release("list-time-picker", "Time range picker open", "/releases", {
 			steps: act(clickButton("Last 7 days")),
 		}),

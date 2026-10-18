@@ -7,6 +7,7 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
+import { LookupNames } from "../../kit/autocomplete-lookups"
 import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
@@ -45,7 +46,14 @@ export const DryRun = Schema.Struct({
 export type DryRun = typeof DryRun.Type
 
 /** The traces facets the scope pickers read (`autocompleteValues.traces`). */
-export const TraceFacets = Schema.Struct({ services: Schema.Array(Schema.String), environments: Schema.Array(Schema.String) })
+export const TraceFacets = Schema.Struct({
+	services: Schema.Array(Schema.String),
+	environments: Schema.Array(Schema.String),
+	spanNames: Schema.Array(Schema.String),
+	httpMethods: Schema.Array(Schema.String),
+	httpStatusCodes: Schema.Array(Schema.String),
+})
+export type TraceFacets = typeof TraceFacets.Type
 
 export const Model = Schema.Struct({
 	search: AlertsCreateSearch,
@@ -74,7 +82,7 @@ export const Model = Schema.Struct({
 	previewPreset: Schema.String,
 	previewWindow: Schema.NullOr(TimeWindow),
 	traceFacets: KeyedSchema(TraceFacets, LoadFailure),
-	autocomplete: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), LoadFailure)),
+	autocomplete: Schema.Record(Schema.String, KeyedSchema(LookupNames, LoadFailure)),
 	preview: PreviewSlot,
 	savedPreview: PreviewSlot,
 	dryRun: Schema.NullOr(DryRun),

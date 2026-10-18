@@ -17,7 +17,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../../ui/empty"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { relativeTime } from "../../kit/relative-time"
-import { commitTrigger, releaseHealthFigure, releaseHealthPill, releaseHref } from "../kit"
+import { releaseHealthFigure, releaseHref } from "../kit"
+import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { sectionCard } from "./view-sections"
 
 // `ReleaseComparison` and `ReleaseVersionsRail` (components/releases/release-detail-panels.tsx).
@@ -149,7 +150,7 @@ const OLDEST_VERSION =
 	"This is the oldest version of the service in the window, so there is nothing to compare against. Widen the time range to include the version it replaced."
 
 /** `ReleaseComparison`: this version against the one it replaced on the same service. */
-export const releaseComparison = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact): Html => {
+export const releaseComparison = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact, overlays: Overlays<M>): Html => {
 	const { baseline } = impact
 	const isComparable =
 		baseline !== undefined &&
@@ -158,7 +159,7 @@ export const releaseComparison = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceIm
 	const action =
 		baseline === undefined
 			? h.span([h.Class("text-2xs text-muted-foreground/70")], ["no previous version"])
-			: commitTrigger(h, baseline.commitSha, "font-mono text-2xs text-muted-foreground", [
+			: commitTrigger(h, overlays, "release-replaced", baseline.commitSha, "font-mono text-2xs text-muted-foreground", [
 					"replaced ",
 					shortReleaseLabel(baseline.commitSha),
 				])
@@ -178,7 +179,8 @@ export const releaseComparison = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceIm
 }
 
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
-export type RailInput = Readonly<{
+export type RailInput<M> = Readonly<{
+	overlays: Overlays<M>
 	impacts: ReadonlyArray<ReleaseServiceImpact>
 	currentSha: string
 	serviceName: string
@@ -189,7 +191,7 @@ export type RailInput = Readonly<{
 }>
 
 /** `ReleaseVersionsRail`: every version of the service in the window, newest first. */
-export const releaseVersionsRail = <M>(h: HtmlBuilder<M>, input: RailInput): Html => {
+export const releaseVersionsRail = <M>(h: HtmlBuilder<M>, input: RailInput<M>): Html => {
 	const sorted = input.impacts.toSorted((a, b) =>
 		a.firstSeen < b.firstSeen ? 1 : a.firstSeen > b.firstSeen ? -1 : 0,
 	)
@@ -211,7 +213,7 @@ export const releaseVersionsRail = <M>(h: HtmlBuilder<M>, input: RailInput): Htm
 	)
 }
 
-const versionLink = <M>(h: HtmlBuilder<M>, input: RailInput, version: ReleaseServiceImpact): Html =>
+const versionLink = <M>(h: HtmlBuilder<M>, input: RailInput<M>, version: ReleaseServiceImpact): Html =>
 	h.a(
 		[
 			h.Key(`${version.commitSha}:${version.environment}`),
@@ -231,12 +233,20 @@ const versionLink = <M>(h: HtmlBuilder<M>, input: RailInput, version: ReleaseSer
 			),
 		],
 		[
-			commitTrigger(h, version.commitSha, "font-mono text-foreground", [
+			commitTrigger(h, input.overlays, "release-rail", version.commitSha, "font-mono text-foreground", [
 				shortReleaseLabel(version.commitSha),
 			]),
 			...(version.health === "healthy"
 				? []
-				: [releaseHealthPill(h, version.health, releaseHealthFigure(version))]),
+				: [
+						releaseHealthPill(
+							h,
+							input.overlays,
+							`release-rail-pill-${version.commitSha.replace(/[^A-Za-z0-9_-]/g, "_")}`,
+							version.health,
+							releaseHealthFigure(version),
+						),
+					]),
 			h.span(
 				[h.Class("ml-auto shrink-0 font-mono tabular-nums text-muted-foreground")],
 				[formatNumber(version.spanCount)],

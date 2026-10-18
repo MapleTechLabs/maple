@@ -87,8 +87,7 @@ export type WriteSync = typeof WriteSync.Type
 
 /**
  * The toast `applyMutationError` raises for a txid timeout: the edit reached the server, but the
- * optimistic copy rolled back. TODO(reconnect): legacy's "Reconnect" action recreates the org
- * collections, which `OrgCollections` cannot do yet.
+ * optimistic copy rolled back. "Reconnect" is the root's `retryOrgCollections`.
  */
 export const behindToast = () =>
 	PageOutMessage.RequestedToast({
@@ -97,6 +96,7 @@ export const behindToast = () =>
 		description: "The change reached the server; this tab’s live sync didn’t catch up, so it isn’t shown yet.",
 		timeoutMs: 10000,
 		action: null,
+		rootAction: { label: "Reconnect", action: "ReconnectOrgCollections" },
 	})
 
 /** A transaction's settlement as an Effect; a rejection keeps its cause for the message. */

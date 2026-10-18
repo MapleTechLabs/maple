@@ -28,7 +28,8 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { truncatedText } from "../../../ui/truncated-text"
 import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
-import { commitAvatar, firstLine, releaseHealthFigure, releaseHealthPill, releaseHref } from "../kit"
+import { commitAvatar, firstLine, releaseHealthFigure, releaseHref } from "../kit"
+import { type Overlays, releaseHealthPill } from "../overlays-view"
 
 // `ReleaseDeployOverview`'s sections, `ReleaseChangeset` and `IssueList` + `IssueLine`.
 
@@ -125,6 +126,7 @@ const serviceRow = <M>(
 	impact: ReleaseServiceImpact,
 	environments: ReadonlyArray<string> | undefined,
 	timeSearch: TimeSearch,
+	overlays: Overlays<M>,
 ): Html =>
 	tableRow(
 		h,
@@ -153,7 +155,15 @@ const serviceRow = <M>(
 								: []),
 							...(impact.health === "healthy"
 								? []
-								: [releaseHealthPill(h, impact.health, releaseHealthFigure(impact))]),
+								: [
+										releaseHealthPill(
+											h,
+											overlays,
+											`release-pill-${`${impact.serviceName}-${impact.environment}`.replace(/[^A-Za-z0-9_-]/g, "_")}`,
+											impact.health,
+											releaseHealthFigure(impact),
+										),
+									]),
 						],
 					),
 				],
@@ -203,6 +213,7 @@ export const deployServices = <M>(
 	group: ReleaseGroup,
 	environments: ReadonlyArray<string> | undefined,
 	timeSearch: TimeSearch,
+	overlays: Overlays<M>,
 ): Html => {
 	const rows = group.services.toSorted(
 		(a, b) =>
@@ -235,7 +246,7 @@ export const deployServices = <M>(
 				]),
 				tableBody(
 					h,
-					rows.map((impact) => serviceRow(h, impact, environments, timeSearch)),
+					rows.map((impact) => serviceRow(h, impact, environments, timeSearch, overlays)),
 				),
 			]),
 		],

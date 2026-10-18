@@ -34,6 +34,10 @@ export interface PageSubscriptionInput<Model> {
 	readonly context: PageContext
 }
 
+/** A toast action the root runs itself, whichever page is open (`retryOrgCollections`). */
+export const RootToastAction = Schema.Literals(["ReconnectOrgCollections"])
+export type RootToastAction = typeof RootToastAction.Type
+
 /** Facts a page reports to the root; the root owns the URL. */
 export const PageOutMessage = defineMessageUnion({
 	/** `navigate({ search })` / `<Link>`: the root pushes (or replaces) the URL, which re-enters the route. */
@@ -66,6 +70,8 @@ export const PageOutMessage = defineMessageUnion({
 		action: Schema.optionalKey(
 			Schema.NullOr(Schema.Struct({ label: Schema.String, message: Schema.Unknown })),
 		),
+		/** An action button the root handles (`action` wins when both are set). */
+		rootAction: Schema.optionalKey(Schema.Struct({ label: Schema.String, action: RootToastAction })),
 	},
 })
 export type PageOutMessage = typeof PageOutMessage.Type

@@ -343,16 +343,17 @@ export const autoIntervalLabel = (model: Model, timeZone: string): string => {
 	return `Auto (${formatBucketSecondsShort(seconds)})`
 }
 
+/** The provider's window: the board's range, snapped, once the editor took focus. */
+export const autocompleteWindowOf = (model: Model, context: PageContext) => {
+	if (!model.isAutocompleteActive || model.timeRange === null || model.nowMs === null) return null
+	const window = resolveTimeRangeWindow(model.timeRange, { snap: true, timeZone: context.timeZone, nowMs: model.nowMs })
+	return window === null ? null : { startTime: window.startTime, endTime: window.endTime }
+}
+
 /** The provider's lookups over the board's window, once active; a held key is not asked again. */
 export const requestAutocomplete = (model: Model, context: PageContext): Return => {
-	if (!model.isAutocompleteActive || model.timeRange === null || model.nowMs === null) return { model }
-	const window = resolveTimeRangeWindow(model.timeRange, {
-		snap: true,
-		timeZone: context.timeZone,
-		nowMs: model.nowMs,
-	})
-	if (window === null) return { model }
-	const range = { startTime: window.startTime, endTime: window.endTime }
+	const range = autocompleteWindowOf(model, context)
+	if (range === null) return { model }
 	return AUTOCOMPLETE_LOOKUPS.reduce<Return>(
 		(step, lookup) => {
 			// The suggestions already asked for these names over this window: legacy reads one atom.

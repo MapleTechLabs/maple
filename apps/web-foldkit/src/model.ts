@@ -5,6 +5,7 @@ import * as Onboarding from "./page/onboarding"
 import { CustomerSlot } from "./page/onboarding/plan-gate"
 import { ClerkSnapshot } from "./platform/clerk"
 import * as Preload from "./page/preload"
+import { RootToastAction } from "./page/contract"
 import { PageMessage, PageSlot } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import * as Toast from "./ui/toast"
@@ -41,6 +42,8 @@ export const Model = Schema.Struct({
 	toasts: Toast.Model,
 	/** A page toast's action, by toast id: the page Message its button sends (`actionProps.onClick`). */
 	toastActions: Schema.Record(Schema.String, PageMessage),
+	/** A toast's root-level action, by toast id (Reconnect). */
+	toastRootActions: Schema.Record(Schema.String, RootToastAction),
 	/** `GlobalChatSheet`: the app-wide chat slide-over, above whichever page is open. */
 	chatSheet: ChatSheet.Model,
 	/** The routed page (`page/registry.ts`): built on route entry, dropped on leave. */

@@ -1,4 +1,5 @@
 import { getMetricsAggregations } from "@maple/query-engine/query-builder"
+import type { WhereClauseAutocompleteValues } from "@maple/web/lib/query-builder/where-clause-autocomplete"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "../../../ui/combobox"
 import * as ComboboxView from "../../../ui/combobox-view"
@@ -9,7 +10,7 @@ import { panelSelect, textInput, whereClauseEditor } from "./parts"
 
 // `MetricsBody` (query-panel.tsx): the metric picker, the where clause, and the two aggregation rows
 // with the one-field breakdown.
-// TODO(query-builder): the metric-scoped where-clause value suggestions.
+// The where editor's values are scoped to the picked metric (`useMetricScopedAutocomplete`).
 
 type H = HtmlBuilder<Message>
 type MetricsQuery = Extract<QueryDraft, { dataSource: "metrics" }>
@@ -115,10 +116,11 @@ export const metricsBody = (
 		searchTerm: string
 		breakdownKeys: ReadonlyArray<string>
 		intervalPlaceholder: string
+		autocompleteValues: WhereClauseAutocompleteValues
 	}>,
 ): ReadonlyArray<Html> => [
 	picker(h, model, query, inputs.options, inputs.searchTerm),
-	whereClauseEditor(h, query, { placeholder: 'service.name = "my-service"', className: "relative" }),
+	whereClauseEditor(h, model, query, inputs.autocompleteValues, { placeholder: 'service.name = "my-service"', className: "relative" }),
 	aggregationRow(h, model, query, "aggregation", "Aggregate within time series", [
 		h.span([h.Class("text-xs text-muted-foreground")], ["every"]),
 		textInput(h, `step-${query.id}`, query.stepInterval, inputs.intervalPlaceholder, "h-8 w-24 text-xs", (value) =>

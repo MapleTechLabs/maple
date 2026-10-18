@@ -4,7 +4,6 @@ import { cn } from "@maple/ui/lib/utils"
 import type { ReleaseHealth } from "@maple/web/components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { badge } from "../../ui/display"
 
 // The React-free halves of components/releases/release-health.tsx and the commit helpers of
 // components/vcs/commit-sha-hover-card.tsx, shared by the list and the detail.
@@ -32,31 +31,12 @@ export const RELEASE_HEALTH_DOT_CLASS = {
 	healthy: TONE_FILL.ok,
 } as const satisfies Record<ReleaseHealth, string>
 
-const PILL_CLASS = {
+export const PILL_CLASS = {
 	regressed: TONE_SOFT.crit,
 	watch: TONE_SOFT.warn,
 	rolling: "bg-primary/10 text-primary",
 	healthy: TONE_SOFT.ok,
 } as const satisfies Record<ReleaseHealth, string>
-
-/** `ReleaseHealthPill`: the tooltip-trigger Badge. TODO(tooltip): the description popup. */
-export const releaseHealthPill = <M>(
-	h: HtmlBuilder<M>,
-	health: ReleaseHealth,
-	label?: string,
-	className?: string,
-): Html =>
-	badge(
-		h,
-		{
-			size: "xs",
-			pill: true,
-			mono: true,
-			className: cn("cursor-default font-normal", PILL_CLASS[health], className),
-			attributes: [h.DataAttribute("base-ui-tooltip-trigger", ""), h.DataAttribute("slot", "tooltip-trigger")],
-		},
-		[label ?? RELEASE_HEALTH_LABEL[health]],
-	)
 
 /** `releaseHealthFigure`: "errors 4.1×" / "p95 +38%" / "42% rolling out". */
 export const releaseHealthFigure = (impact: {
@@ -129,12 +109,6 @@ export const commitAvatar = <M>(h: HtmlBuilder<M>, url: string | null, name: str
 				h.Attribute("referrerpolicy", "no-referrer"),
 			])
 }
-
-/** `CommitShaHoverCard`'s trigger. TODO(commit-hover-card): the card itself is not ported. */
-export const commitTrigger = <M>(h: HtmlBuilder<M>, sha: string, className: string, children: ReadonlyArray<Html | string>): Html =>
-	isResolvableSha(sha)
-		? h.span([h.Class(cn("cursor-default", className)), h.DataAttribute("slot", "hover-card-trigger")], children)
-		: h.span([h.Class(className)], children)
 
 /**
  * `<Link search={...}>` writes the query in the object's key order; `hrefOf` writes it in the

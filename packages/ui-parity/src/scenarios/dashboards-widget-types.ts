@@ -31,6 +31,15 @@ const pickOption = (label: string, option: string) => async (page: Page) => {
  * error #28, a Field part outside its root), so they cannot be compared; Foldkit captures them alone.
  */
 const foldkitOnly = (scenario: Scenario): Scenario => ({ ...scenario, targets: ["foldkit"] })
+/** Focus the first query's where clause and type into it, until the suggestion list opens. */
+const typeWhere = (text: string): ReadonlyArray<(page: Page) => Promise<void>> => [
+	(page) => page.getByRole("textbox", { name: /^Where clause for query/ }).first().click(),
+	(page) => page.keyboard.type(text),
+	(page) => page.getByRole("listbox", { name: "Where clause suggestions" }).waitFor(),
+]
+
+/** The attribute keys answered, so Enter applies a key rather than the bare `attr.` prefix. */
+const keysListed = (page: Page) => page.getByRole("option", { name: /^attr\.[a-z]/ }).first().waitFor()
 
 export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 	dashboard("widget-stat", "Widget editor: a stat", editorOf("traces-stat")),
@@ -139,4 +148,21 @@ export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 			clickButton("Apply"),
 		),
 	})),
+	dashboard("widget-where-values", "Widget editor: the where clause's service suggestions", throughput, {
+		steps: act(...typeWhere("service.name = ")),
+	}),
+	dashboard("widget-where-attr", "Widget editor: an attribute key applied with Enter, its values offered", throughput, {
+		steps: act(...typeWhere("attr."), keysListed, (page) => page.keyboard.press("Enter"), (page) => page.waitForTimeout(700)),
+	}),
+	dashboard("widget-where-picked", "Widget editor: a suggestion clicked into the where clause", throughput, {
+		steps: act(...typeWhere("service.name = "), (page) => page.getByRole("option").first().click()),
+	}),
+	// A key typed in full puts the caret in its value: the metric's values for it are asked for.
+	dashboard("widget-metric-where", "Widget editor: a metric attribute's value suggestions asked for", editorOf("cpu-line"), {
+		steps: act(
+			(page) => page.getByRole("textbox", { name: /^Where clause for query/ }).first().click(),
+			(page) => page.keyboard.type("attr.host.name = "),
+			(page) => page.waitForTimeout(700),
+		),
+	}),
 ]

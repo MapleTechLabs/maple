@@ -15,6 +15,7 @@ import {
 	LoadExternal,
 	ReadSessionTimeRange,
 	NavigateInternal,
+	ReconnectOrgCollections,
 	ReplaceUrl,
 	SaveSelectedPlanKnown,
 	SignOutOfClerk,
@@ -202,9 +203,14 @@ const showPageToast = (model: Model, request: PageToast) => {
 		title: request.title,
 		description: request.description,
 		...(request.timeoutMs === null || request.timeoutMs === undefined ? undefined : { timeoutMs: request.timeoutMs }),
-		...(request.action === null || request.action === undefined ? undefined : { actionLabel: request.action.label }),
+		...(request.action === null || request.action === undefined
+			? request.rootAction === undefined
+				? undefined
+				: { actionLabel: request.rootAction.label }
+			: { actionLabel: request.action.label }),
 	})
 	const action = request.action ?? null
+	const rootAction = action === null ? (request.rootAction ?? null) : null
 	return {
 		model: modifyFields(model, {
 			toasts: () => added.model,
@@ -212,6 +218,8 @@ const showPageToast = (model: Model, request: PageToast) => {
 				action !== null && isPageMessage(action.message)
 					? { ...actions, [toastId]: action.message }
 					: actions,
+			toastRootActions: (actions) =>
+				rootAction === null ? actions : { ...actions, [toastId]: rootAction.action },
 		}),
 		commands: (added.commands ?? []).map(
 			Command.mapMessage((message) => Message.GotToastMessage({ message })),
@@ -738,7 +746,10 @@ export const update = (model: Model, message: Message) =>
 		GotToastMessage: ({ message }) =>
 			message._tag === "ClickedToastAction" && model.toastActions[message.toastId] !== undefined
 				? toPage(model, model.toastActions[message.toastId])
-				: foldToasts(model, message),
+				: message._tag === "ClickedToastAction" && model.toastRootActions[message.toastId] !== undefined
+					? { model, commands: [ReconnectOrgCollections()] }
+					: foldToasts(model, message),
+		CompletedReconnectOrgCollections: () => ({ model }),
 		GotPageMessage: ({ message }) => toPage(model, message),
 		GotChatSheetMessage: ({ message }) => foldChatSheet(model, message),
 		GotOnboardingMessage: ({ message }) => updateOnboarding(model, message),

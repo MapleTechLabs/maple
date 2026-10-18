@@ -4,6 +4,7 @@ import { AsyncData } from "foldkit"
 import { Option } from "effect"
 import { eyebrow } from "../../../ui/eyebrow"
 import { input } from "../../../ui/input"
+import { lookupField } from "../../kit/autocomplete-lookups"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import type { EditorState } from "./editor-state"
 import { validationErrorOf } from "./lowering"
@@ -35,10 +36,11 @@ const suggestionsOf = (model: Model, lookup: SuggestionLookup): ReadonlyArray<Su
 	const own = Option.getOrUndefined(AsyncData.getData(model.suggestions[lookup]?.data ?? AsyncData.Idle()))
 	if (own !== undefined) return own
 	if (lookup !== "eventNames") return []
-	const names = Option.getOrUndefined(
-		AsyncData.getData(model.autocomplete.productEventNames?.data ?? AsyncData.Idle()),
+	const names = lookupField(
+		Option.getOrUndefined(AsyncData.getData(model.autocomplete.productEventNames?.data ?? AsyncData.Idle())),
+		"keys",
 	)
-	return (names ?? []).map((name) => ({ name, count: null, field: null }))
+	return names.map((name) => ({ name, count: null, field: null }))
 }
 
 const FUNNEL_ADD_ONS = [

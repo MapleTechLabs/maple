@@ -11,6 +11,7 @@ import { input } from "../../../ui/input"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { settingRow } from "../../../ui/setting-row"
 import { switchControl } from "../../../ui/switch"
+import { lookupField } from "../../kit/autocomplete-lookups"
 import { whereEditor } from "../../kit/query-builder/where-editor"
 import type { EditorState, ListDataSource } from "./editor-state"
 import { buildListLogsParams } from "./list-logs-params"
@@ -73,7 +74,7 @@ const ATTRIBUTE_PREFIX = {
 } as const
 
 const lookupNames = (model: Model, lookup: string): ReadonlyArray<string> =>
-	Option.getOrElse(AsyncData.getData(model.autocomplete[lookup]?.data ?? AsyncData.Idle()), () => [])
+	lookupField(Option.getOrUndefined(AsyncData.getData(model.autocomplete[lookup]?.data ?? AsyncData.Idle())), "keys")
 
 /** The known columns, then the source's attribute keys under their map prefix. */
 export const suggestedFieldsOf = (model: Model, source: ListDataSource): ReadonlyArray<string> => {

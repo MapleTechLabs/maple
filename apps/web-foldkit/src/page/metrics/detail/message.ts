@@ -12,6 +12,7 @@ import * as Select from "../../../ui/select"
 import { MetricRow } from "../shared"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { AttributeKeyRow, AutocompleteLookup, BreakdownRow, TimeseriesRows } from "./model"
+import { LookupNames } from "../../kit/autocomplete-lookups"
 
 /** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
@@ -25,7 +26,7 @@ const result = <A extends Schema.Top>(schema: A) => ({
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
 	CompletedFetchCatalog: result(Schema.Array(MetricRow)),
-	CompletedFetchAutocomplete: { lookup: AutocompleteLookup, ...result(Schema.Array(Schema.String)) },
+	CompletedFetchAutocomplete: { lookup: AutocompleteLookup, ...result(LookupNames) },
 	CompletedFetchAttributeKeys: result(Schema.Array(AttributeKeyRow)),
 	CompletedFetchTimeseries: result(TimeseriesRows),
 	CompletedFetchBreakdown: result(Schema.Array(BreakdownRow)),

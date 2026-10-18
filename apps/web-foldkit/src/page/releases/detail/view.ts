@@ -19,7 +19,7 @@ import { DEFAULT_PRESET, deriveOf } from "../list/derive"
 import { groupOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { changesetState, serviceBody, serviceButton } from "./view-service"
+import { changesetState, overlaysOf, serviceBody, serviceButton } from "./view-service"
 import { type Clock, deploySummary, deployServices, issueList, releaseChangeset } from "./view-sections"
 
 // `ReleaseDetailPage` (apps/web/src/routes/releases/$commitSha.tsx): `ReleaseDeployOverview`, or with `?service=` the service body (view-service.ts).
@@ -130,7 +130,7 @@ const overview = (h: H, model: Model, clock: Clock): Html => {
 							startTime: model.search.startTime,
 							endTime: model.search.endTime,
 							timePreset: model.search.timePreset,
-						}),
+						}, overlaysOf(model, clock)),
 						releaseChangeset(h, changesetState(model, previousSha(group)), clock),
 						deployIssues(h, model, clock),
 					],

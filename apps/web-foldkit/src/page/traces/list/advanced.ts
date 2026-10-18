@@ -13,7 +13,7 @@ import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Dialog from "../../../ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import type { AutocompleteLookup } from "../../kit/autocomplete-lookups"
+import { type AutocompleteLookup, lookupField, type LookupNames } from "../../kit/autocomplete-lookups"
 import { ADVANCED_LOOKUPS, type AdvancedFilter } from "./advanced-model"
 import { FetchAdvancedLookup, PlaceAdvancedCursor } from "./command"
 import { Message } from "./message"
@@ -29,7 +29,7 @@ type Cmd = Command.Command<Message, never, Resources>
 const MAX_SUGGESTIONS = 20
 
 const lookupNames = (model: Model, name: AutocompleteLookup): Array<string> => [
-	...Option.getOrElse(AsyncData.getData(model.advanced.lookups[name]?.data ?? AsyncData.Idle()), () => []),
+	...lookupField(Option.getOrUndefined(AsyncData.getData(model.advanced.lookups[name]?.data ?? AsyncData.Idle())), "keys"),
 ]
 
 /** The `traces` values the provider hands the editor. */
@@ -89,7 +89,7 @@ const activate = (
 		(acc, lookup) => {
 			const key = requestKey(context.orgId, `autocomplete:${lookup}`, window)
 			const slot =
-				acc.model.advanced.lookups[lookup] ?? Keyed.idle<ReadonlyArray<string>, LoadFailure>()
+				acc.model.advanced.lookups[lookup] ?? Keyed.idle<LookupNames, LoadFailure>()
 			return Option.match(Keyed.request(slot, key, "Load"), {
 				onNone: () => acc,
 				onSome: (next) => ({
@@ -251,7 +251,7 @@ export const advancedHandlers = (model: Model) => ({
 	}: {
 		readonly key: string
 		readonly lookup: AutocompleteLookup
-		readonly result: Result.Result<ReadonlyArray<string>, LoadFailure>
+		readonly result: Result.Result<LookupNames, LoadFailure>
 	}): Return => {
 		const slot = model.advanced.lookups[lookup]
 		return slot === undefined

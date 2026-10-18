@@ -1,5 +1,5 @@
-import { Array as Arr, Effect, Order, Schema, Stream } from "effect"
-import { OrgCollections } from "../data/collections/org-collections"
+import { Array as Arr, Order, Schema, Stream } from "effect"
+import { type OrgCollections, orgLive } from "../data/collections/org-collections"
 import { liveQueryStream } from "../data/live-query"
 
 /** What the Pinned group reads from a `dashboards` row (`DashboardRowSchema` in apps/web). */
@@ -20,19 +20,15 @@ export const pinnedDashboardRows = <Message>(
 	orgId: string,
 	toMessage: (rows: ReadonlyArray<PinnedDashboardRow>) => Message,
 ): Stream.Stream<Message, never, OrgCollections> =>
-	Stream.unwrap(
-		Effect.gen(function* () {
-			const collections = yield* OrgCollections
-			const set = yield* collections.forOrg(orgId)
-			return liveQueryStream(
-				(q) => q.from({ d: set.dashboards }),
-				(rows) =>
-					toMessage(
-						Arr.sort(
-							rows.map((row) => ({ id: row.id, name: row.name, updated_at: row.updated_at })),
-							byUpdatedDesc,
-						),
+	orgLive(orgId, (set) =>
+		liveQueryStream(
+			(q) => q.from({ d: set.dashboards }),
+			(rows) =>
+				toMessage(
+					Arr.sort(
+						rows.map((row) => ({ id: row.id, name: row.name, updated_at: row.updated_at })),
+						byUpdatedDesc,
 					),
-			)
-		}),
+				),
+		),
 	)
