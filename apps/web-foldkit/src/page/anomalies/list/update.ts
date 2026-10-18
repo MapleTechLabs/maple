@@ -204,30 +204,32 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						commands: [LoadMoreIncidents({ status: statusOf(model.search), cursor })],
 					}
 		},
-		CompletedLoadMore: ({ status, result }) =>
-			Result.match(result, {
-				onFailure: () => ({
-					model: { ...model, isLoadingMore: false },
-					outMessage: PageOutMessage.RequestedToast({
-						type: "error",
-						title: "More anomalies could not be loaded",
-						description: "",
+		CompletedLoadMore: ({ status, cursor, result }) =>
+			status !== statusOf(model.search) || cursor !== nextCursorOf(model)
+				? { model: { ...model, isLoadingMore: false } }
+				: Result.match(result, {
+						onFailure: () => ({
+							model: { ...model, isLoadingMore: false },
+							outMessage: PageOutMessage.RequestedToast({
+								type: "error",
+								title: "More anomalies could not be loaded",
+								description: "",
+							}),
+						}),
+						onSuccess: (page) => ({
+							model: {
+								...model,
+								isLoadingMore: false,
+								loadedPages: {
+									key: status,
+									rows: [...(model.loadedPages?.key === status ? model.loadedPages.rows : []), ...page.data],
+									nextCursor: page.nextCursor,
+								},
+							},
+						}),
 					}),
-				}),
-				onSuccess: (page) => ({
-					model: {
-						...model,
-						isLoadingMore: false,
-						loadedPages: {
-							key: status,
-							rows: [...(model.loadedPages?.key === status ? model.loadedPages.rows : []), ...page.data],
-							nextCursor: page.nextCursor,
-						},
-					},
-				}),
-			}),
 		ClickedRetry: () => loadFirstPage(model, context, "Refresh"),
-		TickedLiveRefresh: () => loadFirstPage(model, context, "Refresh"),
+		TickedLiveRefresh: ({ nowMs }) => loadFirstPage({ ...model, nowMs }, context, "Refresh"),
 		ToggledLive: () => {
 			const next = !isLiveOf(model.search)
 			return toNavigation(model, {

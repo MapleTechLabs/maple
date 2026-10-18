@@ -97,4 +97,11 @@ describe("anomaly detail", () => {
 		expect(names(scoped.commands)).toEqual(["FetchAnomalyLinkIssues"])
 		expect(scoped.model.linkAllServices).toBe(true)
 	})
+
+	test("a live tick reads the clock, so an open incident that went quiet turns stale", () => {
+		const model = loaded().model
+		scene({ update: pageUpdate, view }, given(model), themed(), expectView(text(/^Stale/)).not.toExist())
+		const ticked = pageUpdate(model, Message.TickedLiveRefresh({ nowMs: NOW + 30 * 86_400_000 })).model
+		scene({ update: pageUpdate, view }, given(ticked), themed(), expectView(text(/^Stale/)).toExist())
+	})
 })

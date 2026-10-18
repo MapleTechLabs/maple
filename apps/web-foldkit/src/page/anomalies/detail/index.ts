@@ -1,4 +1,4 @@
-import { Duration, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import { definePage, type PageSubscriptionInput } from "../../contract"
 import { incidentOf } from "./derive"
@@ -20,7 +20,9 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()
 					? Stream.tick(Duration.seconds(15)).pipe(
 							Stream.drop(1),
 							Stream.filter(() => typeof document === "undefined" || !document.hidden),
-							Stream.map(() => Message.TickedLiveRefresh()),
+							Stream.mapEffect(() =>
+								Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveRefresh({ nowMs })),
+							),
 						)
 					: Stream.empty,
 		},

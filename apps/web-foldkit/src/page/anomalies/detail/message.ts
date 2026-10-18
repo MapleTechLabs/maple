@@ -20,7 +20,8 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(V2ErrorIssue), LoadFailure),
 	},
-	TickedLiveRefresh: {},
+	/** Each live tick reads the clock, so relative times age with the data. */
+	TickedLiveRefresh: { nowMs: Schema.Number },
 	ClickedRetry: {},
 	ClickedInvestigate: {},
 	CompletedInvestigate: { result: Schema.Result(Schema.String, LoadFailure) },
