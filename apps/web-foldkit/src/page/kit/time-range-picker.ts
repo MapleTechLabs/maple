@@ -3,8 +3,8 @@ import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { kbdStyles } from "@maple/ui/styles/ui/kbd"
-import { Option, Schema } from "effect"
-import { Command, Submodel, type Update } from "foldkit"
+import { Clock, Effect, Option, Schema } from "effect"
+import { Command, Mount, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { button } from "../../ui/button"
@@ -24,6 +24,8 @@ export const Model = Schema.Struct({
 	/** `ShorthandInput`: the typed duration and whether Enter rejected it. */
 	shorthand: Schema.String,
 	isShorthandInvalid: Schema.Boolean,
+	/** The footer's `formatUtcOffset(timeZone)`, read when the footer mounts (each open). */
+	utcOffset: Schema.NullOr(Schema.Struct({ timeZone: Schema.String, label: Schema.String })),
 })
 export type Model = typeof Model.Type
 
@@ -31,6 +33,7 @@ export const init = (id: string): Model => ({
 	popover: Popover.init(id, { align: "end" }),
 	shorthand: "",
 	isShorthandInvalid: false,
+	utcOffset: null,
 })
 
 export const Message = defineMessageUnion({
@@ -38,6 +41,7 @@ export const Message = defineMessageUnion({
 	ClickedPreset: { value: Schema.String },
 	ChangedShorthand: { value: Schema.String },
 	PressedShorthandEnter: {},
+	ResolvedUtcOffset: { timeZone: Schema.String, label: Schema.String },
 })
 export type Message = typeof Message.Type
 
@@ -76,6 +80,7 @@ export const update = (model: Model, message: Message): Return =>
 						outMessage: OutMessage.SelectedPreset({ presetValue: model.shorthand.toLowerCase() }),
 					}
 				: { model: { ...model, isShorthandInvalid: true } },
+		ResolvedUtcOffset: ({ timeZone, label }) => ({ model: { ...model, utcOffset: { timeZone, label } } }),
 	})
 
 /** The list presets (`LONG_RANGE_PRESET_OPTIONS` for long-range pages, else `PRESET_OPTIONS`). */
@@ -230,23 +235,36 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model): Html =>
 		],
 	)
 
-/** `formatUtcOffset`: `UTC+2`, `UTC-5:30`, `UTC`. */
-const formatUtcOffset = (timeZone: string): string => {
-	const part =
-		new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" })
-			.formatToParts(0)
-			.find((entry) => entry.type === "timeZoneName")?.value ?? "GMT"
+/** An unknown zone throws in the constructor; legacy then shows `UTC`. */
+const offsetFormatter = Option.liftThrowable(
+	(timeZone: string) => new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" }),
+)
+
+/** `formatUtcOffset`: `UTC+2`, `UTC-5:30`, `UTC`, the offset a zone is on at `atMs`. */
+export const formatUtcOffset = (timeZone: string, atMs: number): string => {
+	const part = Option.match(offsetFormatter(timeZone), {
+		onNone: () => "GMT",
+		onSome: (formatter) => formatter.formatToParts(atMs).find((entry) => entry.type === "timeZoneName")?.value ?? "GMT",
+	})
 	const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(part)
 	if (match === null) return "UTC"
 	const [, sign, hours, minutes] = match
 	return `UTC${sign}${Number(hours)}${minutes !== undefined && minutes !== "00" ? `:${minutes}` : ""}`
 }
 
+/** The footer mounted (the popover opened): its zone's offset now; a DST change shows on the next open. */
+export const MountUtcOffset = Mount.define("MountTimeRangeUtcOffset", {
+	args: { timeZone: Schema.String },
+	messages: [Message.ResolvedUtcOffset],
+	execute: ({ timeZone }) =>
+		Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ResolvedUtcOffset({ timeZone, label: formatUtcOffset(timeZone, nowMs) })),
+})
+
 /**
  * `TimezoneSelect`'s closed trigger, on the system zone.
  * TODO(timezone): the zone list (a searchable combobox) is not ported; the trigger is inert.
  */
-const timezoneFooter = (h: HtmlBuilder<Message>, timeZone: string): Html =>
+const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
 	h.div(
 		[h.Class("flex items-center justify-between gap-3 border-t border-border/70 bg-muted/20 px-4 py-2")],
 		[
@@ -271,9 +289,10 @@ const timezoneFooter = (h: HtmlBuilder<Message>, timeZone: string): Html =>
 				[
 					icon(h, "GlobeIcon", { className: "size-3 shrink-0 text-muted-foreground/70" }),
 					h.span([h.Class("truncate font-mono text-foreground/90")], [timeZone]),
-					h.span(
-						[h.Class("shrink-0 font-mono text-muted-foreground/70")],
-						[formatUtcOffset(timeZone)],
+					h.keyed("span")(
+						`utc-offset-${timeZone}`,
+						[h.Class("shrink-0 font-mono text-muted-foreground/70"), h.OnMount(MountUtcOffset({ timeZone }))],
+						[model.utcOffset?.timeZone === timeZone ? model.utcOffset.label : ""],
 					),
 					h.span(
 						[
@@ -337,7 +356,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								),
 							],
 						),
-						timezoneFooter(h, inputs.timeZone ?? "UTC"),
+						timezoneFooter(h, model, inputs.timeZone ?? "UTC"),
 					],
 				),
 			],
