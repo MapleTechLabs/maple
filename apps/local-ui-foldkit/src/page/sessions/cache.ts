@@ -23,7 +23,7 @@ export const facetsKey = (window: Window) => keyFor("session-facets", window)
 const CachedPages = Schema.Struct({ pages: Schema.Array(Schema.Array(SessionRow)) })
 
 /** `useInfiniteQuery`'s data: the pages and the cursor each was fetched from. */
-export const pagesToCached = (data: SessionPages) => ({
+export const pagesToCached = (data: Pick<SessionPages, "pages">) => ({
 	pages: data.pages,
 	pageParams: [undefined, ...data.pages.slice(0, -1).map(nextCursor)],
 })

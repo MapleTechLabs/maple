@@ -33,6 +33,7 @@ export const loadMoreIfAtEnd = (model: Model, context: PageContext): UpdateRetur
 				cursorTraceId: cursor.traceId,
 				cursorSpanId: cursor.spanId,
 				cursorRecordIdentity: cursor.recordIdentity,
+				pages: data.pages,
 			}),
 		],
 	}

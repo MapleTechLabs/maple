@@ -26,6 +26,7 @@ export const Message = defineMessageUnion({
 	FailedFetchSparklines: { key: Schema.String, failure: LoadFailure },
 	FoundCachedSparklines: { request: SparklinesRequest, cached: CachedOf(Schema.Array(MetricSparkline)) },
 	ClickedRefresh: {},
+	ClickedOpenFilters: {},
 	CompletedReadRefreshClock: { nowMs: Schema.Number },
 	ChangedSearch: { text: Schema.String },
 	ClickedClearSearch: {},

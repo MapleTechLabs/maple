@@ -23,6 +23,7 @@ export const Message = defineMessageUnion({
 	FailedFetchFacets: { key: Schema.String, failure: LoadFailure },
 	FoundCachedFacets: { key: Schema.String, cached: CachedOf(SessionFacets) },
 	ClickedRefresh: {},
+	ClickedOpenFilters: {},
 	CompletedReadRefreshClock: { nowMs: Schema.Number },
 	ChangedSearch: { text: Schema.String },
 	ClickedClearSearch: {},

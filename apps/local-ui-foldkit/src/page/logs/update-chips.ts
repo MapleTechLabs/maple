@@ -1,7 +1,8 @@
-import { Duration, Effect, Option, Schema } from "effect"
+import * as Tooltip from "@maple/web-foldkit/ui/tooltip"
+import { Duration, Effect, Option, Record, Schema } from "effect"
 import { Command } from "foldkit"
 import { Message } from "./message"
-import type { ChipCard, ChipRef, Model } from "./model"
+import { CHIP_JSON_COPY_ID, type ChipCard, type ChipRef, initChipJsonTooltip, type Model } from "./model"
 import type { UpdateReturn } from "./update"
 
 // `LogAttributeChip`'s hover card: rest 300 ms to open, 150 ms of grace to cross into the card.
@@ -19,7 +20,31 @@ export const WaitChipDelay = Command.define("WaitLocalLogChipDelay", {
 const sameChip = (a: ChipRef, b: ChipRef) => a.index === b.index && a.logKey === b.logKey && a.key === b.key
 const isChip = (maybe: Option.Option<ChipRef>, chip: ChipRef) => Option.exists(maybe, (other) => sameChip(other, chip))
 
-const withCard = (model: Model, chipCard: ChipCard): Model => ({ ...model, chipCard })
+const isSameVisible = (a: Option.Option<ChipRef>, b: Option.Option<ChipRef>) =>
+	Option.isNone(a) ? Option.isNone(b) : Option.isSome(b) && sameChip(a.value, b.value)
+
+/** Another card (or none) unmounts the last one: its JSON view, copy status and tooltip start over. */
+export const withCard = (model: Model, chipCard: ChipCard): Model =>
+	isSameVisible(model.chipCard.visible, chipCard.visible)
+		? { ...model, chipCard }
+		: {
+				...model,
+				chipCard: { ...chipCard, isJsonExpanded: false },
+				chipJsonTooltip: initChipJsonTooltip(),
+				copies: Record.remove(model.copies, CHIP_JSON_COPY_ID),
+			}
+
+export const toggleChipJson = (model: Model): UpdateReturn => ({
+	model: { ...model, chipCard: { ...model.chipCard, isJsonExpanded: !model.chipCard.isJsonExpanded } },
+})
+
+export const updateChipJsonTooltip = (model: Model, message: Tooltip.Message): UpdateReturn => {
+	const next = Tooltip.update(model.chipJsonTooltip, message)
+	return {
+		model: { ...model, chipJsonTooltip: next.model },
+		commands: Command.mapMessages(next.commands ?? [], (tip) => Message.GotChipJsonTooltipMessage({ message: tip })),
+	}
+}
 
 const schedule = (model: Model, card: ChipCard, millis: number): UpdateReturn => ({
 	model: withCard(model, card),

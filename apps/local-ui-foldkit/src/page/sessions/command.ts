@@ -1,11 +1,11 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { withCache } from "../../data/cached"
+import { recordCached, withCache } from "../../data/cached"
 import type { LoadFailure } from "../../data/local-query"
 import { facetsFromCached, facetsKey, pagesFromCached, pagesToCached, sessionsKey } from "./cache"
 import { fetchSessionFacets, fetchSessionPage, filtersOf, nextCursor, type SessionCursor } from "./fetch"
 import { Message } from "./message"
-import type { SessionRow } from "./model"
+import { SessionRow } from "./model"
 
 /** What one list or facets request reads: the hash query (filters), the window and the server. */
 const RequestArgs = {
@@ -62,15 +62,27 @@ export const FetchSessions = Command.define("FetchLocalSessions", {
 })
 
 export const FetchNextPage = Command.define("FetchNextLocalSessionsPage", {
-	args: { ...RequestArgs, cursorStartTime: Schema.DateTimeUtc, cursorSessionId: Schema.String },
+	args: {
+		...RequestArgs,
+		cursorStartTime: Schema.DateTimeUtc,
+		cursorSessionId: Schema.String,
+		/** The pages loaded so far; the cache keeps them with the new one. */
+		pages: Schema.Array(Schema.Array(SessionRow)),
+	},
 	messages: [Message.SucceededFetchNextPage, Message.FailedFetchNextPage],
-	execute: ({ key, search, startTime, endTime, apiBase, cursorStartTime, cursorSessionId }) =>
+	execute: ({ key, search, startTime, endTime, apiBase, cursorStartTime, cursorSessionId, pages }) =>
 		fetchSessionPage(
 			filtersOf(new URLSearchParams(search)),
 			{ startTime, endTime },
 			{ startTime: cursorStartTime, sessionId: cursorSessionId },
 			apiBase,
 		).pipe(
+			// `fetchNextPage` updates the cached query too, so a reload opens on every page loaded.
+			Effect.tap((page) =>
+				Effect.flatMap(Clock.currentTimeMillis, (atMs) =>
+					recordCached(sessionsKey({ search, startTime, endTime }), pagesToCached({ pages: [...pages, page] }), atMs),
+				),
+			),
 			Effect.map((page) => Message.SucceededFetchNextPage({ key, page })),
 			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key, failure }))),
 		),

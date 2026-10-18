@@ -79,6 +79,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return pageShell(
 		h,
 		{
+			onOpenFilters: Message.ClickedOpenFilters(),
 			sidebar: sidebar(h, model, filters),
 			toolbar: logsToolbar(h, model, mode, { range: rangeOf(inputs.context), hasNewData: inputs.hasNewDataSince(since) }),
 			activeFilterCount: activeFilterCount(filters),

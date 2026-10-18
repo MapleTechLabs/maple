@@ -80,6 +80,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return pageShell(
 		h,
 		{
+			onOpenFilters: Message.ClickedOpenFilters(),
 			sidebar: sidebar(h, model, filters, count),
 			toolbar: tracesToolbar(h, model, filters, {
 				rowCount: rows.length,

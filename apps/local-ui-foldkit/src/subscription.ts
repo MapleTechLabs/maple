@@ -1,5 +1,6 @@
 import { Option, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
+import { MOBILE_QUERY } from "./env"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -22,7 +23,16 @@ const sidebarShortcut: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 	},
 })
 
+const viewportChanges: Stream.Stream<Message> = Dom.streamFromMediaQuery({
+	query: MOBILE_QUERY,
+	mapMatches: (isMobile) => Message.ChangedViewport({ isMobile }),
+})
+
 export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
+	viewport: entry({}, {
+		modelToDependencies: () => ({}),
+		dependenciesToStream: () => viewportChanges,
+	}),
 	colorScheme: entry({}, {
 		modelToDependencies: () => ({}),
 		dependenciesToStream: () => colorScheme,

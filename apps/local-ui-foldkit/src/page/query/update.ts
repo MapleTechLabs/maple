@@ -4,7 +4,7 @@ import { Option, Result } from "effect"
 import type { Command, Update } from "foldkit"
 import { accept, acceptCached, idle, keyOf, request } from "../../data/slot"
 import { queryOf } from "../../route"
-import { type PageContext, type PageOutMessage, replaceParams } from "../contract"
+import { type PageContext, PageOutMessage, replaceParams } from "../contract"
 import { DownloadText, FetchTables, ReadPlatform, RunQuery } from "./command"
 import { Message } from "./message"
 import { type LocalTable, type Model, RunState } from "./model"
@@ -87,4 +87,5 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			}
 		},
 		CompletedDownload: () => ({ model }),
+		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
 	})

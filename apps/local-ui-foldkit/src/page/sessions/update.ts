@@ -90,6 +90,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		FailedFetchFacets: ({ key, failure }) => ({
 			model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.fail(failure)) }),
 		}),
+		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
 		ClickedRefresh: () =>
 			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {

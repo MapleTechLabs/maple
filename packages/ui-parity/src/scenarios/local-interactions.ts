@@ -26,6 +26,28 @@ const typeInto = async (page: Page, placeholder: string, text: string) => {
 	await page.waitForTimeout(DEBOUNCE_MS)
 }
 
+/** Rests on the `order.payload` chip until its card is up. */
+const openJsonChip = async (page: Page) => {
+	await page.getByRole("button", { name: /^Copy order\.payload=/ }).first().hover()
+	await page.getByText("Attribute", { exact: true }).waitFor()
+}
+
+/** Lets the drag's layout write (and the 400 ms camera write) land before the next step. */
+const MAP_SETTLE_MS = 800
+
+/** A node card dragged by `(dx, dy)` with the mouse, as React Flow's XYDrag sees it. */
+const dragNode = async (page: Page, name: string, dx: number, dy: number) => {
+	const box = await page.getByRole("application").getByText(name, { exact: true }).first().boundingBox()
+	if (box === null) throw new Error(`no box for ${name}`)
+	const x = box.x + box.width / 2
+	const y = box.y + box.height / 2
+	await page.mouse.move(x, y)
+	await page.mouse.down()
+	await page.mouse.move(x + dx / 2, y + dy / 2, { steps: 4 })
+	await page.mouse.move(x + dx, y + dy, { steps: 4 })
+	await page.mouse.up()
+}
+
 export const localInteractionsArea: AreaModule = {
 	area: "local-interactions",
 	scenarios: [
@@ -40,6 +62,13 @@ export const localInteractionsArea: AreaModule = {
 		interaction("traces-load-more", "Traces: load more", "/traces", (page) =>
 			page.getByRole("button", { name: "Load more" }).click(),
 		),
+		// The loaded pages are saved with the list, so a reload opens on all of them.
+		interaction("traces-load-more-reload", "Traces: load more, then reload", "/traces", async (page) => {
+			await page.getByRole("button", { name: "Load more" }).click()
+			await page.waitForTimeout(MAP_SETTLE_MS)
+			await page.reload()
+			await page.getByRole("link", { name: /^Trace / }).first().waitFor()
+		}),
 		interaction("traces-service-facet", "Traces: service facet", "/traces", (page) =>
 			page.getByRole("checkbox", { name: "storefront" }).click(),
 		),
@@ -68,6 +97,24 @@ export const localInteractionsArea: AreaModule = {
 			await page.getByRole("button", { name: "Copy db.client.connection.pool.name=payments" }).first().hover()
 			await page.waitForTimeout(DEBOUNCE_MS)
 		}),
+		// A JSON attribute's card: the collapsed preview, expanded, and its copy button's tooltip.
+		{ ...interaction("logs-chip-json", "Logs: a JSON chip's card", "/logs", openJsonChip), dataset: "local-json" },
+		{
+			...interaction("logs-chip-json-expanded", "Logs: a JSON chip expanded", "/logs", async (page) => {
+				await openJsonChip(page)
+				await page.getByRole("button", { name: /^\{"orderId"/ }).click()
+			}),
+			dataset: "local-json",
+		},
+		{
+			...interaction("logs-chip-json-copy-tooltip", "Logs: the JSON copy button's tooltip", "/logs", async (page) => {
+				await openJsonChip(page)
+				await page.getByRole("button", { name: /^\{"orderId"/ }).click()
+				await page.getByRole("button", { name: "Copy JSON" }).hover()
+				await page.getByText("Copy JSON", { exact: true }).waitFor()
+			}),
+			dataset: "local-json",
+		},
 		interaction("errors-expand", "Errors: expand a card", "/errors", (page) =>
 			page.getByRole("button", { name: /^ConnectionTimeout/ }).click(),
 		),
@@ -126,5 +173,19 @@ export const localInteractionsArea: AreaModule = {
 		interaction("service-map-focus", "Service map: focus", "/service-map", (page) =>
 			typeInto(page, "Focus a service…", "payment"),
 		),
+		interaction("service-map-drag", "Service map: storefront dragged", "/service-map", (page) =>
+			dragNode(page, "storefront", 40, 160),
+		),
+		interaction("service-map-resort", "Service map: a drag undone by Re-sort", "/service-map", async (page) => {
+			await dragNode(page, "storefront", 40, 160)
+			await page.getByRole("button", { name: "Re-sort" }).click()
+		}),
+		// The finished drag is saved (`maple-local:service-map.layout`), so a reload keeps it.
+		interaction("service-map-drag-persisted", "Service map: a drag kept across a reload", "/service-map", async (page) => {
+			await dragNode(page, "storefront", 40, 160)
+			await page.waitForTimeout(MAP_SETTLE_MS)
+			await page.reload()
+			await page.getByRole("application").waitFor()
+		}),
 	],
 }

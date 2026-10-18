@@ -1,5 +1,7 @@
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
+import { sidebarMobileHeaderStyles, sidebarMobileInnerStyles, sidebarMobileStyles } from "@maple/ui/styles/ui/sidebar"
 import { icon } from "@maple/web-foldkit/ui/icon"
+import { leftSheet } from "@maple/web-foldkit/ui/sheet"
 import {
 	sidebarContent,
 	sidebarDesktop,
@@ -26,11 +28,11 @@ import { activeSection, NAV_GROUPS } from "./nav"
 /** Same selected-row rail as apps/web's sidebar: a 2px lane only the active row paints. */
 const ACTIVE_RAIL = `${ROW_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
 
-/** `AppSidebar`; `linkQuery` is the context every section link carries (range, service filter). */
-export const appSidebar = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): Html => {
+/** `AppSidebar`'s children, shared by the desktop rail and the mobile sheet. */
+const sidebarRegions = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): ReadonlyArray<Html> => {
 	const active = activeSection(model.route)
 	const state = model.isSidebarOpen ? "expanded" : "collapsed"
-	return sidebarDesktop(h, state, [
+	return [
 		sidebarHeader(h, [localLockup(h)], "h-12 flex-row items-center px-4 group-data-[collapsible=icon]:px-2"),
 		sidebarContent(
 			h,
@@ -76,5 +78,30 @@ export const appSidebar = (h: HtmlBuilder<Message>, model: Model, linkQuery: URL
 			),
 		]),
 		sidebarRail(h, Message.ClickedToggleSidebar()),
-	])
+	]
 }
+
+/** `AppSidebar` above `md`; `linkQuery` is the context every section link carries (range, service filter). */
+export const appSidebar = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): Html =>
+	sidebarDesktop(h, model.isSidebarOpen ? "expanded" : "collapsed", sidebarRegions(h, model, linkQuery))
+
+/** `<Sidebar>` below `md`: the same children in `SheetPopup side="left"` (packages/ui sidebar.tsx). */
+export const mobileSidebar = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): Html =>
+	leftSheet(
+		h,
+		{
+			id: "local-mobile-sidebar",
+			className: sidebarMobileStyles,
+			title: "Sidebar",
+			description: "Displays the mobile sidebar.",
+			headerClassName: sidebarMobileHeaderStyles,
+			slot: "sidebar",
+			popupAttributes: [
+				h.DataAttribute("mobile", "true"),
+				h.DataAttribute("sidebar", "sidebar"),
+				h.Style({ "--nested-dialogs": "0", "--sidebar-width": "18rem" }),
+			],
+			onDismiss: Message.DismissedMobileNav(),
+		},
+		[h.div([h.Class(sidebarMobileInnerStyles)], sidebarRegions(h, model, linkQuery))],
+	)

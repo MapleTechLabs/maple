@@ -75,6 +75,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			pageShell(
 				h,
 				{
+					onOpenFilters: Message.ClickedOpenFilters(),
 					sidebar: sidebar(h, model, { service, type }, activeFilterCount),
 					toolbar: toolbar(h, [
 						toolbarSearch(h, {

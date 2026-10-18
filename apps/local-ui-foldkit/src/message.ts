@@ -1,3 +1,4 @@
+import * as Dialog from "@maple/web-foldkit/ui/dialog"
 import * as Popover from "@maple/web-foldkit/ui/popover"
 import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import * as Toast from "@maple/web-foldkit/ui/toast"
@@ -24,6 +25,9 @@ export const Message = defineMessageUnion({
 	ClickedToggleSidebar: {},
 	PressedSidebarShortcut: {},
 	CompletedSaveSidebarState: {},
+	ChangedViewport: { isMobile: Schema.Boolean },
+	DismissedMobileNav: {},
+	GotFilterDrawerMessage: { message: Dialog.Message },
 	GotConnectMessage: { message: Popover.Message },
 	GotInstallTabsMessage: { message: Tabs.Message },
 	ChangedColorScheme: { theme: Theme },

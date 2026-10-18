@@ -135,6 +135,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			({ model: settleRefresh({ ...model, sparklines: accept(model.sparklines, key, Result.succeed(sparklines), fetchedAtMs) }) }),
 		FailedFetchSparklines: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, sparklines: accept(model.sparklines, key, Result.fail(failure)) }) }),
+		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
 		ClickedRefresh: () =>
 			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {

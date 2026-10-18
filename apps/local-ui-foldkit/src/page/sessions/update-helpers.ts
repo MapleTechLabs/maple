@@ -48,6 +48,7 @@ export const loadMore = (model: Model, context: PageContext): UpdateReturn => {
 				apiBase: context.env.apiBase,
 				cursorStartTime: maybeNext.value.startTime,
 				cursorSessionId: maybeNext.value.sessionId,
+				pages: Option.match(AsyncData.getData(model.sessions.data), { onNone: () => [], onSome: (data) => data.pages }),
 			}),
 		],
 	}

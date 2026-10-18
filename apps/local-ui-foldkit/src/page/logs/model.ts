@@ -1,4 +1,5 @@
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
+import * as Tooltip from "@maple/web-foldkit/ui/tooltip"
 import * as ToggleGroup from "@maple/web-foldkit/ui/toggle-group"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
@@ -48,6 +49,8 @@ export const ChipCard = Schema.Struct({
 	pendingOpen: Schema.Option(Schema.Struct({ chip: ChipRef, generation: Schema.Number })),
 	pendingClose: Schema.Option(Schema.Number),
 	generation: Schema.Number,
+	/** `CollapsibleJsonValue` in the shown card; a card that opens again starts collapsed. */
+	isJsonExpanded: Schema.Boolean,
 })
 export type ChipCard = typeof ChipCard.Type
 
@@ -75,5 +78,11 @@ export const Model = Schema.TaggedStruct("LogsPage", {
 	isRefreshing: Schema.Boolean,
 	copies: Copies,
 	chipCard: ChipCard,
+	/** The tooltip on the card JSON block copy button (`<CopyButton tooltip>`). */
+	chipJsonTooltip: Tooltip.Model,
 })
 export type Model = typeof Model.Type
+
+export const CHIP_JSON_TOOLTIP_ID = "local-chip-json-copy"
+export const CHIP_JSON_COPY_ID = "chip-json"
+export const initChipJsonTooltip = (): Tooltip.Model => Tooltip.init(CHIP_JSON_TOOLTIP_ID)

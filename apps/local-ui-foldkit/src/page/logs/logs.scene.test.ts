@@ -95,6 +95,8 @@ describe("local logs", () => {
 		const tall = pageUpdate(model, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 1500 } }))
 		expect(names(tall.commands)).toEqual([FetchNextPage.name])
 		expect(tall.model.isFetchingNextPage).toBe(true)
+		// The pages so far travel with it, so the cache keeps them all with the new one.
+		expect((tall.commands ?? []).map(({ args }) => args)).toMatchObject([{ pages: [model.logs.data._tag === "Success" ? model.logs.data.data.pages[0] : []] }])
 	})
 
 	test("a row click opens the detail sheet on that log", () => {
@@ -140,6 +142,25 @@ describe("local logs", () => {
 		const left = pageUpdate(shown, Message.LeftChip({ chip }))
 		const closed = pageUpdate(left.model, Message.ElapsedChipDelay({ generation: left.model.chipCard.generation })).model
 		expect(closed.chipCard.visible).toEqual(Option.none())
+	})
+
+	test("a JSON value expands in the card, and the next card starts collapsed", () => {
+		const row = { ...log(1, "order placed"), logAttributes: { "order.payload": '{"orderId":"ord_1","total":18.5}' } }
+		const model = pageUpdate(loaded([row]), Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })).model
+		const chip = { index: 0, logKey: logKey(row), key: "order.payload" }
+		const entered = pageUpdate(model, Message.EnteredChip({ chip })).model
+		const shown = pageUpdate(entered, Message.ElapsedChipDelay({ generation: entered.chipCard.generation })).model
+		const resolveMounts = [
+			Mount.resolve(ObserveLogsViewport, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 800 } })),
+			Mount.resolve(PlaceLocalChipCard, Message.PlacedChipCard()),
+		]
+		scene({ update: pageUpdate, view }, given(shown), ...resolveMounts, expectView(role("button", { name: "Copy JSON" })).toBeAbsent())
+		const expanded = pageUpdate(shown, Message.ClickedChipJson()).model
+		scene({ update: pageUpdate, view }, given(expanded), ...resolveMounts, expectView(role("button", { name: "Copy JSON" })).toExist())
+		const closed = pageUpdate(expanded, Message.PressedChipEscape({ chip })).model
+		const again = pageUpdate(closed, Message.EnteredChip({ chip })).model
+		const reopened = pageUpdate(again, Message.ElapsedChipDelay({ generation: again.chipCard.generation })).model
+		expect(reopened.chipCard.isJsonExpanded).toBe(false)
 	})
 
 	test("a pending open is dropped when the pointer moves on first", () => {

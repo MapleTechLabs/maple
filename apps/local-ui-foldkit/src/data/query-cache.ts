@@ -6,6 +6,7 @@ import {
 	type CacheEntries,
 	type CacheValue,
 	type CacheEntry,
+	dropUnused,
 	hashKey,
 	newestOlderWindow,
 	parseSaved,
@@ -42,12 +43,20 @@ export class LocalQueryCache extends Context.Service<
 		this,
 		Effect.gen(function* () {
 			const storageKey = storageKeyFor(localServerPortForLocation(window.location))
-			const entries = yield* Ref.make<CacheEntries>(yield* readSavedEntries)
+			const restored = yield* readSavedEntries
+			const entries = yield* Ref.make<CacheEntries>(restored)
+			// `gcTime`'s clock per entry: a restored result starts unobserved at load.
+			const startedAtMs = yield* Clock.currentTimeMillis
+			const lastUsed = yield* Ref.make<ReadonlyMap<string, number>>(new Map([...restored.keys()].map((hash) => [hash, startedAtMs])))
 			const isSaveScheduled = yield* Ref.make(false)
 			const scope = yield* Effect.scope
-			const save = Effect.flatMap(Ref.get(entries), (current) =>
-				Effect.sync(() => writeLocalStorage(storageKey, serialize(current))),
-			)
+			/** Drops what nothing used for an hour; returns what is left. */
+			const collect = Effect.gen(function* () {
+				const nowMs = yield* Clock.currentTimeMillis
+				const used = yield* Ref.get(lastUsed)
+				return yield* Ref.updateAndGet(entries, (current) => dropUnused(current, used, nowMs))
+			})
+			const save = Effect.flatMap(collect, (current) => Effect.sync(() => writeLocalStorage(storageKey, serialize(current))))
 			// `visibilitychange` to hidden saves at once: the tab may not come back.
 			const services = yield* Effect.context()
 			yield* Effect.acquireRelease(
@@ -60,6 +69,8 @@ export class LocalQueryCache extends Context.Service<
 				}),
 				(onHide) => Effect.sync(() => document.removeEventListener("visibilitychange", onHide)),
 			)
+			// The browser runtime closes this scope on `beforeunload`, before a reload's hidden event.
+			yield* Effect.addFinalizer(() => save)
 			const scheduleSave = Effect.flatMap(
 				Ref.getAndSet(isSaveScheduled, true),
 				(wasScheduled) =>
@@ -72,15 +83,20 @@ export class LocalQueryCache extends Context.Service<
 								),
 							),
 			)
+			const touch = (hash: string, nowMs: number) => Ref.update(lastUsed, (used) => new Map(used).set(hash, nowMs))
 			return {
 				lookup: (key) =>
-					Effect.map(Ref.get(entries), (current): Option.Option<CacheHit> => {
-						const exact = Option.fromNullishOr(current.get(hashKey(key)))
+					Effect.gen(function* () {
+						const current = yield* collect
+						const hash = hashKey(key)
 						const toHit = (entry: CacheEntry, isStandIn: boolean): CacheHit => ({
 							data: entry.data,
 							updatedAtMs: entry.updatedAtMs,
 							isStandIn,
 						})
+						const exact = Option.fromNullishOr(current.get(hash))
+						// A page reading its own key observes it; a stand-in is only read (`getQueryData`).
+						if (Option.isSome(exact)) yield* touch(hash, yield* Clock.currentTimeMillis)
 						return Option.isSome(exact)
 							? Option.some(toHit(exact.value, false))
 							: Option.map(newestOlderWindow(current, key), (entry) => toHit(entry, true))
@@ -90,10 +106,12 @@ export class LocalQueryCache extends Context.Service<
 					Option.match(asCacheValue(data), {
 						onNone: () => Effect.void,
 						onSome: (value) =>
-							Effect.andThen(
-								Ref.update(entries, (current) => new Map([...current, [hashKey(key), { key, data: value, updatedAtMs }]])),
-								scheduleSave,
-							),
+							Effect.gen(function* () {
+								yield* touch(hashKey(key), yield* Clock.currentTimeMillis)
+								yield* Ref.update(entries, (current) => new Map([...current, [hashKey(key), { key, data: value, updatedAtMs }]]))
+								yield* collect
+								yield* scheduleSave
+							}),
 					}),
 			}
 		}),

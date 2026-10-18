@@ -96,5 +96,5 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			"shrink-0",
 		),
 	])
-	return pageShell(h, { sidebar: sidebar(h, model, filters, hasActiveFilters), toolbar: bar, activeFilterCount }, [content()])
+	return pageShell(h, { sidebar: sidebar(h, model, filters, hasActiveFilters), toolbar: bar, activeFilterCount, onOpenFilters: Message.ClickedOpenFilters() }, [content()])
 })

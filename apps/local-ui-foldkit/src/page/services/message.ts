@@ -17,6 +17,7 @@ export const Message = defineMessageUnion({
 	/** The result cache held this slice (or an older window of it) before the fetch ran. */
 	FoundCachedCatalog: { key: Schema.String, cached: CachedOf(Catalog) },
 	ClickedRefresh: {},
+	ClickedOpenFilters: {},
 	CompletedReadRefreshClock: { nowMs: Schema.Number },
 	ChangedSearch: { text: Schema.String },
 	ClickedClearSearch: {},
