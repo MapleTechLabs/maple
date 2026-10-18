@@ -5,8 +5,9 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { bootSplash } from "./layout/boot-splash"
 import { Message } from "./message"
 import { type Model, Session } from "./model"
-import { pageContextOf } from "./update"
+import { onboardingInputsOf, pageContextOf } from "./update"
 import * as ClerkSignIn from "./page/clerk-sign-in"
+import * as Onboarding from "./page/onboarding"
 import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
 import { type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } from "./page/registry"
 import * as SignIn from "./page/sign-in"
@@ -98,11 +99,29 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 	]
 }
 
+/** An onboarding screen open for this route, outside the shell. */
+const onboardingView = (model: Model, h: HtmlBuilder<Message>): Option.Option<Html> =>
+	Option.flatMap(Option.fromNullishOr(model.onboarding), (onboarding) =>
+		Option.map(onboardingInputsOf(model), (inputs) =>
+			h.submodel({
+				slotId: "onboarding",
+				model: onboarding,
+				view: Onboarding.view,
+				viewInputs: inputs,
+				toParentMessage: (message) => Message.GotOnboardingMessage({ message }),
+			}),
+		),
+	)
+
 const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	AppRoute.matchOrElse<ReadonlyArray<Html>>(
 		model.route,
 		{ SignIn: ({ search }) => [signInView(model, h, search.redirect_url)] },
-		() => (rendersShell(model.route) ? shellRoute(model, h) : [placeholder(model, h, [])]),
+		() =>
+			Option.match(onboardingView(model, h), {
+				onSome: (screen) => [screen],
+				onNone: () => (rendersShell(model.route) ? shellRoute(model, h) : [placeholder(model, h, [])]),
+			}),
 	)
 
 /** A protected route while signed out renders nothing: the redirect to `/sign-in` is in flight. */

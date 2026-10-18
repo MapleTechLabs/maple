@@ -52,6 +52,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		toasts: Toast.init("toasts"),
 		toastActions: {},
 		page: null,
+		onboarding: null,
 		timeZone: flags.timeZone,
 	}
 

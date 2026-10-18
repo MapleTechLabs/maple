@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
+import * as Onboarding from "./page/onboarding"
 import { PageMessage, PageSlot } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import * as Toast from "./ui/toast"
@@ -37,6 +38,8 @@ export const Model = Schema.Struct({
 	toastActions: Schema.Record(Schema.String, PageMessage),
 	/** The routed page (`page/registry.ts`): built on route entry, dropped on leave. */
 	page: Schema.NullOr(PageSlot),
+	/** The open onboarding or auth-handoff screen (`page/onboarding`): outside the shell and `PageContext`. */
+	onboarding: Schema.NullOr(Onboarding.Model),
 	/** `useTimezonePreference().effectiveTimezone`, read at boot. */
 	timeZone: Schema.String,
 })

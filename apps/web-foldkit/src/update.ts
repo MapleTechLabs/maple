@@ -18,6 +18,7 @@ import {
 import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { rendersShell } from "./page/chrome"
+import * as Onboarding from "./page/onboarding"
 import { type PageContext, PageOutMessage } from "./page/contract"
 import { changeContext, enterRoute, PageMessage, type PageTransition, updatePage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
@@ -209,6 +210,43 @@ const loadPage: Step = (model) =>
 		onSome: (context) => applyPage(enterRoute(model.page, model.route, context))(model),
 	})
 
+// ONBOARDING
+
+/** The session as the onboarding screens read it. */
+export const onboardingInputsOf = (model: Model): Option.Option<Onboarding.Inputs> =>
+	Session.match(model.session, {
+		Resolving: (): Option.Option<Onboarding.Inputs> => Option.none(),
+		SignedOut: (): Option.Option<Onboarding.Inputs> =>
+			Option.some({ session: "SignedOut", maybeOrgId: Option.none() }),
+		SignedIn: ({ maybeOrgId }): Option.Option<Onboarding.Inputs> =>
+			Option.some({ session: "SignedIn", maybeOrgId }),
+	})
+
+const toOnboardingCommands = (step: Onboarding.Step) =>
+	step.commands.map(Command.mapMessage((message) => Message.GotOnboardingMessage({ message })))
+
+/** Route entry: the screen is kept while its key holds, rebuilt on a new one, dropped on leave. */
+const loadOnboarding: Step = (model) => {
+	const maybeKey = Option.flatMap(onboardingInputsOf(model), (inputs) => Onboarding.keyOf(model.route, inputs))
+	if (Option.isNone(maybeKey)) {
+		return { model: model.onboarding === null ? model : modifyFields(model, { onboarding: () => null }) }
+	}
+	if (model.onboarding !== null && model.onboarding.key === maybeKey.value) return { model }
+	return Option.match(Onboarding.init(model.route, maybeKey.value), {
+		onNone: () => ({ model: modifyFields(model, { onboarding: () => null }) }),
+		onSome: (step) => ({
+			model: modifyFields(model, { onboarding: () => step.model }),
+			commands: toOnboardingCommands(step),
+		}),
+	})
+}
+
+const updateOnboarding = (model: Model, message: Onboarding.Message): UpdateReturn => {
+	if (model.onboarding === null) return { model }
+	const step = Onboarding.update(model.onboarding, message)
+	return { model: modifyFields(model, { onboarding: () => step.model }), commands: toOnboardingCommands(step) }
+}
+
 // ROUTING
 
 /** apps/web's `redirectToDashboard`: same-origin `redirect_url`, else `/`. */
@@ -295,7 +333,7 @@ const loadRoute: Step = (model) =>
 	})
 
 /** Everything that reads the route or the session. */
-export const settle: Step = Update.combine([followRedirects, loadRoute, loadPage])
+export const settle: Step = Update.combine([followRedirects, loadRoute, loadPage, loadOnboarding])
 
 // SESSION
 
@@ -362,4 +400,5 @@ export const update = (model: Model, message: Message) =>
 				? toPage(model, model.toastActions[message.toastId])
 				: foldToasts(model, message),
 		GotPageMessage: ({ message }) => toPage(model, message),
+		GotOnboardingMessage: ({ message }) => updateOnboarding(model, message),
 	})

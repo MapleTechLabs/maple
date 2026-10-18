@@ -15,13 +15,43 @@ import { separator } from "./display"
 
 // MODEL
 
-export const Model = Schema.Struct({ id: Schema.String, slots: Schema.Array(Schema.String) })
+/** Base UI's `validationType`: which characters a slot accepts. */
+export const Validation = Schema.Literals(["numeric", "alphanumeric"])
+export type Validation = typeof Validation.Type
+
+export const Model = Schema.Struct({
+	id: Schema.String,
+	slots: Schema.Array(Schema.String),
+	validation: Validation,
+	/** `normalizeValue={(value) => value.toUpperCase()}`. */
+	isUppercase: Schema.Boolean,
+})
 export type Model = typeof Model.Type
 
-export const init = (config: { id: string; length: number; value?: string }): Model => ({
+export const init = (config: {
+	id: string
+	length: number
+	value?: string
+	validation?: Validation
+	isUppercase?: boolean
+}): Model => ({
 	id: config.id,
 	slots: Array.from({ length: config.length }, (_, index) => config.value?.[index] ?? ""),
+	validation: config.validation ?? "numeric",
+	isUppercase: config.isUppercase ?? false,
 })
+
+/** Every slot is filled (Base UI's `complete` state). */
+export const isComplete = (model: Model): boolean => model.slots.every((slot) => slot !== "")
+
+const REJECTED = { numeric: /\D/g, alphanumeric: /[^a-zA-Z0-9]/g } as const
+const SLOT_PATTERN = { numeric: "\\d", alphanumeric: "[a-zA-Z0-9]" } as const
+const INPUT_MODE = { numeric: "numeric", alphanumeric: "text" } as const
+
+const normalize = (model: Model, text: string): string => {
+	const valid = text.replace(REJECTED[model.validation], "")
+	return model.isUppercase ? valid.toUpperCase() : valid
+}
 
 export const valueOf = (model: Model): string => model.slots.join("")
 
@@ -54,8 +84,7 @@ const focusSlot = (model: Model, index: number) =>
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
 		EnteredText: ({ index, text }) => {
-			const digits = text
-				.replace(/\D/g, "")
+			const digits = normalize(model, text)
 				.split("")
 				.slice(0, model.slots.length - index)
 			if (digits.length === 0) {
@@ -92,10 +121,20 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 export type OtpFieldViewConfig<ParentMessage> = Readonly<{
 	model: Model
 	toParentMessage: (message: Message) => ParentMessage
-	label: string
+	/** The group's `aria-label`, or `labelledBy`: the id of a `<Label>` naming the field. */
+	label?: string
+	labelledBy?: string
+	/** `aria-invalid` on the group. */
+	isInvalid?: boolean
 	size?: "default" | "lg"
 	className?: string
 }>
+
+/** Base UI's `data-complete` / `data-filled` state attributes. */
+const fillAttributes = <M>(h: HtmlBuilder<M>, model: Model, isFilled: boolean) => [
+	...(isComplete(model) ? [h.DataAttribute("complete", "")] : []),
+	...(isFilled ? [h.DataAttribute("filled", "")] : []),
+]
 
 /** The roving tab stop: the first empty slot, else the last. */
 const activeIndex = (model: Model): number => {
@@ -113,9 +152,11 @@ export const otpField = <ParentMessage>(
 	return [
 		h.div(
 			[
-				h.AriaLabel(config.label),
+				...(config.label === undefined ? [] : [h.AriaLabel(config.label)]),
+				...(config.isInvalid === undefined ? [] : [h.AriaInvalid(config.isInvalid)]),
+				...(config.labelledBy === undefined ? [] : [h.AriaLabelledBy(config.labelledBy)]),
 				h.Class(cn(otpFieldStyles, config.className)),
-				...(config.model.slots.some((slot) => slot !== "") ? [h.DataAttribute("filled", "")] : []),
+				...fillAttributes(h, config.model, config.model.slots.some((slot) => slot !== "")),
 				h.DataAttribute("size", config.size ?? "default"),
 				h.DataAttribute("slot", "otp-field"),
 				h.Role("group"),
@@ -126,10 +167,10 @@ export const otpField = <ParentMessage>(
 			h.AriaHidden(true),
 			h.Autocomplete("one-time-code"),
 			h.Id(`${config.model.id}-hidden-input`),
-			h.InputMode("numeric"),
+			h.InputMode(INPUT_MODE[config.model.validation]),
 			h.Maxlength(length),
 			h.Attribute("minlength", String(length)),
-			h.Pattern(`\\d{${length}}`),
+			h.Pattern(`${SLOT_PATTERN[config.model.validation]}{${length}}`),
 			h.Style(VISUALLY_HIDDEN_STYLE),
 			h.Tabindex(-1),
 			h.Type("text"),
@@ -144,22 +185,25 @@ export const otpFieldInput = <ParentMessage>(
 	config: OtpFieldViewConfig<ParentMessage>,
 	index: number,
 	className?: string,
+	ariaLabel?: string,
 ): Html => {
 	const { model, toParentMessage } = config
 	const length = model.slots.length
 	const slot = model.slots[index] ?? ""
 	return h.input([
+		...(index === 0 && config.labelledBy !== undefined ? [h.AriaLabelledBy(config.labelledBy)] : []),
+		...(ariaLabel === undefined ? [] : [h.AriaLabel(ariaLabel)]),
 		h.Autocomplete(index === 0 ? "one-time-code" : "off"),
 		h.Autocorrect("off"),
 		h.Class(cn(otpFieldInputStyles, className)),
-		...(slot === "" ? [] : [h.DataAttribute("filled", "")]),
+		...fillAttributes(h, model, slot !== ""),
 		h.DataAttribute("length", String(length)),
 		h.DataAttribute("slot", "otp-field-input"),
 		h.EnterKeyHint(index === length - 1 ? "done" : "next"),
 		h.Id(slotId(model.id, index)),
-		h.InputMode("numeric"),
+		h.InputMode(INPUT_MODE[model.validation]),
 		...(index === 0 ? [h.Maxlength(length)] : []),
-		h.Pattern("\\d{1}"),
+		h.Pattern(`${SLOT_PATTERN[model.validation]}{1}`),
 		h.Spellcheck(false),
 		h.Tabindex(index === activeIndex(model) ? 0 : -1),
 		h.Type("text"),
