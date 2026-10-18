@@ -97,6 +97,9 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	/** The page's own sentence in place of the signal's, and its guide. */
 	purpose?: string
 	guideDocs?: DocsPage
+	/** The setup guide the absent state links, and its button's label, in place of the signal's. */
+	setupDocs?: DocsPage
+	action?: string
 	isFiltered?: boolean
 	/** `onClearFilters`: the Message the "Clear filters" button sends. */
 	onClearFilters?: M
@@ -186,9 +189,9 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 					emptyActions(h, [
 						linkButton(h, { size: "sm", className: "gap-2", href: "/settings?tab=ingestion" }, [
 							icon(h, "ConnectionIcon"),
-							copy.action,
+							options.action ?? copy.action,
 						]),
-						docsLink(h, copy.setupDocs, "Setup guide"),
+						docsLink(h, options.setupDocs ?? copy.setupDocs, "Setup guide"),
 					]),
 				]),
 			],

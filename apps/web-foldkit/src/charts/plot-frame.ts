@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Message } from "./chart"
-import { CHART_SPEC_ATTRIBUTE, type ChartSpec, encodeChartSpec } from "./chart-spec"
+import { CHART_LABEL_ATTRIBUTE, CHART_SPEC_ATTRIBUTE, type ChartSpec, encodeChartSpec } from "./chart-spec"
 import { type ChartRenderer, MountChart, PLOT_BOX_ATTRIBUTE, PortalTooltipBody } from "./chart-mounts"
 // The tooltip shell theming, imported where legacy imports it: every chart goes through the frame.
 import "@maple/ui/components/plot/plot-tooltip.css"
@@ -49,6 +49,7 @@ const plotBox = (
 			h.Class(cn("relative min-h-0 flex-1", sideLegend && "min-w-0")),
 			h.Attribute(PLOT_BOX_ATTRIBUTE, ""),
 			h.Attribute(CHART_SPEC_ATTRIBUTE, encodeChartSpec(inputs.spec)),
+			h.Attribute(CHART_LABEL_ATTRIBUTE, inputs.ariaLabel),
 			h.OnMount(
 				MountChart({
 					chartId: inputs.chartId,

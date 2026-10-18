@@ -1,12 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
-import { isAutomaticRetryError } from "@maple/web-data/lib/error-messages"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { Effect, Queue, Stream } from "effect"
+import { Mount } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { defineMessageUnion } from "foldkit/message"
 import type { LoadFailure } from "../data/load-failure"
 import { button } from "./button"
 
 // `ErrorState` (apps/web/src/components/common/error-state.tsx). The failure is already the
 // `displayError` body (`data/load-failure.ts`).
-// TODO(auto-retry): `useNetworkAutoRetry` (backoff probe and `online` event) is not ported.
 
 export type ErrorStateOptions<M> = Readonly<{
 	failure: LoadFailure
@@ -14,11 +15,6 @@ export type ErrorStateOptions<M> = Readonly<{
 	onRetry?: M
 	variant?: "panel" | "row" | "inline"
 	className?: string
-	/**
-	 * `useNetworkAutoRetry`'s probe: a Mount the caller defines that dispatches `onRetry` on its
-	 * backoff. Given, a retryable failure says it retries automatically and the root mounts it.
-	 */
-	autoRetry?: Attribute<M>
 }>
 
 const attr = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>>) =>
@@ -118,11 +114,63 @@ const signalBreakTick = <M>(h: HtmlBuilder<M>): Html =>
 
 const alertRegion = <M>(h: HtmlBuilder<M>) => [h.Role("alert"), h.AriaLive("polite"), h.AriaAtomic(true)]
 
+const POLL_DELAYS_MS = [5_000, 10_000, 20_000, 30_000]
+const MAX_POLL_ATTEMPTS = 6
+
+const AutoRetryMessage = defineMessageUnion({ ElapsedAutoRetry: {} })
+
+/** `useNetworkAutoRetry`: jittered backoff probes, plus the `online` and visibility events. */
+export const MountNetworkAutoRetry = Mount.defineStream("MountNetworkAutoRetry", {
+	messages: [AutoRetryMessage.ElapsedAutoRetry],
+	execute: () =>
+		Stream.callback<typeof AutoRetryMessage.ElapsedAutoRetry.Type>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const state = { attempt: 0, timeout: 0 }
+					const probe = () => Queue.offerUnsafe(queue, AutoRetryMessage.ElapsedAutoRetry())
+					const schedule = () => {
+						if (state.attempt >= MAX_POLL_ATTEMPTS) return
+						const base = POLL_DELAYS_MS[Math.min(state.attempt, POLL_DELAYS_MS.length - 1)] ?? 30_000
+						state.timeout = window.setTimeout(
+							() => {
+								if (!document.hidden && navigator.onLine !== false) {
+									probe()
+									state.attempt += 1
+								}
+								schedule()
+							},
+							base * (0.9 + Math.random() * 0.2),
+						)
+					}
+					const onVisibilityChange = () => {
+						if (!document.hidden && navigator.onLine !== false) probe()
+					}
+					window.addEventListener("online", probe)
+					document.addEventListener("visibilitychange", onVisibilityChange)
+					schedule()
+					return () => {
+						window.removeEventListener("online", probe)
+						document.removeEventListener("visibilitychange", onVisibilityChange)
+						window.clearTimeout(state.timeout)
+					}
+				}),
+				(release) => Effect.sync(release),
+			),
+		),
+})
+
 export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>): Html => {
 	const { failure } = options
 	const heading = options.title ?? failure.title
 	const canRetry =
 		options.onRetry !== undefined && (failure.recovery === "retry" || failure.recovery === "refresh")
+	const { onRetry } = options
+	// TODO(auto-retry-exhausted): legacy drops the "Retrying" note after the sixth probe.
+	const autoRetry =
+		onRetry !== undefined && canRetry && failure.retryable
+			? [h.OnMount(Mount.mapMessage(MountNetworkAutoRetry(), () => onRetry))]
+			: []
+	const message = autoRetry.length > 0 ? `${failure.message} Retrying automatically…` : failure.message
 	const retry = (variant: "ghost" | "outline", className?: string) =>
 		options.onRetry === undefined || !canRetry
 			? []
@@ -132,11 +180,6 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					]),
 				]
 	const variant = options.variant ?? "panel"
-	const autoRetry =
-		options.autoRetry !== undefined && canRetry && isAutomaticRetryError(failure)
-			? [options.autoRetry]
-			: []
-	const description = autoRetry.length > 0 ? `${failure.message} Retrying automatically…` : failure.message
 
 	if (variant === "inline") {
 		return h.div(
@@ -157,7 +200,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 						h.p([h.Class("text-xs font-medium text-foreground")], [heading]),
 					],
 				),
-				h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [description]),
+				h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
 				...retry("ghost", "-ml-2 h-6 w-fit px-2 text-xs text-muted-foreground hover:text-foreground"),
 			],
 		)
@@ -181,7 +224,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					[h.Class("min-w-0 flex-1 basis-56 space-y-0.5")],
 					[
 						h.p([h.Class("text-sm font-medium text-foreground")], [heading]),
-						h.p([h.Class("line-clamp-2 text-xs text-muted-foreground")], [description]),
+						h.p([h.Class("line-clamp-2 text-xs text-muted-foreground")], [message]),
 					],
 				),
 				...retry("outline", "shrink-0"),
@@ -206,7 +249,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 				[h.Class("max-w-xs space-y-1")],
 				[
 					h.p([h.Class("text-sm font-medium text-foreground")], [heading]),
-					h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [description]),
+					h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
 				],
 			),
 			...retry("outline"),

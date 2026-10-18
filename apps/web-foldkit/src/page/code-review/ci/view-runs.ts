@@ -1,4 +1,3 @@
-import { MountCiRunsAutoRetry } from "./model"
 import type { CodeReviewCiRun } from "@maple/domain/http"
 import { externalUrl, pullRequestUrl } from "@maple/web/components/code-review/ci/ci-format"
 import { formatDuration } from "@maple/ui/lib/format"
@@ -220,7 +219,6 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 				failure,
 				title: "Failed to load CI runs",
 				onRetry: Message.ClickedRetryRuns(),
-				autoRetry: h.OnMount(MountCiRunsAutoRetry()),
 			}),
 		onData: (response) => {
 			if (response.runs.length === 0)

@@ -1,4 +1,3 @@
-import { MountAnalyticsAutoRetry } from "./command"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -46,7 +45,6 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 				failure,
 				title: "Failed to load review analytics",
 				onRetry: Message.ClickedRetry(),
-				autoRetry: h.OnMount(MountAnalyticsAutoRetry()),
 			}),
 		onData: (analytics) => {
 			if (analytics.current.reviews === 0 && analytics.current.findings === 0) {

@@ -1,4 +1,3 @@
-import { MountReviewsAutoRetry } from "./command"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -37,7 +36,6 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 				failure,
 				title: "Failed to load reviews",
 				onRetry: Message.ClickedRetry(),
-				autoRetry: h.OnMount(MountReviewsAutoRetry()),
 			}),
 		onData: (response) => {
 			if (response.reviews.length === 0) {

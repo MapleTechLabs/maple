@@ -1,4 +1,3 @@
-import { MountCiAnalyticsAutoRetry } from "./model"
 import type { CodeReviewCiAnalytics } from "@maple/domain/http"
 import { CI_RESULT_LABELS, windowWasCut } from "@maple/web/components/code-review/ci/ci-format"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
@@ -171,7 +170,6 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 				failure,
 				title: "Failed to load CI analytics",
 				onRetry: Message.ClickedRetry(),
-				autoRetry: h.OnMount(MountCiAnalyticsAutoRetry()),
 			}),
 		onData: (analytics) => {
 			if (analytics.current.runs !== 0 || analytics.pipelines.length !== 0)

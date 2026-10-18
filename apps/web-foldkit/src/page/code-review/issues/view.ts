@@ -1,4 +1,3 @@
-import { MountFindingsAutoRetry } from "./model"
 import { PrReviewCategory, PrReviewFindingStatus, PrReviewSeverity } from "@maple/domain/http"
 import {
 	CATEGORY_LABELS,
@@ -107,7 +106,6 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 				failure,
 				title: "Failed to load issues",
 				onRetry: Message.ClickedRetry(),
-				autoRetry: h.OnMount(MountFindingsAutoRetry()),
 			}),
 		onData: (response) => {
 			if (response.findings.length === 0) {

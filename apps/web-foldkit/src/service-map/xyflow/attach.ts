@@ -126,18 +126,44 @@ const observeNodes = (renderer: HTMLElement, emit: (message: MountMessage) => vo
 	}
 }
 
-/** `ZoomPane`: XYPanZoom on the renderer with React Flow's default gesture options. */
+const Point = Schema.Tuple([Schema.Number, Schema.Number])
+
+/** `<ReactFlow>` gesture props a canvas may change; React Flow's defaults otherwise. */
+export const FlowGestures = Schema.Struct({
+	panOnScroll: Schema.Boolean,
+	zoomOnScroll: Schema.Boolean,
+	zoomOnDoubleClick: Schema.Boolean,
+	/** `translateExtent` as `[[x0, y0], [x1, y1]]`; `null` is unbounded. */
+	translateExtent: Schema.NullOr(Schema.Tuple([Point, Point])),
+})
+export type FlowGestures = typeof FlowGestures.Type
+
+export const DEFAULT_GESTURES: FlowGestures = {
+	panOnScroll: false,
+	zoomOnScroll: true,
+	zoomOnDoubleClick: true,
+	translateExtent: null,
+}
+
+/** `ZoomPane`: XYPanZoom on the renderer with the canvas's gesture options. */
 const attachPanZoom = (
 	system: typeof import("@xyflow/system"),
 	renderer: HTMLElement,
 	limits: { readonly minZoom: number; readonly maxZoom: number },
+	gestures: FlowGestures,
 	emit: (message: MountMessage) => void,
 ) => {
 	const panZoom = system.XYPanZoom({
 		domNode: renderer,
 		minZoom: limits.minZoom,
 		maxZoom: limits.maxZoom,
-		translateExtent: system.infiniteExtent,
+		translateExtent:
+			gestures.translateExtent === null
+				? system.infiniteExtent
+				: [
+						[gestures.translateExtent[0][0], gestures.translateExtent[0][1]],
+						[gestures.translateExtent[1][0], gestures.translateExtent[1][1]],
+					],
 		viewport: readViewport(renderer) ?? { x: 0, y: 0, zoom: 1 },
 		onDraggingChange: () => {},
 		onPanZoomEnd: () => emit(Message.EndedViewportMove()),
@@ -146,14 +172,14 @@ const attachPanZoom = (
 		noWheelClassName: "nowheel",
 		noPanClassName: "nopan",
 		preventScrolling: true,
-		panOnScroll: false,
+		panOnScroll: gestures.panOnScroll,
 		panOnDrag: true,
 		panOnScrollMode: system.PanOnScrollMode.Free,
 		panOnScrollSpeed: 0.5,
 		userSelectionActive: false,
 		zoomOnPinch: true,
-		zoomOnScroll: true,
-		zoomOnDoubleClick: true,
+		zoomOnScroll: gestures.zoomOnScroll,
+		zoomOnDoubleClick: gestures.zoomOnDoubleClick,
 		zoomActivationKeyPressed: false,
 		lib: "react",
 		connectionInProgress: false,
@@ -166,8 +192,8 @@ const attachPanZoom = (
 		const viewport = readViewport(renderer)
 		if (viewport !== undefined) panZoom.syncViewport(viewport)
 	}
-	const gestures = ["wheel", "mousedown", "touchstart", "dblclick"] as const
-	for (const type of gestures) renderer.addEventListener(type, sync, { capture: true })
+	const gestureEvents = ["wheel", "mousedown", "touchstart", "dblclick"] as const
+	for (const type of gestureEvents) renderer.addEventListener(type, sync, { capture: true })
 	// An animated fit runs as React Flow's does: one d3 transition, every frame back as a Message.
 	const started = { seq: Number.NaN }
 	const animations = new MutationObserver(() => {
@@ -181,7 +207,7 @@ const attachPanZoom = (
 	animations.observe(renderer, { attributes: true, subtree: true, attributeFilter: [ANIMATION_ATTRIBUTE] })
 	return () => {
 		animations.disconnect()
-		for (const type of gestures) renderer.removeEventListener(type, sync, { capture: true })
+		for (const type of gestureEvents) renderer.removeEventListener(type, sync, { capture: true })
 		panZoom.destroy()
 	}
 }
@@ -281,7 +307,7 @@ const observePane = (renderer: HTMLElement, emit: (message: MountMessage) => voi
  * node measurement. Everything it learns returns as canvas Messages; the view renders the camera.
  */
 export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
-	args: { minZoom: Schema.Number, maxZoom: Schema.Number },
+	args: { minZoom: Schema.Number, maxZoom: Schema.Number, gestures: FlowGestures },
 	messages: [
 		Message.ChangedViewport,
 		Message.ResizedPane,
@@ -290,7 +316,7 @@ export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
 		Message.EndedNodeDrag,
 		Message.EndedViewportMove,
 	],
-	execute: ({ element, minZoom, maxZoom }) =>
+	execute: ({ element, minZoom, maxZoom, gestures }) =>
 		Stream.callback<MountMessage>((queue) =>
 			Effect.acquireRelease(
 				Effect.promise(() => import("@xyflow/system")).pipe(
@@ -300,7 +326,7 @@ export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
 						const releases = [
 							observePane(element, emit),
 							observeNodes(element, emit),
-							attachPanZoom(system, element, { minZoom, maxZoom }, emit),
+							attachPanZoom(system, element, { minZoom, maxZoom }, gestures, emit),
 							attachNodeDrag(element, emit),
 						]
 						return () => releases.forEach((release) => release())

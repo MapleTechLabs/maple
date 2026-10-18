@@ -1,5 +1,3 @@
-import { Mount } from "foldkit"
-import { autoRetryStream } from "./auto-retry"
 import {
 	CodeReviewCiRunsQuery,
 	CodeReviewCiRunsResponse,
@@ -77,8 +75,3 @@ export const FetchPullRequestRuns = Command.define("FetchCodeReviewPullRequestRu
 		),
 })
 
-/** `ErrorState`'s auto retry while a retryable failure is on screen. */
-export const MountReviewAutoRetry = Mount.defineStream("MountReviewAutoRetry", {
-	messages: [SheetMessage.ClickedRetry],
-	execute: () => autoRetryStream(() => SheetMessage.ClickedRetry()),
-})

@@ -38,6 +38,8 @@ export interface TabsViewInputs {
 	readonly panel: (value: string) => ReadonlyArray<Html | string> | undefined
 	/** Which values have a panel, without building them (a panel holding a Submodel renders once). */
 	readonly hasPanel?: (value: string) => boolean
+	/** Places the tab list inside page chrome (a sticky bar with a toolbar beside it). */
+	readonly wrapList?: (list: Html) => Html
 }
 
 type H = HtmlBuilder<Message>
@@ -183,7 +185,7 @@ export const view = defineView<Model, Message, TabsViewInputs>((model, inputs, h
 			h.DataAttribute("slot", "tabs"),
 		],
 		[
-			tabList(h, model, inputs, panelValues),
+			(inputs.wrapList ?? ((list: Html) => list))(tabList(h, model, inputs, panelValues)),
 			...(content === undefined
 				? []
 				: [tabPanel(h, model, inputs, panelValues.indexOf(model.selected), content)]),

@@ -1,5 +1,3 @@
-import { Mount } from "foldkit"
-import { autoRetryStream } from "../kit/auto-retry"
 import {
 	CodeReviewCiAnalytics,
 	CodeReviewCiQuery,
@@ -93,14 +91,3 @@ export const FetchCiRuns = Command.define("FetchCodeReviewCiRuns", {
 		),
 })
 
-/** `ErrorState`'s auto retry while a retryable failure is on screen. */
-export const MountCiAnalyticsAutoRetry = Mount.defineStream("MountCiAnalyticsAutoRetry", {
-	messages: [Message.ClickedRetry],
-	execute: () => autoRetryStream(() => Message.ClickedRetry()),
-})
-
-/** `ErrorState`'s auto retry while a retryable failure is on screen. */
-export const MountCiRunsAutoRetry = Mount.defineStream("MountCiRunsAutoRetry", {
-	messages: [Message.ClickedRetryRuns],
-	execute: () => autoRetryStream(() => Message.ClickedRetryRuns()),
-})

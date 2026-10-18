@@ -17,7 +17,6 @@ import type { PageViewInputs } from "../../contract"
 import { codeReviewLayout } from "../kit/layout"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
-import { MountSettingsAutoRetry, MountStatusAutoRetry } from "./command"
 import { Message, type Model } from "./model"
 import { repositoryList } from "./repositories"
 import {
@@ -149,7 +148,6 @@ const repositoriesSection = (h: H, model: Model): Html =>
 				failure,
 				title: "Failed to load repositories",
 				onRetry: Message.ClickedRetryStatus(),
-				autoRetry: h.OnMount(MountStatusAutoRetry()),
 			}),
 		onData: (status) => {
 			const repositories = activeRepositories(model)
@@ -235,7 +233,6 @@ const content = (h: H, model: Model): Html =>
 				failure,
 				title: "Failed to load review settings",
 				onRetry: Message.ClickedRetrySettings(),
-				autoRetry: h.OnMount(MountSettingsAutoRetry()),
 			}),
 		onData: () =>
 			h.div(

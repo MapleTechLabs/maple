@@ -14,7 +14,13 @@ const scenario = (
 	id: string,
 	title: string,
 	path: string,
-	options: { readonly dataset?: string; readonly steps?: (page: Page) => Promise<void> } = {},
+	options: {
+		readonly dataset?: string
+		readonly steps?: (page: Page) => Promise<void>
+		readonly faults?: Scenario["faults"]
+		readonly settle?: Scenario["settle"]
+		readonly fullPage?: boolean
+	} = {},
 ): Scenario => ({
 	id: `agent-sessions-${id}`,
 	title: `Agent sessions: ${title}`,
@@ -23,8 +29,412 @@ const scenario = (
 	viewports: ["desktop"],
 	themes: ["light", "dark"],
 	...(options.steps === undefined ? undefined : { steps: options.steps }),
+	...(options.faults === undefined ? undefined : { faults: options.faults }),
+	...(options.settle === undefined ? undefined : { settle: options.settle }),
+	...(options.fullPage === undefined ? undefined : { fullPage: options.fullPage }),
 	area: "agent-sessions",
 })
+
+/** Held far past any capture, so the screenshot is the loading state. */
+const HELD_MS = 60_000
+
+const failing = (endpoint: string): Scenario["faults"] => ({
+	failures: {
+		[endpoint]: {
+			status: 502,
+			body: {
+				_tag: "@maple/http/errors/WarehouseQueryError",
+				message: "ui-parity: injected agent sessions failure",
+			},
+		},
+	},
+})
+
+const held = (endpoint: string): Scenario["faults"] => ({ delays: { [endpoint]: HELD_MS } })
+
+/** The list page's filter rail. */
+const rail = (page: Page) => page.getByRole("complementary")
+
+/** The interactions every list control gets (search, facets, ranges, toggles, reload, paging out). */
+const listInteractions: ReadonlyArray<Scenario> = [
+	scenario("list-search", "List, searched by session id", "/agent-sessions", {
+		steps: (page) => page.getByRole("textbox", { name: "Session or trace ID…" }).fill("conv_8d"),
+	}),
+	scenario("list-facet", "List, an agent ticked in the rail", "/agent-sessions", {
+		steps: (page) => rail(page).getByRole("checkbox", { name: "support-triage" }).click(),
+	}),
+	scenario("list-facet-search", "List, the tool section searched", "/agent-sessions", {
+		steps: (page) => rail(page).getByRole("textbox", { name: "Search tool..." }).fill("re"),
+	}),
+	scenario("list-show-more", "List, the tool section expanded", "/agent-sessions", {
+		steps: (page) => rail(page).getByRole("button", { name: "Show 6 more" }).click(),
+	}),
+	scenario("list-collapse", "List, the environment section collapsed", "/agent-sessions", {
+		steps: (page) => rail(page).getByRole("button", { name: "Environment" }).click(),
+	}),
+	scenario("list-range-preset", "List, the Quick session length preset", "/agent-sessions", {
+		steps: (page) =>
+			rail(page)
+				.getByRole("button", { name: /^Quick/ })
+				.click(),
+	}),
+	scenario("list-range-typed", "List, a minimum cost typed", "/agent-sessions", {
+		steps: async (page) => {
+			const input = rail(page).getByRole("textbox", { name: "Minimum cost (US dollars)" })
+			await input.fill("0.02")
+			await input.press("Enter")
+		},
+	}),
+	scenario("list-histogram", "List, a tokens bar clicked", "/agent-sessions", {
+		steps: (page) =>
+			rail(page)
+				.getByRole("img", { name: /^Tokens distribution/ })
+				.click(),
+	}),
+	scenario("list-grouped", "List, single-trace sessions hidden", "/agent-sessions", {
+		// Unnamed in both apps: its `aria-labelledby` id holds spaces, so it is the rail's last checkbox.
+		steps: (page) => rail(page).getByRole("checkbox").last().click(),
+	}),
+	scenario(
+		"list-clear-all",
+		"List, the rail's Clear all",
+		"/agent-sessions?agents=%5B%22researcher%22%5D",
+		{
+			steps: (page) => rail(page).getByRole("button", { name: "Clear all" }).click(),
+		},
+	),
+	scenario("list-filtered-empty", "List, filtered to nothing", "/agent-sessions?agents=%5B%22nobody%22%5D"),
+	scenario(
+		"list-clear-filters",
+		"List, Clear filters on the empty list",
+		"/agent-sessions?agents=%5B%22nobody%22%5D",
+		{
+			steps: (page) => page.getByRole("button", { name: "Clear filters" }).click(),
+		},
+	),
+	scenario("list-reload", "List, reloaded", "/agent-sessions", {
+		steps: (page) => page.getByRole("button", { name: "Reload" }).click(),
+	}),
+	scenario("list-sort-twice", "List, the cost sort flipped to ascending", "/agent-sessions", {
+		steps: async (page) => {
+			await page.getByRole("table").getByRole("button", { name: /^Cost/ }).click()
+			await page.getByRole("table").getByRole("button", { name: /^Cost/ }).click()
+		},
+	}),
+	scenario("list-loading", "List, the first page held", "/agent-sessions", {
+		faults: held("aiSessionsInternal.list"),
+		settle: "held",
+	}),
+	scenario("list-error", "List, the first page failing", "/agent-sessions", {
+		faults: failing("aiSessionsInternal.list"),
+	}),
+	scenario("list-facets-error", "List, the rail's facets failing", "/agent-sessions", {
+		faults: failing("aiSessionsInternal.facets"),
+	}),
+]
+
+const TOOLS = "/agent-sessions/tools"
+
+/** Every control of the Tools tab: search, facet selects, failing chip, tiles, percentile, sort, scope, time. */
+const toolsInteractions: ReadonlyArray<Scenario> = [
+	scenario("tools-search", "Tools, searched by name", TOOLS, {
+		steps: (page) => page.getByRole("textbox", { name: "Tool name…" }).fill("re"),
+	}),
+	scenario("tools-service", "Tools, a service picked", TOOLS, {
+		steps: async (page) => {
+			await page.getByRole("combobox", { name: "service" }).click()
+			await page.getByRole("option", { name: "support-agent" }).click()
+		},
+	}),
+	scenario("tools-metric", "Tools, the Error rate tile picked", TOOLS, {
+		steps: (page) => page.getByRole("button", { name: /^Error rate \d/ }).click(),
+	}),
+	scenario("tools-duration", "Tools, the Duration tile picked", TOOLS, {
+		steps: (page) => page.getByRole("button", { name: "P90 duration" }).click(),
+	}),
+	scenario("tools-percentile", "Tools, P95 picked", TOOLS, {
+		steps: (page) =>
+			page.getByRole("group", { name: "Percentile" }).getByRole("button", { name: "p95" }).click(),
+	}),
+	scenario("tools-sort", "Tools, the table sorted by errors", TOOLS, {
+		steps: (page) =>
+			page.getByRole("region", { name: "Tools" }).getByRole("button", { name: "Errors" }).click(),
+	}),
+	scenario("tools-scope", "Tools, scoped to a tool and model", `${TOOLS}?tool=Bash&model=claude-opus-4-1`),
+	scenario(
+		"tools-scope-remove",
+		"Tools, the tool chip removed",
+		`${TOOLS}?tool=Bash&model=claude-opus-4-1`,
+		{
+			steps: (page) => page.getByRole("button", { name: "Remove tool Bash" }).click(),
+		},
+	),
+	scenario("tools-scope-clear", "Tools, the scope cleared", `${TOOLS}?tool=Bash&model=claude-opus-4-1`, {
+		steps: (page) => page.getByRole("button", { name: "Clear all" }).click(),
+	}),
+	scenario("tools-time-range", "Tools, last 1 day from the picker", TOOLS, {
+		steps: async (page) => {
+			await page.getByRole("button", { name: "Last 7 days" }).click()
+			await page.getByRole("dialog").getByRole("button", { name: "Last 1 day" }).click()
+			await page.getByRole("dialog").waitFor({ state: "detached" })
+		},
+	}),
+	scenario("tools-reload", "Tools, reloaded", TOOLS, {
+		steps: (page) => page.getByRole("button", { name: "Reload" }).click(),
+	}),
+	scenario("tools-chart-hover", "Tools, the chart hovered", TOOLS, {
+		steps: (page) =>
+			page
+				.getByRole("img", { name: "Tool calls" })
+				.first()
+				.hover({ position: { x: 900, y: 100 } }),
+	}),
+	scenario("tools-loading", "Tools, the totals held", TOOLS, {
+		faults: held("aiSessionsInternal.toolsTotals"),
+		settle: "held",
+	}),
+	scenario("tools-error", "Tools, the totals failing", TOOLS, {
+		faults: failing("aiSessionsInternal.toolsTotals"),
+	}),
+	scenario("tools-breakdowns-error", "Tools, the table's read failing", TOOLS, {
+		faults: failing("aiSessionsInternal.toolsBreakdowns"),
+	}),
+]
+
+const TOOL = "/agent-sessions/tools/Bash"
+
+/** The tool detail page's controls. The error group modal (`?error=`) is not ported yet. */
+const toolDetailInteractions: ReadonlyArray<Scenario> = [
+	scenario("tool-detail-service", "Tool detail, a service picked", TOOL, {
+		steps: async (page) => {
+			await page.getByRole("combobox", { name: "service" }).click()
+			await page.getByRole("option", { name: "claude-code" }).click()
+		},
+	}),
+	scenario("tool-detail-failing", "Tool detail, failing only", TOOL, {
+		steps: (page) => page.getByRole("button", { name: "Failing only" }).click(),
+	}),
+	scenario("tool-detail-model", "Tool detail, scoped to a model", `${TOOL}?model=claude-opus-4-1`),
+	scenario(
+		"tool-detail-model-remove",
+		"Tool detail, the model chip removed",
+		`${TOOL}?model=claude-opus-4-1`,
+		{
+			steps: (page) => page.getByRole("button", { name: "Remove model claude-opus-4-1" }).click(),
+		},
+	),
+	scenario("tool-detail-sort", "Tool detail, errors sorted by sessions", TOOL, {
+		steps: (page) =>
+			page.getByRole("region", { name: "Errors" }).getByRole("button", { name: "Sessions" }).click(),
+	}),
+	scenario("tool-detail-chart-hover", "Tool detail, the calls chart hovered", TOOL, {
+		steps: (page) =>
+			page
+				.getByRole("img", { name: "Tool calls" })
+				.first()
+				.hover({ position: { x: 470, y: 60 } }),
+	}),
+	scenario("tool-detail-time-range", "Tool detail, last 1 day from the picker", TOOL, {
+		steps: async (page) => {
+			await page.getByRole("button", { name: "Last 7 days" }).click()
+			await page.getByRole("dialog").getByRole("button", { name: "Last 1 day" }).click()
+			await page.getByRole("dialog").waitFor({ state: "detached" })
+		},
+	}),
+	scenario("tool-detail-reload", "Tool detail, reloaded", TOOL, {
+		steps: (page) => page.getByRole("button", { name: "Reload" }).click(),
+	}),
+	scenario("tool-detail-loading", "Tool detail, the totals held", TOOL, {
+		faults: held("aiSessionsInternal.toolsTotals"),
+		settle: "held",
+	}),
+	scenario("tool-detail-error", "Tool detail, the totals failing", TOOL, {
+		faults: failing("aiSessionsInternal.toolsTotals"),
+	}),
+	scenario("tool-detail-errors-error", "Tool detail, the errors read failing", TOOL, {
+		faults: failing("aiSessionsInternal.toolErrors"),
+	}),
+	scenario("tool-detail-sessions-error", "Tool detail, the sessions read failing", TOOL, {
+		faults: failing("aiSessionsInternal.list"),
+	}),
+]
+
+const SESSION = `/agent-sessions/${NEWEST_SESSION}`
+
+const openView = async (page: Page, name: "Traces" | "Flow" | "Transcript") => {
+	await page.getByRole("tab", { name }).click()
+	await page.getByRole("tab", { name, selected: true }).waitFor()
+}
+
+const openDisplay = async (page: Page, name: "Traces" | "Flow" | "Transcript") => {
+	await openView(page, name)
+	await page.getByRole("button", { name: "Display options" }).click()
+}
+
+/**
+ * The session page's controls. Not exercised: a span opens the inspection popover (`?span=`),
+ * which is not ported yet.
+ */
+const detailInteractions: ReadonlyArray<Scenario> = [
+	scenario("detail-flow", "Session detail, flow", SESSION, { steps: (page) => openView(page, "Flow") }),
+	scenario("detail-hotkey", "Session detail, the 2 key opens Traces", SESSION, {
+		steps: (page) => page.keyboard.press("2"),
+	}),
+	scenario("detail-ledger", "Session detail, a tool ledger row opened", SESSION, {
+		steps: (page) => page.getByRole("button", { name: "Bash", exact: true }).click(),
+	}),
+	scenario("detail-checks-passed", "Session detail, the passed checks opened", SESSION, {
+		steps: (page) => page.getByRole("button", { name: /^Passed/ }).click(),
+	}),
+	scenario("detail-checks-skipped", "Session detail, the unchecked checks opened", SESSION, {
+		steps: (page) => page.getByRole("button", { name: /^Not checked/ }).click(),
+	}),
+	scenario("detail-open-tools", "Session detail, the Tools section link", SESSION, {
+		steps: (page) => page.getByRole("button", { name: "Tools section" }).click(),
+	}),
+	scenario("detail-traces-filter", "Session detail, traces filtered", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Traces")
+			await page.getByRole("textbox", { name: "Filter spans" }).fill("Bash")
+		},
+	}),
+	scenario("detail-traces-display", "Session detail, the traces Display options", SESSION, {
+		steps: (page) => openDisplay(page, "Traces"),
+	}),
+	scenario("detail-traces-idle", "Session detail, traces with idle kept", SESSION, {
+		steps: async (page) => {
+			await openDisplay(page, "Traces")
+			await page.getByRole("switch", { name: "Collapse idle" }).click()
+		},
+	}),
+	scenario("detail-traces-all-spans", "Session detail, traces with app spans", SESSION, {
+		steps: async (page) => {
+			await openDisplay(page, "Traces")
+			await page.getByRole("switch", { name: "Agent spans only" }).click()
+		},
+	}),
+	scenario("detail-traces-collapse", "Session detail, a trace turn collapsed", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Traces")
+			await page.getByRole("button", { name: /^Turn 1/ }).click()
+		},
+	}),
+	scenario("detail-transcript-filter", "Session detail, transcript filtered", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Transcript")
+			await page.getByRole("textbox", { name: "Filter transcript" }).fill("retry")
+		},
+	}),
+	scenario("detail-transcript-payloads", "Session detail, transcript payloads expanded", SESSION, {
+		steps: async (page) => {
+			await openDisplay(page, "Transcript")
+			await page.getByRole("switch", { name: "Expand tool payloads" }).click()
+			await page.keyboard.press("Escape")
+		},
+	}),
+	scenario("detail-transcript-tool", "Session detail, a transcript tool card opened", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Transcript")
+			await page.getByRole("button", { name: /^Grep \d/ }).click()
+		},
+	}),
+	scenario("detail-transcript-system", "Session detail, a system prompt opened", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Transcript")
+			await page
+				.getByRole("button", { name: /^System prompt/ })
+				.first()
+				.click()
+		},
+	}),
+	scenario("detail-transcript-raw", "Session detail, a message shown raw", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Transcript")
+			await page.getByRole("button", { name: "raw" }).first().click({ force: true })
+		},
+	}),
+	scenario("detail-transcript-collapse", "Session detail, a transcript turn collapsed", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Transcript")
+			await page
+				.getByRole("heading", { name: /^Turn 1/ })
+				.getByRole("button")
+				.click()
+		},
+	}),
+	scenario("detail-flow-merge", "Session detail, flow with repeats merged", SESSION, {
+		steps: async (page) => {
+			await openDisplay(page, "Flow")
+			await page.getByRole("switch", { name: "Merge repeat tools" }).click()
+			await page.keyboard.press("Escape")
+		},
+	}),
+	scenario("detail-flow-zoom", "Session detail, flow zoomed in", SESSION, {
+		steps: async (page) => {
+			await openView(page, "Flow")
+			await page.getByRole("button", { name: "Zoom in" }).click()
+		},
+	}),
+	scenario("detail-loading", "Session detail, the spans held", SESSION, {
+		faults: held("aiSessionsInternal.spans"),
+		settle: "held",
+	}),
+	scenario("detail-error", "Session detail, the spans failing", SESSION, {
+		faults: failing("aiSessionsInternal.spans"),
+	}),
+]
+
+const labVariant = (
+	id: string,
+	title: string,
+	path: string,
+	steps?: (page: Page) => Promise<void>,
+): Scenario => ({
+	id,
+	title: `Lab: ${title}`,
+	path,
+	dataset: "default",
+	viewports: ["desktop"],
+	themes: ["light", "dark"],
+	area: "lab",
+	...(steps === undefined ? undefined : { steps }),
+})
+
+/** The agent labs' controls. Not exercised: `/lab/agent-tools`' detail view, which is not ported. */
+const labInteractions: ReadonlyArray<Scenario> = [
+	labVariant("lab-agent-session-clean", "Agent session, the clean fixture", "/lab/agent-session", (page) =>
+		page.getByRole("button", { name: "Clean" }).click(),
+	),
+	labVariant("lab-agent-session-capture-off", "Agent session, capture off", "/lab/agent-session", (page) =>
+		page.getByRole("button", { name: "Capture off" }).click(),
+	),
+	labVariant(
+		"lab-agent-session-transcript",
+		"Agent session, opened on the transcript",
+		"/lab/agent-session?view=transcript",
+	),
+	labVariant("lab-agent-sessions-width", "Agent sessions list at 700px", "/lab/agent-sessions", (page) =>
+		page.getByRole("button", { name: "700px" }).click(),
+	),
+	labVariant(
+		"lab-agent-sessions-sort",
+		"Agent sessions list, sorted by cost",
+		"/lab/agent-sessions",
+		(page) => page.getByRole("table").getByRole("button", { name: /^Cost/ }).click(),
+	),
+	labVariant(
+		"lab-agent-sessions-errors",
+		"Agent sessions list, with errors",
+		"/lab/agent-sessions",
+		(page) => page.getByRole("switch", { name: "With errors" }).click(),
+	),
+	labVariant("lab-agent-tools-width", "Agent tools at 820px", "/lab/agent-tools", (page) =>
+		page.getByRole("button", { name: "820px" }).click(),
+	),
+	labVariant("lab-agent-tools-failing", "Agent tools, failing only", "/lab/agent-tools", (page) =>
+		page.getByRole("button", { name: "Failing only" }).click(),
+	),
+]
 
 export const agentSessionsArea: AreaModule = {
 	area: "agent-sessions",
@@ -44,6 +454,11 @@ export const agentSessionsArea: AreaModule = {
 		scenario("list-sort-cost", "List, sorted by cost", "/agent-sessions", {
 			steps: (page) => page.getByRole("table").getByRole("button", { name: /^Cost/ }).click(),
 		}),
+		...listInteractions,
+		...toolsInteractions,
+		...toolDetailInteractions,
+		...detailInteractions,
+		...labInteractions,
 		scenario("detail", "Session detail", `/agent-sessions/${NEWEST_SESSION}`),
 		scenario("detail-transcript", "Session detail, transcript", `/agent-sessions/${NEWEST_SESSION}`, {
 			steps: (page) => page.getByRole("tab", { name: "Transcript" }).click(),

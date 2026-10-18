@@ -7,11 +7,10 @@ import {
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
-import { Command, Mount } from "foldkit"
+import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { readIsAdmin } from "../../alerts/shared/commands"
-import { autoRetryStream } from "../kit/auto-retry"
 import { Message, SavePurpose } from "./model"
 
 type Api = typeof MapleInternalApiClient.Service
@@ -109,12 +108,3 @@ export const SaveRepoConfig = Command.define("SaveCodeReviewRepoConfig", {
 		),
 })
 
-export const MountSettingsAutoRetry = Mount.defineStream("MountCodeReviewSettingsAutoRetry", {
-	messages: [Message.ClickedRetrySettings],
-	execute: () => autoRetryStream(() => Message.ClickedRetrySettings()),
-})
-
-export const MountStatusAutoRetry = Mount.defineStream("MountCodeReviewStatusAutoRetry", {
-	messages: [Message.ClickedRetryStatus],
-	execute: () => autoRetryStream(() => Message.ClickedRetryStatus()),
-})

@@ -48,6 +48,8 @@ export type ViewInputs = Readonly<{
 	renderItem?: (option: SelectOption) => ReadonlyArray<Html | string>
 	/** `<SelectTrigger>` children placed before `<SelectValue>` (an icon). */
 	leading?: ReadonlyArray<Html>
+	/** `<Select disabled>`: the trigger and hidden input are disabled and out of the tab order. */
+	isDisabled?: boolean
 }>
 
 type H = HtmlBuilder<Message>
@@ -225,6 +227,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const options = optionsOf(inputs.entries)
 	const selected = Array.findFirst(options, (item) => item.value === model.value)
 	const isVisible = isMounted(model.isOpen, model.animation)
+	const isDisabled = inputs.isDisabled ?? false
 	const trigger = h.button(
 		[
 			h.Key("trigger"),
@@ -235,13 +238,14 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			...(inputs.labelledBy === undefined ? [] : [h.AriaLabelledBy(inputs.labelledBy)]),
 			...(inputs.describedBy === undefined ? [] : [h.AriaDescribedBy(inputs.describedBy)]),
 			h.Class(cn(selectTriggerVariants({ size: inputs.size ?? "default" }), inputs.className)),
+			...(isDisabled ? [h.DataAttribute("disabled", ""), h.Disabled(true)] : []),
 			...(model.isOpen ? [h.DataAttribute("popup-open", "")] : []),
-			h.DataAttribute("popup-side", model.side),
+			...(isDisabled ? [] : [h.DataAttribute("popup-side", model.side)]),
 			...(model.isOpen ? [h.DataAttribute("pressed", "")] : []),
 			h.DataAttribute("slot", "select-trigger"),
 			h.Id(triggerId(model.id)),
 			h.Role("combobox"),
-			h.Tabindex(0),
+			h.Tabindex(isDisabled ? -1 : 0),
 			h.Type("button"),
 			h.OnClick(
 				Message.ClickedTrigger({ selectedIndex: selectedIndexOf(inputs.entries, model.value) }),
@@ -277,6 +281,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const hiddenInput = h.input([
 		h.Key("hidden-input"),
 		h.AriaHidden(true),
+		...(isDisabled ? [h.Disabled(true)] : []),
 		h.Id(`${triggerId(model.id)}-hidden-input`),
 		h.Style(SR_ONLY_STYLE),
 		h.Tabindex(-1),

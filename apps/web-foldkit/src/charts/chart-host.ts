@@ -22,6 +22,7 @@ import { buildPie, buildPieSpike } from "./definitions/pie"
 import { buildOccurrences } from "./definitions/occurrences"
 import { buildSparkline } from "./definitions/sparkline"
 import { buildStackedBreakdown } from "./definitions/stacked-breakdown"
+import { buildToolSeries } from "./definitions/tool-series"
 
 /**
  * What `RendererChartImplementation` (`@tanstack/charts/react`) does with a `CanvasChart` or SVG
@@ -59,7 +60,8 @@ export interface ChartHostCallbacks {
 }
 
 export interface ChartHostOptions {
-	readonly ariaLabel: string
+	/** Read at every draw: the frame relabels the chart without remounting it. */
+	readonly ariaLabel: () => string
 	readonly idPrefix: string
 	readonly renderer: ChartRendererKind
 	readonly callbacks: ChartHostCallbacks
@@ -98,7 +100,7 @@ const hostFor = <S extends ChartSpec, TDatum, X extends ChartValue, Y extends Ch
 	const optionsFor = (height: number) => ({
 		renderer: chartRenderer,
 		definition: current.built.definition,
-		ariaLabel,
+		ariaLabel: ariaLabel(),
 		idPrefix,
 		height,
 		initialWidth: 640,
@@ -188,4 +190,6 @@ export const createChartHost = (
 				buildStackedBreakdown,
 				options,
 			),
+		ToolSeries: (series) =>
+			hostFor(container, series, height, variant("ToolSeries"), buildToolSeries, options),
 	})

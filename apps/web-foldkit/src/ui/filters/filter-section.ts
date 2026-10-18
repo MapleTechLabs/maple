@@ -9,7 +9,7 @@ import * as Checkbox from "../checkbox"
 import { badge } from "../display"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { emptyMessage } from "../empty"
-import { icon } from "../icon"
+import { icon, iconColor, type IconName } from "../icon"
 import { label } from "../label"
 import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
 import { searchInput } from "../search-input"
@@ -74,6 +74,9 @@ export type FilterSectionConfig<M> = Readonly<{
 	/** `colorMap`: a swatch before the label (`serviceColorMap` for services). */
 	colorOf?: (name: string) => string | undefined
 	getOptionLabel?: (name: string) => string
+	/** `getOptionIcon`: a mark before the label, tinted by `iconColorOf`. */
+	iconOf?: (name: string) => IconName | undefined
+	iconColorOf?: (name: string) => string | undefined
 	/** The label's `title` when it is more than the label. */
 	getOptionDescription?: (name: string) => string | undefined
 	showCounts?: boolean
@@ -159,6 +162,25 @@ const swatch = <M>(h: HtmlBuilder<M>, color: string | undefined, isExcluded: boo
 				),
 			]
 
+/** `getOptionIcon` / `getOptionIconColor`: a brand mark before the label. */
+const optionIcon = <M>(
+	h: HtmlBuilder<M>,
+	config: FilterSectionConfig<M>,
+	name: string,
+	isExcluded: boolean,
+): Html[] => {
+	const iconName = config.iconOf?.(name)
+	const color = config.iconColorOf?.(name)
+	return iconName === undefined
+		? []
+		: [
+				icon(h, iconName, {
+					className: cn("size-3.5 shrink-0", isExcluded && "opacity-40"),
+					...iconColor(color),
+				}),
+			]
+}
+
 const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option: FilterOption): Html => {
 	const excluded = config.excluded ?? []
 	const isExcluded = excluded.includes(option.name)
@@ -200,6 +222,7 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 				},
 				[
 					...swatch(h, config.colorOf?.(option.name), isExcluded),
+					...optionIcon(h, config, option.name, isExcluded),
 					h.span([h.Class("truncate")], [text]),
 				],
 			),
