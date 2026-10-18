@@ -61,9 +61,9 @@ const requestEntry = (model: Model, context: PageContext, mode: Keyed.RequestMod
 			transcript: Option.getOrElse(transcript, () => model.transcript),
 		},
 		commands: [
-			...(Option.isSome(detail) ? [FetchDetail({ key: slots[0][1], ...data })] : []),
-			...(Option.isSome(manifest) ? [FetchManifest({ key: slots[1][1], ...data })] : []),
-			...(Option.isSome(transcript) ? [FetchTranscript({ key: slots[2][1], ...data })] : []),
+			...(Option.isSome(detail) ? [FetchDetail({ key: slots[0][1], ...data, refresh: mode === "Refresh" })] : []),
+			...(Option.isSome(manifest) ? [FetchManifest({ key: slots[1][1], ...data, refresh: mode === "Refresh" })] : []),
+			...(Option.isSome(transcript) ? [FetchTranscript({ key: slots[2][1], ...data, refresh: mode === "Refresh" })] : []),
 		],
 	}
 }

@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import {
 	selectGroupLabelStyles,
+	selectLabelStyles,
 	selectItemIndicatorIconStyles,
 	selectItemIndicatorStyles,
 	selectItemStyles,
@@ -9,6 +10,10 @@ import {
 	selectPopupStyles,
 	selectPopupSurfaceStyles,
 	selectPositionerStyles,
+	selectScrollDownArrowIconStyles,
+	selectScrollDownArrowStyles,
+	selectScrollUpArrowIconStyles,
+	selectScrollUpArrowStyles,
 	selectSeparatorStyles,
 	selectTriggerIconClassName,
 	selectTriggerVariants,
@@ -22,11 +27,18 @@ import { portalId, triggerId } from "./overlay/popup-state"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 import { itemId, listId, Message, type Model, MountSelect } from "./select"
 
-export type SelectOption = Readonly<{ value: string; label: string }>
+/** `isDisabled`: `<SelectItem disabled>`, listed but not choosable. */
+export type SelectOption = Readonly<{ value: string; label: string; isDisabled?: boolean; title?: string }>
 
 /** What the list shows: groups with a label, separators and loose items, in order. */
 export type SelectEntry =
-	| Readonly<{ _tag: "Group"; label: string; items: ReadonlyArray<SelectOption> }>
+	| Readonly<{
+			_tag: "Group"
+			label: string
+			items: ReadonlyArray<SelectOption>
+			/** `<SelectLabel>` in the group (not `SelectGroupLabel`): it labels the Select, not the group. */
+			isSelectLabel?: boolean
+	  }>
 	| Readonly<{ _tag: "Separator" }>
 	| Readonly<{ _tag: "Item"; item: SelectOption }>
 
@@ -60,24 +72,35 @@ export const optionsOf = (entries: ReadonlyArray<SelectEntry>): ReadonlyArray<Se
 		entry._tag === "Group" ? entry.items : entry._tag === "Item" ? [entry.item] : [],
 	)
 
+/** Base UI's `Select.Label` id: every `<SelectLabel>` renders it, and it names the trigger. */
+export const selectLabelId = (id: string): string => `${id}-label`
+
 export const selectedIndexOf = (entries: ReadonlyArray<SelectEntry>, value: string): number | null =>
 	Option.getOrNull(Array.findFirstIndex(optionsOf(entries), (option) => option.value === value))
 
 const option = (h: H, model: Model, inputs: ViewInputs, item: SelectOption, index: number): Html => {
 	const isSelected = item.value === model.value
+	const isDisabled = item.isDisabled ?? false
 	const isHighlighted = model.highlighted === index
 	return h.div(
 		[
 			h.AriaSelected(isSelected),
+			...(isDisabled ? [h.AriaDisabled(true)] : []),
 			h.Class(cn(selectItemStyles)),
+			...(isDisabled ? [h.DataAttribute("disabled", "")] : []),
 			...(isHighlighted ? [h.DataAttribute("highlighted", "")] : []),
 			...(isSelected ? [h.DataAttribute("selected", "")] : []),
 			h.DataAttribute("slot", "select-item"),
 			h.Id(itemId(model.id, index)),
 			h.Role("option"),
 			h.Tabindex(isHighlighted ? 0 : -1),
-			h.OnMouseMove(Message.HoveredItem({ index })),
-			h.OnClick(Message.SelectedItem({ index, value: item.value })),
+			...(item.title === undefined ? [] : [h.Title(item.title)]),
+			...(isDisabled
+				? []
+				: [
+						h.OnMouseMove(Message.HoveredItem({ index })),
+						h.OnClick(Message.SelectedItem({ index, value: item.value })),
+					]),
 		],
 		[
 			...(isSelected
@@ -115,20 +138,34 @@ const listChildren = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Htm
 				return [start + 1, option(h, model, inputs, entry.item, start)]
 			case "Group": {
 				const labelId = `${model.id}-group-${entryIndex}`
+				const isSelectLabel = entry.isSelectLabel ?? false
 				return [
 					start + entry.items.length,
 					h.div(
-						[h.AriaLabelledBy(labelId), h.DataAttribute("slot", "select-group"), h.Role("group")],
 						[
-							h.div(
-								[
-									h.AriaHidden(true),
-									h.Class(selectGroupLabelStyles),
-									h.DataAttribute("slot", "select-group-label"),
-									h.Id(labelId),
-								],
-								[entry.label],
-							),
+							...(isSelectLabel ? [] : [h.AriaLabelledBy(labelId)]),
+							h.DataAttribute("slot", "select-group"),
+							h.Role("group"),
+						],
+						[
+							isSelectLabel
+								? h.div(
+										[
+											h.Class(selectLabelStyles),
+											h.DataAttribute("slot", "select-label"),
+											h.Id(selectLabelId(model.id)),
+										],
+										[entry.label],
+									)
+								: h.div(
+										[
+											h.AriaHidden(true),
+											h.Class(selectGroupLabelStyles),
+											h.DataAttribute("slot", "select-group-label"),
+											h.Id(labelId),
+										],
+										[entry.label],
+									),
 							...entry.items.map((item, offset) =>
 								option(h, model, inputs, item, start + offset),
 							),
@@ -151,6 +188,26 @@ const listKeys = (h: H, options: ReadonlyArray<SelectOption>) =>
 
 const TRIGGER_KEYS = new Set(["ArrowDown", "ArrowUp", "Enter", " "])
 
+/** `SelectScrollUpArrow` / `SelectScrollDownArrow`, while the list can scroll that way. */
+const scrollArrow = (h: H, model: Model, direction: "up" | "down"): Html =>
+	h.div(
+		[
+			h.AriaHidden(true),
+			h.Class(direction === "up" ? selectScrollUpArrowStyles : selectScrollDownArrowStyles),
+			h.DataAttribute("direction", direction),
+			h.DataAttribute("side", model.isAlignedWithTrigger ? "none" : model.side),
+			h.DataAttribute("slot", `select-scroll-${direction}-arrow`),
+			h.DataAttribute("visible", ""),
+			h.Style({ position: "absolute" }),
+		],
+		[
+			icon(h, direction === "up" ? "ChevronUpIcon" : "ChevronDownIcon", {
+				className:
+					direction === "up" ? selectScrollUpArrowIconStyles : selectScrollDownArrowIconStyles,
+			}),
+		],
+	)
+
 const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const state = stateAttributes(h, model.isOpen, model.animation)
 	const placement = [
@@ -168,12 +225,14 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 		[
 			h.div([
 				h.DataAttribute("base-ui-inert", ""),
+				// Base UI's `inert: !open`: a closing menu lets the pointer reach the page at once.
+				...(model.isOpen ? [] : [h.Inert(true)]),
 				h.Role("presentation"),
 				h.Style({ position: "fixed", inset: "0px", userSelect: "none" }),
 			]),
 			h.div(
 				[
-					h.Class(selectPositionerStyles),
+					h.Class(cn(selectPositionerStyles, !model.isOpen && "pointer-events-none")),
 					...placement,
 					h.DataAttribute("slot", "select-positioner"),
 					h.Role("presentation"),
@@ -194,6 +253,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 							h.Tabindex(-1),
 						],
 						[
+							...(model.scrollArrows.up ? [scrollArrow(h, model, "up")] : []),
 							h.div(
 								[h.Class(selectPopupSurfaceStyles)],
 								[
@@ -213,6 +273,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 									),
 								],
 							),
+							...(model.scrollArrows.down ? [scrollArrow(h, model, "down")] : []),
 						],
 					),
 					focusGuard(h, "inside"),

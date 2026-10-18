@@ -105,3 +105,32 @@ export const MeasureTimelineBody = Mount.defineStream("MeasureTraceTimelineBody"
 			),
 		),
 })
+
+/**
+ * The row toggle's ⌥-click (`event.altKey`): Foldkit's click carries no modifiers, so the rows
+ * listen first (capture) and, with ⌥ held, report the subtree toggle instead of the plain one.
+ */
+export const MountAltToggle = Mount.defineStream("MountTimelineAltToggle", {
+	messages: [Message.AltClickedToggleCollapse],
+	execute: ({ element }) =>
+		Stream.callback<typeof Message.AltClickedToggleCollapse.Type>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const onClick = (event: Event) => {
+						if (!(event instanceof MouseEvent) || !event.altKey) return
+						const toggle =
+							event.target instanceof Element
+								? event.target.closest("[data-toggle-span]")
+								: null
+						const spanId = toggle?.getAttribute("data-toggle-span")
+						if (spanId === null || spanId === undefined) return
+						event.stopPropagation()
+						Queue.offerUnsafe(queue, Message.AltClickedToggleCollapse({ spanId }))
+					}
+					element.addEventListener("click", onClick, true)
+					return onClick
+				}),
+				(onClick) => Effect.sync(() => element.removeEventListener("click", onClick, true)),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
+})

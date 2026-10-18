@@ -1,13 +1,13 @@
 import { ErrorIssueId, InvestigationId } from "@maple/domain/http"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { getSpanHierarchy } from "@maple/web-data/warehouse/traces"
 import { loadKnownServices } from "../../chat/kit/known-services"
 import { TraceId } from "@maple/domain"
 import { Clock, Effect, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
+import { readSpanHierarchy, spanHierarchyKey } from "../../traces/detail/command"
 import { Message } from "./message"
 
 /** `KnownServicesProvider`: the org's service names, read once a thread shows its scroller. */
@@ -34,12 +34,15 @@ export const CheckTipFocus = Command.define("CheckInvestigationTipFocus", {
  * loader, which warms its span hierarchy read. The answer is the warm cache, not this page's.
  */
 export const PreloadTrace = Command.define("PreloadInvestigationTrace", {
-	args: { traceId: Schema.String },
+	args: { orgId: Schema.String, traceId: Schema.String },
 	messages: [Message.CompletedPreloadTrace],
-	execute: ({ traceId }) =>
+	execute: ({ orgId, traceId }) =>
 		Effect.gen(function* () {
 			const decoded = Schema.decodeUnknownOption(TraceId)(traceId)
-			if (decoded._tag === "Some") yield* Effect.ignore(getSpanHierarchy({ data: { traceId: decoded.value } }))
+			// Through the read cache, so the trace page opening next joins or reuses this read.
+			const key = (traceId: TraceId) => spanHierarchyKey(orgId, traceId, undefined)
+			if (decoded._tag === "Some")
+				yield* Effect.ignore(readSpanHierarchy(key(decoded.value), decoded.value, undefined))
 			return Message.CompletedPreloadTrace()
 		}),
 })

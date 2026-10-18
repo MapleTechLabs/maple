@@ -1,7 +1,9 @@
 import type { ErrorIssueDetailResponse, ErrorIssueDocument } from "@maple/domain/http"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { errorIssueDetailFromV2 } from "@maple/web/lib/services/error-issues"
-import { DateTime, Option } from "effect"
+import { AlertIncidentId } from "@maple/domain/primitives"
+import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
+import { DateTime, Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ErrorIssueSearch } from "../../../route/search"
@@ -72,3 +74,70 @@ export const escalationsOf = (model: Model) => dataOr(model.escalations.data, nu
 export const pullRequestsOf = (model: Model) => dataOr(model.pullRequests.data, null)?.pullRequests ?? []
 export const latestVerificationOf = (model: Model) =>
 	dataOr(model.verifications.data, null)?.verifications[0] ?? null
+
+/** `issueHeadline`: what the issue is called, for a human and for an agent. */
+const issueHeadline = (issue: ErrorIssueDocument): string =>
+	issue.exceptionType && issue.exceptionMessage
+		? `${issue.exceptionType}: ${issue.exceptionMessage}`
+		: issue.exceptionType || issue.exceptionMessage || issue.errorLabel || "Unlabelled error"
+
+const decodeAlertIncidentId = Schema.decodeUnknownOption(AlertIncidentId)
+
+/** `latestIncidentId` and `startInvestigation`'s subject: the open incident if there is one, else freeform. */
+const subjectOf = (detail: ErrorIssueDetailResponse): V2InvestigationCreateParams["subject"] => {
+	const { issue, incidents } = detail
+	const title = issueHeadline(issue)
+	const freeform = {
+		type: "freeform" as const,
+		title,
+		prompt: `Investigate this issue: ${title}`,
+		context_refs: [{ issue_id: issue.id }],
+	}
+	if (issue.kind === "alert") {
+		const raw = issue.sourceRef?.latestIncidentId
+		return Option.match(decodeAlertIncidentId(raw), {
+			onNone: () => freeform,
+			onSome: (incidentId) => ({
+				type: "incident" as const,
+				incident_kind: "alert" as const,
+				incident_id: incidentId,
+				issue_id: issue.id,
+			}),
+		})
+	}
+	const incident = incidents.find((candidate) => candidate.status === "open") ?? incidents[0]
+	return incident === undefined
+		? freeform
+		: { type: "incident", incident_kind: "error", incident_id: incident.id, issue_id: issue.id }
+}
+
+/** The `investigations.create` payload `startInvestigation` sends. */
+export const investigationPayload = (detail: ErrorIssueDetailResponse): V2InvestigationCreateParams => {
+	const { issue } = detail
+	const title = issueHeadline(issue)
+	return {
+		subject: subjectOf(detail),
+		snapshot: {
+			title,
+			scope: issue.serviceName || null,
+			status: "open",
+			severity: issue.severity,
+			facts: [
+				{ label: "Service", value: issue.serviceName || "unknown" },
+				{ label: "Occurrences", value: String(issue.occurrenceCount) },
+				...(issue.exceptionType ? [{ label: "Exception", value: issue.exceptionType }] : []),
+				...(issue.topFrame ? [{ label: "Top frame", value: issue.topFrame }] : []),
+			],
+			references: [{ label: "Issue", url: `/errors/issues/${issue.id}` }],
+			incidentStartedAt: issue.firstSeenAt,
+			incidentEndedAt: issue.lastSeenAt,
+			fingerprintHash: issue.fingerprintHash || null,
+			exceptionType: issue.exceptionType || null,
+			exceptionMessage: issue.exceptionMessage || null,
+			topFrame: issue.topFrame || null,
+			errorLabel: issue.errorLabel || null,
+			occurrenceCount: issue.occurrenceCount,
+			serviceName: issue.serviceName || null,
+		},
+	}
+}

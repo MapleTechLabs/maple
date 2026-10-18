@@ -1,3 +1,4 @@
+import * as Select from "../../../../ui/select"
 import { Schema } from "effect"
 import { SpanEvents, SpanNodeData } from "../trace-data"
 
@@ -29,6 +30,8 @@ export const Model = Schema.Struct({
 	selectedSpanId: Schema.NullOr(Schema.String),
 	/** A `colorByFieldId` (`preset:service`). */
 	colorBy: Schema.String,
+	/** `ColorByPicker`'s Select, its value kept on `colorBy`. */
+	colorBySelect: Select.Model,
 	spanEvents: Schema.NullOr(SpanEvents),
 	/** The stored label-column width (`traceTimelineSidebarWidth`). */
 	sidebarWidth: Schema.Number,

@@ -19,7 +19,7 @@ import { billingBanners } from "./billing-banners"
 import * as SupportChannelView from "./support-channel-view"
 import { Message } from "./message"
 import type { Model, ShellClerk } from "./model"
-import { PositionMenu } from "./mounts"
+import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
 import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
@@ -37,10 +37,11 @@ const sidebarRegions = (
 	tip: RailTip = NO_TIP,
 ): ReadonlyArray<Html> => [
 	shellSidebarHeader(h, model, clerk, tip),
-	sidebarContent(h, [
-		...navGroupSections(h, model, currentPath, tip, clerk),
-		...pinnedGroup(h, model, currentPath),
-	]),
+	sidebarContent(
+		h,
+		[...navGroupSections(h, model, currentPath, tip, clerk), ...pinnedGroup(h, model, currentPath)],
+		[h.OnMount(MeasureSidebarOverflow())],
+	),
 	shellSidebarFooter(h, model, currentPath, clerk, tip),
 ]
 

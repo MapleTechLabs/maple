@@ -4,7 +4,14 @@ import { Command, expect as expectView, given, Mount, role, scene, text, withVie
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { FetchFacets, FetchFirstPage, FetchNextPage, LoadSignalPresence, MountEmptyState } from "./command"
+import {
+	FetchFacets,
+	FetchFirstPage,
+	FetchNextPage,
+	LoadSignalPresence,
+	MountEmptyState,
+	MountPeekRows,
+} from "./command"
 import { Message } from "./message"
 import type { Model, TraceRow, TracesFacets, TracesPage } from "./model"
 import { allRows, init, routeChanged, update } from "./update"
@@ -155,6 +162,7 @@ describe("traces list", () => {
 			{ update: pageUpdate, view },
 			given(pageUpdate(loaded(page(3)), windowOver(0, 3)).model),
 			Mount.resolve(VirtualizeTraces, windowOver(0, 3)),
+			Mount.resolve(MountPeekRows, Message.ClickedPeekRow({ index: 99 })),
 			expectView(role("table", { name: "Traces" })).toExist(),
 			expectView(role("link", { name: "trace000" })).toHaveAttr(
 				"href",

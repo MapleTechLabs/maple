@@ -3,11 +3,11 @@ import { Command } from "foldkit"
 import { load, pushUrl, replaceUrl } from "foldkit/navigation"
 import { Message } from "./message"
 import { PRELOAD_HOLD_MS } from "./page/preload"
-import { PageMessage } from "./page/registry"
 import { clearSessionToken, MapleAuthApi, readSessionToken, saveSessionToken } from "./platform/auth-api"
 import { saveSelectedPlanKnown } from "./page/onboarding/plan-gate"
 import { loadClerk, signOutOfClerk } from "./platform/clerk"
 import { BillingCustomerCache } from "./data/billing-customer"
+import { ReadCache } from "./data/read-cache"
 import { readSessionTimeRange, writeSessionTimeRange } from "./platform/session-time-range"
 import { SessionTimeRange } from "./route/session-time-range"
 
@@ -117,11 +117,20 @@ export const HoldPreloads = Command.define("HoldPreloads", {
 		Effect.sleep(Duration.millis(PRELOAD_HOLD_MS)).pipe(Effect.as(Message.ExpiredPreloads({ keys }))),
 })
 
-/** A preloaded answer handed to the page that asked for it, instead of a second request. */
-export const DeliverPreloaded = Command.define("DeliverPreloaded", {
-	args: { message: PageMessage },
-	messages: [Message.GotPageMessage],
-	execute: ({ message }) => Effect.succeed(Message.GotPageMessage({ message })),
+/**
+ * A holder let go of these reads (a page left, a preload's hold ran out): their idle TTL starts. A
+ * new page instance also names its org, which drops another org's reads.
+ */
+export const ReleaseReads = Command.define("ReleaseReads", {
+	args: { orgId: Schema.NullOr(Schema.String), keys: Schema.Array(Schema.String) },
+	messages: [Message.CompletedReleaseReads],
+	execute: ({ orgId, keys }) =>
+		Effect.gen(function* () {
+			const cache = yield* ReadCache
+			if (orgId !== null) yield* cache.scopeTo(orgId)
+			yield* cache.release(keys)
+			return Message.CompletedReleaseReads()
+		}),
 })
 
 /** The tab's remembered window for the org, with the clock its presets resolve against. */

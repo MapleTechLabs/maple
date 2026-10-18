@@ -1,3 +1,5 @@
+import { peekPosition } from "./peek"
+import { MountPeekRows } from "./command"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { tableBodyStyles } from "@maple/ui/styles/ui/table"
@@ -147,6 +149,7 @@ const spacer = (h: HtmlBuilder<Message>, height: number): Html =>
 const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html => {
 	const rows = allRows(model)
 	const time = timeFormat(timeZone)
+	const activeIndex = peekPosition(model)?.index ?? null
 	const first = model.virtualRows[0]
 	const last = model.virtualRows.at(-1)
 	return h.tbody(
@@ -155,7 +158,15 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html => 
 			...(first === undefined ? [] : [spacer(h, first.start)]),
 			...model.virtualRows.flatMap((item) => {
 				const row = rows[item.index]
-				return row === undefined ? [] : [traceRow(h, row, item.index, time, model.nowMs)]
+				return row === undefined
+					? []
+					: [
+							traceRow(h, row, item.index, time, model.nowMs, {
+								search: model.search,
+								isFocused: model.focusedIndex === item.index,
+								isActive: activeIndex === item.index,
+							}),
+						]
 			}),
 			...(last === undefined ? [] : [spacer(h, model.totalSize - last.end)]),
 			...(model.pagination.isFetching
@@ -182,6 +193,7 @@ const loadedTable = (h: HtmlBuilder<Message>, model: Model, timeZone: string, is
 		[
 			h.Class(cn("flex min-h-0 flex-1 flex-col gap-4", refreshingClass(isWaiting))),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
+			h.OnMount(MountPeekRows()),
 		],
 		[
 			h.div(

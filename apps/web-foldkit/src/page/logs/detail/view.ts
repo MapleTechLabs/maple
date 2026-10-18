@@ -9,6 +9,7 @@ import { titleId } from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import { icon, type IconName } from "../../../ui/icon"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
+import { panel, panelBody, panelHeader } from "../../../ui/panel"
 import { scrollArea } from "../../../ui/scroll-area"
 import * as TabsView from "../../../ui/tabs-view"
 import { buildLogJsonPayload, TAB_LABELS } from "./derive"
@@ -16,10 +17,11 @@ import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { heroHeader } from "./view-hero"
 import { metaStrip } from "./view-meta"
+import { contextPanel, errorBanner, showsErrorBanner, traceTimeline } from "./view-panels"
 
 // `LogDetailSheet`: hero, meta strip and the tabbed panels in a right-hand sheet.
-// TODO(log-detail): the Trace, Context and Infrastructure panels (they fetch) and
-// `LogErrorBanner` (ErrorSection) for ERROR/FATAL logs are not ported yet.
+// TODO(log-detail): the Infrastructure tab's `InfraCorrelationPanel` charts are not ported (the
+// span panel's are not either); its trigger is.
 
 type H = HtmlBuilder<Message>
 
@@ -71,7 +73,7 @@ const scrolled = (h: H, model: Model, tab: string, child: Html): ReadonlyArray<H
 	]),
 ]
 
-const panelOf = (h: H, model: Model, log: LogRecord) => (value: string) => {
+const panelOf = (h: H, model: Model, log: LogRecord, timeZone: string) => (value: string) => {
 	switch (value) {
 		case "attributes":
 			return scrolled(
@@ -90,6 +92,10 @@ const panelOf = (h: H, model: Model, log: LogRecord) => (value: string) => {
 					toParentMessage: (message) => Message.GotAttributesMessage({ message }),
 				}),
 			)
+		case "trace":
+			return scrolled(h, model, value, traceTimeline(h, model, log) ?? h.div([], []))
+		case "context":
+			return [contextPanel(h, model, log, timeZone)]
 		case "raw":
 			return scrolled(h, model, value, rawPanel(h, model, log))
 		default:
@@ -97,7 +103,7 @@ const panelOf = (h: H, model: Model, log: LogRecord) => (value: string) => {
 	}
 }
 
-const tabs = (h: H, model: Model, log: LogRecord): Html =>
+const tabs = (h: H, model: Model, log: LogRecord, timeZone: string): Html =>
 	h.submodel({
 		slotId: `${model.id}-tabs`,
 		model: model.tabs,
@@ -112,8 +118,9 @@ const tabs = (h: H, model: Model, log: LogRecord): Html =>
 				icon(h, TAB_ICONS.get(value) ?? "CircleInfoIcon", { size: 14 }),
 				` ${label}`,
 			],
-			panel: panelOf(h, model, log),
-			hasPanel: (value) => value === "attributes" || value === "raw",
+			panel: panelOf(h, model, log, timeZone),
+			hasPanel: (value) => value !== "infrastructure",
+			panelClassNameFor: (value) => (value === "context" ? "p-3" : undefined),
 		},
 		toParentMessage: (message) => Message.GotTabsMessage({ message }),
 	})
@@ -135,7 +142,8 @@ const content = (
 	),
 	heroHeader(h, model, log, close),
 	metaStrip(h, model, log, timeZone),
-	tabs(h, model, log),
+	...(showsErrorBanner(log) ? [errorBanner(h, model, log)] : []),
+	tabs(h, model, log, timeZone),
 ]
 
 /** The sheet's portal while it is open or closing, else nothing. */
@@ -157,4 +165,56 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		},
 		toParentMessage: (message) => Message.GotDialogMessage({ message }),
 	})
+})
+
+/** `/logs/$logId`'s body: hero and meta as one card, attributes beside trace, context and raw. */
+export const pageView = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+	const { log } = model
+	if (log === null) return null
+	const trace = traceTimeline(h, model, log)
+	return h.div(
+		[h.Class("contents")],
+		[
+			panel(h, { tone: "background" }, [
+				heroHeader(h, model, log, null),
+				metaStrip(h, model, log, inputs.timeZone, false),
+				...(showsErrorBanner(log) ? [errorBanner(h, model, log)] : []),
+			]),
+			h.div(
+				[h.Class("grid gap-3 lg:grid-cols-[1fr_minmax(360px,440px)]")],
+				[
+					panel(h, {}, [
+						panelHeader(h, { title: "Attributes" }),
+						panelBody(
+							h,
+							[
+								h.submodel({
+									slotId: `${model.id}-attributes-panel`,
+									model: model.attributes,
+									view: AttributesView.view,
+									viewInputs: {
+										logAttributes: log.logAttributes,
+										resourceAttributes: log.resourceAttributes,
+										canFilter: false,
+									},
+									toParentMessage: (message) => Message.GotAttributesMessage({ message }),
+								}),
+							],
+							"p-3",
+						),
+					]),
+					h.div(
+						[h.Class("flex flex-col gap-3")],
+						[
+							...(trace === null ? [] : [panel(h, { padded: "sm" }, [trace])]),
+							panel(h, { padded: "sm" }, [
+								contextPanel(h, model, log, inputs.timeZone, "max-h-[420px] flex-none"),
+							]),
+							panel(h, { padded: "sm" }, [rawPanel(h, model, log)]),
+						],
+					),
+				],
+			),
+		],
+	)
 })

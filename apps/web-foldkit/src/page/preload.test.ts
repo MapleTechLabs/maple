@@ -1,12 +1,10 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { Option, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "./contract"
-import { toLoadFailure } from "../data/load-failure"
 import * as Preload from "./preload"
-import { pageIdentity, preloadRoute, type PageMessage } from "./registry"
+import { pageIdentity, preloadRoute } from "./registry"
 import { AppRoute } from "../route"
-import { Message as TraceMessage } from "./traces/detail/message"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -15,13 +13,6 @@ const traceRoute = AppRoute.Trace({ traceId: TRACE, search: {} })
 
 const preloaded = () => preloadRoute(traceRoute, context, 0)
 const keyOf = () => Option.getOrThrow(Preload.keyOfCommand(preloaded()[0]!))
-const answer = (key: string): PageMessage => ({
-	_tag: "TraceDetail",
-	message: TraceMessage.CompletedFetchHierarchy({
-		key,
-		result: Result.fail(toLoadFailure(new Error("held"))),
-	}),
-})
 const holder = pageIdentity({ _tag: "TraceDetail", key: TRACE, orgId })
 
 describe("intent preload", () => {
@@ -37,36 +28,32 @@ describe("intent preload", () => {
 		expect(preloaded().map((command) => command.name)).toEqual(["FetchSpanHierarchy"])
 	})
 
-	test("a key already preloaded or held by the open page is not sent again", () => {
-		const first = Preload.started(Preload.init(), preloaded())
-		expect(first.keys).toEqual([keyOf()])
-		expect(Preload.started(first.model, preloaded()).commands).toEqual([])
-		const held = Preload.seeded(Preload.init(), holder, preloaded()).model
-		expect(Preload.started(held, preloaded()).commands).toEqual([])
+	test("a page instance holds every key it asks for, and a new one releases the rest", () => {
+		const entered = Preload.held(Preload.init(), holder, preloaded())
+		expect(entered.model.heldKeys).toEqual([keyOf()])
+		expect(entered.released).toEqual([])
+		const again = Preload.held(entered.model, holder, preloaded())
+		expect(again.model.heldKeys).toEqual([keyOf()])
+		const left = Preload.held(entered.model, "Overview::org_acme", [])
+		expect(left.released).toEqual([keyOf()])
+		expect(left.model.heldKeys).toEqual([])
 	})
 
-	test("a settled preload is delivered to the page instead of fetched", () => {
-		const started = Preload.started(Preload.init(), preloaded()).model
-		const settled = Option.getOrThrow(Preload.answered(started, answer(keyOf())))
-		expect(settled.forward).toEqual(Option.none())
-		const entered = Preload.seeded(settled.model, holder, preloaded())
-		expect(entered.commands).toEqual([])
-		expect(entered.delivered).toEqual([answer(keyOf())])
-		expect(entered.model.entries).toEqual({})
+	test("a key the next page asks for again is not released", () => {
+		const entered = Preload.held(Preload.init(), holder, preloaded())
+		const next = Preload.held(entered.model, "TraceDetail:other:org_acme", preloaded())
+		expect(next.released).toEqual([])
 	})
 
-	test("an in-flight preload is awaited, then forwarded to the page", () => {
-		const started = Preload.started(Preload.init(), preloaded()).model
-		const entered = Preload.seeded(started, holder, preloaded())
-		expect(entered.commands).toEqual([])
-		expect(entered.delivered).toEqual([])
-		const landed = Option.getOrThrow(Preload.answered(entered.model, answer(keyOf())))
-		expect(landed.forward).toEqual(Option.some(answer(keyOf())))
-		expect(Preload.expired(entered.model, [keyOf()]).entries).toEqual(entered.model.entries)
+	test("a link under a resting pointer is not an entry; one the pointer moved onto is", () => {
+		expect(Preload.isPointerEntry(Option.none(), 10, 20)).toBe(true)
+		expect(Preload.isPointerEntry(Option.some({ x: 10, y: 20 }), 10, 20)).toBe(false)
+		expect(Preload.isPointerEntry(Option.some({ x: 10, y: 19 }), 10, 20)).toBe(true)
 	})
 
-	test("an unused preload is released after the hold", () => {
-		const started = Preload.started(Preload.init(), preloaded()).model
-		expect(Preload.expired(started, [keyOf()]).entries).toEqual({})
+	test("after the hold, only preloads the open page does not hold are released", () => {
+		expect(Preload.expired(Preload.init(), [keyOf()])).toEqual([keyOf()])
+		const entered = Preload.held(Preload.init(), holder, preloaded()).model
+		expect(Preload.expired(entered, [keyOf()])).toEqual([])
 	})
 })

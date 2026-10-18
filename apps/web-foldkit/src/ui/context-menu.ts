@@ -22,16 +22,23 @@ export const Model = Schema.Struct({
 	...PopupState.fields,
 	point: Point,
 	highlighted: Schema.NullOr(Schema.Number),
+	/** The open submenu's entry index, and its own highlight. */
+	submenu: Schema.NullOr(Schema.Number),
+	subHighlighted: Schema.NullOr(Schema.Number),
 })
 export type Model = typeof Model.Type
 
 export const itemId = (id: string, index: number): string => `${id}-item-${index}`
+export const subItemId = (id: string, index: number): string => `${id}-sub-item-${index}`
+export const subPopupId = (id: string): string => `${id}-sub-popup`
 
 /** Closed; `isOpen` starts it open at `point` (a restored menu, or a test). */
 export const init = (id: string, options: Readonly<{ isOpen?: boolean; point?: Point }> = {}): Model => ({
 	...initPopup(id, { isOpen: options.isOpen ?? false, side: "right", align: "start" }),
 	point: options.point ?? { x: 0, y: 0 },
 	highlighted: null,
+	submenu: null,
+	subHighlighted: null,
 })
 
 // MESSAGE
@@ -45,6 +52,11 @@ export const Message = defineMessageUnion({
 	LeftMenu: {},
 	HoveredItem: { index: Schema.Number },
 	ClickedItem: { index: Schema.Number },
+	/** Hovering or clicking a submenu trigger opens its submenu. */
+	OpenedSubmenu: { index: Schema.Number },
+	HoveredSubItem: { index: Schema.Number },
+	ClickedSubItem: { index: Schema.Number },
+	CompletedMountSubmenu: {},
 	CompletedFocusMenuItem: {},
 	CompletedMountContextMenu: {},
 	ChangedPlacement: { side: Side, align: Align },
@@ -52,7 +64,10 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-export const OutMessage = defineMessageUnion({ SelectedItem: { index: Schema.Number } })
+export const OutMessage = defineMessageUnion({
+	SelectedItem: { index: Schema.Number },
+	SelectedSubItem: { submenu: Schema.Number, index: Schema.Number },
+})
 export type OutMessage = typeof OutMessage.Type
 
 // UPDATE
@@ -73,7 +88,8 @@ export const WaitForContextMenuExit = transition.WaitForExit
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
-const close = (model: Model): UpdateReturn => transition.close({ ...model, highlighted: null })
+const close = (model: Model): UpdateReturn =>
+	transition.close({ ...model, highlighted: null, submenu: null, subHighlighted: null })
 
 /** The highlight moves in `update`, from the current Model, so fast keystrokes never reuse a stale one. */
 const highlight = (model: Model, index: number): UpdateReturn => ({
@@ -103,8 +119,24 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			return model.highlighted === null ? { model } : pick(model, model.highlighted)
 		},
 		LeftMenu: () => ({ model: { ...model, highlighted: null } }),
-		HoveredItem: ({ index }) => (model.highlighted === index ? { model } : highlight(model, index)),
+		HoveredItem: ({ index }) =>
+			model.highlighted === index && model.submenu === null
+				? { model }
+				: highlight({ ...model, submenu: null, subHighlighted: null }, index),
 		ClickedItem: ({ index }) => pick(model, index),
+		OpenedSubmenu: ({ index }) =>
+			model.submenu === index
+				? { model }
+				: { model: { ...model, highlighted: index, submenu: index, subHighlighted: null } },
+		HoveredSubItem: ({ index }) => ({ model: { ...model, subHighlighted: index } }),
+		ClickedSubItem: ({ index }) =>
+			model.submenu === null
+				? { model }
+				: {
+						...close(model),
+						outMessage: OutMessage.SelectedSubItem({ submenu: model.submenu, index }),
+					},
+		CompletedMountSubmenu: () => ({ model }),
 		CompletedFocusMenuItem: () => ({ model }),
 		CompletedMountContextMenu: () => ({ model }),
 		ChangedPlacement: ({ side, align }) => ({ model: { ...model, side, align } }),
@@ -132,7 +164,7 @@ export const MountContextMenu = Mount.defineStream("MountContextMenu", {
 				fallbackAxisSide: "none",
 				shiftCrossAxis: true,
 			},
-			insideSelectors: [],
+			insideSelectors: ["[data-slot=context-menu-sub-content]"],
 			markOutside: Option.some({ mark: true, ariaHidden: true }),
 			lockScroll: true,
 			focus: Option.some({ returnFocusId: Option.none(), initialFocus: "popup" }),
@@ -151,4 +183,27 @@ export const MountContextMenu = Mount.defineStream("MountContextMenu", {
 				}
 			}),
 		),
+})
+
+/** A submenu beside its trigger (`ContextMenuSubContent`, side right); presses in it are inside. */
+export const MountContextSubmenu = Mount.defineStream("MountContextSubmenu", {
+	args: { id: Schema.String, triggerId: Schema.String },
+	messages: [Message.CompletedMountSubmenu],
+	execute: ({ element, id, triggerId }) =>
+		anchoredPopup(element, {
+			positionerSelector: ":scope > [data-side]",
+			popupSelector: `#${CSS.escape(subPopupId(id))}`,
+			config: {
+				...positionDefaults,
+				anchor: { _tag: "Element", id: triggerId },
+				side: "right",
+				align: "start",
+				alignOffset: 4,
+				positionMethod: "fixed",
+			},
+			insideSelectors: ["[data-slot=context-menu-content]"],
+			markOutside: Option.none(),
+			lockScroll: false,
+			focus: Option.none(),
+		}).pipe(Stream.map(() => Message.CompletedMountSubmenu())),
 })

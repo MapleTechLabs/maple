@@ -7,6 +7,7 @@ import { ChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import type { LoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
+import { commitDetailKey } from "../../kit/commit-card"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
@@ -75,7 +76,7 @@ const requestReleases = (
 		(releases) => ({ releases }),
 		key,
 		mode,
-		FetchDeployReleases({ key, startTime: window.startTime, endTime: window.endTime, environments }),
+		FetchDeployReleases({ key, refresh: mode === "Refresh", startTime: window.startTime, endTime: window.endTime, environments }),
 	)
 }
 
@@ -123,7 +124,7 @@ const followOverview = (model: Model, context: PageContext, mode: RequestMode): 
 
 const loadCommit = (model: Model, context: PageContext): Return => {
 	if (!isResolvableSha(model.commitSha)) return { model }
-	const key = requestKey(context.orgId, "vcsCommitDetail", { sha: model.commitSha })
+	const key = commitDetailKey(context.orgId, model.commitSha)
 	return slotStep(
 		model,
 		model.commit,

@@ -4,9 +4,13 @@ import { shortId } from "@maple/ui/lib/ids"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
+import { Option } from "effect"
+import { traceHrefFrom } from "./peek"
 import { tableRowStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AppRoute, hrefOf } from "../../../route"
+import type { TracesSearch } from "../../../route/search"
+
+type Search = typeof TracesSearch.Type
 import { httpSpanLabel } from "../../../ui/http-span-label"
 import { truncatedText } from "../../../ui/truncated-text"
 import { servicePills, traceStatusBadge } from "../../../ui/trace-badges"
@@ -41,13 +45,9 @@ export const timeFormat = (timeZone: string): TimeFormat => {
 const epochOf = (startTime: string): number => new Date(warehouseDateTimeToIso(startTime)).getTime()
 
 /** `traceLink`: the trace page, with the row's own span pre-selected when it is not the root. */
-export const traceHref = (row: TraceRow): string =>
-	hrefOf(
-		AppRoute.Trace({
-			traceId: row.traceId,
-			search: { t: row.startTime, spanId: row.isRootSpan ? undefined : row.spanId },
-		}),
-	)
+/** `traceLink`: the trace page, keeping the list's search (`{ ...prev, t, spanId }`). */
+export const traceHref = (search: Search, row: TraceRow): string =>
+	traceHrefFrom(search, row.traceId, row.startTime, row.isRootSpan ? undefined : row.spanId)
 
 const displayName = (row: TraceRow): string => {
 	const name = row.rootName !== "" ? row.rootName : row.rootSpanName !== "" ? row.rootSpanName : "Unknown"
@@ -59,7 +59,14 @@ const displayName = (row: TraceRow): string => {
 
 const CELL = "p-2 whitespace-normal leading-normal"
 
-const rootSpanCell = (h: HtmlBuilder<Message>, row: TraceRow, time: TimeFormat, nowMs: number): Html => {
+const rootSpanCell = (
+	h: HtmlBuilder<Message>,
+	row: TraceRow,
+	index: number,
+	time: TimeFormat,
+	nowMs: number,
+	search: Search,
+): Html => {
 	const epochMs = epochOf(row.startTime)
 	const stamp = time.row.format(epochMs)
 	const duration = formatDuration(row.durationMs)
@@ -69,12 +76,13 @@ const rootSpanCell = (h: HtmlBuilder<Message>, row: TraceRow, time: TimeFormat, 
 			h.div(
 				[h.Class("flex flex-col min-w-0")],
 				[
-					// TODO(peek): legacy turns a plain click into the peek sheet; this link opens the page.
+					// A plain click peeks (`MountPeekRows`); modified, middle and right clicks follow the link.
 					h.a(
 						[
 							h.AriaLabel(`Open trace ${row.traceId}`),
 							h.Attribute("class", "after:absolute after:inset-0 after:content-['']"),
-							h.Href(traceHref(row)),
+							h.DataAttribute("peek-index", String(index)),
+							h.Href(traceHref(search, row)),
 							h.Tabindex(-1),
 						],
 						[],
@@ -111,12 +119,15 @@ const rootSpanCell = (h: HtmlBuilder<Message>, row: TraceRow, time: TimeFormat, 
 	)
 }
 
+export type RowState = Readonly<{ search: Search; isFocused: boolean; isActive: boolean }>
+
 export const traceRow = (
 	h: HtmlBuilder<Message>,
 	row: TraceRow,
 	index: number,
 	time: TimeFormat,
 	nowMs: number,
+	state: RowState,
 ): Html =>
 	h.tr(
 		[
@@ -124,12 +135,19 @@ export const traceRow = (
 				"class",
 				cn(
 					tableRowStyles,
+					state.isActive && "bg-muted/40",
 					"hover:bg-muted/50 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 				),
 			),
+			...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
 			h.DataAttribute("index", String(index)),
 			h.DataAttribute("slot", "table-row"),
 			h.Tabindex(0),
+			h.OnKeyDownPreventDefault((key) =>
+				key === "Enter" || key === " "
+					? Option.some(Message.ClickedPeekRow({ index }))
+					: Option.none(),
+			),
 		],
 		[
 			tableCell(
@@ -141,14 +159,14 @@ export const traceRow = (
 								"class",
 								"relative z-10 font-mono text-xs text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary",
 							),
-							h.Href(traceHref(row)),
+							h.Href(traceHref(state.search, row)),
 						],
 						[shortId(row.traceId, "trace")],
 					),
 				],
-				cn(CELL, ROW_LANE, "before:bg-transparent"),
+				cn(CELL, ROW_LANE, state.isActive ? "before:bg-primary" : "before:bg-transparent"),
 			),
-			rootSpanCell(h, row, time, nowMs),
+			rootSpanCell(h, row, index, time, nowMs, state.search),
 			tableCell(
 				h,
 				[servicePills(h, row.services) ?? ""],

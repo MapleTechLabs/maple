@@ -1,4 +1,5 @@
 import {
+	allowedTransitionsForAll,
 	type ErrorIssueDocument,
 	type ErrorIssueEnvironment,
 	type IssueSeveritySource,
@@ -14,11 +15,12 @@ import * as CopyButton from "../../../ui/copy-button"
 import { detailRailField, detailRailGroup, detailRailRow } from "../../../ui/detail-rail"
 import * as SelectView from "../../../ui/select-view"
 import { serviceDot } from "../../../ui/values"
-import { actorAvatar } from "../kit/actor"
+import { actorChip } from "../kit/actor"
 import { clampPriority, PRIORITY_LABEL, priorityBarsIcon } from "../kit/priority"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../kit/severity"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../kit/workflow"
 import { Message } from "./message"
+import { leaseHud } from "./view-lease"
 import type { Model } from "./model"
 
 // `IssueSidebar` (components/errors/issue-sidebar.tsx) with `StateSelect` and `SeveritySelect`.
@@ -44,10 +46,18 @@ const isWorkflowState = (value: string): value is WorkflowState =>
 	WORKFLOW_STATE_ORDER.some((state) => state === value)
 const isSeverity = (value: string) => SEVERITY_ORDER.find((severity) => severity === value) ?? null
 
-const STATE_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = OFFERED_STATES.map((state) => ({
-	_tag: "Item",
-	item: { value: state, label: WORKFLOW_LABEL[state] },
-}))
+/** Unreachable states stay listed but disabled, so the list reads the same from every state. */
+const stateEntries = (current: WorkflowState): ReadonlyArray<SelectView.SelectEntry> => {
+	const allowed = new Set<WorkflowState>(allowedTransitionsForAll([current]))
+	return OFFERED_STATES.map((state) => ({
+		_tag: "Item",
+		item: {
+			value: state,
+			label: WORKFLOW_LABEL[state],
+			isDisabled: state !== current && !allowed.has(state),
+		},
+	}))
+}
 
 const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
 	...SEVERITY_ORDER.map((severity) => ({
@@ -61,21 +71,31 @@ const withIcon = (h: H, mark: Html, label: string): ReadonlyArray<Html> => [
 	h.span([h.Class("flex items-center gap-2")], [mark, label]),
 ]
 
-const stateSelect = (h: H, model: Model): Html =>
+const stateSelect = (h: H, model: Model, current: WorkflowState): Html =>
 	h.submodel({
 		slotId: model.statusSelect.id,
 		model: model.statusSelect,
 		view: SelectView.view,
 		viewInputs: {
-			entries: STATE_ENTRIES,
+			entries: stateEntries(current),
 			className: GHOST_TRIGGER,
+			isDisabled: model.busy === "state",
 			renderValue: (value) =>
 				isWorkflowState(value)
 					? withIcon(h, workflowRingIcon(h, value, 12), WORKFLOW_LABEL[value])
 					: ["State"],
 			renderItem: (option) =>
 				isWorkflowState(option.value)
-					? withIcon(h, workflowRingIcon(h, option.value), option.label)
+					? [
+							h.span(
+								[h.Class("flex items-center gap-2")],
+								[
+									workflowRingIcon(h, option.value),
+									option.label,
+									...(option.value === current ? [" (current)"] : []),
+								],
+							),
+						]
 					: [option.label],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
@@ -91,6 +111,7 @@ const severitySelect = (h: H, model: Model): Html =>
 			entries: SEVERITY_ENTRIES,
 			ariaLabel: "Severity",
 			className: GHOST_TRIGGER,
+			isDisabled: model.busy === "severity",
 			renderValue: (value) => {
 				const severity = isSeverity(value)
 				return withIcon(
@@ -161,6 +182,69 @@ const issueIdCopy = (h: H, model: Model, id: string): Html =>
 		],
 	)
 
+/** A held lease: the HUD with Extend and Release; otherwise Claim, or nothing on a closed issue. */
+const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boolean): Html => {
+	const hud =
+		issue.leaseHolder !== null && issue.leaseExpiresAt !== null
+			? leaseHud(
+					h,
+					{
+						leaseHolder: issue.leaseHolder,
+						leaseExpiresAt: issue.leaseExpiresAt,
+						claimedAt: issue.claimedAt,
+					},
+					model.nowMs,
+				)
+			: undefined
+	if (hud !== undefined)
+		return h.div(
+			[h.Class("flex flex-col gap-2")],
+			[
+				...(hud === null ? [] : [hud]),
+				h.div(
+					[h.Class("flex justify-end gap-1")],
+					[
+						button(
+							h,
+							{
+								size: "xs",
+								variant: "ghost",
+								isLoading: model.busy === "heartbeat",
+								attributes: [h.OnClick(Message.ClickedExtendLease())],
+							},
+							["Extend"],
+						),
+						button(
+							h,
+							{
+								size: "xs",
+								variant: "ghost",
+								isLoading: model.busy === "release",
+								attributes: [h.OnClick(Message.ClickedReleaseLease())],
+							},
+							["Release"],
+						),
+					],
+				),
+			],
+		)
+	return detailRailRow(h, { label: canClaim ? "Unclaimed" : "Closed" }, [
+		canClaim
+			? button(
+					h,
+					{
+						size: "xs",
+						variant: "outline",
+						className: "-mr-0.5",
+						isLoading: model.busy === "claim",
+						attributes: [h.OnClick(Message.ClickedClaim())],
+					},
+					["Claim"],
+				)
+			: h.span([h.Class("text-xs text-muted-foreground")], ["No lease needed"]),
+	])
+}
+
 export const issueSidebar = (
 	h: H,
 	model: Model,
@@ -174,7 +258,7 @@ export const issueSidebar = (
 		[h.Class("flex flex-col bg-card/30")],
 		[
 			detailRailGroup(h, "Details", [
-				detailRailRow(h, { label: "Status" }, [stateSelect(h, model)]),
+				detailRailRow(h, { label: "Status" }, [stateSelect(h, model, issue.workflowState)]),
 				detailRailRow(
 					h,
 					{
@@ -192,11 +276,7 @@ export const issueSidebar = (
 						],
 					),
 				]),
-				detailRailRow(h, { label: "Assignee" }, [
-					issue.assignedActor === null
-						? h.span([h.Class("text-xs text-muted-foreground")], [EMPTY_VALUE])
-						: actorAvatar(h, issue.assignedActor),
-				]),
+				detailRailRow(h, { label: "Assignee" }, [actorChip(h, issue.assignedActor)]),
 			]),
 			detailRailGroup(h, "Scope", [
 				detailRailField(h, { label: "Service", title: issue.serviceName }, [
@@ -235,13 +315,7 @@ export const issueSidebar = (
 					: []),
 				detailRailRow(h, { label: "Issue ID" }, [issueIdCopy(h, model, issue.id)]),
 			]),
-			detailRailGroup(h, "Lease", [
-				detailRailRow(h, { label: canClaim ? "Unclaimed" : "Closed" }, [
-					canClaim
-						? button(h, { size: "xs", variant: "outline", className: "-mr-0.5" }, ["Claim"])
-						: h.span([h.Class("text-xs text-muted-foreground")], ["No lease needed"]),
-				]),
-			]),
+			detailRailGroup(h, "Lease", [leaseGroup(h, model, issue, canClaim)]),
 		],
 	)
 }

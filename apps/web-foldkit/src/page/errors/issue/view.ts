@@ -1,8 +1,10 @@
 import type { ErrorIssueDetailResponse } from "@maple/domain/http"
 import { errorIssueDetailFromV2 } from "@maple/web/lib/services/error-issues"
+import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { confirmDialog } from "../../../ui/confirm-dialog"
 import { errorState } from "../../../ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -22,13 +24,19 @@ import { occurrencePanel, OCCURRENCE_TOKENS } from "./view-chart"
 import { headerActions, headerTitle, issueTabs } from "./view-header"
 import { culpritPanel, issueFactStrip } from "./view-overview"
 import {
+	alertSourceCard,
 	attachNudge,
 	bodySection,
-	incidentsTable,
 	linkedInvestigationPanel,
 	pullRequestsPanel,
 } from "./view-panels"
 import { issueSidebar } from "./view-sidebar"
+import { attachDialog } from "./attach"
+import { verificationCard } from "./view-verification"
+import { incidentsTable, occurrencesTable } from "./view-tables"
+import { commentComposer, issueTimeline } from "./view-activity"
+import { skeleton } from "../../../ui/skeleton"
+import { relatedAnomaliesOf, relatedAnomaliesSection } from "./view-anomalies"
 import { issueSkeleton, issueNotFound } from "./view-skeleton"
 
 // `IssueDetailContent`: skeleton, not-found and error states, then the loaded page.
@@ -51,20 +59,21 @@ const overview = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: 
 				timeZone: inputs.context.timeZone,
 				nowMs: model.nowMs,
 			}),
-			// TODO(alert-source): alert-kind issues show `AlertSourceCard` instead of the chart.
-			...(chartWindow === null || model.themeColors === null || model.chartRuntime._tag === "Loading"
-				? []
-				: [
-						occurrencePanel(
-							h,
-							timeseries,
-							issue.severity,
-							chartWindow,
-							model.themeColors,
-							inputs.context.timeZone,
-						),
-					]),
-			linkedInvestigationPanel(h, linkedInvestigationOf(model)),
+			...(issue.kind === "alert"
+				? [alertSourceCard(h, issue)]
+				: chartWindow === null || model.themeColors === null || model.chartRuntime._tag === "Loading"
+					? []
+					: [
+							occurrencePanel(
+								h,
+								timeseries,
+								issue.severity,
+								chartWindow,
+								model.themeColors,
+								inputs.context.timeZone,
+							),
+						]),
+			linkedInvestigationPanel(h, linkedInvestigationOf(model), model.isStartingInvestigation),
 			...(issue.kind === "error"
 				? [
 						bodySection(
@@ -74,11 +83,19 @@ const overview = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: 
 								title: "Incidents",
 								count: incidents.length === 0 ? undefined : `${incidents.length} opened`,
 							},
-							[incidentsTable(h, incidents)],
+							[
+								incidentsTable(h, incidents, {
+									nowMs: model.nowMs,
+									timeZone: inputs.context.timeZone,
+								}),
+							],
 						),
 					]
 				: []),
-			// TODO(anomalies): `RelatedAnomaliesSection` rows when detector incidents link here.
+			...relatedAnomaliesSection(h, relatedAnomaliesOf(model), {
+				nowMs: model.nowMs,
+				timeZone: inputs.context.timeZone,
+			}),
 		],
 	)
 }
@@ -93,35 +110,63 @@ const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html 
 			h.div(
 				[h.Class("flex flex-col gap-4 px-4 pb-4")],
 				[
-					// TODO(verification-card): `IssueVerificationCard` while a fix is being verified.
-					...(verification === null &&
-					AWAITING_FIX_STATES.has(detail.issue.workflowState) &&
-					pullRequests.length === 0
-						? [attachNudge(h)]
-						: []),
-					pullRequestsPanel(h, pullRequests),
+					...(verification !== null
+						? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
+						: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
+							? [attachNudge(h)]
+							: []),
+					pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
 				],
 			),
 		],
 	)
 }
 
-/** TODO(tabs): the Occurrences table and the Activity timeline with its composer. */
-const otherTab = (h: H, tab: "occurrences" | "activity", detail: ErrorIssueDetailResponse): Html =>
-	tab === "occurrences"
-		? bodySection(
-				h,
-				{
-					id: "occurrences",
-					title: "Latest occurrences",
-					count:
-						detail.sampleTraces.length === 0
-							? undefined
-							: `${detail.sampleTraces.length} sampled in this window`,
-				},
-				[],
-			)
-		: bodySection(h, { id: "activity", title: "Activity" }, [])
+/** The Occurrences table, or the Activity timeline with its composer. */
+const otherTab = (
+	h: H,
+	model: Model,
+	tab: "occurrences" | "activity",
+	detail: ErrorIssueDetailResponse,
+	inputs: PageViewInputs,
+): Html => {
+	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
+	if (tab === "occurrences")
+		return bodySection(
+			h,
+			{
+				id: "occurrences",
+				title: "Latest occurrences",
+				count:
+					detail.sampleTraces.length === 0
+						? undefined
+						: `${detail.sampleTraces.length} sampled in this window`,
+			},
+			[occurrencesTable(h, detail.sampleTraces, clock)],
+		)
+	const events = Option.getOrNull(AsyncData.getData(model.events.data))?.events ?? []
+	const { issue } = detail
+	// Everyone who has acted on the issue, newest first.
+	const participants = [
+		...(issue.leaseHolder ? [issue.leaseHolder] : []),
+		...(issue.assignedActor ? [issue.assignedActor] : []),
+		...[...events].reverse().flatMap((event) => (event.actor ? [event.actor] : [])),
+	]
+	return bodySection(h, { id: "activity", title: "Activity" }, [
+		AsyncData.matchData(model.events.data, {
+			onEmpty: () => skeleton(h, "h-20 w-full"),
+			onFailure: (failure) =>
+				errorState(h, {
+					failure,
+					title: "Failed to load the activity timeline",
+					variant: "inline",
+					onRetry: Message.ClickedRetryEvents(),
+				}),
+			onData: (value) => issueTimeline(h, value.events, escalationsOf(model), clock),
+		}),
+		commentComposer(h, { draft: model.commentDraft, isPosting: model.isCommenting, participants }),
+	])
+}
 
 const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: PageViewInputs): Html => {
 	const investigation = linkedInvestigationOf(model)
@@ -129,8 +174,8 @@ const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: Pa
 	return dashboardPage(
 		h,
 		{
-			titleContent: headerTitle(h, detail.issue, investigation),
-			actions: headerActions(h, model, investigation),
+			titleContent: headerTitle(h, detail.issue, investigation, relatedAnomaliesOf(model)),
+			actions: headerActions(h, model, investigation, detail.issue),
 			tabs: issueTabs(h, model.issueId, model.search, {
 				active: tab,
 				showOccurrences: detail.issue.kind === "error",
@@ -139,9 +184,34 @@ const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: Pa
 			}),
 			rightPanel: rightPanel(h, model, detail),
 		},
-		[tab === "overview" ? overview(h, model, detail, inputs) : otherTab(h, tab, detail)],
+		[
+			tab === "overview" ? overview(h, model, detail, inputs) : otherTab(h, model, tab, detail, inputs),
+			severityConfirmDialog(h, model),
+			attachDialog(h, model),
+		],
 	)
 }
+
+/** "Notify escalation destinations?" before a manual severity raise that routes. */
+const severityConfirmDialog = (h: H, model: Model): Html =>
+	confirmDialog(h, {
+		slotId: "issue-severity-confirm",
+		model: model.severityConfirm,
+		toParentMessage: (message) => Message.GotSeverityConfirmMessage({ message }),
+		tone: "default",
+		hasIcon: false,
+		title: "Notify escalation destinations?",
+		description: [
+			"Changing severity to ",
+			model.pendingSeverity?.severity ?? "",
+			" will notify",
+			" ",
+			model.pendingSeverity?.destinationNames.join(", ") ?? "",
+			". Manual severity changes represent explicit human intent and bypass AI confidence gates.",
+		],
+		confirmLabel: "Change severity and notify",
+		onConfirm: Message.ClickedConfirmSeverity(),
+	})
 
 const isNotFound = (failure: { readonly _tag: string }) =>
 	failure._tag === "@maple/http/errors/ErrorIssueNotFoundError"

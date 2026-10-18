@@ -160,7 +160,10 @@ export const definePage = <
 	const isOwnPageMessage = Schema.is(schemas.Message)
 	/** A toast's action is the page's own Message; it travels wrapped, like every page Message. */
 	const wrapOut = (out: PageOutMessage): PageOutMessage =>
-		out._tag === "RequestedToast" && out.action !== null && out.action !== undefined && isOwnPageMessage(out.action.message)
+		out._tag === "RequestedToast" &&
+		out.action !== null &&
+		out.action !== undefined &&
+		isOwnPageMessage(out.action.message)
 			? { ...out, action: { ...out.action, message: wrap(out.action.message) } }
 			: out
 

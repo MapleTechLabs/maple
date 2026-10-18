@@ -3,7 +3,7 @@ import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { Clock, Effect } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../data/integration-statuses"
-import { ServicesFacetsProbe } from "../data/services-facets-probe"
+import { loadServicesFacets } from "../data/services-facets-probe"
 import { SessionTenant } from "../data/session-tenant"
 import { MapleInternalApiClient } from "../platform/api-clients"
 import { Message } from "./message"
@@ -101,7 +101,7 @@ export const LoadNamespaces = Command.define("LoadNamespaces", {
 			startTime: formatWarehouseDateTime(now - 24 * 60 * 60 * 1000),
 			endTime: formatWarehouseDateTime(now),
 		})
-		const response = yield* (yield* ServicesFacetsProbe).load(range)
+		const response = yield* loadServicesFacets(range)
 		const namespaces = response.data.namespaces.map((facet) => facet.name).filter((name) => name !== "")
 		return Message.SucceededLoadNamespaces({ namespaces })
 	}).pipe(failed(Message.FailedLoadNamespaces())),

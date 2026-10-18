@@ -17,6 +17,8 @@ export interface ActorIdentity {
 	readonly kind: "user" | "agent"
 	readonly internal: boolean
 	readonly name: string
+	/** The model for an agent (or its raw name behind a friendly label); people have none here. */
+	readonly detail: string | null
 	readonly initials: string
 	readonly seed: string
 }
@@ -35,6 +37,7 @@ export const resolveActorIdentity = (actor: ActorDocument): ActorIdentity => {
 			kind: "agent",
 			internal: label !== null,
 			name,
+			detail: actor.model ?? (label ? actor.agentName : null),
 			initials: initialsFrom(name),
 			seed: actor.agentName ?? actor.id,
 		}
@@ -44,6 +47,7 @@ export const resolveActorIdentity = (actor: ActorDocument): ActorIdentity => {
 		kind: "user",
 		internal: false,
 		name: shortId(raw),
+		detail: null,
 		initials: raw
 			.replace(/^user_/, "")
 			.slice(0, 2)
@@ -58,10 +62,12 @@ export const identityAvatar = <M>(
 	h: HtmlBuilder<M>,
 	identity: ActorIdentity,
 	size: keyof typeof SIZE_CLASS = "sm",
+	className?: string,
 ): Html => {
 	const base = cn(
 		"inline-flex shrink-0 items-center justify-center rounded-full font-medium select-none",
 		SIZE_CLASS[size],
+		className,
 	)
 	if (identity.kind === "agent") {
 		return h.span(
@@ -91,3 +97,21 @@ export const actorAvatar = <M>(
 /** `ActorChip`'s empty form. */
 export const noActor = <M>(h: HtmlBuilder<M>): Html =>
 	h.span([h.Class("text-xs text-muted-foreground")], [EMPTY_VALUE])
+
+/** `ActorChip`: avatar and name; a person outside the directory has no detail, so no tooltip. */
+export const actorChip = <M>(h: HtmlBuilder<M>, actor: ActorDocument | null, className?: string): Html => {
+	if (actor === null) return noActor(h)
+	const identity = resolveActorIdentity(actor)
+	return h.span(
+		[
+			h.Class(
+				cn(
+					"inline-flex max-w-full items-center gap-1.5 align-middle text-xs",
+					identity.kind === "agent" ? AGENT_ACCENT.text : "text-muted-foreground",
+					className,
+				),
+			),
+		],
+		[identityAvatar(h, identity), h.span([h.Class("truncate font-medium")], [identity.name])],
+	)
+}

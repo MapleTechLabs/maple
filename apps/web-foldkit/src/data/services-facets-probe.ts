@@ -1,43 +1,42 @@
-import { getServicesFacets, type ServicesFacetsResponse } from "@maple/web-data/warehouse/services"
-import { WarehouseExecutor } from "@maple/web-data/warehouse/warehouse-services"
-import { Context, Effect, Layer, SynchronizedRef } from "effect"
+import { getServicesFacets } from "@maple/web-data/warehouse/services"
+import { Effect, Schema } from "effect"
+import { IdleTtl } from "./idle-ttl"
+import { ReadCache } from "./read-cache"
+import type { RequestKey } from "./request-key"
 import type { TimeWindow } from "./time-range"
 
+/** The operation the pages key the facets slot under: `requestKey(org, SERVICES_FACETS, { data })`. */
+export const SERVICES_FACETS = "getServicesFacets"
+
+const FacetItem = Schema.Struct({ name: Schema.String, count: Schema.Number })
+
+/** `ServicesFacetsResponse` (`@maple/web-data/warehouse/services`), as the cache checks it. */
+export const ServicesFacetsResponse = Schema.Struct({
+	data: Schema.Struct({
+		environments: Schema.Array(FacetItem),
+		namespaces: Schema.Array(FacetItem),
+		commitShas: Schema.Array(FacetItem),
+		services: Schema.Array(FacetItem),
+	}),
+})
+
 /**
- * The snapped 24 h services facets probe that the Overview page and the shell's namespace list both
- * read. apps/web's atom cache answers the second reader without a request; this does the same: one
- * request per window, shared while in flight and kept after, until a reader asks for a refresh.
+ * `getServicesFacetsResultAtom({ data: window })`, which the Overview, the services list, the shell's
+ * namespace list and the chat read: through the read cache, so one window is requested once.
  */
-export class ServicesFacetsProbe extends Context.Service<
-	ServicesFacetsProbe,
-	{
-		readonly load: (
-			window: TimeWindow,
-			options?: { readonly refresh?: boolean },
-		) => Effect.Effect<ServicesFacetsResponse, unknown>
-	}
->()("@maple/web-foldkit/ServicesFacetsProbe") {
-	static readonly layer = Layer.effect(
-		this,
-		Effect.gen(function* () {
-			const context = yield* Effect.context<WarehouseExecutor>()
-			const entries = yield* SynchronizedRef.make(
-				new Map<string, Effect.Effect<ServicesFacetsResponse, unknown>>(),
-			)
-			const load = (window: TimeWindow, options?: { readonly refresh?: boolean }) =>
-				Effect.flatten(
-					SynchronizedRef.modifyEffect(entries, (map) => {
-						const key = `${window.startTime}|${window.endTime}`
-						const existing = map.get(key)
-						if (existing !== undefined && options?.refresh !== true)
-							return Effect.succeed([existing, map] as const)
-						return Effect.map(
-							Effect.cached(Effect.provide(getServicesFacets({ data: window }), context)),
-							(cached) => [cached, new Map(map).set(key, cached)] as const,
-						)
-					}),
-				)
-			return { load }
-		}),
-	)
-}
+export const loadServicesFacets = (
+	window: TimeWindow,
+	options?: { readonly refresh?: boolean; readonly key?: RequestKey },
+) =>
+	Effect.flatMap(Effect.service(ReadCache), (cache) => {
+		const spec = {
+			idleTtlMs: IdleTtl.servicesFacets,
+			schema: ServicesFacetsResponse,
+			refresh: options?.refresh === true,
+		}
+		const load = getServicesFacets({ data: window })
+		// A page passes its slot key (its org); the shell and the chat read under the open org.
+		return options?.key === undefined
+			? cache.readInOrg({ ...spec, operation: SERVICES_FACETS, input: { data: window } }, load)
+			: cache.read({ ...spec, key: options.key }, load)
+	})

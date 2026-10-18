@@ -1,18 +1,13 @@
 import { colorByFromId, colorByLabel, DEFAULT_COLOR_BY } from "@maple/ui/components/traces/color-by"
 import { viewportBounds } from "@maple/ui/components/traces/clamp-viewport"
 import { MINIMAP_HEIGHT, TIME_AXIS_HEIGHT } from "@maple/ui/components/traces/trace-timeline-types"
-import { formatDurationAtStep } from "@maple/ui/lib/format"
-import { cn } from "@maple/ui/lib/utils"
-import {
-	selectTriggerIconClassName,
-	selectTriggerVariants,
-	selectValueStyles,
-} from "@maple/ui/styles/ui/select"
+import { countLabel, formatDurationAtStep } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../../ui/button"
 import { icon } from "../../../../ui/icon"
-import { SR_ONLY_STYLE } from "../../../../ui/overlay/transition"
+import * as SelectView from "../../../../ui/select-view"
+import type { SpanNodeData } from "../trace-data"
 import { depthControls } from "../depth-controls"
 import { collectMinimapSpans } from "./layout"
 import { Message } from "./message"
@@ -66,50 +61,103 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 		],
 	)
 
-/**
- * `ColorByPicker`'s closed trigger, Base UI Select markup.
- * TODO(color-by-popup): the option list is not ported; `ui/select` needs a trigger prefix
- * ("Color:") and the `sm` size before this can sit on it.
- */
-const colorByTrigger = (h: H, model: Model, triggerId: string): ReadonlyArray<Html> => [
-	h.button(
-		[
-			h.AriaExpanded(false),
-			h.AriaHasPopup("listbox"),
-			h.Class(
-				cn(
-					selectTriggerVariants({
-						size: "sm",
-						className: "h-5 min-w-0 text-3xs gap-1 px-2 py-0 rounded-md",
-					}),
-				),
-			),
-			h.DataAttribute("slot", "select-trigger"),
-			h.Id(triggerId),
-			h.Role("combobox"),
-			h.Tabindex(0),
-			h.Type("button"),
-		],
-		[
-			h.span([h.Class("text-muted-foreground")], ["Color:"]),
-			h.span(
-				[h.Class(selectValueStyles), h.DataAttribute("slot", "select-value")],
-				[colorByLabel(colorByFromId(model.colorBy) ?? DEFAULT_COLOR_BY)],
-			),
-			h.span(
-				[h.AriaHidden(true), h.DataAttribute("slot", "select-icon")],
-				[icon(h, "ChevronExpandYIcon", { className: selectTriggerIconClassName })],
-			),
-		],
-	),
-	h.input([
-		h.AriaHidden(true),
-		h.Id(`${triggerId}-hidden-input`),
-		h.Style(SR_ONLY_STYLE),
-		h.Tabindex(-1),
-		h.Value(model.colorBy),
-	]),
+type AttributeKey = Readonly<{ kind: "spanAttribute" | "resourceAttribute"; key: string; count: number }>
+
+const MAX_KEYS_PER_SOURCE = 20
+
+const countKeys = (
+	spans: ReadonlyArray<SpanNodeData>,
+	read: (span: SpanNodeData) => Readonly<Record<string, string>>,
+) => {
+	const counts = new Map<string, number>()
+	const visit = (span: SpanNodeData): void => {
+		Object.keys(read(span)).forEach((key) => counts.set(key, (counts.get(key) ?? 0) + 1))
+		span.children.forEach(visit)
+	}
+	spans.forEach(visit)
+	return [...counts.entries()]
+		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+		.slice(0, MAX_KEYS_PER_SOURCE)
+}
+
+/** `useTraceAttributeKeys`: the trace's commonest span and resource attribute keys, 20 of each. */
+const attributeKeys = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<AttributeKey> => [
+	...countKeys(rootSpans, (span) => span.spanAttributes).map(([key, count]) => ({
+		kind: "spanAttribute" as const,
+		key,
+		count,
+	})),
+	...countKeys(rootSpans, (span) => span.resourceAttributes).map(([key, count]) => ({
+		kind: "resourceAttribute" as const,
+		key,
+		count,
+	})),
 ]
+
+const PRESETS = ["preset:service", "preset:spanKind", "preset:statusCode"] as const
+
+/** `ColorByPicker`'s groups: presets, then the trace's span and resource attribute keys. */
+const colorByEntries = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<SelectView.SelectEntry> => {
+	const keys = attributeKeys(rootSpans)
+	const group = (label: string, kind: AttributeKey["kind"]): ReadonlyArray<SelectView.SelectEntry> => {
+		const items = keys.filter((key) => key.kind === kind)
+		return items.length === 0
+			? []
+			: [
+					{ _tag: "Separator" },
+					{
+						_tag: "Group",
+						label,
+						isSelectLabel: true,
+						items: items.map((key) => ({
+							value: `${kind === "spanAttribute" ? "span" : "resource"}:${key.key}`,
+							label: key.key,
+							title: countLabel(key.count, "span"),
+						})),
+					},
+				]
+	}
+	return [
+		{
+			_tag: "Group",
+			label: "Presets",
+			isSelectLabel: true,
+			items: PRESETS.map((id) => ({
+				value: id,
+				label: colorByLabel(colorByFromId(id) ?? DEFAULT_COLOR_BY),
+			})),
+		},
+		...group("Span attributes", "spanAttribute"),
+		...group("Resource attributes", "resourceAttribute"),
+	]
+}
+
+/** `ColorByPicker`: a small Select whose trigger reads "Color: Service". */
+const colorByPicker = (h: H, model: Model): Html =>
+	h.submodel({
+		slotId: model.colorBySelect.id,
+		model: model.colorBySelect,
+		view: SelectView.view,
+		viewInputs: {
+			entries: colorByEntries(model.rootSpans),
+			size: "sm",
+			labelledBy: SelectView.selectLabelId(model.colorBySelect.id),
+			className: "h-5 min-w-0 text-3xs gap-1 px-2 py-0 rounded-md",
+			leading: [h.span([h.Class("text-muted-foreground")], ["Color:"])],
+			renderValue: (value) => [colorByLabel(colorByFromId(value) ?? DEFAULT_COLOR_BY)],
+			renderItem: (option) =>
+				option.value.startsWith("span:")
+					? [h.span([h.Class("font-mono")], [option.label])]
+					: option.value.startsWith("resource:")
+						? [
+								h.span([h.Class("text-muted-foreground mr-1")], ["R:"]),
+								h.span([h.Class("font-mono")], [option.label]),
+							]
+						: [option.label],
+			toView: (parts) => h.span([h.Class("contents")], parts),
+		},
+		toParentMessage: (message) => Message.GotColorBySelectMessage({ message }),
+	})
 
 export type ToolbarIds = Readonly<{
 	depth: readonly [string, string, string, string]
@@ -179,7 +227,7 @@ export const toolbar = (h: H, model: Model, visibleSpanCount: number, ids: Toolb
 									],
 								),
 							]),
-					...colorByTrigger(h, model, ids.colorBy),
+					colorByPicker(h, model),
 				],
 			),
 		],

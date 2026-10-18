@@ -9,10 +9,13 @@ import * as TraceFlow from "../../../service-map/trace-flow/trace-flow"
 import * as Resizable from "../../../ui/resizable"
 import * as Tabs from "../../../ui/tabs"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { copyToast } from "../../kit/clipboard"
 import {
+	CopyTraceId,
 	correlationWindow,
 	decodeTraceId,
 	FetchHierarchy,
+	spanHierarchyKey,
 	FetchLogsCount,
 	FetchProductEvents,
 	FetchReplays,
@@ -174,22 +177,26 @@ const followTrace = (model: Model, context: PageContext, trace: LoadedTrace): Re
 					(logsCount) => ({ logsCount }),
 					() => FetchLogsCount({ key: logsKey, ...input }),
 				),
-				...step(
-					model.productEvents,
-					listKey,
-					(productEvents) => ({ productEvents }),
-					() => FetchProductEvents({ key: listKey, ...input }),
-				),
+				...(model.isPeek
+					? []
+					: step(
+							model.productEvents,
+							listKey,
+							(productEvents) => ({ productEvents }),
+							() => FetchProductEvents({ key: listKey, ...input }),
+						)),
 			]
 		},
 	})
 	const steps: ReadonlyArray<Step> = [
-		...step(
-			model.spanEvents,
-			eventsKey,
-			(spanEvents) => ({ spanEvents }),
-			() => FetchSpanEvents({ key: eventsKey, ...eventsInput }),
-		),
+		...(model.isPeek
+			? []
+			: step(
+					model.spanEvents,
+					eventsKey,
+					(spanEvents) => ({ spanEvents }),
+					() => FetchSpanEvents({ key: eventsKey, ...eventsInput }),
+				)),
 		...step(
 			model.replaySessionId,
 			replaysKey,
@@ -208,9 +215,7 @@ const requestHierarchy = (model: Model, context: PageContext): Return =>
 	Option.match(decodeTraceId(model.traceId), {
 		onNone: () => ({ model }),
 		onSome: (traceId) => {
-			const key = requestKey(context.orgId, "getSpanHierarchy", {
-				data: { traceId, timestamp: model.search.t },
-			})
+			const key = spanHierarchyKey(context.orgId, traceId, model.search.t)
 			return Option.match(Keyed.request(model.hierarchy, key, "Load"), {
 				onNone: () => ({ model }),
 				onSome: (hierarchy) => ({
@@ -238,7 +243,7 @@ const onLoaded = (model: Model, context: PageContext): Return =>
 
 // ENTRY POINTS
 
-export const init = (route: Route, context: PageContext): Return => {
+export const init = (route: Route, context: PageContext, isPeek = false): Return => {
 	const model: Model = {
 		traceId: route.traceId,
 		search: route.search,
@@ -250,12 +255,15 @@ export const init = (route: Route, context: PageContext): Return => {
 		replaySessionId: Keyed.idle(),
 		colorBy: DEFAULT_COLOR_BY,
 		tabs: Tabs.init({ idBase: 23, values: TAB_VALUES, selected: route.search.view ?? "timeline" }),
-		split: Resizable.init("trace-split", "horizontal", [100]),
+		split: isPeek
+			? Resizable.init("trace-peek-split", "vertical", [100])
+			: Resizable.init("trace-split", "horizontal", [100]),
 		splitWidth: null,
 		timeline: null,
 		waterfall: null,
 		flow: null,
 		spanPanel: null,
+		isPeek,
 	}
 	const requested = requestHierarchy(model, context)
 	return { model: requested.model, commands: [ReadClock(), ...(requested.commands ?? [])] }
@@ -345,6 +353,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchReplays: ({ key, result }) => ({
 			model: withSlot(model, "replaySessionId", Keyed.accept(model.replaySessionId, key, result)),
 		}),
+		ClickedCopyTraceId: () => ({ model, commands: [CopyTraceId({ traceId: model.traceId })] }),
+		CompletedCopyTraceId: ({ isOk }) => ({ model, outMessage: copyToast("trace ID", isOk) }),
 		GotTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(model.tabs, inner)
 			const lifted: Return = {

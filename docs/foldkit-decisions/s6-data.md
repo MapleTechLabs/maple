@@ -70,8 +70,34 @@ TTL anyway, which is why `withRetention` (LRU 400, 30 min) and `useRetainedResul
 serve the previous success as `waiting` while the real fetch runs and never suppress a request.
 Their value is "no skeleton flash", which `Keyed.request` gives inside a page (`Refreshing` with
 the previous data on a key change, `Loading` on an org change, as `useRetainedResult` does).
-Lost: data surviving a navigation away and back. If a parity scenario needs it, add a
-`RetainedResults` resource read by the route-entry Command, not a cache in `update`.
+Lost: data surviving a navigation away and back. Superseded for that case by "Read cache" below.
+
+## Read cache
+
+Status: **decided** · 2026-10-18. Parity showed the loss above: a page reading what the previous
+page read (releases then services commit lookups, a trace chip then the trace) sent it twice.
+
+- `ReadCache` (`data/read-cache.ts`) is one resource: entries by `RequestKey` (org + operation +
+  input, the atom key), each a `Deferred` of the answer. A reader joins an in-flight entry, reuses a
+  live one, or loads (forked in the cache's scope). Failures reach their readers and are dropped.
+- TTL is legacy's idle TTL per family (`data/idle-ttl.ts`), counted from the entry's last read or
+  release. The root holds a page instance's keys (`Preload.held`, the `args.key` of every Command
+  it sends) and releases them in `ReleaseReads` when the instance changes, as an unmount starts an
+  atom's idle TTL. A preload's keys are released when its 30 s hold ends.
+- A cached value must pass the reader's schema (`Schema.is`), so two readers sharing a key never
+  trade wrong shapes; a mismatch loads again. LRU bound 400 (`withRetention`).
+- Org: `ReleaseReads` names the new instance's org and `scopeTo` drops other orgs' entries; reads
+  for another org's key also drop them. `readInOrg` keys a read under the open org for readers
+  without one (the shell's namespace list, the chat's known services).
+- Rules: a cached read's Command carries `key` (so it is held and released) and keys cross-page
+  reads through one builder (`commitDetailKey`, `spanHierarchyKey`); a `"Refresh"` with an
+  unchanged key passes `refresh`. Window-keyed reads re-key on refresh (unsnapped window).
+- Preload is the same mechanism: a `preload`'s Commands read through the cache and their result
+  Messages are dropped; the opening page's own reads join or reuse them. Every `preload` Command
+  must be a cached read. `update` stays pure: the clock is read inside the cache's Effects.
+- Hand-offs are the same mechanism too: the traces peek runs the trace page's own cached reads,
+  so Open trace joins them, even mid-flight (no `HandedOff` out-message).
+- Not cached: reads no other page or revisit shares. Move a family on when parity shows a repeat.
 
 Refresh (`useAtomRefresh` 108 calls, `useRefreshableAtomValue` 103): one explicit page Message
 (`ClickedRefresh`) re-resolves the window unsnapped (legacy's `refreshVersion`) and applies

@@ -4,15 +4,19 @@ import {
 	type ListTracesInput,
 	type Trace,
 } from "@maple/web-data/warehouse/traces"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
+import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "../../../data/load-failure"
+import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { TracesSearch } from "../../../route/search"
+import { portalToBody } from "../../../ui/overlay/portal"
+import { autocompleteLookup, AutocompleteLookup } from "../../kit/autocomplete-lookups"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import type { Search } from "./derive"
 import { Message, RequestMode } from "./message"
-import type { TraceRow, TracesPage } from "./model"
+import { type TraceRow, TracesFacets, type TracesPage } from "./model"
 
 /** `useInfiniteTraces`' page size; the first page is the atom, the rest direct fetches. */
 export const PAGE_SIZE = 100
@@ -41,8 +45,13 @@ export const FetchFacets = Command.define("FetchTracesFacets", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
-		getTracesFacets({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
-			Effect.map((response) => response.data),
+		readThrough(
+			{ key, idleTtlMs: IdleTtl.tracesFacets, schema: TracesFacets },
+			Effect.map(
+				getTracesFacets({ data: { startTime: window.startTime, endTime: window.endTime } }),
+				(response) => response.data,
+			),
+		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
@@ -174,4 +183,212 @@ export const CompleteReloadSpin = Command.define("CompleteTracesReloadSpin", {
 	messages: [Message.CompletedReloadSpin],
 	execute: ({ version }) =>
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
+})
+
+/**
+ * `onPeek`: a plain click on a row's stretched link peeks; a modified, middle or right click still
+ * follows it. Foldkit links route through a document listener that skips a prevented click.
+ */
+export const MountPeekRows = Mount.defineStream("MountTracesPeekRows", {
+	messages: [Message.ClickedPeekRow],
+	execute: ({ element }) =>
+		Stream.callback<typeof Message.ClickedPeekRow.Type>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const onClick = (event: Event) => {
+						if (!(event instanceof MouseEvent)) return
+						const isPlain =
+							event.button === 0 &&
+							!event.metaKey &&
+							!event.ctrlKey &&
+							!event.shiftKey &&
+							!event.altKey
+						const link =
+							event.target instanceof Element
+								? event.target.closest("a[data-peek-index]")
+								: null
+						const index = Number(link?.getAttribute("data-peek-index") ?? Number.NaN)
+						if (!isPlain || !Number.isInteger(index)) return
+						event.preventDefault()
+						Queue.offerUnsafe(queue, Message.ClickedPeekRow({ index }))
+					}
+					element.addEventListener("click", onClick)
+					return onClick
+				}),
+				(onClick) => Effect.sync(() => element.removeEventListener("click", onClick)),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
+})
+
+/** One of `AutocompleteValuesProvider`'s lookups, over the list's window. */
+export const FetchAdvancedLookup = Command.define("FetchTracesAdvancedLookup", {
+	args: { key: Schema.String, lookup: AutocompleteLookup, window: TimeWindow },
+	messages: [Message.CompletedAdvancedLookup],
+	execute: ({ key, lookup, window }) =>
+		autocompleteLookup(lookup, window).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedAdvancedLookup({ key, lookup, result })),
+		),
+})
+
+export const ADVANCED_TEXTAREA_ID = "traces-advanced-where"
+
+/** A picked suggestion puts the caret after it (`handleApplySuggestion`'s rAF focus). */
+export const PlaceAdvancedCursor = Command.define("PlaceTracesAdvancedCursor", {
+	args: { cursor: Schema.Number },
+	messages: [Message.CompletedPlaceAdvancedCursor],
+	execute: ({ cursor }) =>
+		Effect.sync(() => {
+			const textarea = document.getElementById(ADVANCED_TEXTAREA_ID)
+			if (textarea instanceof HTMLTextAreaElement) {
+				textarea.focus()
+				textarea.setSelectionRange(cursor, cursor)
+			}
+			return Message.CompletedPlaceAdvancedCursor()
+		}),
+})
+
+type EditorMessage =
+	| typeof Message.EditedAdvanced.Type
+	| typeof Message.FocusedAdvanced.Type
+	| typeof Message.BlurredAdvanced.Type
+	| typeof Message.MovedAdvancedCursor.Type
+	| typeof Message.PressedAdvancedKey.Type
+	| typeof Message.SubmittedAdvanced.Type
+
+/**
+ * The `WhereClauseEditor` textarea's events with what Foldkit's handlers do not carry: the caret,
+ * and the keys the suggestions take (only while their listbox is open, read off `aria-expanded`).
+ * Enter never inserts a newline; ⌘/Ctrl+Enter applies the filter.
+ */
+export const MountWhereEditor = Mount.defineStream("MountTracesWhereEditor", {
+	messages: [
+		Message.EditedAdvanced,
+		Message.FocusedAdvanced,
+		Message.BlurredAdvanced,
+		Message.MovedAdvancedCursor,
+		Message.PressedAdvancedKey,
+		Message.SubmittedAdvanced,
+	],
+	execute: ({ element }) =>
+		Stream.callback<EditorMessage>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const textarea =
+						element instanceof HTMLTextAreaElement ? element : element.querySelector("textarea")
+					if (textarea === null) return null
+					const caret = () => textarea.selectionStart ?? textarea.value.length
+					const send = (message: EditorMessage) => Queue.offerUnsafe(queue, message)
+					const listeners: ReadonlyArray<readonly [string, (event: Event) => void]> = [
+						[
+							"input",
+							() => send(Message.EditedAdvanced({ value: textarea.value, cursor: caret() })),
+						],
+						["focus", () => send(Message.FocusedAdvanced({ cursor: caret() }))],
+						["blur", () => send(Message.BlurredAdvanced())],
+						["click", () => send(Message.MovedAdvancedCursor({ cursor: caret() }))],
+						["select", () => send(Message.MovedAdvancedCursor({ cursor: caret() }))],
+						[
+							"keyup",
+							(event) => {
+								const isOpen = textarea.getAttribute("aria-expanded") === "true"
+								if (
+									event instanceof KeyboardEvent &&
+									isOpen &&
+									(event.key === "ArrowDown" || event.key === "ArrowUp")
+								)
+									return
+								send(Message.MovedAdvancedCursor({ cursor: caret() }))
+							},
+						],
+						[
+							"keydown",
+							(event) => {
+								if (!(event instanceof KeyboardEvent)) return
+								if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+									event.preventDefault()
+									send(Message.SubmittedAdvanced())
+									return
+								}
+								const isOpen = textarea.getAttribute("aria-expanded") === "true"
+								if (event.key === "Enter") {
+									event.preventDefault()
+									if (isOpen) send(Message.PressedAdvancedKey({ key: "Enter" }))
+									return
+								}
+								if (!isOpen) return
+								if (["ArrowDown", "ArrowUp", "Tab", "Escape"].includes(event.key)) {
+									event.preventDefault()
+									event.stopPropagation()
+									send(Message.PressedAdvancedKey({ key: event.key }))
+								}
+							},
+						],
+					]
+					listeners.forEach(([type, listener]) => textarea.addEventListener(type, listener))
+					if (document.activeElement === textarea)
+						send(Message.FocusedAdvanced({ cursor: caret() }))
+					return { textarea, listeners }
+				}),
+				(state) =>
+					Effect.sync(() =>
+						state?.listeners.forEach(([type, listener]) =>
+							state.textarea.removeEventListener(type, listener),
+						),
+					),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
+})
+
+const LISTBOX_MAX_HEIGHT = 208
+const LISTBOX_GAP = 4
+const LISTBOX_MIN_SPACE_BELOW = 160
+
+/** `computeListboxPosition`: under the textarea, or above it when there is no room below. */
+const placeListbox = (listbox: HTMLElement, textarea: Element) => {
+	const rect = textarea.getBoundingClientRect()
+	const viewportHeight = window.innerHeight
+	const spaceBelow = viewportHeight - rect.bottom - LISTBOX_GAP
+	const spaceAbove = rect.top - LISTBOX_GAP
+	const flipUp = spaceBelow < LISTBOX_MIN_SPACE_BELOW && spaceAbove > spaceBelow
+	const available = flipUp ? spaceAbove : spaceBelow
+	listbox.style.left = `${rect.left}px`
+	listbox.style.width = `${rect.width}px`
+	listbox.style.maxHeight = `${Math.max(0, Math.min(LISTBOX_MAX_HEIGHT, available - LISTBOX_GAP))}px`
+	if (flipUp) listbox.style.bottom = `${viewportHeight - rect.top + LISTBOX_GAP}px`
+	else listbox.style.top = `${rect.bottom + LISTBOX_GAP}px`
+}
+
+/** The suggestion listbox, portaled to `<body>` and pinned to the textarea while it resizes or scrolls. */
+export const MountSuggestions = Mount.defineStream("MountTracesWhereSuggestions", {
+	messages: [Message.CompletedPlaceAdvancedCursor],
+	execute: ({ element }) =>
+		Stream.unwrap(
+			Effect.gen(function* () {
+				yield* portalToBody(element)
+				yield* Effect.acquireRelease(
+					Effect.sync(() => {
+						const textarea = document.getElementById(ADVANCED_TEXTAREA_ID)
+						const measure = () => {
+							if (textarea !== null && element instanceof HTMLElement)
+								placeListbox(element, textarea)
+						}
+						measure()
+						const observer = new ResizeObserver(measure)
+						if (textarea !== null) observer.observe(textarea)
+						window.addEventListener("resize", measure)
+						window.addEventListener("scroll", measure, true)
+						return { observer, measure }
+					}),
+					({ observer, measure }) =>
+						Effect.sync(() => {
+							observer.disconnect()
+							window.removeEventListener("resize", measure)
+							window.removeEventListener("scroll", measure, true)
+						}),
+				)
+				return Stream.never
+			}),
+		),
 })

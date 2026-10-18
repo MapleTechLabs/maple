@@ -47,7 +47,7 @@ const TAB_ICON = new Map<string, IconName>([
 	["flow", "NetworkNodesIcon"],
 ])
 
-const tabPanel = (h: HtmlBuilder<Message>, model: Model, value: string) => {
+export const tabPanel = (h: HtmlBuilder<Message>, model: Model, value: string) => {
 	if (value !== model.tabs.selected) return undefined
 	if (value === "timeline" && model.timeline !== null)
 		return [
@@ -78,7 +78,7 @@ const tabPanel = (h: HtmlBuilder<Message>, model: Model, value: string) => {
 	return undefined
 }
 
-const traceViewTabs = (h: HtmlBuilder<Message>, model: Model): Html =>
+export const traceViewTabs = (h: HtmlBuilder<Message>, model: Model): Html =>
 	h.submodel({
 		slotId: "trace-view-tabs",
 		model: model.tabs,
@@ -102,7 +102,7 @@ const traceViewTabs = (h: HtmlBuilder<Message>, model: Model): Html =>
 const anatomySlot = createLazy()
 const calloutSlot = createLazy()
 
-const anatomy = (h: HtmlBuilder<Message>, trace: LoadedTrace, timeZone: string, nowMs: number): Html =>
+export const anatomy = (h: HtmlBuilder<Message>, trace: LoadedTrace, timeZone: string, nowMs: number): Html =>
 	anatomyStrip(h, {
 		trace,
 		hasError: traceErrors(trace.data.rootSpans).spans.length > 0,
@@ -110,8 +110,11 @@ const anatomy = (h: HtmlBuilder<Message>, trace: LoadedTrace, timeZone: string, 
 		nowMs,
 	})
 
-const callout = (h: HtmlBuilder<Message>, trace: LoadedTrace, selectedSpanId: string | undefined): Html =>
-	errorCallout(h, traceErrors(trace.data.rootSpans), selectedSpanId)
+export const callout = (
+	h: HtmlBuilder<Message>,
+	trace: LoadedTrace,
+	selectedSpanId: string | undefined,
+): Html => errorCallout(h, traceErrors(trace.data.rootSpans), selectedSpanId)
 
 const body = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, trace: LoadedTrace): Html => {
 	const selected = selectedSpanOf(model)

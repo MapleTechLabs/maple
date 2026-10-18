@@ -47,6 +47,7 @@ export const Message = defineMessageUnion({
 	ElapsedPreloadDelay: { href: Schema.String, version: Schema.Number, nowMs: Schema.Number },
 	GotPreloadMessage: { message: PageMessage },
 	ExpiredPreloads: { keys: Schema.Array(Schema.String) },
+	CompletedReleaseReads: {},
 	LoadedSessionTimeRange: { orgId: Schema.String, value: SessionTimeRange, nowMs: Schema.Number },
 	CompletedWriteSessionTimeRange: { nowMs: Schema.Number },
 })

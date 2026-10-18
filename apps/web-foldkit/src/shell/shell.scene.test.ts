@@ -23,7 +23,7 @@ import { FocusElement, SaveNamespace, SaveSidebarState, SaveTheme } from "./comm
 import { LoadNamespaces } from "./data"
 import { Menu, Message, OutMessage } from "./message"
 import { init, type Model } from "./model"
-import { PositionMenu } from "./mounts"
+import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
 import { update } from "./update"
 import * as Tooltip from "../ui/tooltip"
 import { CheckDeployedCommit, ReloadPage } from "./version"
@@ -79,6 +79,7 @@ describe("sidebar collapse", () => {
 		scene(
 			{ update, view },
 			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			expect(sidebar).toHaveAttr("data-state", "expanded"),
 			expect(role("link", { name: "Explore" })).toExist(),
 			click(toggle),
@@ -98,6 +99,7 @@ describe("sidebar collapse", () => {
 		scene(
 			{ update, view },
 			given(signedIn({ isSidebarOpen: false })),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			hover(settings),
 			Command.resolve(Tooltip.WaitOpenDelay, Tooltip.Message.ElapsedOpenDelay({ generation: 1 })),
 			Mount.resolve(Tooltip.MountTooltip, Tooltip.Message.CompletedMountTooltip()),
@@ -121,8 +123,10 @@ describe("sidebar collapse", () => {
 			expect(sidebar).toBeAbsent(),
 			click(toggle),
 			Command.expectNone(),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			expect(role("dialog", { name: "Sidebar" })).toExist(),
 			click(selector('[data-slot="sheet-backdrop"]')),
+			Mount.expectEnded(MeasureSidebarOverflow),
 			expect(role("dialog", { name: "Sidebar" })).toBeAbsent(),
 		)
 	})
@@ -133,6 +137,7 @@ describe("menus", () => {
 		scene(
 			{ update, view },
 			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			click(role("button", { name: /Root$/ })),
 			expect(role("button", { name: /Root$/ })).toHaveAttr("aria-expanded", "true"),
 			expect(role("menu")).toExist(),
@@ -153,6 +158,7 @@ describe("menus", () => {
 		scene(
 			{ update, view },
 			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			click(role("button", { name: /Root$/ })),
 			Mount.resolve(PositionMenu, position(Menu.User())),
 			expect(role("switch", { name: "Toggle dark mode" })).toBeChecked(),
@@ -171,6 +177,7 @@ describe("org switcher", () => {
 		scene(
 			{ update, view },
 			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			click(role("button", { name: /Self Hosted/ })),
 			Command.expectExact(LoadNamespaces()),
 			Mount.resolve(PositionMenu, position(Menu.Org())),
@@ -203,6 +210,7 @@ describe("app update banner", () => {
 		scene(
 			{ update, view },
 			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			expect(role("alert")).toBeAbsent(),
 			Subscription.emit(Message.BecameTabVisible()),
 			Command.resolve(
@@ -233,6 +241,7 @@ describe("infrastructure section", () => {
 					integrations: { cloudflare: true, railway: false, planetscale: false, gcp: false },
 				}),
 			),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			expect(role("link", { name: "Hosts" })).toExist(),
 			expect(role("link", { name: "Cloudflare" })).toExist(),
 			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),

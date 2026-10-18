@@ -70,8 +70,8 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			pagination: model.pagination.key === listKey && mode === "Load" ? model.pagination : freshPagination(listKey),
 		},
 		commands: [
-			...(Option.isSome(firstPage) ? [FetchFirstPage({ key: listKey, ...args })] : []),
-			...(Option.isSome(facets) ? [FetchFacets({ key: facetsKey, ...args })] : []),
+			...(Option.isSome(firstPage) ? [FetchFirstPage({ key: listKey, ...args, refresh: mode === "Refresh" })] : []),
+			...(Option.isSome(facets) ? [FetchFacets({ key: facetsKey, ...args, refresh: mode === "Refresh" })] : []),
 		],
 	}
 }

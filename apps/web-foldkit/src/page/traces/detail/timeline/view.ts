@@ -3,7 +3,7 @@ import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../../../ui/empty"
-import { MeasureTimelineBody } from "./command"
+import { MountAltToggle, MeasureTimelineBody } from "./command"
 import { type Bar, computeSearchMatches, computeTimeAxisTicks, ROW_PITCH, virtualRange } from "./layout"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -101,6 +101,7 @@ const body = (
 					h.div(
 						[
 							h.Class("relative w-full"),
+							h.OnMount(MountAltToggle()),
 							h.Style({
 								height: `${bars.length * ROW_PITCH}px`,
 								"--vp0": String(vp0),

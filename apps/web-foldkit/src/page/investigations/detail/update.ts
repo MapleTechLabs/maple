@@ -238,7 +238,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				commands: [
 					...Command.mapMessages(step.commands ?? [], (tooltip) => Message.GotTraceTooltipMessage({ message: tooltip })),
 					...(inner._tag === "FocusedTrigger" ? [CheckTipFocus({ triggerId: inner.triggerId })] : []),
-					...(isPreload ? [PreloadTrace({ traceId: intent })] : []),
+					...(isPreload ? [PreloadTrace({ orgId: context.orgId, traceId: intent })] : []),
 				],
 			}
 		},

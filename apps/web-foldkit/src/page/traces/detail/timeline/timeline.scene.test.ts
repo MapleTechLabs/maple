@@ -15,7 +15,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { SpanNodeData, TraceData } from "../trace-data"
-import { MeasureTimelineBody } from "./command"
+import { MeasureTimelineBody, MountAltToggle } from "./command"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
 import { init, setSelectedSpanId, update } from "./update"
@@ -73,6 +73,8 @@ const entered = (selectedSpanId: string | null = null): Model =>
 const view = withViewInputs(timelineView, { idPrefix: "t" })()
 const measured = () =>
 	Mount.resolve(MeasureTimelineBody, Message.MeasuredScroller({ width: 900, height: 400 }))
+const altToggle = () =>
+	Mount.resolve(MountAltToggle, Message.AltClickedToggleCollapse({ spanId: "no-such-span" }))
 
 describe("trace timeline", () => {
 	test("a small trace opens fully expanded, one row per span in the measured window", () => {
@@ -80,6 +82,7 @@ describe("trace timeline", () => {
 			{ update, view },
 			given(entered()),
 			measured(),
+			altToggle(),
 			expectView(selector('[data-row-id="00000000000000c1"]')).toExist(),
 			expectView(text("SELECT payments")).toExist(),
 		)
@@ -93,6 +96,7 @@ describe("trace timeline", () => {
 			{ update, view },
 			given(entered()),
 			measured(),
+			altToggle(),
 			click(role("button", { name: "Collapse all" })),
 			expectView(selector('[data-row-id="00000000000000b2"]')).not.toExist(),
 			expectView(selector('[data-row-id="00000000000000a1"]')).toExist(),
@@ -110,11 +114,27 @@ describe("trace timeline", () => {
 		expect(reopened.expandedSpanIds).toEqual(["00000000000000a1"])
 	})
 
+	test("⌥ on a toggle closes and reopens the whole subtree; a plain toggle only the span", () => {
+		const closed = update(
+			entered(),
+			Message.AltClickedToggleCollapse({ spanId: "00000000000000a1" }),
+		).model
+		expect(closed.expandedSpanIds).toEqual([])
+		const reopened = update(
+			closed,
+			Message.AltClickedToggleCollapse({ spanId: "00000000000000a1" }),
+		).model
+		expect(reopened.expandedSpanIds).toEqual(entered().expandedSpanIds)
+		const plain = update(closed, Message.ClickedToggleCollapse({ spanId: "00000000000000a1" })).model
+		expect(plain.expandedSpanIds).toEqual(["00000000000000a1"])
+	})
+
 	test("clicking a row asks the page to select its span", () => {
 		scene(
 			{ update, view },
 			given(entered()),
 			measured(),
+			altToggle(),
 			click(selector('[data-row-id="00000000000000b2"]')),
 			expectOutMessage(OutMessage.SelectedSpan({ spanId: "00000000000000b2" })),
 		)
@@ -125,6 +145,7 @@ describe("trace timeline", () => {
 			{ update, view },
 			given(entered()),
 			measured(),
+			altToggle(),
 			typeInto(role("textbox"), "GET"),
 			expectView(text("3 of 4")).toExist(),
 			expectView(role("button", { name: "Clear search" })).toExist(),

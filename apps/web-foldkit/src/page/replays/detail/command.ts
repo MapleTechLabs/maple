@@ -10,9 +10,12 @@ import { getSpanHierarchy } from "@maple/web-data/warehouse/traces"
 import { Clock, Effect, Option, Queue, Result, Schema, Stream } from "effect"
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { Command, Mount } from "foldkit"
+import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "../../../data/load-failure"
+import { readThrough } from "../../../data/read-cache"
 import { REPLAY_EVENTS, runReplayEngine } from "../kit/replay-engine-mount"
 import { Message } from "./message"
+import { EventRow, Manifest, ReplayDetail } from "./model"
 
 // The detail page's reads, each carrying its request key back (S6), and the player Mounts.
 
@@ -27,11 +30,16 @@ export const ResolveClock = Command.define("ResolveReplayClock", {
 })
 
 export const FetchDetail = Command.define("FetchReplayDetail", {
-	args: { key: Schema.String, sessionId: Schema.String, ...Window },
+	args: { key: Schema.String, refresh: Schema.Boolean, sessionId: Schema.String, ...Window },
 	messages: [Message.CompletedFetchDetail],
-	execute: ({ key, sessionId, windowStart, windowEnd }) =>
-		getReplay({ data: { sessionId, windowStart, windowEnd } }).pipe(
-			Effect.map((response) => response.data),
+	execute: ({ key, refresh, sessionId, windowStart, windowEnd }) =>
+		readThrough(
+			{ key, refresh, idleTtlMs: IdleTtl.replay, schema: Schema.NullOr(ReplayDetail) },
+			Effect.map(
+				getReplay({ data: { sessionId, windowStart, windowEnd } }),
+				(response) => response.data,
+			),
+		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchDetail({ key, result })),
@@ -39,15 +47,17 @@ export const FetchDetail = Command.define("FetchReplayDetail", {
 })
 
 export const FetchManifest = Command.define("FetchReplayManifest", {
-	args: { key: Schema.String, sessionId: Schema.String, ...Window },
+	args: { key: Schema.String, refresh: Schema.Boolean, sessionId: Schema.String, ...Window },
 	messages: [Message.CompletedFetchManifest],
-	execute: ({ key, sessionId, windowStart, windowEnd }) =>
-		getReplayManifest({ data: { sessionId, windowStart, windowEnd } }).pipe(
-			Effect.map((manifest) => ({
+	execute: ({ key, refresh, sessionId, windowStart, windowEnd }) =>
+		readThrough(
+			{ key, refresh, idleTtlMs: IdleTtl.replayManifest, schema: Manifest },
+			Effect.map(getReplayManifest({ data: { sessionId, windowStart, windowEnd } }), (manifest) => ({
 				chunks: manifest.chunks,
 				maxBytesPerRequest: manifest.max_bytes_per_request,
 				maxChunksPerRequest: manifest.max_chunks_per_request,
 			})),
+		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchManifest({ key, result })),
@@ -55,11 +65,16 @@ export const FetchManifest = Command.define("FetchReplayManifest", {
 })
 
 export const FetchTranscript = Command.define("FetchReplayTranscript", {
-	args: { key: Schema.String, sessionId: Schema.String, ...Window },
+	args: { key: Schema.String, refresh: Schema.Boolean, sessionId: Schema.String, ...Window },
 	messages: [Message.CompletedFetchTranscript],
-	execute: ({ key, sessionId, windowStart, windowEnd }) =>
-		getSessionTranscript({ data: { sessionId, windowStart, windowEnd } }).pipe(
-			Effect.map((response) => response.data),
+	execute: ({ key, refresh, sessionId, windowStart, windowEnd }) =>
+		readThrough(
+			{ key, refresh, idleTtlMs: IdleTtl.sessionTranscript, schema: Schema.Array(EventRow) },
+			Effect.map(
+				getSessionTranscript({ data: { sessionId, windowStart, windowEnd } }),
+				(response) => response.data,
+			),
+		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTranscript({ key, result })),

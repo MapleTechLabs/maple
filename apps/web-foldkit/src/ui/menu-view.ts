@@ -275,7 +275,11 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 			],
 			[
 				h.div(
-					[h.Class(dropdownMenuPositionerStyles), ...placement, h.Role("presentation")],
+					[
+					h.Class(cn(dropdownMenuPositionerStyles, !model.isOpen && "pointer-events-none")),
+					...placement,
+					h.Role("presentation"),
+				],
 					[
 						h.div(
 							[
@@ -340,12 +344,18 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 		[
 			h.div([
 				h.DataAttribute("base-ui-inert", ""),
+				// Base UI's `inert: !open`: a closing menu lets the pointer reach the page at once.
+				...(model.isOpen ? [] : [h.Inert(true)]),
 				h.Role("presentation"),
 				h.Style({ position: "fixed", inset: "0px", userSelect: "none" }),
 				h.OnClick(Message.PressedOutside()),
 			]),
 			h.div(
-				[h.Class(dropdownMenuPositionerStyles), ...placement, h.Role("presentation")],
+				[
+					h.Class(cn(dropdownMenuPositionerStyles, !model.isOpen && "pointer-events-none")),
+					...placement,
+					h.Role("presentation"),
+				],
 				[
 					focusGuard(h, "inside"),
 					h.div(

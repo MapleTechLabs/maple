@@ -7,6 +7,7 @@ import * as Chart from "../../../charts/chart"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
+import { commitDetailKey } from "../../kit/commit-card"
 import { resolveWindow, type TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
@@ -203,20 +204,24 @@ export const DEPLOYS_RAIL = 8
 export const DEPLOYS_EXPANDED = 50
 
 /** `commitQueryAtom(sha)` is cached per sha for the page's life; only missing ones are requested. */
-const commitsStep = (model: Model): Step => {
-	const missing = overviewShas(model).filter((sha) => model.commits[sha] === undefined)
-	return missing.length === 0
-		? NONE
-		: {
-				patch: {
-					commits: {
-						...model.commits,
-						...Object.fromEntries(missing.map((sha) => [sha, AsyncData.Loading()])),
+const commitsStep =
+	(context: PageContext) =>
+	(model: Model): Step => {
+		const missing = overviewShas(model).filter((sha) => model.commits[sha] === undefined)
+		return missing.length === 0
+			? NONE
+			: {
+					patch: {
+						commits: {
+							...model.commits,
+							...Object.fromEntries(missing.map((sha) => [sha, AsyncData.Loading()])),
+						},
 					},
-				},
-				commands: missing.map((sha) => FetchCommit({ sha })),
-			}
-}
+					commands: missing.map((sha) =>
+						FetchCommit({ key: commitDetailKey(context.orgId, sha), sha }),
+					),
+				}
+	}
 
 /** What `OverviewTab` mounts: the panels' reads, the refinement once sampling shows, the commits. */
 const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
@@ -267,7 +272,7 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 					(key) => FetchRefinement({ key, input }),
 				)
 	},
-	commitsStep,
+	commitsStep(context),
 ]
 
 const tabSteps = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Steps => {

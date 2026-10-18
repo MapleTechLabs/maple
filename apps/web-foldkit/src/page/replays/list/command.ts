@@ -2,13 +2,15 @@ import { getReplaysFacets, listReplays, type ListReplaysInput } from "@maple/web
 import { sessionTagsFromSearch } from "@maple/web/components/replays/session-tags"
 import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
+import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "../../../data/load-failure"
+import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { ReplaysSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { virtualizeSessions } from "../kit/virtualize"
 import { Message, RequestMode } from "./message"
-import type { ReplaysPage, Search } from "./model"
+import { ReplaysFacets, ReplaysPage, type Search } from "./model"
 
 /** `REPLAYS_PAGE_SIZE`. */
 export const PAGE_SIZE = 50
@@ -54,23 +56,29 @@ export const ResolveWindow = Command.define("ResolveReplaysWindow", {
 		),
 })
 
+const listPage = (input: ListReplaysInput) =>
+	Effect.map(listReplays({ data: input }), (page): ReplaysPage => ({
+		rows: page.data,
+		hasMore: page.hasMore,
+		nextCursor: page.nextCursor,
+	}))
+
 const fetchPage = (input: ListReplaysInput) =>
-	listReplays({ data: input }).pipe(
-		Effect.map(
-			(page): ReplaysPage => ({ rows: page.data, hasMore: page.hasMore, nextCursor: page.nextCursor }),
-		),
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-	)
+	listPage(input).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 const PageArgs = { key: Schema.String, search: ReplaysSearch, window: TimeWindow }
 
 export const FetchFirstPage = Command.define("FetchReplaysFirstPage", {
-	args: PageArgs,
+	args: { ...PageArgs, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFirstPage],
-	execute: ({ key, search, window }) =>
-		Effect.map(fetchPage({ ...filterInputs(search, window), limit: PAGE_SIZE }), (result) =>
-			Message.CompletedFetchFirstPage({ key, result }),
+	execute: ({ key, refresh, search, window }) =>
+		readThrough(
+			{ key, refresh, idleTtlMs: IdleTtl.listReplays, schema: ReplaysPage },
+			listPage({ ...filterInputs(search, window), limit: PAGE_SIZE }),
+		).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchFirstPage({ key, result })),
 		),
 })
 
@@ -85,10 +93,13 @@ export const FetchNextPage = Command.define("FetchReplaysNextPage", {
 })
 
 export const FetchFacets = Command.define("FetchReplaysFacets", {
-	args: PageArgs,
+	args: { ...PageArgs, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
-	execute: ({ key, search, window }) =>
-		getReplaysFacets({ data: filterInputs(search, window) }).pipe(
+	execute: ({ key, refresh, search, window }) =>
+		readThrough(
+			{ key, refresh, idleTtlMs: IdleTtl.replaysFacets, schema: ReplaysFacets },
+			getReplaysFacets({ data: filterInputs(search, window) }),
+		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),

@@ -9,8 +9,8 @@ import { getServiceHealthSnapshot } from "@maple/web-data/warehouse/services"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../data/load-failure"
-import { AnomalyServiceCounts } from "../../data/anomaly-service-counts"
-import { ServicesFacetsProbe } from "../../data/services-facets-probe"
+import { loadAnomalyServiceCounts } from "../../data/anomaly-service-counts"
+import { loadServicesFacets } from "../../data/services-facets-probe"
 import { TimeWindow } from "../../data/time-range"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { Message } from "./message"
@@ -99,10 +99,7 @@ export const FetchFacets = Command.define("FetchOverviewFacets", {
 	args: { key: Schema.String, window: TimeWindow, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
-		Effect.gen(function* () {
-			const probe = yield* ServicesFacetsProbe
-			return yield* probe.load(window, { refresh })
-		}).pipe(
+		loadServicesFacets(window, { refresh, key }).pipe(
 			Effect.map(({ data }) => ({
 				environments: data.environments.map((facet) => facet.name),
 				services: data.services.map((facet) => facet.name),
@@ -136,10 +133,7 @@ export const FetchAnomalies = Command.define("FetchOverviewAnomalyCounts", {
 	args: { key: Schema.String, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchAnomalies],
 	execute: ({ key, refresh }) =>
-		Effect.gen(function* () {
-			const counts = yield* AnomalyServiceCounts
-			return yield* counts.load({ refresh })
-		}).pipe(
+		loadAnomalyServiceCounts(key, { refresh }).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchAnomalies({ key, result })),

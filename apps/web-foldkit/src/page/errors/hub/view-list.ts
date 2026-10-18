@@ -5,8 +5,9 @@ import { button } from "../../../ui/button"
 import { toLoadFailure } from "../../../data/load-failure"
 import { errorState } from "../../../ui/error-state"
 import { skeletonList } from "../../../ui/skeleton"
-import { MountEmptyList } from "./command"
+import { MountEmptyList, MountRowSelect } from "./command"
 import { type ListStatus, type PagingState, pagingOf } from "./derive"
+import { bulkBar } from "./view-bulk"
 import { hubEmpty } from "./view-empty"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -96,6 +97,7 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 				[h.Key("empty"), h.Class("contents"), h.OnMount(MountEmptyList())],
 				[hubEmpty(h, model, inputs.isNarrowed)],
 			),
+			...bulkBar(h, model),
 		]
 	}
 	const ids = signals.map((signal) => signal.id)
@@ -111,7 +113,7 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 			[
 				signalHeader(h, selection),
 				h.div(
-					[h.Role("list"), h.Class("divide-y divide-border/40")],
+					[h.Role("list"), h.Class("divide-y divide-border/40"), h.OnMount(MountRowSelect())],
 					signals.map((signal) =>
 						h.div(
 							[h.Key(signal.id), h.Role("listitem")],
@@ -122,6 +124,7 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 				...pagingFooter(h, pagingOf(model)),
 			],
 		),
+		...bulkBar(h, model),
 	]
 }
 

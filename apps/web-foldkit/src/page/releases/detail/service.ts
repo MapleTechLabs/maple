@@ -5,6 +5,7 @@ import { AsyncData, Command } from "foldkit"
 import { ChartRuntime, LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
+import { commitDetailKey } from "../../kit/commit-card"
 import type { Resources } from "../../../platform/resources"
 import type { PageContext, PageReturn } from "../../contract"
 import { commitMarkers, markerShas } from "../../services/detail/derive-markers"
@@ -176,7 +177,7 @@ export const followLoaded = (
 		[
 			...Option.match(issues, { onNone: () => [], onSome: ({ command }) => [command] }),
 			...Option.match(changeset, { onNone: () => [], onSome: ({ command }) => [command] }),
-			...shas.map((sha) => FetchMarkerCommit({ sha })),
+			...shas.map((sha) => FetchMarkerCommit({ key: commitDetailKey(context.orgId, sha), sha })),
 		],
 	)
 }
@@ -212,7 +213,7 @@ export const followService = (model: Model, context: PageContext, mode: RequestM
 	const requested: Return = Option.match(Keyed.request(runtime.model.detail, key, mode), {
 		onNone: () => runtime,
 		onSome: (detail) =>
-			withCommands({ ...runtime.model, detail }, [FetchReleaseDetail({ key, ...input })], runtime),
+			withCommands({ ...runtime.model, detail }, [FetchReleaseDetail({ key, ...input, refresh: mode === "Refresh" })], runtime),
 	})
 	const loaded = followLoaded(requested.model, context, serviceName, mode)
 	return withCommands(loaded.model, loaded.commands ?? [], requested)

@@ -107,7 +107,7 @@ export const issueSkeleton = (h: H, model: Model): Html => {
 		h,
 		{
 			titleContent: titleSkeleton(h),
-			actions: headerActions(h, model, null, true),
+			actions: headerActions(h, model, null, null),
 			tabs: issueTabs(h, model.issueId, model.search, { active: tab, showOccurrences: true }),
 			rightPanel: railSkeleton(h),
 		},

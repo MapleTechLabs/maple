@@ -5,6 +5,7 @@ import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
 import type { LoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
+import { commitDetailsKey } from "../../kit/commit-card"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
@@ -66,7 +67,7 @@ const chain = (first: Return, next: (model: Model) => Return): Return => {
 const requestReleases = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const input = inputOf(model, window)
 	const key = requestKey(context.orgId, "getReleases", { data: input })
-	return slotStep({ ...model, window }, model.releases, (releases) => ({ releases }), key, mode, FetchReleases({ key, input }))
+	return slotStep({ ...model, window }, model.releases, (releases) => ({ releases }), key, mode, FetchReleases({ key, input, refresh: mode === "Refresh" }))
 }
 
 /**
@@ -93,8 +94,9 @@ const followTable = (model: Model, context: PageContext, mode: RequestMode): Ret
 		},
 		(next: Model): Return => {
 			if (shasKey === "") return { model: next }
-			const key = requestKey(context.orgId, "vcsCommitDetails", { shas: shasKey })
-			return slotStep(next, next.commits, (commits) => ({ commits }), key, mode, FetchReleaseCommits({ key, shas: shasKey }))
+			const key = commitDetailsKey(context.orgId, shasKey)
+			const command = FetchReleaseCommits({ key, shas: shasKey, refresh: mode === "Refresh" })
+			return slotStep(next, next.commits, (commits) => ({ commits }), key, mode, command)
 		},
 	].reduce<Return>((step, run) => chain(step, run), { model })
 }

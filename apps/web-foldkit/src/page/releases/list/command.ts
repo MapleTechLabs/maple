@@ -1,10 +1,14 @@
 import { getReleases } from "@maple/web-data/warehouse/releases"
 import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
+import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "../../../data/load-failure"
+import { readThrough } from "../../../data/read-cache"
 import { resolveWindow } from "../../../data/time-range"
+import { readCommitDetails } from "../../kit/commit-card"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { Message, RequestMode } from "./message"
+import { ReleasesData } from "./model"
 
 /** `releasesQueryInput`: the window plus the URL filters the warehouse reads. */
 export const ReleasesInput = Schema.Struct({
@@ -39,18 +43,21 @@ export const ResolveReleasesWindow = Command.define("ResolveReleasesWindow", {
 })
 
 export const FetchReleases = Command.define("FetchReleases", {
-	args: { key: Schema.String, input: ReleasesInput },
+	args: { key: Schema.String, refresh: Schema.Boolean, input: ReleasesInput },
 	messages: [Message.CompletedFetchReleases],
-	execute: ({ key, input }) =>
-		getReleases({
-			data: {
-				startTime: input.startTime,
-				endTime: input.endTime,
-				environments: mutable(input.environments),
-				excludedEnvironments: mutable(input.excludedEnvironments),
-				services: mutable(input.services),
-			},
-		}).pipe(
+	execute: ({ key, refresh, input }) =>
+		readThrough(
+			{ key, refresh, idleTtlMs: IdleTtl.releases, schema: ReleasesData },
+			getReleases({
+				data: {
+					startTime: input.startTime,
+					endTime: input.endTime,
+					environments: mutable(input.environments),
+					excludedEnvironments: mutable(input.excludedEnvironments),
+					services: mutable(input.services),
+				},
+			}),
+		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchReleases({ key, result })),
@@ -75,12 +82,11 @@ export const FetchReleaseIssues = Command.define("FetchReleaseIssues", {
 
 /** `commitsQueryAtom(shasKey)`: every release sha on screen in one request. */
 export const FetchReleaseCommits = Command.define("FetchReleaseCommits", {
-	args: { key: Schema.String, shas: Schema.String },
+	args: { key: Schema.String, shas: Schema.String, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchCommits],
-	execute: ({ key, shas }) =>
+	execute: ({ key, shas, refresh }) =>
 		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			const response = yield* client.integrations.vcsCommitDetails({ query: { shas } })
+			const response = yield* readCommitDetails(key, shas, refresh)
 			return response.commits
 		}).pipe(
 			Effect.mapError(toLoadFailure),

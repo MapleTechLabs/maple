@@ -185,6 +185,73 @@ export const logsPageArea: AreaModule = {
 			await page.getByRole("tab", { name: "Raw" }).click()
 			await page.getByText("JSON Payload", { exact: true }).waitFor()
 		}),
+		logs("detail-trace", "the detail sheet's Trace tab", async (page) => {
+			await stream(page).getByRole("listitem").first().click()
+			await page.getByRole("tab", { name: "Trace" }).click()
+			await page.getByText("Trace Timeline", { exact: false }).waitFor()
+			await page.getByRole("dialog").locator(".font-mono.cursor-pointer").first().waitFor()
+		}),
+		logs("detail-context", "the detail sheet's Context tab", async (page) => {
+			await stream(page).getByRole("listitem").first().click()
+			await page.getByRole("tab", { name: "Context" }).click()
+			await page.getByText("Surrounding logs", { exact: false }).waitFor()
+			await page.getByRole("dialog").locator("li[aria-current]").waitFor()
+		}),
+		logs("detail-context-step", "a surrounding log opened from the Context tab", async (page) => {
+			await stream(page).getByRole("listitem").first().click()
+			await page.getByRole("tab", { name: "Context" }).click()
+			await page.getByRole("dialog").locator("li[aria-current]").waitFor()
+			await page.getByRole("dialog").locator("li:not([aria-current]) button").first().click()
+			await page.getByRole("dialog").locator("li[aria-current]").waitFor()
+			await page.mouse.move(5, 5)
+		}),
+		logs(
+			"detail-error",
+			"an error log's banner",
+			async (page) => {
+				await stream(page).getByRole("listitem").first().click()
+				await page.getByRole("dialog").getByRole("button", { name: "Copy error message" }).waitFor()
+			},
+			"/logs?severities=%5B%22ERROR%22%5D",
+		),
+		logs("detail-copy-json", "the Raw tab's JSON copied", async (page) => {
+			await stream(page).getByRole("listitem").first().click()
+			await page.getByRole("tab", { name: "Raw" }).click()
+			await page.getByRole("dialog").getByRole("button", { name: /Copy/ }).last().click()
+			await page.getByText("Log JSON copied", { exact: true }).waitFor()
+			await page.mouse.move(5, 5)
+		}),
+		logs("detail-page", "a log's own page, from the sheet", async (page) => {
+			await stream(page).getByRole("listitem").first().click()
+			await page
+				.getByRole("dialog")
+				.getByRole("link", { name: /full page/i })
+				.click()
+			await page.waitForURL(/\/logs\/[^?]+$/)
+			await page.getByText("Surrounding logs", { exact: false }).waitFor()
+			await page.mouse.move(5, 5)
+		}),
+		logs(
+			"jump-latest",
+			"Jump to latest after scrolling a live tail down",
+			async (page) => {
+				await stream(page).getByRole("listitem").first().waitFor()
+				await stream(page).hover({ position: { x: 120, y: 120 } })
+				await page.mouse.wheel(0, 4000)
+				await page.getByRole("button", { name: "Jump to latest" }).click()
+				await page.getByRole("button", { name: "Jump to latest" }).waitFor({ state: "detached" })
+				await page.mouse.move(5, 5)
+			},
+			"/logs?refresh=30",
+		),
+		logs(
+			"page-invalid",
+			"a log page whose link does not decode",
+			async (page) => {
+				await page.getByText("Log not found", { exact: true }).waitFor()
+			},
+			"/logs/not-a-log-key",
+		),
 		logs("detail-filter", "filtering by an attribute from the detail sheet", async (page) => {
 			await stream(page).getByRole("listitem").first().click()
 			await page

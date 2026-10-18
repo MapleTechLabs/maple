@@ -1,10 +1,15 @@
 import { getReleaseDetail, getReleases } from "@maple/web-data/warehouse/releases"
 import { Clock, Duration, Effect, Predicate, type Result, Schema } from "effect"
 import { Command } from "foldkit"
+import { IdleTtl } from "../../../data/idle-ttl"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { readThrough } from "../../../data/read-cache"
 import { resolveWindow } from "../../../data/time-range"
+import { readCommitDetail } from "../../kit/commit-card"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { RequestMode } from "../list/message"
+import { ReleasesData } from "../list/model"
+import { ReleaseDetail } from "./model"
 import { Message } from "./message"
 
 const finish = <A, E, R, M>(
@@ -36,33 +41,30 @@ export const FetchReleaseCommit = Command.define("FetchReleaseCommit", {
 	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchCommit],
 	execute: ({ key, sha }) =>
-		finish(
-			Effect.gen(function* () {
-				const client = yield* MapleInternalApiClient
-				return yield* client.integrations.vcsCommitDetail({ params: { sha } })
-			}),
-			(result) => Message.CompletedFetchCommit({ key, result }),
-		),
+		finish(readCommitDetail(key, sha), (result) => Message.CompletedFetchCommit({ key, result })),
 })
 
 /** `getReleasesResultAtom({ startTime, endTime, environments })`: the list's unfiltered read. */
 export const FetchDeployReleases = Command.define("FetchDeployReleases", {
 	args: {
-		key: Schema.String,
+		key: Schema.String, refresh: Schema.Boolean,
 		startTime: Schema.String,
 		endTime: Schema.String,
 		environments: Schema.optional(Schema.Array(Schema.String)),
 	},
 	messages: [Message.CompletedFetchReleases],
-	execute: ({ key, startTime, endTime, environments }) =>
+	execute: ({ key, refresh, startTime, endTime, environments }) =>
 		finish(
-			getReleases({
-				data: {
-					startTime,
-					endTime,
-					environments: environments === undefined ? undefined : [...environments],
-				},
-			}),
+			readThrough(
+				{ key, refresh, idleTtlMs: IdleTtl.releases, schema: ReleasesData },
+				getReleases({
+					data: {
+						startTime,
+						endTime,
+						environments: environments === undefined ? undefined : [...environments],
+					},
+				}),
+			),
 			(result) => Message.CompletedFetchReleases({ key, result }),
 		),
 })
@@ -102,7 +104,7 @@ export const FetchDeployIssues = Command.define("FetchDeployIssues", {
 /** `getReleaseDetailResultAtom`: this version on one service, and the version it replaced. */
 export const FetchReleaseDetail = Command.define("FetchReleaseDetail", {
 	args: {
-		key: Schema.String,
+		key: Schema.String, refresh: Schema.Boolean,
 		serviceName: Schema.String,
 		commitSha: Schema.String,
 		baselineCommitSha: Schema.UndefinedOr(Schema.String),
@@ -111,11 +113,17 @@ export const FetchReleaseDetail = Command.define("FetchReleaseDetail", {
 		environments: Schema.UndefinedOr(Schema.Array(Schema.String)),
 	},
 	messages: [Message.CompletedFetchDetail],
-	execute: ({ key, environments, ...input }) =>
+	execute: ({ key, refresh, environments, ...input }) =>
 		finish(
-			getReleaseDetail({
-				data: { ...input, environments: environments === undefined ? undefined : [...environments] },
-			}),
+			readThrough(
+				{ key, refresh, idleTtlMs: IdleTtl.releaseDetail, schema: ReleaseDetail },
+				getReleaseDetail({
+					data: {
+						...input,
+						environments: environments === undefined ? undefined : [...environments],
+					},
+				}),
+			),
 			(result) => Message.CompletedFetchDetail({ key, result }),
 		),
 })
@@ -144,12 +152,11 @@ export const FetchServiceIssues = Command.define("FetchReleaseServiceIssues", {
 
 /** `commitQueryAtom(sha)` for a commit marker's label. */
 export const FetchMarkerCommit = Command.define("FetchReleaseMarkerCommit", {
-	args: { sha: Schema.String },
+	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchMarkerCommit],
-	execute: ({ sha }) =>
+	execute: ({ key, sha }) =>
 		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			const commit = yield* client.integrations.vcsCommitDetail({ params: { sha } })
+			const commit = yield* readCommitDetail(key, sha)
 			return {
 				sha: commit.sha,
 				message: commit.message,

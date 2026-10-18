@@ -95,6 +95,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 							h.Title(`${verb} — ⌥ for the whole subtree`),
 							h.Type("button"),
 							h.OnClick(Message.ClickedToggleCollapse({ spanId }), { propagation: "Stop" }),
+							h.DataAttribute("toggle-span", spanId),
 						],
 						[icon(h, bar.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon", { size: 12 })],
 					)

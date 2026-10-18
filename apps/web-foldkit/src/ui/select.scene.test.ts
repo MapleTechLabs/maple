@@ -68,7 +68,7 @@ const navigate = (key: string) => [
 ]
 
 describe("select scene", () => {
-	test("the trigger shows the value and opens the list aligned with it, the selected option highlighted", () => {
+	test("a click opens the list with the value selected and nothing highlighted until hovered", () => {
 		scene(
 			config,
 			given(init(ID, { value: "staging", selectedIndex: 1 })),
@@ -77,17 +77,18 @@ describe("select scene", () => {
 			...opened(),
 			expect(trigger).toHaveAttr("aria-expanded", "true"),
 			expect(option("Staging")).toHaveAttr("aria-selected", "true"),
-			expect(option("Staging")).toHaveAttr("data-highlighted", ""),
+			expect(option("Staging")).not.toHaveAttr("data-highlighted"),
 		)
 	})
 
-	test("ArrowDown on the trigger opens the list too", () => {
+	test("ArrowDown on the trigger opens the list with the selected option highlighted", () => {
 		scene(
 			config,
 			given(init(ID, { value: "staging", selectedIndex: 1 })),
 			keydown(trigger, "ArrowDown"),
 			...opened(),
 			expect(listbox).toExist(),
+			expect(option("Staging")).toHaveAttr("data-highlighted", ""),
 		)
 	})
 
