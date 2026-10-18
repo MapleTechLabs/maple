@@ -16,16 +16,19 @@ import { tableSkeleton } from "../../../ui/table-skeleton"
 import { servicePills } from "../../../ui/trace-badges"
 import type { DetectedModel } from "../kit/detected-models"
 import { modelLabel } from "../kit/model-label"
+import { type VirtualWindow, virtualAttributes } from "../kit/virtualize"
 import { sessionHeading } from "../kit/session-name"
 import { vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
 import type { DisplayRow, Sort } from "./derive"
 import { Message } from "./message"
 
-// `AgentSessionsList` (agent-sessions-list.tsx). All rows render (the fixtures fit a window);
-// TODO(virtualize): legacy windows the rows with `useVirtualizer` over the page scroller.
+// `AgentSessionsList` (agent-sessions-list.tsx), windowed like its `useVirtualizer`.
 // TODO(tooltip): every `Hint` is drawn as its trigger; the popups are not ported.
 
 type H = HtmlBuilder<Message>
+
+/** The virtualizer's estimate before a row is measured. */
+const ROW_HEIGHT = 53
 
 interface Column {
 	readonly id: string
@@ -444,9 +447,36 @@ const sessionRow = (h: H, row: DisplayRow, index: number, context: RowContext): 
 	)
 }
 
-/** `VirtualTableBody`'s zero-height spacers around the rendered rows. */
-const spacer = (h: H, key: string): Html =>
-	h.tr([h.Key(key), h.AriaHidden(true), h.Style({ height: "0px" })], [h.td([], [])])
+/** `VirtualTableBody`'s spacers: the table keeps its full height around the rendered window. */
+const spacer = (h: H, key: string, height: number): Html =>
+	h.tr([h.Key(key), h.AriaHidden(true), h.Style({ height: `${height}px` })], [h.td([], [])])
+
+/** The rows the virtualizer mounted, between their spacers; every row without a virtualizer. */
+const windowRows = (
+	h: H,
+	rows: ReadonlyArray<DisplayRow>,
+	context: RowContext,
+	window: VirtualWindow | undefined,
+): ReadonlyArray<Html> => {
+	if (window === undefined)
+		return [
+			spacer(h, "top", 0),
+			...rows.map((row, index) => sessionRow(h, row, index, context)),
+			spacer(h, "bottom", 0),
+		]
+	const { items, scrollMargin, totalSize } = window
+	const first = items[0]
+	const last = items.at(-1)
+	if (first === undefined || last === undefined) return []
+	return [
+		spacer(h, "top", first.start - scrollMargin),
+		...items.flatMap((item) => {
+			const row = rows[item.index]
+			return row === undefined ? [] : [sessionRow(h, row, item.index, context)]
+		}),
+		spacer(h, "bottom", totalSize - (last.end - scrollMargin)),
+	]
+}
 
 export const sessionsTable = (
 	h: H,
@@ -460,6 +490,8 @@ export const sessionsTable = (
 		/** The table's paint and list-end Mounts; a lab without a server leaves them off. */
 		onPainted?: Attribute<Message>
 		onReachEnd?: Attribute<Message>
+		/** The virtualizer's window and its Mount; without one every row is drawn. */
+		virtual?: Readonly<{ window: VirtualWindow; mount: Attribute<Message> }>
 	}>,
 ): Html =>
 	h.div(options.onPainted === undefined ? [] : [options.onPainted], [
@@ -468,10 +500,10 @@ export const sessionsTable = (
 			[
 				table(h, { scroll: false, className: "table-fixed", ariaLabel: "Agent sessions" }, [
 					header(h, options.sort),
-					tableBody(h, [
-						spacer(h, "top"),
-						...options.rows.map((row, index) => sessionRow(h, row, index, options.context)),
-						spacer(h, "bottom"),
+					tableBody(
+						h,
+						[
+						...windowRows(h, options.rows, options.context, options.virtual?.window),
 						...(options.isLoadingMore
 							? [
 									h.tr(
@@ -488,7 +520,19 @@ export const sessionsTable = (
 									),
 								]
 							: []),
-					]),
+						],
+						undefined,
+						options.virtual === undefined
+							? []
+							: [
+									...virtualAttributes(
+										h,
+										options.rows.map((_, index) => String(index)),
+										[ROW_HEIGHT],
+									),
+									options.virtual.mount,
+								],
+					),
 				]),
 			],
 		),

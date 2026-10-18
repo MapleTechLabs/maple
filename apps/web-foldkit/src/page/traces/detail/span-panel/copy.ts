@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton as sharedCopyButton } from "../../../../ui/copy-button"
 import type { IconName } from "../../../../ui/icon"
 import { Message } from "./message"
-import type { CopyStatus, Model } from "./model"
+import type { CopyStatus, PanelState as Model } from "./model"
 
 // `CopyButton` (with `idleIcon` and `tooltip`), `CopyableValue` and `SelectableValue` from @maple/ui,
 // with the copy status read from the panel's Model by target id.

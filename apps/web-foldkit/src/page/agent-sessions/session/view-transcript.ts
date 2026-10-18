@@ -1,9 +1,10 @@
 import type { TranscriptRow } from "@maple/agent-sessions"
 import { cn } from "@maple/ui/lib/utils"
-import { Effect, Stream } from "effect"
+import { Stream } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../../ui/empty"
+import { virtualAttributes, virtualize } from "../kit/virtualize"
 import type { SessionData } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -23,49 +24,48 @@ import { COLUMN } from "./transcript-shell"
 import { emptyTurnRow, turnChapter } from "./transcript-turns"
 
 // `SessionTranscript` (session-detail/session-transcript.tsx): the session as a conversation.
-// TODO(virtualize): every row is drawn and placed; legacy mounts only the rows near the viewport.
-// TODO(span-landing): a pasted `?span=` link does not scroll its block into view.
 
 type H = HtmlBuilder<Message>
 
-/**
- * The virtualizer's placement, every row drawn: each row measured (rounded, as `measureElement`
- * rounds), stacked by transform, and the list sized to their sum. Written to the DOM like
- * `directDomUpdates`, so a row resize never re-renders the list.
- */
-const PlaceTranscriptRows = Mount.defineStream("PlaceAgentSessionTranscriptRows", {
-	messages: [Message.CompletedScroll],
-	execute: ({ element }) =>
-		Stream.callback<typeof Message.CompletedScroll.Type>(() =>
-			Effect.acquireRelease(
-				Effect.sync(() => {
-					const place = () => {
-						if (!(element instanceof HTMLElement)) return
-						const rows = Array.from(element.children).filter(
-							(child) => child instanceof HTMLElement,
+/** Starting guesses only: every mounted row is measured. */
+const ROW_ESTIMATE = {
+	turn: 38,
+	"empty-turn": 30,
+	user: 92,
+	system: 42,
+	assistant: 100,
+	prompt: 130,
+	thinking: 42,
+	tool: 180,
+	"lane-open": 44,
+	"lane-close": 34,
+	parallel: 34,
+	"parallel-turns": 34,
+	structure: 30,
+	note: 86,
+	divider: 60,
+} satisfies Record<TranscriptRow["kind"], number>
+
+/** `useVirtualizer` with `directDomUpdates`: rows measured, placed and the list sized off-render. */
+const VirtualizeTranscript = Mount.defineStream("VirtualizeAgentSessionTranscript", {
+	messages: [Message.ChangedTranscriptWindow],
+	execute: ({ element, viewStateChanges }) =>
+		viewStateChanges.pipe(
+			Stream.switchMap((viewState) =>
+				viewState === "Live" && element instanceof HTMLElement
+					? virtualize(
+							element,
+							{
+								overscan: 12,
+								isMeasured: true,
+								container: ":scope > div",
+								rows: ":scope > div > [data-index]",
+								isAnimationFrameResize: true,
+							},
+							(window) => Message.ChangedTranscriptWindow({ window }),
 						)
-						const total = rows.reduce((top, row) => {
-							row.style.transform = `translate3d(0px, ${top}px, 0px)`
-							return top + Math.round(row.getBoundingClientRect().height)
-						}, 0)
-						element.style.height = `${total}px`
-					}
-					const resizes = new ResizeObserver(place)
-					const observeRows = () => {
-						resizes.disconnect()
-						Array.from(element.children).forEach((child) => resizes.observe(child))
-						place()
-					}
-					const additions = new MutationObserver(observeRows)
-					additions.observe(element, { childList: true })
-					observeRows()
-					return () => {
-						additions.disconnect()
-						resizes.disconnect()
-					}
-				}),
-				(release) => Effect.sync(release),
-			).pipe(Effect.andThen(Effect.never)),
+					: Stream.never,
+			),
 		),
 })
 
@@ -129,15 +129,27 @@ export const transcript = (h: H, model: Model, data: SessionData, timeZone: stri
 				: "No blocks match this filter.",
 		])
 	const context: BlockContext = { model, data, timeZone, continued: continuedKeys(rows) }
+	const mounted = model.transcriptWindow.items.flatMap((item) => {
+		const row = rows[item.index]
+		return row === undefined ? [] : [{ row, index: item.index }]
+	})
 	return h.div(
 		[h.Class(cn(COLUMN, "pt-2"))],
 		[
 			h.div(
-				[],
+				[
+					...virtualAttributes(
+						h,
+						rows.map((row) => row.key),
+						rows.map((row) => ROW_ESTIMATE[row.kind]),
+						model.scroll ?? undefined,
+					),
+					h.OnMount(VirtualizeTranscript()),
+				],
 				[
 					h.div(
-						[h.Class("relative w-full"), h.OnMount(PlaceTranscriptRows())],
-						rows.map((row, index) =>
+						[h.Class("relative w-full")],
+						mounted.map(({ row, index }) =>
 							h.div(
 								[
 									h.Key(row.key),

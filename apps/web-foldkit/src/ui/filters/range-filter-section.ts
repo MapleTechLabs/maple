@@ -27,6 +27,8 @@ export type RangeFilterSectionConfig<M> = Readonly<{
 	histogramUnitLabel?: string
 	/** The bar under the pointer (the readout names it), and the histogram's pointer Messages. */
 	histogramHover?: number | undefined
+	/** The bar a held press went down on, for the drag preview. */
+	histogramDrag?: number | undefined
 	onHistogram?: (message: HistogramMessage) => M
 	minValue: number | undefined
 	maxValue: number | undefined
@@ -86,6 +88,7 @@ const panelBody = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): H
 					minValue: config.minValue,
 					maxValue: config.maxValue,
 					hoveredIndex: config.histogramHover,
+					dragStart: config.histogramDrag,
 					toMessage: onHistogram,
 				})
 			: null

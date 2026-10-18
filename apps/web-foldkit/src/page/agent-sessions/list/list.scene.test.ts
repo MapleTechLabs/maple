@@ -14,11 +14,14 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { LoadSignalPresence, MountEmptyState, MountTable } from "./command"
+import { LoadSignalPresence, MountEmptyState, MountTable, VirtualizeSessions } from "./command"
 import { Message } from "./message"
 import type { Facets, Model, SessionRow } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
+
+/** The virtualizer's window over one 53px row at the top of the page scroller. */
+const ONE_ROW = { items: [{ index: 0, start: 0, end: 53 }], totalSize: 53, scrollMargin: 0 }
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -166,6 +169,7 @@ describe("agent sessions list", () => {
 			{ update: pageUpdate, view },
 			given(painted([session("conv_a")])),
 			Mount.resolve(MountTable, Message.PaintedTable()),
+			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
 			expectView(role("table", { name: "Agent sessions" })).toExist(),
 			expectView(text("support-triage")).toExist(),
 			click(role("button", { name: "Duration" })),
@@ -183,6 +187,7 @@ describe("agent sessions list", () => {
 			{ update: pageUpdate, view },
 			given(painted([session("conv_a")])),
 			Mount.resolve(MountTable, Message.PaintedTable()),
+			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
 			click(role("checkbox", { name: "support-triage" })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({

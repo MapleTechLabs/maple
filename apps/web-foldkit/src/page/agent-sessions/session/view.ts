@@ -22,6 +22,7 @@ import { controlBar } from "./view-toolbar"
 import { transcript } from "./view-transcript"
 import { waterfall } from "./view-waterfall"
 import { flow } from "./view-flow"
+import { viewPopover } from "./span-popover"
 
 // `AgentSessionDetailPage` (routes/agent-sessions/$sessionId.tsx) over `ResultPage`, and `SessionViews`.
 
@@ -53,11 +54,11 @@ const panel = (
 ): ReadonlyArray<Html> => {
 	switch (view) {
 		case "overview":
-			return [overview(h, model, data)]
+			return [overview(h, model, data), viewPopover(h, model, data, view, timeZone)]
 		case "trace":
-			return [waterfall(h, model, data)]
+			return [waterfall(h, model, data), viewPopover(h, model, data, view, timeZone)]
 		case "flow":
-			return [flow(h, model, data)]
+			return [flow(h, model, data), viewPopover(h, model, data, view, timeZone)]
 		case "transcript":
 			return [transcript(h, model, data, timeZone)]
 	}

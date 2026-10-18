@@ -6,7 +6,7 @@ import { eyebrow } from "../../../../ui/eyebrow"
 import { icon } from "../../../../ui/icon"
 import { copyButton, statusOf } from "./copy"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { PanelState as Model } from "./model"
 
 // `ErrorSection` (packages/ui/src/components/error-section.tsx), with a "Copy as prompt" payload.
 
@@ -18,6 +18,9 @@ const LINE_HEIGHT = 1.625
 export type ErrorSectionInput = Readonly<{
 	message: string
 	prompt: Readonly<{ serviceName: string; operation: string; attributes: Readonly<Record<string, string>> }>
+	/** A short tag beside the title (the agent popover's `error.type`). */
+	badge?: string
+	className?: string
 }>
 
 const BODY_ID = "error-body"
@@ -29,13 +32,31 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 	const isClamped = isLong && !model.isErrorExpanded
 	const status = statusOf(model, BODY_ID)
 	return h.div(
-		[h.Class("mx-3 my-2 rounded-lg border border-severity-error/25 bg-severity-error/4 px-3 py-2.5")],
+		[
+			h.Class(
+				cn(
+					"mx-3 my-2 rounded-lg border border-severity-error/25 bg-severity-error/4 px-3 py-2.5",
+					input.className,
+				),
+			),
+		],
 		[
 			h.div(
 				[h.Class("flex min-w-0 items-center gap-2")],
 				[
 					icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-error" }),
 					eyebrow(h, { variant: "label", className: "shrink-0 text-severity-error" }, ["Error"]),
+					...(input.badge === undefined || input.badge === ""
+						? []
+						: [
+								h.span(
+									[
+										h.Class("min-w-0 truncate font-mono text-2xs text-foreground/80"),
+										h.Title(input.badge),
+									],
+									[input.badge],
+								),
+							]),
 					...(body.format === "json"
 						? [
 								h.span(

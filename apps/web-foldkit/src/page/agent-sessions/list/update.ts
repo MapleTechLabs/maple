@@ -10,6 +10,7 @@ import { HistogramMessage } from "../../../ui/filters/range-histogram"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import { missingDetection } from "../kit/detected-models"
+import { emptyWindow } from "../kit/virtualize"
 import {
 	CompleteReloadSpin,
 	DebounceRange,
@@ -43,6 +44,9 @@ import { type ListFacet, Message, type RequestMode } from "./message"
 import type { Model, RangeKey } from "./model"
 
 type Return = PageReturn<Model, Message>
+
+const withoutKey = (record: Readonly<Record<string, number>>, key: string): Readonly<Record<string, number>> =>
+	Object.fromEntries(Object.entries(record).filter(([entry]) => entry !== key))
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 export const RANGE_UNITS = {
@@ -324,11 +328,13 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		rangeDrafts: draftsOf(route.search),
 		rangeDraftVersion: 0,
 		histogramHover: {},
+		histogramDrag: {},
 		searchInput: route.search.q ?? "",
 		searchVersion: 0,
 		lastSentQuery: route.search.q ?? "",
 		refreshVersion: 0,
 		isReloading: false,
+		listWindow: emptyWindow,
 	}
 	return {
 		model,
@@ -459,6 +465,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedDetectModels: ({ key, models }) => ({
 			model: { ...model, detections: { ...model.detections, [key]: models } },
 		}),
+		ChangedListWindow: ({ window }) => ({ model: { ...model, listWindow: window } }),
 		PaintedTable: () =>
 			model.hasPaintedTable ? { model } : follow({ model: { ...model, hasPaintedTable: true } }),
 		PaintedEmptyState: () =>
@@ -534,8 +541,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		AppliedRange: ({ range, min, max }) => applyRange(model, range, min, max),
 		GotHistogramMessage: ({ range, message: inner }) =>
 			HistogramMessage.match<Return>(inner, {
-				PointedHistogramBar: ({ index }) => ({
-					model: { ...model, histogramHover: { ...model.histogramHover, [range]: index } },
+				PointedHistogramBar: ({ index, dragStart }) => ({
+					model: {
+						...model,
+						histogramHover: { ...model.histogramHover, [range]: index },
+						histogramDrag:
+							dragStart === undefined
+								? withoutKey(model.histogramDrag, range)
+								: { ...model.histogramDrag, [range]: dragStart },
+					},
 				}),
 				LeftHistogram: () => ({
 					model: {
@@ -545,7 +559,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						),
 					},
 				}),
-				SelectedHistogramRange: ({ min, max }) => applyRange(model, range, min, max),
+				SelectedHistogramRange: ({ min, max }) =>
+					applyRange({ ...model, histogramDrag: withoutKey(model.histogramDrag, range) }, range, min, max),
 			}),
 		GotFilterSectionsMessage: ({ message: inner }) => {
 			const next = FilterSections.update(model.filterSections, inner)

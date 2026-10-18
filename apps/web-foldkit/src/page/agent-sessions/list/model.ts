@@ -12,6 +12,7 @@ import { AgentSessionsSearch } from "../../../route/search"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import { Detections } from "../kit/detected-models"
+import { VirtualWindow } from "../kit/virtualize"
 
 // `/agent-sessions` (apps/web/src/routes/agent-sessions/index.tsx and its list, toolbar and rail).
 
@@ -79,11 +80,15 @@ export const Model = Schema.Struct({
 	rangeDrafts: Schema.Record(Schema.String, Draft),
 	rangeDraftVersion: Schema.Number,
 	histogramHover: Schema.Record(Schema.String, Schema.Number),
+	/** The bar a held press on a histogram went down on, by range: the drag preview's anchor. */
+	histogramDrag: Schema.Record(Schema.String, Schema.Number),
 	/** `ToolbarSearch`: what is typed, the debounce run that may commit it, the last value sent. */
 	searchInput: Schema.String,
 	searchVersion: Schema.Number,
 	lastSentQuery: Schema.String,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
+	/** The rows the table's virtualizer has mounted. */
+	listWindow: VirtualWindow,
 })
 export type Model = typeof Model.Type

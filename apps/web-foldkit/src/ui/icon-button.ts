@@ -1,4 +1,4 @@
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 
 export type IconButtonOptions<Message> = Readonly<{
@@ -12,7 +12,7 @@ export type IconButtonOptions<Message> = Readonly<{
 	triggerId?: string
 	/** `false` keeps the aria-label but drops the tooltip trigger. */
 	hasTooltip?: boolean
-	attributes?: ReadonlyArray<Attribute<Message>>
+	attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 }>
 
 /**

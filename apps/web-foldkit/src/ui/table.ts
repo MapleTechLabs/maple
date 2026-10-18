@@ -64,8 +64,16 @@ export const tableHeader = <M>(
 		children,
 	)
 
-export const tableBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
-	h.tbody([h.Class(cn(tableBodyStyles, className)), h.DataAttribute("slot", "table-body")], children)
+export const tableBody = <M>(
+	h: HtmlBuilder<M>,
+	children: ReadonlyArray<Html>,
+	className?: string,
+	attributes: ReadonlyArray<Attribute<M>> = [],
+): Html =>
+	h.tbody(
+		[h.Class(cn(tableBodyStyles, className)), h.DataAttribute("slot", "table-body"), ...attributes],
+		children,
+	)
 
 export const tableRow = <M>(
 	h: HtmlBuilder<M>,

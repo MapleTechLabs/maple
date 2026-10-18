@@ -31,6 +31,21 @@ import { loadedSpans, progressOf, sessionData, viewOf } from "./derive"
 import { Message } from "./message"
 import { type Model, SESSION_VIEWS, type SpansPage } from "./model"
 import { layoutLanes, MAX_ZOOM, MIN_ZOOM } from "./flow-layout"
+import { freshLists, land, moveCursor, type SpanKey } from "./navigation"
+import * as Dialog from "../../../ui/dialog"
+import type { Message as SpanPanelMessage } from "../../traces/detail/span-panel/message"
+import * as SpanPanel from "../../traces/detail/span-panel/update"
+import { SPAN_DIALOG_ID } from "./span-popover"
+import {
+	checkedCloseFocus,
+	CLOSE_TOOLTIP_ID,
+	followPopover,
+	freshSpanPanel,
+	liftDialog,
+	popoverMarkdownTexts,
+	stepCloseTooltip,
+} from "./span-popover-update"
+import * as Tooltip from "../../../ui/tooltip"
 import { disclosed } from "./payload-view"
 import { markdownTexts, textHash, transcriptRows } from "./transcript-rows"
 
@@ -217,6 +232,12 @@ export const init = (
 		payloadCopy: { key: null, copy: CopyButton.init() },
 		flowCanvas: Canvas.init({ minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, fitOnInit: Option.none() }),
 		isFlowRelaid: false,
+		...freshLists,
+		spanDialog: Dialog.init(SPAN_DIALOG_ID, "dialog"),
+		spanTab: null,
+		spanPanel: freshSpanPanel(),
+		spanPanelId: null,
+		closeTooltip: Tooltip.init(CLOSE_TOOLTIP_ID),
 	}
 	const first = requestFirstPage(model, context, "Load")
 	return { ...first, commands: [...(first.commands ?? []), ResolveClock()] }
@@ -229,14 +250,18 @@ export const routeChanged = (
 	context: PageContext,
 ): Return => {
 	const view = viewOf(route.search.view)
+	const isSameView = viewOf(model.search.view) === view
+	const base: Model = isSameView ? model : { ...model, ...freshLists }
 	const next: Model = {
-		...model,
-		isFlowRelaid: viewOf(model.search.view) === view && model.isFlowRelaid,
+		...base,
+		isFlowRelaid: isSameView && model.isFlowRelaid,
 		search: route.search,
 		searchStr: searchStrOf(route.sessionId, route.search),
 		tabs: model.tabs.selected === view ? model.tabs : { ...model.tabs, selected: view },
 	}
-	return followMarkdown(follow(context)(requestFirstPage(next, context, "Load")))
+	return followPopover(context)(
+		followLanding(followMarkdown(follow(context)(requestFirstPage(next, context, "Load")))),
+	)
 }
 
 export const contextChanged = (model: Model): Return => ({ model })
@@ -272,10 +297,16 @@ const drain = (result: Return): Return => ({
 /** The transcript's markdown bodies not parsed yet, marked in flight and asked for in one batch. */
 const followMarkdown = (result: Return): Return => {
 	const { model } = result
-	if (viewOf(model.search.view) !== "transcript" || !AsyncData.hasData(model.firstPage.data)) return result
+	if (!AsyncData.hasData(model.firstPage.data)) return result
+	const texts = [
+		...(viewOf(model.search.view) === "transcript"
+			? markdownTexts(model, transcriptRows(model, sessionData(model)))
+			: []),
+		...popoverMarkdownTexts(model),
+	]
 	const missing = [
 		...new Map(
-			markdownTexts(model, transcriptRows(model, sessionData(model)))
+			texts
 				.map((text) => [textHash(text), text] as const)
 				.filter(([hash]) => !(hash in model.markdown)),
 		),
@@ -291,8 +322,49 @@ const followMarkdown = (result: Return): Return => {
 	}
 }
 
+const followLanding = (result: Return): Return => ({ ...result, model: land(result.model) })
+
+/**
+ * Opening a span is a step Back may undo; moving the popover or closing it is not. The search is
+ * set ahead of the round trip, so nothing re-opens the overlay while the URL catches up.
+ */
+const selectSpan = (model: Model, spanId: string | undefined): Return => {
+	const search = { ...model.search, span: spanId }
+	return navigate({ ...model, revealedSpanId: null, search }, search, model.search.span !== undefined)
+}
+
+const stepSpanDialog = (model: Model, message: Dialog.Message): Return => {
+	const step = Dialog.update(model.spanDialog, message)
+	const lifted = liftDialog(model, step)
+	if (step.outMessage?._tag !== "Closed") return lifted
+	const closed = selectSpan(lifted.model, undefined)
+	return { ...closed, commands: [...(lifted.commands ?? []), ...(closed.commands ?? [])] }
+}
+
+const stepSpanPanel = (model: Model, message: SpanPanelMessage): Return => {
+	const step = SpanPanel.updateState(model.spanPanel, message)
+	return {
+		model: { ...model, spanPanel: step.model },
+		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotSpanPanelMessage({ message: inner })),
+	}
+}
+
+const pressedSpanKey = (model: Model, key: SpanKey): Return => {
+	switch (key) {
+		case "Next":
+			return { model: moveCursor(model, 1) }
+		case "Previous":
+			return { model: moveCursor(model, -1) }
+		case "Open":
+			return model.focusedSpanId === null ? { model } : selectSpan(model, model.focusedSpanId)
+		case "Escape":
+			if (model.search.span !== undefined) return selectSpan(model, undefined)
+			return { model: { ...model, focusedSpanId: null } }
+	}
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
-	followMarkdown(step(model, message, context))
+	followMarkdown(followPopover(context)(followLanding(step(model, message, context))))
 
 const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -356,13 +428,26 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			model: { ...model, collapsedTurns: toggledIn(model.collapsedTurns, turnId) },
 		}),
 		ToggledRow: ({ key }) => ({ model: { ...model, openRows: toggledIn(model.openRows, key) } }),
-		// Opening a span is a step Back may undo; moving the popover or closing it is not.
-		ClickedSpan: ({ spanId }) =>
-			navigate(
-				{ ...model, revealedSpanId: null },
-				{ ...model.search, span: spanId },
-				model.search.span !== undefined,
-			),
+		ClickedSpan: ({ spanId }) => selectSpan(model, spanId),
+		ClickedWaterfallSpan: ({ spanId }) =>
+			selectSpan({ ...model, focusedSpanId: spanId }, model.search.span === spanId ? undefined : spanId),
+		PressedSpanKey: ({ key }) => pressedSpanKey(model, key),
+		GotSpanDialogMessage: ({ message: inner }) => stepSpanDialog(model, inner),
+		GotSpanPanelMessage: ({ message: inner }) => stepSpanPanel(model, inner),
+		PickedSpanTab: ({ tab }) => (tab === null ? { model } : { model: { ...model, spanTab: tab } }),
+		ClickedCloseSpan: () => selectSpan(model, undefined),
+		GotCloseTooltipMessage: ({ message: inner }) => stepCloseTooltip(model, inner),
+		CheckedCloseFocus: ({ triggerId, isFocusVisible }) => checkedCloseFocus(model, triggerId, isFocusVisible),
+		ClickedOpenInTraceView: () => {
+			const search = { ...model.search, span: undefined }
+			return navigate(
+				{ ...model, search, revealedSpanId: model.search.span ?? null },
+				{ ...search, view: "trace" },
+				false,
+			)
+		},
+		ChangedWaterfallWindow: ({ window }) => ({ model: { ...model, waterfallWindow: window } }),
+		ChangedTranscriptWindow: ({ window }) => ({ model: { ...model, transcriptWindow: window } }),
 		ToggledChecks: ({ which, isOpen }) => ({
 			model: { ...model, checksChoice: { ...model.checksChoice, [which]: isOpen } },
 		}),
