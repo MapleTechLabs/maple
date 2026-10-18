@@ -1,7 +1,7 @@
 import { fade, type InkPalette } from "./appearance"
 import { drawPlant, placer } from "./maple-scenery"
 import type { Blob } from "./maple-scenery-field"
-import { hash, type Prototypes, type Sketch } from "./maple-scenery-kit"
+import { hash, type Prototypes, type Sketch } from "./maple-scenery-sketch"
 import type { Vec3 } from "./types"
 
 /** The meadow floor's height; terrain steps up from here. */

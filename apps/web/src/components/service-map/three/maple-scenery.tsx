@@ -1,7 +1,7 @@
 import type * as THREE from "three"
 import { fade, type InkPalette } from "./appearance"
 import type { Creek, Meadow } from "./maple-scenery-field"
-import { hash, type Prototypes, type Sketch } from "./maple-scenery-kit"
+import { hash, type Prototypes, type Sketch } from "./maple-scenery-sketch"
 import type { Growth, Plant } from "./maple-scenery-plan"
 import type { Vec3 } from "./types"
 
