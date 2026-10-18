@@ -12,6 +12,7 @@ import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { setBuiltinSignal, setChips, setSeverity } from "./form-steps"
 import { Message } from "./message"
+import { panelInputsOf } from "./where-inputs"
 import type { Model } from "./model"
 import { ReadEditorClock } from "./command"
 import { editForm, type Return } from "./steps"
@@ -82,7 +83,7 @@ export const comboStep = (model: Model, context: PageContext, id: string, messag
 
 /** The rule's one query panel; its edits land on `queryBuilderDraft`. */
 export const queryPanelStep = (model: Model, context: PageContext, message: QueryPanel.Message): Return => {
-	const next = QueryPanel.update(model.queryPanels, message)
+	const next = QueryPanel.update(model.queryPanels, message, panelInputsOf(model, context))
 	const lifted: Model = { ...model, queryPanels: next.model }
 	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
 		Message.GotQueryPanelMessage({ message: inner }),

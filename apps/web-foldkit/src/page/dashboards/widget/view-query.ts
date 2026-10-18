@@ -15,6 +15,7 @@ import { isNote, isBuilderPanel, validationErrorOf } from "./lowering"
 import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
 import { rawSqlEditor } from "./view-sql"
 import { Message } from "./message"
+import { baseValuesOf } from "./where-inputs"
 import type { Model } from "./model"
 
 // `WidgetQueryBuilderPage`'s query side: the source toggle, one `QueryPanel` per query,
@@ -46,6 +47,7 @@ const queryPanel = (
 			metricSearch: model.metricSearch,
 			metricBreakdownKeys:
 				query.dataSource === "metrics" ? (model.metricKeys[`${query.metricName}::${query.metricType}`] ?? []) : [],
+			autocompleteValues: baseValuesOf(model, query),
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 	})

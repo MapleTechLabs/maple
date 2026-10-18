@@ -49,6 +49,9 @@ export const FetchTraceFacets = Command.define("FetchAlertEditorTraceFacets", {
 			Effect.map((response) => ({
 				services: response.data.services.map((row) => row.name),
 				environments: response.data.deploymentEnvs.map((row) => row.name),
+				spanNames: response.data.spanNames.map((row) => row.name),
+				httpMethods: response.data.httpMethods.map((row) => row.name),
+				httpStatusCodes: response.data.httpStatusCodes.map((row) => row.name),
 			})),
 			Effect.mapError(toLoadFailure),
 			Effect.result,

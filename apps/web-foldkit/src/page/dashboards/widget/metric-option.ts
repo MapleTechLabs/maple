@@ -7,3 +7,10 @@ export const MetricOptionSchema = Schema.Struct({
 	isMonotonic: Schema.Boolean,
 })
 export type MetricOption = typeof MetricOptionSchema.Type
+
+/** One `listMetrics` page: the picker's options and every row's service (`metricServices`). */
+export const MetricPageSchema = Schema.Struct({
+	options: Schema.Array(MetricOptionSchema),
+	services: Schema.Array(Schema.String),
+})
+export type MetricPage = typeof MetricPageSchema.Type

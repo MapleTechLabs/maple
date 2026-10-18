@@ -286,10 +286,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: { model },
 		CompletedFetchMetricOptions: ({ search, result }) => {
 			if (search !== model.metricSearch || !Result.isSuccess(result)) return { model }
-			const listed = { ...model, metricOptions: { search, options: result.success } }
+			const listed = { ...model, metricOptions: { search, ...result.success } }
 			// A metrics query without a metric yet takes the first one listed.
 			return listed.state !== null && listed.state.queries.some((query) => query.dataSource === "metrics" && query.metricName === "")
-				? edit(listed, context, (state) => withDefaultMetric(state, result.success))
+				? edit(listed, context, (state) => withDefaultMetric(state, result.success.options))
 				: { model: listed }
 		},
 		CompletedFetchAutocomplete: ({ key, lookup, result }) => {

@@ -4,7 +4,7 @@ import {
 	tokenizeWhereClause,
 	WHERE_CLAUSE_TOKEN_COLOR,
 } from "@maple/web/lib/query-builder/where-clause-highlight"
-import { Option } from "effect"
+import type { WhereClauseAutocompleteValues } from "@maple/web/lib/query-builder/where-clause-autocomplete"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "../../../ui/combobox"
 import { chipsView } from "../../../ui/combobox-view"
@@ -16,6 +16,10 @@ import { textarea } from "../../../ui/textarea"
 import type { AddOnKey } from "./change"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
+import { MountWhereCaret, MountWhereListbox } from "./where-command"
+import { caretOf, whereAutocompleteOf, whereTextareaId } from "./where"
+import { isOpenOf } from "../where-autocomplete"
+import { suggestionListbox, whereKeyHandler } from "../where-autocomplete-view"
 
 // The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
 
@@ -70,21 +74,23 @@ const WHERE_PLACEHOLDER = {
 
 const WHERE_TEXTAREA_CLASS = "min-h-[32px] resize-y text-xs"
 
-/**
- * `WhereClauseEditor`: the textarea under its highlight overlay.
- * TODO(widget-editor): the autocomplete listbox (`useWhereClauseAutocomplete`).
- */
+/** `WhereClauseEditor`: the textarea under its highlight overlay, and its suggestion list. */
 export const whereClauseEditor = (
 	h: H,
+	model: Model,
 	query: QueryDraft,
+	values: WhereClauseAutocompleteValues,
 	options: Readonly<{ placeholder?: string; className?: string }> = {},
 ): Html => {
 	const isHighlighting = query.whereClause.length > 0
+	const caret = caretOf(model, query)
+	const autocomplete = whereAutocompleteOf(model, query, values)
+	const isOpen = isOpenOf(caret, autocomplete)
 	return h.div(
 		[h.Class(options.className ?? "relative flex-1")],
 		[
 			textarea(h, {
-				id: `where-${query.id}`,
+				id: whereTextareaId(query.id),
 				className: cn(WHERE_TEXTAREA_CLASS, isHighlighting && "text-transparent caret-foreground"),
 				defaultValue: query.whereClause,
 				attributes: [
@@ -92,10 +98,15 @@ export const whereClauseEditor = (
 					h.Placeholder(options.placeholder ?? WHERE_PLACEHOLDER[query.dataSource]),
 					h.Rows(1),
 					h.OnInput((value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value })),
-					// Where clauses are single-line.
-					h.OnKeyDownPreventDefault((key) =>
-						key === "Enter" ? Option.some(Message.PressedWhereEnter()) : Option.none(),
+					h.OnKeyDownPreventDefault(
+						whereKeyHandler<Message>(isOpen, {
+							enter: Message.PressedWhereEnter({ queryId: query.id }),
+							move: (step) => Message.MovedWhereSuggestion({ queryId: query.id, step }),
+							tab: Message.PressedWhereTab({ queryId: query.id }),
+							dismiss: Message.DismissedWhereSuggestions({ queryId: query.id }),
+						}),
 					),
+					h.OnMount(MountWhereCaret({ queryId: query.id })),
 				],
 			}),
 			...(isHighlighting
@@ -126,6 +137,17 @@ export const whereClauseEditor = (
 								),
 							],
 						),
+					]
+				: []),
+			...(isOpen
+				? [
+						suggestionListbox(h, {
+							suggestions: autocomplete.suggestions,
+							activeIndex: caret.activeIndex,
+							anchor: caret.anchor,
+							onApply: (index) => Message.AppliedWhereSuggestion({ queryId: query.id, index }),
+							keepFocus: h.OnMount(MountWhereListbox({ queryId: query.id })),
+						}),
 					]
 				: []),
 		],

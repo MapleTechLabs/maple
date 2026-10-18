@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
-import { AutocompleteLookup } from "../../kit/autocomplete-lookups"
+import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 
 // The advanced filter dialog's state (`AdvancedFilterDialog` + `WhereClauseEditor` +
 // `useWhereClauseAutocomplete`), kept apart from the list Model it sits in.
@@ -26,7 +26,7 @@ export const AdvancedFilter = Schema.Struct({
 	/** Escape hid the suggestions until the next edit or caret move. */
 	isDismissed: Schema.Boolean,
 	activeIndex: Schema.Number,
-	lookups: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), LoadFailure)),
+	lookups: Schema.Record(Schema.String, KeyedSchema(LookupNames, LoadFailure)),
 })
 export type AdvancedFilter = typeof AdvancedFilter.Type
 
