@@ -1,8 +1,6 @@
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { listFooter } from "../../../ui/list-footer"
@@ -11,10 +9,10 @@ import { tableSkeleton } from "../../../ui/table-skeleton"
 import { truncatedText } from "../../../ui/truncated-text"
 import { serviceDot } from "../../../ui/values"
 import { metricTypeBadge, type MetricRow } from "../shared"
-import { epochMsOf, formatSeen } from "../time-format"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { metricLink } from "./update"
+import { relativeTime } from "../../kit/relative-time"
 
 // `MetricsTable` (components/metrics/metrics-table.tsx).
 
@@ -58,20 +56,6 @@ export const loadingTable = (h: H): Html =>
 		],
 		rows: 10,
 		tableClassName: "table-fixed",
-	})
-
-/** `RelativeTime tooltip="title"`: the relative label, the zone-aware absolute time as its title. */
-const relativeTime = (h: H, value: string, nowMs: number, timeZone: string): Html =>
-	Option.match(epochMsOf(value), {
-		onNone: () => h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE]),
-		onSome: (epochMs) =>
-			h.time(
-				[
-					h.Attribute("datetime", new Date(epochMs).toISOString()),
-					h.Title(formatSeen(value, timeZone)),
-				],
-				[formatRelativeTime(epochMs, nowMs)],
-			),
 	})
 
 const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Html =>
@@ -132,7 +116,7 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 			tableCell(h, [formatNumber(metric.dataPointCount)], `${MD_CELL} font-mono text-xs`),
 			tableCell(
 				h,
-				[relativeTime(h, metric.lastSeen, model.nowMs, timeZone)],
+				[relativeTime(h, { value: metric.lastSeen, nowMs: model.nowMs, timeZone, tooltip: "title" })],
 				`${MD_CELL} text-xs text-muted-foreground`,
 			),
 		],

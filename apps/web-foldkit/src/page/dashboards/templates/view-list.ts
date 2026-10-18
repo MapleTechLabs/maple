@@ -5,7 +5,7 @@ import { truncatedTextMonoStyles, truncatedTextStyles } from "@maple/ui/styles/u
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { skeletonList } from "../../../ui/skeleton"
@@ -21,6 +21,7 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model, ReadinessFilter } from "./model"
+import { filteredEmpty as filteredEmptyState } from "../../kit/signal-empty-state"
 
 // `TemplateList` (dashboard-builder/templates/template-list.tsx).
 
@@ -109,28 +110,15 @@ const templateRow = (
 }
 
 const filteredEmpty = (h: H, query: string): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "MagnifierIcon", { size: 17 })]),
-				emptyTitle(h, [`No template matches “${query.trim()}”`]),
-				emptyDescription(h, ["Try a shorter term. Or start blank and add the widgets you want."]),
-			]),
-			emptyContent(h, [
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						attributes: [h.OnClick(Message.ChangedSearchDraft({ value: "" }))],
-					},
-					["Clear search"],
-				),
-			]),
-		],
-		"py-14",
-	)
+	filteredEmptyState(h, {
+		noun: "templates",
+		title: `No template matches “${query.trim()}”`,
+		description: "Try a shorter term. Or start blank and add the widgets you want.",
+		icon: icon(h, "MagnifierIcon", { size: 17 }),
+		onClear: Message.ChangedSearchDraft({ value: "" }),
+		clearLabel: "Clear search",
+		className: "py-14",
+	})
 
 const filterHidEverything = (h: H, filter: ReadinessFilter, matched: number, isSearching: boolean): Html =>
 	empty(

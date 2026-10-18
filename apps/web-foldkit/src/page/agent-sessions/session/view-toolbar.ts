@@ -2,12 +2,12 @@ import { Effect, Stream } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
 import { label } from "../../../ui/label"
 import * as Popover from "../../../ui/popover"
 import { switchControl } from "../../../ui/switch"
 import { Message } from "./message"
 import type { Model, SessionView, ViewOption } from "./model"
+import { searchInput } from "../../../ui/search-input"
 
 // The control bar of `SessionViews` (session-detail/session-views.tsx): the filter and `ViewOptions`.
 
@@ -62,35 +62,15 @@ const optionsOf = (view: SessionView): ReadonlyArray<OptionRow> => {
 
 /** `SearchInput` (size sm): not debounced, it filters spans already in hand. */
 const filterInput = (h: H, model: Model, view: SessionView): Html =>
-	inputGroup(h, { className: "w-56" }, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: "agent-session-filter",
-			type: "text",
-			size: "sm",
-			attributes: [
-				h.Placeholder(view === "transcript" ? "Filter transcript" : "Filter spans"),
-				h.Value(model.query),
-				h.OnInput((value) => Message.ChangedQuery({ value })),
-			],
-		}),
-		...(model.query === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(
-							h,
-							{
-								attributes: [
-									h.AriaLabel("Clear search"),
-									h.OnClick(Message.ChangedQuery({ value: "" })),
-								],
-							},
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
+	searchInput(h, {
+		id: "agent-session-filter",
+		size: "sm",
+		className: "w-56",
+		placeholder: view === "transcript" ? "Filter transcript" : "Filter spans",
+		value: model.query,
+		onInput: (value) => Message.ChangedQuery({ value }),
+		onClear: Message.ChangedQuery({ value: "" }),
+	})
 
 const optionRow = (h: H, model: Model, row: OptionRow): Html =>
 	h.div(

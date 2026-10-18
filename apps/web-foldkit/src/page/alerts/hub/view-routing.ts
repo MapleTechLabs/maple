@@ -1,6 +1,5 @@
 import type { AlertDeliveryEventDocument, AlertDestinationDocument } from "@maple/domain/http"
 import { pluralize } from "@maple/ui/lib/format"
-import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -10,7 +9,6 @@ import {
 	formatAlertTime,
 	groupDeliveryEventsByDay,
 } from "@maple/web-data/alerts/form-utils"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { tableCellStyles } from "@maple/ui/styles/ui/table"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -33,6 +31,8 @@ import { createHref } from "../shared/links"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { destinationMenuId } from "./update"
+import { relativeTime } from "../../kit/relative-time"
+import { sectionHeading } from "../../kit/section-heading"
 
 // `AlertsRoutingTab` and `DestinationRow` (overview/routing-tab.tsx, overview/destination-row.tsx).
 
@@ -48,9 +48,6 @@ export type RoutingInputs = Readonly<{
 	nowMs: number
 }>
 
-const sectionHeading = (h: H, title: string): Html =>
-	h.div([h.Class("flex items-baseline gap-2.5")], [h.h2([h.Class("text-sm font-medium text-foreground")], [title])])
-
 export const routingTab = (h: H, model: Model, inputs: RoutingInputs): Html => {
 	const deliveries = AsyncData.getData(model.routingDeliveries.data)
 	const events = deliveries._tag === "Some" ? deliveries.value : []
@@ -63,7 +60,7 @@ export const routingTab = (h: H, model: Model, inputs: RoutingInputs): Html => {
 					h.div(
 						[],
 						[
-							sectionHeading(h, "Destinations"),
+							sectionHeading(h, { title: "Destinations" }),
 							h.p(
 								[h.Class("text-muted-foreground text-sm")],
 								[
@@ -85,7 +82,7 @@ export const routingTab = (h: H, model: Model, inputs: RoutingInputs): Html => {
 					h.div(
 						[],
 						[
-							sectionHeading(h, "Delivery log"),
+							sectionHeading(h, { title: "Delivery log" }),
 							h.p(
 								[h.Class("text-muted-foreground text-sm")],
 								[
@@ -247,7 +244,13 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 										[destination.disabledAt != null ? "auto-disabled" : "disabled"],
 									)
 								: lastSuccess !== undefined
-									? relativeTime(h, lastSuccess.scheduledAt, inputs)
+									? relativeTime(h, {
+											value: lastSuccess.scheduledAt,
+											nowMs: inputs.nowMs,
+											timeZone: inputs.timeZone,
+											variant: "short",
+											tooltip: "title",
+										})
 									: "never",
 						],
 					),
@@ -294,18 +297,6 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 				? [h.p([h.Class("mt-2 break-words pl-5 text-xs text-severity-error")], [problem])]
 				: []),
 		],
-	)
-}
-
-/** `RelativeTime variant="short" tooltip="title"`. */
-const relativeTime = (h: H, value: string, inputs: RoutingInputs): Html => {
-	const epochMs = new Date(value).getTime()
-	return h.time(
-		[
-			h.Attribute("datetime", new Date(epochMs).toISOString()),
-			h.Title(formatTimestampInTimezone(epochMs, { timeZone: inputs.timeZone, withYear: true })),
-		],
-		[formatRelativeShortFrom(epochMs, inputs.nowMs)],
 	)
 }
 

@@ -1,7 +1,6 @@
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { countLabel, formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
-import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { skeletonListGapStyles, skeletonListStyles } from "@maple/ui/styles/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
@@ -15,31 +14,18 @@ import { emptyMessage } from "../../../ui/empty"
 import { listRow } from "../../../ui/list-row"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
 import { truncatedText } from "../../../ui/truncated-text"
-import { formatSeen } from "../../metrics/time-format"
 import { type DeployEntry, deriveDeploys, firstLine, isResolvableSha } from "./derive-panels"
 import { Message } from "./message"
 import type { Issue, Model } from "./model"
 import { DEPLOYS_EXPANDED, DEPLOYS_RAIL } from "./update"
 import { sectionCard } from "./view-panels"
+import { relativeTime } from "../../kit/relative-time"
 
 // `ServiceErrorsPanel` + `IssueLine`, and `ServiceRecentDeploys` (components/services/).
 
 type H = HtmlBuilder<Message>
 
 export type Clock = Readonly<{ nowMs: number; timeZone: string }>
-
-/** `RelativeTime variant="orDate" mono tooltip="title"`. */
-export const relativeTime = (h: H, value: string, clock: Clock, className: string): Html => {
-	const epochMs = toEpochMs(value)
-	return h.time(
-		[
-			h.Class(cn("font-mono tabular-nums", className)),
-			h.Attribute("datetime", new Date(epochMs).toISOString()),
-			h.Title(formatSeen(value, clock.timeZone)),
-		],
-		[formatRelativeTimeOrDate(epochMs, clock.nowMs, clock.timeZone)],
-	)
-}
 
 // copied: `SEVERITY_TONE` / `SEVERITY_LABEL` (components/errors/severity-badge.tsx, a React module).
 const SEVERITY = new Map([
@@ -72,7 +58,7 @@ const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
 					[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
 					[formatNumber(issue.occurrenceCount), "×"],
 				),
-				relativeTime(h, issue.lastSeenAt, clock, "w-14 text-right text-xs text-muted-foreground/70"),
+				relativeTime(h, { value: issue.lastSeenAt, ...clock, variant: "orDate", mono: true, tooltip: "title", className: "w-14 text-right text-xs text-muted-foreground/70" }),
 			],
 		),
 	})
@@ -167,7 +153,7 @@ const rowMeta = (
 ): ReadonlyArray<Html> => [
 	...prefix,
 	h.span([h.Class("shrink-0 tabular-nums")], [formatNumber(deploy.spanCount), " spans"]),
-	relativeTime(h, deploy.firstSeen, clock, "ml-auto shrink-0 cursor-default text-muted-foreground/70"),
+	relativeTime(h, { value: deploy.firstSeen, ...clock, variant: "orDate", mono: true, tooltip: "title", className: "ml-auto shrink-0 cursor-default text-muted-foreground/70" }),
 ]
 
 const blankAvatar = (h: H): Html => h.span([h.Class("block size-5 rounded-full bg-muted")])

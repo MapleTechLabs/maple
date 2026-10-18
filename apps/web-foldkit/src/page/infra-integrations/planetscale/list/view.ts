@@ -15,7 +15,7 @@ import { docsLink, emptyActions } from "../../../kit/signal-empty-state"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { pageHero } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
-import { statRail, statRailItem, statRailItemSkeleton } from "../../../kit/stat-rail"
+import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import type { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
 import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../metrics"
 import {
@@ -37,13 +37,6 @@ type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
 const NO_STATS: ReadonlyArray<DatabaseStat> = []
-
-const statRailLoading = (h: H): Html =>
-	statRail(
-		h,
-		{ isBusy: true },
-		Array.from({ length: 4 }, () => statRailItemSkeleton(h)),
-	)
 
 const loading = (h: H): Html => h.div([h.Class("space-y-4")], [statRailLoading(h), databaseTableLoading(h)])
 

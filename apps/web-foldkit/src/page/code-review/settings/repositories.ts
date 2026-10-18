@@ -11,10 +11,10 @@ import { AppRoute, hrefOf } from "../../../route"
 import { button } from "../../../ui/button"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
-import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "../../../ui/input-group"
 import { panel, panelHeader } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import * as Switch from "../../../ui/switch"
+import { searchInput } from "../../../ui/search-input"
 
 // `RepositoryList`, `RepositoryRow` and `RepositoryName` (code-review-settings.tsx), shared with
 // `/lab/code-review-repos`.
@@ -138,31 +138,16 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 }
 
 const searchBox = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>): Html =>
-	inputGroup(h, { className: "min-w-48 flex-1" }, [
-		inputGroupAddon(h, {}, [icon(h, "MagnifierIcon")]),
-		inputGroupInput(h, {
-			id: "code-review-repo-search",
-			size: "sm",
-			type: "text",
-			attributes: [
-				h.AriaLabel("Search repositories"),
-				h.Placeholder("Search repositories"),
-				h.Value(options.state.search),
-				h.OnInput(options.onSearch),
-			],
-		}),
-		...(options.state.search === ""
-			? []
-			: [
-					inputGroupAddon(h, { align: "inline-end" }, [
-						inputGroupButton(
-							h,
-							{ attributes: [h.AriaLabel("Clear search"), h.OnClick(options.onSearch(""))] },
-							[icon(h, "XmarkIcon")],
-						),
-					]),
-				]),
-	])
+	searchInput(h, {
+		id: "code-review-repo-search",
+		size: "sm",
+		className: "min-w-48 flex-1",
+		placeholder: "Search repositories",
+		value: options.state.search,
+		onInput: options.onSearch,
+		onClear: options.onSearch(""),
+		attributes: [h.AriaLabel("Search repositories")],
+	})
 
 export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>): Html => {
 	const { repositories, state } = options
