@@ -87,6 +87,14 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				Stream.map(Shell.filterViewportChanges, (message) => Message.GotShellMessage({ message })),
 		},
 	),
+	shellSmallViewport: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () =>
+				Stream.map(Shell.smallViewportChanges, (message) => Message.GotShellMessage({ message })),
+		},
+	),
 	/** ⌘B / Ctrl+B toggles the sidebar while a shell page is open (`SidebarProvider`). */
 	shellSidebarShortcut: entry(
 		{ isShellOpen: Schema.Boolean },

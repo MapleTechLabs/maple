@@ -36,6 +36,7 @@ export const Message = defineMessageUnion({
 	ChangedViewport: { isMobile: Schema.Boolean },
 	DismissedMobileNav: {},
 	ChangedFilterViewport: { isCollapsed: Schema.Boolean },
+	ChangedSmallViewport: { isBelowSm: Schema.Boolean },
 	/** The top bar's "Open filters" / "Open context" (`FilterSidebarTrigger`, `RightSidebarTrigger`). */
 	ClickedOpenFilters: {},
 	ClickedOpenContext: {},

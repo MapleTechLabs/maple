@@ -43,6 +43,8 @@ export const Model = Schema.Struct({
 	hasRequestedSidebarData: Schema.Boolean,
 	/** Below `lg` the page rails are sheets (`PageLayout`'s `useMediaQuery("max-lg")`). */
 	isFilterCollapsed: Schema.Boolean,
+	/** Below `sm` (`useMediaQuery("max-sm")`), passed to pages that branch on it. */
+	isBelowSm: Schema.Boolean,
 	/** `PageLayout.FilterSidebar` and `RightSidebar` as sheets, opened from the top bar. */
 	filterSheet: Dialog.Model,
 	rightSheet: Dialog.Model,
@@ -99,6 +101,7 @@ export const initRightSheet = (): Dialog.Model => Dialog.init(RIGHT_SHEET_ID, "s
 export type ShellFlags = Readonly<{
 	isMobile: boolean
 	isFilterCollapsed?: boolean
+	isBelowSm?: boolean
 	theme: Theme
 	pinnedNamespaces: Readonly<Record<string, string>>
 	dashboardFavorites: ReadonlyArray<string>
@@ -111,6 +114,7 @@ export const init = (flags: ShellFlags): Model => ({
 	isMobile: flags.isMobile,
 	hasRequestedSidebarData: false,
 	isFilterCollapsed: flags.isFilterCollapsed ?? false,
+	isBelowSm: flags.isBelowSm ?? false,
 	filterSheet: initFilterSheet(),
 	rightSheet: initRightSheet(),
 	theme: flags.theme,

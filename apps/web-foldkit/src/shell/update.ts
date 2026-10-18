@@ -273,6 +273,7 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 				rightSheet: () => initRightSheet(),
 			}),
 		}),
+		ChangedSmallViewport: ({ isBelowSm }) => ({ model: modifyFields(model, { isBelowSm: () => isBelowSm }) }),
 		ClickedOpenFilters: () => filterSheetStep(model, Dialog.open(model.filterSheet)),
 		ClickedOpenContext: () => rightSheetStep(model, Dialog.open(model.rightSheet)),
 		GotFilterSheetMessage: ({ message: child }) => filterSheetStep(model, Dialog.update(model.filterSheet, child)),

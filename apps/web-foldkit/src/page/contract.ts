@@ -24,6 +24,8 @@ export interface PageViewInputs {
 	readonly context: PageContext
 	/** `useIsMobile()` (below `md`), for the few layouts that branch on it in JSX (`/chat`). */
 	readonly isMobile?: boolean
+	/** `useMediaQuery("max-sm")`, likewise (the analytics chart's narrow margin). */
+	readonly isBelowSm?: boolean
 }
 
 /** What a page's Subscriptions see: its own Model plus the context. */
@@ -230,7 +232,11 @@ export const definePage = <
 						slotId: id,
 						model: slot.model,
 						view: spec.view,
-						viewInputs: { context: inputs.context, isMobile: inputs.isMobile ?? false },
+						viewInputs: {
+							context: inputs.context,
+							isMobile: inputs.isMobile ?? false,
+							isBelowSm: inputs.isBelowSm ?? false,
+						},
 						toParentMessage: wrap,
 					})
 				: null,
@@ -244,7 +250,11 @@ export const definePage = <
 							slotId: `${id}:topbar`,
 							model: slot.model,
 							view: actions,
-							viewInputs: { context: inputs.context, isMobile: inputs.isMobile ?? false },
+							viewInputs: {
+							context: inputs.context,
+							isMobile: inputs.isMobile ?? false,
+							isBelowSm: inputs.isBelowSm ?? false,
+						},
 							toParentMessage: wrap,
 						})
 					: null

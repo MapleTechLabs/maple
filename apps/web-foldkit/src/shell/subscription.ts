@@ -19,6 +19,14 @@ export const filterViewportChanges: Stream.Stream<Message> = Dom.streamFromMedia
 	mapMatches: (isCollapsed) => Message.ChangedFilterViewport({ isCollapsed }),
 })
 
+/** `useMediaQuery("max-sm")`, which a few page layouts branch on (the analytics chart's margin). */
+export const SMALL_QUERY = "(max-width: 639px)"
+
+export const smallViewportChanges: Stream.Stream<Message> = Dom.streamFromMediaQuery({
+	query: SMALL_QUERY,
+	mapMatches: (isBelowSm) => Message.ChangedSmallViewport({ isBelowSm }),
+})
+
 /** `SidebarProvider`'s ⌘B / Ctrl+B toggle. */
 export const sidebarShortcut: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 	target: () => window,

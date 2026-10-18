@@ -33,6 +33,7 @@ export const Flags = Schema.Struct({
 	shell: Schema.Struct({
 		isMobile: Schema.Boolean,
 		isFilterCollapsed: Schema.optionalKey(Schema.Boolean),
+		isBelowSm: Schema.optionalKey(Schema.Boolean),
 		theme: Shell.Theme,
 		pinnedNamespaces: Schema.Record(Schema.String, Schema.String),
 		dashboardFavorites: Schema.Array(Schema.String),

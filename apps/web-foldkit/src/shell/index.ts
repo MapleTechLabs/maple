@@ -4,7 +4,13 @@ export { readShellFlags } from "./flags"
 export { Message, OutMessage, Theme } from "./message"
 export { init, Model, type ShellClerk } from "./model"
 
-export { favoritesChanges, filterViewportChanges, sidebarShortcut, viewportChanges } from "./subscription"
+export {
+	favoritesChanges,
+	filterViewportChanges,
+	sidebarShortcut,
+	smallViewportChanges,
+	viewportChanges,
+} from "./subscription"
 export { DASHBOARD_FAVORITES_EVENT, DASHBOARD_FAVORITES_KEY } from "./favorites"
 export { pinnedDashboardRows } from "./dashboards-shape"
 export { BUILT_COMMIT, versionChecks } from "./version"
