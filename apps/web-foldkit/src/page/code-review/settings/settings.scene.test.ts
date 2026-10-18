@@ -15,6 +15,7 @@ const settings = Schema.decodeUnknownSync(GithubPrReviewSettingsResponse)({
 	},
 })
 const INFRA = Schema.decodeSync(VcsRepositoryId)("00000c01-0000-4000-8000-000000000001")
+const WEB = Schema.decodeSync(VcsRepositoryId)("00000c01-0000-4000-8000-000000000002")
 
 const loaded = () => {
 	const entry = init({}, context).model
@@ -61,6 +62,36 @@ describe("code review settings", () => {
 		const first = pageUpdate(model, toggle)
 		expect(names(first.commands)).toEqual(["SetCodeReviewPrReview"])
 		expect(names(pageUpdate(first.model, toggle).commands)).toEqual([])
+	})
+
+	test("repository A's late save neither re-keys nor settles repository B's open rules", () => {
+		const listed = pageUpdate(
+			loaded().model,
+			Message.CompletedFetchStatus({
+				key: loaded().model.githubStatus.key ?? "",
+				result: Result.succeed(
+					githubStatusOf([
+						{ name: "infra", reviewed: true },
+						{ name: "web", reviewed: true },
+					]),
+				),
+			}),
+		).model
+		const onB = pageUpdate(
+			pageUpdate(listed, Message.ClickedConfigure({ repositoryId: INFRA })).model,
+			Message.ClickedConfigure({ repositoryId: WEB }),
+		).model
+		const late = pageUpdate(
+			onB,
+			Message.CompletedSaveRepoConfig({ repositoryId: INFRA, fullName: "acme-shop/infra", result: Result.void }),
+		)
+		expect(late.model.configuring).toBe(WEB)
+		expect(late.model.repoConfig.key).toBe(onB.repoConfig.key)
+		expect(late.model.repoForm).toBe(onB.repoForm)
+		expect(names(late.commands)).toEqual([])
+		expect(late.outMessage?._tag === "RequestedToast" ? late.outMessage.title : null).toBe(
+			"Rules saved for acme-shop/infra",
+		)
 	})
 })
 
