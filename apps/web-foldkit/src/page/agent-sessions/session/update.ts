@@ -94,6 +94,8 @@ const requestFirstPage = (model: Model, context: PageContext, mode: Keyed.Reques
 	})
 }
 
+const landedCount = (more: Model["more"]): number => more.agentPages.length + more.appPages.length
+
 /** The next background page, if the session did not fit: every agent page, then every app page. */
 const nextPage = (model: Model): Commands => {
 	const first = Option.getOrUndefined(AsyncData.getData(model.firstPage.data))
@@ -105,7 +107,7 @@ const nextPage = (model: Model): Commands => {
 	const agentCursor = lastAgent === undefined ? first.nextCursor : lastAgent.nextCursor
 	const window = windowOf(model.search)
 	const fetch = (scope: "ai" | "app", after: NonNullable<SpansPage["nextCursor"]>) => [
-		FetchMorePage({ key, sessionId: model.sessionId, window, scope, after, limit: model.more.limit }),
+		FetchMorePage({ key, sessionId: model.sessionId, window, scope, after, limit: model.more.limit, index: landedCount(model.more) }),
 	]
 	if (agentCursor !== null) return fetch("ai", agentCursor)
 	const appCursor = lastApp === undefined ? first.nextCursor : lastApp.nextCursor
@@ -269,9 +271,10 @@ export const routeChanged = (
 export const contextChanged = (model: Model): Return => ({ model })
 
 const acceptMore = (model: Model, message: Extract<Message, { _tag: "CompletedFetchMorePage" }>): Model => {
-	const { key, scope, result } = message
+	const { key, index, scope, result } = message
 	if (key !== model.firstPage.key) return model
 	const more = model.more.key === key ? model.more : nothingLoaded(key)
+	if (index !== landedCount(more) || more.status !== "loading") return model
 	if (result._tag === "Failure") {
 		return message.isTooLarge && more.limit > MIN_PAGE_SIZE
 			? { ...model, more: { ...more, limit: Math.max(MIN_PAGE_SIZE, Math.floor(more.limit / 2)) } }
@@ -380,7 +383,11 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			}
 			return drain(follow(context)({ model: accepted }))
 		},
-		CompletedFetchMorePage: (more) => drain(follow(context)({ model: acceptMore(model, more) })),
+		// A dropped page asks for nothing: the drain's own request for that position is still in flight.
+		CompletedFetchMorePage: (more) => {
+			const accepted = acceptMore(model, more)
+			return accepted === model ? { model } : drain(follow(context)({ model: accepted }))
+		},
 		CompletedFetchTotals: ({ key, result }) =>
 			follow(context)({ model: { ...model, totals: Keyed.accept(model.totals, key, result) } }),
 		CompletedDetectModels: ({ key, models }) => ({
