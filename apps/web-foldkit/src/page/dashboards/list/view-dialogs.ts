@@ -6,6 +6,7 @@ import {
 	confirmDialogMediaDestructiveStyles,
 } from "@maple/ui/styles/ui/confirm-dialog"
 import * as DialogStyles from "@maple/ui/styles/ui/dialog"
+import { fieldLabelStyles } from "@maple/ui/styles/ui/field"
 import { formDialogFormStyles, formDialogPanelStyles } from "@maple/ui/styles/ui/form-dialog"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -92,6 +93,10 @@ export const deleteDialog = (h: H, model: Model): Html => {
 		toParentMessage: (message) => Message.GotDeleteDialogMessage({ message }),
 	})
 }
+
+/** A `FieldLabel` with no control of its own (a chip list follows it). */
+const plainFieldLabel = (h: H, text: string): Html =>
+	h.label([h.Class(cn(fieldLabelStyles, "text-xs")), h.DataAttribute("slot", "field-label")], [text])
 
 const TAG_INPUT_ID = "tag-editor-input"
 const TAG_IDS = { control: TAG_INPUT_ID, label: `${TAG_INPUT_ID}-label`, error: `${TAG_INPUT_ID}-error` }
@@ -222,23 +227,14 @@ export const tagsDialog = (h: H, model: Model, allTags: ReadonlyArray<string>): 
 									),
 								]),
 								field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
-									h.label(
-										[h.DataAttribute("slot", "field-label"), h.Class("text-xs")],
-										["On this dashboard"],
-									),
+									plainFieldLabel(h, "On this dashboard"),
 									draftChips(h, model),
 								]),
 								...(unused.length === 0
 									? []
 									: [
 											field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
-												h.label(
-													[
-														h.DataAttribute("slot", "field-label"),
-														h.Class("text-xs"),
-													],
-													["Used elsewhere"],
-												),
+												plainFieldLabel(h, "Used elsewhere"),
 												h.div(
 													[h.Class("flex flex-wrap gap-1")],
 													unused.map((tag) =>

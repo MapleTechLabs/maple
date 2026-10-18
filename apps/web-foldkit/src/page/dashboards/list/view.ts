@@ -67,7 +67,8 @@ const persistenceBanner = (h: H, error: string | null): Html | undefined =>
 				alertDescription(
 					h,
 					[
-						`${error}. Editing, import and delete are disabled until it recovers; reading is unaffected.`,
+						error,
+						". Editing, import and delete are disabled until it recovers; reading is unaffected.",
 					],
 					TONE_TEXT.crit,
 				),

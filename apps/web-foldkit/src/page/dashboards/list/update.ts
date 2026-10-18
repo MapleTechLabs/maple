@@ -273,7 +273,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedExportDashboard: () => ({ model }),
 		CompletedDuplicateDashboard: ({ result }) =>
 			Result.match(result, {
-				onFailure: () => ({ model }),
+				// TODO(toast): legacy also toasts "Failed to duplicate dashboard".
+				onFailure: (error) => failedWrite(model, error),
 				onSuccess: (id) => navigateTo(model, dashboardHref(id)),
 			}),
 		GotDeleteDialogMessage: ({ message: inner }) =>

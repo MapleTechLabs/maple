@@ -3,8 +3,11 @@ import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { File as FoldkitFile } from "foldkit/file"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { DASHBOARD_FAVORITES_EVENT, DASHBOARD_FAVORITES_KEY } from "../../../shell"
-import { readDashboardFavorites } from "../../../shell/favorites"
+import {
+	DASHBOARD_FAVORITES_EVENT,
+	DASHBOARD_FAVORITES_KEY,
+	readDashboardFavorites,
+} from "../../../shell/favorites"
 import {
 	createPayload,
 	downloadPortable,

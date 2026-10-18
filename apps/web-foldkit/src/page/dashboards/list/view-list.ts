@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "@maple/ui/styles/ui/row-actions-menu"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -109,11 +110,79 @@ const disabledReason = (h: H, child: Html): Html =>
 	)
 
 /** `TagFilterMenu` with no tags in the org: disabled, with the reason as its tooltip. */
-const tagFilter = (h: H, allTags: ReadonlyArray<string>): Html =>
-	// TODO(tags-filter): the MultiSelectCombobox for orgs whose dashboards carry tags.
-	disabledReason(
-		h,
-		button(h, { variant: "outline", className: "shrink-0", isDisabled: allTags.length === 0 }, ["Tags"]),
+const tagFilter = (h: H, allTags: ReadonlyArray<string>, selected: ReadonlyArray<string>): Html =>
+	allTags.length === 0
+		? disabledReason(
+				h,
+				button(h, { variant: "outline", className: "shrink-0", isDisabled: true }, ["Tags"]),
+			)
+		: tagFilterTrigger(h, selected)
+
+/**
+ * `MultiSelectCombobox` (`mode="trigger"`), closed: the combobox trigger and Base UI's hidden input.
+ * TODO(tags-filter): the popup (search, tag list, Clear tags) is not ported; the trigger is inert.
+ */
+const tagFilterTrigger = (h: H, selected: ReadonlyArray<string>): Html =>
+	h.div(
+		[h.Class("contents")],
+		[
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "default",
+					className: "shrink-0 gap-1.5",
+					slot: "combobox-trigger",
+					attributes: [
+						h.AriaExpanded(false),
+						h.AriaHasPopup("dialog"),
+						h.AriaLabel("Tags"),
+						...(selected.length === 0 ? [h.DataAttribute("placeholder", "")] : []),
+						h.Role("combobox"),
+						h.Tabindex(0),
+					],
+				},
+				[
+					"Tags",
+					...(selected.length === 0
+						? []
+						: [
+								h.span(
+									[
+										h.Class(
+											cn(
+												badgeVariants({
+													className: "ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs",
+												}),
+											),
+										),
+										h.DataAttribute("slot", "badge"),
+									],
+									[String(selected.length)],
+								),
+							]),
+					icon(h, "ChevronDownIcon", { className: "text-muted-foreground" }),
+				],
+			),
+			h.input([
+				h.AriaHidden(true),
+				h.Style({
+					clipPath: "inset(50%)",
+					overflow: "hidden",
+					whiteSpace: "nowrap",
+					border: "0px",
+					padding: "0px",
+					width: "1px",
+					height: "1px",
+					margin: "-1px",
+					position: "fixed",
+					top: "0px",
+					left: "0px",
+				}),
+				h.Tabindex(-1),
+				h.Value(selected.join(",")),
+			]),
+		],
 	)
 
 const sortEntries = (sort: DashboardSortOption): ReadonlyArray<MenuView.MenuEntry> => [
@@ -171,7 +240,7 @@ const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, s
 				ariaLabel: "Filter dashboards by favorite",
 				className: "shrink-0",
 			}),
-			tagFilter(h, collectTags(dashboards)),
+			tagFilter(h, collectTags(dashboards), tagsOf(model.search)),
 			sortMenu(h, model),
 			h.span([h.Class("grow")], []),
 			h.span(
@@ -584,7 +653,7 @@ export const listBody = (
 								h.span([h.Class("font-mono text-foreground")], [String(sections.matched)]),
 								h.span(
 									[h.Class("text-muted-foreground")],
-									[`of ${dashboards.length} match name, description or tag`],
+									["of ", String(dashboards.length), " match name, description or tag"],
 								),
 							],
 						),
