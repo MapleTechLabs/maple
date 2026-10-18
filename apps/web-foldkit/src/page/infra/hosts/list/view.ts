@@ -87,6 +87,7 @@ const hostList = (
 						timeZone: inputs.context.timeZone,
 						isWaiting,
 						sort: model.sort,
+						onSort: (key) => Message.ClickedSort({ key }),
 					}),
 		],
 	)
