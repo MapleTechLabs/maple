@@ -1,16 +1,25 @@
+import type { AiTriageResult } from "@maple/domain/http"
+import { parseDiagnosisMarker } from "@maple/web/components/chat/diagnosis-marker"
 import { cn } from "@maple/ui/lib/utils"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AREA_CHART_TOKENS } from "../../../charts/area-chart"
+import { BAR_CHART_TOKENS } from "../../../charts/bar-chart"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { skeleton } from "../../../ui/skeleton"
-import { approvalCard, taskCard } from "../kit/view-cards"
+import { approvalCard } from "../kit/view-cards"
+import { taskCard, taskSheetId } from "../kit/view-task"
+import * as Dialog from "../../../ui/dialog"
 import { composer, failureNotice } from "../kit/view-composer"
 import { MountTurnMinimap } from "../kit/turn-minimap-mount"
-import { MountMermaid } from "../kit/mermaid"
+import { MountDiagramFullscreen, MountDiagramMenu, MountMermaid } from "../kit/mermaid"
+import { MountMath } from "../kit/math"
+import { MountJumpToMessage } from "../kit/scroller"
+import { MountRunningClock } from "../kit/view-tool"
+import { findDiagnosisMessageId } from "../kit/transcript-rows"
 import { inlineCard } from "../kit/view-inline"
 import { chatMarkdownOverrides } from "../kit/view-markdown"
 import { type TranscriptHost, transcript } from "../kit/view-transcript"
@@ -18,8 +27,9 @@ import { Message } from "./message"
 import { isLoading, type Model } from "./model"
 
 // `ChatConversation` (apps/web components/chat/chat-conversation.tsx): transcript, notices, composer.
-// TODO(chat-investigation-mode): the investigation and widget-fix subjects (attachment cards, their
-// suggestions and empty notices, the widget-fix auto-send) are not ported.
+
+/** The area and bar plots' colours, read once for every chart fence. */
+const CHART_TOKENS = [...new Set([...AREA_CHART_TOKENS, ...BAR_CHART_TOKENS])]
 
 export type ConversationViewOptions<M> = Readonly<{
 	toMessage: (message: Message) => M
@@ -43,6 +53,10 @@ export type ConversationViewOptions<M> = Readonly<{
 	fallback?: Html
 	/** The subject's starter prompts above the composer of an empty thread (investigation mode). */
 	suggestions?: Readonly<{ items: ReadonlyArray<string>; onSelect: (text: string) => M }>
+	/** `DiagnosisReportCard` for a `submit_diagnosis` turn; without it the turn draws nothing. */
+	diagnosisCard?: (report: AiTriageResult) => Html
+	/** The subject pinned above the thread (`InvestigationAttachmentCard`, `WidgetFixAttachmentCard`). */
+	header?: ReadonlyArray<Html>
 }>
 
 /** Approvals, sub-agent rows, inline cards and the chat's tables and charts. */
@@ -52,11 +66,24 @@ const cardsOf = <M>(
 	options: ConversationViewOptions<M>,
 ): Pick<TranscriptHost<M>, "inlineCard" | "ownCard" | "taskCard" | "markdownOverrides"> => ({
 	inlineCard: (segment) => inlineCard(h, segment, options.timeZone),
-	taskCard: (part) => taskCard(h, part, `chat-task-${part.toolCallId}`),
+	taskCard: (part, draw) =>
+		taskCard(
+			h,
+			{
+				dialog: (toolCallId) => model.taskSheets[toolCallId] ?? Dialog.init(taskSheetId(toolCallId), "sheet"),
+				onDialog: (toolCallId, message) => options.toMessage(Message.GotTaskSheetMessage({ toolCallId, message })),
+				richText: draw.richText,
+				tool: draw.tool,
+				clockMount: Mount.mapMessage(MountRunningClock(), () => options.toMessage(Message.CompletedMountClock())),
+			},
+			part,
+		),
 	ownCard:
 		options.ownCard ??
-		((part) =>
-			part.state !== "proposed"
+		((part) => {
+			const diagnosis = part.state === "output-available" ? parseDiagnosisMarker(part.output) : null
+			if (diagnosis !== null) return options.diagnosisCard?.(diagnosis.report) ?? null
+			return part.state !== "proposed"
 				? null
 				: approvalCard(h, {
 						toolName: part.toolName,
@@ -67,7 +94,8 @@ const cardsOf = <M>(
 						onToggleRaw: options.toMessage(Message.ToggledPanel({ id: `raw:${part.toolCallId}` })),
 						onApprove: options.toMessage(Message.ClickedApprove({ toolCallId: part.toolCallId, tool: part.toolName })),
 						onDeny: options.toMessage(Message.ClickedDeny({ toolCallId: part.toolCallId })),
-					})),
+					})
+		}),
 	markdownOverrides: chatMarkdownOverrides(
 		h,
 		options.knownServices,
@@ -83,18 +111,38 @@ const cardsOf = <M>(
 			highlights: model.highlights,
 			onCopy: (code) => options.toMessage(Message.ClickedCopyCode({ code })),
 			onDownload: (code, language) => options.toMessage(Message.ClickedDownloadCode({ code, language })),
-			onDownloadDiagram: (code) => options.toMessage(Message.ClickedDownloadDiagram({ code })),
-			mermaidMount: (code) =>
-				Mount.mapMessage(MountMermaid({ code }), (message) =>
+			diagramMenu: model.diagramMenu,
+			fullscreenDiagram: model.fullscreenDiagram,
+			onToggleDiagramMenu: (menuId) => options.toMessage(Message.ToggledDiagramMenu({ menuId })),
+			onDiagramFormat: (menuId, code, format) => options.toMessage(Message.ClickedDiagramFormat({ menuId, code, format })),
+			onFullscreen: (code) => options.toMessage(Message.ClickedDiagramFullscreen({ code })),
+			onExitFullscreen: options.toMessage(Message.ClosedDiagramFullscreen()),
+			diagramMenuMount: (menuId) =>
+				Mount.mapMessage(MountDiagramMenu(), (message) =>
+					options.toMessage(
+						message._tag === "PressedOutsideDiagramMenu"
+							? Message.PressedOutsideDiagramMenu({ menuId })
+							: Message.CompletedMountDiagramOverlay(),
+					),
+				),
+			fullscreenMount: Mount.mapMessage(MountDiagramFullscreen(), (message) =>
+				options.toMessage(
+					message._tag === "CompletedMountDiagramOverlay" ? Message.CompletedMountDiagramOverlay() : Message.ClosedDiagramFullscreen(),
+				),
+			),
+			mermaidMount: (code, isFullscreen) =>
+				Mount.mapMessage(MountMermaid({ code, isFullscreen }), (message) =>
 					options.toMessage(Message.CompletedMermaidDiagram({ isDrawn: message._tag === "CompletedMountMermaid" })),
 				),
+			mathMount: (tex, isDisplay) =>
+				Mount.mapMessage(MountMath({ tex, isDisplay }), () => options.toMessage(Message.CompletedMountMath())),
 		},
 	),
 })
 
 /** Reads the chart colours off the page, again on every light/dark flip. */
 export const themeMount = <M>(toMessage: (message: Message) => M) =>
-	Mount.mapMessage(ResolveThemeColors({ tokens: AREA_CHART_TOKENS }), (message) =>
+	Mount.mapMessage(ResolveThemeColors({ tokens: CHART_TOKENS }), (message) =>
 		toMessage(Message.ResolvedThemeColors({ colors: message.colors })),
 	)
 
@@ -145,6 +193,7 @@ const emptyStateOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationV
 export const transcriptHostOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): TranscriptHost<M> => ({
 	isOpen: (id) => model.openPanels.includes(id),
 	onToggle: (id) => options.toMessage(Message.ToggledPanel({ id })),
+	clockMount: Mount.mapMessage(MountRunningClock(), () => options.toMessage(Message.CompletedMountClock())),
 	markdown: model.markdown,
 	timeZone: options.timeZone,
 	isLoading: isLoading(model),
@@ -156,8 +205,22 @@ export const transcriptHostOf = <M>(h: HtmlBuilder<M>, model: Model, options: Co
 	minimapMount: Mount.mapMessage(MountTurnMinimap(), (message) => options.toMessage(Message.GotMinimapMessage({ message }))),
 	permalinkFor: options.permalinkFor,
 	fallback: options.fallback,
+	...jumpOf(model, options),
 	...cardsOf(h, model, options),
 })
+
+/** `diagnosisMessageId`: a thread with a `submit_diagnosis` turn offers the way back to it. */
+const jumpOf = <M>(model: Model, options: ConversationViewOptions<M>): Pick<TranscriptHost<M>, "jump"> => {
+	const messageId = findDiagnosisMessageId(model.messages)
+	return messageId === undefined
+		? {}
+		: {
+				jump: {
+					messageId,
+					mount: Mount.mapMessage(MountJumpToMessage({ messageId }), () => options.toMessage(Message.CompletedMountJump())),
+				},
+			}
+}
 
 const notices = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): ReadonlyArray<Html> => {
 	if (model.failedSend !== null) {
@@ -213,6 +276,7 @@ export const conversationView = <M>(h: HtmlBuilder<M>, model: Model, options: Co
 			...(model.chartRuntime === null
 				? []
 				: [h.keyed("span")("chat-theme-probe", [h.Class("contents"), h.OnMount(themeMount(options.toMessage))], [])]),
+			...(options.header ?? []),
 			transcript(h, transcriptHostOf(h, model, options), model.messages, () => emptyStateOf(h, model, options)),
 			...(model.readOnly !== null
 				? []

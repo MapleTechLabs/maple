@@ -1,5 +1,6 @@
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
-import { Option, Schema, Stream } from "effect"
+import { captureChatReferrer } from "@maple/web/components/chat/auto-contexts"
+import { Effect, Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import { Tail, tailOf, tailsMessages } from "../conversation/subscription"
@@ -36,7 +37,7 @@ const shortcut: Stream.Stream<Message> = Dom.streamFromEventFilterMapPreventDefa
 })
 
 /** `isTypeAnywhere`: `/chat`'s composer takes printable keys first (`useTypeAnywhereFocus`, capture phase). */
-export type SheetHost = Readonly<{ sheet: Model; isSignedIn: boolean; isTypeAnywhere: boolean }>
+export type SheetHost = Readonly<{ sheet: Model; isSignedIn: boolean; isTypeAnywhere: boolean; pathname: string }>
 
 export const subscriptions = Subscription.make<SheetHost, Message, Resources>()((entry) => ({
 	open: entry(
@@ -45,6 +46,14 @@ export const subscriptions = Subscription.make<SheetHost, Message, Resources>()(
 			modelToDependencies: ({ isSignedIn, isTypeAnywhere }) => ({ isSignedIn, isTypeAnywhere }),
 			dependenciesToStream: ({ isSignedIn, isTypeAnywhere }) =>
 				!isSignedIn ? Stream.empty : isTypeAnywhere ? openEvents : Stream.merge(openEvents, shortcut),
+		},
+	),
+	/** `captureChatReferrer(pathname)` (`__root.tsx`): the page a chat opens over, for its context chips. */
+	referrer: entry(
+		{ pathname: Schema.String },
+		{
+			modelToDependencies: ({ pathname }) => ({ pathname }),
+			dependenciesToStream: ({ pathname }) => Stream.fromEffectDrain(Effect.sync(() => captureChatReferrer(pathname))),
 		},
 	),
 	tail: entry(

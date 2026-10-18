@@ -3,6 +3,8 @@ import type { FixtureArea, RawRoute } from "../areas.ts"
 import type { Dataset } from "../dataset.ts"
 import { defaultDataset } from "../datasets/default.ts"
 import { MINUTE } from "../identity.ts"
+import { ACME_OPS_THREAD_DATASET } from "./ops.ts"
+import { INVESTIGATION_DIAGNOSED_ID, INVESTIGATION_DIAGNOSED_REPORT } from "./ops/investigations.ts"
 
 /**
  * `/chat`'s durable transcript (`GET /api/chat/sessions/<orgId>:<tab>/history`, a raw route in
@@ -100,6 +102,111 @@ const codeConversation = (nowMs: number) => {
 	]
 }
 
+export const CHAT_MATH_DATASET = "chat-math"
+
+/** A reply with text math, a `$$` block and a ```math fence: KaTeX, inline and display. */
+const mathConversation = (nowMs: number) => {
+	const at = (minutesAgo: number) => nowMs - minutesAgo * MINUTE
+	const answer = [
+		"The error budget burns at $$\\frac{e}{r} \\times 100$$ percent, against a budget of $2 per run.",
+		"",
+		"$$",
+		"\\text{burn} = \\frac{\\text{errors}}{\\text{requests}} \\cdot \\frac{30\\,\\text{d}}{w}",
+		"$$",
+		"",
+		"With the window at one hour:",
+		"",
+		"```math",
+		"p_{95} \\le 800\\,\\text{ms}",
+		"```",
+	].join("\n")
+	return [
+		{ id: "msg_math_user", role: "user", text: "How fast are we burning the error budget?", toolCalls: [], createdAt: at(4), startSeq: 1 },
+		{ id: "msg_math_assistant", role: "assistant", text: answer, toolCalls: [], createdAt: at(3), startSeq: 2 },
+	]
+}
+
+export const CHAT_CHARTS_DATASET = "chat-charts"
+
+/** A reply with a `bar` and a `line` ```chart fence, ending a few minutes before `now`. */
+const chartsConversation = (nowMs: number) => {
+	const series = (values: ReadonlyArray<number>, name: string) =>
+		values.map((value, index) => ({
+			bucket: new Date(Math.floor(nowMs / MINUTE - (values.length - index + 2)) * MINUTE).toISOString(),
+			series: { [name]: value, "checkout-api": Math.round(value / 3) },
+		}))
+	const fence = (spec: Record<string, unknown>) => ["```chart", JSON.stringify(spec), "```"].join("\n")
+	const answer = [
+		"Errors per minute, by service:",
+		"",
+		fence({ type: "bar", title: "Errors per minute", unit: "number", data: series([4, 6, 5, 31, 88, 140, 132, 96], "payment-svc") }),
+		"",
+		"and p95 latency over the same window:",
+		"",
+		fence({ type: "line", title: "p95 latency", unit: "ms", data: series([180, 190, 210, 900, 1600, 1840, 1790, 1500], "payment-svc") }),
+	].join("\n")
+	return [
+		{ id: "msg_charts_user", role: "user", text: "Chart the incident.", toolCalls: [], createdAt: nowMs - 2 * MINUTE, startSeq: 1 },
+		{ id: "msg_charts_assistant", role: "assistant", text: answer, toolCalls: [], createdAt: nowMs - MINUTE, startSeq: 2 },
+	]
+}
+
+export const CHAT_PROPOSALS_DATASET = "chat-proposals"
+
+/** One proposal per dashboard tool, awaiting approval: each tool's own summary in its card. */
+const proposalsConversation = (nowMs: number) => {
+	const widget = { id: "w-p95", visualization: "chart", display: { title: "Checkout p95" }, dataSource: { endpoint: "custom_timeseries", params: { group_by: "service" } } }
+	const propose = (id: string, name: string, input: Record<string, unknown>) => ({ id, name, input, proposed: true, textOffset: 0 })
+	return [
+		{ id: "msg_prop_user", role: "user", text: "Build me a checkout dashboard.", toolCalls: [], createdAt: nowMs - 3 * MINUTE, startSeq: 1 },
+		{
+			id: "msg_prop_assistant",
+			role: "assistant",
+			text: "Here are the changes, each waiting for your approval.",
+			toolCalls: [
+				propose("call_prop_1", "create_dashboard", { name: "Checkout", description: "Checkout health", service_name: "checkout-api", dashboard_json: JSON.stringify({ name: "Checkout v2", widgets: [widget, { ...widget, id: "w-2", visualization: "table", display: { title: "Slow routes" } }] }) }),
+				propose("call_prop_2", "update_dashboard", { dashboard_id: "dash-checkout", name: "Checkout (prod)", time_range: "24h" }),
+				propose("call_prop_3", "add_dashboard_widget", { dashboard_id: "dash-checkout", visualization: "pie", display_json: JSON.stringify({ title: "Errors by route" }), data_source_json: JSON.stringify({ endpoint: "errors_by_type", params: { service_name: "checkout-api" } }), layout_json: JSON.stringify({ x: 0, y: 4, w: 6, h: 4 }) }),
+				propose("call_prop_4", "update_dashboard_widget", { dashboard_id: "dash-checkout", widget_id: "w-p95", display_json: JSON.stringify({ title: "Checkout p99" }), layout_json: "{}" }),
+				propose("call_prop_5", "remove_dashboard_widget", { dashboard_id: "dash-checkout", widget_id: "w-2" }),
+				propose("call_prop_6", "reorder_dashboard_widgets", { dashboard_id: "dash-checkout", layouts_json: JSON.stringify(["a", "b", "c", "d", "e"].map((id) => ({ id }))) }),
+			],
+			createdAt: nowMs - 2 * MINUTE,
+			startSeq: 2,
+		},
+	]
+}
+
+/** The diagnosed investigation's thread (`inv-<id>`): its autonomous pass, ending in `submit_diagnosis`. */
+const investigationThread = (nowMs: number) => {
+	const at = (minutesAgo: number) => nowMs - minutesAgo * MINUTE
+	const call = (id: string, name: string, input: Record<string, unknown>, output: unknown) => ({ id, name, input, output, textOffset: 0 })
+	return [
+		{
+			id: "msg_inv_user",
+			role: "user",
+			text: "Investigate payment-svc p95 latency above baseline.",
+			toolCalls: [],
+			createdAt: at(105),
+			startSeq: 1,
+		},
+		{
+			id: "msg_inv_assistant",
+			role: "assistant",
+			text: "The pool shrank in 3.5.0 while each charge gained a query; the report is attached.",
+			toolCalls: [
+				call("call_inv_1", "service_overview", { service: "payment-svc", time_window: "24h" }, { p95Ms: 1840, baselineP95Ms: 412 }),
+				call("call_inv_2", "list_releases", { service: "payment-svc" }, { releases: [{ version: "3.5.0" }] }),
+				call("call_inv_3", "submit_diagnosis", { confidence: "high" }, { status: "diagnosis", report: INVESTIGATION_DIAGNOSED_REPORT }),
+			],
+			createdAt: at(98),
+			startSeq: 2,
+		},
+	]
+}
+
+const INVESTIGATION_THREAD = new RegExp(`(?::|%3A)inv-${INVESTIGATION_DIAGNOSED_ID}/history$`, "i")
+
 const history: RawRoute = {
 	tag: "chat.history",
 	answer: ({ dataset, url, method }) => {
@@ -110,7 +217,15 @@ const history: RawRoute = {
 				? conversation(nowMs)
 				: dataset.name === CHAT_CODE_DATASET
 					? codeConversation(nowMs)
-					: []
+					: dataset.name === CHAT_MATH_DATASET
+						? mathConversation(nowMs)
+						: dataset.name === CHAT_CHARTS_DATASET
+							? chartsConversation(nowMs)
+						: dataset.name === CHAT_PROPOSALS_DATASET
+							? proposalsConversation(nowMs)
+						: dataset.name === ACME_OPS_THREAD_DATASET && INVESTIGATION_THREAD.test(url.pathname)
+							? investigationThread(nowMs)
+							: []
 		return Response.json({ messages, cursor: messages.length === 0 ? 0 : 40, running: false })
 	},
 }
@@ -182,11 +297,21 @@ const abort: RawRoute = {
 		method === "POST" && ABORT_PATH.test(url.pathname) ? new Response(null, { status: 204 }) : undefined,
 }
 
+/** `POST /internal/chat/apply`: the session ran the approved proposal (or recorded the denial). */
+const apply: RawRoute = {
+	tag: "chat.apply",
+	answer: ({ url, method }) =>
+		method === "POST" && url.pathname === "/internal/chat/apply" ? Response.json({ content: "Applied." }) : undefined,
+}
+
 const chatConversationDataset: Dataset = { ...defaultDataset, name: CHAT_CONVERSATION_DATASET }
 const chatCodeDataset: Dataset = { ...defaultDataset, name: CHAT_CODE_DATASET }
+const chatMathDataset: Dataset = { ...defaultDataset, name: CHAT_MATH_DATASET }
+const chatProposalsDataset: Dataset = { ...defaultDataset, name: CHAT_PROPOSALS_DATASET }
+const chatChartsDataset: Dataset = { ...defaultDataset, name: CHAT_CHARTS_DATASET }
 
 export const fixtureArea: FixtureArea = {
 	area: "chat",
-	rawRoutes: [history, send, events, abort],
-	datasets: [chatConversationDataset, chatCodeDataset],
+	rawRoutes: [history, send, events, abort, apply],
+	datasets: [chatConversationDataset, chatCodeDataset, chatMathDataset, chatProposalsDataset, chatChartsDataset],
 }

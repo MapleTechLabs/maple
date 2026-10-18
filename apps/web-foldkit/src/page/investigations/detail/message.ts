@@ -31,7 +31,6 @@ export const Message = defineMessageUnion({
 	GotActionSheetMessage: { message: Dialog.Message },
 	GotCanvasMessage: { message: Canvas.Message },
 	GotTraceTooltipMessage: { message: Tooltip.Message },
-	CompletedPreloadTrace: {},
 	GotConversationMessage: { message: ConversationMessage },
 	ClickedReportAction: { index: Schema.Number },
 	GotReportSheetMessage: { message: Dialog.Message },

@@ -15,7 +15,11 @@ import { chatEmptyState } from "../kit/view-empty"
 import { MountEmptyState, shareUrl } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { activeContexts, composerId, suggestionsOf } from "./update"
+import { activeContexts, activeTabId, composerId, subjectFor, suggestionsOf } from "./update"
+import { Message as ConversationMessage } from "../conversation/message"
+import { emptyNotice } from "../conversation/view"
+import { investigationNoun } from "../../investigations/detail/investigation-context"
+import { investigationCard, widgetFixCard } from "../kit/view-subject"
 import { chatSidebar } from "./view-sidebar"
 
 // `ChatPage` (apps/web components/chat/chat-page.tsx), desktop layout: the conversation rail
@@ -30,25 +34,53 @@ const conversation = (
 	tab: { readonly id: string; readonly title: string },
 	state: ConversationModel,
 	timeZone: string,
-): Html =>
-	conversationView(h, state, {
+): Html => {
+	const subject = subjectFor(model, tab.id)
+	const onSelect = (text: string) =>
+		Message.GotConversationMessage({ tabId: tab.id, message: ConversationMessage.ClickedSuggestion({ text }) })
+	const suggestions = suggestionsOf(model, tab.id)
+	return conversationView(h, state, {
 		toMessage: (message) => Message.GotConversationMessage({ tabId: tab.id, message }),
 		timeZone,
 		textareaId: composerId(tab.id),
-		placeholder: "Ask about your system…",
+		placeholder:
+			subject === null
+				? "Ask about your system…"
+				: subject._tag === "Investigation"
+					? `Ask about this ${investigationNoun(subject.context.kind)}…`
+					: "Ask about this widget…",
 		emptyState: () =>
-			chatEmptyState(h, {
-				suggestions: suggestionsOf(model),
-				onSelect: (text) => Message.GotConversationMessage({ tabId: tab.id, message: { _tag: "ClickedSuggestion", text } }),
-				tracePresence: presenceOf(model.presence, "traces"),
-				mount: MountEmptyState(),
-			}),
-		chips: contextChips(h, activeContexts(model), (id) => Message.DismissedContext({ id })),
+			subject === null
+				? chatEmptyState(h, {
+						suggestions,
+						onSelect,
+						tracePresence: presenceOf(model.presence, "traces"),
+						mount: MountEmptyState(),
+					})
+				: subject._tag === "Investigation"
+					? emptyNotice(
+							h,
+							"Ready to investigate",
+							`This ${investigationNoun(subject.context.kind)} is attached to every message in the thread. Start with a suggestion or ask your own question.`,
+						)
+					: emptyNotice(
+							h,
+							"Diagnosing widget…",
+							"Maple AI is reading the broken widget config and the validation error. It will propose a corrected widget JSON for you to approve.",
+						),
+		chips: subject === null ? contextChips(h, activeContexts(model), (id) => Message.DismissedContext({ id })) : [],
 		permalinkFor: (messageId) => shareUrl(model.origin, tab, messageId),
-		scrollerMount: MountMessageScroller(),
+		scrollerMount: MountMessageScroller({ focusMessageId: tab.id === activeTabId(model) ? (model.search.m ?? null) : null }),
 		knownServices: new Set(model.knownServices),
 		nowMs: model.nowMs,
+		...(subject === null
+			? undefined
+			: {
+					suggestions: { items: suggestions, onSelect },
+					header: [subject._tag === "Investigation" ? investigationCard(h, subject.context) : widgetFixCard(h, subject.context)],
+				}),
 	})
+}
 
 const conversations = (h: H, model: Model, timeZone: string): Html => {
 	const tabs = model.tabs
@@ -112,7 +144,7 @@ const sharedView = (h: H, model: Model, timeZone: string): Html => {
 										placeholder: "Ask about your system…",
 										emptyState: () => h.empty,
 										chips: [],
-										scrollerMount: MountMessageScroller(),
+										scrollerMount: MountMessageScroller({ focusMessageId: shared.focusMessageId }),
 										knownServices: new Set(model.knownServices),
 										nowMs: model.nowMs,
 										permalinkFor: (messageId) =>

@@ -2,6 +2,8 @@ import { Schema } from "effect"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import { SignalPresenceData } from "../../kit/signal-presence"
+import { ChatSearch } from "../../../route/search"
+import { ChatSubject } from "../kit/subject"
 import { TabsState } from "../kit/tab-store"
 import * as Conversation from "../conversation/model"
 
@@ -41,6 +43,10 @@ export const Model = Schema.Struct({
 	/** The org's service names (the shared 24 h facets probe), for chat tables' service links. */
 	knownServices: Schema.Array(Schema.String),
 	isKnownServicesRequested: Schema.Boolean,
+	/** `?mode=alert` / `?mode=widget-fix`: the subject its own tab is about. */
+	subject: Schema.NullOr(ChatSubject),
+	/** The route's search, kept when `?tab=` is rewritten (`url.searchParams.set`). */
+	search: ChatSearch,
 })
 export type Model = typeof Model.Type
 

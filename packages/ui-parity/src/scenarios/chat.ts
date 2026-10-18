@@ -1,4 +1,5 @@
 import type { Page } from "playwright"
+import { SEEDED } from "./ops-kit.ts"
 import type { AreaModule, Scenario } from "./types.ts"
 
 /**
@@ -66,6 +67,175 @@ const openSheet = async (page: Page) => {
 	await page.getByRole("dialog").getByText("Or just start typing.", { exact: false }).waitFor()
 }
 
+/** `toBase64Url(JSON.stringify(ctx))`, the encoding alert links and the widget menu write. */
+const base64Url = (value: unknown) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url")
+
+/** An alert notification's "Investigate in chat" link (`?mode=alert`). */
+const ALERT_PATH = `/chat?mode=alert&alert=${base64Url({
+	ruleId: "rule_parity_checkout_p95",
+	ruleName: "Checkout p95 latency over budget",
+	incidentId: "0199b0aa-0000-7000-8000-00000000a1e7",
+	eventType: "trigger",
+	signalType: "p95_latency",
+	severity: "critical",
+	comparator: "gt",
+	threshold: 800,
+	value: 1840,
+	windowMinutes: 5,
+	groupKey: "checkout-api",
+	sampleCount: 120,
+})}`
+
+/** A broken widget's "Fix with AI" (`?mode=widget-fix`). */
+const WIDGET_FIX_PATH = `/chat?mode=widget-fix&widget=${base64Url({
+	dashboardId: "0199c0de-0000-7000-8000-0000000d45b0",
+	widgetId: "w-checkout-p95",
+	widgetTitle: "Checkout p95 latency",
+	widgetJson: JSON.stringify({ id: "w-checkout-p95", visualization: "chart", dataSource: { endpoint: "custom_timeseries" } }),
+	errorTitle: "Invalid widget config",
+	errorMessage: "dataSource.params is missing: a custom timeseries needs a metric and an aggregation.",
+})}`
+
+const subjectScenarios: ReadonlyArray<Scenario> = [
+	{ ...scenario("alert", "an alert attached from its notification", "default"), path: ALERT_PATH },
+	{
+		...scenario("alert-send", "an alert suggestion sent with its context", "default", async (page) => {
+			await page.getByRole("button", { name: "Slowest operations in checkout-api right now" }).click()
+			await replied(page)
+		}),
+		path: ALERT_PATH,
+	},
+	{
+		...scenario("alert-typed", "a typed question about the attached alert", "default", async (page) => {
+			await page.getByPlaceholder("Ask about this alert…").fill("Is this the deploy?")
+			await page.getByPlaceholder("Ask about this alert…").press("Enter")
+			await replied(page)
+		}),
+		path: ALERT_PATH,
+	},
+	{ ...scenario("widget-fix", "a broken widget's fix prompt sent on arrival", "default", replied), path: WIDGET_FIX_PATH },
+]
+
+/**
+ * Page context: the sheet opened over `/traces` (the root records it as `maple-chat-referrer`) shows
+ * a "Traces explorer" chip and route-aware suggestions, sends the context block with the first
+ * message unless the chip was removed, and hands both to `/chat` through Open full page.
+ */
+const overTraces = (id: string, title: string, steps: (page: Page) => Promise<void>): Scenario => ({
+	...scenario(`context-${id}`, `page context, ${title}`, "default", async (page) => {
+		await openSheet(page)
+		await page.getByRole("dialog").getByRole("button", { name: "Remove Traces explorer" }).waitFor()
+		await steps(page)
+	}),
+	path: "/traces",
+})
+
+const contextScenarios: ReadonlyArray<Scenario> = [
+	overTraces("sheet", "the sheet opened over the traces explorer", async () => {}),
+	overTraces("sheet-send", "a route-aware suggestion sent with the context", async (page) => {
+		await page.getByRole("dialog").getByRole("button", { name: "Find traces with errors" }).click()
+		await replied(page)
+	}),
+	overTraces("sheet-dismissed", "the chip removed, then a question sent without it", async (page) => {
+		await page.getByRole("dialog").getByRole("button", { name: "Remove Traces explorer" }).click()
+		await page.getByRole("dialog").getByRole("button", { name: "Remove Traces explorer" }).waitFor({ state: "detached" })
+		await page.getByRole("dialog").getByRole("button", { name: "Show me the slowest traces" }).click()
+		await replied(page)
+	}),
+	overTraces("full-page", "carried to the full page", async (page) => {
+		await page.getByRole("dialog").getByRole("link", { name: "Open full page" }).click()
+		await page.getByRole("button", { name: "Remove Traces explorer" }).waitFor()
+	}),
+]
+
+/**
+ * The diagnosed investigation's Chat and Transcript tabs once its thread holds the
+ * `submit_diagnosis` turn (`acme-ops-thread`): the report card drawn in the thread.
+ */
+const thread = (id: string, title: string, tab: "chat" | "transcript", steps?: (page: Page) => Promise<void>): Scenario => ({
+	...scenario(`investigation-${id}`, `investigation thread, ${title}`, "acme-ops-thread", async (page) => {
+		await page.getByText("Recommended actions").first().waitFor()
+		await steps?.(page)
+	}),
+	path: `/investigations/${SEEDED.diagnosedInvestigation}?tab=${tab}`,
+})
+
+const threadScenarios: ReadonlyArray<Scenario> = [
+	thread("thread", "the report drawn in the Chat tab", "chat"),
+	thread("thread-transcript", "the report drawn in the Transcript tab", "transcript"),
+	thread("thread-action", "a report action opened in its sheet", "chat", async (page) => {
+		await page.getByRole("button", { name: /Roll payment-svc back to 3.4.1/ }).click()
+		await page.getByRole("dialog").waitFor({ state: "visible" })
+	}),
+]
+
+/** The mermaid block's toolbar on `chat-code`: the download menu, fullscreen, and pan and zoom. */
+const diagram = (id: string, title: string, steps: (page: Page) => Promise<void>): Scenario =>
+	scenario(`code-${id}`, `the mermaid diagram, ${title}`, "chat-code", async (page) => {
+		await page.getByRole("button", { name: "Copy Code" }).first().waitFor()
+		await steps(page)
+	})
+
+const openFullscreen = async (page: Page) => {
+	await page.getByRole("button", { name: "View fullscreen" }).click()
+	await page.getByRole("dialog", { name: "View fullscreen" }).getByRole("img", { name: "Mermaid chart" }).waitFor()
+}
+
+const diagramScenarios: ReadonlyArray<Scenario> = [
+	diagram("download-menu", "its download menu open", (page) =>
+		page.getByRole("button", { name: "Download diagram", exact: true }).click(),
+	),
+	diagram("download-mmd", "its source downloaded as MMD", async (page) => {
+		await page.getByRole("button", { name: "Download diagram", exact: true }).click()
+		await page.getByRole("button", { name: "Download diagram as MMD" }).click()
+		await page.getByRole("button", { name: "Download diagram as MMD" }).waitFor({ state: "detached" })
+	}),
+	diagram("download-menu-dismissed", "its download menu closed by a press outside", async (page) => {
+		await page.getByRole("button", { name: "Download diagram", exact: true }).click()
+		await page.getByText("The slow authorizations all run this query:").click()
+		await page.getByRole("button", { name: "Download diagram as SVG" }).waitFor({ state: "detached" })
+	}),
+	diagram("zoom", "zoomed in twice", async (page) => {
+		await page.getByRole("button", { name: "Zoom in" }).click()
+		await page.getByRole("button", { name: "Zoom in" }).click()
+	}),
+	diagram("zoom-reset", "zoomed out and reset", async (page) => {
+		await page.getByRole("button", { name: "Zoom out" }).click()
+		await page.getByRole("button", { name: "Reset zoom and pan" }).click()
+	}),
+	diagram("fullscreen", "opened fullscreen", openFullscreen),
+	diagram("fullscreen-menu", "its fullscreen download menu open", async (page) => {
+		await openFullscreen(page)
+		await page.getByRole("dialog").getByRole("button", { name: "Download diagram", exact: true }).click()
+	}),
+	diagram("fullscreen-exit", "fullscreen closed with its exit button", async (page) => {
+		await openFullscreen(page)
+		await page.getByRole("button", { name: "Exit fullscreen" }).click()
+		await page.getByRole("dialog").waitFor({ state: "detached" })
+	}),
+	diagram("fullscreen-escape", "fullscreen closed with Escape", async (page) => {
+		await openFullscreen(page)
+		await page.keyboard.press("Escape")
+		await page.getByRole("dialog").waitFor({ state: "detached" })
+	}),
+]
+
+/** `?m=` permalinks open the transcript on their message; the link itself is copied from the row. */
+const permalinkScenarios: ReadonlyArray<Scenario> = [
+	{
+		...scenario("permalink", "a message permalink opened on its own conversation", "chat-conversation"),
+		path: "/chat?tab=default&m=msg_parity_assistant_1",
+	},
+	{
+		...scenario("shared-permalink", "a shared conversation opened on one message", "chat-conversation"),
+		path: "/chat?shared=default&title=Checkout%20incident&m=msg_parity_assistant_1",
+	},
+	scenario("copy-permalink", "a message's permalink copied", "chat-conversation", async (page) => {
+		await page.getByText("payment-svc 3.5.0 is exhausting its Postgres connection pool.").hover()
+		await page.getByRole("button", { name: "Copy Link to message" }).first().click()
+	}),
+]
+
 const sheetScenarios: ReadonlyArray<Scenario> = [
 	sheet("open", "opened from the top bar", openSheet),
 	sheet("shortcut", "opened with C", async (page) => {
@@ -82,6 +252,11 @@ const sheetScenarios: ReadonlyArray<Scenario> = [
 		await openSheet(page)
 		await page.getByRole("dialog").getByRole("button", { name: "New chat" }).click()
 	}),
+	sheet("full-page", "its thread opened in the full page", async (page) => {
+		await openSheet(page)
+		await page.getByRole("dialog").getByRole("link", { name: "Open full page" }).click()
+		await page.getByRole("complementary", { name: "Chat conversations" }).getByText("Quick chat").waitFor()
+	}),
 	sheet("closed", "opened and closed again", async (page) => {
 		await openSheet(page)
 		await page.getByRole("dialog").getByRole("button", { name: "Close" }).click()
@@ -96,6 +271,23 @@ export const chatArea: AreaModule = {
 		scenario("conversation", "Incident investigation", "chat-conversation"),
 		scenario("code", "a reply with a SQL block and a mermaid diagram", "chat-code", async (page) => {
 			await page.getByRole("button", { name: "Copy Code" }).first().waitFor()
+		}),
+		scenario("proposals", "the dashboard tools' approval summaries", "chat-proposals", async (page) => {
+			await page.getByText("Reorder ").first().waitFor()
+		}),
+		scenario("proposal-approved", "a dashboard proposal approved", "chat-proposals", async (page) => {
+			await page.getByRole("button", { name: "Approve" }).first().click()
+			await page.getByText("Change applied").waitFor()
+		}),
+		scenario("proposal-denied", "a dashboard proposal denied", "chat-proposals", async (page) => {
+			await page.getByRole("button", { name: "Deny" }).nth(4).click()
+			await page.getByText("Denied", { exact: true }).waitFor()
+		}),
+		scenario("charts", "a reply with a bar and a line chart fence", "chat-charts", async (page) => {
+			await page.getByText("p95 latency", { exact: true }).waitFor()
+		}),
+		scenario("math", "a reply with text math, a math block and a math fence", "chat-math", async (page) => {
+			await page.getByText("With the window at one hour:").waitFor()
 		}),
 		scenario(
 			"conversation-tool-open",
@@ -179,6 +371,11 @@ export const chatArea: AreaModule = {
 			...scenario("shared", "a teammate's shared conversation", "chat-conversation"),
 			path: "/chat?shared=default&title=Checkout%20incident",
 		},
+		...subjectScenarios,
+		...permalinkScenarios,
+		...diagramScenarios,
+		...contextScenarios,
+		...threadScenarios,
 		...sheetScenarios,
 		lab("sheet-width", "at the sheet width", (page) => page.getByRole("button", { name: "Sheet (620px)" }).click()),
 		lab("narrow-width", "at the narrow width", (page) => page.getByRole("button", { name: "Narrow (420px)" }).click()),
@@ -204,6 +401,19 @@ export const chatArea: AreaModule = {
 		lab("tool-open", "a standalone tool call expanded", async (page) => {
 			await page.getByRole("button", { name: /Inspect Trace/ }).click()
 			await page.getByText("Result").first().waitFor()
+		}),
+		lab("task-open", "a finished sub-agent's sheet", async (page) => {
+			await page.getByText("Find every trace where the entitlement lookup returned an empty body").first().click()
+			await page.getByRole("dialog").getByText("Its own steps").waitFor()
+		}),
+		lab("task-running-open", "a running sub-agent's sheet", async (page) => {
+			await page.getByText("Deep-dive the service").first().click()
+			await page.getByRole("dialog").getByText("Answer").waitFor()
+		}),
+		lab("task-closed", "a sub-agent's sheet opened and closed", async (page) => {
+			await page.getByText("Find every trace where the entitlement lookup returned an empty body").first().click()
+			await page.getByRole("dialog").getByRole("button", { name: "Close" }).click()
+			await page.getByRole("dialog").waitFor({ state: "detached" })
 		}),
 		lab("group-open", "a tool burst expanded", async (page) => {
 			await page.getByRole("button", { name: /List Services/ }).click()

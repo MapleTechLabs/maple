@@ -1,4 +1,7 @@
+import { TraceId } from "@maple/domain"
+import type { AiTriageResult } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
+import { Option, Schema } from "effect"
 import { classifyAction } from "@maple/web-data/investigations/action-target"
 import type { ActionNodeData } from "@maple/web-data/investigations/provenance-graph"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -19,6 +22,27 @@ import { evidenceChips, type TipTrigger } from "./view-sections"
 
 type H = HtmlBuilder<Message>
 type Report = NonNullable<V2Investigation["report"]>
+
+const decodeTraceId = Schema.decodeUnknownOption(TraceId)
+
+/** A thread's `submit_diagnosis` report in the investigation's shape (trace ids branded, invalid ones dropped). */
+export const reportOfDiagnosis = (report: AiTriageResult): Report => ({
+	...(report.headline === undefined ? undefined : { headline: report.headline }),
+	...(report.severityAssessment === undefined ? undefined : { severityAssessment: report.severityAssessment }),
+	...(report.ruledOut === undefined ? undefined : { ruledOut: report.ruledOut }),
+	...(report.unchecked === undefined ? undefined : { unchecked: report.unchecked }),
+	summary: report.summary,
+	suspectedCause: report.suspectedCause,
+	affectedScope: report.affectedScope,
+	suggestedActions: report.suggestedActions,
+	confidence: report.confidence,
+	evidence: report.evidence.map((item) => ({
+		traceIds: item.traceIds.flatMap((id) => Option.toArray(decodeTraceId(id))),
+		logPatterns: item.logPatterns,
+		relatedServices: item.relatedServices,
+		note: item.note,
+	})),
+})
 
 /** The report's actions as the card routes them: by the affected scope alone. */
 export const reportActions = (report: Report): ReadonlyArray<ActionNodeData> =>

@@ -2,12 +2,10 @@ import { ErrorIssueId, InvestigationId } from "@maple/domain/http"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { loadKnownServices } from "../../chat/kit/known-services"
-import { TraceId } from "@maple/domain"
 import { Clock, Effect, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
-import { readSpanHierarchy, spanHierarchyKey } from "../../traces/detail/command"
 import { Message } from "./message"
 
 /** `KnownServicesProvider`: the org's service names, read once a thread shows its scroller. */
@@ -27,24 +25,6 @@ export const CheckTipFocus = Command.define("CheckInvestigationTipFocus", {
 				isFocusVisible: document.getElementById(triggerId)?.matches(":focus-visible") === true,
 			}),
 		),
-})
-
-/**
- * TanStack's `defaultPreload: "intent"`: a trace link hovered or focused runs the trace route's
- * loader, which warms its span hierarchy read. The answer is the warm cache, not this page's.
- */
-export const PreloadTrace = Command.define("PreloadInvestigationTrace", {
-	args: { orgId: Schema.String, traceId: Schema.String },
-	messages: [Message.CompletedPreloadTrace],
-	execute: ({ orgId, traceId }) =>
-		Effect.gen(function* () {
-			const decoded = Schema.decodeUnknownOption(TraceId)(traceId)
-			// Through the read cache, so the trace page opening next joins or reuses this read.
-			const key = (traceId: TraceId) => spanHierarchyKey(orgId, traceId, undefined)
-			if (decoded._tag === "Some")
-				yield* Effect.ignore(readSpanHierarchy(key(decoded.value), decoded.value, undefined))
-			return Message.CompletedPreloadTrace()
-		}),
 })
 
 const finish = <A, E, R, M>(effect: Effect.Effect<A, E, R>, toMessage: (result: Result.Result<A, LoadFailure>) => M) =>

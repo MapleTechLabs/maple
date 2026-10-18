@@ -23,7 +23,7 @@ import { marker, markerContent, markerIcon } from "../../../ui/marker"
 import { message as messageRow, messageContent, messageFooter } from "../../../ui/message"
 import { dotLoader } from "./dot-loader"
 import { type MinimapState, turnMinimap } from "./turn-minimap"
-import { richTextSegments } from "./rich-text"
+import { richTextSegments, transcriptMarkdown } from "./rich-text"
 import {
 	buildTranscriptRows,
 	isMachineTurn,
@@ -34,7 +34,7 @@ import {
 	toolPartsOf,
 } from "./transcript-rows"
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
-import { type PanelHost, toolNodes } from "./view-tool"
+import { type PanelHost, runningClock, toolNodes, toolStandalone } from "./view-tool"
 
 // `ChatTranscript` (apps/web components/chat/chat-transcript.tsx): the scrolling thread.
 
@@ -59,10 +59,16 @@ export type TranscriptHost<M> = PanelHost<M> &
 		minimapMount: Parameters<HtmlBuilder<M>["OnMount"]>[0]
 		inlineCard?: (segment: Exclude<AnnotationSegment, { type: "text" }>) => Html
 		ownCard?: (part: ToolPart, messageId: string) => Html | null
-		taskCard?: (part: Extract<UIMessagePart, { _tag: "task" }>) => Html
+		/** A sub-agent row; `draw` renders its answer and steps the way the thread does. */
+		taskCard?: (
+			part: Extract<UIMessagePart, { _tag: "task" }>,
+			draw: Readonly<{ richText: (text: string) => Html; tool: (part: ToolPart) => Html }>,
+		) => Html
 		markdownOverrides?: ViewOverrides
 		/** `fallbackDiagnosis`: the report card an investigation thread leads with until its own turn lands. */
 		fallback?: Html
+		/** `JumpToDiagnosis`: the thread's `submit_diagnosis` turn and the Mount (`MountJumpToMessage`). */
+		jump?: Readonly<{ messageId: string; mount: Parameters<HtmlBuilder<M>["OnMount"]>[0] }>
 	}>
 
 const TRANSCRIPT_ITEM = "[content-visibility:visible] [contain-intrinsic-size:none]"
@@ -100,7 +106,10 @@ const messageParts = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, message: UI
 				return { nodes: text === "" ? flushed : [...flushed, richText(h, host, text)], buffer: [] }
 			}
 			if (part._tag === "task")
-				return { nodes: host.taskCard === undefined ? flushed : [...flushed, host.taskCard(part)], buffer: [] }
+				return { nodes: host.taskCard === undefined ? flushed : [
+								...flushed,
+								host.taskCard(part, { richText: (text) => richText(h, host, text), tool: (leaf) => toolStandalone(h, leaf, host) }),
+							], buffer: [] }
 			if (!isToolPart(part)) return acc
 			if (rendersOwnCard(part)) {
 				const card = host.ownCard?.(part, `${message.id}:${index}`) ?? null
@@ -114,7 +123,7 @@ const messageParts = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, message: UI
 }
 
 /** `StatusMarker`: the live "Thinking…" row. */
-export const statusMarker = <M>(h: HtmlBuilder<M>, label = "Thinking…"): Html =>
+export const statusMarker = <M>(h: HtmlBuilder<M>, label = "Thinking…", clockMount?: PanelHost<M>["clockMount"]): Html =>
 	h.div(
 		[
 			h.Class(cn(markerVariants({ variant: "default", className: "text-xs" }))),
@@ -124,7 +133,7 @@ export const statusMarker = <M>(h: HtmlBuilder<M>, label = "Thinking…"): Html 
 		],
 		[
 			markerIcon(h, [dotLoader(h)], "size-5"),
-			markerContent(h, [h.span([h.Class("shimmer")], [label])], "flex items-center gap-2"),
+			markerContent(h, [h.span([h.Class("shimmer")], [label]), ...runningClock(h, clockMount)], "flex items-center gap-2"),
 		],
 	)
 
@@ -195,7 +204,7 @@ const messageItem = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, message: UIM
 						[
 							h.div(
 								[h.Class(PART_STACK)],
-								[...messageParts(h, host, message), ...(showThinking ? [statusMarker(h)] : [])],
+								[...messageParts(h, host, message), ...(showThinking ? [statusMarker(h, undefined, host.clockMount)] : [])],
 							),
 						],
 						isUser ? "rounded-lg px-3.5 py-2.5 text-sm" : "text-sm",
@@ -217,7 +226,7 @@ const toolRunItem = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, id: string, 
 						[
 							h.div(
 								[h.Class(PART_STACK)],
-								[...toolNodes(h, toolPartsOf(messages), id, host), ...(showThinking ? [statusMarker(h)] : [])],
+								[...toolNodes(h, toolPartsOf(messages), id, host), ...(showThinking ? [statusMarker(h, undefined, host.clockMount)] : [])],
 							),
 						],
 						"text-sm",
@@ -250,6 +259,21 @@ const scrollButton = <M>(h: HtmlBuilder<M>): Html =>
 		],
 	)
 
+/** `JumpToDiagnosis`: back to the report once it scrolled away (its Mount shows and presses it). */
+const jumpButton = <M>(h: HtmlBuilder<M>, messageId: string, mount: Parameters<HtmlBuilder<M>["OnMount"]>[0]): Html =>
+	h.keyed("div")(`jump:${messageId}`, [h.Class("contents")], [
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				className: "absolute bottom-4 start-4 max-w-[45%] rounded-full bg-background shadow-sm",
+				attributes: [h.OnMount(mount)],
+			},
+			[icon(h, "PulseIcon"), h.span([h.Class("truncate")], ["Jump to diagnosis"])],
+		),
+	])
+
 /** The thread, or `emptyState` centred in its place while there is nothing to scroll. */
 export const transcript = <M>(
 	h: HtmlBuilder<M>,
@@ -265,6 +289,7 @@ export const transcript = <M>(
 	const awaitingFirstToken = host.isLoading && last?.role === "user"
 	const rows = buildTranscriptRows(messages)
 	const readOnlyLabel = host.readOnly === null ? undefined : READ_ONLY_LABEL.get(host.readOnly)
+	const isMarkdownPending = transcriptMarkdown(messages).some((text) => (host.markdown[text] ?? null) === null)
 	// Keyed apart from the empty state: patched in place, the scroller's Mount would never run.
 	return h.keyed("div")(
 		"transcript-scroller",
@@ -288,6 +313,7 @@ export const transcript = <M>(
 							h.Attribute("aria-relevant", "additions"),
 							h.Class(cn(messageScrollerContentStyles, "mx-auto w-full max-w-3xl gap-4 px-4 py-6")),
 							h.DataAttribute("slot", "message-scroller-content"),
+							...(isMarkdownPending ? [h.DataAttribute("markdown-pending", "")] : []),
 							h.Role("log"),
 						],
 						[
@@ -307,7 +333,7 @@ export const transcript = <M>(
 									showsThinkingRow(row.message, host.isLoading, row.message.id === last?.id),
 								)
 							}),
-							...(awaitingFirstToken ? [scrollerItem(h, "__status", false, [statusMarker(h)])] : []),
+							...(awaitingFirstToken ? [scrollerItem(h, "__status", false, [statusMarker(h, undefined, host.clockMount)])] : []),
 							h.keyed("div")("__spacer", [h.AriaHidden(true), h.DataAttribute("message-scroller-spacer", ""), h.Attribute("hidden", "")], []),
 						],
 					),
@@ -315,6 +341,7 @@ export const transcript = <M>(
 			),
 			turnMinimap(h, rows, host.minimap, host.minimapMount),
 			scrollButton(h),
+			...(host.jump === undefined ? [] : [jumpButton(h, host.jump.messageId, host.jump.mount)]),
 		],
 	)
 }

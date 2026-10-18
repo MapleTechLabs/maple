@@ -10,6 +10,7 @@ import { panelPaddingStyles, panelStyles, panelToneStyles } from "@maple/ui/styl
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "../../../charts/area-chart"
+import * as BarChart from "../../../charts/bar-chart"
 import * as ChartModel from "../../../charts/chart"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
@@ -17,12 +18,13 @@ import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { ViewOverrides } from "../../kit/message-response"
 import * as HbarChart from "../../../charts/hbar-chart"
+import { MATH_MARK } from "./math"
 import { type CodeHost, codeBlock, mermaidBlock } from "./view-code"
 
 // The chat's own markdown elements over Streamdown's (apps/web components/ai-elements/
 // markdown-table.tsx, markdown-chart.tsx): tables on Maple's `Table` with recognised cells, and
 // ```chart fences as the query builder's plots.
-// TODO(chat-katex): math (`$…$`) is plain text: `@foldkit/markdown`'s parser has no remark-math.
+// Math (`$$…$$`, ```math) is drawn by KaTeX (`kit/math.ts`).
 
 export type ChartHost<M> = Readonly<{
 	charts: Readonly<Record<string, ChartModel.Model>>
@@ -159,7 +161,23 @@ const plot = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, id: string, spec: ChartS
 		})
 	if (!host.isRuntimeReady || host.theme === null)
 		return chartSkeleton(h, spec.type === "bar" ? "bar" : spec.type, PLOT_HEIGHT)
-	// TODO(chat-chart-bar): a `bar` fence draws as an area until the bar chart takes chat rows.
+	if (spec.type === "bar")
+		return h.submodel({
+			slotId: `chat-chart:${id}`,
+			model: host.charts[id] ?? ChartModel.init(),
+			view: BarChart.view,
+			viewInputs: {
+				chartId: id,
+				data: timeseriesRows(spec),
+				theme: host.theme,
+				unit,
+				timeZone: host.timeZone,
+				nowMs: host.nowMs,
+				className: PLOT_HEIGHT,
+				legend: "hidden",
+			},
+			toParentMessage: (message) => host.onChart(id, message),
+		})
 	return h.submodel({
 		slotId: `chat-chart:${id}`,
 		model: host.charts[id] ?? ChartModel.init(),
@@ -195,8 +213,15 @@ export const chatMarkdownOverrides =
 	<M>(h: HtmlBuilder<M>, knownServices: ReadonlySet<string>, charts: ChartHost<M>, code: CodeHost<M>): ViewOverrides =>
 	(views) => ({
 		Table: (node) => tableView(h, knownServices)(views)(node),
+		// KaTeX draws into an unstyled span: legacy's `.katex` / `.katex-display` sit in its place.
+		InlineCode: (node) =>
+			node.value.startsWith(MATH_MARK)
+				? h.keyed("span")(`math:${node.value}`, [h.OnMount(code.mathMount(node.value.slice(MATH_MARK.length), false))], [])
+				: views.InlineCode(node),
 		CodeBlock: (block) => {
 			const language = Option.getOrElse(block.maybeLanguage, () => "")
+			if (language === "math")
+				return h.keyed("span")(`math-display:${block.value}`, [h.OnMount(code.mathMount(block.value, true))], [])
 			if (language === "chart") return chartView(h, charts, block.value)
 			if (language === "mermaid") return mermaidBlock(h, code, block.value.replace(/\n+$/, ""))
 			return codeBlock(h, code, block.value, language)

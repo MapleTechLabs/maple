@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 
@@ -11,12 +11,14 @@ import { defineMessageUnion } from "foldkit/message"
 export const ScrollerMessage = defineMessageUnion({ CompletedMountScroller: {} })
 export const CompletedMountScroller = ScrollerMessage.CompletedMountScroller
 
+/** Asks the scroller around the target to bring a message to the top (`scrollToMessage`). */
+export const SCROLL_TO_MESSAGE = "maple:scroll-to-message"
 const EDGE_THRESHOLD = 8
 const PREVIOUS_PEEK = 64
 const HALF_PIXEL = 0.5
 const SCROLL_KEYS = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "])
 
-type Mode = "following-bottom" | "anchored-to-message" | "free-scrolling"
+type Mode = "following-bottom" | "anchored-to-message" | "settling-jump" | "free-scrolling"
 
 const px = (value: string): number => {
 	const parsed = Number.parseFloat(value)
@@ -24,7 +26,7 @@ const px = (value: string): number => {
 }
 
 /** Wires one scroller; returns its teardown. Mutable locals are the DOM glue's own bookkeeping. */
-const attach = (root: Element): (() => void) => {
+const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 	const viewport = root.querySelector("[data-slot=message-scroller-viewport]")
 	const content = root.querySelector("[data-slot=message-scroller-content]")
 	const button = root.querySelector("[data-slot=message-scroller-button]")
@@ -92,7 +94,27 @@ const attach = (root: Element): (() => void) => {
 		mode = "anchored-to-message"
 		scrollTo(target, "auto")
 	}
+	/** `scrollToMessage(id, { align: "start" })`: a permalink's message at the top, left where it lands. */
+	const jumpTo = (element: HTMLElement, behavior: ScrollBehavior = "auto") => {
+		const offset = element.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
+		const target = offset - paddings().start
+		setSpacer(target + viewport.clientHeight - contentBottom())
+		anchored = null
+		mode = "settling-jump"
+		scrollTo(target, behavior)
+	}
 	const isAnchor = (element: HTMLElement) => element.dataset.scrollAnchor === "true"
+	// Legacy's thread is laid out on its first paint; here replies are laid out once their markdown
+	// parses (`data-markdown-pending` clears), so the permalink waits for that, as a queued jump.
+	let pendingFocus = focusMessageId
+	const flushFocus = (): boolean => {
+		if (pendingFocus === null || content.hasAttribute("data-markdown-pending")) return false
+		const target = items().find((item) => item.dataset.messageId === pendingFocus)
+		pendingFocus = null
+		if (target === undefined) return false
+		jumpTo(target)
+		return true
+	}
 
 	const onContentChange = () => {
 		const list = items()
@@ -102,8 +124,9 @@ const attach = (root: Element): (() => void) => {
 		// (legacy leaves them unmarked and only its frame batching keeps it from re-anchoring).
 		if (previous === 0) {
 			list.filter(isAnchor).forEach((item) => handled.add(item))
-			return toEnd("auto")
+			return flushFocus() ? undefined : toEnd("auto")
 		}
+		if (flushFocus()) return
 		if (list.length > previous) {
 			const added = list.slice(previous).filter(isAnchor)
 			const first = added[0]
@@ -136,14 +159,23 @@ const attach = (root: Element): (() => void) => {
 		if (SCROLL_KEYS.has(event.key)) onUserScroll()
 	}
 	const onClick = () => toEnd("smooth")
+	const onScrollToMessage = (event: Event) => {
+		const id = event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : null
+		const target = items().find((item) => item.dataset.messageId === id)
+		if (target !== undefined) jumpTo(target, "smooth")
+	}
 
 	const mutation = new MutationObserver(onContentChange)
+	const markdownSettled = new MutationObserver(() => {
+		flushFocus()
+	})
 	let frame = 0
 	const resize = new ResizeObserver(() => {
 		cancelAnimationFrame(frame)
 		frame = requestAnimationFrame(onResize)
 	})
 	mutation.observe(content, { childList: true })
+	markdownSettled.observe(content, { attributeFilter: ["data-markdown-pending"] })
 	resize.observe(viewport)
 	resize.observe(content)
 	viewport.addEventListener("scroll", syncButton, { passive: true })
@@ -151,9 +183,11 @@ const attach = (root: Element): (() => void) => {
 	viewport.addEventListener("touchmove", onUserScroll, { passive: true })
 	viewport.addEventListener("keydown", onKey)
 	button?.addEventListener("click", onClick)
+	root.addEventListener(SCROLL_TO_MESSAGE, onScrollToMessage)
 	onContentChange()
 	return () => {
 		mutation.disconnect()
+		markdownSettled.disconnect()
 		resize.disconnect()
 		cancelAnimationFrame(frame)
 		viewport.removeEventListener("scroll", syncButton)
@@ -161,18 +195,56 @@ const attach = (root: Element): (() => void) => {
 		viewport.removeEventListener("touchmove", onUserScroll)
 		viewport.removeEventListener("keydown", onKey)
 		button?.removeEventListener("click", onClick)
+		root.removeEventListener(SCROLL_TO_MESSAGE, onScrollToMessage)
 	}
 }
 
-/** On the `message-scroller` root: its viewport, content, spacer and jump button are its children. */
+/** On the `message-scroller` root; `focusMessageId` is a `?m=` permalink to open on. */
 export const MountMessageScroller = Mount.define("MountChatMessageScroller", {
+	args: { focusMessageId: Schema.NullOr(Schema.String) },
 	messages: [CompletedMountScroller],
-	execute: ({ element }) =>
+	execute: ({ element, focusMessageId }) =>
 		Effect.as(
 			Effect.acquireRelease(
-				Effect.sync(() => attach(element)),
+				Effect.sync(() => attach(element, focusMessageId)),
 				(release) => Effect.sync(release),
 			),
 			CompletedMountScroller(),
+		),
+})
+
+export const CompletedMountJump = defineMessageUnion({ CompletedMountJump: {} }).CompletedMountJump
+
+/**
+ * `JumpToDiagnosis`: on its button, hidden while the message is in view (the scroller's
+ * IntersectionObserver, 64 px peek off the top); a press asks the scroller to bring it up.
+ */
+export const MountJumpToMessage = Mount.define("MountChatJumpToMessage", {
+	args: { messageId: Schema.String },
+	messages: [CompletedMountJump],
+	execute: ({ element, messageId }) =>
+		Effect.as(
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const root = element.closest("[data-slot=message-scroller]")
+					const viewport = root?.querySelector("[data-slot=message-scroller-viewport]")
+					const target = root?.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`)
+					if (!(element instanceof HTMLElement) || root == null || !(viewport instanceof HTMLElement) || target == null)
+						return () => {}
+					const observer = new IntersectionObserver(
+						(entries) => entries.forEach((entry) => element.toggleAttribute("hidden", entry.isIntersecting)),
+						{ root: viewport, rootMargin: `${-PREVIOUS_PEEK}px 0px 0px 0px`, threshold: [0, 0.01, 0.5, 1] },
+					)
+					observer.observe(target)
+					const onClick = () => root.dispatchEvent(new CustomEvent(SCROLL_TO_MESSAGE, { detail: messageId }))
+					element.addEventListener("click", onClick)
+					return () => {
+						observer.disconnect()
+						element.removeEventListener("click", onClick)
+					}
+				}),
+				(release) => Effect.sync(release),
+			),
+			CompletedMountJump(),
 		),
 })

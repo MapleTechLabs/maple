@@ -151,7 +151,7 @@ const labView = (model: Model, h: H): Html => {
 		placeholder: "Ask about your system…",
 		emptyState: () => h.p([h.Class("text-sm text-muted-foreground")], ["Nothing here yet."]),
 		chips: [],
-		scrollerMount: MountMessageScroller(),
+		scrollerMount: MountMessageScroller({ focusMessageId: null }),
 		knownServices: new Set(model.knownServices),
 		nowMs: model.nowMs,
 		ownCard: (part) =>

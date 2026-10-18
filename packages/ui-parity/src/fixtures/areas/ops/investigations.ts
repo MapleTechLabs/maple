@@ -96,6 +96,9 @@ const diagnosed = {
 	updated_at: at(98),
 }
 
+/** The diagnosed report, as its thread's `submit_diagnosis` turn returned it (`chat.ts`). */
+export const INVESTIGATION_DIAGNOSED_REPORT = diagnosed.report
+
 const running = {
 	...diagnosed,
 	id: INVESTIGATION_RUNNING_ID,

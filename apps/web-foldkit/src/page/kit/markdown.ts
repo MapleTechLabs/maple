@@ -42,12 +42,12 @@ export const escapeDirectives = (text: string): string =>
 		)
 		.lines.join("\n")
 
-/** Each text parsed by the lazily imported remark pipeline; a rejected text parses to `null`. */
-export const parseMarkdownTexts = (texts: ReadonlyArray<string>) =>
+/** Each text parsed by the lazily imported remark pipeline (after `prepare`); a rejected text parses to `null`. */
+export const parseMarkdownTexts = (texts: ReadonlyArray<string>, prepare: (text: string) => string = (text) => text) =>
 	Effect.promise(() => import("@foldkit/markdown/vite")).pipe(
 		Effect.flatMap(({ parseMarkdown }) =>
 			Effect.forEach(texts, (text) =>
-				Effect.try(() => parseMarkdown(escapeDirectives(text))).pipe(
+				Effect.try(() => parseMarkdown(escapeDirectives(prepare(text)))).pipe(
 					Effect.map((document): ParsedMarkdown => ({ text, document })),
 					Effect.orElseSucceed((): ParsedMarkdown => ({ text, document: null })),
 				),

@@ -5,16 +5,27 @@ import { type HighlightedCode, highlightKey } from "./code-highlight"
 
 // Streamdown's full code block (`@streamdown/code`: Shiki tokens) and mermaid block
 // (`@streamdown/mermaid`: the diagram, its toolbar and the zoom controls).
-// TODO(chat-mermaid-fullscreen): "View fullscreen" and the download menu's PNG / MMD formats are not
-// ported; Download saves the SVG.
+type OnMount<M> = Parameters<HtmlBuilder<M>["OnMount"]>[0]
+export type DiagramFormat = "svg" | "png" | "mmd"
 
 export type CodeHost<M> = Readonly<{
 	highlights: Readonly<Record<string, HighlightedCode | null>>
 	onCopy: (code: string) => M
 	onDownload: (code: string, language: string) => M
-	onDownloadDiagram: (code: string) => M
-	/** `MountMermaid({ code })` lifted to the host's Message. */
-	mermaidMount: (code: string) => Parameters<HtmlBuilder<M>["OnMount"]>[0]
+	/** The open download menu (`inline:` / `fullscreen:` + source) and the fullscreen diagram. */
+	diagramMenu: string | null
+	fullscreenDiagram: string | null
+	onToggleDiagramMenu: (menuId: string) => M
+	onDiagramFormat: (menuId: string, code: string, format: DiagramFormat) => M
+	onFullscreen: (code: string) => M
+	onExitFullscreen: M
+	/** `MountDiagramMenu` and `MountDiagramFullscreen` lifted to the host's Message. */
+	diagramMenuMount: (menuId: string) => OnMount<M>
+	fullscreenMount: OnMount<M>
+	/** `MountMermaid({ code, isFullscreen })` lifted to the host's Message. */
+	mermaidMount: (code: string, isFullscreen: boolean) => OnMount<M>
+	/** `MountMath({ tex, isDisplay })` lifted to the host's Message. */
+	mathMount: (tex: string, isDisplay: boolean) => Parameters<HtmlBuilder<M>["OnMount"]>[0]
 }>
 
 const ZOOM_IN_PATH =
@@ -169,7 +180,7 @@ const zoomButton = <M>(h: HtmlBuilder<M>, label: string, d: string, slot: string
 		[glyph(h, d, "16")],
 	)
 
-/** A ```mermaid fence: the diagram rendered by mermaid in a Mount, pan and zoom on the frame. */
+/** A ```mermaid fence: its toolbar (download menu, copy, fullscreen) and the diagram. */
 export const mermaidBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: string): Html =>
 	h.div(
 		[
@@ -179,51 +190,145 @@ export const mermaidBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: stri
 		[
 			h.div([h.Class("flex h-8 items-center text-muted-foreground text-xs")], [h.span([h.Class("ml-1 font-mono lowercase")], ["mermaid"])]),
 			actionsBar(h, "mermaid-block-actions", [
-				h.div([h.Class("relative")], [action(h, "Download diagram", DOWNLOAD_PATH, null, host.onDownloadDiagram(code))]),
+				diagramDownload(h, host, `inline:${code}`, code),
 				action(h, "Copy Code", COPY_PATH, "code-block-copy-button", host.onCopy(code)),
-				action(h, "View fullscreen", FULLSCREEN_PATH, null, null),
+				action(h, "View fullscreen", FULLSCREEN_PATH, null, host.onFullscreen(code)),
+				...(host.fullscreenDiagram === code ? [fullscreenOverlay(h, host, code)] : []),
 			]),
+			h.div([h.Class("overflow-hidden rounded-md border border-border bg-background")], [mermaidFrame(h, host, code, false)]),
+		],
+	)
+
+/** The fullscreen dialog (portaled by its Mount): download, copy and exit over the fitted diagram. */
+const fullscreenOverlay = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: string): Html =>
+	h.keyed("div")(
+		"mermaid-fullscreen",
+		[
+			h.AriaLabel("View fullscreen"),
+			h.Attribute("aria-modal", "true"),
+			h.Class("fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm"),
+			h.DataAttribute("streamdown", "mermaid-fullscreen"),
+			h.Role("dialog"),
+			h.OnMount(host.fullscreenMount),
+		],
+		[
 			h.div(
-				[h.Class("overflow-hidden rounded-md border border-border bg-background")],
+				[h.Class("absolute top-4 right-4 z-10 flex items-center gap-1"), h.Role("presentation")],
+				[
+					diagramDownload(h, host, `fullscreen:${code}`, code),
+					action(h, "Copy Code", COPY_PATH, "code-block-copy-button", host.onCopy(code)),
+					h.button(
+						[
+							h.AriaLabel("Exit fullscreen"),
+							h.Class("rounded-md p-2 text-muted-foreground transition-all hover:bg-muted hover:text-foreground"),
+							h.OnClick(host.onExitFullscreen),
+							h.Title("Exit fullscreen"),
+							h.Type("button"),
+						],
+						[glyph(h, XMARK_PATH, "20")],
+					),
+				],
+			),
+			h.div([h.Class("flex size-full items-center justify-center p-4"), h.Role("presentation")], [mermaidFrame(h, host, code, true)]),
+		],
+	)
+
+const FORMATS: ReadonlyArray<readonly [DiagramFormat, string]> = [
+	["svg", "SVG"],
+	["png", "PNG"],
+	["mmd", "MMD"],
+]
+
+/** `ct`: Download opens a menu of formats under it; a press outside closes it. */
+const diagramDownload = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, menuId: string, code: string): Html =>
+	h.div(
+		[h.Class("relative")],
+		[
+			action(h, "Download diagram", DOWNLOAD_PATH, null, host.onToggleDiagramMenu(menuId)),
+			...(host.diagramMenu !== menuId
+				? []
+				: [
+						h.keyed("div")(
+							`diagram-menu:${menuId}`,
+							[
+								h.Class(
+									"absolute top-full right-0 z-10 mt-1 min-w-[120px] overflow-hidden rounded-md border border-border bg-background shadow-lg",
+								),
+								h.OnMount(host.diagramMenuMount(menuId)),
+							],
+							FORMATS.map(([format, label]) =>
+								h.button(
+									[
+										h.AriaLabel(`Download diagram as ${label}`),
+										h.Class("w-full px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40"),
+										h.OnClick(host.onDiagramFormat(menuId, code, format)),
+										h.Title(`Download diagram as ${label}`),
+										h.Type("button"),
+									],
+									[label],
+								),
+							),
+						),
+					]),
+		],
+	)
+
+const XMARK_PATH =
+	"M12.4697 13.5303L13 14.0607L14.0607 13L13.5303 12.4697L9.06065 7.99999L13.5303 3.53032L14.0607 2.99999L13 1.93933L12.4697 2.46966L7.99999 6.93933L3.53032 2.46966L2.99999 1.93933L1.93933 2.99999L2.46966 3.53032L6.93933 7.99999L2.46966 12.4697L1.93933 13L2.99999 14.0607L3.53032 13.5303L7.99999 9.06065L12.4697 13.5303Z"
+
+const FULLSCREEN_SVG_CLASS = "size-full [&_svg]:h-auto [&_svg]:w-auto"
+
+/** Streamdown's `Mermaid` (`ln`) + `PanZoom` (`Rr`): the frame mermaid draws into, inline or fullscreen. */
+const mermaidFrame = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: string, isFullscreen: boolean): Html =>
+	h.div(
+		[
+			h.Class(isFullscreen ? cn("size-full", FULLSCREEN_SVG_CLASS) : "max-h-[min(70vh,40rem)] w-full"),
+			h.DataAttribute("streamdown", "mermaid"),
+		],
+		[
+			h.div(
+				[
+					h.Class(
+						isFullscreen
+							? cn("relative flex flex-col", "h-full w-full", cn("size-full overflow-hidden", FULLSCREEN_SVG_CLASS))
+							: "relative flex flex-col min-h-28 w-full max-h-[min(70vh,40rem)] overflow-hidden",
+					),
+					h.Style({ cursor: "grab" }),
+					h.OnMount(host.mermaidMount(code, isFullscreen)),
+				],
 				[
 					h.div(
-						[h.Class("max-h-[min(70vh,40rem)] w-full"), h.DataAttribute("streamdown", "mermaid")],
+						[
+							h.Class(
+								cn(
+									"absolute z-10 flex flex-col gap-1 rounded-md border border-border bg-background/80 p-1 supports-[backdrop-filter]:bg-background/70 supports-[backdrop-filter]:backdrop-blur-sm",
+									isFullscreen ? "bottom-4 left-4" : "bottom-2 left-2",
+								),
+							),
+						],
+						[
+							zoomButton(h, "Zoom in", ZOOM_IN_PATH, "in", false),
+							zoomButton(h, "Zoom out", ZOOM_OUT_PATH, "out", false),
+							zoomButton(h, "Reset zoom and pan", RESET_PATH, "reset", true),
+						],
+					),
+					h.div(
+						[
+							h.Class(
+								"flex h-full w-full flex-1 origin-center items-center justify-center transition-transform duration-150 ease-out",
+							),
+							h.Role("application"),
+							h.Style({
+								transform: "translate(0px, 0px) scale(1)",
+								"transform-origin": "center center",
+								"touch-action": "none",
+								"will-change": "transform",
+							}),
+						],
 						[
 							h.div(
-								[
-									h.Class("relative flex flex-col min-h-28 w-full max-h-[min(70vh,40rem)] overflow-hidden"),
-									h.Style({ cursor: "grab" }),
-									h.OnMount(host.mermaidMount(code)),
-								],
-								[
-									h.div(
-										[
-											h.Class(
-												"absolute z-10 flex flex-col gap-1 rounded-md border border-border bg-background/80 p-1 supports-[backdrop-filter]:bg-background/70 supports-[backdrop-filter]:backdrop-blur-sm bottom-2 left-2",
-											),
-										],
-										[
-											zoomButton(h, "Zoom in", ZOOM_IN_PATH, "in", false),
-											zoomButton(h, "Zoom out", ZOOM_OUT_PATH, "out", false),
-											zoomButton(h, "Reset zoom and pan", RESET_PATH, "reset", true),
-										],
-									),
-									h.div(
-										[
-											h.Class(
-												"flex h-full w-full flex-1 origin-center items-center justify-center transition-transform duration-150 ease-out",
-											),
-											h.Role("application"),
-											h.Style({
-												transform: "translate(0px, 0px) scale(1)",
-												"transform-origin": "center center",
-												"touch-action": "none",
-												"will-change": "transform",
-											}),
-										],
-										[h.div([h.AriaLabel("Mermaid chart"), h.Class("flex justify-center"), h.Role("img")], [])],
-									),
-								],
+								[h.AriaLabel("Mermaid chart"), h.Class(cn("flex justify-center", isFullscreen && "size-full items-center")), h.Role("img")],
+								[],
 							),
 						],
 					),
@@ -231,3 +336,4 @@ export const mermaidBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: stri
 			),
 		],
 	)
+

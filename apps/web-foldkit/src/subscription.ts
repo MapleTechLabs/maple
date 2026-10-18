@@ -12,6 +12,7 @@ import { pageContextOf } from "./update"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
 import * as ChatSheet from "./page/chat/sheet"
+import { hrefOf } from "./route"
 
 /** Emits nothing: an Alt+click on a tri-state filter label is redirected to that row's Exclude button. */
 const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
@@ -186,6 +187,7 @@ const chatSheet = Subscription.lift(ChatSheet.subscriptions)<Model, Message>({
 			isSignedIn: model.session._tag === "SignedIn" && rendersShell(model.route),
 			isTypeAnywhere:
 				model.route._tag === "Chat" && (model.route.search.shared === undefined || model.route.search.shared === ""),
+			pathname: hrefOf(model.route).split("?")[0] ?? "/",
 		}),
 	toParentMessage: (message) => Message.GotChatSheetMessage({ message }),
 })

@@ -41,6 +41,12 @@ export const StampRename = Command.define("StampChatRename", {
 	execute: ({ id, title }) => Effect.map(Clock.currentTimeMillis, (nowMs) => Message.StampedRename({ id, title, nowMs })),
 })
 
+/** `ensureTab`'s clock, for a subject that arrives on a later route change. */
+export const StampSubjectTab = Command.define("StampChatSubjectTab", {
+	messages: [Message.StampedSubjectTab],
+	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.StampedSubjectTab({ nowMs })),
+})
+
 /** `shareUrl`: a read-only link carrying the tab id, its title and an optional message. */
 export const shareUrl = (origin: string, tab: { readonly id: string; readonly title: string }, messageId?: string) => {
 	const url = new URL("/chat", origin)

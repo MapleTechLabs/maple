@@ -9,7 +9,7 @@ import { MountMessageScroller } from "../../chat/kit/scroller"
 import { findDiagnosisMessageId } from "../../chat/kit/transcript-rows"
 import { contextOf, placeholderOf, suggestionsOf } from "./conversation"
 import { investigationNoun } from "./investigation-context"
-import { diagnosisReportCard } from "./view-diagnosis-card"
+import { diagnosisReportCard, reportOfDiagnosis } from "./view-diagnosis-card"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { toLoadFailure } from "../../../data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
@@ -216,10 +216,11 @@ const conversationTab = (
 			placeholder: placeholderOf(investigation),
 			emptyState: () => investigationLead(h, investigation),
 			chips: [],
-			scrollerMount: Mount.mapMessage(MountMessageScroller(), () => Message.CompletedMountScroller()),
+			scrollerMount: Mount.mapMessage(MountMessageScroller({ focusMessageId: null }), () => Message.CompletedMountScroller()),
 			knownServices: new Set(model.knownServices ?? []),
 			nowMs: model.nowMs,
 			fallback: report === null || hasDiagnosisTurn ? undefined : diagnosisReportCard(h, model, report, trigger),
+			diagnosisCard: (diagnosis) => diagnosisReportCard(h, model, reportOfDiagnosis(diagnosis), trigger),
 			suggestions: {
 				items: suggestionsOf(investigation),
 				onSelect: (text) => toMessage(ConversationMessageUnion.ClickedSuggestion({ text })),

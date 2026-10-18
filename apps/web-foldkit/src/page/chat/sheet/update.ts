@@ -6,6 +6,7 @@ import * as Dialog from "../../../ui/dialog"
 import * as Tooltip from "../../../ui/tooltip"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import { OutMessage as ConversationOut } from "../conversation/message"
+import { activeContextsOf, pageContextPreamble } from "../kit/preamble"
 import * as Conversation from "../conversation/update"
 import {
 	CreateSheetTab,
@@ -13,6 +14,7 @@ import {
 	LoadKnownServices,
 	LoadPresence,
 	ReadSheetTab,
+	ReleaseFocus,
 	RenameStoredTab,
 } from "./command"
 import { init as initSheet, Message, type Model, OutMessage } from "./model"
@@ -20,7 +22,10 @@ import { init as initSheet, Message, type Model, OutMessage } from "./model"
 export type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
-const NO_CONTEXT: Conversation.SendContext = { preamble: "" }
+/** The page the sheet was opened over, as the first message's context block. */
+const sendContext = (model: Model): Conversation.SendContext => ({
+	preamble: pageContextPreamble(model.referrerPath, activeContextsOf(model.referrerPath, model.dismissedContexts)),
+})
 
 const withCommands = (result: Return, commands: Commands): Return => ({
 	...result,
@@ -33,7 +38,10 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 	const next: Model = closed ? { ...initSheet(), dialog: step.model } : { ...model, dialog: step.model }
 	return {
 		model: next,
-		commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
+		commands: [
+			...Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
+			...(closed ? [ReleaseFocus()] : []),
+		],
 	}
 }
 
@@ -69,8 +77,8 @@ const updateTooltip = (model: Model, message: Tooltip.Message): Return => {
 	}
 }
 
-const startConversation = (model: Model, orgId: string, tabId: string): Return =>
-	liftConversation({ ...model, orgId, tabId }, Conversation.init(tabId, makeChatSessionId(orgId, tabId)))
+const startConversation = (model: Model, orgId: string, tabId: string, referrerPath: string | null): Return =>
+	liftConversation({ ...model, orgId, tabId, referrerPath, dismissedContexts: [] }, Conversation.init(tabId, makeChatSessionId(orgId, tabId)))
 
 /** `orgId` is the session's org; the sheet does nothing without one (`if (!orgId) return null`). */
 export const update = (model: Model, message: Message, orgId: string | null): Return =>
@@ -81,10 +89,10 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 				: withCommands(liftDialog({ ...model, orgId, isInitialFocusPointer: !viaKeyboard }, Dialog.open(model.dialog)), [
 						ReadSheetTab({ orgId }),
 					]),
-		CompletedReadSheetTab: ({ orgId: forOrg, tabId, nowMs }) =>
+		CompletedReadSheetTab: ({ orgId: forOrg, tabId, nowMs, referrerPath }) =>
 			!model.dialog.isOpen || forOrg !== model.orgId
 				? { model }
-				: startConversation({ ...model, nowMs }, forOrg, tabId),
+				: startConversation({ ...model, nowMs }, forOrg, tabId, referrerPath),
 		GotDialogMessage: ({ message: child }) => liftDialog(model, Dialog.update(model.dialog, child)),
 		// Focus leaving a header button ends the pointer-opened initial focus.
 		GotTooltipMessage: ({ message: child }) =>
@@ -99,10 +107,12 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 				: updateTooltip(model, Tooltip.Message.FocusedTrigger({ triggerId })),
 		ClickedNewChat: () => (model.orgId === null ? { model } : { model, commands: [CreateSheetTab({ orgId: model.orgId })] }),
 		// A fresh conversation mounts a fresh empty state, which asks for the signal presence again.
-		CreatedSheetTab: ({ orgId: forOrg, tabId }) =>
+		CreatedSheetTab: ({ orgId: forOrg, tabId, referrerPath }) =>
 			!model.dialog.isOpen || forOrg !== model.orgId
 				? { model }
-				: startConversation({ ...model, isPresenceRequested: false }, forOrg, tabId),
+				: startConversation({ ...model, isPresenceRequested: false }, forOrg, tabId, referrerPath),
+		DismissedContext: ({ id }) =>
+			model.dismissedContexts.includes(id) ? { model } : { model: { ...model, dismissedContexts: [...model.dismissedContexts, id] } },
 		ClickedOpenFullPage: () =>
 			model.orgId === null
 				? { model }
@@ -110,7 +120,7 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 		CompletedEnsureStoredTab: () => ({ model }),
 		CompletedRenameStoredTab: () => ({ model }),
 		GotConversationMessage: ({ message: child }) =>
-			model.conversation === null ? { model } : liftConversation(model, Conversation.update(model.conversation, child, NO_CONTEXT)),
+			model.conversation === null ? { model } : liftConversation(model, Conversation.update(model.conversation, child, sendContext(model))),
 		PaintedEmptyState: () =>
 			model.isPresenceRequested
 				? { model }
@@ -126,4 +136,5 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 		}),
 		CompletedLoadKnownServices: ({ services }) => ({ model: { ...model, knownServices: services } }),
 		CompletedMountScroller: () => ({ model }),
+		CompletedReleaseFocus: () => ({ model }),
 	})

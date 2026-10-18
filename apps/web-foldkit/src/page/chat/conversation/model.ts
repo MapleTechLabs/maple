@@ -4,6 +4,7 @@ import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
 import * as CopyButton from "../../../ui/copy-button"
+import * as Dialog from "../../../ui/dialog"
 import { HighlightedCode } from "../kit/code-highlight"
 import { MinimapState } from "../kit/turn-minimap"
 import { ChatStatus, UIMessage } from "../kit/ui-message"
@@ -55,6 +56,12 @@ export const Model = Schema.Struct({
 	minimap: MinimapState,
 	/** Shiki tokens by fence (`highlightKey`); `null` while in flight or when it could not colour it. */
 	highlights: Schema.Record(Schema.String, Schema.NullOr(HighlightedCode)),
+	/** Each sub-agent row's sheet, by its tool call. */
+	taskSheets: Schema.Record(Schema.String, Dialog.Model),
+	/** The open diagram download menu (`inline:` or `fullscreen:` + source). */
+	diagramMenu: Schema.NullOr(Schema.String),
+	/** The diagram shown fullscreen, by source. */
+	fullscreenDiagram: Schema.NullOr(Schema.String),
 	/** Markdown parses by text; `null` while in flight. */
 	markdown: Schema.Record(Schema.String, Schema.NullOr(Schema.Struct({ document: Schema.NullOr(MarkdownDocument) }))),
 })

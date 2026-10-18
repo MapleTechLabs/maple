@@ -18,7 +18,6 @@ import {
 	FetchSignalLogs,
 	CheckTipFocus,
 	FetchSignalTraces,
-	PreloadTrace,
 	ReadInvestigationClock,
 	ResolveInvestigation,
 	RestartInvestigation,
@@ -109,7 +108,6 @@ export const init = (route: InvestigationRoute, _context: PageContext): Return =
 		actionSheet: Dialog.init("investigation-action-sheet", "sheet", { isOpen: false }),
 		canvas: Canvas.init({ minZoom: 0.3, maxZoom: 1.4, fitOnInit: Option.none() }),
 		traceTooltip: Tooltip.init("investigation-trace-tooltip"),
-		preloadedTraces: [],
 		conversation: null,
 		reportActionIndex: null,
 		reportSheet: Dialog.init("investigation-report-sheet", "sheet", { isOpen: false }),
@@ -153,10 +151,6 @@ const primaryKind = (investigation: V2Investigation): "resolve" | "restart" =>
 	investigation.status === "failed" || investigation.status === "inconclusive" || investigation.status === "resolved"
 		? "restart"
 		: "resolve"
-
-/** The trace a chip's tooltip trigger names (`traceTipId`). */
-const traceOfTip = (triggerId: string): string | undefined =>
-	/^trace-tip-(?:sheet|evidence|card)-(.+)$/.exec(triggerId)?.[1]
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -227,18 +221,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			// A focus opens the tip only once `:focus-visible` confirms it was the keyboard's.
 			const isFocus = inner._tag === "FocusedTrigger"
 			const step = isFocus ? { model: model.traceTooltip, commands: [] } : Tooltip.update(model.traceTooltip, inner)
-			const intent = inner._tag === "EnteredTrigger" || inner._tag === "FocusedTrigger" ? traceOfTip(inner.triggerId) : undefined
-			const isPreload = intent !== undefined && !model.preloadedTraces.includes(intent)
+			// The chip is a link: the root's intent preload warms its trace route (`page/preload.ts`).
 			return {
-				model: {
-					...model,
-					traceTooltip: step.model,
-					preloadedTraces: isPreload ? [...model.preloadedTraces, intent] : model.preloadedTraces,
-				},
+				model: { ...model, traceTooltip: step.model },
 				commands: [
 					...Command.mapMessages(step.commands ?? [], (tooltip) => Message.GotTraceTooltipMessage({ message: tooltip })),
 					...(inner._tag === "FocusedTrigger" ? [CheckTipFocus({ triggerId: inner.triggerId })] : []),
-					...(isPreload ? [PreloadTrace({ orgId: context.orgId, traceId: intent })] : []),
 				],
 			}
 		},
@@ -251,7 +239,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		CompletedLoadKnownServices: ({ services }) => ({ model: { ...model, knownServices: services } }),
-		CompletedPreloadTrace: () => ({ model }),
 		GotConversationMessage: ({ message: inner }) => stepConversation(model, inner),
 		ClickedReportAction: ({ index }) => openReportAction(model, index),
 		GotReportSheetMessage: ({ message: inner }) => stepReportSheet(model, inner),

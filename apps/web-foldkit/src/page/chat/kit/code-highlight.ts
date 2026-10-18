@@ -23,7 +23,7 @@ export const highlightedFences = (
 		switch (block._tag) {
 			case "CodeBlock": {
 				const language = Option.getOrElse(block.maybeLanguage, () => "")
-				return language === "chart" || language === "mermaid" ? [] : [{ language, code: block.value }]
+				return language === "chart" || language === "mermaid" || language === "math" ? [] : [{ language, code: block.value }]
 			}
 			case "List":
 				return block.items.flatMap((item) => highlightedFences(item.blocks))

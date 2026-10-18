@@ -13,6 +13,9 @@ import { Message as ConversationMessage } from "../conversation/message"
 import { conversationView } from "../conversation/view"
 import { MountMessageScroller } from "../kit/scroller"
 import { chatEmptyState } from "../kit/view-empty"
+import { contextChips } from "../kit/view-composer"
+import { activeContextsOf } from "../kit/preamble"
+import { suggestionsForContexts } from "@maple/web/components/chat/auto-contexts"
 import { DEFAULT_SUGGESTIONS } from "../page/update"
 import { MountEmptyState, MountFocusVisibleTrigger } from "./command"
 import { Message, type Model, SHEET_ID } from "./model"
@@ -129,8 +132,10 @@ const header = (h: HtmlBuilder<Message>, model: Model): Html =>
 	)
 
 /** Keyed by the thread (`<GlobalChatContent key={tabId}>`): a new chat mounts afresh. */
-const content = (h: HtmlBuilder<Message>, model: Model, inputs: SheetViewInputs): Html =>
-	h.keyed("div")(
+const content = (h: HtmlBuilder<Message>, model: Model, inputs: SheetViewInputs): Html => {
+	// `PageContextChips` and `suggestionsForContexts`: the page the sheet was opened over.
+	const contexts = activeContextsOf(model.referrerPath, model.dismissedContexts)
+	return h.keyed("div")(
 		model.tabId,
 		[h.Class("flex min-h-0 flex-1 flex-col")],
 		model.conversation === null
@@ -143,18 +148,19 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: SheetViewInputs)
 						placeholder: "Ask about your system…",
 						emptyState: () =>
 							chatEmptyState(h, {
-								suggestions: DEFAULT_SUGGESTIONS,
+								suggestions: suggestionsForContexts([...contexts]) ?? DEFAULT_SUGGESTIONS,
 								onSelect: (text) => toConversation(ConversationMessage.ClickedSuggestion({ text })),
 								tracePresence: presenceOf(model.presence, "traces"),
 								mount: MountEmptyState(),
 							}),
-						chips: [],
-						scrollerMount: MountMessageScroller(),
+						chips: contextChips(h, contexts, (id) => Message.DismissedContext({ id })),
+						scrollerMount: MountMessageScroller({ focusMessageId: null }),
 						knownServices: new Set(model.knownServices),
 						nowMs: model.nowMs,
 					}),
 				],
 	)
+}
 
 /** The sheet's portal (Base UI appends it to `<body>`); nothing while closed. */
 export const view = Submodel.defineView<Model, Message, SheetViewInputs>((model, inputs, h) =>
