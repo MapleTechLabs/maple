@@ -2,7 +2,9 @@ import { describeQueryError, parseTables, TABLES_SQL } from "@maple/local-ui/lib
 import { executeLocalQuery } from "@maple/query-engine/local"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { cachedAs, withCache } from "../../data/cached"
 import { Message } from "./message"
+import { LocalTable } from "./model"
 
 // The console's side effects: the platform read, the tables list, a run and a download.
 
@@ -11,13 +13,20 @@ export const ReadPlatform = Command.define("ReadQueryConsolePlatform", {
 	execute: Effect.sync(() => Message.CompletedReadPlatform({ isMac: /Mac|iPhone|iPad/.test(navigator.platform) })),
 })
 
-/** `QuerySidebar`'s `system.tables` read (`retry: false`). */
+/** `QuerySidebar`'s `system.tables` read (`retry: false`), opened on its cached list first. */
 export const FetchTables = Command.define("FetchQueryConsoleTables", {
-	args: { key: Schema.String, apiBase: Schema.String },
-	messages: [Message.SucceededFetchTables, Message.FailedFetchTables],
-	execute: ({ key, apiBase }) =>
-		executeLocalQuery(TABLES_SQL, apiBase).pipe(
-			Effect.map((rows) => Message.SucceededFetchTables({ key, tables: parseTables(rows) })),
+	args: { key: Schema.String, apiBase: Schema.String, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchTables, Message.FailedFetchTables, Message.FoundCachedTables],
+	execute: ({ key, apiBase, readsCache }) =>
+		withCache({
+			key: ["local", "query-console", "tables"],
+			readsCache,
+			fromCached: cachedAs(Schema.Array(LocalTable)),
+			toCached: (tables: ReadonlyArray<LocalTable>) => tables,
+			fetch: Effect.map(executeLocalQuery(TABLES_SQL, apiBase), (rows): ReadonlyArray<LocalTable> => parseTables(rows)),
+			found: (cached) => Message.FoundCachedTables({ key, cached }),
+			succeeded: (tables, fetchedAtMs) => Message.SucceededFetchTables({ key, tables, fetchedAtMs }),
+		}).pipe(
 			Effect.catch((error) =>
 				Effect.succeed(Message.FailedFetchTables({ key, failure: { message: describeQueryError(error).detail } })),
 			),

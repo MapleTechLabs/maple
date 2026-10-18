@@ -11,6 +11,7 @@ import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "../../data/local-query"
 import { Message as LogSheetMessage } from "../kit/log-sheet/message"
 import { LocalLog } from "../kit/log-sheet/model"
+import { SpanDetailRequest, SpanLogsRequest } from "./requests"
 import { SpanAttrs, SpanLog } from "./panel-model"
 
 export const Message = defineMessageUnion({
@@ -27,10 +28,13 @@ export const Message = defineMessageUnion({
 	GotTimelineMessage: { message: Timeline.Message },
 	GotWaterfallMessage: { message: Waterfall.Message },
 	GotFlowMessage: { message: TraceFlow.Message },
-	SucceededFetchSpanDetail: { key: Schema.String, detail: SpanAttrs },
+	SucceededFetchSpanDetail: { key: Schema.String, detail: SpanAttrs, fetchedAtMs: Schema.Number },
 	FailedFetchSpanDetail: { key: Schema.String, failure: LoadFailure },
-	SucceededFetchSpanLogs: { key: Schema.String, logs: Schema.Array(SpanLog) },
+	/** The result cache answered first; `request` is the read the fetch then repeats. */
+	FoundCachedSpanDetail: { request: SpanDetailRequest, cached: CachedOf(SpanAttrs) },
+	SucceededFetchSpanLogs: { key: Schema.String, logs: Schema.Array(SpanLog), fetchedAtMs: Schema.Number },
 	FailedFetchSpanLogs: { key: Schema.String, failure: LoadFailure },
+	FoundCachedSpanLogs: { request: SpanLogsRequest, cached: CachedOf(Schema.Array(SpanLog)) },
 	/** The panel's header, copy and error parts (the web panel's markup and Messages). */
 	GotSpanPanelMessage: { message: SpanPanel.Message },
 	GotPanelTabsMessage: { message: Tabs.Message },

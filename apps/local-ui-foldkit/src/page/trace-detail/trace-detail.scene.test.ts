@@ -112,7 +112,7 @@ describe("local trace detail", () => {
 			resourceAttributes: {},
 		}
 		const logsKey = open.panel?.logs.key ?? ""
-		const withLogs = update(open, Message.SucceededFetchSpanLogs({ key: logsKey, logs: [spanLog] }), ctx).model
+		const withLogs = update(open, Message.SucceededFetchSpanLogs({ key: logsKey, logs: [spanLog], fetchedAtMs: NOW }), ctx).model
 		const clicked = update(withLogs, Message.ClickedSpanLog({ log: spanLog }), ctx).model
 		const sheet = Option.getOrNull(clicked.panel?.maybeLogSheet ?? Option.none())
 		expect([sheet?.dialog.isOpen, sheet?.log.body]).toEqual([true, "card declined"])

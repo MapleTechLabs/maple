@@ -4,7 +4,7 @@ import * as AttributesPanel from "@maple/web-foldkit/ui/attributes/attributes-pa
 import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import { Match, Option, Record, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { accept, idle, keyOf } from "../../data/slot"
+import { accept, acceptCached, idle, keyOf } from "../../data/slot"
 import * as LogSheet from "../kit/log-sheet/update"
 import type { Resources } from "../../platform/resources"
 import { FetchSpanDetail, FetchSpanLogs, WaitCopyStatus, WriteClipboard } from "./command"
@@ -23,8 +23,9 @@ const logsKey = (span: SpanNodeData) =>
 	keyOf("span-logs", { traceId: span.traceId, spanId: span.spanId, startTime: span.startTime, durationMs: span.durationMs })
 
 /** The panel's reads: the logs always, the full attributes unless the span is a missing parent. */
-const fetches = (span: SpanNodeData, apiBase: string): Commands => [
+const fetches = (span: SpanNodeData, apiBase: string, readsCache: boolean): Commands => [
 	FetchSpanLogs({
+		readsCache,
 		key: logsKey(span),
 		traceId: span.traceId,
 		spanId: span.spanId,
@@ -34,7 +35,7 @@ const fetches = (span: SpanNodeData, apiBase: string): Commands => [
 	}),
 	...(span.isMissing === true
 		? []
-		: [FetchSpanDetail({ key: detailKey(span), traceId: span.traceId, spanId: span.spanId, apiBase })]),
+		: [FetchSpanDetail({ key: detailKey(span), traceId: span.traceId, spanId: span.spanId, apiBase, readsCache })]),
 ]
 
 /** `<SpanDetailPanel>` mounting for a newly selected span. */
@@ -49,7 +50,7 @@ export const initPanel = (span: SpanNodeData, apiBase: string): PanelReturn => (
 		attributes: AttributesPanel.init("span-attributes"),
 		maybeLogSheet: Option.none(),
 	},
-	commands: fetches(span, apiBase),
+	commands: fetches(span, apiBase, true),
 })
 
 /** A refresh (`invalidateQueries`) refetches the open panel's reads in place. */
@@ -59,7 +60,7 @@ export const refetchPanel = (panel: PanelModel, apiBase: string): PanelReturn =>
 		detail: panel.detail.key === null ? panel.detail : { ...panel.detail, data: refreshing(panel.detail.data) },
 		logs: { ...panel.logs, data: refreshing(panel.logs.data) },
 	},
-	commands: fetches(panel.span, apiBase),
+	commands: fetches(panel.span, apiBase, false),
 })
 
 const refreshing = <A, E>(data: AsyncData.AsyncData<A, E>): AsyncData.AsyncData<A, E> =>
@@ -109,9 +110,25 @@ export const updatePanel = (panel: PanelModel, message: Message): PanelReturn =>
 	Match.value(message).pipe(
 		Match.withReturnType<PanelReturn>(),
 		Match.tags({
-		SucceededFetchSpanDetail: ({ key, detail }) => ({ panel: { ...panel, detail: accept(panel.detail, key, Result.succeed(detail)) } }),
+		SucceededFetchSpanDetail: ({ key, detail, fetchedAtMs }) =>
+			({ panel: { ...panel, detail: accept(panel.detail, key, Result.succeed(detail), fetchedAtMs) } }),
+		FoundCachedSpanDetail: ({ request, cached }) =>
+			panel.detail.key === request.key
+				? {
+						panel: { ...panel, detail: acceptCached(panel.detail, request.key, cached, cached.isFresh) },
+						commands: cached.isFresh ? [] : [FetchSpanDetail({ ...request, readsCache: false })],
+					}
+				: { panel },
+		FoundCachedSpanLogs: ({ request, cached }) =>
+			panel.logs.key === request.key
+				? {
+						panel: { ...panel, logs: acceptCached(panel.logs, request.key, cached, cached.isFresh) },
+						commands: cached.isFresh ? [] : [FetchSpanLogs({ ...request, readsCache: false })],
+					}
+				: { panel },
 		FailedFetchSpanDetail: ({ key, failure }) => ({ panel: { ...panel, detail: accept(panel.detail, key, Result.fail(failure)) } }),
-		SucceededFetchSpanLogs: ({ key, logs }) => ({ panel: { ...panel, logs: accept(panel.logs, key, Result.succeed(logs)) } }),
+		SucceededFetchSpanLogs: ({ key, logs, fetchedAtMs }) =>
+			({ panel: { ...panel, logs: accept(panel.logs, key, Result.succeed(logs), fetchedAtMs) } }),
 		FailedFetchSpanLogs: ({ key, failure }) => ({ panel: { ...panel, logs: accept(panel.logs, key, Result.fail(failure)) } }),
 		GotSpanPanelMessage: ({ message: child }) => updateParts(panel, child),
 		GotPanelTabsMessage: ({ message: child }) => {

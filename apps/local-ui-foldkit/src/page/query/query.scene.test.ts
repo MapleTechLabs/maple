@@ -25,7 +25,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 
 const loaded = (): Model => {
 	const model = init(context).model
-	return pageUpdate(model, Message.SucceededFetchTables({ key: model.tables.key ?? "", tables: [{ name: "traces", totalRows: 12 }] })).model
+	return pageUpdate(model, Message.SucceededFetchTables({ key: model.tables.key ?? "", tables: [{ name: "traces", totalRows: 12 }], fetchedAtMs: 0 })).model
 }
 
 describe("local query console", () => {
