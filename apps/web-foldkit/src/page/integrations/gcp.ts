@@ -1,3 +1,4 @@
+import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { GcpResourcesResponse } from "@maple/domain/http"
 import { V2GcpSetupScripts } from "@maple/domain/http/v2"
 import { GcpConnectorId } from "@maple/domain/primitives"
@@ -161,7 +162,7 @@ export const ReadRemoved = Command.define("ReadGcpRemovedConnectors", {
 		Effect.sync(() =>
 			Message.CompletedReadGcpRemoved({
 				removed: Option.getOrElse(
-					decodeRemoved(window.localStorage.getItem(storageKey(orgId)) ?? ""),
+					Option.flatMap(readLocalStorage(storageKey(orgId)), decodeRemoved),
 					() => [],
 				),
 			}),
@@ -173,7 +174,8 @@ export const WriteRemoved = Command.define("WriteGcpRemovedConnectors", {
 	messages: [Message.CompletedWriteGcpRemoved],
 	execute: ({ orgId, removed }) =>
 		Effect.sync(() => {
-			window.localStorage.setItem(storageKey(orgId), encodeRemoved(removed))
+			// Best effort, like the legacy atom: private mode and blocked site data throw here.
+			writeLocalStorage(storageKey(orgId), encodeRemoved(removed))
 			return Message.CompletedWriteGcpRemoved()
 		}),
 })

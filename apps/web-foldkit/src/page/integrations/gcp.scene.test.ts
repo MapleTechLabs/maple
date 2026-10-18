@@ -1,10 +1,11 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2GcpIntegration } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
-import { describe, expect, test } from "vitest"
+import { Effect, Result, Schema } from "effect"
+import { describe, expect, test, vi } from "vitest"
 import * as Menu from "../../ui/menu"
 import { toLoadFailure } from "../../data/load-failure"
 import type { PageContext } from "../contract"
+import { ReadRemoved, WriteRemoved } from "./gcp"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -110,5 +111,18 @@ describe("google cloud card", () => {
 		expect(step.outMessage?._tag === "RequestedNavigation" ? step.outMessage.url : "").toContain(
 			"maple_gcp_connector_id",
 		)
+	})
+
+	test("blocked site storage reads no removed connectors and drops the write", async () => {
+		const blocked = () => Effect.die("storage is blocked")
+		vi.stubGlobal("localStorage", {
+			getItem: () => Effect.runSync(blocked()),
+			setItem: () => Effect.runSync(blocked()),
+		})
+		const read = await Effect.runPromise(ReadRemoved({ orgId: "org_acme" }).effect)
+		const written = await Effect.runPromise(WriteRemoved({ orgId: "org_acme", removed: [] }).effect)
+		vi.unstubAllGlobals()
+		expect(read).toEqual(Message.CompletedReadGcpRemoved({ removed: [] }))
+		expect(written).toEqual(Message.CompletedWriteGcpRemoved())
 	})
 })
