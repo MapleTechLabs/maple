@@ -23,6 +23,11 @@ export interface Faults {
 	readonly delays?: Readonly<Record<string, number>>
 	/** Matching requests are answered with this status and encoded error body instead. */
 	readonly failures?: Readonly<Record<string, FaultFailure>>
+	/**
+	 * Local server tags (`local.status`, `local.query`) refused at the network level, as when
+	 * `maple start` is not running. The capture aborts them before the backend sees them.
+	 */
+	readonly refusals?: ReadonlyArray<string>
 }
 
 /** An encoded error the endpoint declares, e.g. `{ _tag: "@maple/http/errors/...", message }`, at its status. */

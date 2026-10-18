@@ -68,6 +68,11 @@ const connection: ReadonlyArray<Scenario> = [
 	scenario(traces, "legacy-binary", {
 		faults: { failures: { "local.status": { status: 404, body: { message: "not found" } } } },
 	}),
+	// Nothing listening and nothing loaded: two refused probes (1 s apart) swap in the screen.
+	scenario(traces, "disconnected", {
+		faults: { refusals: ["local."] },
+		steps: (page) => page.getByText("Can’t reach Maple Local").first().waitFor(),
+	}),
 ]
 
 export const localArea: AreaModule = {

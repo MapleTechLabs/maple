@@ -210,6 +210,10 @@ with that encoded error, which the app decodes when the endpoint declares it. A 
 apply to every scenario on it; `Scenario.faults` travel in the `x-parity-faults` header and override
 them per prefix. Raw routes are matched by their tag (`chat.history`); a raw route's request body is part of its logged payload. Electric shapes are not covered.
 
+- `refusals: ["local.status"]` (local targets) aborts matching local server requests as
+  `connectionrefused` in the capture, before the backend sees them, as when `maple start` is not
+  running (`local-traces-disconnected`). They are not in the call log, and Chromium's
+  `net::ERR_CONNECTION_REFUSED` console line is expected for them.
 - `settle: "held"` captures a loading state: before each settle point the capture waits until every
   request in flight to the API is one the backend is holding (`FixtureBackend.held`), then settles
   visually as usual. The default `"quiet"` would also work most of the time, but could screenshot
