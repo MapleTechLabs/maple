@@ -42,17 +42,40 @@ const withCommands = (result: Return, commands: Commands): Return => ({
 	commands: [...(result.commands ?? []), ...commands],
 })
 
-/** Markdown bodies not parsed yet, marked in flight and asked for in one batch. */
+type MarkdownEntry = Model["markdown"][string]
+
+/** The longest parsed text an on-screen body extends: a streaming body's previous version. */
+const parsedPrefix = (cache: Model["markdown"], text: string): MarkdownEntry | undefined =>
+	Object.entries(cache)
+		.filter(([key, entry]) => !entry.isStale && key !== text && text.startsWith(key))
+		.reduce<[string, MarkdownEntry] | undefined>((best, pair) => (best === undefined || pair[0].length > best[0].length ? pair : best), undefined)?.[1]
+
+/**
+ * The cache keeps only the bodies on screen (a body still parsing shows its previous version's
+ * parse), parses each missing one unless an earlier version is in flight, and colours its fences.
+ */
 const followMarkdown = (result: Return): Return => {
 	const model = result.model
-	const missing = Array.dedupe(transcriptMarkdown(model.messages)).filter((text) => !(text in model.markdown))
-	if (missing.length === 0) return result
+	const wanted = Array.dedupe(transcriptMarkdown(model.messages))
+	const markdown = Object.fromEntries(
+		wanted.flatMap((text) => {
+			const own = model.markdown[text]
+			if (own !== undefined && !own.isStale) return [[text, own]]
+			const prefix = parsedPrefix(model.markdown, text)
+			const shown = prefix === undefined ? own : { document: prefix.document, isStale: true }
+			return shown === undefined ? [] : [[text, shown]]
+		}),
+	)
+	const missing = wanted.filter(
+		(text) => (markdown[text]?.isStale ?? true) && !model.markdownPending.some((pending) => text.startsWith(pending)),
+	)
+	const fences = Object.values(markdown).flatMap(({ document }) => (document === null ? [] : highlightedFences(document.blocks)))
+	const keys = new Set(fences.map((fence) => highlightKey(fence.language, fence.code)))
+	const highlights = Object.fromEntries(Object.entries(model.highlights).filter(([key]) => keys.has(key)))
+	const coloured = requestHighlights({ ...model, markdown, highlights, markdownPending: [...model.markdownPending, ...missing] }, fences)
 	return withCommands(
-		{
-			...result,
-			model: { ...model, markdown: { ...model.markdown, ...Object.fromEntries(missing.map((text) => [text, null])) } },
-		},
-		[ParseMarkdown({ texts: missing })],
+		{ ...result, model: coloured.model },
+		[...(missing.length === 0 ? [] : [ParseMarkdown({ texts: missing })]), ...(coloured.commands ?? [])],
 	)
 }
 
@@ -93,6 +116,7 @@ export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null
 		diagramMenu: null,
 		fullscreenDiagram: null,
 		markdown: {},
+		markdownPending: [],
 	},
 	commands: [LoadHistory({ sessionId, generation: 1 })],
 })
@@ -100,7 +124,7 @@ export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null
 /** `sendMessage`: the optimistic bubble, `submitted`, and the POST; nothing while a turn runs. */
 const send = (model: Model, raw: string, context: SendContext): Return => {
 	const trimmed = raw.trim()
-	if (trimmed === "" || isLoading(model) || model.readOnly !== null) return { model }
+	if (trimmed === "" || !model.historyReady || isLoading(model) || model.readOnly !== null) return { model }
 	const isFirst = model.messages.length === 0
 	const outgoing = isFirst && context.preamble !== "" ? wrapChatContext(context.preamble, trimmed) : trimmed
 	const generation = model.generation + 1
@@ -180,7 +204,8 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 		},
 		ChangedDraft: ({ text }) => ({ model: { ...model, draft: text } }),
 		// `form.reset()` runs before `onSubmit`, so the composer clears even when nothing is sent.
-		SubmittedComposer: () => send({ ...model, draft: "" }, model.draft, context),
+		// Before the history is read the draft stays: a send then would drop the history.
+		SubmittedComposer: () => (model.historyReady ? send({ ...model, draft: "" }, model.draft, context) : { model }),
 		ClickedSuggestion: ({ text }) => send(model, text, context),
 		ClickedRetrySend: ({ text }) => send(model, text, context),
 		ClickedContinue: () => send(model, "Continue.", context),
@@ -235,17 +260,13 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 				commands: Command.mapMessages(result.commands ?? [], (inner) => Message.GotCopyMessage({ id, message: inner })),
 			}
 		},
-		CompletedParseMarkdown: ({ parsed }) =>
-			requestHighlights(
-				{
-					...model,
-					markdown: {
-						...model.markdown,
-						...Object.fromEntries(parsed.map(({ text, document }) => [text, { document }])),
-					},
-				},
-				parsed.flatMap(({ document }) => (document === null ? [] : highlightedFences(document.blocks))),
-			),
+		CompletedParseMarkdown: ({ parsed }) => ({
+			model: {
+				...model,
+				markdown: { ...model.markdown, ...Object.fromEntries(parsed.map(({ text, document }) => [text, { document, isStale: false }])) },
+				markdownPending: model.markdownPending.filter((text) => !parsed.some((entry) => entry.text === text)),
+			},
+		}),
 		ClickedCopyCode: ({ code }) => ({ model, commands: [CopyCode({ code })] }),
 		ClickedDownloadCode: ({ code, language }) => ({ model, commands: [DownloadCode({ code, language })] }),
 		ToggledDiagramMenu: ({ menuId }) => ({ model: { ...model, diagramMenu: model.diagramMenu === menuId ? null : menuId } }),

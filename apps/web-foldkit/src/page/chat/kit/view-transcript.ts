@@ -38,7 +38,7 @@ import { type PanelHost, runningClock, toolNodes, toolStandalone } from "./view-
 
 // `ChatTranscript` (apps/web components/chat/chat-transcript.tsx): the scrolling thread.
 
-export type MarkdownCache = Readonly<Record<string, { readonly document: MarkdownDocument | null } | null>>
+export type MarkdownCache = Readonly<Record<string, { readonly document: MarkdownDocument | null; readonly isStale: boolean }>>
 
 /** Everything a transcript needs from its host besides the messages. */
 export type TranscriptHost<M> = PanelHost<M> &
@@ -289,7 +289,7 @@ export const transcript = <M>(
 	const awaitingFirstToken = host.isLoading && last?.role === "user"
 	const rows = buildTranscriptRows(messages)
 	const readOnlyLabel = host.readOnly === null ? undefined : READ_ONLY_LABEL.get(host.readOnly)
-	const isMarkdownPending = transcriptMarkdown(messages).some((text) => (host.markdown[text] ?? null) === null)
+	const isMarkdownPending = transcriptMarkdown(messages).some((text) => host.markdown[text]?.isStale ?? true)
 	// Keyed apart from the empty state: patched in place, the scroller's Mount would never run.
 	return h.keyed("div")(
 		"transcript-scroller",
