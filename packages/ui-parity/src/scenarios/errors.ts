@@ -44,6 +44,13 @@ const pickInRail =
 		if (toast !== undefined) await page.getByText(toast, { exact: true }).waitFor()
 		await settlePointer(page)
 	}
+/** A closed popup uncovers a row under the pointer: both apps focus it on hover; wait for that. */
+const rowHoverSettled = (page: Page) =>
+	page.waitForFunction(() => {
+		const hovered = document.querySelector("[data-issue-id]:hover")
+		return hovered === null || hovered.hasAttribute("data-focused")
+	})
+
 const statusTrigger = (page: Page) => page.getByRole("combobox").filter({ hasText: "Triage" })
 const severityTrigger = (page: Page) => page.getByRole("combobox", { name: "Severity" })
 
@@ -304,6 +311,7 @@ export const errorsArea: AreaModule = {
 				await page.locator("[data-issue-id]").first().click({ button: "right" })
 				await page.getByRole("menuitem", { name: "Claim" }).click()
 				await page.getByText("Claimed", { exact: true }).waitFor()
+				await rowHoverSettled(page)
 				await settlePointer(page)
 			},
 		}),
@@ -319,6 +327,7 @@ export const errorsArea: AreaModule = {
 				await page.locator("[data-picker=state]").first().click()
 				await page.getByRole("option", { name: "Todo" }).click()
 				await page.getByText("Moved to Todo", { exact: true }).waitFor()
+				await rowHoverSettled(page)
 				await settlePointer(page)
 			},
 		}),
