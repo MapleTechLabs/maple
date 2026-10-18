@@ -4,6 +4,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../platform/resources"
 import * as Shell from "../shell"
+import * as Toast from "../ui/toast"
+import * as ToastView from "../ui/toast-view"
 import {
 	foldLabShell,
 	initLabShell,
@@ -13,9 +15,11 @@ import {
 	labShellView,
 } from "./app-shell"
 import { defineLabWithFlags, type LabEntry } from "./define"
+import { foldLabToasts, initLabToasts } from "./toasts"
 
 // A lab page inside the real shell (apps/web's `DashboardLayout`): the page is a Submodel with its
-// own Flags, the shell is booted for the session's org around it.
+// own Flags, the shell is booted for the session's org around it, and the root `ToastProvider`'s
+// Notifications regions follow it, as on every legacy lab page.
 
 export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFlags> = Readonly<{
 	Model: Schema.Codec<PageModel, unknown>
@@ -39,17 +43,20 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 	title: string,
 	page: ShellLabPage<PageModel, PageMessage, PageFlags>,
 ): LabEntry => {
-	const Model = Schema.Struct({ page: page.Model, shell: Shell.Model })
+	const Model = Schema.Struct({ page: page.Model, shell: Shell.Model, toasts: Toast.Model })
 	type Model = typeof Model.Type
 	const Message = defineMessageUnion({
 		GotPageMessage: { message: page.Message },
 		GotShellMessage: { message: Shell.Message },
+		GotToastMessage: { message: Toast.Message },
 	})
 	type Message = typeof Message.Type
 	type Return = Update.Return<Model, Message, Resources>
 	const toShell = (message: Shell.Message): Message => Message.GotShellMessage({ message })
 	const toPage = (message: PageMessage): Message => Message.GotPageMessage({ message })
 	const foldShell = foldLabShell<Model, Message>(toShell)
+	const toToast = (message: Toast.Message): Message => Message.GotToastMessage({ message })
+	const foldToasts = foldLabToasts<Model, Message>(toToast)
 	const pageView = Submodel.defineView<PageModel, PageMessage>(page.view)
 	const before = page.before
 	const beforeView = before === undefined ? null : Submodel.defineView<PageModel, PageMessage>(before)
@@ -67,7 +74,7 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 			const shell = initLabShell(flags.shell)
 			const inner = page.init(flags.page)
 			return {
-				model: { page: inner.model, shell: shell.model },
+				model: { page: inner.model, shell: shell.model, toasts: initLabToasts() },
 				commands: [
 					...Command.mapMessages(shell.commands ?? [], toShell),
 					...Command.mapMessages(inner.commands ?? [], toPage),
@@ -84,6 +91,7 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 					}
 				},
 				GotShellMessage: ({ message: inner }) => foldShell(model, inner),
+				GotToastMessage: ({ message: inner }) => foldToasts(model, inner),
 			}),
 		view: (model: Model, h: HtmlBuilder<Message>) =>
 			h.div(
@@ -110,6 +118,7 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 								toParentMessage: toPage,
 							}),
 					}),
+					...ToastView.regions(h, model.toasts, toToast),
 				],
 			),
 		subscriptions: Subscription.aggregate<Model, Message, Resources>()(
