@@ -211,6 +211,8 @@ export const MountCombobox = Mount.defineStream("MountCombobox", {
 				align: "start",
 				sideOffset: sideOffset ?? 4,
 				fallbackAxisSide: "none",
+				// `ComboboxPositioner` passes `lazyFlip: true`: a flipped list keeps its side while open.
+				lazyFlip: true,
 			},
 			insideSelectors: [anchorSelector],
 			markOutside: Option.some({ mark: true, ariaHidden: true, keep: [anchorSelector] }),

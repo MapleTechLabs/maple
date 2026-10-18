@@ -34,7 +34,8 @@ export const init = (slotPrefix: string): Model => ({
 export const Message = defineMessageUnion({
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
 	GotGroupByMessage: { queryId: Schema.String, message: Combobox.Message },
-	GotMetricMessage: { queryId: Schema.String, message: Combobox.Message },
+	/** `value`: the draft's metric, which a closed picker's input reads (and keeps on opening). */
+	GotMetricMessage: { queryId: Schema.String, value: Schema.String, message: Combobox.Message },
 	GotMetricBreakdownMessage: { queryId: Schema.String, message: Combobox.Message },
 	ToggledCollapsed: { queryId: Schema.String },
 	ToggledVisible: { queryId: Schema.String },
@@ -114,12 +115,13 @@ export const metricPickerIdOf = (queryId: string): string => `metric-${queryId}`
 export const metricBreakdownIdOf = (queryId: string): string => `metric-by-${queryId}`
 
 /** The metric picker: a pick goes to the host, typing re-reads the list. */
-const metricStep = (model: Model, queryId: string, message: Combobox.Message): Return => {
-	const current = model.metricPickers[queryId] ?? Combobox.init(metricPickerIdOf(queryId), "single")
+const metricStep = (model: Model, queryId: string, value: string, message: Combobox.Message): Return => {
+	const stored = model.metricPickers[queryId] ?? Combobox.init(metricPickerIdOf(queryId), "single")
+	const current = stored.isOpen ? stored : { ...stored, inputValue: value }
 	const next = Combobox.update(current, message)
 	const lifted: Model = { ...model, metricPickers: { ...model.metricPickers, [queryId]: next.model } }
 	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
-		Message.GotMetricMessage({ queryId, message: inner }),
+		Message.GotMetricMessage({ queryId, value, message: inner }),
 	)
 	if (message._tag === "ChangedInput")
 		return { model: lifted, commands, outMessage: OutMessage.ChangedMetricSearch({ search: message.value }) }
@@ -144,7 +146,7 @@ export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, id, inner),
 		GotGroupByMessage: ({ queryId, message: inner }) => groupByStep(model, queryId, inner),
-		GotMetricMessage: ({ queryId, message: inner }) => metricStep(model, queryId, inner),
+		GotMetricMessage: ({ queryId, value, message: inner }) => metricStep(model, queryId, value, inner),
 		GotMetricBreakdownMessage: ({ queryId, message: inner }) => metricBreakdownStep(model, queryId, inner),
 		ToggledCollapsed: ({ queryId }) => ({ model: { ...model, collapsed: toggled(model.collapsed, queryId) } }),
 		ToggledVisible: ({ queryId }) => changed(model, queryId, QueryChange.ToggledHidden()),
