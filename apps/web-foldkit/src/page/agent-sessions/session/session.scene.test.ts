@@ -23,6 +23,11 @@ describe("agent session detail", () => {
 		expect(AsyncData.isLoading(model.firstPage.data)).toBe(true)
 	})
 
+	test("the clock read brings the browser locale the token titles format with", () => {
+		const clocked = pageUpdate(entered().model, Message.CompletedResolveClock({ nowMs: 1, locale: "de-DE" }))
+		expect(clocked.model.locale).toBe("de-DE")
+	})
+
 	test("the tool a link carries seeds the span filter", () => {
 		expect(entered({ tool: "Bash" }).model.query).toBe("Bash")
 	})

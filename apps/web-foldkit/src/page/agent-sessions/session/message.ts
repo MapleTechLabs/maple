@@ -17,7 +17,8 @@ export const SpanScope = Schema.Literals(["ai", "app"])
 export type SpanScope = typeof SpanScope.Type
 
 export const Message = defineMessageUnion({
-	CompletedResolveClock: { nowMs: Schema.Number },
+	/** The clock and the browser's locale (the token titles' `toLocaleString`). */
+	CompletedResolveClock: { nowMs: Schema.Number, locale: Schema.String },
 	CompletedFetchFirstPage: { key: Schema.String, result: Schema.Result(SpansPage, LoadFailure) },
 	/** A background page; `isTooLarge` asks again at half the page size. */
 	CompletedFetchMorePage: {

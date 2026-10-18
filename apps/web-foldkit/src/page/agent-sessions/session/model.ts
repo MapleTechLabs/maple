@@ -66,6 +66,7 @@ export const Model = Schema.Struct({
 	/** The search string the session was entered from, for the back-to-list crumb. */
 	searchStr: Schema.String,
 	nowMs: Schema.Number,
+	locale: Schema.String,
 	firstPage: KeyedSchema(SpansPage, LoadFailure),
 	more: MorePages,
 	totals: KeyedSchema(SessionTotals, LoadFailure),
