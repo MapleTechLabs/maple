@@ -7,6 +7,7 @@ import { getSpanHierarchy, getTraceSpanEvents } from "@maple/web-data/warehouse/
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
+import { writeClipboard } from "../../kit/clipboard"
 import { Message } from "./message"
 
 /** `decodeTraceIdParam`: a pasted id may carry whitespace; anything still undecodable is not found. */
@@ -109,4 +110,12 @@ export const FetchReplays = Command.define("FetchTraceReplays", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchReplays({ key, result })),
 		),
+})
+
+/** `TraceIdBadge`'s `useCopy({ label: "trace ID" })`. */
+export const CopyTraceId = Command.define("CopyTraceId", {
+	args: { traceId: Schema.String },
+	messages: [Message.CompletedCopyTraceId],
+	execute: ({ traceId }) =>
+		Effect.map(writeClipboard(traceId), (isOk) => Message.CompletedCopyTraceId({ isOk })),
 })

@@ -115,6 +115,8 @@ export type ViewInputs = Readonly<{
 	showCloseButton?: boolean
 	/** Base UI points `aria-describedby` at a description only when one renders. */
 	hasDescription?: boolean
+	/** `initialFocus={popupRef}`: focus lands on the popup itself, not its first control. */
+	isPopupFocused?: boolean
 }>
 
 const slotPrefix = (kind: Kind) => kind
@@ -156,7 +158,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 					h.Key(`${model.id}-portal`),
 					h.DataAttribute("base-ui-portal", ""),
 					h.Id(`${model.id}-portal`),
-					h.OnMount(MountDialog({ id: model.id, hasTrigger: inputs.hasTrigger ?? true })),
+					h.OnMount(
+						MountDialog({
+							id: model.id,
+							hasTrigger: inputs.hasTrigger ?? true,
+							isPopupFocused: inputs.isPopupFocused ?? false,
+						}),
+					),
 					h.OnKeyDownPreventDefault((key) =>
 						key === "Escape" ? Option.some(Message.PressedEscape()) : Option.none(),
 					),
@@ -279,10 +287,11 @@ export const dialogDescription = <M>(
 	kind: TitledKind,
 	id: string,
 	text: string | ReadonlyArray<Html | string>,
+	className?: string,
 ): Html =>
 	h.p(
 		[
-			h.Class(cn(contentStyles[kind].description)),
+			h.Class(cn(contentStyles[kind].description, className)),
 			h.DataAttribute("slot", `${kind}-description`),
 			h.Id(descriptionId(id)),
 		],

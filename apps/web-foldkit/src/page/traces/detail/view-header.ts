@@ -35,7 +35,7 @@ export const titleContent = (h: HtmlBuilder<Message>, trace: LoadedTrace): Html 
 }
 
 /** `TraceLogsLink`: "View Logs (N)" when any log carries the trace id; silent otherwise. */
-const logsLink = (h: HtmlBuilder<Message>, model: Model, trace: LoadedTrace): Html | null =>
+export const logsLink = (h: HtmlBuilder<Message>, model: Model, trace: LoadedTrace): Html | null =>
 	Option.match(correlationWindow(trace.traceStartTime, trace.data.totalDurationMs), {
 		onNone: () => null,
 		onSome: ({ startTime, endTime }) => {
@@ -57,7 +57,7 @@ const logsLink = (h: HtmlBuilder<Message>, model: Model, trace: LoadedTrace): Ht
 	})
 
 /** `TraceReplayLink`: "View Session Replay" when a browser session observed the trace. */
-const replayLink = (h: HtmlBuilder<Message>, model: Model): Html | null =>
+export const replayLink = (h: HtmlBuilder<Message>, model: Model): Html | null =>
 	Option.match(
 		Option.flatMapNullishOr(AsyncData.getData(model.replaySessionId.data), (id) => id),
 		{

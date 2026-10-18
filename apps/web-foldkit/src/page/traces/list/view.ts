@@ -1,3 +1,4 @@
+import { peekSheet } from "./view-peek"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
@@ -121,6 +122,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onClearAll: Message.ClickedClearAllChips(),
 			}),
 			tracesTable(h, model, inputs.context.timeZone),
+			peekSheet(h, model, inputs.context.timeZone),
 		],
 	)
 })

@@ -112,6 +112,59 @@ export const tracesPageArea: AreaModule = {
 				await firstRowSettled(page)
 			},
 		}),
+		list("peek", "a plain row click peeks the trace", {
+			steps: async (page) => {
+				await firstRowSettled(page)
+				await tracesTable(page).getByRole("row").nth(1).getByRole("cell").nth(1).click()
+				await page.getByRole("dialog").getByText("Open trace").waitFor()
+				await page.getByRole("dialog").getByText("Spans and timing", { exact: false }).waitFor()
+				await page.mouse.move(2, 2)
+			},
+		}),
+		list("peek-step", "the peek steps to the next trace", {
+			steps: async (page) => {
+				await firstRowSettled(page)
+				await tracesTable(page).getByRole("row").nth(1).getByRole("cell").nth(1).click()
+				await page.getByRole("dialog").getByText("Open trace").waitFor()
+				await page.getByRole("button", { name: "Next trace" }).click()
+				await page.getByRole("dialog").getByText(/^2 of/).waitFor()
+				await page.mouse.move(2, 2)
+			},
+		}),
+		list("peek-open", "Open trace from the peek", {
+			steps: async (page) => {
+				await firstRowSettled(page)
+				await tracesTable(page).getByRole("row").nth(1).getByRole("cell").nth(1).click()
+				await page.getByRole("dialog").getByText("Open trace").click()
+				await page.waitForURL(/\/traces\/[0-9a-f]{32}/)
+				await page.getByRole("tab", { name: "Waterfall" }).waitFor()
+				await page.mouse.move(2, 2)
+			},
+		}),
+		list("peek-url", "a peek from the URL", {
+			path: "/traces?peek=6843a8853182b32339b2dd5120d423f2",
+			steps: async (page) => {
+				await page.getByRole("dialog").getByText("Open trace").waitFor()
+				await page.getByRole("dialog").getByText("Spans and timing", { exact: false }).waitFor()
+			},
+		}),
+		list("keyboard", "j, j focuses the second row", {
+			steps: async (page) => {
+				await firstRowSettled(page)
+				await page.keyboard.press("j")
+				await page.keyboard.press("j")
+				await tracesTable(page).locator("[data-focused]").waitFor()
+			},
+		}),
+		list("keyboard-enter", "j then Enter peeks the row", {
+			steps: async (page) => {
+				await firstRowSettled(page)
+				await page.keyboard.press("j")
+				await page.keyboard.press("Enter")
+				await page.getByRole("dialog").getByText("Open trace").waitFor()
+				await page.getByRole("dialog").getByText("Spans and timing", { exact: false }).waitFor()
+			},
+		}),
 		list("duration-preset", "the > 1s duration preset", {
 			steps: async (page) => {
 				await page.getByRole("button", { name: "> 1s" }).click()

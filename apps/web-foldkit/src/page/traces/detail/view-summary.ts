@@ -12,7 +12,7 @@ import { statFigure } from "../../../ui/stat-figure"
 import { statusDot } from "../../../ui/status-dot"
 import { serviceDot } from "../../../ui/values"
 import { computeServiceShares, type ServiceShare } from "./derive"
-import type { Message } from "./message"
+import { Message } from "./message"
 import type { LoadedTrace } from "./select"
 
 // `TraceAnatomyStrip` (apps/web components/traces/trace-anatomy-strip.tsx over the @maple/ui strip).
@@ -169,6 +169,7 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 							traceIdBadge(h, trace.data.traceId, {
 								size: "default",
 								className: "text-xs max-w-[10rem]",
+								onCopy: Message.ClickedCopyTraceId(),
 							}),
 						],
 					),

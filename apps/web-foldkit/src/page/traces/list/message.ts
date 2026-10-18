@@ -3,7 +3,9 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as Dialog from "../../../ui/dialog"
 import { SignalPresences } from "../../kit/signal-presence"
+import { Message as DetailMessage } from "../detail/message"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { TracesFacets, TracesPage, VirtualRow } from "./model"
 
@@ -66,5 +68,11 @@ export const Message = defineMessageUnion({
 	ClickedWidenRange: {},
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
+	ClickedPeekRow: { index: Schema.Number },
+	ClickedPeekStep: { step: Schema.Literals([1, -1]) },
+	ClickedOpenTrace: {},
+	PressedListKey: { key: Schema.String },
+	GotPeekMessage: { message: DetailMessage },
+	GotPeekDialogMessage: { message: Dialog.Message },
 })
 export type Message = typeof Message.Type

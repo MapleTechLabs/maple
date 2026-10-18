@@ -21,6 +21,8 @@ import {
 } from "./command"
 import type { Search } from "./derive"
 import { sidebarHandlers, tableHandlers } from "./handlers"
+import * as Dialog from "../../../ui/dialog"
+import { openPeekedTrace, peekDialogStep, peekRow, peekStep, steppedPeek, syncPeek } from "./peek"
 import { Message, type RequestMode } from "./message"
 import type { Model, Pagination, TraceRow } from "./model"
 import { durationDraftOf } from "./search-edits"
@@ -185,17 +187,31 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		durationDraftVersion: 0,
 		refreshVersion: 0,
 		isReloading: false,
+		focusedIndex: null,
+		peekDialog: Dialog.init("traces-peek", "sheet"),
+		peek: null,
 	}
+	const peeked = syncPeek(model, context)
 	return {
-		model,
+		...peeked,
 		commands: [
 			resolveCommand(model, context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
+			...(peeked.commands ?? []),
 		],
 	}
 }
+
+/** The search without the peek params: only these re-query the list. */
+const listSearchOf = (search: Search): Search => ({
+	...search,
+	peek: undefined,
+	peekRow: undefined,
+	peekT: undefined,
+	peekSpan: undefined,
+})
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Traces({ search }))
 
@@ -205,6 +221,8 @@ export const routeChanged = (
 	context: PageContext,
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
+	if (searchHref(listSearchOf(model.search)) === searchHref(listSearchOf(route.search)))
+		return syncPeek({ ...model, search: route.search }, context)
 	const isSameDuration =
 		route.search.minDurationMs === model.search.minDurationMs &&
 		route.search.maxDurationMs === model.search.maxDurationMs
@@ -235,6 +253,31 @@ const lift = <A>(
 /** A settled first page or later page, then the reach-end check `useVirtualReachEnd` re-runs. */
 const settled = (model: Model, context: PageContext): Return => reachEnd(model, context)
 
+/** `useListNavigation` over the rows, and the peek's own keys while it is open. */
+const pressedListKey = (model: Model, key: string): Return => {
+	const isDown = key === "j" || key === "J" || key === "ArrowDown"
+	const isUp = key === "k" || key === "K" || key === "ArrowUp"
+	if (model.search.peek !== undefined) {
+		if (isDown || isUp) return steppedPeek(model, isDown ? 1 : -1)
+		return key === "Enter" ? openPeekedTrace(model) : { model }
+	}
+	const count = allRows(model).length
+	if ((isDown || isUp) && count > 0) {
+		const current = model.focusedIndex ?? -1
+		const next = isDown
+			? current < 0
+				? 0
+				: Math.min(current + 1, count - 1)
+			: current <= 0
+				? 0
+				: current - 1
+		return { model: { ...model, focusedIndex: next } }
+	}
+	if (key === "Enter" && model.focusedIndex !== null) return peekRow(model, model.focusedIndex)
+	if (key === "Escape") return { model: { ...model, focusedIndex: null } }
+	return { model }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
@@ -251,7 +294,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						: { ...model.firstPageCache, [key]: page },
 				onFailure: () => model.firstPageCache,
 			})
-			return settled({ ...model, firstPage, firstPageCache }, context)
+			const done = settled({ ...model, firstPage, firstPageCache }, context)
+			// A peek whose row just loaded gains the row's time (`resolvePeek`).
+			const peeked = syncPeek(done.model, context)
+			return { ...peeked, commands: [...(done.commands ?? []), ...(peeked.commands ?? [])] }
 		},
 		CompletedFetchNextPage: ({ key, result }) => {
 			if (key !== model.pagination.key) return { model }
@@ -303,6 +349,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		...sidebarHandlers(model),
 		...tableHandlers(model),
+		ClickedPeekRow: ({ index }) => peekRow(model, index),
+		ClickedPeekStep: ({ step }) => steppedPeek(model, step),
+		ClickedOpenTrace: () => openPeekedTrace(model),
+		PressedListKey: ({ key }) => pressedListKey(model, key),
+		GotPeekMessage: ({ message: inner }) => peekStep(model, inner, context),
+		GotPeekDialogMessage: ({ message: inner }) => peekDialogStep(model, inner),
 		GotFilterSectionsMessage: ({ message: inner }) => {
 			const next = FilterSections.update(model.filterSections, inner)
 			return lift(model, next.commands, (m) => Message.GotFilterSectionsMessage({ message: m }), {

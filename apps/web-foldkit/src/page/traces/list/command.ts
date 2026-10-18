@@ -4,7 +4,7 @@ import {
 	type ListTracesInput,
 	type Trace,
 } from "@maple/web-data/warehouse/traces"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -174,4 +174,39 @@ export const CompleteReloadSpin = Command.define("CompleteTracesReloadSpin", {
 	messages: [Message.CompletedReloadSpin],
 	execute: ({ version }) =>
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
+})
+
+/**
+ * `onPeek`: a plain click on a row's stretched link peeks; a modified, middle or right click still
+ * follows it. Foldkit links route through a document listener that skips a prevented click.
+ */
+export const MountPeekRows = Mount.defineStream("MountTracesPeekRows", {
+	messages: [Message.ClickedPeekRow],
+	execute: ({ element }) =>
+		Stream.callback<typeof Message.ClickedPeekRow.Type>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const onClick = (event: Event) => {
+						if (!(event instanceof MouseEvent)) return
+						const isPlain =
+							event.button === 0 &&
+							!event.metaKey &&
+							!event.ctrlKey &&
+							!event.shiftKey &&
+							!event.altKey
+						const link =
+							event.target instanceof Element
+								? event.target.closest("a[data-peek-index]")
+								: null
+						const index = Number(link?.getAttribute("data-peek-index") ?? Number.NaN)
+						if (!isPlain || !Number.isInteger(index)) return
+						event.preventDefault()
+						Queue.offerUnsafe(queue, Message.ClickedPeekRow({ index }))
+					}
+					element.addEventListener("click", onClick)
+					return onClick
+				}),
+				(onClick) => Effect.sync(() => element.removeEventListener("click", onClick)),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
 })

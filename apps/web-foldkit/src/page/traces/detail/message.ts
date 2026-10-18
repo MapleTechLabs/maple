@@ -34,5 +34,7 @@ export const Message = defineMessageUnion({
 	GotWaterfallMessage: { message: Waterfall.Message },
 	GotFlowMessage: { message: TraceFlow.Message },
 	GotSpanPanelMessage: { message: SpanPanel.Message },
+	ClickedCopyTraceId: {},
+	CompletedCopyTraceId: { isOk: Schema.Boolean },
 })
 export type Message = typeof Message.Type

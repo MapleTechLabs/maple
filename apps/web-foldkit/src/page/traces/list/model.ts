@@ -4,7 +4,9 @@ import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { TracesSearch } from "../../../route/search"
 import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as Dialog from "../../../ui/dialog"
 import { SignalPresenceData } from "../../kit/signal-presence"
+import { Model as TraceDetailModel } from "../detail/model"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // The `/traces` list (apps/web/src/routes/traces/index.tsx and components/traces/traces-table.tsx).
@@ -88,5 +90,10 @@ export const Model = Schema.Struct({
 	durationDraftVersion: Schema.Number,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
+	/** `useListNavigation`'s focused row, by index (the list is append-only per query). */
+	focusedIndex: Schema.NullOr(Schema.Number),
+	/** The peek sheet and the trace page running inside it while `peek` is in the URL. */
+	peekDialog: Dialog.Model,
+	peek: Schema.NullOr(TraceDetailModel),
 })
 export type Model = typeof Model.Type
