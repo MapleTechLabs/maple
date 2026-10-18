@@ -274,6 +274,7 @@ export const dialogTitle = <M>(
 		typeof text === "string" ? [text] : text,
 	)
 
+/** `text` as runs where the JSX interpolates, so the text nodes split the same. */
 export const dialogDescription = <M>(
 	h: HtmlBuilder<M>,
 	kind: TitledKind,

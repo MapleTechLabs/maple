@@ -387,6 +387,7 @@
         "@maple/web": "workspace:*",
         "@maple/web-data": "workspace:*",
         "@maple/widgets": "workspace:*",
+        "@rrweb/replay": "^2.1.7",
         "@tanstack/charts": "catalog:charts",
         "@tanstack/charts-scales": "catalog:charts",
         "@tanstack/db": "0.11.3",

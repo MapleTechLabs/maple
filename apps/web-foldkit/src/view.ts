@@ -8,7 +8,7 @@ import { type Model, Session } from "./model"
 import { pageContextOf } from "./update"
 import * as ClerkSignIn from "./page/clerk-sign-in"
 import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
-import { type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } from "./page/registry"
+import { isBarePageRoute, type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
@@ -102,7 +102,12 @@ const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =
 	AppRoute.matchOrElse<ReadonlyArray<Html>>(
 		model.route,
 		{ SignIn: ({ search }) => [signInView(model, h, search.redirect_url)] },
-		() => (rendersShell(model.route) ? shellRoute(model, h) : [placeholder(model, h, [])]),
+		() =>
+			rendersShell(model.route)
+				? shellRoute(model, h)
+				: isBarePageRoute(model.route) && model.page !== null
+					? [pageView(model, h)]
+					: [placeholder(model, h, [])],
 	)
 
 /** A protected route while signed out renders nothing: the redirect to `/sign-in` is in flight. */

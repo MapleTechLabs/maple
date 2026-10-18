@@ -94,12 +94,13 @@ export type SignalEmptyStateOptions<M> = Readonly<{
 	presence: SignalPresence
 	nowMs: number
 	noun?: string
+	/** The setup button's label in place of the signal's. */
+	action?: string
 	/** The page's own sentence in place of the signal's, and its guide. */
 	purpose?: string
 	guideDocs?: DocsPage
-	/** The setup guide the absent state links, and its button's label, in place of the signal's. */
+	/** The setup guide the absent state links in place of the signal's. */
 	setupDocs?: DocsPage
-	action?: string
 	isFiltered?: boolean
 	/** `onClearFilters`: the Message the "Clear filters" button sends. */
 	onClearFilters?: M

@@ -1,3 +1,4 @@
+import type { DashboardDocument } from "@maple/domain/http"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import { fieldDescriptionStyles, fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
@@ -57,7 +58,7 @@ const MIN_HEIGHT = new Map([
 ])
 const MIN_HEIGHT_DEFAULT = CARD_CHROME + 128 + 94
 
-type PreviewWidget = Parameters<typeof widgetTile>[2]
+type PreviewWidget = DashboardDocument["widgets"][number]
 
 const heightFor = (widget: PreviewWidget): number =>
 	Math.max(widget.layout.h * ROW_HEIGHT, MIN_HEIGHT.get(widget.visualization) ?? MIN_HEIGHT_DEFAULT)

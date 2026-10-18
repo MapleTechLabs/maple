@@ -57,6 +57,7 @@ import * as InvestigationDetail from "./investigations/detail"
 import * as InvestigationsList from "./investigations/list"
 import * as LogsList from "./logs/list"
 import * as MetricsBrowse from "./metrics/browse"
+import * as Analytics from "./analytics"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as Recommendation from "./recommendations"
@@ -64,10 +65,13 @@ import * as ReleaseDetail from "./releases/detail"
 import * as ReleasesList from "./releases/list"
 import * as ServiceDetail from "./services/detail"
 import * as ServiceMap from "./service-map"
+import * as ReplayDetail from "./replays/detail"
+import * as ReplaysList from "./replays/list"
 import * as ServicesList from "./services/list"
 import * as Settings from "./settings"
 import * as Account from "./settings/account"
 import * as McpPage from "./settings/mcp-page"
+import * as Share from "./share"
 import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
 
@@ -132,7 +136,16 @@ export const pages = [
 	Settings.page,
 	McpPage.page,
 	Account.page,
+	ReplaysList.page,
+	ReplayDetail.page,
+	Share.page,
+	Analytics.page,
 ]
+
+/** Public routes a page renders bare, outside the shell (`/share/$token`). */
+const BARE_PAGE_ROUTES: ReadonlyArray<AppRoute["_tag"]> = ["Share"]
+
+export const isBarePageRoute = (route: AppRoute): boolean => BARE_PAGE_ROUTES.includes(route._tag)
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))
 export type PageSlot = typeof PageSlot.Type
