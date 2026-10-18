@@ -65,18 +65,15 @@ export const FetchSignalLogs = Command.define("FetchInvestigationSignalLogs", {
 		),
 })
 
-/** `TracesRow`: the service's busiest overview row over the window. */
+/** `TracesRow`'s read: the window's overview rows, every service. */
 export const FetchSignalTraces = Command.define("FetchInvestigationSignalTraces", {
-	args: { key: Schema.String, service: Schema.String, startTime: Schema.String, endTime: Schema.String },
+	args: { key: Schema.String, startTime: Schema.String, endTime: Schema.String },
 	messages: [Message.CompletedFetchTraces],
-	execute: ({ key, service, startTime, endTime }) =>
+	execute: ({ key, startTime, endTime }) =>
 		finish(
-			Effect.map(getServiceOverview({ data: { startTime, endTime } }), (response) => {
-				const row = response.data
-					.filter((candidate) => candidate.serviceName === service)
-					.toSorted((left, right) => right.spanCount - left.spanCount)[0]
-				return row === undefined ? null : { spanCount: row.spanCount, p95LatencyMs: row.p95LatencyMs, errorRate: row.errorRate }
-			}),
+			Effect.map(getServiceOverview({ data: { startTime, endTime } }), (response) =>
+				response.data.map(({ serviceName, spanCount, p95LatencyMs, errorRate }) => ({ serviceName, spanCount, p95LatencyMs, errorRate })),
+			),
 			(result) => Message.CompletedFetchTraces({ key, result }),
 		),
 })

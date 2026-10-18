@@ -23,6 +23,9 @@ export type Sync = typeof Sync.Type
 /** `SignalsCard`'s two reads: log volume by severity, and the service's overview row. */
 export const LogBucket = Schema.Struct({ bucket: Schema.String, series: Schema.Record(Schema.String, Schema.Number) })
 export const TracesRow = Schema.Struct({ spanCount: Schema.Number, p95LatencyMs: Schema.Number, errorRate: Schema.Number })
+/** One `getServiceOverview` row; the card picks its service's busiest at render, as legacy does. */
+export const OverviewRow = Schema.Struct({ ...TracesRow.fields, serviceName: Schema.String })
+export type OverviewRow = typeof OverviewRow.Type
 
 /** `listIssueEscalations`, reduced to the attempt for this run. */
 export const Escalation = Schema.Struct({
@@ -38,7 +41,7 @@ export const Model = Schema.Struct({
 	nowMs: Schema.Number,
 	sync: Sync,
 	logs: KeyedSchema(Schema.Array(LogBucket), LoadFailure),
-	traces: KeyedSchema(Schema.NullOr(TracesRow), LoadFailure),
+	traces: KeyedSchema(Schema.Array(OverviewRow), LoadFailure),
 	escalation: KeyedSchema(Schema.NullOr(Escalation), LoadFailure),
 	busy: Busy,
 	actionsMenu: Menu.Model,

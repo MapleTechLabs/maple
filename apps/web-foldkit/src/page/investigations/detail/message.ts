@@ -6,7 +6,7 @@ import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as Tooltip from "../../../ui/tooltip"
 import { Message as ConversationMessage } from "../../chat/conversation/message"
-import { Escalation, LogBucket, Sync, TracesRow } from "./model"
+import { Escalation, LogBucket, OverviewRow, Sync } from "./model"
 
 const result = <A extends Schema.Top>(schema: A) => ({ key: Schema.String, result: Schema.Result(schema, LoadFailure) })
 
@@ -16,7 +16,7 @@ export const Message = defineMessageUnion({
 	/** The scoped shape's answer, for the org and investigation it was read for. */
 	SyncedInvestigation: { orgId: Schema.String, id: Schema.String, sync: Sync },
 	CompletedFetchLogs: result(Schema.Array(LogBucket)),
-	CompletedFetchTraces: result(Schema.NullOr(TracesRow)),
+	CompletedFetchTraces: result(Schema.Array(OverviewRow)),
 	CompletedFetchEscalation: result(Schema.NullOr(Escalation)),
 	ClickedPrimary: {},
 	ClickedRetrySync: {},

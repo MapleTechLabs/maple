@@ -68,7 +68,7 @@ const followOverview = (model: Model, context: PageContext): Return =>
 					: chain(
 							(() => {
 								const key = requestKey(context.orgId, "getServiceOverview", { startTime: window.startTime, endTime: window.endTime })
-								return slotStep(model, model.traces, (traces) => ({ traces }), key, FetchSignalTraces({ key, service, startTime: window.startTime, endTime: window.endTime }))
+								return slotStep(model, model.traces, (traces) => ({ traces }), key, FetchSignalTraces({ key, startTime: window.startTime, endTime: window.endTime }))
 							})(),
 							(next) => {
 								const key = requestKey(context.orgId, "getCustomChartTimeSeries", { service, window })
