@@ -33,10 +33,15 @@ export type BreakdownSortKey = typeof BreakdownSortKey.Type
 
 export const FilterKey = Schema.Literals(["branches", "branchStates", "branchRoles", "branchContains"])
 
+export const LocalWindow = Schema.Struct({ startMs: Schema.Number, endMs: Schema.Number })
+export type LocalWindow = typeof LocalWindow.Type
+
 export const Model = Schema.Struct({
 	dbName: Schema.String,
 	search: InfraPlanetscaleDatabaseSearch,
 	window: Schema.NullOr(TimeWindow),
+	/** `window` read as browser-local time (legacy's `Date.parse`), for the events read. */
+	localWindow: Schema.NullOr(LocalWindow),
 	nowMs: Schema.Number,
 	status: KeyedSchema(PlanetscaleStatus, LoadFailure),
 	databases: KeyedSchema(DatabaseList, LoadFailure),
@@ -67,7 +72,7 @@ const result = <A extends Schema.Top>(schema: A) => ({
 })
 
 export const Message = defineMessageUnion({
-	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedResolveWindow: { window: TimeWindow, localWindow: LocalWindow, nowMs: Schema.Number, mode: RequestMode },
 	CompletedLoadStatus: result(PlanetscaleStatus),
 	CompletedFetchDatabases: result(DatabaseList),
 	CompletedFetchBranchStats: result(Schema.Array(BranchStat)),

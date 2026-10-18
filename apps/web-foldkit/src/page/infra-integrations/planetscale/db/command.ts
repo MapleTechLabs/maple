@@ -13,6 +13,12 @@ import {
 } from "../data"
 import { Message, RequestMode } from "./model"
 
+/** The window plus its bounds read as browser-local time (`Date.parse` in legacy's events read). */
+const withLocal = (window: TimeWindow) => ({
+	window,
+	localWindow: { startMs: new Date(window.startTime).getTime(), endMs: new Date(window.endTime).getTime() },
+})
+
 export const ResolveWindow = Command.define("ResolvePlanetscaleDatabaseWindow", {
 	args: {
 		mode: RequestMode,
@@ -25,7 +31,7 @@ export const ResolveWindow = Command.define("ResolvePlanetscaleDatabaseWindow", 
 	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
 		Effect.map(Clock.currentTimeMillis, (nowMs) =>
 			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
+				...withLocal(resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs)),
 				nowMs,
 				mode,
 			}),

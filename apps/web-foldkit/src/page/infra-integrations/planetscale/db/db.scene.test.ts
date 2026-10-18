@@ -36,8 +36,11 @@ const inventory: DatabaseList = {
 	],
 }
 
+/** Local epochs the resolve read; the events read must send them as they are. */
+const LOCAL = { startMs: 1_790_000_000_000, endMs: 1_790_003_600_000 }
+
 const windowed = () =>
-	pageUpdate(init(route, context).model, Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }))
+	pageUpdate(init(route, context).model, Message.CompletedResolveWindow({ window, localWindow: LOCAL, nowMs: 0, mode: "Load" }))
 
 describe("planetscale database", () => {
 	test("entry asks for status and inventory; the window brings the branch stats and the scoped reads", () => {
@@ -54,6 +57,12 @@ describe("planetscale database", () => {
 			"FetchPlanetscaleEvents",
 			"FetchPlanetscaleQueryInsights",
 		])
+	})
+
+	test("the events read uses the window's browser-local epochs from the resolve", () => {
+		const events = windowed().commands?.find((command) => command.name === "FetchPlanetscaleEvents")
+		expect(JSON.stringify(events?.args)).toContain(`"startTime":${LOCAL.startMs}`)
+		expect(JSON.stringify(events?.args)).toContain(`"endTime":${LOCAL.endMs}`)
 	})
 
 	test("the inventory resolves the production branch, which re-keys the scoped reads", () => {
