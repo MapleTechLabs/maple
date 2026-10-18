@@ -3,7 +3,7 @@ import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import * as CopyButton from "../../../ui/copy-button"
-import type { PageContext, PageReturn } from "../../contract"
+import { type PageContext, type PageReturn, pickCommands } from "../../contract"
 import { deriveMeta } from "../kit/replay-meta"
 import { rangeKey, replayRangeInput } from "../kit/replay-range"
 import {
@@ -205,6 +205,10 @@ export const init = (route: Route, context: PageContext): Return => {
 	const entry = requestEntry(model, context, "Load")
 	return { model: entry.model, commands: [ResolveClock(), ...(entry.commands ?? [])] }
 }
+
+/** The route loader warms the session row, manifest and transcript for the `t` window. */
+export const preload = (route: Route, context: PageContext) =>
+	pickCommands(init(route, context), [FetchDetail.name, FetchManifest.name, FetchTranscript.name])
 
 /** `t` changes the partition window, and with it every key. */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return =>

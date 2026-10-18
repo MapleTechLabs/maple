@@ -90,6 +90,33 @@ export const servicesPageArea: AreaModule = {
 				.first()
 				.hover()
 		}),
+		// Intent preload: the router warms the target's loader atoms 50 ms after hover or focus.
+		services(
+			"preload-hover",
+			"the sidebar's Services link hovered from the overview",
+			async (page) => {
+				await page.getByRole("link", { name: "Services", exact: true }).first().hover()
+				await page.waitForTimeout(300)
+			},
+			"/",
+		),
+		services(
+			"preload-focus",
+			"the sidebar's Explore (traces) link focused from the services list",
+			async (page) => {
+				await page.getByRole("link", { name: "Explore", exact: true }).focus()
+				await page.waitForTimeout(300)
+			},
+		),
+		services(
+			"preload-filtered-link",
+			"the overview's View all services link (window and environment) hovered",
+			async (page) => {
+				await page.getByRole("link", { name: "View all services", exact: true }).hover()
+				await page.waitForTimeout(300)
+			},
+			"/",
+		),
 		services("time-range", "last 24 hours from the time range picker", async (page) => {
 			await page.getByRole("button", { name: "Last 12 hours" }).click()
 			await page.getByRole("dialog").getByRole("button", { name: "Last 1 day" }).click()

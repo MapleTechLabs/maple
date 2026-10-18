@@ -2,11 +2,11 @@ import { Array as Arr, Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
-import type { TimeWindow } from "../../../data/time-range"
+import { resolveWindow, type TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as FilterSections from "../../../ui/filters/filter-sections"
-import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -198,6 +198,22 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 }
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Traces({ search }))
+
+/** The route loader warms only the facet sidebar (`getTracesFacetsResultAtom`) for the snapped window. */
+export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
+	const { model } = init(route, context)
+	const window = resolveWindow(
+		{
+			startTime: model.search.startTime,
+			endTime: model.search.endTime,
+			preset: model.search.timePreset ?? DEFAULT_PRESET,
+			snap: true,
+			timeZone: context.timeZone,
+		},
+		nowMs,
+	)
+	return pickCommands(requestAll(model, context, window, "Load"), [FetchFacets.name])
+}
 
 export const routeChanged = (
 	model: Model,

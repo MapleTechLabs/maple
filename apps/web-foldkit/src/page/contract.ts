@@ -66,6 +66,13 @@ export type PageReturn<Model, Message> = Update.ReturnWithOutMessage<
 	Resources
 >
 
+/** A `preload`: the named fetch Commands of a step the page would take anyway (its `init`, a window load). */
+export const pickCommands = <Model, Message>(
+	result: PageReturn<Model, Message>,
+	names: ReadonlyArray<string>,
+): ReadonlyArray<Command.Command<Message, never, Resources>> =>
+	(result.commands ?? []).filter((command) => names.includes(command.name))
+
 type RouteOf<Tags extends RouteTag> = Extract<AppRoute, { readonly _tag: Tags }>
 
 // SPEC (what a page module provides)
@@ -76,6 +83,15 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	/** The instance survives a navigation while this stays equal (default: the route tag). */
 	readonly key?: (route: RouteOf<Tags>) => string
 	readonly init: (route: RouteOf<Tags>, context: PageContext) => PageReturn<Model, Message>
+	/**
+	 * The requests legacy's route loader warms on link intent (`warmAtoms`): the same fetch Commands
+	 * `init` goes on to send, keyed alike, so the root seeds them into the new instance (s8 "Preload").
+	 */
+	readonly preload?: (
+		route: RouteOf<Tags>,
+		context: PageContext,
+		nowMs: number,
+	) => ReadonlyArray<Command.Command<Message, never, Resources>>
 	readonly update: (model: Model, message: Message, context: PageContext) => PageReturn<Model, Message>
 	/** Same instance, new route: the search params changed (filters, window). */
 	readonly routeChanged?: (
@@ -176,6 +192,11 @@ export const definePage = <
 			ownsRoute(route)
 				? Option.some(step(keyOf(route), context, spec.init(route, context)))
 				: Option.none<PageStep<SlotType, WrappedType>>(),
+		/** The route's preload Commands, wrapped; `None` when the page has none or does not own the route. */
+		preload: (route: AppRoute, context: PageContext, nowMs: number) =>
+			ownsRoute(route) && spec.preload
+				? Option.some(Command.mapMessages(spec.preload(route, context, nowMs), wrap))
+				: Option.none<ReadonlyArray<Command.Command<WrappedType, never, Resources>>>(),
 		update: (slot: PageSlotBase, message: PageMessageBase, context: PageContext) =>
 			isOwnSlot(slot) && isOwnMessage(message)
 				? Option.some(step(slot.key, context, spec.update(slot.model, message.message, context)))

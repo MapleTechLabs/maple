@@ -1,7 +1,9 @@
-import { Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { load, pushUrl, replaceUrl } from "foldkit/navigation"
 import { Message } from "./message"
+import { PRELOAD_HOLD_MS } from "./page/preload"
+import { PageMessage } from "./page/registry"
 import { clearSessionToken, MapleAuthApi, readSessionToken, saveSessionToken } from "./platform/auth-api"
 import { loadClerk } from "./platform/clerk"
 
@@ -65,4 +67,30 @@ export const LoadClerk = Command.define("LoadClerk", {
 export const WaitForAuthSettle = Command.define("WaitForAuthSettle", {
 	messages: [Message.CompletedWaitForAuthSettle],
 	execute: Effect.sleep(AUTH_SETTLE_TIMEOUT).pipe(Effect.as(Message.CompletedWaitForAuthSettle())),
+})
+
+/** TanStack's intent timer: the link stayed hovered or focused for `delayMs`. */
+export const WaitPreloadDelay = Command.define("WaitPreloadDelay", {
+	args: { href: Schema.String, version: Schema.Number, delayMs: Schema.Number },
+	messages: [Message.ElapsedPreloadDelay],
+	execute: ({ href, version, delayMs }) =>
+		Effect.sleep(Duration.millis(delayMs)).pipe(
+			Effect.andThen(Clock.currentTimeMillis),
+			Effect.map((nowMs) => Message.ElapsedPreloadDelay({ href, version, nowMs })),
+		),
+})
+
+/** `warmAtoms`' hold: unused preloads are released after it. */
+export const HoldPreloads = Command.define("HoldPreloads", {
+	args: { keys: Schema.Array(Schema.String) },
+	messages: [Message.ExpiredPreloads],
+	execute: ({ keys }) =>
+		Effect.sleep(Duration.millis(PRELOAD_HOLD_MS)).pipe(Effect.as(Message.ExpiredPreloads({ keys }))),
+})
+
+/** A preloaded answer handed to the page that asked for it, instead of a second request. */
+export const DeliverPreloaded = Command.define("DeliverPreloaded", {
+	args: { message: PageMessage },
+	messages: [Message.GotPageMessage],
+	execute: ({ message }) => Effect.succeed(Message.GotPageMessage({ message })),
 })
