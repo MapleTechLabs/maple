@@ -117,7 +117,14 @@ export const infraArea: AreaModule = {
 			undefined,
 			SERVICE_LENS_RACE,
 		),
-		scenario("workloads", "Workloads", "/infra/kubernetes/workloads", K8S),
+		...timed(
+			"service-detail",
+			"Kubernetes service",
+			"/infra/kubernetes/services/payment-svc",
+			K8S,
+			"queryEngine.serviceDetailOverview",
+		).map((entry) => ({ ...entry, pageCalls: SERVICE_LENS_RACE })),
+		scenario("workloads", "Workloads","/infra/kubernetes/workloads", K8S),
 		scenario("workloads-empty", "Workloads (empty org)", "/infra/kubernetes/workloads", EMPTY),
 		scenario(
 			"workload-detail",

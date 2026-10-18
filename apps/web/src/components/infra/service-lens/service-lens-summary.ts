@@ -7,8 +7,11 @@
 // present and the infra one moves first. Everything below that degrades to a
 // weaker, still-true sentence rather than to silence.
 
-import type { PodRow } from "@/components/infra/pod-table"
-import { formatWholePercent } from "@/components/infra/format"
+// Framework-free and relative-imported: the Foldkit app imports it too.
+import type { ListPodsResponse } from "@maple/domain/http"
+import { formatWholePercent } from "../format"
+
+type PodRow = ListPodsResponse["data"][number]
 
 /** A pod at or above this share of a limit is treated as pinned against it. */
 export const SATURATED = 0.9
