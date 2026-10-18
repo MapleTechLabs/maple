@@ -251,6 +251,7 @@ export const toolbar = (h: H, model: Model, timeZone: string): Html => {
 										size: "sm",
 										isDisabled: isReadOnly,
 										attributes: [
+											h.Key("add-widget"),
 											h.AriaLabel("Add widget"),
 											h.OnClick(Message.ClickedAddWidget()),
 										],
@@ -271,6 +272,8 @@ export const toolbar = (h: H, model: Model, timeZone: string): Html => {
 							size: "sm",
 							isDisabled: isReadOnly,
 							attributes: [
+								// One element across Edit and Done, as React keeps it, so focus survives the toggle.
+								h.Key("toggle-edit"),
 								h.AriaLabel(isEdit ? "Done editing" : "Edit dashboard"),
 								h.OnClick(Message.ClickedToggleEdit()),
 							],

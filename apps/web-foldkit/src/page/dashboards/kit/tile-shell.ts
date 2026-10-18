@@ -1,7 +1,6 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { cardActionStyles } from "@maple/ui/styles/ui/card"
-import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { card, cardHeader, cardPanel } from "../../../ui/card"
@@ -15,10 +14,10 @@ export const GRID_INSTRUCTIONS_ID = "dashboard-grid-instructions"
 
 // `WidgetShell`, `WidgetFrame` and `WidgetEmptyState` (dashboard-builder/widgets/widget-shell.tsx).
 
-export type ShellOptions<M> = Readonly<{
+export type ShellOptions = Readonly<{
 	widgetId: string
-	/** Edit mode's grip: a primary-button press starts the drag. */
-	onGripDown: ((clientX: number, clientY: number) => M) | null
+	/** The drag grip (edit mode); the grid watches presses on it (`DashboardGrid`'s pointerdown). */
+	hasGrip: boolean
 	title: string
 	isEdit: boolean
 	/** The actions menu (trigger and portal), or `null` when the tile offers none. */
@@ -29,12 +28,8 @@ export type ShellOptions<M> = Readonly<{
 	footer?: string | undefined
 }>
 
-/** The grip a tile is dragged by (edit mode). TODO(grid-drag): presses are not wired to a gesture. */
-const grip = <M>(
-	h: HtmlBuilder<M>,
-	title: string,
-	onGripDown: (clientX: number, clientY: number) => M,
-): Html =>
+/** The grip a tile is dragged by (edit mode); the press starts the grid gesture. */
+const grip = <M>(h: HtmlBuilder<M>, title: string): Html =>
 	h.button(
 		[
 			h.Type("button"),
@@ -44,16 +39,13 @@ const grip = <M>(
 				"widget-drag-handle cursor-grab touch-none rounded-sm text-muted-foreground outline-none group-[.is-layout-locked]/canvas:hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
 			),
 			h.AriaDescribedBy(GRID_INSTRUCTIONS_ID),
-			h.OnPointerDown((_pointerType, button, _sx, _sy, _t, clientX, clientY) =>
-				button === 0 ? Option.some(onGripDown(clientX, clientY)) : Option.none(),
-			),
 		],
 		[icon(h, "GripDotsIcon", { size: 14 })],
 	)
 
 export const widgetShell = <M>(
 	h: HtmlBuilder<M>,
-	options: ShellOptions<M>,
+	options: ShellOptions,
 	children: ReadonlyArray<Html>,
 ): Html =>
 	card(
@@ -65,9 +57,7 @@ export const widgetShell = <M>(
 					h.div(
 						[h.Class("flex min-w-0 items-center gap-2")],
 						[
-							...(options.isEdit && options.onGripDown !== null
-								? [grip(h, options.title, options.onGripDown)]
-								: []),
+							...(options.isEdit && options.hasGrip ? [grip(h, options.title)] : []),
 							eyebrow(
 								h,
 								{
@@ -191,7 +181,7 @@ const failedState = <M>(h: HtmlBuilder<M>, state: Extract<WidgetDataState, { _ta
 		],
 	)
 
-export type FrameOptions<M> = ShellOptions<M> &
+export type FrameOptions<M> = ShellOptions &
 	Readonly<{ state: WidgetDataState; loadingSkeleton: Html; configure: M | null }>
 
 /** `WidgetFrame`: loading, the three error shapes, or the tile's own content. */

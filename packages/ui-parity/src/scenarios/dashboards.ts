@@ -1,4 +1,4 @@
-import type { Page } from "playwright"
+import type { Locator, Page } from "playwright"
 import { clickButton, EMPTY, opsScenarios, SEEDED, act } from "./ops-kit.ts"
 import type { AreaModule, Scenario } from "./types.ts"
 
@@ -71,6 +71,45 @@ const renameTo = (name: string) => async (page: Page) => {
 }
 
 const widgetEditor = `${platform}/widgets/throughput-by-service`
+
+/**
+ * A pointer drag in small steps, so the grid resolves cells between moves (legacy steps once per
+ * animation frame). `release: false` presses Escape instead of letting go.
+ */
+const dragBy =
+	(handle: (page: Page) => Locator, dx: number, dy: number, release = true) =>
+	async (page: Page) => {
+		const box = await handle(page).boundingBox()
+		if (box === null) return
+		const x = box.x + box.width / 2
+		const y = box.y + box.height / 2
+		await page.mouse.move(x, y)
+		await page.mouse.down()
+		for (const step of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+			await page.mouse.move(x + (dx * step) / 10, y + (dy * step) / 10)
+			await page.waitForTimeout(40)
+		}
+		if (release) await page.mouse.up()
+		else await page.keyboard.press("Escape")
+		await page.waitForTimeout(300)
+	}
+
+const grip = (name: string) => (page: Page) => page.getByRole("button", { name: `Move ${name}` })
+
+const resizeCorner = (widgetId: string) => (page: Page) =>
+	page.locator(`[data-grid-item="${widgetId}"] > [data-grid-resize-handle]`)
+
+/** Focus a tile's grip, then press keys on it with a beat between (each re-renders the grid). */
+const pressOnGrip = (name: string, keys: ReadonlyArray<string>) => async (page: Page) => {
+	await grip(name)(page).focus()
+	for (const key of keys) {
+		await page.keyboard.press(key)
+		await page.waitForTimeout(80)
+	}
+	await page.waitForTimeout(300)
+}
+
+const hoverTile = (widgetId: string) => (page: Page) => page.locator(`[data-grid-item="${widgetId}"]`).hover()
 
 const renameWidget = (name: string) => async (page: Page) => {
 	await page.getByRole("textbox", { name: "Name" }).fill(name)
@@ -195,6 +234,37 @@ export const dashboardsArea: AreaModule = {
 		}),
 		dashboard("edit-refresh-30s", "Edit mode: 30s saved as the board's auto-refresh", platform, {
 			steps: act(enterEdit, clickButton("Auto-refresh off"), clickMenuRadio("30s")),
+		}),
+		dashboard("edit-dragged", "Edit mode: Total Traces dragged two columns right", platform, {
+			steps: act(enterEdit, dragBy(grip("Total Traces"), 300, 0)),
+			fullPage: true,
+		}),
+		dashboard("edit-drag-cancelled", "Edit mode: a drag cancelled with Escape", platform, {
+			steps: act(enterEdit, dragBy(grip("Total Traces"), 300, 0, false)),
+			fullPage: true,
+		}),
+		// The Total Traces tile, near the top: a corner near the viewport edge auto-scrolls the board
+		// per animation frame, which makes the final size depend on frame timing.
+		dashboard("edit-resized", "Edit mode: Total Traces resized wider and taller", platform, {
+			steps: act(
+				enterEdit,
+				hoverTile("total-throughput"),
+				dragBy(resizeCorner("total-throughput"), 250, 80),
+			),
+			fullPage: true,
+		}),
+		dashboard(
+			"edit-keyboard-picked",
+			"Edit mode: Total Traces picked up and moved with the keyboard",
+			platform,
+			{
+				steps: act(enterEdit, pressOnGrip("Total Traces", [" ", "ArrowRight", "ArrowDown"])),
+				fullPage: true,
+			},
+		),
+		dashboard("edit-keyboard-dropped", "Edit mode: a keyboard move dropped with Space", platform, {
+			steps: act(enterEdit, pressOnGrip("Total Traces", [" ", "ArrowRight", "Shift+ArrowRight", " "])),
+			fullPage: true,
 		}),
 		dashboard("edit-more-menu", "Edit mode: more actions menu", platform, {
 			steps: act(enterEdit, clickButton("More dashboard actions")),

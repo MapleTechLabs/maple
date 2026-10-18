@@ -29,19 +29,54 @@ export type WidgetSlot = typeof WidgetSlot.Type
 export const RequestSlot = KeyedSchema(Schema.Unknown, WidgetFailure)
 export type RequestSlot = typeof RequestSlot.Type
 
-/** An in-progress pointer drag or resize over the grid (`useGridInteraction`). */
+/** `GridItem` (`@maple/grid-engine`): one placed tile in grid units. */
+export const GridItem = Schema.Struct({
+	i: Schema.String,
+	x: Schema.Number,
+	y: Schema.Number,
+	w: Schema.Number,
+	h: Schema.Number,
+	minW: Schema.optionalKey(Schema.Number),
+	maxW: Schema.optionalKey(Schema.Number),
+	minH: Schema.optionalKey(Schema.Number),
+	maxH: Schema.optionalKey(Schema.Number),
+})
+
+export const PixelRect = Schema.Struct({
+	left: Schema.Number,
+	top: Schema.Number,
+	width: Schema.Number,
+	height: Schema.Number,
+})
+
+/** An in-progress pointer drag or resize over the grid (`useGridInteraction`'s pointer session). */
 export const GridGesture = Schema.Struct({
 	kind: Schema.Literals(["drag", "resize"]),
 	widgetId: Schema.String,
 	startX: Schema.Number,
 	startY: Schema.Number,
-	/** The cell under the pointer, in grid units, as the gesture last resolved it. */
-	x: Schema.Number,
-	y: Schema.Number,
-	w: Schema.Number,
-	h: Schema.Number,
+	/** Pointer travel since the press. */
+	dx: Schema.Number,
+	dy: Schema.Number,
+	/** Past the 3 px threshold: until then a press is still a click. */
+	isStarted: Schema.Boolean,
+	/** The grid's viewport position at the first frame; auto-scrolling moves it under the pointer. */
+	gridOrigin: Schema.NullOr(Schema.Struct({ left: Schema.Number, top: Schema.Number })),
+	/** The tile's box when it was picked up, inside the grid's padding box. */
+	rect: PixelRect,
+	origin: Schema.Array(GridItem),
+	preview: Schema.Array(GridItem),
 })
 export type GridGesture = typeof GridGesture.Type
+
+/** A tile picked up from its grip with Space (`useGridInteraction`'s keyboard session). */
+export const KeyboardMove = Schema.Struct({
+	widgetId: Schema.String,
+	label: Schema.String,
+	origin: Schema.Array(GridItem),
+	preview: Schema.Array(GridItem),
+})
+export type KeyboardMove = typeof KeyboardMove.Type
 
 export const Model = Schema.Struct({
 	dashboardId: Schema.String,
@@ -73,6 +108,11 @@ export const Model = Schema.Struct({
 	titleDraft: Schema.NullOr(Schema.String),
 	pickerDialog: Dialog.Model,
 	gesture: Schema.NullOr(GridGesture),
+	keyboardMove: Schema.NullOr(KeyboardMove),
+	/** The grid's polite live region: what the keyboard session just did. */
+	gridAnnouncement: Schema.String,
+	/** `settled`: a dropped layout, drawn until the store echoes the write back. */
+	droppedLayout: Schema.NullOr(Schema.Array(GridItem)),
 	persistenceError: Schema.NullOr(Schema.String),
 })
 export type Model = typeof Model.Type

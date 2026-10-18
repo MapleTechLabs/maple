@@ -28,6 +28,7 @@ import { gestureStep } from "./gesture"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { replan, slotOf, withCharts } from "./plan"
+import { isEditing } from "./mode"
 import { createAlertSearch } from "./widget-actions"
 
 export type Return = PageReturn<Model, Message>
@@ -60,6 +61,9 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		titleDraft: null,
 		pickerDialog: Dialog.init("dashboard-widget-picker", "dialog"),
 		gesture: null,
+		keyboardMove: null,
+		gridAnnouncement: "",
+		droppedLayout: null,
 		persistenceError: null,
 	},
 	commands: [
@@ -76,9 +80,7 @@ export const routeChanged = (model: Model, route: Route): Return => ({
 	model: { ...model, search: route.search },
 })
 
-/** `mode`: edit only from the URL, and never while writes are unavailable. */
-export const isEditing = (model: Model): boolean =>
-	model.search.mode === "edit" && model.persistenceError === null
+export { isEditing } from "./mode"
 
 const dashboardHref = (model: Model, search: Search) =>
 	hrefOf(
@@ -160,6 +162,8 @@ const receiveDocument = (
 				...model,
 				status: "Ready",
 				document,
+				// The store caught up with a drop (or moved on): the grid draws what it holds.
+				droppedLayout: null,
 				timeRange: model.timeRange ?? document.timeRange,
 				charts: withCharts(model, document.widgets),
 				// The toolbar's share dialog reads the shares too, so they load for an empty board as well.
@@ -459,6 +463,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		PressedResizeHandle: (pressed) => gestureStep(model, context, pressed),
 		MovedPointer: (moved) => gestureStep(model, context, moved),
 		ReleasedPointer: (released) => gestureStep(model, context, released),
+		CancelledPointer: (cancelled) => gestureStep(model, context, cancelled),
+		PressedGripKey: (pressed) => gestureStep(model, context, pressed),
+		BlurredGrip: (blurred) => gestureStep(model, context, blurred),
 		CompletedWrite: ({ result }) =>
 			Result.match(result, {
 				onFailure: (error) => ({ model: { ...model, persistenceError: error } }),

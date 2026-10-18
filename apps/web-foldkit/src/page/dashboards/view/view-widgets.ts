@@ -94,7 +94,7 @@ export const tileContext = (h: H, model: Model, widget: Widget, timeZone: string
 		isEdit,
 		menu: widgetMenu(h, model, widget),
 		isMenuOpen: model.widgetMenuId === widget.id && model.widgetMenu.isOpen,
-		onGripDown: (clientX, clientY) => Message.PressedGrip({ widgetId: widget.id, clientX, clientY }),
+		hasGrip: true,
 		configure: isEdit
 			? Message.GotWidgetMenuMessage({
 					widgetId: widget.id,

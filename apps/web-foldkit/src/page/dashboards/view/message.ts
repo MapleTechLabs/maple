@@ -42,8 +42,25 @@ export const Message = defineMessageUnion({
 	ClickedWidgetPreset: { presetId: Schema.String },
 	PressedGrip: { widgetId: Schema.String, clientX: Schema.Number, clientY: Schema.Number },
 	PressedResizeHandle: { widgetId: Schema.String, clientX: Schema.Number, clientY: Schema.Number },
-	MovedPointer: { clientX: Schema.Number, clientY: Schema.Number },
+	/** One animation frame of a gesture: the pointer, and where the grid now sits (it scrolls). */
+	MovedPointer: {
+		clientX: Schema.Number,
+		clientY: Schema.Number,
+		gridLeft: Schema.Number,
+		gridTop: Schema.Number,
+	},
 	ReleasedPointer: {},
+	/** `pointercancel` or Escape: the gesture ends where it began. */
+	CancelledPointer: {},
+	/** A key on a grip (`DashboardGrid`'s keydown): Space or Enter picks up and drops, arrows move. */
+	PressedGripKey: {
+		widgetId: Schema.String,
+		label: Schema.String,
+		key: Schema.String,
+		isShift: Schema.Boolean,
+	},
+	/** Focus left a picked-up tile's grip for somewhere outside it: the tile drops where it is. */
+	BlurredGrip: { widgetId: Schema.String },
 	CompletedWrite: { result: WriteResult },
 	/** "Undo" on the "Widget removed" toast: the removed tile, as it was stored. */
 	ClickedUndoRemoveWidget: { widget: DashboardWidgetSchema },

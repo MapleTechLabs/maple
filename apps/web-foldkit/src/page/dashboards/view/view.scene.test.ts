@@ -11,6 +11,7 @@ import {
 	RenameDashboard,
 	SaveRefreshInterval,
 	SaveTimeRange,
+	UpdateWidgetLayouts,
 } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -134,6 +135,46 @@ describe("dashboard view", () => {
 		)
 		expect(names(deleted.commands)).toContain(RemoveWidget.name)
 		expect(deleted.outMessage?._tag).toBe("RequestedToast")
+	})
+
+	test("a grip dragged past the threshold writes the tiles that moved, once, on release", () => {
+		const editing = pageUpdate(
+			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model,
+			Message.MeasuredGrid({ width: 1200 }),
+		).model
+		const pressed = pageUpdate(
+			editing,
+			Message.PressedGrip({ widgetId: "total-errors", clientX: 100, clientY: 100 }),
+		).model
+		const frame = { gridLeft: 0, gridTop: 0 }
+		const clicked = pageUpdate(pressed, Message.ReleasedPointer())
+		expect(names(clicked.commands)).toEqual([])
+		const dragged = [400, 700].reduce(
+			(model, clientX) =>
+				pageUpdate(model, Message.MovedPointer({ clientX, clientY: 100, ...frame })).model,
+			pressed,
+		)
+		expect(dragged.gesture?.isStarted).toBe(true)
+		const released = pageUpdate(dragged, Message.ReleasedPointer())
+		expect(names(released.commands)).toEqual([UpdateWidgetLayouts.name])
+		expect(released.model.gesture).toBeNull()
+	})
+
+	test("a tile picked up with Space moves with the arrows; Escape puts it back without a write", () => {
+		const editing = pageUpdate(
+			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model,
+			Message.MeasuredGrid({ width: 1200 }),
+		).model
+		const key = (value: string, isShift = false) =>
+			Message.PressedGripKey({ widgetId: "total-errors", label: "Total errors", key: value, isShift })
+		const picked = pageUpdate(editing, key(" ")).model
+		expect(picked.gridAnnouncement).toMatch(/^Picked up Total errors/)
+		const moved = pageUpdate(picked, key("ArrowRight")).model
+		const cancelled = pageUpdate(moved, key("Escape"))
+		expect(names(cancelled.commands)).toEqual([])
+		expect(cancelled.model.gridAnnouncement).toMatch(/^Move cancelled/)
+		const dropped = pageUpdate(moved, key(" "))
+		expect(names(dropped.commands)).toEqual([UpdateWidgetLayouts.name])
 	})
 
 	test("an auto-refresh pick rides in the URL, and in edit mode becomes the board's default", () => {

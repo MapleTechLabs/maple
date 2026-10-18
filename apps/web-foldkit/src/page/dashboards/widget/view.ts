@@ -128,7 +128,7 @@ const preview = (h: H, model: Model, timeZone: string): Html => {
 									isEdit: false,
 									menu: null,
 									isMenuOpen: false,
-									onGripDown: null,
+									hasGrip: false,
 									configure: null,
 									chart: model.chart,
 									themeColors: model.themeColors,

@@ -41,7 +41,7 @@ export type TileContext<M> = Readonly<{
 	isEdit: boolean
 	menu: Html | null
 	isMenuOpen: boolean
-	onGripDown: ((clientX: number, clientY: number) => M) | null
+	hasGrip: boolean
 	configure: M | null
 	chart: Chart.Model
 	themeColors: ThemeColors | null
@@ -152,7 +152,7 @@ const frame = <M>(
 	title:
 		widget.display.title !== undefined && widget.display.title !== "" ? widget.display.title : "Untitled",
 	isEdit: ctx.isEdit,
-	onGripDown: ctx.onGripDown,
+	hasGrip: ctx.hasGrip,
 	menu: ctx.menu,
 	isMenuOpen: ctx.isMenuOpen,
 	contentClassName: undefined,

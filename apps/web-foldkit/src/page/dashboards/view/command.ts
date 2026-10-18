@@ -172,6 +172,107 @@ export const ExportDashboard = Command.define("ExportDashboardJson", {
 
 // MOUNTS
 
+type HandleMessage =
+	| typeof Message.PressedGrip.Type
+	| typeof Message.PressedResizeHandle.Type
+	| typeof Message.PressedGripKey.Type
+	| typeof Message.BlurredGrip.Type
+
+/** This grid's own cell for an event target on one of its handles (`cellOf`). */
+const handleCellOf = (container: Element, target: EventTarget | null, selector: string) => {
+	if (!(target instanceof Element)) return null
+	const handle = target.closest<HTMLElement>(selector)
+	const cell = handle?.closest<HTMLElement>("[data-grid-item]")
+	const widgetId = cell?.dataset.gridItem
+	return handle == null || cell == null || cell.parentElement !== container || widgetId === undefined
+		? null
+		: { handle, widgetId }
+}
+
+const GRIP = ".widget-drag-handle"
+const GRIP_KEYS = new Set([" ", "Enter", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"])
+
+/**
+ * `DashboardGrid`'s `onPointerDown`, `onKeyDown` and `onBlur`. A primary press on a grip or resize
+ * corner starts a gesture, default prevented so it neither selects text nor moves focus. Keys on a
+ * grip drive the keyboard move; which keys it takes depends on whether a tile is picked up.
+ */
+export const WatchGridHandles = Mount.defineStream("WatchDashboardGridHandles", {
+	messages: [Message.PressedGrip, Message.PressedResizeHandle, Message.PressedGripKey, Message.BlurredGrip],
+	execute: ({ element }) =>
+		Stream.callback<HandleMessage>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const session = { pickedUp: "" }
+					const onKey = (event: Event) => {
+						if (!(event instanceof KeyboardEvent)) return
+						const target = handleCellOf(element, event.target, GRIP)
+						if (target === null) return
+						const isPickKey = event.key === " " || event.key === "Enter"
+						if (session.pickedUp === "" ? !isPickKey : session.pickedUp !== target.widgetId)
+							return
+						if (!GRIP_KEYS.has(event.key)) return
+						event.preventDefault()
+						if (session.pickedUp === "") session.pickedUp = target.widgetId
+						else if (isPickKey || event.key === "Escape") session.pickedUp = ""
+						Queue.offerUnsafe(
+							queue,
+							Message.PressedGripKey({
+								widgetId: target.widgetId,
+								label: target.handle.dataset.gridLabel ?? "",
+								key: event.key,
+								isShift: event.shiftKey,
+							}),
+						)
+					}
+					const onBlur = (event: Event) => {
+						if (!(event instanceof FocusEvent) || session.pickedUp === "") return
+						const next = handleCellOf(element, event.relatedTarget, GRIP)
+						if (next?.widgetId === session.pickedUp) return
+						const widgetId = session.pickedUp
+						session.pickedUp = ""
+						Queue.offerUnsafe(queue, Message.BlurredGrip({ widgetId }))
+					}
+					const onDown = (event: Event) => {
+						if (
+							!(event instanceof PointerEvent) ||
+							event.button !== 0 ||
+							!(event.target instanceof Element)
+						)
+							return
+						const handle = event.target.closest(".widget-drag-handle, [data-grid-resize-handle]")
+						const cell = handle?.closest<HTMLElement>("[data-grid-item]")
+						const widgetId = cell?.dataset.gridItem
+						if (
+							handle == null ||
+							cell == null ||
+							cell.parentElement !== element ||
+							widgetId === undefined
+						)
+							return
+						event.preventDefault()
+						const pressed = { widgetId, clientX: event.clientX, clientY: event.clientY }
+						Queue.offerUnsafe(
+							queue,
+							handle.matches("[data-grid-resize-handle]")
+								? Message.PressedResizeHandle(pressed)
+								: Message.PressedGrip(pressed),
+						)
+					}
+					element.addEventListener("pointerdown", onDown)
+					element.addEventListener("keydown", onKey)
+					element.addEventListener("focusout", onBlur)
+					return () => {
+						element.removeEventListener("pointerdown", onDown)
+						element.removeEventListener("keydown", onKey)
+						element.removeEventListener("focusout", onBlur)
+					}
+				}),
+				(detach) => Effect.sync(detach),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
+})
+
 /** `useContainerWidth`: the sections container's width in whole px, before first paint. */
 export const MeasureGrid = Mount.defineStream("MeasureDashboardGrid", {
 	messages: [Message.MeasuredGrid],

@@ -150,7 +150,7 @@ const previewBody = (h: H, model: Model, timeZone: string): Html => {
 									isEdit: false,
 									menu: null,
 									isMenuOpen: false,
-									onGripDown: null,
+									hasGrip: false,
 									configure: null,
 									chart: model.charts[widget.id] ?? Chart.init(),
 									themeColors: model.themeColors,
