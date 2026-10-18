@@ -36,7 +36,32 @@ export const readCached = <A>(
 		)
 	})
 
-export const recordCached = <A>(key: QueryKey, data: A, updatedAtMs: number): Effect.Effect<void, never, LocalQueryCache> =>
+/**
+ * A fetch Command's body with the cache in front: with `readsCache`, a cached answer comes back
+ * first (`found`); else the fetch runs and its result is recorded (`succeeded`).
+ */
+export const withCache = <A, B, Found, Succeeded, E, R>(
+	options: Readonly<{
+		key: QueryKey
+		readsCache: boolean
+		fromCached: (value: CacheValue) => Option.Option<A>
+		staleMs?: number
+		toCached: (data: A) => B
+		fetch: Effect.Effect<A, E, R>
+		found: (cached: Cached<A>) => Found
+		succeeded: (data: A, fetchedAtMs: number) => Succeeded
+	}>,
+): Effect.Effect<Found | Succeeded, E, R | LocalQueryCache> =>
+	Effect.gen(function* () {
+		const maybeCached = options.readsCache ? yield* readCached(options.key, options.fromCached, options.staleMs) : Option.none()
+		if (Option.isSome(maybeCached)) return options.found(maybeCached.value)
+		const data = yield* options.fetch
+		const fetchedAtMs = yield* Clock.currentTimeMillis
+		yield* recordCached(options.key, options.toCached(data), fetchedAtMs)
+		return options.succeeded(data, fetchedAtMs)
+	})
+
+export const recordCached =<A>(key: QueryKey, data: A, updatedAtMs: number): Effect.Effect<void, never, LocalQueryCache> =>
 	Effect.gen(function* () {
 		yield* (yield* LocalQueryCache).record(key, data, updatedAtMs)
 	})

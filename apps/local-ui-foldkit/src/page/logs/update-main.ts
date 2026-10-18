@@ -16,7 +16,7 @@ import { appendPage, loadMoreIfAtEnd, rowsOf } from "./stream"
 import { navigate, selectPattern, setRange, settleRefresh, toSections, type UpdateReturn } from "./update"
 import * as LogSheet from "../kit/log-sheet/update"
 import { closeChip, elapseDelay, enterCard, leaveCard, leaveChip, scheduleOpen } from "./update-chips"
-import { updateFetch } from "./update-fetch"
+import { updateFetch, updateFound } from "./update-fetch"
 import { virtualWindow } from "./virtualize"
 
 /** A card whose row scrolled out of the virtual window goes with it. */
@@ -56,18 +56,22 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		CompletedReadClock: ({ nowMs }) => load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
 		SucceededFetchLogs: (fields) => updateFetch(model, Message.SucceededFetchLogs(fields), context),
 		FailedFetchLogs: (fields) => updateFetch(model, Message.FailedFetchLogs(fields), context),
+		FoundCachedLogs: (fields) => updateFound(model, Message.FoundCachedLogs(fields), context),
+		FoundCachedPatterns: (fields) => updateFound(model, Message.FoundCachedPatterns(fields), context),
+		FoundCachedServices: (fields) => updateFound(model, Message.FoundCachedServices(fields), context),
+		FoundCachedSeverities: (fields) => updateFound(model, Message.FoundCachedSeverities(fields), context),
 		SucceededFetchNextPage: ({ key, page }) => loadMoreIfAtEnd(appendPage(model, key, page), context),
 		FailedFetchNextPage: ({ key, failure }) => ({
 			model: { ...model, isFetchingNextPage: false, logs: accept(model.logs, key, Result.fail(failure)) },
 		}),
 		SucceededFetchPatterns: (fields) => updateFetch(model, Message.SucceededFetchPatterns(fields), context),
 		FailedFetchPatterns: (fields) => updateFetch(model, Message.FailedFetchPatterns(fields), context),
-		SucceededFetchServices: ({ key, options }) =>
-			({ model: settleRefresh({ ...model, services: accept(model.services, key, Result.succeed(options)) }) }),
+		SucceededFetchServices: ({ key, options, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, services: accept(model.services, key, Result.succeed(options), fetchedAtMs) }) }),
 		FailedFetchServices: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, services: accept(model.services, key, Result.fail(failure)) }) }),
-		SucceededFetchSeverities: ({ key, options }) =>
-			({ model: settleRefresh({ ...model, severities: accept(model.severities, key, Result.succeed(options)) }) }),
+		SucceededFetchSeverities: ({ key, options, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, severities: accept(model.severities, key, Result.succeed(options), fetchedAtMs) }) }),
 		FailedFetchSeverities: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, severities: accept(model.severities, key, Result.fail(failure)) }) }),
 		ChangedViewport: ({ viewport }) => loadMoreIfAtEnd(dropScrolledCard({ ...model, viewport }), context),

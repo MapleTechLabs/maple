@@ -1,7 +1,9 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { DEBOUNCE } from "../traces/command"
+import { cachedAs, readCached, recordCached } from "../../data/cached"
 import { fetchCatalog } from "./fetch"
+import { Catalog } from "./model"
 import { Message } from "./message"
 
 export const ReadClock = Command.define("ReadServicesClock", {
@@ -23,12 +25,17 @@ export const FetchCatalog = Command.define("FetchLocalServiceCatalog", {
 		startTime: Schema.String,
 		endTime: Schema.String,
 		apiBase: Schema.String,
+		readsCache: Schema.Boolean,
 	},
-	messages: [Message.SucceededFetchCatalog, Message.FailedFetchCatalog],
-	execute: ({ key, env, ns, startTime, endTime, apiBase }) =>
+	messages: [Message.SucceededFetchCatalog, Message.FailedFetchCatalog, Message.FoundCachedCatalog],
+	execute: ({ key, env, ns, startTime, endTime, apiBase, readsCache }) =>
 		Effect.gen(function* () {
+			const cacheKey = ["local", "services", "catalog", env, ns, `${startTime}/${endTime}`]
+			const maybeCached = readsCache ? yield* readCached(cacheKey, cachedAs(Catalog)) : Option.none()
+			if (Option.isSome(maybeCached)) return Message.FoundCachedCatalog({ key, cached: maybeCached.value })
 			const catalog = yield* fetchCatalog(env ?? undefined, ns ?? undefined, { startTime, endTime }, apiBase)
 			const fetchedAtMs = yield* Clock.currentTimeMillis
+			yield* recordCached(cacheKey, catalog, fetchedAtMs)
 			return Message.SucceededFetchCatalog({ key, catalog, fetchedAtMs })
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchCatalog({ key, failure })))),
 })

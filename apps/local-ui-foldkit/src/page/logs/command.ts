@@ -1,6 +1,8 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { withCache } from "../../data/cached"
 import type { LoadFailure } from "../../data/local-query"
+import { logsKey, optionsFromCached, pagesFromCached, pagesToCached, patternsFromCached, patternsKey, patternsToCached, servicesKey, severitiesKey } from "./cache"
 import { fetchLogsPage, fetchPatterns, fetchServices, fetchSeverities, type LogCursor, nextCursor } from "./fetch"
 import { filtersOf } from "./filters"
 import { Message } from "./message"
@@ -40,21 +42,22 @@ const fetchPages = <R>(
 		return remaining <= 1 || next === undefined ? Effect.succeed(pages) : fetchPages(run, remaining - 1, next, pages)
 	})
 
+/** `readsCache`: a key the page has no rows for yet opens on its cached result first. */
 export const FetchLogs = Command.define("FetchLocalLogs", {
-	args: { ...RequestArgs, pageCount: Schema.Number },
-	messages: [Message.SucceededFetchLogs, Message.FailedFetchLogs],
-	execute: ({ key, search, startTime, endTime, apiBase, pageCount }) =>
-		Effect.gen(function* () {
-			const filters = filtersFrom(search)
-			const pages = yield* fetchPages(
-				(cursor) => fetchLogsPage(filters, { startTime, endTime }, cursor, apiBase),
-				pageCount,
-				undefined,
-				[],
-			)
-			const last = pages[pages.length - 1] ?? []
-			const fetchedAtMs = yield* Clock.currentTimeMillis
-			return Message.SucceededFetchLogs({ key, data: { pages, hasNextPage: nextCursor(last) !== undefined }, fetchedAtMs })
+	args: { ...RequestArgs, pageCount: Schema.Number, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchLogs, Message.FailedFetchLogs, Message.FoundCachedLogs],
+	execute: ({ key, search, startTime, endTime, apiBase, pageCount, readsCache }) =>
+		withCache({
+			key: logsKey({ search, startTime, endTime }),
+			readsCache,
+			fromCached: pagesFromCached,
+			toCached: pagesToCached,
+			fetch: Effect.map(
+				fetchPages((cursor) => fetchLogsPage(filtersFrom(search), { startTime, endTime }, cursor, apiBase), pageCount, undefined, []),
+				(pages) => ({ pages, hasNextPage: nextCursor(pages[pages.length - 1] ?? []) !== undefined }),
+			),
+			found: (cached) => Message.FoundCachedLogs({ key, cached }),
+			succeeded: (data, fetchedAtMs) => Message.SucceededFetchLogs({ key, data, fetchedAtMs }),
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchLogs({ key, failure })))),
 })
 
@@ -87,34 +90,53 @@ export const FetchNextPage = Command.define("FetchNextLocalLogsPage", {
 })
 
 export const FetchPatterns = Command.define("FetchLocalLogPatterns", {
-	args: RequestArgs,
-	messages: [Message.SucceededFetchPatterns, Message.FailedFetchPatterns],
-	execute: ({ key, search, startTime, endTime, apiBase }) =>
-		Effect.gen(function* () {
-			const data = yield* fetchPatterns(filtersFrom(search), { startTime, endTime }, apiBase)
-			const fetchedAtMs = yield* Clock.currentTimeMillis
-			return Message.SucceededFetchPatterns({ key, data, fetchedAtMs })
+	args: { ...RequestArgs, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchPatterns, Message.FailedFetchPatterns, Message.FoundCachedPatterns],
+	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
+		withCache({
+			key: patternsKey({ search, startTime, endTime }),
+			readsCache,
+			fromCached: patternsFromCached,
+			toCached: patternsToCached,
+			fetch: fetchPatterns(filtersFrom(search), { startTime, endTime }, apiBase),
+			found: (cached) => Message.FoundCachedPatterns({ key, cached }),
+			succeeded: (data, fetchedAtMs) => Message.SucceededFetchPatterns({ key, data, fetchedAtMs }),
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchPatterns({ key, failure })))),
 })
 
+/** The facets' own `staleTime`. */
+const FACET_STALE_MS = 60_000
+
 export const FetchServices = Command.define("FetchLocalLogServices", {
-	args: RequestArgs,
-	messages: [Message.SucceededFetchServices, Message.FailedFetchServices],
-	execute: ({ key, search, startTime, endTime, apiBase }) =>
-		fetchServices(filtersFrom(search), { startTime, endTime }, apiBase).pipe(
-			Effect.map((options) => Message.SucceededFetchServices({ key, options })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchServices({ key, failure }))),
-		),
+	args: { ...RequestArgs, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchServices, Message.FailedFetchServices, Message.FoundCachedServices],
+	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
+		withCache({
+			key: servicesKey({ search, startTime, endTime }),
+			readsCache,
+			fromCached: optionsFromCached,
+			staleMs: FACET_STALE_MS,
+			toCached: (options) => options,
+			fetch: fetchServices(filtersFrom(search), { startTime, endTime }, apiBase),
+			found: (cached) => Message.FoundCachedServices({ key, cached }),
+			succeeded: (options, fetchedAtMs) => Message.SucceededFetchServices({ key, options, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchServices({ key, failure })))),
 })
 
 export const FetchSeverities = Command.define("FetchLocalLogSeverities", {
-	args: RequestArgs,
-	messages: [Message.SucceededFetchSeverities, Message.FailedFetchSeverities],
-	execute: ({ key, search, startTime, endTime, apiBase }) =>
-		fetchSeverities(filtersFrom(search), { startTime, endTime }, apiBase).pipe(
-			Effect.map((options) => Message.SucceededFetchSeverities({ key, options })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchSeverities({ key, failure }))),
-		),
+	args: { ...RequestArgs, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchSeverities, Message.FailedFetchSeverities, Message.FoundCachedSeverities],
+	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
+		withCache({
+			key: severitiesKey({ search, startTime, endTime }),
+			readsCache,
+			fromCached: optionsFromCached,
+			staleMs: FACET_STALE_MS,
+			toCached: (options) => options,
+			fetch: fetchSeverities(filtersFrom(search), { startTime, endTime }, apiBase),
+			found: (cached) => Message.FoundCachedSeverities({ key, cached }),
+			succeeded: (options, fetchedAtMs) => Message.SucceededFetchSeverities({ key, options, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSeverities({ key, failure })))),
 })
 
 /** `useCopy`'s write of a chip's `key=value`; a refused clipboard is not an error the row shows. */

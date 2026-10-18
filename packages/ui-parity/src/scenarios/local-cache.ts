@@ -70,6 +70,46 @@ const traceEntry = {
 	updatedAt: FROZEN_NOW_MS - HOUR_MS,
 }
 
+const olderWindow = windowKey(FROZEN_NOW_MS - HOUR_MS)
+
+const catalogEntry = (serviceName: string, spanCount: number) => ({
+	serviceName,
+	serviceNamespaces: ["shop"],
+	deploymentEnvironments: ["production"],
+	spanCount,
+	errorCount: 2,
+	errorRate: 2 / spanCount,
+	p50LatencyMs: 12,
+	p95LatencyMs: 48,
+	p99LatencyMs: 90,
+	logCount: 40,
+})
+
+const olderCatalogEntry = {
+	key: ["local", "services", "catalog", null, null, olderWindow],
+	data: [catalogEntry("cached-api", 400), catalogEntry("cached-worker", 120)],
+	updatedAt: FROZEN_NOW_MS - HOUR_MS,
+}
+
+const log = (index: number, body: string) => ({
+	timestamp: formatWarehouseDateTime(FROZEN_NOW_MS - HOUR_MS - index * 1_000).replace(/$/, ".000000000"),
+	severityText: index === 1 ? "ERROR" : "INFO",
+	severityNumber: index === 1 ? 17 : 9,
+	serviceName: "cached-api",
+	body,
+	traceId: "",
+	spanId: "",
+	recordIdentity: String(index),
+	logAttributes: {},
+	resourceAttributes: {},
+})
+
+const olderLogsEntry = {
+	key: ["local", "logs", {}, olderWindow],
+	data: { pages: [[log(1, "cached: payment declined"), log(2, "cached: order placed")]], pageParams: [{ $t: "undefined" }] },
+	updatedAt: FROZEN_NOW_MS - HOUR_MS,
+}
+
 const saved = (entries: ReadonlyArray<unknown>) => ({ [STORAGE_KEY]: JSON.stringify({ version: 1, entries }) })
 
 const scenario = (id: string, title: string, hash: string, extra: Partial<Scenario>): Scenario => ({
@@ -101,6 +141,16 @@ export const localCacheArea: AreaModule = {
 			localStorage: saved([olderTracesEntry]),
 			faults: { refusals: ["local."] },
 			steps: untilOffline,
+		}),
+		scenario("services-loading", "services open on an older window", "/services", {
+			localStorage: saved([olderCatalogEntry]),
+			faults: { delays: { "local.query": HELD_MS } },
+			settle: "held",
+		}),
+		scenario("logs-loading", "logs open on an older window", "/logs", {
+			localStorage: saved([olderLogsEntry]),
+			faults: { delays: { "local.query": HELD_MS } },
+			settle: "held",
 		}),
 		scenario("trace-detail-loading", "a saved trace while it refetches", `/traces/${TRACE_ID}`, {
 			localStorage: saved([traceEntry]),

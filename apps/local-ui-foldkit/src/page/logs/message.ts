@@ -3,6 +3,7 @@ import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
 import * as ToggleGroup from "@maple/web-foldkit/ui/toggle-group"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "../../data/local-query"
 import { Message as LogSheetMessage } from "../kit/log-sheet/message"
 import { ChipRef, FacetOption, LocalLog, LogPages, LogPatterns, LogPattern, Viewport } from "./model"
@@ -14,14 +15,19 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
 	SucceededFetchLogs: { key: Schema.String, data: LogPages, fetchedAtMs: Schema.Number },
 	FailedFetchLogs: { key: Schema.String, failure: LoadFailure },
+	/** The result cache held this key (or an older window of its view) before the fetch ran. */
+	FoundCachedLogs: { key: Schema.String, cached: CachedOf(LogPages) },
 	SucceededFetchNextPage: { key: Schema.String, page: Schema.Array(LocalLog) },
 	FailedFetchNextPage: { key: Schema.String, failure: LoadFailure },
 	SucceededFetchPatterns: { key: Schema.String, data: LogPatterns, fetchedAtMs: Schema.Number },
 	FailedFetchPatterns: { key: Schema.String, failure: LoadFailure },
-	SucceededFetchServices: { key: Schema.String, options: Schema.Array(FacetOption) },
+	FoundCachedPatterns: { key: Schema.String, cached: CachedOf(LogPatterns) },
+	SucceededFetchServices: { key: Schema.String, options: Schema.Array(FacetOption), fetchedAtMs: Schema.Number },
 	FailedFetchServices: { key: Schema.String, failure: LoadFailure },
-	SucceededFetchSeverities: { key: Schema.String, options: Schema.Array(FacetOption) },
+	FoundCachedServices: { key: Schema.String, cached: CachedOf(Schema.Array(FacetOption)) },
+	SucceededFetchSeverities: { key: Schema.String, options: Schema.Array(FacetOption), fetchedAtMs: Schema.Number },
 	FailedFetchSeverities: { key: Schema.String, failure: LoadFailure },
+	FoundCachedSeverities: { key: Schema.String, cached: CachedOf(Schema.Array(FacetOption)) },
 	ChangedViewport: { viewport: Viewport },
 	ClickedRefresh: {},
 	CompletedReadRefreshClock: { nowMs: Schema.Number },
