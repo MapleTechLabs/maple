@@ -20,6 +20,7 @@ import { listFooterText } from "../../../ui/logs/viewer"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as LogDetail from "../detail"
+import { copyToast } from "../../kit/clipboard"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -384,12 +385,12 @@ export const contextChanged = (model: Model, context: PageContext): Return =>
 
 // STREAM
 
-const foldStreamOut = (model: Model, out: LogsStream.OutMessage): Return =>
+const foldStreamOut = (model: Model, out: LogsStream.OutMessage, context: PageContext): Return =>
 	LogsStream.OutMessage.match<Return>(out, {
 		OpenedLog: ({ index }) => {
 			const row = model.stream.rows[index]
 			if (row === undefined) return { model }
-			const opened = LogDetail.open(model.detail, row.log)
+			const opened = LogDetail.open(model.detail, row.log, context.orgId)
 			return liftChild({ ...model, detail: opened.model, selectedIndex: index }, opened.commands, (m) =>
 				Message.GotDetailMessage({ message: m }),
 			)
@@ -408,7 +409,9 @@ const foldStream = (model: Model, message: LogsStream.Message, context: PageCont
 	const result = LogsStream.update(model.stream, message)
 	const streamed = { ...model, stream: result.model }
 	const out =
-		result.outMessage === undefined ? { model: streamed } : foldStreamOut(streamed, result.outMessage)
+		result.outMessage === undefined
+			? { model: streamed }
+			: foldStreamOut(streamed, result.outMessage, context)
 	const withOut: Return = {
 		model: out.model,
 		commands: [
@@ -617,6 +620,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const out = next.outMessage
 			if (out === undefined) return lifted
 			if (out._tag === "Closed") return { ...lifted, model: { ...lifted.model, selectedIndex: null } }
+			if (out._tag === "Copied") return { ...lifted, outMessage: copyToast(out.label, out.isOk) }
 			return {
 				...navigate(lifted.model, {
 					...model.search,

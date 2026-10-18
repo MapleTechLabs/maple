@@ -56,6 +56,7 @@ import * as Integrations from "./integrations"
 import * as InvestigationDetail from "./investigations/detail"
 import * as InvestigationsList from "./investigations/list"
 import * as LogsList from "./logs/list"
+import * as LogPage from "./logs/log"
 import * as MetricsBrowse from "./metrics/browse"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
@@ -85,6 +86,7 @@ export const pages = [
 	TracesList.page,
 	TraceDetail.page,
 	LogsList.page,
+	LogPage.page,
 	ServiceDetail.page,
 	AlertsHub.page,
 	AlertIncident.page,

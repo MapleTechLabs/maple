@@ -132,18 +132,22 @@ describe("execute-batch on the fixture warehouse", () => {
 describe("unmocked requests", () => {
 	it("reports an endpoint without a fixture handler and answers 501", async () => {
 		const token = await login("default")
-		const response = await fetch(`${api}/internal/query-engine/get-log`, {
+		const response = await fetch(`${api}/internal/query-engine/product-event-trace-samples`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
 				authorization: `Bearer ${token}`,
 				[CAPTURE_HEADER]: "unmocked-endpoint",
 			},
-			body: JSON.stringify({ timestamp: "2026-10-01 11:00:00", serviceName: "checkout-api" }),
+			body: JSON.stringify({
+				startTime: "2026-10-01 10:00:00",
+				endTime: "2026-10-01 11:00:00",
+				eventName: "checkout_completed",
+			}),
 		})
 		expect(response.status).toBe(501)
 		const { unmocked } = await takeCalls("unmocked-endpoint")
-		expect(unmocked).toEqual(["queryEngine.getLog (POST /internal/query-engine/get-log)"])
+		expect(unmocked).toEqual(["queryEngine.productEventTraceSamples (POST /internal/query-engine/product-event-trace-samples)"])
 	})
 
 	it("reports a path no API declares", async () => {

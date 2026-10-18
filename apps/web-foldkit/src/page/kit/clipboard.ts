@@ -10,10 +10,18 @@ export const writeClipboard = (text: string): Effect.Effect<boolean> =>
 		Effect.orElseSucceed(() => false),
 	)
 
-/** `useCopy({ label, successMessage })`'s toast for a finished copy. */
-export const copyToast = (label: string, isOk: boolean, successMessage?: string) =>
+/** `useCopy({ label, successMessage })`'s toast for a finished copy (no label: the generic titles). */
+export const copyToast = (label: string | undefined, isOk: boolean, successMessage?: string) =>
 	PageOutMessage.RequestedToast(
 		isOk
-			? { type: "success", title: successMessage ?? `${label} copied`, description: "" }
-			: { type: "error", title: `Failed to copy ${label.toLowerCase()}`, description: "" },
+			? {
+					type: "success",
+					title: successMessage ?? (label ? `${label} copied` : "Copied to clipboard"),
+					description: "",
+				}
+			: {
+					type: "error",
+					title: label ? `Failed to copy ${label.toLowerCase()}` : "Failed to copy",
+					description: "",
+				},
 	)

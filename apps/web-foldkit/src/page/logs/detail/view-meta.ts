@@ -22,7 +22,13 @@ const tooltipTrigger = (h: H, id: string) => [
 	h.Id(id),
 ]
 
-export const metaStrip = (h: H, model: Model, log: LogRecord, timeZone: string): Html =>
+export const metaStrip = (
+	h: H,
+	model: Model,
+	log: LogRecord,
+	timeZone: string,
+	showOpenFullPage = true,
+): Html =>
 	h.div(
 		[
 			h.Class(
@@ -81,25 +87,29 @@ export const metaStrip = (h: H, model: Model, log: LogRecord, timeZone: string):
 			h.div(
 				[h.Class("ml-auto flex shrink-0 items-center gap-0.5")],
 				[
-					h.a(
-						[
-							h.AriaLabel("Open in full page"),
-							h.Class(
-								cn(
-									buttonVariants({
-										size: "icon-xs",
-										variant: "ghost",
-										className: "text-muted-foreground",
-									}),
+					...(showOpenFullPage
+						? [
+								h.a(
+									[
+										h.AriaLabel("Open in full page"),
+										h.Class(
+											cn(
+												buttonVariants({
+													size: "icon-xs",
+													variant: "ghost",
+													className: "text-muted-foreground",
+												}),
+											),
+										),
+										h.DataAttribute("base-ui-tooltip-trigger", ""),
+										h.DataAttribute("slot", "icon-button"),
+										h.Href(`/logs/${encodeLogKey(log)}`),
+										h.Id("log-detail-open-full-page"),
+									],
+									[icon(h, "ExternalLinkIcon")],
 								),
-							),
-							h.DataAttribute("base-ui-tooltip-trigger", ""),
-							h.DataAttribute("slot", "icon-button"),
-							h.Href(`/logs/${encodeLogKey(log)}`),
-							h.Id("log-detail-open-full-page"),
-						],
-						[icon(h, "ExternalLinkIcon")],
-					),
+							]
+						: []),
 					copyButton(h, {
 						status: copyStatusOf(model, "meta-link"),
 						label: "Link to log",

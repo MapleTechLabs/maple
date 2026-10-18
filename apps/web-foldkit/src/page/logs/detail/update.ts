@@ -4,34 +4,49 @@ import * as AttributesPanel from "../../../ui/attributes/attributes-panel"
 import type { CopyStatus } from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
+import * as Keyed from "../../../data/keyed"
+import { writeClipboard } from "../../kit/clipboard"
+import type { Resources } from "../../../platform/resources"
 import * as Tabs from "../../../ui/tabs"
+import * as ToggleGroup from "../../../ui/toggle-group"
 import { tabValues } from "./derive"
 import { Message, type Model, OutMessage } from "./model"
+import { requestPanels } from "./panels"
 
-type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>
+type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
 const COPY_TIMEOUT = Duration.millis(2000)
 
+/** Each `CopyButton`'s `label`; the `CopyableValue`s pass none. */
+const COPY_LABELS = new Map([
+	["hero-message", "message"],
+	["meta-link", "Link to log"],
+	["meta-json", "Log JSON"],
+	["raw-json", "Log JSON"],
+	["error-body", "Error"],
+	["error-prompt", "error as an AI prompt"],
+])
+
 export const WriteDetailClipboard = Command.define("WriteDetailClipboard", {
-	args: { text: Schema.String, generation: Schema.Number },
+	args: { text: Schema.String, generation: Schema.Number, copyId: Schema.String },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
-	execute: ({ text, generation }) =>
-		Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
-			Effect.as(Message.SucceededCopy({ generation })),
-			Effect.orElseSucceed(() => Message.FailedCopy({ generation })),
+	execute: ({ text, generation, copyId }) =>
+		Effect.map(writeClipboard(text), (isOk) =>
+			isOk ? Message.SucceededCopy({ generation, copyId }) : Message.FailedCopy({ generation, copyId }),
 		),
 })
 
 /** `logPermalink`: the origin is read when copying, never in the view. */
 export const WritePermalinkClipboard = Command.define("WritePermalinkClipboard", {
-	args: { logKey: Schema.String, generation: Schema.Number },
+	args: { logKey: Schema.String, generation: Schema.Number, copyId: Schema.String },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
-	execute: ({ logKey, generation }) =>
-		Effect.tryPromise(() =>
-			navigator.clipboard.writeText(`${window.location.origin}/logs/${logKey}`),
-		).pipe(
-			Effect.as(Message.SucceededCopy({ generation })),
-			Effect.orElseSucceed(() => Message.FailedCopy({ generation })),
+	execute: ({ logKey, generation, copyId }) =>
+		Effect.suspend(() => writeClipboard(`${window.location.origin}/logs/${logKey}`)).pipe(
+			Effect.map((isOk) =>
+				isOk
+					? Message.SucceededCopy({ generation, copyId })
+					: Message.FailedCopy({ generation, copyId }),
+			),
 		),
 })
 
@@ -44,8 +59,19 @@ export const WaitDetailCopyStatus = Command.define("WaitDetailCopyStatus", {
 
 const TABS_ID_BASE = 900
 
-export const init = (id: string): Model => ({
+const initScope = () => ToggleGroup.init({ label: "Context scope", values: ["instance"] })
+
+/** `isPage`: `/logs/$logId` shows every panel at once, outside a sheet. */
+export const init = (id: string, isPage = false): Model => ({
 	id,
+	orgId: "",
+	isPage,
+	isErrorExpanded: false,
+	contextScope: initScope(),
+	contextBefore: Keyed.idle(),
+	contextAfter: Keyed.idle(),
+	traceLogs: Keyed.idle(),
+	traceSpans: Keyed.idle(),
 	dialog: Dialog.init(id, "sheet"),
 	log: null,
 	tabs: Tabs.init({ idBase: TABS_ID_BASE, values: ["attributes"], selected: "attributes" }),
@@ -60,18 +86,43 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	outMessage: result.outMessage?._tag === "Closed" ? OutMessage.Closed() : undefined,
 })
 
+/** A log on show: legacy's `key={logKey}` remounts the attributes and context panels. */
+const viewing = (model: Model, log: LogRecord, selected: string): Model => {
+	const values = tabValues(log)
+	const isSameTabs = model.tabs.selected === selected && values.join() === model.tabs.values.join()
+	return {
+		...model,
+		log,
+		tabs: isSameTabs
+			? model.tabs
+			: Tabs.init({
+					idBase: TABS_ID_BASE,
+					values,
+					selected: values.includes(selected) ? selected : "attributes",
+				}),
+		attributes: AttributesPanel.init(`${model.id}-attributes`),
+		contextScope: initScope(),
+		isHeroExpanded: false,
+		isErrorExpanded: false,
+	}
+}
+
+const withPanels = (result: Return): Return => {
+	const requested = requestPanels(result.model)
+	return {
+		...result,
+		model: requested.model,
+		commands: [...(result.commands ?? []), ...requested.commands],
+	}
+}
+
 /** Shows `log`, starting fresh on the Attributes tab (legacy remounts the panels per log). */
-export const open = (model: Model, log: LogRecord): Return =>
-	liftDialog(
-		{
-			...model,
-			log,
-			tabs: Tabs.init({ idBase: TABS_ID_BASE, values: tabValues(log), selected: "attributes" }),
-			attributes: AttributesPanel.init(`${model.id}-attributes`),
-			isHeroExpanded: false,
-		},
-		Dialog.open(model.dialog),
-	)
+export const open = (model: Model, log: LogRecord, orgId: string): Return =>
+	withPanels(liftDialog(viewing({ ...model, orgId }, log, "attributes"), Dialog.open(model.dialog)))
+
+/** `/logs/$logId`: the page's log, every panel reading at once. */
+export const show = (model: Model, log: LogRecord, orgId: string): Return =>
+	withPanels({ model: viewing({ ...model, orgId }, log, "attributes") })
 
 const settled = (model: Model, generation: number, status: CopyStatus): Return =>
 	generation === model.copy.generation
@@ -91,13 +142,42 @@ export const update = (model: Model, message: Message): Return =>
 		GotDialogMessage: ({ message: inner }) => liftDialog(model, Dialog.update(model.dialog, inner)),
 		GotTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(model.tabs, inner)
-			return {
+			return withPanels({
 				model: { ...model, tabs: next.model },
 				commands: Command.mapMessages(next.commands ?? [], (m) =>
 					Message.GotTabsMessage({ message: m }),
 				),
-			}
+			})
 		},
+		ToggledErrorExpanded: () => ({ model: { ...model, isErrorExpanded: !model.isErrorExpanded } }),
+		// `onValueChange` ignores an empty value: pressing the chosen scope keeps it.
+		GotContextScopeMessage: ({ message: inner }) => {
+			const next = ToggleGroup.update(model.contextScope, inner)
+			const contextScope =
+				next.model.values.length === 0
+					? { ...next.model, values: model.contextScope.values }
+					: next.model
+			return withPanels({
+				model: { ...model, contextScope },
+				commands: Command.mapMessages(next.commands ?? [], (m) =>
+					Message.GotContextScopeMessage({ message: m }),
+				),
+			})
+		},
+		ClickedLog: ({ log }) => withPanels({ model: viewing(model, log, model.tabs.selected) }),
+		PositionedLogRow: () => ({ model }),
+		CompletedFetchContext: ({ key, side, result }) => ({
+			model:
+				side === "before"
+					? { ...model, contextBefore: Keyed.accept(model.contextBefore, key, result) }
+					: { ...model, contextAfter: Keyed.accept(model.contextAfter, key, result) },
+		}),
+		CompletedFetchTraceLogs: ({ key, result }) => ({
+			model: { ...model, traceLogs: Keyed.accept(model.traceLogs, key, result) },
+		}),
+		CompletedFetchTraceSpans: ({ key, result }) => ({
+			model: { ...model, traceSpans: Keyed.accept(model.traceSpans, key, result) },
+		}),
 		GotAttributesMessage: ({ message: inner }) => {
 			const next = AttributesPanel.update(model.attributes, inner)
 			return {
@@ -121,18 +201,24 @@ export const update = (model: Model, message: Message): Return =>
 			const started = startCopy(model, copyId)
 			return {
 				model: started.model,
-				commands: [WriteDetailClipboard({ text, generation: started.generation })],
+				commands: [WriteDetailClipboard({ text, generation: started.generation, copyId })],
 			}
 		},
 		ClickedCopyPermalink: ({ copyId, logKey }) => {
 			const started = startCopy(model, copyId)
 			return {
 				model: started.model,
-				commands: [WritePermalinkClipboard({ logKey, generation: started.generation })],
+				commands: [WritePermalinkClipboard({ logKey, generation: started.generation, copyId })],
 			}
 		},
-		SucceededCopy: ({ generation }) => settled(model, generation, "copied"),
-		FailedCopy: ({ generation }) => settled(model, generation, "error"),
+		SucceededCopy: ({ generation, copyId }) => ({
+			...settled(model, generation, "copied"),
+			outMessage: OutMessage.Copied({ label: COPY_LABELS.get(copyId), isOk: true }),
+		}),
+		FailedCopy: ({ generation, copyId }) => ({
+			...settled(model, generation, "error"),
+			outMessage: OutMessage.Copied({ label: COPY_LABELS.get(copyId), isOk: false }),
+		}),
 		ElapsedCopyStatus: ({ generation }) =>
 			generation === model.copy.generation
 				? { model: { ...model, copy: { ...model.copy, status: "idle" } } }
