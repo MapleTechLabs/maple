@@ -25,7 +25,7 @@ import type { ListDashboard, Model } from "./model"
 
 export type Return = PageReturn<Model, Message>
 type Search = typeof DashboardsSearch.Type
-type Route = Extract<AppRoute, { readonly _tag: "Dashboards" }>
+type Route = Readonly<{ search: Search }>
 
 export const SORT_MENU_ID = "dashboards-sort-menu"
 export const rowMenuIdOf = (id: string): string => `dashboard-row-menu-${id}`

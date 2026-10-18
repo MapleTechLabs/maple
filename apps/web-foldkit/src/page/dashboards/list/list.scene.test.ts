@@ -101,7 +101,7 @@ describe("dashboards list", () => {
 	})
 
 	test("a search that matches nothing offers to clear it", () => {
-		const model = routeChanged(loaded(), { _tag: "Dashboards", search: { q: "zzz" } }).model
+		const model = routeChanged(loaded(), { search: { q: "zzz" } }).model
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
