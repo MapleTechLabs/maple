@@ -22,6 +22,8 @@ export type FitRequest = typeof FitRequest.Type
 export const Model = Schema.Struct({
 	viewport: Viewport,
 	pane: Schema.Struct({ width: Schema.Number, height: Schema.Number }),
+	/** The zoom extent: the pane's fractional box (`XYPanZoom`'s cached extent). */
+	extent: Schema.Struct({ width: Schema.Number, height: Schema.Number }),
 	measured: Schema.Record(Schema.String, MeasuredNode),
 	/** A fit to run once every node is measured (React Flow's `fitView` prop / queued `fitView`). */
 	pendingFit: Schema.Option(FitRequest),
@@ -54,6 +56,7 @@ export const init = (config: {
 }): Model => ({
 	viewport: INITIAL_VIEWPORT,
 	pane: { width: 0, height: 0 },
+	extent: { width: 0, height: 0 },
 	measured: {},
 	pendingFit: config.fitOnInit,
 	movedByUser: false,
@@ -66,7 +69,15 @@ export const init = (config: {
 
 export const Message = defineMessageUnion({
 	ChangedViewport: { viewport: Viewport },
-	ResizedPane: { width: Schema.Number, height: Schema.Number },
+	/**
+	 * `width`/`height` are the pane's offset size (React Flow's store, what fits frame); `extent` is
+	 * its fractional box, the zoom extent XYPanZoom caches and zooms around.
+	 */
+	ResizedPane: {
+		width: Schema.Number,
+		height: Schema.Number,
+		extent: Schema.optionalKey(Schema.Struct({ width: Schema.Number, height: Schema.Number })),
+	},
 	MeasuredNodes: { nodes: Schema.Array(MeasuredNode) },
 	ClickedZoomIn: {},
 	ClickedZoomOut: {},
@@ -139,8 +150,11 @@ export const update = (
 	Message.match<Model>(message, {
 		ChangedViewport: ({ viewport }) =>
 			modifyFields(model, { viewport: () => viewport, movedByUser: () => true }),
-		ResizedPane: ({ width, height }) => {
-			const next = modifyFields(model, { pane: () => ({ width, height }) })
+		ResizedPane: ({ width, height, extent }) => {
+			const next = modifyFields(model, {
+				pane: () => ({ width, height }),
+				extent: () => extent ?? { width, height },
+			})
 			return resolvePendingFit(next, [...placed(next, nodes), ...extra(next)])
 		},
 		MeasuredNodes: ({ nodes: measurements }) => {
@@ -151,11 +165,11 @@ export const update = (
 		},
 		ClickedZoomIn: () =>
 			modifyFields(model, {
-				viewport: () => scaleViewport(model.viewport, ZOOM_STEP, model.pane, model),
+				viewport: () => scaleViewport(model.viewport, ZOOM_STEP, model.extent, model),
 			}),
 		ClickedZoomOut: () =>
 			modifyFields(model, {
-				viewport: () => scaleViewport(model.viewport, 1 / ZOOM_STEP, model.pane, model),
+				viewport: () => scaleViewport(model.viewport, 1 / ZOOM_STEP, model.extent, model),
 			}),
 		ClickedFitView: () =>
 			requestFit(model, [...placed(model, nodes), ...extra(model)], {

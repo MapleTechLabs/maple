@@ -261,7 +261,16 @@ const attachNodeDrag = (renderer: HTMLElement, emit: (message: MountMessage) => 
 /** Pane size from the renderer, which fills the `.react-flow` wrapper. */
 const observePane = (renderer: HTMLElement, emit: (message: MountMessage) => void) => {
 	const report = () =>
-		emit(Message.ResizedPane({ width: renderer.offsetWidth, height: renderer.offsetHeight }))
+		emit(
+			Message.ResizedPane({
+				width: renderer.offsetWidth,
+				height: renderer.offsetHeight,
+				extent: {
+					width: renderer.getBoundingClientRect().width,
+					height: renderer.getBoundingClientRect().height,
+				},
+			}),
+		)
 	const observer = new ResizeObserver(report)
 	observer.observe(renderer)
 	return () => observer.disconnect()
