@@ -9,6 +9,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Tabs from "../../../ui/tabs"
 import { popupId } from "../../../ui/overlay/popup-state"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -21,6 +22,9 @@ import {
 	RemoveWidget,
 	RenameDashboard,
 	RestoreWidget,
+	AddWidget,
+	AutoLayout,
+	SaveTags,
 	SaveRefreshInterval,
 	SaveTimeRange,
 } from "./command"
@@ -29,6 +33,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { replan, slotOf, withCharts } from "./plan"
 import { isEditing } from "./mode"
+import { PICKER_TABS } from "./picker-catalog"
+import * as TagEditor from "../kit/tag-editor"
 import { createAlertSearch } from "./widget-actions"
 
 export type Return = PageReturn<Model, Message>
@@ -60,6 +66,9 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		widgetMenu: Menu.init("dashboard-widget-menu"),
 		titleDraft: null,
 		pickerDialog: Dialog.init("dashboard-widget-picker", "dialog"),
+		tagEditor: TagEditor.init("dashboard-view-tags-dialog"),
+		orgTags: [],
+		pickerTabs: Tabs.init({ idBase: 300, values: PICKER_TABS.map((tab) => tab.id), selected: "all" }),
 		gesture: null,
 		keyboardMove: null,
 		gridAnnouncement: "",
@@ -109,6 +118,38 @@ const reload = (model: Model): Return => {
 		commands: [ReadClock(), CompleteReloadSpin({ version: refreshVersion })],
 	}
 }
+
+/**
+ * The picker's `onSelect` (`addWidget`): the dialog closes on the add, and an add from view mode
+ * carries the board into edit mode with the viewer's controls.
+ */
+const addPicked = (
+	model: Model,
+	context: PageContext,
+	pick: { readonly presetId: string | null; readonly chartId: string | null },
+): Return => {
+	if (model.persistenceError !== null) return { model }
+	const closed = Dialog.close(model.pickerDialog)
+	const commands = [
+		...Command.mapMessages(closed.commands ?? [], (dialog) =>
+			Message.GotPickerDialogMessage({ message: dialog }),
+		),
+		AddWidget({ orgId: context.orgId, dashboardId: model.dashboardId, ...pick }),
+	]
+	const updated = { ...model, pickerDialog: closed.model }
+	return isEditing(model)
+		? { model: updated, commands }
+		: {
+				model: updated,
+				commands,
+				outMessage: PageOutMessage.RequestedNavigation({
+					url: dashboardHref(model, { ...pickDashboardControlParams(model.search), mode: "edit" }),
+					isReplace: false,
+				}),
+			}
+}
+
+const wrapTagEditor = (message: TagEditor.Message) => Message.GotTagEditorMessage({ message })
 
 const decodeInterval = (value: string) =>
 	Schema.decodeUnknownOption(DashboardRefreshIntervalSeconds)(Number(value))
@@ -253,6 +294,18 @@ const menuStep = (
 /** The "More dashboard actions" menu. TODO(toolbar): share, history, variables, tags, groups. */
 const moreAction = (model: Model, context: PageContext, value: string): Return => {
 	switch (value) {
+		case "tags": {
+			if (model.persistenceError !== null || model.document === null) return { model }
+			const opened = TagEditor.open(model.tagEditor, model.document.name, model.document.tags ?? [])
+			return {
+				model: { ...model, tagEditor: opened.model },
+				commands: Command.mapMessages(opened.commands ?? [], wrapTagEditor),
+			}
+		}
+		case "auto-layout":
+			return model.persistenceError === null
+				? { model, commands: [AutoLayout({ orgId: context.orgId, dashboardId: model.dashboardId })] }
+				: { model }
 		case "export":
 			return {
 				model,
@@ -440,7 +493,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		SubmittedTitle: () => titleSubmit(model, context),
 		CancelledTitle: () => ({ model: { ...model, titleDraft: null } }),
 		ClickedAddWidget: () => {
-			// TODO(widget-picker): the picker dialog opens empty; presets are not ported yet.
 			const next = Dialog.open(model.pickerDialog)
 			return {
 				model: { ...model, pickerDialog: next.model },
@@ -458,7 +510,36 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
-		ClickedWidgetPreset: () => ({ model }),
+		ClickedWidgetPreset: ({ presetId }) => addPicked(model, context, { presetId, chartId: null }),
+		ClickedChartStyle: ({ chartId }) => addPicked(model, context, { presetId: null, chartId }),
+		GotTagEditorMessage: ({ message: inner }) => {
+			const next = TagEditor.update(model.tagEditor, inner)
+			const commands = Command.mapMessages(next.commands ?? [], wrapTagEditor)
+			const updated = { ...model, tagEditor: next.model }
+			return next.outMessage === undefined || model.persistenceError !== null
+				? { model: updated, commands }
+				: {
+						model: updated,
+						commands: [
+							...commands,
+							SaveTags({
+								orgId: context.orgId,
+								dashboardId: model.dashboardId,
+								tags: next.outMessage.tags,
+							}),
+						],
+					}
+		},
+		UpdatedOrgTags: ({ tags }) => ({ model: { ...model, orgTags: tags } }),
+		GotPickerTabsMessage: ({ message: inner }) => {
+			const next = Tabs.update(model.pickerTabs, inner)
+			return {
+				model: { ...model, pickerTabs: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (tabs) =>
+					Message.GotPickerTabsMessage({ message: tabs }),
+				),
+			}
+		},
 		PressedGrip: (pressed) => gestureStep(model, context, pressed),
 		PressedResizeHandle: (pressed) => gestureStep(model, context, pressed),
 		MovedPointer: (moved) => gestureStep(model, context, moved),

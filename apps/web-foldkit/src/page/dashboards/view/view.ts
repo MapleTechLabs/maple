@@ -20,6 +20,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
 import { dashboardSections } from "./view-grid"
+import * as TagEditor from "../kit/tag-editor"
+import { widgetPicker } from "./picker"
 import { toolbar } from "./view-toolbar"
 
 // `DashboardViewPage` (apps/web/src/routes/dashboards/$dashboardId.tsx).
@@ -234,6 +236,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						},
 				body(h, model, inputs.context.timeZone),
 			),
+			widgetPicker(h, model),
+			h.submodel({
+				slotId: "dashboard-view-tag-editor",
+				model: model.tagEditor,
+				view: TagEditor.view,
+				viewInputs: { allTags: model.orgTags },
+				toParentMessage: (message) => Message.GotTagEditorMessage({ message }),
+			}),
 		],
 	),
 )

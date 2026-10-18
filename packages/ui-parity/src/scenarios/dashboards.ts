@@ -109,6 +109,8 @@ const pressOnGrip = (name: string, keys: ReadonlyArray<string>) => async (page: 
 	await page.waitForTimeout(300)
 }
 
+const pickerTab = (name: string) => (page: Page) => page.getByRole("tab", { name }).click()
+
 const hoverTile = (widgetId: string) => (page: Page) => page.locator(`[data-grid-item="${widgetId}"]`).hover()
 
 const renameWidget = (name: string) => async (page: Page) => {
@@ -266,6 +268,59 @@ export const dashboardsArea: AreaModule = {
 			steps: act(enterEdit, pressOnGrip("Total Traces", [" ", "ArrowRight", "Shift+ArrowRight", " "])),
 			fullPage: true,
 		}),
+		dashboard("edit-picker-stats", "Edit mode: the widget picker's Stats tab", platform, {
+			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Stats")),
+		}),
+		dashboard("edit-picker-tables", "Edit mode: the widget picker's Tables tab", platform, {
+			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Tables")),
+		}),
+		dashboard("edit-picker-lists", "Edit mode: the widget picker's Lists tab", platform, {
+			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Lists")),
+		}),
+		dashboard("edit-picker-notes", "Edit mode: the widget picker's Notes tab", platform, {
+			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Notes")),
+		}),
+		dashboard("edit-widget-added", "Edit mode: the Total Logs stat added from the picker", platform, {
+			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Stats"), clickButton(/Sum of logs/)),
+			fullPage: true,
+		}),
+		dashboard("edit-note-added", "Edit mode: a note added from the picker", platform, {
+			steps: act(enterEdit, clickButton("Add widget"), pickerTab("Notes"), clickButton(/^Note/)),
+			fullPage: true,
+		}),
+		dashboard(
+			"blank-widget-added",
+			"A blank board: a stat added from the empty state",
+			"/dashboards/dash_parity_2",
+			{
+				steps: act(
+					clickButton("Add your first widget"),
+					pickerTab("Stats"),
+					clickButton(/Sum of logs/),
+				),
+			},
+		),
+		dashboard("edit-auto-layout", "Edit mode: Auto layout from the more actions menu", platform, {
+			steps: act(enterEdit, clickButton("More dashboard actions"), clickMenuItem("Auto layout")),
+			fullPage: true,
+		}),
+		dashboard("edit-tags-dialog", "Edit mode: the board's tag editor with a typed tag", platform, {
+			steps: act(
+				enterEdit,
+				clickButton("More dashboard actions"),
+				clickMenuItem("Tags"),
+				typeTag("slo"),
+			),
+		}),
+		dashboard("edit-tags-saved", "Edit mode: the board's tags saved", platform, {
+			steps: act(
+				enterEdit,
+				clickButton("More dashboard actions"),
+				clickMenuItem("Tags"),
+				typeTag("slo"),
+				clickButton("Save"),
+			),
+		}),
 		dashboard("edit-more-menu", "Edit mode: more actions menu", platform, {
 			steps: act(enterEdit, clickButton("More dashboard actions")),
 		}),
@@ -288,6 +343,13 @@ export const dashboardsArea: AreaModule = {
 		}),
 		dashboard("widget-cancel", "Widget editor: Cancel with nothing changed", widgetEditor, {
 			steps: act(clickButton("Cancel")),
+		}),
+		dashboard("widget-note", "Widget editor: switched to a note with a body typed", widgetEditor, {
+			steps: act(clickButton("Note"), async (page) => {
+				await page
+					.getByPlaceholder(/Runbook/)
+					.fill("## Runbook\n- Check **errors** first\n- See [docs](https://maple.dev)")
+			}),
 		}),
 		dashboard("widget-line", "Widget editor: switched to a line chart", widgetEditor, {
 			steps: act(clickButton("Line")),

@@ -25,6 +25,8 @@ export interface TabsViewInputs {
 	/** One label per `model.values` entry. */
 	readonly labels: ReadonlyArray<string>
 	readonly className?: string
+	/** `<TabsList className>`. */
+	readonly listClassName?: string
 	readonly panelClassName?: string
 	/** `<TabsTab className>` for every tab. */
 	readonly tabClassName?: string
@@ -115,6 +117,7 @@ const tabList = (h: H, model: Model, inputs: TabsViewInputs, panelValues: Readon
 					tabsListStyles,
 					tabsListVerticalStyles,
 					variant === "default" ? tabsListDefaultStyles : tabsListUnderlineStyles,
+					inputs.listClassName,
 				),
 			),
 			...stateAttributes(h, model),

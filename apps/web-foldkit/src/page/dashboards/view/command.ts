@@ -1,17 +1,29 @@
 import {
 	DashboardId,
+	defaultWidgetLayout,
 	DashboardRefreshIntervalSeconds,
 	DashboardWidgetSchema,
 	TimeRangeSchema,
 } from "@maple/domain/http"
-import { Clock, Duration, Effect, Queue, Random, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Queue, Random, Result, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
+import { createQueryDraft } from "@maple/query-engine/query-builder"
+import { makeQueryDataSource } from "@maple/widgets/dashboard"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { downloadPortable } from "../kit/portable"
-import { generateWidgetId, withClone, withLayouts, withoutWidget } from "../kit/layout"
+import {
+	autoLaidOut,
+	generateWidgetId,
+	withAddedWidget,
+	withClone,
+	withLayouts,
+	withoutWidget,
+} from "../kit/layout"
 import { errorMessageOf, mutateDashboard, readDocument } from "../kit/store"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
+import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
+import { presetById } from "./picker-catalog"
 
 export const ReadClock = Command.define("ReadDashboardClock", {
 	messages: [Message.CompletedReadClock],
@@ -369,6 +381,79 @@ export const SaveRefreshInterval = Command.define("SaveDashboardRefreshInterval"
 			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({
 				...document,
 				refreshIntervalSeconds,
+				updatedAt: nowIso,
+			})),
+		),
+})
+
+/** What the picker adds: a preset as it ships, or a chart style over one default query. */
+const pickedWidget = (pick: { readonly presetId: string | null; readonly chartId: string | null }) => {
+	const preset = pick.presetId === null ? undefined : presetById(pick.presetId)
+	if (preset !== undefined)
+		return { visualization: preset.visualization, dataSource: preset.dataSource, display: preset.display }
+	if (pick.chartId === null) return null
+	const draft = createQueryDraft(0)
+	return {
+		visualization: "chart" as const,
+		dataSource: makeQueryDataSource({
+			resultShape: "timeseries",
+			queries: [draft],
+			formulas: [],
+			comparison: { mode: "none", includePercentChange: true },
+		}),
+		// A derived title ("Error rate by service.name"), so a fresh chart is never "Untitled".
+		display: { chartId: pick.chartId, title: deriveDefaultWidgetTitle([draft]) },
+	}
+}
+
+/** `addWidget` from the picker: a new id, the type's default size, the next free slot. */
+export const AddWidget = Command.define("AddDashboardWidget", {
+	args: { ...Target, presetId: Schema.NullOr(Schema.String), chartId: Schema.NullOr(Schema.String) },
+	messages: [Message.CompletedWrite],
+	execute: ({ orgId, dashboardId, presetId, chartId }) =>
+		Effect.gen(function* () {
+			const picked = pickedWidget({ presetId, chartId })
+			if (picked === null) return Message.CompletedWrite({ result: Result.succeed(undefined) })
+			const id = generateWidgetId(yield* Clock.currentTimeMillis, yield* Random.next)
+			return yield* toWriteMessage(
+				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
+					withAddedWidget(
+						document,
+						{ id, ...picked, layout: defaultWidgetLayout(picked.visualization) },
+						nowIso,
+					),
+				),
+			)
+		}),
+})
+
+/** `autoLayoutWidgets`: every container re-flowed; an empty board is left as it is. */
+export const AutoLayout = Command.define("AutoLayoutDashboard", {
+	args: Target,
+	messages: [Message.CompletedWrite],
+	execute: ({ orgId, dashboardId }) =>
+		toWriteMessage(
+			mutateDashboard(orgId, dashboardId, (document, nowIso) =>
+				document.widgets.length === 0
+					? document
+					: {
+							...document,
+							widgets: autoLaidOut(document.widgets, document.sections ?? []),
+							updatedAt: nowIso,
+						},
+			),
+		),
+})
+
+/** The toolbar's Tags: `updateDashboard(id, { tags })`. */
+export const SaveTags = Command.define("SaveDashboardViewTags", {
+	args: { ...Target, tags: Schema.Array(Schema.String) },
+	messages: [Message.CompletedWrite],
+	execute: ({ orgId, dashboardId, tags }) =>
+		toWriteMessage(
+			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({
+				...document,
+				tags,
 				updatedAt: nowIso,
 			})),
 		),

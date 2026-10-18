@@ -3,7 +3,7 @@ import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
-import { documentStream } from "../kit/document-stream"
+import { documentStream, orgTagsStream } from "../kit/document-stream"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
@@ -112,6 +112,15 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					documentStream(orgId, dashboardId, (maybeDocument) =>
 						Message.UpdatedDashboard({ orgId, maybeDocument }),
 					),
+			},
+		),
+		/** The org's tags, for the tag editor's suggestions. */
+		orgTags: entry(
+			{ orgId: Schema.String },
+			{
+				modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
+				dependenciesToStream: ({ orgId }) =>
+					orgTagsStream(orgId, (tags) => Message.UpdatedOrgTags({ tags })),
 			},
 		),
 		/** `useGridInteraction`'s window listeners, attached for the life of a pointer gesture. */

@@ -5,14 +5,17 @@ import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
+	AddWidget,
 	FetchShares,
 	FetchWidget,
 	RemoveWidget,
 	RenameDashboard,
 	SaveRefreshInterval,
+	SaveTags,
 	SaveTimeRange,
 	UpdateWidgetLayouts,
 } from "./command"
+import * as TagEditor from "../kit/tag-editor"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -175,6 +178,40 @@ describe("dashboard view", () => {
 		expect(cancelled.model.gridAnnouncement).toMatch(/^Move cancelled/)
 		const dropped = pageUpdate(moved, key(" "))
 		expect(names(dropped.commands)).toEqual([UpdateWidgetLayouts.name])
+	})
+
+	test("a picked preset is added and closes the picker; from view mode it also enters edit mode", () => {
+		const pick = Message.ClickedWidgetPreset({ presetId: "stat-total-logs" })
+		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model
+		const opened = pageUpdate(editing, Message.ClickedAddWidget()).model
+		expect(opened.pickerDialog.isOpen).toBe(true)
+		const added = pageUpdate(opened, pick)
+		expect(names(added.commands)).toContain(AddWidget.name)
+		expect(added.model.pickerDialog.isOpen).toBe(false)
+		expect(added.outMessage).toBeUndefined()
+		const fromView = pageUpdate(ready(), pick)
+		expect(fromView.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/dashboards/dash_platform?mode=edit",
+				isReplace: false,
+			}),
+		)
+	})
+
+	test("Tags opens the editor on the board's tags; Save writes what it holds", () => {
+		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }).model
+		const opened = pageUpdate(
+			editing,
+			Message.GotMoreMenuMessage({
+				message: { _tag: "ClickedItem", index: 3, item: { kind: "Item", value: "tags" } },
+			}),
+		).model
+		expect(opened.tagEditor.dialog.isOpen).toBe(true)
+		const tag = (message: TagEditor.Message) => Message.GotTagEditorMessage({ message })
+		const typed = pageUpdate(opened, tag(TagEditor.Message.ChangedTagInput({ value: "SLO" }))).model
+		const saved = pageUpdate(typed, tag(TagEditor.Message.ClickedSaveTags()))
+		expect(names(saved.commands)).toContain(SaveTags.name)
+		expect(saved.model.tagEditor.dialog.isOpen).toBe(false)
 	})
 
 	test("an auto-refresh pick rides in the URL, and in edit mode becomes the board's default", () => {

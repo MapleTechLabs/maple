@@ -28,10 +28,17 @@ const matches = (list: ReadonlyArray<string>, key: string) => list.some((prefix)
 
 // Version-4 ids are minted by the app (`crypto.randomUUID`); fixture ids are deterministic.
 const RANDOM_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+// Dashboard widget ids are minted as `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`.
+const MINTED_WIDGET_ID = /^\d{13}-[0-9a-z]{1,7}$/
 
 /** Sorted keys, app-minted ids replaced by a placeholder, so equal payloads serialize equally. */
 const normalize = (value: Schema.Json): Schema.Json => {
-	if (typeof value === "string") return RANDOM_UUID.test(value) ? "<random-uuid>" : value
+	if (typeof value === "string")
+		return RANDOM_UUID.test(value)
+			? "<random-uuid>"
+			: MINTED_WIDGET_ID.test(value)
+				? "<minted-id>"
+				: value
 	if (isJsonArray(value)) return value.map(normalize)
 	if (isJsonObject(value))
 		return Object.fromEntries(

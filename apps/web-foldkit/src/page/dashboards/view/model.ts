@@ -7,7 +7,9 @@ import { KeyedSchema } from "../../../data/keyed"
 import { DashboardSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Tabs from "../../../ui/tabs"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import * as TagEditor from "../kit/tag-editor"
 import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 
@@ -107,6 +109,11 @@ export const Model = Schema.Struct({
 	/** `InlineEditableTitle`. */
 	titleDraft: Schema.NullOr(Schema.String),
 	pickerDialog: Dialog.Model,
+	tagEditor: TagEditor.Model,
+	/** `collectTags(dashboards)`: the tag editor's suggestions. */
+	orgTags: Schema.Array(Schema.String),
+	/** The picker's section tabs; the choice outlives a close, as the component state does. */
+	pickerTabs: Tabs.Model,
 	gesture: Schema.NullOr(GridGesture),
 	keyboardMove: Schema.NullOr(KeyboardMove),
 	/** The grid's polite live region: what the keyboard session just did. */

@@ -5,7 +5,9 @@ import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Tabs from "../../../ui/tabs"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import * as TagEditor from "../kit/tag-editor"
 import { WidgetFailure } from "../kit/widget-data"
 
 /** A write's outcome: the failure is the message the persistence banner shows. */
@@ -40,6 +42,10 @@ export const Message = defineMessageUnion({
 	ClickedAddWidget: {},
 	GotPickerDialogMessage: { message: Dialog.Message },
 	ClickedWidgetPreset: { presetId: Schema.String },
+	ClickedChartStyle: { chartId: Schema.String },
+	GotTagEditorMessage: { message: TagEditor.Message },
+	UpdatedOrgTags: { tags: Schema.Array(Schema.String) },
+	GotPickerTabsMessage: { message: Tabs.Message },
 	PressedGrip: { widgetId: Schema.String, clientX: Schema.Number, clientY: Schema.Number },
 	PressedResizeHandle: { widgetId: Schema.String, clientX: Schema.Number, clientY: Schema.Number },
 	/** One animation frame of a gesture: the pointer, and where the grid now sits (it scrolls). */

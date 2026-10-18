@@ -135,3 +135,47 @@ export const withAddedWidget = (
 /** `widgetId` from `generateId`: wall clock and a random suffix. */
 export const generateWidgetId = (nowMs: number, random: number): string =>
 	`${nowMs}-${random.toString(36).slice(2, 9)}`
+
+/** `CANONICAL_COLS`: the editable canvas's width in columns. */
+const CANONICAL_COLS = 12
+
+type Flow = Readonly<{
+	x: number
+	y: number
+	rowHeight: number
+	placed: ReadonlyArray<readonly [Widget, Widget]>
+}>
+
+/** One container re-flowed from (0, 0): left to right in reading order, wrapping at the canvas width. */
+const flowContainer = (bucket: ReadonlyArray<Widget>): Flow["placed"] =>
+	bucket.reduce<Flow>(
+		(flow, widget) => {
+			const { w, h } = widget.layout
+			const wraps = flow.x + w > CANONICAL_COLS
+			const x = wraps ? 0 : flow.x
+			const y = wraps ? flow.y + flow.rowHeight : flow.y
+			return {
+				x: x + w,
+				y,
+				rowHeight: wraps ? h : Math.max(flow.rowHeight, h),
+				placed: [...flow.placed, [widget, { ...widget, layout: { ...widget.layout, x, y } }]],
+			}
+		},
+		{ x: 0, y: 0, rowHeight: 0, placed: [] },
+	).placed
+
+/**
+ * `autoLayoutPerContainer`: every container re-flowed on its own, in the board's sorted order.
+ * Keyed by the widget object, not its id: stored ids are not validated unique.
+ */
+export const autoLaidOut = (
+	widgets: ReadonlyArray<Widget>,
+	sections: ReadonlyArray<Section>,
+): ReadonlyArray<Widget> => {
+	const sorted = sortWidgetsForLayout(widgets, sections)
+	const keys = [...new Set(sorted.map((widget) => containerKeyOf(widget)))]
+	const placed = new Map(
+		keys.flatMap((key) => flowContainer(sorted.filter((widget) => containerKeyOf(widget) === key))),
+	)
+	return sorted.map((widget) => placed.get(widget) ?? widget)
+}

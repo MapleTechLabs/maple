@@ -24,3 +24,26 @@ export const documentStream = <M>(
 			),
 		),
 	)
+
+/** `collectTags(dashboards)`: every tag on the org's boards, sorted, as the collection changes. */
+export const orgTagsStream = <M>(orgId: string, toMessage: (tags: ReadonlyArray<string>) => M) =>
+	Stream.unwrap(
+		Effect.map(dashboardsOf(orgId), (collection) =>
+			liveQueryStream(
+				(q) => q.from({ d: collection }),
+				(rows) =>
+					toMessage(
+						Array.from(
+							new Set(
+								rows.flatMap((row) =>
+									Option.match(rowToDocument(row), {
+										onNone: () => [],
+										onSome: (document) => document.tags ?? [],
+									}),
+								),
+							),
+						).sort(),
+					),
+			),
+		),
+	)
