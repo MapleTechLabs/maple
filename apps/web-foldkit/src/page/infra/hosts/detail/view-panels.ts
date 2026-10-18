@@ -104,7 +104,7 @@ const stripChart = (h: H, model: Model, metric: HostMetric, timeZone: string): H
 							linkedChartId: `host-${metric}`,
 							header: hostSeriesSummary,
 							isWaiting: AsyncData.isRefreshing(data),
-							height: INFRA_METRIC_CHART_HEIGHT,
+							plotAreaHeight: INFRA_METRIC_CHART_HEIGHT,
 							theme,
 							timeZone,
 						},

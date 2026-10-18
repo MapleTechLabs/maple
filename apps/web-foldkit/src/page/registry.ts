@@ -16,6 +16,8 @@ import type {
 } from "./contract"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
+import * as InfraContainer from "./infra/containers/detail"
+import * as InfraContainers from "./infra/containers/list"
 import * as InfraHost from "./infra/hosts/detail"
 import * as InfraHosts from "./infra/hosts/list"
 import * as LogsList from "./logs/list"
@@ -42,6 +44,8 @@ export const pages = [
 	LogsList.page,
 	InfraHosts.page,
 	InfraHost.page,
+	InfraContainers.page,
+	InfraContainer.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

@@ -11,6 +11,7 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../kit/fleet-band"
 import * as Frame from "../../kit/frame"
+import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { countLabel, filteredEmpty, pageHero, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { type SortAccessors, sortRows } from "../../kit/sort"
@@ -34,7 +35,7 @@ const HOST_SORT_ACCESSORS: SortAccessors<HostRow> = new Map<string, (row: HostRo
 	["lastSeen", (row) => row.lastSeen],
 ])
 
-const openInstall = Message.GotInstallMessage({ message: { _tag: "ClickedOpen" } })
+const openInstall = Message.GotInstallMessage({ message: InstallModal.Message.ClickedOpen() })
 
 const hostList = (
 	h: H,

@@ -90,13 +90,14 @@ export type MetaRowOptions<M> = Readonly<{
 	copyValue?: string
 	tooltip?: string
 	valueClassName?: string
-	copies: Copies
-	onCopy: (label: string, message: CopyButton.Message) => M
+	copies?: Copies
+	onCopy?: (label: string, message: CopyButton.Message) => M
 }>
 
 /** `DetailRail.MetaRow`: nothing for an empty value. */
 export const metaRow = <M>(h: HtmlBuilder<M>, options: MetaRowOptions<M>): Html => {
 	const value = options.value
+	const onCopy = options.onCopy
 	if (!value) return null
 	const valueNode = h.span(
 		[
@@ -134,11 +135,11 @@ export const metaRow = <M>(h: HtmlBuilder<M>, options: MetaRowOptions<M>): Html 
 								[valueNode],
 							)
 						: valueNode,
-					...(options.copyable === true || options.copyValue
+					...((options.copyable === true || options.copyValue) && onCopy !== undefined
 						? [
 								CopyButton.view(h, {
-									model: options.copies[options.label] ?? CopyButton.init(),
-									toParentMessage: (message) => options.onCopy(options.label, message),
+									model: options.copies?.[options.label] ?? CopyButton.init(),
+									toParentMessage: (message) => onCopy(options.label, message),
 									value: options.copyValue ?? value,
 									label: options.label,
 									iconSize: 11,

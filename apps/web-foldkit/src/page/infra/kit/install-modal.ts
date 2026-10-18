@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { AsyncData, Command, type Update } from "foldkit"
+import { AsyncData, Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -45,7 +45,7 @@ export const init = (id: string, defaultTab: InstallTab): Model => ({
 	dialog: Dialog.init(id, "dialog"),
 	tabs: Tabs.init({ idBase: 0, values: INSTALL_TABS, selected: defaultTab }),
 	isRevealed: false,
-	ingestKey: IngestKeyData.Loading(),
+	ingestKey: IngestKeyData.Idle(),
 	copies: {
 		helm: CopyButton.init(),
 		docker: CopyButton.init(),
@@ -58,6 +58,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchIngestKey: { result: Schema.Result(Schema.String, LoadFailure) },
 	ClickedOpen: {},
 	ClickedToggleReveal: {},
+	MountedInstallModal: {},
 	GotDialogMessage: { message: Dialog.Message },
 	GotTabsMessage: { message: Tabs.Message },
 	GotCopyMessage: { snippet: Snippet, message: CopyButton.Message },
@@ -79,6 +80,18 @@ export const FetchIngestKey = Command.define("FetchInstallIngestKey", {
 
 export type Return = Update.Return<Model, Message, Resources>
 
+/** `retainedQueryV2("ingestKeys", "retrieve")` mounting: fetched once, when the modal first mounts. */
+export const load = (model: Model): Return =>
+	AsyncData.isIdle(model.ingestKey)
+		? { model: { ...model, ingestKey: IngestKeyData.Loading() }, commands: [FetchIngestKey()] }
+		: { model }
+
+/** The modal mounted with the element it sits in (`InfraSetupEmpty` mounts its own). */
+export const MountInstallModal = Mount.define("MountInstallModal", {
+	messages: [Message.MountedInstallModal],
+	execute: () => Effect.succeed(Message.MountedInstallModal()),
+})
+
 /** Closing re-masks the key and restores the caller's tab, so each open starts the same way. */
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => {
 	const isClosed = result.outMessage !== undefined && result.outMessage._tag === "Closed"
@@ -96,6 +109,7 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
+		MountedInstallModal: () => load(model),
 		CompletedFetchIngestKey: ({ result }) => ({
 			model: { ...model, ingestKey: AsyncData.settle(model.ingestKey, result) },
 		}),

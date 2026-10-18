@@ -199,12 +199,33 @@ export const infraArea: AreaModule = {
 			clickText("StatefulSets"),
 		),
 		scenario("workloads-jobs", "Workloads: Jobs", "/infra/kubernetes/workloads", K8S, clickText("Jobs")),
+		...timed("containers", "Containers", "/infra/containers", K8S, "queryEngine.listContainers"),
+		scenario("containers-sort-cpu", "Containers: sorted by CPU", "/infra/containers", K8S, (page) =>
+			page.getByRole("button", { name: "CPU", exact: true }).click(),
+		),
+		scenario("containers-facet", "Containers: one container ticked", "/infra/containers", K8S, (page) =>
+			page.getByRole("checkbox", { name: "ci-stack-redis-1" }).click(),
+		),
+		scenario("containers-search", "Containers: searched by name", "/infra/containers", K8S, (page) =>
+			page.getByRole("textbox", { name: "Search all containers…" }).fill("redis"),
+		),
+		scenario("containers-empty-install", "Containers: the Docker install modal", "/infra/containers", EMPTY, (page) =>
+			page.getByRole("button", { name: "Install the Docker agent" }).click(),
+		),
 		scenario(
 			"containers-scope-saturated",
 			"Containers: saturated scope",
 			"/infra/containers",
 			K8S,
 			clickText("Saturated"),
+		),
+		...timed(
+			"container-detail",
+			"Container detail",
+			`/infra/containers/${CONTAINER}?host=build-runner-01`,
+			K8S,
+			"queryEngine.container",
+			"queryEngine.containerDetailSummary",
 		),
 		scenario(
 			"container-detail-network",

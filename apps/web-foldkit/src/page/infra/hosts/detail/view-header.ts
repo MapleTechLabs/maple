@@ -3,8 +3,8 @@ import { formatLoad, formatPercent } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { button, linkButton } from "../../../../ui/button"
-import { badge } from "../../../../ui/display"
 import { skeleton } from "../../../../ui/skeleton"
+import { heroChip } from "../../kit/hero-chip"
 import { platformLabel } from "../../kit/meta-line"
 import { pageHero } from "../../kit/page-parts"
 import { relativeTime } from "../../kit/relative-time"
@@ -17,24 +17,6 @@ import type { HostSummary } from "./model"
 // `HeroChip` (components/common/page-hero.tsx).
 
 type H = HtmlBuilder<Message>
-
-/** `HeroChip`: a plain-text chip titles itself with its text. */
-export const heroChip = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>, title?: string): Html => {
-	const texts = children.filter((child): child is string => typeof child === "string")
-	const derived = texts.length === children.length ? texts.join("") : undefined
-	const resolvedTitle = title ?? derived
-	return badge(
-		h,
-		{
-			variant: "meta",
-			size: "xs",
-			mono: true,
-			className: "min-w-0",
-			attributes: resolvedTitle === undefined ? [] : [h.Title(resolvedTitle)],
-		},
-		[h.span([h.Class("min-w-0 truncate")], children)],
-	)
-}
 
 export const hostDetailHeaderLoading = (h: H): Html =>
 	h.div(

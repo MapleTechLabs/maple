@@ -52,22 +52,24 @@ const liftInstall = (model: Model, result: InstallModal.Return): Return => ({
 })
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
-	const model: Model = {
-		search: route.search,
-		frame: Frame.init("infra-hosts-time-range"),
-		hosts: Keyed.idle(),
-		sort: { key: "cpuPct", dir: "desc" },
-		install: InstallModal.init("infra-hosts-install", "hosts"),
-	}
+	// The page-level modal mounts with the page, so the key is fetched on entry.
+	const install = liftInstall(
+		{
+			search: route.search,
+			frame: Frame.init("infra-hosts-time-range"),
+			hosts: Keyed.idle(),
+			sort: { key: "cpuPct", dir: "desc" },
+			install: InstallModal.init("infra-hosts-install", "hosts"),
+		},
+		InstallModal.load(InstallModal.init("infra-hosts-install", "hosts")),
+	)
 	return {
-		model,
+		model: install.model,
 		commands: [
-			Command.mapMessage(Frame.resolve(model.frame, scopeOf(model, context), "Load"), (message) =>
+			Command.mapMessage(Frame.resolve(install.model.frame, scopeOf(install.model, context), "Load"), (message) =>
 				Message.GotFrameMessage({ message }),
 			),
-			Command.mapMessage(InstallModal.FetchIngestKey(), (message) =>
-				Message.GotInstallMessage({ message }),
-			),
+			...(install.commands ?? []),
 		],
 	}
 }

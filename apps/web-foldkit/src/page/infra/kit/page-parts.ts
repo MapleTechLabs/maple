@@ -43,7 +43,7 @@ export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =
 					...(options.description === undefined
 						? []
 						: [h.p([h.Class("max-w-2xl text-sm text-muted-foreground")], [options.description])]),
-					...(options.meta === undefined || options.meta.length === 0
+					...(options.meta === undefined
 						? []
 						: [h.div([h.Class("mt-2 flex flex-wrap items-center gap-2")], options.meta)]),
 				],
@@ -183,6 +183,8 @@ export const setupEmpty = <M>(
 		onAction: M
 		docs: DocsPage
 		extra?: ReadonlyArray<Html>
+		/** The empty state's own install modal (`mountedView`), when the page has none of its own. */
+		modal?: Html
 	}>,
 ): Html =>
 	empty(
@@ -201,6 +203,7 @@ export const setupEmpty = <M>(
 				docsLink(h, options.docs),
 				...(options.extra ?? []),
 			]),
+			...(options.modal === undefined ? [] : [options.modal]),
 		],
 		"py-16",
 	)

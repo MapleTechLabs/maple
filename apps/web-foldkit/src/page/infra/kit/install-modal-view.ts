@@ -11,7 +11,7 @@ import { inputGroup, inputGroupAddon, inputGroupButton } from "../../../ui/input
 import { skeleton } from "../../../ui/skeleton"
 import * as TabsView from "../../../ui/tabs-view"
 import { textarea } from "../../../ui/textarea"
-import { Message, type Model, type Snippet } from "./install-modal"
+import { Message, type Model, MountInstallModal, type Snippet } from "./install-modal"
 import {
 	dockerCommand,
 	helmCommand,
@@ -213,4 +213,28 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 		},
 		toParentMessage: (message) => Message.GotDialogMessage({ message }),
 	}),
+)
+
+/**
+ * The modal as `InfraSetupEmpty` mounts it: a hidden holder whose Mount fetches the key when the
+ * empty state appears (the portal moves itself to `<body>`, so the holder adds no layout).
+ */
+export const mountedView = Submodel.defineView<Model, Message>((model, h) =>
+	h.span(
+		[h.Hidden(true), h.OnMount(MountInstallModal())],
+		[
+			h.submodel({
+				slotId: `${model.id}-dialog`,
+				model: model.dialog,
+				view: DialogView.view,
+				viewInputs: {
+					className: "max-w-2xl overflow-hidden",
+					hasTrigger: false,
+					toView: ({ portal }) => portal,
+					toContent: (close) => content(h, model, close),
+				},
+				toParentMessage: (message) => Message.GotDialogMessage({ message }),
+			}),
+		],
+	),
 )

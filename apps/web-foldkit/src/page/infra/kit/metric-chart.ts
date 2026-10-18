@@ -72,8 +72,10 @@ export type MetricChartInputs = Readonly<{
 	seriesColors?: Readonly<Record<string, string>>
 	header?: (h: HtmlBuilder<Message>, info: InfraSeriesInfo) => Html
 	isWaiting?: boolean
-	/** The surrounding plot area's height (`useChartPlotHeight`), else the chart's own 220. */
+	/** The `height` prop: the plot's height, and the empty state's (else it fills its plot area). */
 	height?: number
+	/** The surrounding `ChartPlotArea`'s height (`useChartPlotHeight`). */
+	plotAreaHeight?: number
 	className?: string
 	theme: ThemeColors
 	timeZone: string
@@ -150,9 +152,17 @@ export const chartPlotArea = <M>(
 		children,
 	)
 
-/** `ChartStateBox` inside a plot area: `height: 100%`. */
-const stateBox = <M>(h: HtmlBuilder<M>, className: string, children: ReadonlyArray<Html | string>): Html =>
-	h.div([h.Class(cn("w-full", className)), h.Style({ height: "100%" })], children)
+/** `ChartStateBox`: an explicit height, else it fills the plot area it sits in. */
+const stateBox = <M>(
+	h: HtmlBuilder<M>,
+	className: string,
+	children: ReadonlyArray<Html | string>,
+	height?: number,
+): Html =>
+	h.div(
+		[h.Class(cn("w-full", className)), h.Style({ height: height === undefined ? "100%" : `${height}px` })],
+		children,
+	)
 
 const MESSAGE_BASE = "flex items-center justify-center px-3 text-center font-mono text-2xs"
 
@@ -184,23 +194,28 @@ const emptyAxes = <M>(h: HtmlBuilder<M>): Html => {
 	)
 }
 
-/** `ChartEmpty` inside a plot area. */
-export const chartEmpty = <M>(h: HtmlBuilder<M>, message: string): Html =>
-	stateBox(h, cn(MESSAGE_BASE, "relative text-muted-foreground"), [
-		emptyAxes(h),
-		h.div(
-			[h.Class("relative flex flex-col items-center gap-1")],
-			[h.span([h.Class("text-foreground/70")], [message])],
-		),
-	])
+/** `ChartEmpty`. */
+export const chartEmpty = <M>(h: HtmlBuilder<M>, message: string, height?: number): Html =>
+	stateBox(
+		h,
+		cn(MESSAGE_BASE, "relative text-muted-foreground"),
+		[
+			emptyAxes(h),
+			h.div(
+				[h.Class("relative flex flex-col items-center gap-1")],
+				[h.span([h.Class("text-foreground/70")], [message])],
+			),
+		],
+		height,
+	)
 
-/** `ChartLoading` inside a plot area. */
-export const chartLoadingIn = <M>(h: HtmlBuilder<M>, variant: ChartSkeletonVariant): Html =>
-	stateBox(h, "", [chartSkeleton(h, variant)])
+/** `ChartLoading`. */
+export const chartLoadingIn = <M>(h: HtmlBuilder<M>, variant: ChartSkeletonVariant, height?: number): Html =>
+	stateBox(h, "", [chartSkeleton(h, variant)], height)
 
-/** `ChartError` inside a plot area. */
-export const chartError = <M>(h: HtmlBuilder<M>, message: string): Html =>
-	stateBox(h, cn(MESSAGE_BASE, "border bg-severity-error/5", TONE_BORDER.crit, TONE_TEXT.crit), [message])
+/** `ChartError`. */
+export const chartError = <M>(h: HtmlBuilder<M>, message: string, height?: number): Html =>
+	stateBox(h, cn(MESSAGE_BASE, "border bg-severity-error/5", TONE_BORDER.crit, TONE_TEXT.crit), [message], height)
 
 /** `CHART_EMPTY_MESSAGE` (components/common/chart-card.tsx). */
 export const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
@@ -208,7 +223,7 @@ export const CHART_EMPTY_MESSAGE = "No data for this metric in the selected wind
 /** `InfraMetricChart`: the header, then the linked-cursor wrapper around `CursorPlot`. */
 export const view = Submodel.defineView<Model, Message, MetricChartInputs>((model, inputs, h) => {
 	const { spec, info, hasValue } = infraChartModel(inputs)
-	if (!hasValue) return chartEmpty(h, CHART_EMPTY_MESSAGE)
+	if (!hasValue) return chartEmpty(h, CHART_EMPTY_MESSAGE, inputs.height)
 	const isWaiting = inputs.isWaiting === true
 	const linked = inputs.linkedChartId
 	return h.div(
@@ -225,7 +240,9 @@ export const view = Submodel.defineView<Model, Message, MetricChartInputs>((mode
 					h.div(
 						[
 							h.Class("w-full"),
-							h.Style({ height: `${inputs.height ?? INFRA_METRIC_CHART_HEIGHT}px` }),
+							h.Style({
+								height: `${inputs.height ?? inputs.plotAreaHeight ?? INFRA_METRIC_CHART_HEIGHT}px`,
+							}),
 						],
 						[
 							plotFrame(h, {
