@@ -53,6 +53,8 @@ export const load = (
 				timeseries: keyOf("service-operations-ts", { serviceName, spanNames, bucketSeconds, boundsKey }),
 				golden: keyOf("service-golden-signals", { serviceName, bucketSeconds, boundsKey }),
 			}
+			// A key the slot has no rows for opens on its cached result; a forced refetch does not.
+			const readsCache = (slot: SlotName) => !forced.includes(slot) && model[slot].key !== keys[slot]
 			const overview = request(model.overview, keys.overview, forced.includes("overview"))
 			const operations = request(model.operations, keys.operations, forced.includes("operations"))
 			// `skipToken` while no operation is known: nothing to chart.
@@ -68,10 +70,12 @@ export const load = (
 					golden: Option.getOrElse(golden, () => model.golden),
 				},
 				commands: Array.getSomes([
-					Option.map(overview, () => FetchOverview({ key: keys.overview, ...window })),
-					Option.map(operations, () => FetchOperations({ key: keys.operations, ...window })),
-					Option.map(timeseries, () => FetchTimeseries({ key: keys.timeseries, ...window, spanNames, bucketSeconds })),
-					Option.map(golden, () => FetchGoldenSignals({ key: keys.golden, ...window, bucketSeconds })),
+					Option.map(overview, () => FetchOverview({ key: keys.overview, ...window, readsCache: readsCache("overview") })),
+					Option.map(operations, () => FetchOperations({ key: keys.operations, ...window, readsCache: readsCache("operations") })),
+					Option.map(timeseries, () =>
+						FetchTimeseries({ key: keys.timeseries, ...window, spanNames, bucketSeconds, readsCache: readsCache("timeseries") }),
+					),
+					Option.map(golden, () => FetchGoldenSignals({ key: keys.golden, ...window, bucketSeconds, readsCache: readsCache("golden") })),
 				]),
 			}
 		},

@@ -11,6 +11,10 @@ export type Slot<A> = Readonly<{
 	data: AsyncData.AsyncData<A, LoadFailure>
 	/** React Query's `isPlaceholderData`: the rows on screen are another key's. */
 	isPlaceholder: boolean
+	/** `dataUpdatedAt` of the rows on screen; null where the page does not track it. */
+	updatedAtMs: number | null
+	/** The rows on screen are an older window's, opened from the cache (`standInSince`). */
+	isStandIn: boolean
 }>
 
 export const SlotSchema = <A, AI>(dataSchema: Schema.Codec<A, AI>) =>
@@ -18,9 +22,11 @@ export const SlotSchema = <A, AI>(dataSchema: Schema.Codec<A, AI>) =>
 		key: Schema.NullOr(Schema.String),
 		data: AsyncData.Schema(dataSchema, LoadFailure).schema,
 		isPlaceholder: Schema.Boolean,
+		updatedAtMs: Schema.NullOr(Schema.Number),
+		isStandIn: Schema.Boolean,
 	})
 
-export const idle = <A>(): Slot<A> => ({ key: null, data: AsyncData.Idle(), isPlaceholder: false })
+export const idle = <A>(): Slot<A> => ({ key: null, data: AsyncData.Idle(), isPlaceholder: false, updatedAtMs: null, isStandIn: false })
 
 /** A key for one query: its name and inputs, as React Query hashes `queryKey`. */
 export const keyOf = (name: string, input: unknown): string => `${name}:${JSON.stringify(input)}`
@@ -36,20 +42,63 @@ export const request = <A>(slot: Slot<A>, key: string, force = false): Option.Op
 		onNone: (): AsyncData.AsyncData<A, LoadFailure> => AsyncData.Loading(),
 		onSome: (previous) => AsyncData.Refreshing({ data: previous }),
 	})
-	return Option.some({ key, data, isPlaceholder: slot.key !== key && Option.isSome(maybePrevious) })
+	const isNewKey = slot.key !== key
+	return Option.some({
+		key,
+		data,
+		isPlaceholder: isNewKey && Option.isSome(maybePrevious),
+		updatedAtMs: slot.updatedAtMs,
+		isStandIn: !isNewKey && slot.isStandIn,
+	})
 }
 
 /**
  * Folds a result in only if it answers the slot's current key; a superseded answer is dropped.
  * A failed new key drops the placeholder rows (they were another key's); a failed refetch keeps them.
  */
-export const accept = <A>(slot: Slot<A>, key: string, result: Result.Result<A, LoadFailure>): Slot<A> => {
+export const accept = <A>(slot: Slot<A>, key: string, result: Result.Result<A, LoadFailure>, atMs: number | null = null): Slot<A> => {
 	if (slot.key !== key) return slot
 	const data =
 		slot.isPlaceholder && Result.isFailure(result)
 			? AsyncData.fail<LoadFailure, A>(result.failure)
 			: AsyncData.settle(slot.data, result)
-	return { key, data, isPlaceholder: false }
+	return Result.isSuccess(result)
+		? { key, data, isPlaceholder: false, updatedAtMs: atMs ?? slot.updatedAtMs, isStandIn: false }
+		: { ...slot, key, data, isPlaceholder: false }
+}
+
+/**
+ * The cache answered for the current key before the fetch did: show it (an exact result, or an
+ * older window standing in), unless a fetch already filled the slot. `isFresh`: no fetch follows.
+ */
+export const acceptCached = <A>(
+	slot: Slot<A>,
+	key: string,
+	cached: Readonly<{ data: A; updatedAtMs: number; isStandIn: boolean }>,
+	isFresh: boolean,
+): Slot<A> => {
+	if (slot.key !== key || (Option.isSome(AsyncData.getData(slot.data)) && !slot.isPlaceholder)) return slot
+	return {
+		key,
+		data: isFresh ? AsyncData.Success({ data: cached.data }) : AsyncData.Refreshing({ data: cached.data }),
+		isPlaceholder: false,
+		updatedAtMs: cached.updatedAtMs,
+		isStandIn: cached.isStandIn,
+	}
+}
+
+/** What `useShownData` reads off one query on screen. */
+export type Shown = Readonly<{ atMs: number; isStandIn: boolean; isRefreshing: boolean; isFailed: boolean }>
+
+/** The slot's rows as the stale-data notice sees them: none for placeholders or untracked slots. */
+export const shownOf = <A>(slot: Slot<A>): Option.Option<Shown> => {
+	if (slot.isPlaceholder || slot.updatedAtMs === null || Option.isNone(AsyncData.getData(slot.data))) return Option.none()
+	return Option.some({
+		atMs: slot.updatedAtMs,
+		isStandIn: slot.isStandIn,
+		isRefreshing: AsyncData.isRefreshing(slot.data),
+		isFailed: AsyncData.isStale(slot.data),
+	})
 }
 
 /** React Query's `isPending`: no data yet, nothing to show. */

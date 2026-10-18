@@ -7,11 +7,17 @@ import * as AttributesPanel from "@maple/web-foldkit/ui/attributes/attributes-pa
 import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "../../data/local-query"
+import { Message as LogSheetMessage } from "../kit/log-sheet/message"
+import { LocalLog } from "../kit/log-sheet/model"
+import { SpanDetailRequest, SpanLogsRequest } from "./requests"
 import { SpanAttrs, SpanLog } from "./panel-model"
 
 export const Message = defineMessageUnion({
 	SucceededFetchTrace: { key: Schema.String, trace: Schema.Option(TraceData), fetchedAtMs: Schema.Number },
+	/** The result cache held this trace before the fetch ran. */
+	FoundCachedTrace: { key: Schema.String, cached: CachedOf(Schema.Option(TraceData)) },
 	FailedFetchTrace: { key: Schema.String, failure: LoadFailure },
 	ClickedBack: {},
 	ClickedRefresh: {},
@@ -22,14 +28,20 @@ export const Message = defineMessageUnion({
 	GotTimelineMessage: { message: Timeline.Message },
 	GotWaterfallMessage: { message: Waterfall.Message },
 	GotFlowMessage: { message: TraceFlow.Message },
-	SucceededFetchSpanDetail: { key: Schema.String, detail: SpanAttrs },
+	SucceededFetchSpanDetail: { key: Schema.String, detail: SpanAttrs, fetchedAtMs: Schema.Number },
 	FailedFetchSpanDetail: { key: Schema.String, failure: LoadFailure },
-	SucceededFetchSpanLogs: { key: Schema.String, logs: Schema.Array(SpanLog) },
+	/** The result cache answered first; `request` is the read the fetch then repeats. */
+	FoundCachedSpanDetail: { request: SpanDetailRequest, cached: CachedOf(SpanAttrs) },
+	SucceededFetchSpanLogs: { key: Schema.String, logs: Schema.Array(SpanLog), fetchedAtMs: Schema.Number },
 	FailedFetchSpanLogs: { key: Schema.String, failure: LoadFailure },
+	FoundCachedSpanLogs: { request: SpanLogsRequest, cached: CachedOf(Schema.Array(SpanLog)) },
 	/** The panel's header, copy and error parts (the web panel's markup and Messages). */
 	GotSpanPanelMessage: { message: SpanPanel.Message },
 	GotPanelTabsMessage: { message: Tabs.Message },
 	GotAttributesMessage: { message: AttributesPanel.Message },
+	/** A row of the span's Logs tab: `LogDetailSheet` opens on it. */
+	ClickedSpanLog: { log: LocalLog },
+	GotLogSheetMessage: { message: LogSheetMessage },
 	CompletedWriteClipboard: { id: Schema.String, generation: Schema.Number, isOk: Schema.Boolean },
 	ElapsedCopyStatus: { id: Schema.String, generation: Schema.Number },
 })

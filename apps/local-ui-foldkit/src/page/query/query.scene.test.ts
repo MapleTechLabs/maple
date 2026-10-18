@@ -14,6 +14,7 @@ const contextFor = (search: string): PageContext => ({
 	env,
 	location: { path: "/query", search },
 	rememberedRange: "1h",
+	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 })
 const context = contextFor("sql=SELECT%201")
@@ -24,7 +25,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 
 const loaded = (): Model => {
 	const model = init(context).model
-	return pageUpdate(model, Message.SucceededFetchTables({ key: model.tables.key ?? "", tables: [{ name: "traces", totalRows: 12 }] })).model
+	return pageUpdate(model, Message.SucceededFetchTables({ key: model.tables.key ?? "", tables: [{ name: "traces", totalRows: 12 }], fetchedAtMs: 0 })).model
 }
 
 describe("local query console", () => {
@@ -52,6 +53,14 @@ describe("local query console", () => {
 		const cancelled = pageUpdate(running, Message.ClickedCancel()).model
 		const late = pageUpdate(cancelled, Message.SucceededRunQuery({ id: 0, rows: [], elapsedMs: 1 }))
 		expect(late.model.run).toEqual(RunState.Idle())
+	})
+
+	test("Cancel interrupts the running request, and only while one runs", () => {
+		const running = pageUpdate(loaded(), Message.ClickedRun()).model
+		const cancelled = pageUpdate(running, Message.ClickedCancel())
+		const interrupt = RunQuery.Interrupt({ id: 0 }, (outcome) => Message.CompletedCancelRunQuery({ id: 0, outcome }))
+		expect(names(cancelled.commands)).toEqual([interrupt.name])
+		expect(pageUpdate(cancelled.model, Message.ClickedCancel()).commands).toBeUndefined()
 	})
 
 	test("an empty editor does not run", () => {

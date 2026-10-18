@@ -3,13 +3,14 @@ import { snapToMinute, WIDEST_RANGE } from "@maple/local-ui/lib/time"
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { accept, idle } from "../../data/slot"
+import type { Cached } from "../../data/cached"
+import { accept, acceptCached, idle } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import { updateCopy } from "../kit/copies"
-import { ReadClock, ReadRefreshClock, WaitSearchDebounce } from "./command"
+import { FetchCatalog, ReadClock, ReadRefreshClock, WaitSearchDebounce } from "./command"
 import { filtersOf, visibleEntries } from "./derive"
-import { load } from "./load"
+import { boundsOf, load } from "./load"
 import { Message } from "./message"
 import type { Catalog, Model } from "./model"
 import type { LoadFailure } from "../../data/local-query"
@@ -75,11 +76,40 @@ const settleRefresh = (model: Model): Model => {
 }
 
 /** One fetch answers whichever slots hold its key (both, while no filter is set). */
-const settled = (model: Model, key: string, result: Result.Result<Catalog, LoadFailure>): Model => ({
+const settled = (model: Model, key: string, result: Result.Result<Catalog, LoadFailure>, atMs: number | null = null): Model => ({
 	...model,
-	catalog: accept(model.catalog, key, result),
-	unfiltered: accept(model.unfiltered, key, result),
+	catalog: accept(model.catalog, key, result, atMs),
+	unfiltered: accept(model.unfiltered, key, result, atMs),
 })
+
+/** The cache answered a slice first: whichever slots hold its key show it, then the fetch runs. */
+const settledFromCache = (model: Model, context: PageContext, key: string, cached: Cached<Catalog>): UpdateReturn => {
+	const next = {
+		...model,
+		catalog: acceptCached(model.catalog, key, cached, cached.isFresh),
+		unfiltered: acceptCached(model.unfiltered, key, cached, cached.isFresh),
+		catalogUpdatedAtMs: model.catalog.key === key ? cached.updatedAtMs : model.catalogUpdatedAtMs,
+	}
+	const holder = next.catalog.key === key ? "catalog" : next.unfiltered.key === key ? "unfiltered" : null
+	if (holder === null || cached.isFresh) return { model: settleRefresh(next) }
+	const bounds = Option.getOrNull(boundsOf(next, context))
+	if (bounds === null) return { model: next }
+	const filters = filtersOf(queryOf(context.location))
+	const isRows = holder === "catalog"
+	return {
+		model: next,
+		commands: [
+			FetchCatalog({
+				key,
+				env: isRows ? (filters.env ?? null) : null,
+				ns: isRows ? (filters.ns ?? null) : null,
+				...bounds,
+				apiBase: context.env.apiBase,
+				readsCache: false,
+			}),
+		],
+	}
+}
 
 const searchStep = (model: Model, text: string): UpdateReturn => {
 	const version = model.search.version + 1
@@ -93,9 +123,10 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
 		SucceededFetchCatalog: ({ key, catalog, fetchedAtMs }) => {
 			const catalogUpdatedAtMs = model.catalog.key === key ? fetchedAtMs : model.catalogUpdatedAtMs
-			const next = settleRefresh({ ...settled(model, key, Result.succeed(catalog)), catalogUpdatedAtMs })
+			const next = settleRefresh({ ...settled(model, key, Result.succeed(catalog), fetchedAtMs), catalogUpdatedAtMs })
 			return model.catalog.key === key ? withPresence({ model: next }, context) : { model: next }
 		},
+		FoundCachedCatalog: ({ key, cached }) => settledFromCache(model, context, key, cached),
 		FailedFetchCatalog: ({ key, failure }) => ({ model: settleRefresh(settled(model, key, Result.fail(failure))) }),
 		ClickedRefresh: () =>
 			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
@@ -105,7 +136,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
 				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return { model: settleRefresh(refetch.model), commands: refetch.commands }
+			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
 		},
 		ChangedSearch: ({ text }) => searchStep(model, text),
 		ClickedClearSearch: () => searchStep(model, ""),

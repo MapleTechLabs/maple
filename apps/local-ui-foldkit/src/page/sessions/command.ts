@@ -1,6 +1,8 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { withCache } from "../../data/cached"
 import type { LoadFailure } from "../../data/local-query"
+import { facetsFromCached, facetsKey, pagesFromCached, pagesToCached, sessionsKey } from "./cache"
 import { fetchSessionFacets, fetchSessionPage, filtersOf, nextCursor, type SessionCursor } from "./fetch"
 import { Message } from "./message"
 import type { SessionRow } from "./model"
@@ -37,18 +39,26 @@ const fetchPages = <R>(
 		return remaining <= 1 || next === undefined ? Effect.succeed(pages) : fetchPages(run, remaining - 1, next, pages)
 	})
 
+/** `readsCache`: a key the page has no rows for yet opens on its cached result first. */
 export const FetchSessions = Command.define("FetchLocalSessions", {
-	args: { ...RequestArgs, pageCount: Schema.Number },
-	messages: [Message.SucceededFetchSessions, Message.FailedFetchSessions],
-	execute: ({ key, search, startTime, endTime, apiBase, pageCount }) =>
-		Effect.gen(function* () {
-			const filters = filtersOf(new URLSearchParams(search))
-			const run = (cursor: SessionCursor | undefined) => fetchSessionPage(filters, { startTime, endTime }, cursor, apiBase)
-			const pages = yield* fetchPages(run, pageCount, undefined, [])
-			const last = pages[pages.length - 1] ?? []
-			const fetchedAtMs = yield* Clock.currentTimeMillis
-			return Message.SucceededFetchSessions({ key, data: { pages, hasNextPage: nextCursor(last) !== undefined }, fetchedAtMs })
-		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSessions({ key, failure })))),
+	args: { ...RequestArgs, pageCount: Schema.Number, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchSessions, Message.FailedFetchSessions, Message.FoundCachedSessions],
+	execute: ({ key, search, startTime, endTime, apiBase, pageCount, readsCache }) => {
+		const filters = filtersOf(new URLSearchParams(search))
+		const run = (cursor: SessionCursor | undefined) => fetchSessionPage(filters, { startTime, endTime }, cursor, apiBase)
+		return withCache({
+			key: sessionsKey({ search, startTime, endTime }),
+			readsCache,
+			fromCached: pagesFromCached,
+			toCached: pagesToCached,
+			fetch: Effect.map(fetchPages(run, pageCount, undefined, []), (pages) => ({
+				pages,
+				hasNextPage: nextCursor(pages[pages.length - 1] ?? []) !== undefined,
+			})),
+			found: (cached) => Message.FoundCachedSessions({ key, cached }),
+			succeeded: (data, fetchedAtMs) => Message.SucceededFetchSessions({ key, data, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSessions({ key, failure }))))
+	},
 })
 
 export const FetchNextPage = Command.define("FetchNextLocalSessionsPage", {
@@ -66,14 +76,23 @@ export const FetchNextPage = Command.define("FetchNextLocalSessionsPage", {
 		),
 })
 
+/** `useLocalSessionFacets`' own `staleTime`. */
+const FACETS_STALE_MS = 30_000
+
 export const FetchFacets = Command.define("FetchLocalSessionFacets", {
-	args: RequestArgs,
-	messages: [Message.SucceededFetchFacets, Message.FailedFetchFacets],
-	execute: ({ key, search, startTime, endTime, apiBase }) =>
-		fetchSessionFacets(filtersOf(new URLSearchParams(search)), { startTime, endTime }, apiBase).pipe(
-			Effect.map((facets) => Message.SucceededFetchFacets({ key, facets })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchFacets({ key, failure }))),
-		),
+	args: { ...RequestArgs, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchFacets, Message.FailedFetchFacets, Message.FoundCachedFacets],
+	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
+		withCache({
+			key: facetsKey({ search, startTime, endTime }),
+			readsCache,
+			fromCached: facetsFromCached,
+			staleMs: FACETS_STALE_MS,
+			toCached: (facets) => facets,
+			fetch: fetchSessionFacets(filtersOf(new URLSearchParams(search)), { startTime, endTime }, apiBase),
+			found: (cached) => Message.FoundCachedFacets({ key, cached }),
+			succeeded: (facets, fetchedAtMs) => Message.SucceededFetchFacets({ key, facets, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchFacets({ key, failure })))),
 })
 
 /** `ToolbarSearch`'s 300 ms pause before a typed value commits. */

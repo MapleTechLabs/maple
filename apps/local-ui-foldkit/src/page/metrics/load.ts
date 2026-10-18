@@ -43,7 +43,7 @@ export const loadSparklines = (model: Model, context: PageContext, force = false
 				onNone: () => ({ model }),
 				onSome: (sparklines) => ({
 					model: { ...model, sparklines },
-					commands: [FetchSparklines({ key, groups, bucketSeconds, ...bounds, apiBase: context.env.apiBase })],
+					commands: [FetchSparklines({ key, groups, bucketSeconds, ...bounds, apiBase: context.env.apiBase, readsCache: model.sparklines.key !== key })],
 				}),
 			})
 		},
@@ -70,8 +70,8 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 				model: sparklines.model,
 				commands: [
 					...Array.getSomes([
-						Option.map(list, () => FetchList({ key: listKey, type, search, ...bounds, apiBase })),
-						Option.map(summary, () => FetchSummary({ key: summaryKey, service, ...bounds, apiBase })),
+						Option.map(list, () => FetchList({ key: listKey, type, search, ...bounds, apiBase, readsCache: model.list.key !== listKey })),
+						Option.map(summary, () => FetchSummary({ key: summaryKey, service, ...bounds, apiBase, readsCache: model.summary.key !== summaryKey })),
 					]),
 					...(sparklines.commands ?? []),
 				],

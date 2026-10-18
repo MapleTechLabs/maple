@@ -5,17 +5,31 @@ import { Option, Result } from "effect"
 import { Command } from "foldkit"
 import { accept } from "../../data/slot"
 import { queryOf } from "../../route"
-import type { PageContext } from "../contract"
+import { type PageContext, PageOutMessage } from "../contract"
 import { updateCopy } from "../kit/copies"
 import { CopyChip, ReadRefreshClock, WaitSearchDebounce } from "./command"
 import { modeOf } from "./filters"
 import { load } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { appendPage, loadMoreIfAtEnd, openDetail } from "./stream"
+import { appendPage, loadMoreIfAtEnd, rowsOf } from "./stream"
 import { navigate, selectPattern, setRange, settleRefresh, toSections, type UpdateReturn } from "./update"
-import { closeDetail, foldAttributes, foldTabs, toggleBody } from "./update-detail"
-import { updateFetch } from "./update-fetch"
+import * as LogSheet from "../kit/log-sheet/update"
+import { closeChip, elapseDelay, enterCard, leaveCard, leaveChip, scheduleOpen } from "./update-chips"
+import { updateFetch, updateFound } from "./update-fetch"
+import { virtualWindow } from "./virtualize"
+
+/** A card whose row scrolled out of the virtual window goes with it. */
+const dropScrolledCard = (model: Model): Model => {
+	const rendered = new Set(virtualWindow(rowsOf(model).length, model.viewport))
+	return { ...model, chipCard: { ...model.chipCard, visible: Option.filter(model.chipCard.visible, (chip) => rendered.has(chip.index)) } }
+}
+
+/** Folds a sheet step into the page. */
+const liftSheet = (model: Model, step: LogSheet.UpdateReturn): UpdateReturn => ({
+	model: { ...model, maybeDetail: Option.some(step.model) },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotLogSheetMessage({ message })),
+})
 
 const debounceSearch = (model: Model, text: string): UpdateReturn => {
 	const version = model.search.version + 1
@@ -42,21 +56,25 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		CompletedReadClock: ({ nowMs }) => load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
 		SucceededFetchLogs: (fields) => updateFetch(model, Message.SucceededFetchLogs(fields), context),
 		FailedFetchLogs: (fields) => updateFetch(model, Message.FailedFetchLogs(fields), context),
+		FoundCachedLogs: (fields) => updateFound(model, Message.FoundCachedLogs(fields), context),
+		FoundCachedPatterns: (fields) => updateFound(model, Message.FoundCachedPatterns(fields), context),
+		FoundCachedServices: (fields) => updateFound(model, Message.FoundCachedServices(fields), context),
+		FoundCachedSeverities: (fields) => updateFound(model, Message.FoundCachedSeverities(fields), context),
 		SucceededFetchNextPage: ({ key, page }) => loadMoreIfAtEnd(appendPage(model, key, page), context),
 		FailedFetchNextPage: ({ key, failure }) => ({
 			model: { ...model, isFetchingNextPage: false, logs: accept(model.logs, key, Result.fail(failure)) },
 		}),
 		SucceededFetchPatterns: (fields) => updateFetch(model, Message.SucceededFetchPatterns(fields), context),
 		FailedFetchPatterns: (fields) => updateFetch(model, Message.FailedFetchPatterns(fields), context),
-		SucceededFetchServices: ({ key, options }) =>
-			({ model: settleRefresh({ ...model, services: accept(model.services, key, Result.succeed(options)) }) }),
+		SucceededFetchServices: ({ key, options, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, services: accept(model.services, key, Result.succeed(options), fetchedAtMs) }) }),
 		FailedFetchServices: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, services: accept(model.services, key, Result.fail(failure)) }) }),
-		SucceededFetchSeverities: ({ key, options }) =>
-			({ model: settleRefresh({ ...model, severities: accept(model.severities, key, Result.succeed(options)) }) }),
+		SucceededFetchSeverities: ({ key, options, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, severities: accept(model.severities, key, Result.succeed(options), fetchedAtMs) }) }),
 		FailedFetchSeverities: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, severities: accept(model.severities, key, Result.fail(failure)) }) }),
-		ChangedViewport: ({ viewport }) => loadMoreIfAtEnd({ ...model, viewport }, context),
+		ChangedViewport: ({ viewport }) => loadMoreIfAtEnd(dropScrolledCard({ ...model, viewport }), context),
 		ClickedRefresh: () =>
 			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {
@@ -65,7 +83,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
 				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return { model: settleRefresh(refetch.model), commands: refetch.commands }
+			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
 		},
 		ChangedSearch: ({ text }) => debounceSearch(model, text),
 		ClickedClearSearch: () => debounceSearch(model, ""),
@@ -81,13 +99,20 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		ClickedWidenRange: () => setRange(model, context, WIDEST_RANGE),
 		GotModeToggleMessage: ({ message: child }) => foldModeToggle(model, context, child),
 		ClickedPattern: ({ pattern }) => selectPattern(model, context, pattern.template),
-		ClickedLog: ({ log }) => ({ model: { ...model, maybeDetail: Option.some(openDetail(model.maybeDetail, log)) } }),
+		ClickedLog: ({ log }) => liftSheet(model, LogSheet.openLog(model.maybeDetail, log)),
 		ClickedChip: ({ text }) => ({ model, commands: [CopyChip({ text })] }),
 		CompletedCopyChip: () => ({ model }),
-		ClosedDetail: () => closeDetail(model),
-		ToggledBodyExpanded: () => toggleBody(model),
-		GotDetailTabsMessage: ({ message: child }) => foldTabs(model, child),
-		GotDetailAttributesMessage: ({ message: child }) => foldAttributes(model, child),
+		EnteredChip: ({ chip }) => scheduleOpen(model, chip),
+		FocusedChip: ({ chip }) => scheduleOpen(model, chip),
+		LeftChip: ({ chip }) => leaveChip(model, chip),
+		BlurredChip: ({ chip }) => closeChip(model, chip),
+		PressedChipEscape: ({ chip }) => closeChip(model, chip),
+		EnteredChipCard: () => enterCard(model),
+		LeftChipCard: () => leaveCard(model),
+		ElapsedChipDelay: ({ generation }) => elapseDelay(model, generation),
+		PlacedChipCard: () => ({ model }),
+		GotLogSheetMessage: ({ message: child }) =>
+			Option.match(model.maybeDetail, { onNone: () => ({ model }), onSome: (sheet) => liftSheet(model, LogSheet.update(sheet, child)) }),
 		GotFilterSectionsMessage: ({ message: child }) => {
 			const next = FilterSections.update(model.sections, child)
 			return { model: { ...model, sections: next.model }, commands: Command.mapMessages(next.commands ?? [], toSections) }

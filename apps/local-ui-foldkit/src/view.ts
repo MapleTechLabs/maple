@@ -11,6 +11,8 @@ import { viewPage } from "./page/registry"
 import { queryOf } from "./route"
 import { connectionOf } from "./server/derive"
 import { disconnectedState, rejectedState } from "./shell/connection-states"
+import { shownDataOf } from "./data/shown"
+import { describeNotice, staleNotice } from "./shell/stale-notice"
 import { localLockup } from "./shell/lockup"
 import { appSidebar } from "./shell/sidebar"
 import { pageContextOf } from "./update-page"
@@ -42,13 +44,25 @@ const pageView = (h: HtmlBuilder<Message>, model: Model): Html => {
 	)
 }
 
-/** Only a server that is really gone (or refusing this page) swaps the views out. */
-const mainContent = (h: HtmlBuilder<Message>, model: Model): Html => {
+/**
+ * Only a server that is really gone (or refusing this page) swaps the views out. A gone server
+ * with saved results keeps them, and the notice says what they are.
+ */
+const mainContent = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> => {
 	const connection = connectionOf(model.maybeServer)
-	if (connection.status === "disconnected") return disconnectedState(h, model)
-	if (connection.status === "rejected" && connection.rejection !== null)
-		return rejectedState(h, connection.rejection)
-	return pageView(h, model)
+	const isDisconnected = connection.status === "disconnected"
+	if (isDisconnected && !model.hasCache) return [disconnectedState(h, model)]
+	if (connection.status === "rejected" && connection.rejection !== null) return [rejectedState(h, connection.rejection)]
+	if (connection.status === "rejected") return [pageView(h, model)]
+	const nowMs = Option.match(model.maybeServer, { onNone: () => 0, onSome: (server) => server.checkedAtMs })
+	const notice = describeNotice({
+		isDisconnected,
+		isBusy: Option.exists(model.maybeServer, (server) => server.reachability === "busy"),
+		shown: shownDataOf(model.page, nowMs),
+		nowMs,
+		timeFormat: model.timeFormat,
+	})
+	return [pageView(h, model), ...(notice === null ? [] : [staleNotice(h, notice, Message.ClickedRetryStaleData())])]
 }
 
 // NOTE: Foldkit's first render replaces the container, so the view root is `div#app` itself.
@@ -77,7 +91,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
 									localLockup(h),
 								],
 							),
-							h.div([h.Class("relative min-h-0 flex-1")], [mainContent(h, model)]),
+							h.div([h.Class("relative min-h-0 flex-1")], mainContent(h, model)),
 						],
 						"h-dvh text-foreground",
 					),

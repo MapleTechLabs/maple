@@ -1,10 +1,11 @@
+import { cachedAs, readCached, recordCached, withCache } from "../../data/cached"
 import { CH } from "@maple/query-engine"
 import { LOCAL_ORG_ID } from "@maple/query-engine/local"
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { queryFirstRow, queryRows } from "../../data/local-query"
 import { Message } from "./message"
-import type { SessionDetail, SessionTrace, TranscriptEvent } from "./model"
+import { SessionDetail, SessionTrace, TranscriptEvent } from "./model"
 
 // apps/local-ui/src/hooks/use-local-session-detail.ts as Commands.
 
@@ -15,10 +16,13 @@ export const ReadClock = Command.define("ReadSessionDetailClock", {
 
 /** Finalized metadata for one session (latest ReplacingMergeTree version), or null. */
 export const FetchDetail = Command.define("FetchLocalSessionDetail", {
-	args: { key: Schema.String, sessionId: Schema.String, apiBase: Schema.String },
-	messages: [Message.SucceededFetchDetail, Message.FailedFetchDetail],
-	execute: ({ key, sessionId, apiBase }) =>
+	args: { key: Schema.String, sessionId: Schema.String, apiBase: Schema.String, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchDetail, Message.FailedFetchDetail, Message.FoundCachedDetail],
+	execute: ({ key, sessionId, apiBase, readsCache }) =>
 		Effect.gen(function* () {
+			const cacheKey = ["local", "session", sessionId]
+			const maybeCached = readsCache ? yield* readCached(cacheKey, cachedAs(Schema.NullOr(SessionDetail))) : Option.none()
+			if (Option.isSome(maybeCached)) return Message.FoundCachedDetail({ key, cached: maybeCached.value })
 			const row = yield* queryFirstRow(CH.compile(CH.getSessionReplayQuery(), { orgId: LOCAL_ORG_ID, sessionId }), apiBase)
 			const fetchedAtMs = yield* Clock.currentTimeMillis
 			const detail = Option.match(row, {
@@ -44,20 +48,25 @@ export const FetchDetail = Command.define("FetchLocalSessionDetail", {
 					traceIds: session.traceIds,
 				}),
 			})
+			yield* recordCached(cacheKey, detail, fetchedAtMs)
 			return Message.SucceededFetchDetail({ key, detail, fetchedAtMs })
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchDetail({ key, failure })))),
 })
 
 /** Distilled event transcript (navigation / click / console / network / error). */
 export const FetchTranscript = Command.define("FetchLocalSessionTranscript", {
-	args: { key: Schema.String, sessionId: Schema.String, apiBase: Schema.String },
-	messages: [Message.SucceededFetchTranscript, Message.FailedFetchTranscript],
-	execute: ({ key, sessionId, apiBase }) =>
-		queryRows(CH.compile(CH.sessionTranscriptQuery({ limit: 250 }), { orgId: LOCAL_ORG_ID, sessionId }), apiBase).pipe(
-			Effect.map((rows) =>
-				Message.SucceededFetchTranscript({
-					key,
-					events: rows.map(
+	args: { key: Schema.String, sessionId: Schema.String, apiBase: Schema.String, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchTranscript, Message.FailedFetchTranscript, Message.FoundCachedTranscript],
+	execute: ({ key, sessionId, apiBase, readsCache }) =>
+		withCache({
+			key: ["local", "session-transcript", sessionId],
+			readsCache,
+			fromCached: cachedAs(Schema.Array(TranscriptEvent)),
+			toCached: (events: ReadonlyArray<TranscriptEvent>) => events,
+			fetch: Effect.map(
+				queryRows(CH.compile(CH.sessionTranscriptQuery({ limit: 250 }), { orgId: LOCAL_ORG_ID, sessionId }), apiBase),
+				(rows): ReadonlyArray<TranscriptEvent> =>
+					rows.map(
 						(row): TranscriptEvent => ({
 							timestamp: row.timestamp,
 							seq: row.seq,
@@ -74,22 +83,26 @@ export const FetchTranscript = Command.define("FetchLocalSessionTranscript", {
 							errorStack: row.errorStack,
 						}),
 					),
-				}),
 			),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchTranscript({ key, failure }))),
-		),
+			found: (cached) => Message.FoundCachedTranscript({ key, cached }),
+			succeeded: (events, fetchedAtMs) => Message.SucceededFetchTranscript({ key, events, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchTranscript({ key, failure })))),
 })
 
 /** Per-trace summaries for the session's correlated backend traces. */
 export const FetchTraces = Command.define("FetchLocalSessionTraces", {
-	args: { key: Schema.String, traceIds: Schema.Array(Schema.String), apiBase: Schema.String },
-	messages: [Message.SucceededFetchTraces, Message.FailedFetchTraces],
-	execute: ({ key, traceIds, apiBase }) =>
-		queryRows(CH.compile(CH.sessionTraceSummariesQuery({ traceIds }), { orgId: LOCAL_ORG_ID }), apiBase).pipe(
-			Effect.map((rows) =>
-				Message.SucceededFetchTraces({
-					key,
-					traces: rows.map(
+	args: { key: Schema.String, traceIds: Schema.Array(Schema.String), apiBase: Schema.String, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchTraces, Message.FailedFetchTraces, Message.FoundCachedTraces],
+	execute: ({ key, traceIds, apiBase, readsCache }) =>
+		withCache({
+			key: ["local", "session-traces", traceIds],
+			readsCache,
+			fromCached: cachedAs(Schema.Array(SessionTrace)),
+			toCached: (traces: ReadonlyArray<SessionTrace>) => traces,
+			fetch: Effect.map(
+				queryRows(CH.compile(CH.sessionTraceSummariesQuery({ traceIds }), { orgId: LOCAL_ORG_ID }), apiBase),
+				(rows): ReadonlyArray<SessionTrace> =>
+					rows.map(
 						(row): SessionTrace => ({
 							traceId: row.traceId,
 							durationMs: row.durationMs,
@@ -99,8 +112,8 @@ export const FetchTraces = Command.define("FetchLocalSessionTraces", {
 							hasError: row.hasError,
 						}),
 					),
-				}),
 			),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchTraces({ key, failure }))),
-		),
+			found: (cached) => Message.FoundCachedTraces({ key, cached }),
+			succeeded: (traces, fetchedAtMs) => Message.SucceededFetchTraces({ key, traces, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchTraces({ key, failure })))),
 })

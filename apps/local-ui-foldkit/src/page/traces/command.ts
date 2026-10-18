@@ -1,6 +1,8 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
+import { readCached, recordCached } from "../../data/cached"
 import type { LoadFailure } from "../../data/local-query"
+import { facetsFromCached, facetsKey, facetsToCached, pagesFromCached, pagesToCached, tracesKey } from "./cache"
 import { fetchTraceFacets } from "./fetch-facets"
 import { fetchTracePage, nextCursor, type TraceCursor } from "./fetch-traces"
 import { filtersOf } from "./filters"
@@ -40,18 +42,24 @@ const fetchPages = <R>(
 		return remaining <= 1 || next === undefined ? Effect.succeed(pages) : fetchPages(run, remaining - 1, next, pages)
 	})
 
+/** `readsCache`: a key the page has no rows for yet opens on its cached result first. */
 export const FetchTraces = Command.define("FetchLocalTraces", {
-	args: { ...RequestArgs, pageCount: Schema.Number },
-	messages: [Message.SucceededFetchTraces, Message.FailedFetchTraces],
-	execute: ({ key, search, startTime, endTime, apiBase, pageCount }) =>
+	args: { ...RequestArgs, pageCount: Schema.Number, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchTraces, Message.FailedFetchTraces, Message.FoundCachedTraces],
+	execute: ({ key, search, startTime, endTime, apiBase, pageCount, readsCache }) =>
 		Effect.gen(function* () {
+			const cacheKey = tracesKey({ search, startTime, endTime })
+			const maybeCached = readsCache ? yield* readCached(cacheKey, pagesFromCached) : Option.none()
+			if (Option.isSome(maybeCached)) return Message.FoundCachedTraces({ key, cached: maybeCached.value })
 			const filters = filtersOf(new URLSearchParams(search))
 			const run = (cursor: TraceCursor | undefined) =>
 				fetchTracePage(filters, { startTime, endTime }, cursor, apiBase)
 			const pages = yield* fetchPages(run, pageCount, undefined, [])
 			const last = pages[pages.length - 1] ?? []
 			const fetchedAtMs = yield* Clock.currentTimeMillis
-			return Message.SucceededFetchTraces({ key, data: { pages, hasNextPage: nextCursor(last) !== undefined }, fetchedAtMs })
+			const data = { pages, hasNextPage: nextCursor(last) !== undefined }
+			yield* recordCached(cacheKey, pagesToCached(data), fetchedAtMs)
+			return Message.SucceededFetchTraces({ key, data, fetchedAtMs })
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchTraces({ key, failure })))),
 })
 
@@ -70,14 +78,22 @@ export const FetchNextPage = Command.define("FetchNextLocalTracesPage", {
 		),
 })
 
+/** `useLocalTraceFacets`' own `staleTime`. */
+const FACETS_STALE_MS = 15_000
+
 export const FetchFacets = Command.define("FetchLocalTraceFacets", {
-	args: RequestArgs,
-	messages: [Message.SucceededFetchFacets, Message.FailedFetchFacets],
-	execute: ({ key, search, startTime, endTime, apiBase }) =>
-		fetchTraceFacets(filtersOf(new URLSearchParams(search)), { startTime, endTime }, apiBase).pipe(
-			Effect.map((facets) => Message.SucceededFetchFacets({ key, facets })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchFacets({ key, failure }))),
-		),
+	args: { ...RequestArgs, readsCache: Schema.Boolean },
+	messages: [Message.SucceededFetchFacets, Message.FailedFetchFacets, Message.FoundCachedFacets],
+	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
+		Effect.gen(function* () {
+			const cacheKey = facetsKey({ search, startTime, endTime })
+			const maybeCached = readsCache ? yield* readCached(cacheKey, facetsFromCached, FACETS_STALE_MS) : Option.none()
+			if (Option.isSome(maybeCached)) return Message.FoundCachedFacets({ key, cached: maybeCached.value })
+			const facets = yield* fetchTraceFacets(filtersOf(new URLSearchParams(search)), { startTime, endTime }, apiBase)
+			const fetchedAtMs = yield* Clock.currentTimeMillis
+			yield* recordCached(cacheKey, facetsToCached(facets), fetchedAtMs)
+			return Message.SucceededFetchFacets({ key, facets, fetchedAtMs })
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchFacets({ key, failure })))),
 })
 
 /** `ToolbarSearch`'s and `RangeFilterSection`'s 300 ms pause before a typed value commits. */

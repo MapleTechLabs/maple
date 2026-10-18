@@ -15,6 +15,7 @@ const context: PageContext = {
 	env,
 	location: { path: "/sessions/sess-1", search: "range=1h&spanId=abc" },
 	rememberedRange: "1h",
+	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 }
 const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, hasNewDataSince: () => false }

@@ -45,8 +45,10 @@ export const loadDependents = (model: Model, context: PageContext, force = false
 			breakdown: Option.getOrElse(breakdown, () => model.breakdown),
 		},
 		commands: Array.getSomes([
-			Option.map(timeseries, () => FetchTimeseries({ key: timeseriesKey, entry, bucketSeconds, ...bounds, apiBase })),
-			Option.map(breakdown, () => FetchBreakdown({ key: breakdownKey, entry, ...bounds, apiBase })),
+			Option.map(timeseries, () =>
+				FetchTimeseries({ key: timeseriesKey, entry, bucketSeconds, ...bounds, apiBase, readsCache: !force && model.timeseries.key !== timeseriesKey }),
+			),
+			Option.map(breakdown, () => FetchBreakdown({ key: breakdownKey, entry, ...bounds, apiBase, readsCache: !force && model.breakdown.key !== breakdownKey })),
 		]),
 	}
 }
@@ -64,7 +66,7 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 				commands: [
 					...Array.getSomes([
 						Option.map(entry, () =>
-							FetchEntry({ key, metricName: model.metricName, ...bounds, apiBase: context.env.apiBase }),
+							FetchEntry({ key, metricName: model.metricName, ...bounds, apiBase: context.env.apiBase, readsCache: !force && model.entry.key !== key }),
 						),
 					]),
 					...(dependents.commands ?? []),

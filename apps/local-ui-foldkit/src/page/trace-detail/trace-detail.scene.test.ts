@@ -19,6 +19,7 @@ const contextAt = (search: string): PageContext => ({
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
 	location: { path: `/traces/${TRACE_ID}`, search },
 	rememberedRange: "1h",
+	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 })
 const context = contextAt("")
@@ -92,5 +93,28 @@ describe("local trace detail", () => {
 		const open = answered(init(ctx, TRACE_ID).model, Option.some(trace), ctx).model
 		const closed = update(open, Message.PressedEscape(), ctx)
 		expect(closed.outMessage).toEqual(PageOutMessage.RequestedNavigation({ hash: `#/traces/${TRACE_ID}`, isReplace: true }))
+	})
+
+	test("a row of the span's Logs tab opens the log sheet on that log", () => {
+		const ctx = contextAt(`spanId=${SPAN_ID}`)
+		const open = answered(init(ctx, TRACE_ID).model, Option.some(trace), ctx).model
+		const spanLog = {
+			key: "k1",
+			timestamp: "2026-10-01 11:59:00.004000000",
+			severityText: "ERROR",
+			severityNumber: 17,
+			serviceName: "storefront",
+			body: "card declined",
+			traceId: TRACE_ID,
+			spanId: SPAN_ID,
+			recordIdentity: "1",
+			logAttributes: {},
+			resourceAttributes: {},
+		}
+		const logsKey = open.panel?.logs.key ?? ""
+		const withLogs = update(open, Message.SucceededFetchSpanLogs({ key: logsKey, logs: [spanLog], fetchedAtMs: NOW }), ctx).model
+		const clicked = update(withLogs, Message.ClickedSpanLog({ log: spanLog }), ctx).model
+		const sheet = Option.getOrNull(clicked.panel?.maybeLogSheet ?? Option.none())
+		expect([sheet?.dialog.isOpen, sheet?.log.body]).toEqual([true, "card declined"])
 	})
 })

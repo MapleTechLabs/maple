@@ -20,6 +20,7 @@ export const Message = defineMessageUnion({
 	CompletedProbeServer: { outcome: ProbeOutcome, checkedAtMs: Schema.Number },
 	ElapsedProbeDelay: { version: Schema.Number },
 	ClickedRetryConnection: {},
+	ClickedRetryStaleData: {},
 	ClickedToggleSidebar: {},
 	PressedSidebarShortcut: {},
 	CompletedSaveSidebarState: {},

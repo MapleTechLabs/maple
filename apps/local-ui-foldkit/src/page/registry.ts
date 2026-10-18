@@ -136,6 +136,27 @@ export const updatePage = (page: PageModel, message: PageMessage, context: PageC
 	})
 }
 
+/** The notice's Try again: the open page's own refresh, where it has one. */
+export const refreshPage = (page: PageModel, context: PageContext): PageReturn => {
+	if (page._tag === "TracesPage") return updatePage(page, PageMessage.GotTracesMessage({ message: Traces.Message.ClickedRefresh() }), context)
+	if (page._tag === "TraceDetailPage")
+		return updatePage(page, PageMessage.GotTraceDetailMessage({ message: TraceDetail.Message.ClickedRefresh() }), context)
+	if (page._tag === "LogsPage") return updatePage(page, PageMessage.GotLogsMessage({ message: Logs.Message.ClickedRefresh() }), context)
+	if (page._tag === "MetricsPage") return updatePage(page, PageMessage.GotMetricsMessage({ message: Metrics.Message.ClickedRefresh() }), context)
+	if (page._tag === "MetricDetailPage")
+		return updatePage(page, PageMessage.GotMetricDetailMessage({ message: MetricDetail.Message.ClickedRefresh() }), context)
+	if (page._tag === "ServicesPage") return updatePage(page, PageMessage.GotServicesMessage({ message: Services.Message.ClickedRefresh() }), context)
+	if (page._tag === "ServiceDetailPage")
+		return updatePage(page, PageMessage.GotServiceDetailMessage({ message: ServiceDetail.Message.ClickedRefresh() }), context)
+	if (page._tag === "ServiceMapPage")
+		return updatePage(page, PageMessage.GotServiceMapMessage({ message: ServiceMap.Message.ClickedRefresh() }), context)
+	if (page._tag === "ErrorsPage") return updatePage(page, PageMessage.GotErrorsMessage({ message: Errors.Message.ClickedRefresh() }), context)
+	if (page._tag === "SessionsPage") return updatePage(page, PageMessage.GotSessionsMessage({ message: Sessions.Message.ClickedRefresh() }), context)
+	if (page._tag === "SessionDetailPage")
+		return updatePage(page, PageMessage.GotSessionDetailMessage({ message: SessionDetail.Message.ClickedRefresh() }), context)
+	return { model: page }
+}
+
 /** The open page sees a new fragment (filters, range, selection) without being rebuilt. */
 export const locationChanged = (page: PageModel, context: PageContext): PageReturn => {
 	if (page._tag === "TracesPage") return lift(Traces.locationChanged(page, context), toTraces)

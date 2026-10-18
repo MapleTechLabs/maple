@@ -44,9 +44,26 @@ export const load = (
 					isFetchingNextPage: Option.isSome(sessions) ? false : model.isFetchingNextPage,
 				},
 				commands: Array.getSomes([
-					Option.map(sessions, () => FetchSessions({ key: sessionsKey, ...args, pageCount })),
-					Option.map(facets, () => FetchFacets({ key: facetsKey, ...args })),
+					Option.map(sessions, () => FetchSessions({ key: sessionsKey, ...args, pageCount, readsCache: model.sessions.key !== sessionsKey })),
+					Option.map(facets, () => FetchFacets({ key: facetsKey, ...args, readsCache: model.facets.key !== facetsKey })),
 				]),
 			}
 		},
 	})
+
+/** A cached result is on screen: fetch the real one (`readsCache: false`), unless it is fresh. */
+export const fetchAfterCache = (
+	model: Model,
+	context: PageContext,
+	which: "sessions" | "facets",
+	isFresh: boolean,
+): ReadonlyArray<Command.Command<Message, never, Resources>> =>
+	isFresh
+		? []
+		: Option.match(boundsOf(model, context), {
+				onNone: () => [],
+				onSome: (bounds) => {
+					const args = { key: model[which].key ?? "", search: context.location.search, ...bounds, apiBase: context.env.apiBase, readsCache: false }
+					return [which === "sessions" ? FetchSessions({ ...args, pageCount: 1 }) : FetchFacets(args)]
+				},
+			})

@@ -42,6 +42,7 @@ export const init = (context: PageContext): InitReturn => {
 			maybeDetail: Option.none(),
 			isRefreshing: false,
 			copies: {},
+			chipCard: { visible: Option.none(), pendingOpen: Option.none(), pendingClose: Option.none(), generation: 0 },
 		},
 		commands: [ReadClock(), Command.mapMessage(FilterSections.ReadRemembered(), toSections)],
 	}

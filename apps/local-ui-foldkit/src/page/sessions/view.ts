@@ -61,7 +61,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h.div(
 					[h.Class("space-y-2")],
 					sessions.map((session) =>
-						sessionCard(h, session, hrefFor(`/sessions/${encodeURIComponent(session.sessionId)}`, query), model.nowMs),
+						sessionCard(h, session, hrefFor(`/sessions/${encodeURIComponent(session.sessionId)}`, query), model.nowMs, context.timeFormat),
 					),
 				),
 				...(footer === null ? [] : [footer]),

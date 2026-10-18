@@ -1,4 +1,5 @@
-import { formatLocalTimestamp, formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatUtcTitle } from "@maple/local-ui/lib/time"
+import { formatTimestamp, type TimeFormat } from "../kit/local-time"
 import { countLabel } from "@maple/ui/lib/format"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
@@ -9,7 +10,8 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { firstLineOf, rowChips, severityLabel } from "./derive"
 import { Message } from "./message"
-import type { LocalLog } from "./model"
+import type { ChipRef, LocalLog } from "./model"
+import { logKey } from "./stream"
 import { highlightedText } from "./view-highlight"
 
 // `LogRow` (apps/local-ui/src/views/logs-view.tsx): one 36 px line of the virtualized stream.
@@ -26,34 +28,47 @@ const SEVERITY_ROW: ReadonlyMap<string, string> = new Map([
 /** Debug and trace chatter is read last, so its message is set back a step. */
 const QUIET_SEVERITIES = new Set(["DEBUG", "TRACE"])
 
-const chipsView = (h: HtmlBuilder<Message>, log: LocalLog): ReadonlyArray<Html> => {
+/** The anchor a chip's hover card is placed under. */
+export const chipId = (chip: ChipRef): string => `log-chip-${chip.index}-${chip.key}`
+
+const chipsView = (h: HtmlBuilder<Message>, log: LocalLog, index: number): ReadonlyArray<Html> => {
 	const chips = rowChips(log)
+	const key = logKey(log)
 	if (chips.length === 0) return []
 	return [
 		h.div(
 			[h.Class("hidden h-5 min-w-0 max-w-[30%] flex-wrap items-center justify-end gap-1 overflow-hidden md:flex")],
-			chips.map((chip) =>
-				h.button(
+			chips.map((chip) => {
+				const ref = { index, logKey: key, key: chip.key }
+				return h.button(
 					[
 						h.Type("button"),
+						h.Id(chipId(ref)),
 						h.AriaLabel(`Copy ${chip.key}=${chip.value}`),
 						h.Class(cn(CHIP_CLASS, CHIP_TONE_CLASSES[chip.tone])),
+						h.OnMouseEnter(Message.EnteredChip({ chip: ref })),
+						h.OnMouseLeave(Message.LeftChip({ chip: ref })),
+						h.OnFocus(Message.FocusedChip({ chip: ref })),
+						h.OnBlur(Message.BlurredChip({ chip: ref })),
 						h.OnClick(Message.ClickedChip({ text: `${chip.key}=${chip.value}` }), { propagation: "Stop" }),
+						h.OnKeyDownPreventDefault((pressed) =>
+							pressed === "Escape" ? Option.some(Message.PressedChipEscape({ chip: ref })) : Option.none(),
+						),
 					],
 					[
 						h.span([h.Class("shrink-0 opacity-70")], [chip.displayKey]),
 						h.span([h.Class("shrink-0 opacity-40")], [":"]),
 						h.span([h.Class("min-w-0 truncate")], [chip.displayValue]),
 					],
-				),
-			),
+				)
+			}),
 		),
 	]
 }
 
 export const logRow = (
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ log: LocalLog; search: string | undefined; top: number; isSelected: boolean; nowMs: number }>,
+	options: Readonly<{ log: LocalLog; index: number; search: string | undefined; top: number; isSelected: boolean; nowMs: number; timeFormat: TimeFormat }>,
 ): Html => {
 	const { log, search } = options
 	const firstLine = firstLineOf(log.body, search)
@@ -86,7 +101,7 @@ export const logRow = (
 		[
 			h.span(
 				[h.Class("w-36 shrink-0 truncate text-foreground/75 tabular-nums"), h.Title(formatUtcTitle(log.timestamp))],
-				[formatLocalTimestamp(log.timestamp, { nowMs: options.nowMs })],
+				[formatTimestamp(options.timeFormat, log.timestamp, { nowMs: options.nowMs })],
 			),
 			h.span(
 				[
@@ -124,7 +139,7 @@ export const logRow = (
 						: []),
 				],
 			),
-			...chipsView(h, log),
+			...chipsView(h, log, options.index),
 		],
 	)
 }
