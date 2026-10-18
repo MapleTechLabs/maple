@@ -2,7 +2,7 @@ import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
 import { subscriptions } from "./subscription"
-import { contextChanged, init, routeChanged, update } from "./update"
+import { contextChanged, init, preload, routeChanged, update } from "./update"
 import { view } from "./view"
 
 /** `/services`: the services list. One instance per org; search changes arrive as `routeChanged`. */
@@ -12,6 +12,7 @@ export const page = definePage(
 	{
 		routes: ["Services"],
 		init,
+		preload,
 		update,
 		routeChanged,
 		contextChanged,

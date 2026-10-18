@@ -182,6 +182,26 @@ export const enterRoute = (current: PageSlot | null, route: AppRoute, context: P
 		},
 	)
 
+/** Link intent (`page/preload.ts`): the route's page's preload Commands, or none. */
+export const preloadRoute = (
+	route: AppRoute,
+	context: PageContext,
+	nowMs: number,
+): ReadonlyArray<Command.Command<PageMessage, never, Resources>> =>
+	Option.getOrElse(
+		Array.findFirst(pages, (page) => Option.isSome(page.keyOf(route))).pipe(
+			Option.flatMap(
+				(page): Option.Option<ReadonlyArray<Command.Command<PageMessage, never, Resources>>> =>
+					page.preload(route, context, nowMs),
+			),
+		),
+		() => [],
+	)
+
+/** A page instance's identity: a new one starts with nothing held. */
+export const pageIdentity = (slot: PageSlotBase | null): string =>
+	slot === null ? "" : `${slot._tag}:${slot.key}:${slot.orgId}`
+
 export const updatePage = (
 	current: PageSlot | null,
 	message: PageMessageBase,

@@ -6,20 +6,32 @@ import { Command, Update } from "foldkit"
 import { UrlRequest } from "foldkit/navigation"
 import { Transition } from "foldkit/route"
 import { modifyFields } from "foldkit/struct"
-import { toString as urlToString } from "foldkit/url"
+import { fromString as urlFromString, toString as urlToString } from "foldkit/url"
 import {
 	CheckSession,
+	DeliverPreloaded,
+	HoldPreloads,
 	LoadExternal,
 	NavigateInternal,
 	ReplaceUrl,
 	SaveSessionToken,
 	WaitForAuthSettle,
+	WaitPreloadDelay,
 } from "./command"
 import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { rendersShell } from "./page/chrome"
 import { type PageContext, PageOutMessage } from "./page/contract"
-import { changeContext, enterRoute, PageMessage, type PageTransition, updatePage } from "./page/registry"
+import * as Preload from "./page/preload"
+import {
+	changeContext,
+	enterRoute,
+	PageMessage,
+	pageIdentity,
+	preloadRoute,
+	type PageTransition,
+	updatePage,
+} from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import type { ClerkSnapshot } from "./platform/clerk"
@@ -181,12 +193,12 @@ const writePage =
 			),
 			{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
 		)
+		const seeded = Preload.seeded(toasted.model.preload, pageIdentity(transition.slot), transition.commands)
 		return {
-			model: modifyFields(toasted.model, { page: () => transition.slot }),
+			model: modifyFields(toasted.model, { page: () => transition.slot, preload: () => seeded.model }),
 			commands: [
-				...transition.commands.map(
-					Command.mapMessage((message) => Message.GotPageMessage({ message })),
-				),
+				...seeded.commands.map(Command.mapMessage((message) => Message.GotPageMessage({ message }))),
+				...seeded.delivered.map((message) => DeliverPreloaded({ message })),
 				...Option.match(transition.outMessage, {
 					onNone: () => [],
 					onSome: PageOutMessage.match({
@@ -322,6 +334,34 @@ const appliedClerkSnapshot =
 		return isPublicRoute(model.route) ? signedOut(model) : { model, commands: [WaitForAuthSettle()] }
 	}
 
+// PRELOAD
+
+const withPreload = (model: Model, preload: Preload.Model) => modifyFields(model, { preload: () => preload })
+
+/** The delay elapsed on a link still intended: run its route's page preload under that route's context. */
+const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
+	Option.match(
+		Option.flatMap(urlFromString(href), (url) => {
+			const route = urlToAppRoute(url)
+			return Option.map(pageContextOf(modifyFields(model, { route: () => route })), (context) =>
+				preloadRoute(route, context, nowMs),
+			)
+		}),
+		{
+			onNone: () => ({ model }),
+			onSome: (commands) => {
+				const started = Preload.started(model.preload, commands)
+				return {
+					model: withPreload(model, started.model),
+					commands: [
+						...started.commands.map(Command.mapMessage((message) => Message.GotPreloadMessage({ message }))),
+						...(started.keys.length === 0 ? [] : [HoldPreloads({ keys: started.keys })]),
+					],
+				}
+			},
+		},
+	)
+
 // UPDATE
 
 export const update = (model: Model, message: Message) =>
@@ -362,4 +402,30 @@ export const update = (model: Model, message: Message) =>
 				? toPage(model, model.toastActions[message.toastId])
 				: foldToasts(model, message),
 		GotPageMessage: ({ message }) => toPage(model, message),
+		IntendedLink: ({ href, isImmediate }) =>
+			Option.match(Preload.intended(model.preload, href), {
+				onNone: () => ({ model }),
+				onSome: (next) => ({
+					model: withPreload(model, next.model),
+					commands: [
+						WaitPreloadDelay({ href, version: next.version, delayMs: isImmediate ? 0 : Preload.PRELOAD_DELAY_MS }),
+					],
+				}),
+			}),
+		EndedLinkIntent: ({ href }) => ({ model: withPreload(model, Preload.ended(model.preload, href)) }),
+		ElapsedPreloadDelay: ({ href, version, nowMs }) =>
+			Option.match(Preload.elapsed(model.preload, href, version), {
+				onNone: () => ({ model }),
+				onSome: (preload) => preloadLink(withPreload(model, preload), href, nowMs),
+			}),
+		GotPreloadMessage: ({ message }) =>
+			Option.match(Preload.answered(model.preload, message), {
+				onNone: () => ({ model }),
+				onSome: ({ model: preload, forward }) =>
+					Option.match(forward, {
+						onNone: () => ({ model: withPreload(model, preload) }),
+						onSome: (forwarded) => toPage(withPreload(model, preload), forwarded),
+					}),
+			}),
+		ExpiredPreloads: ({ keys }) => ({ model: withPreload(model, Preload.expired(model.preload, keys)) }),
 	})

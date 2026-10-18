@@ -33,5 +33,11 @@ export const Message = defineMessageUnion({
 	GotShellMessage: { message: Shell.Message },
 	GotToastMessage: { message: Toast.Message },
 	GotPageMessage: { message: PageMessage },
+	/** Link intent (`page/preload.ts`): hovered, focused or touched; left or blurred. */
+	IntendedLink: { href: Schema.String, isImmediate: Schema.Boolean },
+	EndedLinkIntent: { href: Schema.String },
+	ElapsedPreloadDelay: { href: Schema.String, version: Schema.Number, nowMs: Schema.Number },
+	GotPreloadMessage: { message: PageMessage },
+	ExpiredPreloads: { keys: Schema.Array(Schema.String) },
 })
 export type Message = typeof Message.Type

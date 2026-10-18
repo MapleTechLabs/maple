@@ -5,6 +5,7 @@ import type { Url } from "foldkit/url"
 import { CheckSession, LoadClerk } from "./command"
 import type { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
+import * as Preload from "./page/preload"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { readSessionToken } from "./platform/auth-api"
@@ -52,6 +53,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		toasts: Toast.init("toasts"),
 		toastActions: {},
 		page: null,
+		preload: Preload.init(),
 		timeZone: flags.timeZone,
 	}
 

@@ -1,4 +1,4 @@
-import { definePage } from "../../contract"
+import { definePage, pickCommands } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
@@ -12,6 +12,8 @@ export const page = definePage(
 		routes: ["Trace"],
 		key: (route) => route.traceId,
 		init,
+		/** `warmAtoms([getSpanHierarchyResultAtom({ traceId, timestamp: t })])` in the route loader. */
+		preload: (route, context) => pickCommands(init(route, context), ["FetchSpanHierarchy"]),
 		update,
 		routeChanged,
 		contextChanged,

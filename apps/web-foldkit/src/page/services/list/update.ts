@@ -3,10 +3,10 @@ import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
-import type { TimeWindow } from "../../../data/time-range"
+import { resolveWindow, type TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import * as FilterSections from "../../../ui/filters/filter-sections"
-import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { Resources } from "../../../platform/resources"
@@ -305,6 +305,29 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 }
 
 /** The search changed (a filter, the window, grouping): re-resolve and re-request. */
+/**
+ * `servicesRouteAtoms(search)`, warmed on link intent: the facets, overview and sparklines for the
+ * snapped window. Built from search alone, so the namespace pin is not applied (legacy's loader).
+ */
+export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
+	const { model } = init(route, context)
+	const window = resolveWindow(
+		{
+			startTime: model.search.startTime,
+			endTime: model.search.endTime,
+			preset: model.search.timePreset ?? DEFAULT_PRESET,
+			snap: true,
+			timeZone: context.timeZone,
+		},
+		nowMs,
+	)
+	return pickCommands(requestAll(model, { ...context, pinnedNamespace: null }, window, "Load"), [
+		FetchOverview.name,
+		FetchSparklines.name,
+		FetchFacets.name,
+	])
+}
+
 export const routeChanged = (
 	model: Model,
 	route: { readonly search: Search },

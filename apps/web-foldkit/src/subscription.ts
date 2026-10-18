@@ -6,6 +6,7 @@ import type { Resources } from "./platform/resources"
 import type { Model } from "./model"
 import { SELF_HOSTED_AUTH_EVENT } from "./platform/auth-api"
 import { rendersShell } from "./page/chrome"
+import * as Preload from "./page/preload"
 import { pageSubscriptions } from "./page/registry"
 import { pageContextOf } from "./update"
 import { clerkSnapshots } from "./platform/clerk"
@@ -102,6 +103,24 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				Stream.when(
 					Stream.map(Shell.versionChecks, (message) => Message.GotShellMessage({ message })),
 					Effect.sync(() => isPolling),
+				),
+		},
+	),
+	/** `defaultPreload: "intent"`: link hover, focus and touch, while a shell page is open. */
+	linkIntent: entry(
+		{ isShellOpen: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({
+				isShellOpen: model.session._tag === "SignedIn" && rendersShell(model.route),
+			}),
+			dependenciesToStream: ({ isShellOpen }) =>
+				Stream.when(
+					Stream.map(Preload.linkIntents, (intent) =>
+						intent._tag === "Intended"
+							? Message.IntendedLink({ href: intent.href, isImmediate: intent.isImmediate })
+							: Message.EndedLinkIntent({ href: intent.href }),
+					),
+					Effect.sync(() => isShellOpen),
 				),
 		},
 	),

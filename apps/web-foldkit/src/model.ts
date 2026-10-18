@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
+import * as Preload from "./page/preload"
 import { PageMessage, PageSlot } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import * as Toast from "./ui/toast"
@@ -37,6 +38,8 @@ export const Model = Schema.Struct({
 	toastActions: Schema.Record(Schema.String, PageMessage),
 	/** The routed page (`page/registry.ts`): built on route entry, dropped on leave. */
 	page: Schema.NullOr(PageSlot),
+	/** Link-intent preloads waiting for their page (`page/preload.ts`). */
+	preload: Preload.Model,
 	/** `useTimezonePreference().effectiveTimezone`, read at boot. */
 	timeZone: Schema.String,
 })
