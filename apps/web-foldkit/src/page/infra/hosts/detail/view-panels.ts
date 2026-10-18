@@ -7,14 +7,8 @@ import { panel, panelHeader } from "../../../../ui/panel"
 import { middleTruncate } from "../../../../ui/middle-truncate"
 import { formatValueWithUnit } from "@maple/web/components/infra/chart-units"
 import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "../../../../charts/linked-cursor"
-import {
-	chartError,
-	chartLoadingIn,
-	chartPlotArea,
-	INFRA_METRIC_CHART_HEIGHT,
-	type InfraSeriesInfo,
-	view as metricChartView,
-} from "../../kit/metric-chart"
+import { INFRA_METRIC_CHART_HEIGHT, type InfraSeriesInfo, metricView as metricChartView } from "../../../../charts/infra-metric-chart"
+import { chartError, chartLoading, chartPlotArea } from "../../../../ui/chart-state"
 import { attributeSection, metaRow, resourceAttributesCard } from "../../kit/resource-attributes"
 import { seriesLegend } from "../../../kit/series-legend"
 import { formatSeen } from "../../../metrics/time-format"
@@ -84,11 +78,11 @@ const stripChart = (h: H, model: Model, metric: HostMetric, timeZone: string): H
 	const data = slot === undefined ? AsyncData.Idle() : slot.data
 	const theme = model.themeColors
 	return AsyncData.matchData(data, {
-		onEmpty: () => chartLoadingIn(h, "area"),
-		onFailure: (failure) => chartError(h, failure.message),
+		onEmpty: () => chartLoading(h, { variant: "area" }),
+		onFailure: (failure) => chartError(h, {}, [failure.message]),
 		onData: (series) =>
 			theme === null || model.chartRuntime._tag === "Loading"
-				? chartLoadingIn(h, "area")
+				? chartLoading(h, { variant: "area" })
 				: h.submodel({
 						slotId: `host-chart-${metric}`,
 						model: model.charts[metric] ?? Chart.init(),

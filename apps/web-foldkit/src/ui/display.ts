@@ -4,7 +4,7 @@ import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { kbdGroupStyles, kbdStyles } from "@maple/ui/styles/ui/kbd"
 import { separatorStyles } from "@maple/ui/styles/ui/separator"
 import type { VariantProps } from "class-variance-authority"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 
 type Children = ReadonlyArray<Html | string>
 
@@ -23,7 +23,7 @@ export const kbdGroup = <Message>(
 ): Html => h.kbd([h.Class(cn(kbdGroupStyles, className)), h.DataAttribute("slot", "kbd-group")], children)
 
 export type BadgeOptions<Message = never> = VariantProps<typeof badgeVariants> &
-	Readonly<{ className?: string; attributes?: ReadonlyArray<Attribute<Message>> }>
+	Readonly<{ className?: string; attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute> }>
 
 /** `<Badge>`: the same `badgeVariants` call, className folded in by cva. */
 export const badge = <Message>(

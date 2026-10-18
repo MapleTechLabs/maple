@@ -11,6 +11,12 @@ import { renderToStaticMarkup } from "../../web/node_modules/react-dom/server.no
 import * as UiIcons from "../../../packages/ui/src/components/icons/index.ts"
 import { MAPLE_MARK_PATH } from "../../../packages/ui/src/components/icons/maple-mark.tsx"
 import * as WebIcons from "../../web/src/components/icons/index.ts"
+// Outside the apps/web barrel (its chunk loads at startup): only the Google Cloud pages draw them.
+import { CloudRunIcon } from "../../web/src/components/icons/cloud-run.tsx"
+import { GooglePubSubIcon } from "../../web/src/components/icons/google-pubsub.tsx"
+import { MysqlDolphinIcon } from "../../web/src/components/icons/mysql-dolphin.tsx"
+import { ParenthesesDotsIcon } from "../../web/src/components/icons/parentheses-dots.tsx"
+import { SqlServerIcon } from "../../web/src/components/icons/sql-server.tsx"
 
 type Icon = ComponentType<{ size?: string; className?: string }>
 
@@ -151,6 +157,17 @@ const NAMES = [
 	"SquarePlusIcon",
 	"BracketsCurlyIcon",
 	"SparkleIcon",
+	"CloudRunIcon",
+	"GooglePubSubIcon",
+	"MysqlDolphinIcon",
+	"ParenthesesDotsIcon",
+	"SqlServerIcon",
+	"SitemapIcon",
+	"GkeIcon",
+	"GoogleCloudMonoIcon",
+	"StopwatchIcon",
+	"ShieldCheckIcon",
+	"TagIcon",
 ] as const
 
 const duplicates = NAMES.filter((name, index) => NAMES.indexOf(name) !== index)
@@ -166,7 +183,16 @@ const SOURCE_OF = new Map<string, "ui" | "web">([
 const ALIASES = new Map<string, readonly ["ui" | "web", string]>([["UiLayersIcon", ["ui", "LayersIcon"]]])
 
 const uiIcons = new Map<string, Icon>(Object.entries(UiIcons))
-const webIcons = new Map<string, Icon>(Object.entries(WebIcons))
+const webIcons = new Map<string, Icon>([
+	...Object.entries(WebIcons),
+	["CloudRunIcon", CloudRunIcon],
+	["GooglePubSubIcon", GooglePubSubIcon],
+	["MysqlDolphinIcon", MysqlDolphinIcon],
+	["ParenthesesDotsIcon", ParenthesesDotsIcon],
+	["SqlServerIcon", SqlServerIcon],
+	// `GcpServiceIcon`'s GKE glyph: the Kubernetes wheel in the text colour.
+	["GkeIcon", (props) => createElement(WebIcons.KubernetesIcon, { fill: "currentColor", ...props })],
+])
 
 /** Placeholders the template fills per call: React writes `size` to width/height. */
 const SIZE = "7777"

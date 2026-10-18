@@ -16,10 +16,12 @@ import {
 } from "./definitions/histogram"
 import { buildFixedMetric } from "./definitions/fixed-metric"
 import { buildInfraMetric } from "./definitions/infra-metric"
+import { buildPlanetScaleMetric } from "./definitions/planetscale-metric"
 import { buildLogsVolume } from "./definitions/logs-volume"
 import { buildPie, buildPieSpike } from "./definitions/pie"
 import { buildOccurrences } from "./definitions/occurrences"
 import { buildSparkline } from "./definitions/sparkline"
+import { buildStackedBreakdown } from "./definitions/stacked-breakdown"
 
 /**
  * What `RendererChartImplementation` (`@tanstack/charts/react`) does with a `CanvasChart` or SVG
@@ -175,4 +177,15 @@ export const createChartHost = (
 		AlertRule: (rule) => hostFor(container, rule, height, variant("AlertRule"), buildAlertRule, options),
 		InfraMetric: (metric) =>
 			hostFor(container, metric, height, variant("InfraMetric"), buildInfraMetric, options),
+		PlanetScaleMetric: (metric) =>
+			hostFor(container, metric, height, variant("PlanetScaleMetric"), buildPlanetScaleMetric, options),
+		StackedBreakdown: (breakdown) =>
+			hostFor(
+				container,
+				breakdown,
+				height,
+				variant("StackedBreakdown"),
+				buildStackedBreakdown,
+				options,
+			),
 	})

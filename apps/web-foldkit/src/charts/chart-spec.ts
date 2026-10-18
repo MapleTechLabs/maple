@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
+import { ChartEventMarker, MarkerColors } from "./event-marker-spec"
 
 /**
  * Everything a chart definition is built from, as data. The view renders it into the chart host's
@@ -145,7 +146,17 @@ export const ChartSpec = defineTaggedUnion({
 		rows: Schema.Array(
 			Schema.Struct({ bucket: Schema.String, attributeValue: Schema.String, value: Schema.Number }),
 		),
-		unit: Schema.String,
+		unit: Schema.Literals([
+			"percent",
+			"cores",
+			"seconds",
+			"load",
+			"bytes_per_second",
+			"bytes",
+			"milliseconds",
+			"rate",
+			"count",
+		]),
 		seriesLabel: Nullable(Schema.String),
 		stacked: Schema.Boolean,
 		showThreshold: Schema.Boolean,
@@ -159,6 +170,9 @@ export const ChartSpec = defineTaggedUnion({
 		thresholdColor: Schema.String,
 		gradientPrefix: Schema.String,
 		timeZone: Schema.String,
+		/** Deploy markers drawn at the same instant on every strip. */
+		markers: Schema.Array(ChartEventMarker),
+		markerColors: MarkerColors,
 	},
 	/** `ThroughputAreaChart`, `ErrorRateAreaChart`, `ApdexAreaChart`, `LatencyLineChart` (charts/area, charts/line). */
 	FixedMetric: {
@@ -216,6 +230,36 @@ export const ChartSpec = defineTaggedUnion({
 		bucketSeconds: Nullable(Schema.Number),
 		gradientId: Schema.String,
 	},
+	/** `StackedBreakdownChart` (components/infra/cloudflare/cloudflare-zone-detail-charts.tsx). */
+	StackedBreakdown: {
+		rows: Schema.Array(
+			Schema.Struct({ bucket: Schema.String, attributeValue: Schema.String, value: Schema.Number }),
+		),
+		/** Stack and legend order, already folded and ranked. */
+		series: Schema.Array(Schema.String),
+		/** Display label per series (the pooled tail reads "Other"). */
+		labels: Schema.Record(Schema.String, Schema.String),
+		/** Resolved colour per series, plus `border` / `background` chrome. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		timeZone: Schema.String,
+		gradientPrefix: Schema.String,
+	},
+	/** `PlanetScaleChart` (components/infra/planetscale/planetscale-chart.tsx): one gauge, gaps kept. */
+	PlanetScaleMetric: {
+		metric: Schema.Literals([
+			"connectionsAvg",
+			"cpuMaxPercent",
+			"memMaxPercent",
+			"storageUsedPercent",
+			"replicaLagMaxSeconds",
+		]),
+		points: Schema.Array(Schema.Struct({ bucket: Schema.String, value: Nullable(Schema.Number) })),
+		/** The series colour plus `border` / `background` chrome. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		markers: Schema.Array(ChartEventMarker),
+		markerColors: MarkerColors,
+		timeZone: Schema.String,
+	},
 })
 export type ChartSpec = typeof ChartSpec.Type
 
@@ -238,6 +282,8 @@ export const ChartTooltip = defineTaggedUnion({
 	/** `PlotTooltipBody` for a fixed-metric chart: the bucket heading and one formatted row per series. */
 	Bucket: {
 		heading: Schema.String,
+		/** The row `PlotTooltipBody` emphasises: the series nearest the cursor. */
+		highlighted: Schema.optionalKey(Schema.String),
 		rows: Schema.Array(
 			Schema.Struct({
 				label: Schema.String,

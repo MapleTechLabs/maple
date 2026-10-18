@@ -21,19 +21,10 @@ import { ruleX, rect, text } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { resolvePlotColor } from "@maple/ui/components/plot"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import type { Tone } from "@maple/ui/lib/tone"
 
-export type ChartEventTone = Extract<Tone, "neutral" | "warn" | "crit">
+import type { ChartEventMarker, ChartEventTone } from "./chart-event-marker"
 
-export interface ChartEventMarker {
-	readonly id: string
-	/** ISO timestamp of the event. */
-	readonly at: string
-	readonly label: string
-	readonly tone: ChartEventTone
-	/** When present the marker is drawn as a band rather than a line. */
-	readonly endsAt?: string
-}
+export type { ChartEventMarker, ChartEventTone } from "./chart-event-marker"
 
 export interface PlacedMarker {
 	readonly marker: ChartEventMarker

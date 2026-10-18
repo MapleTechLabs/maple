@@ -23,7 +23,14 @@ export const bucketTooltipBody = <Message>(
 				[h.Class("grid gap-1.5")],
 				tooltip.rows.map((row, index) =>
 					h.div(
-						[h.Key(`${index}:${row.label}`), h.Class("flex w-full items-center gap-2")],
+						[
+							h.Key(`${index}:${row.label}`),
+							h.Class(
+								row.label === tooltip.highlighted
+									? "flex w-full items-center gap-2 [&_*]:font-semibold"
+									: "flex w-full items-center gap-2",
+							),
+						],
 						[
 							h.span([
 								h.Class(

@@ -1,0 +1,519 @@
+import {
+	GCP_DATABASE_RULES,
+	GCP_SERVICE_RULES,
+	GCP_SUBSCRIPTION_RULES,
+	GCP_WORKLOAD_RULES,
+	gcpProjectCounts,
+	gcpProjectHealth,
+	gcpProjectShares,
+	gcpViewFailed,
+	sortByAttention,
+	type GcpProjectHealth,
+	type RowRules,
+} from "@maple/web/components/infra/gcp/list-model"
+import {
+	GCP_RESOURCES_TAB,
+	GCP_VIEW_SERVICES,
+	gcpResourcesError,
+	type GcpView,
+} from "@maple/web/components/infra/gcp/tabs"
+import { formatPercent } from "@maple/ui/lib/format"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
+import { Option } from "effect"
+import { AsyncData, Submodel } from "foldkit"
+import type { Html } from "foldkit/html"
+import { ResolveThemeColors } from "../../../../charts/theme-colors"
+import { button } from "../../../../ui/button"
+import { errorState } from "../../../../ui/error-state"
+import { icon } from "../../../../ui/icon"
+import { segmentedSelect } from "../../../../ui/segmented-select"
+import { skeleton } from "../../../../ui/skeleton"
+import type { PageViewInputs } from "../../../contract"
+import { dashboardPage } from "../../../kit/dashboard-page"
+import { integrationNotConnected } from "../../kit/empty-states"
+import { heroChip, pageHero } from "../../kit/page-hero"
+import { pageTime } from "../../kit/page-time"
+import { searchToolbar } from "../../kit/search-toolbar"
+import { listScopeOf, metricsConnectors, noticeOf, pageStateOf, statusOf } from "./derive"
+import { Message, type Model } from "./model"
+import { DEFAULT_PRESET } from "./update"
+import {
+	GCP_DATABASE_BAND,
+	GCP_SERVICE_BAND,
+	GCP_SUBSCRIPTION_BAND,
+	type GcpBandSpec,
+	gcpBand,
+	gcpBandLoading,
+	gcpWorkloadBand,
+} from "./view-band"
+import { gcpNotice } from "./view-notice"
+import { resourcesView } from "./view-resources"
+import type { H, RowsContext } from "./view-rows"
+import {
+	databasesTable,
+	serviceTable,
+	serviceTableLoading,
+	servicesTable,
+	subscriptionsTable,
+} from "./view-tables"
+
+// `GcpPage`, `GcpInfra` and `GcpListPage` (apps/web/src/routes/infra/gcp/index.tsx,
+// components/infra/gcp/gcp-list-page.tsx).
+// TODO(project-menu): with several projects legacy titles the page with a project dropdown
+// (`GcpProjectMenu`); the fixtures connect one project, so the menu is not ported yet.
+
+const VIEW_LABEL = {
+	services: "Services",
+	pubsub: "Pub/Sub",
+	cloudSql: "Cloud SQL",
+	gke: "GKE",
+	computeEngine: "Compute Engine",
+	loadBalancing: "Load Balancing",
+	resources: "Resources",
+} as const satisfies Record<GcpView, string>
+
+const ROWS_NOUN = {
+	services: "services",
+	pubsub: "subscriptions",
+	cloudSql: "instances",
+	gke: "containers",
+	computeEngine: "VMs",
+	loadBalancing: "URL maps",
+} as const
+
+const GENERIC_BAND = {
+	gke: gcpWorkloadBand("container"),
+	computeEngine: gcpWorkloadBand("VM"),
+	loadBalancing: gcpWorkloadBand("URL map"),
+} as const
+
+const THEME_TOKENS = ["--chart-2", "--severity-error", "--muted-foreground"]
+
+const hero = (h: H): Html =>
+	pageHero(h, {
+		title: "Google Cloud",
+		description:
+			"Workloads and resources of your connected Google Cloud projects, from Cloud Monitoring metrics and Cloud Asset Inventory.",
+	})
+
+/** `ListBody`: one view's band, search and table; the band counts every row, the table what is left. */
+const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends string>(
+	h: H,
+	model: Model,
+	options: Readonly<{
+		rows: ReadonlyArray<R>
+		rules: RowRules<R, S>
+		spec: GcpBandSpec<S>
+		region: string | undefined
+		noun: string
+		order?: string
+		title: string
+		failed: boolean
+		render: (rows: ReadonlyArray<R>, emptyMessage: string) => Html
+	}>,
+): ReadonlyArray<Html> => {
+	const { rows, rules } = options
+	const scope = rules.scopes.find((candidate) => candidate === model.search.scope)
+	const query = model.search.q ?? ""
+	const needle = query.trim().toLowerCase()
+	const shown = sortByAttention(
+		rules,
+		rows.filter(
+			(row) =>
+				(scope === undefined || rules.inScope(row, scope)) &&
+				(needle === "" || row.keys.join(" ").toLowerCase().includes(needle)),
+		),
+	)
+	const emptyMessage = options.failed
+		? `Maple could not read the ${options.title} metrics. Reload to try again.`
+		: rows.length === 0
+			? `No ${options.title} metrics in this time range.`
+			: `No ${options.noun} match. Clear the search or scope.`
+	return [
+		gcpBand(h, {
+			rows,
+			rules,
+			spec: options.spec,
+			activeScope: scope,
+			onScopeChange: (next) => Message.ClickedScope({ scope: next }),
+		}),
+		searchToolbar(h, {
+			id: "gcp-search",
+			value: query,
+			placeholder: `Filter ${rows.length} ${options.noun}`,
+			onInput: (value) => Message.ChangedSearch({ value }),
+			onClear: Message.ClickedClearSearch(),
+			trailing:
+				shown.length === rows.length
+					? `${rows.length} ${options.noun} · ${options.order ?? "problems first"}`
+					: `${shown.length} of ${rows.length} ${options.noun}`,
+			children: options.region === undefined ? [] : [regionChip(h, options.region)],
+		}),
+		options.render(shown, emptyMessage),
+	]
+}
+
+/** `FilterChipRail` with the one region chip. */
+const regionChip = (h: H, region: string): Html => {
+	const label = `region ${region}`
+	return h.div(
+		[h.Class("flex flex-wrap items-center gap-1.5"), h.AriaLabel("Active filters")],
+		[
+			h.span(
+				[
+					h.Class(
+						"inline-flex items-center gap-1 rounded-sm border border-border/70 bg-background/60 py-0.5 pr-0.5 pl-1.5 font-mono text-3xs text-muted-foreground",
+					),
+				],
+				[
+					h.span([h.Class("max-w-[22ch] truncate text-foreground/80")], [label]),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "icon-2xs",
+							className: "text-muted-foreground hover:text-foreground",
+							attributes: [
+								h.AriaLabel(`Remove ${label}`),
+								h.OnClick(Message.ClickedClearRegion()),
+							],
+						},
+						[icon(h, "XmarkIcon")],
+					),
+				],
+			),
+			h.button(
+				[
+					h.Type("button"),
+					h.OnClick(Message.ClickedClearRegion()),
+					h.Class(
+						"font-mono text-3xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline ml-1",
+					),
+				],
+				["Clear all"],
+			),
+		],
+	)
+}
+
+const healthText = (health: GcpProjectHealth | undefined) =>
+	health === undefined || health.tone === "ok" || health.tone === "neutral"
+		? "text-muted-foreground"
+		: TONE_TEXT[health.tone]
+
+const healthDotOf = (h: H, health: GcpProjectHealth | undefined): ReadonlyArray<Html> =>
+	health === undefined
+		? []
+		: [
+				h.span([
+					h.AriaHidden(true),
+					h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_FILL[health.tone])),
+				]),
+			]
+
+/** `GcpProjectsStrip`: one cell per project, the biggest share first; a cell scopes to it. */
+const projectsStrip = (
+	h: H,
+	projects: ReadonlyArray<string>,
+	share: ReadonlyMap<string, number>,
+	counts: (project: string) => string,
+	health: ReadonlyMap<string, GcpProjectHealth>,
+): Html =>
+	h.div(
+		[h.Class("flex flex-col overflow-hidden rounded-md border md:flex-row")],
+		projects
+			.toSorted((a, b) => (share.get(b) ?? 0) - (share.get(a) ?? 0))
+			.map((project) => {
+				const fraction = share.get(project) ?? 0
+				const projectHealth = health.get(project)
+				const problem = projectHealth !== undefined && projectHealth.tone !== "ok"
+				return h.button(
+					[
+						h.Type("button"),
+						h.OnClick(Message.SelectedProject({ project })),
+						h.Class(
+							"flex min-w-0 flex-1 flex-col gap-2 border-b px-4 py-3 text-left transition-colors last:border-0 hover:bg-muted/40 md:border-b-0 md:border-l md:first:border-l-0",
+						),
+					],
+					[
+						h.span(
+							[h.Class("flex items-center gap-2")],
+							[
+								...healthDotOf(h, projectHealth),
+								h.span(
+									[h.Class("truncate font-mono text-xs font-medium text-foreground")],
+									[project],
+								),
+								h.span(
+									[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
+									[formatPercent(fraction)],
+								),
+							],
+						),
+						h.span(
+							[h.Class("block h-1 w-full overflow-hidden rounded-full bg-muted")],
+							[
+								h.span([
+									h.Class("block h-full rounded-full bg-muted-foreground/60"),
+									h.Style({
+										width: `${Math.max(fraction * 100, fraction > 0 ? 1.5 : 0)}%`,
+									}),
+								]),
+							],
+						),
+						h.span(
+							[h.Class(cn("truncate font-mono text-3xs", healthText(projectHealth)))],
+							[problem ? projectHealth.message : counts(project)],
+						),
+					],
+				)
+			}),
+	)
+
+const infraView = (
+	h: H,
+	model: Model,
+	connectors: ReturnType<typeof metricsConnectors>,
+): ReadonlyArray<Html> => {
+	const fleetData = model.fleet.data
+	const fleet = AsyncData.isSuccess(fleetData) || AsyncData.isRefreshing(fleetData) ? fleetData.data : null
+	const collecting = connectors.length > 0
+	if (connectors.length === 0 && fleet !== null && fleet.length === 0) {
+		return [
+			hero(h),
+			integrationNotConnected(h, {
+				icon: icon(h, "GoogleCloudIcon", { size: 16 }),
+				title: "Turn on metrics for Google Cloud",
+				description:
+					"Your Google Cloud connections forward logs only. Turn on Metrics and resources under Configure in the Google Cloud integration, then run the setup script.",
+				integration: "gcp",
+				actionLabel: "Open the integration",
+				docsPage: "gcp",
+			}),
+		]
+	}
+	const failures = Option.toArray(AsyncData.getError(fleetData))
+	if (failures.length > 0) {
+		return [
+			hero(h),
+			...failures.map((failure) =>
+				errorState(h, {
+					failure,
+					title: "Failed to load Google Cloud workloads",
+					onRetry: Message.ClickedRetryFleet(),
+				}),
+			),
+		]
+	}
+	const { projects, project, region, inRegion, rows, counts, views, view } = listScopeOf(model, collecting)
+	const multiProject = projects.length > 1
+	const projectCounts = (name: string) => gcpProjectCounts(inRegion, name, view)
+	const isWaiting = AsyncData.isRefreshing(fleetData)
+	const ctx: RowsContext = {
+		timeSearch: {
+			startTime: model.search.startTime,
+			endTime: model.search.endTime,
+			timePreset: model.search.timePreset,
+		},
+		showProject: multiProject && project === undefined,
+		theme: model.themeColors,
+		isChartReady: model.chartRuntime._tag !== "Loading",
+	}
+	const section = (children: ReadonlyArray<Html>) =>
+		h.div(
+			[h.Class(cn("space-y-4", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+			children,
+		)
+	const body = (): Html => {
+		if (view === GCP_RESOURCES_TAB)
+			return resourcesView(h, model, ctx.timeSearch, gcpResourcesError(connectors))
+		if (fleet === null) {
+			return section([
+				gcpBandLoading(h),
+				serviceTableLoading(h, GCP_VIEW_SERVICES[view][0] ?? "cloudRun"),
+			])
+		}
+		const failed = gcpViewFailed(fleet, view)
+		switch (view) {
+			case "services":
+				return section(
+					listBody(h, model, {
+						rows: rows.services,
+						rules: GCP_SERVICE_RULES,
+						spec: GCP_SERVICE_BAND,
+						region,
+						noun: ROWS_NOUN.services,
+						title: "Cloud Run or Cloud Functions",
+						failed,
+						render: (shown, emptyMessage) => servicesTable(h, shown, emptyMessage, ctx),
+					}),
+				)
+			case "pubsub":
+				return section(
+					listBody(h, model, {
+						rows: rows.pubsub,
+						rules: GCP_SUBSCRIPTION_RULES,
+						spec: GCP_SUBSCRIPTION_BAND,
+						region,
+						noun: ROWS_NOUN.pubsub,
+						title: "Pub/Sub",
+						failed,
+						render: (shown, emptyMessage) => subscriptionsTable(h, shown, emptyMessage, ctx),
+					}),
+				)
+			case "cloudSql":
+				return section(
+					listBody(h, model, {
+						rows: rows.cloudSql,
+						rules: GCP_DATABASE_RULES,
+						spec: GCP_DATABASE_BAND,
+						region,
+						noun: ROWS_NOUN.cloudSql,
+						order: "closest to a limit first",
+						title: "Cloud SQL",
+						failed,
+						render: (shown, emptyMessage) => databasesTable(h, shown, emptyMessage, ctx),
+					}),
+				)
+			default:
+				return section(
+					listBody(h, model, {
+						rows: rows[view],
+						rules: GCP_WORKLOAD_RULES,
+						spec: GENERIC_BAND[view],
+						region,
+						noun: ROWS_NOUN[view],
+						title: VIEW_LABEL[view],
+						failed,
+						render: (shown, emptyMessage) =>
+							serviceTable(h, view, shown, GENERIC_BAND[view], emptyMessage, ctx),
+					}),
+				)
+		}
+	}
+	const health = gcpProjectHealth(connectors, model.nowMs)
+	const notice = noticeOf(model, connectors)
+	return [
+		h.div(
+			[h.Class("space-y-6")],
+			[
+				pageHero(h, {
+					title: "Google Cloud",
+					trailing:
+						!multiProject && projects.length === 1
+							? heroChip(h, `project ${projects[0] ?? ""}`)
+							: undefined,
+					actions:
+						views.length > 1
+							? [
+									segmentedSelect(h, {
+										size: "xs",
+										ariaLabel: "Google Cloud view",
+										options: views.map((option) => ({
+											value: option,
+											label:
+												option === GCP_RESOURCES_TAB || counts === null
+													? VIEW_LABEL[option]
+													: `${VIEW_LABEL[option]} ${counts[option]}`,
+										})),
+										value: view,
+										onChange: (next) => Message.ClickedView({ view: next }),
+									}),
+								]
+							: undefined,
+				}),
+				...(notice === null ? [] : [gcpNotice(h, notice)]),
+				...(multiProject && project === undefined && view !== GCP_RESOURCES_TAB
+					? [projectsStrip(h, projects, gcpProjectShares(inRegion, view), projectCounts, health)]
+					: []),
+				body(),
+			],
+		),
+	]
+}
+
+const content = (h: H, model: Model): ReadonlyArray<Html> =>
+	AsyncData.match(model.status.data, {
+		onIdle: () => [hero(h), skeleton(h, "h-64 w-full")],
+		onLoading: () => [hero(h), skeleton(h, "h-64 w-full")],
+		onFailure: (failure) => [
+			hero(h),
+			errorState(h, {
+				failure,
+				title: "Failed to load the Google Cloud integration",
+				onRetry: Message.ClickedRetryStatus(),
+			}),
+		],
+		onStale: ({ error }) => [
+			hero(h),
+			errorState(h, {
+				failure: error,
+				title: "Failed to load the Google Cloud integration",
+				onRetry: Message.ClickedRetryStatus(),
+			}),
+		],
+		onRefreshing: () => connected(h, model),
+		onSuccess: () => connected(h, model),
+	})
+
+const connected = (h: H, model: Model): ReadonlyArray<Html> => {
+	const status = statusOf(model)
+	if (status === null) return []
+	const state = pageStateOf(status, model.nowMs)
+	switch (state._tag) {
+		case "NotConnected":
+			return [
+				hero(h),
+				integrationNotConnected(h, {
+					icon: icon(h, "GoogleCloudIcon", { size: 16 }),
+					title: "Connect Google Cloud to see your infrastructure",
+					description:
+						"Connect an organization, folder or project that collects metrics and resources. Maple reads Cloud Monitoring metrics and lists your resources, with no agents to install.",
+					integration: "gcp",
+					actionLabel: "Connect Google Cloud",
+					docsPage: "gcp",
+				}),
+			]
+		case "SetupPending":
+			return [
+				hero(h),
+				integrationNotConnected(h, {
+					icon: icon(h, "GoogleCloudIcon", { size: 16 }),
+					title: "Finish setting up Google Cloud",
+					description: "Metrics and resources are on, but the setup script hasn't run yet.",
+					integration: "gcp",
+					actionLabel: "Open the integration",
+					docsPage: "gcp",
+				}),
+			]
+		case "Infra":
+			return infraView(h, model, state.connectors)
+	}
+}
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
+	h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
+		[
+			dashboardPage(
+				h,
+				{
+					scrollClassName: "gap-6",
+					actions: pageTime(h, {
+						search: model.search,
+						defaultPreset: DEFAULT_PRESET,
+						window: model.window,
+						picker: model.timePicker,
+						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+						onReset: Message.ClickedResetTimeRange(),
+						onReload: Message.ClickedReload(),
+						isReloading: model.isReloading,
+					}),
+				},
+				content(h, model),
+			),
+		],
+	),
+)

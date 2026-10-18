@@ -31,6 +31,15 @@ import * as InfraKubernetesService from "./infra/kubernetes/service"
 import * as InfraKubernetesWorkload from "./infra/kubernetes/workload"
 import * as InfraKubernetesWorkloads from "./infra/kubernetes/workloads"
 import * as InfraOverview from "./infra/overview"
+import * as InfraCloudflare from "./infra-integrations/cloudflare/list"
+import * as InfraCloudflareWorker from "./infra-integrations/cloudflare/worker"
+import * as InfraCloudflareZone from "./infra-integrations/cloudflare/zone"
+import * as InfraGcp from "./infra-integrations/gcp/list"
+import * as InfraGcpWorkload from "./infra-integrations/gcp/workload"
+import * as InfraPlanetscaleDatabase from "./infra-integrations/planetscale/db"
+import * as InfraPlanetscale from "./infra-integrations/planetscale/list"
+import * as InfraRailway from "./infra-integrations/railway/list"
+import * as InfraRailwayService from "./infra-integrations/railway/service"
 import * as LogsList from "./logs/list"
 import * as MetricsBrowse from "./metrics/browse"
 import * as MetricDetail from "./metrics/detail"
@@ -72,6 +81,15 @@ export const pages = [
 	InfraKubernetesWorkload.page,
 	InfraKubernetesService.page,
 	InfraOverview.page,
+	InfraRailway.page,
+	InfraRailwayService.page,
+	InfraPlanetscale.page,
+	InfraPlanetscaleDatabase.page,
+	InfraGcp.page,
+	InfraGcpWorkload.page,
+	InfraCloudflare.page,
+	InfraCloudflareWorker.page,
+	InfraCloudflareZone.page,
 ]
 
 export const PageSlot = Schema.Union(pages.map((page) => page.Slot))

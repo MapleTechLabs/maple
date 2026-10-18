@@ -15,7 +15,8 @@ import { skeleton } from "../../../../ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import * as Frame from "../../kit/frame"
-import { chartLoadingIn, INFRA_CHART_TOKENS } from "../../kit/metric-chart"
+import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
+import { chartLoading } from "../../../../ui/chart-state"
 import { pageHero } from "../../kit/page-parts"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { sectionHeading } from "../../../kit/section-heading"
@@ -199,7 +200,7 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 									hint: "one cursor, one time axis",
 								}),
 								isLoading || theme === null || model.chartRuntime._tag === "Loading"
-									? chartLoadingIn(h, "line", 360)
+									? chartLoading(h, { variant: "line", height: 360 })
 									: correlationStrips(h, model, { series: strips, xDomain, isWaiting, theme, timeZone: inputs.context.timeZone }),
 							],
 						),

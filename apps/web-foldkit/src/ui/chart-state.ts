@@ -123,3 +123,19 @@ export const chartLoading = <M>(
 		],
 		[chartSkeleton(h, options.variant)],
 	)
+
+/** `ChartPlotArea`: reserves the plot box; the states inside fill it. */
+export const chartPlotArea = <M>(
+	h: HtmlBuilder<M>,
+	height: number,
+	children: ReadonlyArray<Html>,
+	className?: string,
+): Html =>
+	h.div(
+		[
+			h.Class(cn("w-full", className)),
+			h.Style({ height: `${height}px` }),
+			h.DataAttribute("slot", "chart-plot-area"),
+		],
+		children,
+	)

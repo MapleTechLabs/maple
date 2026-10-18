@@ -5,7 +5,8 @@ import * as Chart from "../../../charts/chart"
 import type { ChartRuntime } from "../../../charts/chart-runtime"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { panel } from "../../../ui/panel"
-import { chartError, chartLoadingIn, type InfraSeriesInfo, view as metricChartView } from "./metric-chart"
+import { type InfraSeriesInfo, metricView as metricChartView } from "../../../charts/infra-metric-chart"
+import { chartError, chartLoading } from "../../../ui/chart-state"
 import type { SeriesSlot } from "./series"
 import { seriesLegend } from "../../kit/series-legend"
 
@@ -51,11 +52,11 @@ export const k8sChart = <M>(h: HtmlBuilder<M>, options: K8sChartOptions<M>): Htm
 	const data = options.slot?.data ?? AsyncData.Idle()
 	const theme = options.theme
 	return AsyncData.matchData(data, {
-		onEmpty: () => chartLoadingIn(h, "area", height),
-		onFailure: (failure) => chartError(h, failure.message, height),
+		onEmpty: () => chartLoading(h, { variant: "area", height: height }),
+		onFailure: (failure) => chartError(h, { height: height }, [failure.message]),
 		onData: (series) =>
 			theme === null || options.runtime._tag === "Loading"
-				? chartLoadingIn(h, "area", height)
+				? chartLoading(h, { variant: "area", height: height })
 				: panel(h, { className: "p-4" }, [
 						h.submodel({
 							slotId: `k8s-chart-${options.chartId}`,

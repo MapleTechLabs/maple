@@ -25,6 +25,8 @@ export type ListFooterOptions<M> = Readonly<{
 	onLoadMore?: M
 	align?: "start" | "center"
 	className?: string
+	/** After the count and the button, in the same row. */
+	children?: ReadonlyArray<Html>
 }>
 
 const count = (value: number) => value.toLocaleString("en-US")
@@ -47,7 +49,8 @@ export const listFooter = <M>(h: HtmlBuilder<M>, options: ListFooterOptions<M>):
 	const text = countText(options)
 	const canLoad =
 		options.onLoadMore !== undefined && (options.hasMore === true || options.isFailed === true)
-	if (text === null && !canLoad) return null
+	const children = options.children ?? []
+	if (text === null && !canLoad && children.length === 0) return null
 	return h.div(
 		[
 			h.Class(
@@ -75,6 +78,7 @@ export const listFooter = <M>(h: HtmlBuilder<M>, options: ListFooterOptions<M>):
 						),
 					]
 				: []),
+			...children,
 		],
 	)
 }
