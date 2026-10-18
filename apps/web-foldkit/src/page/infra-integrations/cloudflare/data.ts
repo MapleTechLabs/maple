@@ -1,8 +1,19 @@
-import { CloudflareIntegrationStatus, CloudflareUsageResponse } from "@maple/domain/http"
 import {
+	CloudflareInfraZoneFacetsResponse,
+	CloudflareIntegrationStatus,
+	CloudflareUsageResponse,
+} from "@maple/domain/http"
+import {
+	CLOUDFLARE_BREAKDOWN_DIMENSIONS,
 	getCloudflarePlatformResources,
+	getCloudflareTopTraffic,
 	getCloudflareWorkerDetail,
 	getCloudflareWorkers,
+	getCloudflareZoneBreakdown,
+	getCloudflareZoneDetail,
+	getCloudflareZoneDns,
+	getCloudflareZoneFacets,
+	getCloudflareZoneSecurity,
 	getCloudflareZones,
 	getCloudflareZoneTimeseries,
 } from "@maple/web-data/warehouse/cloudflare-infra"
@@ -216,6 +227,207 @@ export const loadReleases = (input: ReleasesInput) =>
 				errorCount: release.errorCount,
 			})),
 		),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+/** The zone filters every zone read carries (`CloudflareFilters`, URL-shaped). */
+export const ZoneFilters = Schema.Struct({
+	hosts: Schema.optional(Schema.Array(Schema.String)),
+	cacheStatuses: Schema.optional(Schema.Array(Schema.String)),
+	statusClasses: Schema.optional(Schema.Array(Schema.String)),
+	paths: Schema.optional(Schema.Array(Schema.String)),
+	pathContains: Schema.optional(Schema.String),
+	countries: Schema.optional(Schema.Array(Schema.String)),
+	methods: Schema.optional(Schema.Array(Schema.String)),
+	protocols: Schema.optional(Schema.Array(Schema.String)),
+	deviceTypes: Schema.optional(Schema.Array(Schema.String)),
+})
+export type ZoneFilters = typeof ZoneFilters.Type
+
+export const ZoneDetailInput = Schema.Struct({
+	...ZoneFilters.fields,
+	serviceName: Schema.String,
+	startTime: Schema.String,
+	endTime: Schema.String,
+	bucketSeconds: Schema.Number,
+})
+export type ZoneDetailInput = typeof ZoneDetailInput.Type
+
+export const ZoneDetail = Schema.Struct({
+	statusBuckets: Schema.Array(
+		Schema.Struct({ bucket: Schema.String, statusClass: Schema.String, requests: Schema.Number }),
+	),
+	cacheBuckets: Schema.Array(
+		Schema.Struct({ bucket: Schema.String, cacheStatus: Schema.String, requests: Schema.Number }),
+	),
+	latencyBuckets: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			ttfbP50Ms: Schema.Number,
+			ttfbP95Ms: Schema.Number,
+			ttfbP99Ms: Schema.Number,
+			originP50Ms: Schema.Number,
+			originP95Ms: Schema.Number,
+			originP99Ms: Schema.Number,
+		}),
+	),
+	ignoredFilters: Schema.Array(Schema.String),
+	latencyIgnoredFilters: Schema.Array(Schema.String),
+})
+export type ZoneDetail = typeof ZoneDetail.Type
+
+export const ZoneDns = Schema.Struct({
+	buckets: Schema.Array(
+		Schema.Struct({ bucket: Schema.String, responseCode: Schema.String, queries: Schema.Number }),
+	),
+	names: Schema.Array(
+		Schema.Struct({ queryName: Schema.String, queries: Schema.Number, nxdomain: Schema.Number }),
+	),
+	ignoredFilters: Schema.Array(Schema.String),
+})
+export type ZoneDns = typeof ZoneDns.Type
+
+export const ZoneSecurity = Schema.Struct({
+	buckets: Schema.Array(
+		Schema.Struct({ bucket: Schema.String, action: Schema.String, events: Schema.Number }),
+	),
+	top: Schema.Array(
+		Schema.Struct({
+			source: Schema.String,
+			action: Schema.String,
+			ruleId: Schema.String,
+			host: Schema.String,
+			events: Schema.Number,
+		}),
+	),
+	ignoredFilters: Schema.Array(Schema.String),
+})
+export type ZoneSecurity = typeof ZoneSecurity.Type
+
+export const ZoneFacetsInput = Schema.Struct({
+	...ZoneFilters.fields,
+	serviceName: Schema.String,
+	startTime: Schema.String,
+	endTime: Schema.String,
+})
+export type ZoneFacetsInput = typeof ZoneFacetsInput.Type
+
+export const ZoneFacets = CloudflareInfraZoneFacetsResponse
+export type ZoneFacets = CloudflareInfraZoneFacetsResponse
+
+export const ZonesInput = Schema.Struct({
+	...ZoneFilters.fields,
+	startTime: Schema.String,
+	endTime: Schema.String,
+})
+export type ZonesInput = typeof ZonesInput.Type
+
+export const BreakdownDimension = Schema.Literals(CLOUDFLARE_BREAKDOWN_DIMENSIONS)
+export type BreakdownDimension = typeof BreakdownDimension.Type
+
+export const BreakdownInput = Schema.Struct({
+	...ZoneDetailInput.fields,
+	dimension: BreakdownDimension,
+	limit: Schema.Number,
+})
+export type BreakdownInput = typeof BreakdownInput.Type
+
+export const BreakdownTotal = Schema.Struct({
+	key: Schema.String,
+	requests: Schema.Number,
+	errors5xx: Schema.Number,
+	errorRate: Schema.Number,
+	bytes: Schema.Number,
+	share: Schema.Number,
+})
+export type BreakdownTotal = typeof BreakdownTotal.Type
+
+export const ZoneBreakdown = Schema.Struct({
+	totals: Schema.Array(BreakdownTotal),
+	coverage: Schema.Number,
+	coverageStart: Schema.NullOr(Schema.String),
+	ignoredFilters: Schema.Array(Schema.String),
+})
+export type ZoneBreakdown = typeof ZoneBreakdown.Type
+
+export const TopTrafficInput = Schema.Struct({
+	zoneName: Schema.String,
+	dimension: Schema.Literals(["host", "path"]),
+	startTime: Schema.Number,
+	endTime: Schema.Number,
+	limit: Schema.Number,
+	contains: Schema.String,
+})
+export type TopTrafficInput = typeof TopTrafficInput.Type
+
+export const TopTraffic = Schema.Struct({
+	unavailableReason: Schema.NullOr(Schema.String),
+	rows: Schema.Array(
+		Schema.Struct({
+			key: Schema.String,
+			requests: Schema.Number,
+			bytes: Schema.Number,
+			errors5xx: Schema.Number,
+			errorRate: Schema.Number,
+		}),
+	),
+})
+export type TopTraffic = typeof TopTraffic.Type
+
+/** `cloudflareZoneDetailResultAtom`. */
+export const loadZoneDetail = (data: ZoneDetailInput) =>
+	getCloudflareZoneDetail({ data }).pipe(
+		Effect.map((detail): ZoneDetail => detail),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+/** `cloudflareZoneDnsResultAtom`. */
+export const loadZoneDns = (data: ZoneDetailInput) =>
+	getCloudflareZoneDns({ data }).pipe(
+		Effect.map((dns): ZoneDns => dns),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+/** `cloudflareZoneSecurityResultAtom`. */
+export const loadZoneSecurity = (data: ZoneDetailInput) =>
+	getCloudflareZoneSecurity({ data }).pipe(
+		Effect.map((security): ZoneSecurity => security),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+/** `cloudflareZoneFacetsResultAtom`. */
+export const loadZoneFacets = (data: ZoneFacetsInput) =>
+	getCloudflareZoneFacets({ data }).pipe(Effect.mapError(toLoadFailure), Effect.result)
+
+/** `cloudflareZonesResultAtom` with the zone page's filters. */
+export const loadFilteredZones = (data: ZonesInput) =>
+	getCloudflareZones({ data }).pipe(
+		Effect.map((response): ReadonlyArray<ZoneRow> => response.zones),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+/** `cloudflareZoneBreakdownResultAtom`. */
+export const loadZoneBreakdown = (data: BreakdownInput) =>
+	getCloudflareZoneBreakdown({ data }).pipe(
+		Effect.map((breakdown): ZoneBreakdown => ({
+			totals: breakdown.totals,
+			coverage: breakdown.coverage,
+			coverageStart: breakdown.coverageStart,
+			ignoredFilters: breakdown.ignoredFilters,
+		})),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+/** `cloudflareTopTrafficResultAtom`: the live long-tail lookup. */
+export const loadTopTraffic = (data: TopTrafficInput) =>
+	getCloudflareTopTraffic({ data }).pipe(
+		Effect.map((traffic): TopTraffic => traffic),
 		Effect.mapError(toLoadFailure),
 		Effect.result,
 	)

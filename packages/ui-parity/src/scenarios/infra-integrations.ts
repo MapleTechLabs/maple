@@ -11,6 +11,7 @@ const PS_DB = "/infra/planetscale/acme-prod"
 const RAILWAY_SERVICE = "/infra/railway/svc_acme_api?environmentId=env_acme_production"
 const GCP_WORKLOAD = "/infra/gcp/cloudRun/checkout-api?project=acme-shop-prod&region=us-central1"
 const CF_WORKER = "/infra/cloudflare/workers/edge-router"
+const CF_ZONE = "/infra/cloudflare/acme.test"
 const EMPTY = "empty"
 
 const scenario = (
@@ -118,6 +119,105 @@ export const infraIntegrationsArea: AreaModule = {
 		scenario("cloudflare-zone-security", "Cloudflare zone: Security tab", "/infra/cloudflare/acme.test", {
 			steps: press("Security"),
 		}),
+		scenario(
+			"cloudflare-zone-loading",
+			"Cloudflare zone: detail loading",
+			CF_ZONE,
+			held("queryEngine.cloudflareInfraZoneDetail"),
+		),
+		scenario(
+			"cloudflare-zone-error",
+			"Cloudflare zone: detail failing",
+			CF_ZONE,
+			failing("queryEngine.cloudflareInfraZoneDetail"),
+		),
+		scenario("cloudflare-zone-hover", "Cloudflare zone: strips under one cursor", CF_ZONE, {
+			steps: async (page) => {
+				await page.getByRole("img", { name: "Requests" }).hover({ position: { x: 400, y: 40 } })
+				await page.locator("[data-linked-cursor-source]").waitFor()
+			},
+		}),
+		scenario("cloudflare-zone-rail-dns", "Cloudflare zone: DNS from the rail", CF_ZONE, {
+			steps: async (page) => {
+				await page.getByRole("button", { name: /queries$/ }).click()
+				await page.getByText("DNS queries by response code").waitFor()
+			},
+		}),
+		scenario("cloudflare-zone-breakdown-hosts", "Cloudflare zone: breakdown by host", CF_ZONE, {
+			steps: async (page) => {
+				await press("Hosts")(page)
+				await page.getByLabel("Filter the listed hosts").waitFor()
+			},
+		}),
+		scenario(
+			"cloudflare-zone-breakdown-sort",
+			"Cloudflare zone: breakdown sorted by error rate",
+			CF_ZONE,
+			{
+				steps: press("Error rate"),
+			},
+		),
+		scenario("cloudflare-zone-breakdown-filter", "Cloudflare zone: breakdown narrowed", CF_ZONE, {
+			steps: async (page) => {
+				await page.getByLabel("Filter the listed paths").fill("prod")
+				await page.getByText("Search all paths in Cloudflare").waitFor()
+			},
+		}),
+		scenario("cloudflare-zone-breakdown-live", "Cloudflare zone: live long-tail lookup", CF_ZONE, {
+			steps: async (page) => {
+				await page.getByLabel("Filter the listed paths").fill("widget")
+				await page.getByText("Search all paths in Cloudflare").click()
+				await page.getByText("/products/blue-widget").waitFor()
+			},
+		}),
+		scenario("cloudflare-zone-row-filter", "Cloudflare zone: a breakdown row filters the page", CF_ZONE, {
+			steps: async (page) => {
+				await page.getByTitle("Filter this page by /checkout").click()
+				await page.getByRole("button", { name: "Remove path:/checkout" }).waitFor()
+			},
+		}),
+		scenario(
+			"cloudflare-zone-filtered-scope",
+			"Cloudflare zone: what a filtered panel covers",
+			`${CF_ZONE}?tab=dns&paths=%5B%22%2Fcheckout%22%5D`,
+			{
+				steps: hoverTooltip(
+					(page) => page.getByText("zone-wide").first(),
+					"DNS analytics is a separate dataset with its own dimensions.",
+				),
+			},
+		),
+		scenario(
+			"cloudflare-zone-chip-removed",
+			"Cloudflare zone: a filter chip removed",
+			`${CF_ZONE}?paths=%5B%22%2Fcheckout%22%5D`,
+			{
+				steps: async (page) => {
+					await page.getByRole("button", { name: "Remove path:/checkout" }).click()
+					await page
+						.getByRole("button", { name: "Remove path:/checkout" })
+						.waitFor({ state: "detached" })
+				},
+			},
+		),
+		scenario("cloudflare-zone-filter-popover", "Cloudflare zone: every facet behind + Filter", CF_ZONE, {
+			steps: async (page) => {
+				await press("+ Filter")(page)
+				await page.getByText("Cache status").first().waitFor()
+			},
+		}),
+		scenario(
+			"cloudflare-zone-filter-popover-toggle",
+			"Cloudflare zone: a facet ticked in + Filter",
+			CF_ZONE,
+			{
+				steps: async (page) => {
+					await press("+ Filter")(page)
+					await page.getByRole("checkbox", { name: "4xx" }).click()
+					await page.getByRole("button", { name: "Remove status:4xx" }).waitFor()
+				},
+			},
+		),
 		scenario(
 			"cloudflare-worker",
 			"Cloudflare Worker: edge-router",

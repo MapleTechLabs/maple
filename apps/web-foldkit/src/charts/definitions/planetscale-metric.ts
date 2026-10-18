@@ -25,7 +25,9 @@ interface MetricPoint {
 const isPercentMetric = (metric: PlanetScaleMetric) =>
 	metric === "cpuMaxPercent" || metric === "memMaxPercent" || metric === "storageUsedPercent"
 
-export const buildPlanetScaleMetric = (spec: PlanetScaleSpec): BuiltChart<MetricPoint, ChartValue, number> => {
+export const buildPlanetScaleMetric = (
+	spec: PlanetScaleSpec,
+): BuiltChart<MetricPoint, ChartValue, number> => {
 	const data: ReadonlyArray<MetricPoint> = spec.points.map((point) => ({
 		bucket: point.bucket,
 		date: bucketDate(point.bucket),
@@ -36,7 +38,9 @@ export const buildPlanetScaleMetric = (spec: PlanetScaleSpec): BuiltChart<Metric
 	const placed = placeMarkersInWindow(spec.markers, buckets)
 	const yDomain: [number, number] = isPercentMetric(spec.metric)
 		? [0, 100]
-		: niceLinearDomain(linearYDomain({ rows: data.map((point) => ({ value: point.value ?? 0 })), keys: ["value"] }))
+		: niceLinearDomain(
+				linearYDomain({ rows: data.map((point) => ({ value: point.value ?? 0 })), keys: ["value"] }),
+			)
 	const color = spec.colors[spec.metric] ?? spec.colors.border ?? ""
 	const chrome = { border: spec.colors.border ?? "", background: spec.colors.background ?? "" }
 	const at = (point: MetricPoint) => point.date
@@ -53,7 +57,10 @@ export const buildPlanetScaleMetric = (spec: PlanetScaleSpec): BuiltChart<Metric
 			y: {
 				grid: DASHED_Y_GRID,
 				scale: scaleLinear().domain(yDomain),
-				axis: { line: false, ticks: { size: 0, padding: 8, format: (v: number) => formatMetricValue(v, spec.metric) } },
+				axis: {
+					line: false,
+					ticks: { size: 0, padding: 8, format: (v: number) => formatMetricValue(v, spec.metric) },
+				},
 			},
 		},
 		margin: { left: 52, top: 12, right: 12 },

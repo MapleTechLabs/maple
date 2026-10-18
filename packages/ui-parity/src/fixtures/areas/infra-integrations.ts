@@ -439,6 +439,14 @@ const connectedEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string
 	"planetscaleIntegration.queryInsights": planetscaleInsights,
 	"planetscaleIntegration.events": planetscaleEvents,
 	"integrations.gcpResources": gcpResources,
+	// The breakdown's live long-tail lookup proxies Cloudflare's GraphQL API, not the warehouse.
+	"integrations.cloudflareTopTraffic": constant({
+		rows: [
+			{ key: "/products/blue-widget", requests: 412, bytes: 1_234_567, errors5xx: 3 },
+			{ key: "/products/red-widget", requests: 198, bytes: 654_321, errors5xx: 0 },
+		],
+		unavailableReason: null,
+	}),
 })
 
 /** Connection state the shared defaults answer as not connected: overridden for this org only. */
@@ -467,6 +475,7 @@ const otherOrgEndpoints = (warehouse: FixtureWarehouse): Readonly<Record<string,
 	"integrations.gcpResources": constant({ resources: [], total: 0, types: [], projects: [] }),
 	// The connect write answers as if the token were accepted; scenarios inject the rejections.
 	"integrations.railwayConnect": constant(railwayStatus),
+	"integrations.cloudflareTopTraffic": constant({ rows: [], unavailableReason: null }),
 })
 
 /** One handler per tag that picks the connected answer for this area's dataset only. */

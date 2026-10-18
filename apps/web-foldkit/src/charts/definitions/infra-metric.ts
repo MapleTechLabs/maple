@@ -29,7 +29,7 @@ import {
 import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
 import { chartEventMarkerMarks, placeMarkersInWindow } from "./event-markers"
-import { cursorTooltip } from "./plot-constants"
+import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
 // Port of `InfraMetricChart`'s definition (apps/web/src/components/infra/primitives/infra-metric-chart.tsx).
 
@@ -164,6 +164,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 							]),
 				]
 	const placed = placeMarkersInWindow(spec.markers, spec.xDomain ?? data.map((point) => point.bucket))
+	const focus = tooltipFocusCapture()
 	const definition = defineChart({
 		gradients: spec.stacked
 			? series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04))
@@ -187,13 +188,17 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		margin: { top: 12, right: 12, left: 56 },
 		focus: "group-x",
 		focusRing: false,
-		tooltip: cursorTooltip<InfraDatum>("pointer"),
+		tooltip: cursorTooltip<InfraDatum>(focus.anchor),
 	})
 	const labelFor = (name: string) => (name === UNNAMED_SERIES_KEY ? (spec.seriesLabel ?? name) : name)
 	const tooltipOf = (points: ReadonlyArray<ChartPoint<InfraDatum, ChartValue, number>>) =>
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
 			const row = rowOf(datum)
-			return ChartTooltip.Bucket({
+			// The raw value, stacked or not: legacy's cursor series carry no stacked position.
+			const highlighted = focus.highlight(
+				series.map((name): readonly [string, number | null] => [labelFor(name), valueOf(name)(row)]),
+			)
+			const base = {
 				heading: axis.heading(row.bucket),
 				rows: series.flatMap((name) => {
 					const value = row[name]
@@ -208,7 +213,10 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 							]
 						: []
 				}),
-			})
+			}
+			return highlighted === undefined
+				? ChartTooltip.Bucket(base)
+				: ChartTooltip.Bucket({ ...base, highlighted })
 		})
 	return { definition, focusKeyOf: (point) => rowOf(point.datum).bucket, tooltipOf }
 }

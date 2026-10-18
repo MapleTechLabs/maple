@@ -26,7 +26,9 @@ export const view = Submodel.defineView<Model, Message, PlotBoxChartInputs>((mod
 				className: "h-full w-full",
 				tooltipBody: (portal) =>
 					Option.flatMap(model.tooltip, (tooltip) =>
-						tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
+						tooltip._tag === "Bucket"
+							? Option.some(bucketTooltipBody(h, tooltip, portal))
+							: Option.none(),
 					),
 			}),
 		],

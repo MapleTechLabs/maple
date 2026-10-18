@@ -173,6 +173,20 @@ export const ChartSpec = defineTaggedUnion({
 		markers: Schema.Array(ChartEventMarker),
 		markerColors: MarkerColors,
 	},
+	/** `StackedBreakdownChart` (components/infra/cloudflare/cloudflare-zone-detail-charts.tsx). */
+	StackedBreakdown: {
+		rows: Schema.Array(
+			Schema.Struct({ bucket: Schema.String, attributeValue: Schema.String, value: Schema.Number }),
+		),
+		/** Stack and legend order, already folded and ranked. */
+		series: Schema.Array(Schema.String),
+		/** Display label per series (the pooled tail reads "Other"). */
+		labels: Schema.Record(Schema.String, Schema.String),
+		/** Resolved colour per series, plus `border` / `background` chrome. */
+		colors: Schema.Record(Schema.String, Schema.String),
+		timeZone: Schema.String,
+		gradientPrefix: Schema.String,
+	},
 	/** `PlanetScaleChart` (components/infra/planetscale/planetscale-chart.tsx): one gauge, gaps kept. */
 	PlanetScaleMetric: {
 		metric: Schema.Literals([
@@ -211,6 +225,8 @@ export const ChartTooltip = defineTaggedUnion({
 	/** `PlotTooltipBody` for a fixed-metric chart: the bucket heading and one formatted row per series. */
 	Bucket: {
 		heading: Schema.String,
+		/** The row `PlotTooltipBody` emphasises: the series nearest the cursor. */
+		highlighted: Schema.optionalKey(Schema.String),
 		rows: Schema.Array(
 			Schema.Struct({
 				label: Schema.String,

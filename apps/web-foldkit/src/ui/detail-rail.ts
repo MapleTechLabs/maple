@@ -1,10 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { type CopyStatus, copyButton } from "./copy-button"
 import { eyebrow } from "./eyebrow"
 import { icon, type IconName } from "./icon"
 
 // Port of `DetailRail` (packages/ui/src/components/detail-rail.tsx): Group, Row and Field.
-// TODO(icon): `Row`'s leading icon is not ported yet; `MetaRow` has no copy button or tooltip.
+// TODO(icon): `Row`'s leading icon is not ported yet; `MetaRow` has no value tooltip.
 
 type Children = ReadonlyArray<Html | string>
 
@@ -105,6 +106,8 @@ export const detailRailMetaRow = <M>(
 		valueClassName?: string
 		/** A glyph before the label; give every row in a rail one or none. */
 		icon?: IconName
+		/** `copyable`: the hover-revealed copy button, its status and click owned by the page. */
+		copy?: Readonly<{ status: CopyStatus; onClick: M }>
 	}>,
 ): Html | null =>
 	options.value === null || options.value === undefined || options.value === ""
@@ -149,6 +152,18 @@ export const detailRailMetaRow = <M>(
 								],
 								[options.value],
 							),
+							...(options.copy === undefined
+								? []
+								: [
+										copyButton(h, {
+											status: options.copy.status,
+											label: options.label,
+											iconSize: 11,
+											onClick: options.copy.onClick,
+											className:
+												"size-5 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100",
+										}),
+									]),
 						],
 					),
 				],

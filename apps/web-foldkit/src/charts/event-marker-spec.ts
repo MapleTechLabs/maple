@@ -24,4 +24,8 @@ export const MarkerColors = Schema.Struct({
 export type MarkerColors = typeof MarkerColors.Type
 
 /** The tokens `MarkerColors` resolves. */
-export const MARKER_TOKENS = { neutral: "--muted-foreground", warn: "--severity-warn", crit: "--severity-error" } as const
+export const MARKER_TOKENS = {
+	neutral: "--muted-foreground",
+	warn: "--severity-warn",
+	crit: "--severity-error",
+} as const
