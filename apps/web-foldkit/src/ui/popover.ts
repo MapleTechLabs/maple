@@ -30,9 +30,16 @@ export type Model = PopupState
 export const titleId = (id: string): string => `${id}-title`
 export const descriptionId = (id: string): string => `${id}-description`
 
-/** `align` is `PopoverContent`'s (center by default). */
-export const init = (id: string, options: Readonly<{ isOpen?: boolean; align?: Align }> = {}): Model =>
-	initPopup(id, { isOpen: options.isOpen, side: "bottom", align: options.align ?? "center" })
+/** `align` and `side` are `PopoverContent`'s (center and bottom by default). */
+export const init = (
+	id: string,
+	options: Readonly<{ isOpen?: boolean; align?: Align; side?: Side }> = {},
+): Model =>
+	initPopup(id, {
+		isOpen: options.isOpen,
+		side: options.side ?? "bottom",
+		align: options.align ?? "center",
+	})
 
 // MESSAGE
 
@@ -73,16 +80,16 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 
 /** Portal, marker on the page outside, placement under the trigger and outside presses. */
 export const MountPopover = Mount.defineStream("MountPopover", {
-	args: { id: Schema.String, align: Align },
+	args: { id: Schema.String, align: Align, side: Side },
 	messages: [Message.CompletedMountPopover, Message.ChangedPlacement, Message.PressedOutside],
-	execute: ({ element, id, align }) =>
+	execute: ({ element, id, align, side }) =>
 		anchoredPopup(element, {
 			positionerSelector: "[data-slot=popover-positioner]",
 			popupSelector: `#${CSS.escape(popupId(id))}`,
 			config: {
 				...positionDefaults,
 				anchor: { _tag: "Element", id: triggerId(id) },
-				side: "bottom",
+				side,
 				align,
 				sideOffset: 4,
 				adaptiveOrigin: true,
@@ -127,6 +134,8 @@ export type ViewInputs = Readonly<{
 	toView: (render: RenderInfo) => Html
 	toContent: (close: ReadonlyArray<ChildAttribute>) => ReadonlyArray<Html>
 	className?: string
+	/** `PopoverContent`'s `side` (bottom by default); pair it with `init`'s. */
+	side?: Side
 }>
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
@@ -150,7 +159,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.Key(portalId(model.id)),
 			h.DataAttribute("base-ui-portal", ""),
 			h.Id(portalId(model.id)),
-			h.OnMount(MountPopover({ id: model.id, align: model.align })),
+			h.OnMount(MountPopover({ id: model.id, align: model.align, side: inputs.side ?? "bottom" })),
 			h.OnKeyDownPreventDefault((key) =>
 				key === "Escape" ? Option.some(Message.PressedEscape()) : Option.none(),
 			),

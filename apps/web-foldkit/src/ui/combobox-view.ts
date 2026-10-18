@@ -120,7 +120,13 @@ export const comboboxCheckIcon = <Message>(h: HtmlBuilder<Message>): Html =>
 		[h.path([h.Attribute("d", "M5.252 12.7 10.2 18.63 18.748 5.37")])],
 	)
 
-const comboboxItem = (h: H, model: Model, value: string, index: number): Html => {
+const comboboxItem = (
+	h: H,
+	model: Model,
+	value: string,
+	index: number,
+	renderItem?: (value: string) => ReadonlyArray<Html | string>,
+): Html => {
 	const isSelected = model.selected.includes(value)
 	return h.div(
 		[
@@ -147,7 +153,7 @@ const comboboxItem = (h: H, model: Model, value: string, index: number): Html =>
 						),
 					]
 				: []),
-			h.div([h.Class(C.comboboxItemTextStyles)], [value]),
+			h.div([h.Class(C.comboboxItemTextStyles)], renderItem?.(value) ?? [value]),
 		],
 	)
 }
@@ -189,6 +195,8 @@ export type PopupOptions = Readonly<{
 	emptyText: string
 	anchorSelector: string
 	className?: string
+	/** A `<ComboboxItem>`'s children when they are more than its value. */
+	renderItem?: (value: string) => ReadonlyArray<Html | string>
 }>
 
 /** `ComboboxPopup` / `AutocompletePopup` with `Empty` and `List` (in a ScrollArea) inside. */
@@ -260,7 +268,13 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 												],
 												filtered.map((value, index) =>
 													options.slot === "combobox"
-														? comboboxItem(h, model, value, index)
+														? comboboxItem(
+																h,
+																model,
+																value,
+																index,
+																options.renderItem,
+															)
 														: autocompleteItem(h, model, value, index),
 												),
 											),
@@ -368,6 +382,11 @@ export type SingleViewInputs = Readonly<{
 	placeholder: string
 	emptyText: string
 	startAddon?: Html
+	/** `<ComboboxInput size>`. */
+	size?: "sm" | "default"
+	/** `<ComboboxInput showTrigger={false}>` drops the chevron button. */
+	showTrigger?: boolean
+	renderItem?: (value: string) => ReadonlyArray<Html | string>
 	/** `<ComboboxInput className>`: lands on the input-control span. */
 	className?: string
 	/** Wraps the input group (`<div className="w-64">`) and places it with the hidden input and portal. */
@@ -377,6 +396,7 @@ export type SingleViewInputs = Readonly<{
 /** `<Combobox>` with `<ComboboxInput startAddon>`: input group, chevron trigger and its popup. */
 export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model, inputs, h) => {
 	const hasAddon = inputs.startAddon !== undefined
+	const size = inputs.size ?? "default"
 	const field = h.div(
 		[
 			h.Key("input-group"),
@@ -403,16 +423,16 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 						cn(
 							inputControlLayoutStyles,
 							inputControlChromeStyles,
-							`${C.comboboxInputControlStyles} ${cn(hasAddon && C.comboboxInputStartAddonStyles, C.comboboxInputDefaultStyles)}`,
+							`${C.comboboxInputControlStyles} ${cn(hasAddon && C.comboboxInputStartAddonStyles, size === "sm" ? C.comboboxInputSmStyles : C.comboboxInputDefaultStyles)}`,
 							inputs.className,
 						),
 					),
-					h.DataAttribute("size", "default"),
+					h.DataAttribute("size", size),
 					h.DataAttribute("slot", "input-control"),
 				],
 				[
 					h.input([
-						h.Class(inputControlClassName("default")),
+						h.Class(inputControlClassName(size)),
 						...inputAttributes(
 							h,
 							model,
@@ -427,23 +447,7 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 					]),
 				],
 			),
-			h.button(
-				[
-					h.AriaExpanded(model.isOpen),
-					h.AriaHasPopup("listbox"),
-					h.Class(cn(C.comboboxTriggerStyles, C.comboboxTriggerDefaultStyles)),
-					h.DataAttribute("slot", "combobox-trigger"),
-					h.Tabindex(-1),
-					h.Type("button"),
-					h.OnClick(Message.ClickedTrigger()),
-				],
-				[
-					h.span(
-						[h.AriaHidden(true), h.DataAttribute("slot", "combobox-icon")],
-						[icon(h, "ChevronExpandYIcon")],
-					),
-				],
-			),
+			...(inputs.showTrigger === false ? [] : [triggerButton(h, model, size)]),
 		],
 	)
 	return inputs.toView({
@@ -457,9 +461,35 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 							items: inputs.items,
 							emptyText: inputs.emptyText,
 							anchorSelector: `[data-slot=combobox-input-group]:has(#${inputId(model.id)})`,
+							renderItem: inputs.renderItem,
 						}),
 					]
 				: []),
 		],
 	})
 })
+
+/** `ComboboxTrigger` with its chevron. */
+const triggerButton = (h: H, model: Model, size: "sm" | "default"): Html =>
+	h.button(
+		[
+			h.AriaExpanded(model.isOpen),
+			h.AriaHasPopup("listbox"),
+			h.Class(
+				cn(
+					C.comboboxTriggerStyles,
+					size === "sm" ? C.comboboxTriggerSmStyles : C.comboboxTriggerDefaultStyles,
+				),
+			),
+			h.DataAttribute("slot", "combobox-trigger"),
+			h.Tabindex(-1),
+			h.Type("button"),
+			h.OnClick(Message.ClickedTrigger()),
+		],
+		[
+			h.span(
+				[h.AriaHidden(true), h.DataAttribute("slot", "combobox-icon")],
+				[icon(h, "ChevronExpandYIcon")],
+			),
+		],
+	)

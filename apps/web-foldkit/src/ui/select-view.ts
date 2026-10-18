@@ -43,6 +43,8 @@ export type ViewInputs = Readonly<{
 	renderValue?: (value: string) => ReadonlyArray<Html | string>
 	/** A `<SelectItem>`'s children when they are more than its label. */
 	renderItem?: (option: SelectOption) => ReadonlyArray<Html | string>
+	/** `<SelectTrigger>` children placed before `<SelectValue>` (an icon). */
+	leading?: ReadonlyArray<Html>
 }>
 
 type H = HtmlBuilder<Message>
@@ -251,6 +253,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			),
 		],
 		[
+			...(inputs.leading ?? []),
 			h.span(
 				[h.Class(selectValueStyles), h.DataAttribute("slot", "select-value")],
 				inputs.renderValue?.(model.value) ??

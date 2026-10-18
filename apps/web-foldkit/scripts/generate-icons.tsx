@@ -100,6 +100,7 @@ const NAMES = [
 	"NetworkNodesIcon",
 	"NodejsMonoIcon",
 	"OpenjdkMonoIcon",
+	"PaletteIcon",
 	"PaperPlaneIcon",
 	"PixelTriangleWarningIcon",
 	"PlanetScaleIcon",
