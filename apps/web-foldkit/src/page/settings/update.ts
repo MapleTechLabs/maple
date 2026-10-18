@@ -16,6 +16,7 @@ import * as Mcp from "./mcp/update"
 import type * as IngestionMessage from "./ingestion/message"
 import type * as IngestionModel from "./ingestion/model"
 import * as Ingestion from "./ingestion/update"
+import * as SetupHealth from "./setup-health/update"
 import type * as KeysMessage from "./keys/message"
 import { Message as KeysMessageValue } from "./keys/message"
 import type * as KeysModel from "./keys/model"
@@ -58,6 +59,7 @@ const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
 	["mcp", "Mcp"],
 	["keys", "Keys"],
 	["ingestion", "Ingestion"],
+	["setup-health", "SetupHealth"],
 ])
 const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
 
@@ -98,6 +100,13 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			return {
 				model: { ...model, tab: { _tag: "Keys", model: { ...step.model, apiKeys: model.apiKeys } } },
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotKeysMessage({ message })),
+			}
+		}
+		case "SetupHealth": {
+			const step = SetupHealth.init()
+			return {
+				model: { ...model, tab: { _tag: "SetupHealth", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotSetupHealthMessage({ message })),
 			}
 		}
 		case "Unported":
@@ -207,6 +216,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			syncTab({ ...model, session: AsyncData.settle(model.session, result) }, context),
 		CompletedFetchCustomer: ({ result }) =>
 			syncTab({ ...model, customer: AsyncData.settle(model.customer, result) }, context),
+		GotSetupHealthMessage: ({ message: inner }) => {
+			if (model.tab === null || model.tab._tag !== "SetupHealth") return { model }
+			const step = SetupHealth.update(model.tab.model, inner)
+			return {
+				model: { ...model, tab: { _tag: "SetupHealth", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotSetupHealthMessage({ message: child })),
+			}
+		},
 		GotIngestionMessage: ({ message: inner }) =>
 			model.tab !== null && model.tab._tag === "Ingestion"
 				? liftIngestion(model, model.tab.model, inner, context)

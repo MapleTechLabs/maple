@@ -234,6 +234,21 @@ const ingestionInteractions: ReadonlyArray<Scenario> = [
 	}),
 ]
 
+const SETUP_HEALTH = "/settings?tab=setup-health"
+
+/** Setup health: re-run the audit, open the passing checks. */
+const setupHealthInteractions: ReadonlyArray<Scenario> = [
+	page("setup-health-rerun", "Setup health: re-run", SETUP_HEALTH, {
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Re-run" }).click()
+			await target.getByRole("button", { name: "Re-run" }).and(target.locator(":enabled")).waitFor()
+		},
+	}),
+	page("setup-health-passing", "Setup health: passing checks", SETUP_HEALTH, {
+		steps: (target) => target.getByRole("button", { name: /^Passing/ }).click(),
+	}),
+]
+
 export const settingsArea: AreaModule = {
 	area: "settings",
 	scenarios: [
@@ -257,6 +272,7 @@ export const settingsArea: AreaModule = {
 		...keysInteractions,
 		...mcpInteractions,
 		...ingestionInteractions,
+		...setupHealthInteractions,
 		page("audit-log-denied", "Audit log: denied only", "/settings?tab=audit-log", {
 			// The outcome filter precedes the table's "Denied" badges in document order.
 			steps: (page) => page.getByText("Denied", { exact: true }).first().click(),

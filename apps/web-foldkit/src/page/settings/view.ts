@@ -9,6 +9,7 @@ import { navShell } from "./kit/nav-shell"
 import * as IngestionView from "./ingestion/view"
 import * as KeysView from "./keys/view"
 import * as McpView from "./mcp/view"
+import * as SetupHealthView from "./setup-health/view"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { settingsTabLabels, visibleSections, visibleTabs } from "./nav"
@@ -63,6 +64,16 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					view: IngestionView.view,
 					toParentMessage: (message) => Message.GotIngestionMessage({ message }),
 					viewInputs: {},
+				}),
+			]
+		case "SetupHealth":
+			return [
+				h.submodel({
+					slotId: "settings-setup-health",
+					model: tab.model,
+					view: SetupHealthView.view,
+					toParentMessage: (message) => Message.GotSetupHealthMessage({ message }),
+					viewInputs: { nowMs: model.nowMs, timeZone: inputs.context.timeZone },
 				}),
 			]
 		case "Unported":

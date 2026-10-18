@@ -6,6 +6,7 @@ import { SettingsSearch } from "../../route/search"
 import * as Ingestion from "./ingestion/model"
 import * as Keys from "./keys/model"
 import * as Mcp from "./mcp/model"
+import * as SetupHealth from "./setup-health/model"
 
 // `/settings` (apps/web/src/routes/settings.tsx): the nav rail and the active tab's section.
 
@@ -20,6 +21,7 @@ export const TabModel = Schema.Union([
 	Schema.TaggedStruct("Mcp", { model: Mcp.Model }),
 	Schema.TaggedStruct("Keys", { model: Keys.Model }),
 	Schema.TaggedStruct("Ingestion", { model: Ingestion.Model }),
+	Schema.TaggedStruct("SetupHealth", { model: SetupHealth.Model }),
 	/** A tab whose section is not ported yet. */
 	Schema.TaggedStruct("Unported", { tab: Schema.String }),
 ])
