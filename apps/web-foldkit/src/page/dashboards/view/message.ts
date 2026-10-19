@@ -27,6 +27,7 @@ export const Message = defineMessageUnion({
 	MeasuredGrid: { width: Schema.Number },
 	MeasuredWidget: { widgetId: Schema.String, widthPx: Schema.Number },
 	RevealedWidget: { widgetId: Schema.String },
+	ClickedNarrowRange: { widgetId: Schema.String },
 	CompletedFetchWidget: { key: Schema.String, result: Schema.Result(Schema.Unknown, WidgetFailure) },
 	CompletedFetchVariableOptions: {
 		name: Schema.String,

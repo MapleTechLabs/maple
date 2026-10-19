@@ -491,6 +491,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = { ...model, widgets: { ...model.widgets, [widgetId]: { ...slot, widthPx } } }
 			return slot.isRevealed ? withReplan(next, context, "Load") : { model: next }
 		},
+		ClickedNarrowRange: ({ widgetId }) => {
+			const slot = slotOf(model, widgetId)
+			return slot.isNarrowed === true
+				? { model }
+				: withReplan({ ...model, widgets: { ...model.widgets, [widgetId]: { ...slot, isNarrowed: true } } }, context, "Load")
+		},
 		RevealedWidget: ({ widgetId }) => {
 			const slot = slotOf(model, widgetId)
 			return slot.isRevealed

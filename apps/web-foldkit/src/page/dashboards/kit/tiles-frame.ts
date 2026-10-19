@@ -34,6 +34,7 @@ export const frame = <M>(
 	loadingSkeleton: chartSkeleton(ctx.h, "line"),
 	configure: ctx.configure,
 	fix: ctx.fix,
+	narrowRange: ctx.narrowRange,
 	errorDetails: ctx.errorDetails,
 	...overrides,
 })

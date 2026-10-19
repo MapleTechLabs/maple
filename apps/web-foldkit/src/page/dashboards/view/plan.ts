@@ -162,6 +162,7 @@ export const replan = (
 			...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
 			maxDataPoints: maxDataPointsForWidth(slot.widthPx ?? DEFAULT_WIDGET_WIDTH_PX, panelType),
 			variables,
+			isNarrowed: slot.isNarrowed === true,
 		})
 		const sparkGate = sparklineGate(context, widget, window, state.requests, gate, variables)
 		const widgets = { ...state.widgets, [widget.id]: { ...slot, gate, sparkGate } }

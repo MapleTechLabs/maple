@@ -67,6 +67,8 @@ export type TileContext<M> = Readonly<{
 	variables?: VariableValues
 	/** "Fix with AI" on a decode error, when the surface offers it. */
 	fix?: M | null
+	/** "Show last 7 days" on a list wider than the cap, when the surface offers narrowing. */
+	narrowRange?: M | null
 	/** The "Details" popover under a failed tile's message, when the surface renders one. */
 	errorDetails?: ((message: string) => Html) | null
 }>
