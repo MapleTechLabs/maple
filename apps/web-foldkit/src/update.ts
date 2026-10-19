@@ -782,7 +782,7 @@ const changedUrlStep = (model: Model, changedUrl: Url): UpdateReturn => {
 		route: () => nextRoute,
 		signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
 	})
-	return Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
+	return Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag, rendersShell(nextRoute))), settle])(routed)
 }
 
 /** The Command behind a root toast action. */
