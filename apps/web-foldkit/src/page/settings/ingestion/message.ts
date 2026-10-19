@@ -13,7 +13,7 @@ import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as Tabs from "../../../ui/tabs"
 import * as MappingDialog from "./mapping-dialog"
-import { OverviewRow, RecommendationTab } from "./model"
+import { IngestKeyKind, OverviewRow, RecommendationTab } from "./model"
 
 const result = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schema, LoadFailure) })
 
@@ -27,6 +27,12 @@ export const Message = defineMessageUnion({
 	ClickedSendTestEvent: {},
 	CompletedSendTestEvent: { isSent: Schema.Boolean },
 	GotEndpointCopyMessage: { message: CopyButton.Message },
+	ToggledKeyReveal: { kind: IngestKeyKind },
+	GotKeyCopyMessage: { kind: IngestKeyKind, message: CopyButton.Message },
+	ClickedRegenerateKey: { kind: IngestKeyKind },
+	GotRollDialogMessage: { message: Dialog.Message },
+	ClickedConfirmRoll: {},
+	CompletedRollKey: { kind: IngestKeyKind, result: Schema.Result(Schema.Void, LoadFailure) },
 	ClickedShowSetup: {},
 	ClickedFramework: { framework: Schema.String },
 	CompletedSaveFramework: {},

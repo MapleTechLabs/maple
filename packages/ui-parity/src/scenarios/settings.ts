@@ -78,11 +78,10 @@ const failing = (...tags: ReadonlyArray<string>) => ({
 /** Loading and failed reads for each tab that loads data (the first read the tab renders from). */
 const FAULT_TABS: ReadonlyArray<readonly [id: string, path: string, tags: ReadonlyArray<string>]> = [
 	["audit-log", "/settings?tab=audit-log", ["auditLog.list"]],
-	["ingestion", "/settings?tab=ingestion", ["attributeMappings.list", "instrumentationRecommendations.list"]],
+	["ingestion", "/settings?tab=ingestion", ["attributeMappings.list", "instrumentationRecommendations.list", "ingestKeys.retrieve"]],
 	["data-platform", "/settings?tab=data-platform", ["orgClickHouseSettings.get"]],
 	["setup-audit", "/settings?tab=setup-audit", ["instrumentationAudit.retrieve"]],
 	["automation", "/settings?tab=automation", ["errors.getEscalationPolicy", "errors.listRecentEscalations"]],
-	["api-keys", "/settings?tab=api-keys", ["ingestKeys.retrieve"]],
 	["mcp", "/settings?tab=mcp", ["mcpConnections.list", "mcpTools.list"]],
 	["ai-provider", "/settings?tab=ai-provider", ["openRouterKey.get", "aiTriage.getSettings"]],
 ]
@@ -125,7 +124,7 @@ const fillCreateDialog = async (target: Page, name: string) => {
 	await target.getByRole("textbox", { name: "Name" }).fill(name)
 }
 
-/** Every Keys control and write: create (full and restricted), roll, revoke, ingest roll, filters. */
+/** Every Keys control and write: create (full and restricted), roll, revoke, filters. */
 const keysInteractions: ReadonlyArray<Scenario> = [
 	page("keys-create-submit", "Keys: create an API key", KEYS, {
 		steps: async (target) => {
@@ -170,14 +169,6 @@ const keysInteractions: ReadonlyArray<Scenario> = [
 			await target.getByText("API key rolled").waitFor()
 		},
 	}),
-	page("keys-ingest-roll", "Keys: roll the public ingest key", KEYS, {
-		steps: async (target) => {
-			await target.getByRole("button", { name: "Actions for public ingest key" }).click()
-			await target.getByRole("menuitem", { name: "Roll key" }).click()
-			await target.getByRole("alertdialog").getByRole("button", { name: "Roll key" }).click()
-			await target.getByText("Public ingest key rolled", { exact: false }).waitFor()
-		},
-	}),
 	page("keys-filters", "Keys: API type, revoked status", KEYS, {
 		steps: async (target) => {
 			await target.getByRole("button", { name: "API · 2" }).click()
@@ -188,11 +179,8 @@ const keysInteractions: ReadonlyArray<Scenario> = [
 	page("keys-search", "Keys: search", KEYS, {
 		steps: (target) => target.getByRole("textbox", { name: "Search keys" }).fill("graf"),
 	}),
-	page("keys-reveal-scopes", "Keys: reveal an ingest key, open scopes", KEYS, {
-		steps: async (target) => {
-			await target.getByRole("button", { name: "Reveal key" }).first().click()
-			await target.getByRole("button", { name: /^Scopes/ }).click()
-		},
+	page("keys-scopes", "Keys: open scopes", KEYS, {
+		steps: (target) => target.getByRole("button", { name: /^Scopes/ }).click(),
 	}),
 ]
 
@@ -226,8 +214,21 @@ const mcpInteractions: ReadonlyArray<Scenario> = [
 const INGESTION = "/settings?tab=ingestion"
 const RULES = "settings-ingestion-rules"
 
-/** Ingestion: setup steps, mappings (add, edit, toggle, delete) and recommendations (apply, dismiss, reopen). */
+/** Ingestion: keys (reveal, regenerate), setup steps, mappings and recommendations. */
 const ingestionInteractions: ReadonlyArray<Scenario> = [
+	page("ingestion-reveal-key", "Ingestion: reveal the private key", INGESTION, {
+		steps: (target) => target.getByRole("button", { name: "Reveal key" }).nth(1).click(),
+	}),
+	page("ingestion-regenerate-dialog", "Ingestion: regenerate public key dialog", INGESTION, {
+		steps: (target) => target.getByRole("button", { name: "Regenerate public key" }).click(),
+	}),
+	page("ingestion-regenerate-key", "Ingestion: regenerate the private key", INGESTION, {
+		steps: async (target) => {
+			await target.getByRole("button", { name: "Regenerate private key" }).click()
+			await target.getByRole("alertdialog").getByRole("button", { name: "Regenerate key" }).click()
+			await target.getByText("Private key regenerated", { exact: false }).waitFor()
+		},
+	}),
 	page("ingestion-show-setup", "Ingestion: expand setup, pick Python, Instrument tab", INGESTION, {
 		steps: async (target) => {
 			await target.getByRole("button", { name: "Show setup" }).click()

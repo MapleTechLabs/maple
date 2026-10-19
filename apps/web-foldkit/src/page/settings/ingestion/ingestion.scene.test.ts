@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest"
 import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
+import { toLoadFailure } from "../../../data/load-failure"
 import { PageOutMessage } from "../../contract"
 import * as MappingDialog from "./mapping-dialog"
 import { Message } from "./message"
@@ -56,6 +57,39 @@ describe("ingestion tab", () => {
 			"FetchAttributeMappings",
 			"ReadQuickStartFramework",
 		])
+	})
+
+	test("regenerating a key asks first, refetches the pair and says the old key was revoked", () => {
+		const asked = step(loaded(), Message.ClickedRegenerateKey({ kind: "private" })).model
+		expect([asked.rollDialog.isOpen, asked.rollType]).toEqual([true, "private"])
+		const rolling = step(asked, Message.ClickedConfirmRoll())
+		expect(rolling.commands?.[0]).toMatchObject({ name: "RollIngestKey", args: { kind: "private" } })
+		expect(step(rolling.model, Message.ClickedConfirmRoll()).commands ?? []).toEqual([])
+		const rolled = step(rolling.model, Message.CompletedRollKey({ kind: "private", result: Result.succeed(undefined) }))
+		expect(names(rolled.commands)).toContain("FetchIngestionKeys")
+		expect([rolled.model.isRolling, rolled.model.rollDialog.isOpen]).toEqual([false, false])
+		expect(rolled.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Private key regenerated. Previous key was revoked immediately.",
+				description: "",
+			}),
+		)
+	})
+
+	test("a failed regenerate closes the dialog with an error toast and keeps the pair", () => {
+		const rolling = step(step(loaded(), Message.ClickedRegenerateKey({ kind: "public" })).model, Message.ClickedConfirmRoll())
+		const failure = toLoadFailure(new Error("boom"))
+		const failed = step(rolling.model, Message.CompletedRollKey({ kind: "public", result: Result.fail(failure) }))
+		expect(names(failed.commands)).not.toContain("FetchIngestionKeys")
+		expect(failed.model.rollDialog.isOpen).toBe(false)
+		expect(failed.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "error", title: "Unable to complete request", description: failure.message }))
+	})
+
+	test("reveal toggles one key at a time", () => {
+		const shown = step(loaded(), Message.ToggledKeyReveal({ kind: "public" })).model
+		expect(shown.revealedKeys).toEqual(["public"])
+		expect(step(shown, Message.ToggledKeyReveal({ kind: "public" })).model.revealedKeys).toEqual([])
 	})
 
 	test("applying a rename creates the copy mapping, then refreshes both lists with a toast", () => {

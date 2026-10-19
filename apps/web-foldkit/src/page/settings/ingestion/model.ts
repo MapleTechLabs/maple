@@ -9,7 +9,7 @@ import * as Tabs from "../../../ui/tabs"
 import * as MappingDialog from "./mapping-dialog"
 
 // `IngestionSection` (apps/web/src/components/settings/ingestion-section.tsx): the ingest-health
-// strip, the OTLP endpoint, install steps, recommendations and attribute mappings.
+// strip, the OTLP endpoint and ingest keys, install steps, recommendations and attribute mappings.
 
 /** `ServiceOverview` reduced to what `useIngestConnection` reads. */
 export const OverviewRow = Schema.Struct({ serviceName: Schema.String, spanCount: Schema.Number })
@@ -20,6 +20,10 @@ export const IngestData = AsyncData.Schema(V2IngestKeys, LoadFailure)
 export const RecommendationsData = AsyncData.Schema(Schema.Array(V2Recommendation), LoadFailure)
 export const MappingsData = AsyncData.Schema(Schema.Array(V2AttributeMapping), LoadFailure)
 
+/** The org's ingest key pair: `public` for browser SDKs, `private` for servers. */
+export const IngestKeyKind = Schema.Literals(["public", "private"])
+export type IngestKeyKind = typeof IngestKeyKind.Type
+
 export const RecommendationTab = Schema.Literals(["open", "closed"])
 export type RecommendationTab = typeof RecommendationTab.Type
 
@@ -29,6 +33,12 @@ export const Model = Schema.Struct({
 	ingest: IngestData.schema,
 	isSendingTest: Schema.Boolean,
 	endpointCopy: CopyButton.Model,
+	/** Admin-only rows: which keys are revealed, each key's copy state, and the regenerate flow. */
+	revealedKeys: Schema.Array(IngestKeyKind),
+	keyCopies: Schema.Record(Schema.String, CopyButton.Model),
+	rollDialog: Dialog.Model,
+	rollType: IngestKeyKind,
+	isRolling: Schema.Boolean,
 	isSetupExpanded: Schema.Boolean,
 	/** The quick-start framework (`maple-onboarding-v6-<org>`), `null` until storage is read. */
 	framework: Schema.String,

@@ -34,8 +34,8 @@ const steps = (model: Model, messages: ReadonlyArray<Message>) =>
 	messages.reduce((current, message) => update(current, message).model, model)
 
 describe("keys tab", () => {
-	test("admins read the ingest pair; members never ask for it", () => {
-		expect(names(init({ isAdmin: true, userId: null }).commands)).toEqual(["FetchIngestKeys"])
+	test("entry reads nothing: the keys follow the synced shape and ingest keys live in Ingestion", () => {
+		expect(names(init({ isAdmin: true, userId: null }).commands)).toEqual([])
 		expect(names(init({ isAdmin: false, userId: "user_1" }).commands)).toEqual([])
 	})
 
@@ -79,19 +79,5 @@ describe("keys tab", () => {
 		const done = update(confirming.model, Message.CompletedRevoke({ id: key.id, result: Result.succeed(undefined) }))
 		expect(done.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "success", title: "Key revoked", description: "" }))
 		expect(done.model.isRevoking).toBe(false)
-	})
-
-	test("a rolled ingest key refetches the pair and says the old one stopped", () => {
-		const rolling = update({ ...loaded(), ingestRollType: "ingest_private" }, Message.ClickedConfirmIngestRoll())
-		expect(names(rolling.commands)).toEqual(["RollIngestKey"])
-		const rolled = update(rolling.model, Message.CompletedIngestRoll({ type: "ingest_private", result: Result.succeed(undefined) }))
-		expect(names(rolled.commands)).toContain("FetchIngestKeys")
-		expect(rolled.outMessage).toEqual(
-			PageOutMessage.RequestedToast({
-				type: "success",
-				title: "Private ingest key rolled. The previous key stopped working immediately.",
-				description: "",
-			}),
-		)
 	})
 })

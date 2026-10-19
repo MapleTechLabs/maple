@@ -10,6 +10,7 @@ import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
 import { MapleApiV2Client, MapleSyncHttpClient } from "../../../platform/api-clients"
 import { Message } from "./message"
+import { IngestKeyKind } from "./model"
 
 const PAGE_LIMIT = 100
 
@@ -39,6 +40,19 @@ export const FetchIngestionKeys = Command.define("FetchIngestionKeys", {
 	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
 		settle((result) => Message.CompletedFetchIngestKeys({ result })),
 	),
+})
+
+/** `ingestKeys.rollPublic` / `rollPrivate`: the previous key stops working immediately. */
+export const RollIngestKey = Command.define("RollIngestKey", {
+	args: { kind: IngestKeyKind },
+	messages: [Message.CompletedRollKey],
+	execute: ({ kind }) =>
+		Effect.flatMap(MapleApiV2Client, (client) =>
+			kind === "public" ? client.ingestKeys.rollPublic() : client.ingestKeys.rollPrivate(),
+		).pipe(
+			Effect.asVoid,
+			settle((result) => Message.CompletedRollKey({ kind, result })),
+		),
 })
 
 /** `recommendationIssuesListAtom`: every page. */
