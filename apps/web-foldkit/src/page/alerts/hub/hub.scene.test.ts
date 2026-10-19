@@ -113,6 +113,21 @@ describe("alerts hub", () => {
 		)
 	})
 
+	test("a chat destination's routing row names its connector, not a generic Chat", () => {
+		const chat = destinationRow({
+			type: "chat",
+			name: "Eng alerts",
+			config_json: { summary: "#alerts", channelLabel: null, chatConnector: "slack" },
+		})
+		const model = pageUpdate(loaded({ tab: "routing" }), Message.UpdatedDestinations({ orgId: ORG, rows: [chat] })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Slack")).toExist(),
+			expectView(text("Chat")).not.toExist(),
+		)
+	})
+
 	test("a rule listed under several tags has a menu per tag, and each acts on that rule", () => {
 		const tagged = pageUpdate(
 			loaded({ tab: "rules" }),

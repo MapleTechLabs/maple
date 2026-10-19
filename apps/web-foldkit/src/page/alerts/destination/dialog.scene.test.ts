@@ -1,5 +1,5 @@
 import { AlertDestinationId } from "@maple/domain/http"
-import type { V2TelegramChat } from "@maple/domain/http/v2"
+import { encodePublicId, PublicIdPrefixes, V2ChatConnector, type V2ChatDestination, type V2TelegramChat } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import {
 	click,
@@ -10,16 +10,50 @@ import {
 	Mount,
 	role,
 	scene,
+	text,
 	type,
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "../../../ui/dialog"
 import { MountDialog } from "../../../ui/dialog"
-import { CreateDestination, DetectTelegramChats, Message, OutMessage, init, openNew, update } from "./dialog"
+import * as Combobox from "../../../ui/combobox"
+import * as ChatConnect from "../shared/chat-connect"
+import * as ChatFields from "./chat-fields"
+import {
+	chatConnectDependencies,
+	CreateDestination,
+	DetectTelegramChats,
+	isFormReady,
+	Message,
+	OutMessage,
+	init,
+	openNew,
+	update,
+} from "./dialog"
 import { view as dialogView } from "./view"
 
 const view = withViewInputs(dialogView, { id: "test-destination" })()
+const workspaceWire = (n: number, name: string) => ({
+	id: encodePublicId(PublicIdPrefixes.chatWorkspace, `0199a0d5-0000-7000-8000-00000000000${n}`),
+	object: "chat_workspace",
+	connector: "slack",
+	external_workspace_id: `T0${n}`,
+	name,
+	settings: {},
+	created_at: "2026-09-01T00:00:00.000Z",
+})
+const slack = (workspaces: ReadonlyArray<ReturnType<typeof workspaceWire>>) =>
+	Schema.decodeUnknownSync(V2ChatConnector)({
+		id: "slack",
+		object: "chat_connector",
+		name: "Slack",
+		available: true,
+		workspaces,
+		supports_identity: true,
+	})
+const channel = (id: string, name: string, isPrivate = false): V2ChatDestination => ({ id, name, private: isPrivate })
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 const opened = () => openNew(init("test-destination")).model
 const CREATED = Schema.decodeSync(AlertDestinationId)("0199a001-0000-7000-8000-0000000000ff")
 
@@ -84,6 +118,61 @@ describe("destination dialog", () => {
 		expect(onB.isDetectingChats).toBe(false)
 		const late = update(onB, Message.CompletedDetectChats({ openCount: 1, botToken: token, result: Result.succeed([chat]) }))
 		expect(late.model.form.telegramChatId).toBe("")
+	})
+
+	test("a linked Slack workspace lists its channels; picking one makes the destination savable", () => {
+		const withSlack = update(opened(), Message.CompletedFetchConnectors({ connectors: [slack([workspaceWire(1, "Acme Shop")])] })).model
+		const workspaceId = withSlack.connectors?.[0]?.workspaces[0]?.id ?? ""
+		const picked = update(withSlack, Message.ClickedChatWorkspace({ connector: "slack", workspaceId }))
+		expect(names(picked.commands)).toEqual(["FetchAlertChatChannels"])
+		expect(isFormReady(picked.model.form, false)).toBe(false)
+		const listed = update(
+			picked.model,
+			Message.GotChatFieldsMessage({
+				message: ChatFields.Message.CompletedFetchChannels({
+					key: picked.model.chat.channels.key ?? "",
+					result: Result.succeed([channel("C1", "incidents"), channel("C2", "ops", true)]),
+				}),
+			}),
+		).model
+		scene(
+			{ update, view },
+			given(listed),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("combobox", { name: "Channel" })).toExist(),
+		)
+		const chosen = update(
+			listed,
+			Message.GotChatFieldsMessage({
+				message: ChatFields.Message.GotComboboxMessage({ message: Combobox.Message.ClickedItem({ value: "#ops (private)" }) }),
+			}),
+		).model
+		expect([chosen.form.chatChannelId, chosen.form.chatChannelName]).toEqual(["C2", "ops"])
+		expect(isFormReady(chosen.form, false)).toBe(true)
+		expect(names(update(chosen, Message.ClickedSave()).commands)).toEqual(["CreateAlertDestination"])
+	})
+
+	test("Connect on an unlinked Slack links it in a popup, then the new workspace is the form's", () => {
+		const unlinked = update(opened(), Message.CompletedFetchConnectors({ connectors: [slack([])] })).model
+		scene(
+			{ update, view },
+			given(unlinked),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Connect a Slack workspace, then pick a channel.")).toExist(),
+		)
+		const connecting = update(unlinked, Message.ClickedConnectChat({ connector: "slack" })).model
+		expect(chatConnectDependencies(connecting).phase).toBe("popup")
+		const attempt = connecting.chatConnect.active?.attempt ?? 0
+		const polled = update(connecting, Message.GotChatConnectMessage({ message: ChatConnect.Message.Polled({ attempt }) }))
+		expect(names(polled.commands)).toEqual(["FetchChatConnectors"])
+		const linked = update(
+			polled.model,
+			Message.CompletedFetchConnectors({ connectors: [slack([workspaceWire(2, "Acme Ops")])] }),
+		)
+		expect(linked.model.form.type).toBe("chat")
+		expect(linked.model.form.chatWorkspaceId).toBe(linked.model.connectors?.[0]?.workspaces[0]?.id)
+		expect(chatConnectDependencies(linked.model).phase).toBe("idle")
+		expect(names(linked.commands)).toEqual(["FetchAlertChatChannels"])
 	})
 
 	test("a save is in flight once; a failure keeps the dialog open and reports the error", () => {

@@ -110,7 +110,8 @@ const tabStrip = (h: H, model: Model): Html => {
 			h.a(
 				[
 					h.Key(tab),
-					h.Href(ruleHref(model.ruleId, tab)),
+					// `search={(prev) => ({ ...prev, tab })}`: the time range rides along.
+					h.Href(ruleHref(model.ruleId, { ...model.search, tab })),
 					...(tab === active ? [h.AriaCurrent("page")] : []),
 					h.Class(underlineTabClass(tab === active)),
 				],

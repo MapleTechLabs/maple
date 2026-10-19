@@ -1,12 +1,14 @@
 import * as Keyed from "../../../data/keyed"
 import { resolveWindow } from "../../../data/time-range"
 import * as Dialog from "../../../ui/dialog"
+import * as Tooltip from "../../../ui/tooltip"
+import { Command } from "foldkit"
 import type { PageContext } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import { completeSave, completeTest, runTest, save } from "./actions"
-import { FocusSqlCaret, InsertSqlToken } from "./command"
+import { FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
 import { SQL_TEXTAREA_ID } from "./view-sql"
-import { liftDialog, menuStep, removeDestination } from "./dest-steps"
+import { chatConnectStep, connectorsAnswered, liftDialog, menuStep, removeDestination } from "./dest-steps"
 import { suggestedName } from "./derive"
 import * as F from "./form-steps"
 import { Message } from "./message"
@@ -42,10 +44,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		UpdatedIncidents: ({ orgId, rows }) => ofOrg(model, context, orgId, () => ({ model: { ...model, incidents: rows } })),
 		UpdatedDestinations: ({ orgId, rows }) =>
 			ofOrg(model, context, orgId, () => followRows({ ...model, destinations: rows }, context)),
+		// A verdict only counts while nothing has answered: a resolved list is the answer.
+		FailedLoadRules: ({ orgId }) =>
+			ofOrg(model, context, orgId, () =>
+				model.rules === null ? initialize({ ...model, isRulesLoadFailed: true }, context) : { model },
+			),
+		UpdatedSourceDashboard: ({ orgId, dashboards }) =>
+			ofOrg(model, context, orgId, () => followRows({ ...model, sourceDashboards: dashboards }, context)),
+		FailedLoadDashboards: ({ orgId }) =>
+			ofOrg(model, context, orgId, () =>
+				model.sourceDashboards === null ? followRows({ ...model, isDashboardsLoadFailed: true }, context) : { model },
+			),
+		ClickedReloadPage: () => ({ model, commands: [ReloadPage()] }),
+		ReloadedPage: () => ({ model }),
 		GeneratedDraftId: ({ id }) => initialize({ ...model, draftId: id }, context),
 		CompletedReadClock: ({ nowMs }) => readClock(model, context, nowMs),
 		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
-		CompletedFetchConnectors: ({ connectors }) => ({ model: { ...model, connectors } }),
+		CompletedFetchConnectors: ({ connectors }) => connectorsAnswered(model, connectors),
+		GotChatConnectMessage: ({ message: inner }) => chatConnectStep(model, inner),
 		CompletedFetchTraceFacets: ({ key, result }) => ({
 			model: { ...model, traceFacets: Keyed.accept(model.traceFacets, key, result) },
 		}),
@@ -93,6 +109,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedTest: (completed) => completeTest(model, completed),
 		ClickedSave: () => save(model),
 		CompletedSave: (completed) => completeSave(model, completed),
+		TrackedRuleCreated: () => ({ model }),
 		ClickedShowTemplates: () => liftTemplates(model, Dialog.open(model.templates)),
 		GotTemplatesMessage: ({ message: inner }) => liftTemplates(model, Dialog.update(model.templates, inner)),
 		ClickedTemplate: ({ id }) => {
@@ -132,6 +149,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRemoveDestination: ({ tier, id }) => removeDestination(model, tier, id),
 		GotDestinationDialogMessage: ({ message: inner }) =>
 			liftDialog(model, DestinationDialog.update(model.destinationDialog, inner)),
+		GotIssuesTooltipMessage: ({ message: inner }) => {
+			const step = Tooltip.update(model.issuesTooltip, inner)
+			return {
+				model: { ...model, issuesTooltip: step.model },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotIssuesTooltipMessage({ message })),
+			}
+		},
 		FailedLoadProviderLogo: ({ type }) =>
 			model.brokenLogos.includes(type) ? { model } : { model: { ...model, brokenLogos: [...model.brokenLogos, type] } },
 	})

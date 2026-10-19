@@ -98,6 +98,18 @@ describe("alert rule", () => {
 		scene({ update: pageUpdate, view }, given(failed), themeResolved(), expectView(text("Failed to load checks")).toExist())
 	})
 
+	test("the Overview and History tab links keep the time range", () => {
+		const search = { timePreset: "7d" }
+		const href = (tab: string) => `/alerts/${RULE}?tab=${tab}&timePreset=7d`
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(search)),
+			themeResolved(),
+			expectView(role("link", { name: "History" })).toHaveAttr("href", href("history")),
+			expectView(role("link", { name: "Overview" })).toHaveAttr("href", href("overview")),
+		)
+	})
+
 	test("an unknown rule says so", () => {
 		const model = pageUpdate(init(route(), context).model, Message.UpdatedRules({ orgId: ORG, rows: [] })).model
 		scene({ update: pageUpdate, view }, given(model), themeResolved(), expectView(text("Rule not found")).toExist())

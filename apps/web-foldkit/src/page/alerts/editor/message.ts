@@ -1,4 +1,4 @@
-import { AlertDestinationId, AlertRulePreviewResponse } from "@maple/domain/http"
+import { AlertDestinationId, AlertRulePreviewResponse, DashboardDocument } from "@maple/domain/http"
 import { V2ChatConnector } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
@@ -14,12 +14,14 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Tooltip from "../../../ui/tooltip"
 import * as RadioGroup from "../../../ui/radio-group"
 import * as Select from "../../../ui/select"
 import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
+import * as ChatConnect from "../shared/chat-connect"
 import { PreviewFailure } from "../shared/preview"
 import { DryRun, TraceFacets } from "./model"
 
@@ -57,6 +59,13 @@ export const Message = defineMessageUnion({
 	UpdatedRuleStates: { orgId: Schema.String, rows: Schema.Array(AlertRuleStateRowSchema) },
 	UpdatedIncidents: { orgId: Schema.String, rows: Schema.Array(AlertIncidentRowSchema) },
 	UpdatedDestinations: { orgId: Schema.String, rows: Schema.Array(AlertDestinationRowSchema) },
+	/** The `alert_rules` sync gave up, or sat loading past the timeout, while an edit waited on it. */
+	FailedLoadRules: { orgId: Schema.String },
+	/** The widget's dashboard as the collection answers (empty when it has no such board). */
+	UpdatedSourceDashboard: { orgId: Schema.String, dashboards: Schema.Array(DashboardDocument) },
+	FailedLoadDashboards: { orgId: Schema.String },
+	ClickedReloadPage: {},
+	ReloadedPage: {},
 	GeneratedDraftId: { id: Schema.String },
 	CompletedReadClock: { nowMs: Schema.Number },
 	CompletedReadIsAdmin: { isAdmin: Schema.Boolean },
@@ -97,6 +106,8 @@ export const Message = defineMessageUnion({
 	},
 	ClickedSave: {},
 	CompletedSave: { result: Schema.Result(Schema.Void, Failure) },
+	/** `trackProduct("alert_rule_created")` was handed to the session SDK. */
+	TrackedRuleCreated: {},
 	ClickedShowTemplates: {},
 	GotTemplatesMessage: { message: Dialog.Message },
 	ClickedTemplate: { id: Schema.String },
@@ -117,6 +128,8 @@ export const Message = defineMessageUnion({
 	GotMenuMessage: { id: Schema.String, message: Menu.Message },
 	ClickedRemoveDestination: { tier: Tier, id: AlertDestinationId },
 	GotDestinationDialogMessage: { message: DestinationDialog.Message },
+	GotIssuesTooltipMessage: { message: Tooltip.Message },
+	GotChatConnectMessage: { message: ChatConnect.Message },
 	FailedLoadProviderLogo: { type: Schema.String },
 })
 export type Message = typeof Message.Type

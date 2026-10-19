@@ -232,6 +232,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			// `onClick={() => onSelect(issue.id)}`: a picked item links; the rest is the input's own state.
 			if (inner._tag === "ClickedItem") return update(model, Message.SelectedLinkIssue({ issueId: ErrorIssueId.make(inner.value) }), context)
 			const next = Combobox.update(model.linkCombobox, inner)
+			// Enter on the active item picks like a click; the input keeps the query, not the id.
+			if (next.outMessage?._tag === "ChangedValue")
+				return update(model, Message.SelectedLinkIssue({ issueId: ErrorIssueId.make(next.outMessage.value) }), context)
 			return {
 				model: { ...model, linkCombobox: next.model },
 				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotLinkComboboxMessage({ message })),

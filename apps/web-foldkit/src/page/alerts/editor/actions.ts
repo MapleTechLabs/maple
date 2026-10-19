@@ -6,7 +6,7 @@ import {
 import { Result } from "effect"
 import { PageOutMessage } from "../../contract"
 import { alertsHref } from "../shared/links"
-import { RunRuleTest, SaveRule } from "./command"
+import { RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
 import { previewIdentityKey, validationIssues } from "./derive"
 import type { Message } from "./message"
 import type { Model } from "./model"
@@ -58,6 +58,8 @@ export const completeSave = (model: Model, message: Extract<Message, { _tag: "Co
 	Result.match(message.result, {
 		onSuccess: () => ({
 			model: { ...model, isSaving: false },
+			commands:
+				model.editingRuleId === null && model.form !== null ? [TrackRuleCreated({ signal: model.form.signalType })] : [],
 			outMessage: PageOutMessage.RequestedNavigation({
 				url: alertsHref({}),
 				isReplace: false,

@@ -2,6 +2,8 @@ import { Clock, Effect, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
+import * as DestinationDialog from "../destination/dialog"
+import * as ChatConnectStream from "../shared/chat-connect-stream"
 import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../shared/collections"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -32,6 +34,14 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
 			dependenciesToStream: ({ orgId }) =>
 				destinationRows(orgId, (rows) => Message.UpdatedDestinations({ orgId, rows })),
+		}),
+		/** The destination dialog's workspace connect popup (`useChatWorkspaceConnect`). */
+		destinationChatConnect: entry(ChatConnectStream.Dependencies.fields, {
+			modelToDependencies: ({ model }) => DestinationDialog.chatConnectDependencies(model.destinationDialog),
+			dependenciesToStream: (dependencies) =>
+				Stream.map(DestinationDialog.chatConnectStream(dependencies), (message) =>
+					Message.GotDestinationDialogMessage({ message }),
+				),
 		}),
 		clock: entry(
 			{},

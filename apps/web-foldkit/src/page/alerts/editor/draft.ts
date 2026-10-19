@@ -13,6 +13,7 @@ import type { Model, Notice } from "./model"
 
 export type Initialization =
 	| { readonly _tag: "Loading" }
+	| { readonly _tag: "Failed" }
 	| {
 			readonly _tag: "Ready"
 			readonly key: string
@@ -69,7 +70,8 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 	const search = model.search
 	const base = baseForm(search.serviceName, draftId)
 	if (search.ruleId !== undefined) {
-		if (model.rules === null) return { _tag: "Loading" }
+		// Terminal: an edit must not silently turn into a create, so the page stops here.
+		if (model.rules === null) return model.isRulesLoadFailed ? { _tag: "Failed" } : { _tag: "Loading" }
 		const rule = editingRuleOf(model, search.ruleId)
 		if (rule !== null) {
 			const form = fromFormState(ruleToFormState(rule))
@@ -85,18 +87,33 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 		return ready(`chart:${chart.value.dashboardId}:${chart.value.widget.id}`, fromFormState(result.form), result.notices)
 	}
 	if (search.dashboardId !== undefined || search.widgetId !== undefined) {
-		// TODO(alert-editor): the dashboards id lookup; without a snapshot the draft starts blank.
-		const result = resolveWidgetAlertPrefill({
-			dashboards: [],
-			dashboardId: search.dashboardId,
-			widgetId: search.widgetId,
-			base,
-		})
-		return ready(
-			`missing-chart-source:${search.dashboardId ?? "dashboard"}:${search.widgetId ?? "widget"}`,
-			fromFormState(result.form),
-			result.notices,
-		)
+		if (search.dashboardId === undefined || search.widgetId === undefined) {
+			const result = resolveWidgetAlertPrefill({
+				dashboards: [],
+				dashboardId: search.dashboardId,
+				widgetId: search.widgetId,
+				base,
+			})
+			return ready(
+				`missing-chart-source:${search.dashboardId ?? "dashboard"}:${search.widgetId ?? "widget"}`,
+				fromFormState(result.form),
+				result.notices,
+			)
+		}
+		// No snapshot (an oversized one is dropped): the id lookup over the dashboards list.
+		if (model.sourceDashboards !== null) {
+			const result = resolveWidgetAlertPrefill({
+				dashboards: model.sourceDashboards,
+				dashboardId: search.dashboardId,
+				widgetId: search.widgetId,
+				base,
+			})
+			return ready(`dashboard:${search.dashboardId}:widget:${search.widgetId}`, fromFormState(result.form), result.notices)
+		}
+		if (!model.isDashboardsLoadFailed) return { _tag: "Loading" }
+		return ready(`dashboard-load-failed:${search.dashboardId}:${search.widgetId}`, base, [
+			{ severity: "warning", message: "Dashboards could not be loaded. Starting from a blank alert." },
+		])
 	}
 	const template = ALERT_TEMPLATES.find((candidate) => candidate.id === search.template)
 	if (template !== undefined) return ready(`new:template:${template.id}`, fromFormState(template.apply(base)))

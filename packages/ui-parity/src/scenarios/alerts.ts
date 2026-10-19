@@ -161,6 +161,29 @@ export const alertsArea: AreaModule = {
 				waitForText("Destination created"),
 			),
 		}),
+		alert("hub-new-destination-chat", "Hub, add a Slack channel destination", ROUTING, {
+			steps: act(
+				clickButton("New destination"),
+				clickButton(/^Slack/),
+				(page) => page.getByRole("combobox", { name: "Channel" }).click(),
+				(page) => page.getByRole("option", { name: "#incidents" }).click(),
+				clickButton("Add Slack destination"),
+				waitForText("Destination created"),
+			),
+		}),
+		alert("hub-new-destination-hazel", "Hub, add a Hazel channel destination", ROUTING, {
+			steps: act(
+				clickButton("New destination"),
+				clickButton(/^Hazel/),
+				waitForText("Connected to Hazel"),
+				(page) => page.getByRole("combobox", { name: "Hazel organization" }).click(),
+				(page) => page.getByRole("option", { name: "Acme Shop" }).click(),
+				(page) => page.getByRole("combobox", { name: "Hazel channel" }).click(),
+				(page) => page.getByRole("option", { name: "#alerts" }).click(),
+				clickButton("Add Hazel destination"),
+				waitForText("Destination created"),
+			),
+		}),
 		alert("hub-edit-destination", "Hub, edit a destination", ROUTING, {
 			steps: act(clickButton("Actions for On-call webhook"), clickMenuItem("Edit")),
 		}),

@@ -68,6 +68,20 @@ describe("alert incident", () => {
 		)
 	})
 
+	test("a changed incident row re-reads the clock, so Open Xm and the preview window move on", () => {
+		const loaded = [
+			Message.ReadClock({ nowMs: NOW }),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2)] }),
+		].reduce((model, message) => step(model, message).model, init(route(), context).model)
+		const changed = step(loaded, Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow({ last_observed_value: 2100 })] }))
+		expect(names(changed.commands)).toContain("ReadAlertIncidentClock")
+		const later = step(changed.model, Message.ReadClock({ nowMs: NOW + 10 * 60_000 + 30_000 }))
+		expect(later.model.nowMs).toBe(NOW + 10 * 60_000)
+		expect(names(later.commands)).toContain("FetchAlertIncidentPreview")
+		scene({ update: pageUpdate, view }, given(later.model), themeResolved(), expectView(text(/^Open 2h ·/)).toExist())
+	})
+
 	test("an unknown incident says so and links back to alerts", () => {
 		const model = [Message.ReadClock({ nowMs: NOW }), Message.UpdatedIncidents({ orgId: ORG, rows: [] })].reduce(
 			(current, message) => step(current, message).model,

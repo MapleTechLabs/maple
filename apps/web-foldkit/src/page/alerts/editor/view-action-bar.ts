@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
+import * as Tooltip from "../../../ui/tooltip"
 import { alertsHref } from "../shared/links"
 import { describeRuleCondition, validationIssues } from "./derive"
 import type { RuleForm } from "./form"
@@ -16,8 +17,39 @@ type H = HtmlBuilder<Message>
 
 const MAX_VISIBLE_ISSUES = 3
 
-/** `ValidationSummary`. TODO(alert-editor): the "details" tooltip listing every issue. */
-const validationSummary = (h: H, issues: ReadonlyArray<string>): Html => {
+/** The "details" trigger and its tooltip: every issue, one per line. */
+const issuesDetails = (h: H, model: Model, issues: ReadonlyArray<string>): Html =>
+	h.submodel({
+		slotId: "alert-rule-issues-tooltip",
+		model: model.issuesTooltip,
+		view: Tooltip.view,
+		toParentMessage: (message: Tooltip.Message) => Message.GotIssuesTooltipMessage({ message }),
+		viewInputs: {
+			toContent: () => [
+				h.ul([h.Class("space-y-0.5 text-xs")], issues.map((issue) => h.li([h.Key(issue)], [`• ${issue}`]))),
+			],
+			toView: ({ trigger, portal }) =>
+				h.span(
+					[h.Class("contents")],
+					[
+						button(
+							h,
+							{
+								variant: "link",
+								size: "xs",
+								className: "text-muted-foreground underline decoration-dotted hover:text-foreground",
+								attributes: trigger(),
+							},
+							["details"],
+						),
+						...(portal === null ? [] : [portal]),
+					],
+				),
+		},
+	})
+
+/** `ValidationSummary`. */
+const validationSummary = (h: H, model: Model, issues: ReadonlyArray<string>): Html => {
 	if (issues.length === 0)
 		return h.span(
 			[h.Class("flex items-center gap-1.5 text-xs text-severity-info")],
@@ -31,19 +63,7 @@ const validationSummary = (h: H, issues: ReadonlyArray<string>): Html => {
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "shrink-0 text-severity-warn" }),
 			h.span([h.Class("truncate")], ["Missing: ", h.span([h.Class("text-foreground")], [summary])]),
-			...(hiddenCount > 0
-				? [
-						button(
-							h,
-							{
-								variant: "link",
-								size: "xs",
-								className: "text-muted-foreground underline decoration-dotted hover:text-foreground",
-							},
-							["details"],
-						),
-					]
-				: []),
+			...(hiddenCount > 0 ? [issuesDetails(h, model, issues)] : []),
 		],
 	)
 }
@@ -86,7 +106,7 @@ export const actionBar = (h: H, model: Model, form: RuleForm, changeCount: numbe
 								[h.Class("flex min-w-0 flex-col gap-0.5")],
 								[
 									h.p([h.Class("truncate text-sm text-foreground"), h.Title(summary)], [summary]),
-									validationSummary(h, issues),
+									validationSummary(h, model, issues),
 								],
 							),
 						],

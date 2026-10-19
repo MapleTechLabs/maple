@@ -26,7 +26,7 @@ import { statusDot } from "../../../ui/status-dot"
 import { switchControl } from "../../../ui/switch"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
-import { providerLogo, providerOf } from "../shared/providers"
+import { destinationProvider, providerLogo } from "../shared/providers"
 import { createHref } from "../shared/links"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -183,7 +183,7 @@ type RowInputs = Readonly<{
 /** `DestinationRow`; the Model owns the menu, the test and delete pending state, the confirm dialog. */
 export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: RowInputs): Html => {
 	const { destination, recent } = row
-	const provider = providerOf(destination.type)
+	const provider = destinationProvider(destination.type, destination.chatConnector ?? undefined)
 	const lastSuccess = recent.find((event) => event.status === "success")
 	const failed = recent.filter((event) => event.status === "failed").length
 	const problem =
@@ -215,6 +215,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							statusDot(h, { tone: healthTone(destination, recent), size: "lg" }),
 							providerLogo(h, {
 								type: destination.type,
+								chatConnector: destination.chatConnector ?? undefined,
 								size: 28,
 								isBare: true,
 								className: "flex shrink-0 items-center",

@@ -330,5 +330,12 @@ export const fixtureArea: FixtureArea = {
 			}),
 		"chatIntegration.connectors": connectors,
 		"integrations.hazelStatus": hazelStatus,
+		// What the connected Hazel account can post into (a Hazel alert destination's selects).
+		"integrations.hazelOrganizations": () =>
+			Effect.succeed({ organizations: [{ id: "hz_org_acme", name: "Acme Shop", slug: "acme", logoUrl: null }] }),
+		"integrations.hazelChannels": () =>
+			Effect.succeed({
+				channels: [{ id: "hz_ch_alerts", name: "alerts", type: "public", organizationId: "hz_org_acme" }],
+			}),
 	}),
 }
