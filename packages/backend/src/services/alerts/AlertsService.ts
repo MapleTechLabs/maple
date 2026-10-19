@@ -324,8 +324,9 @@ const DESTINATION_DISABLE_AFTER_FAILURES = 3
 /** Bound on the stored `disabled_reason`; it is a provider sentence, not a log. */
 const DISABLED_REASON_MAX_LENGTH = 500
 const ALERT_TEST_DELIVERY_CONCURRENCY = 5
-// A Worker invocation has six simultaneous outbound connections; more only queue.
-const ALERT_CHECK_INGEST_CONCURRENCY = 6
+// A Worker invocation has six outbound slots; the tail's housekeeping and sweep run beside
+// these POSTs, so leave them two.
+const ALERT_CHECK_INGEST_CONCURRENCY = 4
 
 /** A warehouse outage (5xx or unreachable), not a fault of the rule being evaluated. */
 const warehouseOutageOf = (error: unknown): Option.Option<WarehouseUpstreamError> =>
