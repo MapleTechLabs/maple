@@ -338,7 +338,9 @@ export const formatValueByUnit: (num: number, unit?: string) => string = (num, u
 		Match.when("bytes", () => formatStorageBytes(num)),
 		// Spend per bucket is often a fraction of a cent, which two decimals print as "$0.00".
 		Match.when("usd", () =>
-			num !== 0 && Math.abs(num) < 0.01 ? `$${num.toPrecision(2)}` : formatCurrency(num, "usd"),
+			num !== 0 && Math.abs(num) < 0.01
+				? num.toLocaleString("en-US", { style: "currency", currency: "USD", maximumSignificantDigits: 2 })
+				: formatCurrency(num, "usd"),
 		),
 		Match.orElse(() => formatNumber(num)),
 	)

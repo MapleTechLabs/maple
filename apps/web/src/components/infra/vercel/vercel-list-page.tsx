@@ -127,7 +127,7 @@ export function VercelListPage({
 				</>
 			)
 		}
-		if (projects.length === 0) return <NoDataYet status={status} />
+		if (rows.length === 0) return <NoDataYet status={status} />
 		const q = (state.q ?? "").trim().toLowerCase()
 		const shown = q
 			? rows.filter((row) =>

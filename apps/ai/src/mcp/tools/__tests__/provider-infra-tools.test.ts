@@ -132,10 +132,12 @@ describe("inspect_infra provider kinds", () => {
 		expect(output.details?.["Project id"]).toBe("prj_store")
 		expect(output.series.find((s) => s.label === "5xx per bucket")?.change).toBeGreaterThan(0)
 		const paths = output.breakdowns?.find((b) => b.title === "Busiest paths")
-		expect(paths?.rows[0]).toEqual({ key: "/api/checkout", values: [9_400, 120, 3_800, 0] })
+		expect(paths?.rows.map((row) => row.key)).toEqual(["/", "/api/checkout"])
+		expect(paths?.rows[1]).toEqual({ key: "/api/checkout", values: [9_400, 120, 3_800, 0] })
 		const text = markdown(result)
 		expect(text).toContain("connect ETIMEDOUT")
-		expect(text).toContain('attribute_key="vercel.project.name"')
+		expect(text).toContain('attribute_key="vercel.project.id"')
+		expect(text).toContain('attribute_value="prj_store"')
 	})
 
 	it("reads PlanetScale percentages as fractions", async () => {

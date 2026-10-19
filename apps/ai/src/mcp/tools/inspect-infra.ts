@@ -99,7 +99,8 @@ const resourceKeyFor = (kind: (typeof ENTITY_KINDS)[number], workloadKind: strin
 		case "workload":
 			return workloadKind === undefined ? undefined : `k8s.${workloadKind}.name`
 		case "vercel_project":
-			return "vercel.project.name"
+			// The name can be a fallback (service name or id); the id is on every drain log.
+			return "vercel.project.id"
 		case "cloudflare_zone":
 		case "cloudflare_worker":
 		case "railway_service":
@@ -518,7 +519,10 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 									kind: "timeseries",
 									group_by: "severity",
 									attribute_key: resourceKey,
-									attribute_value: output.name,
+									attribute_value:
+										output.kind === "vercel_project"
+											? (output.details?.["Project id"] ?? output.name)
+											: output.name,
 									attribute_scope: "resource",
 									start_time: output.timeRange.start,
 									end_time: output.timeRange.end,

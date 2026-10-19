@@ -147,6 +147,8 @@ describe("value-by-unit dispatch", () => {
 	it("prints dollars, keeping a fraction of a cent visible", () => {
 		expect(formatValueByUnit(12.5, "usd")).toBe("$12.50")
 		expect(formatValueByUnit(0.0042, "usd")).toBe("$0.0042")
+		// An embedding call's cost per bucket: no exponent notation.
+		expect(formatValueByUnit(0.00000024, "usd")).toBe("$0.00000024")
 		expect(formatValueByUnit(0, "usd")).toBe("$0.00")
 	})
 })

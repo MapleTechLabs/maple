@@ -178,20 +178,20 @@ export const providerFixtureRules = (): FixtureRule[] => [
 		match: (sql) => vercelLogs(sql) && has(sql, "path"),
 		rows: [
 			{
-				path: "/api/checkout",
-				requests: 9_400,
-				requests4xx: 120,
-				requests5xx: 3_800,
-				cacheHits: 0,
-				cacheLookups: 0,
-			},
-			{
 				path: "/",
 				requests: 30_000,
 				requests4xx: 40,
 				requests5xx: 20,
 				cacheHits: 27_000,
 				cacheLookups: 29_000,
+			},
+			{
+				path: "/api/checkout",
+				requests: 9_400,
+				requests4xx: 120,
+				requests5xx: 3_800,
+				cacheHits: 0,
+				cacheLookups: 0,
 			},
 		],
 	},

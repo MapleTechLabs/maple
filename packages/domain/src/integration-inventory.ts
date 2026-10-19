@@ -414,8 +414,13 @@ const vercel = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 		state: VercelDrainSnapshot | null,
 	): ReadonlyArray<IntegrationResource> => {
 		if (!enabled) return []
-		const status: IntegrationStatus =
-			state === null ? "pending" : state.status === "enabled" ? "healthy" : "failing"
+		// "unknown": Vercel's answer carried no status; the next check reads it.
+		const unchecked = state === null || state.status === "unknown"
+		const status: IntegrationStatus = unchecked
+			? "pending"
+			: state.status === "enabled"
+				? "healthy"
+				: "failing"
 		return [
 			{
 				kind: "drain",
@@ -423,7 +428,7 @@ const vercel = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 				status,
 				lastSuccessAt: null,
 				lastError: status === "failing" ? (state?.lastError ?? `drain ${state?.status}`) : null,
-				note: state === null ? "not checked yet" : null,
+				note: unchecked ? "not checked yet" : null,
 			},
 		]
 	}
