@@ -20,7 +20,6 @@ import { ChatConnectorId } from "@maple/domain/primitives"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
-import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
 import { Panel } from "@maple/ui/components/ui/panel"
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
@@ -147,7 +146,7 @@ const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = chatConnectorManifests.map((ma
 	category: "notifications",
 }))
 
-const CATALOG: ReadonlyArray<CatalogEntry> = [
+export const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
 		id: "cloudflare",
 		category: "infrastructure",
@@ -243,12 +242,6 @@ export const gcpStatusQuery = () =>
 
 export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((entry) => entry.id === id)!
 
-/** The catalog this org is shown, in catalog order. */
-export function useVisibleCatalog(): ReadonlyArray<CatalogEntry> {
-	const isVisible = useIsIntegrationVisible()
-	return CATALOG.filter((entry) => isVisible(entry.id))
-}
-
 /**
  * Whether a value names an integration in the catalog. External OAuth callbacks
  * redirect back with `?integration=<id>`, so the id arrives as untrusted input
@@ -256,19 +249,6 @@ export function useVisibleCatalog(): ReadonlyArray<CatalogEntry> {
  */
 export const isIntegrationId = (value: string): value is IntegrationId =>
 	CATALOG.some((entry) => entry.id === value)
-
-/**
- * Whether an entry belongs in this organization's catalog. Chat connectors roll
- * out per org, so they are hidden until the org's flag says otherwise — and
- * while Clerk is still answering, which keeps a tile from flashing in.
- */
-export function useIsIntegrationVisible(): (id: IntegrationId) => boolean {
-	const chatConnectorGate = useChatConnectorGate()
-	return (id) => {
-		const connector = chatConnectorOf(id)
-		return connector === null || chatConnectorGate(connector)
-	}
-}
 
 interface CardStatus {
 	readonly label: string
@@ -1015,19 +995,17 @@ export function NewBadge() {
 
 export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId) => void }) {
 	const overviews = useIntegrationOverviews()
-	const catalog = useVisibleCatalog()
-
-	const connected = catalog.flatMap((entry) => {
+	const connected = CATALOG.flatMap((entry) => {
 		const overview = overviews[entry.id]
 		return overview !== null && (overview.kind === "connected" || overview.kind === "unavailable")
 			? [{ entry, overview }]
 			: []
 	})
-	const available = catalog.flatMap((entry) => {
+	const available = CATALOG.flatMap((entry) => {
 		const overview = overviews[entry.id]
 		return overview !== null && overview.kind === "available" ? [{ entry, overview }] : []
 	})
-	const loading = catalog.filter((entry) => overviews[entry.id] === null)
+	const loading = CATALOG.filter((entry) => overviews[entry.id] === null)
 
 	// Every provider is on screen: a shelf you have to expand is one most people never open, and
 	// grouping by what the integration feeds keeps the full list scannable. New ones lead their shelf.
