@@ -31,6 +31,7 @@ import {
 	TraceListMv,
 	Traces,
 	inTraces,
+	paramTraceWindow,
 	orgIdParam,
 	utcSecondsParam,
 } from "../tables"
@@ -440,7 +441,7 @@ export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
 			.where(($) => [
 				$.TraceId.eq(opts.traceId),
 				$.OrgId.eq(orgIdParam),
-				inTraces((id) => id.eq(opts.traceId)),
+				inTraces((id) => id.eq(opts.traceId), opts.narrowByTime ? paramTraceWindow() : undefined),
 				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTime("startTime"))),
 				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTime("endTime"))),
 			])
@@ -513,7 +514,7 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 			$.TraceId.eq(opts.traceId),
 			$.SpanId.eq(opts.spanId),
 			$.OrgId.eq(orgIdParam),
-			inTraces((id) => id.eq(opts.traceId)),
+			inTraces((id) => id.eq(opts.traceId), opts.narrowByTime ? paramTraceWindow() : undefined),
 			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTime("startTime"))),
 			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTime("endTime"))),
 		])
@@ -597,7 +598,7 @@ export function spanEventsByTraceQuery(opts: { traceId: string; limit?: number }
 				$.Timestamp.gte(param.dateTime("startTime")),
 				$.Timestamp.lte(param.dateTime("endTime")),
 				$.TraceId.eq(opts.traceId),
-				inTraces((id) => id.eq(opts.traceId)),
+				inTraces((id) => id.eq(opts.traceId), paramTraceWindow()),
 				notEmpty($.EventsName),
 			])
 			// Earliest first, like `spanHierarchyQuery`, so the cap keeps the spans the timeline shows.
@@ -1571,11 +1572,13 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			inTraces((id) =>
-				inSubquery(
-					id,
-					fromQuery(occurrences, "matching_traces").select(($$) => ({ TraceId: $$.TraceId })),
-				),
+			inTraces(
+				(id) =>
+					inSubquery(
+						id,
+						fromQuery(occurrences, "matching_traces").select(($$) => ({ TraceId: $$.TraceId })),
+					),
+				paramTraceWindow(),
 			),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
@@ -1683,7 +1686,9 @@ export function errorOccurrenceSpansQuery(opts: { traceIds: readonly string[]; s
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			opts.traceIds.length ? inTraces((id) => CH.inList(id, opts.traceIds)) : CH.rawCond("1 = 0"),
+			opts.traceIds.length
+				? inTraces((id) => CH.inList(id, opts.traceIds), paramTraceWindow())
+				: CH.rawCond("1 = 0"),
 			opts.spanIds.length ? CH.inList($.SpanId, opts.spanIds) : CH.rawCond("1 = 0"),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),

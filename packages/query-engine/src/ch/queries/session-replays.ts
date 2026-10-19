@@ -1065,7 +1065,7 @@ export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			inTraces((id) => id.in_(...opts.traceIds)),
+			inTraces((id) => id.in_(...opts.traceIds), undefined),
 			CH.when(opts.startTime, (v: DateTime.Utc) => $.Timestamp.gte(v)),
 			CH.when(opts.endTime, (v: DateTime.Utc) => $.Timestamp.lte(v)),
 		])

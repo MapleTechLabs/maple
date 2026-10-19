@@ -650,7 +650,7 @@ describe("aiToolErrorPayloadsQuery", () => {
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)
 		expect(compiled.sql).toMatch(
-			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('t2', 't1'\)\)/,
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('t2', 't1'\)\s+AND trace_index\.Bucket >= toStartOfFiveMinutes\(toDateTime64\(/,
 		)
 		expect(compiled.sql).toContain(
 			"(traces.TraceId, traces.SpanId) IN (tuple('t2', 's2'), tuple('t1', 's1'))",

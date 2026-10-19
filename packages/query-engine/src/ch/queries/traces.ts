@@ -22,6 +22,7 @@ import {
 	TraceListMv,
 	Traces,
 	inTraces,
+	paramTraceWindow,
 	TracesAggregatesHourly,
 	orgIdParam,
 	utcSecondsParam,
@@ -1252,7 +1253,9 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 	// are cheap to read directly.
 	if (opts.traceId) {
 		const traceId = opts.traceId
-		return spanSearchFrom(Traces, opts, limit, offset).where(() => [inTraces((id) => id.eq(traceId))])
+		return spanSearchFrom(Traces, opts, limit, offset).where(() => [
+			inTraces((id) => id.eq(traceId), paramTraceWindow()),
+		])
 	}
 
 	// Without one, the sort key `(OrgId, ServiceName, 5-minute bucket, TraceId)`
@@ -1576,6 +1579,12 @@ const subtractHours = <Q>(d: CH.Expr<DateTime.Utc, Q>, hours: CH.Expr<number>) =
 const addHours = <Q>(d: CH.Expr<DateTime.Utc, Q>, hours: CH.Expr<number>) =>
 	CH.compileTypedFnCall("addHours", T.dateTime.schema, d, hours)
 
+/** The list window padded ±1h: a trace's children can start before or outlive its root. */
+const paddedTraceWindow = {
+	start: subtractHours(CH.toDateTime(utcSecondsParam("startTime")), CH.lit(1)),
+	end: addHours(CH.toDateTime(utcSecondsParam("endTime")), CH.lit(1)),
+}
+
 /**
  * Attribute-filter keys the trace-list MV pre-extracts into columns. The MV
  * coalesces both semconv spellings at write time, so either key lands on the
@@ -1819,10 +1828,12 @@ export function traceListQuery(opts: TraceListOpts) {
 			// (`computeTraceTimeWindow`). Without any bound this scans every
 			// retained partition for the PK analysis and times out on prod
 			// (measured: 12h window, unbounded >10s; bounded <10s).
-			$.Timestamp.gte(subtractHours(CH.toDateTime(utcSecondsParam("startTime")), CH.lit(1))),
-			$.Timestamp.lte(addHours(CH.toDateTime(utcSecondsParam("endTime")), CH.lit(1))),
-			inTraces(() =>
-				subqueryCond(pageQuery, (sql) => `trace_index.TraceId IN (SELECT traceId FROM (${sql}))`),
+			$.Timestamp.gte(paddedTraceWindow.start),
+			$.Timestamp.lte(paddedTraceWindow.end),
+			inTraces(
+				() =>
+					subqueryCond(pageQuery, (sql) => `trace_index.TraceId IN (SELECT traceId FROM (${sql}))`),
+				paddedTraceWindow,
 			),
 		])
 		.groupBy("traceId")
@@ -1924,9 +1935,9 @@ export function traceSpanStatsByTraceIdsQuery(opts: TraceSpanStatsByTraceIdsOpts
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			inTraces((id) => id.in_(...opts.traceIds)),
-			$.Timestamp.gte(subtractHours(CH.toDateTime(utcSecondsParam("startTime")), CH.lit(1))),
-			$.Timestamp.lte(addHours(CH.toDateTime(utcSecondsParam("endTime")), CH.lit(1))),
+			inTraces((id) => id.in_(...opts.traceIds), paddedTraceWindow),
+			$.Timestamp.gte(paddedTraceWindow.start),
+			$.Timestamp.lte(paddedTraceWindow.end),
 		])
 		.groupBy("traceId")
 		.limit(opts.traceIds.length)
