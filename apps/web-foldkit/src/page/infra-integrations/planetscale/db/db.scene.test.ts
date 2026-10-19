@@ -5,7 +5,7 @@ import { PageOutMessage, type PageContext } from "../../../contract"
 import type { DatabaseList } from "../data"
 import { selectedBranchOf, timeseriesInputOf } from "./derive"
 import { Message, type Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -43,6 +43,15 @@ const windowed = () =>
 	pageUpdate(init(route, context).model, Message.CompletedResolveWindow({ window, localWindow: LOCAL, nowMs: 0, mode: "Load" }))
 
 describe("planetscale database", () => {
+	test("after a Reload a branch change reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(windowed().model, Message.ClickedReload()).model
+		const scoped = routeChanged(reloaded, { ...route, search: { branch: "dev" } }, context)
+		expect(names(scoped.commands)).not.toContain("ResolvePlanetscaleDatabaseWindow")
+		expect(scoped.model.window).toEqual(window)
+		const moved = routeChanged(scoped.model, { ...route, search: { branch: "dev", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual(["ResolvePlanetscaleDatabaseWindow", "Refresh"])
+	})
+
 	test("entry asks for status and inventory; the window brings the branch stats and the scoped reads", () => {
 		expect(names(init(route, context).commands)).toEqual([
 			"ResolvePlanetscaleDatabaseWindow",

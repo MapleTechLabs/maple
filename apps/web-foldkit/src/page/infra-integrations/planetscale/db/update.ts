@@ -10,6 +10,7 @@ import * as FilterSections from "../../../../ui/filters/filter-sections"
 import * as Select from "../../../../ui/select"
 import * as Tooltip from "../../../../ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
+import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../kit/page-time"
 import { nextSort } from "../../../kit/table-sort"
@@ -165,14 +166,17 @@ export const init = (route: Route, context: PageContext): Return => {
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	if (hrefOfSearch(model, model.search) === hrefOfSearch(model, route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const scoped = requestScoped(next, context, "Load")
-	return {
-		model: scoped.model,
-		commands: [
-			resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh"),
-			...(scoped.commands ?? []),
-		],
+	const resolve = (): Return => {
+		const scoped = requestScoped(next, context, "Load")
+		return {
+			model: scoped.model,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion)), ...(scoped.commands ?? [])],
+		}
 	}
+	return routeWindowStep(model.search, route.search, {
+		resolve,
+		requestAll: (mode) => (next.window === null ? resolve() : requestWindowed(next, context, mode)),
+	})
 }
 
 export const contextChanged = (model: Model): Return => ({ model })
