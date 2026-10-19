@@ -10,6 +10,7 @@ import * as Select from "../../ui/select"
 import * as Tabs from "../../ui/tabs"
 import type { PageContext } from "../contract"
 import { SignalPresenceData } from "../kit/signal-presence"
+import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
 import { CompleteReloadSpin, LoadSignalPresence, ReadStored, SaveStored } from "./command"
@@ -21,7 +22,6 @@ import {
 	bundleStep,
 	databaseSteps,
 	facetsStep,
-	isWindowChange,
 	navigate,
 	requestAll,
 	resolveCommand,
@@ -210,12 +210,10 @@ export const routeChanged = (
 	// The 3D viewport remounts when the view switches to it, so its state starts over.
 	const isEntering3d = route.search.view === "3d" && model.search.view !== "3d"
 	const next = { ...model, search: route.search, scene3d: isEntering3d ? Scene3d.init() : model.scene3d }
-	const requested = isWindowChange(model.search, route.search)
-		? {
-				model: next,
-				commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-			}
-		: requestAll(next, context, "Load")
+	const requested = routeWindowStep(model.search, route.search, {
+		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		requestAll: (mode) => requestAll(next, context, mode),
+	})
 	return applyUrlFocus(requested, context)
 }
 

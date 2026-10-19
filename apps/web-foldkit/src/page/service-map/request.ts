@@ -215,7 +215,3 @@ export const navigate = (model: Model, search: Search, isReplace = false): Retur
 })
 
 export const searchHref = (search: Search) => hrefOf(AppRoute.ServiceMap({ search }))
-
-/** Whether two searches differ in what decides the window. */
-export const isWindowChange = (a: Search, b: Search) =>
-	a.startTime !== b.startTime || a.endTime !== b.endTime || a.timePreset !== b.timePreset

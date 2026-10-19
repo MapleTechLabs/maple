@@ -234,6 +234,15 @@ describe("service map page: navigation", () => {
 		expect(next.outMessage).toBeUndefined()
 	})
 
+	test("after a Reload an environment change keeps the window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(withBundle(windowed(), BUNDLE), Message.ClickedReload()).model
+		const scoped = routeChanged(reloaded, { search: { environment: "production" } }, context)
+		expect(names(scoped.commands)).not.toContain("ResolveServiceMapWindow")
+		expect(scoped.model.window).toEqual(reloaded.window)
+		const moved = routeChanged(scoped.model, { search: { environment: "production", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveServiceMapWindow", "Refresh"]])
+	})
+
 	test("the view switch and the environment select navigate", () => {
 		const model = windowed()
 		expect(urlOf(pageUpdate(model, Message.ClickedView({ view: "3d" })))?.url).toBe(
