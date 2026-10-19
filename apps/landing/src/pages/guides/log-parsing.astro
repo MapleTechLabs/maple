@@ -65,7 +65,7 @@ java.lang.IllegalStateException: cart is empty
 	at com.example.CheckoutService.submit(CheckoutService.java:88)
 	at com.example.CheckoutController.post(CheckoutController.java:41)`;
 
-const nginxRegex = String.raw`^(?P<client_address>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>[A-Z]+) (?P<path>[^ ?"]+)[^ "]* HTTP/[0-9.]+" (?P<status>\d{3}) (?P<body_bytes>\d+) "[^"]*" "(?P<user_agent>[^"]*)"$`;
+const nginxRegex = String.raw`^(?P<client_address>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>[A-Z]+) (?P<path>[^ ?"]+)[^ "]* HTTP/[0-9.]+" (?P<status>\d{3}) (?P<body_bytes>\d+|-) "[^"]*" "(?P<user_agent>[^"]*)"$`;
 
 const pythonParser = String.raw`import re
 import sys
@@ -74,7 +74,7 @@ from collections import Counter
 LINE = re.compile(
     r'(?P<client>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] '
     r'"(?P<method>[A-Z]+) (?P<path>[^ ?"]+)[^"]* HTTP/[0-9.]+" '
-    r'(?P<status>\d{3}) (?P<bytes>\d+)'
+    r'(?P<status>\d{3}) (?P<bytes>\d+|-)'
 )
 
 errors = Counter()
@@ -541,7 +541,7 @@ const articleJsonLd = {
                             <span>01</span>
                             <div>
                                 <h3>One regex, timestamp and severity in one operator</h3>
-                                <p>The <code>regex_parser</code> captures each field as a named group. Its embedded <code>timestamp</code> block reads <code>[19/Oct/2026:14:02:11 +0000]</code> with the layout <code>%d/%b/%Y:%H:%M:%S %z</code>. The <code>severity</code> block maps status codes to levels with the <code>2xx</code>-style placeholders, and <code>overwrite_text: true</code> stores <code>INFO</code>, <code>WARN</code> or <code>ERROR</code> as the severity text instead of the raw <code>502</code>.</p>
+                                <p>The <code>regex_parser</code> captures each field as a named group. Its embedded <code>timestamp</code> block reads <code>[19/Oct/2026:14:02:11 +0000]</code> with the layout <code>%d/%b/%Y:%H:%M:%S %z</code>. The <code>severity</code> block maps status codes to levels: a numeric range for 100 to 399, then the <code>4xx</code> and <code>5xx</code> placeholders. Placeholders exist only for <code>2xx</code> to <code>5xx</code>, so a 101 WebSocket upgrade needs the range. <code>overwrite_text: true</code> stores <code>INFO</code>, <code>WARN</code> or <code>ERROR</code> as the severity text instead of the raw <code>502</code>.</p>
                             </div>
                         </li>
                         <li>
@@ -562,7 +562,7 @@ const articleJsonLd = {
                             <span>04</span>
                             <div>
                                 <h3>Types and service name in the transform processor</h3>
-                                <p>The regex captures strings. The transform processor converts status and body size to integers with OTTL's <code>Int()</code>, skipping records where the field is missing, and sets the <code>service.name</code> resource attribute so the logs are grouped under <code>nginx</code> instead of an unknown service.</p>
+                                <p>The regex captures strings. The transform processor drops the body size when it is <code>-</code>, which Apache writes for empty responses, converts status and body size to integers with OTTL's <code>Int()</code>, skipping records where the field is missing, and sets the <code>service.name</code> resource attribute so the logs are grouped under <code>nginx</code> instead of an unknown service.</p>
                             </div>
                         </li>
                     </ol>

@@ -3,7 +3,7 @@ receivers:
         include: [/var/log/nginx/access.log]
         operators:
             - type: regex_parser
-              regex: '^(?P<client_address>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>[A-Z]+) (?P<path>[^ ?"]+)[^ "]* HTTP/[0-9.]+" (?P<status>\d{3}) (?P<body_bytes>\d+) "[^"]*" "(?P<user_agent>[^"]*)"$'
+              regex: '^(?P<client_address>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>[A-Z]+) (?P<path>[^ ?"]+)[^ "]* HTTP/[0-9.]+" (?P<status>\d{3}) (?P<body_bytes>\d+|-) "[^"]*" "(?P<user_agent>[^"]*)"$'
               timestamp:
                   parse_from: attributes.time_local
                   layout: "%d/%b/%Y:%H:%M:%S %z"
@@ -11,7 +11,9 @@ receivers:
                   parse_from: attributes.status
                   overwrite_text: true
                   mapping:
-                      info: [2xx, 3xx]
+                      info:
+                          - min: 100
+                            max: 399
                       warn: 4xx
                       error: 5xx
             - type: move
@@ -47,6 +49,7 @@ processors:
         error_mode: ignore
         log_statements:
             - set(resource.attributes["service.name"], "nginx")
+            - delete_key(log.attributes, "http.response.body.size") where log.attributes["http.response.body.size"] == "-"
             - set(log.attributes["http.response.status_code"], Int(log.attributes["http.response.status_code"])) where log.attributes["http.response.status_code"] != nil
             - set(log.attributes["http.response.body.size"], Int(log.attributes["http.response.body.size"])) where log.attributes["http.response.body.size"] != nil
     batch: {}
