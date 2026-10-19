@@ -22,6 +22,7 @@ import { WORKFLOW_LABEL, workflowRingIcon } from "../kit/workflow"
 import { Message } from "./message"
 import { leaseHud } from "./view-lease"
 import type { Model } from "./model"
+import { sidebarBusy } from "./writes"
 
 // `IssueSidebar` (components/errors/issue-sidebar.tsx) with `StateSelect` and `SeveritySelect`.
 // TODO(lease): a held lease renders `LeaseHud` with Extend and Release in legacy; Claim is inert here.
@@ -79,7 +80,7 @@ const stateSelect = (h: H, model: Model, current: WorkflowState): Html =>
 		viewInputs: {
 			entries: stateEntries(current),
 			className: GHOST_TRIGGER,
-			isDisabled: model.busy === "state",
+			isDisabled: sidebarBusy(model) === "state",
 			renderValue: (value) =>
 				isWorkflowState(value)
 					? withIcon(h, workflowRingIcon(h, value, 12), WORKFLOW_LABEL[value])
@@ -111,7 +112,7 @@ const severitySelect = (h: H, model: Model): Html =>
 			entries: SEVERITY_ENTRIES,
 			ariaLabel: "Severity",
 			className: GHOST_TRIGGER,
-			isDisabled: model.busy === "severity",
+			isDisabled: sidebarBusy(model) === "severity",
 			renderValue: (value) => {
 				const severity = isSeverity(value)
 				return withIcon(
@@ -209,7 +210,7 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 							{
 								size: "xs",
 								variant: "ghost",
-								isLoading: model.busy === "heartbeat",
+								isLoading: sidebarBusy(model) === "heartbeat",
 								attributes: [h.OnClick(Message.ClickedExtendLease())],
 							},
 							["Extend"],
@@ -219,7 +220,7 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 							{
 								size: "xs",
 								variant: "ghost",
-								isLoading: model.busy === "release",
+								isLoading: sidebarBusy(model) === "release",
 								attributes: [h.OnClick(Message.ClickedReleaseLease())],
 							},
 							["Release"],
@@ -236,7 +237,7 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 						size: "xs",
 						variant: "outline",
 						className: "-mr-0.5",
-						isLoading: model.busy === "claim",
+						isLoading: sidebarBusy(model) === "claim",
 						attributes: [h.OnClick(Message.ClickedClaim())],
 					},
 					["Claim"],

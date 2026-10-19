@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -59,5 +59,15 @@ describe("agent tool detail", () => {
 		const sorted = pageUpdate(model, Message.ClickedErrorsSort({ key: "sessions" }))
 		expect(sorted.model.errorsSort).toEqual({ key: "sessions", dir: "desc" })
 		expect(pageUpdate(model, Message.ToggledErrorsExpanded()).model.isErrorsExpanded).toBe(true)
+	})
+
+	test("after Reload, an error row's URL change re-reads nothing; a time change re-resolves", () => {
+		const reloaded = pageUpdate(windowed().model, Message.ClickedReload()).model
+		const resolved = pageUpdate(reloaded, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" })).model
+		const clicked = routeChanged(resolved, { toolName: "Bash", search: { error: "42" } }, context)
+		expect(names(clicked.commands)).toEqual([])
+		expect(clicked.model.search.error).toBe("42")
+		const ranged = routeChanged(resolved, { toolName: "Bash", search: { timePreset: "24h" } }, context)
+		expect(names(ranged.commands)).toEqual(["ResolveAgentToolWindow"])
 	})
 })

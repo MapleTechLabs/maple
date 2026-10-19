@@ -35,7 +35,7 @@ describe("error issue writes", () => {
 		).model
 		const claiming = pageUpdate(settled, Message.ClickedClaim())
 		expect(names(claiming.commands)).toEqual(["RunErrorIssueWrite"])
-		expect(claiming.model.busy).toBe("claim")
+		expect(claiming.model.busy).toEqual(["claim"])
 		expect(pageUpdate(claiming.model, Message.ClickedClaim()).commands).toBeUndefined()
 		const done = pageUpdate(
 			claiming.model,
@@ -44,10 +44,32 @@ describe("error issue writes", () => {
 				result: Result.succeed({ severity: null }),
 			}),
 		)
-		expect(done.model.busy).toBeNull()
+		expect(done.model.busy).toEqual([])
 		expect(done.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success", title: "Claimed" })
 		// Reads still in flight are not asked twice; the settled timeline is re-read.
 		expect(names(done.commands)).toEqual(["FetchErrorIssueEvents"])
+	})
+
+	test("writes of different kinds run side by side; a confirmed raise is never dropped", () => {
+		const claiming = pageUpdate(windowed(), Message.ClickedClaim()).model
+		const routed = pageUpdate(
+			claiming,
+			Message.CompletedEvaluateEscalation({
+				severity: "high",
+				pick: 0,
+				result: Result.succeed({ outcome: "route", destinationIds: ["dest-1"] }),
+			}),
+		)
+		const confirmed = pageUpdate(routed.model, Message.ClickedConfirmSeverity())
+		expect(confirmed.commands?.find(({ name }) => name === "RunErrorIssueWrite")).toMatchObject({
+			args: { write: { _tag: "SetSeverity", severity: "high" } },
+		})
+		expect(confirmed.model.busy).toEqual(["claim", "severity"])
+		const claimed = pageUpdate(
+			confirmed.model,
+			Message.CompletedIssueWrite({ write: { _tag: "Claim" }, result: Result.succeed({ severity: null }) }),
+		)
+		expect(claimed.model.busy).toEqual(["severity"])
 	})
 
 	test("a failed write toasts the error and re-reads nothing", () => {
@@ -87,7 +109,7 @@ describe("error issue writes", () => {
 				result: Result.succeed({ outcome: "skip", destinationIds: [] }),
 			}),
 		)
-		expect(skipped.model.busy).toBe("severity")
+		expect(skipped.model.busy).toEqual(["severity"])
 		const failed = pageUpdate(
 			windowed(),
 			Message.CompletedEvaluateEscalation({
@@ -96,7 +118,7 @@ describe("error issue writes", () => {
 				result: Result.fail(toLoadFailure("boom")),
 			}),
 		)
-		expect(failed.model.busy).toBeNull()
+		expect(failed.model.busy).toEqual([])
 		expect(failed.outMessage).toMatchObject({ type: "error" })
 	})
 
@@ -109,7 +131,7 @@ describe("error issue writes", () => {
 			second.model,
 			Message.CompletedEvaluateEscalation({ severity: "low", pick: pickOf(first), result: skip }),
 		)
-		expect(firstLanded.model.busy).toBeNull()
+		expect(firstLanded.model.busy).toEqual([])
 		const secondLanded = pageUpdate(
 			firstLanded.model,
 			Message.CompletedEvaluateEscalation({ severity: "high", pick: pickOf(second), result: skip }),

@@ -444,6 +444,30 @@ const followWidgetFix = (result: Return): Return => {
 	return { ...sent, commands: [...(result.commands ?? []), ...(sent.commands ?? [])], outMessage: result.outMessage ?? sent.outMessage }
 }
 
+const runningTails = (model: Model): string =>
+	Object.values(model.conversations)
+		.flatMap((conversation) => (conversation.stream === null ? [] : [`${conversation.tabId}:${conversation.stream.generation}`]))
+		.join("|")
+
+/** All tails share one Subscription: when the set changes, each reconnects from what it has folded. */
+const followTails = (before: Model, result: Return): Return =>
+	runningTails(before) === runningTails(result.model)
+		? result
+		: {
+				...result,
+				model: {
+					...result.model,
+					conversations: Object.fromEntries(
+						Object.entries(result.model.conversations).map(([tabId, conversation]) => [
+							tabId,
+							conversation.stream === null
+								? conversation
+								: { ...conversation, stream: { ...conversation.stream, cursor: conversation.lastSeq } },
+						]),
+					),
+				},
+			}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
-	followWidgetFix(step(model, message, context))
+	followTails(model, followWidgetFix(step(model, message, context)))
 

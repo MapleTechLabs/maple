@@ -8,7 +8,7 @@ import { presenceOf } from "../../kit/signal-presence"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { detectLookup } from "../kit/detected-models"
 import { agentSessionsTabs } from "../kit/tabs"
-import { MountEmptyState, MountReachEnd, MountTable, VirtualizeSessions } from "./command"
+import { MountEmptyState, MountReachEnd, MountRowClicks, MountTable, VirtualizeSessions } from "./command"
 import {
 	displayedRows,
 	filterInputs,
@@ -73,6 +73,7 @@ const listArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 				isCapped: rows.length >= MAX_RETAINED_SESSIONS,
 				onPainted: h.OnMount(MountTable()),
 				onReachEnd: h.OnMount(MountReachEnd()),
+				onRowClick: h.OnMount(MountRowClicks()),
 				virtual: { window: model.listWindow, mount: h.OnMount(VirtualizeSessions()) },
 			})
 		},

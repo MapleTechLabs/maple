@@ -75,8 +75,7 @@ export type SessionData = Readonly<{
 	progress: LoadProgress | undefined
 }>
 
-/** What every view reads, built from the spans in hand. */
-export const sessionData = (model: Model): SessionData => {
+const buildSessionData = (model: Model): SessionData => {
 	const spans = loadedSpans(model)
 	const turns = buildSessionTurns(spans)
 	return {
@@ -86,6 +85,21 @@ export const sessionData = (model: Model): SessionData => {
 		toolResults: sessionToolResults(turns.flatMap((turn) => turn.spans)),
 		progress: progressOf(model, spans),
 	}
+}
+
+// A pure cache, as legacy's `useMemo` over the spans: the pages in hand are immutable, so their
+// identities key the result and a scroll or tooltip step reuses it instead of rebuilding the turns.
+const built = new WeakMap<object, WeakMap<object, Readonly<{ key: string | null; data: SessionData }>>>()
+
+/** What every view reads, built once per change of the spans in hand. */
+export const sessionData = (model: Model): SessionData => {
+	const byMore = built.get(model.firstPage.data) ?? new WeakMap()
+	const hit = byMore.get(model.more)
+	if (hit !== undefined && hit.key === model.firstPage.key) return hit.data
+	const data = buildSessionData(model)
+	byMore.set(model.more, { key: model.firstPage.key, data })
+	built.set(model.firstPage.data, byMore)
+	return data
 }
 
 const isSessionView = (value: string): value is SessionView => SESSION_VIEWS.some((view) => view === value)

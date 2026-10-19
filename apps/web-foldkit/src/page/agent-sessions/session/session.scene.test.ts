@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { sessionData } from "./derive"
 import { init, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -127,5 +128,20 @@ describe("agent session detail", () => {
 		expect(
 			pageUpdate(clamped, Message.MeasuredClamp({ key: "k", isClamped: true })).model.clampedBodies,
 		).toEqual(["k"])
+	})
+
+	test("the session's turns are built once per span change, not on every scroll tick", () => {
+		const { model } = entered()
+		const key = model.firstPage.key ?? ""
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: null }) }),
+		).model
+		const window = { items: [{ index: 0, start: 0, end: 40 }], totalSize: 40, scrollMargin: 0 }
+		const scrolled = pageUpdate(loaded, Message.ChangedTranscriptWindow({ window }))
+		expect(scrolled.commands ?? []).toEqual([])
+		expect(sessionData(scrolled.model)).toBe(sessionData(loaded))
+		const reloaded = pageUpdate(scrolled.model, Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: null }) }))
+		expect(sessionData(reloaded.model)).not.toBe(sessionData(loaded))
 	})
 })

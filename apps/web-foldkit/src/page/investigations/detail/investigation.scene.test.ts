@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { InvestigationRowSchema, rowsToInvestigation } from "@maple/web-data/collections/investigations"
-import { Result, Schema } from "effect"
+import { Effect, Result, Schema, Stream } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -9,9 +9,10 @@ import { AppRoute } from "../../../route"
 import { AttachFlowCanvas } from "../../../service-map/xyflow/attach"
 import * as Canvas from "../../../service-map/xyflow/canvas"
 import { type PageContext, PageOutMessage } from "../../contract"
+import { MountNodeLinks } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { subscriptions } from "./subscription"
+import { subscriptions, withLoadWatchdog } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -25,6 +26,10 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 // Matched by name: the canvas Mount is mapped into the page, so it resolves with the lifted Message.
 const paned = () =>
 	Mount.resolve({ name: AttachFlowCanvas.name }, Message.GotCanvasMessage({ message: Canvas.Message.ResizedPane({ width: 1102, height: 222 }) }))
+
+// The canvas links' Mount answers with a plain click on a trace link.
+const TRACE_HREF = "/traces/6843a8853182b32339b2dd5120d423f2"
+const canvas = () => [paned(), Mount.resolve(MountNodeLinks, Message.ClickedNodeLink({ href: TRACE_HREF }))]
 
 const NOW = Date.parse("2026-10-01T12:00:00.000Z")
 
@@ -117,7 +122,7 @@ describe("investigation detail", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(step.model),
-			paned(),
+			...canvas(),
 			expectView(text("Suspected cause")).toExist(),
 			expectView(role("application", { name: "Investigation provenance graph" })).toExist(),
 			expectView(role("button", { name: "Resolve" })).toExist(),
@@ -140,7 +145,7 @@ describe("investigation detail", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(resynced.model),
-			paned(),
+			...canvas(),
 			expectView(text("731")).toExist(),
 			expectView(text("457")).not.toExist(),
 		)
@@ -166,7 +171,7 @@ describe("investigation detail", () => {
 
 	test("a failed run's primary action restarts it", () => {
 		const ready = synced(entered(), investigationOf({ status: "failed", report_json: null, diagnosed_at: null })).model
-		scene({ update: pageUpdate, view }, given(ready), paned(), expectView(role("button", { name: "Retry" })).toExist())
+		scene({ update: pageUpdate, view }, given(ready), ...canvas(), expectView(role("button", { name: "Retry" })).toExist())
 		expect(names(pageUpdate(ready, Message.ClickedPrimary()).commands)).toEqual(["RestartInvestigation"])
 	})
 
@@ -179,6 +184,24 @@ describe("investigation detail", () => {
 		expect(opened.actionSheet.isOpen).toBe(true)
 		const stale = routeChanged(ready, AppRoute.Investigation({ id: ID, search: { action: "abc" } }), context).model
 		expect(stale.actionSheet.isOpen).toBe(false)
+	})
+
+	test("the action panel opens only on Overview, for an action the graph drew", () => {
+		const ready = synced(entered(), investigationOf()).model
+		const missing = routeChanged(ready, AppRoute.Investigation({ id: ID, search: { action: 3 } }), context).model
+		expect(missing.actionSheet.isOpen).toBe(false)
+		const offTab = routeChanged(ready, AppRoute.Investigation({ id: ID, search: { tab: "evidence", action: 0 } }), context).model
+		expect(offTab.actionSheet.isOpen).toBe(false)
+		const early = routeChanged(entered(), AppRoute.Investigation({ id: ID, search: { action: 0 } }), context).model
+		expect(early.actionSheet.isOpen).toBe(false)
+		expect(synced(early, investigationOf()).model.actionSheet.isOpen).toBe(true)
+	})
+
+	test("a lost shape (nothing synced within 30 s) becomes Failed, a synced one is mirrored", async () => {
+		const timedOut = await Effect.runPromise(Stream.runCollect(withLoadWatchdog(Stream.never, "failed", "5 millis")))
+		expect(timedOut).toEqual(["failed"])
+		const live = await Effect.runPromise(Stream.runCollect(withLoadWatchdog(Stream.make("ready", "changed"), "failed", "1 second")))
+		expect(live).toEqual(["ready", "changed"])
 	})
 
 	test("the follow-up composer hands the question to the Chat tab", () => {

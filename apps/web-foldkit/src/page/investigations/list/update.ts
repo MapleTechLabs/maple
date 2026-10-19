@@ -1,3 +1,4 @@
+import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
@@ -16,6 +17,7 @@ import {
 	LoadInvestigationsPresence,
 	PAGE_SIZE,
 	ReadInvestigationsClock,
+	ReadInvestigationsIsAdmin,
 	WaitInvestigationsSearch,
 } from "./command"
 import { isLoadingMoreOf, KIND_FILTER_VALUES, nextCursorOf, SORT_OPTIONS, type Search, sortValueOf, viewOf } from "./derive"
@@ -49,6 +51,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		presence: SignalPresenceData.Idle(),
 		subject: "",
 		isCreating: false,
+		isOrgAdmin: !isClerkAuthEnabled,
 		searchDraft: search.q ?? "",
 		searchGeneration: 0,
 		tabs: Tabs.init({ idBase: 0, values: VIEWS, selected: viewOf(search) }),
@@ -64,7 +67,12 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	const loaded = loadFirstPage(model, context, "Load")
 	return {
 		model: loaded.model,
-		commands: [ReadInvestigationsClock(), ...(loaded.commands ?? []), FetchTriageBudget({ key: budgetKey })],
+		commands: [
+			ReadInvestigationsClock(),
+			...(loaded.commands ?? []),
+			FetchTriageBudget({ key: budgetKey }),
+			...(isClerkAuthEnabled ? [ReadInvestigationsIsAdmin({ orgId: context.orgId })] : []),
+		],
 	}
 }
 
@@ -125,6 +133,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			},
 		}),
 		CompletedFetchBudget: ({ key, result }) => ({ model: { ...model, budget: Keyed.accept(model.budget, key, result) } }),
+		CompletedReadIsAdmin: ({ orgId, isAdmin }) => (orgId === context.orgId ? { model: { ...model, isOrgAdmin: isAdmin } } : { model }),
 		ClickedRetry: () => loadFirstPage(model, context, "Refresh"),
 		ClickedLoadMore: () => {
 			const cursor = nextCursorOf(model)

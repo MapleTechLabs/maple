@@ -120,14 +120,21 @@ const toolCallToPart = (call: ChatToolCall): UIMessagePart => {
  * Prose and tool calls back in the order they happened: the text is split at each call's
  * `textOffset`, clamped and forced non-decreasing; a call without one lands after the prose.
  */
+/** The fold's state: the parts so far and how much of the text they cover. */
+interface Interleaved<Part> {
+	readonly parts: Array<Part | ReturnType<typeof TextPart.make>>
+	readonly cursor: number
+}
+
 const interleave = <Call extends { readonly textOffset?: number }, Part>(
 	text: string,
 	calls: ReadonlyArray<Call>,
 	toPart: (call: Call) => Part,
 ): Array<Part | ReturnType<typeof TextPart.make>> => {
+	const seed: Interleaved<Part> = { parts: [], cursor: 0 }
 	const { parts, cursor } = Array.reduce(
 		calls,
-		{ parts: [] as Array<Part | ReturnType<typeof TextPart.make>>, cursor: 0 },
+		seed,
 		(acc, call) => {
 			const offset = Math.min(Math.max(call.textOffset ?? text.length, acc.cursor), text.length)
 			const chunk = text.slice(acc.cursor, offset)

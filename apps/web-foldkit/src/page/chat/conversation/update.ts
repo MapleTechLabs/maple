@@ -122,6 +122,7 @@ export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null
 })
 
 /** `sendMessage`: the optimistic bubble, `submitted`, and the POST; nothing while a turn runs. */
+// TODO(analytics): `trackProduct("chat_message_sent", { turn })` (chat-conversation.tsx).
 const send = (model: Model, raw: string, context: SendContext): Return => {
 	const trimmed = raw.trim()
 	if (trimmed === "" || !model.historyReady || isLoading(model) || model.readOnly !== null) return { model }
@@ -222,14 +223,18 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 						commands: [AbortTurn({ sessionId: model.sessionId })],
 					}
 				: { model },
+		// A send outlives a Stop (`runStream` after the POST): its bubble still shown, it adopts the
+		// cursor under a fresh generation so the server's `turn-end` settles the turn.
 		CompletedPostMessage: ({ generation, localId, raw, result }) => {
-			if (generation !== model.generation) return { model }
+			if (!model.messages.some((entry) => entry.id === localId)) return { model }
+			const tail = generation === model.generation ? generation : model.generation + 1
 			return Result.match(result, {
 				onSuccess: (sent) => ({
 					model: {
 						...model,
 						messages: model.messages.map((entry) => (entry.id === localId ? { ...entry, id: sent.messageId } : entry)),
-						stream: { generation, cursor: sent.cursor },
+						generation: tail,
+						stream: { generation: tail, cursor: sent.cursor },
 						lastSeq: sent.cursor,
 					},
 				}),

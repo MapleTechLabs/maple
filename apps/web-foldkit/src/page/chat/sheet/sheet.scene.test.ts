@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest"
 import * as Dialog from "../../../ui/dialog"
 import { Message as ConversationMessage } from "../conversation/message"
 import { init, Message, type Model } from "./model"
-import { update } from "./update"
+import { sessionChanged, update } from "./update"
 
 // The global chat sheet's update logic (`GlobalChatSheet` + `GlobalChatPanel`).
 
@@ -102,5 +102,18 @@ describe("chat sheet", () => {
 		expect(byPointer.model.tooltip.isOpen).toBe(false)
 		const byKey = step(opened(true).model, Message.FocusedVisibleTrigger({ triggerId: "chat-sheet-new-chat" }))
 		expect(byKey.model.tooltip.isOpen).toBe(true)
+	})
+
+	test("an org switch under the open sheet moves it onto the new org's thread; signing out closes it", () => {
+		const model = opened().model
+		expect(sessionChanged(model, "org_acme").model).toBe(model)
+		const switched = sessionChanged(model, "org_beta")
+		expect(switched.model.dialog.isOpen).toBe(true)
+		expect(switched.model.conversation).toBeNull()
+		expect(switched.commands?.map((command) => command.args)).toEqual([{ orgId: "org_beta" }])
+		const signedOut = sessionChanged(model, null).model
+		expect(signedOut.dialog.isOpen).toBe(false)
+		expect(signedOut.conversation).toBeNull()
+		expect(signedOut.orgId).toBeNull()
 	})
 })

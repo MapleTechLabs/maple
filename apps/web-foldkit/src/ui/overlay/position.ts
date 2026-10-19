@@ -23,7 +23,8 @@ export type Align = typeof Align.Type
 
 /** What the popup is placed against: a trigger element by id, or a point (a context menu). */
 export const Anchor = Schema.Union([
-	Schema.TaggedStruct("Element", { id: Schema.String }),
+	/** `fallbackSelector`: placed against it instead while the element has no client rects (hidden). */
+	Schema.TaggedStruct("Element", { id: Schema.String, fallbackSelector: Schema.optional(Schema.String) }),
 	Schema.TaggedStruct("Selector", { selector: Schema.String }),
 	Schema.TaggedStruct("Point", { x: Schema.Number, y: Schema.Number }),
 ])
@@ -68,8 +69,20 @@ const alignOf = (placement: Placement): Align =>
 	placement.endsWith("-start") ? "start" : placement.endsWith("-end") ? "end" : "center"
 const placementOf = (side: Side, align: Align): Placement => (align === "center" ? side : `${side}-${align}`)
 
+type Rects = Readonly<{ getClientRects: () => Readonly<{ length: number }> }>
+
+/** Base UI's `anchor` callback with a fallback: the trigger while on screen, else the fallback. */
+export const onScreenOr = <E extends Rects>(trigger: E | null, fallback: () => E | null): E | null =>
+	trigger !== null && trigger.getClientRects().length > 0 ? trigger : fallback()
+
 const resolveAnchor = (element: HTMLElement, anchor: Anchor): Element | VirtualElement | null => {
-	if (anchor._tag === "Element") return element.ownerDocument.getElementById(anchor.id)
+	if (anchor._tag === "Element") {
+		const trigger = element.ownerDocument.getElementById(anchor.id)
+		const { fallbackSelector } = anchor
+		return fallbackSelector === undefined
+			? trigger
+			: onScreenOr(trigger, () => element.ownerDocument.querySelector(fallbackSelector))
+	}
 	if (anchor._tag === "Selector") return element.ownerDocument.querySelector(anchor.selector)
 	const rect = { x: anchor.x, y: anchor.y, width: 0, height: 0 }
 	return {

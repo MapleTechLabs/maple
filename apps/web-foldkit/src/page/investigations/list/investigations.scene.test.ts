@@ -7,7 +7,7 @@ import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { LoadInvestigationsPresence, MountHero } from "./command"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { Model, TriageBudget } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -55,6 +55,18 @@ describe("investigations list", () => {
 		expect(pageUpdate(started.model, Message.ClickedSuggestion({ title: "again" })).commands ?? []).toHaveLength(0)
 		const done = pageUpdate(started.model, Message.CompletedCreate({ result: Result.succeed("inv-1") }))
 		expect(done.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/investigations/inv-1", isReplace: false }))
+	})
+
+	test("the budget notice offers Raise the limit to org admins only", () => {
+		const entered = init({ search: {} }, context).model
+		const budget: TriageBudget = { enabled: true, ordinaryPaused: true, priorityPaused: false, pausedDimension: "runs", resumesAt: null }
+		const paused = pageUpdate(entered, Message.CompletedFetchBudget({ key: entered.budget.key ?? "", result: Result.succeed(budget) })).model
+		const member = { ...paused, isOrgAdmin: false }
+		scene({ update: pageUpdate, view }, given(member), measured(), expectView(text("Raise the limit")).not.toExist())
+		const admin = pageUpdate(member, Message.CompletedReadIsAdmin({ orgId: context.orgId, isAdmin: true })).model
+		scene({ update: pageUpdate, view }, given(admin), measured(), expectView(text("Raise the limit")).toExist())
+		const otherOrg = pageUpdate(member, Message.CompletedReadIsAdmin({ orgId: "org_other", isAdmin: true })).model
+		expect(otherOrg.isOrgAdmin).toBe(false)
 	})
 
 	test("search is debounced into the URL", () => {

@@ -79,8 +79,6 @@ const modelSetting = (h: H, model: Model): Html =>
 		className: "bg-card px-5 py-4",
 		label: "Review model",
 		description: "Runs pull request reviews and replies.",
-		// TODO(select-disabled): legacy disables the select for non-admins and while it saves;
-		// here the change is ignored in `update` instead.
 		control: [
 			h.submodel({
 				slotId: model.modelSelect.id,
@@ -92,6 +90,7 @@ const modelSetting = (h: H, model: Model): Html =>
 					size: "sm",
 					ariaLabel: "Review model",
 					className: "w-56",
+					isDisabled: !model.isAdmin || model.isSavingModel,
 					toView: (parts) =>
 						h.div(
 							[

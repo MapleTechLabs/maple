@@ -135,10 +135,10 @@ const triggerAttributes = (h: H): ReadonlyArray<Attribute<Message>> => [
 	h.DataAttribute("slot", "tooltip-trigger"),
 ]
 
-/** `Hint`: an inline figure whose tooltip says what it counts. A lifted trigger, so a click on it
- *  opens the session as the row's own click handler does. */
-const hint = (h: H, className: string, onClick: Message, children: ReadonlyArray<Html | string>): Html =>
-	h.span([h.Class(className), ...triggerAttributes(h), h.OnClick(onClick)], children)
+/** `Hint`: an inline figure whose tooltip says what it counts. A lifted trigger: a plain click on it
+ *  reaches the row's click handler (`MountRowClicks`), which opens the session. */
+const hint = (h: H, className: string, children: ReadonlyArray<Html | string>): Html =>
+	h.span([h.Class(className), ...triggerAttributes(h)], children)
 
 /** `SortableHeader`; a column with a hint renders its button as a tooltip trigger. */
 const sortableHeader = (h: H, column: Column, sort: Sort): Html => {
@@ -208,11 +208,11 @@ export type RowContext = Readonly<{
 export const sessionHref = (row: DisplayRow): string =>
 	hrefOf(AppRoute.AgentSession({ sessionId: row.sessionId, search: sessionLinkWindow(row) }))
 
-const startedAt = (h: H, row: DisplayRow, context: RowContext, className: string, open: Message): Html =>
-	hint(h, className, open, [formatRelativeTimeOrDate(row.startTime, context.nowMs, context.timeZone)])
+const startedAt = (h: H, row: DisplayRow, context: RowContext, className: string): Html =>
+	hint(h, className, [formatRelativeTimeOrDate(row.startTime, context.nowMs, context.timeZone)])
 
 /** The agent it ran beside the framework's mark, over the id it is cited by. */
-const sessionCell = (h: H, row: DisplayRow, context: RowContext, open: Message): Html => {
+const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 	const vendor = vendorLabel(row.vendorId)
 	const id = sessionRowIdParts(row.sessionId)
 	const href = sessionHref(row)
@@ -229,7 +229,6 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext, open: Message):
 							h.Class("flex shrink-0 items-center"),
 							...triggerAttributes(h),
 							h.Role("img"),
-							h.OnClick(open),
 						],
 						[
 							icon(h, vendorIcon(row.vendorId), {
@@ -254,15 +253,13 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext, open: Message):
 						row,
 						context,
 						"ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @min-[400px]/page:hidden",
-						open,
-					),
+									),
 				],
 			),
 			h.div(
 				[
 					h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"),
 					...triggerAttributes(h),
-					h.OnClick(open),
 				],
 				[
 					h.span(
@@ -276,11 +273,11 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext, open: Message):
 	)
 }
 
-const modelCell = (h: H, row: DisplayRow, context: RowContext, open: Message): Html | null => {
+const modelCell = (h: H, row: DisplayRow, context: RowContext): Html | null => {
 	const [firstModel] = row.models
 	return firstModel === undefined
 		? null
-		: hint(h, "block min-w-0 text-xs text-muted-foreground", open, [
+		: hint(h, "block min-w-0 text-xs text-muted-foreground", [
 				modelLabel(h, {
 					detected: context.detect(firstModel),
 					moreCount: row.models.length - 1,
@@ -290,11 +287,10 @@ const modelCell = (h: H, row: DisplayRow, context: RowContext, open: Message): H
 }
 
 /** A count with the kind's glyph, in its hue. */
-const workCount = (h: H, iconName: IconName, tone: string, count: number, open: Message): Html =>
+const workCount = (h: H, iconName: IconName, tone: string, count: number): Html =>
 	hint(
 		h,
 		cn("inline-flex items-center gap-1 text-xs tabular-nums", count > 0 ? tone : "text-muted-foreground"),
-		open,
 		[
 			icon(h, iconName, { size: 12, className: "shrink-0", attributes: [h.AriaHidden(true)] }),
 			formatCount(count),
@@ -304,7 +300,7 @@ const workCount = (h: H, iconName: IconName, tone: string, count: number, open: 
 const BUCKET_COVERAGE_MIN = 0.9
 
 /** In over out, each in its side's colour; a session that reported only a total shows the total. */
-const tokenBar = (h: H, row: DisplayRow, open: Message): Html | null => {
+const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	const inputs = [row.inputTokens, row.cacheReadTokens, row.cacheWriteTokens].filter((value) => value > 0)
 	const outputs = [row.outputTokens, row.reasoningTokens].filter((value) => value > 0)
 	const drawnTotal = [...inputs, ...outputs].reduce((sum, value) => sum + value, 0)
@@ -312,7 +308,7 @@ const tokenBar = (h: H, row: DisplayRow, open: Message): Html | null => {
 	const total = hasBuckets ? drawnTotal : row.totalTokens
 	if (total === 0) return null
 	if (!hasBuckets) {
-		return hint(h, "font-mono text-xs tabular-nums text-muted-foreground", open, [formatCount(total)])
+		return hint(h, "font-mono text-xs tabular-nums text-muted-foreground", [formatCount(total)])
 	}
 	const sides = [
 		{ label: "in", tone: "text-chart-tok-input", count: inputs.reduce((sum, value) => sum + value, 0) },
@@ -325,7 +321,6 @@ const tokenBar = (h: H, row: DisplayRow, open: Message): Html | null => {
 	return hint(
 		h,
 		"flex flex-col gap-0.5 font-mono text-xs tabular-nums",
-		open,
 		sides.map((side) =>
 			h.span(
 				[h.Class("flex items-baseline gap-1.5")],
@@ -351,9 +346,8 @@ const tokenBar = (h: H, row: DisplayRow, open: Message): Html | null => {
 const errorChip = (
 	h: H,
 	options: Readonly<{ iconName?: IconName; count: number; noun: string; className: string }>,
-	open: Message,
 ): Html =>
-	hint(h, cn(badgeVariants({ pill: true, size: "xs", mono: true }), options.className), open, [
+	hint(h, cn(badgeVariants({ pill: true, size: "xs", mono: true }), options.className), [
 		options.iconName === undefined
 			? statusDot(h, { tone: "custom", size: "sm", className: "bg-current" })
 			: icon(h, options.iconName, {
@@ -378,7 +372,7 @@ const TURN_CHIP = "border-severity-error/30 bg-severity-error/10 text-severity-e
 const TOOL_CHIP = "border-severity-warn/40 bg-severity-warn/10 text-severity-warn"
 
 /** Tool failures apart from turn failures; an unclassified failure only when it is all there is. */
-const errorChips = (h: H, row: DisplayRow, open: Message): Html => {
+const errorChips = (h: H, row: DisplayRow): Html => {
 	if (row.errorSpanCount === 0) return h.span([h.Class("text-xs text-muted-foreground/50")], [EMPTY_VALUE])
 	const classified = row.toolErrorCount + row.turnErrorCount
 	const other = row.errorSpanCount - classified
@@ -395,7 +389,6 @@ const errorChips = (h: H, row: DisplayRow, open: Message): Html => {
 								noun: "turn",
 								className: TURN_CHIP,
 							},
-							open,
 						),
 					]
 				: []),
@@ -409,12 +402,11 @@ const errorChips = (h: H, row: DisplayRow, open: Message): Html => {
 								noun: "tool",
 								className: TOOL_CHIP,
 							},
-							open,
 						),
 					]
 				: []),
 			...(classified === 0 && other > 0
-				? [errorChip(h, { count: other, noun: "span", className: TURN_CHIP }, open)]
+				? [errorChip(h, { count: other, noun: "span", className: TURN_CHIP })]
 				: []),
 		],
 	)
@@ -422,28 +414,31 @@ const errorChips = (h: H, row: DisplayRow, open: Message): Html => {
 
 const CELL_CLASS = "p-2 whitespace-normal leading-normal"
 
-const cellsOf = (h: H, row: DisplayRow, context: RowContext, open: Message): ReadonlyArray<Html | null> => [
-	sessionCell(h, row, context, open),
+const cellsOf = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<Html | null> => [
+	sessionCell(h, row, context),
 	row.serviceNames.length === 0 ? null : servicePills(h, row.serviceNames),
-	modelCell(h, row, context, open),
-	hint(h, "font-mono text-xs tabular-nums", open, [formatSessionDuration(row.durationMs)]),
-	workCount(h, "PixelSparkleIcon", "text-chart-ai-inference", row.llmCalls, open),
-	workCount(h, "GearIcon", "text-chart-ai-tool", row.toolCalls, open),
-	tokenBar(h, row, open),
-	row.cost > 0 ? hint(h, "font-mono text-xs tabular-nums", open, [formatCost(row.cost)]) : null,
-	errorChips(h, row, open),
-	startedAt(h, row, context, "block truncate text-xs text-muted-foreground", open),
+	modelCell(h, row, context),
+	hint(h, "font-mono text-xs tabular-nums", [formatSessionDuration(row.durationMs)]),
+	workCount(h, "PixelSparkleIcon", "text-chart-ai-inference", row.llmCalls),
+	workCount(h, "GearIcon", "text-chart-ai-tool", row.toolCalls),
+	tokenBar(h, row),
+	row.cost > 0 ? hint(h, "font-mono text-xs tabular-nums", [formatCost(row.cost)]) : null,
+	errorChips(h, row),
+	startedAt(h, row, context, "block truncate text-xs text-muted-foreground"),
 ]
 
 const sessionRow = (h: H, row: DisplayRow, index: number, context: RowContext): Html => {
-	const open = Message.ClickedSessionRow({ url: sessionHref(row) })
 	return tableRow(
 		h,
-		cellsOf(h, row, context, open).map((cell, column) =>
+		cellsOf(h, row, context).map((cell, column) =>
 			tableCell(h, cell === null ? [] : [cell], cn(CELL_CLASS, COLUMNS[column]?.responsive)),
 		),
 		cn("cursor-pointer hover:bg-muted/50", ROW_LIFT_TOOLTIPS),
-		[h.Key(row.sessionId), h.DataAttribute("index", String(index))],
+		[
+			h.Key(row.sessionId),
+			h.DataAttribute("index", String(index)),
+			h.DataAttribute("session-href", sessionHref(row)),
+		],
 	)
 }
 
@@ -490,13 +485,15 @@ export const sessionsTable = (
 		/** The table's paint and list-end Mounts; a lab without a server leaves them off. */
 		onPainted?: Attribute<Message>
 		onReachEnd?: Attribute<Message>
+		/** The rows' click handler (`MountRowClicks`); a lab without a router leaves it off. */
+		onRowClick?: Attribute<Message>
 		/** The virtualizer's window and its Mount; without one every row is drawn. */
 		virtual?: Readonly<{ window: VirtualWindow; mount: Attribute<Message> }>
 	}>,
 ): Html =>
 	h.div(options.onPainted === undefined ? [] : [options.onPainted], [
 		h.div(
-			[h.Class("rounded-md border")],
+			[h.Class("rounded-md border"), ...(options.onRowClick === undefined ? [] : [options.onRowClick])],
 			[
 				table(h, { scroll: false, className: "table-fixed", ariaLabel: "Agent sessions" }, [
 					header(h, options.sort),

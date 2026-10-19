@@ -6,7 +6,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import type { TotalsResult } from "../tools-kit/model"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -102,5 +102,17 @@ describe("agent tools", () => {
 		const reloaded = pageUpdate(windowed().model, Message.ClickedReload())
 		expect(names(reloaded.commands)).toEqual(["ResolveAgentToolsWindow", "CompleteAgentToolsReloadSpin"])
 		expect(reloaded.model.isReloading).toBe(true)
+	})
+
+	test("after Reload, a metric tile's URL change re-reads nothing; a new filter reads only its own keys", () => {
+		const reloaded = pageUpdate(windowed().model, Message.ClickedReload()).model
+		const resolved = pageUpdate(reloaded, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" })).model
+		expect(names(routeChanged(resolved, { search: { metric: "error_rate" } }, context).commands)).toEqual([])
+		expect(names(routeChanged(resolved, { search: { tool: "Bash" } }, context).commands)).toEqual([
+			"FetchAgentToolsSeries",
+			"FetchAgentToolsSeries",
+			"FetchAgentToolsTotals",
+			"FetchAgentToolsBreakdowns",
+		])
 	})
 })

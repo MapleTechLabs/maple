@@ -310,6 +310,9 @@ const trailingLanes = (h: H, signal: ErrorSignal, state: RowState): ReadonlyArra
 
 const pickerMessage = (message: QuickPick.Message) => Message.GotPickerMessage({ message })
 
+/** The row link (`rowRef`), the picker's anchor while its lane is hidden. */
+export const rowSelector = (id: string): string => `a[data-issue-id="${id}"]`
+
 /** `SeverityPicker`: the closed trigger, or the open popover around it. */
 const severityPicker = (h: H, signal: ErrorSignal, state: RowState): Html =>
 	state.picker?.kind === "severity"
@@ -321,6 +324,7 @@ const severityPicker = (h: H, signal: ErrorSignal, state: RowState): Html =>
 				hotkey: PICKER_HOTKEY.severity,
 				label: "Severity",
 				toMessage: pickerMessage,
+				fallbackAnchorSelector: rowSelector(signal.id),
 				trigger: (attributes) =>
 					severityPickerTrigger(h, signal.severity, undefined, { isOpen: true, attributes }),
 				toView: (parts) => h.span([h.Class("contents")], parts),
@@ -342,6 +346,7 @@ const statePicker = (h: H, signal: ErrorSignal, state: RowState): Html => {
 				hotkey: PICKER_HOTKEY.state,
 				label: "Status",
 				toMessage: pickerMessage,
+				fallbackAnchorSelector: rowSelector(signal.id),
 				trigger: (attributes) =>
 					statePickerTrigger(h, current, undefined, { isOpen: true, attributes }),
 				toView: (parts) => h.span([h.Class("contents")], parts),
