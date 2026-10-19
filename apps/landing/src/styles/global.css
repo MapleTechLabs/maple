@@ -777,7 +777,6 @@
 	animation: mcp-caret-blink 1.05s steps(1) infinite;
 }
 
-
 /* ──────────────────────────────────────────────────────────────
    Roadmap board.
    Shipment-meter segments wipe in from the left (scaleX), and
@@ -1468,6 +1467,10 @@
  */
 .docs-content img {
 	@apply w-full h-auto aspect-[1280/660] object-cover bg-bg-deep border border-border rounded-xl my-8;
+}
+
+.docs-content .docs-byline img {
+	@apply w-5 h-5 aspect-square my-0 border-0 rounded-full;
 }
 
 /* ──────────────────────────────────────────────────────────────
