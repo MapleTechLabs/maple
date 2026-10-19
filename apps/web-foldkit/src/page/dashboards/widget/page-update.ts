@@ -376,12 +376,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.isAutocompleteActive
 				? { model }
 				: requestAutocomplete({ ...model, isAutocompleteActive: true }, context),
+		// A failed read is forgotten, so the next edit asks again instead of leaving the picker empty.
 		CompletedFetchMetricKeys: ({ metric, result }) =>
 			Result.isSuccess(result)
 				? { model: { ...model, metricKeys: { ...model.metricKeys, [metric]: result.success } } }
-				: { model },
+				: { model: { ...model, metricKeysRequested: model.metricKeysRequested.filter((key) => key !== metric) } },
 		CompletedFetchMetricOptions: ({ search, result }) => {
-			if (search !== model.metricSearch || !Result.isSuccess(result)) return { model }
+			if (search !== model.metricSearch) return { model }
+			if (!Result.isSuccess(result)) return { model: { ...model, metricRequested: null } }
 			const listed = { ...model, metricOptions: { search, ...result.success } }
 			// A metrics query without a metric yet takes the first one listed.
 			return listed.state !== null && listed.state.queries.some((query) => query.dataSource === "metrics" && query.metricName === "")
