@@ -123,7 +123,10 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // measured in CI at 706.7 against main's 706.0 — the setup_scripts fields and the
 // confirm_removal endpoint on the v2 contract every page's client carries. The method step and
 // manual steps stay in their route chunks.
-const maxGzipBytes = 707.5 * 1024
+// 710.5 KB from the sources API (#1535, 2026-10-17): ~2.6 KB of startup measured in CI at
+// 709.1 against 706.5 (~709.3 with #1533 above), the /v2/sources group and its schemas on
+// the contract every page's client carries. The Sources pages stay in their route chunks.
+const maxGzipBytes = 710.5 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
