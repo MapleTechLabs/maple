@@ -101,12 +101,17 @@ describe("metrics explorer", () => {
 			catalog.model,
 		)
 		const narrowed = routeChanged(answered, { search: { type: "sum" } }, context)
-		const reResolved = pageUpdate(
-			narrowed.model,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
-		)
-		const remounted = withCatalog(reResolved.model, [row("c", "sum")])
+		const remounted = withCatalog(narrowed.model, [row("c", "sum")])
 		expect(names(remounted.commands)).toEqual([])
+	})
+
+	test("after a Reload a type change reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(windowed(), Message.ClickedReload()).model
+		const typed = routeChanged(reloaded, { search: { type: "sum" } }, context)
+		expect(names(typed.commands)).toEqual(["FetchMetricsCatalog"])
+		expect(typed.model.window).toEqual(window)
+		const moved = routeChanged(typed.model, { search: { type: "sum", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveMetricsWindow", "Refresh"]])
 	})
 
 	test("a card shows its type and service, and opens the metric with its type", () => {

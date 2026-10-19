@@ -11,6 +11,7 @@ import type { MetricsSearch } from "../../../route/search"
 import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
+import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { SPARKLINE_METRIC_TYPES } from "../shared"
 import {
@@ -201,7 +202,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
-/** A filter, the view or the window changed: re-resolve and re-request. */
+/** A filter, the view or the window changed: re-request, re-resolving only a moved window. */
 export const routeChanged = (
 	model: Model,
 	route: { readonly search: Search },
@@ -216,10 +217,12 @@ export const routeChanged = (
 		typeSelect: { ...model.typeSelect, value: typeSelectValue(route.search) },
 	}
 	const next: Model = isOutsideQuery ? { ...base, searchInput: query, lastSentQuery: query } : base
-	return {
-		model: next,
-		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-	}
+	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	// A filter or view change reads its new keys under the kept window; only a moved window re-resolves.
+	return routeWindowStep(model.search, route.search, {
+		resolve,
+		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+	})
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>

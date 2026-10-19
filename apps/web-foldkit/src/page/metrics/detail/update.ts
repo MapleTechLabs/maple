@@ -23,6 +23,7 @@ import * as Combobox from "../../../ui/combobox"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	BuildAlertLink,
@@ -234,9 +235,6 @@ export const backToMetricsHref = (search: Search): string =>
 		}),
 	)
 
-const isSameWindow = (a: Search, b: Search) =>
-	a.startTime === b.startTime && a.endTime === b.endTime && a.timePreset === b.timePreset
-
 /** The dialog's step; a widget that landed opens its dashboard. */
 const liftAddToDashboard = (
 	model: Model,
@@ -321,13 +319,11 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 		whereInput: route.search.where ?? "",
 		stepInput: route.search.step ?? "",
 	})
-	if (!isSameWindow(model.search, route.search) || next.window === null) {
-		return {
-			model: next,
-			commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-		}
-	}
-	return requestContent(next, context, "Load")
+	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	return routeWindowStep(model.search, route.search, {
+		resolve,
+		requestAll: (mode) => (next.window === null ? resolve() : requestContent(next, context, mode)),
+	})
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>

@@ -144,6 +144,15 @@ describe("metric detail", () => {
 		expect(changed.model.whereInput).toBe('service.name = "payment-svc"')
 	})
 
+	test("after a Reload a where change reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(loaded([row("payment-svc")]), Message.ClickedReload()).model
+		const search = { where: 'service.name = "payment-svc"' }
+		const filtered = routeChanged(reloaded, { metricName: NAME, search }, context)
+		expect(names(filtered.commands)).toEqual(["FetchMetricTimeseries", "FetchMetricBreakdown"])
+		const moved = routeChanged(filtered.model, { metricName: NAME, search: { ...search, timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveMetricWindow", "Refresh"]])
+	})
+
 	test("the where clause commits after the debounce, and the step only when it changed", () => {
 		const model = loaded([row("payment-svc")])
 		const typed = pageUpdate(model, Message.ChangedWhereInput({ value: 'http.route = "/a"' })).model
