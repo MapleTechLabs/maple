@@ -11,18 +11,18 @@ unmocked endpoints.
 
 ## Status (2026-10-19, branch `fk/parity-harness`, PR #1544)
 
-Phases 0 to 4 and 7 done; cutover (6) open. Decision records: [S1 skeleton](foldkit-decisions/s1-skeleton.md),
+Phases 0 to 4 and 7 done; cutover (6) switched, apps/web deletion open (section 6). Decision records: [S1 skeleton](foldkit-decisions/s1-skeleton.md),
 [S2 bundle](foldkit-decisions/s2-bundle.md), [S3 charts](foldkit-decisions/s3-charts.md),
 [S4 tables](foldkit-decisions/s4-tables.md), [S5 service map](foldkit-decisions/s5-service-map.md),
 [S6 data](foldkit-decisions/s6-data.md), [S7 overlays](foldkit-decisions/s7-overlays.md),
 [S8 pages](foldkit-decisions/s8-pages.md).
 
-| Piece    | State                                                                                                   |
-| -------- | ------------------------------------------------------------------------------------------------------- |
-| Pages    | Every `apps/web` route and lab page ported, plus command palette and shortcuts                          |
-| Local UI | `apps/local-ui-foldkit`: all routes, mobile sheets, map cache                                           |
-| Parity   | Last full run (5 of 7 foldkit chunks): 2,188 identical, 485 pass, 9 fail, 0 missing                    |
-| Tests    | `apps/web-foldkit` 180 files, 964 Scene and unit tests                                                  |
+| Piece    | State                                                                               |
+| -------- | ----------------------------------------------------------------------------------- |
+| Pages    | Every `apps/web` route and lab page ported, plus command palette and shortcuts      |
+| Local UI | `apps/local-ui-foldkit`: all routes, mobile sheets, map cache                       |
+| Parity   | Last full run (5 of 7 foldkit chunks): 2,188 identical, 485 pass, 9 fail, 0 missing |
+| Tests    | `apps/web-foldkit` 180 files, 964 Scene and unit tests                              |
 
 Open fails from that run: `lab-worst-case` (known race, also on the old build),
 `settings-clerk-billing-error` (fixed in `c6a1d0d08`, not yet rerun), and behavior-only diffs in
@@ -120,3 +120,30 @@ React-only dependencies and replacements:
 Identical scenarios at desktop and mobile (if responsive) in light and dark; default, empty,
 loading, error and overflow states; 0 behavior diffs; Scene tests for update logic; ARIA roles
 and names match.
+
+## 6. Cutover
+
+The `app` Worker (`apps/web-foldkit/src/worker.ts`, logical id `app`, Worker name `maple-web-*`)
+builds apps/web-foldkit on every stage and region. The domain, Worker name, env and alchemy state
+are unchanged, so there is no DNS, certificate or Clerk origin change. `app-pr-<n>` serves Foldkit;
+the separate `fk-pr-<n>` Worker is gone (alchemy deletes it on the next deploy of an open PR, the
+orphan sweep reaps closed ones by its `maple-web-foldkit-pr-<n>` name).
+
+`MAPLE_WEB_APP` picks the build: `foldkit` (default) or `react` (apps/web). Both run apps/web's
+Worker entry, so the `/_api` proxy, OG and chart images, share meta rewriting and the frame and
+referrer headers are the same. Both builds ship `apps/web/public` and `/version.json`, so a tab on
+the old bundle sees the newer commit and offers a reload. apps/web had no service worker, so no
+tombstone is needed.
+
+Rollback:
+
+1. Set `MAPLE_WEB_APP=react` in the deploy environment (Infisical `prod` and `prod-<region>` for
+   prd, `dev` for previews).
+2. Re-run the deploy (`deploy-prd.yml`, or push to the PR for a preview). The `app` Worker rebuilds
+   from apps/web; nothing else changes.
+3. To return to Foldkit, remove the variable (or set `foldkit`) and redeploy.
+
+Still to do: delete apps/web (move `src/worker-entry.ts`, `handler.ts`, `og/`, `api-proxy*`,
+`worker-env.ts`, `public/` and the version plugin into apps/web-foldkit first), its bundle budget
+and its perf specs. The preview e2e suite (apps/web/e2e) selects by role and label, so it runs
+against Foldkit unchanged; it moves with the rest.
