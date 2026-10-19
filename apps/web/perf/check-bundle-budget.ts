@@ -123,11 +123,16 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // measured in CI at 706.7 against main's 706.0 — the setup_scripts fields and the
 // confirm_removal endpoint on the v2 contract every page's client carries. The method step and
 // manual steps stay in their route chunks.
-// 708.5 KB from the root span setup check (#1564, 2026-10-19): measured in CI at 707.7 against
-// 707.5 at its previous head. The audit checks' text rides on the v2 contract every page's client
-// carries (it imports `SetupAuditUnavailableError` from the audit module), and main had reached the
-// budget on its own.
-const maxGzipBytes = 708.5 * 1024
+// 710.5 KB from the sources API (#1535, 2026-10-17): ~2.6 KB of startup measured in CI at
+// 709.1 against 706.5 (~709.3 with #1533 above), the /v2/sources group and its schemas on
+// the contract every page's client carries. The Sources pages stay in their route chunks.
+// 712 KB from the Sources pages (#1538, 2026-10-17): ~0.4 KB of startup measured locally at
+// 710.9, the sidebar entry, the palette item and three route-tree entries. The pages stay in
+// their route chunks; the detail route's search schema reads only `source-tabs.ts`.
+// 712.5 KB from the root span setup check (#1564, 2026-10-19): measured locally at 712.0 over
+// main's 712.0 budget. The audit checks' text rides on the v2 contract every page's client
+// carries (it imports `SetupAuditUnavailableError` from the audit module).
+const maxGzipBytes = 712.5 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

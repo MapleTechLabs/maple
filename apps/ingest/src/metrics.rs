@@ -139,6 +139,13 @@ static GCP_DISABLED_DROPS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+static SOURCE_PAUSED_DROPS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_source_paused_drops_total")
+        .with_description("Requests from a paused source, answered with success and dropped")
+        .build()
+});
+
 static SENTINEL_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_sentinel_total")
@@ -574,6 +581,17 @@ pub fn replay_blob_put_failed(org_id: &str) {
 /// Current in-flight request count for an org.
 pub fn org_requests_in_flight(org_id: &str, value: u64) {
     ORG_REQUESTS_IN_FLIGHT.record(value, &[KeyValue::new("org_id", org_id.to_owned())]);
+}
+
+/// A paused source's request was accepted and its data dropped.
+pub fn source_paused_drop(org_id: &str, signal: &str) {
+    SOURCE_PAUSED_DROPS_TOTAL.add(
+        1,
+        &[
+            KeyValue::new("org_id", org_id.to_owned()),
+            KeyValue::new("signal", signal.to_owned()),
+        ],
+    );
 }
 
 /// A request used the sentinel test token.

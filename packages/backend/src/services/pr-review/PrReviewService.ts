@@ -709,7 +709,6 @@ export const renderMergeReminder = (
 export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly heading: boolean }): string => {
 	const { report } = input
 	const carried = input.carried ?? NO_CARRIED
-	const { score } = scorePrReview(report, carried.open)
 	const lineUrl = (finding: { readonly path: string; readonly line: number; readonly endLine?: number }) =>
 		`${input.repositoryUrl.replace(/\/+$/, "")}/blob/${input.headSha}/${finding.path
 			.split("/")
@@ -736,7 +735,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		// An early end is already the warning below; the reason would only say it again.
 		if (confidence.reason !== undefined && confidence.cappedBy !== "partial")
 			lines.push(confidence.reason)
-		lines.push(`<sub>${[`quality ${score}/100`, ...confidence.factors].join(" · ")}</sub>`, "")
+		lines.push(`<sub>${confidence.factors.join(" · ")}</sub>`, "")
 	}
 	if (input.partial)
 		lines.push("> [!WARNING]", "> This review ended early; what follows is what it established.", "")

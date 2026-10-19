@@ -46,6 +46,8 @@ type JsonObject = JsonMap<String, JsonValue>;
 pub struct Connector<'a> {
     pub id: &'a str,
     pub org_id: &'a str,
+    /// The `src_` id of the connector's integration source, once the API created it.
+    pub source_id: Option<&'a str>,
 }
 
 /// A `LogEntry` field, the semantic-convention attribute it becomes, and that
@@ -175,6 +177,7 @@ fn resource_attributes(entry: &JsonObject, connector: &Connector<'_>) -> Vec<Key
         attribute("cloud.provider", "gcp"),
         attribute("gcp.resource.type", resource_type),
     ];
+    push(&mut attributes, "maple_source_id", connector.source_id);
     // An aggregated sink delivers entries from many projects, so the project
     // is the entry's own. Entries logged against an organization, folder or
     // billing account have none.
@@ -525,6 +528,7 @@ mod tests {
     const CONNECTOR: Connector<'static> = Connector {
         id: "gcp_conn_1",
         org_id: "org_1",
+        source_id: None,
     };
 
     /// The resource's attributes and the record.
@@ -534,6 +538,31 @@ mod tests {
         let mut resource_logs = request.resource_logs.remove(0);
         let record = resource_logs.scope_logs.remove(0).log_records.remove(0);
         (resource_logs.resource.unwrap().attributes, record)
+    }
+
+    #[test]
+    fn the_integration_source_is_stamped_only_once_it_exists() {
+        let entry = parse_log_entry(br#"{"logName":"projects/p/logs/app","textPayload":"hi"}"#)
+            .expect("a LogEntry");
+        let resource_of = |connector: &Connector<'_>| {
+            let request = build_logs_request(&entry, connector, NOW);
+            strings(
+                &request.resource_logs[0]
+                    .resource
+                    .as_ref()
+                    .unwrap()
+                    .attributes,
+            )
+        };
+        assert!(!resource_of(&CONNECTOR).contains_key("maple_source_id"));
+        let with_source = Connector {
+            source_id: Some("src_aXunrkWtzvXSkw9Z2smcft"),
+            ..CONNECTOR
+        };
+        assert_eq!(
+            resource_of(&with_source)["maple_source_id"],
+            "src_aXunrkWtzvXSkw9Z2smcft"
+        );
     }
 
     fn convert(entry: JsonValue) -> (HashMap<String, String>, LogRecord) {

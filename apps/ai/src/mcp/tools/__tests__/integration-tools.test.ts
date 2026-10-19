@@ -4,6 +4,7 @@ import {
 	CiRunsOutput,
 	CompareCommitsOutput,
 	ListIntegrationsOutput,
+	ListSourcesOutput,
 	ScrapeTargetMutationOutput,
 } from "@maple/domain/mcp-outputs"
 import { RoleName } from "@maple/domain/primitives"
@@ -56,6 +57,32 @@ describe("list_integrations", () => {
 		const result = await runToolDirect(member, "list_integrations", { provider: "prometheus" })
 		expect(markdown(result)).not.toContain("fixture-secret")
 		expect(JSON.stringify(result.structuredContent)).not.toContain("fixture-secret")
+	})
+})
+
+describe("list_sources", () => {
+	it("lists every integration as a source, worst health first, beside the default source", async () => {
+		const result = await runToolDirect(member, "list_sources", {})
+		const output = decode(ListSourcesOutput, result)
+		const byName = new Map(output.sources.map((s) => [s.name, s]))
+		expect(byName.get(INTEGRATION_WORLD.failingScrapeTarget)).toMatchObject({
+			platform: "prometheus",
+			delivery: "pull",
+			status: "failing",
+		})
+		expect(output.sources.find((s) => s.platform === "railway")?.status).toBe("stale")
+		expect(output.sources.find((s) => s.isDefault)).toMatchObject({ delivery: "push", status: "pending" })
+		expect(output.sources.every((s) => s.id.startsWith("src_"))).toBe(true)
+		expect(output.sources[0]?.status).toBe("failing")
+		expect(JSON.stringify(result.structuredContent)).not.toContain("fixture-secret")
+	})
+
+	it("keeps source ids stable across calls", async () => {
+		const ids = async () =>
+			decode(ListSourcesOutput, await runToolDirect(member, "list_sources", {}))
+				.sources.map((s) => s.id)
+				.sort()
+		expect(await ids()).toEqual(await ids())
 	})
 })
 

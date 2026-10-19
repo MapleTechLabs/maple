@@ -68,6 +68,11 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.gcpConnector,
 		verbs: ["created", "updated", "removal_confirmed", "deleted"],
 	},
+	/** Anything that sends data; a token source's secret is never in `changes`. */
+	source: {
+		prefix: PublicIdPrefixes.source,
+		verbs: ["created", "updated", "paused", "resumed", "rolled", "deleted"],
+	},
 	/** Org-singleton public/private pair; which one rolled is in `metadata`. */
 	ingest_key: { verbs: ["rolled"] },
 	/**
@@ -160,6 +165,7 @@ export const AuditResourceLabels = {
 	member: "Member",
 	organization: "Organization",
 	scrape_target: "Scrape target",
+	source: "Source",
 	session_replay: "Session replay",
 	support_channel: "Support channel",
 	telemetry: "Telemetry",
@@ -225,6 +231,12 @@ export const AuditActionLabels = {
 	"gcp_connector.removal_confirmed": "Confirmed Google Cloud resources removed",
 	"gcp_connector.deleted": "Removed Google Cloud connector",
 	"ingest_key.rolled": "Rolled ingest key",
+	"source.created": "Created source",
+	"source.updated": "Updated source",
+	"source.paused": "Paused source",
+	"source.resumed": "Resumed source",
+	"source.rolled": "Rolled source token",
+	"source.deleted": "Deleted source",
 	"mcp_connection.revoked": "Revoked MCP connection",
 	"mcp_tool.called": "Called MCP tool",
 	"investigation.created": "Started investigation",

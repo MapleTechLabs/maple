@@ -17,6 +17,7 @@
  */
 import type { MetricAttrs, MetricGaugeRow, MetricSumRow } from "@maple/backend/services/warehouse/metric-rows"
 import { parseWarehouseDateTime } from "@maple/query-engine"
+import { SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
 
 interface OtlpKeyValue {
 	readonly key: string
@@ -114,15 +115,22 @@ const scopeKey = (row: MetricGaugeRow): string =>
 export const metricRowsToOtlp = (
 	sumRows: ReadonlyArray<MetricSumRow>,
 	gaugeRows: ReadonlyArray<MetricGaugeRow>,
+	options?: { readonly sourceId?: string | undefined },
 ): OtlpMetricsPayload => {
 	const resources = new Map<string, ResourceAcc>()
+	// The poller's pull source, stamped on every resource so the gateway attributes the data.
+	const sourceId = options?.sourceId
+	const resourceAttributes = (row: MetricGaugeRow): MetricAttrs =>
+		sourceId === undefined
+			? row.resource_attributes
+			: { ...row.resource_attributes, [SOURCE_ID_ATTRIBUTE]: sourceId }
 
 	const scopeFor = (row: MetricGaugeRow): ScopeAcc => {
 		const rKey = resourceKey(row)
 		let resource = resources.get(rKey)
 		if (!resource) {
 			resource = {
-				resource: { attributes: toKeyValues(row.resource_attributes) },
+				resource: { attributes: toKeyValues(resourceAttributes(row)) },
 				schemaUrl: row.resource_schema_url,
 				scopes: new Map(),
 			}
