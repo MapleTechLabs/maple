@@ -180,6 +180,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: planPreview({ ...model, previewWidth: widthPx }, context),
 		// A stat that just got its value asks for its sparkline series next.
 		CompletedFetchWidget: (fetched) => planPreview(acceptFetch(model, fetched.key, fetched), context),
+		// The options settle the variables, which may unblock a preview waiting on them.
+		CompletedFetchVariableOptions: ({ name, key, result }) => {
+			const slot = model.variableOptions[name]
+			return slot === undefined
+				? { model }
+				: planPreview({ ...model, variableOptions: { ...model.variableOptions, [name]: Keyed.accept(slot, key, result) } }, context)
+		},
 		GotSparklineChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.sparklineChart, inner)
 			return {

@@ -1,10 +1,11 @@
-import { DashboardWidgetSchema, TimeRangeSchema } from "@maple/domain/http"
+import { DashboardVariableSchema, DashboardWidgetSchema, TimeRangeSchema } from "@maple/domain/http"
 import { Clock, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { errorMessageOf, mutateDashboard } from "../kit/store"
+import { fetchVariableOptions } from "../kit/variables"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { GeneratedIdPurpose, Message } from "./message"
 import { fetchSuggestions, SuggestionLookup } from "./suggestions"
@@ -39,6 +40,18 @@ export const FetchWidget = Command.define("FetchWidgetPreview", {
 			Effect.mapError(toWidgetFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchWidget({ key, result })),
+		),
+})
+
+/** A query variable's option list over the board's window (`readVariableOptions`). */
+export const FetchVariableOptions = Command.define("FetchWidgetEditorVariableOptions", {
+	args: { name: Schema.String, key: Schema.String, variable: DashboardVariableSchema, window: TimeWindow },
+	messages: [Message.CompletedFetchVariableOptions],
+	execute: ({ name, key, variable, window }) =>
+		fetchVariableOptions(variable, window).pipe(
+			Effect.mapError(toWidgetFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchVariableOptions({ name, key, result })),
 		),
 })
 

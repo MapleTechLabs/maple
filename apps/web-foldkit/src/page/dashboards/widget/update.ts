@@ -23,7 +23,8 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget } from "../kit/widget-data"
 import { dataStateOf } from "../kit/data-state"
-import { FetchAutocomplete, FetchWidget, ReadClock } from "./command"
+import { FetchAutocomplete, FetchVariableOptions, FetchWidget, ReadClock } from "./command"
+import { planOptionRequests, planVariablesOf } from "../kit/variables"
 import type { EditorState } from "./editor-state"
 import { buildDataSource, buildDisplay, toInitialState, validationErrorOf, type Widget } from "./lowering"
 import { initRawSql, type RawSqlDraft, rawSqlDataSourceOf } from "./raw-sql"
@@ -59,6 +60,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		sparkGate: null,
 		sparklineChart: Chart.init(),
 		requests: {},
+		variableOptions: {},
 		chart: Chart.init(),
 		tableSort: { key: null, dir: "desc" },
 		themeColors: null,
@@ -183,6 +185,22 @@ const planWidgetPreview = (model: Model, context: PageContext): Return => {
 		timeZone: context.timeZone,
 		nowMs: model.nowMs,
 	})
+	// `DashboardVariablesProvider` with no URL values: `$name` previews at the variable's default.
+	const definitions = model.document?.variables ?? []
+	const options = planOptionRequests(context.orgId, definitions, model.variableOptions, window, "Load")
+	const variables = planVariablesOf(context.orgId, definitions, {}, options.slots, window)
+	const optionCommands = options.requests.map((request) => FetchVariableOptions(request))
+	const planned = planWidgetGates({ ...model, variableOptions: options.slots }, context, widget, window, variables)
+	return { model: planned.model, commands: [...optionCommands, ...planned.commands] }
+}
+
+const planWidgetGates = (
+	model: Model,
+	context: PageContext,
+	widget: Widget,
+	window: ReturnType<typeof resolveTimeRangeWindow>,
+	variables: ReturnType<typeof planVariablesOf>,
+): Planned => {
 	const panel = toPanelType(widget.visualization, widget.display.chartId)
 	const gate = planWidget({
 		orgId: context.orgId,
@@ -190,6 +208,7 @@ const planWidgetPreview = (model: Model, context: PageContext): Return => {
 		window,
 		...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
 		maxDataPoints: maxDataPointsForWidth(model.previewWidth ?? DEFAULT_WIDGET_WIDTH_PX, panel),
+		variables,
 	})
 	const asked = ask({ model: { ...model, gate }, commands: [] }, gate)
 	// `StatSparklineLoader`: the trend is asked for once the stat itself has its value.
@@ -204,6 +223,7 @@ const planWidgetPreview = (model: Model, context: PageContext): Return => {
 					dataSource: sparkline.dataSource,
 					window,
 					...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
+					variables,
 				})
 			: null
 	const withSpark = { ...asked, model: { ...asked.model, sparkGate } }
@@ -211,6 +231,7 @@ const planWidgetPreview = (model: Model, context: PageContext): Return => {
 }
 
 type Planned = Readonly<{ model: Model; commands: ReadonlyArray<ReturnType<typeof FetchWidget>> }>
+
 
 /** A gate's request asked for unless its key is already held. */
 const ask = (planned: Planned, gate: Model["gate"]): Planned => {

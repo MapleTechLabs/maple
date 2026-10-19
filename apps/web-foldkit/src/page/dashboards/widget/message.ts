@@ -31,6 +31,11 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
 	MeasuredPreview: { widthPx: Schema.Number },
 	CompletedFetchWidget: { key: Schema.String, result: Schema.Result(Schema.Unknown, WidgetFailure) },
+	CompletedFetchVariableOptions: {
+		name: Schema.String,
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(Schema.String), WidgetFailure),
+	},
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

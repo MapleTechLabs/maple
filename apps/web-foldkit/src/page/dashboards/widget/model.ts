@@ -57,6 +57,8 @@ export const Model = Schema.Struct({
 	sparkGate: Schema.NullOr(WidgetGate),
 	sparklineChart: Chart.Model,
 	requests: Schema.Record(Schema.String, KeyedSchema(Schema.Unknown, WidgetFailure)),
+	/** `DashboardVariablesProvider` at defaults: each query variable's option list, by name. */
+	variableOptions: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), WidgetFailure)),
 	chart: Chart.Model,
 	tableSort: TableSort,
 	themeColors: Schema.NullOr(ThemeColors),
