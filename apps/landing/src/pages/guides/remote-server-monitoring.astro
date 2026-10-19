@@ -1,0 +1,669 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const pageTitle = "Remote server monitoring with OpenTelemetry: agents, checks and alerts";
+const pageDescription =
+    "Remote server monitoring for cloud VMs, colo and branch servers: agent vs agentless, what to watch, secure push, and an OpenTelemetry Collector setup.";
+const published = "2026-10-19";
+const updatedLabel = "October 19, 2026";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const methods = [
+    {
+        method: "Agent on the server",
+        how: "A process on the server reads /proc, log files and the journal, and sends the data out. The OpenTelemetry Collector, Prometheus node_exporter and vendor agents work this way.",
+        fits: "Linux and Windows servers you control",
+        cost: "Software to install, configure and upgrade on every server. Uses some CPU and memory of its own.",
+    },
+    {
+        method: "SNMP polling",
+        how: "A central poller queries the SNMP daemon on each device over UDP 161 and looks values up in MIBs.",
+        fits: "Switches, firewalls, UPS units and appliances that cannot run an agent",
+        cost: "Coarse metrics and no logs. SNMP v1 and v2c send the community string in plain text, so use v3.",
+    },
+    {
+        method: "SSH polling",
+        how: "A central host logs in on a schedule, runs commands such as df or uptime, and parses the output.",
+        fits: "A handful of servers, or one metric no agent collects",
+        cost: "The poller holds credentials for every server, and each server accepts inbound SSH from it. Output parsing breaks across distributions.",
+    },
+    {
+        method: "WMI or WinRM polling",
+        how: "A central host queries Windows performance counters remotely.",
+        fits: "Windows servers in a domain",
+        cost: "Inbound RPC (135 plus a dynamic port range) or WinRM (5985 and 5986), and an account with remote query rights.",
+    },
+    {
+        method: "HTTP and ICMP checks",
+        how: "A prober outside the server sends a request or a ping and records whether it answered and how fast.",
+        fits: "Reachability, public endpoints, TLS certificates",
+        cost: "Sees up or down and latency. Nothing about disk, memory or the process that is about to fail.",
+    },
+];
+
+const signals = [
+    { signal: "Heartbeat", source: "The agent reporting at all", metric: "Any host metric arriving", alert: "No data from the host for 5 minutes" },
+    { signal: "Reachability", source: "A check from another machine", metric: "httpcheck.status", alert: "No 2xx response for 2 minutes" },
+    { signal: "CPU", source: "/proc/stat", metric: "system.cpu.utilization, system.cpu.load_average.15m", alert: "Above 90% for 15 minutes, or load above the core count" },
+    { signal: "Memory", source: "/proc/meminfo", metric: "system.memory.utilization", alert: "Above 90% used, or the OOM killer in the logs" },
+    { signal: "Disk space", source: "statfs on each mount", metric: "system.filesystem.utilization", alert: "Any mountpoint above 85 to 90%" },
+    { signal: "Network", source: "/proc/net/dev", metric: "system.network.io, system.network.errors", alert: "Errors or drops rising, or traffic at link capacity" },
+    { signal: "Processes", source: "/proc", metric: "system.processes.count", alert: "Blocked processes piling up" },
+    { signal: "Logs", source: "/var/log, the journal", metric: "filelog receiver", alert: "Disk I/O errors, OOM kills, repeated SSH auth failures" },
+    { signal: "Certificates", source: "The TLS handshake", metric: "httpcheck.tls.cert_remaining", alert: "Fewer than 14 days left" },
+];
+
+const sshCommands = `uptime                   # load averages for 1, 5 and 15 minutes, time since boot
+top -o %MEM              # live CPU and memory per process (or htop)
+vmstat 5 5               # run queue, swap in and out, CPU iowait, every 5 seconds
+iostat -xz 5 3           # per-device utilization and wait times (sysstat package)
+free -h                  # memory and swap in use
+df -h && df -i           # space and inodes per filesystem
+ss -tulpn                # listening sockets and the process behind each
+ss -s                    # socket counts by state
+journalctl -p err -b     # errors since the last boot
+journalctl -u nginx --since "1 hour ago"`;
+
+const sshLoop = `for h in web-01 web-02 db-01; do
+  ssh "$h" 'echo "== $(hostname)"; uptime; df -h / | tail -1'
+done`;
+
+const installCommands = `curl -LO https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.163.1/otelcol-contrib_0.163.1_linux_amd64.deb
+sudo dpkg -i otelcol-contrib_0.163.1_linux_amd64.deb`;
+
+const serverConfig = `receivers:
+    hostmetrics:
+        collection_interval: 30s
+        scrapers:
+            cpu:
+                metrics:
+                    system.cpu.utilization:
+                        enabled: true
+            load: {}
+            memory:
+                metrics:
+                    system.memory.utilization:
+                        enabled: true
+            filesystem:
+                metrics:
+                    system.filesystem.utilization:
+                        enabled: true
+            network: {}
+            processes: {}
+    filelog:
+        include:
+            - /var/log/syslog
+            - /var/log/auth.log
+        start_at: end
+
+processors:
+    resourcedetection:
+        detectors: [env, system]
+    resource/logs:
+        attributes:
+            - key: service.name
+              value: system-logs
+              action: upsert
+    batch: {}
+
+exporters:
+    otlphttp/maple:
+        endpoint: https://ingest.maple.dev
+        compression: gzip
+        headers:
+            x-maple-ingest-key: \${env:MAPLE_INGEST_KEY}
+
+service:
+    pipelines:
+        metrics:
+            receivers: [hostmetrics]
+            processors: [resourcedetection, batch]
+            exporters: [otlphttp/maple]
+        logs:
+            receivers: [filelog]
+            processors: [resourcedetection, resource/logs, batch]
+            exporters: [otlphttp/maple]`;
+
+const envFile = `OTELCOL_OPTIONS="--config=/etc/otelcol-contrib/config.yaml"
+MAPLE_INGEST_KEY=maple_sk_...
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production`;
+
+const serviceCommands = `sudo chmod 600 /etc/otelcol-contrib/otelcol-contrib.conf
+sudo usermod -aG adm otelcol-contrib
+sudo systemctl enable otelcol-contrib
+sudo systemctl restart otelcol-contrib
+journalctl -u otelcol-contrib -f`;
+
+const checkerConfig = `receivers:
+    http_check:
+        collection_interval: 60s
+        metrics:
+            httpcheck.tls.cert_remaining:
+                enabled: true
+        targets:
+            - method: GET
+              endpoints:
+                  - https://web-01.example.com/health
+                  - https://web-02.example.com/health
+                  - https://api.example.com/health
+
+processors:
+    resource/uptime:
+        attributes:
+            - key: service.name
+              value: uptime-checks
+              action: upsert
+    batch: {}
+
+exporters:
+    otlphttp/maple:
+        endpoint: https://ingest.maple.dev
+        compression: gzip
+        headers:
+            x-maple-ingest-key: \${env:MAPLE_INGEST_KEY}
+
+service:
+    pipelines:
+        metrics/uptime:
+            receivers: [http_check]
+            processors: [resource/uptime, batch]
+            exporters: [otlphttp/maple]`;
+
+const envTemplate = `OTELCOL_OPTIONS="--config=/etc/otelcol-contrib/config.yaml"
+MAPLE_INGEST_KEY={{ maple_ingest_key }}
+OTEL_RESOURCE_ATTRIBUTES=host.name={{ inventory_hostname }},deployment.environment.name={{ env_name }}`;
+
+const heartbeatSql = `SELECT $__timeGroup(TimeUnix) AS bucket, count() AS value
+FROM metrics_gauge
+WHERE $__orgFilter AND $__timeFilter(TimeUnix)
+  AND MetricName = 'system.memory.utilization'
+  AND ResourceAttributes['host.name'] = 'web-01'
+GROUP BY bucket`;
+
+const diskSql = `SELECT $__timeGroup(TimeUnix) AS bucket,
+       ResourceAttributes['host.name'] AS group,
+       max(Value) AS value
+FROM metrics_gauge
+WHERE $__orgFilter AND $__timeFilter(TimeUnix)
+  AND MetricName = 'system.filesystem.utilization'
+  AND Attributes['type'] NOT IN ('squashfs', 'tmpfs')
+GROUP BY bucket, group`;
+
+const toc = [
+    ["definition", "Definition"],
+    ["methods", "Agent vs agentless"],
+    ["push-pull", "Push or pull"],
+    ["signals", "Signals to watch"],
+    ["security", "Security"],
+    ["ssh", "Checks over SSH"],
+    ["collector", "Collector setup"],
+    ["hosts", "Hosts in Maple"],
+    ["http-checks", "HTTP checks"],
+    ["fleet", "Many servers"],
+    ["alerting", "Alerts"],
+] as const;
+const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
+
+const faqs = [
+    {
+        question: "What is remote server monitoring?",
+        answer:
+            "Remote server monitoring is collecting health data from servers you do not sit next to, such as cloud VMs, machines in a colocation rack or a server in a branch office, and alerting when something goes wrong. It covers availability, CPU, memory, disk, network, processes and logs, collected either by an agent on each server or by a central system that polls or probes them.",
+    },
+    {
+        question: "What is the difference between agent-based and agentless server monitoring?",
+        answer:
+            "Agent-based monitoring runs a small program on each server that reads local metrics and logs and sends them out. Agentless monitoring collects from a central system over SNMP, SSH, WMI or with HTTP and ping checks. Agents see far more, including logs and per-mount disk usage, and need only outbound network access. Agentless methods suit devices that cannot run an agent, and they need inbound ports and credentials on every target.",
+    },
+    {
+        question: "How can I monitor a remote Linux server for free?",
+        answer:
+            "Install the OpenTelemetry Collector Contrib, which is open source under the Apache 2.0 license, as a systemd service with the hostmetrics and filelog receivers, and send its output to any OTLP backend. For a one-off look, SSH in and run uptime, vmstat, df -h, ss and journalctl. A fully self-hosted alternative is Prometheus node_exporter with Prometheus and Grafana, which you run and store yourself.",
+    },
+    {
+        question: "How do I get alerted when a remote server goes down?",
+        answer:
+            "Use two alerts. A heartbeat rule fires when the server's agent stops sending data for a few minutes, which catches a crashed host, a full network outage and a stopped agent. An HTTP check from a different machine fires when the service on the server stops answering. Run the check outside the server it watches, or it goes down with it.",
+    },
+    {
+        question: "Is it secure to send server metrics over the internet?",
+        answer:
+            "Yes, when the agent pushes over HTTPS to the backend with a send-only key. The server opens an outbound connection, so it needs no inbound monitoring port, and TLS protects the data in transit. Keep the key in a root-only file, run the agent as an unprivileged user, and rotate the key if a server is compromised. Plain SNMP v1 and v2c and unencrypted syslog are the parts to avoid on the open internet.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Remote server monitoring with OpenTelemetry",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: published,
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/remote-server-monitoring`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Remote server monitoring" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-24 md:pt-28">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                        <span class="border border-primary/40 px-2 py-1 text-primary">Infrastructure</span>
+                        <span>11 min read</span>
+                    </div>
+                    <h1 class="mt-6 max-w-[20ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                        Remote server monitoring with OpenTelemetry
+                    </h1>
+                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
+                        Collect CPU, memory, disk, network and logs from servers in the cloud, a colo rack or a branch office, push them out over HTTPS, and get alerted when a server goes quiet. The setup uses the OpenTelemetry Collector as a systemd service.
+                    </p>
+                    <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                        <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                            <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                            <span>By {author.name}</span>
+                        </a>
+                        <time datetime={published}>Updated {updatedLabel}</time>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {toc.map(([id, label]) => (
+                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={tocHeadings} class="sticky top-28" />
+            </aside>
+
+            <article class="rsm-guide min-w-0">
+                <section id="definition" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · Definition</p>
+                    <h2>Remote server monitoring covers the servers you cannot walk up to</h2>
+
+                    <div class="guide-answer">
+                        <p>
+                            <strong>Remote server monitoring</strong> is collecting health data from servers in another building, region or provider, and alerting on it. The usual targets are cloud VMs, machines in a colocation rack, and a server in a branch office or a customer site.
+                        </p>
+                    </div>
+
+                    <p>
+                        A server on your desk tells you it is in trouble: the fan spins up, the shell lags. A VM in another region gives you nothing until someone reports the outage. Remote monitoring replaces that with numbers sent on a schedule and an alert when they cross a line or stop arriving.
+                    </p>
+                    <p>
+                        The distance adds failure modes a local machine does not have. The network between you and the server can fail while the server is fine, and a server that stops reporting can mean the host died, the agent crashed, or a firewall rule changed. A good setup tells these cases apart.
+                    </p>
+                </section>
+
+                <section id="methods" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · Collection</p>
+                    <h2>Agent-based vs agentless remote server monitoring</h2>
+                    <p>
+                        Data either comes from software on the server (an agent) or from a central system that reaches into the server or probes it from outside (agentless).
+                    </p>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Method</th><th>How it collects</th><th>Fits</th><th>Trade-offs</th></tr>
+                            </thead>
+                            <tbody>
+                                {methods.map((row) => (
+                                    <tr>
+                                        <td class="guide-table__key">{row.method}</td>
+                                        <td>{row.how}</td>
+                                        <td>{row.fits}</td>
+                                        <td>{row.cost}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        For servers you run, an agent wins on coverage: it reads per-mount disk usage, per-process counts and log files, none of which an outside probe can see. Agentless methods earn their place on devices that cannot run an agent, and HTTP checks earn theirs as the outside view an agent cannot give. A server that has hung hard sends no data, while a probe from another machine still gets an answer or a timeout.
+                    </p>
+                    <p>
+                        The OpenTelemetry Collector covers both. Its Contrib distribution has the <code>hostmetrics</code> and <code>filelog</code> receivers for the agent role, and <code>snmp</code>, <code>ssh_check</code> and <code>http_check</code> receivers for polling from a central Collector.
+                    </p>
+                </section>
+
+                <section id="push-pull" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · Direction</p>
+                    <h2>Push or pull monitoring for remote servers</h2>
+                    <p>
+                        In a <strong>pull</strong> model the monitoring system connects to each server and scrapes it. Prometheus scraping node_exporter on port 9100 is the common example. The monitoring system knows the full list of targets, so a failed scrape is itself the "server down" signal.
+                    </p>
+                    <p>
+                        In a <strong>push</strong> model the agent on each server opens a connection to the backend and sends its data. The server needs no open port, which matters for remote servers: a branch office behind NAT, a VM in a private subnet, or a customer machine you cannot reach from outside can all push out over HTTPS.
+                    </p>
+                    <p>
+                        Push has one weakness. The backend only learns about a server from the data it sends, so a server that dies quietly produces silence. A push setup needs an explicit alert on missing data, covered in <a href="#alerting">Alerts</a> below. The Collector pushes OTLP, and that is the model the rest of this guide uses.
+                    </p>
+                </section>
+
+                <section id="signals" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · Signals</p>
+                    <h2>What to watch on a remote server</h2>
+                    <p>
+                        The table maps each signal to where Linux keeps it, the Collector metric that reports it, and a starting alert condition. Tune the thresholds against a normal week before you page anyone on them.
+                    </p>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Signal</th><th>Source on Linux</th><th>Collector metric</th><th>Starting alert</th></tr>
+                            </thead>
+                            <tbody>
+                                {signals.map((row) => (
+                                    <tr>
+                                        <td class="guide-table__key">{row.signal}</td>
+                                        <td>{row.source}</td>
+                                        <td><code>{row.metric}</code></td>
+                                        <td>{row.alert}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        Alert on disk space for every mountpoint, including <code>/var</code> and data volumes. A log directory fills, the database cannot write, and the service fails while CPU and memory look normal. Check inodes as well as bytes: a mount with free space and no free inodes rejects new files all the same.
+                    </p>
+                    <p>
+                        Disk I/O wait comes from the <code>disk</code> scraper, which the config below leaves out to keep it small. Add <code>disk: {"{}"}</code> under <code>scrapers</code> when you need <code>system.disk.io</code> and <code>system.disk.operation_time</code>.
+                    </p>
+                </section>
+
+                <section id="security" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · Security</p>
+                    <h2>Securing remote server monitoring</h2>
+                    <p>
+                        Monitoring traffic crosses networks you do not own, and the agent runs on every server. Keep both narrow.
+                    </p>
+                    <ul class="guide-list">
+                        <li>Push outbound only. The agent connects out to the ingest endpoint on 443. Nothing listens on the server for monitoring, so the firewall can deny all inbound traffic except SSH, and SSH can sit behind a VPN or bastion host.</li>
+                        <li>Use an <code>https://</code> endpoint and leave certificate verification on. Never set <code>insecure_skip_verify</code> on an exporter that crosses the internet.</li>
+                        <li>A Maple ingest key can send telemetry and cannot read anything. A key copied off a compromised server lets someone send data to your organization, and nothing more. Rotate it under <strong>Settings → Ingestion</strong>; the old key stops working immediately, so roll out the new one first. See <a href="/docs/reference/authentication#ingest-keys">Authentication</a>.</li>
+                        <li>The Collector packages run the service as an unprivileged <code>otelcol-contrib</code> user. Grant it read access to the log files it tails and nothing else. The per-process scraper is the one part that may need more; leave it off unless you need it.</li>
+                        <li>SNMP v1 and v2c and unencrypted syslog over UDP do not belong on the open internet. Use SNMP v3, or keep those protocols inside a VPN.</li>
+                    </ul>
+                </section>
+
+                <section id="ssh" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>06</span> · Ad-hoc checks</p>
+                    <h2>Quick Linux checks on a remote server over SSH</h2>
+                    <p>
+                        When an alert fires, a minute in a shell often answers what the graphs cannot. These ship with most distributions; <code>iostat</code> needs the <code>sysstat</code> package and <code>htop</code> is a separate install.
+                    </p>
+                    <pre><code>{sshCommands}</code></pre>
+                    <p>
+                        Read <code>vmstat</code> by column: a high <code>r</code> (run queue) means CPU contention, non-zero <code>si</code> and <code>so</code> mean the server is swapping, and a high <code>wa</code> means processes are waiting on disk. In <code>iostat -x</code>, a device near 100 in <code>%util</code> with a rising <code>await</code> is saturated.
+                    </p>
+                    <p>For a quick pass across a few servers:</p>
+                    <pre><code>{sshLoop}</code></pre>
+                    <p>
+                        That loop is fine for five servers and an incident. It is a poor monitoring system: nothing runs when you are asleep, and nothing keeps history to compare against.
+                    </p>
+                </section>
+
+                <section id="collector" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>07</span> · Hands-on</p>
+                    <h2>Monitor a remote Linux server with the OpenTelemetry Collector</h2>
+                    <p>
+                        This installs the Collector Contrib as a systemd service on a Debian or Ubuntu server, collects host metrics every 30 seconds, tails the system logs, and pushes both to Maple. The config was validated with <code>otelcol-contrib validate</code> on release 0.163.1.
+                    </p>
+
+                    <h3>Install the package</h3>
+                    <p>
+                        Take the current version from the <a href="https://github.com/open-telemetry/opentelemetry-collector-releases/releases" target="_blank" rel="noopener noreferrer">releases page</a>; use the <code>arm64</code> package on ARM servers and the <code>.rpm</code> on RHEL-family systems.
+                    </p>
+                    <pre><code>{installCommands}</code></pre>
+                    <p>
+                        The package creates the <code>otelcol-contrib</code> user, a systemd unit, and <code>/etc/otelcol-contrib/</code> holding the config and an environment file the unit reads.
+                    </p>
+
+                    <h3>Write the config</h3>
+                    <p>Replace <code>/etc/otelcol-contrib/config.yaml</code> with:</p>
+                    <pre><code>{serverConfig}</code></pre>
+
+                    <ul class="guide-list">
+                        <li>The receiver, processors and exporter for metrics match the <a href="/docs/infrastructure/hosts">Hosts docs</a>, with the <code>processes</code> scraper added. The <code>*.utilization</code> metrics are off by default in the receiver and have to be enabled as above.</li>
+                        <li><code>resourcedetection</code> sets <code>host.name</code>, <code>os.type</code> and <code>host.arch</code>. The <code>env</code> detector reads <code>OTEL_RESOURCE_ATTRIBUTES</code>, so per-server attributes live in the environment file and the config stays identical on every server.</li>
+                        <li><code>filelog</code> starts at the end of each file, so a restart does not resend old lines. Lines arrive as unparsed text under the service <code>system-logs</code>.</li>
+                        <li>Debian 12 and later log only to the journal unless <code>rsyslog</code> is installed. RHEL-family systems use <code>/var/log/messages</code> and <code>/var/log/secure</code>. Adjust <code>include</code> to the files that exist.</li>
+                        <li>EU organizations use <code>https://ingest.eu.maple.dev</code>.</li>
+                    </ul>
+
+                    <h3>Add the key and start the service</h3>
+                    <p>
+                        Edit <code>/etc/otelcol-contrib/otelcol-contrib.conf</code> to hold the private ingest key (<code>maple_sk_…</code>) from <strong>Settings → Ingestion</strong>:
+                    </p>
+                    <pre><code>{envFile}</code></pre>
+                    <p>
+                        Then make the file root-only, let the service user read logs (on Debian and Ubuntu the files in <code>/var/log</code> belong to the <code>adm</code> group), and start it:
+                    </p>
+                    <pre><code>{serviceCommands}</code></pre>
+                    <p>
+                        systemd reads the environment file as root before it starts the service, so the file can stay root-only and the key stays out of <code>config.yaml</code>. A <code>401</code> in the journal means the key is wrong.
+                    </p>
+                </section>
+
+                <section id="hosts" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>08</span> · In Maple</p>
+                    <h2>Remote servers on the Maple Hosts page</h2>
+                    <p>
+                        Open <strong>Infrastructure → Hosts</strong>. A server appears within about a minute of the Collector starting, keyed on its <code>host.name</code>. The list shows each host's <strong>Status</strong>, <strong>Usage</strong> (CPU, memory and disk), <strong>Load 15m</strong> and <strong>Last seen</strong>, and with four or more hosts a fleet grid shows them side by side.
+                    </p>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Status</th><th>Meaning</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td class="guide-table__key" data-status="active">Active</td><td>Last report less than 1 minute ago</td></tr>
+                                <tr><td class="guide-table__key" data-status="idle">Idle</td><td>Last report between 1 and 5 minutes ago</td></tr>
+                                <tr><td class="guide-table__key" data-status="ended">Ended</td><td>No report for 5 minutes or more</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        Filter the list by name or by status to find the servers that went quiet. A host's detail page charts CPU, memory, filesystem per mountpoint, network per device and the 15-minute load, next to its <code>os.type</code>, <code>host.arch</code>, <code>cloud.provider</code> and <code>cloud.region</code>. The cloud fields fill in when you add the <code>ec2</code>, <code>gcp</code> or <code>azure</code> detector to <code>resourcedetection</code>.
+                    </p>
+                    <p>
+                        The system logs land on the <a href="/docs/explore/logs">Logs</a> page under the service <code>system-logs</code>. For Windows hosts, the same Collector approach is in the <a href="/guides/windows-server-monitoring">Windows server monitoring guide</a>.
+                    </p>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Set it up in Maple</p>
+                        <h3>Host metrics, step by step</h3>
+                        <p>
+                            The Hosts docs have the reference config, what each metric feeds on the page, and troubleshooting for missing hosts and zero readings.
+                        </p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/infrastructure/hosts" class="guide-button guide-button--primary">Send host metrics</a>
+                            <a href="/docs/alerting/alert-rules" class="guide-button">Alert rules</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="http-checks" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>09</span> · Outside view</p>
+                    <h2>HTTP checks for remote servers</h2>
+                    <p>
+                        The agent reports what the server sees. An HTTP check reports what a client sees: DNS, the network path, TLS and the web server together. Run it in a Collector on a different machine, ideally in a different network, so it keeps running when the server it checks does not. One small VM can check a whole fleet.
+                    </p>
+                    <pre><code>{checkerConfig}</code></pre>
+                    <p>
+                        The receiver reports <code>httpcheck.status</code> per status class, <code>httpcheck.duration</code>, <code>httpcheck.error</code> for connections that failed before a response, and <code>httpcheck.tls.cert_remaining</code> in seconds. Older Collector releases name the receiver <code>httpcheck</code>. The <a href="/docs/alerting/uptime-monitoring#add-http-checks">uptime monitoring docs</a> have the rules for an endpoint that stops answering, a checker that stops reporting, and a certificate near expiry. <a href="/guides/uptime-monitoring">Uptime monitoring with traces and HTTP checks</a> covers which failures a probe catches and which only traces see.
+                    </p>
+                </section>
+
+                <section id="fleet" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>10</span> · Scale</p>
+                    <h2>Monitoring many remote servers</h2>
+                    <p>
+                        With three servers you can fix things by hand. With fifty, the agent config has to be one file you change in one place, and every server has to identify itself the same way.
+                    </p>
+                    <h3>Keep host.name stable</h3>
+                    <p>
+                        Maple keys each host on <code>host.name</code>, and each distinct value is its own host. A rename, a cloned VM image that kept its hostname, or the <code>system</code> detector resolving a fully qualified name on some servers and a short name on others all produce duplicates or merged rows. Pick one naming scheme and pin it: either set <code>hostname_sources: [os]</code> under a <code>system</code> block in <code>resourcedetection</code>, or set <code>host.name</code> in <code>OTEL_RESOURCE_ATTRIBUTES</code>. The <code>env</code> detector runs first, so its value wins.
+                    </p>
+                    <h3>Same config, different environment file</h3>
+                    <p>
+                        Ship <code>config.yaml</code> unchanged to every server and template only the environment file. With Ansible, a Jinja template for <code>otelcol-contrib.conf</code> looks like this:
+                    </p>
+                    <pre><code>{envTemplate}</code></pre>
+                    <p>
+                        Deploy it with mode <code>0600</code> and restart the service when either file changes. Add resource attributes you will filter on later, such as <code>deployment.environment.name</code>, and keep the set the same across the fleet. Pin the Collector version in the same playbook so an upgrade is one change you can roll back.
+                    </p>
+                </section>
+
+                <section id="alerting" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>11</span> · Alerts</p>
+                    <h2>Alerting when a remote server goes down or stops reporting</h2>
+                    <p>
+                        A pushed metric that stops arriving looks like no data at all, and most alert rules skip an empty window instead of firing. In Maple, a rule with <strong>Alert when there is no data</strong> switched on counts an empty window as a breach. The switch is not available on grouped rules: a group that stops reporting keeps its open incident until its telemetry returns, and a host that was healthy never opens one. So the heartbeat rule is one ungrouped rule per server you would want to be woken up for.
+                    </p>
+
+                    <h3>Heartbeat rule per server</h3>
+                    <p>
+                        Open <strong>Alerts</strong>, click <strong>New rule</strong>, choose <strong>Start blank</strong> and set the signal to <strong>Raw SQL</strong>:
+                    </p>
+                    <pre><code>{heartbeatSql}</code></pre>
+                    <ul class="guide-list">
+                        <li><strong>Reduce buckets by</strong> Sum, <strong>Condition</strong> <code>&lt;</code>, <strong>Threshold</strong> <code>1</code>.</li>
+                        <li><strong>Window (min)</strong> 5 and <strong>Min samples</strong> 1. The app default of 50 would skip every check, because each bucket counts as one sample.</li>
+                        <li><strong>Alert when there is no data</strong> on.</li>
+                    </ul>
+                    <p>
+                        With the default of two <strong>Breaches to fire</strong>, the rule opens an incident a couple of minutes after the five-minute window empties. To manage one rule per server, create them from your config management with the <a href="/docs/alerting/alert-rules#create-a-rule-over-the-api">alert rules API</a>.
+                    </p>
+
+                    <h3>Disk usage across the fleet</h3>
+                    <p>
+                        Threshold rules do not need the no-data switch, so one grouped rule covers every server. Return a <code>group</code> column and Maple opens one incident per host:
+                    </p>
+                    <pre><code>{diskSql}</code></pre>
+                    <p>
+                        Set <strong>Reduce buckets by</strong> Maximum, <strong>Condition</strong> <code>&gt;</code>, <strong>Threshold</strong> <code>0.9</code> (utilization is a 0 to 1 ratio) and <strong>Min samples</strong> 1. The <code>type</code> filter drops read-only snap images and memory-backed mounts, which sit at or near 100% by design. Swap the metric name for <code>system.memory.utilization</code> or <code>system.cpu.utilization</code> to build the matching memory and CPU rules, with a longer window for CPU so short spikes do not page.
+                    </p>
+                    <p>
+                        Click <strong>Test rule</strong> before saving: the preview replays the rule over a past range and shades the periods it would have fired. Once a rule fires, <a href="/docs/alerting/incidents">Incidents</a> describes renotification, resolution and the <strong>Waiting on data</strong> state.
+                    </p>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/hostmetricsreceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib: Host Metrics Receiver</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib: Filelog Receiver</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/httpcheckreceiver" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib: HTTP Check Receiver</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/resourcedetectionprocessor" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector Contrib: Resource Detection Processor</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-releases/releases" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector releases</a></li>
+                        <li><a href="/docs/infrastructure/hosts">Maple docs: Hosts</a></li>
+                        <li><a href="/docs/alerting/uptime-monitoring">Maple docs: Uptime monitoring</a></li>
+                        <li><a href="/docs/alerting/alert-rules">Maple docs: Alert rules</a></li>
+                        <li><a href="/docs/alerting/incidents">Maple docs: Incidents</a></li>
+                        <li><a href="/docs/reference/sql">Maple docs: SQL reference</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .rsm-guide { max-width: 46rem; }
+    .rsm-guide section + section { margin-top: 5.5rem; }
+    .rsm-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .rsm-guide .guide-eyebrow span { color: var(--primary); }
+    .rsm-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .rsm-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .rsm-guide > section > p:not(.guide-eyebrow, .guide-kicker), .rsm-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .rsm-guide strong { font-weight: 600; color: var(--foreground); }
+    .rsm-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .rsm-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .rsm-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .rsm-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .rsm-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: color-mix(in oklab, var(--primary) 7%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .rsm-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
+    .rsm-guide .guide-list { margin: 1.25rem 0 1.75rem; padding-left: 1.1rem; list-style: disc; }
+    .rsm-guide .guide-list li { margin: 0 0 0.7rem; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .rsm-guide .guide-list li::marker { color: var(--primary); }
+    .rsm-guide .guide-table { margin: 1.6rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .rsm-guide table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .rsm-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .rsm-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .rsm-guide td + td { border-left: 1px solid var(--border); }
+    .rsm-guide tbody tr:last-child td { border-bottom: 0; }
+    .rsm-guide .guide-table__key { color: var(--foreground); }
+    .rsm-guide td code { word-break: break-word; }
+    .rsm-guide [data-status="active"] { --status: var(--success); }
+    .rsm-guide [data-status="idle"] { --status: var(--warning); }
+    .rsm-guide [data-status="ended"] { --status: var(--muted-foreground); }
+    .rsm-guide td[data-status] { position: relative; padding-left: 1.9rem; }
+    .rsm-guide td[data-status]::before { content: ""; position: absolute; left: 0.9rem; top: 1.4rem; width: 6px; height: 6px; border-radius: 999px; background: var(--status); }
+    .rsm-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .rsm-guide .guide-maple { margin-top: 3.5rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .rsm-guide .guide-maple h3 { margin: 0.55rem 0 0.8rem; font-size: 1.35rem; }
+    .rsm-guide .guide-maple > p:not(.guide-kicker) { max-width: none; margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .rsm-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .rsm-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .rsm-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .rsm-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .rsm-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .rsm-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .rsm-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .rsm-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .rsm-guide a, .rsm-guide .guide-button { transition: none; }
+    }
+</style>
