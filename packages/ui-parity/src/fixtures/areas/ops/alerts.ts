@@ -255,5 +255,14 @@ export const alertEndpoints = {
 	"alertRules.checks": checks,
 	"alertRules.checksSummary": checksSummary,
 	"alertRules.preview": preview,
+	// The linked Slack workspace's channels, for a `chat` destination's picker.
+	"chatIntegration.destinations": () =>
+		Effect.succeed({
+			object: "chat_workspace.destination_list",
+			destinations: [
+				{ id: "C0PARITYINC", name: "incidents", private: false },
+				{ id: "C0PARITYOPS", name: "ops-alerts", private: true },
+			],
+		}),
 	// `chatIntegration.connectors` is answered by the integrations area.
 } satisfies Readonly<Record<string, EndpointHandler>>
