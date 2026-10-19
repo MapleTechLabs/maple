@@ -21,6 +21,7 @@ import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
+import * as ChatConnect from "../shared/chat-connect"
 import { PreviewFailure } from "../shared/preview"
 import { DryRun, TraceFacets } from "./model"
 
@@ -128,6 +129,7 @@ export const Message = defineMessageUnion({
 	ClickedRemoveDestination: { tier: Tier, id: AlertDestinationId },
 	GotDestinationDialogMessage: { message: DestinationDialog.Message },
 	GotIssuesTooltipMessage: { message: Tooltip.Message },
+	GotChatConnectMessage: { message: ChatConnect.Message },
 	FailedLoadProviderLogo: { type: Schema.String },
 })
 export type Message = typeof Message.Type

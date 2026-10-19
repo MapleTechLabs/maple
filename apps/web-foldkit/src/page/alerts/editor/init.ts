@@ -9,6 +9,7 @@ import type { PageContext, PageReturn } from "../../contract"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
+import * as ChatConnect from "../shared/chat-connect"
 import { FetchEditorConnectors, GenerateDraftId, ReadEditorClock, ReadEditorIsAdmin } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -62,6 +63,8 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		menus: {},
 		destinationDialog: DestinationDialog.init("alert-rule-destination"),
 		issuesTooltip: Tooltip.init("alert-rule-issues"),
+		chatConnect: ChatConnect.init(),
+		chatConnectMenuId: null,
 		brokenLogos: [],
 		timePicker: TimeRangePicker.init("alert-rule-preview-range"),
 		chart: Chart.init(),

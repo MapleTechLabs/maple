@@ -17,6 +17,9 @@ import { settingRow } from "../../../ui/setting-row"
 import { switchControl } from "../../../ui/switch"
 import { destinationProvider, providerLogo, providerOf, destinationTypesFor } from "../shared/providers"
 import { isFormReady, isValidPagerDutyKey, isValidTelegramToken, Message, type Model } from "./dialog"
+import { chatFields } from "./chat-fields-view"
+import { waitingFor } from "../shared/chat-connect"
+import { spinner } from "../../../ui/spinner"
 import { type TextField, toFormState } from "./form"
 
 // `DestinationDialog` (components/alerts/destination-dialog.tsx).
@@ -81,6 +84,8 @@ const providerTile = (
 		label?: string
 		description?: string
 		isSelected: boolean
+		/** `busy`: the tile's popup is out; it disables and spins. */
+		isBusy?: boolean
 		onSelect: Message
 	}>,
 ): Html => {
@@ -90,6 +95,7 @@ const providerTile = (
 			h.Key(options.key),
 			h.Type("button"),
 			h.OnClick(options.onSelect),
+			...(options.isBusy === true ? [h.Disabled(true)] : []),
 			h.AriaPressed(options.isSelected ? "true" : "false"),
 			h.Class(
 				cn(
@@ -109,7 +115,11 @@ const providerTile = (
 			]),
 			h.div(
 				[h.Class("relative flex w-full items-center gap-2.5")],
-				[logo(h, model, options.type, 32, options.chatConnector), h.span([h.Class("truncate text-sm font-semibold")], [options.label ?? provider.label])],
+				[
+					logo(h, model, options.type, 32, options.chatConnector),
+					h.span([h.Class("truncate text-sm font-semibold")], [options.label ?? provider.label]),
+					...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
+				],
 			),
 			h.p([h.Class("relative text-2xs leading-snug text-muted-foreground")], [options.description ?? provider.description]),
 		],
@@ -123,19 +133,37 @@ const providerPicker = (h: H, model: Model): Html => {
 	return h.div(
 		[h.Class("grid grid-cols-2 gap-2")],
 		[
-			...connectors.flatMap((connector) =>
-				connector.workspaces.map((workspace) =>
+			...connectors.flatMap((connector) => {
+				if (connector.workspaces.length > 0)
+					return connector.workspaces.map((workspace) =>
+						providerTile(h, model, {
+							key: workspace.id,
+							type: "chat",
+							chatConnector: connector.id,
+							label: connector.workspaces.length > 1 ? `${connector.name} · ${workspace.name}` : connector.name,
+							description: `Post to a channel in ${workspace.name}.`,
+							isSelected: model.form.type === "chat" && model.form.chatWorkspaceId === workspace.id,
+							onSelect: Message.ClickedChatWorkspace({ connector: connector.id, workspaceId: workspace.id }),
+						}),
+					)
+				if (!connector.available || connector.id === "discord") return []
+				// Not linked yet: the tile links a workspace in a popup, the form stays as it is.
+				const isWaiting = waitingFor(model.chatConnect) === connector.id
+				return [
 					providerTile(h, model, {
-						key: workspace.id,
+						key: connector.id,
 						type: "chat",
 						chatConnector: connector.id,
-						label: connector.workspaces.length > 1 ? `${connector.name} · ${workspace.name}` : connector.name,
-						description: `Post to a channel in ${workspace.name}.`,
-						isSelected: model.form.type === "chat" && model.form.chatWorkspaceId === workspace.id,
-						onSelect: Message.ClickedChatWorkspace({ connector: connector.id, workspaceId: workspace.id }),
+						label: connector.name,
+						description: isWaiting
+							? `Finish in the ${connector.name} window. This form stays as it is.`
+							: `Connect a ${connector.name} workspace, then pick a channel.`,
+						isSelected: false,
+						isBusy: isWaiting,
+						onSelect: Message.ClickedConnectChat({ connector: connector.id }),
 					}),
-				),
-			),
+				]
+			}),
 			...destinationTypesFor(isDiscordLinked).map((type) =>
 				providerTile(h, model, {
 					key: type,
@@ -250,6 +278,15 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 							],
 						),
 					]
+		case "chat":
+			return [
+				chatFields(h, {
+					model: model.chat,
+					form,
+					isEditing,
+					toMessage: (message) => Message.GotChatFieldsMessage({ message }),
+				}),
+			]
 		default:
 			return []
 	}

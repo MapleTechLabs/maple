@@ -1,10 +1,13 @@
 import { AlertDestinationId, AlertDestinationType } from "@maple/domain/http"
+import type { V2ChatConnector } from "@maple/domain/http/v2"
 import { chatDestinationForm, defaultDestinationForm } from "@maple/web-data/alerts/form-utils"
 import { Option, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Menu from "../../../ui/menu"
 import { PageOutMessage } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
+import * as ChatConnect from "../shared/chat-connect"
+import { FetchEditorConnectors } from "./command"
 import { addId, removeId, updateTierIds } from "./form-steps"
 import { Message, type Tier } from "./message"
 import type { Model } from "./model"
@@ -64,7 +67,41 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 			? { model }
 			: liftDialog(model, DestinationDialog.openNew(model.destinationDialog, chatDestinationForm(connector, workspace.id)))
 	}
+	// `chatConnect.connect(connector)`: link a workspace in a popup first.
+	if (kind === "connect") {
+		const connector = (model.connectors ?? []).find((entry) => entry.id === rest.join(":"))
+		return connector === undefined || ChatConnect.waitingFor(model.chatConnect) !== null
+			? { model }
+			: { model: { ...model, chatConnect: ChatConnect.start(model.chatConnect, connector), chatConnectMenuId: menuId } }
+	}
 	return { model }
+}
+
+export const chatConnectStep = (model: Model, message: ChatConnect.Message): Return => {
+	const step = ChatConnect.update(model.chatConnect, message)
+	return {
+		model: { ...model, chatConnect: step.model },
+		commands: step.isRefetching ? [FetchEditorConnectors()] : [],
+		...Option.match(step.toast, {
+			onNone: () => ({}),
+			onSome: ({ title, description }) => ({
+				outMessage: PageOutMessage.RequestedToast({ type: "error", title, description }),
+			}),
+		}),
+	}
+}
+
+/** `onLinked`: the popup closes and the new workspace opens the destination dialog. */
+export const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2ChatConnector>): Return => {
+	const next: Model = { ...model, connectors }
+	return Option.match(ChatConnect.linkedOf(model.chatConnect, connectors), {
+		onNone: () => ({ model: next }),
+		onSome: (linked) =>
+			liftDialog(
+				{ ...next, chatConnect: ChatConnect.finish(next.chatConnect), chatConnectMenuId: null },
+				DestinationDialog.openNew(next.destinationDialog, chatDestinationForm(linked.connector, linked.id)),
+			),
+	})
 }
 
 export const menuStep = (model: Model, menuId: string, message: Menu.Message): Return => {

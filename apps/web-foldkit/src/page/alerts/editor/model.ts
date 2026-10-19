@@ -23,6 +23,7 @@ import * as Select from "../../../ui/select"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
+import * as ChatConnect from "../shared/chat-connect"
 import { PreviewSlot } from "../shared/preview"
 import { RuleForm } from "./form"
 
@@ -112,6 +113,9 @@ export const Model = Schema.Struct({
 	destinationDialog: DestinationDialog.Model,
 	/** The action bar's "details" tooltip listing every validation issue. */
 	issuesTooltip: Tooltip.Model,
+	/** The Add destination menus' workspace connect popup, and the menu it was started from. */
+	chatConnect: ChatConnect.Model,
+	chatConnectMenuId: Schema.NullOr(Schema.String),
 	brokenLogos: Schema.Array(Schema.String),
 	timePicker: TimeRangePicker.Model,
 	chart: Chart.Model,

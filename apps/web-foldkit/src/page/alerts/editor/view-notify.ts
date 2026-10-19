@@ -10,6 +10,7 @@ import { middleTruncate } from "../../../ui/middle-truncate"
 import { panel } from "../../../ui/panel"
 import { destinationProvider, destinationTypesFor, providerLogo, type ProviderLogoOptions } from "../shared/providers"
 import { menuIdOf } from "./dest-steps"
+import { waitingFor } from "../shared/chat-connect"
 import { destinationTarget } from "./derive"
 import { Message, type Tier } from "./message"
 import type { Model } from "./model"
@@ -112,7 +113,6 @@ const menuEntries = (
 						: []),
 				],
 			}))
-		// TODO(alert-editor): linking a workspace in a popup (`useChatWorkspaceConnect`) is not ported.
 		if (!connector.available || connector.id === "discord") return []
 		return [
 			{
@@ -154,6 +154,8 @@ const addMenu = (
 	const newTypes = destinationTypesFor(isDiscordLinked)
 	const previewChat = connectors.filter((c) => c.workspaces.length > 0 || (c.available && c.id !== "discord"))
 	const menuId = menuIdOf(tier)
+	const waitingId = model.chatConnectMenuId === menuId ? waitingFor(model.chatConnect) : null
+	const waiting = connectors.find((c) => c.id === waitingId)
 	const menu = model.menus[menuId] ?? Menu.init(menuId)
 	return h.submodel({
 		slotId: menuId,
@@ -182,7 +184,7 @@ const addMenu = (
 							],
 							[
 								icon(h, "PlusIcon", { size: 14 }),
-								"Add destination",
+								waiting === undefined ? "Add destination" : `Finish connecting ${waiting.name} in the other window…`,
 								h.span(
 									[h.AriaHidden(true), h.Class("ml-auto flex items-center gap-1.5")],
 									[

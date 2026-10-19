@@ -1,10 +1,12 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
+import { encodePublicId, PublicIdPrefixes, V2ChatConnector } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import * as Animation from "@foldkit/ui/animation"
 import { click, Command, expect as expectView, given, hover, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
+import * as Menu from "../../../ui/menu"
 import * as Tooltip from "../../../ui/tooltip"
 import type { PageContext } from "../../contract"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
@@ -175,6 +177,38 @@ describe("alert rule editor", () => {
 		expect(failed.notices).toEqual([
 			{ severity: "warning", message: "Dashboards could not be loaded. Starting from a blank alert." },
 		])
+	})
+
+	test("Connect in the add destination menu links Slack in a popup, then opens its destination form", () => {
+		const connector = (workspaces: ReadonlyArray<unknown>) =>
+			Schema.decodeUnknownSync(V2ChatConnector)({
+				id: "slack",
+				object: "chat_connector",
+				name: "Slack",
+				available: true,
+				workspaces,
+				supports_identity: true,
+			})
+		const ready = pageUpdate(withLists(entered({ template: "slow_p95" })), Message.CompletedFetchConnectors({ connectors: [connector([])] })).model
+		const menuId = "alert-rule-add-destination-warning"
+		const picked = pageUpdate(
+			ready,
+			Message.GotMenuMessage({ id: menuId, message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: "connect:slack" } }) }),
+		).model
+		expect(picked.chatConnect.active?.connector).toBe("slack")
+		const workspace = {
+			id: encodePublicId(PublicIdPrefixes.chatWorkspace, "0199a0d5-0000-7000-8000-000000000003"),
+			object: "chat_workspace",
+			connector: "slack",
+			external_workspace_id: "T03",
+			name: "Acme Ops",
+			settings: {},
+			created_at: "2026-09-01T00:00:00.000Z",
+		}
+		const linked = pageUpdate(picked, Message.CompletedFetchConnectors({ connectors: [connector([workspace])] })).model
+		expect(linked.chatConnect.active).toBeNull()
+		expect(linked.destinationDialog.dialog.isOpen).toBe(true)
+		expect(linked.destinationDialog.form.type).toBe("chat")
 	})
 
 	test("an incomplete rule cannot be saved", () => {

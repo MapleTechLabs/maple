@@ -5,6 +5,8 @@ import { definePage, type PageSubscriptionInput } from "../../contract"
 import { documentStream } from "../../dashboards/kit/document-stream"
 import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../shared/collections"
 import { collectionLoadFailed } from "../shared/collection-load"
+import * as ChatConnectStream from "../shared/chat-connect-stream"
+import * as DestinationDialog from "../destination/dialog"
 import { decodeChartParam } from "./draft"
 import { init } from "./init"
 import { Message } from "./message"
@@ -40,6 +42,19 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
 		dependenciesToStream: ({ orgId }) =>
 			destinationRows(orgId, (rows) => Message.UpdatedDestinations({ orgId, rows })),
+	}),
+	/** The Add destination menu's `useChatWorkspaceConnect`, outside the menu so closing it keeps watching. */
+	menuChatConnect: entry(ChatConnectStream.Dependencies.fields, {
+		modelToDependencies: ({ model }) => ChatConnectStream.dependenciesOf(model.chatConnect),
+		dependenciesToStream: (dependencies) =>
+			Stream.map(ChatConnectStream.streamOf(dependencies), (message) => Message.GotChatConnectMessage({ message })),
+	}),
+	destinationChatConnect: entry(ChatConnectStream.Dependencies.fields, {
+		modelToDependencies: ({ model }) => DestinationDialog.chatConnectDependencies(model.destinationDialog),
+		dependenciesToStream: (dependencies) =>
+			Stream.map(DestinationDialog.chatConnectStream(dependencies), (message) =>
+				Message.GotDestinationDialogMessage({ message }),
+			),
 	}),
 	/** `useCollectionLoadFailed(rulesCollection.id, pending)` while an edit waits on the rules. */
 	rulesLoad: entry(watching, {

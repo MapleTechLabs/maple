@@ -8,7 +8,7 @@ import * as DestinationDialog from "../destination/dialog"
 import { completeSave, completeTest, runTest, save } from "./actions"
 import { FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
 import { SQL_TEXTAREA_ID } from "./view-sql"
-import { liftDialog, menuStep, removeDestination } from "./dest-steps"
+import { chatConnectStep, connectorsAnswered, liftDialog, menuStep, removeDestination } from "./dest-steps"
 import { suggestedName } from "./derive"
 import * as F from "./form-steps"
 import { Message } from "./message"
@@ -60,7 +60,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GeneratedDraftId: ({ id }) => initialize({ ...model, draftId: id }, context),
 		CompletedReadClock: ({ nowMs }) => readClock(model, context, nowMs),
 		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
-		CompletedFetchConnectors: ({ connectors }) => ({ model: { ...model, connectors } }),
+		CompletedFetchConnectors: ({ connectors }) => connectorsAnswered(model, connectors),
+		GotChatConnectMessage: ({ message: inner }) => chatConnectStep(model, inner),
 		CompletedFetchTraceFacets: ({ key, result }) => ({
 			model: { ...model, traceFacets: Keyed.accept(model.traceFacets, key, result) },
 		}),
