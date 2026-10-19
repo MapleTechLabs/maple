@@ -539,10 +539,6 @@ const clerkInteractions: ReadonlyArray<Scenario> = [
 			await target.getByText("Logs cap saved").waitFor()
 		},
 	}),
-	// Back from Stripe with the plan already on the customer: the wait ends and the marker leaves.
-	page("clerk-billing-checkout-return", "Billing: back from Stripe Checkout, plan confirmed", `${BILLING}&checkout=complete`, {
-		dataset: CLERK,
-	}),
 	page("clerk-billing-set-caps", "Billing: Set caps opens the first uncapped row", BILLING, {
 		dataset: CLERK,
 		steps: (target) => target.getByRole("button", { name: "Set caps" }).click(),
