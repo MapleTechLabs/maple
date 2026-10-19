@@ -10,7 +10,7 @@ import {
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
-import type { OrgId, UserId } from "@maple/domain/primitives"
+import { type OrgId, UserId } from "@maple/domain/primitives"
 import { chatConnectorAgentName } from "@maple/domain/system-agents"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -135,6 +135,8 @@ export const linkedUserTenant = Effect.fn("ChatTurnActor.linkedUserTenant")(func
 	} satisfies TenantContext
 })
 
+const decodeUserId = Schema.decodeUnknownOption(UserId)
+
 /**
  * Who a turn's tools run as: the linked Maple user when the connector named one, the connector's
  * agent actor otherwise, and the tenant itself for an app or autonomous turn.
@@ -144,7 +146,17 @@ export const turnTenant = Effect.fn("ChatTurnActor.turnTenant")(function* (
 	origin: ChatTurnOrigin,
 ) {
 	if (origin.kind === "connector" && origin.actingUserId !== undefined) {
-		return yield* linkedUserTenant(tenant.orgId, origin.actingUserId, origin)
+		// The origin crosses the Durable Object hop in its encoded form, so the brand is re-checked
+		// here. An id that does not decode names nobody, and that refuses rather than reading as the
+		// connector.
+		const userId = decodeUserId(origin.actingUserId)
+		if (Option.isNone(userId)) {
+			return yield* new LinkedUserNotPermitted({
+				reason: "unavailable",
+				message: "Maple could not tell which Maple user you are.",
+			})
+		}
+		return yield* linkedUserTenant(tenant.orgId, userId.value, origin)
 	}
 	return yield* withConnectorActor(tenant, origin)
 })
