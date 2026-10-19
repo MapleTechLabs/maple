@@ -271,6 +271,61 @@ const TracerLive = Maple.layer({
 `replay.enabled` and `emitSessionMeta` are the only switches for replay and session rows. Keyless
 against Maple's hosted ingest cannot work (it answers 401), so that one combination logs a warning.
 
+## Foldkit
+
+`@maple-dev/effect-sdk/foldkit` instruments a [Foldkit](https://github.com/foldkit/foldkit) app. It builds on `MapleFlush.make` (flush on unload, sessions, replay, global error capture) and wraps the config you pass to `Runtime.makeApplication`:
+
+```typescript
+import { MapleFoldkit } from "@maple-dev/effect-sdk/foldkit"
+import { Runtime } from "foldkit"
+import type { UrlRequest } from "foldkit/navigation"
+import type { Url } from "foldkit/url"
+
+const maple = MapleFoldkit.make({
+	serviceName: "acme-web",
+	ingestKey: "maple_pk_...",
+	routeName: (pathname) => routeOfPath(pathname)._tag,
+})
+
+Runtime.run(
+	Runtime.makeApplication(
+		maple.instrument({
+			Model,
+			init,
+			update,
+			view,
+			resources: ResourcesLive,
+			container,
+			routing: {
+				onUrlRequest: (request: UrlRequest) => Message.ClickedLink({ request }),
+				onUrlChange: (url: Url) => Message.ChangedUrl({ url }),
+			},
+		}),
+	),
+)
+```
+
+Annotate the `routing` callback parameters: TypeScript cannot infer them through `instrument`.
+
+What it records:
+
+- **Commands.** Foldkit runs every Command in a span named after it. Those spans are grouped under a `pageload <route>` or `navigate <route>` span, together with the Commands their result Messages start, and `HttpClient`/RPC spans nest inside with `traceparent` sent to your backend. Each Command carries `maple.foldkit.message`, the Message that started it.
+- **Only Commands that did work.** A Command that finished without starting a child span (focus, scroll, a hover delay) is dropped. Failed Commands always export; `keepCommands` exports named ones regardless.
+- **Scrubbed args.** Command args become span attributes in Foldkit. By default only args whose key ends in `Id`/`Ids`, booleans and nulls export; every other value is `[redacted]`. `commandArgs: { allow: ["provider"] }` exports more keys by name, `"all"` and `"none"` switch it wholesale.
+- **Crashes.** A runtime crash is reported as an exception with the Message that crashed it and the last 20 Message tags, then flushed.
+- **Slow phases.** `update` over 16ms and `view` or DOM patch over 50ms become `foldkit.update`, `foldkit.view` and `foldkit.patch` spans. Set `slowPhases` to change the budgets (`0` records every run) or `false` to turn it off.
+
+| Option                 | Default                               |                                                                               |
+| ---------------------- | ------------------------------------- | ----------------------------------------------------------------------------- |
+| `commandArgs`          | `"ids"`                               | Which Command args export                                                     |
+| `keepCommands`         | `[]`                                  | Commands exported even without a child span                                   |
+| `sampleCommands`       | `{}`                                  | Per-Command sample rates outside a navigation, e.g. `{ SendHeartbeat: 0.01 }` |
+| `navigationSampleRate` | `1`                                   | Share of navigations traced; their Commands follow the decision               |
+| `routeName`            | the path                              | Navigation span name from the URL path, e.g. a route template                 |
+| `slowPhases`           | `{ Update: 16, View: 50, Patch: 50 }` | Slow-phase budgets in ms, or `false`                                          |
+
+Every `MapleFlush.make` option is accepted too.
+
 ## Manual flush
 
 `Maple.layer` (server + client) batches in the background and only exports on a timer, on batch overflow, or when its scope closes — there's no way to force an export. That's a problem in two places: a browser tab dropping the last few seconds of spans on unload, and a short-lived process exiting before the timer fires.
