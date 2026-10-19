@@ -123,31 +123,32 @@ export const SaveFramework = Command.define("SaveQuickStartFramework", {
 
 // WRITES
 
+/** `sendTestEventEffect`: one synthetic span with the public key; `true` when ingest accepted it. */
+export const sendIngestTestEvent = (publicKey: string) =>
+	Effect.gen(function* () {
+		const now = yield* Clock.currentTimeMillis
+		const hex = (bytes: number) =>
+			Effect.map(
+				Effect.forEach(Array.from({ length: bytes }), () => Random.nextIntBetween(0, 256)),
+				(values) => values.map((value) => value.toString(16).padStart(2, "0")).join(""),
+			)
+		const traceId = yield* hex(16)
+		const spanId = yield* hex(8)
+		const payload = testEventPayload(now, traceId, spanId)
+		const client = yield* MapleSyncHttpClient
+		const request = yield* HttpClientRequest.bodyJson(
+			HttpClientRequest.post(`${ingestUrl}/v1/traces`, { headers: { Authorization: `Bearer ${publicKey}` } }),
+			payload,
+		)
+		const response = yield* client.execute(request)
+		return response.status >= 200 && response.status < 300
+	}).pipe(Effect.orElseSucceed(() => false))
+
 export const SendTestEvent = Command.define("SendIngestTestEvent", {
 	args: { publicKey: Schema.String },
 	messages: [Message.CompletedSendTestEvent],
 	execute: ({ publicKey }) =>
-		Effect.gen(function* () {
-			const now = yield* Clock.currentTimeMillis
-			const hex = (bytes: number) =>
-				Effect.map(
-					Effect.forEach(Array.from({ length: bytes }), () => Random.nextIntBetween(0, 256)),
-					(values) => values.map((value) => value.toString(16).padStart(2, "0")).join(""),
-				)
-			const traceId = yield* hex(16)
-			const spanId = yield* hex(8)
-			const payload = testEventPayload(now, traceId, spanId)
-			const client = yield* MapleSyncHttpClient
-			const request = yield* HttpClientRequest.bodyJson(
-				HttpClientRequest.post(`${ingestUrl}/v1/traces`, { headers: { Authorization: `Bearer ${publicKey}` } }),
-				payload,
-			)
-			const response = yield* client.execute(request)
-			return response.status >= 200 && response.status < 300
-		}).pipe(
-			Effect.orElseSucceed(() => false),
-			Effect.map((isSent) => Message.CompletedSendTestEvent({ isSent })),
-		),
+		Effect.map(sendIngestTestEvent(publicKey), (isSent) => Message.CompletedSendTestEvent({ isSent })),
 })
 
 /** `sendTestEventEffect`'s single synthetic span. */

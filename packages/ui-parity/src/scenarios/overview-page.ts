@@ -17,6 +17,12 @@ const overview = (
 	area: "overview",
 })
 
+/** Clerk mode with no telemetry yet: `SetupChecklist`'s "Connect your app" card heads the page. */
+const clerkSetup = (id: string, title: string, steps?: Scenario["steps"]): Scenario => ({
+	...overview(id, title, { steps }),
+	dataset: "settings-clerk",
+})
+
 /** Held far past any capture, so the screenshot is the loading state. */
 const HELD_MS = 60_000
 
@@ -89,5 +95,15 @@ export const overviewPageArea: AreaModule = {
 		overview("time-range", "last 6 hours from the time range picker", {
 			steps: (page) => pickPreset(page, "Last 6 hours"),
 		}),
+		clerkSetup("clerk-setup", "Clerk: the setup checklist card"),
+		clerkSetup("clerk-setup-collapse", "Clerk: setup checklist collapsed", (page) =>
+			page.getByRole("button", { name: "Collapse" }).click(),
+		),
+		clerkSetup("clerk-setup-framework", "Clerk: setup checklist, Python picked", (page) =>
+			page.getByRole("button", { name: "Python" }).click(),
+		),
+		clerkSetup("clerk-setup-dismiss", "Clerk: setup checklist dismissed", (page) =>
+			page.getByRole("button", { name: "Dismiss setup checklist" }).click(),
+		),
 	],
 }

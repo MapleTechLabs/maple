@@ -42,6 +42,10 @@ import {
 } from "./derive"
 import { Message, type RequestMode, type RetryTarget } from "./message"
 import { IncidentsData, type Model, RulesData } from "./model"
+import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { storageKeyOf } from "../onboarding/quick-start-state"
+import type * as SetupChecklist from "./setup-checklist"
+import * as Setup from "./setup-checklist-update"
 
 export type Return = PageReturn<Model, Message>
 type Search = typeof HomeSearch.Type
@@ -261,6 +265,38 @@ export const sync = (model: Model, context: PageContext, mode: RequestMode): Ret
 	])
 }
 
+// SETUP CHECKLIST
+
+/** Runs a setup-checklist step on top of `result`, lifting its Commands and OutMessage. */
+const withSetup = (
+	result: Return,
+	step: (setup: SetupChecklist.Model) => PageReturn<SetupChecklist.Model, SetupChecklist.Message>,
+): Return => {
+	const setup = result.model.setup
+	if (setup === null) return result
+	const next = step(setup)
+	const lifted: Return = {
+		...result,
+		model: { ...result.model, setup: next.model },
+		commands: [
+			...(result.commands ?? []),
+			...Command.mapMessages(next.commands ?? [], (message) => Message.GotSetupMessage({ message })),
+		],
+	}
+	return next.outMessage === undefined ? lifted : { ...lifted, outMessage: next.outMessage }
+}
+
+/** `useIngestConnection`'s `useEffectiveTimeRange(undefined, undefined, "1h")`. */
+const resolveSetupWindow = (result: Return, context: PageContext): Return => {
+	const nowMs = result.model.nowMs
+	if (nowMs === null) return result
+	const window = resolveWindow(
+		{ preset: "1h", snap: result.model.refreshVersion === 0, timeZone: context.timeZone },
+		nowMs,
+	)
+	return withSetup(result, (setup) => Setup.windowResolved(setup, window, context.pinnedNamespace))
+}
+
 // NAVIGATION
 
 const navigate = (model: Model, search: Search): Return => ({
@@ -273,7 +309,11 @@ const navigate = (model: Model, search: Search): Return => ({
 
 // ENTRY POINTS
 
-export const init = (route: { readonly search: Search }, context: PageContext): Return => {
+/** `init`, with the Clerk gate as an input (`{isClerkAuthEnabled && <SetupChecklist />}`). */
+export const initWith =
+	(isClerk: boolean) =>
+	(route: { readonly search: Search }, context: PageContext): Return => {
+	const setup = isClerk ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
 	const model: Model = {
 		search: route.search,
 		nowMs: null,
@@ -297,11 +337,13 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		themeColors: null,
 		refreshVersion: 0,
 		isReloading: false,
+		setup: setup?.model ?? null,
 	}
 	return {
 		model,
 		commands: [
 			ReadEntry({ orgId: context.orgId }),
+			...Command.mapMessages(setup?.commands ?? [], (message) => Message.GotSetupMessage({ message })),
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
 					? Message.CompletedLoadChartRuntime()
@@ -323,7 +365,10 @@ export const routeChanged = (
 		? { model }
 		: sync({ ...model, search: route.search }, context, "Load")
 
-export const contextChanged = (model: Model, context: PageContext): Return => sync(model, context, "Load")
+export const init = initWith(isClerkAuthEnabled)
+
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	resolveSetupWindow(sync(model, context, "Load"), context)
 
 /** Retry (`useAtomRefresh` on a failed read): forget the slot, so the next sync requests it again. */
 const RETRY_SLOT = {
@@ -407,8 +452,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		CompletedMountLinkedCursor: () => ({ model }),
 		CompletedReadEntry: ({ nowMs, hint }) =>
-			sync({ ...model, nowMs, hint, facetsWindow: facetsWindowAt(nowMs) }, context, "Load"),
-		CompletedResolveClock: ({ nowMs }) => sync({ ...model, nowMs }, context, "Refresh"),
+			resolveSetupWindow(
+				sync({ ...model, nowMs, hint, facetsWindow: facetsWindowAt(nowMs) }, context, "Load"),
+				context,
+			),
+		CompletedResolveClock: ({ nowMs }) =>
+			resolveSetupWindow(sync({ ...model, nowMs }, context, "Refresh"), context),
 		CompletedFetchFacets: ({ key, result }) =>
 			sync({ ...model, facets: Keyed.accept(model.facets, key, result) }, context, "Load"),
 		CompletedFetchSnapshot: ({ key, result }) => ({
@@ -478,4 +527,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotEnvironmentSelectMessage: ({ message: inner }) => withEnvironmentSelect(model, inner),
 		GotTimePickerMessage: ({ message: inner }) => withPicker(model, inner),
 		GotChartMessage: ({ chartId, message: inner }) => withChart(model, chartId, inner),
+		GotSetupMessage: ({ message: inner }) =>
+			withSetup({ model }, (setup) => Setup.update(setup, inner, context.pinnedNamespace)),
 	})

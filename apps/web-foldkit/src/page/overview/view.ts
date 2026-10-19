@@ -26,8 +26,9 @@ import { healthList, healthOverview, type SliceSearch } from "./view-health"
 import { gridItems, metricsGrid, THEME_TOKENS } from "./view-metrics"
 import { usageCards } from "./view-usage"
 
+import * as SetupChecklistView from "./setup-checklist-view"
+
 // `HomePage` / `DashboardContent` (apps/web/src/routes/index.tsx).
-// TODO(setup-checklist): `SetupChecklist` renders in Clerk mode only; not ported.
 
 type H = HtmlBuilder<Message>
 
@@ -143,6 +144,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
 			dashboardPage(h, { actions: headerActions(h, model) }, [
+				...(model.setup === null
+					? []
+					: [
+							h.submodel({
+								slotId: "setup-checklist",
+								model: model.setup,
+								view: SetupChecklistView.view,
+								toParentMessage: (message) => Message.GotSetupMessage({ message }),
+							}),
+						]),
 				...facetsError(h, model),
 				healthOverview(h, { model, slice, nowMs }),
 				usageCards(h, model),

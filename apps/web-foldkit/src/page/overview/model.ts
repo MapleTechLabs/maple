@@ -12,6 +12,7 @@ import { HomeSearch } from "../../route/search"
 import * as Select from "../../ui/select"
 import { SignalPresenceData } from "../kit/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import * as SetupChecklist from "./setup-checklist"
 
 // The Overview home page (apps/web/src/routes/index.tsx and components/dashboard/).
 
@@ -113,5 +114,7 @@ export const Model = Schema.Struct({
 	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
+	/** `SetupChecklist`, Clerk mode only (`null` self-hosted). */
+	setup: Schema.NullOr(SetupChecklist.Model),
 })
 export type Model = typeof Model.Type
