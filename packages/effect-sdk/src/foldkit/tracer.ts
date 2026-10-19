@@ -28,6 +28,8 @@ interface Navigation {
 	readonly sampled: boolean
 	span: Tracer.Span | undefined
 	pending: number
+	/** Until its first Command starts, the navigation waits on the start grace, not the quiet period. */
+	hasCommand: boolean
 	lastEnd: bigint
 	quietTimer: ReturnType<typeof setTimeout> | undefined
 	readonly capTimer: ReturnType<typeof setTimeout>
@@ -120,6 +122,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 			sampled: Math.random() < options.navigationSampleRate,
 			span: undefined,
 			pending: 0,
+			hasCommand: false,
 			lastEnd: input.startTime,
 			quietTimer: undefined,
 			capTimer: setTimeout(
@@ -136,6 +139,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 
 	const commandStarted = (navigation: Navigation): void => {
 		navigation.pending += 1
+		navigation.hasCommand = true
 		if (navigation.quietTimer !== undefined) clearTimeout(navigation.quietTimer)
 		navigation.quietTimer = undefined
 	}
@@ -272,7 +276,8 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		const navigation = latestNavigation
 		if (navigation !== undefined && endTime > navigation.lastEnd) {
 			navigation.lastEnd = endTime
-			if (navigation.pending === 0) armQuietTimer(navigation, options.navigationQuietMs)
+			if (navigation.hasCommand && navigation.pending === 0)
+				armQuietTimer(navigation, options.navigationQuietMs)
 		}
 		const record = (tracer: Tracer.Tracer): void => {
 			const parent = parentSpanOf(navigation, tracer)

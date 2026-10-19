@@ -9,12 +9,13 @@ const setup = (
 		readonly keepCommands?: ReadonlyArray<string>
 		readonly startGraceMs?: number
 		readonly navigationSampleRate?: number
+		readonly sampleRates?: Readonly<Record<string, number>>
 	} = {},
 ) => {
 	const buffer = makeSpanBuffer()
 	const tracing = makeFoldkitTracing({
 		keepCommands: new Set(options.keepCommands ?? []),
-		sampleRates: {},
+		sampleRates: options.sampleRates ?? {},
 		navigationSampleRate: options.navigationSampleRate ?? 1,
 		navigationQuietMs: 0,
 		navigationStartGraceMs: options.startGraceMs ?? 1_000,
@@ -115,6 +116,24 @@ describe("Foldkit command tracing", () => {
 		expect(byName(spans, "LoadMessages")?.parentSpanId).toBeUndefined()
 	})
 
+	it("samples a Command outside a navigation at its configured rate", async () => {
+		const dropped = setup({ sampleRates: { SendHeartbeat: 0 } })
+		await dropped.runCommand(
+			"SendHeartbeat",
+			{},
+			Effect.void.pipe(Effect.withSpan("RpcClient.heartbeat")),
+		)
+		expect(dropped.buffer.drain()).toEqual([])
+		const kept = setup({ sampleRates: { SendHeartbeat: 1 } })
+		await kept.runCommand("SendHeartbeat", {}, Effect.void.pipe(Effect.withSpan("RpcClient.heartbeat")))
+		expect(
+			kept.buffer
+				.drain()
+				.map((span) => span.name)
+				.sort(),
+		).toEqual(["RpcClient.heartbeat", "SendHeartbeat"])
+	})
+
 	it("exports nothing for a navigation whose Commands were all UI work", async () => {
 		const { buffer, tracing, runCommand } = setup()
 		const id = tracing.startNavigation({
@@ -153,6 +172,23 @@ describe("Foldkit phase spans", () => {
 		await new Promise((resolve) => setTimeout(resolve, 20))
 		await runCommand("FocusSearch", {}, Effect.void)
 		expect(buffer.drain()).toEqual([])
+	})
+
+	it("keeps waiting for the first Command when a slow render lands before it", async () => {
+		const { buffer, tracing, runCommand } = setup({ startGraceMs: 200 })
+		await runCommand("FocusSearch", {}, Effect.void)
+		const id = tracing.startNavigation({ kind: "pageload", route: "/", path: "/", startTime: nowNanos() })
+		const end = nowNanos()
+		tracing.recordPhase("foldkit.view", end - 1_000_000n, end, { "maple.foldkit.phase": "View" })
+		await new Promise((resolve) => setTimeout(resolve, 20))
+		await runCommand(
+			"CheckSession",
+			{ [NAVIGATION_ARG]: id },
+			Effect.void.pipe(Effect.withSpan("http.client POST")),
+		)
+		await new Promise((resolve) => setTimeout(resolve, 10))
+		const spans = buffer.drain()
+		expect(byName(spans, "CheckSession")?.parentSpanId).toBe(byName(spans, "pageload /")?.spanId)
 	})
 
 	it("ends a navigation that started no Command at its last phase span", async () => {
