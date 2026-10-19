@@ -44,7 +44,7 @@ const faqs = [
     {
         question: "How do I pretty print Pino logs?",
         answer:
-            "Install pino-pretty as a dev dependency. Either pipe the output through it (node app.js | npx pino-pretty) or set transport: { target: \"pino-pretty\" } in the logger options when NODE_ENV is not production. Keep production output as plain JSON so log tooling can parse it.",
+            "Install pino-pretty as a dev dependency. Either pipe the output through it (node app.js | npx pino-pretty) or set transport: { target: \"pino-pretty\" } in the logger options only when NODE_ENV is development. Keep production output as plain JSON so log tooling can parse it.",
     },
     {
         question: "How do I set the Pino log level?",
@@ -126,12 +126,12 @@ logger.info({ user: { id: "u_1", plan: "pro", email: "ada@example.com" } }, "loa
 const prettySnippet = `const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
   transport:
-    process.env.NODE_ENV === "production"
-      ? undefined
-      : {
+    process.env.NODE_ENV === "development"
+      ? {
           target: "pino-pretty",
           options: { colorize: true, translateTime: "SYS:HH:MM:ss", ignore: "pid,hostname" },
-        },
+        }
+      : undefined,
 })`;
 
 const prettyCliSnippet = `node app.mjs | npx pino-pretty -c -t "SYS:HH:MM:ss" -i pid,hostname`;
@@ -164,7 +164,10 @@ import express from "express"
 import pino from "pino"
 import { pinoHttp } from "pino-http"
 
-const logger = pino({ level: process.env.LOG_LEVEL ?? "info" })
+const logger = pino({
+  level: process.env.LOG_LEVEL ?? "info",
+  redact: ["req.headers.authorization", "req.headers.cookie"],
+})
 const app = express()
 
 app.use(
@@ -456,7 +459,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow">07 · Development</p>
                     <h2>Pretty print Pino logs with pino-pretty</h2>
                     <p>
-                        Raw NDJSON is hard to scan in a terminal. <code>pino-pretty</code> turns it into colored, indented lines. Load it as a transport in development only:
+                        Raw NDJSON is hard to scan in a terminal. <code>pino-pretty</code> turns it into colored, indented lines. Load it as a transport only when <code>NODE_ENV</code> is <code>development</code>, so a production install without dev dependencies never asks for it:
                     </p>
                     <pre><code>{prettySnippet}</code></pre>
                     <pre><code>{prettyOutput}</code></pre>
@@ -523,7 +526,7 @@ const articleJsonLd = {
                         <code>pino-http</code> writes one <code>request completed</code> line per request with the method, URL, status code and <code>responseTime</code> in milliseconds. It also attaches a child logger as <code>req.log</code> carrying a request <code>id</code>, so every line a handler writes can be tied to the request. <code>customLogLevel</code> logs 4xx responses as <code>warn</code> and 5xx as <code>error</code>; without it every response is <code>info</code>. The older <code>express-pino-logger</code> package is deprecated in favour of <code>pino-http</code>.
                     </p>
                     <p>
-                        The default request serializer includes headers. Add <code>redact: ["req.headers.authorization", "req.headers.cookie"]</code> to the Pino options before you ship it.
+                        The default request serializer includes every request header, which is why the logger above redacts <code>authorization</code> and <code>cookie</code>. Add any other header that carries a credential, such as an API key header.
                     </p>
 
                     <h3>Fastify</h3>
@@ -579,6 +582,9 @@ const articleJsonLd = {
                         Create <code>tracing.mjs</code>. It starts the SDK before your application code loads Pino, which is what lets the instrumentation patch it:
                     </p>
                     <pre><code>{tracingSnippet}</code></pre>
+                    <p>
+                        An ingest key can only write telemetry to your organization; it cannot read data. To keep it out of source anyway, the SDK can take its whole configuration from the standard <code>OTEL_*</code> variables, as shown in <a href="/docs/guides/instrumentation-nodejs#environment-variables">the Node.js guide's environment variables section</a>.
+                    </p>
                     <div class="guide-callout">
                         <p class="guide-kicker">Check the BatchLogRecordProcessor signature</p>
                         <p>
