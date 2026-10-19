@@ -1,7 +1,9 @@
 import type { OrgId } from "@maple/domain"
+import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { Array, Option, Schema, Stream } from "effect"
 import { Command, Submodel, Subscription, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import type { IntegrationFlags } from "../data/infra-surfaces"
 import type { Resources } from "../platform/resources"
 import type { AppRoute, RouteTag } from "../route"
 import type { BreadcrumbEntry } from "../shell"
@@ -18,6 +20,14 @@ export interface PageContext {
 	readonly pinnedNamespace: string | null
 	/** `useTimezonePreference().effectiveTimezone`. */
 	readonly timeZone: string
+	/** `useInfraSurfaces()` as the shell reads it; absent off the shell (a public page). */
+	readonly infra?: ShellInfraSurfaces
+}
+
+/** The sidebar's last-hour presence probe (`null` until it answers) and the integration statuses. */
+export interface ShellInfraSurfaces {
+	readonly presence: ReadonlyArray<InfraSurfaceLiteral> | null
+	readonly integrations: IntegrationFlags
 }
 
 export interface PageViewInputs {

@@ -16,6 +16,7 @@ import { getRailwayServices } from "@maple/web-data/warehouse/railway-infra"
 import { getServiceMapPlanetScale } from "@maple/web-data/warehouse/service-map"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { loadInfraPresence } from "../../../data/infra-surfaces"
 import { toLoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { Message } from "./message"
@@ -23,41 +24,53 @@ import { SourceId, type SourceReading } from "./model"
 
 // The `*Data` components of components/infra/overview/infra-overview.tsx: one read per source.
 
-const reading = (summary: SourceReading["summary"], isReporting: boolean): SourceReading => ({ summary, isReporting })
+const reading = (summary: SourceReading["summary"]): SourceReading => ({ summary })
 
 const read = (source: SourceId, window: TimeWindow) => {
 	const data = { startTime: window.startTime, endTime: window.endTime }
 	switch (source) {
 		case "hosts":
 			return Effect.map(listHosts({ data: { ...data, limit: HOST_LIST_LIMIT } }), (response) =>
-				reading(summarizeHosts(response.data, window.endTime), response.data.length > 0),
+				reading(summarizeHosts(response.data, window.endTime)),
 			)
 		case "containers":
 			return Effect.map(containersSummary({ data }), (counts) =>
-				reading(summarizeContainers(counts), counts.totalContainers > 0),
+				reading(summarizeContainers(counts)),
 			)
 		case "kubernetes":
 			return Effect.map(podsSummary({ data }), (counts) =>
-				reading(summarizePods(counts), counts.livePods + counts.endedPods > 0),
+				reading(summarizePods(counts)),
 			)
 		case "cloudflare":
 			return Effect.map(getCloudflareZones({ data }), ({ zones }) =>
-				reading(summarizeCloudflare(zones), zones.length > 0),
+				reading(summarizeCloudflare(zones)),
 			)
 		case "railway":
 			return Effect.map(getRailwayServices({ data }), ({ services }) =>
-				reading(summarizeRailway(services), services.length > 0),
+				reading(summarizeRailway(services)),
 			)
 		case "planetscale":
 			return Effect.map(getServiceMapPlanetScale({ data }), ({ databases }) =>
-				reading(summarizePlanetScale(databases), databases.length > 0),
+				reading(summarizePlanetScale(databases)),
 			)
 		case "gcp":
 			return Effect.map(getGcpInfraFleet({ data }), ({ services }) =>
-				reading(summarizeGcp(gcpFleet(services)), services.length > 0),
+				reading(summarizeGcp(gcpFleet(services))),
 			)
 	}
 }
+
+/** `infraPresenceResultAtom({ data: window })`, one cache entry with the sidebar's when the windows match. */
+export const FetchPresence = Command.define("FetchInfraOverviewPresence", {
+	args: { orgId: Schema.String, key: Schema.String, window: TimeWindow },
+	messages: [Message.CompletedFetchPresence],
+	execute: ({ orgId, key, window }) =>
+		loadInfraPresence(orgId, window).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchPresence({ key, result })),
+		),
+})
 
 export const FetchSource = Command.define("FetchInfraOverviewSource", {
 	args: { source: SourceId, key: Schema.String, window: TimeWindow },

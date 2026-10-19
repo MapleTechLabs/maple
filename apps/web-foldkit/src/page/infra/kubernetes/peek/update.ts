@@ -47,8 +47,15 @@ const summaryInputOf = (pod: PodRow, window: TimeWindow) => ({
 	endTime: window.endTime,
 })
 
-/** The summary and every chart of the pod and its neighbours (`PeekPrefetch`), as `Load`. */
-const request = (model: Model, context: PageContext, window: TimeWindow, pods: ReadonlyArray<PodRow>, mode: Keyed.RequestMode) => {
+/** The summary and (unless `summaryOnly`) every chart of the pods (`PeekPrefetch`). */
+const request = (
+	model: Model,
+	context: PageContext,
+	window: TimeWindow,
+	pods: ReadonlyArray<PodRow>,
+	mode: Keyed.RequestMode,
+	summaryOnly = false,
+) => {
 	const summaries = seriesSteps<PodSummary, LoadFailure, Message>(
 		model.summaries,
 		pods.map((pod) => {
@@ -64,7 +71,7 @@ const request = (model: Model, context: PageContext, window: TimeWindow, pods: R
 	)
 	const series = seriesSteps<SeriesData, LoadFailure, Message>(
 		model.series,
-		pods.flatMap((pod) =>
+		(summaryOnly ? [] : pods).flatMap((pod) =>
 			PEEK_METRICS.map((metric) => {
 				const input = {
 					...summaryInputOf(pod, window),
@@ -138,8 +145,9 @@ export const update = (
 		}),
 		ClickedStep: ({ step }) => ({ model, outMessage: OutMessage.RequestedStep({ step }) }),
 		PressedStepKey: ({ step }) => ({ model, outMessage: OutMessage.RequestedStep({ step }) }),
+		// `useAtomRefresh` on the summary atom alone: the charts are not re-read.
 		ClickedRetrySummary: () =>
-			peek === null || window === null ? { model } : request(model, context, window, [peek.pod], "Refresh"),
+			peek === null || window === null ? { model } : request(model, context, window, [peek.pod], "Refresh", true),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),

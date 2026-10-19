@@ -208,7 +208,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedCloudflarePrime: ({ isOk, isConnected }) =>
 			CloudflareCard.completedPrime(model, context, isOk, isConnected),
-		TickedCloudflareIngest: () => CloudflareCard.refreshCloudflare(model, context),
+		TickedCloudflareIngest: () => {
+			// Legacy reads `Date.now()` on every render: the ingest phase (stalled, backfill) follows the clock.
+			const refreshed = CloudflareCard.refreshCloudflare(model, context)
+			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
+		},
 		GotZoneFilterMessage: ({ message: child }) => CloudflareCard.gotZoneFilter(model, child),
 		ChangedZoneSearch: ({ value }) => CloudflareCard.updateBoard(model, { zoneSearch: value }),
 		ClickedZoneSort: ({ key }) => CloudflareCard.clickedZoneSort(model, key),
@@ -392,8 +396,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedBranch: ({ repoId, branch }) => Github.clickedBranch(model, repoId, branch),
 		GotBranchDialogMessage: ({ message: child }) => Github.gotBranchDialog(model, child),
 		ConfirmedBranch: () => Github.confirmedBranch(model),
-		CompletedTrackedBranch: ({ branch, backfillQueued, failure }) =>
-			Github.completedTrackedBranch(model, context, branch, backfillQueued, failure),
+		CompletedTrackedBranch: ({ repoId, branch, backfillQueued, failure }) =>
+			Github.completedTrackedBranch(model, context, repoId, branch, backfillQueued, failure),
 		CompletedChatInstall: ({ failure }) => Chat.completedInstall(model, context, failure),
 		ClickedChatIdentity: () => Chat.clickedIdentity(model),
 		CompletedChatIdentity: ({ kind, failure }) => Chat.completedIdentity(model, context, kind, failure),

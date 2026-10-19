@@ -6,7 +6,7 @@ import * as Frame from "../../kit/frame"
 import * as Rail from "../lens/rail"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, routeChanged, update } from "./update"
+import { contextChanged, init, routeChanged, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -57,5 +57,17 @@ describe("service lens", () => {
 		const picked = routeChanged(withNames, { search: {}, serviceName: "payment-svc" }, context)
 		expect(picked.model.rail.names).toEqual(withNames.rail.names)
 		expect(names(picked.commands)).not.toContain("FetchLensServiceNames")
+	})
+
+	test("the rail's service names follow the namespace pin, in the payload and the key", () => {
+		const pinned: PageContext = { ...context, pinnedNamespace: "payments" }
+		const enter = (ctx: PageContext) => update(init({ search: {} }, ctx).model, resolved, ctx)
+		const unpinned = enter(context)
+		const entered = enter(pinned)
+		const fetch = entered.commands?.find(({ name }) => name === "FetchLensServiceNames")
+		const args = fetch?.args !== undefined && "input" in fetch.args ? fetch.args.input : null
+		expect(args).toEqual({ ...window, namespaces: ["payments"] })
+		expect(entered.model.rail.names.key).not.toEqual(unpinned.model.rail.names.key)
+		expect(names(contextChanged(unpinned.model, pinned).commands)).toContain("FetchLensServiceNames")
 	})
 })

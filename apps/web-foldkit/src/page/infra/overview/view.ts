@@ -15,7 +15,7 @@ import { pickTimeSearch } from "../kit/view-tabs"
 import { Message } from "./message"
 import { type Model, SOURCE_IDS, type SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
-import { presentSources, sourceState } from "./state"
+import { presentSources, sourceState, surfacesOf } from "./state"
 import { DEFAULT_PRESET } from "./update"
 import { needsAttention } from "./view-findings"
 import { sourcesTable } from "./view-sources"
@@ -71,8 +71,8 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 		),
 	])
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
-	const sources = presentSources(model)
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const sources = presentSources(surfacesOf(model, inputs.context))
 	const missing = SOURCE_IDS.filter((id) => !sources.includes(id))
 	const states = sources.map((id) => ({ id, state: sourceState(model, id) }))
 	const time = pickTimeSearch(model.search)

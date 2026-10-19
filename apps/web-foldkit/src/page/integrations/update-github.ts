@@ -168,8 +168,8 @@ export const gotBranchPopover = (model: Model, repoId: VcsRepositoryId, message:
 
 /** The tracked branch shown: the optimistic save, else the server's (falling back to the default). */
 export const trackedBranchOf = (model: Model, repo: GithubRepoSummary): string | null => {
-	const saving = model.githubCard.savingBranch
-	if (saving !== null && saving.repoId === repo.id) return saving.branch
+	const saving = model.githubCard.savingBranches.find((entry) => entry.repoId === repo.id)
+	if (saving !== undefined) return saving.branch
 	return repo.trackedBranch ?? repo.branches.find((branch) => branch.isDefault)?.name ?? null
 }
 
@@ -202,8 +202,9 @@ export const gotBranchDialog = (model: Model, message: Dialog.Message): Return =
 /** `commit`: optimistic, popover closed, then the save. */
 export const confirmedBranch = (model: Model): Return => {
 	const pending = model.githubCard.pendingBranch
-	if (pending === null || model.githubCard.savingBranch !== null) return { model }
-	return chain(withCard(model, { pendingBranch: null, savingBranch: pending }), [
+	const card = model.githubCard
+	if (pending === null || card.savingBranches.some((entry) => entry.repoId === pending.repoId)) return { model }
+	return chain(withCard(model, { pendingBranch: null, savingBranches: [...card.savingBranches, pending] }), [
 		(next) => branchDialogStep(next, Dialog.close(next.githubCard.branchDialog)),
 		(next) => popoverStep(next, pending.repoId, Popover.close(popoverOf(next, pending.repoId))),
 		(next) => ({ model: next, commands: [SetTrackedBranch(pending)] }),
@@ -213,11 +214,14 @@ export const confirmedBranch = (model: Model): Return => {
 export const completedTrackedBranch = (
 	model: Model,
 	context: PageContext,
+	repoId: VcsRepositoryId,
 	branch: string,
 	backfillQueued: boolean,
 	failure: LoadFailure | null,
 ): Return => {
-	const settled = withCard(model, { savingBranch: null })
+	const settled = withCard(model, {
+		savingBranches: model.githubCard.savingBranches.filter((entry) => entry.repoId !== repoId),
+	})
 	if (failure !== null) return toast(settled, "error", "Failed to change tracked branch", failure.message)
 	if (!backfillQueued) return refresh(settled, context)
 	const version = model.githubCard.forcePollVersion + 1

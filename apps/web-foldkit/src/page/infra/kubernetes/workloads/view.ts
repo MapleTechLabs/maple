@@ -17,6 +17,7 @@ import {
 	filterSidebarHeader,
 	filterSidebarLoading,
 } from "../../../../ui/filters/filter-sidebar"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../../ui/empty"
 import { icon } from "../../../../ui/icon"
 import { segmentedSelect } from "../../../../ui/segmented-select"
 import type { PageViewInputs } from "../../../contract"
@@ -26,7 +27,7 @@ import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
-import { filteredEmpty } from "../../../kit/signal-empty-state"
+import { emptyActions, filteredEmpty } from "../../../kit/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
 import { kubernetesViewTabs } from "../../kit/view-tabs"
 import { type Facet, Message, type WorkloadScope } from "./message"
@@ -36,9 +37,6 @@ import { workloadTable, workloadTableLoading } from "./view-table"
 
 // `WorkloadsPage` (apps/web/src/routes/infra/kubernetes/workloads/index.tsx) and
 // `WorkloadsFilterSidebarView` (components/infra/k8s-filter-sidebar.tsx).
-// TODO(presence): legacy reads the sidebar's infra presence (`useInfraSurfaces`) to tell "this kind
-// is empty" from "nothing installed"; pages have no access to the shell's probe, so an empty kind
-// always shows the install state (what legacy shows before the probe lands).
 
 type H = HtmlBuilder<Message>
 
@@ -102,6 +100,40 @@ const loadedRail = (h: H, model: Model, facets: WorkloadFacets, label: string): 
 
 const toInstall = (message: InstallModal.Message) => Message.GotInstallMessage({ message })
 
+/** The sidebar's presence probe (`useInfraSurfaces()`): any Kubernetes surface means the chart is in. */
+const isClusterReporting = (inputs: PageViewInputs): boolean =>
+	(inputs.context.infra?.presence ?? []).some(
+		(surface) => surface === "k8sPods" || surface === "k8sNodes" || surface === "k8sWorkloads",
+	)
+
+const otherKinds = (h: H, kind: WorkloadKind): ReadonlyArray<Html> =>
+	KIND_OPTIONS.filter((option) => option.value !== kind).map((option) =>
+		button(
+			h,
+			{ variant: "outline", size: "sm", attributes: [h.Key(option.value), h.OnClick(Message.ChangedKind({ kind: option.value }))] },
+			["Show ", option.label],
+		),
+	)
+
+/** The cluster already reports, so only this kind is missing: no install advice. */
+const emptyKindInWindow = (h: H, kind: WorkloadKind, kindLabel: string): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyMedia(h, { variant: "icon" }, [icon(h, "GridIcon", { size: 16 })]),
+				emptyTitle(h, [`No ${kindLabel} in this window.`]),
+				emptyDescription(h, [
+					"Your cluster is reporting, but no pod carried a ",
+					`k8s.${kind}.name`,
+					" attribute in this time range.",
+				]),
+			]),
+			emptyActions(h, otherKinds(h, kind)),
+		],
+		"py-16",
+	)
+
 const emptyKind = (h: H, model: Model, kind: WorkloadKind, kindLabel: string): Html =>
 	setupEmpty(h, {
 		icon: icon(h, "GridIcon", { size: 16 }),
@@ -111,13 +143,7 @@ const emptyKind = (h: H, model: Model, kind: WorkloadKind, kindLabel: string): H
 		actionLabel: "Install the Helm chart",
 		onAction: toInstall(InstallModal.Message.ClickedOpen()),
 		docs: "kubernetes",
-		extra: KIND_OPTIONS.filter((option) => option.value !== kind).map((option) =>
-			button(
-				h,
-				{ variant: "outline", size: "sm", attributes: [h.Key(option.value), h.OnClick(Message.ChangedKind({ kind: option.value }))] },
-				["Show ", option.label],
-			),
-		),
+		extra: otherKinds(h, kind),
 		modal: h.submodel({ slotId: "install-modal", model: model.install, view: InstallModalView.mountedView, toParentMessage: toInstall }),
 	})
 
@@ -126,7 +152,8 @@ const workloadList = (h: H, model: Model, workloads: ReadonlyArray<WorkloadRow>,
 	const kindLabel = KIND_OPTIONS.find((option) => option.value === kind)?.label ?? "Deployments"
 	const isWaiting = AsyncData.isRefreshing(model.workloads.data)
 	const hasStructuredFilter = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	if (workloads.length === 0 && !hasStructuredFilter) return emptyKind(h, model, kind, kindLabel)
+	if (workloads.length === 0 && !hasStructuredFilter)
+		return isClusterReporting(inputs) ? emptyKindInWindow(h, kind, kindLabel) : emptyKind(h, model, kind, kindLabel)
 	const endTime = model.frame.window?.endTime ?? ""
 	const scoped = workloads.map((workload) => ({ workload, scope: scopeOf(workload, endTime) }))
 	const count = (target: WorkloadScope) => scoped.filter((entry) => entry.scope === target).length

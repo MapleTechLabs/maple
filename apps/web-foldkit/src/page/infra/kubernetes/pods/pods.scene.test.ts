@@ -3,8 +3,10 @@ import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import * as Dialog from "../../../../ui/dialog"
+import { toLoadFailure } from "../../../../data/load-failure"
 import * as Frame from "../../kit/frame"
 import * as PeekMessage from "../peek/message"
+import { PEEK_METRICS, seriesId } from "../peek/model"
 import type { PodRow } from "../pod-data"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -102,6 +104,37 @@ describe("pods list", () => {
 		expect(loaded.model.peek.dialog.isOpen).toBe(true)
 		expect(names(loaded.commands).filter((name) => name === "FetchInfraPodPeekSummary")).toHaveLength(3)
 		expect(names(loaded.commands).filter((name) => name === "FetchInfraPodPeekSeries")).toHaveLength(15)
+	})
+
+	test("retrying the peek's summary re-reads the summary alone, not its charts", () => {
+		const { model } = peekedPage()
+		const peekMessage = (message: PeekMessage.Message) => Message.GotPeekMessage({ message })
+		const charted = PEEK_METRICS.reduce(
+			(acc, metric) =>
+				pageUpdate(
+					acc,
+					peekMessage(
+						PeekMessage.Message.CompletedFetchSeries({
+							id: seriesId("shop/payment-2", metric),
+							key: acc.peek.series[seriesId("shop/payment-2", metric)]?.key ?? "",
+							result: Result.succeed({ rows: [], unit: "percent" }),
+						}),
+					),
+				).model,
+			model,
+		)
+		const failed = pageUpdate(
+			charted,
+			peekMessage(
+				PeekMessage.Message.CompletedFetchSummary({
+					podKey: "shop/payment-2",
+					key: charted.peek.summaries["shop/payment-2"]?.key ?? "",
+					result: Result.fail(toLoadFailure("boom")),
+				}),
+			),
+		).model
+		const retried = pageUpdate(failed, Message.GotPeekMessage({ message: PeekMessage.Message.ClickedRetrySummary() }))
+		expect(names(retried.commands)).toEqual(["FetchInfraPodPeekSummary"])
 	})
 
 	test("a step replaces the peek with the next row; closing clears it", () => {
