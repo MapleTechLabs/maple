@@ -1709,6 +1709,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.streamJobLog(installation.externalInstallationId, repo.owner, repo.name, jobId)
 					.pipe(Stream.mapError(toVcsCommitError))
 
+			const canReadWorkflowLogs: VcsProviderClient["canReadWorkflowLogs"] = (installation) =>
+				client
+					.canReadActions(installation.externalInstallationId)
+					.pipe(Effect.mapError(toVcsCommitError))
+
 			const fetchWorkflowJobAnnotations: VcsProviderClient["fetchWorkflowJobAnnotations"] = (
 				installation,
 				repo,
@@ -1776,6 +1781,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchCloneCredentials,
 				fetchWorkflowJobAnnotations,
 				streamWorkflowJobLog,
+				canReadWorkflowLogs,
 			} satisfies VcsProviderClient
 		}),
 	},
