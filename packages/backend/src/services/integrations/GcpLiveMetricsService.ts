@@ -167,7 +167,7 @@ const selectTargets = (
 	GcpLiveQueryRejectedError
 > => {
 	const requested = scope.projects
-	const known = new Set(all.targets.map((target) => target.projectId))
+	const known = new Set<string>(all.targets.map((target) => target.projectId))
 	if (requested !== undefined && requested.every((projectId) => known.has(projectId))) {
 		const named = all.targets.filter((target) => requested.includes(target.projectId))
 		return Effect.succeed({ targets: named, failures: [] })

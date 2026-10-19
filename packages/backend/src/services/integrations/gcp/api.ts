@@ -124,7 +124,7 @@ const errorReason = (body: unknown, kind: GcpApiError["kind"]): string | undefin
  * The poller's calls are not capped.
  */
 const MAX_BODY_BYTES = 8 * 1024 * 1024
-const parseJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
+const parseJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 interface CallOptions<E> {
 	/** Turns a failed answer into the caller's own error. */
