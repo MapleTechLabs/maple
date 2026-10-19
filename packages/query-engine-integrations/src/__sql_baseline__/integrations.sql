@@ -53,7 +53,9 @@ SELECT
           AND ai_trace_index.Timestamp <= '2026-01-02 12:30:00'
         GROUP BY traceId
         HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0) AS agent_traces
-        WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')))
+        WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-02 09:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-02 13:30:00', 9))
         GROUP BY traceId) AS session_traces
         INNER JOIN (SELECT
           agent_traces.traceId AS traceId,
@@ -150,7 +152,9 @@ SELECT
           AND countIf(ai_trace_index.AgentName IN ('billing-agent')) > 0
           AND countIf(ai_trace_index.ToolName IN ('send_email')) > 0
           AND countIf((ai_trace_index.SessionId LIKE '%wrun\\_01%' OR ai_trace_index.TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
-        WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')))
+        WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-02 09:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-02 13:30:00', 9))
         GROUP BY traceId) AS session_traces
         INNER JOIN (SELECT
           agent_traces.traceId AS traceId,
@@ -249,7 +253,9 @@ SELECT
         HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0
           AND countIf(ai_trace_index.VendorId IN ('eve')) > 0
           AND countIf(ai_trace_index.ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
-        WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef')))
+        WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-02 09:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-02 13:30:00', 9))
         GROUP BY traceId) AS session_traces
         INNER JOIN (SELECT
           agent_traces.traceId AS traceId,
@@ -932,7 +938,9 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (mapContains(traces.SpanAttributes, 'maple_ai.session.id') AND traces.SpanAttributes['maple_ai.session.id'] != '')
-          AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog'))
+          AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
           AND traces.SpanAttributes['maple_ai.vendor.id'] != ''
           AND (traces.Timestamp > '2026-01-01 10:30:00.123456789' OR (traces.Timestamp = '2026-01-01 10:30:00.123456789' AND traces.SpanId > '00000000000007d0'))
         ORDER BY timestamp ASC, spanId ASC
@@ -969,7 +977,9 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (mapContains(traces.SpanAttributes, 'maple_ai.session.id') AND traces.SpanAttributes['maple_ai.session.id'] != '')
-          AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog'))
+          AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         ORDER BY timestamp ASC, spanId ASC
         LIMIT 2000
         FORMAT JSON
@@ -1015,7 +1025,9 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (mapContains(traces.SpanAttributes, 'maple_ai.session.id') AND traces.SpanAttributes['maple_ai.session.id'] != '')
-          AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog'))
+          AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         GROUP BY turnKey
         ORDER BY startTime ASC
         LIMIT 1001
@@ -1060,7 +1072,9 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (mapContains(traces.SpanAttributes, 'maple_ai.session.id') AND traces.SpanAttributes['maple_ai.session.id'] != '')
-          AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog'))
+          AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionWindowQuery:default
@@ -1097,7 +1111,9 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId = '7f3a4b5c6d7e8f901234567890abcdef')
+          AND trace_index.TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         ORDER BY timestamp ASC, spanId ASC
         LIMIT 2000
         FORMAT JSON
@@ -1125,7 +1141,9 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef', '0123456789abcdef0123456789abcdef'))
+          AND trace_index.TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef', '0123456789abcdef0123456789abcdef')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
           AND traces.SpanAttributes['maple_ai.vendor.id'] = ''
         ORDER BY timestamp ASC, spanId ASC
         LIMIT 2000
@@ -1165,7 +1183,9 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId = '7f3a4b5c6d7e8f901234567890abcdef')
+          AND trace_index.TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         GROUP BY turnKey
         ORDER BY startTime ASC
         LIMIT 1001
@@ -1203,7 +1223,9 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId = '7f3a4b5c6d7e8f901234567890abcdef')
+          AND trace_index.TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         FORMAT JSON
 
 -- builder:ai-sessions:aiTraceWindowQuery:default
@@ -1376,7 +1398,9 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef'))
+          AND trace_index.TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-02 11:15:00.000000000', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-02 11:45:30.000000000', 9))
           AND (traces.TraceId, traces.SpanId) IN (tuple('7f3a4b5c6d7e8f901234567890abcdef', '00000000000007d0'), tuple('7f3a4b5c6d7e8f901234567890abcdef', '00000000000007d1'))
         FORMAT JSON
 

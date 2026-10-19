@@ -79,16 +79,53 @@ export const Traces = Datasources.traces
 /** One row per (trace, service, 5-minute bucket) the trace's spans occupy in `traces`. */
 export const TraceIndex = Datasources.traceIndex
 
+/** The `traces.Timestamp` range a reader scans, bounding its `trace_index` lookup to the same days. */
+export interface TraceWindow {
+	readonly start: CH.Expr<DateTime.Utc>
+	readonly end: CH.Expr<DateTime.Utc>
+}
+
+// A bound may compile to a string with nanoseconds, which neither `toDateTime`
+// nor a `DateTime` comparison parses; `toDateTime64(x, 9)` takes every shape.
+const asDateTime64 = (value: CH.Expr<DateTime.Utc>) =>
+	CH.compileTypedFnCall("toDateTime64", T.dateTime64.schema, value, CH.lit(9))
+
+/** A {@link TraceWindow} from the query's `DateTime64` bound params. */
+export const paramTraceWindow = (start = "startTime", end = "endTime"): TraceWindow => ({
+	start: T.param.dateTime(start),
+	end: T.param.dateTime(end),
+})
+
 /**
  * Selects the spans of the traces `match` picks from `trace_index`, for a query
  * reading `traces`. The index names every `(ServiceName, bucket, TraceId)` sort-key
  * prefix those traces occupy, so the read seeks their granules instead of scanning.
+ *
+ * `window` is required so every caller decides: an unbounded lookup by a subquery
+ * set probes every retained partition and timed out the trace list (2026-10-19).
+ * Pass `undefined` only for a literal trace id with no known time.
  */
-export const inTraces = <Q>(match: (traceId: T.ColumnRef<"TraceId", T.CHString>) => CH.Condition<Q>) =>
+export const inTraces = <Q>(
+	match: (traceId: T.ColumnRef<"TraceId", T.CHString>) => CH.Condition<Q>,
+	window: TraceWindow | undefined,
+) =>
 	T.subqueryCond(
 		T.from(TraceIndex)
 			.select(($) => ({ ServiceName: $.ServiceName, Bucket: $.Bucket, TraceId: $.TraceId }))
-			.where(($) => [$.OrgId.eq(orgIdParam), match($.TraceId)]),
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				match($.TraceId),
+				// A span's bucket floors its start, so the lower bound floors too.
+				window &&
+					$.Bucket.gte(
+						CH.compileTypedFnCall(
+							Datasources.TRACE_BUCKET_FN,
+							T.dateTime.schema,
+							asDateTime64(window.start),
+						),
+					),
+				window && $.Bucket.lte(asDateTime64(window.end)),
+			]),
 		(sql) =>
 			`(traces.ServiceName, ${Datasources.TRACE_BUCKET_FN}(traces.Timestamp), traces.TraceId) IN (${sql})`,
 	)

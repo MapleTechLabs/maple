@@ -889,7 +889,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:errors:errorOccurrenceSpansQuery:default  [d6ae24de]
+-- builder:errors:errorOccurrenceSpansQuery:default  [de3e74bc]
 SELECT
           traces.SpanId AS spanId,
           traces.SpanName AS spanName,
@@ -904,7 +904,9 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId IN ('0af7651916cd43dd8448eb211c80319c'))
+          AND trace_index.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
           AND traces.SpanId IN ('b7ad6b7169203331')
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
@@ -1014,7 +1016,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:spanDetailQuery:narrowByTime  [92ebef07]
+-- builder:errors:spanDetailQuery:narrowByTime  [42a87429]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -1039,13 +1041,15 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c')
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:spanEventsByTraceQuery:default  [ff12ba31]
+-- builder:errors:spanEventsByTraceQuery:default  [7d3c75cf]
 SELECT
           traces.SpanId AS spanId,
           toString(traces.Timestamp) AS spanStart,
@@ -1062,7 +1066,9 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c')
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
           AND notEmpty(traces.EventsName)
         ORDER BY spanStart ASC
         LIMIT 5000
@@ -6700,7 +6706,7 @@ SELECT
         LIMIT 2
         FORMAT JSON
 
--- builder:traces:traceSpanStatsByTraceIdsQuery:page-enrichment  [b590a279]
+-- builder:traces:traceSpanStatsByTraceIdsQuery:page-enrichment  [755f61aa]
 SELECT
           traces.TraceId AS traceId,
           count() AS spanCount,
@@ -6713,7 +6719,9 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736'))
+          AND trace_index.TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
           AND traces.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
           AND traces.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
         GROUP BY traceId
@@ -9118,7 +9126,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:error_detail_traces:default:baseline  [ea7b0ed8]
+-- pipe:error_detail_traces:default:baseline  [15f8e52e]
 SELECT
           traces.TraceId AS traceId,
           min(traces.Timestamp) AS startTime,
@@ -9179,7 +9187,9 @@ SELECT
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY TraceId
         ORDER BY lastErrorSeen DESC, TraceId DESC
-        LIMIT 10) AS matching_traces))
+        LIMIT 10) AS matching_traces)
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
@@ -11783,7 +11793,7 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- pipe:span_hierarchy:windowed:baseline  [7d89ba99]
+-- pipe:span_hierarchy:windowed:baseline  [c4559257]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -11808,7 +11818,9 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c')
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
         ORDER BY startTime ASC
@@ -14833,7 +14845,7 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:baseline  [103c6cb2]
+-- spec:traces-list-grouped-attr-fallback:baseline  [3ca37cb7]
 SELECT
           traces.TraceId AS traceId,
           argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -14874,13 +14886,15 @@ SELECT
           AND SpanAttributes['user.id'] = 'u1'
           AND traces.ParentSpanId = ''
         ORDER BY ts DESC, traceId DESC
-        LIMIT 50)))
+        LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startTime DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:bloom  [d0506d34]
+-- spec:traces-list-grouped-attr-fallback:bloom  [ccbf5975]
 SELECT
           traces.TraceId AS traceId,
           argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -14921,13 +14935,15 @@ SELECT
           AND ((has(mapKeys(SpanAttributes), 'user.id') AND has(mapValues(SpanAttributes), 'u1')) AND SpanAttributes['user.id'] = 'u1')
           AND traces.ParentSpanId = ''
         ORDER BY ts DESC, traceId DESC
-        LIMIT 50)))
+        LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startTime DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:text  [e1b943c8]
+-- spec:traces-list-grouped-attr-fallback:text  [707255d9]
 SELECT
           traces.TraceId AS traceId,
           argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -14968,13 +14984,15 @@ SELECT
           AND (has(SpanAttributeItems, concat('user.id', char(31), 'u1')) AND SpanAttributes['user.id'] = 'u1')
           AND traces.ParentSpanId = ''
         ORDER BY ts DESC, traceId DESC
-        LIMIT 50)))
+        LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startTime DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-duration-sort:baseline  [e174b540]
+-- spec:traces-list-grouped-duration-sort:baseline  [b5c0e18d]
 SELECT
           traces.TraceId AS traceId,
           argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -15014,13 +15032,15 @@ SELECT
           AND trace_list_mv.DeploymentEnv = 'production'
         ORDER BY d DESC, ts DESC, traceId DESC
         LIMIT 50
-        OFFSET 100)))
+        OFFSET 100))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY rootDurationMicros DESC, startSecond DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:baseline  [36abbb95]
+-- spec:traces-list-grouped:baseline  [d3989738]
 SELECT
           traces.TraceId AS traceId,
           argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -15059,13 +15079,15 @@ SELECT
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
         ORDER BY ts DESC, traceId DESC
-        LIMIT 50)))
+        LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startSecond DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:bloom  [36abbb95]
+-- spec:traces-list-grouped:bloom  [d3989738]
 SELECT
           traces.TraceId AS traceId,
           argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -15104,13 +15126,15 @@ SELECT
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
         ORDER BY ts DESC, traceId DESC
-        LIMIT 50)))
+        LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startSecond DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:text  [36abbb95]
+-- spec:traces-list-grouped:text  [d3989738]
 SELECT
           traces.TraceId AS traceId,
           argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
@@ -15149,7 +15173,9 @@ SELECT
           AND trace_list_mv.ServiceName = 'api'
           AND trace_list_mv.DeploymentEnv = 'production'
         ORDER BY ts DESC, traceId DESC
-        LIMIT 50)))
+        LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startSecond DESC, traceId DESC
         LIMIT 50

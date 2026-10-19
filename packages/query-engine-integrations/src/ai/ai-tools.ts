@@ -79,7 +79,14 @@ import {
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
 import { Array as Arr, type DateTime, Schema } from "effect"
 import { QueryBuilderDefect, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import { AiTraceIndex, Traces, exactDateTime64, inTraces, orgIdParam } from "@maple/query-engine/ch/tables"
+import {
+	AiTraceIndex,
+	Traces,
+	exactDateTime64,
+	inTraces,
+	orgIdParam,
+	paramTraceWindow,
+} from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { aiToolCallPayload } from "./ai-integrations"
@@ -1038,7 +1045,10 @@ export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiTool
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("sliceStart")),
 			$.Timestamp.lte(param.dateTime("sliceEnd")),
-			inTraces((id) => CH.inList(id, [...new Set(calls.map((call) => call.traceId))])),
+			inTraces(
+				(id) => CH.inList(id, [...new Set(calls.map((call) => call.traceId))]),
+				paramTraceWindow("sliceStart", "sliceEnd"),
+			),
 			CH.inExprList(
 				traceSpanKey,
 				calls.map((call) =>
