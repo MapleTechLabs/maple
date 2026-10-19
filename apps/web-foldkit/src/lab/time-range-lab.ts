@@ -16,7 +16,7 @@ import { kbd } from "../ui/display"
 export const Range = Schema.Struct({
 	startTime: Schema.String,
 	endTime: Schema.String,
-	presetValue: Schema.String,
+	presetValue: Schema.NullOr(Schema.String),
 })
 export type Range = typeof Range.Type
 
@@ -84,10 +84,14 @@ export const update = (model: Model, message: Message): Return =>
 			const commands = Command.mapMessages(next.commands ?? [], (child) =>
 				Message.GotPickerMessage({ message: child }),
 			)
+			const picker = { ...model, picker: next.model }
+			// `setRange`: a custom range is stored as picked, with no preset.
+			if (next.outMessage?._tag === "SelectedCustomRange")
+				return { model: { ...picker, range: { startTime: next.outMessage.startTime, endTime: next.outMessage.endTime, presetValue: null } }, commands }
 			return {
-				model: { ...model, picker: next.model },
+				model: picker,
 				commands:
-					next.outMessage === undefined
+					next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 						? commands
 						: [
 								...commands,
@@ -120,7 +124,7 @@ export const rowsOf = (model: Model) => {
 }
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
-	const preset = model.range?.presetValue
+	const preset = model.range?.presetValue ?? undefined
 	return dashboardPage(
 		h,
 		{
@@ -134,6 +138,8 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 					selectedPreset: preset,
 					presets: TimeRangePicker.PRESET_VALUES,
 					timeZone: model.effectiveTimeZone,
+					startTime: model.range?.startTime,
+					endTime: model.range?.endTime,
 				},
 			}),
 		},

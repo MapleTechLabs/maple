@@ -4,6 +4,7 @@ import { type SelectEntry, type SelectOption, view as selectView } from "../../.
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "./author"
+import { CI_MAX_RANGE_MS } from "./layout"
 import { ALL, type Frame, FrameMessage, type WindowSearch } from "./frame"
 import { repositoriesOf } from "./frame-update"
 
@@ -23,6 +24,10 @@ export type FiltersOptions<M> = Readonly<{
 	presets: ReadonlyArray<string>
 	toMessage: (message: FrameMessage) => M
 }>
+
+/** `CODE_REVIEW_CI_MAX_RANGE_SECONDS` on CI (the workflow filter), else `CODE_REVIEW_MAX_RANGE_SECONDS`. */
+const maxRangeSecondsOf = (kind: FiltersOptions<unknown>["kind"]): number =>
+	kind === "workflow" ? CI_MAX_RANGE_MS / 1000 : 365 * 24 * 60 * 60
 
 const item = (value: string, label: string): SelectEntry => ({ _tag: "Item", item: { value, label } })
 
@@ -92,7 +97,14 @@ export const filtersView = <M>(h: HtmlBuilder<M>, options: FiltersOptions<M>): H
 						view: TimeRangePicker.view,
 						toParentMessage: (message: TimeRangePicker.Message) =>
 							toMessage(FrameMessage.GotTimePickerMessage({ message })),
-						viewInputs: { label, selectedPreset: preset, presets: options.presets },
+						viewInputs: {
+							label,
+							selectedPreset: preset,
+							presets: options.presets,
+							maxRangeSeconds: maxRangeSecondsOf(options.kind),
+							startTime: frame.window?.startTime,
+							endTime: frame.window?.endTime,
+						},
 					}),
 			}),
 		],

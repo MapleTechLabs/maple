@@ -1,4 +1,3 @@
-import type { TimeRange } from "@maple/domain/http"
 import { Result } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "../../../charts/chart"
@@ -67,9 +66,9 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 		Message.GotTimePickerMessage({ message: inner }),
 	)
 	const updated = { ...model, timePicker: next.model }
-	if (next.outMessage === undefined) return { model: updated, commands }
-	const timeRange: TimeRange = { type: "relative", value: next.outMessage.presetValue }
-	if (model.timeRange?.type === "relative" && model.timeRange.value === timeRange.value)
+	const timeRange = TimeRangePicker.dashboardTimeRangeOf(next.outMessage)
+	if (timeRange === undefined) return { model: updated, commands }
+	if (model.timeRange?.type === "relative" && timeRange.type === "relative" && model.timeRange.value === timeRange.value)
 		return { model: updated, commands }
 	const previewed = planPreview({ ...updated, timeRange }, context)
 	const looked = requestAutocomplete(previewed.model, context)

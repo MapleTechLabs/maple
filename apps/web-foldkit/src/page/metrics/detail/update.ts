@@ -393,16 +393,14 @@ const liftTimePicker = (model: Model, message: TimeRangePicker.Message): Return 
 			Message.GotTimePickerMessage({ message: inner }),
 		),
 	}
-	return next.outMessage === undefined
+	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 		? lifted
 		: {
 				...lifted,
 				outMessage: PageOutMessage.RequestedNavigation({
 					url: metricHref(model, {
 						...model.search,
-						startTime: undefined,
-						endTime: undefined,
-						timePreset: next.outMessage.presetValue,
+						...TimeRangePicker.searchPatchOf(next.outMessage),
 					}),
 					isReplace: false,
 				}),

@@ -18,28 +18,27 @@ export const stepTimePicker = <M>(
 	picker: TimeRangePicker.Model,
 	message: TimeRangePicker.Message,
 	toMessage: (message: TimeRangePicker.Message) => M,
-	hrefFor: (preset: string) => string,
+	/** The page URL for a picked range (`applyTimeRangeSearch`; `withPreset` takes it). */
+	hrefFor: (picked: TimeRangePicker.TimeSearchPatch) => string,
 ): TimePickerStep<M> => {
 	const next = TimeRangePicker.update(picker, message)
 	const commands = Command.mapMessages(next.commands, toMessage)
-	return next.outMessage === undefined
+	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 		? { timePicker: next.model, commands }
 		: {
 				timePicker: next.model,
 				commands,
 				outMessage: PageOutMessage.RequestedNavigation({
-					url: hrefFor(next.outMessage.presetValue),
+					url: hrefFor(TimeRangePicker.searchPatchOf(next.outMessage)),
 					isReplace: false,
 				}),
 			}
 }
 
-/** `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL. */
-export const withPreset = <S extends TimeSearch>(search: S, preset: string): S => ({
+/** `applyTimeRangeSearch`: a preset clears the absolute bounds, a custom range the preset. */
+export const withPreset = <S extends TimeSearch>(search: S, picked: string | TimeRangePicker.TimeSearchPatch): S => ({
 	...search,
-	startTime: undefined,
-	endTime: undefined,
-	timePreset: preset,
+	...(typeof picked === "string" ? { startTime: undefined, endTime: undefined, timePreset: picked } : picked),
 })
 
 export type PageTimeOptions<M> = Readonly<{

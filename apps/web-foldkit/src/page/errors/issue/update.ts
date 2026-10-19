@@ -471,14 +471,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(timePicker) => ({ timePicker }),
 				(picker) => Message.GotTimePickerMessage({ message: picker }),
 			)
-			return next.outMessage === undefined
+			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 				? stepped
 				: {
 						...navigateSearch(stepped.model, {
 							...model.search,
-							startTime: undefined,
-							endTime: undefined,
-							timePreset: next.outMessage.presetValue,
+							...TimeRangePicker.searchPatchOf(next.outMessage),
 						}),
 						commands: stepped.commands,
 					}

@@ -299,11 +299,12 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 		Message.GotTimePickerMessage({ message: inner }),
 	)
 	const updated = { ...model, timePicker: next.model }
-	if (next.outMessage === undefined) return { model: updated, commands }
-	const timeRange = { type: "relative" as const, value: next.outMessage.presetValue }
+	const timeRange = TimeRangePicker.dashboardTimeRangeOf(next.outMessage)
+	if (timeRange === undefined) return { model: updated, commands }
 	const isSame =
 		model.timeRange !== null &&
 		model.timeRange.type === "relative" &&
+		timeRange.type === "relative" &&
 		model.timeRange.value === timeRange.value
 	if (isSame) return { model: updated, commands }
 	const planned = withReplan({ ...updated, timeRange }, context, "Load")

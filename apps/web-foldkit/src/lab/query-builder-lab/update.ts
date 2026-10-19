@@ -119,9 +119,9 @@ const liftPicker = (model: Model, message: TimeRangePicker.Message): Return => {
 		Message.GotPickerMessage({ message: inner }),
 	)
 	const lifted = { ...model, picker: next.model }
-	return next.outMessage === undefined
+	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 		? { model: lifted, commands }
-		: withCommands(withSearch(lifted, { timePreset: next.outMessage.presetValue }), commands)
+		: withCommands(withSearch(lifted, TimeRangePicker.searchPatchOf(next.outMessage)), commands)
 }
 
 /** Reload: the window unsnapped, and every `useRefreshableAtomValue` read refreshed. */

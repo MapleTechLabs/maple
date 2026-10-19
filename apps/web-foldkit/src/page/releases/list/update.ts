@@ -224,16 +224,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model: { ...model, timePicker: next.model },
 				commands: Command.mapMessages(next.commands, (picker) => Message.GotTimePickerMessage({ message: picker })),
 			}
-			return next.outMessage === undefined
-				? lifted
+			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
+				? TimeRangePicker.unpicked(lifted, next.outMessage)
 				: {
 						...lifted,
 						outMessage: PageOutMessage.RequestedNavigation({
 							url: searchHref({
 								...model.search,
-								startTime: undefined,
-								endTime: undefined,
-								timePreset: next.outMessage.presetValue,
+								...TimeRangePicker.searchPatchOf(next.outMessage),
 							}),
 							isReplace: false,
 						}),

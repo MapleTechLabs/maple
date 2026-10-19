@@ -222,15 +222,13 @@ const pickedTime = (model: Model, message: TimeRangePicker.Message): Return => {
 	const lifted = lift(model, next.commands, (m) => Message.GotTimePickerMessage({ message: m }), {
 		timePicker: next.model,
 	})
-	return next.outMessage === undefined
+	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 		? lifted
 		: {
 				...lifted,
 				outMessage: navigate(model, {
 					...model.search,
-					startTime: undefined,
-					endTime: undefined,
-					timePreset: next.outMessage.presetValue,
+					...TimeRangePicker.searchPatchOf(next.outMessage),
 				}).outMessage,
 			}
 }

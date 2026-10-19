@@ -49,6 +49,8 @@ const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => 
 			return navigate(model, { pipeline: out.value })
 		case "PickedWindow":
 			return navigate(model, out.window)
+		case "RefusedWindow":
+			return { model, outMessage: out.toast }
 		case "ResolvedWindow":
 			return request(model, context, out.window, out.mode)
 	}

@@ -502,8 +502,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 			// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-			return next.outMessage === undefined
-				? lifted
+			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
+				? TimeRangePicker.unpicked(lifted, next.outMessage)
 				: {
 						...lifted,
 						outMessage: PageOutMessage.RequestedNavigation({
@@ -511,9 +511,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 								AppRoute.Services({
 									search: {
 										...model.search,
-										startTime: undefined,
-										endTime: undefined,
-										timePreset: next.outMessage.presetValue,
+										...TimeRangePicker.searchPatchOf(next.outMessage),
 									},
 								}),
 							),

@@ -85,6 +85,8 @@ const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => 
 			return navigate(model, { ...model.search, author: out.value })
 		case "PickedWindow":
 			return navigate(model, { ...model.search, ...out.window })
+		case "RefusedWindow":
+			return { model, outMessage: out.toast }
 		case "ResolvedWindow":
 			return request(model, context, out.window, out.mode)
 	}

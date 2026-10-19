@@ -683,15 +683,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				Message.GotTimePickerMessage({ message: m }),
 			)
 			// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-			return next.outMessage === undefined
+			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 				? lifted
 				: {
 						...lifted,
 						...navigate(lifted.model, {
 							...model.search,
-							startTime: undefined,
-							endTime: undefined,
-							timePreset: next.outMessage.presetValue,
+							...TimeRangePicker.searchPatchOf(next.outMessage),
 						}),
 						commands: lifted.commands,
 					}

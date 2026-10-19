@@ -278,15 +278,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					Message.GotTimePickerMessage({ message: picker }),
 				),
 			}
-			return next.outMessage === undefined
-				? lifted
+			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
+				? TimeRangePicker.unpicked(lifted, next.outMessage)
 				: {
 						...lifted,
 						outMessage: navigate(model, {
 							...model.search,
-							startTime: undefined,
-							endTime: undefined,
-							timePreset: next.outMessage.presetValue,
+							...TimeRangePicker.searchPatchOf(next.outMessage),
 						}).outMessage,
 					}
 		},

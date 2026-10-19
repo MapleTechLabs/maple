@@ -8,6 +8,7 @@ import { SELF_HOSTED_AUTH_EVENT } from "./platform/auth-api"
 import { rendersShell } from "./page/chrome"
 import * as Preload from "./page/preload"
 import { pageSubscriptions } from "./page/registry"
+import * as TimeRangePicker from "./page/kit/time-range-picker"
 import { pageContextOf } from "./update"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
@@ -194,6 +195,14 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 		{
 			modelToDependencies: () => ({}),
 			dependenciesToStream: () => altClickExclude,
+		},
+	),
+	/** "D" opens the page-level time range picker (`useAppHotkey("time.open")`). */
+	timeRangeHotkey: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () => TimeRangePicker.openOnHotkey<Message>(),
 		},
 	),
 	/** Clerk's listener (what `useAuth()` re-renders on), once clerk-js has loaded. */

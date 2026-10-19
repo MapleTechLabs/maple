@@ -176,14 +176,9 @@ export const updateFrame = (
 				out:
 					next.outMessage === undefined
 						? null
-						: {
-								_tag: "PickedWindow",
-								window: {
-									timePreset: next.outMessage.presetValue,
-									startTime: undefined,
-									endTime: undefined,
-								},
-							},
+						: next.outMessage._tag === "RejectedRange"
+							? { _tag: "RefusedWindow", toast: TimeRangePicker.rejectedToast(next.outMessage.maxRangeSeconds) }
+							: { _tag: "PickedWindow", window: TimeRangePicker.searchPatchOf(next.outMessage) },
 			}
 		},
 		ClickedResetTimeRange: () => ({

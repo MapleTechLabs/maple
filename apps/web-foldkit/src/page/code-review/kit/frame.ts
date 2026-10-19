@@ -8,6 +8,7 @@ import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Select from "../../../ui/select"
+import type { PageOutMessage } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // The state every Code Review tab with filters shares (code-review-layout.tsx): the repository
@@ -55,6 +56,8 @@ export type FrameOut =
 	| Readonly<{ _tag: "PickedRepository"; repo: VcsRepositoryId | undefined }>
 	| Readonly<{ _tag: "PickedOption"; value: string | undefined }>
 	| Readonly<{ _tag: "PickedWindow"; window: WindowSearch }>
+	/** The picker refused a range wider than the page allows: its error toast. */
+	| Readonly<{ _tag: "RefusedWindow"; toast: PageOutMessage }>
 	| Readonly<{ _tag: "ResolvedWindow"; window: TimeWindow; mode: RequestMode }>
 
 export type FrameCommand = Command.Command<FrameMessage, never, Resources>

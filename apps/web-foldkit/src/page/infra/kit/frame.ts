@@ -129,16 +129,14 @@ export const update = (model: Model, message: Message, scope: Scope): Return =>
 				),
 			}
 			// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-			return next.outMessage === undefined
+			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 				? lifted
 				: {
 						...lifted,
 						outMessage: OutMessage.ChangedTimeSearch({
 							search: {
 								...timeSearchOf(scope.search),
-								startTime: undefined,
-								endTime: undefined,
-								timePreset: next.outMessage.presetValue,
+								...TimeRangePicker.searchPatchOf(next.outMessage),
 							},
 						}),
 					}

@@ -321,16 +321,14 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 					Message.GotTimePickerMessage({ message: picker }),
 				),
 			}
-			return next.outMessage === undefined
+			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 				? lifted
 				: {
 						...lifted,
 						outMessage: PageOutMessage.RequestedNavigation({
 							url: hrefFor(model.toolName, {
 								...model.search,
-								startTime: undefined,
-								endTime: undefined,
-								timePreset: next.outMessage.presetValue,
+								...TimeRangePicker.searchPatchOf(next.outMessage),
 							}),
 							isReplace: false,
 						}),

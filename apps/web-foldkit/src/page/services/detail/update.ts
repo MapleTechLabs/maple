@@ -398,17 +398,15 @@ const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
 		),
 	}
 	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-	return next.outMessage === undefined
-		? lifted
+	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
+		? TimeRangePicker.unpicked(lifted, next.outMessage)
 		: {
 				...lifted,
 				outMessage: navigate(
 					model,
 					{
 						...model.search,
-						startTime: undefined,
-						endTime: undefined,
-						timePreset: next.outMessage.presetValue,
+						...TimeRangePicker.searchPatchOf(next.outMessage),
 					},
 					false,
 				).outMessage,

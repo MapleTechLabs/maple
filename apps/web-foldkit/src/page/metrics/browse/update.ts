@@ -263,16 +263,14 @@ const liftTimePicker = (model: Model, message: TimeRangePicker.Message): Return 
 		),
 	}
 	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL (a push, not a replace).
-	return next.outMessage === undefined
+	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 		? lifted
 		: {
 				...lifted,
 				outMessage: PageOutMessage.RequestedNavigation({
 					url: searchHref({
 						...model.search,
-						startTime: undefined,
-						endTime: undefined,
-						timePreset: next.outMessage.presetValue,
+						...TimeRangePicker.searchPatchOf(next.outMessage),
 					}),
 					isReplace: false,
 				}),
