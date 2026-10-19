@@ -145,7 +145,10 @@ const WaitCheckoutTimeout = Command.define("WaitBillingCheckoutTimeout", {
 
 /** `plan_checkout_started` and `plan_checkout_returned` (apps/web/src/lib/analytics.ts). */
 const TrackCheckout = Command.define("TrackBillingCheckout", {
-	args: { event: Schema.Literals(["plan_checkout_started", "plan_checkout_returned"]), props: Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Boolean])) },
+	args: {
+		event: Schema.Literals(["plan_checkout_started", "plan_checkout_returned"]),
+		props: Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Boolean])),
+	},
 	messages: [Message.CompletedTrackProduct],
 	execute: ({ event, props }) => trackProduct(event, props).pipe(Effect.as(Message.CompletedTrackProduct())),
 })

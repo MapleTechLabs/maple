@@ -71,26 +71,26 @@ const FetchAuditPage = Command.define("FetchAuditLogPage", {
 })
 
 const fetchPage = (request: PageRequest, presetSince: string | null) =>
-		Effect.gen(function* () {
-			const since = presetSince ?? request.since
-			const client = yield* MapleApiV2Client
-			const response = yield* client.auditLog.list({
-				query: {
-					limit: AUDIT_LOG_PAGE_LIMIT,
-					...(request.cursor !== undefined && { cursor: request.cursor }),
-					...(request.actorType !== undefined && { actor_type: request.actorType }),
-					...(request.actorId !== undefined && { actor_id: request.actorId }),
-					...(request.outcome !== undefined && { outcome: request.outcome }),
-					...(since !== undefined && { since }),
-					...(request.until !== undefined && { until: request.until }),
-				},
-			})
-			return { data: response.data, has_more: response.has_more, next_cursor: response.next_cursor }
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchPage({ request, resolvedSince: presetSince, result })),
-		)
+	Effect.gen(function* () {
+		const since = presetSince ?? request.since
+		const client = yield* MapleApiV2Client
+		const response = yield* client.auditLog.list({
+			query: {
+				limit: AUDIT_LOG_PAGE_LIMIT,
+				...(request.cursor !== undefined && { cursor: request.cursor }),
+				...(request.actorType !== undefined && { actor_type: request.actorType }),
+				...(request.actorId !== undefined && { actor_id: request.actorId }),
+				...(request.outcome !== undefined && { outcome: request.outcome }),
+				...(since !== undefined && { since }),
+				...(request.until !== undefined && { until: request.until }),
+			},
+		})
+		return { data: response.data, has_more: response.has_more, next_cursor: response.next_cursor }
+	}).pipe(
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+		Effect.map((result) => Message.CompletedFetchPage({ request, resolvedSince: presetSince, result })),
+	)
 
 /** `useOrganization({ memberships: { pageSize: 100 } })`: members by user id; none on a failed read. */
 const FetchAuditMembers = Command.define("FetchAuditLogMembers", {
