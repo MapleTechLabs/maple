@@ -123,7 +123,11 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // measured in CI at 706.7 against main's 706.0 — the setup_scripts fields and the
 // confirm_removal endpoint on the v2 contract every page's client carries. The method step and
 // manual steps stay in their route chunks.
-const maxGzipBytes = 707.5 * 1024
+// 708.5 KB from the root span setup check (#1564, 2026-10-19): measured in CI at 707.7 against
+// 707.5 at its previous head. The audit checks' text rides on the v2 contract every page's client
+// carries (it imports `SetupAuditUnavailableError` from the audit module), and main had reached the
+// budget on its own.
+const maxGzipBytes = 708.5 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
