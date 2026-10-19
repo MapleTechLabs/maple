@@ -929,6 +929,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const evaluateRule = Effect.fn("AlertsService.evaluateRule")(function* (
 				orgId: OrgId,
 				rule: NormalizedRule,
+				windowEndMs?: number,
 			): Effect.fn.Return<
 				ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }>,
 				| AlertValidationError
@@ -939,8 +940,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": rule.id })
 				// Snapped, not raw `now`: excludes the still-filling current minute and
 				// lets rules over the same signal share one `qe-evaluate` entry within
-				// a tick. See `snapAlertWindowEndMs`.
-				const endMs = snapAlertWindowEndMs(yield* now)
+				// a tick. See `snapAlertWindowEndMs`. A scheduler tick passes its own.
+				const endMs = windowEndMs === undefined ? snapAlertWindowEndMs(yield* now) : windowEndMs
 				const startMs = endMs - rule.windowMinutes * 60_000
 				const plan = rule.compiledPlan
 				const source = yield* planEvaluateSource(plan, rule.windowMinutes)
@@ -2570,6 +2571,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				pushBudget: IncidentPushBudget,
 				prefetch: TickPrefetch,
 				stateWrites: RuleStateWrites,
+				windowEndMs: number,
 			) {
 				// `timestamp` is the tick's claim on the rule. The claim can expire while
 				// this runs (slow notification enrichment, a late warehouse result), so
@@ -3151,8 +3153,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					ObservedValue: evaluation.value,
 					SampleCount: evaluation.sampleCount,
 					WindowMinutes: normalized.windowMinutes,
-					WindowStart: toIngestDateTime64(timestamp - normalized.windowMinutes * 60_000),
-					WindowEnd: toIngestDateTime64(timestamp),
+					// The window the tick read, not the claim time: the claim lands later in the spread.
+					WindowStart: toIngestDateTime64(windowEndMs - normalized.windowMinutes * 60_000),
+					WindowEnd: toIngestDateTime64(windowEndMs),
 					ConsecutiveBreaches: outcome.consecutiveBreaches,
 					ConsecutiveHealthy: outcome.consecutiveHealthy,
 					IncidentId: outcome.incidentId,
@@ -3547,6 +3550,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			// age below SCHEDULER_LOCK_TTL_MS; a larger chunk only defers more rules.
 			const RULE_CLAIM_CHUNK_SIZE = 25
 
+			// Time kept clear at the end of a tick for evaluations started late in its
+			// spread: the last rule starts at least this long before the deadline.
+			const SCHEDULER_SPREAD_TAIL_MS = 10_000
+
 			// Unchanged-state ticks skip the alert_rule_states upsert so the Electric
 			// shape stays quiet; lastEvaluatedAt is refreshed at most this often.
 			const STATE_HEARTBEAT_MS = 5 * 60_000
@@ -3912,6 +3919,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			const evaluateScheduledRules = Effect.fn("AlertsService.evaluateScheduledRules")(function* () {
 				const tickStart = yield* now
+				// One window for the whole tick: a rule that starts after the spread crossed a
+				// minute must not skip ahead of the rules that started before it.
+				const tickWindowEndMs = snapAlertWindowEndMs(tickStart)
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						selectStoredAlertRules()
@@ -4060,8 +4070,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							ObservedValue: null,
 							SampleCount: 0,
 							WindowMinutes: row.windowMinutes,
-							WindowStart: toIngestDateTime64(failedAt - row.windowMinutes * 60_000),
-							WindowEnd: toIngestDateTime64(failedAt),
+							WindowStart: toIngestDateTime64(tickWindowEndMs - row.windowMinutes * 60_000),
+							WindowEnd: toIngestDateTime64(tickWindowEndMs),
 							ConsecutiveBreaches: 0,
 							ConsecutiveHealthy: 0,
 							IncidentId: null,
@@ -4165,7 +4175,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				const evaluateBeforeDeadline = (orgId: OrgId, rule: NormalizedRule) =>
 					Effect.flatMap(now, (startedAt) =>
-						evaluateRule(orgId, rule).pipe(
+						evaluateRule(orgId, rule, tickWindowEndMs).pipe(
 							Effect.timeoutOrElse({
 								duration: Duration.millis(
 									Math.max(
@@ -4231,6 +4241,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										pushBudget,
 										prefetch,
 										stateWrites,
+										tickWindowEndMs,
 									)
 								}),
 							).pipe(flushingStates)
@@ -4278,6 +4289,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									pushBudget,
 									prefetch,
 									stateWrites,
+									tickWindowEndMs,
 								)
 							}),
 						).pipe(flushingStates)
@@ -4403,6 +4415,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Lock ages stay bounded by a chunk's queueing, as before, but one slow
 				// rule no longer idles the other lanes until its chunk drains.
 				const lastClaimedAt = yield* loadLastClaimTimes(rows)
+
+				// Space rule starts across the spread so a tick is not one warehouse CPU burst.
+				// Windows snap to the minute, so a later start reads the same data; a tick that
+				// starts late gets a shorter spread, never deferrals.
+				const spreadStart = yield* now
+				const spreadMs = Math.max(
+					0,
+					Math.min(runtime.schedulerSpreadMs(), deadline - SCHEDULER_SPREAD_TAIL_MS - spreadStart),
+				)
+				const startSpacingMs = rows.length > 0 ? spreadMs / rows.length : 0
+				yield* Effect.annotateCurrentSpan("maple.alerting.spread_ms", Math.round(spreadMs))
+				const waitForStartSlot = (index: number) =>
+					Effect.flatMap(now, (time) => {
+						const waitMs = spreadStart + index * startSpacingMs - time
+						return waitMs > 0 ? Effect.sleep(Duration.millis(waitMs)) : Effect.void
+					})
+
 				yield* Stream.fromIterable(
 					Arr.chunksOf(
 						interleaveAlertRulesByOrg(orderAlertRulesByLastClaim(rows, lastClaimedAt)),
@@ -4437,6 +4466,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						}),
 					),
 					Stream.flattenIterable,
+					// One at a time, so the next chunk is claimed only when its first rule's slot comes up.
+					Stream.mapEffect((claimed, index) => Effect.as(waitForStartSlot(index), claimed)),
 					Stream.mapEffect(
 						({ row, timestamp }) =>
 							Effect.flatMap(now, (startedAt) =>
