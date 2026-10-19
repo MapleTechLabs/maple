@@ -315,6 +315,10 @@ export interface TraceCompletenessInputs {
 		readonly traceCount: number
 		readonly rootlessCount: number
 		readonly sampledRootlessCount: number
+		/** Org-wide totals, the same on every row; they include services past the row cap. */
+		readonly orgTraceCount: number
+		readonly orgRootlessCount: number
+		readonly orgSampledRootlessCount: number
 	}>
 }
 
@@ -1585,14 +1589,15 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			"A root span is exported when it ends, so it is the span most often lost: make sure the process flushes the exporter before it exits or is frozen (serverless handlers, CLI commands, worker shutdown). If an uninstrumented proxy or gateway starts the trace, instrument it or let your ingress service start the trace instead. A root that stays open for more than a few minutes (a WebSocket session, a long job) also reads as missing until it ends; start a new trace per message or step and link it instead.",
 		evaluate: ({ warehouse }) => {
 			const traces = warehouse?.traceCompleteness
-			if (!traces) return PASS
+			const org = traces?.rootless[0]
+			if (!traces || !org) return PASS
 			// Rootless traces inside sampling-marked traces are the sampler's doing, not a lost root.
 			const rows = traces.rootless.map((row) => ({
 				...row,
 				missing: row.rootlessCount - row.sampledRootlessCount,
 			}))
-			const total = rows.reduce((sum, row) => sum + row.traceCount, 0)
-			const missing = rows.reduce((sum, row) => sum + row.missing, 0)
+			const total = org.orgTraceCount
+			const missing = org.orgRootlessCount - org.orgSampledRootlessCount
 			if (missing < ROOTLESS_MIN_TRACES) return PASS
 			const ratio = missing / total
 			// Below the minimum sample a rate is noise, so it never escalates past info.
@@ -1613,11 +1618,11 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 				}))
 
 			// One upstream fact, not N service defects — but only when every sizable service shows it.
+			const sizable = rows.filter((row) => row.traceCount >= TRACE_MIN_SAMPLE)
 			const systemic =
 				ratio > ROOTLESS_SYSTEMIC_RATIO &&
-				rows
-					.filter((row) => row.traceCount >= TRACE_MIN_SAMPLE)
-					.every((row) => row.missing / row.traceCount > ROOTLESS_SYSTEMIC_RATIO)
+				sizable.length > 0 &&
+				sizable.every((row) => row.missing / row.traceCount > ROOTLESS_SYSTEMIC_RATIO)
 			if (systemic) {
 				return {
 					...fail(

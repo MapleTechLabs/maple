@@ -53,6 +53,24 @@ const spanKey = (key: string, usageCount = 100) => ({ scope: "span", key, usageC
 const resourceKey = (key: string, usageCount = 100) => ({ scope: "resource", key, usageCount })
 
 /** A fully healthy telemetry snapshot — every telemetry check passes against it. */
+/** Rootless rows as the query returns them: each carries the org-wide totals of all the rows. */
+const withOrgTotals = (
+	rows: ReadonlyArray<{
+		readonly entryService: string
+		readonly traceCount: number
+		readonly rootlessCount: number
+		readonly sampledRootlessCount: number
+	}>,
+) => {
+	const sum = (pick: (row: (typeof rows)[number]) => number) => rows.reduce((total, row) => total + pick(row), 0)
+	const totals = {
+		orgTraceCount: sum((row) => row.traceCount),
+		orgRootlessCount: sum((row) => row.rootlessCount),
+		orgSampledRootlessCount: sum((row) => row.sampledRootlessCount),
+	}
+	return rows.map((row) => ({ ...row, ...totals }))
+}
+
 const healthyWarehouse: WarehouseAuditInputs = {
 	lookbackHours: 24,
 	logCorrelationHours: 6,
@@ -113,7 +131,7 @@ const healthyWarehouse: WarehouseAuditInputs = {
 				sampleTraceIds: [],
 			},
 		],
-		rootless: [{ entryService: "api", traceCount: 10_000, rootlessCount: 1, sampledRootlessCount: 0 }],
+		rootless: withOrgTotals([{ entryService: "api", traceCount: 10_000, rootlessCount: 1, sampledRootlessCount: 0 }]),
 	},
 }
 
@@ -277,7 +295,7 @@ describe("runSetupAudit — baseline", () => {
 						sampledOrphanCount: 0,
 						sampleTraceIds: [],
 					})),
-					rootless: [
+					rootless: withOrgTotals([
 						{ entryService: "api", traceCount: 800, rootlessCount: 0, sampledRootlessCount: 0 },
 						...each((i) => ({
 							entryService: `svc-${i}`,
@@ -285,7 +303,7 @@ describe("runSetupAudit — baseline", () => {
 							rootlessCount: 400,
 							sampledRootlessCount: 0,
 						})),
-					],
+					]),
 				},
 			}
 			return runSetupAudit({ now: NOW, config, warehouse: telemetry }).checks
@@ -1465,12 +1483,14 @@ describe("trace completeness", () => {
 			>
 		) =>
 			traces({
-				rootless: rows.map(([entryService, traceCount, rootlessCount, sampledRootlessCount = 0]) => ({
-					entryService,
-					traceCount,
-					rootlessCount,
-					sampledRootlessCount,
-				})),
+				rootless: withOrgTotals(
+					rows.map(([entryService, traceCount, rootlessCount, sampledRootlessCount = 0]) => ({
+						entryService,
+						traceCount,
+						rootlessCount,
+						sampledRootlessCount,
+					})),
+				),
 			})
 
 		it("passes with a single trace that lacks a root", () => {
@@ -1516,6 +1536,28 @@ describe("trace completeness", () => {
 			expect(check(rootless(["api", 40, 40]), "TRC-02").severity).toBe("info")
 		})
 
+		it("does not blame upstream when no service has 50 traces", () => {
+			const result = check(rootless(["api", 40, 40]), "TRC-02")
+			expect(result.detail).toContain("100% of traces have no root span: 40 of 40 traces")
+		})
+
+		it("rates the whole org, including services past the row cap", () => {
+			// The query returned only api; the org totals also count 90,000 healthy traces it cut.
+			const api = {
+				entryService: "api",
+				traceCount: 10_000,
+				rootlessCount: 200,
+				sampledRootlessCount: 0,
+				orgTraceCount: 100_000,
+				orgRootlessCount: 200,
+				orgSampledRootlessCount: 0,
+			}
+			const report = traces({ rootless: [api] })
+			const result = check(report, "TRC-02")
+			expect(result.severity).toBe("warn")
+			expect(result.detail).toContain("0.2% of traces have no root span: 200 of 100000 traces")
+		})
+
 		it("does not count traces whose root the sampler dropped", () => {
 			expect(check(rootless(["api", 1_000, 50, 50]), "TRC-02").status).toBe("pass")
 		})
@@ -1523,9 +1565,9 @@ describe("trace completeness", () => {
 		it("says when the counts come from a trace sample", () => {
 			const report = traces({
 				traceSampleModulus: 4,
-				rootless: [
+				rootless: withOrgTotals([
 					{ entryService: "api", traceCount: 1_000, rootlessCount: 5, sampledRootlessCount: 0 },
-				],
+				]),
 			})
 			expect(check(report, "TRC-02").detail).toContain("(1 in 4 sampled)")
 		})

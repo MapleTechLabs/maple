@@ -4053,7 +4053,10 @@ SELECT
           t.entryService AS entryService,
           count() AS traceCount,
           countIf(r.TraceId = '') AS rootlessCount,
-          countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AS sampledRootlessCount
+          countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AS sampledRootlessCount,
+          sum(count()) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgTraceCount,
+          sum(countIf(r.TraceId = '')) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgRootlessCount,
+          sum(countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0)))) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgSampledRootlessCount
         FROM (SELECT
           traces.TraceId AS TraceId,
           argMin(traces.ServiceName, traces.Timestamp) AS entryService,

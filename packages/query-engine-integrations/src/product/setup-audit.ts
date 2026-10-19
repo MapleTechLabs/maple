@@ -572,6 +572,10 @@ export interface AuditRootlessTraceRow {
 	readonly traceCount: number
 	readonly rootlessCount: number
 	readonly sampledRootlessCount: number
+	/** Org-wide totals over every service, including those past the row cap. */
+	readonly orgTraceCount: number
+	readonly orgRootlessCount: number
+	readonly orgSampledRootlessCount: number
 }
 
 /**
@@ -583,8 +587,8 @@ export interface AuditRootlessTraceRow {
  * that was never exported (a serverless runtime frozen before the root span ended and flushed), and
  * those traces may hold no other Server/Consumer span at all. It reads from `parentStart` and keeps
  * only traces whose first span is inside the window, so a long-running trace that began earlier is
- * not mistaken for one whose root went missing. The caller sums the rows into an org-wide rate, so
- * the row cap sits far above any real service count.
+ * not mistaken for one whose root went missing. The `org*` columns are window totals over every
+ * service, so the org-wide rate holds even past the row cap.
  *
  * `sampledRootlessCount` covers both ways a sampler explains a missing root: a `th:` TraceState, and
  * a trace made only of spans the ingest sampler keeps from dropped traces (`overrides`).
@@ -640,18 +644,26 @@ export function auditRootlessTracesSQL(
 		.select(($) => {
 			// `join_use_nulls = 0` turns a miss into '' — see auditOrphanSpansSQL.
 			const noRoot = $.r.TraceId.eq("")
+			const traceCount = CH.count()
+			const rootlessCount = CH.countIf(noRoot)
+			const sampledRootlessCount = CH.countIf(
+				noRoot.and($.thresholdSampled.eq(1).or($.unkeptSpans.eq(0))),
+			)
+			const allServices = CH.windowSpec({
+				frame: CH.rowsBetween(CH.unboundedPreceding, CH.unboundedFollowing),
+			})
 			return {
 				entryService: $.entryService,
-				traceCount: CH.count(),
-				rootlessCount: CH.countIf(noRoot),
-				sampledRootlessCount: CH.countIf(
-					noRoot.and($.thresholdSampled.eq(1).or($.unkeptSpans.eq(0))),
-				),
+				traceCount,
+				rootlessCount,
+				sampledRootlessCount,
+				orgTraceCount: CH.over(CH.sum(traceCount), allServices),
+				orgRootlessCount: CH.over(CH.sum(rootlessCount), allServices),
+				orgSampledRootlessCount: CH.over(CH.sum(sampledRootlessCount), allServices),
 			}
 		})
 		.groupBy("entryService")
-		// Past the cap, drop the smallest services rather than the healthiest: the caller sums these
-		// rows into an org-wide rate, and cutting zero-rootless rows would inflate it.
+		// Past the cap, keep the services with the most traces; the rate comes from the org* totals.
 		.orderBy(["traceCount", "desc"])
 		.limit(1000)
 		.format("JSON")
