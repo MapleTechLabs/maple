@@ -562,6 +562,15 @@ describe("CiTraceService", () => {
 		})
 	})
 
+	it.live("does not re-read the key or resend after a 403", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			yield* WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
+			assert.strictEqual(calls.length, 1)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [403, 200]))))
+	})
+
 	it.live("writes a job's log as records on the step span that was running at each line", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: Array<IngestCall> = []

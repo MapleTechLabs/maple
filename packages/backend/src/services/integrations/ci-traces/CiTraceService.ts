@@ -124,8 +124,9 @@ const make = Effect.gen(function* () {
 		)
 
 	/**
-	 * Posts with the org's public key. A 401 or 403 can be a key rotated in another graph while this
-	 * one's memo holds the old key, so the memo entry is dropped and the post sent once more.
+	 * Posts with the org's public key. A 401 can be a key rotated in another graph while this one's
+	 * memo holds the old key, so the memo entry is dropped and the post sent once more. A 403 is a
+	 * key that may not send the signal, which a fresh read cannot fix.
 	 */
 	const postAs = (orgId: OrgId, payload: OtlpTracesPayload | OtlpLogsPayload) => {
 		const send = ingestKeys
@@ -133,7 +134,7 @@ const make = Effect.gen(function* () {
 			.pipe(Effect.flatMap((keys) => post(keys.publicKey, payload)))
 		return send.pipe(
 			Effect.catchTag("@maple/backend/integrations/CiTraceIngestError", (error) =>
-				error.status === 401 || error.status === 403
+				error.status === 401
 					? ingestKeys.forget(orgId).pipe(Effect.andThen(send))
 					: Effect.fail(error),
 			),
