@@ -8,7 +8,7 @@ afterEach(() => {
 })
 
 /** Escapes `strayEscapes(root)` emits for `keys` pressed on a document whose last portal is topmost. */
-const escapesFor = (root: object, portals: ReadonlyArray<object>, keys: ReadonlyArray<string>) =>
+const escapesFor = (root: EventTarget, portals: ReadonlyArray<EventTarget>, keys: ReadonlyArray<string>) =>
 	Effect.runPromise(
 		Effect.gen(function* () {
 			const doc = Object.assign(new EventTarget(), { querySelectorAll: () => portals })
@@ -17,11 +17,11 @@ const escapesFor = (root: object, portals: ReadonlyArray<object>, keys: Readonly
 			const fiber = yield* Effect.forkChild(
 				Stream.runForEach(strayEscapes(root), () => Effect.sync(() => seen.push("escape"))),
 			)
-			yield* Effect.sleep(1)
+			yield* Effect.sleep(10)
 			yield* Effect.forEach(keys, (key) =>
 				Effect.sync(() => doc.dispatchEvent(Object.assign(new Event("keydown"), { key }))),
 			)
-			yield* Effect.sleep(1)
+			yield* Effect.sleep(10)
 			yield* Fiber.interrupt(fiber)
 			return seen.length
 		}),
@@ -29,12 +29,12 @@ const escapesFor = (root: object, portals: ReadonlyArray<object>, keys: Readonly
 
 describe("strayEscapes", () => {
 	test("an Escape with focus on the body reaches the topmost dialog; other keys do not", async () => {
-		const root = {}
-		expect(await escapesFor(root, [{}, root], ["Enter", "Escape"])).toBe(1)
+		const root = new EventTarget()
+		expect(await escapesFor(root, [new EventTarget(), root], ["Enter", "Escape"])).toBe(1)
 	})
 
 	test("a dialog under another portal leaves the Escape to the topmost one", async () => {
-		const root = {}
-		expect(await escapesFor(root, [root, {}], ["Escape"])).toBe(0)
+		const root = new EventTarget()
+		expect(await escapesFor(root, [root, new EventTarget()], ["Escape"])).toBe(0)
 	})
 })

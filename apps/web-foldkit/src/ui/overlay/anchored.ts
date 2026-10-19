@@ -93,7 +93,7 @@ const isInsidePortal = (target: EventTarget | null): boolean =>
  * Escape pressed while focus sits outside every portal (on `<body>` after the focused control
  * re-rendered away): Base UI's dismiss listens on the document, so the topmost `root` still closes.
  */
-export const strayEscapes = (root: object): Stream.Stream<void> =>
+export const strayEscapes = (root: EventTarget): Stream.Stream<void> =>
 	Stream.callback<void>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() => {
