@@ -57,8 +57,8 @@ export interface RelayWorkspace {
 	/**
 	 * The Maple user the `externalUserId` that was asked about is linked to in that org.
 	 *
-	 * Absent means nobody has linked it — which is a refusal on a connector that can prove who
-	 * clicked, and irrelevant on one that cannot (and on a mention, which never asks).
+	 * Absent means nobody has linked it, which is a refusal on a connector that can prove who is
+	 * asking or clicking, and irrelevant on one that cannot.
 	 */
 	readonly linkedUserId?: UserId
 }
@@ -82,8 +82,8 @@ export interface RelayPorts<R = never> {
 	 * read.
 	 *
 	 * `externalUserId` asks a second question in the same database connection: which Maple user
-	 * that chat account is linked to. A mention omits it; an approval passes it, and the host skips
-	 * the query anyway when the connector has no `identity` half to link with.
+	 * that chat account is linked to. The host skips it when the connector has no `identity` half
+	 * to link with.
 	 */
 	readonly resolveWorkspace: (
 		connector: ChatConnectorId,
@@ -91,7 +91,7 @@ export interface RelayPorts<R = never> {
 		externalUserId?: string,
 	) => Effect.Effect<Option.Option<RelayWorkspace>, WorkspaceLookupFailed>
 	/**
-	 * Whether this connector can prove who clicked a button.
+	 * Whether this connector can prove who asked or clicked.
 	 *
 	 * The connector's `identity` half, as a fact rather than a function: the host knows which
 	 * connector it is running and this file must not.
@@ -147,19 +147,26 @@ const UNAVAILABLE_NOTICE = "Maple's agent can't be reached from here right now."
 const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more."
 
 /**
- * Why a click was refused, and the one step that fixes it. Bold on its first line, because it
- * answers a button press and has to read as the answer rather than as another line of the thread.
- * The link is Maple's own page, which is where a session is.
+ * Why a question or a click was refused, and the one step that fixes it. Bold on its first line, so
+ * it reads as the answer rather than as another line of the thread. The link is Maple's own page,
+ * which is where a session is.
  */
-const linkNotice = (connector: ChatConnectorId, appBaseUrl: string) => {
+const linkNotice = (connector: ChatConnectorId, appBaseUrl: string, refused: "ask" | "approve") => {
 	const platform = connector.charAt(0).toUpperCase() + connector.slice(1)
+	const link = `[Link your account](${appBaseUrl}/integrations)`
 	return [
 		{
 			kind: "prose" as const,
-			markdown: [
-				`**Link your ${platform} account to Maple to approve this.**`,
-				`A change you approve runs as your Maple user, with your permissions and your name on it, so Maple has to know which user you are. [Link your account](${appBaseUrl}/integrations), then press Approve again.`,
-			].join("\n"),
+			markdown: (refused === "ask"
+				? [
+						`**Link your ${platform} account to Maple to ask it questions.**`,
+						`Maple answers as your Maple user, with your permissions, so it has to know which user you are. ${link}, then ask again.`,
+					]
+				: [
+						`**Link your ${platform} account to Maple to approve this.**`,
+						`A change you approve runs as your Maple user, with your permissions and your name on it, so Maple has to know which user you are. ${link}, then press the button again.`,
+					]
+			).join("\n"),
 		},
 	]
 }
@@ -259,7 +266,9 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 		}
 	}
 
-	const workspace = yield* Effect.exit(ports.resolveWorkspace(message.connector, message.workspaceId))
+	const workspace = yield* Effect.exit(
+		ports.resolveWorkspace(message.connector, message.workspaceId, author.value),
+	)
 	// A lookup that failed says nothing about whether this workspace is linked, so the mention goes
 	// unanswered rather than answered wrongly. The port has already logged why.
 	if (Exit.isFailure(workspace)) {
@@ -274,7 +283,26 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 		}
 		return
 	}
-	const { orgId } = workspace.value.value
+	const { orgId, linkedUserId } = workspace.value.value
+	yield* Effect.annotateCurrentSpan({ orgId })
+
+	// See `ChatConnector.identity`: a connector that can name the asker answers only a linked Maple
+	// user, so a bot added to a public channel reads nothing for strangers. Before the conversation
+	// is opened, so a refused mention leaves no empty thread behind.
+	if (ports.supportsIdentity && linkedUserId === undefined) {
+		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "unlinked_author" })
+		if (!message.mentionsBot) return
+		return yield* transport
+			.post(replyTarget(message), linkNotice(message.connector, ports.appBaseUrl, "ask"))
+			.pipe(
+				Effect.tapError((error) =>
+					Effect.logWarning("Chat notice could not be posted").pipe(
+						Effect.annotateLogs({ "error.type": error.operation }),
+					),
+				),
+				Effect.ignore,
+			)
+	}
 
 	// Resolved after the workspace, for a mention: opening a thread in a server nobody has linked
 	// would leave an empty one behind every time.
@@ -297,7 +325,7 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 		)
 	}
 	const sessionId = connectorSessionId(orgId, message.connector, conversation.conversationKey)
-	yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.session_id": sessionId })
+	yield* Effect.annotateCurrentSpan({ "maple.chat.session_id": sessionId })
 
 	const session = ports.chatSession(sessionId)
 	if (session === undefined) {
@@ -363,6 +391,9 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 				workspaceId: message.workspaceId,
 				externalUserId: author.value,
 				displayName: message.author.displayName,
+				// Only ever the user the HOST resolved from its own database: this is who the turn
+				// runs as.
+				...(linkedUserId === undefined ? undefined : { actingUserId: linkedUserId }),
 			},
 		})
 		.pipe(
@@ -467,7 +498,11 @@ const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 	// link, and one that cannot lets anyone in the conversation decide.
 	if (ports.supportsIdentity && linkedUserId === undefined) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unlinked" })
-		return yield* tellClicker(transport, action, linkNotice(action.connector, ports.appBaseUrl))
+		return yield* tellClicker(
+			transport,
+			action,
+			linkNotice(action.connector, ports.appBaseUrl, "approve"),
+		)
 	}
 	yield* Effect.annotateCurrentSpan({
 		"maple.chat.approval.as": linkedUserId === undefined ? "connector" : "user",

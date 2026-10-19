@@ -34,32 +34,32 @@ The bot asks for no member, role, channel, or moderation permissions.
 
 ## Link your Discord account
 
-Each person who wants to approve changes from Discord links their own account once.
+The bot answers only people who have linked their Discord account to a Maple user. Each person links once.
 
 1. Open **Integrations → Discord** in Maple.
 2. Under **Your Discord account**, click **Link your account** and approve in Discord.
 
-The link asks Discord for your user ID and nothing else. It adds no permissions on any server. You can only link your own account.
+The link asks Discord for your user ID and nothing else. It adds no permissions on any server. You can only link your own account, and only members of the Maple organization get answers.
 
 ## Ask the bot a question
 
-Mention the bot in any channel it can see, for example `@Maple why is checkout slow?`.
+Mention the bot in any channel it can see, for example `@Maple why is checkout slow?`. If your account is not linked, the bot replies with a link to do it and reads nothing.
 
 The bot starts a thread on your message and edits its reply there as the answer comes in. It reads the surrounding messages for context, so a follow-up like "and the payments call?" works.
 
-- **Follow-ups**: reply inside the bot's thread. No mention is needed.
+- **Follow-ups**: reply inside the bot's thread. No mention is needed. Replies from people who have not linked are ignored.
 - **New conversation**: mention the bot in another channel.
 - **One question at a time**: a message sent while an answer is still being written gets a note asking you to wait. It is not queued.
 
-### Approving changes
+### Answers run as your Maple user
 
-The bot reads your Maple data the same way the [MCP server](/docs/reference/mcp) does. When a request would change something, such as creating a dashboard or editing an alert rule, it posts a card with **Run** and **Skip** buttons instead of acting.
+The bot reads your Maple data the same way the [MCP server](/docs/reference/mcp) does, as your Maple user with your current roles. If you leave the organization, the bot stops answering you even while the link exists.
 
-Only people who have [linked their account](#link-your-discord-account) can press them. The change runs as that person's Maple user with their current roles, so a change that needs an admin fails for a member, the same as in the app. The card then updates with the result.
+When a request would change something, such as creating a dashboard or editing an alert rule, the bot posts a card with **Run** and **Skip** buttons instead of acting. Any linked person can press them. The change runs as that person's Maple user, so a change that needs an admin fails for a member, the same as in the app. The card then updates with the result.
 
-This is the main difference from [Slack](/docs/integrations/slack), where anyone who can see the card can approve it with organization-level permissions.
+Answers are posted in the channel, so everyone who can read the channel sees them. Add the bot only where the members should see your data.
 
-Reading data needs no link. Anyone in a channel the bot can see can ask about the linked organization's data, so add the bot only where its members should see that data.
+This differs from [Slack](/docs/integrations/slack), which has no account linking: anyone in a Slack channel with the bot can ask, and anyone who can see a card can approve it.
 
 ## Discord as an alert destination
 
@@ -86,7 +86,9 @@ To unlink your own account, click **Unlink** under **Your Discord account**.
 
 - **"This workspace isn't connected to a Maple organization yet."** The bot is in the server but the server is not linked. An admin runs **Add to Discord** from Maple.
 - **"Only organization admins can connect Discord."** Ask an organization admin to install it.
+- **"Link your Discord account to Maple to ask it questions."** Link your account in Maple, then mention the bot again.
 - **"Link your Discord account to Maple to approve this."** Link your account in Maple, then press **Run** again.
+- **"The Maple account this chat account is linked to is no longer in this organization."** Ask an admin to add you back, or link a different Maple account.
 - **The bot does not reply.** Make sure you mentioned it and that it can see the channel. Check the channel's permission overrides for the Maple role.
 
 ## Next steps
