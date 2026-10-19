@@ -42,10 +42,7 @@ describe("code review issues", () => {
 
 	test("the severity filter sends the narrowed read, the author list stays", () => {
 		const model = windowed().model
-		const narrowed = pageUpdate(
-			routeChanged(model, { search: { severity: "critical" } }, context).model,
-			resolved,
-		)
+		const narrowed = routeChanged(model, { search: { severity: "critical" } }, context)
 		expect(names(narrowed.commands)).toEqual(["FetchCodeReviewFindings"])
 		expect(narrowed.model.findings.key).toContain('"severity":"critical"')
 	})

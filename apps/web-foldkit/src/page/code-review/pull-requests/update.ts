@@ -187,7 +187,7 @@ export const routeChanged = (
 	return combine(
 		liftFrame(
 			next,
-			frameRouteChanged(next.frame, route.search, route.search.author, DEFAULT_PRESET, context),
+			frameRouteChanged(next.frame, model.search, route.search, route.search.author, DEFAULT_PRESET, context),
 			context,
 		),
 		(changed) =>

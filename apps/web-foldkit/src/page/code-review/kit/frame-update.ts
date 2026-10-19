@@ -7,6 +7,7 @@ import { emptyRetained, type Retained, retainedStatus } from "./retained"
 import { requestKey } from "../../../data/request-key"
 import * as Select from "../../../ui/select"
 import type { PageContext } from "../../contract"
+import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	ALL,
@@ -92,9 +93,10 @@ export const initFrame = (
 	}
 }
 
-/** A new search: the selects follow it and the window resolves again. */
+/** A new search: the selects follow it; only a moved window resolves again, else the page re-reads under it. */
 export const frameRouteChanged = (
 	frame: Frame,
+	previous: WindowSearch,
 	search: FrameSearch,
 	option: string | undefined,
 	defaultPreset: string,
@@ -105,8 +107,16 @@ export const frameRouteChanged = (
 		repoSelect: { ...frame.repoSelect, value: search.repo ?? ALL },
 		optionSelect: { ...frame.optionSelect, value: option ?? ALL },
 	}
-	const mode: RequestMode = frame.refreshVersion === 0 ? "Load" : "Refresh"
-	return { frame: next, commands: [resolveCommand(search, defaultPreset, context, mode)], out: null }
+	const resolve = (): FrameReturn => ({
+		frame: next,
+		commands: [resolveCommand(search, defaultPreset, context, snapModeOf(frame.refreshVersion))],
+		out: null,
+	})
+	return routeWindowStep(previous, search, {
+		resolve,
+		requestAll: (mode) =>
+			frame.window === null ? resolve() : { frame: next, commands: [], out: { _tag: "ResolvedWindow", window: frame.window, mode } },
+	})
 }
 
 const mapped = <M>(commands: ReadonlyArray<Command.Command<M, never, never>>, wrap: (m: M) => FrameMessage) =>

@@ -136,7 +136,7 @@ export const routeChanged = (
 		? { model }
 		: liftFrame(
 				{ ...model, search: route.search },
-				frameRouteChanged(model.frame, route.search, route.search.author, DEFAULT_PRESET, context),
+				frameRouteChanged(model.frame, model.search, route.search, route.search.author, DEFAULT_PRESET, context),
 				context,
 			)
 

@@ -28,8 +28,8 @@ const answered = (model: Model, reviews: number, authors: ReadonlyArray<string> 
 	).model
 
 /** Search changed: the page re-resolves its window, then reads. */
-const navigated = (model: Model, search: Search) =>
-	pageUpdate(routeChanged(model, { search }, context).model, resolved)
+/** A filter change reads under the kept window; it does not resolve the window again. */
+const navigated = (model: Model, search: Search) => routeChanged(model, { search }, context)
 
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
@@ -51,6 +51,14 @@ describe("code review analytics", () => {
 		const back = navigated(answered(filtered.model, 1, ["ada-l"]), {})
 		expect(names(back.commands)).toEqual([])
 		expect(back.model.analytics.data._tag).toBe("Success")
+	})
+
+	test("after a Reload an author pick reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(answered(windowed().model, 3, ["ada-l"]), frame(FrameMessage.ClickedReload())).model
+		const filtered = navigated(reloaded, { author: "ada-l" })
+		expect(names(filtered.commands)).toEqual(["FetchCodeReviewAnalytics"])
+		const moved = navigated(filtered.model, { author: "ada-l", timePreset: "1h" })
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveCodeReviewWindow", "Refresh"]])
 	})
 
 	test("an answer for a superseded filter is dropped", () => {
