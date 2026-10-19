@@ -8,7 +8,7 @@ import { PageOutMessage, type PageContext } from "../../../contract"
 import type { FleetRead } from "../data"
 import { Message, type Model } from "./model"
 import { subscriptions } from "./subscription"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -85,6 +85,15 @@ const withStatus = (connected: boolean) => {
 }
 
 describe("google cloud list", () => {
+	test("after a Reload a tab change reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(withStatus(true).model, Message.ClickedReload()).model
+		const tabbed = routeChanged(reloaded, { search: { tab: "resources" } }, context)
+		expect(names(tabbed.commands)).not.toContain("ResolveGcpWindow")
+		expect(tabbed.model.window).toEqual(window)
+		const moved = routeChanged(tabbed.model, { search: { tab: "resources", timePreset: "6h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual(["ResolveGcpWindow", "Refresh"])
+	})
+
 	test("a connected status reads the fleet; until it lands the page shows its resources", () => {
 		expect(names(init({ search: {} }, context).commands)).toEqual([
 			"ResolveGcpWindow",

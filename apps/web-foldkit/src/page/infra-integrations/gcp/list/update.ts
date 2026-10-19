@@ -10,6 +10,7 @@ import { AppRoute, hrefOf } from "../../../../route"
 import * as Menu from "../../../../ui/menu"
 import * as Select from "../../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
+import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../kit/page-time"
 import type { ResourcesQuery } from "../data"
@@ -154,14 +155,17 @@ export const routeChanged = (
 ): Return => {
 	if (hrefOfSearch(model.search) === hrefOfSearch(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const synced = sync(next, context, "Load")
-	return {
-		model: synced.model,
-		commands: [
-			resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh"),
-			...(synced.commands ?? []),
-		],
+	const resolve = (): Return => {
+		const synced = sync(next, context, "Load")
+		return {
+			model: synced.model,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion)), ...(synced.commands ?? [])],
+		}
 	}
+	return routeWindowStep(model.search, route.search, {
+		resolve,
+		requestAll: (mode) => (next.window === null ? resolve() : sync(next, context, mode)),
+	})
 }
 
 export const contextChanged = (model: Model): Return => ({ model })
