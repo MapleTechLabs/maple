@@ -64,6 +64,8 @@ export const Model = Schema.Struct({
 	themeColors: Schema.NullOr(ThemeColors),
 	chartRuntime: ChartRuntime,
 	timePicker: TimeRangePicker.Model,
+	/** `WidgetTimeRange`'s picker under Custom: the widget's own window. */
+	rangePicker: TimeRangePicker.Model,
 	sourceTabs: Tabs.Model,
 	/** The rail's selects, by id: unit and comparison. */
 	selects: Schema.Record(Schema.String, Select.Model),

@@ -7,7 +7,9 @@ import * as Checkbox from "../../../ui/checkbox"
 import { field, fieldLabel, type FieldState, input } from "../../../ui/field"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { textarea } from "../../../ui/textarea"
+import * as TimeRangePicker from "../../kit/time-range-picker"
 import { toPanelType } from "../kit/chart-registry"
+import { widgetTimeRangeLabel } from "../kit/time-range-label"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -125,8 +127,11 @@ const descriptionField = (h: H, state: EditorState): Html =>
 		}),
 	])
 
-/** `WidgetTimeRange`. TODO(widget-editor): the override's own range picker under Custom. */
-const timeRangeField = (h: H, state: EditorState): Html =>
+/**
+ * `WidgetTimeRange`: Dashboard or Custom, and under Custom the override's own picker.
+ * TODO(picker): the picker's custom-range tab (an absolute window) is not ported anywhere yet.
+ */
+const timeRangeField = (h: H, model: Model, state: EditorState, timeZone: string): Html =>
 	railSetting(h, "time-range", "Time range", false, [
 		h.div(
 			[h.Class("space-y-1.5")],
@@ -140,6 +145,23 @@ const timeRangeField = (h: H, state: EditorState): Html =>
 					],
 					(mode) => Message.ChangedTimeRangeMode({ mode }),
 				),
+				...(state.timeRange === null
+					? []
+					: [
+							h.submodel({
+								slotId: "widget-editor-range-picker",
+								model: model.rangePicker,
+								view: TimeRangePicker.view,
+								viewInputs: {
+									label: widgetTimeRangeLabel(state.timeRange, timeZone, model.nowMs ?? 0),
+									selectedPreset: state.timeRange.type === "relative" ? state.timeRange.value : undefined,
+									presets: TimeRangePicker.PRESET_VALUES,
+									timeZone,
+									hasHotkey: false,
+								},
+								toParentMessage: (message) => Message.GotRangePickerMessage({ message }),
+							}),
+						]),
 			],
 		),
 	])
@@ -308,7 +330,7 @@ const timeseriesSettings = (h: H, model: Model, state: EditorState): ReadonlyArr
 }
 
 /** The "Panel Options" rail: the shared fields, then the panel type's own (`ConfigPanel`). */
-export const settingsRail = (h: H, model: Model): Html => {
+export const settingsRail = (h: H, model: Model, timeZone: string): Html => {
 	const state = model.state
 	if (state === null) return h.empty
 	const panel = toPanelType(state.visualization, state.chartId)
@@ -322,7 +344,7 @@ export const settingsRail = (h: H, model: Model): Html => {
 			nameField(h, state),
 			descriptionField(h, state),
 			// A note never queries, so it has no window of its own.
-			...(panel === "markdown" ? [] : [timeRangeField(h, state)]),
+			...(panel === "markdown" ? [] : [timeRangeField(h, model, state, timeZone)]),
 			divider(h),
 			typePicker(h, state),
 			...(panel === "line" || panel === "bar" || panel === "area"

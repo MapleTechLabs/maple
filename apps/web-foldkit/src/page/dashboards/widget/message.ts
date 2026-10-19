@@ -43,6 +43,7 @@ export const Message = defineMessageUnion({
 	GotSparklineChartMessage: { message: Chart.Message },
 	ClickedSortColumn: { field: Schema.String, isText: Schema.Boolean },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
+	GotRangePickerMessage: { message: TimeRangePicker.Message },
 	CompletedSaveTimeRange: { error: Schema.NullOr(Schema.String) },
 	GotSourceTabsMessage: { message: Tabs.Message },
 	GotSelectMessage: { id: Schema.String, message: Select.Message },

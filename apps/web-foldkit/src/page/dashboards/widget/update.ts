@@ -66,6 +66,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		themeColors: null,
 		chartRuntime: { _tag: "Loading" },
 		timePicker: TimeRangePicker.init("widget-editor-time-range"),
+		rangePicker: TimeRangePicker.init("widget-editor-widget-time-range"),
 		sourceTabs: Tabs.init({ idBase: 0, values: SOURCE_MODES, selected: "builder" }),
 		selects: {},
 		queryPanels: QueryPanel.init("widget-editor"),

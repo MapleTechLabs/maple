@@ -169,7 +169,7 @@ const editor = (h: H, model: Model, timeZone: string): Html =>
 			),
 			h.aside(
 				[h.Class("w-[272px] shrink-0 border-l overflow-y-auto p-5 bg-muted/20")],
-				[settingsRail(h, model)],
+				[settingsRail(h, model, timeZone)],
 			),
 		],
 	)
