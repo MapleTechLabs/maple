@@ -1,0 +1,630 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+
+const pageTitle = "Microservices monitoring: best practices, metrics and tools";
+const pageDescription =
+    "Microservices monitoring best practices: RED metrics per service, SLOs, distributed tracing across HTTP and queues, sampling, alerting and tool categories.";
+const published = "2026-10-19";
+const updatedLabel = "October 19, 2026";
+
+const toc = [
+    ["why-harder", "Why it is harder"],
+    ["what-to-measure", "Metrics to monitor"],
+    ["tracing", "Distributed tracing"],
+    ["logs", "Logs and trace IDs"],
+    ["dependency-map", "Dependency maps"],
+    ["alerting", "Alerting"],
+    ["sampling", "Cardinality and sampling"],
+    ["checklist", "Best practices checklist"],
+    ["tools", "Monitoring tools"],
+    ["maple", "In Maple"],
+] as const;
+const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
+
+const traceparentExample = `traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`;
+
+const queueSnippet = `import { context, propagation, trace, SpanKind, SpanStatusCode } from "@opentelemetry/api";
+
+const tracer = trace.getTracer("orders");
+
+// Producer: write the active trace context into the message headers.
+export async function publishOrder(queue, order) {
+  await tracer.startActiveSpan(
+    "send orders",
+    { kind: SpanKind.PRODUCER, attributes: { "messaging.system": "rabbitmq", "messaging.destination.name": "orders" } },
+    async (span) => {
+      const headers = {};
+      propagation.inject(context.active(), headers);
+      await queue.send({ body: JSON.stringify(order), headers });
+      span.end();
+    },
+  );
+}
+
+// Consumer: read the context back and start the consumer span under it.
+export async function handleMessage(message, processOrder) {
+  const parent = propagation.extract(context.active(), message.headers);
+  await tracer.startActiveSpan(
+    "process orders",
+    { kind: SpanKind.CONSUMER, attributes: { "messaging.system": "rabbitmq", "messaging.destination.name": "orders" } },
+    parent,
+    async (span) => {
+      try {
+        await processOrder(JSON.parse(message.body));
+      } catch (error) {
+        span.recordException(error);
+        span.setStatus({ code: SpanStatusCode.ERROR });
+        throw error;
+      } finally {
+        span.end();
+      }
+    },
+  );
+}`;
+
+const logExample = `{
+  "timestamp": "2026-10-19T09:14:03.412Z",
+  "severity": "ERROR",
+  "service.name": "payments",
+  "message": "card authorization timed out after 3 attempts",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "a3ce929d0e0e4736"
+}`;
+
+const headSamplingEnv = `OTEL_TRACES_SAMPLER=parentbased_traceidratio
+OTEL_TRACES_SAMPLER_ARG=0.1`;
+
+const collectorConfig = `receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+connectors:
+  spanmetrics:
+
+processors:
+  tail_sampling:
+    decision_wait: 10s
+    policies:
+      - name: keep-errors
+        type: status_code
+        status_code: { status_codes: [ERROR] }
+      - name: keep-slow
+        type: latency
+        latency: { threshold_ms: 1000 }
+      - name: sample-the-rest
+        type: probabilistic
+        probabilistic: { sampling_percentage: 10 }
+  batch:
+
+exporters:
+  otlphttp:
+    endpoint: https://otel.example.com
+
+service:
+  pipelines:
+    # Every span feeds the metrics, before anything is dropped.
+    traces/all:
+      receivers: [otlp]
+      exporters: [spanmetrics]
+    # Only sampled traces are stored.
+    traces/sampled:
+      receivers: [otlp]
+      processors: [tail_sampling, batch]
+      exporters: [otlphttp]
+    metrics:
+      receivers: [spanmetrics]
+      processors: [batch]
+      exporters: [otlphttp]`;
+
+const faqs = [
+    {
+        question: "What is microservices monitoring?",
+        answer:
+            "Microservices monitoring is the practice of measuring the health of each service in a distributed system and of the requests that cross them. It combines per-service metrics such as request rate, error rate and latency, distributed traces that follow one request through every service it touches, and logs that carry the trace ID so you can move between the three.",
+    },
+    {
+        question: "What metrics should I monitor for microservices?",
+        answer:
+            "Start with RED for every service and endpoint: request rate, error rate and duration as percentiles (p50, p95, p99). Add USE for the infrastructure under them: utilization, saturation and errors for CPU, memory, connection pools and queues. For queues, track consumer lag or oldest-message age. Then define SLOs on the few user-facing journeys that matter and alert on their error budget.",
+    },
+    {
+        question: "What is the difference between monitoring and observability for microservices?",
+        answer:
+            "Monitoring watches known signals and alerts when they cross a threshold, such as error rate above 5% for five minutes. Observability is the ability to answer questions you did not plan for, such as why only one tenant on one route is slow after a deploy, from the telemetry you already collect. In practice monitoring tells you that something is wrong, and traces with rich attributes plus correlated logs tell you where and why.",
+    },
+    {
+        question: "How do you trace requests across microservices?",
+        answer:
+            "Instrument every service with an OpenTelemetry SDK and propagate trace context between them. The caller writes a W3C traceparent header with the trace ID and its span ID, and the callee reads it and starts its own span as a child. Instrumented HTTP and gRPC clients and servers do this automatically. Custom clients, proxies and message queues are where the header usually gets lost.",
+    },
+    {
+        question: "How do you monitor asynchronous, queue-based microservices?",
+        answer:
+            "Measure the queue itself (consumer lag, oldest message age, dead-letter count) and carry trace context inside the message. The producer injects traceparent into the message headers and the consumer extracts it before starting a consumer span, so one trace covers the publish, the wait in the queue and the processing. Alert on lag or age, because a stalled consumer produces no errors.",
+    },
+    {
+        question: "Should I use head sampling or tail sampling?",
+        answer:
+            "Head sampling decides at the start of a trace and is cheap, but it drops errors and slow requests at the same rate as everything else. Tail sampling decides after the trace finishes, so it can keep every error and slow trace, but it needs a Collector tier that holds whole traces in memory. You can combine them: a head sample in the SDK to cap volume, tail sampling in the Collector to keep the interesting traces, and RED metrics derived from spans before either sampler drops anything.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Microservices monitoring: best practices, metrics and tools",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: published,
+    author: { "@type": "Organization", name: "Maple" },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/microservices-monitoring`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Microservices monitoring" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto grid max-w-6xl gap-12 px-6 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.75fr)] lg:items-center lg:gap-16">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                        <span class="border border-primary/40 px-2 py-1 text-primary">Distributed systems</span>
+                        <span>13 min read</span>
+                    </div>
+                    <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                        Microservices monitoring: best practices, metrics and tools
+                    </h1>
+                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
+                        One user request in a microservices system can touch a dozen services, a queue and three databases. Monitoring it means measuring every service the same way, following each request across all of them, and alerting on what the user sees.
+                    </p>
+                    <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                        <span>By Maple</span>
+                        <time datetime={published}>Updated {updatedLabel}</time>
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-border bg-bg-deep p-4 shadow-2xl shadow-black/20 md:p-5" aria-label="Microservices monitoring at a glance">
+                    <div class="flex items-center justify-between border-b border-border pb-3 font-mono text-[10px] text-fg-muted">
+                        <span>microservices / at a glance</span>
+                        <span class="text-primary">per service</span>
+                    </div>
+                    <ol class="divide-y divide-border">
+                        {[
+                            ["01", "Measure", "Rate, errors, duration per endpoint", "RED"],
+                            ["02", "Propagate", "traceparent on every hop, queues too", "W3C"],
+                            ["03", "Correlate", "trace_id on every log line", "logs to traces"],
+                            ["04", "Alert", "On SLO burn and user-facing symptoms", "not on CPU"],
+                            ["05", "Sample", "Keep errors and slow traces", "metrics first"],
+                        ].map(([number, label, headline, detail]) => (
+                            <li class="grid grid-cols-[2rem_1fr] gap-3 py-3.5">
+                                <span class="font-mono text-[10px] text-primary">{number}</span>
+                                <div>
+                                    <div class="flex items-baseline justify-between gap-3">
+                                        <span class="text-xs font-medium text-fg">{label}</span>
+                                        <span class="font-mono text-[9px] text-fg-muted">{detail}</span>
+                                    </div>
+                                    <p class="mt-1 text-[11px] leading-relaxed text-fg-muted">{headline}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {toc.map(([id, label]) => (
+                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={tocHeadings} class="sticky top-28" />
+            </aside>
+
+            <article class="ms-guide min-w-0">
+                <section id="why-harder" class="scroll-mt-24">
+                    <p class="guide-eyebrow">01 · The problem</p>
+                    <h2>Microservices are harder to monitor than one process</h2>
+
+                    <div class="guide-answer">
+                        <p>
+                            <strong>Microservices monitoring</strong> measures the health of every service in a distributed system and of the requests that cross between them. It rests on per-service metrics (request rate, errors, latency), distributed traces that follow one request through every hop, and logs tagged with the trace ID.
+                        </p>
+                    </div>
+
+                    <p>
+                        In a monolith a slow request has one process, one log file and one stack trace to read. Split the same application into services and each request becomes a chain of network calls owned by different teams, deployed on different days. The split brings failure modes a monolith does not have:
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Failure mode</th><th>What happens</th><th>What catches it</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><strong>Fan-out</strong></td><td>A request that waits on 100 backends, each slow 1% of the time, is slow 63% of the time (1 - 0.99<sup>100</sup>). Rare per-service tail latency becomes common end-to-end latency.</td><td>p99 per dependency, traces of the slow requests</td></tr>
+                                <tr><td><strong>Partial failure</strong></td><td>One dependency fails and the caller falls back or returns a degraded response with status 200. Nothing looks red.</td><td>Error status on child spans, business-level success metrics</td></tr>
+                                <tr><td><strong>Retry amplification</strong></td><td>Three layers that each make up to three attempts turn one failing call at the bottom into as many as 27.</td><td>Request rate per edge, retry count as a span attribute</td></tr>
+                                <tr><td><strong>Async queues</strong></td><td>A consumer stalls and messages pile up. No request fails, so error-rate alerts stay quiet while work is hours late.</td><td>Consumer lag or oldest-message age, traces that span the queue</td></tr>
+                                <tr><td><strong>Ownership gaps</strong></td><td>Each team's dashboard looks healthy, and the user-facing journey is still broken in the space between them.</td><td>End-to-end SLOs and a dependency map</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        The fan-out figure comes from Dean and Barroso's <a href="https://research.google/pubs/the-tail-at-scale/" target="_blank" rel="noopener noreferrer">The Tail at Scale</a>. Per-service dashboards miss all of these on their own. You need the same measurements on every service, plus a way to follow a single request across them.
+                    </p>
+                </section>
+
+                <section id="what-to-measure" class="scroll-mt-24">
+                    <p class="guide-eyebrow">02 · Signals</p>
+                    <h2>Metrics to monitor: RED per service, USE per resource</h2>
+                    <p>
+                        Use one small, fixed set of metrics for every service, so any engineer can read any team's service.
+                    </p>
+
+                    <div class="guide-grid guide-grid--two">
+                        <div>
+                            <p class="guide-kicker">RED, for request-driven services</p>
+                            <h3>Rate, Errors, Duration</h3>
+                            <p>Requests per second, the share that failed, and latency as p50, p95 and p99. Break each down by endpoint (<code>http.route</code>), because an average across a health check and a checkout hides both. Described by Tom Wilkie in <a href="https://grafana.com/blog/2018/08/02/the-red-method-how-to-instrument-your-services/" target="_blank" rel="noopener noreferrer">The RED Method</a>.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">USE, for resources</p>
+                            <h3>Utilization, Saturation, Errors</h3>
+                            <p>For CPU, memory, disks, connection pools, thread pools and queues. Saturation (work waiting) is the one that predicts trouble: a full connection pool shows up as latency long before it shows up as errors. From Brendan Gregg's <a href="https://www.brendangregg.com/usemethod.html" target="_blank" rel="noopener noreferrer">USE Method</a>.</p>
+                        </div>
+                    </div>
+
+                    <p>
+                        Google's <a href="https://sre.google/sre-book/monitoring-distributed-systems/" target="_blank" rel="noopener noreferrer">four golden signals</a> (latency, traffic, errors, saturation) are RED plus saturation. Count latency of failed and successful requests separately: a fast 500 pulls the average down and makes a broken service look quick.
+                    </p>
+
+                    <h3>Queue-based services need their own metrics</h3>
+                    <p>
+                        A consumer's RED metrics describe the messages it processed, not the ones still waiting. Add consumer lag (messages behind), the age of the oldest unprocessed message, and the dead-letter queue size. Age is the most useful of the three, because it is in the same unit as the user's wait.
+                    </p>
+
+                    <h3>SLOs and error budgets</h3>
+                    <p>
+                        A service level objective turns a RED metric into a target over a window, for example "99.9% of <code>POST /checkout</code> requests succeed in under 800 ms, over 30 days". The remaining 0.1% is the error budget: 43.2 minutes of full outage in 30 days, or 1,000 bad requests out of every million.
+                    </p>
+                    <p>
+                        Alert on how fast the budget is burning rather than on the instant value. The <a href="https://sre.google/workbook/alerting-on-slos/" target="_blank" rel="noopener noreferrer">Google SRE workbook</a> suggests paging when the burn rate is 14.4 over both the last hour and the last five minutes: at that rate the service spends 2% of a 30-day budget in one hour. Keep SLOs to the few journeys users would notice, such as sign-in, search and checkout. Internal services inherit their targets from those journeys.
+                    </p>
+                </section>
+
+                <section id="tracing" class="scroll-mt-24">
+                    <p class="guide-eyebrow">03 · Tracing</p>
+                    <h2>Distributed tracing and context propagation</h2>
+                    <p>
+                        A <strong>trace</strong> is the tree of spans one request created, across every service it touched. Each span records one unit of work with its service, duration, status and attributes. Traces answer the question metrics cannot: which hop in this request was slow or failed.
+                    </p>
+                    <p>
+                        Spans from different services join into one trace through <strong>context propagation</strong>. The caller sends the trace ID and its own span ID in the <a href="https://www.w3.org/TR/trace-context/" target="_blank" rel="noopener noreferrer">W3C Trace Context</a> <code>traceparent</code> header, and the callee starts its span as a child of that ID:
+                    </p>
+                    <pre><code>{traceparentExample}</code></pre>
+                    <p>
+                        The fields are the version (<code>00</code>), the 16-byte trace ID shared by every span in the request, the 8-byte ID of the calling span, and flags, where <code>01</code> means the caller sampled the trace. A companion <code>tracestate</code> header carries vendor-specific values.
+                    </p>
+                    <p>
+                        OpenTelemetry instrumentation for HTTP and gRPC clients and servers injects and extracts this header for you. Context gets lost in the places nobody instrumented: a hand-written HTTP client, a proxy that strips unknown headers, a thread pool that drops the active context, and message queues. A lost header does not cause an error. It splits one request into two unrelated traces, so check a trace end to end after adding each service.
+                    </p>
+
+                    <h3>Propagating trace context across message queues</h3>
+                    <p>
+                        Some messaging instrumentations (for Kafka, RabbitMQ and SQS clients, for example) carry context in message headers automatically. With a client that does not, do it by hand: inject the context into the message headers on publish, and extract it before starting the consumer span. This version uses the OpenTelemetry JavaScript API and works with any queue client that supports headers:
+                    </p>
+                    <pre><code>{queueSnippet}</code></pre>
+                    <p>
+                        The producer span uses kind <code>PRODUCER</code> and the consumer span kind <code>CONSUMER</code>, with <code>messaging.*</code> attributes from the <a href="https://opentelemetry.io/docs/specs/semconv/messaging/messaging-spans/" target="_blank" rel="noopener noreferrer">OpenTelemetry messaging conventions</a>. The resulting trace covers the publish, the time spent in the queue, and the processing. For consumers that process a batch of messages from different traces, the conventions use span links to each message's context instead of a single parent.
+                    </p>
+                </section>
+
+                <section id="logs" class="scroll-mt-24">
+                    <p class="guide-eyebrow">04 · Correlation</p>
+                    <h2>Correlating logs with trace IDs</h2>
+                    <p>
+                        Logs from twenty services interleaved by timestamp are close to unreadable during an incident. Put the trace ID and span ID on every log record and you can pull exactly the lines one request produced, in every service, in order:
+                    </p>
+                    <pre><code>{logExample}</code></pre>
+                    <p>
+                        You rarely need to add the IDs by hand. OpenTelemetry log bridges and appenders for common logging libraries attach the active trace and span ID to each record written inside a span (see the <a href="https://opentelemetry.io/docs/specs/otel/logs/" target="_blank" rel="noopener noreferrer">OpenTelemetry logs specification</a>). Log in structured fields rather than interpolated strings, and set the same <code>service.name</code> on logs, metrics and traces, so a filter on one service means the same thing on all three.
+                    </p>
+                </section>
+
+                <section id="dependency-map" class="scroll-mt-24">
+                    <p class="guide-eyebrow">05 · Topology</p>
+                    <h2>Service dependency maps</h2>
+                    <p>
+                        A dependency map draws services as nodes and calls as edges. Architecture diagrams go stale; a map built from traces shows the calls that actually happened in a time window, including the undocumented ones.
+                    </p>
+                    <p>
+                        The map is built from parent and child spans: when a client span in service A has a server span in service B as its child, A calls B. It is only as complete as your propagation, so a missing edge between two services you know talk to each other is usually a dropped <code>traceparent</code>. During an incident, use the map to find the dependency all the failing callers share, and to see the blast radius of a slow database: every service with an edge into it.
+                    </p>
+                </section>
+
+                <section id="alerting" class="scroll-mt-24">
+                    <p class="guide-eyebrow">06 · Alerting</p>
+                    <h2>Alert on symptoms, investigate causes</h2>
+                    <p>
+                        With fifty services you can alert on hundreds of causes: CPU, pod restarts, queue depth on every topic, GC pauses. Most of those fire without a user noticing, and the on-call engineer learns to ignore them. Page on symptoms the user sees, and keep causes on dashboards for the investigation.
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Page on (symptom)</th><th>Investigate with (cause)</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Error rate on a user-facing endpoint above its SLO</td><td>Error rate per dependency, the failing spans in traces</td></tr>
+                                <tr><td>p99 latency or SLO burn on a key journey</td><td>Per-hop span durations, connection pool saturation</td></tr>
+                                <tr><td>Oldest-message age on a queue above the delay users accept</td><td>Consumer error rate, consumer CPU, partition skew</td></tr>
+                                <tr><td>Throughput drop to near zero on an entry point</td><td>Deploy markers, load balancer and DNS health</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        Group alerts by service, or by service and route, so one bad endpoint opens one incident instead of being averaged into a healthy service-wide number. Require a minimum number of requests per window and a few consecutive breaches before firing, or a quiet night with three failed requests will page someone.
+                    </p>
+                </section>
+
+                <section id="sampling" class="scroll-mt-24">
+                    <p class="guide-eyebrow">07 · Cost</p>
+                    <h2>Cardinality and sampling: head vs tail</h2>
+
+                    <h3>Keep metric labels bounded</h3>
+                    <p>
+                        Every unique combination of metric labels is a separate time series. Label request metrics by <code>service.name</code>, <code>http.route</code>, method and status code. Never label them with user IDs, order IDs or raw URL paths: <code>/orders/8812</code> and <code>/orders/8813</code> are two series, and a busy service creates millions. Put high-cardinality values on spans instead, where they cost storage per span and not per series, and are what you filter traces by during an investigation.
+                    </p>
+
+                    <h3>Head sampling and tail sampling</h3>
+                    <p>
+                        At high volume you keep a fraction of traces (see <a href="https://opentelemetry.io/docs/concepts/sampling/" target="_blank" rel="noopener noreferrer">OpenTelemetry sampling</a>). The choice is about when the decision is made.
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th></th><th>Head sampling</th><th>Tail sampling</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><strong>Decides</strong></td><td>When the root span starts</td><td>After the whole trace has finished</td></tr>
+                                <tr><td><strong>Runs in</strong></td><td>The SDK of the first service</td><td>An OpenTelemetry Collector tier</td></tr>
+                                <tr><td><strong>Keeps errors and slow traces</strong></td><td>At the same rate as everything else</td><td>All of them, by policy</td></tr>
+                                <tr><td><strong>Cost</strong></td><td>Close to zero</td><td>Collector memory for every in-flight trace; all spans of a trace must reach the same Collector instance</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        Head sampling in the SDK is two environment variables. <code>parentbased_</code> makes downstream services follow the decision in the incoming <code>traceparent</code>, so traces are kept or dropped whole:
+                    </p>
+                    <pre><code>{headSamplingEnv}</code></pre>
+                    <p>
+                        Tail sampling runs in the Collector. This configuration keeps every error and every trace over one second, keeps 10% of the rest, and feeds every span to the <code>spanmetrics</code> connector before sampling, so request rate, errors and duration stay exact:
+                    </p>
+                    <pre><code>{collectorConfig}</code></pre>
+                    <p>
+                        With more than one Collector replica, put a load-balancing exporter keyed on trace ID in front of the sampling tier, so each trace's spans land on one instance. A sampler that keeps all errors and 10% of successes produces a trace set biased towards failures, so read error rates from the span metrics or from a backend that weights each span by its sample rate.
+                    </p>
+                </section>
+
+                <section id="checklist" class="scroll-mt-24">
+                    <p class="guide-eyebrow">08 · Checklist</p>
+                    <h2>Microservices monitoring best practices checklist</h2>
+                    <div class="guide-checklist">
+                        {[
+                            ["Name every service", "Set service.name, service.version and deployment.environment as resource attributes in every SDK. Without a name many SDKs report unknown_service."],
+                            ["Instrument with OpenTelemetry", "One vendor-neutral SDK per language, with auto-instrumentation for HTTP, gRPC, database and messaging clients."],
+                            ["Propagate W3C traceparent everywhere", "Including proxies, custom clients, background jobs and message headers. Check one trace end to end after every new service."],
+                            ["RED per endpoint", "Rate, errors and p50/p95/p99 by http.route for every service, on one standard dashboard."],
+                            ["USE for shared resources", "Connection pools, thread pools, queues and the hosts or pods under them."],
+                            ["Age and lag for every queue", "Alert on oldest-message age, since stalled consumers produce no errors."],
+                            ["Trace IDs on every log", "Use an OpenTelemetry log bridge so the IDs are attached automatically."],
+                            ["SLOs on user journeys", "A few, on what users notice, with burn-rate alerts instead of static thresholds."],
+                            ["Page on symptoms", "Error rate, latency and throughput at entry points. Causes go on dashboards."],
+                            ["Bound metric cardinality", "Routes, not URLs. IDs go on spans, never on metric labels."],
+                            ["Sample deliberately", "Derive metrics before sampling, keep errors and slow traces, and record the sample rate."],
+                            ["Mark deploys", "Set the commit or version on telemetry so a regression lines up with the release that caused it."],
+                        ].map(([title, body], index) => (
+                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{body}</p></div></div>
+                        ))}
+                    </div>
+                </section>
+
+                <section id="tools" class="scroll-mt-24">
+                    <p class="guide-eyebrow">09 · Tooling</p>
+                    <h2>Microservices monitoring tools by category</h2>
+                    <p>
+                        Most stacks combine an instrumentation layer with one or more backends. Because OpenTelemetry exports the same OTLP data to any compatible backend, the instrumentation choice and the backend choice are separate decisions.
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Category</th><th>Role</th><th>Examples</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><strong>Instrumentation</strong></td><td>SDKs and auto-instrumentation that produce traces, metrics and logs; the Collector to receive, process, sample and route them</td><td><a href="https://opentelemetry.io/docs/collector/" target="_blank" rel="noopener noreferrer">OpenTelemetry</a></td></tr>
+                                <tr><td><strong>Open-source tracing backends</strong></td><td>Store and query traces</td><td><a href="https://www.jaegertracing.io/" target="_blank" rel="noopener noreferrer">Jaeger</a>, <a href="https://zipkin.io/" target="_blank" rel="noopener noreferrer">Zipkin</a>, <a href="https://grafana.com/oss/tempo/" target="_blank" rel="noopener noreferrer">Grafana Tempo</a></td></tr>
+                                <tr><td><strong>Open-source metrics</strong></td><td>Time-series storage, queries and alerting rules</td><td><a href="https://prometheus.io/" target="_blank" rel="noopener noreferrer">Prometheus</a></td></tr>
+                                <tr><td><strong>Open-source logs</strong></td><td>Log storage and search</td><td><a href="https://grafana.com/oss/loki/" target="_blank" rel="noopener noreferrer">Grafana Loki</a>, <a href="https://opensearch.org/" target="_blank" rel="noopener noreferrer">OpenSearch</a></td></tr>
+                                <tr><td><strong>Commercial APM and observability platforms</strong></td><td>Hosted storage, correlation across signals, dashboards and alerting</td><td><a href="https://docs.datadoghq.com/opentelemetry/" target="_blank" rel="noopener noreferrer">Datadog</a>, <a href="https://docs.dynatrace.com/docs/ingest-from/opentelemetry" target="_blank" rel="noopener noreferrer">Dynatrace</a>, <a href="https://docs.honeycomb.io/send-data/opentelemetry/" target="_blank" rel="noopener noreferrer">Honeycomb</a>, <a href="https://docs.newrelic.com/docs/opentelemetry/opentelemetry-introduction/" target="_blank" rel="noopener noreferrer">New Relic</a> (links go to each vendor's OpenTelemetry docs)</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>Questions that separate the options for a microservices system:</p>
+                    <ul class="guide-list">
+                        <li>Does it accept OTLP directly, for traces, metrics and logs?</li>
+                        <li>Can you move from a metric spike to the traces behind it, and from a trace to its logs, without copying IDs between tools?</li>
+                        <li>Does it draw a service map from your traces?</li>
+                        <li>How is it priced (per host, per GB ingested, per span or event), and what does that do to your sampling decisions?</li>
+                        <li>For self-hosted backends, who operates the storage, the upgrades and the retention?</li>
+                    </ul>
+                    <p>
+                        For a longer comparison of self-hosted options, see <a href="/best-open-source-observability-tools">the best open-source observability tools</a>.
+                    </p>
+                </section>
+
+                <section id="maple" class="scroll-mt-24">
+                    <p class="guide-eyebrow">10 · In practice</p>
+                    <h2>Monitoring microservices in Maple</h2>
+                    <p>
+                        Maple builds its service views from the OpenTelemetry traces your services already send. Each distinct <code>service.name</code> is one service.
+                    </p>
+
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h3>Instrument and propagate</h3><p>Send OTLP from each service with <code>service.name</code> and <code>deployment.environment</code> set, and propagate <code>traceparent</code> between them. See <a href="/docs/getting-started/introduction">getting started</a>.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h3>Read RED per service and endpoint</h3><p>The <a href="/docs/explore/services">Services</a> page lists P50, P95, P99, error rate and throughput for every service. A service's <strong>API</strong> tab breaks those down by HTTP endpoint, and its <strong>Dependencies</strong> tab lists the services, databases, HTTP hosts, queues and RPC systems it calls.</p></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h3>Check the service map</h3><p>The <a href="/docs/explore/service-map">Service Map</a> draws an edge when a <code>Client</code> or <code>Producer</code> span in one service has a child <code>Server</code> or <code>Consumer</code> span in another. Nodes show requests per second, error percentage and average latency, colored <strong>Degraded</strong> above 1% errors and <strong>Error</strong> above 5%. <strong>Focus a service</strong> narrows the map to one or two hops around it.</p></div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div><h3>Follow a request</h3><p>On <a href="/docs/explore/traces">Traces</a>, filter by service and <strong>Has Error</strong>, open a trace, and use <strong>View Logs</strong> to see the logs emitted during it.</p></div>
+                        </li>
+                        <li>
+                            <span>05</span>
+                            <div><h3>Alert on symptoms</h3><p>The <strong>High error rate</strong> <a href="/docs/alerting/alert-rules">alert rule</a> template fires above 5% over five minutes and groups by <code>service.name</code> when no scope is set, so each service gets its own incident. Built-in signals read entry-point spans, the same requests the service pages chart.</p></div>
+                        </li>
+                    </ol>
+
+                    <p>
+                        When you sample, Maple weights each span by its <code>SampleRate</code> attribute or the W3C threshold in <code>tracestate</code>, and marks estimated throughput with a <code>~</code>. A span that carries neither counts once. See <a href="/docs/concepts/sampling-throughput">Sampling and throughput</a>.
+                    </p>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Microservices in Maple</p>
+                        <h3>A service map and RED metrics from the traces you already send</h3>
+                        <p>
+                            The service map docs cover the attributes that create nodes and edges, and how to fix two services that should be connected but are not.
+                        </p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/explore/service-map" class="guide-button guide-button--primary">Read the service map docs</a>
+                            <a href="/docs/getting-started/introduction" class="guide-button">Instrument a service</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://www.w3.org/TR/trace-context/" target="_blank" rel="noopener noreferrer">W3C: Trace Context</a></li>
+                        <li><a href="https://opentelemetry.io/docs/concepts/context-propagation/" target="_blank" rel="noopener noreferrer">OpenTelemetry: Context propagation</a></li>
+                        <li><a href="https://opentelemetry.io/docs/specs/semconv/messaging/messaging-spans/" target="_blank" rel="noopener noreferrer">OpenTelemetry: Semantic conventions for messaging spans</a></li>
+                        <li><a href="https://opentelemetry.io/docs/concepts/sampling/" target="_blank" rel="noopener noreferrer">OpenTelemetry: Sampling</a></li>
+                        <li><a href="https://opentelemetry.io/docs/languages/sdk-configuration/general/" target="_blank" rel="noopener noreferrer">OpenTelemetry: SDK configuration environment variables</a></li>
+                        <li><a href="https://sre.google/sre-book/monitoring-distributed-systems/" target="_blank" rel="noopener noreferrer">Google SRE book: Monitoring distributed systems</a></li>
+                        <li><a href="https://sre.google/workbook/alerting-on-slos/" target="_blank" rel="noopener noreferrer">Google SRE workbook: Alerting on SLOs</a></li>
+                        <li><a href="https://research.google/pubs/the-tail-at-scale/" target="_blank" rel="noopener noreferrer">Dean and Barroso: The Tail at Scale</a></li>
+                        <li><a href="/guides/what-is-apm">Maple guide: What is APM?</a></li>
+                        <li><a href="/guides/api-latency">Maple guide: When API p99 jumps but p50 doesn't</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .ms-guide section + section { margin-top: 5.5rem; }
+    .ms-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .ms-guide h2 { max-width: 21ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .ms-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .ms-guide > section > p:not(.guide-eyebrow, .guide-kicker), .ms-guide .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .ms-guide strong { font-weight: 600; color: var(--foreground); }
+    .ms-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .ms-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .ms-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .ms-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .ms-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1.25rem 1.35rem; }
+    .ms-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
+    .ms-guide table { width: 100%; min-width: 620px; margin: 1.6rem 0 2rem; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .ms-guide th { border-bottom: 1px solid var(--border); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
+    .ms-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .ms-guide .guide-grid { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .ms-guide .guide-grid > div { background: var(--background); padding: 1.5rem; }
+    .ms-guide .guide-grid h3 { margin: 0.4rem 0 0.65rem; font-size: 1rem; }
+    .ms-guide .guide-grid p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .ms-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .ms-guide .guide-list { max-width: 70ch; margin: 0 0 1.5rem; padding-left: 1.2rem; list-style: disc; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .ms-guide .guide-steps { margin: 2rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .ms-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.35rem 0; }
+    .ms-guide .guide-steps > li > span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .ms-guide .guide-steps h3, .ms-guide .guide-steps p { margin: 0; }
+    .ms-guide .guide-steps h3 { font-size: 1rem; }
+    .ms-guide .guide-steps p { margin-top: 0.45rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .ms-guide .guide-checklist { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .ms-guide .guide-checklist > div { display: grid; grid-template-columns: 2rem 1fr; gap: 0.8rem; background: var(--background); padding: 1.15rem 1.25rem; }
+    .ms-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--primary); }
+    .ms-guide .guide-checklist h3, .ms-guide .guide-checklist p { margin: 0; }
+    .ms-guide .guide-checklist h3 { font-size: 0.95rem; }
+    .ms-guide .guide-checklist p { margin-top: 0.35rem; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
+    .ms-guide .guide-maple { margin-top: 3.5rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .ms-guide .guide-maple h3 { margin: 0.55rem 0 0.8rem; font-size: 1.35rem; }
+    .ms-guide .guide-maple > p:not(.guide-kicker) { max-width: none; margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .ms-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .ms-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .ms-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .ms-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .ms-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .ms-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .ms-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .ms-guide .guide-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .ms-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .ms-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .ms-guide a, .ms-guide .guide-button { transition: none; }
+    }
+</style>
