@@ -1,5 +1,6 @@
 import { Layer } from "effect"
 import { Headers, HttpMiddleware } from "effect/http"
+import { VCS_SYNC_BATCH_PATH } from "../worker/vcs-sync-dispatch"
 
 // OAuth callbacks whose query string carries a provider-issued authorization
 // `code` (exchangeable for an access token) plus the single-use connect `state`.
@@ -30,6 +31,9 @@ export const ApiObservabilityLive = Layer.mergeAll(
 		HttpMiddleware.TracerDisabledWhen,
 		(request: { url: string; method: string }) =>
 			request.url === "/health" ||
+			// A VCS sync batch: its spans are `maple-vcs-sync`'s, and a minute-long server span here
+			// would skew this service's latency.
+			request.url === VCS_SYNC_BATCH_PATH ||
 			request.method === "OPTIONS" ||
 			OAUTH_CALLBACK_PATH.test(request.url) ||
 			EMAIL_UNSUBSCRIBE_PATH.test(request.url) ||
