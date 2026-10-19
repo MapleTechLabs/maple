@@ -21,6 +21,7 @@ import {
 	Option,
 	Ref,
 	Schema,
+	Tracer,
 } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
@@ -6714,13 +6715,22 @@ describe("AlertsService post-evaluation writes", () => {
 })
 
 describe("AlertsService investigation starts", () => {
-	it.effect("starts a grouped rule's investigations after its state is written, several at once", () => {
-		const testDb = createTestDb(trackedDbs)
-		const groups = Arr.makeBy(12, (i) => `svc-${i}`)
+	// One grouped rule whose `groupCount` groups all breach on the first tick, with
+	// triage enabled, and a chat port that records each investigation turn it starts.
+	const setupTriageStorm = (
+		testDb: TestDb,
+		groupCount: number,
+		adapt: {
+			readonly stub?: (stub: WarehouseQueryServiceApi) => WarehouseQueryServiceApi
+			readonly now?: Effect.Effect<number>
+		} = {},
+	) => {
+		const groups = Arr.makeBy(groupCount, (i) => `svc-${i}`)
 		const alertRows: ReadonlyArray<Record<string, unknown>> = groups.map((groupName) =>
 			tracesRow({ groupName, count: 200, errorRate: 10, satisfiedCount: 180, estimatedSpanCount: 200 }),
 		)
-		const stub = makeWarehouseStub({ tracesAggregateRows: alertRows })
+		const baseStub = makeWarehouseStub({ tracesAggregateRows: alertRows })
+		const stub = adapt.stub ? adapt.stub(baseStub) : baseStub
 		const turns: Array<string> = []
 		const chatSessions = fakeChatSessions(() => ({
 			beginTurn: async (input: { sessionId: string; messageId: string }) => {
@@ -6728,8 +6738,7 @@ describe("AlertsService investigation starts", () => {
 				return { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
 			},
 		}))
-
-		return Effect.gen(function* () {
+		const createRule = Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_triage_storm")
@@ -6762,7 +6771,30 @@ describe("AlertsService investigation starts", () => {
 					[orgId],
 				),
 			)
+			return { alerts, orgId, rule }
+		})
+		const committedStates = (ruleId: string) =>
+			Effect.promise(() =>
+				queryFirstRow<{ n: number }>(
+					testDb,
+					"select count(*)::int as n from alert_rule_states where rule_id = $1",
+					[ruleId],
+				),
+			).pipe(Effect.map((row) => row?.n ?? 0))
+		const layer = makeLayer(testDb, stub, {
+			fetch: okFetch,
+			chatSessions,
+			now: adapt.now ?? Clock.currentTimeMillis,
+		})
+		return { groups, turns, createRule, committedStates, layer }
+	}
 
+	it.effect("starts a grouped rule's investigations after its state is written, several at once", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { groups, turns, createRule, committedStates, layer } = setupTriageStorm(testDb, 12)
+
+		return Effect.gen(function* () {
+			const { alerts, orgId, rule } = yield* createRule
 			// What the classifier sees when it is called: how many of the rule's groups have a
 			// committed state row, and how many classifications are in flight with it.
 			const inFlight = yield* Ref.make(0)
@@ -6771,14 +6803,8 @@ describe("AlertsService investigation starts", () => {
 			const classifier = Layer.succeed(IncidentClassifier, {
 				classify: () =>
 					Effect.gen(function* () {
-						const states = yield* Effect.promise(() =>
-							queryFirstRow<{ n: number }>(
-								testDb,
-								"select count(*)::int as n from alert_rule_states where rule_id = $1",
-								[rule.id],
-							),
-						)
-						yield* Ref.update(statesAtFirstCall, (seen) => seen ?? states?.n ?? 0)
+						const states = yield* committedStates(rule.id)
+						yield* Ref.update(statesAtFirstCall, (seen) => seen ?? states)
 						const current = yield* Ref.updateAndGet(inFlight, (n) => n + 1)
 						yield* Ref.update(peakInFlight, (peak) => Math.max(peak, current))
 						yield* Effect.yieldNow.pipe(Effect.repeat({ times: 5 }))
@@ -6793,6 +6819,113 @@ describe("AlertsService investigation starts", () => {
 			assert.lengthOf(turns, groups.length)
 			assert.strictEqual(yield* Ref.get(statesAtFirstCall), groups.length)
 			assert.isAbove(yield* Ref.get(peakInFlight), 1)
-		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch, chatSessions })))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("starts every queued investigation when the triage phase runs past the claim TTL", () => {
+		const testDb = createTestDb(trackedDbs)
+		// The production storm: one rule opening 34 incidents.
+		const { groups, turns, createRule, committedStates, layer } = setupTriageStorm(testDb, 34)
+
+		return Effect.gen(function* () {
+			const { alerts, rule } = yield* createRule
+			const firstCall = yield* Ref.make<{ elapsedMs: number; states: number } | null>(null)
+			// Every classification takes the classifier's full 10 s timeout, so the phase
+			// runs far past tick start + 30 s.
+			const classifier = Layer.succeed(IncidentClassifier, {
+				classify: () =>
+					Effect.gen(function* () {
+						const elapsedMs = (yield* Clock.currentTimeMillis) - DEFAULT_CLOCK_EPOCH_MS
+						const states = yield* committedStates(rule.id)
+						yield* Ref.update(firstCall, (seen) => seen ?? { elapsedMs, states })
+						yield* TestClock.adjust("10 seconds")
+						return null
+					}),
+			})
+
+			yield* alerts.runSchedulerTick().pipe(Effect.provide(classifier))
+
+			const seen = yield* Ref.get(firstCall)
+			assert.isNotNull(seen)
+			assert.strictEqual(seen?.states, groups.length)
+			assert.isBelow(seen?.elapsedMs ?? Infinity, 1_000)
+			assert.isAbove((yield* Clock.currentTimeMillis) - DEFAULT_CLOCK_EPOCH_MS, 30_000)
+			assert.lengthOf(turns, groups.length)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("releases the tick's unstarted claims before triage begins", () => {
+		const testDb = createTestDb(trackedDbs)
+		// Every warehouse answer moves the scheduler's clock a minute on, so once the first
+		// evaluations return, the rules still waiting for a lane pass the tick deadline.
+		const shiftMs = Ref.makeUnsafe(0)
+		const advance = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+			Effect.tap(effect, () => Ref.update(shiftMs, (shift) => shift + 60_000))
+		const { turns, createRule, layer } = setupTriageStorm(testDb, 3, {
+			now: Effect.zipWith(Clock.currentTimeMillis, Ref.get(shiftMs), (ms, shift) => ms + shift),
+			stub: (base) => ({
+				...base,
+				compiledQuery: (...args) => advance(base.compiledQuery(...args)),
+				compiledQueryWithCapabilities: (...args) =>
+					advance(base.compiledQueryWithCapabilities(...args)),
+				compiledQueryFirst: (...args) => advance(base.compiledQueryFirst(...args)),
+			}),
+		})
+		const { spans, tracer } = makeRecordingTracer()
+
+		return Effect.gen(function* () {
+			const { alerts } = yield* createRule
+			// Created after the storm rule, so the scheduler reaches them later: more rules
+			// than lanes, in an org without triage.
+			const otherOrg = asOrgId("org_triage_other")
+			const destination = yield* createWebhookDestination(alerts, otherOrg, asUserId("user_other"))
+			yield* Effect.forEach(
+				Arr.range(1, 6),
+				(index) =>
+					TestClock.adjust("2 millis").pipe(
+						Effect.andThen(
+							alerts.createRule(
+								otherOrg,
+								asUserId("user_other"),
+								adminRoles,
+								new AlertRuleUpsertRequest({
+									name: `Other rule ${index}`,
+									severity: "warning",
+									enabled: true,
+									signalType: "error_rate",
+									comparator: "gt",
+									threshold: 99,
+									windowMinutes: 5,
+									destinationIds: [destination.id],
+								}),
+							),
+						),
+					),
+				{ discard: true },
+			)
+			// Whether the release had finished each time the triage phase opened.
+			const releasedAtTriageStart: Array<boolean> = []
+			const classifier = Layer.succeed(IncidentClassifier, { classify: () => Effect.succeed(null) })
+			const recording = Tracer.make({
+				span(options) {
+					if (options.name === "AlertsService.startPendingTriages") {
+						releasedAtTriageStart.push(
+							spansNamed(spans, "AlertsService.releaseClaims").some(
+								(span) => span.status._tag === "Ended",
+							),
+						)
+					}
+					return tracer.span(options)
+				},
+			})
+
+			const tick = yield* alerts
+				.runSchedulerTick()
+				.pipe(Effect.provide(classifier), Effect.withTracer(recording))
+
+			assert.isAbove(tick.deferredCount, 0)
+			assert.deepStrictEqual(releasedAtTriageStart, [true])
+			assert.lengthOf(turns, 3)
+		}).pipe(Effect.provide(layer))
 	})
 })

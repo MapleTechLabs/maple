@@ -2533,43 +2533,29 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				return yield* Ref.get(totals)
 			})
 
-			// Investigation starts the rule loop queued, run after every rule's claim-fenced
-			// writes so a slow model call holds no claim. One admission permit per org keeps
-			// the daily quota exact. Nothing starts after `startBy`; the rest are logged.
+			// Investigation starts the rule loop queued, run once every rule's claim-fenced
+			// writes are done and the claims are released, so a slow model call holds no
+			// claim. None is dropped: incidents open once, so a skipped start never retries.
 			const startPendingTriages = Effect.fn("AlertsService.startPendingTriages")(function* (
 				pending: ReadonlyArray<MaybeEnqueueTriageInput>,
-				startBy: number,
 			) {
+				yield* Effect.annotateCurrentSpan("maple.alerting.triages_pending", pending.length)
+				// One admission permit per org keeps the daily quota exact under concurrency.
 				const admissions = new Map(
 					yield* Effect.forEach(Arr.dedupe(Arr.map(pending, (triage) => triage.orgId)), (orgId) =>
 						Effect.map(Semaphore.make(1), (admission) => [orgId, admission] as const),
 					),
 				)
-				const skipped = yield* Ref.make(0)
 				yield* Effect.forEach(
 					pending,
 					(triage) =>
-						Effect.flatMap(now, (startedAt) =>
-							startedAt >= startBy
-								? Ref.update(skipped, (n) => n + 1)
-								: maybeEnqueueTriage({
-										...triage,
-										chatSessions,
-										admission: admissions.get(triage.orgId),
-									}).pipe(Effect.provideService(Database, database)),
-						),
+						maybeEnqueueTriage({
+							...triage,
+							chatSessions,
+							admission: admissions.get(triage.orgId),
+						}).pipe(Effect.provideService(Database, database)),
 					{ concurrency: TRIAGE_START_CONCURRENCY, discard: true },
 				)
-				const skippedCount = yield* Ref.get(skipped)
-				yield* Effect.annotateCurrentSpan({
-					"maple.alerting.triages_pending": pending.length,
-					"maple.alerting.triages_skipped": skippedCount,
-				})
-				if (skippedCount > 0) {
-					yield* Effect.logWarning("Alert triage window closed; investigations not started").pipe(
-						Effect.annotateLogs({ workerId, pending: pending.length, skipped: skippedCount }),
-					)
-				}
 			})
 
 			const processEvaluation = Effect.fn("AlertsService.processEvaluation")(function* (
@@ -4472,17 +4458,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Stream.runDrain,
 				)
 
-				// Every rule's writes are done; triage overlaps the tail and is joined before
-				// returning, since a fiber that outlives a Worker invocation is cancelled.
-				const triages = yield* forkRequestScoped(
-					startPendingTriages(
-						Chunk.toReadonlyArray(yield* Ref.get(pendingTriages)),
-						tickStart + SCHEDULER_LOCK_TTL_MS,
-					),
-				)
-
 				yield* releaseClaims(Chunk.toReadonlyArray(yield* Ref.get(unstartedClaims))).pipe(
 					Effect.withSpan("AlertsService.releaseClaims"),
+				)
+
+				// Every rule's writes are done and its claims released; triage overlaps the tail and
+				// is joined before returning, since a fiber that outlives a Worker invocation is cancelled.
+				const triages = yield* forkRequestScoped(
+					startPendingTriages(Chunk.toReadonlyArray(yield* Ref.get(pendingTriages))),
 				)
 				const deferred = yield* Ref.get(deferredRules)
 				yield* Effect.annotateCurrentSpan("maple.alerting.rules_deferred", deferred)
