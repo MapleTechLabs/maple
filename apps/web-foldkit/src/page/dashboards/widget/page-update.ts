@@ -57,6 +57,10 @@ import {
 /** `emitAttribute`: only a non-empty key becomes a breakdown. */
 const breakdownValueOf = (key: string): string | null => (key.trim() === "" ? null : `attribute:${key.trim()}`)
 
+/** The SQL draft taken as the opened one, so a discarded or saved draft no longer reads as dirty. */
+const savedSql = (model: Model): Model["rawSql"] =>
+	model.rawSql === null ? null : { ...model.rawSql, initial: model.rawSql.draft }
+
 /** A failed write's message, kept until dismissed. */
 const errorToast = (title: string) =>
 	PageOutMessage.RequestedToast({ type: "error", title, description: "", timeoutMs: null, action: null })
@@ -318,9 +322,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				includePercentChange: !state.includePercentChange,
 			})),
 		ClickedApply: () => apply(model, context, null),
+		// What was saved is no longer an unsaved change, so the way back is not held.
 		CompletedSave: ({ error }) =>
 			error === null
-				? navigate({ ...model, isSaving: false }, backHref(model))
+				? navigate(
+						{ ...model, isSaving: false, initial: model.state, initialSourceMode: model.sourceMode, rawSql: savedSql(model) },
+						backHref(model),
+					)
 				: {
 						model: { ...model, isSaving: false },
 						outMessage: errorToast(error),
@@ -331,8 +339,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const closed = Dialog.close(model.leaveDialog)
 			return {
 				...navigate(
-					{ ...model, leaveDialog: closed.model, initial: model.state, sourceMode: "builder" },
-					backHref(model),
+					{ ...model, leaveDialog: closed.model, initial: model.state, sourceMode: model.initialSourceMode, rawSql: savedSql(model) },
+					model.pendingLeaveUrl ?? backHref(model),
 				),
 				commands: Command.mapMessages(closed.commands ?? [], (inner) =>
 					Message.GotLeaveDialogMessage({ message: inner }),

@@ -85,6 +85,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		sqlChipTooltip: Tooltip.init("widget-sql-chip-tooltip"),
 		isSaving: false,
 		leaveDialog: Dialog.init("widget-editor-leave-dialog", "alert-dialog"),
+		pendingLeaveUrl: null,
 	},
 	commands: [
 		ReadClock(),
@@ -326,12 +327,20 @@ export const navigate = (model: Model, url: string): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
 })
 
-/** `useBlocker`: leaving with unsaved edits asks first. */
+/** `shouldBlockFn: !isSaving && isDirty()`. */
+export const isBlockingNavigation = (model: Model): boolean => !model.isSaving && isDirty(model)
+
+/** `useBlocker`: leaving with unsaved edits asks first; Discard then goes where the user was going. */
 export const leave = (model: Model, url: string): Return => {
-	if (model.isSaving || !isDirty(model)) return navigate(model, url)
+	if (!isBlockingNavigation(model)) return navigate(model, url)
+	return askToLeave(model, url)
+}
+
+/** The confirmation over a held navigation (a link, Back, or Cancel). */
+export const askToLeave = (model: Model, url: string): Return => {
 	const next = Dialog.open(model.leaveDialog)
 	return {
-		model: { ...model, leaveDialog: next.model },
+		model: { ...model, leaveDialog: next.model, pendingLeaveUrl: url },
 		commands: Command.mapMessages(next.commands ?? [], (message) =>
 			Message.GotLeaveDialogMessage({ message }),
 		),

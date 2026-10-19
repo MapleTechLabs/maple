@@ -124,6 +124,12 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly breadcrumbs: (model: Model) => ReadonlyArray<BreadcrumbEntry>
 	/** `DashboardPage`'s `topbarActions`: the page's own controls after the shell's top-bar buttons. */
 	readonly topbarActions?: Submodel.View<Model, Message, PageViewInputs>
+	/**
+	 * `useBlocker`: while this holds, a link or Back that leaves the page asks first. The root
+	 * keeps the page and hands it `blockedNavigation` with where the user was going.
+	 */
+	readonly isBlockingNavigation?: (model: Model) => boolean
+	readonly blockedNavigation?: (model: Model, url: string, context: PageContext) => PageReturn<Model, Message>
 }
 
 // ERASED PAGE (what the registry and root consume)
@@ -293,6 +299,14 @@ export const definePage = <
 		routeChanged: (slot: PageSlotBase, route: AppRoute, context: PageContext) =>
 			isOwnSlot(slot) && ownsRoute(route) && spec.routeChanged
 				? Option.some(step(slot.key, context, spec.routeChanged(slot.model, route, context)))
+				: Option.none<PageStep<SlotType, WrappedType>>(),
+		/** A navigation away from this instance, held: the page's confirm step, or `None` if it allows it. */
+		blockedNavigation: (slot: PageSlotBase, url: string, context: PageContext) =>
+			isOwnSlot(slot) &&
+			spec.isBlockingNavigation !== undefined &&
+			spec.blockedNavigation !== undefined &&
+			spec.isBlockingNavigation(slot.model)
+				? Option.some(step(slot.key, context, spec.blockedNavigation(slot.model, url, context)))
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		contextChanged: (slot: PageSlotBase, context: PageContext) =>
 			isOwnSlot(slot) && spec.contextChanged

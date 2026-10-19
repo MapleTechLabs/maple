@@ -33,6 +33,7 @@ import { type PageContext, PageOutMessage } from "./page/contract"
 import * as Preload from "./page/preload"
 import {
 	changeContext,
+	blockNavigation,
 	enterRoute,
 	isBarePageRoute,
 	PageMessage,
@@ -696,36 +697,59 @@ const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 		},
 	)
 
+/** A new URL: the route, the session range carried into it, and the page it enters. */
+const changedUrlStep = (model: Model, changedUrl: Url): UpdateReturn => {
+	const injected = sessionRangeUrl(model, changedUrl)
+	const url = Option.getOrElse(
+		Option.flatMap(injected, (path) => urlFromString(new URL(path, urlToString(changedUrl)).href)),
+		() => changedUrl,
+	)
+	const nextRoute = urlToAppRoute(url)
+	const isEnteringSignIn = Transition.isEntering(Transition.make(model.route, nextRoute), "SignIn")
+	const routed = modifyFields(model, {
+		route: () => nextRoute,
+		signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
+	})
+	const routedStep = Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
+	return Option.match(injected, {
+		onNone: () => routedStep,
+		onSome: (injectedUrl) => ({
+			...routedStep,
+			commands: [ReplaceUrl({ url: injectedUrl }), ...(routedStep.commands ?? [])],
+		}),
+	})
+}
+
+/** `useBlocker`: the open page holds a navigation that would leave it, and asks instead. */
+const heldNavigation = (model: Model, url: Url): Option.Option<UpdateReturn> =>
+	Option.flatMap(pageContextOf(model), (context) =>
+		Option.map(blockNavigation(model.page, urlToAppRoute(url), urlToString(url), context), (transition) =>
+			applyPage(transition)(model),
+		),
+	)
+
 // UPDATE
 
 export const update = (model: Model, message: Message) =>
 	Message.match<UpdateReturn>(message, {
 		ClickedLink: ({ request }) =>
 			UrlRequest.match<UpdateReturn>(request, {
-				Internal: ({ url }) => ({ model, commands: [NavigateInternal({ url: urlToString(url) })] }),
+				Internal: ({ url }) =>
+					Option.getOrElse(heldNavigation(model, url), () => ({
+						model,
+						commands: [NavigateInternal({ url: urlToString(url) })],
+					})),
 				External: ({ href }) => ({ model, commands: [LoadExternal({ href })] }),
 			}),
-		ChangedUrl: ({ url: changedUrl }) => {
-			const injected = sessionRangeUrl(model, changedUrl)
-			const url = Option.getOrElse(
-				Option.flatMap(injected, (path) => urlFromString(new URL(path, urlToString(changedUrl)).href)),
-				() => changedUrl,
-			)
-			const nextRoute = urlToAppRoute(url)
-			const isEnteringSignIn = Transition.isEntering(Transition.make(model.route, nextRoute), "SignIn")
-			const routed = modifyFields(model, {
-				route: () => nextRoute,
-				signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
-			})
-			const routedStep = Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
-			return Option.match(injected, {
-				onNone: () => routedStep,
-				onSome: (injectedUrl) => ({
-					...routedStep,
-					commands: [ReplaceUrl({ url: injectedUrl }), ...(routedStep.commands ?? [])],
-				}),
-			})
-		},
+		ChangedUrl: ({ url: changedUrl }) =>
+			Option.getOrElse(
+				// Back or Forward away from a page that blocks it: the URL goes back while it asks.
+				Option.map(heldNavigation(model, changedUrl), (held) => ({
+					...held,
+					commands: [NavigateInternal({ url: hrefOf(model.route) }), ...(held.commands ?? [])],
+				})),
+				() => changedUrlStep(model, changedUrl),
+			),
 		CompletedNavigateInternal: () => ({ model }),
 		CompletedReplaceUrl: () => ({ model }),
 		CompletedLoadExternal: () => ({ model }),

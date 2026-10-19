@@ -229,6 +229,27 @@ export const updatePage = (
 				onSome: (page) => toTransition(page.update(current, message, context), current),
 			})
 
+const toHeld = (step: Option.Option<PageStep<PageSlot, PageMessage>>): Option.Option<PageTransition> => step
+
+/**
+ * `useBlocker`: a navigation to `route` that would drop the open instance, held by a page that
+ * blocks it; `None` lets it through (no page, a page that allows it, or the same instance).
+ */
+export const blockNavigation = (
+	current: PageSlot | null,
+	route: AppRoute,
+	url: string,
+	context: PageContext,
+): Option.Option<PageTransition> => {
+	if (current === null) return Option.none()
+	const isSameInstance = Array.some(
+		pages,
+		(page) => page.id === current._tag && Option.contains(page.keyOf(route), current.key),
+	)
+	if (isSameInstance) return Option.none()
+	return Option.flatMap(pageById(current._tag), (page) => toHeld(page.blockedNavigation(current, url, context)))
+}
+
 export const changeContext = (current: PageSlot | null, context: PageContext): PageTransition =>
 	current === null
 		? unchanged(current)

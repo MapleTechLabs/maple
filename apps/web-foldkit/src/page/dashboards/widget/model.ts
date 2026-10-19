@@ -95,5 +95,7 @@ export const Model = Schema.Struct({
 	isSaving: Schema.Boolean,
 	/** The unsaved-changes confirmation (`useBlocker`). */
 	leaveDialog: Dialog.Model,
+	/** Where the held navigation was going: Discard goes there (Cancel's is the dashboard). */
+	pendingLeaveUrl: Schema.NullOr(Schema.String),
 })
 export type Model = typeof Model.Type
