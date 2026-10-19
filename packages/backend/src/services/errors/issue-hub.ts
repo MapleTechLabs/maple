@@ -10,9 +10,8 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Actors, AlertIncidents, ErrorIssueEvents, ErrorIssues, type ErrorIssueRow } from "@maple/db/tables"
 import { Clock, Effect, Schema } from "effect"
-import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { maybeEnqueueTriage } from "./ai-triage-enqueue"
+import type { MaybeEnqueueTriageInput } from "./ai-triage-enqueue"
 import { issueSeverityFromAlert } from "./severity-map"
 import { SYSTEM_ALERTS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -55,13 +54,16 @@ export interface UpsertAlertIssueInput {
 	readonly incidentId: AlertIncidentId
 	readonly serviceName: string
 	readonly timestamp: number
-	/** The `ChatSession` port the investigation agent runs on. */
-	readonly chatSessions?: ChatSessionsApi
 }
 
 export interface UpsertAlertIssueResult {
 	readonly issueId: ErrorIssueId | null
 	readonly action: "created" | "reopened" | "refreshed" | "skipped" | "error"
+	/**
+	 * The investigation start this incident asks for, or null. The caller runs it once its
+	 * own writes are done: a start awaits a model call, which a scheduler tick cannot hold.
+	 */
+	readonly triage: MaybeEnqueueTriageInput | null
 }
 
 const describeIncident = (input: UpsertAlertIssueInput): string => {
@@ -250,7 +252,7 @@ export const upsertAlertIssue: (
 			if (snoozeActive) {
 				// Mirrors the errors tick: a wontfix issue with an active (or
 				// indefinite) snooze is left alone entirely.
-				return { issueId, action: "skipped" as const }
+				return { issueId, action: "skipped" as const, triage: null }
 			}
 
 			yield* database.execute((db) =>
@@ -324,7 +326,7 @@ export const upsertAlertIssue: (
 			),
 		)
 
-		yield* maybeEnqueueTriage({
+		const triage: MaybeEnqueueTriageInput = {
 			orgId: input.orgId,
 			incidentKind: "alert",
 			incidentId: input.incidentId,
@@ -349,10 +351,9 @@ export const upsertAlertIssue: (
 				lastTriggeredAt: new Date(input.timestamp).toISOString(),
 				issueId,
 			},
-			chatSessions: input.chatSessions,
-		})
+		}
 
-		return { issueId, action }
+		return { issueId, action, triage }
 	},
 	(effect, input) =>
 		Effect.catchCause(effect, (cause) =>
@@ -365,7 +366,7 @@ export const upsertAlertIssue: (
 						error: summarizeCause(cause),
 					}),
 				)
-				return { issueId: null, action: "error" as const }
+				return { issueId: null, action: "error" as const, triage: null }
 			}),
 		),
 )

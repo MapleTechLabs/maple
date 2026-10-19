@@ -168,9 +168,9 @@ const NO_BILLING_ANSWER = {
 
 // What a connection shows, for the project connector `acme-prod`.
 const READ_DENIED =
-	"Google denied Maple's read of project acme-prod: the read-only roles are missing. Run the setup script again: it grants them. A new grant can take a few minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED)"
+	"Google denied Maple's read of project acme-prod: the read-only roles are missing. Grant them with the setup script, the console steps or your Terraform. A new grant can take a few minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED)"
 const CANNOT_SIGN_IN =
-	"Maple can't sign in as this connection's read-only service account yet. After a setup run Google needs a few minutes to accept the new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: run the setup script and read its last lines. (IAM Credentials returned 403 PERMISSION_DENIED)"
+	"Maple can't sign in as this connection's read-only service account yet. Google needs a few minutes to accept a new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: finish the read-only account steps of a manual setup, or run the setup script again. (IAM Credentials returned 403 PERMISSION_DENIED)"
 const NO_BILLING =
 	"The project acme-prod has no active billing account, and Cloud Monitoring only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=acme-prod Maple retries every 5 minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED, BILLING_DISABLED)"
 const queriesFailed = (failed: number, type: string, answer: string) =>
@@ -458,6 +458,7 @@ interface PollState {
 	readonly metrics_lease_until: Date | null
 	readonly resources_synced_at: Date | null
 	readonly last_resources_error: string | null
+	readonly applied_metrics_enabled: boolean | null
 }
 
 const pollState = (testDb: TestDb, id: string) =>
@@ -465,7 +466,7 @@ const pollState = (testDb: TestDb, id: string) =>
 		queryFirstRow<PollState>(
 			testDb,
 			`SELECT metrics_watermark_at, last_metrics_received_at, last_metrics_error, metrics_lease_until,
-			        resources_synced_at, last_resources_error
+			        resources_synced_at, last_resources_error, applied_metrics_enabled
 			 FROM gcp_connectors WHERE id = $1`,
 			[id],
 		),
@@ -611,6 +612,8 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(state.metrics_watermark_at?.getTime(), horizon)
 				assert.strictEqual(state.last_metrics_received_at?.getTime(), now)
 				assert.isNull(state.last_metrics_error)
+				// No setup run reported it: the read confirms the read-only account.
+				assert.isTrue(state.applied_metrics_enabled)
 
 				// No credential in anything the tick logged or traced.
 				const recorded = recorder.text()
@@ -813,7 +816,7 @@ describe("GcpMetricsService", () => {
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(
 					state.last_metrics_error,
-					"Maple can no longer sign in as this connection's read-only service account. The account was deleted, or the grant to Maple was removed or is blocked by an organization policy. Run the setup script again: it restores both, or says what blocks it. (IAM Credentials returned 403 PERMISSION_DENIED)",
+					"Maple can no longer sign in as this connection's read-only service account. The account was deleted, or the grant to Maple was removed or is blocked by an organization policy. Run the setup script again or redo the read-only steps: either restores both. (IAM Credentials returned 403 PERMISSION_DENIED)",
 				)
 				assert.strictEqual(state.last_metrics_received_at?.getTime(), now)
 			}),
@@ -1099,7 +1102,7 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(yield* metricsError, NO_BILLING)
 				assert.strictEqual(
 					(yield* pollState(testDb, CONNECTOR_A)).last_resources_error,
-					"The Cloud Asset Inventory API is switched off in the project acme-prod. Run the setup script again: it switches the API on. (Cloud Asset Inventory returned 403 PERMISSION_DENIED, SERVICE_DISABLED)",
+					"The Cloud Asset Inventory API is switched off in the project acme-prod. Switch it on in the console, or run the setup script again. (Cloud Asset Inventory returned 403 PERMISSION_DENIED, SERVICE_DISABLED)",
 				)
 
 				monitoring = () => googleError(403, "PERMISSION_DENIED", [errorInfo("BILLING_DISABLED")])
@@ -1498,7 +1501,7 @@ describe("GcpMetricsService resource inventory", () => {
 				const state = yield* pollState(testDb, CONNECTOR_A)
 				assert.strictEqual(
 					state.last_resources_error,
-					"Google denied the resource listing for project acme-prod. Run the setup script again: it grants Cloud Asset Viewer. (Cloud Asset Inventory returned 403 PERMISSION_DENIED)",
+					"Google denied the resource listing for project acme-prod. Cloud Asset Viewer is missing. Grant it with the setup script, the console steps or your Terraform. (Cloud Asset Inventory returned 403 PERMISSION_DENIED)",
 				)
 				assert.isNull(state.resources_synced_at)
 				assert.isNull(state.last_metrics_error)

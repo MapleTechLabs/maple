@@ -45,7 +45,7 @@ func (t *tracesExporter) shutdown(_ context.Context) error { return nil }
 //   - service_overview_spans              (entry-point spans)
 //   - service_map_spans / _children       (parent/child span linkage)
 //   - service_map_edges_hourly            (Client + peer.service)
-//   - trace_list_mv / trace_detail_spans  (UI list/detail views)
+//   - trace_list_mv / trace_index         (UI trace list, trace-id lookup)
 //   - traces_aggregates_hourly            (latency p50/p95/p99)
 //   - service_usage_traces_mv             (per-service trace counts)
 //   - trace_resource/span attribute_keys / values_mv (search facets)

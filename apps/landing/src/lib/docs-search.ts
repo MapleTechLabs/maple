@@ -22,10 +22,19 @@ export interface SearchDoc {
 	description: string
 	group: string
 	sdk?: string
+	/** Key into `SearchIndexPayload.icons`. */
+	icon?: string
 	/** Plain text before the first H2. */
 	intro: string
 	/** One entry per H2/H3; deeper headings fold into their parent section. */
 	sections: SearchSection[]
+}
+
+/** Body of `/docs/search-index.json`. */
+export interface SearchIndexPayload {
+	docs: SearchDoc[]
+	/** Prerendered SVG markup, keyed `sdk:<id>`, `mark:<id>` or `group:<name>`. */
+	icons: Record<string, string>
 }
 
 /** One searchable row: a whole page (intro) or one of its sections. */

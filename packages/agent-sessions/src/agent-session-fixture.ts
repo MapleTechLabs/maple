@@ -687,7 +687,7 @@ function richTurn(t: number): readonly AiSessionSpan[] {
 			genAi: {
 				toolCallId: "toolu_01Kd3W",
 				toolCallArguments: {
-					sql: "SELECT SpanAttributes['db.query.summary'] AS stmt, count() AS calls,\n       quantile(0.95)(Duration)/1e6 AS p95_ms\n  FROM trace_detail_spans WHERE ParentServiceName = 'checkout-api'\n   AND SpanKind = 'Client' GROUP BY stmt ORDER BY p95_ms DESC",
+					sql: "SELECT SpanAttributes['db.query.summary'] AS stmt, count() AS calls,\n       quantile(0.95)(Duration)/1e6 AS p95_ms\n  FROM traces WHERE ParentServiceName = 'checkout-api'\n   AND SpanKind = 'Client' GROUP BY stmt ORDER BY p95_ms DESC",
 				},
 				toolCallResult: TRUNCATED_STATEMENT_RESULT,
 			},
