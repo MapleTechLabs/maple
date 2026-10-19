@@ -16,6 +16,7 @@ import {
 	RubyIcon,
 	RustIcon,
 	ServerIcon,
+	VercelIcon,
 } from "@/components/icons"
 import { GoIcon, NodejsIcon, OpenTelemetryIcon, PythonIcon } from "@/components/quick-start/framework-icons"
 
@@ -51,6 +52,7 @@ export const PLATFORMS = {
 	cloudflare: { label: "Cloudflare", description: "Zone and Workers analytics", icon: CloudflareIcon },
 	gcp: { label: "Google Cloud", description: "Logs, metrics and resources", icon: GoogleCloudIcon },
 	railway: { label: "Railway", description: "Service metrics", icon: RailwayIcon },
+	vercel: { label: "Vercel", description: "Logs, traces and deployments", icon: VercelIcon },
 	planetscale: { label: "PlanetScale", description: "Database metrics", icon: PlanetScaleIcon },
 	github: { label: "GitHub", description: "Repositories, CI and deploys", icon: GithubIcon },
 } satisfies Record<SourcePlatform, PlatformMeta>

@@ -21,7 +21,7 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 		description:
 			"Everything that sends data to this Maple organization, worst health first: OpenTelemetry SDKs and collectors " +
 			"(each with its own token, or the default ingest keys), Kubernetes clusters, Docker hosts, Prometheus scrape " +
-			"targets and connected integrations (Cloudflare, Google Cloud, Railway, PlanetScale, GitHub CI). Each source " +
+			"targets and connected integrations (Cloudflare, Google Cloud, Railway, Vercel, PlanetScale, GitHub CI). Each source " +
 			"says whether data is arriving and when it last did. Telemetry carries its source in the `maple_source_id` " +
 			"resource attribute, so a source id filters traces, logs and metrics.",
 		parameters: Schema.Struct({
