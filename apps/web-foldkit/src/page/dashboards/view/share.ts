@@ -51,6 +51,8 @@ export const SharingState = Schema.Struct({
 	embedNowMs: Schema.Number,
 	/** "Make dashboard public" runs two writes; the chart link is minted after the board's. */
 	queuedChart: Schema.NullOr(Schema.String),
+	/** The latest list read sent; an older answer landing after it is dropped. */
+	fetchSeq: Schema.Number,
 })
 export type SharingState = typeof SharingState.Type
 
@@ -69,10 +71,11 @@ export const initSharing = (): SharingState => ({
 	snippetCopy: CopyButton.init(),
 	embedNowMs: 0,
 	queuedChart: null,
+	fetchSeq: 0,
 })
 
 export const ShareMessage = defineMessageUnion({
-	CompletedFetchShares: { result: Schema.Result(Schema.Array(ShareRow), LoadFailure) },
+	CompletedFetchShares: { seq: Schema.Number, result: Schema.Result(Schema.Array(ShareRow), LoadFailure) },
 	GotOrigin: { origin: Schema.String },
 	GotDialogMessage: { message: Dialog.Message },
 	GotAccessMessage: { message: RadioGroup.Message },
