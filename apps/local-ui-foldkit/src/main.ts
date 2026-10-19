@@ -7,10 +7,10 @@ import { Effect, Option, Schema } from "effect"
 import { AsyncData, type Runtime } from "foldkit"
 import type { Url } from "foldkit/url"
 import { ApplyTheme, ProbeServer } from "./command"
-import { LocalEnv, readLocalEnv, readRememberedRange, readSidebarOpen, readTheme, readTimeFormat, Theme } from "./env"
+import { LocalEnv, readIsMobile, readLocalEnv, readRememberedRange, readSidebarOpen, readTheme, readTimeFormat, Theme } from "./env"
 import { TimeFormat } from "./page/kit/local-time"
 import type { Message } from "./message"
-import type { Model } from "./model"
+import { initFilterDrawer, type Model } from "./model"
 import { hashOf, locationOf, routeOf } from "./navigation"
 import { CONNECT_POPOVER_ID } from "./shell/connect"
 import { enterLocation } from "./update-page"
@@ -28,6 +28,7 @@ export const Flags = Schema.Struct({
 	env: LocalEnv,
 	rememberedRange: Schema.String,
 	isSidebarOpen: Schema.Boolean,
+	isMobile: Schema.Boolean,
 	theme: Theme,
 	timeFormat: TimeFormat,
 	/** Saved results younger than a day: the views stay up even if the server never answers. */
@@ -39,6 +40,7 @@ export const flags: Effect.Effect<Flags> = Effect.all({
 	env: readLocalEnv,
 	rememberedRange: readRememberedRange,
 	isSidebarOpen: readSidebarOpen,
+	isMobile: readIsMobile,
 	theme: readTheme,
 	timeFormat: readTimeFormat,
 	hasSavedResults: Effect.map(readSavedEntries, (entries) => entries.size > 0),
@@ -57,6 +59,8 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		timeFormat: flags.timeFormat,
 		isSidebarOpen: flags.isSidebarOpen,
 		isSidebarOpenMobile: false,
+		isMobile: flags.isMobile,
+		filterDrawer: initFilterDrawer(),
 		maybeServer: Option.none(),
 		probe: { isInFlight: true, version: 0 },
 		hasIngested: false,

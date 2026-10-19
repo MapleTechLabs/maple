@@ -128,6 +128,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		},
 		FoundCachedCatalog: ({ key, cached }) => settledFromCache(model, context, key, cached),
 		FailedFetchCatalog: ({ key, failure }) => ({ model: settleRefresh(settled(model, key, Result.fail(failure))) }),
+		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
 		ClickedRefresh: () =>
 			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {

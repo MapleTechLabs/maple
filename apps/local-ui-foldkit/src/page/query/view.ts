@@ -101,7 +101,7 @@ const result = (h: HtmlBuilder<Message>, model: Model): Html =>
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const sql = queryOf(inputs.context.location).get("sql") ?? ""
-	return pageShell(h, { sidebar: querySidebar(h, model), toolbar: consoleToolbar(h, model) }, [
+	return pageShell(h, { sidebar: querySidebar(h, model), toolbar: consoleToolbar(h, model), onOpenFilters: Message.ClickedOpenFilters() }, [
 		h.div(
 			[h.Class("flex h-full min-h-0 flex-col")],
 			[editor(h, model, sql), h.div([h.Class("min-h-0 flex-1 overflow-auto")], [result(h, model)])],

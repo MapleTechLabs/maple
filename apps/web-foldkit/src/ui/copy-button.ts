@@ -16,7 +16,7 @@ import {
 } from "@maple/ui/styles/ui/copy-button"
 import { Duration, Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { button } from "./button"
@@ -202,7 +202,7 @@ export type CopyButtonOptions<M> = Readonly<{
 	/** `data-slot` when a wrapper renders through it (`tooltip-trigger`). */
 	slot?: string
 	/** Props spread onto the button after its own. */
-	attributes?: ReadonlyArray<Attribute<M>>
+	attributes?: ReadonlyArray<Attribute<M> | ChildAttribute>
 }>
 
 /** `<CopyButton>` from @maple/ui (no tooltip), for a parent that owns the copy status. */

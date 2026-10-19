@@ -1,4 +1,5 @@
 import type { Resources } from "./platform/resources"
+import * as Dialog from "@maple/web-foldkit/ui/dialog"
 import * as Popover from "@maple/web-foldkit/ui/popover"
 import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import * as Toast from "@maple/web-foldkit/ui/toast"
@@ -12,11 +13,13 @@ import { hashOf, locationOf, routeOf, trackVisit } from "./navigation"
 import { updateCopy } from "./page/kit/copies"
 import { pageKeyOf } from "./page/registry"
 import { nextProbeDelayMs, nextServerState } from "./server/derive"
-import { enterLocation, probe, retryStaleData, type RootReturn, updatePageMessage } from "./update-page"
+import { enterLocation, filterDrawerStep, probe, retryStaleData, type RootReturn, updatePageMessage } from "./update-page"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 
+/** `toggleSidebar`: the sheet below `md`, else the rail (and its cookie). */
 const toggleSidebar = (model: Model): RootReturn => {
+	if (model.isMobile) return { model: { ...model, isSidebarOpenMobile: !model.isSidebarOpenMobile } }
 	const isOpen = !model.isSidebarOpen
 	return { model: { ...model, isSidebarOpen: isOpen }, commands: [SaveSidebarState({ isOpen })] }
 }
@@ -75,6 +78,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		ClickedToggleSidebar: () => toggleSidebar(model),
 		PressedSidebarShortcut: () => toggleSidebar(model),
 		CompletedSaveSidebarState: () => ({ model }),
+		ChangedViewport: ({ isMobile }) => ({ model: { ...model, isMobile, isSidebarOpenMobile: false } }),
+		DismissedMobileNav: () => ({ model: { ...model, isSidebarOpenMobile: false } }),
+		GotFilterDrawerMessage: ({ message: child }) => filterDrawerStep(model, Dialog.update(model.filterDrawer, child)),
 		GotInstallTabsMessage: ({ message: child }) => {
 			const next = Tabs.update(model.installTabs, child)
 			return {

@@ -118,6 +118,7 @@ const loadMore = (model: Model, context: PageContext): UpdateReturn => {
 				apiBase: context.env.apiBase,
 				cursorTimestamp: maybeNext.value.timestamp,
 				cursorTraceId: maybeNext.value.traceId,
+				pages: Option.match(AsyncData.getData(model.traces.data), { onNone: () => [], onSome: (data) => data.pages }),
 			}),
 		],
 	}
@@ -173,6 +174,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }) }),
 		FailedFetchFacets: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.fail(failure)) }) }),
+		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
 		ClickedRefresh: () =>
 			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {

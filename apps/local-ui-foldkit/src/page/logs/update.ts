@@ -11,7 +11,7 @@ import { ReadClock } from "./command"
 import { filtersOf, modeOf } from "./filters"
 import { load } from "./load"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { initChipJsonTooltip, type Model } from "./model"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
 export type InitReturn = Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }>
@@ -42,7 +42,8 @@ export const init = (context: PageContext): InitReturn => {
 			maybeDetail: Option.none(),
 			isRefreshing: false,
 			copies: {},
-			chipCard: { visible: Option.none(), pendingOpen: Option.none(), pendingClose: Option.none(), generation: 0 },
+			chipCard: { visible: Option.none(), pendingOpen: Option.none(), pendingClose: Option.none(), generation: 0, isJsonExpanded: false },
+			chipJsonTooltip: initChipJsonTooltip(),
 		},
 		commands: [ReadClock(), Command.mapMessage(FilterSections.ReadRemembered(), toSections)],
 	}

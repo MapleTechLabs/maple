@@ -7,7 +7,7 @@ import { fetchTraceFacets } from "./fetch-facets"
 import { fetchTracePage, nextCursor, type TraceCursor } from "./fetch-traces"
 import { filtersOf } from "./filters"
 import { Message } from "./message"
-import type { TraceRow } from "./model"
+import { TraceRow } from "./model"
 
 /** What one list or facets request reads: the hash query (filters), the window and the server. */
 const RequestArgs = {
@@ -64,15 +64,27 @@ export const FetchTraces = Command.define("FetchLocalTraces", {
 })
 
 export const FetchNextPage = Command.define("FetchNextLocalTracesPage", {
-	args: { ...RequestArgs, cursorTimestamp: Schema.DateTimeUtc, cursorTraceId: Schema.String },
+	args: {
+		...RequestArgs,
+		cursorTimestamp: Schema.DateTimeUtc,
+		cursorTraceId: Schema.String,
+		/** The pages loaded so far; the cache keeps them with the new one. */
+		pages: Schema.Array(Schema.Array(TraceRow)),
+	},
 	messages: [Message.SucceededFetchNextPage, Message.FailedFetchNextPage],
-	execute: ({ key, search, startTime, endTime, apiBase, cursorTimestamp, cursorTraceId }) =>
+	execute: ({ key, search, startTime, endTime, apiBase, cursorTimestamp, cursorTraceId, pages }) =>
 		fetchTracePage(
 			filtersOf(new URLSearchParams(search)),
 			{ startTime, endTime },
 			{ timestamp: cursorTimestamp, traceId: cursorTraceId },
 			apiBase,
 		).pipe(
+			// `fetchNextPage` updates the cached query too, so a reload opens on every page loaded.
+			Effect.tap((page) =>
+				Effect.flatMap(Clock.currentTimeMillis, (atMs) =>
+					recordCached(tracesKey({ search, startTime, endTime }), pagesToCached({ pages: [...pages, page] }), atMs),
+				),
+			),
 			Effect.map((page) => Message.SucceededFetchNextPage({ key, page })),
 			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key, failure }))),
 		),

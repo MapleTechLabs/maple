@@ -23,5 +23,6 @@ export const Message = defineMessageUnion({
 	FailedRunQuery: { id: Schema.Number, title: Schema.String, detail: Schema.String },
 	ClickedDownload: { format: DownloadFormat },
 	CompletedDownload: {},
+	ClickedOpenFilters: {},
 })
 export type Message = typeof Message.Type

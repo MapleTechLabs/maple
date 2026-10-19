@@ -116,3 +116,14 @@ export const serialize = (entries: CacheEntries): string => {
 	)
 	return `{"version":1,"entries":[${kept.items.join(",")}]}`
 }
+
+/** The client's `gcTime`: a result nothing has read or written for an hour leaves the cache. */
+export const GC_MS = 60 * 60 * 1000
+
+/** `gcTime` applied: the entries used (read or written) within the last hour, by `lastUsedAtMs`. */
+export const dropUnused = (
+	entries: CacheEntries,
+	lastUsedAtMs: ReadonlyMap<string, number>,
+	nowMs: number,
+): CacheEntries =>
+	new Map(Array.filter(Array.fromIterable(entries), ([hash]) => nowMs - (lastUsedAtMs.get(hash) ?? 0) < GC_MS))

@@ -28,7 +28,7 @@ export const facetsKey = (window: Window): QueryKey => [
 const CachedPages = Schema.Struct({ pages: Schema.Array(Schema.Array(TraceRow)) })
 
 /** `useInfiniteQuery`'s data: the pages and the cursor each was fetched from. */
-export const pagesToCached = (data: TracePages) => ({
+export const pagesToCached = (data: Pick<TracePages, "pages">) => ({
 	pages: data.pages,
 	pageParams: [undefined, ...data.pages.slice(0, -1).map(nextCursor)],
 })

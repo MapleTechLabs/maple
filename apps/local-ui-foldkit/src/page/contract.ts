@@ -40,6 +40,8 @@ export const PageOutMessage = defineMessageUnion({
 	 * server and marks the signal presence stale, so the next empty state reads it again.
 	 */
 	RefetchedInPlace: {},
+	/** `PageShell`'s Filters button below `md`: the root opens the drawer around the page's rail. */
+	RequestedFilterDrawer: {},
 })
 export type PageOutMessage = typeof PageOutMessage.Type
 

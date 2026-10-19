@@ -1,5 +1,6 @@
 import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
+import * as Tooltip from "@maple/web-foldkit/ui/tooltip"
 import * as ToggleGroup from "@maple/web-foldkit/ui/toggle-group"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -30,6 +31,7 @@ export const Message = defineMessageUnion({
 	FoundCachedSeverities: { key: Schema.String, cached: CachedOf(Schema.Array(FacetOption)) },
 	ChangedViewport: { viewport: Viewport },
 	ClickedRefresh: {},
+	ClickedOpenFilters: {},
 	CompletedReadRefreshClock: { nowMs: Schema.Number },
 	ChangedSearch: { text: Schema.String },
 	ClickedClearSearch: {},
@@ -52,6 +54,8 @@ export const Message = defineMessageUnion({
 	LeftChipCard: {},
 	ElapsedChipDelay: { generation: Schema.Number },
 	PlacedChipCard: {},
+	ClickedChipJson: {},
+	GotChipJsonTooltipMessage: { message: Tooltip.Message },
 	CompletedCopyChip: {},
 	GotLogSheetMessage: { message: LogSheetMessage },
 	GotFilterSectionsMessage: { message: FilterSections.Message },

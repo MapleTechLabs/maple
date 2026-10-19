@@ -1,9 +1,10 @@
 import type { Resources } from "./platform/resources"
+import * as Dialog from "@maple/web-foldkit/ui/dialog"
 import { AsyncData, Command } from "foldkit"
 import { Option } from "effect"
 import { FetchSignalPresence, GoBack, Navigate, ProbeServer, RememberRange } from "./command"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { initFilterDrawer, type Model } from "./model"
 import { canGoBack } from "./navigation"
 import { shownDataOf } from "./data/shown"
 import { type PageContext, PageOutMessage } from "./page/contract"
@@ -31,6 +32,12 @@ const requestPresence = (model: Model): RootReturn => {
 	return { model: { ...model, presence, isPresenceStale: false }, commands: [FetchSignalPresence({ apiBase: model.env.apiBase, lastReadAtMs })] }
 }
 
+/** One step of the Filters drawer's Dialog, its Commands lifted. */
+export const filterDrawerStep = (model: Model, step: ReturnType<typeof Dialog.update>): RootReturn => ({
+	model: { ...model, filterDrawer: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotFilterDrawerMessage({ message })),
+})
+
 /** Start a probe now, retiring any pending timer. */
 export const probe = (model: Model): RootReturn =>
 	model.probe.isInFlight
@@ -57,6 +64,7 @@ export const foldPageOut = (model: Model, outMessage: PageOutMessage): RootRetur
 		}),
 		RequestedSignalPresence: () => requestPresence(model),
 		RefetchedInPlace: () => probe({ ...model, isPresenceStale: true }),
+		RequestedFilterDrawer: () => filterDrawerStep(model, Dialog.open(model.filterDrawer)),
 	})
 
 /** Folds one page step's Model, Commands and OutMessage into the root. */
@@ -76,7 +84,7 @@ export const enterLocation = (model: Model, previousKey: string | null): RootRet
 	const context = pageContextOf(model)
 	return previousKey === pageKeyOf(model.route)
 		? applyPage(model, locationChanged(model.page, context))
-		: applyPage(model, initPage(model.route, context))
+		: applyPage({ ...model, filterDrawer: initFilterDrawer() }, initPage(model.route, context))
 }
 
 export const updatePageMessage = (model: Model, message: PageMessage): RootReturn =>

@@ -13,7 +13,7 @@ import { button, linkButton } from "@maple/web-foldkit/ui/button"
 import { icon } from "@maple/web-foldkit/ui/icon"
 import { scrollArea } from "@maple/web-foldkit/ui/scroll-area"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LocalServiceMapData } from "./fetch"
+import type { LocalServiceMapData } from "./data"
 import { metricTile, panelHeader, peerList, type PeerRow, rates, sectionTitle, serviceHref, serviceTracesHref } from "./view-panel-kit"
 
 // `ServiceMapServicePanel` (apps/local-ui/src/components/service-map-panel.tsx).

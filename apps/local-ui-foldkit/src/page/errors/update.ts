@@ -154,6 +154,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		FailedFetchTraces: ({ fingerprintHash, key, failure }) =>
 			({ model: settleTraces(model, fingerprintHash, key, Result.fail(failure)) }),
 		ClickedRetryTraces: ({ fingerprintHash }) => loadCard(model, context, fingerprintHash, true),
+		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
 		ClickedRefresh: () =>
 			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {

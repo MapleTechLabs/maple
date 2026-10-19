@@ -53,3 +53,8 @@ export const readTimeFormat: Effect.Effect<TimeFormat> = Effect.sync(() => {
 	const resolved = new Intl.DateTimeFormat().resolvedOptions()
 	return { locale: resolved.locale, timeZone: resolved.timeZone }
 })
+
+/** `useIsMobile` (`max-md`): below 768px the sidebar is a sheet. */
+export const MOBILE_QUERY = "(max-width: 767px)"
+
+export const readIsMobile: Effect.Effect<boolean> = Effect.sync(() => window.matchMedia(MOBILE_QUERY).matches)

@@ -33,7 +33,7 @@ export const severitiesKey = (window: Window): QueryKey => {
 const CachedPages = Schema.Struct({ pages: Schema.Array(Schema.Array(LocalLog)) })
 
 /** `useInfiniteQuery`'s data: the pages and the cursor each was fetched from. */
-export const pagesToCached = (data: LogPages) => ({
+export const pagesToCached = (data: Pick<LogPages, "pages">) => ({
 	pages: data.pages,
 	pageParams: [undefined, ...data.pages.slice(0, -1).map(nextCursor)],
 })

@@ -1,12 +1,12 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { withCache } from "../../data/cached"
+import { recordCached, withCache } from "../../data/cached"
 import type { LoadFailure } from "../../data/local-query"
 import { logsKey, optionsFromCached, pagesFromCached, pagesToCached, patternsFromCached, patternsKey, patternsToCached, servicesKey, severitiesKey } from "./cache"
 import { fetchLogsPage, fetchPatterns, fetchServices, fetchSeverities, type LogCursor, nextCursor } from "./fetch"
 import { filtersOf } from "./filters"
 import { Message } from "./message"
-import type { LocalLog } from "./model"
+import { LocalLog } from "./model"
 
 /** What one request reads: the hash query (filters), the window and the server. */
 const RequestArgs = {
@@ -69,6 +69,8 @@ export const FetchNextPage = Command.define("FetchNextLocalLogsPage", {
 		cursorTraceId: Schema.String,
 		cursorSpanId: Schema.String,
 		cursorRecordIdentity: Schema.String,
+		/** The pages loaded so far; the cache keeps them with the new one. */
+		pages: Schema.Array(Schema.Array(LocalLog)),
 	},
 	messages: [Message.SucceededFetchNextPage, Message.FailedFetchNextPage],
 	execute: (args) =>
@@ -84,6 +86,12 @@ export const FetchNextPage = Command.define("FetchNextLocalLogsPage", {
 			},
 			args.apiBase,
 		).pipe(
+			// `fetchNextPage` updates the cached query too, so a reload opens on every page loaded.
+			Effect.tap((page) =>
+				Effect.flatMap(Clock.currentTimeMillis, (atMs) =>
+					recordCached(logsKey(args), pagesToCached({ pages: [...args.pages, page] }), atMs),
+				),
+			),
 			Effect.map((page) => Message.SucceededFetchNextPage({ key: args.key, page })),
 			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key: args.key, failure }))),
 		),

@@ -2,6 +2,8 @@ import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage
 import { Snapshot, ViewPrefs } from "@maple/web-foldkit/service-map/map/state"
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
+import { withCache } from "../../data/cached"
+import { mapFromCached } from "./data"
 import { fetchServiceMap } from "./fetch"
 import { Message } from "./message"
 
@@ -62,14 +64,25 @@ export const SaveViewPrefs = Command.define("SaveLocalServiceMapViewPrefs", {
 		}),
 })
 
+/** `useLocalServiceMap`: `windowed(["local", "service-map", durationSeconds, boundsKey(bounds)])`. */
 export const FetchServiceMap = Command.define("FetchLocalServiceMap", {
-	args: { key: Schema.String, startTime: Schema.String, endTime: Schema.String, durationSeconds: Schema.Number, apiBase: Schema.String },
-	messages: [Message.SucceededFetchServiceMap, Message.FailedFetchServiceMap],
-	execute: ({ key, startTime, endTime, durationSeconds, apiBase }) =>
-		fetchServiceMap({ startTime, endTime }, durationSeconds, apiBase).pipe(
-			Effect.flatMap((data) =>
-				Effect.map(Clock.currentTimeMillis, (fetchedAtMs) => Message.SucceededFetchServiceMap({ key, data, fetchedAtMs })),
-			),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchServiceMap({ key, failure }))),
-		),
+	args: {
+		key: Schema.String,
+		startTime: Schema.String,
+		endTime: Schema.String,
+		durationSeconds: Schema.Number,
+		apiBase: Schema.String,
+		readsCache: Schema.Boolean,
+	},
+	messages: [Message.SucceededFetchServiceMap, Message.FailedFetchServiceMap, Message.FoundCachedServiceMap],
+	execute: ({ key, startTime, endTime, durationSeconds, apiBase, readsCache }) =>
+		withCache({
+			key: ["local", "service-map", durationSeconds, `${startTime}/${endTime}`],
+			readsCache,
+			fromCached: mapFromCached,
+			toCached: (data) => data,
+			fetch: fetchServiceMap({ startTime, endTime }, durationSeconds, apiBase),
+			found: (cached) => Message.FoundCachedServiceMap({ key, cached }),
+			succeeded: (data, fetchedAtMs) => Message.SucceededFetchServiceMap({ key, data, fetchedAtMs }),
+		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchServiceMap({ key, failure })))),
 })

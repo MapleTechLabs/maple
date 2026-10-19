@@ -110,6 +110,32 @@ const olderLogsEntry = {
 	updatedAt: FROZEN_NOW_MS - HOUR_MS,
 }
 
+const mapEdge = (sourceService: string, targetService: string, callCount: number) => ({
+	sourceService,
+	targetService,
+	callCount,
+	estimatedCallCount: callCount,
+	errorCount: 2,
+	errorRate: 2 / callCount,
+	avgDurationMs: 18,
+	maxDurationMs: 120,
+	hasSampling: false,
+	samplingWeight: 1,
+})
+
+/** `useLocalServiceMap` an hour ago (1 h range: `durationSeconds` 3600), its Maps in the codec's form. */
+const olderServiceMapEntry = {
+	key: ["local", "service-map", 3600, olderWindow],
+	data: {
+		edges: [mapEdge("cached-web", "cached-api", 400), mapEdge("cached-api", "cached-worker", 120)],
+		dbEdges: [],
+		overviews: [],
+		platforms: { $t: "map", v: [["cached-web", "web"]] },
+		runtimes: { $t: "map", v: [] },
+	},
+	updatedAt: FROZEN_NOW_MS - HOUR_MS,
+}
+
 const saved = (entries: ReadonlyArray<unknown>) => ({ [STORAGE_KEY]: JSON.stringify({ version: 1, entries }) })
 
 const scenario = (id: string, title: string, hash: string, extra: Partial<Scenario>): Scenario => ({
@@ -146,6 +172,16 @@ export const localCacheArea: AreaModule = {
 			localStorage: saved([olderCatalogEntry]),
 			faults: { delays: { "local.query": HELD_MS } },
 			settle: "held",
+		}),
+		scenario("service-map-loading", "the service map opens on an older window", "/service-map", {
+			localStorage: saved([olderServiceMapEntry]),
+			faults: { delays: { "local.query": HELD_MS } },
+			settle: "held",
+		}),
+		scenario("service-map-offline", "the service map with the server gone", "/service-map", {
+			localStorage: saved([olderServiceMapEntry]),
+			faults: { refusals: ["local."] },
+			steps: untilOffline,
 		}),
 		scenario("logs-loading", "logs open on an older window", "/logs", {
 			localStorage: saved([olderLogsEntry]),

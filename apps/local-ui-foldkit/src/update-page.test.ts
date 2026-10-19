@@ -12,6 +12,7 @@ const flags = {
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
 	rememberedRange: "1h",
 	isSidebarOpen: true,
+	isMobile: false,
 	theme: "dark" as const,
 	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	hasSavedResults: false,

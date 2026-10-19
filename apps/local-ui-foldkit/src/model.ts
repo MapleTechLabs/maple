@@ -1,3 +1,4 @@
+import * as Dialog from "@maple/web-foldkit/ui/dialog"
 import * as Popover from "@maple/web-foldkit/ui/popover"
 import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import * as Toast from "@maple/web-foldkit/ui/toast"
@@ -8,6 +9,7 @@ import { PresenceResult } from "./data/signal-presence"
 import { Copies } from "./page/kit/copies"
 import { LocalEnv, Theme } from "./env"
 import { TimeFormat } from "./page/kit/local-time"
+import { FILTER_DRAWER_ID } from "./page/kit/page-shell"
 import { PageModel } from "./page/registry"
 import { AppRoute, Location } from "./route"
 import { ServerState } from "./server/state"
@@ -34,6 +36,10 @@ export const Model = Schema.Struct({
 	timeFormat: TimeFormat,
 	isSidebarOpen: Schema.Boolean,
 	isSidebarOpenMobile: Schema.Boolean,
+	/** Below `md` the sidebar is a sheet (`useIsMobile`). */
+	isMobile: Schema.Boolean,
+	/** `PageShell`'s Filters drawer below `md`; a new page starts it closed. */
+	filterDrawer: Dialog.Model,
 	maybeServer: Schema.Option(ServerState),
 	probe: Probe,
 	/** `ConnectButton`'s latch: loud until the first telemetry lands, quiet after. */
@@ -53,3 +59,5 @@ export const Model = Schema.Struct({
 	page: PageModel,
 })
 export type Model = typeof Model.Type
+
+export const initFilterDrawer = (): Dialog.Model => Dialog.init(FILTER_DRAWER_ID, "sheet")

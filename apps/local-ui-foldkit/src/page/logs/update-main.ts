@@ -15,14 +15,24 @@ import type { Model } from "./model"
 import { appendPage, loadMoreIfAtEnd, rowsOf } from "./stream"
 import { navigate, selectPattern, setRange, settleRefresh, toSections, type UpdateReturn } from "./update"
 import * as LogSheet from "../kit/log-sheet/update"
-import { closeChip, elapseDelay, enterCard, leaveCard, leaveChip, scheduleOpen } from "./update-chips"
+import {
+	closeChip,
+	elapseDelay,
+	enterCard,
+	leaveCard,
+	leaveChip,
+	scheduleOpen,
+	toggleChipJson,
+	updateChipJsonTooltip,
+	withCard,
+} from "./update-chips"
 import { updateFetch, updateFound } from "./update-fetch"
 import { virtualWindow } from "./virtualize"
 
 /** A card whose row scrolled out of the virtual window goes with it. */
 const dropScrolledCard = (model: Model): Model => {
 	const rendered = new Set(virtualWindow(rowsOf(model).length, model.viewport))
-	return { ...model, chipCard: { ...model.chipCard, visible: Option.filter(model.chipCard.visible, (chip) => rendered.has(chip.index)) } }
+	return withCard(model, { ...model.chipCard, visible: Option.filter(model.chipCard.visible, (chip) => rendered.has(chip.index)) })
 }
 
 /** Folds a sheet step into the page. */
@@ -75,6 +85,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		FailedFetchSeverities: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, severities: accept(model.severities, key, Result.fail(failure)) }) }),
 		ChangedViewport: ({ viewport }) => loadMoreIfAtEnd(dropScrolledCard({ ...model, viewport }), context),
+		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
 		ClickedRefresh: () =>
 			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {
@@ -111,6 +122,8 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		LeftChipCard: () => leaveCard(model),
 		ElapsedChipDelay: ({ generation }) => elapseDelay(model, generation),
 		PlacedChipCard: () => ({ model }),
+		ClickedChipJson: () => toggleChipJson(model),
+		GotChipJsonTooltipMessage: ({ message: child }) => updateChipJsonTooltip(model, child),
 		GotLogSheetMessage: ({ message: child }) =>
 			Option.match(model.maybeDetail, { onNone: () => ({ model }), onSome: (sheet) => liftSheet(model, LogSheet.update(sheet, child)) }),
 		GotFilterSectionsMessage: ({ message: child }) => {

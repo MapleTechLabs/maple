@@ -27,6 +27,7 @@ export const Message = defineMessageUnion({
 	FailedFetchTraces: { fingerprintHash: Schema.String, key: Schema.String, failure: LoadFailure },
 	ClickedRetryTraces: { fingerprintHash: Schema.String },
 	ClickedRefresh: {},
+	ClickedOpenFilters: {},
 	CompletedReadRefreshClock: { nowMs: Schema.Number },
 	ToggledRootOnly: {},
 	ToggledFacetOption: { param: FacetParam, name: Schema.String },
