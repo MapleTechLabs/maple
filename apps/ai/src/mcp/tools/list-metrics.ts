@@ -33,7 +33,7 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 		title: "List Metrics",
 		description:
 			"Discover custom metrics with their type, unit, monotonicity and data volume. Pass a discovered `metric_name` and `metric_type` to query_data source=metrics. " +
-			"Google Cloud Monitoring metrics with data in the last day are listed too, under service `Google Cloud`, and are read live from Google.",
+			"Google Cloud Monitoring metrics with data in the last day are listed too, under service `Google Cloud`, in the room the first page leaves (search e.g. `cloudsql.googleapis.com` to find them), and are read live from Google.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
@@ -85,9 +85,12 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 				{ concurrency: "unbounded" },
 			)
 
-			// Google rows ride on the first page; paging counts the warehouse's alone.
+			// Google rows fill what the first page leaves free; paging counts the warehouse's alone.
 			const hasMore = metricsResult.data.length === params.limit
-			const metrics: ReadonlyArray<MetricListRow> = [...metricsResult.data, ...gcpMetrics]
+			const metrics: ReadonlyArray<MetricListRow> = [
+				...metricsResult.data,
+				...gcpMetrics.slice(0, Math.max(0, params.limit - metricsResult.data.length)),
+			]
 			yield* Effect.annotateCurrentSpan("result.rowCount", metrics.length)
 
 			return {
