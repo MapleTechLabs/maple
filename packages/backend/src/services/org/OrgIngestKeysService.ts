@@ -28,6 +28,8 @@ import {
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
+import { SharedIngestKeysMemo } from "./shared-ingest-keys-memo"
 
 const toPersistenceError = (error: unknown) =>
 	new IngestKeyPersistenceError({
@@ -46,10 +48,10 @@ const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
 // isolate. Matches `OrgClickHouseSettingsService`'s config memo TTL, so
 // cross-isolate staleness after a reroll is bounded to minutes.
 //
-// The Map itself is built per service instance (not at module scope) so it is
-// scoped to the layer that owns the connection it caches — module scope would
-// share one memo across every database in a process, which is exactly wrong for
-// tests that build a fresh PGlite per case.
+// The store is built per service instance (not at module scope) so it is scoped to
+// the layer that owns the connection it caches; module scope would share one memo
+// across every database in a process. A Worker that wants it for the whole isolate
+// provides `SharedIngestKeysMemo`.
 const ORG_INGEST_KEYS_MEMO_TTL_MS = 300_000
 
 const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, IngestKeyEncryptionError> =>
@@ -92,7 +94,8 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "OrgIngestKeysService", toPersistenceError)
 			/** Holds the ENCRYPTED row exactly as stored — `toResponse` decrypts per request. */
-			const ingestKeysMemo = new Map<string, { row: OrgIngestKeyRow; expiresAt: number }>()
+			const ingestKeysMemo =
+				(yield* SharedIngestKeysMemo) ?? (yield* makeExpiringStore<OrgIngestKeyRow>())
 			const env = yield* Env
 			const encryptionKey = yield* parseEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -150,19 +153,16 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			// early-returns and contributes nothing but a duplicate span.
 			const ensureRow = Effect.fnUntraced(function* (orgId: OrgId, userId: UserId) {
 				const now = yield* Clock.currentTimeMillis
-				const memoized = ingestKeysMemo.get(orgId)
-				if (memoized !== undefined && memoized.expiresAt > now) {
+				const memoized = yield* ingestKeysMemo.get(orgId)
+				if (Option.isSome(memoized)) {
 					yield* Effect.annotateCurrentSpan("maple.ingest_keys.memo_hit", true)
-					return memoized.row
+					return memoized.value
 				}
 				yield* Effect.annotateCurrentSpan("maple.ingest_keys.memo_hit", false)
 
 				const existing = yield* selectRow(orgId)
 				if (Option.isSome(existing)) {
-					ingestKeysMemo.set(orgId, {
-						row: existing.value,
-						expiresAt: now + ORG_INGEST_KEYS_MEMO_TTL_MS,
-					})
+					yield* ingestKeysMemo.set(orgId, existing.value, now + ORG_INGEST_KEYS_MEMO_TTL_MS)
 					return existing.value
 				}
 
@@ -213,10 +213,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 						}),
 					)
 				}
-				ingestKeysMemo.set(orgId, {
-					row: row.value,
-					expiresAt: now + ORG_INGEST_KEYS_MEMO_TTL_MS,
-				})
+				yield* ingestKeysMemo.set(orgId, row.value, now + ORG_INGEST_KEYS_MEMO_TTL_MS)
 
 				return row.value
 			})
@@ -236,12 +233,17 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				userId: UserId,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				const [memoHits, misses] = Arr.partition(Arr.dedupe(orgIds), (orgId) => {
-					const memoized = ingestKeysMemo.get(orgId)
-					return memoized !== undefined && memoized.expiresAt > now
-						? Result.succeed([orgId, memoized.row] as const)
-						: Result.fail(orgId)
-				})
+				const lookups = yield* Effect.forEach(Arr.dedupe(orgIds), (orgId) =>
+					ingestKeysMemo.get(orgId).pipe(
+						Effect.map(
+							Option.match({
+								onNone: () => Result.fail(orgId),
+								onSome: (row) => Result.succeed([orgId, row] as const),
+							}),
+						),
+					),
+				)
+				const [memoHits, misses] = Arr.partition(lookups, (lookup) => lookup)
 				yield* Effect.annotateCurrentSpan({
 					"maple.ingest_keys.requested": memoHits.length + misses.length,
 					"maple.ingest_keys.memo_misses": misses.length,
@@ -258,13 +260,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 					: []
 				yield* Effect.forEach(
 					selected,
-					(row) =>
-						Effect.sync(() =>
-							ingestKeysMemo.set(row.orgId, {
-								row,
-								expiresAt: now + ORG_INGEST_KEYS_MEMO_TTL_MS,
-							}),
-						),
+					(row) => ingestKeysMemo.set(row.orgId, row, now + ORG_INGEST_KEYS_MEMO_TTL_MS),
 					{ discard: true },
 				)
 
@@ -309,7 +305,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 				// The memoized row is now stale in this isolate; others fall off within
 				// the TTL. Must come before the re-read so it repopulates with the new key.
-				ingestKeysMemo.delete(orgId)
+				yield* ingestKeysMemo.remove(orgId)
 
 				const row = yield* selectRow(orgId)
 				if (Option.isNone(row)) {
@@ -319,7 +315,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 						}),
 					)
 				}
-				ingestKeysMemo.set(orgId, { row: row.value, expiresAt: now + ORG_INGEST_KEYS_MEMO_TTL_MS })
+				yield* ingestKeysMemo.set(orgId, row.value, now + ORG_INGEST_KEYS_MEMO_TTL_MS)
 
 				return yield* toResponse(row.value)
 			})
@@ -351,7 +347,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 					),
 				)
 
-				ingestKeysMemo.delete(orgId)
+				yield* ingestKeysMemo.remove(orgId)
 
 				const row = yield* selectRow(orgId)
 				if (Option.isNone(row)) {
@@ -361,7 +357,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 						}),
 					)
 				}
-				ingestKeysMemo.set(orgId, { row: row.value, expiresAt: now + ORG_INGEST_KEYS_MEMO_TTL_MS })
+				yield* ingestKeysMemo.set(orgId, row.value, now + ORG_INGEST_KEYS_MEMO_TTL_MS)
 
 				return yield* toResponse(row.value)
 			})
