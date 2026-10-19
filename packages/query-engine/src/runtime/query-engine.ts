@@ -71,6 +71,15 @@ import {
 } from "../registry/product-events"
 import { runQueryDefinition } from "./query-definition-runner"
 import { resolveDirectRouteCachePolicy, type DirectRouteCachePolicyInput } from "./cache-policy"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
+import type { GcpLiveMetrics } from "./live-metrics"
+import {
+	gcpMetricAttributeKeys,
+	gcpMetricAttributeValues,
+	gcpMetricsAlertBuckets,
+	gcpMetricsBreakdown,
+	gcpMetricsTimeseries,
+} from "./gcp-metrics"
 
 export {
 	makeDirectRouteCachePolicy,
@@ -1448,7 +1457,11 @@ const withTraceFacetsFallback = <A, E, R>(
 			)
 		: run(true)
 
-export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEngineWarehouse<T>) =>
+/** `gcp` answers metrics on a Cloud Monitoring metric type; absent, those fail as unavailable. */
+export const makeQueryEngineExecute = <T extends QueryTenant>(
+	warehouse: QueryEngineWarehouse<T>,
+	gcp?: GcpLiveMetrics<T>,
+) =>
 	Effect.fn("QueryEngineService.execute")(function* (
 		tenant: T,
 		request: QueryEngineExecuteRequest,
@@ -1639,6 +1652,29 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			})
 		}
 
+		if (
+			request.query.source === "metrics" &&
+			request.query.kind === "timeseries" &&
+			isGcpMetricType(request.query.filters.metricName)
+		) {
+			const { rows, stepSeconds } = yield* gcpMetricsTimeseries(gcp, tenant, request.query, {
+				startMs: range.startMs,
+				endMs: range.endMs,
+				bucketSeconds,
+			})
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "timeseries",
+					source: "metrics",
+					data: groupTimeSeriesRows(rows, (row) => row.value, {
+						startMs: range.startMs,
+						endMs: range.endMs,
+						bucketSeconds: stepSeconds,
+					}),
+				},
+			})
+		}
+
 		if (request.query.source === "metrics" && request.query.kind === "timeseries") {
 			const execution = yield* executeMetricsTimeseriesRows(
 				warehouse,
@@ -1720,27 +1756,32 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					result: { kind: "sparklines", source: "metrics", data: [] },
 				})
 			}
+			// Google Cloud metrics are not read for previews; they keep empty points.
+			const warehouseMetricNames = metricNames.filter((name) => !isGcpMetricType(name))
 
 			const sparklineBucketSeconds =
 				request.query.bucketSeconds ?? computeBucketSeconds(range.startMs, range.endMs)
 			yield* Effect.annotateCurrentSpan("query.bucketSeconds", sparklineBucketSeconds)
 			yield* Effect.annotateCurrentSpan("query.metricCount", metricNames.length)
 
-			const rows = yield* executeCHQuery(
-				warehouse,
-				tenant,
-				CH.metricsSparklinesQuery({
-					metricType: request.query.metricType,
-					metricNames,
-				}),
-				{
-					orgId: tenant.orgId,
-					startTime: request.startTime,
-					endTime: request.endTime,
-					bucketSeconds: sparklineBucketSeconds,
-				},
-				"metricsSparklines",
-			)
+			const rows =
+				warehouseMetricNames.length === 0
+					? []
+					: yield* executeCHQuery(
+							warehouse,
+							tenant,
+							CH.metricsSparklinesQuery({
+								metricType: request.query.metricType,
+								metricNames: warehouseMetricNames,
+							}),
+							{
+								orgId: tenant.orgId,
+								startTime: request.startTime,
+								endTime: request.endTime,
+								bucketSeconds: sparklineBucketSeconds,
+							},
+							"metricsSparklines",
+						)
 
 			// Numbers are coerced here (not via a rowSchema) because BYO-ClickHouse
 			// serializes 64-bit aggregates as JSON strings.
@@ -1856,6 +1897,20 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					source: "product_events",
 					data: rows.map((row) => ({ name: row.name, value: row.value })),
 				},
+			})
+		}
+
+		if (
+			request.query.source === "metrics" &&
+			request.query.kind === "breakdown" &&
+			isGcpMetricType(request.query.filters.metricName)
+		) {
+			const data = yield* gcpMetricsBreakdown(gcp, tenant, request.query, {
+				endMs: range.endMs,
+				rangeSeconds: range.rangeSeconds,
+			})
+			return new QueryEngineExecuteResponse({
+				result: { kind: "breakdown", source: "metrics", data },
 			})
 		}
 
@@ -2095,6 +2150,23 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			})
 		}
 
+		if (
+			request.query.source === "metrics" &&
+			request.query.kind === "attributeKeys" &&
+			request.query.metricName !== undefined &&
+			isGcpMetricType(request.query.metricName)
+		) {
+			const data = yield* gcpMetricAttributeKeys(gcp, tenant, {
+				metricName: request.query.metricName,
+				scope: request.query.scope,
+				limit: request.query.limit,
+				endMs: range.endMs,
+			})
+			return new QueryEngineExecuteResponse({
+				result: { kind: "attributeKeys", source: "metrics", data },
+			})
+		}
+
 		if (request.query.kind === "attributeKeys") {
 			const scope = resolveAttributeScope(request.query.source, request.query.scope)
 			// Per-metric scoping reads the raw metric table (the hourly rollup has no
@@ -2318,6 +2390,24 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			})
 		}
 
+		if (
+			request.query.source === "metrics" &&
+			request.query.kind === "attributeValues" &&
+			request.query.metricName !== undefined &&
+			isGcpMetricType(request.query.metricName)
+		) {
+			const data = yield* gcpMetricAttributeValues(gcp, tenant, {
+				metricName: request.query.metricName,
+				attributeKey: request.query.attributeKey,
+				limit: request.query.limit,
+				endMs: range.endMs,
+				rangeSeconds: range.rangeSeconds,
+			})
+			return new QueryEngineExecuteResponse({
+				result: { kind: "attributeValues", source: "metrics", data },
+			})
+		}
+
 		if (request.query.kind === "attributeValues") {
 			// Per-metric scoping reads the raw metric table (see attributeKeys above).
 			const { metricName, metricNames, metricType } = request.query
@@ -2487,6 +2577,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 	tenant: T,
 	request: AlertBucketRequest,
 	bucketSeconds: number,
+	gcp?: GcpLiveMetrics<T>,
 ) {
 	if (request.source.kind === "raw_sql") {
 		return yield* computeRawSqlBuckets(warehouse, tenant, request.source, request)
@@ -2591,6 +2682,15 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 				sampleCount,
 			})
 		}
+	} else if (isGcpMetricType(query.filters.metricName)) {
+		obs.push(
+			...(yield* gcpMetricsAlertBuckets(gcp, tenant, query, {
+				startMs: toEpochMs(request.startTime),
+				endMs: toEpochMs(request.endTime),
+				bucketSeconds,
+				wholeRange: request.wholeRange,
+			})),
+		)
 	} else {
 		const execution = yield* executeMetricsTimeseriesRows(
 			warehouse,
@@ -2833,7 +2933,10 @@ const prepareAlertEvaluation = Effect.fnUntraced(function* (request: AlertEvalua
 	return query.bucketSeconds ?? computeBucketSeconds(startMs, endMs, BUCKET_POLICIES.alert)
 })
 
-export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryEngineWarehouse<T>) =>
+export const makeQueryEngineEvaluate = <T extends QueryTenant>(
+	warehouse: QueryEngineWarehouse<T>,
+	gcp?: GcpLiveMetrics<T>,
+) =>
 	Effect.fn("QueryEngineService.evaluate")(function* (
 		tenant: T,
 		request: AlertEvaluateRequest,
@@ -2852,7 +2955,7 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 			endTime: request.endTime,
 			wholeRange: true,
 		}
-		const load = computeAlertBuckets(warehouse, tenant, bucketRequest, bucketSeconds)
+		const load = computeAlertBuckets(warehouse, tenant, bucketRequest, bucketSeconds, gcp)
 		// Raw SQL may contain volatile functions. Keep its existing whole-result
 		// cache policy; only structured queries share buckets across reducers.
 		const obs = yield* request.source.kind === "spec"
@@ -2876,7 +2979,10 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
  *
  * Preview requests are ad-hoc form states and execute directly.
  */
-export const makeQueryEngineEvaluateSeries = <T extends QueryTenant>(warehouse: QueryEngineWarehouse<T>) =>
+export const makeQueryEngineEvaluateSeries = <T extends QueryTenant>(
+	warehouse: QueryEngineWarehouse<T>,
+	gcp?: GcpLiveMetrics<T>,
+) =>
 	Effect.fn("QueryEngineService.evaluateSeries")(function* (
 		tenant: T,
 		request: AlertEvaluateRequest,
@@ -2889,6 +2995,7 @@ export const makeQueryEngineEvaluateSeries = <T extends QueryTenant>(warehouse: 
 			tenant,
 			{ source: request.source, startTime: request.startTime, endTime: request.endTime },
 			bucketSeconds,
+			gcp,
 		)
 		yield* Effect.annotateCurrentSpan("result.pointCount", series.length)
 		return series

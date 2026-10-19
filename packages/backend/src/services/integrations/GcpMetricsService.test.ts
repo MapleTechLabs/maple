@@ -1104,13 +1104,14 @@ describe("GcpMetricsService", () => {
 				yield* pollAll
 				assert.strictEqual(yield* metricsError, READ_DENIED)
 
-				// Signing in as the reader does not go through the host project.
+				// Signing in as the reader does not go through the host project: a refusal for
+				// Maple's own project is Maple's to fix, not the connection's setup.
 				impersonate = () => googleError(403, "PERMISSION_DENIED", [errorInfo("SERVICE_DISABLED")])
 				yield* TestClock.setTime(now + 15 * minute)
 				yield* pollAll
 				assert.strictEqual(
 					yield* metricsError,
-					CANNOT_SIGN_IN.replace("DENIED)", "DENIED, SERVICE_DISABLED)"),
+					"Maple's request to Google's IAM Credentials API failed. Maple retries in 5 minutes. If this repeats, write to support@maple.dev. (IAM Credentials returned 403 PERMISSION_DENIED, SERVICE_DISABLED)",
 				)
 
 				// Details of another form cost neither the status code nor the poll.

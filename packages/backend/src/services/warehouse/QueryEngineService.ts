@@ -1,5 +1,6 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
+import { Clock, Context, Effect, Layer, Metric, Option, type Schema } from "effect"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
 import type { QueryEngineTimeoutError } from "@maple/domain/http"
 import {
@@ -41,6 +42,7 @@ import {
 import { EdgeCacheService } from "@maple/cache"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import * as QueryEngineMetrics from "@maple/backend/observability/QueryEngineMetrics"
+import { GcpLiveMetricsPort } from "@maple/backend/services/warehouse/GcpLiveMetricsPort"
 
 // QueryEngineService — caching + orchestration. The pure lowering (validation,
 // QuerySpec → CH, evaluate/raw-SQL) lives in `@maple/query-engine/runtime`; this
@@ -97,9 +99,10 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 			const warehouse = yield* WarehouseQueryService
 			const edgeCache = yield* EdgeCacheService
 			const bucketCache = yield* BucketCacheService
-			const executeImpl = makeQueryEngineExecute(warehouse)
-			const evaluateImpl = makeQueryEngineEvaluate(warehouse)
-			const evaluateSeriesImpl = makeQueryEngineEvaluateSeries(warehouse)
+			const gcp = Option.getOrUndefined(yield* Effect.serviceOption(GcpLiveMetricsPort))
+			const executeImpl = makeQueryEngineExecute(warehouse, gcp)
+			const evaluateImpl = makeQueryEngineEvaluate(warehouse, gcp)
+			const evaluateSeriesImpl = makeQueryEngineEvaluateSeries(warehouse, gcp)
 
 			// A request that has moved onto a registry definition. `apply` keeps the
 			// definition and its input paired under one type parameter, so the cache
@@ -339,6 +342,13 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 
 						if (!bucketCache.enabled) return yield* useBlobPath("bucket_cache_disabled")
 						if (request.query.kind !== "timeseries") return yield* useBlobPath("not_timeseries")
+						// Google settles recent points minutes late; settled-bucket caching would freeze gaps.
+						if (
+							request.query.source === "metrics" &&
+							isGcpMetricType(request.query.filters.metricName)
+						) {
+							return yield* useBlobPath("gcp_live")
+						}
 
 						const startEpochMs = toEpochMs(request.startTime)
 						const endEpochMs = toEpochMs(request.endTime)
