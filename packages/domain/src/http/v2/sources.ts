@@ -88,7 +88,7 @@ const expiresAtField = Schema.NullOr(Timestamp).annotate({
 const V2SourceHealth = Schema.Struct({
 	status: Schema.Literals(["disconnected", "failing", "stale", "paused", "pending", "healthy"]).annotate({
 		description:
-			"`healthy`: data is arriving. `pending`: nothing has arrived yet. `stale`: data stopped arriving (a day for push sources, the integration's poll interval for pull sources). `failing`: the last attempt failed. `paused`: data is dropped on purpose. `disconnected`: the token expired or the integration was removed.",
+			"`healthy`: data is arriving. `pending`: nothing has arrived yet. `stale`: data stopped arriving (a day for push sources; for pull sources, longer than the integration normally goes between collections). `failing`: the last attempt failed. `paused`: data is dropped on purpose. `disconnected`: the token expired or the integration was removed.",
 		examples: ["healthy"],
 	}),
 	last_data_at: Schema.NullOr(Timestamp).annotate({
