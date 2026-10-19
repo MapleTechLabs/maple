@@ -338,8 +338,9 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 							</span>
 						</div>
 						<p className="text-xs text-muted-foreground">
-							Linked to your organization, for everyone in this workspace — no {manifest.name}{" "}
-							account is tied to an individual Maple user.
+							{status?.supports_identity === true
+								? `Linked to your organization. Maple answers only people who have linked their ${manifest.name} account, as their own Maple user.`
+								: `Linked to your organization, for everyone in this workspace. No ${manifest.name} account is tied to an individual Maple user.`}
 						</p>
 						<RelativeTime
 							value={workspace.created_at}
