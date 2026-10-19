@@ -29,7 +29,10 @@
 			]
 		},
 		"apps/landing": {
-			"entry": ["src/worker.ts", "tools/**/*.ts", "tools/**/*.js"],
+			// scripts/figures/*.mjs generate blog figures and covers, run by hand with node.
+			// iso/ is a vendored drawing kit; only part of its API is used.
+			"entry": ["src/worker.ts", "tools/**/*.ts", "tools/**/*.js", "scripts/figures/*.mjs"],
+			"ignore": ["src/components/blog/foldkit/iso/**"],
 			"ignoreDependencies": ["@paper-design/shaders"]
 		},
 		"apps/api": {
