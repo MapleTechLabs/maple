@@ -160,6 +160,16 @@ const reload = (model: Model): Return => {
 	}
 }
 
+/** `open={readOnly ? false : chartPickerOpen}`: the picker closes once writes are unavailable. */
+const closePicker = (model: Model): Return => {
+	if (!model.pickerDialog.isOpen) return { model }
+	const closed = Dialog.close(model.pickerDialog)
+	return {
+		model: { ...model, pickerDialog: closed.model, pickerTarget: null },
+		commands: Command.mapMessages(closed.commands ?? [], (dialog) => Message.GotPickerDialogMessage({ message: dialog })),
+	}
+}
+
 /**
  * The picker's `onSelect` (`addWidget`): the dialog closes on the add, and an add from view mode
  * carries the board into edit mode with the viewer's controls.
@@ -169,7 +179,19 @@ const addPicked = (
 	context: PageContext,
 	pick: { readonly presetId: string | null; readonly chartId: string | null },
 ): Return => {
-	if (model.persistenceError !== null) return { model }
+	if (model.persistenceError !== null) {
+		const shut = closePicker(model)
+		return {
+			...shut,
+			outMessage: PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Dashboard editing is unavailable right now",
+				description: "Reconnect to the dashboard store, then add the widget again.",
+				timeoutMs: null,
+				action: null,
+			}),
+		}
+	}
 	const closed = Dialog.close(model.pickerDialog)
 	const commands = [
 		...Command.mapMessages(closed.commands ?? [], (dialog) =>
@@ -281,11 +303,14 @@ const receiveDocument = (
 				context,
 				"Load",
 			)
-			const shares =
-				model.shares === "Idle" && next.shares === "Loading"
-					? [FetchShares({ dashboardId: model.dashboardId })]
-					: []
-			return { ...planned, commands: [...(planned.commands ?? []), ...shares, ...refocus] }
+			const isFirstRead = model.shares === "Idle" && next.shares === "Loading"
+			const seq = model.sharing.fetchSeq + 1
+			const shares = isFirstRead ? [FetchShares({ dashboardId: model.dashboardId, seq })] : []
+			return {
+				...planned,
+				model: isFirstRead ? { ...planned.model, sharing: { ...planned.model.sharing, fetchSeq: seq } } : planned.model,
+				commands: [...(planned.commands ?? []), ...shares, ...refocus],
+			}
 		},
 	})
 
@@ -588,7 +613,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = TagEditor.update(model.tagEditor, inner)
 			const commands = Command.mapMessages(next.commands ?? [], wrapTagEditor)
 			const updated = { ...model, tagEditor: next.model }
-			return next.outMessage === undefined || model.persistenceError !== null
+			// Not gated on `persistenceError`: the dialog closed on Save, and a success clears the banner.
+			return next.outMessage === undefined
 				? { model: updated, commands }
 				: {
 						model: updated,
@@ -621,7 +647,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		BlurredGrip: (blurred) => gestureStep(model, context, blurred),
 		CompletedWrite: ({ result }) =>
 			Result.match(result, {
-				onFailure: (error) => ({ model: { ...model, persistenceError: error } }),
+				onFailure: (error) => closePicker({ ...model, persistenceError: error }),
 				onSuccess: (sync) =>
 					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
 			}),
