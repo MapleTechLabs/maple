@@ -145,7 +145,7 @@ single `Alchemy.Stack("maple", …)` whose program yields one module per app:
   KV, queues, the two Workflows and the `ChatSession` Durable Object, all yielded from its init
 - `apps/alerting/src/worker.ts` — cron-driven alerting Worker (cross-script workflow ref)
 - `apps/electric-sync/src/worker.ts` — ElectricSQL shape-proxy Worker
-- `apps/web/src/worker.ts` / `apps/landing/src/worker.ts` / `apps/local-ui/src/worker.ts`
+- `apps/web-foldkit/src/worker.ts` / `apps/landing/src/worker.ts` / `apps/local-ui/src/worker.ts`
   — static builds via `Command.Build` + asset-serving Workers
 
 Stage grammar is `prd` / `pr-<number>` / dev names, resolved via

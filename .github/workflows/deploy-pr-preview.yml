@@ -190,7 +190,6 @@ jobs:
                   SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
                   DESTROY_OUTCOME: ${{ steps.destroy.outcome }}
                   WEB_URL: ${{ steps.deploy.outputs.web_url }}
-                  WEB_FOLDKIT_URL: ${{ steps.deploy.outputs.web_foldkit_url }}
                   API_URL: ${{ steps.deploy.outputs.api_url }}
                   SYNC_URL: ${{ steps.deploy.outputs.sync_url }}
                   COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
@@ -232,9 +231,6 @@ jobs:
                       echo "| Service | Preview URL |"
                       echo "| :-- | :-- |"
                       printf '| Web | [%s](%s) |\n' "${WEB_URL#https://}" "$WEB_URL"
-                      if [ -n "$WEB_FOLDKIT_URL" ]; then
-                        printf '| Web (Foldkit) | [%s](%s) |\n' "${WEB_FOLDKIT_URL#https://}" "$WEB_FOLDKIT_URL"
-                      fi
                       printf '| API | [%s](%s) |\n' "${API_URL#https://}" "$API_URL"
                       printf '| Electric Sync | [%s](%s) |\n' "${SYNC_URL#https://}" "$SYNC_URL"
                       if [ -n "$INGEST_URL" ]; then
