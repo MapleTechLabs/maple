@@ -20,7 +20,7 @@ const contextFor = (search: string): PageContext => ({
 	canGoBack: false,
 })
 const context = contextFor("sql=SELECT%201")
-const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: 0, hasNewDataSince: () => false }
+const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: 0, clockMs: 0, hasNewDataSince: () => false }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, inputs)()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)

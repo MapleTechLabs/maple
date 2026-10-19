@@ -20,7 +20,7 @@ const contextAt = (search: string): PageContext => ({
 })
 const context = contextAt("")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
-const inputs = { context, presenceOf: () => Option.none(), presenceNowMs: 0, hasNewDataSince: () => false }
+const inputs = { context, presenceOf: () => Option.none(), presenceNowMs: 0, clockMs: 0, hasNewDataSince: () => false }
 const view = withViewInputs(pageView, inputs)()
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
@@ -79,5 +79,10 @@ describe("local errors", () => {
 		const closed = pageUpdate(answered.model, Message.ClickedErrorType({ fingerprintHash: "fp1" }))
 		const reopened = pageUpdate(closed.model, Message.ClickedErrorType({ fingerprintHash: "fp1" }))
 		expect(names(reopened.commands)).toEqual([])
+	})
+
+	test("last seen reads the root's newer clock, as legacy reads the time at each render", () => {
+		const later = withViewInputs(pageView, { ...inputs, clockMs: NOW + 20 * 60_000 })()
+		scene({ update: pageUpdate, view: later }, given(loaded([row("fp1", "ConnectionTimeout")])), expectView(text("21m ago")).toExist())
 	})
 })

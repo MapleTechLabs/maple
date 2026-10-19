@@ -47,7 +47,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						: []),
 				],
 			)
-		return detailBody(h, model, entry, maybeBounds.value)
+		return detailBody(h, model, entry, maybeBounds.value, inputs.clockMs)
 	}
 	return h.div(
 		[h.Class("flex h-full flex-col"), h.OnMount(ResolveThemeColors({ tokens: SERIES_CHART_TOKENS }))],

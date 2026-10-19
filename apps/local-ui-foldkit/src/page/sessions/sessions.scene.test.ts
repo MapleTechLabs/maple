@@ -25,6 +25,7 @@ const inputs: PageViewInputs = {
 	context,
 	presenceOf: () => Option.none(),
 	presenceNowMs: NOW,
+	clockMs: 0,
 	hasNewDataSince: () => false,
 }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)

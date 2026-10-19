@@ -18,7 +18,7 @@ const context: PageContext = {
 	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 }
-const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, hasNewDataSince: () => false }
+const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, clockMs: 0, hasNewDataSince: () => false }
 const view = withViewInputs(pageView, inputs)()
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)

@@ -9,6 +9,8 @@ export type PageViewInputs = Readonly<{
 	presenceOf: (signal: TelemetrySignal) => Option.Option<SignalPresence>
 	/** The clock at the presence read, for "last received 3m ago". */
 	presenceNowMs: number
+	/** The root's latest clock read (each server probe): legacy's per-render `Date.now()` for relative times. */
+	clockMs: number
 	/** `useNewDataSince(sinceMs)`: telemetry arrived after a list loaded. */
 	hasNewDataSince: (sinceMs: number) => boolean
 }>

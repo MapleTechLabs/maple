@@ -25,6 +25,7 @@ const inputs: PageViewInputs = {
 	context,
 	presenceOf: () => Option.some({ signal: "traces", status: "absent", lastSeenMs: null }),
 	presenceNowMs: NOW,
+	clockMs: 0,
 	hasNewDataSince: () => false,
 }
 const view = withViewInputs(pageView, inputs)()

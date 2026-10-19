@@ -27,6 +27,7 @@ const inputs: PageViewInputs = {
 	context,
 	presenceOf: () => Option.none(),
 	presenceNowMs: NOW,
+	clockMs: 0,
 	hasNewDataSince: () => false,
 }
 const view = withViewInputs(pageView, inputs)()

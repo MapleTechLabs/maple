@@ -1,11 +1,15 @@
-import { DateTime } from "effect"
+import { DateTime, Option } from "effect"
+import { ResolveThemeColors } from "@maple/web-foldkit/charts/theme-colors"
+import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
 import { PageOutMessage } from "../contract"
 import type { MetricEntry } from "../metrics/catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
+import type { PageViewInputs } from "../kit/inputs"
 import { init, update } from "./update"
+import { view as pageView } from "./view"
 
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-01T12:00:00Z"))
 const env = { apiBase: "", port: "4318", otlpEndpoint: "http://localhost:4318", isHosted: false }
@@ -63,5 +67,17 @@ describe("local metric detail", () => {
 	test("back without in-app history opens the list, filters kept, detail params dropped", () => {
 		const back = pageUpdate(entered().model, Message.ClickedBack())
 		expect(back.outMessage).toEqual(PageOutMessage.RequestedBack({ fallbackHash: "#/metrics?range=1h" }))
+	})
+
+	test("last seen reads the root's newer clock, as legacy reads the time at each render", () => {
+		const step = entered()
+		const found = pageUpdate(step.model, Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry, fetchedAtMs: NOW })).model
+		const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, clockMs: NOW + 20 * 60_000, hasNewDataSince: () => false }
+		scene(
+			{ update: pageUpdate, view: withViewInputs(pageView, inputs)() },
+			given(found),
+			Mount.resolve(ResolveThemeColors, Message.ResolvedThemeColors({ colors: {} })),
+			expectView(text(/20m ago/)).toExist(),
+		)
 	})
 })

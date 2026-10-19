@@ -58,7 +58,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					})
 		return h.div(
 			[h.Class(cn("space-y-2 p-4", model.byType.isPlaceholder && "opacity-60 transition-opacity"))],
-			rows.map((row) => errorTypeCard(h, row, cardOf(model, row.fingerprintHash), query, model.nowMs)),
+			rows.map((row) => errorTypeCard(h, row, cardOf(model, row.fingerprintHash), query, Math.max(model.nowMs, inputs.clockMs))),
 		)
 	}
 	return pageShell(

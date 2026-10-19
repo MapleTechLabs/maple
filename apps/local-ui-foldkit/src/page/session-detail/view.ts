@@ -56,8 +56,10 @@ const content = (h: HtmlBuilder<Message>, model: Model, timeFormat: TimeFormat):
 	return sessionBody(h, model, session, timeFormat)
 }
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	h.div(
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((opened, inputs, h) => {
+	// "Live" and "started 3m ago" follow the root's clock, as legacy's render-time `Date.now()` does.
+	const model = { ...opened, nowMs: Math.max(opened.nowMs, inputs.clockMs) }
+	return h.div(
 		[h.Class("flex h-full flex-col")],
 		[
 			h.div(
@@ -78,5 +80,5 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			),
 			h.div([h.Class("min-h-0 flex-1 overflow-auto")], [content(h, model, inputs.context.timeFormat)]),
 		],
-	),
-)
+	)
+})
