@@ -187,7 +187,9 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 			{ status: 400, headers: corsHeaders(request) },
 		)
 
+	// Loopback only: the fixtures accept any bearer and the call log has no auth.
 	const apiServer = Bun.serve({
+		hostname: "127.0.0.1",
 		port: options.apiPort,
 		idleTimeout: 0,
 		fetch: async (request) => {
@@ -211,6 +213,7 @@ export const startFixtureBackend = async (options: StartFixtureBackendOptions) =
 		},
 	})
 	const electricServer = Bun.serve({
+		hostname: "127.0.0.1",
 		port: options.electricPort,
 		idleTimeout: 0,
 		fetch: (request) => {

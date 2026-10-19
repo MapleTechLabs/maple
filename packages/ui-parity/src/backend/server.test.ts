@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process"
+import { networkInterfaces } from "node:os"
 import { fileURLToPath } from "node:url"
 import { Schema } from "effect"
 import {
@@ -147,7 +148,9 @@ describe("unmocked requests", () => {
 		})
 		expect(response.status).toBe(501)
 		const { unmocked } = await takeCalls("unmocked-endpoint")
-		expect(unmocked).toEqual(["queryEngine.productEventTraceSamples (POST /internal/query-engine/product-event-trace-samples)"])
+		expect(unmocked).toEqual([
+			"queryEngine.productEventTraceSamples (POST /internal/query-engine/product-event-trace-samples)",
+		])
 	})
 
 	it("reports a path no API declares", async () => {
@@ -171,5 +174,21 @@ describe("auth", () => {
 		})
 		const body: { readonly orgId: string; readonly authMode: string } = await response.json()
 		expect(body).toMatchObject({ orgId: "org_parity_acme", authMode: "self_hosted" })
+	})
+})
+
+// The first non-loopback IPv4 address, when the machine has one.
+const lanAddress = Object.values(networkInterfaces())
+	.flatMap((entries) => entries ?? [])
+	.find((entry) => entry.family === "IPv4" && !entry.internal)?.address
+
+describe("network exposure", () => {
+	it.skipIf(lanAddress === undefined)("refuses connections from outside loopback", async () => {
+		const reach = (port: number) =>
+			fetch(`http://${lanAddress}:${port}/__parity/calls?capture=lan`).then(
+				() => "reachable",
+				() => "refused",
+			)
+		expect(await Promise.all([reach(base), reach(base + 3)])).toEqual(["refused", "refused"])
 	})
 })
