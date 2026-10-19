@@ -163,6 +163,12 @@ interface ClerkGlobal extends ClerkResources {
 	readonly unmountSignUp: (element: HTMLDivElement) => void
 	readonly setActive: (params: { readonly organization: string | null }) => Promise<void>
 	readonly signOut: () => Promise<void>
+	/** Clerk's re-verification modal, what `useReverification` opens (absent on a stub). */
+	readonly __internal_openReverification?: (props: {
+		readonly appearance?: unknown
+		readonly afterVerification: () => void
+		readonly afterVerificationCancelled: () => void
+	}) => void
 }
 declare global {
 	interface Window {
@@ -412,6 +418,48 @@ export const clerkTry = <A>(fallback: string, run: () => Promise<A>): Effect.Eff
 		try: run,
 		catch: (cause) => new ClerkActionError({ message: clerkErrorMessage(cause, fallback), cause }),
 	})
+
+/** `isReverificationCancelledError`: a dismissed challenge, which the tabs settle without a toast. */
+export const REVERIFICATION_CANCELLED = "User cancelled attempted verification"
+
+class ReverificationCancelledError extends Schema.TaggedError<ReverificationCancelledError>()(
+	"@maple/web-foldkit/ReverificationCancelledError",
+	{ message: Schema.String },
+) {}
+
+/** `session_reverification_required`: the session is past the window for this write. */
+const isReverificationRequired = (cause: unknown): boolean =>
+	Predicate.hasProperty(cause, "errors") &&
+	Array.isArray(cause.errors) &&
+	cause.errors.some((error: unknown) => stringField(error, "code") === "session_reverification_required")
+
+/** Opens Clerk's challenge in the app's theme; fails with `cause` when there is no modal to open. */
+const reverify = (cause: unknown): Effect.Effect<void, unknown> =>
+	Effect.flatMap(
+		Effect.tryPromise(() => import("@maple/web/lib/clerk-appearance")).pipe(
+			Effect.map(({ clerkAppearance }) => clerkAppearance),
+			Effect.orElseSucceed(() => undefined),
+		),
+		(appearance) =>
+			Effect.callback<void, unknown>((resume) => {
+				const open = window.Clerk?.__internal_openReverification
+				if (open === undefined) return resume(Effect.fail(cause))
+				open.call(window.Clerk, {
+					appearance,
+					afterVerification: () => resume(Effect.void),
+					afterVerificationCancelled: () => resume(Effect.fail(new ReverificationCancelledError({ message: REVERIFICATION_CANCELLED }))),
+				})
+			}),
+	)
+
+/** `useReverification(fetcher)`: a refused write opens the challenge, then runs once more. */
+export const clerkTryReverified = <A>(fallback: string, run: () => Promise<A>): Effect.Effect<A, ClerkActionError> => {
+	const attempt = Effect.tryPromise({ try: run, catch: (cause): unknown => cause })
+	return attempt.pipe(
+		Effect.catchIf(isReverificationRequired, (cause) => Effect.andThen(reverify(cause), attempt)),
+		Effect.mapError((cause) => new ClerkActionError({ message: clerkErrorMessage(cause, fallback), cause })),
+	)
+}
 
 /** `setActive({ organization })` then home: after leaving or deleting the active organization. */
 export const switchAwayFrom = (orgId: string): Effect.Effect<void> =>

@@ -5,7 +5,7 @@ import { ClerkActionError } from "../../../../platform/clerk"
 import * as Dialog from "../../../../ui/dialog"
 import * as Menu from "../../../../ui/menu"
 import { PageOutMessage, type PageReturn } from "../../../contract"
-import { settled, withUser } from "../clerk-write"
+import { settled, withUser, withUserReverified } from "../clerk-write"
 import { readAccountUser } from "../user"
 import { Message, type Model } from "./model"
 
@@ -18,8 +18,13 @@ const ReadPasskeysUser = Command.define("ReadPasskeysUser", {
 	),
 })
 
-const withPasskey = <A>(id: string, fallback: string, run: (passkey: ClerkPasskeyResource) => Promise<A>) =>
-	withUser(fallback, (user) =>
+const withPasskey = <A>(
+	id: string,
+	fallback: string,
+	run: (passkey: ClerkPasskeyResource) => Promise<A>,
+	write = withUser<A>,
+) =>
+	write(fallback, (user) =>
 		Option.match(
 			Array.findFirst(user.passkeys, (passkey) => passkey.id === id),
 			{
@@ -32,7 +37,7 @@ const withPasskey = <A>(id: string, fallback: string, run: (passkey: ClerkPasske
 /** `createPasskey()` takes no name: Clerk derives one from the authenticator. */
 const CreatePasskey = Command.define("CreateClerkPasskey", {
 	messages: [Message.CompletedCreate],
-	execute: withUser("Failed to add a passkey", (user) => user.createPasskey()).pipe(
+	execute: withUserReverified("Failed to add a passkey", (user) => user.createPasskey()).pipe(
 		settled((result) => Message.CompletedCreate({ result })),
 	),
 })
@@ -50,7 +55,7 @@ const RemovePasskey = Command.define("RemoveClerkPasskey", {
 	args: { id: Schema.String },
 	messages: [Message.CompletedRemove],
 	execute: ({ id }) =>
-		withPasskey(id, "Failed to remove passkey", (passkey) => passkey.delete()).pipe(
+		withPasskey(id, "Failed to remove passkey", (passkey) => passkey.delete(), withUserReverified).pipe(
 			settled((result) => Message.CompletedRemove({ result })),
 		),
 })

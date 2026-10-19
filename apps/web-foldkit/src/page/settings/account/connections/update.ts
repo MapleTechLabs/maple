@@ -5,7 +5,7 @@ import { ClerkActionError } from "../../../../platform/clerk"
 import * as Dialog from "../../../../ui/dialog"
 import type { IconName } from "../../../../ui/icon"
 import { PageOutMessage, type PageReturn } from "../../../contract"
-import { settled, withUser } from "../clerk-write"
+import { settled, withUser, withUserReverified } from "../clerk-write"
 import { readAccountUser } from "../user"
 import { Message, type Model, ProviderId } from "./model"
 
@@ -57,8 +57,13 @@ const Connect = Command.define("CreateClerkExternalAccount", {
 	},
 })
 
-const withAccount = <A>(accountId: string, fallback: string, run: (account: ClerkExternalAccountResource) => Promise<A>) =>
-	withUser(fallback, (user) =>
+const withAccount = <A>(
+	accountId: string,
+	fallback: string,
+	run: (account: ClerkExternalAccountResource) => Promise<A>,
+	write = withUser<A>,
+) =>
+	write(fallback, (user) =>
 		Option.match(
 			Array.findFirst(user.externalAccounts, (account) => account.id === accountId),
 			{
@@ -92,7 +97,7 @@ const Disconnect = Command.define("DestroyClerkExternalAccount", {
 	args: { accountId: Schema.String, label: Schema.String },
 	messages: [Message.CompletedDisconnect],
 	execute: ({ accountId, label }) =>
-		withAccount(accountId, `Failed to disconnect ${label}`, (account) => account.destroy()).pipe(
+		withAccount(accountId, `Failed to disconnect ${label}`, (account) => account.destroy(), withUserReverified).pipe(
 			settled((result) => Message.CompletedDisconnect({ result })),
 		),
 })
