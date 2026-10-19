@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
+import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING, TICK_PATH } from "./tick-dispatch"
 
 const TOKEN = "secret-token"
@@ -22,12 +23,12 @@ const tickRequest = (init: {
 }
 
 /** A service binding that answers with `status` and records what it was sent. */
-const fakeBinding = (status: number) => {
+const fakeBinding = (status: number, headers: Record<string, string> = {}) => {
 	const seen: Array<Request> = []
 	const binding = {
 		fetch: (input: RequestInfo, init?: RequestInit) => {
 			seen.push(new Request(input, init))
-			return Promise.resolve(new Response(null, { status }))
+			return Promise.resolve(new Response(null, { status, headers }))
 		},
 	}
 	return { binding, seen }
@@ -57,8 +58,6 @@ describe("authorizeTickRequest", () => {
 			expect(tick).toEqual({
 				cron: "0 * * * *",
 				lane: "service_map_rollup",
-				colo: "unknown",
-				placement: "none",
 			})
 		}),
 	)
@@ -114,6 +113,25 @@ describe("dispatchTick", () => {
 			expect(seen).toHaveLength(1)
 			const tick = yield* authorizeTickRequest(seen[0]!, ENV)
 			expect(tick).toMatchObject({ cron: "*/5 * * * *", lane: "anomaly" })
+		}),
+	)
+
+	it.effect("records whether placement routed the hop, from the response's cf-placement", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const placed = fakeBinding(204, { "cf-placement": "remote-IAD" }).binding
+			yield* dispatchTick("* * * * *", "alert", { ...ENV, [SELF_BINDING]: placed }).pipe(
+				Effect.withTracer(tracer),
+			)
+			yield* dispatchTick("* * * * *", "alert", {
+				...ENV,
+				[SELF_BINDING]: fakeBinding(204).binding,
+			}).pipe(Effect.withTracer(tracer))
+			expect(
+				spansNamed(spans, "alerting.dispatch_tick").map((span) =>
+					span.attributes.get("maple.placement"),
+				),
+			).toEqual(["remote-IAD", "none"])
 		}),
 	)
 

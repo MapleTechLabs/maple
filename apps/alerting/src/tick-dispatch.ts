@@ -97,6 +97,8 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 		Effect.provideService(HttpClient.HttpClient, client),
 		Effect.mapError((cause) => new TickDispatchError({ message: "Placed tick request failed", cause })),
 	)
+	// Set by Cloudflare when placement routed the hop (`remote-IAD`, `local-FRA`); absent otherwise.
+	yield* Effect.annotateCurrentSpan("maple.placement", response.headers["cf-placement"] ?? "none")
 	if (response.status === 204) return
 	// The handler did not run the tick: a token mismatch or a version without the route.
 	if (response.status === 401 || response.status === 404) {
@@ -114,10 +116,6 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 export interface PlacedTick {
 	readonly cron: string
 	readonly lane: TickLane
-	/** The data center that ran the handler, e.g. `IAD`. */
-	readonly colo: string
-	/** Cloudflare's `cf-placement` header, e.g. `remote-IAD` or `local-FRA`. */
-	readonly placement: string
 }
 
 /** Validates a request to the tick route against `env`'s internal token and the schedule. */
@@ -142,10 +140,5 @@ export const authorizeTickRequest = Effect.fnUntraced(function* (
 	if (cron === null || lane === null || !isLaneOf(cron, lane)) {
 		return yield* new TickRequestRefused({ message: "Unknown cron or lane", status: 400 })
 	}
-	return {
-		cron,
-		lane,
-		colo: typeof request.cf?.colo === "string" ? request.cf.colo : "unknown",
-		placement: request.headers.get("cf-placement") ?? "none",
-	} satisfies PlacedTick
+	return { cron, lane } satisfies PlacedTick
 })

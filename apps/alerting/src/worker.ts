@@ -36,9 +36,10 @@ import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
-import { HttpServerResponse } from "effect/http"
+import { FetchHttpClient, HttpServerResponse } from "effect/http"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
+import { lookupColo } from "./worker-colo.ts"
 import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticipated"
 
 /**
@@ -144,6 +145,15 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		const chatSessions = yield* bindChatSessions
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
+		// Once per isolate too: an isolate never changes data center. A failed lookup stays
+		// "unknown" for the isolate rather than costing every fire another timeout.
+		const isolateColo = yield* Effect.cached(
+			lookupColo().pipe(
+				Effect.provide(FetchHttpClient.layer),
+				Effect.tapError((error) => Effect.logWarning("Alerting colo lookup failed", error)),
+				Effect.orElseSucceed(() => "unknown"),
+			),
+		)
 
 		const runTick = (cron: string, lane: string, env: Record<string, unknown>) =>
 			Effect.gen(function* () {
@@ -206,18 +216,31 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 						Effect.annotateLogs({ cron: controller.cron }),
 					)
 				}
+				// The fire's own colo, beside the placed handler's, says whether the hop moved the tick.
+				const fireColo = yield* isolateColo
 				const inline = yield* Effect.filter(
 					schedule.lanes,
-					(lane) => dispatchLane(controller.cron, lane, env),
+					(lane) =>
+						dispatchLane(controller.cron, lane, env).pipe(
+							Effect.annotateSpans("maple.alerting.fire_colo", fireColo),
+						),
 					{
 						concurrency: "unbounded",
 					},
 				)
 				// One at a time: inline lanes share this invocation's six outbound
 				// connections, and each lane's pool may open up to five.
-				yield* Effect.forEach(inline, (lane) => runTick(controller.cron, lane, env), {
-					discard: true,
-				})
+				yield* Effect.forEach(
+					inline,
+					(lane) =>
+						runTick(controller.cron, lane, env).pipe(
+							Effect.annotateSpans({
+								"maple.alerting.dispatch": "inline",
+								"maple.colo": fireColo,
+							}),
+						),
+					{ discard: true },
+				)
 			})
 
 		// Reached only through `SELF_BINDING`: the Worker has no route and no workers.dev URL.
@@ -225,12 +248,12 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 			const request = yield* Cloudflare.Request
 			const env = yield* Cloudflare.WorkerEnvironment
 			const tick = yield* authorizeTickRequest(request, env)
+			const colo = yield* isolateColo
 			yield* runTick(tick.cron, tick.lane, env).pipe(
 				Effect.annotateSpans({
 					"maple.alerting.dispatch": "placed",
 					"maple.alerting.lane": tick.lane,
-					"maple.colo": tick.colo,
-					"maple.placement": tick.placement,
+					"maple.colo": colo,
 				}),
 			)
 			return HttpServerResponse.empty({ status: 204 })
