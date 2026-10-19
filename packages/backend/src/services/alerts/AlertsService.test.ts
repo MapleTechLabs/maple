@@ -73,6 +73,9 @@ import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
+import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
+import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 
 const trackedDbs: TestDb[] = []
 
@@ -218,6 +221,8 @@ const defaultTestRuntime: AlertRuntimeApi = {
 interface TestOverrides extends Partial<AlertRuntimeApi> {
 	/** Provided as `FetchHttpClient.Fetch`, so every outbound call goes through it. */
 	readonly fetch?: typeof fetch
+	/** The investigation agent's port; absent means investigations cannot start. */
+	readonly chatSessions?: ChatSessionsApi
 }
 
 // The fixed epoch scheduler tests start TestClock at, mirroring the previous
@@ -271,7 +276,7 @@ const makeLayer = (
 	emailStub?: (typeof EmailService)["Service"],
 	chatAlertPoster: Layer.Layer<ChatAlertPoster, never, Database | Env> = ChatAlertPoster.layer,
 ) => {
-	const { fetch: fetchImpl = globalThis.fetch, ...runtimeOverrides } = overrides
+	const { fetch: fetchImpl = globalThis.fetch, chatSessions, ...runtimeOverrides } = overrides
 	const configLive = makeConfig()
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
 	const databaseLive = testDb.layer
@@ -334,6 +339,7 @@ const makeLayer = (
 		Layer.provide(alertDestinationsLive),
 		Layer.provide(alertReadModelsLive),
 		Layer.provide(alertRulesLive),
+		Layer.provide(chatSessions === undefined ? Layer.empty : Layer.succeed(ChatSessions, chatSessions)),
 	)
 	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive).pipe(
 		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)),
@@ -6704,5 +6710,89 @@ describe("AlertsService post-evaluation writes", () => {
 				[],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
+	})
+})
+
+describe("AlertsService investigation starts", () => {
+	it.effect("starts a grouped rule's investigations after its state is written, several at once", () => {
+		const testDb = createTestDb(trackedDbs)
+		const groups = Arr.makeBy(12, (i) => `svc-${i}`)
+		const alertRows: ReadonlyArray<Record<string, unknown>> = groups.map((groupName) =>
+			tracesRow({ groupName, count: 200, errorRate: 10, satisfiedCount: 180, estimatedSpanCount: 200 }),
+		)
+		const stub = makeWarehouseStub({ tracesAggregateRows: alertRows })
+		const turns: Array<string> = []
+		const chatSessions = fakeChatSessions(() => ({
+			beginTurn: async (input: { sessionId: string; messageId: string }) => {
+				turns.push(input.sessionId)
+				return { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
+			},
+		}))
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_triage_storm")
+			const userId = asUserId("user_triage_storm")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Every service error rate",
+					severity: "critical",
+					enabled: true,
+					groupBy: ["service.name"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 1,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 30,
+					destinationIds: [destination.id],
+				}),
+			)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"insert into ai_triage_settings (org_id, enabled, max_runs_per_day, updated_at) values ($1, true, 100, now())",
+					[orgId],
+				),
+			)
+
+			// What the classifier sees when it is called: how many of the rule's groups have a
+			// committed state row, and how many classifications are in flight with it.
+			const inFlight = yield* Ref.make(0)
+			const peakInFlight = yield* Ref.make(0)
+			const statesAtFirstCall = yield* Ref.make<number | null>(null)
+			const classifier = Layer.succeed(IncidentClassifier, {
+				classify: () =>
+					Effect.gen(function* () {
+						const states = yield* Effect.promise(() =>
+							queryFirstRow<{ n: number }>(
+								testDb,
+								"select count(*)::int as n from alert_rule_states where rule_id = $1",
+								[rule.id],
+							),
+						)
+						yield* Ref.update(statesAtFirstCall, (seen) => seen ?? states?.n ?? 0)
+						const current = yield* Ref.updateAndGet(inFlight, (n) => n + 1)
+						yield* Ref.update(peakInFlight, (peak) => Math.max(peak, current))
+						yield* Effect.yieldNow.pipe(Effect.repeat({ times: 5 }))
+						yield* Ref.update(inFlight, (n) => n - 1)
+						return null
+					}),
+			})
+
+			yield* alerts.runSchedulerTick().pipe(Effect.provide(classifier))
+
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, groups.length)
+			assert.lengthOf(turns, groups.length)
+			assert.strictEqual(yield* Ref.get(statesAtFirstCall), groups.length)
+			assert.isAbove(yield* Ref.get(peakInFlight), 1)
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch, chatSessions })))
 	})
 })

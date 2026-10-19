@@ -86,6 +86,7 @@ import {
 	Duration,
 	Effect,
 	Exit,
+	Fiber,
 	HashMap,
 	HashSet,
 	Layer,
@@ -100,12 +101,18 @@ import {
 	Redacted,
 	Ref,
 	Schema,
+	Semaphore,
 	Stream,
 	Context,
 } from "effect"
 import { HttpClient } from "effect/http"
 import * as AlertingMetrics from "@maple/backend/observability/AlertingMetrics"
 import { escalateAlertIssue, upsertAlertIssue } from "@maple/backend/services/errors/issue-hub"
+import {
+	maybeEnqueueTriage,
+	type MaybeEnqueueTriageInput,
+} from "@maple/backend/services/errors/ai-triage-enqueue"
+import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import {
 	holdCeilingMs,
 	type LivenessReason,
@@ -328,6 +335,9 @@ const warehouseOutageOf = (error: unknown): Option.Option<WarehouseUpstreamError
 // Storm fuse: cap issue-hub upserts per scheduler tick so a pathological
 // group-by rule opening hundreds of incidents can't stall the per-minute tick.
 const ISSUE_UPSERTS_PER_TICK = 50
+// Investigation starts in flight at once after the rule loop. Each is a model call
+// plus an agent start (1-3 s); 50 at 8 wide take about 10 s instead of 60.
+const TRIAGE_START_CONCURRENCY = 8
 // The same fuse for phones lives in `alert-push-budget.ts`, which bounds both
 // the tick's total sends and any one rule's share of them. Deliberately not
 // solved by forking the sends instead: on Workers a fiber that outlives the
@@ -2523,6 +2533,45 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				return yield* Ref.get(totals)
 			})
 
+			// Investigation starts the rule loop queued, run after every rule's claim-fenced
+			// writes so a slow model call holds no claim. One admission permit per org keeps
+			// the daily quota exact. Nothing starts after `startBy`; the rest are logged.
+			const startPendingTriages = Effect.fn("AlertsService.startPendingTriages")(function* (
+				pending: ReadonlyArray<MaybeEnqueueTriageInput>,
+				startBy: number,
+			) {
+				const admissions = new Map(
+					yield* Effect.forEach(Arr.dedupe(Arr.map(pending, (triage) => triage.orgId)), (orgId) =>
+						Effect.map(Semaphore.make(1), (admission) => [orgId, admission] as const),
+					),
+				)
+				const skipped = yield* Ref.make(0)
+				yield* Effect.forEach(
+					pending,
+					(triage) =>
+						Effect.flatMap(now, (startedAt) =>
+							startedAt >= startBy
+								? Ref.update(skipped, (n) => n + 1)
+								: maybeEnqueueTriage({
+										...triage,
+										chatSessions,
+										admission: admissions.get(triage.orgId),
+									}).pipe(Effect.provideService(Database, database)),
+						),
+					{ concurrency: TRIAGE_START_CONCURRENCY, discard: true },
+				)
+				const skippedCount = yield* Ref.get(skipped)
+				yield* Effect.annotateCurrentSpan({
+					"maple.alerting.triages_pending": pending.length,
+					"maple.alerting.triages_skipped": skippedCount,
+				})
+				if (skippedCount > 0) {
+					yield* Effect.logWarning("Alert triage window closed; investigations not started").pipe(
+						Effect.annotateLogs({ workerId, pending: pending.length, skipped: skippedCount }),
+					)
+				}
+			})
+
 			const processEvaluation = Effect.fn("AlertsService.processEvaluation")(function* (
 				row: StoredAlertRuleRow,
 				normalized: NormalizedRule,
@@ -2531,6 +2580,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				timestamp: number,
 				pendingChecks: Ref.Ref<Chunk.Chunk<AlertChecksRow>>,
 				issueBudget: Ref.Ref<number>,
+				pendingTriages: Ref.Ref<Chunk.Chunk<MaybeEnqueueTriageInput>>,
 				pushBudget: IncidentPushBudget,
 				prefetch: TickPrefetch,
 				stateWrites: RuleStateWrites,
@@ -3069,7 +3119,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					if (allowed) {
 						// The tier the incident opened at, so severity and threshold agree.
 						const openedRule = ruleAtSeverity(normalized, outcome.severity ?? normalized.severity)
-						yield* upsertAlertIssue({
+						const linked = yield* upsertAlertIssue({
 							orgId: row.orgId,
 							ruleId: row.id,
 							ruleName: row.name,
@@ -3088,8 +3138,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									? groupKey
 									: (normalized.serviceNames[0] ?? ""),
 							timestamp,
-							chatSessions,
 						}).pipe(Effect.provideService(Database, database))
+						// Started after the rule loop (`startPendingTriages`), off this rule's claim.
+						if (linked.triage !== null) {
+							yield* Ref.update(pendingTriages, Chunk.append(linked.triage))
+						}
 					} else {
 						yield* Effect.logWarning(
 							"Alert issue upsert budget exhausted; skipping issue link",
@@ -3917,6 +3970,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Chunk makes concurrent appends immutable without copying the full buffer.
 				const pendingChecks = yield* Ref.make(Chunk.empty<AlertChecksRow>())
 				const issueBudget = yield* Ref.make(ISSUE_UPSERTS_PER_TICK)
+				const pendingTriages = yield* Ref.make(Chunk.empty<MaybeEnqueueTriageInput>())
 				const pushBudget = yield* makeIncidentPushBudget
 
 				// Two housekeeping statements used to run per rule, inside the loop.
@@ -4187,6 +4241,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										timestamp,
 										pendingChecks,
 										issueBudget,
+										pendingTriages,
 										pushBudget,
 										prefetch,
 										stateWrites,
@@ -4233,6 +4288,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									timestamp,
 									pendingChecks,
 									issueBudget,
+									pendingTriages,
 									pushBudget,
 									prefetch,
 									stateWrites,
@@ -4416,6 +4472,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Stream.runDrain,
 				)
 
+				// Every rule's writes are done; triage overlaps the tail and is joined before
+				// returning, since a fiber that outlives a Worker invocation is cancelled.
+				const triages = yield* forkRequestScoped(
+					startPendingTriages(
+						Chunk.toReadonlyArray(yield* Ref.get(pendingTriages)),
+						tickStart + SCHEDULER_LOCK_TTL_MS,
+					),
+				)
+
 				yield* releaseClaims(Chunk.toReadonlyArray(yield* Ref.get(unstartedClaims))).pipe(
 					Effect.withSpan("AlertsService.releaseClaims"),
 				)
@@ -4529,6 +4594,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						{ concurrency: ALERT_CHECK_INGEST_CONCURRENCY },
 					).pipe(Effect.withSpan("AlertsService.ingestAlertChecks"))
 				}
+
+				yield* Fiber.join(triages)
 
 				const evaluatedCount = yield* Ref.get(evaluatedRules)
 				yield* Metric.update(AlertingMetrics.rulesEvaluatedTotal, evaluatedCount)
