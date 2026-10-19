@@ -6,7 +6,7 @@ import { TimeWindow } from "../../../data/time-range"
 import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { errorMessageOf, mutateDashboard } from "../kit/store"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
-import { Message } from "./message"
+import { GeneratedIdPurpose, Message } from "./message"
 import { fetchSuggestions, SuggestionLookup } from "./suggestions"
 
 /** One `useFunnelSuggestions` lookup over the preview's window. */
@@ -44,7 +44,7 @@ export const FetchWidget = Command.define("FetchWidgetPreview", {
 
 /** `crypto.randomUUID()` for a new or cloned query, or a new formula. */
 export const GenerateId = Command.define("GenerateWidgetEditorId", {
-	args: { purpose: Schema.Literals(["addQuery", "cloneQuery", "addFormula"]), source: Schema.String },
+	args: { purpose: GeneratedIdPurpose, source: Schema.String },
 	messages: [Message.GeneratedId],
 	execute: ({ purpose, source }) =>
 		Effect.map(

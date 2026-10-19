@@ -1,3 +1,4 @@
+import { initWhereFields } from "../../kit/where-field"
 import { pickDashboardControlParams } from "@maple/web/lib/dashboard-controls/search-params"
 import {
 	computeBucketSecondsForWidthRange,
@@ -75,6 +76,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		autocomplete: {},
 		suggestions: {},
 		stepCombos: {},
+		whereFields: initWhereFields(),
 		listFieldFocus: null,
 		isProductPanelCollapsed: false,
 		breakdownAttribute: { isActive: false, key: "" },

@@ -22,7 +22,7 @@ import { removeQuery, setAggregation, setDataSource, updateQuery, withInferredUn
 import type { EditorState } from "./editor-state"
 import { applyProductEdit } from "./product-apply"
 import { BREAKDOWN_ATTRIBUTE, BREAKDOWN_SELECT_ID, breakdownPicked, productSelectEdit } from "./product-selects"
-import { Message } from "./message"
+import { type GeneratedIdPurpose, Message } from "./message"
 import { panelInputsOf } from "./where-inputs"
 import type { Model } from "./model"
 import { editState, type Return } from "./update"
@@ -181,6 +181,6 @@ export const acceptFetch = (
 }
 
 export const generate = (
-	purpose: "addQuery" | "cloneQuery" | "addFormula",
+	purpose: GeneratedIdPurpose,
 	source: string,
 ): Return["commands"] => [GenerateId({ purpose, source })]

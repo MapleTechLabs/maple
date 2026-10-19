@@ -1,6 +1,7 @@
 import { DashboardDocument, TimeRangeSchema } from "@maple/domain/http"
 import { Schema } from "effect"
 import { LookupNames } from "../../kit/autocomplete-lookups"
+import { WhereFields } from "../../kit/where-field"
 import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
@@ -80,6 +81,8 @@ export const Model = Schema.Struct({
 	suggestions: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Suggestion), LoadFailure)),
 	/** The step inputs' comboboxes, by id. */
 	stepCombos: Schema.Record(Schema.String, Combobox.Model),
+	/** The list, population and step filters' carets, lists and key values. */
+	whereFields: WhereFields,
 	/** The list column whose field input shows its suggestions. */
 	listFieldFocus: Schema.NullOr(Schema.Number),
 	/** The funnel or paths panel's own collapse toggle (`QueryPanelShell`'s state). */

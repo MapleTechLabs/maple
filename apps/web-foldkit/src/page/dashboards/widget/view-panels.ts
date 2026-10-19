@@ -79,7 +79,7 @@ export const funnelPanel = (h: H, model: Model, state: EditorState): ReadonlyArr
 					}),
 				],
 			),
-			populationFilter(h, "funnel", funnel.filterClause, "Funnel population filter"),
+			populationFilter(h, model, "funnel", funnel.filterClause, "Funnel population filter"),
 			addOnBar(h, FUNNEL_ADD_ONS, funnel.addOns, (key) =>
 				product(ProductEdit.ToggledFunnelAddOn({ key })),
 			),
@@ -275,7 +275,7 @@ export const pathsPanel = (h: H, model: Model, state: EditorState): ReadonlyArra
 						),
 					],
 				),
-				populationFilter(h, "paths", paths.filterClause, "Paths population filter"),
+				populationFilter(h, model, "paths", paths.filterClause, "Paths population filter"),
 				addOnBar(h, PATHS_ADD_ONS, paths.addOns, (key) =>
 					product(ProductEdit.ToggledPathsAddOn({ key })),
 				),

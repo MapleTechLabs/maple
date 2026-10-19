@@ -13,6 +13,7 @@ import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
 import { panel } from "../../../ui/panel"
 import { whereEditor } from "../../kit/query-builder/where-editor"
+import { autocompleteFor, stepField } from "./where-fields"
 import type { StepDraft } from "./editor-state"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -255,7 +256,7 @@ const rowActions = (h: H, index: number, total: number): Html =>
 	)
 
 /** The event step's attribute filter line, its parse error under it. */
-const filterLine = (h: H, scope: StepScope, step: StepDraft & { kind: "event" }, index: number): Html => {
+const filterLine = (h: H, model: Model, scope: StepScope, step: StepDraft & { kind: "event" }, index: number): Html => {
 	const filterClause = step.filterClause ?? ""
 	const parsed = parseFunnelStepFilter(filterClause)
 	return h.div(
@@ -274,7 +275,7 @@ const filterLine = (h: H, scope: StepScope, step: StepDraft & { kind: "event" },
 						className: "min-w-0 flex-1",
 						textareaClassName: "min-h-[28px] resize-none text-xs",
 						onInput: text(scope, index, "filterClause"),
-						onEnter: Message.PressedWhereEnter(),
+						autocomplete: autocompleteFor(model, stepField(scope, index, filterClause)),
 					}),
 				],
 			),
@@ -326,7 +327,7 @@ const stepRow = (h: H, model: Model, options: StepBuilderOptions, step: StepDraf
 			],
 		),
 		...(options.eventStepFilter && step.kind === "event"
-			? [filterLine(h, options.scope, step, index)]
+			? [filterLine(h, model, options.scope, step, index)]
 			: []),
 	])
 }

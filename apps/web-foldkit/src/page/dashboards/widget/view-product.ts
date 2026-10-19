@@ -17,6 +17,7 @@ import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
 import type { SelectOption } from "../../../ui/select-view"
 import { whereEditor } from "../../kit/query-builder/where-editor"
+import { autocompleteFor, populationField } from "./where-fields"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -133,7 +134,7 @@ export const rowLabel = (
 ): Html => h.span([h.Class(className)], [text])
 
 /** The population filter and its parse error (or what it means). */
-export const populationFilter = (h: H, scope: StepScope, value: string, ariaLabel: string): Html => {
+export const populationFilter = (h: H, model: Model, scope: StepScope, value: string, ariaLabel: string): Html => {
 	const parsed = parseProductEventsFilterClause(value)
 	return h.div(
 		[h.Class("space-y-1")],
@@ -152,7 +153,7 @@ export const populationFilter = (h: H, scope: StepScope, value: string, ariaLabe
 						textareaClassName: "min-h-[32px] resize-y text-xs",
 						onInput: (next) =>
 							product(ProductEdit.ChangedPopulationFilter({ scope, value: next })),
-						onEnter: Message.PressedWhereEnter(),
+						autocomplete: autocompleteFor(model, populationField(model, scope, value)),
 					}),
 				],
 			),

@@ -1,5 +1,6 @@
 import { getProductEventNames } from "@maple/web-data/warehouse/product-events"
 import { getWebAnalyticsBreakdowns, getWebAnalyticsPages } from "@maple/web-data/warehouse/web-analytics"
+import { FUNNEL_POPULATION_FILTER_FIELDS, type FunnelPopulationFilterField } from "@maple/query-model"
 import { Effect, Schema } from "effect"
 import type { TimeWindow } from "../../../data/time-range"
 
@@ -10,7 +11,7 @@ import type { TimeWindow } from "../../../data/time-range"
 export const Suggestion = Schema.Struct({
 	name: Schema.String,
 	count: Schema.NullOr(Schema.Number),
-	field: Schema.NullOr(Schema.String),
+	field: Schema.NullOr(Schema.Literals(FUNNEL_POPULATION_FILTER_FIELDS)),
 })
 export type Suggestion = typeof Suggestion.Type
 
@@ -38,7 +39,7 @@ export const suggestionRequestOf = (lookup: SuggestionLookup, window: TimeWindow
 	}
 }
 
-const facet = (field: string, rows: ReadonlyArray<{ readonly name: string }>): ReadonlyArray<Suggestion> =>
+const facet = (field: FunnelPopulationFilterField, rows: ReadonlyArray<{ readonly name: string }>): ReadonlyArray<Suggestion> =>
 	rows.flatMap((row) => (row.name === "" ? [] : [{ name: row.name, count: null, field }]))
 
 export const fetchSuggestions = (lookup: SuggestionLookup, window: TimeWindow) => {

@@ -8,6 +8,9 @@ import * as Tabs from "../../../ui/tabs"
 import * as Tooltip from "../../../ui/tooltip"
 import { type PageContext, PageOutMessage } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import type { WhereFieldMessage } from "../../kit/where-field"
+import { updateWhereFields } from "../../kit/where-field-update"
+import { toPanelType } from "../kit/chart-registry"
 import { SaveTimeRange, SaveWidget } from "./command"
 import {
 	addFormula,
@@ -20,6 +23,7 @@ import type { EditorState } from "./editor-state"
 import { validationErrorOf } from "./lowering"
 import { ProductEdit } from "./product-edit"
 import { applyEdit, stepComboStep } from "./product-step"
+import { whereFieldsInputsOf, whereFieldsOf } from "./where-fields"
 import { rawSqlErrorOf, reseedForType } from "./raw-sql"
 import { withDefaultMetric } from "./metric-options"
 import { runSqlPreview, sqlStep } from "./sql-step"
@@ -105,19 +109,33 @@ const sortStep = (model: Model, field: string, isText: boolean): Return => {
 	return { model: { ...model, tableSort } }
 }
 
-/** `applyChanges`: an invalid query set, or a save in flight, leaves Apply a no-op. */
-const apply = (model: Model, context: PageContext): Return => {
+/** A list read through the query engine lowers a fresh `createQueryDraft(0)` on each Apply. */
+const isEngineList = (model: Model, state: EditorState): boolean =>
+	!isSqlSource(model) &&
+	toPanelType(state.visualization, state.chartId) === "list" &&
+	state.listDataSource !== "logs"
+
+/** The list's lowered query under `id`; the preview keeps the draft's own. */
+const withListQueryId = (state: EditorState, id: string | null): EditorState =>
+	id === null ? state : { ...state, queries: state.queries.map((query, index) => (index === 0 ? { ...query, id } : query)) }
+
+/**
+ * `applyChanges`: an invalid query set, or a save in flight, leaves Apply a no-op. An engine list
+ * first asks for its query's fresh id (`listQueryId`).
+ */
+const apply = (model: Model, context: PageContext, listQueryId: string | null): Return => {
 	const widget = widgetOf(model)
 	if (model.isSaving || widget === null || model.state === null) return { model }
 	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
 	if (rawSql === null ? validationErrorOf(model.state) !== null : rawSqlErrorOf(rawSql) !== null) return { model }
+	if (listQueryId === null && isEngineList(model, model.state)) return { model, commands: generate("applyList", "") }
 	return {
 		model: { ...model, isSaving: true },
 		commands: [
 			SaveWidget({
 				orgId: context.orgId,
 				dashboardId: model.dashboardId,
-				widget: editedWidget(widget, model.state, rawSql),
+				widget: editedWidget(widget, withListQueryId(model.state, listQueryId), rawSql),
 			}),
 		],
 	}
@@ -128,6 +146,17 @@ const edit = (model: Model, context: PageContext, change: (state: EditorState) =
 
 const productEdit = (model: Model, context: PageContext, change: ProductEdit): Return =>
 	planPreview(applyEdit(model, change), context)
+
+/** A where field's step; an applied suggestion edits its text like typing. */
+const whereFieldStep = (model: Model, context: PageContext, message: WhereFieldMessage): Return => {
+	const next = updateWhereFields(model.whereFields, message, whereFieldsInputsOf(model, context))
+	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotWhereFieldMessage({ message: inner }))
+	const updated = { ...model, whereFields: next.fields }
+	const field = next.change === undefined ? undefined : whereFieldsOf(model, null).get(next.change.fieldId)
+	if (next.change === undefined || field === undefined) return { model: updated, commands }
+	const edited = productEdit(updated, context, field.edit(next.change.expression))
+	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
+}
 
 const acceptSuggestions = (model: Model, message: Message & { _tag: "CompletedFetchSuggestions" }): Return => {
 	const slot = model.suggestions[message.lookup]
@@ -174,13 +203,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddQuery: () => ({ model, commands: generate("addQuery", "") }),
 		ClickedAddFormula: () => ({ model, commands: generate("addFormula", "") }),
 		GeneratedId: ({ purpose, source, id }) =>
-			edit(model, context, (state) =>
-				purpose === "addQuery"
-					? addQuery(state, id)
-					: purpose === "cloneQuery"
-						? cloneQuery(state, source, id)
-						: addFormula(state, id),
-			),
+			purpose === "applyList"
+				? apply(model, context, id)
+				: edit(model, context, (state) =>
+						purpose === "addQuery"
+							? addQuery(state, id)
+							: purpose === "cloneQuery"
+								? cloneQuery(state, source, id)
+								: addFormula(state, id),
+					),
 		ToggledFormulaVisible: ({ formulaId }) =>
 			edit(model, context, (state) => ({
 				...state,
@@ -279,7 +310,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...state,
 				includePercentChange: !state.includePercentChange,
 			})),
-		ClickedApply: () => apply(model, context),
+		ClickedApply: () => apply(model, context, null),
 		CompletedSave: ({ error }) =>
 			error === null
 				? navigate({ ...model, isSaving: false }, backHref(model))
@@ -305,7 +336,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotStepComboMessage: ({ id, message: inner }) => stepComboStep(model, context, id, inner, productEdit),
 		FocusedListField: ({ index }) => ({ model: { ...model, listFieldFocus: index } }),
 		BlurredListField: () => ({ model: { ...model, listFieldFocus: null } }),
-		PressedWhereEnter: () => ({ model }),
+		GotWhereFieldMessage: ({ message: inner }) => whereFieldStep(model, context, inner),
 		ToggledProductPanel: () => ({ model: { ...model, isProductPanelCollapsed: !model.isProductPanelCollapsed } }),
 		ChangedBreakdownAttribute: ({ value }) =>
 			productEdit(

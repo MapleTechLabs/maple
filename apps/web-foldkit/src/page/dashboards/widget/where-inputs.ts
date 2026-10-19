@@ -19,12 +19,14 @@ const field = (model: Model, lookup: AutocompleteLookup, name: string): Array<st
 	...lookupField(answerOf(model, lookup), name),
 ]
 
-/** `autocompleteValues[query.dataSource]`, with a picked metric's own keys (`useMetricScopedAutocomplete`). */
-export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutocompleteValues => {
-	const variables = (model.document?.variables ?? []).map((variable) => variable.name)
+/** `AutocompleteValuesProvider`'s values for a source the list widget reads (no variables). */
+export const providerValuesOf = (
+	model: Model,
+	dataSource: "traces" | "logs" | "product_events",
+): WhereClauseAutocompleteValues => {
 	const spanKeys = field(model, "spanAttributeKeys", "keys")
 	const resourceKeys = field(model, "resourceAttributeKeys", "keys")
-	switch (query.dataSource) {
+	switch (dataSource) {
 		case "traces":
 			return {
 				services: field(model, "tracesFacets", "services"),
@@ -34,7 +36,6 @@ export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutoco
 				httpStatusCodes: field(model, "tracesFacets", "httpStatusCodes"),
 				attributeKeys: spanKeys,
 				resourceAttributeKeys: resourceKeys,
-				variables,
 			}
 		case "logs":
 			return {
@@ -42,8 +43,23 @@ export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutoco
 				severities: field(model, "logsFacets", "severities"),
 				attributeKeys: spanKeys,
 				resourceAttributeKeys: resourceKeys,
-				variables,
 			}
+		case "product_events":
+			return {
+				eventNames: field(model, "productEventNames", "keys"),
+				attributeKeys: field(model, "productEventAttributeKeys", "keys"),
+			}
+	}
+}
+
+/** `autocompleteValues[query.dataSource]`, with a picked metric's own keys (`useMetricScopedAutocomplete`). */
+export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutocompleteValues => {
+	const variables = (model.document?.variables ?? []).map((variable) => variable.name)
+	switch (query.dataSource) {
+		case "traces":
+		case "logs":
+		case "product_events":
+			return { ...providerValuesOf(model, query.dataSource), variables }
 		case "metrics": {
 			const isScoped = query.metricName !== ""
 			return {
@@ -55,12 +71,6 @@ export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutoco
 				variables,
 			}
 		}
-		case "product_events":
-			return {
-				eventNames: field(model, "productEventNames", "keys"),
-				attributeKeys: field(model, "productEventAttributeKeys", "keys"),
-				variables,
-			}
 	}
 }
 

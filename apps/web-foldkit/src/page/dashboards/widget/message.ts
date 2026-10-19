@@ -12,6 +12,7 @@ import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { LoadFailure } from "../../../data/load-failure"
 import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
+import { WhereFieldMessage } from "../../kit/where-field"
 import { WidgetFailure } from "../kit/widget-data"
 import { LegendPosition, PointsMode } from "./editor-state"
 import { MetricPageSchema } from "./metric-option"
@@ -20,6 +21,10 @@ import { Suggestion, SuggestionLookup } from "./suggestions"
 
 export const FormulaTextField = Schema.Literals(["expression", "legend"])
 export type FormulaTextField = typeof FormulaTextField.Type
+
+/** `applyList`: the list's lowered query takes a fresh id on Apply (`createQueryDraft(0)`). */
+export const GeneratedIdPurpose = Schema.Literals(["addQuery", "cloneQuery", "addFormula", "applyList"])
+export type GeneratedIdPurpose = typeof GeneratedIdPurpose.Type
 
 export const Message = defineMessageUnion({
 	UpdatedDashboard: { orgId: Schema.String, maybeDocument: Schema.Option(DashboardDocument) },
@@ -41,7 +46,7 @@ export const Message = defineMessageUnion({
 	ClickedAddFormula: {},
 	/** A fresh id for what was asked (`crypto.randomUUID()` in legacy's builder actions). */
 	GeneratedId: {
-		purpose: Schema.Literals(["addQuery", "cloneQuery", "addFormula"]),
+		purpose: GeneratedIdPurpose,
 		source: Schema.String,
 		id: Schema.String,
 	},
@@ -87,8 +92,8 @@ export const Message = defineMessageUnion({
 	/** A step's suggesting input (`SuggestingInput`), by combobox id. */
 	GotStepComboMessage: { id: Schema.String, message: Combobox.Message },
 	FocusedListField: { index: Schema.Number },
-	/** Enter in a where clause: swallowed, a where clause is single-line. */
-	PressedWhereEnter: {},
+	/** The list, population and step filters' suggestions (`WhereFields`). */
+	GotWhereFieldMessage: { message: WhereFieldMessage },
 	ToggledProductPanel: {},
 	BlurredListField: {},
 	/** The key typed under `BreakdownPicker`'s "Attribute..." mode. */

@@ -13,6 +13,7 @@ import { settingRow } from "../../../ui/setting-row"
 import { switchControl } from "../../../ui/switch"
 import { lookupField } from "../../kit/autocomplete-lookups"
 import { whereEditor } from "../../kit/query-builder/where-editor"
+import { autocompleteFor, listField } from "./where-fields"
 import type { EditorState, ListDataSource } from "./editor-state"
 import { MountListColumnDrag } from "./list-column-drag"
 import { buildListLogsParams } from "./list-logs-params"
@@ -227,7 +228,7 @@ export const listPanel = (h: H, model: Model, state: EditorState): ReadonlyArray
 						rows: 1,
 						textareaClassName: "min-h-[32px] resize-y text-xs",
 						onInput: (value) => product(ProductEdit.ChangedListWhere({ value })),
-						onEnter: Message.PressedWhereEnter(),
+						autocomplete: autocompleteFor(model, listField(model, null, state.listWhereClause, source)),
 					}),
 					...warningList(h, filterWarnings(source, state.listWhereClause)),
 					...performanceHints(h, state),
