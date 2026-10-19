@@ -16,6 +16,7 @@ import {
 	ReadSessionTimeRange,
 	NavigateInternal,
 	ReconnectOrgCollections,
+	RestoreDashboardWidgets,
 	ReplaceUrl,
 	SaveSelectedPlanKnown,
 	SignOutOfClerk,
@@ -37,10 +38,11 @@ import {
 	isRouteHeld,
 	planGate,
 } from "./page/onboarding/plan-gate"
-import { type PageContext, PageOutMessage } from "./page/contract"
+import { type PageContext, PageOutMessage, type RootToastAction } from "./page/contract"
 import * as Preload from "./page/preload"
 import {
 	changeContext,
+	blockNavigation,
 	enterRoute,
 	isBarePageRoute,
 	PageMessage,
@@ -57,6 +59,7 @@ import { completeRangeOf, isWithin, withSessionRange } from "./route/session-tim
 import * as Shell from "./shell"
 import * as ChatSheet from "./page/chat/sheet"
 import * as OrgSwitcher from "./shell/clerk-org-switcher"
+import { presenceOf } from "./shell/view-nav"
 import * as Toast from "./ui/toast"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
@@ -173,11 +176,13 @@ export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 		SignedIn: ({ maybeOrgId }) =>
 			isBarePageRoute(model.route)
 				? publicContextOf(model, maybeOrgId)
-				: Option.filter(maybeOrgId, () => rendersShell(model.route)).pipe(
+				: // `WrongRegionScreen` replaces the page, so it reads nothing this region would refuse.
+					Option.filter(maybeOrgId, () => rendersShell(model.route) && !isWrongRegion(model)).pipe(
 				Option.map((orgId) => ({
 					orgId,
 					pinnedNamespace: model.shell.pinnedNamespaces[orgId] ?? null,
 					timeZone: model.timeZone,
+					infra: { presence: presenceOf(model.shell), integrations: model.shell.integrations },
 				})),
 			),
 	})
@@ -264,14 +269,26 @@ const writePage =
 			),
 			{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
 		)
+		const followUp = Option.flatMap(transition.outMessage, (out) =>
+			out._tag === "RequestedNavigation" && out.followUpToast !== undefined
+				? Option.some(PageOutMessage.RequestedToast({ ...out.followUpToast, timeoutMs: null, action: null }))
+				: Option.none(),
+		)
+		const followed = Option.match(followUp, {
+			onNone: () => toasted,
+			onSome: (request) => {
+				const shown = showPageToast(toasted.model, request)
+				return { model: shown.model, commands: [...toasted.commands, ...shown.commands] }
+			},
+		})
 		const held = Preload.held(
-			toasted.model.preload,
+			followed.model.preload,
 			pageIdentity(transition.slot),
 			transition.commands,
 			Preload.liveKeysOf(transition.slot?.model),
 		)
 		return {
-			model: modifyFields(toasted.model, {
+			model: modifyFields(followed.model, {
 				page: () => transition.slot,
 				pageInstances: (built) => Math.max(built, transition.slot?.instance ?? 0),
 				preload: () => held.model,
@@ -293,21 +310,35 @@ const writePage =
 						RequestedSidebarToggle: () => [],
 						RequestedInfraSurfaces: () => [],
 						RequestedToast: () => [],
+						RequestedReconnectOrgCollections: () => [ReconnectOrgCollections()],
 					}),
 				}),
-				...toasted.commands,
+				...followed.commands,
 			],
 		}
 	}
 
 /** The chat sheet's step: its Commands lifted, its toast shown like a page's. */
-const foldChatSheet = (model: Model, message: ChatSheet.Message) => {
-	const orgId = Session.match(model.session, {
+const chatSheetOrgOf = (model: Model): string | null =>
+	Session.match(model.session, {
 		Resolving: () => null,
 		SignedOut: () => null,
 		SignedIn: ({ maybeOrgId }) => Option.getOrNull(maybeOrgId),
 	})
-	const step = ChatSheet.update(model.chatSheet, message, orgId)
+
+/** An org switch or sign-out under the open sheet moves it to the new org, or closes it. */
+const followChatSheetOrg: Step = (model) => {
+	const step = ChatSheet.sessionChanged(model.chatSheet, chatSheetOrgOf(model))
+	return step.model === model.chatSheet
+		? { model }
+		: {
+				model: modifyFields(model, { chatSheet: () => step.model }),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotChatSheetMessage({ message: child })),
+			}
+}
+
+const foldChatSheet = (model: Model, message: ChatSheet.Message) => {
+	const step = ChatSheet.update(model.chatSheet, message, chatSheetOrgOf(model))
 	const next = modifyFields(model, { chatSheet: () => step.model })
 	const commands = Command.mapMessages(step.commands ?? [], (child) => Message.GotChatSheetMessage({ message: child }))
 	if (step.outMessage === undefined) return { model: next, commands }
@@ -535,6 +566,8 @@ export const planGateOf = (model: Model): Option.Option<Gate> =>
 			),
 	})
 
+const isWrongRegion = (model: Model): boolean => Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
+
 const followRedirects: Step = (model) => {
 	const maybeRedirect = Session.match(model.session, {
 		Resolving: () => Option.none<Redirect>(),
@@ -559,7 +592,8 @@ const loadRoute: Step = (model) =>
 		Resolving: () => ({ model }),
 		SignedOut: () => ({ model }),
 		SignedIn: ({ maybeOrgId }) =>
-			Option.isNone(maybeOrgId) || isPublicRoute(model.route)
+			// `WrongRegionScreen` replaces the whole frame: no shell, no chat sheet, nothing it reads.
+			Option.isNone(maybeOrgId) || isPublicRoute(model.route) || isWrongRegion(model)
 				? { model }
 				: rendersShell(model.route)
 					? foldShellStep(Shell.enter(maybeOrgId.value))(model)
@@ -678,6 +712,7 @@ export const settle: Step = Update.combine([
 	loadPage,
 	loadOnboarding,
 	syncSessionTimeRange,
+	followChatSheetOrg,
 ])
 
 // SESSION
@@ -739,25 +774,53 @@ const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 		},
 	)
 
+/** A new URL: the route and the page it enters. The remembered window joined in `navigateTo`, never here. */
+const changedUrlStep = (model: Model, changedUrl: Url): UpdateReturn => {
+	const nextRoute = urlToAppRoute(changedUrl)
+	const isEnteringSignIn = Transition.isEntering(Transition.make(model.route, nextRoute), "SignIn")
+	const routed = modifyFields(model, {
+		route: () => nextRoute,
+		signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
+	})
+	return Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
+}
+
+/** The Command behind a root toast action. */
+const rootToastCommand = (action: RootToastAction | undefined) =>
+	action !== undefined && action._tag === "RestoreDashboardWidgets"
+		? RestoreDashboardWidgets(action)
+		: ReconnectOrgCollections()
+
+/** `useBlocker`: the open page holds a navigation that would leave it, and asks instead. */
+const heldNavigation = (model: Model, url: Url): Option.Option<UpdateReturn> =>
+	Option.flatMap(pageContextOf(model), (context) =>
+		Option.map(blockNavigation(model.page, urlToAppRoute(url), urlToString(url), context), (transition) =>
+			applyPage(transition)(model),
+		),
+	)
+
 // UPDATE
 
 export const update = (model: Model, message: Message) =>
 	Message.match<UpdateReturn>(message, {
 		ClickedLink: ({ request }) =>
 			UrlRequest.match<UpdateReturn>(request, {
-				Internal: ({ url }) => ({ model, commands: [navigateTo(model, urlToString(url), false)] }),
+				Internal: ({ url }) =>
+					Option.getOrElse(heldNavigation(model, url), () => ({
+						model,
+						commands: [navigateTo(model, urlToString(url), false)],
+					})),
 				External: ({ href }) => ({ model, commands: [LoadExternal({ href })] }),
 			}),
-		// The remembered window was added where the navigation was built (`navigateTo`), never here.
-		ChangedUrl: ({ url }) => {
-			const nextRoute = urlToAppRoute(url)
-			const isEnteringSignIn = Transition.isEntering(Transition.make(model.route, nextRoute), "SignIn")
-			const routed = modifyFields(model, {
-				route: () => nextRoute,
-				signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
-			})
-			return Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
-		},
+		ChangedUrl: ({ url: changedUrl }) =>
+			Option.getOrElse(
+				// Back or Forward away from a page that blocks it: the URL goes back while it asks.
+				Option.map(heldNavigation(model, changedUrl), (held) => ({
+					...held,
+					commands: [NavigateInternal({ url: hrefOf(model.route) }), ...(held.commands ?? [])],
+				})),
+				() => changedUrlStep(model, changedUrl),
+			),
 		CompletedNavigateInternal: () => ({ model }),
 		CompletedReplaceUrl: () => ({ model }),
 		CompletedLoadExternal: () => ({ model }),
@@ -782,11 +845,12 @@ export const update = (model: Model, message: Message) =>
 			message._tag === "ClickedToastAction" && model.toastActions[message.toastId] !== undefined
 				? toPage(model, model.toastActions[message.toastId])
 				: message._tag === "ClickedToastAction" && model.toastRootActions[message.toastId] !== undefined
-					? { model, commands: [ReconnectOrgCollections()] }
+					? { model, commands: [rootToastCommand(model.toastRootActions[message.toastId])] }
 					: message._tag === "EndedToastTransition"
 						? foldToasts(withoutToastActions(model, message.toastId), message)
 						: foldToasts(model, message),
 		CompletedReconnectOrgCollections: () => ({ model }),
+		CompletedRestoreDashboardWidgets: () => ({ model }),
 		GotPageMessage: ({ message }) => toPage(model, message),
 		GotChatSheetMessage: ({ message }) => foldChatSheet(model, message),
 		GotOnboardingMessage: ({ message }) => updateOnboarding(model, message),

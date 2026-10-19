@@ -171,11 +171,16 @@ export const menuGroup = <Message>(
 	)
 
 /** `<DropdownMenuLabel>` (Base UI `Menu.GroupLabel`, hidden from the accessibility tree). */
-export const menuLabel = <Message>(h: HtmlBuilder<Message>, id: string, children: Children): Html =>
+export const menuLabel = <Message>(
+	h: HtmlBuilder<Message>,
+	id: string,
+	children: Children,
+	className?: string,
+): Html =>
 	h.div(
 		[
 			h.AriaHidden(true),
-			h.Class(cn(dropdownMenuLabelStyles)),
+			h.Class(cn(dropdownMenuLabelStyles, className)),
 			h.DataAttribute("slot", "dropdown-menu-label"),
 			h.Id(id),
 		],

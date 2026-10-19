@@ -257,7 +257,8 @@ const LONG_LABELS = new Map([
 	["3mo", "Last 3 months"],
 	["6mo", "Last 6 months"],
 ])
-const QUICK_SELECT = ["3h", "4d", "6w", "12h", "10d", "2w", "2mo", "today"]
+// `QUICK_SELECT_OPTIONS`: shortest to longest; "today" is calendar-anchored, so it sits last.
+const QUICK_SELECT = ["3h", "12h", "4d", "10d", "2w", "6w", "2mo", "today"]
 
 const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
 

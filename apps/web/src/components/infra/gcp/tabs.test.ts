@@ -285,6 +285,7 @@ describe("gcpInfraNotice", () => {
 		last_metrics_error: null as string | null,
 		discovered_project_count: 1,
 		last_resources_error: null,
+		created_at: ago(120),
 		...over,
 	})
 	const unset = connector({

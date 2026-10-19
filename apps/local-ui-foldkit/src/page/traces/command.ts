@@ -46,6 +46,7 @@ const fetchPages = <R>(
 export const FetchTraces = Command.define("FetchLocalTraces", {
 	args: { ...RequestArgs, pageCount: Schema.Number, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchTraces, Message.FailedFetchTraces, Message.FoundCachedTraces],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, pageCount, readsCache }) =>
 		Effect.gen(function* () {
 			const cacheKey = tracesKey({ search, startTime, endTime })
@@ -66,13 +67,16 @@ export const FetchTraces = Command.define("FetchLocalTraces", {
 export const FetchNextPage = Command.define("FetchNextLocalTracesPage", {
 	args: {
 		...RequestArgs,
+		/** The list generation the page extends; a reload retires it. */
+		generation: Schema.Number,
 		cursorTimestamp: Schema.DateTimeUtc,
 		cursorTraceId: Schema.String,
 		/** The pages loaded so far; the cache keeps them with the new one. */
 		pages: Schema.Array(Schema.Array(TraceRow)),
 	},
 	messages: [Message.SucceededFetchNextPage, Message.FailedFetchNextPage],
-	execute: ({ key, search, startTime, endTime, apiBase, cursorTimestamp, cursorTraceId, pages }) =>
+	interrupt: { keyFields: ["key", "generation"], toKey: ({ key, generation }) => `${key}#${generation}` },
+	execute: ({ key, generation, search, startTime, endTime, apiBase, cursorTimestamp, cursorTraceId, pages }) =>
 		fetchTracePage(
 			filtersOf(new URLSearchParams(search)),
 			{ startTime, endTime },
@@ -85,8 +89,8 @@ export const FetchNextPage = Command.define("FetchNextLocalTracesPage", {
 					recordCached(tracesKey({ search, startTime, endTime }), pagesToCached({ pages: [...pages, page] }), atMs),
 				),
 			),
-			Effect.map((page) => Message.SucceededFetchNextPage({ key, page })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key, failure }))),
+			Effect.map((page) => Message.SucceededFetchNextPage({ key, generation, page })),
+			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key, generation, failure }))),
 		),
 })
 
@@ -96,6 +100,7 @@ const FACETS_STALE_MS = 15_000
 export const FetchFacets = Command.define("FetchLocalTraceFacets", {
 	args: { ...RequestArgs, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchFacets, Message.FailedFetchFacets, Message.FoundCachedFacets],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
 		Effect.gen(function* () {
 			const cacheKey = facetsKey({ search, startTime, endTime })

@@ -64,6 +64,7 @@ export const load = (
 					traces: Option.getOrElse(traces, () => model.traces),
 					facets: Option.getOrElse(facets, () => model.facets),
 					isFetchingNextPage: Option.isSome(traces) ? false : model.isFetchingNextPage,
+					pageGeneration: Option.isSome(traces) ? model.pageGeneration + 1 : model.pageGeneration,
 				},
 				commands: Array.getSomes([
 					Option.map(traces, () => FetchTraces({ key: tracesKey, ...args, pageCount, readsCache: model.traces.key !== tracesKey })),

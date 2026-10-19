@@ -12,6 +12,7 @@ import { Message } from "./message"
 export const FetchTrace = Command.define("FetchLocalTraceDetail", {
 	args: { key: Schema.String, traceId: Schema.String, apiBase: Schema.String, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchTrace, Message.FailedFetchTrace, Message.FoundCachedTrace],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, traceId, apiBase, readsCache }) =>
 		Effect.gen(function* () {
 			const cacheKey = traceCacheKey(traceId)
@@ -27,6 +28,7 @@ export const FetchTrace = Command.define("FetchLocalTraceDetail", {
 export const FetchSpanDetail = Command.define("FetchLocalSpanDetail", {
 	args: { ...SpanDetailRequest.fields, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchSpanDetail, Message.FailedFetchSpanDetail, Message.FoundCachedSpanDetail],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ readsCache, ...request }) =>
 		withCache({
 			key: ["local", "span-detail", request.traceId, request.spanId],
@@ -46,6 +48,7 @@ const spanLogsFromCached = (value: CacheValue): Option.Option<ReadonlyArray<Span
 export const FetchSpanLogs = Command.define("FetchLocalSpanLogs", {
 	args: { ...SpanLogsRequest.fields, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchSpanLogs, Message.FailedFetchSpanLogs, Message.FoundCachedSpanLogs],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ readsCache, ...request }) =>
 		withCache({
 			key: ["local", "span-logs", request.traceId, request.spanId, request.spanStartTime, request.spanDurationMs],

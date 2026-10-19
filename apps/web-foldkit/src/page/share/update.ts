@@ -9,7 +9,8 @@ import { AppRoute, hrefOf } from "../../route"
 import * as Menu from "../../ui/menu"
 import { type PageReturn, PageOutMessage } from "../contract"
 import { presetLabel } from "../kit/time-controls"
-import { FetchBatch, GoToSignIn, ResolveClock, ResolveReloadClock, ResolveShare, WaitFlushFrame } from "./command"
+import { withActiveTab, withSectionCollapsed } from "@maple/web/lib/dashboards/section-view-state"
+import { FetchBatch, GoToSignIn, ReadFrame, ResolveClock, ResolveReloadClock, ResolveShare, WaitFlushFrame } from "./command"
 import { Message } from "./message"
 import type { Model, SharedDashboard, ShareWindow } from "./model"
 
@@ -124,8 +125,12 @@ export const init = (route: Route): Return => ({
 		chartRuntime: { _tag: "Loading" },
 		refreshMenu: Menu.init("share-refresh-menu"),
 		nowMs: 0,
+		isFramed: false,
+		variables: {},
+		sectionView: {},
 	},
 	commands: [
+		ReadFrame(),
 		ResolveClock(),
 		ResolveShare({ token: route.token }),
 		Command.mapMessage(LoadChartRuntime(), (message) =>
@@ -158,12 +163,15 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		MeasuredGrid: ({ width }) => ({ model: { ...model, gridWidth: width } }),
 		CompletedFlushFrame: () => flush({ ...model, isFlushScheduled: false }),
-		CompletedFetchBatch: ({ keys, states }) => {
+		CompletedFetchBatch: ({ keys, states, variables }) => {
 			const [next, ...rest] = model.queuedBatches
+			const isLive = Object.keys(states).some((widgetId) => model.requested[widgetId] === keys[widgetId])
 			return {
 			model: {
 				...model,
 				queuedBatches: rest,
+				// A batch whose widgets all moved on is skipped whole, its variables included.
+				variables: isLive && variables !== undefined ? variables : model.variables,
 				states: {
 					...model.states,
 					...Object.fromEntries(
@@ -213,6 +221,14 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 			})
 		},
+		CompletedReadFrame: ({ isFramed }) => ({ model: { ...model, isFramed } }),
+		AppliedShareAppearance: () => ({ model }),
+		ClickedSectionChevron: ({ sectionId, collapsed }) => ({
+			model: { ...model, sectionView: withSectionCollapsed(model.sectionView, sectionId, collapsed) },
+		}),
+		ClickedSectionTab: ({ sectionId, tabId }) => ({
+			model: { ...model, sectionView: withActiveTab(model.sectionView, sectionId, tabId) },
+		}),
 		ClickedSignIn: () => ({ model, commands: [GoToSignIn()] }),
 		StartedSignInRedirect: () => ({ model }),
 	})

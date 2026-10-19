@@ -75,6 +75,7 @@ export const FetchServiceMap = Command.define("FetchLocalServiceMap", {
 		readsCache: Schema.Boolean,
 	},
 	messages: [Message.SucceededFetchServiceMap, Message.FailedFetchServiceMap, Message.FoundCachedServiceMap],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, startTime, endTime, durationSeconds, apiBase, readsCache }) =>
 		withCache({
 			key: ["local", "service-map", durationSeconds, `${startTime}/${endTime}`],

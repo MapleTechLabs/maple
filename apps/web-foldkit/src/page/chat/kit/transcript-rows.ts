@@ -28,7 +28,8 @@ export type TranscriptRow =
 
 /** Each maximal run of two or more adjacent tool-only assistant turns becomes one row. */
 export const buildTranscriptRows = (messages: ReadonlyArray<UIMessage>): ReadonlyArray<TranscriptRow> => {
-	const runs = Array.reduce(messages, [] as ReadonlyArray<ReadonlyArray<UIMessage>>, (acc, message) => {
+	const seed: ReadonlyArray<ReadonlyArray<UIMessage>> = []
+	const runs = Array.reduce(messages, seed, (acc, message) => {
 		const last = acc[acc.length - 1]
 		const lastMessage = last?.[last.length - 1]
 		return last !== undefined &&

@@ -122,7 +122,12 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // 710 KB for the Foldkit migration foundations (fk/parity-harness, 2026-10-17): 3.8 KB over
 // main's 705.9 — the six /lab/kit gallery route shells in the route tree (2.4 KB of index) and
 // the `@maple/web-data` service layer the warehouse queries now require. Lab pages stay lazy.
-const maxGzipBytes = 710 * 1024
+// 707.5 KB from the Google Cloud connect methods (#1533, 2026-10-18): ~0.7 KB of startup
+// measured in CI at 706.7 against main's 706.0 — the setup_scripts fields and the
+// confirm_removal endpoint on the v2 contract every page's client carries. The method step and
+// manual steps stay in their route chunks.
+// 711 KB with both: the Foldkit foundations and #1533's 0.7 KB.
+const maxGzipBytes = 711 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

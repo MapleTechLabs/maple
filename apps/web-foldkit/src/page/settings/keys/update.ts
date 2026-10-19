@@ -1,15 +1,15 @@
 import type { ApiKeyKind } from "@maple/domain/http"
 import { Array, Option, Result } from "effect"
-import { AsyncData, Command } from "foldkit"
+import { Command } from "foldkit"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
-import { FetchIngestKeys, RevokeApiKey, RollIngestKey } from "./command"
+import { RevokeApiKey } from "./command"
 import * as CreateDialog from "./create-dialog"
 import { Message } from "./message"
-import { type IngestKeyType, KeyStatusFilter, type Model } from "./model"
+import { KeyStatusFilter, type Model } from "./model"
 import * as RollDialog from "./roll-dialog"
 
 type Return = PageReturn<Model, Message>
@@ -21,27 +21,20 @@ export const init = (options: Readonly<{ isAdmin: boolean; userId: string | null
 		isAdmin: options.isAdmin,
 		userId: options.userId,
 		apiKeys: null,
-		ingest: options.isAdmin ? AsyncData.Loading() : AsyncData.Idle(),
 		typeFilter: "all",
 		statusFilter: "active",
 		statusSelect: Select.init("keys-status", { value: "active", selectedIndex: 0 }),
 		search: "",
 		createMenu: Menu.init("keys-create-menu"),
 		rowMenus: {},
-		revealedIngest: [],
-		ingestCopies: {},
 		revokeDialog: Dialog.init("keys-revoke", "alert-dialog"),
 		revoking: null,
 		isRevoking: false,
-		ingestRollDialog: Dialog.init("keys-ingest-roll", "alert-dialog"),
-		ingestRollType: "ingest_public",
-		isIngestRolling: false,
 		roll: RollDialog.init("keys-roll"),
 		create: CreateDialog.init("keys-create"),
 		baseUrlCopy: CopyButton.init(),
 		isScopesOpen: false,
 	},
-	commands: options.isAdmin ? [FetchIngestKeys()] : [],
 })
 
 const toast = (type: "success" | "error", title: string, description = "") =>
@@ -49,14 +42,10 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 
 // CHILDREN
 
-const liftDialog =
-	(field: "revokeDialog" | "ingestRollDialog", wrap: (message: Dialog.Message) => Message) =>
-	(model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
-		model: { ...model, [field]: step.model },
-		commands: Command.mapMessages(step.commands ?? [], wrap),
-	})
-const liftRevoke = liftDialog("revokeDialog", (message) => Message.GotRevokeDialogMessage({ message }))
-const liftIngestRoll = liftDialog("ingestRollDialog", (message) => Message.GotIngestRollDialogMessage({ message }))
+const liftRevoke = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: { ...model, revokeDialog: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRevokeDialogMessage({ message })),
+})
 
 const liftCreate = (model: Model, step: ReturnType<typeof CreateDialog.update>): Return => ({
 	model: { ...model, create: step.model },
@@ -82,10 +71,6 @@ export const openCreate = (model: Model, kind: ApiKeyKind): Return =>
 
 /** A row menu's pick: roll or revoke the key it belongs to. */
 const pickedRowAction = (model: Model, menuId: string, value: string): Return => {
-	if (menuId === "keys-row-ingest_public" || menuId === "keys-row-ingest_private") {
-		const type: IngestKeyType = menuId === "keys-row-ingest_public" ? "ingest_public" : "ingest_private"
-		return liftIngestRoll({ ...model, ingestRollType: type }, Dialog.open(model.ingestRollDialog))
-	}
 	return Option.match(
 		Array.findFirst(model.apiKeys ?? [], (key) => `keys-row-${key.id}` === menuId),
 		{
@@ -122,8 +107,6 @@ const updateMenu = (
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		UpdatedApiKeys: ({ rows }) => ({ model: { ...model, apiKeys: rows } }),
-		CompletedFetchIngestKeys: ({ result }) => ({ model: { ...model, ingest: AsyncData.settle(model.ingest, result) } }),
-		ClickedRetryIngestKeys: () => ({ model: { ...model, ingest: AsyncData.Loading() }, commands: [FetchIngestKeys()] }),
 		ClickedTypeFilter: ({ type }) => ({ model: { ...model, typeFilter: type } }),
 		GotStatusSelectMessage: ({ message: child }) => {
 			const step = Select.update(model.statusSelect, child)
@@ -159,21 +142,6 @@ export const update = (model: Model, message: Message): Return =>
 				(inner) => Message.GotRowMenuMessage({ menuId, message: inner }),
 				(next, value) => pickedRowAction(next, menuId, value),
 			),
-		ToggledIngestReveal: ({ type }) => ({
-			model: {
-				...model,
-				revealedIngest: model.revealedIngest.includes(type)
-					? model.revealedIngest.filter((entry) => entry !== type)
-					: [...model.revealedIngest, type],
-			},
-		}),
-		GotIngestCopyMessage: ({ type, message: child }) => {
-			const step = CopyButton.update(model.ingestCopies[type] ?? CopyButton.init(), child)
-			return {
-				model: { ...model, ingestCopies: { ...model.ingestCopies, [type]: step.model } },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotIngestCopyMessage({ type, message: inner })),
-			}
-		},
 		GotRevokeDialogMessage: ({ message: child }) =>
 			model.isRevoking ? { model } : liftRevoke(model, Dialog.update(model.revokeDialog, child)),
 		ClickedConfirmRevoke: () =>
@@ -191,26 +159,6 @@ export const update = (model: Model, message: Message): Return =>
 					outMessage: toast("error", "Failed to revoke key", error.message),
 				}),
 			}),
-		GotIngestRollDialogMessage: ({ message: child }) =>
-			model.isIngestRolling ? { model } : liftIngestRoll(model, Dialog.update(model.ingestRollDialog, child)),
-		ClickedConfirmIngestRoll: () =>
-			model.isIngestRolling
-				? { model }
-				: { model: { ...model, isIngestRolling: true }, commands: [RollIngestKey({ type: model.ingestRollType })] },
-		CompletedIngestRoll: ({ type, result }) => {
-			const closed = liftIngestRoll({ ...model, isIngestRolling: false }, Dialog.close(model.ingestRollDialog))
-			return Result.match(result, {
-				onSuccess: () => ({
-					...closed,
-					commands: [...(closed.commands ?? []), FetchIngestKeys()],
-					outMessage: toast(
-						"success",
-						`${type === "ingest_public" ? "Public" : "Private"} ingest key rolled. The previous key stopped working immediately.`,
-					),
-				}),
-				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Unable to roll the ingest key", error.message) }),
-			})
-		},
 		GotRollMessage: ({ message: child }) => liftRoll(model, RollDialog.update(model.roll, child)),
 		GotCreateMessage: ({ message: child }) => liftCreate(model, CreateDialog.update(model.create, child)),
 		GotBaseUrlCopyMessage: ({ message: child }) => {

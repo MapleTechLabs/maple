@@ -4,7 +4,9 @@ import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { toLoadFailure } from "../../../data/load-failure"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
+import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
@@ -45,6 +47,23 @@ const formSkeleton = (h: H): Html =>
 					),
 				],
 			),
+		],
+	)
+
+/** `useAlertRulesList`'s `SYNC_UNAVAILABLE`, shown through `ErrorState` as legacy does. */
+const SYNC_UNAVAILABLE = { message: "Live sync is unavailable, so alerts couldn’t be loaded. Reload to try again." }
+
+/** `AlertRuleFormLoadError`: the rules stream stopped, so the rule being edited can never load. */
+const loadError = (h: H): Html =>
+	h.div(
+		[h.Class(cn("mx-auto w-full", RULE_FORM_MAX_WIDTH))],
+		[
+			errorState(h, {
+				failure: toLoadFailure(SYNC_UNAVAILABLE),
+				title: "Failed to load alert rules",
+				onRetry: Message.ClickedReloadPage(),
+				className: "py-12",
+			}),
 		],
 	)
 
@@ -126,7 +145,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: RULE_CHART_TOKENS }))],
 		[
-			dashboardPage(h, {}, form === null ? [formSkeleton(h)] : surface(h, model, form, inputs.context.timeZone)),
+			dashboardPage(
+				h,
+				{},
+				form !== null
+					? surface(h, model, form, inputs.context.timeZone)
+					: [model.status === "Failed" ? loadError(h) : formSkeleton(h)],
+			),
 			h.submodel({
 				slotId: "alert-rule-destination",
 				model: model.destinationDialog,

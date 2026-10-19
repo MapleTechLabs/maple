@@ -1,11 +1,15 @@
 import { GithubPrReviewSettingsResponse, PrReviewRepositoryConfig, VcsRepositoryId } from "@maple/domain/http"
 import { Option, Result, Schema } from "effect"
+import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { requestKey } from "../../../data/request-key"
 import * as Select from "../../../ui/select"
-import { context, githubStatusOf, names } from "../kit/test-fixtures"
+import { emptyRetained } from "../kit/retained"
+import { context, githubStatusOf, names, NOW } from "../kit/test-fixtures"
 import * as RulesForm from "../rules-form/form"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
+import { view as pageView } from "./view"
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const settings = Schema.decodeUnknownSync(GithubPrReviewSettingsResponse)({
@@ -16,6 +20,8 @@ const settings = Schema.decodeUnknownSync(GithubPrReviewSettingsResponse)({
 })
 const INFRA = Schema.decodeSync(VcsRepositoryId)("00000c01-0000-4000-8000-000000000001")
 const WEB = Schema.decodeSync(VcsRepositoryId)("00000c01-0000-4000-8000-000000000002")
+
+const view = withViewInputs(pageView, { context })()
 
 const loaded = () => {
 	const entry = init({}, context).model
@@ -91,6 +97,45 @@ describe("code review settings", () => {
 		expect(names(late.commands)).toEqual([])
 		expect(late.outMessage?._tag === "RequestedToast" ? late.outMessage.title : null).toBe(
 			"Rules saved for acme-shop/infra",
+		)
+	})
+})
+
+describe("code review settings, entered from another tab", () => {
+	const status = githubStatusOf([
+		{ name: "infra", reviewed: false },
+		{ name: "web", reviewed: true },
+	])
+	const carried = () => {
+		const key = requestKey(context.orgId, "integrations.githubStatus", {})
+		return init({}, context, {
+			retained: { ...emptyRetained, githubStatus: { [key]: { value: status, usedAtMs: NOW } } },
+			nowMs: NOW,
+		})
+	}
+
+	test("the handed-over status pins the reviewed repositories on entry", () => {
+		expect(carried().model.repoList.pinned).toEqual([WEB])
+	})
+})
+
+describe("review model select", () => {
+	test("is disabled for a non-admin and while a pick saves", () => {
+		const model = loaded().model
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...model, isAdmin: false }),
+			expectView(role("combobox", { name: "Review model" })).toBeDisabled(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...model, isSavingModel: true }),
+			expectView(role("combobox", { name: "Review model" })).toBeDisabled(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("combobox", { name: "Review model" })).toBeEnabled(),
 		)
 	})
 })

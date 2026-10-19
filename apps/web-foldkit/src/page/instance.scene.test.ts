@@ -42,8 +42,6 @@ const stamp = (key: string, instance: number, message: Message, org: string = or
 	message,
 })
 
-const isPageMessage = Schema.is(PageMessage)
-
 const send = (slot: PageSlot | null, message: PageMessage) => updatePage(slot, message, context)
 
 /** Dashboard `id` entered in edit mode as build `instance`, clocked and holding its document. */
@@ -65,26 +63,25 @@ const deleteTile = (slot: PageSlot | null, id: string, instance: number) =>
 		),
 	)
 
+/** The toast's Undo: a root action, so the page that raised it need not be open. */
 const undoOf = (step: ReturnType<typeof deleteTile>) =>
 	Option.flatMap(step.outMessage, (out) =>
-		out._tag === "RequestedToast" && out.action !== null && out.action !== undefined && isPageMessage(out.action.message)
-			? Option.some(out.action.message)
+		out._tag === "RequestedToast" && out.rootAction?.action._tag === "RestoreDashboardWidgets"
+			? Option.some(out.rootAction.action)
 			: Option.none(),
 	)
 
-const names = (step: { readonly commands: ReadonlyArray<{ readonly name: string }> }) =>
-	step.commands.map(({ name }) => name)
-
 describe("page instances", () => {
-	test("Undo on dashboard A's toast, clicked after B opened, does not restore A's tile into B", () => {
+	test("Undo on dashboard A's toast names A, so after B opened it restores into A, never B", () => {
 		const onA = opened(null, "dash_a", 1)
 		const undo = Option.getOrThrow(undoOf(deleteTile(onA, "dash_a", 1)))
-		expect(names(send(onA, undo))).toEqual(["RestoreDashboardWidget"])
 		const onB = opened(onA, "dash_b", 2)
 		expect(onB?.key).toBe("dash_b")
-		const clicked = send(onB, undo)
-		expect(clicked.commands).toEqual([])
-		expect(clicked.slot).toBe(onB)
+		expect([undo.orgId, undo.dashboardId, undo.widgets.map((widget) => widget.id)]).toEqual([
+			orgId,
+			"dash_a",
+			["total-errors"],
+		])
 	})
 
 	test("dashboard A's late failed write does not make B read-only", () => {

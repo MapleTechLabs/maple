@@ -17,8 +17,8 @@ export const Message = defineMessageUnion({
 	/** The result cache held this key (or an older window of its view) before the fetch ran. */
 	FoundCachedSessions: { key: Schema.String, cached: CachedOf(SessionPages) },
 	ClickedLoadMore: {},
-	SucceededFetchNextPage: { key: Schema.String, page: Schema.Array(SessionRow) },
-	FailedFetchNextPage: { key: Schema.String, failure: LoadFailure },
+	SucceededFetchNextPage: { key: Schema.String, generation: Schema.Number, page: Schema.Array(SessionRow) },
+	FailedFetchNextPage: { key: Schema.String, generation: Schema.Number, failure: LoadFailure },
 	SucceededFetchFacets: { key: Schema.String, facets: SessionFacets, fetchedAtMs: Schema.Number },
 	FailedFetchFacets: { key: Schema.String, failure: LoadFailure },
 	FoundCachedFacets: { key: Schema.String, cached: CachedOf(SessionFacets) },

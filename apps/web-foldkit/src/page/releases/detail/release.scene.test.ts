@@ -9,7 +9,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { ReleasesData } from "../list/model"
 import { Message } from "./message"
 import { type Model, ReleaseDetail } from "./model"
-import { init, update } from "./update"
+import { contextChanged, init, update } from "./update"
 import { view as pageView } from "./view"
 
 const context: PageContext = {
@@ -176,5 +176,14 @@ describe("release detail", () => {
 		const reloaded = pageUpdate(withReleases().model, Message.ClickedReload())
 		expect(names(reloaded.commands)).toEqual(["ResolveReleaseWindow", "CompleteReleaseReloadSpin"])
 		expect(reloaded.model.isReloading).toBe(true)
+	})
+
+	test("the deploy's releases read carries the namespace pin; a pin change re-resolves", () => {
+		const pinned: PageContext = { ...context, pinnedNamespace: "payments" }
+		const entered = init(route(), pinned).model
+		const resolved = update(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }), pinned)
+		expect(resolved.commands?.[0]?.args).toMatchObject({ namespaces: ["payments"] })
+		expect(resolved.model.releases.key).not.toEqual(withReleases().model.releases.key)
+		expect(names(contextChanged(withReleases().model, pinned).commands)).toEqual(["ResolveReleaseWindow"])
 	})
 })

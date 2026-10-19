@@ -13,6 +13,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchFirstPage: result(InvestigationPage),
 	CompletedFetchMorePage: { cursor: Schema.String, ...result(InvestigationPage) },
 	CompletedFetchBudget: result(TriageBudget),
+	CompletedReadIsAdmin: { orgId: Schema.String, isAdmin: Schema.Boolean },
 	ClickedRetry: {},
 	ClickedLoadMore: {},
 	ChangedSubject: { value: Schema.String },

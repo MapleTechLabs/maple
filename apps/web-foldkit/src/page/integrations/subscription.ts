@@ -11,6 +11,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
 import { githubStatusOf } from "./update-github"
+import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
 import { runConfirmed } from "./gcp-configure-derive"
 import { configureConnector } from "./update-gcp-configure"
 
@@ -168,12 +169,18 @@ const gcpRefreshInterval = (model: Model): number | null => {
 	return settling ? 10_000 : 60_000
 }
 
-/** The wizard's run step is open and Maple has not confirmed the run. */
+/** The Set up step is open and Maple has not confirmed the run, or the first data. */
 const isAwaitingRun = (model: Model): boolean => {
 	const configure = model.gcpCard.configure
 	if (configure === null || configure.opened === null) return false
 	const connector = configureConnector(model, configure)
-	return connector !== undefined && !runConfirmed(connector, configure.opened, model.nowMs)
+	if (connector === undefined) return false
+	if (configure.method === "script") return !runConfirmed(connector, configure.opened, model.nowMs)
+	// `MethodApplyStage`: until each capability's first data, or its removal, is confirmed.
+	return CAPABILITY_IDS.some((capability) => {
+		const applied = capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
+		return connector[CAPABILITIES[capability].flag] ? applied !== true : applied === true
+	})
 }
 
 /** Prometheus and WarpStream share the scrape-target section. */

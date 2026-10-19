@@ -2,7 +2,7 @@ import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "@maple/local-ui/lib/time"
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
 import { Option, Result } from "effect"
-import { Command } from "foldkit"
+import { AsyncData, Command } from "foldkit"
 import { accept, acceptCached, idle } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage } from "../contract"
@@ -30,6 +30,7 @@ export const init = (context: PageContext): Readonly<{ model: Model; commands: R
 			sessions: idle(),
 			facets: idle(),
 			isFetchingNextPage: false,
+			pageGeneration: 0,
 			sessionsUpdatedAtMs: 0,
 			search: { text: q, version: 0, sent: q },
 			sections: FilterSections.init(),
@@ -70,17 +71,22 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			model: settleRefresh({ ...model, sessions: accept(model.sessions, key, Result.fail(failure)) }),
 		}),
 		ClickedLoadMore: () => loadMore(model, context),
-		SucceededFetchNextPage: ({ key, page }) => ({ model: appendPage(model, key, page) }),
-		FailedFetchNextPage: ({ key, failure }) => ({
-			model: { ...model, isFetchingNextPage: false, sessions: accept(model.sessions, key, Result.fail(failure)) },
-		}),
+		SucceededFetchNextPage: ({ key, generation, page }) =>
+			generation === model.pageGeneration ? { model: appendPage(model, key, page) } : { model },
+		FailedFetchNextPage: ({ key, generation, failure }) =>
+			generation !== model.pageGeneration
+				? { model }
+				: { model: { ...model, isFetchingNextPage: false, sessions: accept(model.sessions, key, Result.fail(failure)) } },
 		SucceededFetchFacets: ({ key, facets, fetchedAtMs }) => ({
 			model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }),
 		}),
 		FoundCachedSessions: ({ key, cached }) => {
 			if (model.sessions.key !== key) return { model }
 			const next = { ...model, sessions: acceptCached(model.sessions, key, cached, cached.isFresh), sessionsUpdatedAtMs: cached.updatedAtMs }
-			return { model: settleRefresh(next), commands: fetchAfterCache(next, context, "sessions", cached.isFresh) }
+			const step = { model: settleRefresh(next), commands: fetchAfterCache(next, context, "sessions", cached.isFresh) }
+			// A cached empty list renders `SignalEmptyState` as a fetched one does.
+			const isEmpty = Option.exists(AsyncData.getData(next.sessions.data), (data) => data.pages.every((page) => page.length === 0))
+			return isEmpty ? { ...step, outMessage: PageOutMessage.RequestedSignalPresence() } : step
 		},
 		FoundCachedFacets: ({ key, cached }) => {
 			if (model.facets.key !== key) return { model }

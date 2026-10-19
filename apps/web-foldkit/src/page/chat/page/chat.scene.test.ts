@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import { ChatEvent } from "@maple/domain/chat-session"
 import { Result, Schema } from "effect"
 import { Command, click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -72,6 +73,18 @@ describe("chat page", () => {
 		expect(names(typed.commands)).toContain("StampChatRename")
 		const renamed = step(typed.model, Message.StampedRename({ id: "default", title: "Which services have the highest error ra", nowMs: NOW + 1 }))
 		expect(renamed.model.tabs?.tabs[0]?.title).toBe("Which services have the highest error ra")
+	})
+
+	test("a second tab's turn starting reconnects the first tab's tail from what it already folded", () => {
+		const running = (cursor: number) =>
+			ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor, running: true }) })
+		const first = step(loaded([tab("default"), tab("t2")]).model, Message.GotConversationMessage({ tabId: "default", message: running(5) })).model
+		const delta = Schema.decodeUnknownSync(ChatEvent)({ type: "text-delta", seq: 9, messageId: "r", text: "Hello" })
+		const folded = step(first, Message.GotConversationMessage({ tabId: "default", message: ConversationMessage.ReceivedChatEvents({ generation: 1, events: [delta], nowMs: NOW }) })).model
+		expect(folded.conversations.default?.stream?.cursor).toBe(5)
+		const both = step(folded, Message.GotConversationMessage({ tabId: "t2", message: running(2) })).model
+		expect(both.conversations.default?.stream?.cursor).toBe(9)
+		expect(both.conversations.t2?.stream?.cursor).toBe(2)
 	})
 
 	test("double-click renames: Enter applies a changed title, Escape and an unchanged one cancel", () => {

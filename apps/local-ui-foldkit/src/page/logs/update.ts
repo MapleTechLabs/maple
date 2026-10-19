@@ -30,6 +30,7 @@ export const init = (context: PageContext): InitReturn => {
 			nowMs: 0,
 			logs: idle(),
 			isFetchingNextPage: false,
+			pageGeneration: 0,
 			logsUpdatedAtMs: 0,
 			patternsUpdatedAtMs: 0,
 			patterns: idle(),

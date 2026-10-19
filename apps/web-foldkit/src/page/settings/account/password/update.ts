@@ -1,7 +1,7 @@
 import { Effect, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { PageOutMessage, type PageReturn } from "../../../contract"
-import { settled, withUser } from "../clerk-write"
+import { settled, withUserReverified } from "../clerk-write"
 import { readAccountUser } from "../user"
 import { Message, type Model } from "./model"
 
@@ -22,7 +22,7 @@ const UpdatePassword = Command.define("UpdateClerkPassword", {
 	},
 	messages: [Message.CompletedSubmit],
 	execute: ({ newPassword, currentPassword, signOutOfOtherSessions }) =>
-		withUser("Failed to update your password", (user) =>
+		withUserReverified("Failed to update your password", (user) =>
 			user.updatePassword({
 				newPassword,
 				// Clerk rejects `currentPassword` on an account that has none yet.

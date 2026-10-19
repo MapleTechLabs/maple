@@ -3,7 +3,8 @@ import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-chart
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { loadKnownServices } from "../../chat/kit/known-services"
 import { Clock, Effect, type Result, Schema } from "effect"
-import { Command } from "foldkit"
+import { Command, Mount } from "foldkit"
+import { clickStream, factsOf, nodeLinkClick } from "../clicks"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { Message } from "./message"
@@ -65,13 +66,20 @@ export const FetchSignalLogs = Command.define("FetchInvestigationSignalLogs", {
 		),
 })
 
-/** `TracesRow`'s read: the window's overview rows, every service. */
+/** `TracesRow`'s read: the window's overview rows, every service, under the namespace pin. */
 export const FetchSignalTraces = Command.define("FetchInvestigationSignalTraces", {
-	args: { key: Schema.String, startTime: Schema.String, endTime: Schema.String },
+	args: {
+		key: Schema.String,
+		startTime: Schema.String,
+		endTime: Schema.String,
+		namespaces: Schema.optional(Schema.Array(Schema.String)),
+	},
 	messages: [Message.CompletedFetchTraces],
-	execute: ({ key, startTime, endTime }) =>
+	execute: ({ key, startTime, endTime, namespaces }) =>
 		finish(
-			Effect.map(getServiceOverview({ data: { startTime, endTime } }), (response) =>
+			Effect.map(getServiceOverview({
+				data: { startTime, endTime, namespaces: namespaces === undefined ? undefined : [...namespaces] },
+			}), (response) =>
 				response.data.map(({ serviceName, spanCount, p95LatencyMs, errorRate }) => ({ serviceName, spanCount, p95LatencyMs, errorRate })),
 			),
 			(result) => Message.CompletedFetchTraces({ key, result }),
@@ -126,4 +134,21 @@ export const RestartInvestigation = Command.define("RestartInvestigation", {
 			}),
 			(result) => Message.CompletedRestart({ result }),
 		),
+})
+
+/**
+ * The canvas `<Link>`s: captured before the action card's own click, which they never trigger.
+ * A plain click routes in place; a modified one keeps the browser's new tab.
+ */
+export const MountNodeLinks = Mount.defineStream("MountInvestigationNodeLinks", {
+	messages: [Message.ClickedNodeLink],
+	execute: ({ element }) =>
+		clickStream<ReturnType<typeof Message.ClickedNodeLink>>(element, true, (event, emit) => {
+			const link = nodeLinkClick(factsOf(event))
+			if (link === null) return
+			event.stopPropagation()
+			if (!link.isPlain) return
+			event.preventDefault()
+			emit(Message.ClickedNodeLink({ href: link.href }))
+		}),
 })

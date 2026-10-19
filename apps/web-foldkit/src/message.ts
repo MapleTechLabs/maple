@@ -35,6 +35,7 @@ export const Message = defineMessageUnion({
 	FailedLoadCustomer: { orgId: Schema.String },
 	CompletedSaveSelectedPlanKnown: {},
 	CompletedReconnectOrgCollections: {},
+	CompletedRestoreDashboardWidgets: {},
 	CompletedSignOutOfClerk: {},
 	GotSignInMessage: { message: SignIn.Message },
 	GotShellMessage: { message: Shell.Message },

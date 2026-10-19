@@ -3,7 +3,6 @@ import {
 	defaultWidgetLayout,
 	DashboardRefreshIntervalSeconds,
 	DashboardVariableSchema,
-	DashboardWidgetSchema,
 	TimeRangeSchema,
 } from "@maple/domain/http"
 import { Clock, Duration, Effect, Queue, Random, Result, Schema, Stream } from "effect"
@@ -72,9 +71,9 @@ const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 
 /** `dashboardSharesAtom`: loaded means every widget menu offers "Embed chart". */
 export const FetchShares = Command.define("FetchDashboardShares", {
-	args: { dashboardId: Schema.String },
+	args: { dashboardId: Schema.String, seq: Schema.Number },
 	messages: [Message.GotShareMessage],
-	execute: ({ dashboardId }) =>
+	execute: ({ dashboardId, seq }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
@@ -83,7 +82,7 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ result }) })),
+			Effect.map((result) => Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) })),
 		),
 })
 
@@ -157,20 +156,6 @@ export const CloneWidget = Command.define("CloneDashboardWidget", {
 				),
 			)
 		}),
-})
-
-/** `restoreWidget`: idempotent, a refetch may already have put it back. */
-export const RestoreWidget = Command.define("RestoreDashboardWidget", {
-	args: { ...Target, widget: DashboardWidgetSchema },
-	messages: [Message.CompletedWrite],
-	execute: ({ orgId, dashboardId, widget }) =>
-		toWriteMessage(
-			mutateDashboard(orgId, dashboardId, (document, nowIso) =>
-				document.widgets.some((existing) => existing.id === widget.id)
-					? document
-					: { ...document, widgets: [...document.widgets, widget], updatedAt: nowIso },
-			),
-		),
 })
 
 /** `updateWidgetLayouts`: one commit per finished drag or resize, only the changed boxes. */

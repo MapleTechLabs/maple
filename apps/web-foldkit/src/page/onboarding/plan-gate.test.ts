@@ -34,7 +34,7 @@ const gate = (route: AppRoute, customer: CustomerSlot, isKnownToRenderApp = fals
 
 describe("plan gate", () => {
 	test("while the plan loads, the app waits on the splash unless this browser knows the org", () => {
-		expect(gate(home, loading)).toEqual({ redirect: Option.none(), isSplash: true })
+		expect(gate(home, loading)).toEqual({ redirect: Option.none(), isSplash: true, wrongRegion: null })
 		expect(gate(home, loading, true).isSplash).toBe(false)
 		expect(gate(AppRoute.QuickStart({ search: {} }), loading).isSplash).toBe(false)
 	})
@@ -58,6 +58,7 @@ describe("plan gate", () => {
 		expect(gate(home, { orgId: "org_1", data: CustomerData.Failure({ error: "Failed" }) })).toEqual({
 			redirect: Option.none(),
 			isSplash: false,
+			wrongRegion: null,
 		})
 	})
 
@@ -69,5 +70,18 @@ describe("plan gate", () => {
 
 	test("the unsubscribe page never reads the plan", () => {
 		expect(gate(AppRoute.Unsubscribe({ search: {} }), customerWith(null)).redirect).toEqual(Option.none())
+	})
+
+	test("an org another region serves gets the wrong-region screen once its choice is closed", () => {
+		const elsewhere: ClerkOrganization = { ...organization, homeRegion: "eu", isServedHere: false }
+		const at = (org: ClerkOrganization, route: AppRoute) =>
+			planGate({ route, organization: Option.some(org), customer: loading, isKnownToRenderApp: true })
+		expect(at(elsewhere, home)).toEqual({ redirect: Option.none(), isSplash: false, wrongRegion: "eu" })
+		expect(at(elsewhere, AppRoute.CliLogin({ search: {} })).wrongRegion).toBe("eu")
+		const open: ClerkOrganization = { ...elsewhere, isRegionOpen: true }
+		expect(at(open, home).redirect).toEqual(
+			Option.some({ url: hrefOf(AppRoute.QuickStart({ search: { redirect_url: "/" } })), isReplace: true }),
+		)
+		expect(at(open, home).wrongRegion).toBeNull()
 	})
 })

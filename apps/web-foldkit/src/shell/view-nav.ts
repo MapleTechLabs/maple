@@ -1,8 +1,10 @@
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { Option } from "effect"
+import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { infraSurfacesOf } from "../data/infra-surfaces"
 import { icon, iconColor } from "../ui/icon"
 import {
 	sidebarGroup,
@@ -42,21 +44,20 @@ export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<N
 			(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags.releases)),
 	})
 
-/** `useInfraSurfaces`: the probe's surfaces plus connected integrations; `null` until the probe answers. */
-export const surfacesOf = (model: Model): ReadonlySet<NavSurface> | null =>
+/** The last-hour probe's answer; `null` while it is in flight or after it failed. */
+export const presenceOf = (model: Model): ReadonlyArray<InfraSurfaceLiteral> | null =>
 	AsyncData.match(model.infraPresence, {
 		onIdle: () => null,
 		onLoading: () => null,
 		onRefreshing: () => null,
 		onFailure: () => null,
 		onStale: () => null,
-		onSuccess: (surfaces): ReadonlySet<NavSurface> => {
-			const present = new Set<NavSurface>(surfaces)
-			for (const integration of ["cloudflare", "planetscale", "railway", "gcp"] as const)
-				if (model.integrations[integration]) present.add(integration)
-			return present
-		},
+		onSuccess: (surfaces) => surfaces,
 	})
+
+/** `useInfraSurfaces`: the probe's surfaces plus connected integrations; `null` until the probe answers. */
+export const surfacesOf = (model: Model): ReadonlySet<NavSurface> | null =>
+	infraSurfacesOf(presenceOf(model), model.integrations)
 
 /** Brand marks of a closed section (all or nothing, deduplicated, the section's own page left out). */
 const previewOf = (item: NavItem, isOpen: boolean): ReadonlyArray<NavSubItem> | undefined => {

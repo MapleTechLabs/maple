@@ -1,4 +1,4 @@
-import { AlertRuleId } from "@maple/domain/http"
+import { AlertRuleId, DashboardDocument } from "@maple/domain/http"
 import { V2ChatConnector } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
@@ -18,10 +18,12 @@ import { AlertsCreateSearch } from "../../../route/search"
 import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
+import * as Tooltip from "../../../ui/tooltip"
 import * as Select from "../../../ui/select"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
+import * as ChatConnect from "../shared/chat-connect"
 import { PreviewSlot } from "../shared/preview"
 import { RuleForm } from "./form"
 
@@ -33,8 +35,8 @@ const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 export const Notice = Schema.Struct({ severity: Schema.Literals(["warning", "error"]), message: Schema.String })
 export type Notice = typeof Notice.Type
 
-/** `RuleInitialization`: the draft exists only once ready. TODO(alert-editor): the sync-failed state. */
-export const Status = Schema.Literals(["Loading", "Ready"])
+/** `RuleInitialization`: the draft exists only once ready; `Failed` is the rules sync that never answered. */
+export const Status = Schema.Literals(["Loading", "Ready", "Failed"])
 export type Status = typeof Status.Type
 
 /** A dry run's verdict, tagged with the rule it was produced from (`previewIdentityKey`). */
@@ -73,6 +75,11 @@ export const Model = Schema.Struct({
 	states: Rows(AlertRuleStateRowSchema),
 	incidents: Rows(AlertIncidentRowSchema),
 	destinations: Rows(AlertDestinationRowSchema),
+	/** `useCollectionLoadFailed` on `alert_rules` while an edit waits on it. */
+	isRulesLoadFailed: Schema.Boolean,
+	/** The widget's dashboard when no `chart` snapshot came along (`useDashboardsRead`). */
+	sourceDashboards: Schema.NullOr(Schema.Array(DashboardDocument)),
+	isDashboardsLoadFailed: Schema.Boolean,
 	isAdmin: Schema.Boolean,
 	isDefaultDestinationApplied: Schema.Boolean,
 	/** `useChatConnectors`: `null` until the list answers. */
@@ -104,6 +111,11 @@ export const Model = Schema.Struct({
 	/** The "Add destination" menus (one per tier) and the variable tooltips, by id. */
 	menus: Schema.Record(Schema.String, Menu.Model),
 	destinationDialog: DestinationDialog.Model,
+	/** The action bar's "details" tooltip listing every validation issue. */
+	issuesTooltip: Tooltip.Model,
+	/** The Add destination menus' workspace connect popup, and the menu it was started from. */
+	chatConnect: ChatConnect.Model,
+	chatConnectMenuId: Schema.NullOr(Schema.String),
 	brokenLogos: Schema.Array(Schema.String),
 	timePicker: TimeRangePicker.Model,
 	chart: Chart.Model,

@@ -18,6 +18,7 @@ export const ReadClock = Command.define("ReadSessionDetailClock", {
 export const FetchDetail = Command.define("FetchLocalSessionDetail", {
 	args: { key: Schema.String, sessionId: Schema.String, apiBase: Schema.String, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchDetail, Message.FailedFetchDetail, Message.FoundCachedDetail],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, sessionId, apiBase, readsCache }) =>
 		Effect.gen(function* () {
 			const cacheKey = ["local", "session", sessionId]
@@ -57,6 +58,7 @@ export const FetchDetail = Command.define("FetchLocalSessionDetail", {
 export const FetchTranscript = Command.define("FetchLocalSessionTranscript", {
 	args: { key: Schema.String, sessionId: Schema.String, apiBase: Schema.String, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchTranscript, Message.FailedFetchTranscript, Message.FoundCachedTranscript],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, sessionId, apiBase, readsCache }) =>
 		withCache({
 			key: ["local", "session-transcript", sessionId],
@@ -93,6 +95,7 @@ export const FetchTranscript = Command.define("FetchLocalSessionTranscript", {
 export const FetchTraces = Command.define("FetchLocalSessionTraces", {
 	args: { key: Schema.String, traceIds: Schema.Array(Schema.String), apiBase: Schema.String, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchTraces, Message.FailedFetchTraces, Message.FoundCachedTraces],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, traceIds, apiBase, readsCache }) =>
 		withCache({
 			key: ["local", "session-traces", traceIds],

@@ -1,4 +1,5 @@
 import { GCP_INFRA_SERVICE_IDS } from "@maple/domain/gcp-infra"
+import { InfraSurfaceLiteral } from "@maple/domain/http"
 import { Schema } from "effect"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
@@ -55,13 +56,9 @@ export const SourceSummary = Schema.Struct({
 })
 export type SourceSummary = typeof SourceSummary.Type
 
-/**
- * One source's read: its summary (`null` when it answered with nothing readable) and whether it
- * has anything at all, which stands in for the shell's presence probe (see `presentSources`).
- */
+/** One source's read: its summary, `null` when it answered with nothing readable. */
 export const SourceReading = Schema.Struct({
 	summary: Schema.NullOr(SourceSummary),
-	isReporting: Schema.Boolean,
 })
 export type SourceReading = typeof SourceReading.Type
 
@@ -70,6 +67,8 @@ export const SourceSlot = KeyedSchema(SourceReading, LoadFailure)
 export const Model = Schema.Struct({
 	search: InfraSearch,
 	frame: Frame.Model,
+	/** `useInfraSurfaces(window)`: the presence probe over the page's window. */
+	presence: KeyedSchema(Schema.Array(InfraSurfaceLiteral), LoadFailure),
 	sources: Schema.Struct({
 		hosts: SourceSlot,
 		containers: SourceSlot,

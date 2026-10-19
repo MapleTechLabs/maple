@@ -1,13 +1,20 @@
 import { OrgId, SpanId, TraceId } from "@maple/domain"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Dialog from "../../../ui/dialog"
+import { MountDialog } from "../../../ui/dialog"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { SpanNodeData, TraceData } from "./trace-data"
 import { init, routeChanged, update } from "./update"
-import { view as pageView } from "./view"
+import * as Tabs from "../../../ui/tabs"
+import * as SpanPanel from "./span-panel"
+import { MeasureSplit } from "./split"
+import { MeasureTimelineBody, MountAltToggle } from "./timeline/command"
+import { Message as TimelineMessage } from "./timeline/message"
+import { breadcrumbs, view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -63,12 +70,16 @@ const loaded = (search = {}) => {
 
 describe("trace detail", () => {
 	test("entry reads the clock and asks for the span hierarchy", () => {
-		expect(names(entered().commands)).toEqual(["ReadTraceDetailClock", "FetchSpanHierarchy"])
+		expect(names(entered().commands)).toEqual([
+			"ReadTraceDetailClock",
+			"ReadTraceListQuery",
+			"FetchSpanHierarchy",
+		])
 	})
 
 	test("an id that is not a trace id renders not found without a request", () => {
 		const invalid = init({ traceId: "  ", search: {} }, context)
-		expect(names(invalid.commands)).toEqual(["ReadTraceDetailClock"])
+		expect(names(invalid.commands)).toEqual(["ReadTraceDetailClock", "ReadTraceListQuery"])
 		scene(
 			{ update: pageUpdate, view },
 			given(invalid.model),
@@ -125,5 +136,66 @@ describe("trace detail", () => {
 		const model = loaded({ spanId: child.spanId }).model
 		expect(model.spanPanel).not.toBeNull()
 		expect(model.split.layout).toEqual([60, 40])
+	})
+
+	const urlOf = (result: { readonly outMessage?: unknown }) =>
+		typeof result.outMessage === "object" && result.outMessage !== null && "url" in result.outMessage
+			? String(result.outMessage.url)
+			: ""
+
+	const withList = (model: Model) =>
+		pageUpdate(model, Message.CompletedReadListQuery({ listQuery: "services=api&hasError=true" })).model
+
+	test("the list filters on the URL ride on span navigation and the Traces crumb", () => {
+		const model = withList(loaded().model)
+		expect(breadcrumbs(model)[0]?.href).toBe("/traces?services=api&hasError=true")
+		const selected = pageUpdate(model, Message.ClickedViewOriginSpan({ spanId: child.spanId }))
+		expect(urlOf(selected)).toBe(`/traces/${TRACE}?services=api&hasError=true&spanId=${child.spanId}`)
+		const invalid = withList(init({ traceId: "  ", search: {} }, context).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(invalid),
+			expectView(role("link", { name: "Back to Traces" })).toHaveAttr(
+				"href",
+				"/traces?services=api&hasError=true",
+			),
+		)
+	})
+
+	test("Escape on the page closes the span panel, replacing history", () => {
+		const model = withList(loaded({ spanId: child.spanId }).model)
+		expect(pageUpdate(model, Message.PressedPageEscape()).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: `/traces/${TRACE}?services=api&hasError=true`,
+				isReplace: true,
+			}),
+		)
+		expect(pageUpdate(loaded().model, Message.PressedPageEscape()).outMessage).toBeUndefined()
+	})
+
+	const RECT = { left: 0, right: 96, top: 0, bottom: 32, width: 96, height: 32 }
+
+	test("below md the span opens in a bottom sheet, which closes the panel when dismissed", () => {
+		const model = loaded({ spanId: child.spanId }).model
+		scene(
+			{ update: pageUpdate, view: withViewInputs(pageView, { context, isMobile: true })() },
+			given(model),
+			Mount.resolve(MeasureSplit, Message.MeasuredSplitWidth({ width: 390 })),
+			// Mounts inside a Submodel resolve with that Submodel's own Message.
+			Mount.resolve(MountAltToggle, TimelineMessage.AltClickedToggleCollapse({ spanId: "none" })),
+			Mount.resolve(MeasureTimelineBody, TimelineMessage.MeasuredScroller({ width: 390, height: 400 })),
+			Mount.resolve(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
+			Mount.resolve<string, SpanPanel.Message>(
+				Tabs.MeasureTabIndicator,
+				SpanPanel.Message.GotTabsMessage({ message: Tabs.Message.MeasuredIndicator({ rect: RECT }) }),
+			),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("dialog", { name: "Span details" })).toExist(),
+		)
+		const dismissed = pageUpdate(
+			model,
+			Message.GotSpanSheetMessage({ message: Dialog.Message.PressedEscape() }),
+		)
+		expect(urlOf(dismissed)).toBe(`/traces/${TRACE}`)
 	})
 })

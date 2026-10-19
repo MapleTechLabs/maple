@@ -6,7 +6,8 @@ import { shownOf, type Slot } from "./slot"
 // `useShownData` (apps/local-ui/src/hooks/use-shown-data.ts): what the open page shows from its
 // queries, and how old it is. A page's queries are the Slots in its Model (and its panel's).
 
-const SLOT_DEPTH = 2
+/** The page's fields, nested state (the span panel) and keyed state (an error card under its hash). */
+const SLOT_DEPTH = 3
 
 const isSlot = (value: unknown): value is Slot<unknown> =>
 	typeof value === "object" &&
@@ -17,9 +18,9 @@ const isSlot = (value: unknown): value is Slot<unknown> =>
 	"data" in value &&
 	AsyncData.isAsyncData(value.data)
 
-/** Every Slot in a page Model, its own fields and one level of nested state (the span panel). */
+/** Every Slot in a page Model, down to keyed nested state. Rows arrays never hold one, so they are skipped. */
 export const slotsOf = (model: unknown, depth = SLOT_DEPTH): ReadonlyArray<Slot<unknown>> => {
-	if (typeof model !== "object" || model === null || depth === 0) return []
+	if (typeof model !== "object" || model === null || Array.isArray(model) || depth === 0) return []
 	return Object.values(model).flatMap((value) => (isSlot(value) ? [value] : slotsOf(value, depth - 1)))
 }
 

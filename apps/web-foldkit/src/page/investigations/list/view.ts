@@ -3,7 +3,6 @@ import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import {
 	investigationFinding,
 	investigationHeadline,
@@ -35,7 +34,8 @@ import { docsLink, filteredEmpty } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { severityBadge } from "../../errors/kit/severity"
 import { confidenceMeter, investigateBar, kindMarker, statusBadge } from "../kit"
-import { MountHero } from "./command"
+import { ROW_ATTRIBUTE } from "../clicks"
+import { MountHero, MountInvestigationRows } from "./command"
 import {
 	allOf,
 	type HubView,
@@ -241,7 +241,7 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 				}),
 			],
 		),
-	}, [h.Key(investigation.id), h.OnClick(Message.ClickedRow({ id: investigation.id }))])
+	}, [h.Key(investigation.id), h.Attribute(ROW_ATTRIBUTE, investigation.id)])
 }
 
 /** `InvestigationTableSkeleton`: ghosts the row rhythm. */
@@ -387,8 +387,7 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 		budget.pausedDimension === "runs" || budget.pausedDimension === "runs_reserved"
 			? "Today's investigation limit is reached"
 			: "Today's model budget is spent"
-	// TODO(clerk-admin): Clerk mode reads the session roles (`useIsOrgAdmin`); self-hosted is root.
-	const canEditSettings = !isClerkAuthEnabled
+	const canEditSettings = model.isOrgAdmin
 	return alert(h, { variant: "warn", className: "mb-4" }, [
 		alertTitle(h, [budget.priorityPaused ? "Automatic triage paused" : "Automatic triage paused for routine incidents"], "text-foreground"),
 		alertDescription(h, [
@@ -435,7 +434,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		return h.div(
 			[h.Class("contents")],
 			[
-				h.ul([h.Class("flex flex-col")], visible.map((investigation) => row(h, investigation, model.nowMs, timeZone))),
+				h.ul([h.Class("flex flex-col"), h.OnMount(MountInvestigationRows())], visible.map((investigation) => row(h, investigation, model.nowMs, timeZone))),
 				...(hasMore
 					? [
 							h.div(

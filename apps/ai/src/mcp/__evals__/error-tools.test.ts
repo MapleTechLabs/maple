@@ -7,7 +7,7 @@ import { Schema } from "effect"
 import { ErrorDetailOutput, FindErrorsOutput, ListErrorIssuesOutput } from "@maple/domain/mcp-outputs"
 import { executeSql } from "@maple/backend/platform/test-pglite"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "./eval-runtime"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
+import { installFakeWarehouse, readsTraceSpans, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
 import { FIXTURES } from "./utils"
 
 const FINGERPRINT = "13521913963841819692"
@@ -96,7 +96,7 @@ const rules: FixtureRule[] = [
 		rows: [{ fingerprintHash: UNKNOWN_FINGERPRINT, traceId: "t-landing", spanId: "s-landing" }],
 	},
 	{
-		match: (sql) => sql.includes("FROM trace_detail_spans") && sql.includes("AS httpStatus"),
+		match: (sql) => readsTraceSpans(sql) && sql.includes("AS httpStatus"),
 		rows: [
 			{
 				spanId: "s-landing",

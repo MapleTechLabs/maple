@@ -1,10 +1,16 @@
 import { OrgId } from "@maple/domain"
+import { DashboardDocument } from "@maple/domain/http"
+import { encodePublicId, PublicIdPrefixes, V2ChatConnector } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import * as Animation from "@foldkit/ui/animation"
+import { click, Command, expect as expectView, given, hover, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
+import * as Menu from "../../../ui/menu"
+import * as Tooltip from "../../../ui/tooltip"
 import type { PageContext } from "../../contract"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
+import { ReloadPage } from "./command"
 import { init } from "./init"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -32,6 +38,24 @@ const withLists = (model: Model) =>
 		Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
 		Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { name: "Payment p95 latency" })] }),
 	])
+
+const dashboardFixture = {
+	id: "dash-1",
+	name: "Checkout",
+	timeRange: { type: "relative", value: "6h" },
+	widgets: [
+		{
+			id: "w-1",
+			visualization: "stat",
+			dataSource: { kind: "route", endpoint: "errors_summary" },
+			display: { title: "Checkout latency", unit: "number" },
+			layout: { x: 0, y: 0, w: 3, h: 2 },
+		},
+	],
+	createdAt: "2026-09-19T12:00:00.000Z",
+	updatedAt: "2026-09-28T12:00:00.000Z",
+	schemaVersion: 3,
+}
 
 describe("alert rule editor", () => {
 	test("a new rule opens on the template picker, in the query builder, with the reads it needs", () => {
@@ -88,6 +112,103 @@ describe("alert rule editor", () => {
 		expect(names(pageUpdate(saving.model, Message.ClickedSave()).commands)).toEqual([])
 		const saved = pageUpdate(saving.model, Message.CompletedSave({ result: Result.succeed(undefined) }))
 		expect(saved.outMessage?._tag).toBe("RequestedNavigation")
+	})
+
+	test("a created rule records alert_rule_created with its signal; a failed save does not", () => {
+		const saving = pageUpdate(withLists(entered({ template: "slow_p95" })), Message.ClickedSave()).model
+		const saved = pageUpdate(saving, Message.CompletedSave({ result: Result.succeed(undefined) }))
+		expect(names(saved.commands)).toEqual(["TrackAlertRuleCreated"])
+		const failed = pageUpdate(saving, Message.CompletedSave({ result: Result.fail({ title: "Bad", message: "nope" }) }))
+		expect(names(failed.commands)).toEqual([])
+	})
+
+	test("past three missing fields, details lists every one", () => {
+		const model = run(withLists(entered({ template: "slow_p95" })), [
+			Message.ChangedField({ field: "name", value: "" }),
+			Message.ChangedField({ field: "threshold", value: "" }),
+			Message.ChangedField({ field: "windowMinutes", value: "" }),
+			Message.ChangedField({ field: "consecutiveBreachesRequired", value: "" }),
+		])
+		const details = role("button", { name: "details" })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(text("• Checks to fire")).not.toExist(),
+			hover(details),
+			Command.resolve(Tooltip.WaitOpenDelay, Tooltip.Message.ElapsedOpenDelay({ generation: 1 })),
+			Mount.resolve(Tooltip.MountTooltip, Tooltip.Message.CompletedMountTooltip()),
+			Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
+			Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+			expectView(text("• Checks to fire")).toExist(),
+		)
+	})
+
+	test("an edit whose rules sync gave up says so, with a reload, instead of a skeleton", () => {
+		const waiting = entered({ ruleId: ruleId(2) })
+		const failed = pageUpdate(waiting, Message.FailedLoadRules({ orgId: ORG })).model
+		expect(failed.form).toBeNull()
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			expectView(text("Failed to load alert rules")).toExist(),
+			click(role("button", { name: "Try again" })),
+			Command.expectHas(ReloadPage()),
+			Command.resolve(ReloadPage, Message.ReloadedPage()),
+		)
+		const answered = pageUpdate(withLists(waiting), Message.FailedLoadRules({ orgId: ORG })).model
+		expect(answered.editingRuleId).toBe(ruleId(2))
+	})
+
+	test("a widget link without its snapshot prefills from the dashboard, or says it could not load", () => {
+		const search = { dashboardId: "dash-1", widgetId: "w-1" }
+		expect(withLists(entered(search)).form).toBeNull()
+		const dashboard = Schema.decodeUnknownSync(DashboardDocument)(dashboardFixture)
+		const found = pageUpdate(
+			withLists(entered(search)),
+			Message.UpdatedSourceDashboard({ orgId: ORG, dashboards: [dashboard] }),
+		).model
+		expect(found.draftKey).toBe("dashboard:dash-1:widget:w-1")
+		expect(found.notices.map((notice) => notice.message)).not.toContain(
+			"The source chart could not be found. Starting from a blank alert.",
+		)
+		const failed = pageUpdate(withLists(entered(search)), Message.FailedLoadDashboards({ orgId: ORG })).model
+		expect(failed.notices).toEqual([
+			{ severity: "warning", message: "Dashboards could not be loaded. Starting from a blank alert." },
+		])
+	})
+
+	test("Connect in the add destination menu links Slack in a popup, then opens its destination form", () => {
+		const connector = (workspaces: ReadonlyArray<unknown>) =>
+			Schema.decodeUnknownSync(V2ChatConnector)({
+				id: "slack",
+				object: "chat_connector",
+				name: "Slack",
+				available: true,
+				workspaces,
+				supports_identity: true,
+			})
+		const ready = pageUpdate(withLists(entered({ template: "slow_p95" })), Message.CompletedFetchConnectors({ connectors: [connector([])] })).model
+		const menuId = "alert-rule-add-destination-warning"
+		const picked = pageUpdate(
+			ready,
+			Message.GotMenuMessage({ id: menuId, message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: "connect:slack" } }) }),
+		).model
+		expect(picked.chatConnect.active?.connector).toBe("slack")
+		const workspace = {
+			id: encodePublicId(PublicIdPrefixes.chatWorkspace, "0199a0d5-0000-7000-8000-000000000003"),
+			object: "chat_workspace",
+			connector: "slack",
+			external_workspace_id: "T03",
+			name: "Acme Ops",
+			settings: {},
+			created_at: "2026-09-01T00:00:00.000Z",
+		}
+		const linked = pageUpdate(picked, Message.CompletedFetchConnectors({ connectors: [connector([workspace])] })).model
+		expect(linked.chatConnect.active).toBeNull()
+		expect(linked.destinationDialog.dialog.isOpen).toBe(true)
+		expect(linked.destinationDialog.form.type).toBe("chat")
 	})
 
 	test("an incomplete rule cannot be saved", () => {

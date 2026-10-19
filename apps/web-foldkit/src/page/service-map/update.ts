@@ -290,7 +290,12 @@ const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, timeZone, facetsWindow, nowMs, mode }) =>
-			requestAll({ ...model, window, windowZone: timeZone, facetsWindow, nowMs }, context, mode),
+			// Legacy mints `facetsRange` once per mount (`useMemo` with no deps).
+			requestAll(
+				{ ...model, window, windowZone: timeZone, facetsWindow: model.facetsWindow ?? facetsWindow, nowMs },
+				context,
+				mode,
+			),
 		CompletedReadStored: ({ stored }) =>
 			syncMap(context)({ model: { ...model, stored: Option.some(stored) } }),
 		CompletedSaveStored: () => ({ model }),

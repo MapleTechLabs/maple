@@ -14,13 +14,20 @@ import {
 	suggestedDestinationName,
 } from "@maple/web-data/alerts/form-utils"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema, Stream } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import type { ChatWorkspaceId } from "@maple/domain/primitives"
+import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Dialog from "../../../ui/dialog"
+import * as ChatConnect from "../shared/chat-connect"
+import * as ChatConnectStream from "../shared/chat-connect-stream"
+import * as ChatFields from "./chat-fields"
+import * as EmailFields from "./email-fields"
+import * as HazelFields from "./hazel-fields"
 import { DestinationForm, TextField, toFormState } from "./form"
 
 // `DestinationDialog` and the `useDestinationManager` state it is driven by
@@ -41,6 +48,14 @@ export const Model = Schema.Struct({
 	telegramChats: Schema.NullOr(Schema.Array(V2TelegramChat)),
 	telegramError: Schema.NullOr(Schema.String),
 	isDetectingChats: Schema.Boolean,
+	/** `ChatDestinationFields`: the channel list and picker of a `chat` destination. */
+	chat: ChatFields.Model,
+	/** `useChatWorkspaceConnect` behind the connect tiles. */
+	chatConnect: ChatConnect.Model,
+	/** `EmailMemberPicker`: the org's members, read from Clerk once the picker mounts. */
+	email: EmailFields.Model,
+	/** `HazelOAuthFields`: the connection, its organizations and the picked one's channels. */
+	hazel: HazelFields.Model,
 	brokenLogos: Schema.Array(Schema.String),
 })
 export type Model = typeof Model.Type
@@ -57,6 +72,10 @@ export const init = (id: string): Model => ({
 	telegramError: null,
 	isDetectingChats: false,
 	brokenLogos: [],
+	chat: ChatFields.init(),
+	chatConnect: ChatConnect.init(),
+	email: EmailFields.init(),
+	hazel: HazelFields.init(),
 })
 
 export const Message = defineMessageUnion({
@@ -83,6 +102,11 @@ export const Message = defineMessageUnion({
 		result: Schema.Result(AlertDestinationId, Schema.Struct({ title: Schema.String, message: Schema.String })),
 	},
 	FailedLoadProviderLogo: { type: Schema.String },
+	GotChatFieldsMessage: { message: ChatFields.Message },
+	ClickedConnectChat: { connector: Schema.String },
+	GotChatConnectMessage: { message: ChatConnect.Message },
+	GotEmailFieldsMessage: { message: EmailFields.Message },
+	GotHazelFieldsMessage: { message: HazelFields.Message },
 })
 export type Message = typeof Message.Type
 
@@ -232,13 +256,78 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	commands: Command.mapMessages(result.commands ?? [], (message) => Message.GotDialogMessage({ message })),
 })
 
+const withCommands = (step: Return, commands: Return["commands"]): Return => ({
+	...step,
+	commands: [...(step.commands ?? []), ...(commands ?? [])],
+})
+
+const liftChat = (model: Model, step: ChatFields.Return): Return => ({
+	model: { ...model, chat: step.model, form: step.form === undefined ? model.form : { ...model.form, ...step.form } },
+	commands: Command.mapMessages(step.commands, (message) => Message.GotChatFieldsMessage({ message })),
+})
+
+const liftEmail = (model: Model, step: EmailFields.Return): Return => ({
+	model: { ...model, email: step.model, form: step.form === undefined ? model.form : { ...model.form, ...step.form } },
+	commands: Command.mapMessages(step.commands, (message) => Message.GotEmailFieldsMessage({ message })),
+})
+
+const liftHazel = (model: Model, step: HazelFields.Return): Return => ({
+	model: { ...model, hazel: step.model, form: step.form === undefined ? model.form : { ...model.form, ...step.form } },
+	commands: Command.mapMessages(step.commands, (message) => Message.GotHazelFieldsMessage({ message })),
+})
+
+/** The provider's own fields mount with the form: a chat channel list, or the email members, load. */
+const mountFields = (step: Return): Return => {
+	const { form } = step.model
+	if (form.type === "chat") return withCommands(liftChat(step.model, ChatFields.reset(step.model.chat, form)), step.commands)
+	if (form.type === "hazel-oauth") return withCommands(liftHazel(step.model, HazelFields.reset(step.model.hazel, form)), step.commands)
+	if (form.type === "email" && isClerkAuthEnabled)
+		return withCommands(liftEmail(step.model, EmailFields.reset(step.model.email, form)), step.commands)
+	return step
+}
+
 /** A save in flight stays in flight across a reopen (legacy's `useAsyncAction`): no second submit. */
 const open = (model: Model, patch: Partial<Model>): Return => {
-	const next = { ...model, ...patch, openCount: model.openCount + 1, telegramChats: null, telegramError: null, isDetectingChats: false }
+	const next = { ...model, ...patch, openCount: model.openCount + 1, telegramChats: null, telegramError: null, isDetectingChats: false, chatConnect: ChatConnect.finish(model.chatConnect) }
 	const opened = liftDialog(next, Dialog.open(model.dialog))
 	// `ProviderPicker` reads the connectors; it renders only for a new, unlocked destination.
 	const needsConnectors = next.editingId === null && !next.isProviderLocked && next.connectors === null
-	return { ...opened, commands: [...(opened.commands ?? []), ...(needsConnectors ? [FetchChatConnectors()] : [])] }
+	return mountFields(withCommands(opened, needsConnectors ? [FetchChatConnectors()] : []))
+}
+
+/** A chat workspace picked, or just linked in the popup: the form posts to one of its channels. */
+const pickChatWorkspace = (model: Model, connector: string, workspaceId: ChatWorkspaceId): Return =>
+	mountFields({ model: { ...model, form: chatDestinationForm(connector, workspaceId) } })
+
+const connectChat = (model: Model, connectorId: string): Return =>
+	Option.match(Option.fromNullishOr((model.connectors ?? []).find((entry) => entry.id === connectorId)), {
+		onNone: () => ({ model }),
+		onSome: (connector) =>
+			ChatConnect.waitingFor(model.chatConnect) !== null
+				? { model }
+				: { model: { ...model, chatConnect: ChatConnect.start(model.chatConnect, connector) } },
+	})
+
+const chatConnectStep = (model: Model, message: ChatConnect.Message): Return => {
+	const step = ChatConnect.update(model.chatConnect, message)
+	return {
+		model: { ...model, chatConnect: step.model },
+		commands: step.isRefetching ? [FetchChatConnectors()] : [],
+		...Option.match(step.toast, {
+			onNone: () => ({}),
+			onSome: ({ title, description }) => ({ outMessage: OutMessage.RequestedToast({ type: "error", title, description }) }),
+		}),
+	}
+}
+
+/** `onLinked`: the new workspace becomes the form's, and the popup closes. */
+const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2ChatConnector>): Return => {
+	const next = { ...model, connectors }
+	return Option.match(ChatConnect.linkedOf(model.chatConnect, connectors), {
+		onNone: () => ({ model: next }),
+		onSome: (linked) =>
+			pickChatWorkspace({ ...next, chatConnect: ChatConnect.finish(next.chatConnect) }, linked.connector, linked.id),
+	})
 }
 
 /** `openDialog()`: a new destination, optionally preset to a provider picked elsewhere. */
@@ -289,11 +378,20 @@ const detected = (model: Model, result: Result.Result<ReadonlyArray<V2TelegramCh
 		onFailure: (error) => ({ model: { ...model, isDetectingChats: false, telegramError: error } }),
 	})
 
+// SUBSCRIPTION (the host page runs it: a Submodel has no Subscriptions of its own)
+
+/** The connect popup lives with the open dialog, as legacy's hook lives in its picker. */
+export const chatConnectDependencies = (model: Model): ChatConnectStream.Dependencies =>
+	ChatConnectStream.dependenciesOf(model.chatConnect, model.dialog.isOpen)
+
+export const chatConnectStream = (dependencies: ChatConnectStream.Dependencies) =>
+	Stream.map(ChatConnectStream.streamOf(dependencies), (message) => Message.GotChatConnectMessage({ message }))
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: child }) => liftDialog(model, Dialog.update(model.dialog, child)),
-		CompletedFetchConnectors: ({ connectors }) => ({ model: { ...model, connectors } }),
-		ClickedProvider: ({ type }) => ({ model: { ...model, form: defaultDestinationForm(type) } }),
+		CompletedFetchConnectors: ({ connectors }) => connectorsAnswered(model, connectors),
+		ClickedProvider: ({ type }) => mountFields({ model: { ...model, form: defaultDestinationForm(type) } }),
 		ClickedChatWorkspace: ({ connector, workspaceId }) =>
 			Option.match(
 				Option.flatMap(Option.fromNullishOr(model.connectors), (connectors) =>
@@ -303,7 +401,7 @@ export const update = (model: Model, message: Message): Return =>
 				),
 				{
 					onNone: () => ({ model }),
-					onSome: (workspace) => ({ model: { ...model, form: chatDestinationForm(connector, workspace.id) } }),
+					onSome: (workspace) => pickChatWorkspace(model, connector, workspace.id),
 				},
 			),
 		ClickedUnlockProvider: () => ({ model: { ...model, isProviderLocked: false } }),
@@ -349,4 +447,9 @@ export const update = (model: Model, message: Message): Return =>
 			}),
 		FailedLoadProviderLogo: ({ type }) =>
 			model.brokenLogos.includes(type) ? { model } : { model: { ...model, brokenLogos: [...model.brokenLogos, type] } },
+		GotChatFieldsMessage: ({ message: inner }) => liftChat(model, ChatFields.update(model.chat, inner, model.form)),
+		ClickedConnectChat: ({ connector }) => connectChat(model, connector),
+		GotChatConnectMessage: ({ message: inner }) => chatConnectStep(model, inner),
+		GotEmailFieldsMessage: ({ message: inner }) => liftEmail(model, EmailFields.update(model.email, inner)),
+		GotHazelFieldsMessage: ({ message: inner }) => liftHazel(model, HazelFields.update(model.hazel, inner, model.form)),
 	})

@@ -189,11 +189,14 @@ export const routeChanged = (
 		modelSelect: { ...model.modelSelect, value: route.search.model ?? ALL },
 		envSelect: { ...model.envSelect, value: route.search.env ?? ALL },
 	}
-	return {
-		model: next,
-		commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-	}
+	// `useEffectiveTimeRange` re-resolves only on a time change; every other change reads its new keys.
+	return isSameTime(model.search, route.search)
+		? followModal(context)(requestAll(next, context, "Load"))
+		: { model: next, commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
 }
+
+const isSameTime = (a: Search, b: Search): boolean =>
+	a.startTime === b.startTime && a.endTime === b.endTime && a.timePreset === b.timePreset
 
 export const contextChanged = (model: Model, context: PageContext): Return => ({
 	model,
@@ -219,8 +222,13 @@ const errorFingerprints = (model: Model): ReadonlyArray<string> =>
 		onSome: (errors) => errors.data.map((row) => row.fingerprint),
 	})
 
-const modalContextOf = (model: Model, context: PageContext): ErrorModalUpdate.ModalContext => ({
+const modalContextOf = (
+	model: Model,
+	context: PageContext,
+	detailMode: Keyed.RequestMode = "Load",
+): ErrorModalUpdate.ModalContext => ({
 	orgId: context.orgId,
+	detailMode,
 	selection: model.window === null ? null : selectionOf(model, model.window),
 	error: model.search.error,
 	session: model.search.session,
@@ -240,11 +248,11 @@ const liftModal = (model: Model, step: ErrorModalUpdate.Return): Return => {
 
 /** After every step: the modal follows the URL and the Errors read. */
 const followModal =
-	(context: PageContext) =>
+	(context: PageContext, detailMode: Keyed.RequestMode = "Load") =>
 	(result: Return): Return => {
 		const followed = liftModal(
 			result.model,
-			ErrorModalUpdate.follow(result.model.errorModal, modalContextOf(result.model, context)),
+			ErrorModalUpdate.follow(result.model.errorModal, modalContextOf(result.model, context, detailMode)),
 		)
 		return {
 			...result,
@@ -254,8 +262,12 @@ const followModal =
 		}
 	}
 
+// Reload re-reads the open group's facts too (`useRefreshableAtomValue`), even under the same key.
+const detailModeOf = (message: Message): Keyed.RequestMode =>
+	message._tag === "CompletedResolveWindow" ? message.mode : "Load"
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
-	followModal(context)(step(model, message, context))
+	followModal(context, detailModeOf(message))(step(model, message, context))
 
 const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {

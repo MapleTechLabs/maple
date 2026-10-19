@@ -1,8 +1,15 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import type { DashboardsSearch } from "../../../route/search"
-import { type DashboardSortOption, epochOf, isDashboardSortOption } from "../kit/summary"
-import type { ListDashboard, Model, Scope } from "./model"
+import type { DashboardDocument } from "@maple/domain/http"
+import {
+	dashboardDomains,
+	type DashboardSortOption,
+	epochOf,
+	isDashboardSortOption,
+	readsFromLabel,
+} from "../kit/summary"
+import type { Glyph, ListDashboard, Model, Scope } from "./model"
 
 // The pure halves of `DashboardList` and `dashboard-summary.ts`.
 
@@ -103,5 +110,40 @@ export const sectionsOf = (model: Model, dashboards: ReadonlyArray<ListDashboard
 		others: scope === "favorites" ? [] : sorted.filter((dashboard) => !isFavorite(dashboard)),
 		matched: searched.length,
 		scoped: inScope.length,
+	}
+}
+
+/** `dashboardGlyph`. */
+const glyphOf = (document: DashboardDocument): Glyph => {
+	if (document.widgets.length === 0) return "GridIcon"
+	switch (dashboardDomains(document)[0]) {
+		case "Traces":
+			return "PulseIcon"
+		case "Logs":
+			return "TextWrapIcon"
+		case "Errors":
+			return "CircleWarningIcon"
+		case "Metrics":
+			return "ChartBarIcon"
+		case "Raw SQL":
+			return "CodeIcon"
+		case undefined:
+			return "FileIcon"
+	}
+}
+
+export const toListDashboard = (document: DashboardDocument): ListDashboard => {
+	const reads = readsFromLabel(document)
+	return {
+		id: document.id,
+		name: document.name,
+		description: document.description ?? null,
+		tags: document.tags ?? [],
+		widgetCount: document.widgets.length,
+		readsShort: reads.short,
+		readsFull: reads.full,
+		glyph: glyphOf(document),
+		createdAt: document.createdAt,
+		updatedAt: document.updatedAt,
 	}
 }

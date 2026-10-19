@@ -1,7 +1,8 @@
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
 import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
-import { Option, Result } from "effect"
+import { AlertIncidentRowSchema } from "@maple/web-data/collections/alerts"
+import { Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "../../../charts/chart"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
@@ -131,10 +132,27 @@ const createPayload = (model: Model): Option.Option<V2InvestigationCreateParams>
 const withRows = (model: Model, context: PageContext, orgId: string, patch: Partial<Model>): Return =>
 	orgId === context.orgId ? followData({ ...model, ...patch }, context) : { model }
 
+const isSameIncidentRow = Schema.toEquivalence(AlertIncidentRowSchema)
+const incidentRowOf = (model: Model, rows: Model["incidents"]) =>
+	Option.fromNullishOr((rows ?? []).find((row) => row.id === model.incidentId))
+
+/** `clockAtSync`: once the incident row itself changes, the minute clock is read again. */
+const withIncidents = (model: Model, context: PageContext, orgId: string, rows: Model["incidents"]): Return => {
+	const next = withRows(model, context, orgId, { incidents: rows })
+	const before = incidentRowOf(model, model.incidents)
+	const after = incidentRowOf(model, rows)
+	const isChanged =
+		orgId === context.orgId &&
+		Option.isSome(before) &&
+		Option.isSome(after) &&
+		!isSameIncidentRow(before.value, after.value)
+	return isChanged ? { ...next, commands: [...(next.commands ?? []), ReadIncidentClock()] } : next
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs) }, context),
-		UpdatedIncidents: ({ orgId, rows }) => withRows(model, context, orgId, { incidents: rows }),
+		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
 		UpdatedRules: ({ orgId, rows }) => withRows(model, context, orgId, { rules: rows }),
 		UpdatedRuleStates: ({ orgId, rows }) => withRows(model, context, orgId, { states: rows }),
 		CompletedFetchPreview: ({ key, result }) => ({

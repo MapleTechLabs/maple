@@ -146,7 +146,15 @@ const settleCached = (model: Model, context: PageContext, key: string, cached: C
 	return chain({ model: next, commands: fetch }, (loaded) => onLoaded(loaded, context))
 }
 
-/** The trace answered: a first load mounts the tab and panel; a refetch keeps them. */
+/** Spans and duration identify a result; a refetch that changes them rebuilds the tab like legacy's re-render. */
+const traceSignature = (trace: Option.Option<TraceData>): string =>
+	Option.match(trace, {
+		onNone: () => "none",
+		onSome: (t) => `${t.totalDurationMs}|${t.rootSpans.map((s) => s.spanId).join(",")}|${t.spans.map((s) => s.spanId).join(",")}`,
+	})
+const sameTrace = (a: Option.Option<TraceData>, b: Option.Option<TraceData>) => traceSignature(a) === traceSignature(b)
+
+/** The trace answered: a first load mounts the tab and panel; a refetch keeps them unless the trace changed. */
 const settleTrace = (model: Model, context: PageContext, key: string, result: Result.Result<Option.Option<TraceData>, LoadFailure>, fetchedAtMs: number): UpdateReturn => {
 	if (model.trace.key !== key) return { model }
 	const hadData = Option.isSome(AsyncData.getData(model.trace.data))
@@ -156,7 +164,8 @@ const settleTrace = (model: Model, context: PageContext, key: string, result: Re
 		traceUpdatedAtMs: Result.isSuccess(result) ? fetchedAtMs : model.traceUpdatedAtMs,
 		isRefreshing: false,
 	}
-	return hadData ? { model: next } : onLoaded(next, context)
+	const changed = Result.isSuccess(result) && !sameTrace(loadedTrace(model), loadedTrace(next))
+	return hadData && !changed ? { model: next } : onLoaded(next, context)
 }
 
 const panelStep = (model: Model, context: PageContext, message: Message): UpdateReturn => {

@@ -56,6 +56,10 @@ import {
 /** `emitAttribute`: only a non-empty key becomes a breakdown. */
 const breakdownValueOf = (key: string): string | null => (key.trim() === "" ? null : `attribute:${key.trim()}`)
 
+/** The SQL draft taken as the opened one, so a discarded or saved draft no longer reads as dirty. */
+const savedSql = (model: Model): Model["rawSql"] =>
+	model.rawSql === null ? null : { ...model.rawSql, initial: model.rawSql.draft }
+
 /** A failed write's message, kept until dismissed. */
 const errorToast = (title: string) =>
 	PageOutMessage.RequestedToast({ type: "error", title, description: "", timeoutMs: null, action: null })
@@ -78,6 +82,17 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	}
 	const save = SaveTimeRange({ orgId: context.orgId, dashboardId: model.dashboardId, timeRange })
 	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
+}
+
+/** The Custom picker: a picked preset or range is the widget's own window, as legacy's `onChange`. */
+const rangePickerStep = (model: Model, context: PageContext, message: TimeRangePicker.Message): Return => {
+	const next = TimeRangePicker.update(model.rangePicker, message)
+	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotRangePickerMessage({ message: inner }))
+	const updated = { ...model, rangePicker: next.model }
+	const timeRange = TimeRangePicker.dashboardTimeRangeOf(next.outMessage)
+	if (timeRange === undefined) return { model: updated, commands }
+	const edited = editState(updated, context, (state) => ({ ...state, timeRange }))
+	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
 }
 
 /** The Source tabs: the preview switches to what the picked source runs. */
@@ -179,6 +194,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: planPreview({ ...model, previewWidth: widthPx }, context),
 		// A stat that just got its value asks for its sparkline series next.
 		CompletedFetchWidget: (fetched) => planPreview(acceptFetch(model, fetched.key, fetched), context),
+		// The options settle the variables, which may unblock a preview waiting on them.
+		CompletedFetchVariableOptions: ({ name, key, result }) => {
+			const slot = model.variableOptions[name]
+			return slot === undefined
+				? { model }
+				: planPreview({ ...model, variableOptions: { ...model.variableOptions, [name]: Keyed.accept(slot, key, result) } }, context)
+		},
 		GotSparklineChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.sparklineChart, inner)
 			return {
@@ -194,6 +216,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotChartMessage: ({ message: inner }) => chartStep(model, inner),
 		ClickedSortColumn: ({ field, isText }) => sortStep(model, field, isText),
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, context, inner),
+		GotRangePickerMessage: ({ message: inner }) => rangePickerStep(model, context, inner),
 		// Legacy raises the store's persistence banner; the editor has none, so the failure toasts.
 		CompletedSaveTimeRange: ({ error }) => (error === null ? { model } : { model, outMessage: errorToast(error) }),
 		GotSourceTabsMessage: ({ message: inner }) => tabsStep(model, context, inner),
@@ -310,9 +333,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				includePercentChange: !state.includePercentChange,
 			})),
 		ClickedApply: () => apply(model, context, null),
+		// What was saved is no longer an unsaved change, so the way back is not held.
 		CompletedSave: ({ error }) =>
 			error === null
-				? navigate({ ...model, isSaving: false }, backHref(model))
+				? navigate(
+						{ ...model, isSaving: false, initial: model.state, initialSourceMode: model.sourceMode, rawSql: savedSql(model) },
+						backHref(model),
+					)
 				: {
 						model: { ...model, isSaving: false },
 						outMessage: errorToast(error),
@@ -323,8 +350,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const closed = Dialog.close(model.leaveDialog)
 			return {
 				...navigate(
-					{ ...model, leaveDialog: closed.model, initial: model.state, sourceMode: "builder" },
-					backHref(model),
+					{ ...model, leaveDialog: closed.model, initial: model.state, sourceMode: model.initialSourceMode, rawSql: savedSql(model) },
+					model.pendingLeaveUrl ?? backHref(model),
 				),
 				commands: Command.mapMessages(closed.commands ?? [], (inner) =>
 					Message.GotLeaveDialogMessage({ message: inner }),
@@ -348,12 +375,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.isAutocompleteActive
 				? { model }
 				: requestAutocomplete({ ...model, isAutocompleteActive: true }, context),
+		// A failed read is forgotten, so the next edit asks again instead of leaving the picker empty.
 		CompletedFetchMetricKeys: ({ metric, result }) =>
 			Result.isSuccess(result)
 				? { model: { ...model, metricKeys: { ...model.metricKeys, [metric]: result.success } } }
-				: { model },
+				: { model: { ...model, metricKeysRequested: model.metricKeysRequested.filter((key) => key !== metric) } },
 		CompletedFetchMetricOptions: ({ search, result }) => {
-			if (search !== model.metricSearch || !Result.isSuccess(result)) return { model }
+			if (search !== model.metricSearch) return { model }
+			if (!Result.isSuccess(result)) return { model: { ...model, metricRequested: null } }
 			const listed = { ...model, metricOptions: { search, ...result.success } }
 			// A metrics query without a metric yet takes the first one listed.
 			return listed.state !== null && listed.state.queries.some((query) => query.dataSource === "metrics" && query.metricName === "")

@@ -36,7 +36,7 @@ import * as ToggleGroup from "../../ui/toggle-group"
 import * as Chart from "../../charts/chart"
 import { ConnectProvider } from "./connect"
 import { FleetRead } from "../infra-integrations/gcp/data"
-import { Capability, GcpFlags } from "./gcp-configure-schema"
+import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
 import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
 
 export const StatusName = Schema.Literals([
@@ -255,6 +255,16 @@ export const Message = defineMessageUnion({
 	},
 	ClickedGcpConfigureScriptRetry: {},
 	ClickedGcpScriptExpand: {},
+	/** The Method step: a row, or the code flavour under it. */
+	ClickedGcpMethod: { method: SetupMethod },
+	GotGcpFlavourMessage: { message: ToggleGroup.Message },
+	ClickedGcpMethodContinue: {},
+	ClickedGcpManualStep: { title: Schema.String, firstTitle: Schema.NullOr(Schema.String) },
+	ClickedGcpCopyPrompt: { prompt: Schema.String },
+	CompletedGcpPromptCopy: { isCopied: Schema.Boolean },
+	ClickedGcpPromptBack: {},
+	ClickedGcpConfirmRemoval: {},
+	CompletedGcpConfirmRemoval: { failure: Schema.NullOr(LoadFailure) },
 	/** The status poll: 10 s while a connection settles, else every minute (`useIntervalRefresh`). */
 	TickedGcpRefresh: {},
 	ReceivedConnectMessage: {

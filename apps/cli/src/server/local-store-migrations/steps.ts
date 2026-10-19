@@ -8,6 +8,7 @@ import {
 	PRODUCT_EVENTS_TRACE_BACKFILL,
 	PRODUCT_EVENTS_TRACE_FILTER,
 	errorRollupBackfill,
+	tracesTraceKeyRekey,
 } from "./backfills"
 import {
 	addColumns,
@@ -25,6 +26,12 @@ import type { StateDispositionEntry } from "../local-store-migration-module"
 const TRACE_FACETS_HOURLY_BACKFILL = [
 	"TRUNCATE TABLE IF EXISTS trace_facets_hourly",
 	"INSERT INTO trace_facets_hourly (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, TraceCount, DurationMin, DurationMax, DurationQuantiles) SELECT OrgId, toStartOfHour(Timestamp) AS Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, count() AS TraceCount, min(Duration) AS DurationMin, max(Duration) AS DurationMax, quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles FROM trace_list_mv GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError",
+] as const
+
+/** Indexes every retained span; the truncate makes a resumed step converge. */
+const TRACE_INDEX_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS trace_index",
+	"INSERT INTO trace_index (OrgId, TraceId, ServiceName, Bucket, MinTimestamp, MaxTimestamp) SELECT OrgId, TraceId, ServiceName, toStartOfFiveMinutes(Timestamp) AS Bucket, min(Timestamp) AS MinTimestamp, max(Timestamp) AS MaxTimestamp FROM traces GROUP BY OrgId, TraceId, ServiceName, Bucket",
 ] as const
 
 /** Existing rollup rows keep what the old view bodies wrote and age out with their TTL. */
@@ -1301,6 +1308,80 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				disposition: "preserve-exact",
 				guarantee:
 					"Existing check rows are kept as written with an empty Level; only checks recorded after the migration carry one.",
+			},
+		],
+	},
+	{
+		// Both objects are new; the backfill indexes the spans already retained.
+		id: "local-0032-to-0033-trace-index",
+		from: 32,
+		to: 33,
+		description: "Create trace_index and its view: where each trace's spans live in traces",
+		clonedBefore: "any DDL runs",
+		afterBootstrap: [backfill(...TRACE_INDEX_BACKFILL)],
+		plan: [
+			[
+				"create-trace-index",
+				"Create trace_index and trace_index_mv via the v33 bootstrap and index every retained span from traces",
+			],
+		],
+		verifies: "Verify the v33 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_index",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Rebuilt from every span traces retains; both keep 30 days.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
+	{
+		// The bootstrap keeps the v33 traces (IF NOT EXISTS); the custom step swaps in a
+		// v34-keyed copy. Every view and rollup is untouched: none fires on the copy.
+		id: "local-0033-to-0034-traces-trace-key",
+		from: 33,
+		to: 34,
+		description: "Re-sort traces by service, 5-minute bucket and trace id, with a span-name bloom index",
+		clonedBefore: "any DDL runs",
+		custom: tracesTraceKeyRekey,
+		plan: [
+			[
+				"resort-traces",
+				"Copy traces into a view-free table with the v34 sort key and span-name index, then exchange it in for traces",
+			],
+		],
+		verifies:
+			"Verify the v34 physical schema, the retained raw telemetry counts, and that no staging table is left",
+		dispositions: [
+			{
+				name: "traces",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"Every span inside its TTL is copied as written into the re-sorted table, keeping the store's TTL; spans already past it are dropped as a merge would. No view fires on the copy, so no rollup counts a span twice.",
+			},
+		],
+	},
+	{
+		// The view goes before its table, or inserts into traces fail on the missing target.
+		id: "local-0034-to-0035-drop-trace-detail-spans",
+		from: 34,
+		to: 35,
+		description: "Drop trace_detail_spans and its view; trace-id reads seek traces through trace_index",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [dropViews("trace_detail_spans_mv"), dropTables("trace_detail_spans")],
+		plan: [["drop-trace-detail-spans", "Drop trace_detail_spans and trace_detail_spans_mv"]],
+		verifies: "Verify the v35 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_detail_spans",
+				classification: "derived",
+				disposition: "invalidate",
+				guarantee:
+					"Dropped permanently with its view. Every trace-id read seeks traces through trace_index, and the rows were a copy of traces.",
 			},
 		],
 	},

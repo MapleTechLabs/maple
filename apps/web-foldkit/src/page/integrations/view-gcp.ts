@@ -48,14 +48,14 @@ const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 				[
 					h.h3(
 						[h.Class(GCP_TITLE)],
-						[entry.label, " ", entry.reported ? "disconnected, not cleaned up" : "disconnected"],
+						[entry.label, " ", entry.reported ? "disconnected, may not be cleaned up" : "disconnected"],
 					),
 					h.p(
 						[h.Class("text-xs/5 text-pretty text-muted-foreground")],
 						[
 							entry.reported
-								? "Google Cloud still holds what the setup script created, and bills for it. Dismiss this once the cleanup script has run."
-								: "If the setup script ran part of the way, the cleanup script removes what it created.",
+								? "Google Cloud may still hold Maple's resources, billed by Google. Run the cleanup script, or remove them with Terraform, Alchemy or in the console, then dismiss this."
+								: "If any of it was set up, Google bills for it until it is removed. The cleanup script removes it, however it was made.",
 						],
 					),
 				],
@@ -95,8 +95,8 @@ const emptyState = (h: H): Html =>
 			},
 			{
 				label: "Access",
-				title: "One script, read-only",
-				description: "You run it in Cloud Shell. No keys, no write access for Maple.",
+				title: "Read-only, your choice of setup",
+				description: "A Cloud Shell script, the console, Terraform or Alchemy. No keys, no write access for Maple.",
 			},
 		]),
 		integrationEmptyCard(h, [

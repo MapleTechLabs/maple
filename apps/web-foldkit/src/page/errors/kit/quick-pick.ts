@@ -159,6 +159,8 @@ export type ViewOptions<M> = Readonly<{
 	/** The trigger button, given the Popover's trigger attributes. */
 	trigger: (attributes: Popover.RenderInfo["trigger"]) => Html
 	toView: (parts: ReadonlyArray<Html>) => Html
+	/** `fallbackAnchor`: the row, used while the trigger is hidden (narrow page). */
+	fallbackAnchorSelector?: string
 }>
 
 const listId = (id: string) => `${id}-list`
@@ -307,6 +309,7 @@ export const view = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>): Html =>
 				),
 			},
 			toContent: () => content(h, options),
+			fallbackAnchorSelector: options.fallbackAnchorSelector,
 			toView: ({ trigger, withTrigger }) => options.toView(withTrigger(options.trigger(trigger))),
 		},
 	})

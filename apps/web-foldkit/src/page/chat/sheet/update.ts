@@ -141,3 +141,14 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 		CompletedMountScroller: () => ({ model }),
 		CompletedReleaseFocus: () => ({ model }),
 	})
+
+/**
+ * The session's org moved under an open sheet: `<GlobalChatPanel key={orgId}>` remounts on the
+ * new org's thread, and without an org (signed out) the sheet renders nothing.
+ */
+export const sessionChanged = (model: Model, orgId: string | null): Return =>
+	model.orgId === null || model.orgId === orgId
+		? { model }
+		: orgId === null
+			? liftDialog(model, Dialog.close(model.dialog))
+			: { model: { ...initSheet(), dialog: model.dialog, orgId }, commands: [ReadSheetTab({ orgId })] }

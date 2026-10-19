@@ -1,4 +1,4 @@
-import type { V2ApiKey, V2IngestKeys } from "@maple/domain/http/v2"
+import type { V2ApiKey } from "@maple/domain/http/v2"
 
 /**
  * A key has exactly one status. "Expiring" still works, so it lists under Active, but it carries a
@@ -6,8 +6,8 @@ import type { V2ApiKey, V2IngestKeys } from "@maple/domain/http/v2"
  */
 export type ApiKeyStatus = "active" | "expiring" | "expired" | "revoked"
 export type KeyStatusFilter = "active" | "expired" | "revoked"
-export type KeyTypeFilter = "all" | "ingest" | "api" | "mcp"
-export type KeyType = "ingest_public" | "ingest_private" | "api" | "mcp"
+export type KeyTypeFilter = "all" | "api" | "mcp"
+export type KeyType = "api" | "mcp"
 
 const EXPIRING_WINDOW_MS = 7 * 86_400_000
 
@@ -29,73 +29,27 @@ export function hasPendingStatusBoundary(keys: ReadonlyArray<V2ApiKey>, now: num
 	})
 }
 
-export interface IngestKeyRow {
-	readonly source: "ingest"
-	readonly id: "ingest_public" | "ingest_private"
-	readonly type: "ingest_public" | "ingest_private"
-	readonly name: string
-	readonly purpose: string
-	readonly value: string
-	readonly rotatedAt: string
-	readonly status: "active"
-}
-
-export interface ApiKeyRow {
-	readonly source: "api"
+export interface KeyRow {
 	readonly id: string
 	readonly type: "api" | "mcp"
 	readonly key: V2ApiKey
 	readonly status: ApiKeyStatus
 }
 
-export type KeyRow = IngestKeyRow | ApiKeyRow
-
 export const KEY_TYPE_LABELS = {
-	ingest_public: "Ingest public",
-	ingest_private: "Ingest private",
 	api: "API",
 	mcp: "MCP",
 } satisfies Record<KeyType, string>
 
-/**
- * One list for every credential: the org's ingest pair (null when the viewer cannot see it) first,
- * then API and MCP keys. Device keys belong to the mobile app and are not managed here.
- */
+/** API and MCP keys. Device keys belong to the mobile app and are not managed here. */
 export function buildKeyRows(input: {
 	readonly apiKeys: ReadonlyArray<V2ApiKey>
-	readonly ingestKeys: V2IngestKeys | null
 	readonly now: number
 }): ReadonlyArray<KeyRow> {
-	const ingest: ReadonlyArray<IngestKeyRow> =
-		input.ingestKeys === null
-			? []
-			: [
-					{
-						source: "ingest",
-						id: "ingest_public",
-						type: "ingest_public",
-						name: "Public ingest key",
-						purpose: "Browser and client-side SDKs",
-						value: input.ingestKeys.public_key,
-						rotatedAt: input.ingestKeys.public_rotated_at,
-						status: "active",
-					},
-					{
-						source: "ingest",
-						id: "ingest_private",
-						type: "ingest_private",
-						name: "Private ingest key",
-						purpose: "Server-side SDKs and collectors",
-						value: input.ingestKeys.private_key,
-						rotatedAt: input.ingestKeys.private_rotated_at,
-						status: "active",
-					},
-				]
-	const api = input.apiKeys.flatMap((key): ReadonlyArray<ApiKeyRow> => {
+	return input.apiKeys.flatMap((key): ReadonlyArray<KeyRow> => {
 		if (key.kind === "device") return []
 		return [
 			{
-				source: "api",
 				id: key.id,
 				type: key.kind === "mcp" ? "mcp" : "api",
 				key,
@@ -103,23 +57,15 @@ export function buildKeyRows(input: {
 			},
 		]
 	})
-	return [...ingest, ...api]
 }
 
 const statusMatches = (row: KeyRow, status: KeyStatusFilter): boolean =>
 	status === "active" ? row.status === "active" || row.status === "expiring" : row.status === status
 
-const typeMatches = (row: KeyRow, type: KeyTypeFilter): boolean => {
-	if (type === "all") return true
-	if (type === "ingest") return row.source === "ingest"
-	return row.type === type
-}
+const typeMatches = (row: KeyRow, type: KeyTypeFilter): boolean => type === "all" || row.type === type
 
 const searchText = (row: KeyRow): string =>
-	(row.source === "ingest"
-		? [row.name, row.purpose, KEY_TYPE_LABELS[row.type]]
-		: [row.key.name, row.key.description ?? "", row.key.key_prefix, row.key.created_by_email ?? ""]
-	)
+	[row.key.name, row.key.description ?? "", row.key.key_prefix, row.key.created_by_email ?? ""]
 		.join(" ")
 		.toLowerCase()
 
@@ -146,7 +92,7 @@ export function filterKeyRows(
 	const visible = inStatus
 		.filter((row) => typeMatches(row, filter.type))
 		.filter((row) => needle.length === 0 || searchText(row).includes(needle))
-		// Ingest keys lead, then keys about to stop working; everything else keeps list order.
+		// Keys about to stop working lead; everything else keeps list order.
 		.map((row, index) => ({ row, index }))
 		.sort((a, b) => rank(a.row) - rank(b.row) || a.index - b.index)
 		.map(({ row }) => row)
@@ -154,7 +100,7 @@ export function filterKeyRows(
 	const countStatus = (status: KeyStatusFilter) => rows.filter((row) => statusMatches(row, status)).length
 	return {
 		visible,
-		typeCounts: { all: count("all"), ingest: count("ingest"), api: count("api"), mcp: count("mcp") },
+		typeCounts: { all: count("all"), api: count("api"), mcp: count("mcp") },
 		statusCounts: {
 			active: countStatus("active"),
 			expired: countStatus("expired"),
@@ -163,15 +109,14 @@ export function filterKeyRows(
 	}
 }
 
-const rank = (row: KeyRow): number => (row.source === "ingest" ? 0 : row.status === "expiring" ? 1 : 2)
+const rank = (row: KeyRow): number => (row.status === "expiring" ? 0 : 1)
 
 /**
- * What a row's key can do, in words: "Send telemetry" for ingest keys, "Full access" for unscoped
+ * What a row's key can do, in words: "MCP tools" for MCP keys, "Full access" for unscoped
  * keys, otherwise "Write: alerts · Read: dashboards, metrics". Write implies read, so a family
  * with write access is not repeated under Read.
  */
 export function keyAccessSummary(row: KeyRow): string {
-	if (row.source === "ingest") return "Send telemetry"
 	if (row.type === "mcp") return "MCP tools"
 	if (row.key.scopes === null) return "Full access"
 	const family = (scope: string) => scope.replace(/:(read|write)$/, "").replaceAll("_", " ")
@@ -186,16 +131,4 @@ export function keyAccessSummary(row: KeyRow): string {
 	]
 		.filter((part) => part !== null)
 		.join(" · ")
-}
-
-/**
- * How an API/MCP key load failure shows. Admins always get the ingest pair, so a failed list must
- * not hide behind those rows: it replaces the table only when nothing else could render.
- */
-export function apiKeysFailureDisplay(input: {
-	readonly apiKeysFailed: boolean
-	readonly rows: ReadonlyArray<KeyRow>
-}): "none" | "inline" | "replace" {
-	if (!input.apiKeysFailed) return "none"
-	return input.rows.length === 0 ? "replace" : "inline"
 }

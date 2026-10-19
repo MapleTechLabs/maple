@@ -28,6 +28,7 @@ export const FetchCatalog = Command.define("FetchLocalServiceCatalog", {
 		readsCache: Schema.Boolean,
 	},
 	messages: [Message.SucceededFetchCatalog, Message.FailedFetchCatalog, Message.FoundCachedCatalog],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, env, ns, startTime, endTime, apiBase, readsCache }) =>
 		Effect.gen(function* () {
 			const cacheKey = ["local", "services", "catalog", env, ns, `${startTime}/${endTime}`]

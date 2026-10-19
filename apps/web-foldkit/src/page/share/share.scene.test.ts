@@ -33,6 +33,7 @@ const share = (count: number): SharedDashboard => ({
 		name: "Platform overview",
 		timeRange: { type: "relative", value: "6h" },
 		widgets: Array.from({ length: count }, (_, i) => widget(`w${i}`)),
+		sections: [],
 	},
 })
 

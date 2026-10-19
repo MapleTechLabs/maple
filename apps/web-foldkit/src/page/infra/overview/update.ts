@@ -1,4 +1,6 @@
+import { Option } from "effect"
 import { Command } from "foldkit"
+import { presenceKey } from "../../../data/infra-surfaces"
 import * as Keyed from "../../../data/keyed"
 import type { LoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
@@ -8,9 +10,10 @@ import * as Frame from "../kit/frame"
 import { liftFrame, resolveFrame } from "../kit/frame-step"
 import * as InstallModal from "../kit/install-modal"
 import { seriesSteps } from "../kit/requests"
-import { FetchSource } from "./command"
+import { FetchPresence, FetchSource } from "./command"
 import { Message } from "./message"
-import { type Model, SOURCE_IDS, type SourceReading } from "./model"
+import type { Model, SourceReading } from "./model"
+import { presentSources, surfacesOf } from "./state"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -24,14 +27,14 @@ const scopeOf = (model: Model, context: PageContext): Frame.Scope => ({
 	timeZone: context.timeZone,
 })
 
-/** Every source is read until presence is known, like legacy's `presentSources(null)`. */
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+/** The sources presence shows (every one until it is known, `presentSources(null)`); each mounts its read. */
+const requestSources = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const input = { startTime: window.startTime, endTime: window.endTime }
 	const requested = seriesSteps<SourceReading, LoadFailure, Message>(
 		model.sources,
-		SOURCE_IDS.map((source) => ({
+		presentSources(surfacesOf(model, context)).map((source) => ({
 			id: source,
 			key: requestKey(context.orgId, `infraOverview.${source}`, { data: input }),
 			fetch: (key: string) => FetchSource({ source, key, window }),
@@ -39,6 +42,22 @@ const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode)
 		mode,
 	)
 	return { model: { ...model, sources: { ...model.sources, ...requested.slots } }, commands: requested.commands }
+}
+
+/** The window's presence probe (a new window keeps the last answer meanwhile), then its sources. */
+const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+	const window = model.frame.window
+	if (window === null) return { model }
+	const key = presenceKey(context.orgId, window)
+	const probed = Option.match(Keyed.request(model.presence, key, "Load"), {
+		onNone: () => ({ model, commands: [] }),
+		onSome: (presence) => ({
+			model: { ...model, presence },
+			commands: [FetchPresence({ orgId: context.orgId, key, window })],
+		}),
+	})
+	const sources = requestSources(probed.model, context, mode)
+	return { model: sources.model, commands: [...probed.commands, ...(sources.commands ?? [])] }
 }
 
 const liftInstall = (model: Model, result: InstallModal.Return): Return => ({
@@ -51,6 +70,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	const model: Model = {
 		search: route.search,
 		frame: Frame.init("infra-overview-time-range"),
+		presence: Keyed.idle(),
 		sources: {
 			hosts: Keyed.idle(),
 			containers: Keyed.idle(),
@@ -67,7 +87,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model: loaded.model,
 		commands: [resolveFrame(model.frame, scopeOf(model, context), toFrame, "Load"), ...(loaded.commands ?? [])],
-		// TODO(infra-window): legacy probes presence over the page's window; the shell's is the last hour.
+		// The sidebar's statuses (and its last-hour probe, below `md` too); the page probes its own window.
 		outMessage: PageOutMessage.RequestedInfraSurfaces(),
 	}
 }
@@ -89,6 +109,8 @@ const navigate = (model: Model, search: Search): Return => ({
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
+		CompletedFetchPresence: ({ key, result }) =>
+			requestSources({ ...model, presence: Keyed.accept(model.presence, key, result) }, context, "Load"),
 		CompletedFetchSource: ({ source, key, result }) => ({
 			model: { ...model, sources: { ...model.sources, [source]: Keyed.accept(model.sources[source], key, result) } },
 		}),

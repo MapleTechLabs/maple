@@ -85,7 +85,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = { ...model, log }
 			return Option.match(Option.flatMap(AsyncData.getData(log.data), Option.fromNullishOr), {
 				onNone: () => ({ model: next }),
-				onSome: (loaded) => liftDetail(next, LogDetail.show(model.detail, loaded, context.orgId)),
+				onSome: (loaded) => liftDetail(next, LogDetail.show(model.detail, loaded, context)),
 			})
 		},
 		ClickedRetry: () => requestLog(model, context, "Refresh"),

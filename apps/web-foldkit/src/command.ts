@@ -1,3 +1,5 @@
+import { DashboardWidgetSchema } from "@maple/domain/http"
+import { mutateDashboard } from "./page/dashboards/kit/store"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { load, pushUrl, replaceUrl } from "foldkit/navigation"
@@ -23,6 +25,17 @@ export const ReconnectOrgCollections = Command.define("ReconnectOrgCollections",
 		yield* (yield* OrgCollections).recreate
 		return Message.CompletedReconnectOrgCollections()
 	}),
+})
+
+/** A dashboard toast's Undo: the removed widgets back on the board, wherever the user is now. */
+export const RestoreDashboardWidgets = Command.define("RestoreDashboardWidgets", {
+	args: { orgId: Schema.String, dashboardId: Schema.String, widgets: Schema.Array(DashboardWidgetSchema) },
+	messages: [Message.CompletedRestoreDashboardWidgets],
+	execute: ({ orgId, dashboardId, widgets }) =>
+		mutateDashboard(orgId, dashboardId, (document, nowIso) => {
+			const missing = widgets.filter((widget) => !document.widgets.some((existing) => existing.id === widget.id))
+			return missing.length === 0 ? document : { ...document, widgets: [...document.widgets, ...missing], updatedAt: nowIso }
+		}).pipe(Effect.ignore, Effect.as(Message.CompletedRestoreDashboardWidgets())),
 })
 
 export const NavigateInternal = Command.define("NavigateInternal", {

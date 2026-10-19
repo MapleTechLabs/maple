@@ -3,7 +3,7 @@ import { tinybirdProjectManifest } from "../generated/tinybird-project-manifest"
 
 const RETENTION_DAYS = {
 	alert_checks: 365,
-	// Raw-tier sibling of trace_detail_spans: rebuilt from `traces`, so holding
+	// Raw-tier projection of `traces`: rebuilt from it, so holding
 	// it past the source's own retention would store rows detection can no
 	// longer cross-check against a raw trace.
 	ai_trace_index: 30,
@@ -44,7 +44,7 @@ const RETENTION_DAYS = {
 	session_replay_events: 30,
 	session_replays: 30,
 	span_metrics_calls_hourly: 90,
-	trace_detail_spans: 30,
+	trace_index: 30,
 	// Matches its source, trace_list_mv: facet counts past the list's own window
 	// would offer values that filter the list down to nothing.
 	trace_facets_hourly: 30,

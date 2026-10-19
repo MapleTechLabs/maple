@@ -68,8 +68,10 @@ const requestReleases = (
 	mode: RequestMode,
 ): Return => {
 	const environments = model.search.environments
+	// `globalNamespace: "top"`: the pin is part of the read and its key.
+	const namespaces = context.pinnedNamespace === null ? undefined : [context.pinnedNamespace]
 	const key = requestKey(context.orgId, "getReleases", {
-		data: { startTime: window.startTime, endTime: window.endTime, environments },
+		data: { startTime: window.startTime, endTime: window.endTime, environments, namespaces },
 	})
 	return slotStep(
 		{ ...model, window },
@@ -77,7 +79,14 @@ const requestReleases = (
 		(releases) => ({ releases }),
 		key,
 		mode,
-		FetchDeployReleases({ key, refresh: mode === "Refresh", startTime: window.startTime, endTime: window.endTime, environments }),
+		FetchDeployReleases({
+			key,
+			refresh: mode === "Refresh",
+			startTime: window.startTime,
+			endTime: window.endTime,
+			environments,
+			namespaces,
+		}),
 	)
 }
 
@@ -177,6 +186,12 @@ export const routeChanged = (model: Model, route: ReleaseRoute, context: PageCon
 		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
 	}
 }
+
+/** A pin or zone change re-resolves the window: the zone moves it, the pin re-keys the reads. */
+export const contextChanged = (model: Model, context: PageContext): Return => ({
+	model,
+	commands: [resolveCommand(model, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
+})
 
 const navigate = (model: Model, search: Model["search"]): Return => ({
 	model,

@@ -63,6 +63,8 @@ export const Model = Schema.TaggedStruct("LogsPage", {
 	nowMs: Schema.Number,
 	logs: SlotSchema(LogPages),
 	isFetchingNextPage: Schema.Boolean,
+	/** Bumped when the list is refetched or rekeyed; a next page from an older generation is dropped. */
+	pageGeneration: Schema.Number,
 	/** `dataUpdatedAt` of the active mode's main query, for the "New data" pill. */
 	logsUpdatedAtMs: Schema.Number,
 	patternsUpdatedAtMs: Schema.Number,

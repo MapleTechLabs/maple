@@ -251,7 +251,7 @@ export const init = (
 		issueIdCopy: CopyButton.init(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
-		busy: null,
+		busy: [],
 		isStartingInvestigation: false,
 		overflowMenu: Menu.init("issue-overflow"),
 		attachDialog: Dialog.init("issue-attach-pr", "dialog"),

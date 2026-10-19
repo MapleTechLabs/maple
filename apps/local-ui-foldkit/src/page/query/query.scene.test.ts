@@ -3,7 +3,9 @@ import { click, Command, expect as expectView, given, role, scene, text, withVie
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
+import { outcomeOf, stopSuperseded } from "../../data/lanes"
 import { FetchTables, ReadPlatform, RunQuery } from "./command"
+import { lanes } from "./lanes"
 import { Message } from "./message"
 import { type Model, RunState } from "./model"
 import { init, update } from "./update"
@@ -18,7 +20,7 @@ const contextFor = (search: string): PageContext => ({
 	canGoBack: false,
 })
 const context = contextFor("sql=SELECT%201")
-const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: 0, hasNewDataSince: () => false }
+const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: 0, clockMs: 0, hasNewDataSince: () => false }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, inputs)()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
@@ -55,12 +57,13 @@ describe("local query console", () => {
 		expect(late.model.run).toEqual(RunState.Idle())
 	})
 
-	test("Cancel interrupts the running request, and only while one runs", () => {
+	test("Cancel or a second run stops the running request, and only while one runs", () => {
 		const running = pageUpdate(loaded(), Message.ClickedRun()).model
-		const cancelled = pageUpdate(running, Message.ClickedCancel())
-		const interrupt = RunQuery.Interrupt({ id: 0 }, (outcome) => Message.CompletedCancelRunQuery({ id: 0, outcome }))
-		expect(names(cancelled.commands)).toEqual([interrupt.name])
-		expect(pageUpdate(cancelled.model, Message.ClickedCancel()).commands).toBeUndefined()
+		const stopsAfter = (before: Model, message: Message) =>
+			names(stopSuperseded(lanes(before), lanes(pageUpdate(before, message).model), outcomeOf))
+		expect(stopsAfter(running, Message.ClickedCancel())).toEqual(["RunQueryConsoleQuery.Interrupt"])
+		expect(stopsAfter(running, Message.ClickedRun())).toEqual(["RunQueryConsoleQuery.Interrupt"])
+		expect(stopsAfter(pageUpdate(running, Message.ClickedCancel()).model, Message.ClickedCancel())).toEqual([])
 	})
 
 	test("an empty editor does not run", () => {

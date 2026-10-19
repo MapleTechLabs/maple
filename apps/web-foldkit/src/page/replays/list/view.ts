@@ -30,6 +30,7 @@ import {
 	facetsOf,
 	hasActiveFilters,
 	isCapped,
+	listEndKey,
 	nextCursor,
 	selectedTags,
 } from "./derive"
@@ -133,7 +134,16 @@ const listFooterParts = (h: H, model: Model, items: ReturnType<typeof sessionLis
 									["Load more sessions"],
 								),
 							])
-						: h.div([h.AriaHidden(true), h.Class("h-px w-full"), h.OnMount(WatchListEnd())], []),
+						: h.div(
+								[
+									h.Key(listEndKey(model)),
+									h.AriaHidden(true),
+									h.DataAttribute("replays-list-end", ""),
+									h.Class("h-px w-full"),
+									h.OnMount(WatchListEnd()),
+								],
+								[],
+							),
 				]
 			: []),
 		...(capped === null ? [] : [capped]),

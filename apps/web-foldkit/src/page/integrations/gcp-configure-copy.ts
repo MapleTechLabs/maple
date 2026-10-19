@@ -7,6 +7,8 @@ import type { Capability } from "./gcp-configure-schema"
 
 export const DOCS = docsUrl("gcp")
 export const OTEL_DOCS = docsUrl("gcpOpenTelemetry")
+export const MANUAL_DOCS = docsUrl("gcpManualSetup")
+export const IAC_DOCS = docsUrl("gcpInfrastructureAsCode")
 
 export const PROJECT_ID_RULE =
 	"A project ID is 6 to 30 lowercase letters, digits and hyphens. It starts with a letter and can't end with a hyphen. The project name and number don't work."
@@ -44,7 +46,7 @@ export const LOCK_NOTES = {
 	"metrics-unavailable": "Not available on this Maple deployment.",
 } as const satisfies { readonly [Lock in GcpCollectLock]: string }
 
-export const STEPS = ["Scope", "Data", "Run setup"] as const
+export const STEPS = ["Scope", "Data", "Method", "Set up"] as const
 
 /** What an existing sink's filter can be left as or replaced with. */
 export const FILTER_MODES = [
@@ -63,18 +65,18 @@ export const CAPABILITIES = {
 		description: "Request, audit and managed-service logs, through a Log Router sink and Pub/Sub.",
 		run: { on: "Log sink and Pub/Sub topic", off: "Removes the log sink" },
 		effects: {
-			"starts-after-script": "Starts once the script has run",
+			"starts-after-script": "Starts once it's set up in Google Cloud",
 			"resumes-now": "Stored again as soon as you save",
 			"stops-now": "Maple stops storing them when you save",
-			"removed-by-script": "Still forwarded by Google Cloud until the script has run",
+			"removed-by-script": "Still forwarded by Google Cloud until the change is applied there",
 		},
 		now: {
 			"stops-now": "Stops storing this connection's logs within about a minute.",
 			"resumes-now": "Stores this connection's logs again, at once.",
 		},
 		later: {
-			"stops-now": "Keeps forwarding them to Pub/Sub, billed by Google, until the script has run.",
-			"resumes-now": "Nothing to run: the log sink is still there and forwarding.",
+			"stops-now": "Keeps forwarding them to Pub/Sub, billed by Google, until the change is applied in Google Cloud.",
+			"resumes-now": "Nothing to apply: the log sink is still there and forwarding.",
 		},
 	},
 	metrics: {
@@ -84,18 +86,18 @@ export const CAPABILITIES = {
 			"Cloud Run, GKE, Compute Engine, Cloud SQL, Pub/Sub, Load Balancing and Cloud Functions. Read-only, every 5 minutes.",
 		run: { on: "Read-only service account", off: "Removes the service account" },
 		effects: {
-			"starts-after-script": "Starts once the script has run",
+			"starts-after-script": "Starts once it's set up in Google Cloud",
 			"resumes-now": "Read again from the next 5-minute read",
 			"stops-now": "Maple stops reading when you save",
-			"removed-by-script": "Its service account stays in Google Cloud until the script has run",
+			"removed-by-script": "Its service account stays in Google Cloud until the change is applied there",
 		},
 		now: {
 			"stops-now": "Stops reading this connection's metrics and resources from the next 5-minute read.",
 			"resumes-now": "Reads this connection's metrics and resources again from the next 5-minute read.",
 		},
 		later: {
-			"stops-now": "Keeps the read-only service account and its roles until the script has run.",
-			"resumes-now": "Nothing to run: the read-only service account is still there.",
+			"stops-now": "Keeps the read-only service account and its roles until the change is applied in Google Cloud.",
+			"resumes-now": "Nothing to apply: the read-only service account is still there.",
 		},
 	},
 } as const satisfies {

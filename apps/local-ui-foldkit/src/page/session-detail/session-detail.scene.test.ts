@@ -18,7 +18,7 @@ const context: PageContext = {
 	timeFormat: { locale: "en-US", timeZone: "UTC" },
 	canGoBack: false,
 }
-const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, hasNewDataSince: () => false }
+const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, clockMs: 0, hasNewDataSince: () => false }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, inputs)()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
@@ -67,5 +67,12 @@ describe("local session detail", () => {
 			click(role("button", { name: "Sessions" })),
 			expectOutMessage(PageOutMessage.RequestedBack({ fallbackHash: "#/sessions?range=1h" })),
 		)
+	})
+
+	test("the start time reads the root's newer clock, as legacy reads the time at each render", () => {
+		const opened = pageUpdate(init(context, "sess-1").model, Message.CompletedReadClock({ nowMs: NOW })).model
+		const found = pageUpdate(opened, Message.SucceededFetchDetail({ key: opened.detail.key ?? "", detail: session([]), fetchedAtMs: NOW })).model
+		const later = withViewInputs(pageView, { ...inputs, clockMs: NOW + 20 * 60_000 })()
+		scene({ update: pageUpdate, view: later }, given(found), expectView(text("21m ago")).toExist())
 	})
 })

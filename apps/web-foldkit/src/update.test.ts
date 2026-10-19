@@ -65,7 +65,7 @@ describe("root navigation", () => {
 	})
 
 	test("a closed toast's action entries are dropped", () => {
-		const model = { ...base(AppRoute.Logs({ search: {} })), toastRootActions: { t1: "ReconnectOrgCollections" as const } }
+		const model = { ...base(AppRoute.Logs({ search: {} })), toastRootActions: { t1: { _tag: "ReconnectOrgCollections" as const } } }
 		const ended = update(model, Message.GotToastMessage({ message: Toast.Message.EndedToastTransition({ toastId: "t1" }) }))
 		expect(ended.model.toastRootActions).toEqual({})
 	})

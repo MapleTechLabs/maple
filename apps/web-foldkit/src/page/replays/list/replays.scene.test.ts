@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
-import { Command, expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import { Option, Result, Schema } from "effect"
+import { Command, expect as expectView, find, given, Mount, scene, tap, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { SessionRow } from "../kit/session-row"
@@ -210,5 +210,56 @@ describe("replays list", () => {
 			),
 			expectView(text("No sessions yet")).toExist(),
 		)
+	})
+
+	test("a server repeating an earlier cursor stops paging after that page", () => {
+		const model = loaded(page([session("a")], "cursor-1"))
+		const asked = pageUpdate(model, Message.ReachedListEnd()).model
+		const repeated = Message.CompletedFetchNextPage({
+			key: model.pagination.key ?? "",
+			generation: model.pagination.generation,
+			cursor: "cursor-1",
+			result: Result.succeed(page([session("b")], "cursor-1")),
+		})
+		const answered = pageUpdate(asked, repeated).model
+		expect(allRows(answered).map((row) => row.sessionId)).toEqual(["a", "b"])
+		expect(names(pageUpdate(answered, Message.ReachedListEnd()).commands)).toEqual([])
+	})
+
+	test("the end sentinel re-observes once a refreshed first page settles, like ReachEndSentinel", () => {
+		const model = pageUpdate(loaded(page([session("a")], "cursor-1")), rowsWindow(1)).model
+		const refreshing = pageUpdate(model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" })).model
+		const settled = pageUpdate(
+			refreshing,
+			Message.CompletedFetchFirstPage({ key: refreshing.firstPage.key ?? "", result: Result.succeed(page([session("a")], "cursor-1")) }),
+		).model
+		const keys: Array<unknown> = []
+		const recordKey = tap<Model, Message>((simulation) => {
+			keys.push(Option.getOrUndefined(find(simulation.html, "[data-replays-list-end]"))?.key)
+		})
+		// While refreshing, the visible sentinel's report is dropped: no page 2.
+		scene(
+			{ update: pageUpdate, view },
+			given(refreshing),
+			Mount.resolve(VirtualizeList, rowsWindow(1)),
+			recordKey,
+			Mount.resolve(WatchListEnd, Message.ReachedListEnd()),
+			Command.expectNone(),
+		)
+		// Settled, a fresh observer reports the still-visible sentinel and page 2 is asked for.
+		scene(
+			{ update: pageUpdate, view },
+			given(settled),
+			Mount.resolve(VirtualizeList, rowsWindow(1)),
+			recordKey,
+			Mount.resolve(WatchListEnd, Message.ReachedListEnd()),
+			Command.resolve(
+				FetchNextPage,
+				Message.CompletedFetchNextPage({ key: "", generation: 0, cursor: "cursor-1", result: Result.succeed(page([])) }),
+			),
+		)
+		expect(keys).toHaveLength(2)
+		expect(keys[0]).toBeDefined()
+		expect(keys[0]).not.toEqual(keys[1])
 	})
 })

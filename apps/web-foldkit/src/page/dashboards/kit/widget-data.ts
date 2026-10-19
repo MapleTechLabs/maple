@@ -2,7 +2,9 @@
 import { QueryEngineValidationError } from "@maple/domain/http"
 import {
 	formatRangeSeconds,
+	formatWarehouseDateTime,
 	hasUnresolvedVariableRefs,
+	parseWarehouseDateTime,
 	MAX_LIST_RANGE_SECONDS,
 	planWidgetRequest,
 	type VariableValues,
@@ -51,7 +53,12 @@ export interface PlanInput {
 	readonly maxDataPoints?: number
 	/** The board's variables: their names, and the values resolved so far (`useDashboardVariables`). */
 	readonly variables?: Readonly<{ names: ReadonlyArray<string>; values: VariableValues }>
+	/** `narrowedToCap`: the viewer pulled this list back to the cap (per tile, not persisted). */
+	readonly isNarrowed?: boolean
 }
+
+/** `narrowRangeLabel`: the list cap as the CTA reads it. */
+export const NARROW_RANGE_LABEL = `Show last ${formatRangeSeconds(MAX_LIST_RANGE_SECONDS)}`
 
 /**
  * `useWidgetDataSource`'s `plan`, `disableReason` and gating, in that order.
@@ -69,13 +76,28 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 	)
 		return { _tag: "WaitingOnVariables" }
 	if (input.window === null) return { _tag: "Disabled", message: "Unable to resolve dashboard time range" }
-	const plan = planWidgetRequest({
+	const planned = planWidgetRequest({
 		request,
 		dashboardWindow: input.window,
 		...(input.widgetTimeRange === undefined ? undefined : { widgetTimeRange: input.widgetTimeRange }),
 		...(input.maxDataPoints === undefined ? undefined : { maxDataPoints: input.maxDataPoints }),
 		...(input.variables === undefined ? undefined : { variableValues: input.variables.values }),
 	})
+	// Narrowing re-plans over the capped window, measured from where the tile's window ends.
+	const plan =
+		input.isNarrowed === true && planned.kind === "request" && planned.exceedsListCap
+			? planWidgetRequest({
+					request,
+					dashboardWindow: {
+						startTime: formatWarehouseDateTime(
+							parseWarehouseDateTime(planned.window.endTime) - MAX_LIST_RANGE_SECONDS * 1000,
+						),
+						endTime: planned.window.endTime,
+					},
+					...(input.maxDataPoints === undefined ? undefined : { maxDataPoints: input.maxDataPoints }),
+					...(input.variables === undefined ? undefined : { variableValues: input.variables.values }),
+				})
+			: planned
 	if (plan.kind === "disabled") {
 		return plan.reason === "metric_not_selected"
 			? {

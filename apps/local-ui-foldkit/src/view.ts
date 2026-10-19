@@ -39,6 +39,7 @@ const pageView = (h: HtmlBuilder<Message>, model: Model): Html => {
 			context: pageContextOf(model),
 			presenceOf: (signal) => presenceOf(presence, signal),
 			presenceNowMs: Option.match(presence, { onNone: () => 0, onSome: (result) => result.nowMs }),
+			clockMs: Option.match(model.maybeServer, { onNone: () => 0, onSome: (server) => server.checkedAtMs }),
 			hasNewDataSince: (sinceMs) => sinceMs > 0 && Option.exists(lastIngest, (last) => last > sinceMs),
 		},
 		(message) => Message.GotPageMessage({ message }),

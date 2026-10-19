@@ -25,9 +25,9 @@ import {
 	footerNote,
 	mono,
 } from "./view-gcp-configure-parts"
-import { scriptCard } from "./view-gcp-configure-script"
+import { fileCard } from "./view-gcp-configure-script"
 import { applied, runStatus } from "./view-gcp-configure-status"
-import { GCP_TITLE, type ScriptFailure, SMALL } from "./view-gcp-parts"
+import { GCP_TITLE, openCloudShellButton, type ScriptFailure, SMALL } from "./view-gcp-parts"
 
 // `ApplyStage` / `GcpApplyView`: the script and the run's status, or the confirmed run.
 
@@ -35,17 +35,18 @@ type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>
 
 /** What the script applies, so it is never a black box, and the way back to change it. */
-const runSummary = (h: H, connector: V2GcpConnector, logFilter: string): Html => {
+export const runSummary = (h: H, connector: V2GcpConnector, logFilter: string, byScript = true): Html => {
+	const removed = byScript ? "removed by this run" : "to remove"
 	const capabilities = [
 		connector.logs_enabled
 			? `Logs · ${logFilter}`
 			: connector.applied_logs_enabled === true
-				? "Logs · removed by this run"
+				? `Logs · ${removed}`
 				: null,
 		connector.metrics_enabled
 			? "Metrics"
 			: connector.applied_metrics_enabled === true
-				? "Metrics · removed by this run"
+				? `Metrics · ${removed}`
 				: null,
 	].filter((label) => label !== null)
 	return h.div(
@@ -76,6 +77,22 @@ const runSummary = (h: H, connector: V2GcpConnector, logFilter: string): Html =>
 			),
 		],
 	)
+}
+
+/** `RunAs`: who may run or apply a setup, an Owner of the host project with the scope's roles. */
+export const runAs = (h: H, connector: V2GcpConnector): ReadonlyArray<Html | string> => {
+	const scopeRoles = gcpScopeRoles(connector.scope_type, connector)
+	const role = (name: string) => h.span([h.Class("text-foreground")], [name])
+	return [
+		"as an ",
+		role("Owner"),
+		" of ",
+		...(connector.scope_type === "project" ? [] : ["the host project "]),
+		mono(h, connector.project_id),
+		...scopeRoles.flatMap((name, index) => [index === 0 ? " who also has " : " and ", role(name)]),
+		...(scopeRoles.length > 0 ? [` on the ${connector.scope_type}`] : []),
+		".",
+	]
 }
 
 const scriptState = (configure: ConfigureModel): { script: string | null; failure: ScriptFailure | null } => {
@@ -126,13 +143,10 @@ export const applyStage = (
 			]),
 		]
 	const overdue = !opened.rerun && gcpScriptOverdue(connector, opened.at, nowMs)
-	const scopeRoles = gcpScopeRoles(connector.scope_type, connector)
-	const scopeName = GCP_SCOPE_NAMES[connector.scope_type].toLowerCase()
-	const role = (name: string) => h.span([h.Class("text-foreground")], [name])
 	const choice = gcpLogFilterChoice(configure.filter, sinkExists)
 	const { script, failure } = scriptState(configure)
 	return [
-		configureHeader(h, options.title, 2),
+		configureHeader(h, options.title, 3),
 		configurePanel(
 			h,
 			[
@@ -147,22 +161,18 @@ export const applyStage = (
 								h.p([h.Class(SMALL)], ["Nothing changes in Google Cloud until it runs."]),
 							],
 						),
-						scriptCard(h, model, configure, { script, failure, projectId: connector.project_id }),
+						fileCard(h, model, configure, {
+							name: "setup.sh",
+							text: script,
+							failure,
+							secret: true,
+							children: [openCloudShellButton(h, connector.project_id, "default")],
+						}),
 						h.p(
 							[h.Class(SMALL)],
 							[
-								"Run it as an ",
-								role("Owner"),
-								" of",
-								" ",
-								...(connector.scope_type === "project" ? [] : ["the host project "]),
-								mono(h, connector.project_id),
-								...scopeRoles.flatMap((name, index) => [
-									index === 0 ? " who also has " : " and ",
-									role(name),
-								]),
-								...(scopeRoles.length > 0 ? [` on the ${scopeName}`] : []),
-								".",
+								"Run it ",
+								...runAs(h, connector),
 								" ",
 								!connector.logs_enabled && sinkExists
 									? "Takes one to two minutes. "
@@ -179,7 +189,7 @@ export const applyStage = (
 			],
 			"flex flex-col gap-5",
 		),
-		runStatus(h, connector, { opened, overdue, nowMs }),
+		runStatus(h, connector, { opened, overdue, nowMs, method: "script" }),
 		configureFooter(h, [
 			footerNote(h, ["Saved. Close this any time and come back to it."]),
 			button(h, { variant: "outline", attributes: [h.OnClick(close)] }, ["Close"]),

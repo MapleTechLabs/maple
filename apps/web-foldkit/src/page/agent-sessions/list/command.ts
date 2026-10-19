@@ -6,7 +6,7 @@ import {
 	listAiSessions,
 } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolTotals } from "@maple/web-data/warehouse/ai-session-tools"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -14,7 +14,7 @@ import { AgentSessionsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { detectModels } from "../kit/detected-models"
 import { virtualize } from "../kit/virtualize"
-import { countedFilters, filterInputs, PAGE_SIZE, presentInputs } from "./derive"
+import { countedFilters, filterInputs, PAGE_SIZE, presentInputs, rankedOf } from "./derive"
 import { Message, RequestMode } from "./message"
 import { RangeKey } from "./model"
 
@@ -40,7 +40,7 @@ const fetchPage = (search: typeof AgentSessionsSearch.Type, window: TimeWindow, 
 	listAiSessions({
 		data: { ...presentInputs(filterInputs(search, window)), limit: PAGE_SIZE, offset },
 	}).pipe(
-		Effect.map((response) => ({ data: response.data, ranked: response.data.length })),
+		Effect.map((response) => ({ data: response.data, ranked: rankedOf(response) })),
 		Effect.mapError(toLoadFailure),
 		Effect.result,
 	)
@@ -194,6 +194,55 @@ export const MountFilterRail = Mount.define("MountAgentSessionsFilterRail", {
 export const MountTable = Mount.define("MountAgentSessionsTable", {
 	messages: [Message.PaintedTable],
 	execute: () => afterPaint(Message.PaintedTable()),
+})
+
+export type RowClick = Readonly<{
+	button: number
+	metaKey: boolean
+	ctrlKey: boolean
+	shiftKey: boolean
+	altKey: boolean
+	isInsideLink: boolean
+	rowUrl: string | null
+}>
+
+/** The row's `onClick`: a plain primary click outside a link opens the row's session. */
+export const openedRowUrl = (click: RowClick): Option.Option<string> =>
+	click.button === 0 &&
+	!click.metaKey &&
+	!click.ctrlKey &&
+	!click.shiftKey &&
+	!click.altKey &&
+	!click.isInsideLink
+		? Option.fromNullishOr(click.rowUrl)
+		: Option.none()
+
+/** Every row's click handler, on the table: the stretched link and its lifted figures sit in it. */
+export const MountRowClicks = Mount.defineStream("MountAgentSessionsRowClicks", {
+	messages: [Message.ClickedSessionRow],
+	execute: ({ element }) =>
+		Stream.callback<ReturnType<typeof Message.ClickedSessionRow>>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const onClick = (event: Event) => {
+						if (!(event instanceof MouseEvent) || !(event.target instanceof Element)) return
+						const url = openedRowUrl({
+							button: event.button,
+							metaKey: event.metaKey,
+							ctrlKey: event.ctrlKey,
+							shiftKey: event.shiftKey,
+							altKey: event.altKey,
+							isInsideLink: event.target.closest("a") !== null,
+							rowUrl: event.target.closest("tr[data-session-href]")?.getAttribute("data-session-href") ?? null,
+						})
+						if (Option.isSome(url)) Queue.offerUnsafe(queue, Message.ClickedSessionRow({ url: url.value }))
+					}
+					element.addEventListener("click", onClick)
+					return onClick
+				}),
+				(onClick) => Effect.sync(() => element.removeEventListener("click", onClick)),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
 })
 
 /** `useVirtualizer` over the page scroller, on the table body: measured rows, index keys. */

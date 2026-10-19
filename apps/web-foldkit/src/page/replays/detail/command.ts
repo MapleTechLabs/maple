@@ -191,10 +191,14 @@ export const FeedEvents = Mount.defineStream("FeedReplayEvents", {
 		),
 })
 
+/** ToggleFullscreen fullscreens the figure, not the studio element the watcher mounts on. */
+export const isFigureFullscreen = (fullscreen: Pick<Element, "hasAttribute"> | null): boolean =>
+	fullscreen !== null && fullscreen.hasAttribute("data-replay-figure")
+
 /** `useReplayKeyboardShortcuts` and `fullscreenchange`, for the page's lifetime. */
 export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 	messages: [Message.ClickedPlay, Message.RequestedSeekBy, Message.ChangedFullscreen],
-	execute: ({ element }) =>
+	execute: () =>
 		Stream.callback<
 			| typeof Message.ClickedPlay.Type
 			| typeof Message.RequestedSeekBy.Type
@@ -219,7 +223,7 @@ export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 					const onFullscreen = () =>
 						Queue.offerUnsafe(
 							queue,
-							Message.ChangedFullscreen({ isFullscreen: document.fullscreenElement === element }),
+							Message.ChangedFullscreen({ isFullscreen: isFigureFullscreen(document.fullscreenElement) }),
 						)
 					window.addEventListener("keydown", onKey)
 					document.addEventListener("fullscreenchange", onFullscreen)

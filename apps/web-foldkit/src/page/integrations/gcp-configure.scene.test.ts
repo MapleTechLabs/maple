@@ -43,6 +43,14 @@ const connector = (fields: Readonly<Record<string, unknown>> = {}) => ({
 	...fields,
 })
 
+const SETUP_FIELDS = {
+	push_endpoint: "https://ingest.maple.dev/v1/logpush/gcp/x",
+	log_filter: "severity>=DEFAULT",
+	maple_service_account_email: "collector@maple-prod.iam.gserviceaccount.com",
+	terraform: "# maple.tf",
+	alchemy: "// maple.ts",
+}
+
 const status = (connectors: ReadonlyArray<unknown>) =>
 	Schema.decodeUnknownSync(V2GcpIntegration)({
 		object: "gcp_integration",
@@ -97,7 +105,7 @@ describe("google cloud wizard: a new connection", () => {
 		expect(configureOf(folder).newTitle).toBe("Add connection")
 	})
 
-	test("the create sends once, then leads into the run step with its script", () => {
+	test("the create sends once, then leads into the Method step, and Continue reads the script", () => {
 		const data = run(openNew(loaded([])), [...typed("scopeId", "acme-prod"), Message.SubmittedGcpScope()])
 		const sent = step(data, Message.SubmittedGcpCreate())
 		expect(names(sent.commands)).toEqual(["CreateGcpConnector"])
@@ -112,10 +120,11 @@ describe("google cloud wizard: a new connection", () => {
 		)
 		const done = step(sent.model, Message.CompletedGcpCreate({ opens: 1, connector: created, failure: null }))
 		expect(configureOf(done.model).target).toEqual({ _tag: "Connection", id: created.id, stage: "apply" })
-		expect(configureOf(done.model).opened?.rerun).toBe(false)
-		expect(names(done.commands)).toEqual(
-			expect.arrayContaining(["LoadGcpConfigureScripts", "LoadIntegrationsGcpStatus"]),
-		)
+		expect([configureOf(done.model).connectionStage, configureOf(done.model).opened]).toEqual(["method", null])
+		expect(names(done.commands)).toContain("LoadIntegrationsGcpStatus")
+		const setUp = step(done.model, Message.ClickedGcpMethodContinue())
+		expect(configureOf(setUp.model).opened?.rerun).toBe(false)
+		expect(names(setUp.commands)).toEqual(["LoadGcpConfigureScripts"])
 	})
 
 	test("a reopen mid-create sends no second create, and the late result leaves the new wizard", () => {
@@ -160,10 +169,12 @@ const configured = () =>
 const metricsOff = () => run(configured(), [Message.ToggledGcpCollect({ capability: "metrics" })])
 
 describe("google cloud wizard: a connection", () => {
-	test("Configure opens the data step; unchanged, Continue reruns with the sink's filter kept", () => {
+	test("Configure opens the data step; unchanged, Continue and the Method step rerun with the sink's filter kept", () => {
 		const model = configured()
 		expect(configureOf(model).opened).toBeNull()
-		const next = step(model, Message.ClickedGcpChooseApply())
+		const method = step(model, Message.ClickedGcpChooseApply())
+		expect([configureOf(method.model).connectionStage, configureOf(method.model).rerun]).toEqual(["method", true])
+		const next = step(method.model, Message.ClickedGcpMethodContinue())
 		expect(configureOf(next.model).opened?.rerun).toBe(true)
 		expect(names(next.commands)).toEqual(["LoadGcpConfigureScripts"])
 	})
@@ -183,7 +194,7 @@ describe("google cloud wizard: a connection", () => {
 		const flags = { logs_enabled: true, metrics_enabled: false }
 		const saved = step(sent, Message.CompletedGcpUpdate({ opens: 1, id, flags, failure: null }))
 		expect(configureOf(saved.model).asked).toEqual(flags)
-		expect(configureOf(saved.model).opened?.rerun).toBe(false)
+		expect(configureOf(saved.model).rerun).toBe(false)
 		expect(names(saved.commands)).toEqual(expect.arrayContaining(["LoadIntegrationsGcpStatus"]))
 		const key = saved.model.statuses.gcp.key ?? ""
 		const read = step(
@@ -213,7 +224,7 @@ describe("google cloud wizard: a connection", () => {
 	})
 
 	test("a script answer for an earlier request is dropped", () => {
-		const opened = step(configured(), Message.ClickedGcpChooseApply()).model
+		const opened = run(configured(), [Message.ClickedGcpChooseApply(), Message.ClickedGcpMethodContinue()])
 		const stale = step(
 			opened,
 			Message.CompletedGcpConfigureScripts({
@@ -222,9 +233,68 @@ describe("google cloud wizard: a connection", () => {
 					object: "gcp_connector.setup_scripts",
 					setup_script: "x",
 					cleanup_script: "y",
+					...SETUP_FIELDS,
 				}),
 			}),
 		)
 		expect(configureOf(stale.model).scripts.data._tag).toBe("Loading")
+	})
+})
+
+const toMethod = () => step(configured(), Message.ClickedGcpChooseApply()).model
+const setUp = (method: "script" | "manual" | "terraform" | "alchemy") =>
+	run(toMethod(), [Message.ClickedGcpMethod({ method }), Message.ClickedGcpMethodContinue()])
+
+describe("google cloud wizard: the Method and Set up steps", () => {
+	test("the code row starts on Terraform, the toggle switches to Alchemy, and Continue reads the file", () => {
+		const code = run(toMethod(), [Message.ClickedGcpMethod({ method: "terraform" })])
+		expect(configureOf(code).method).toBe("terraform")
+		const alchemy = run(code, [
+			Message.GotGcpFlavourMessage({ message: ToggleGroup.Message.ClickedItem({ value: "alchemy", index: 1 }) }),
+		])
+		expect([configureOf(alchemy).method, configureOf(alchemy).flavourGroup.values]).toEqual(["alchemy", ["alchemy"]])
+		const next = step(alchemy, Message.ClickedGcpMethodContinue())
+		expect(configureOf(next.model).opened).not.toBeNull()
+		expect(names(next.commands)).toEqual(["LoadGcpConfigureScripts"])
+	})
+
+	test("Edit on the Set up step returns to the Method step with its choice; Back there, to the data step", () => {
+		const back = run(setUp("manual"), [Message.ClickedGcpRunEdit()])
+		expect([configureOf(back).opened, configureOf(back).connectionStage, configureOf(back).method]).toEqual([
+			null,
+			"method",
+			"manual",
+		])
+		expect(configureOf(run(back, [Message.ClickedGcpRunEdit()])).connectionStage).toBe("choose")
+	})
+
+	test("I've removed them records the removal once, then reads the status again", () => {
+		const sent = step(setUp("manual"), Message.ClickedGcpConfirmRemoval())
+		expect(names(sent.commands)).toEqual(["ConfirmGcpRemoval"])
+		expect(names(step(sent.model, Message.ClickedGcpConfirmRemoval()).commands)).toEqual([])
+		const done = step(sent.model, Message.CompletedGcpConfirmRemoval({ failure: null }))
+		expect(configureOf(done.model).isConfirmingRemoval).toBe(false)
+		expect(names(done.commands)).toContain("LoadIntegrationsGcpStatus")
+		const failed = step(sent.model, Message.CompletedGcpConfirmRemoval({ failure: toLoadFailure("nope") }))
+		expect(failed.outMessage).toEqual(
+			expect.objectContaining({ _tag: "RequestedToast", title: "Couldn't record the removal" }),
+		)
+	})
+
+	test("copying the prompt shows it in the file's place until Back, and a new Set up step starts on the file", () => {
+		const copying = step(setUp("terraform"), Message.ClickedGcpCopyPrompt({ prompt: "Add maple.tf" }))
+		expect(names(copying.commands)).toEqual(["CopyGcpPrompt"])
+		const refused = run(copying.model, [Message.CompletedGcpPromptCopy({ isCopied: false })])
+		expect([configureOf(refused).isPromptShown, configureOf(refused).promptCopied]).toEqual([true, false])
+		expect(configureOf(run(refused, [Message.ClickedGcpPromptBack()])).isPromptShown).toBe(false)
+		const again = run(refused, [Message.ClickedGcpRunEdit(), Message.ClickedGcpMethodContinue()])
+		expect([configureOf(again).isPromptShown, configureOf(again).promptCopied]).toEqual([false, null])
+	})
+
+	test("the console steps open one at a time; the first is open until another is clicked", () => {
+		const closed = run(setUp("manual"), [Message.ClickedGcpManualStep({ title: "Topic", firstTitle: "Topic" })])
+		expect([configureOf(closed).isManualTouched, configureOf(closed).manualOpen]).toEqual([true, null])
+		const sink = run(closed, [Message.ClickedGcpManualStep({ title: "Sink", firstTitle: "Topic" })])
+		expect(configureOf(sink).manualOpen).toBe("Sink")
 	})
 })

@@ -80,7 +80,7 @@ describe("pricing cards", () => {
 		expect(names(clicked)).toEqual(["AttachPlan"])
 		expect(names(PricingCards.update(clicked.model, PricingCards.Message.ClickedPlan({ planId: "startup" })))).toEqual([])
 		const attached = PricingCards.update(clicked.model, PricingCards.Message.SucceededAttach({ paymentUrl: "https://stripe.test/pay" }))
-		expect(names(attached)).toEqual(["LoadPlans", "OpenCheckout"])
+		expect(names(attached)).toEqual(["LoadPlans", "TrackCheckoutStarted", "OpenCheckout"])
 		expect(attached.model.loadingPlanId).toBe("startup")
 		expect(attached.outMessage).toEqual(PricingCards.OutMessage.ChangedPlan({ isLeavingForCheckout: true }))
 	})

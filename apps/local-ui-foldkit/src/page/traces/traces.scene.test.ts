@@ -3,10 +3,13 @@ import { click, expect as expectView, expectOutMessage, given, role, scene, text
 import { describe, expect, test } from "vitest"
 import { type PageContext, PageOutMessage } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
+import { outcomeOf, stopSuperseded } from "../../data/lanes"
 import { FetchFacets, FetchTraces } from "./command"
+import { lanes } from "./lanes"
 import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
-import { init, update } from "./update"
+import { PAGE_SIZE } from "./fetch-traces"
+import { init, locationChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const NOW = Date.parse("2026-10-01T12:00:30Z")
@@ -22,6 +25,7 @@ const inputs: PageViewInputs = {
 	context,
 	presenceOf: () => Option.some({ signal: "traces", status: "absent", lastSeenMs: null }),
 	presenceNowMs: NOW,
+	clockMs: 0,
 	hasNewDataSince: () => false,
 }
 const view = withViewInputs(pageView, inputs)()
@@ -101,5 +105,37 @@ describe("local traces list", () => {
 		const result = loaded([])
 		expect(result.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 		scene({ update: pageUpdate, view }, given(result.model), expectView(text("No traces yet")).toExist())
+	})
+
+	const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+	const fullList = () => {
+		const base = anchored().model
+		const rows = Array.from({ length: PAGE_SIZE }, (_, index) => row(`t${index}`))
+		const data = { pages: [rows], hasNextPage: true }
+		return pageUpdate(base, Message.SucceededFetchTraces({ key: base.traces.key ?? "", data, fetchedAtMs: NOW })).model
+	}
+
+	test("Load more on the previous filter's rows waits for the new filter's list", () => {
+		const filtered = { ...context, location: { path: "/traces", search: "errors=1" } }
+		const pending = locationChanged(fullList(), filtered).model
+		expect(pending.traces.isPlaceholder).toBe(true)
+		expect(names(update(pending, Message.ClickedLoadMore(), filtered).commands)).toEqual([])
+	})
+
+	test("a next page asked for before a same-minute Reload is dropped when it lands", () => {
+		const more = pageUpdate(fullList(), Message.ClickedLoadMore())
+		expect(names(more.commands)).toEqual(["FetchNextLocalTracesPage"])
+		const reloaded = pageUpdate(more.model, Message.CompletedReadRefreshClock({ nowMs: NOW })).model
+		const late = Message.SucceededFetchNextPage({ key: reloaded.traces.key ?? "", generation: more.model.pageGeneration, page: [row("late")] })
+		expect(pageUpdate(reloaded, late).model.traces).toEqual(reloaded.traces)
+		// It is stopped too, so it never writes its stale pages into the cache.
+		expect(names(stopSuperseded(lanes(more.model), lanes(reloaded), outcomeOf))).toContain("FetchNextLocalTracesPage.Interrupt")
+	})
+
+	test("a fresh cached empty list asks for signal presence like a fetched one", () => {
+		const base = anchored().model
+		const cached = { data: { pages: [[]], hasNextPage: false }, updatedAtMs: NOW - 5_000, isStandIn: false, isFresh: true }
+		const found = pageUpdate(base, Message.FoundCachedTraces({ key: base.traces.key ?? "", cached }))
+		expect(found.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 	})
 })

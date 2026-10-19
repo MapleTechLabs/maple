@@ -1,6 +1,7 @@
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { Clock, Effect } from "effect"
 import { Command } from "foldkit"
+import { REVERIFICATION_CANCELLED } from "../../../platform/clerk"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { Message, type Model, type TabModel } from "./model"
@@ -121,7 +122,18 @@ export const init = (route: AccountRoute, context: PageContext): Return => {
 export const routeChanged = (model: Model, route: AccountRoute, context: PageContext): Return =>
 	enter({ ...model, search: route.search }, context)
 
+/** `toastAccountError`: dismissing Clerk's re-verification challenge is a no-op, not an error. */
+const withoutCancelledToast = (step: Return): Return =>
+	step.outMessage !== undefined &&
+	step.outMessage._tag === "RequestedToast" &&
+	step.outMessage.title === REVERIFICATION_CANCELLED
+		? { ...step, outMessage: undefined }
+		: step
+
 export const update = (model: Model, message: Message, _context: PageContext): Return =>
+	withoutCancelledToast(updateTab(model, message))
+
+const updateTab = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		ClickedTab: ({ tab }) => ({

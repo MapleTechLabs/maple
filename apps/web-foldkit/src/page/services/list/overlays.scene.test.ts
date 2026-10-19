@@ -60,10 +60,27 @@ describe("services list overlays", () => {
 		})
 	})
 
-	test("link intent warms the facets, overview and sparklines, without the namespace pin", () => {
+	test("link intent warms the keys the pinned page reads", () => {
 		const pinned = { ...context, pinnedNamespace: "shop" }
-		const commands = preload({ search: {} }, pinned, Date.UTC(2026, 9, 1, 12))
+		const nowMs = Date.UTC(2026, 9, 1, 12)
+		const commands = preload({ search: {} }, pinned, nowMs)
 		expect(names(commands)).toEqual(["FetchServiceOverview", "FetchServiceSparklines", "FetchServicesFacets"])
-		expect(JSON.stringify(commands.map((command) => command.args))).not.toContain("shop")
+		const opened = update(
+			init({ search: {} }, pinned).model,
+			Message.CompletedResolveWindow({
+				window: { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" },
+				nowMs,
+				mode: "Load",
+			}),
+			pinned,
+		).commands
+		const keysOf = (list: typeof commands | undefined) =>
+			(list ?? []).flatMap((command) =>
+				command.args !== undefined && "key" in command.args && typeof command.args.key === "string"
+					? [command.args.key]
+					: [],
+			)
+		expect(keysOf(commands)).toHaveLength(3)
+		expect(keysOf(opened)).toEqual(expect.arrayContaining(keysOf(commands)))
 	})
 })

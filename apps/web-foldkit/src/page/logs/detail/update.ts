@@ -66,6 +66,7 @@ const initScope = () => ToggleGroup.init({ label: "Context scope", values: ["ins
 export const init = (id: string, isPage = false): Model => ({
 	id,
 	orgId: "",
+	pinnedNamespace: null,
 	isPage,
 	isErrorExpanded: false,
 	contextScope: initScope(),
@@ -119,13 +120,16 @@ const withPanels = (result: Return): Return => {
 	}
 }
 
+/** The org and namespace pin the panel reads are keyed under (`PageContext`'s). */
+export type Scope = Readonly<{ orgId: string; pinnedNamespace: string | null }>
+
 /** Shows `log`, starting fresh on the Attributes tab (legacy remounts the panels per log). */
-export const open = (model: Model, log: LogRecord, orgId: string): Return =>
-	withPanels(liftDialog(viewing({ ...model, orgId }, log, "attributes"), Dialog.open(model.dialog)))
+export const open = (model: Model, log: LogRecord, scope: Scope): Return =>
+	withPanels(liftDialog(viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes"), Dialog.open(model.dialog)))
 
 /** `/logs/$logId`: the page's log, every panel reading at once. */
-export const show = (model: Model, log: LogRecord, orgId: string): Return =>
-	withPanels({ model: viewing({ ...model, orgId }, log, "attributes") })
+export const show = (model: Model, log: LogRecord, scope: Scope): Return =>
+	withPanels({ model: viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes") })
 
 const settled = (model: Model, generation: number, status: CopyStatus): Return =>
 	generation === model.copy.generation

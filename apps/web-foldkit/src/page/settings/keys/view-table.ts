@@ -1,25 +1,14 @@
 import type { V2ApiKey } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { REPLAY_BLOCK_CLASS } from "@maple/web/components/common/replay-privacy"
 import { apiKeyRowPermissions } from "@maple/web/components/settings/api-key-permissions"
-import {
-	type ApiKeyRow,
-	type IngestKeyRow,
-	KEY_TYPE_LABELS,
-	keyAccessSummary,
-	type KeyRow,
-	type KeyType,
-} from "@maple/web/components/settings/keys-table"
+import { KEY_TYPE_LABELS, keyAccessSummary, type KeyRow, type KeyType } from "@maple/web/components/settings/keys-table"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { DateTime, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as CopyButton from "../../../ui/copy-button"
-import { maskKey } from "../../../ui/copyable-field"
 import { badge } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
 import * as Menu from "../../../ui/menu"
 import type * as MenuView from "../../../ui/menu-view"
 import { rowActionsMenu } from "../../../ui/row-actions-menu"
@@ -29,7 +18,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `KeysTable`, `IngestRow`, `ApiRow` (apps/web/src/components/settings/api-keys-section.tsx).
+// `KeysTable`, `ApiRow` (apps/web/src/components/settings/api-keys-section.tsx).
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -37,11 +26,9 @@ type Inputs = Readonly<{ nowMs: number; timeZone: string }>
 const STATUS_LABELS = { active: "Active", expired: "Expired", revoked: "Revoked" } as const
 
 const TYPE_BADGE = {
-	ingest_public: "info",
-	ingest_private: "outline",
 	api: "muted",
 	mcp: "ok",
-} as const satisfies { readonly [Type in KeyType]: "info" | "outline" | "muted" | "ok" }
+} as const satisfies { readonly [Type in KeyType]: "muted" | "ok" }
 
 const COL = {
 	name: "w-0 min-w-[180px] flex-1",
@@ -66,78 +53,6 @@ const rowMenu = (h: H, model: Model, menuId: string, label: string, entries: Rea
 		toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
 	})
 
-/** `IngestKeyValue`: masked until revealed; copy always takes the real value. */
-const ingestKeyValue = (h: H, model: Model, row: IngestKeyRow): Html => {
-	const isVisible = model.revealedIngest.includes(row.type)
-	return h.div(
-		[h.Class("flex min-w-0 items-center gap-1")],
-		[
-			h.span(
-				[
-					h.Class(
-						cn(
-							REPLAY_BLOCK_CLASS,
-							"text-muted-foreground min-w-0 font-mono text-2xs tracking-wide",
-							isVisible ? "break-all" : "truncate",
-						),
-					),
-				],
-				[isVisible ? row.value : maskKey(row.value)],
-			),
-			iconButton(
-				h,
-				{
-					variant: "ghost",
-					size: "icon-xs",
-					label: isVisible ? "Hide key" : "Reveal key",
-					attributes: [h.OnClick(Message.ToggledIngestReveal({ type: row.type }))],
-				},
-				[icon(h, "EyeIcon", { className: isVisible ? "text-foreground" : "text-muted-foreground" })],
-			),
-			CopyButton.view(h, {
-				model: model.ingestCopies[row.type] ?? CopyButton.init(),
-				toParentMessage: (message) => Message.GotIngestCopyMessage({ type: row.type, message }),
-				value: row.value,
-				label: row.name,
-				size: "icon-xs",
-			}),
-		],
-	)
-}
-
-const ingestRow = (h: H, model: Model, row: IngestKeyRow, formatDate: (iso: string) => string): Html =>
-	h.div(
-		[h.Key(row.id), h.Class(cn(ROW_CLASS, "hover:bg-muted/20"))],
-		[
-			h.div(
-				[h.Class(cn(COL.name, "flex flex-col gap-1"))],
-				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[truncatedText(h, { text: row.name, className: "text-foreground text-sm font-medium" }), typeBadge(h, row.type)],
-					),
-					truncatedText(h, { text: row.purpose, className: "text-muted-foreground text-2xs" }),
-					ingestKeyValue(h, model, row),
-					h.span([h.Class("text-muted-foreground truncate text-2xs")], ["Rotated ", formatDate(row.rotatedAt)]),
-				],
-			),
-			truncatedText(h, { text: keyAccessSummary(row), className: cn(COL.access, "text-foreground/80 text-2xs") }),
-			h.span([h.Class(cn(COL.createdBy, "text-muted-foreground text-2xs"))], ["Organization"]),
-			h.span([h.Class(cn(COL.lastUsed, "text-muted-foreground text-2xs"))], ["n/a"]),
-			h.span([h.Class(cn(COL.expires, "text-muted-foreground text-2xs"))], ["Never"]),
-			h.div(
-				[h.Class(cn(COL.menu, "flex items-center justify-end"))],
-				model.isAdmin
-					? [
-							rowMenu(h, model, `keys-row-${row.id}`, `Actions for ${row.name.toLowerCase()}`, [
-								{ _tag: "Item", value: "roll", label: "Roll key", icon: "ArrowPathIcon" },
-							]),
-						]
-					: [],
-			),
-		],
-	)
-
 /** "In 3 days" / "Today": the urgency; the date sits under it. */
 const expiresInLabel = (expiresAt: number, now: number): string => {
 	const days = Math.floor((expiresAt - now) / 86_400_000)
@@ -148,7 +63,7 @@ const expiresInLabel = (expiresAt: number, now: number): string => {
 const epochOf = (iso: string | null): number | null =>
 	iso === null ? null : Option.getOrNull(Option.map(DateTime.make(iso), DateTime.toEpochMillis))
 
-const statusBadge = (h: H, row: ApiRowLike, now: number): ReadonlyArray<Html> => {
+const statusBadge = (h: H, row: KeyRow, now: number): ReadonlyArray<Html> => {
 	const expiresAt = epochOf(row.key.expires_at)
 	if (row.status === "revoked") return [badge(h, { variant: "crit", size: "sm" }, ["Revoked"])]
 	if (row.status === "expired") return [badge(h, { variant: "outline", size: "sm" }, ["Expired"])]
@@ -157,9 +72,7 @@ const statusBadge = (h: H, row: ApiRowLike, now: number): ReadonlyArray<Html> =>
 	return []
 }
 
-type ApiRowLike = ApiKeyRow
-
-const apiRow = (h: H, model: Model, row: ApiKeyRow, inputs: Inputs, formatDate: (iso: string) => string): Html => {
+const apiRow = (h: H, model: Model, row: KeyRow, inputs: Inputs, formatDate: (iso: string) => string): Html => {
 	const key: V2ApiKey = row.key
 	const isDead = row.status === "revoked" || row.status === "expired"
 	const can = apiKeyRowPermissions(key, { isAdmin: model.isAdmin, userId: model.userId })
@@ -238,9 +151,7 @@ export const keysTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, input
 			columnHead(h, { label: "Expires", width: COL.expires }),
 			h.span([h.Class(COL.menu)], []),
 		],
-		rows.map((row) =>
-			row.source === "ingest" ? ingestRow(h, model, row, formatDate) : apiRow(h, model, row, inputs, formatDate),
-		),
+		rows.map((row) => apiRow(h, model, row, inputs, formatDate)),
 	)
 }
 

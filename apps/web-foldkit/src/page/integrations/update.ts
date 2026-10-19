@@ -208,7 +208,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedCloudflarePrime: ({ isOk, isConnected }) =>
 			CloudflareCard.completedPrime(model, context, isOk, isConnected),
-		TickedCloudflareIngest: () => CloudflareCard.refreshCloudflare(model, context),
+		TickedCloudflareIngest: () => {
+			// Legacy reads `Date.now()` on every render: the ingest phase (stalled, backfill) follows the clock.
+			const refreshed = CloudflareCard.refreshCloudflare(model, context)
+			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
+		},
 		GotZoneFilterMessage: ({ message: child }) => CloudflareCard.gotZoneFilter(model, child),
 		ChangedZoneSearch: ({ value }) => CloudflareCard.updateBoard(model, { zoneSearch: value }),
 		ClickedZoneSort: ({ key }) => CloudflareCard.clickedZoneSort(model, key),
@@ -317,7 +321,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotWorkloadFilterMessage: ({ message: child }) => Gcp.gotWorkloadFilter(model, child),
 		GotGcpMenuMessage: ({ id, message: child }) =>
 			Gcp.gotMenu(model, context, id, child, (next, target) =>
-				Configure.openConfigure(next, context, target),
+				Configure.openConfigure(next, target),
 			),
 		CompletedGcpScripts: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { scripts: Keyed.accept(model.gcpCard.scripts, key, result) }),
@@ -334,7 +338,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotGcpDismissDialogMessage: ({ message: child }) => Gcp.gotDismissDialog(model, child),
 		ConfirmedDismissCleanup: () => Gcp.confirmedDismiss(model, context),
 		GotGcpCopyMessage: ({ id, message: child }) => Gcp.gotCopy(model, id, child),
-		ClickedGcpConfigure: ({ target }) => Configure.openConfigure(model, context, target),
+		ClickedGcpConfigure: ({ target }) => Configure.openConfigure(model, target),
 		ClosedGcpConfigure: () => Configure.closedConfigure(model),
 		GotGcpConfigureDialogMessage: ({ message: child }) => Configure.gotConfigureDialog(model, child),
 		GotGcpScopeTypeMessage: ({ message: child }) => Configure.gotScopeType(model, child),
@@ -350,7 +354,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledGcpRuntime: ({ runtime }) => Configure.toggledRuntime(model, runtime),
 		CompletedGcpCreate: ({ opens, connector, failure }) =>
 			Configure.completedCreate(model, context, opens, connector, failure),
-		ClickedGcpChooseApply: () => Configure.clickedChooseApply(model, context),
+		ClickedGcpChooseApply: () => Configure.clickedChooseApply(model),
 		GotGcpConfirmDialogMessage: ({ message: child }) => Configure.gotConfirmDialog(model, child),
 		ConfirmedGcpSave: () => Configure.confirmedSave(model),
 		CompletedGcpUpdate: ({ opens, flags, failure }) =>
@@ -359,6 +363,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedGcpConfigureScripts: ({ key, result }) => Configure.completedScripts(model, key, result),
 		ClickedGcpConfigureScriptRetry: () => Configure.retriedScripts(model, context),
 		ClickedGcpScriptExpand: () => Configure.clickedScriptExpand(model),
+		ClickedGcpMethod: ({ method }) => Configure.clickedMethod(model, method),
+		GotGcpFlavourMessage: ({ message: child }) => Configure.gotFlavour(model, child),
+		ClickedGcpMethodContinue: () => Configure.clickedMethodContinue(model, context),
+		ClickedGcpManualStep: ({ title, firstTitle }) => Configure.clickedManualStep(model, title, firstTitle),
+		ClickedGcpCopyPrompt: ({ prompt }) => Configure.clickedCopyPrompt(model, prompt),
+		CompletedGcpPromptCopy: ({ isCopied }) => Configure.completedPromptCopy(model, isCopied),
+		ClickedGcpPromptBack: () => Configure.clickedPromptBack(model),
+		ClickedGcpConfirmRemoval: () => Configure.clickedConfirmRemoval(model),
+		CompletedGcpConfirmRemoval: ({ failure }) => Configure.completedConfirmRemoval(model, context, failure),
 		TickedGcpRefresh: () => {
 			const refreshed = requestStatus(model, context, "gcp", "Poll")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
@@ -383,8 +396,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedBranch: ({ repoId, branch }) => Github.clickedBranch(model, repoId, branch),
 		GotBranchDialogMessage: ({ message: child }) => Github.gotBranchDialog(model, child),
 		ConfirmedBranch: () => Github.confirmedBranch(model),
-		CompletedTrackedBranch: ({ branch, backfillQueued, failure }) =>
-			Github.completedTrackedBranch(model, context, branch, backfillQueued, failure),
+		CompletedTrackedBranch: ({ repoId, branch, backfillQueued, failure }) =>
+			Github.completedTrackedBranch(model, context, repoId, branch, backfillQueued, failure),
 		CompletedChatInstall: ({ failure }) => Chat.completedInstall(model, context, failure),
 		ClickedChatIdentity: () => Chat.clickedIdentity(model),
 		CompletedChatIdentity: ({ kind, failure }) => Chat.completedIdentity(model, context, kind, failure),

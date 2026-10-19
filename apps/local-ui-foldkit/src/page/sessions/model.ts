@@ -51,6 +51,8 @@ export const Model = Schema.TaggedStruct("SessionsPage", {
 	sessions: SlotSchema(SessionPages),
 	facets: SlotSchema(SessionFacets),
 	isFetchingNextPage: Schema.Boolean,
+	/** Bumped when the list is refetched or rekeyed; a next page from an older generation is dropped. */
+	pageGeneration: Schema.Number,
 	/** `dataUpdatedAt` of the list, for the "New data" pill. */
 	sessionsUpdatedAtMs: Schema.Number,
 	search: Draft,

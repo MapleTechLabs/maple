@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
 import {
 	click,
 	Command,
@@ -14,8 +14,16 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { LoadSignalPresence, MountEmptyState, MountFilterRail, MountTable, VirtualizeSessions } from "./command"
-import { pageRows } from "./derive"
+import {
+	LoadSignalPresence,
+	MountEmptyState,
+	MountFilterRail,
+	MountRowClicks,
+	MountTable,
+	openedRowUrl,
+	VirtualizeSessions,
+} from "./command"
+import { pageRows, rankedOf } from "./derive"
 import { Message } from "./message"
 import type { Facets, Model, SessionRow } from "./model"
 import { init, update } from "./update"
@@ -186,6 +194,7 @@ describe("agent sessions list", () => {
 			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
+			Mount.resolve(MountRowClicks, Message.ClickedSessionRow({ url: "/agent-sessions/conv_a" })),
 			expectView(role("table", { name: "Agent sessions" })).toExist(),
 			expectView(text("support-triage")).toExist(),
 			click(role("button", { name: "Duration" })),
@@ -205,6 +214,7 @@ describe("agent sessions list", () => {
 			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
+			Mount.resolve(MountRowClicks, Message.ClickedSessionRow({ url: "/agent-sessions/conv_a" })),
 			click(role("checkbox", { name: "support-triage" })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({
@@ -248,6 +258,41 @@ describe("agent sessions list", () => {
 				url: "/agent-sessions?costMin=0.1&costMax=0.5",
 				isReplace: false,
 			}),
+		)
+	})
+
+	test("a short server page pages on the server's ranked count, not its row count", () => {
+		expect(rankedOf({ data: [session("conv_a")], ranked: 50 })).toBe(50)
+		expect(rankedOf({ data: [session("conv_a")] })).toBe(1)
+	})
+
+	test("a plain click outside a link opens the row's session; a modified click or one on a link does not", () => {
+		const plain = {
+			button: 0,
+			metaKey: false,
+			ctrlKey: false,
+			shiftKey: false,
+			altKey: false,
+			isInsideLink: false,
+			rowUrl: "/agent-sessions/conv_a",
+		}
+		expect(openedRowUrl(plain)).toEqual(Option.some("/agent-sessions/conv_a"))
+		expect(openedRowUrl({ ...plain, metaKey: true })).toEqual(Option.none())
+		expect(openedRowUrl({ ...plain, ctrlKey: true })).toEqual(Option.none())
+		expect(openedRowUrl({ ...plain, button: 1 })).toEqual(Option.none())
+		expect(openedRowUrl({ ...plain, isInsideLink: true })).toEqual(Option.none())
+		expect(openedRowUrl({ ...plain, rowUrl: null })).toEqual(Option.none())
+	})
+
+	test("a row's click, the service pills included, opens its session through the URL", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(painted([session("conv_a")])),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			Mount.resolve(MountTable, Message.PaintedTable()),
+			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
+			Mount.resolve(MountRowClicks, Message.ClickedSessionRow({ url: "/agent-sessions/conv_a" })),
+			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/agent-sessions/conv_a", isReplace: false })),
 		)
 	})
 })

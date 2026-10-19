@@ -199,5 +199,12 @@ describe("railway list", () => {
 		const connected = pageUpdate(model, Message.SucceededConnect({ status: status(true) }))
 		expect(names(connected.commands)).toEqual(["FetchRailwayServices"])
 		expect(connected.model.connect.token.value).toBe("")
+		expect(connected.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Railway connected",
+				description: "Pulled the last hour of metrics for 1 environment.",
+			}),
+		)
 	})
 })

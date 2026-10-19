@@ -36,7 +36,12 @@ const result = <A extends Schema.Top>(schema: A) => ({
 })
 
 export const Message = defineMessageUnion({
-	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedResolveWindow: {
+		window: TimeWindow,
+		nowMs: Schema.Number,
+		mode: RequestMode,
+		timeZone: Schema.String,
+	},
 	CompletedFetchFacets: result(TracesFacets),
 	CompletedFetchFirstPage: result(TracesPage),
 	/** A later page; `key` is the first page's key it continues. */
@@ -72,7 +77,10 @@ export const Message = defineMessageUnion({
 	ClickedPeekRow: { index: Schema.Number },
 	ClickedPeekStep: { step: Schema.Literals([1, -1]) },
 	ClickedOpenTrace: {},
-	PressedListKey: { key: Schema.String },
+	/** `isMobile`: below `md` the peek is off (`peekEnabled = !isMobile`), read when pressed. */
+	PressedListKey: { key: Schema.String, isMobile: Schema.Boolean },
+	/** Enter on a row below `md`: the trace page itself (`navigate(traceLink(trace))`). */
+	PressedOpenRow: { index: Schema.Number },
 	GotPeekMessage: { message: DetailMessage },
 	GotPeekDialogMessage: { message: Dialog.Message },
 	ClickedAdvancedFilter: {},

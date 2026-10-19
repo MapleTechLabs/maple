@@ -3,9 +3,8 @@ import {
 	filterKeyRows,
 	type KeyTypeFilter,
 } from "@maple/web/components/settings/keys-table"
-import { AsyncData, Submodel } from "foldkit"
+import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertAction, alertDescription } from "../../../ui/alert"
 import { button } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { icon } from "../../../ui/icon"
@@ -24,16 +23,16 @@ import { STATUS_VALUES } from "./update"
 import { apiReference, oauthPointer } from "./view-reference"
 import { keysEmpty, keysTable } from "./view-table"
 
-// `KeysTab` (apps/web/src/components/settings/api-keys-section.tsx).
+// `ApiKeysSection` (apps/web/src/components/settings/api-keys-section.tsx).
 
 export type ViewInputs = Readonly<{ nowMs: number; timeZone: string }>
 
 type H = HtmlBuilder<Message>
 
-const TYPE_FILTER_LABELS = { all: "All", ingest: "Ingest", api: "API", mcp: "MCP" } as const
+const TYPE_FILTER_LABELS = { all: "All", api: "API", mcp: "MCP" } as const
 const STATUS_LABELS = { active: "Active", expired: "Expired", revoked: "Revoked" } as const
 
-/** Ingest keys are a fixed pair, so only API and MCP keys can be created. Members may create MCP keys. */
+/** Members may create MCP keys only. */
 const createKeyButton = (h: H, model: Model): Html => {
 	const plus = icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] })
 	if (!model.isAdmin)
@@ -84,12 +83,6 @@ const createKeyButton = (h: H, model: Model): Html => {
 	)
 }
 
-const retryAlert = (h: H, text: string, onRetry: Message): Html =>
-	alert(h, { size: "sm", variant: "crit" }, [
-		alertDescription(h, [text]),
-		alertAction(h, [button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(onRetry)] }, ["Retry"])]),
-	])
-
 const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): Html =>
 	h.div(
 		[h.Class("flex flex-wrap items-center gap-3")],
@@ -99,10 +92,10 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 				ariaLabel: "Key type",
 				value: model.typeFilter,
 				onChange: (type) => Message.ClickedTypeFilter({ type }),
-				// Members never see ingest keys, so that chip would always read 0.
-				options: (["all", "ingest", "api", "mcp"] as const)
-					.filter((type) => type !== "ingest" || model.isAdmin)
-					.map((type) => ({ value: type, label: `${TYPE_FILTER_LABELS[type]} · ${counts.typeCounts[type]}` })),
+				options: (["all", "api", "mcp"] as const).map((type) => ({
+					value: type,
+					label: `${TYPE_FILTER_LABELS[type]} · ${counts.typeCounts[type]}`,
+				})),
 			}),
 			h.submodel({
 				slotId: "keys-status-select",
@@ -138,33 +131,26 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 	)
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
-	const ingestKeys = AsyncData.getOrElse(model.ingest, () => null)
-	const isIngestFailed = AsyncData.isFailure(model.ingest)
-	const rows = buildKeyRows({ apiKeys: model.apiKeys ?? [], ingestKeys, now: inputs.nowMs })
+	const rows = buildKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
 	const counts = filterKeyRows(rows, { type: model.typeFilter, status: model.statusFilter, search: model.search })
-	const isIngestLoading = model.isAdmin && ingestKeys === null && !isIngestFailed
 	const isLoading = model.apiKeys === null
-	const showSkeleton = isLoading || (isIngestLoading && (model.apiKeys ?? []).length === 0)
 	return settingsSections(h, "wide", [
 		settingsSection(
 			h,
 			{
 				id: "keys-heading",
 				title: "Keys",
-				description: ["Every credential that sends data to Maple or reads from it."],
+				description: ["Keys for the Maple API and MCP clients. Ingest keys live in Ingestion."],
 				framed: false,
 				width: "wide",
 				actions: createKeyButton(h, model),
 			},
 			[
 				toolbar(h, model, counts),
-				// TODO(settings-keys): the API-key sync-failure alert and `SyncUnavailable` need the
-				// collection load-failure signal (`useCollectionLoadFailed`), not wired in Foldkit yet.
-				...(isIngestFailed
-					? [retryAlert(h, "Couldn't load the ingest keys. API and MCP keys below are unaffected.", Message.ClickedRetryIngestKeys())]
-					: []),
+				// TODO(settings-keys): `SyncUnavailable` needs the collection load-failure signal
+				// (`useCollectionLoadFailed`), not wired in Foldkit yet.
 				panel(h, {}, [
-					showSkeleton
+					isLoading
 						? skeletonList(h, { rows: 3, rowClassName: "h-[52px]", gap: "2", className: "p-4" })
 						: counts.visible.length === 0
 							? keysEmpty(h, model)
@@ -205,22 +191,6 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			confirmLabel: "Revoke key",
 			onConfirm: Message.ClickedConfirmRevoke(),
 			isPending: model.isRevoking,
-		}),
-		confirmDialog(h, {
-			slotId: "keys-ingest-roll-dialog",
-			model: model.ingestRollDialog,
-			toParentMessage: (message) => Message.GotIngestRollDialogMessage({ message }),
-			title: `Roll ${model.ingestRollType === "ingest_public" ? "public" : "private"} ingest key?`,
-			description: [
-				"This action cannot be undone. Everything sending telemetry with this key will be rejected immediately. You will need to update your",
-				" ",
-				model.ingestRollType === "ingest_public" ? "client-side SDKs" : "server configurations",
-				" ",
-				"with the new key.",
-			],
-			confirmLabel: "Roll key",
-			onConfirm: Message.ClickedConfirmIngestRoll(),
-			isPending: model.isIngestRolling,
 		}),
 	])
 })

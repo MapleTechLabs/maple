@@ -162,15 +162,16 @@ export const MountPopover = Mount.defineStream("MountPopover", {
 		sideOffset: Schema.Number,
 		isBare: Schema.Boolean,
 		initialFocus: Schema.Literals(["popup", "first-tabbable"]),
+		fallbackAnchorSelector: Schema.NullOr(Schema.String),
 	},
 	messages: [Message.CompletedMountPopover, Message.ChangedPlacement, Message.PressedOutside],
-	execute: ({ element, id, align, side, sideOffset, isBare, initialFocus }) =>
+	execute: ({ element, id, align, side, sideOffset, isBare, initialFocus, fallbackAnchorSelector }) =>
 		anchoredPopup(element, {
 			positionerSelector: "[data-slot=popover-positioner]",
 			popupSelector: `#${CSS.escape(popupId(id))}`,
 			config: {
 				...positionDefaults,
-				anchor: { _tag: "Element", id: triggerId(id) },
+				anchor: { _tag: "Element", id: triggerId(id), fallbackSelector: fallbackAnchorSelector ?? undefined },
 				side,
 				align,
 				sideOffset,
@@ -223,6 +224,8 @@ export type ViewInputs = Readonly<{
 	className?: string
 	/** With `isBare`: the Positioner's and the Popup's own classes. */
 	bare?: Readonly<{ positionerClassName: string; popupClassName: string }>
+	/** `QuickPickMenu`'s `fallbackAnchor`: placed against it while the trigger is hidden. */
+	fallbackAnchorSelector?: string | undefined
 }>
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
@@ -259,6 +262,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 					sideOffset: model.sideOffset,
 					isBare: model.isBare,
 					initialFocus: model.initialFocus,
+					fallbackAnchorSelector: inputs.fallbackAnchorSelector ?? null,
 				}),
 			),
 			h.OnKeyDownPreventDefault((key) =>

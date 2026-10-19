@@ -211,13 +211,15 @@ export const LONG_RANGE_PRESET_OPTIONS: TimePreset[] = [
 	},
 ]
 
+// Shortest to longest so the 4-column grid reads left to right, top to bottom.
+// "today" is calendar-anchored, not a fixed duration, so it sits last.
 export const QUICK_SELECT_OPTIONS: QuickSelectOption[] = [
 	{ label: "3h", value: "3h" },
-	{ label: "4d", value: "4d" },
-	{ label: "6w", value: "6w" },
 	{ label: "12h", value: "12h" },
+	{ label: "4d", value: "4d" },
 	{ label: "10d", value: "10d" },
 	{ label: "2w", value: "2w" },
+	{ label: "6w", value: "6w" },
 	{ label: "2mo", value: "2mo" },
 	{ label: "today", value: "today" },
 ]

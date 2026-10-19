@@ -27,6 +27,7 @@ const inputs: PageViewInputs = {
 	context,
 	presenceOf: () => Option.none(),
 	presenceNowMs: NOW,
+	clockMs: 0,
 	hasNewDataSince: () => false,
 }
 const view = withViewInputs(pageView, inputs)()
@@ -116,5 +117,25 @@ describe("local trace detail", () => {
 		const clicked = update(withLogs, Message.ClickedSpanLog({ log: spanLog }), ctx).model
 		const sheet = Option.getOrNull(clicked.panel?.maybeLogSheet ?? Option.none())
 		expect([sheet?.dialog.isOpen, sheet?.log.body]).toEqual([true, "card declined"])
+	})
+
+	test("a Refresh that finds the spans of a not-yet-landed trace mounts the tab and the hash's panel", () => {
+		const ctx = contextAt(`spanId=${SPAN_ID}`)
+		const empty = answered(init(ctx, TRACE_ID).model, Option.none(), ctx).model
+		const refreshed = update(empty, Message.ClickedRefresh(), ctx).model
+		const landed = answered(refreshed, Option.some(trace), ctx).model
+		expect([landed.timeline?.rootSpans.length, landed.panel?.span.spanId]).toEqual([1, SPAN_ID])
+	})
+
+	test("a refetch that adds spans rebuilds the open tab on the new tree", () => {
+		const loaded = answered(entered.model, Option.some(trace)).model
+		const child = { ...span, spanId: Schema.decodeSync(SpanId)("2222222222222222"), parentSpanId: SPAN_ID, spanName: "db" }
+		const grown: TraceData = {
+			...trace,
+			spans: [span, child],
+			rootSpans: [{ ...span, children: [{ ...child, children: [], depth: 1 }], depth: 0 }],
+		}
+		const refetched = answered(pageUpdate(loaded, Message.ClickedRefresh()).model, Option.some(grown)).model
+		expect(refetched.timeline?.rootSpans[0]?.children.map((node) => node.spanName)).toEqual(["db"])
 	})
 })

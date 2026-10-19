@@ -38,6 +38,7 @@ import {
 } from "./command"
 import {
 	allLogs,
+	brushRange,
 	chipId,
 	FETCH_THRESHOLD,
 	HISTOGRAM_TARGET_POINTS,
@@ -63,6 +64,8 @@ const WIDEN_TIME_PRESET = "7d"
 
 /** The stream's default window (`DashboardPage`'s `defaultPreset`). */
 export const DEFAULT_PRESET = "12h"
+
+const NO_BRUSH = { left: null, right: null, isSelecting: false }
 
 const freshPagination = (generation: number): Pagination => ({
 	generation,
@@ -328,6 +331,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		volume: Keyed.idle(),
 		attributeKeys: Keyed.idle(),
 		volumeChart: Chart.init(),
+		volumeBrush: NO_BRUSH,
 		stream: LogsStream.init("logs", []),
 		wrap: false,
 		density: "compact",
@@ -393,7 +397,7 @@ const foldStreamOut = (model: Model, out: LogsStream.OutMessage, context: PageCo
 		OpenedLog: ({ index }) => {
 			const row = model.stream.rows[index]
 			if (row === undefined) return { model }
-			const opened = LogDetail.open(model.detail, row.log, context.orgId)
+			const opened = LogDetail.open(model.detail, row.log, context)
 			return liftChild({ ...model, detail: opened.model, selectedIndex: index }, opened.commands, (m) =>
 				Message.GotDetailMessage({ message: m }),
 			)
@@ -673,10 +677,32 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotVolumeChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.volumeChart, inner)
-			return liftChild({ ...model, volumeChart: next.model }, next.commands, (m) =>
+			// `handleBucketHover`: while dragging, every bucket crossed extends the selection.
+			const hovered = inner._tag === "ChangedChartFocus" ? Option.getOrNull(inner.maybeKey) : null
+			const volumeBrush =
+				model.volumeBrush.isSelecting && hovered !== null
+					? { ...model.volumeBrush, right: hovered }
+					: model.volumeBrush
+			return liftChild({ ...model, volumeChart: next.model, volumeBrush }, next.commands, (m) =>
 				Message.GotVolumeChartMessage({ message: m }),
 			)
 		},
+		PressedVolumeChart: () =>
+			Option.match(model.volumeChart.activeKey, {
+				onNone: () => ({ model }),
+				onSome: (bucket) => ({ model: { ...model, volumeBrush: { left: bucket, right: null, isSelecting: true } } }),
+			}),
+		ReleasedVolumeChart: () => {
+			const { left, right, isSelecting } = model.volumeBrush
+			const cleared = { ...model, volumeBrush: NO_BRUSH }
+			const buckets = Option.getOrUndefined(AsyncData.getData(model.volume.data)) ?? []
+			const range = isSelecting && left !== null ? brushRange(left, right ?? left, buckets) : undefined
+			// `onTimeRangeSelect`: `applyTimeRangeSearch` with absolute bounds, as a replace.
+			return range === undefined
+				? { model: cleared }
+				: navigate(cleared, { ...model.search, ...range, timePreset: undefined }, true)
+		},
+		LeftVolumeChart: () => (model.volumeBrush.isSelecting ? { model: { ...model, volumeBrush: NO_BRUSH } } : { model }),
 		GotTimePickerMessage: ({ message: inner }) => {
 			const next = TimeRangePicker.update(model.timePicker, inner)
 			const lifted = liftChild({ ...model, timePicker: next.model }, next.commands, (m) =>

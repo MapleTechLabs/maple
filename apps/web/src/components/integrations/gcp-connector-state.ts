@@ -120,6 +120,7 @@ type MetricsFields = Pick<
 	| "last_resources_error"
 	| "applied_metrics_enabled"
 	| "setup_reported_at"
+	| "created_at"
 >
 
 export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMetricsState {
@@ -128,8 +129,18 @@ export function gcpMetricsState(connector: MetricsFields, nowMs: number): GcpMet
 	const lastMetricsReceivedAt = connector.last_metrics_received_at
 	const error = connector.last_metrics_error
 	const age = ageMs(lastMetricsReceivedAt, nowMs)
-	// Before the script has run the poller says it can't sign in. That is the expected start.
+	// Before any setup the poller says it can't sign in: the expected start. A setup without the
+	// script never reports, so once a new grant has had its grace the poller's error says what is missing.
 	const reportedAt = connector.setup_reported_at
+	if (
+		connector.applied_metrics_enabled === null &&
+		error !== null &&
+		lastMetricsReceivedAt === null &&
+		// From the connection's creation, or a run that reported since: its grant is new too.
+		Math.min(ageMs(connector.created_at, nowMs), ageMs(reportedAt, nowMs)) > GRANT_GRACE_MS
+	) {
+		return { kind: "failing", error, lastMetricsReceivedAt }
+	}
 	if (needsSetup(connector.applied_metrics_enabled, age)) {
 		return { kind: setupKind(connector.applied_metrics_enabled, reportedAt, nowMs) }
 	}
@@ -177,6 +188,14 @@ export const GCP_METRICS_STATUS = {
 
 type ConnectorFields = LogFields & MetricsFields
 
+/** No setup run reported and no data arrived: as far as Maple knows, nothing exists in Google Cloud. */
+export const gcpNothingSeen = (connector: V2GcpConnector) =>
+	connector.setup_reported_at === null &&
+	connector.last_log_received_at === null &&
+	connector.last_metrics_received_at === null &&
+	connector.applied_logs_enabled !== true &&
+	connector.applied_metrics_enabled !== true
+
 /**
  * What still waits on a re-run of the setup script, for a connection whose configuration disagrees
  * with what a run reported: a sentence per capability, saying what goes on until then. A capability
@@ -188,16 +207,16 @@ export const gcpPendingChanges = (connector: ConnectorFields, nowMs: number): Re
 	const metrics = gcpMetricsState(connector, nowMs)
 	return [
 		log.kind === "setup-pending" && connector.applied_logs_enabled === false
-			? "Log forwarding starts once the script has created the log sink."
+			? "Log forwarding starts once the log sink exists in Google Cloud."
 			: null,
 		log.kind === "off" && log.stillSetUp
-			? "Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink."
+			? "Google Cloud keeps forwarding logs, billed by Google, until the log sink is removed."
 			: null,
 		metrics.kind === "setup-pending" && connector.applied_metrics_enabled === false
-			? "Metrics and resources start once the script has created the read-only service account."
+			? "Metrics and resources start once the read-only service account exists in Google Cloud."
 			: null,
 		metrics.kind === "off" && metrics.stillSetUp
-			? "The read-only service account stays in Google Cloud until the script has removed it."
+			? "The read-only service account stays in Google Cloud until it is removed."
 			: null,
 	].filter((line) => line !== null)
 }

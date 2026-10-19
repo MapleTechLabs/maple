@@ -1,5 +1,6 @@
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
+import { canExtend } from "../../data/slot"
 import type { PageContext } from "../contract"
 import { FetchNextPage } from "./command"
 import { nextCursor } from "./fetch"
@@ -16,7 +17,7 @@ export const rowsOf = (model: Model): ReadonlyArray<LocalLog> =>
 export const loadMoreIfAtEnd = (model: Model, context: PageContext): UpdateReturn => {
 	const data = Option.getOrNull(AsyncData.getData(model.logs.data))
 	const maybeBounds = boundsOf(model, context)
-	if (data === null || !data.hasNextPage || model.isFetchingNextPage || model.logs.key === null) return { model }
+	if (data === null || !data.hasNextPage || model.isFetchingNextPage || !canExtend(model.logs) || model.logs.key === null) return { model }
 	if (Option.isNone(maybeBounds) || !reachesEnd(rowsOf(model).length, model.viewport)) return { model }
 	const cursor = nextCursor(data.pages[data.pages.length - 1] ?? [])
 	if (cursor === undefined) return { model }
@@ -25,6 +26,7 @@ export const loadMoreIfAtEnd = (model: Model, context: PageContext): UpdateRetur
 		commands: [
 			FetchNextPage({
 				key: model.logs.key,
+				generation: model.pageGeneration,
 				search: context.location.search,
 				...maybeBounds.value,
 				apiBase: context.env.apiBase,

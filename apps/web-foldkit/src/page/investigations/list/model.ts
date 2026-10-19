@@ -40,6 +40,8 @@ export const Model = Schema.Struct({
 	/** The investigate bar's text and whether its create is in flight. */
 	subject: Schema.String,
 	isCreating: Schema.Boolean,
+	/** `useIsOrgAdmin`: false until the session says otherwise; self-hosted is root. */
+	isOrgAdmin: Schema.Boolean,
 	searchDraft: Schema.String,
 	searchGeneration: Schema.Number,
 	tabs: Tabs.Model,

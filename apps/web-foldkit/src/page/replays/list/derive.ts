@@ -26,6 +26,15 @@ export const nextCursor = (model: Model): string | null => {
 	return last?.hasMore === true ? last.nextCursor : null
 }
 
+/** `ReachEndSentinel` re-observes when `loading` or its `onReachEnd` deps change: the remount key. */
+export const listEndKey = (model: Model): string =>
+	[
+		model.pagination.generation,
+		model.pagination.isFetching ? "fetching" : "idle",
+		AsyncData.isSuccess(model.firstPage.data) ? "settled" : "waiting",
+		nextCursor(model) ?? "",
+	].join("|")
+
 export const isCapped = (model: Model): boolean => allRows(model).length >= MAX_RETAINED_REPLAYS
 
 /** The list header's `hasActiveFilters`: any filter or search narrows the list. */

@@ -10,9 +10,10 @@ import { gcpConnectors } from "./update-gcp"
 import { chooseConfirm, chooseStage } from "./view-gcp-configure-choose"
 import { newConnection } from "./view-gcp-configure-new"
 import { configureHeader, configurePanel } from "./view-gcp-configure-parts"
+import { methodApplyStage, methodStage } from "./view-gcp-configure-method"
 import { applyStage } from "./view-gcp-configure-run"
 
-// `GcpConfigure`: the one place a connection is configured, as three steps in one dialog.
+// `GcpConfigure`: the one place a connection is configured, as four steps in one dialog.
 
 type H = HtmlBuilder<Message>
 
@@ -43,9 +44,13 @@ const stages = (
 				" ",
 				h.span([h.Class("font-mono whitespace-nowrap")], [connector.scope_id]),
 			]
-	return configure.opened === null
-		? chooseStage(h, configure, connector, { title, metricsAvailable: available, close })
-		: applyStage(h, model, configure, connector, { title, created, opened: configure.opened, timeZone })
+	if (configure.opened === null)
+		return configure.connectionStage === "choose"
+			? chooseStage(h, configure, connector, { title, metricsAvailable: available, close })
+			: methodStage(h, configure, connector, title)
+	return configure.method === "script"
+		? applyStage(h, model, configure, connector, { title, created, opened: configure.opened, timeZone })
+		: methodApplyStage(h, model, configure, connector, { title, opened: configure.opened })
 }
 
 /** `GcpConfigureFrame`: the dialog every step renders in, open while the wizard is. */

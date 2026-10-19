@@ -138,6 +138,13 @@ describe("dashboard view", () => {
 		)
 		expect(names(deleted.commands)).toContain(RemoveWidget.name)
 		expect(deleted.outMessage?._tag).toBe("RequestedToast")
+		// The root runs the Undo, so it still restores after the user left the board.
+		const out = deleted.outMessage
+		const undo = out?._tag === "RequestedToast" ? out.rootAction?.action : undefined
+		expect(undo?._tag === "RestoreDashboardWidgets" && [undo.dashboardId, undo.widgets.map((widget) => widget.id)]).toEqual([
+			ROUTE.dashboardId,
+			["total-errors"],
+		])
 	})
 
 	test("a grip dragged past the threshold writes the tiles that moved, once, on release", () => {

@@ -10,6 +10,7 @@ import * as Tooltip from "../../../../ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { nextSort } from "../../../kit/table-sort"
+import { connectedToastOf } from "../../../integrations/railway"
 import { CompleteReloadSpin, ConnectRailway, FetchServices, LoadStatus, ResolveWindow } from "./command"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
@@ -210,9 +211,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			})
 		},
-		// TODO(toast): legacy toasts `connectedToast`; the page has no toast region yet.
-		SucceededConnect: ({ status }) =>
-			requestServices(
+		// `RailwayTokenForm` toasts `connectedToast` on success.
+		SucceededConnect: ({ status }) => ({
+			...requestServices(
 				{
 					...model,
 					connect: { token: Field.init(), isSubmitting: false, error: null },
@@ -221,6 +222,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				context,
 				"Load",
 			),
+			outMessage: PageOutMessage.RequestedToast({ type: "success", ...connectedToastOf(status, "connect") }),
+		}),
 		FailedConnect: ({ error }) => ({
 			model: { ...model, connect: { ...model.connect, isSubmitting: false, error } },
 		}),

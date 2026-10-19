@@ -1,4 +1,5 @@
-import { Result } from "effect"
+import { Option, Result } from "effect"
+import { AsyncData } from "foldkit"
 import { accept, acceptCached } from "../../data/slot"
 import { fetchAfterCache } from "./load"
 import { type PageContext, PageOutMessage } from "../contract"
@@ -24,12 +25,19 @@ export const updateFound = (model: Model, message: FoundMessage, context: PageCo
 		model: settleRefresh(next),
 		commands: next[which].key === key ? fetchAfterCache(next, context, which, cached.isFresh) : [],
 	})
-	if (message._tag === "FoundCachedLogs")
-		return model.logs.key === key
-			? loadMoreIfAtEndAfter(step({ ...model, logs: acceptCached(model.logs, key, message.cached, cached.isFresh), logsUpdatedAtMs: cached.updatedAtMs }, "logs"), context)
-			: { model }
-	if (message._tag === "FoundCachedPatterns")
-		return step({ ...model, patterns: acceptCached(model.patterns, key, message.cached, cached.isFresh), patternsUpdatedAtMs: model.patterns.key === key ? cached.updatedAtMs : model.patternsUpdatedAtMs }, "patterns")
+	// A cached empty result renders `SignalEmptyState` as a fetched one does.
+	if (message._tag === "FoundCachedLogs") {
+		if (model.logs.key !== key) return { model }
+		const logs = acceptCached(model.logs, key, message.cached, cached.isFresh)
+		const shown = loadMoreIfAtEndAfter(step({ ...model, logs, logsUpdatedAtMs: cached.updatedAtMs }, "logs"), context)
+		return withPresence(shown, Option.exists(AsyncData.getData(logs.data), (data) => data.pages.every((page) => page.length === 0)))
+	}
+	if (message._tag === "FoundCachedPatterns") {
+		const patterns = acceptCached(model.patterns, key, message.cached, cached.isFresh)
+		const patternsUpdatedAtMs = model.patterns.key === key ? cached.updatedAtMs : model.patternsUpdatedAtMs
+		const isEmpty = model.patterns.key === key && Option.exists(AsyncData.getData(patterns.data), (data) => data.patterns.length === 0)
+		return withPresence(step({ ...model, patterns, patternsUpdatedAtMs }, "patterns"), isEmpty)
+	}
 	if (message._tag === "FoundCachedServices")
 		return step({ ...model, services: acceptCached(model.services, key, message.cached, cached.isFresh) }, "services")
 	return step({ ...model, severities: acceptCached(model.severities, key, message.cached, cached.isFresh) }, "severities")

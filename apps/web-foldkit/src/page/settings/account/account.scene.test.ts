@@ -7,6 +7,13 @@ import * as Password from "./password/update"
 import { Message as PasswordMessage } from "./password/model"
 import { canRemove } from "./emails/update"
 import type { AccountUser } from "./user"
+import { OrgId } from "@maple/domain"
+import { REVERIFICATION_CANCELLED } from "../../../platform/clerk"
+import type { PageContext } from "../../contract"
+import { Message as AccountMessage, type Model as AccountModel } from "./model"
+import { update as updateAccount } from "./update"
+
+const context: PageContext = { orgId: OrgId.make("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
 
 const user: AccountUser = {
 	id: "user_ada",
@@ -47,6 +54,18 @@ describe("password tab", () => {
 			name: "UpdateClerkPassword",
 			args: { newPassword: "new-password-2", currentPassword: "old-password-1", signOutOfOtherSessions: true },
 		})
+	})
+
+	test("a dismissed re-verification challenge frees the form without an error toast", () => {
+		const saving: AccountModel = { search: {}, nowMs: 0, tab: { _tag: "Password", model: { ...typed, isSaving: true } } }
+		const failure = (message: string) =>
+			AccountMessage.GotPasswordMessage({
+				message: PasswordMessage.CompletedSubmit({ hadPassword: true, result: Result.fail(message) }),
+			})
+		const cancelled = updateAccount(saving, failure(REVERIFICATION_CANCELLED), context)
+		expect(cancelled.outMessage).toBeUndefined()
+		expect(cancelled.model.tab?._tag === "Password" && cancelled.model.tab.model.isSaving).toBe(false)
+		expect(updateAccount(saving, failure("Wrong password"), context).outMessage).toMatchObject({ title: "Wrong password" })
 	})
 
 	test("a changed password clears the fields", () => {

@@ -12,12 +12,13 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { BLANK_TEMPLATE_ID, computeReadiness } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { selectedOf, templatesOf } from "./update"
+import { PANEL_SHEET_ID, selectedOf, templatesOf } from "./update"
+import * as DialogView from "../../../ui/dialog-view"
 import { templateList } from "./view-list"
 import { detailPanel, panelRestState } from "./view-panel"
 
-// `TemplatesPage` (apps/web/src/routes/dashboards/templates.tsx). TODO(lg): below `lg` the panel is
-// a sheet in legacy; here it is always the side pane.
+// `TemplatesPage` (apps/web/src/routes/dashboards/templates.tsx): below `lg` the detail panel is a
+// right sheet over the list (`panelIsSheet`), else the side pane.
 
 type H = HtmlBuilder<Message>
 
@@ -76,6 +77,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const isLoaded = AsyncData.isSuccess(model.templates.data) || AsyncData.isRefreshing(model.templates.data)
 	const isFailed = AsyncData.isFailure(model.templates.data)
 	const selected = selectedOf(model)
+	const isSheet = inputs.isBelowLg === true
+	const panel = (template: NonNullable<typeof selected>) =>
+		detailPanel(h, model, template, metrics === null ? undefined : readiness.get(template.id), inputs.context.timeZone)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))],
 		[
@@ -110,30 +114,50 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 										],
 										[templateList(h, model, readiness)],
 									),
-									h.div(
+									...(isSheet ? [] : [h.div(
 										[
 											h.Class(
 												"bg-background min-w-0 grow overflow-y-auto [--panel-surface:var(--background)]",
 											),
 										],
 										[
-											selected === null
-												? panelRestState(h)
-												: detailPanel(
-														h,
-														model,
-														selected,
-														metrics === null
-															? undefined
-															: readiness.get(selected.id),
-														inputs.context.timeZone,
-													),
+											selected === null ? panelRestState(h) : panel(selected),
 										],
-									),
+									)]),
 								],
 							),
 				],
 			),
+			...(isSheet && selected !== null
+				? [panelSheet(h, model, panel(selected))]
+				: []),
 		],
 	)
 })
+
+/** `<SheetContent side="right">` with the sr-only header, around the detail panel. */
+const panelSheet = (h: H, model: Model, content: Html): Html =>
+	h.submodel({
+		slotId: `${PANEL_SHEET_ID}-dialog`,
+		model: model.panelSheet,
+		view: DialogView.view,
+		viewInputs: {
+			className: "w-full overflow-y-auto p-0 [--panel-surface:var(--popover)] sm:max-w-lg",
+			side: "right",
+			hasTrigger: false,
+			toView: ({ portal }) => portal,
+			toContent: () => [
+				DialogView.dialogHeader(
+					h,
+					"sheet",
+					[
+						DialogView.dialogTitle(h, "sheet", PANEL_SHEET_ID, selectedOf(model)?.name ?? "Template"),
+						DialogView.dialogDescription(h, "sheet", PANEL_SHEET_ID, "What this template builds and what it needs."),
+					],
+					"sr-only",
+				),
+				content,
+			],
+		},
+		toParentMessage: (message) => Message.GotPanelSheetMessage({ message }),
+	})

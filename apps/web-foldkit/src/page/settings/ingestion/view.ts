@@ -7,7 +7,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import * as CopyButton from "../../../ui/copy-button"
-import { eyebrow } from "../../../ui/eyebrow"
+import { confirmDialog } from "../../../ui/confirm-dialog"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
@@ -15,6 +15,7 @@ import { settingsSection, settingsSections } from "../kit/section"
 import * as MappingDialogView from "./mapping-dialog-view"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { credentialRow, ingestKeyRows } from "./view-keys"
 import { connectInstructions, frameworkIconStrip, frameworkPicker } from "./view-setup"
 import { deleteMappingDialog, mappingsSection, recommendationsSection } from "./view-rules"
 
@@ -78,12 +79,14 @@ const statusBanner = (h: H, model: Model): Html => {
 	])
 }
 
-const endpointSection = (h: H, model: Model): Html =>
+/** The OTLP endpoint plus the org's ingest key pair. The pair is admin-only, so members see the endpoint. */
+const endpointAndKeysSection = (h: H, model: Model): Html =>
 	settingsSection(
 		h,
 		{
 			id: "ingestion-endpoint-heading",
-			title: "Endpoint",
+			title: model.isAdmin ? "Endpoint & keys" : "Endpoint",
+			description: ["Point your OTLP exporter at the endpoint and authenticate with an ingest key."],
 			padded: false,
 			actions: h.a(
 				[
@@ -92,44 +95,43 @@ const endpointSection = (h: H, model: Model): Html =>
 					h.Rel("noopener noreferrer"),
 					h.Class("text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors"),
 				],
-				["Setup docs ↗"],
+				["Docs ↗"],
 			),
 		},
 		[
 			h.div(
 				[h.Class("divide-y")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 sm:flex-nowrap")],
-						[
-							h.span([h.Class("shrink-0 text-sm sm:w-[120px]")], ["OTLP endpoint"]),
-							eyebrow(h, { variant: "mono", className: "text-muted-foreground hidden w-14 shrink-0 sm:block" }, ["HTTP"]),
-							h.span([h.Class("min-w-0 grow truncate font-mono text-xs")], [ingestUrl]),
-							CopyButton.view(h, {
-								model: model.endpointCopy,
-								toParentMessage: (message) => Message.GotEndpointCopyMessage({ message }),
-								value: ingestUrl,
-								label: "OTLP endpoint",
-								variant: "outline",
-								size: "icon-sm",
-							}),
-						],
-					),
-					h.div(
-						[h.Class("text-muted-foreground flex items-center gap-2 px-4 py-2.5 text-xs")],
-						[
-							icon(h, "KeyIcon", { size: 12, className: "shrink-0" }),
-							h.span([h.Class("grow")], ["Ingest keys live in Keys."]),
-							h.a(
-								[h.Href("/settings?tab=keys"), h.Class("text-foreground inline-flex items-center gap-1 hover:underline underline-offset-2")],
-								["Open Keys", icon(h, "ChevronRightIcon", { size: 12 })],
-							),
-						],
-					),
+					credentialRow(h, {
+						label: "OTLP endpoint",
+						badge: "HTTP",
+						badgeClass: "text-muted-foreground",
+						value: ingestUrl,
+						copy: model.endpointCopy,
+						onCopy: (text) => Message.GotEndpointCopyMessage({ message: CopyButton.Message.ClickedCopy({ text }) }),
+					}),
+					...(model.isAdmin ? ingestKeyRows(h, model) : []),
 				],
 			),
 		],
 	)
+
+const rollKeyDialog = (h: H, model: Model): Html =>
+	confirmDialog(h, {
+		slotId: "ingestion-key-roll-dialog",
+		model: model.rollDialog,
+		toParentMessage: (message) => Message.GotRollDialogMessage({ message }),
+		title: `Regenerate ${model.rollType} key?`,
+		description: [
+			"This action cannot be undone. All existing integrations using this key will stop working immediately. You will need to update your",
+			" ",
+			model.rollType === "public" ? "client-side SDKs" : "server configurations",
+			" with the new key.",
+		],
+		confirmLabel: "Regenerate key",
+		onConfirm: Message.ClickedConfirmRoll(),
+		isPending: model.isRolling,
+	})
 
 const addServiceSection = (h: H, model: Model): Html => {
 	const connection = connectionOf(model)
@@ -172,7 +174,7 @@ export const view = Submodel.defineView<Model, Message, NoInputs>((model, _input
 	settingsSections(h, "standard", [
 		// `AdminOnlyNotice subject="ingestion settings"` renders nothing for admins.
 		statusBanner(h, model),
-		endpointSection(h, model),
+		endpointAndKeysSection(h, model),
 		addServiceSection(h, model),
 		...recommendationsSection(h, model),
 		mappingsSection(h, model),
@@ -184,5 +186,6 @@ export const view = Submodel.defineView<Model, Message, NoInputs>((model, _input
 			viewInputs: { slotId: "ingestion-mapping-dialog-popup" },
 		}),
 		deleteMappingDialog(h, model),
+		...(model.isAdmin ? [rollKeyDialog(h, model)] : []),
 	]),
 )

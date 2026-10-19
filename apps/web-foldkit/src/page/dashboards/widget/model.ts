@@ -57,11 +57,15 @@ export const Model = Schema.Struct({
 	sparkGate: Schema.NullOr(WidgetGate),
 	sparklineChart: Chart.Model,
 	requests: Schema.Record(Schema.String, KeyedSchema(Schema.Unknown, WidgetFailure)),
+	/** `DashboardVariablesProvider` at defaults: each query variable's option list, by name. */
+	variableOptions: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), WidgetFailure)),
 	chart: Chart.Model,
 	tableSort: TableSort,
 	themeColors: Schema.NullOr(ThemeColors),
 	chartRuntime: ChartRuntime,
 	timePicker: TimeRangePicker.Model,
+	/** `WidgetTimeRange`'s picker under Custom: the widget's own window. */
+	rangePicker: TimeRangePicker.Model,
 	sourceTabs: Tabs.Model,
 	/** The rail's selects, by id: unit and comparison. */
 	selects: Schema.Record(Schema.String, Select.Model),
@@ -93,5 +97,7 @@ export const Model = Schema.Struct({
 	isSaving: Schema.Boolean,
 	/** The unsaved-changes confirmation (`useBlocker`). */
 	leaveDialog: Dialog.Model,
+	/** Where the held navigation was going: Discard goes there (Cancel's is the dashboard). */
+	pendingLeaveUrl: Schema.NullOr(Schema.String),
 })
 export type Model = typeof Model.Type

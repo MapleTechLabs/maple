@@ -230,7 +230,7 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 					worst === "attention"
 						? `${countLabel(count("attention"), "connection")} failing`
 						: worst === "setup-pending" || worst === "changes-pending"
-							? "Run setup script"
+							? "Finish setup"
 							: null,
 			}
 		},

@@ -21,6 +21,7 @@ export const ReadRefreshClock = Command.define("ReadMetricsRefreshClock", {
 export const FetchList = Command.define("FetchLocalMetricsList", {
 	args: { ...ListRequest.fields, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchList, Message.FailedFetchList, Message.FoundCachedList],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ readsCache, ...request }) =>
 		withCache({
 			key: ["local", "metrics", "list", request.type ?? null, request.search ?? null, `${request.startTime}/${request.endTime}`],
@@ -36,6 +37,7 @@ export const FetchList = Command.define("FetchLocalMetricsList", {
 export const FetchSummary = Command.define("FetchLocalMetricsSummary", {
 	args: { ...SummaryRequest.fields, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchSummary, Message.FailedFetchSummary, Message.FoundCachedSummary],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ readsCache, ...request }) =>
 		withCache({
 			key: ["local", "metrics", "summary", request.service ?? null, `${request.startTime}/${request.endTime}`],
@@ -51,6 +53,7 @@ export const FetchSummary = Command.define("FetchLocalMetricsSummary", {
 export const FetchSparklines = Command.define("FetchLocalMetricsSparklines", {
 	args: { ...SparklinesRequest.fields, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchSparklines, Message.FailedFetchSparklines, Message.FoundCachedSparklines],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ readsCache, ...request }) =>
 		withCache({
 			key: ["local", "metrics", "sparklines", request.groups, request.bucketSeconds, `${request.startTime}/${request.endTime}`],

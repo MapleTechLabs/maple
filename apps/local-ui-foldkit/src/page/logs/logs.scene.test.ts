@@ -30,6 +30,7 @@ const inputs: PageViewInputs = {
 	context,
 	presenceOf: () => Option.none(),
 	presenceNowMs: NOW,
+	clockMs: 0,
 	hasNewDataSince: () => false,
 }
 
@@ -169,5 +170,20 @@ describe("local logs", () => {
 		const entered = pageUpdate(loaded([row]), Message.EnteredChip({ chip })).model
 		const left = pageUpdate(entered, Message.LeftChip({ chip })).model
 		expect(pageUpdate(left, Message.ElapsedChipDelay({ generation: entered.chipCard.generation })).model.chipCard.visible).toEqual(Option.none())
+	})
+
+	test("a next page in flight across a same-minute Reload is dropped when it lands", () => {
+		const model = loaded(Array.from({ length: PAGE_SIZE }, (_, index) => log(index)))
+		const scrolled = pageUpdate(model, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 1500 } })).model
+		const reloaded = pageUpdate(scrolled, Message.CompletedReadRefreshClock({ nowMs: NOW })).model
+		const late = Message.SucceededFetchNextPage({ key: reloaded.logs.key ?? "", generation: scrolled.pageGeneration, page: [log(99)] })
+		expect(pageUpdate(reloaded, late).model.logs).toEqual(reloaded.logs)
+	})
+
+	test("a fresh cached empty window asks for signal presence like a fetched one", () => {
+		const base = entered()
+		const cached = { data: { pages: [[]], hasNextPage: false }, updatedAtMs: NOW - 5_000, isStandIn: false, isFresh: true }
+		const found = pageUpdate(base, Message.FoundCachedLogs({ key: base.logs.key ?? "", cached }))
+		expect(found.outMessage?._tag).toBe("RequestedSignalPresence")
 	})
 })

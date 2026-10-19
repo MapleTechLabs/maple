@@ -13,6 +13,7 @@ import { eyebrow } from "../../ui/eyebrow"
 import { field, type FieldIds, type FieldState, fieldLabel, input } from "../../ui/field"
 import { icon } from "../../ui/icon"
 import { optionCard, type PixelGlyphName, pixelGlyph } from "./option-card"
+import { regionStep } from "./quick-start-region-view"
 import { Message, type Model, roleNeedsDetail } from "./quick-start"
 import { type QuickStartState, resolveQuickStartStep, STEP_IDS } from "./quick-start-state"
 
@@ -312,6 +313,8 @@ export type QuickStartParts = Readonly<{
 	accountCluster: (label: Html) => Html
 	teamStep: (state: QuickStartState) => Html
 	planStep: Html
+	/** `needsRegion`: the region step holds back the others until the org has one. */
+	needsRegion: boolean
 }>
 
 /**
@@ -325,6 +328,11 @@ export const view = (h: H, model: Model, parts: QuickStartParts): Html | null =>
 	const state = model.state
 	if (state === null) return null
 	const step = resolveQuickStartStep(state)
+	const regionOffset = model.isRegionStepShown || parts.needsRegion ? 1 : 0
+	if (parts.needsRegion)
+		return onboardingLayout(h, 1, STEP_IDS.length + regionOffset, parts.accountCluster, [
+			motionStep(h, "region", regionStep(h, model.region)),
+		])
 	const content =
 		step === "role"
 			? roleStep(h, state)
@@ -333,7 +341,7 @@ export const view = (h: H, model: Model, parts: QuickStartParts): Html | null =>
 				: step === "team"
 					? parts.teamStep(state)
 					: parts.planStep
-	return onboardingLayout(h, STEP_IDS.indexOf(step) + 1, STEP_IDS.length, parts.accountCluster, [
+	return onboardingLayout(h, STEP_IDS.indexOf(step) + 1 + regionOffset, STEP_IDS.length + regionOffset, parts.accountCluster, [
 		motionStep(h, step, content),
 	])
 }

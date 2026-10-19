@@ -3,6 +3,7 @@ import { Command, Mount } from "foldkit"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { dataSourceTransform, toReadyData } from "../dashboards/kit/widget-data"
 import { Message } from "./message"
+import { DashboardSectionSchema } from "@maple/widgets/dashboard"
 import { type Resolve, type ShareError, SharedDashboard, type WidgetState } from "./model"
 
 // The share's reads: resolve the token, then widget data in batches of four (`useShareWidgetData`).
@@ -21,7 +22,28 @@ export const ResolveReloadClock = Command.define("ResolveShareReloadClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveReloadClock({ nowMs })),
 })
 
+/** `isFramed`: reading a cross-origin `top` throws, and that means framed by someone unseen. */
+export const ReadFrame = Command.define("ReadShareFrame", {
+	messages: [Message.CompletedReadFrame],
+	execute: Effect.try(() => window.self !== window.top).pipe(
+		Effect.orElseSucceed(() => true),
+		Effect.map((isFramed) => Message.CompletedReadFrame({ isFramed })),
+	),
+})
+
 const decodeDashboard = Schema.decodeUnknownEffect(SharedDashboard)
+const decodeSections = Schema.decodeUnknownOption(Schema.Array(DashboardSectionSchema))
+const decodeSectionsField = Schema.decodeUnknownOption(Schema.Struct({ sections: Schema.Unknown }))
+
+/** `decodeShare`: sections that fail to decode render an ungrouped board, never a dead page. */
+export const sectionsOf = (dashboard: unknown) =>
+	Option.getOrElse(
+		Option.flatMap(decodeSectionsField(dashboard), ({ sections }) => decodeSections(sections)),
+		() => [],
+	)
+
+const decodeObject = (value: unknown): Readonly<Record<string, unknown>> =>
+	Option.getOrElse(Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))(value), () => ({}))
 
 const decodeEnvelope = Schema.decodeUnknownOption(Schema.Struct({ error: Schema.Struct({ _tag: Schema.String }) }))
 const decodeMessage = Schema.decodeUnknownOption(Schema.Struct({ error: Schema.Struct({ message: Schema.String }) }))
@@ -64,7 +86,7 @@ export const ResolveShare = Command.define("ResolveShare", {
 				mode: response.mode,
 				scope: response.scope,
 				embeddable: response.embeddable,
-				dashboard: response.dashboard,
+				dashboard: { ...decodeObject(response.dashboard), sections: sectionsOf(response.dashboard) },
 			})
 		}).pipe(
 			Effect.map((share): Resolve => ({ _tag: "Ready", share })),
@@ -115,7 +137,7 @@ export const FetchBatch = Command.define("FetchShareWidgetBatch", {
 				},
 			})
 			const transforms = new Map(requests.map((request) => [request.widgetId, request.transform]))
-			return Object.fromEntries(
+			const states = Object.fromEntries(
 				response.results.map((result): [string, WidgetState] => [
 					result.widgetId,
 					result.ok === true
@@ -126,13 +148,18 @@ export const FetchBatch = Command.define("FetchShareWidgetBatch", {
 						: { _tag: "Error", message: result.message, kind: result.reason === "unsupported" ? "range" : "runtime" },
 				]),
 			)
+			return Message.CompletedFetchBatch({ keys, states, variables: response.variables })
 		}).pipe(
 			Effect.catch((error) =>
 				Effect.succeed(
-					failAll(Option.getOrElse(Option.map(decodeMessage(error), (envelope) => envelope.error.message), () => DATA_UNAVAILABLE_MESSAGE)),
+					Message.CompletedFetchBatch({
+						keys,
+						states: failAll(
+							Option.getOrElse(Option.map(decodeMessage(error), (envelope) => envelope.error.message), () => DATA_UNAVAILABLE_MESSAGE),
+						),
+					}),
 				),
 			),
-			Effect.map((states) => Message.CompletedFetchBatch({ keys, states })),
 		)
 	},
 })
@@ -199,3 +226,54 @@ export const WatchTile = Mount.defineStream("WatchShareTile", {
 		),
 })
 
+
+type Appearance = Readonly<{ theme: string | null; background: string; colorScheme: string }>
+
+/** The page's appearance now, to put back on the way out. */
+const currentAppearance = (): Appearance => {
+	const root = document.documentElement
+	return {
+		theme: root.classList.contains("dark") ? "dark" : root.classList.contains("light") ? "light" : null,
+		background: document.body.style.background,
+		colorScheme: root.style.colorScheme,
+	}
+}
+
+const applyThemeClass = (theme: string) => {
+	const root = document.documentElement
+	root.classList.remove("light", "dark")
+	root.classList.add(theme)
+	root.style.colorScheme = theme
+}
+
+const isThemeOverride = (theme: string | null) => theme === "light" || theme === "dark"
+
+/**
+ * `SharePage`'s layout effect: `?theme=` applies without persisting, and an embed clears the
+ * backdrop (`body` and `color-scheme`) so the host page shows around the card. Restored on leave.
+ */
+export const ApplyShareAppearance = Mount.defineStream("ApplyShareAppearance", {
+	args: { theme: Schema.NullOr(Schema.String), isEmbed: Schema.Boolean },
+	messages: [Message.AppliedShareAppearance],
+	execute: ({ theme, isEmbed }) =>
+		Stream.callback<typeof Message.AppliedShareAppearance.Type>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const previous = currentAppearance()
+					if (theme !== null && isThemeOverride(theme)) applyThemeClass(theme)
+					if (isEmbed) {
+						document.body.style.background = "transparent"
+						document.documentElement.style.colorScheme = "normal"
+					}
+					Queue.offerUnsafe(queue, Message.AppliedShareAppearance())
+					return previous
+				}),
+				(previous) =>
+					Effect.sync(() => {
+						document.body.style.background = previous.background
+						if (previous.theme !== null && isThemeOverride(theme)) applyThemeClass(previous.theme)
+						document.documentElement.style.colorScheme = previous.colorScheme
+					}),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
+})

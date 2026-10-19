@@ -4,6 +4,7 @@ import { AsyncData, type Update } from "foldkit"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import { FetchNextPage } from "./command"
 import { nextCursor } from "./fetch"
+import { canExtend } from "../../data/slot"
 import { boundsOf } from "./load"
 import type { Message } from "./message"
 import type { Model, SessionRow } from "./model"
@@ -36,13 +37,14 @@ export const loadMore = (model: Model, context: PageContext): UpdateReturn => {
 		Option.fromNullishOr(data.hasNextPage ? nextCursor(data.pages[data.pages.length - 1] ?? []) : undefined),
 	)
 	const maybeBounds = boundsOf(model, context)
-	if (model.isFetchingNextPage || model.sessions.key === null || Option.isNone(maybeNext) || Option.isNone(maybeBounds))
+	if (model.isFetchingNextPage || !canExtend(model.sessions) || model.sessions.key === null || Option.isNone(maybeNext) || Option.isNone(maybeBounds))
 		return { model }
 	return {
 		model: { ...model, isFetchingNextPage: true },
 		commands: [
 			FetchNextPage({
 				key: model.sessions.key,
+				generation: model.pageGeneration,
 				search: context.location.search,
 				...maybeBounds.value,
 				apiBase: context.env.apiBase,

@@ -5,7 +5,6 @@ import * as Combobox from "../../../ui/combobox"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { isEditing } from "./mode"
 import { variablesOf } from "./plan"
 
 // `VariableSelects` and `handleVariableChange`: a picked or typed value rides `var-<name>` in the URL
@@ -21,7 +20,7 @@ const setValue = (model: Model, name: string, value: string): Return => {
 	const controls = pickDashboardControlParams(model.search)
 	const search = {
 		...controls,
-		...(isEditing(model) ? { mode: "edit" as const } : undefined),
+		...(model.search.mode === "edit" ? { mode: "edit" as const } : undefined),
 		[`var-${name}`]: value,
 	}
 	return {

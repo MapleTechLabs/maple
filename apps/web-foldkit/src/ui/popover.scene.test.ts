@@ -101,6 +101,7 @@ describe("popover scene", () => {
 					sideOffset: 4,
 					isBare: false,
 					initialFocus: "popup",
+					fallbackAnchorSelector: null,
 				}),
 			),
 			Mount.resolve(MountPopover, Message.CompletedMountPopover()),

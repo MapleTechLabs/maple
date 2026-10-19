@@ -16,7 +16,7 @@ import { searchPreset, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as LogDetail from "../detail"
 import { liveControls } from "../live-controls"
-import { chipId, logFilterChips } from "./derive"
+import { chipId, isInspectingOf, logFilterChips } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET, footerText } from "./update"
@@ -130,7 +130,7 @@ const headerActions = (h: HtmlBuilder<Message>, model: Model): Html => {
 			? undefined
 			: liveControls(h, {
 					refreshInterval: resolveRefreshIntervalSeconds(model.search.refresh, undefined),
-					isInspecting: model.isInspecting || model.selectedIndex !== null,
+					isInspecting: isInspectingOf(model),
 					isScrolledAway: model.isScrolledAway,
 					isReloading: model.isReloading,
 					onReload: Message.ClickedReload(),

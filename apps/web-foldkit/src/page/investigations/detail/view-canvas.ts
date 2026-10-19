@@ -27,6 +27,8 @@ import { panel } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import { relativeTime } from "../../kit/relative-time"
+import { NODE_LINK_ATTRIBUTE } from "../clicks"
+import { MountNodeLinks } from "./command"
 import { CONTROL_GUTTER, fitScale, graphOf, HEADING_GUTTER } from "./graph"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -81,7 +83,8 @@ const liveBar = (h: H, isEdge: boolean): Html =>
 
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-const nodeLink = (h: H, href: string) => h.OnClick(Message.ClickedNodeLink({ href }), { propagation: "Stop", defaultAction: "Prevent" })
+/** Routed by `MountNodeLinks` on the canvas. */
+const nodeLink = (h: H) => h.Attribute(NODE_LINK_ATTRIBUTE, "")
 
 /** `FlowSpineNode`. */
 const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): ReadonlyArray<Html> => {
@@ -166,7 +169,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 						h.Href(data.href),
 						h.Class(cn(shell, "transition-colors hover:border-primary/60")),
 						h.Title(data.titleHint ?? data.title),
-						nodeLink(h, data.href),
+						nodeLink(h),
 					],
 					body,
 				)
@@ -265,7 +268,7 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 												[
 													h.Href(data.target.href),
 													h.Class("shrink-0 text-4xs font-medium tracking-[0.06em] text-primary hover:underline"),
-													nodeLink(h, data.target.href),
+													nodeLink(h),
 												],
 												[data.target.label, " →"],
 											),
@@ -474,7 +477,11 @@ export const provenanceCanvas = (h: H, model: Model, investigation: V2Investigat
 	return panel(h, { className: PANEL }, [
 		caption(h, graph, model.nowMs),
 		h.div(
-			[h.Class("relative w-full"), h.Style({ height: `${graph.height * scale + HEADING_GUTTER + CONTROL_GUTTER}px` })],
+			[
+				h.Class("relative w-full"),
+				h.Style({ height: `${graph.height * scale + HEADING_GUTTER + CONTROL_GUTTER}px` }),
+				h.OnMount(MountNodeLinks()),
+			],
 			[
 				flowCanvas(h, {
 					model: model.canvas,

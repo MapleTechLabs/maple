@@ -27,7 +27,7 @@ const relative = (value: string, nowMs: number): string => {
 	return ms === null ? "-" : formatRelativeFrom(ms, nowMs)
 }
 
-const chartSection = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds): Html => {
+const chartSection = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds, clockMs: number): Html => {
 	const counter = isCounter(entry)
 	const unitLabel = humanizeUnit(entry.metricUnit, entry.metricName)
 	const chartUnit = counter ? undefined : chartUnitFromOtel(entry.metricUnit, entry.metricName)
@@ -51,7 +51,7 @@ const chartSection = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds
 							formatNumber(entry.dataPointCount),
 							" datapoints · last seen",
 							" ",
-							relative(entry.lastSeen, model.nowMs),
+							relative(entry.lastSeen, Math.max(model.nowMs, clockMs)),
 						],
 					),
 				],
@@ -125,14 +125,14 @@ const breakdownSection = (h: H, model: Model, entry: MetricEntry): Html => {
 }
 
 /** The loaded metric: description, chart and breakdown. */
-export const detailBody = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds): Html =>
+export const detailBody = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds, clockMs: number): Html =>
 	h.div(
 		[h.Class("space-y-6 p-4")],
 		[
 			...(entry.metricDescription
 				? [h.p([h.Class("text-sm text-muted-foreground")], [entry.metricDescription])]
 				: []),
-			chartSection(h, model, entry, bounds),
+			chartSection(h, model, entry, bounds, clockMs),
 			breakdownSection(h, model, entry),
 		],
 	)

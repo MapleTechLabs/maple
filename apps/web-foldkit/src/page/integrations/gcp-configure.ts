@@ -9,6 +9,7 @@ import { Command } from "foldkit"
 import * as Keyed from "../../data/keyed"
 import { toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
+import * as CopyButton from "../../ui/copy-button"
 import * as Dialog from "../../ui/dialog"
 import * as Field from "../../ui/field"
 import * as Select from "../../ui/select"
@@ -60,6 +61,16 @@ export const initConfigure = (
 		isSaving: false,
 		scripts: Keyed.idle(),
 		isScriptExpanded: false,
+		connectionStage: "choose",
+		method: "script",
+		rerun: null,
+		flavourGroup: ToggleGroup.init({ label: "", values: ["terraform"] }),
+		sinkExisted: false,
+		manualOpen: null,
+		isManualTouched: false,
+		isPromptShown: false,
+		promptCopied: null,
+		isConfirmingRemoval: false,
 	}
 }
 
@@ -119,4 +130,28 @@ export const LoadConfigureScripts = Command.define("LoadGcpConfigureScripts", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedGcpConfigureScripts({ key, result })),
 		),
+})
+
+/** `confirmRemoval`: records, on the admin's word, that what was switched off is gone. */
+export const ConfirmRemoval = Command.define("ConfirmGcpRemoval", {
+	args: { id: GcpConnectorId },
+	messages: [Message.CompletedGcpConfirmRemoval],
+	execute: ({ id }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			return yield* client.gcpIntegration.confirmRemoval({ params: { id } })
+		}).pipe(
+			Effect.match({
+				onFailure: (error) => Message.CompletedGcpConfirmRemoval({ failure: toLoadFailure(error) }),
+				onSuccess: () => Message.CompletedGcpConfirmRemoval({ failure: null }),
+			}),
+		),
+})
+
+/** `FileCard`'s `useCopy({ label: "prompt" })`: whether the prompt reached the clipboard. */
+export const CopyPrompt = Command.define("CopyGcpPrompt", {
+	args: { text: Schema.String },
+	messages: [Message.CompletedGcpPromptCopy],
+	execute: ({ text }) =>
+		Effect.map(CopyButton.writeClipboard(text), (isCopied) => Message.CompletedGcpPromptCopy({ isCopied })),
 })

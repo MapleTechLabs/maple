@@ -1,6 +1,6 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import type { GcpConnectorId } from "@maple/domain/primitives"
-import { gcpScopeLabel } from "@maple/web/components/integrations/gcp-connector-state"
+import { gcpNothingSeen, gcpScopeLabel } from "@maple/web/components/integrations/gcp-connector-state"
 import { encodeLogAttributeFilter } from "@maple/web/lib/logs/log-attribute-filters"
 import { Option } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
@@ -108,9 +108,8 @@ const disconnectStep = (model: Model, step: ReturnType<typeof Dialog.update>): R
 	),
 })
 
-/** No run has reported: as far as Maple knows, nothing exists in Google Cloud. */
-export const neverReported = (connector: V2GcpConnector): boolean =>
-	connector.applied_logs_enabled === null && connector.applied_metrics_enabled === null
+/** No setup reported and no data arrived: as far as Maple knows, nothing exists in Google Cloud. */
+export const neverReported = (connector: V2GcpConnector): boolean => gcpNothingSeen(connector)
 
 /** The logs this connection forwarded: ingest stamps each with the connection's id. */
 export const gcpLogsHref = (connector: V2GcpConnector): string =>
@@ -230,10 +229,7 @@ export const completedDisconnect = (
 			}),
 		}
 	const connector = gcpConnectors(model).find((entry) => entry.id === id)
-	const neverReported =
-		connector !== undefined &&
-		connector.applied_logs_enabled === null &&
-		connector.applied_metrics_enabled === null
+	const neverReported = connector !== undefined && gcpNothingSeen(connector)
 	const cleanedUp =
 		connector !== undefined &&
 		connector.applied_logs_enabled === false &&

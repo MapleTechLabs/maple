@@ -91,10 +91,11 @@ export const openAttach = (model: Model): Return => liftDialog(model, Dialog.ope
 export const clearedAttach = (model: Model): Model => ({
 	...model,
 	attachDraft: "",
+	attachRepository: null,
 	attachCombobox: Combobox.init(model.attachCombobox.id, "single"),
 })
 
-/** `close`: what was typed is cleared whichever way the dialog closes. */
+/** `close`: what was typed and the picked repository are cleared whichever way the dialog closes. */
 export const attachDialogStep = (model: Model, message: Dialog.Message): Return => {
 	const step = Dialog.update(model.attachDialog, message)
 	const lifted = liftDialog(model, step)

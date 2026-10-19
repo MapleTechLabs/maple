@@ -225,6 +225,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 
 const searchHref = (search: Search) => hrefOf(AppRoute.AgentSessionTools({ search }))
 
+const isSameTime = (a: Search, b: Search): boolean =>
+	a.startTime === b.startTime && a.endTime === b.endTime && a.timePreset === b.timePreset
+
 export const routeChanged = (
 	model: Model,
 	route: { readonly search: Search },
@@ -238,10 +241,10 @@ export const routeChanged = (
 		searchInput: isOutsideQuery ? query : model.searchInput,
 		lastSentQuery: isOutsideQuery ? query : model.lastSentQuery,
 	}
-	return {
-		model: next,
-		commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-	}
+	// `useEffectiveTimeRange` re-resolves only on a time change; every other change reads its new keys.
+	return isSameTime(model.search, route.search)
+		? requestAll(next, context, "Load")
+		: { model: next, commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => ({

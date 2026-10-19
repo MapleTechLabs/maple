@@ -14,6 +14,7 @@ import {
 	FetchMappings,
 	FetchRecommendations,
 	ReadFramework,
+	RollIngestKey,
 	SaveFramework,
 	SendTestEvent,
 	ToggleMapping,
@@ -45,6 +46,11 @@ export const init = (options: InitOptions): Return => ({
 		ingest: AsyncData.Loading(),
 		isSendingTest: false,
 		endpointCopy: CopyButton.init(),
+		revealedKeys: [],
+		keyCopies: {},
+		rollDialog: Dialog.init("ingestion-key-roll", "alert-dialog"),
+		rollType: "public",
+		isRolling: false,
 		isSetupExpanded: false,
 		framework: "nodejs",
 		setupTabs: Tabs.init({ idBase: 40, values: ["install", "instrument", "claude-code"], selected: "install" }),
@@ -102,6 +108,11 @@ const liftMappingDialog = (model: Model, step: ReturnType<typeof MappingDialog.u
 		outMessage: toast("success", out.isCreate ? "Attribute mapping created" : "Attribute mapping updated"),
 	}
 }
+
+const liftRollDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: { ...model, rollDialog: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRollDialogMessage({ message })),
+})
 
 const mappingById = (model: Model, id: string) =>
 	Array.findFirst(AsyncData.getOrElse(model.mappings, () => []), (mapping) => mapping.id === id)
@@ -162,6 +173,44 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 				model: { ...model, endpointCopy: step.model },
 				commands: Command.mapMessages(step.commands, (inner) => Message.GotEndpointCopyMessage({ message: inner })),
 			}
+		},
+		ToggledKeyReveal: ({ kind }) => ({
+			model: {
+				...model,
+				revealedKeys: model.revealedKeys.includes(kind)
+					? model.revealedKeys.filter((entry) => entry !== kind)
+					: [...model.revealedKeys, kind],
+			},
+		}),
+		GotKeyCopyMessage: ({ kind, message: child }) => {
+			const step = CopyButton.update(model.keyCopies[kind] ?? CopyButton.init(), child)
+			return {
+				model: { ...model, keyCopies: { ...model.keyCopies, [kind]: step.model } },
+				commands: Command.mapMessages(step.commands, (inner) => Message.GotKeyCopyMessage({ kind, message: inner })),
+			}
+		},
+		ClickedRegenerateKey: ({ kind }) =>
+			model.isRolling ? { model } : liftRollDialog({ ...model, rollType: kind }, Dialog.open(model.rollDialog)),
+		GotRollDialogMessage: ({ message: child }) =>
+			model.isRolling ? { model } : liftRollDialog(model, Dialog.update(model.rollDialog, child)),
+		ClickedConfirmRoll: () =>
+			model.isRolling
+				? { model }
+				: { model: { ...model, isRolling: true }, commands: [RollIngestKey({ kind: model.rollType })] },
+		CompletedRollKey: ({ kind, result }) => {
+			// The dialog closes either way, like legacy's `setRollOpen(false)` after the toast.
+			const closed = liftRollDialog({ ...model, isRolling: false }, Dialog.close(model.rollDialog))
+			return Result.match(result, {
+				onSuccess: () => ({
+					model: { ...closed.model, ingest: refresh(closed.model.ingest) },
+					commands: [...(closed.commands ?? []), FetchIngestionKeys()],
+					outMessage: toast(
+						"success",
+						`${kind === "public" ? "Public" : "Private"} key regenerated. Previous key was revoked immediately.`,
+					),
+				}),
+				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Unable to complete request", error.message) }),
+			})
 		},
 		ClickedShowSetup: () => ({ model: { ...model, isSetupExpanded: true } }),
 		ClickedFramework: ({ framework }) => ({

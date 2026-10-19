@@ -46,6 +46,7 @@ const fetchPages = <R>(
 export const FetchLogs = Command.define("FetchLocalLogs", {
 	args: { ...RequestArgs, pageCount: Schema.Number, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchLogs, Message.FailedFetchLogs, Message.FoundCachedLogs],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, pageCount, readsCache }) =>
 		withCache({
 			key: logsKey({ search, startTime, endTime }),
@@ -64,6 +65,8 @@ export const FetchLogs = Command.define("FetchLocalLogs", {
 export const FetchNextPage = Command.define("FetchNextLocalLogsPage", {
 	args: {
 		...RequestArgs,
+		/** The list generation the page extends; a reload retires it. */
+		generation: Schema.Number,
 		cursorTimestamp: Schema.String,
 		cursorServiceName: Schema.String,
 		cursorTraceId: Schema.String,
@@ -73,6 +76,7 @@ export const FetchNextPage = Command.define("FetchNextLocalLogsPage", {
 		pages: Schema.Array(Schema.Array(LocalLog)),
 	},
 	messages: [Message.SucceededFetchNextPage, Message.FailedFetchNextPage],
+	interrupt: { keyFields: ["key", "generation"], toKey: ({ key, generation }) => `${key}#${generation}` },
 	execute: (args) =>
 		fetchLogsPage(
 			filtersFrom(args.search),
@@ -92,14 +96,15 @@ export const FetchNextPage = Command.define("FetchNextLocalLogsPage", {
 					recordCached(logsKey(args), pagesToCached({ pages: [...args.pages, page] }), atMs),
 				),
 			),
-			Effect.map((page) => Message.SucceededFetchNextPage({ key: args.key, page })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key: args.key, failure }))),
+			Effect.map((page) => Message.SucceededFetchNextPage({ key: args.key, generation: args.generation, page })),
+			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key: args.key, generation: args.generation, failure }))),
 		),
 })
 
 export const FetchPatterns = Command.define("FetchLocalLogPatterns", {
 	args: { ...RequestArgs, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchPatterns, Message.FailedFetchPatterns, Message.FoundCachedPatterns],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
 		withCache({
 			key: patternsKey({ search, startTime, endTime }),
@@ -118,6 +123,7 @@ const FACET_STALE_MS = 60_000
 export const FetchServices = Command.define("FetchLocalLogServices", {
 	args: { ...RequestArgs, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchServices, Message.FailedFetchServices, Message.FoundCachedServices],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
 		withCache({
 			key: servicesKey({ search, startTime, endTime }),
@@ -134,6 +140,7 @@ export const FetchServices = Command.define("FetchLocalLogServices", {
 export const FetchSeverities = Command.define("FetchLocalLogSeverities", {
 	args: { ...RequestArgs, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchSeverities, Message.FailedFetchSeverities, Message.FoundCachedSeverities],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
 		withCache({
 			key: severitiesKey({ search, startTime, endTime }),

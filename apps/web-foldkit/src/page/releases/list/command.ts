@@ -17,6 +17,8 @@ export const ReleasesInput = Schema.Struct({
 	environments: Schema.optional(Schema.Array(Schema.String)),
 	excludedEnvironments: Schema.optional(Schema.Array(Schema.String)),
 	services: Schema.optional(Schema.Array(Schema.String)),
+	/** The namespace pin, `globalNamespace: "top"`. */
+	namespaces: Schema.optional(Schema.Array(Schema.String)),
 })
 export type ReleasesInput = typeof ReleasesInput.Type
 
@@ -55,6 +57,7 @@ export const FetchReleases = Command.define("FetchReleases", {
 					environments: mutable(input.environments),
 					excludedEnvironments: mutable(input.excludedEnvironments),
 					services: mutable(input.services),
+					namespaces: mutable(input.namespaces),
 				},
 			}),
 		).pipe(

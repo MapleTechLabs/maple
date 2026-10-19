@@ -37,6 +37,10 @@ export const ListView = Schema.Struct({
 	nextCursor: Schema.NullOr(Schema.String),
 })
 
+/** A Person filter option: a member's user id, or an API key's public id, and its label. */
+export const PersonOption = Schema.Struct({ value: Schema.String, label: Schema.String })
+export type PersonOption = typeof PersonOption.Type
+
 export const Model = Schema.Struct({
 	/** The request in flight or last answered; answers for any other are dropped. */
 	request: PageRequest,
@@ -47,6 +51,10 @@ export const Model = Schema.Struct({
 	view: Schema.NullOr(ListView),
 	/** Frozen on the first Load more so later offsets address a list that cannot grow. */
 	pinnedUntil: Schema.NullOr(Schema.String),
+	/** A rolling preset's `since`, resolved when the list started (`resolvedAt`); later pages reuse it. */
+	resolvedSince: Schema.NullOr(Schema.String),
+	/** `useOrganization({ memberships: { pageSize: 100 } })`: the Person filter's members (Clerk only). */
+	members: Schema.Array(PersonOption),
 	expanded: Schema.Array(Schema.String),
 	copies: Schema.Record(Schema.String, CopyButton.Model),
 	personSelect: Select.Model,
@@ -55,7 +63,13 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
-	CompletedFetchPage: { request: PageRequest, result: Schema.Result(AuditPage, LoadFailure) },
+	CompletedFetchPage: {
+		request: PageRequest,
+		/** The rolling preset's `since` this page was fetched with. */
+		resolvedSince: Schema.NullOr(Schema.String),
+		result: Schema.Result(AuditPage, LoadFailure),
+	},
+	CompletedFetchMembers: { members: Schema.Array(PersonOption) },
 	ClickedRefresh: {},
 	ClickedRetry: {},
 	ClickedLoadMore: {},
