@@ -36,8 +36,13 @@ export const DailyData = AsyncData.Schema(DailySpendResponse, LoadFailure)
 export const InvoicesData = AsyncData.Schema(Schema.Array(BillingInvoice), LoadFailure)
 export const ProfileData = AsyncData.Schema(BillingProfile, ProfileFailure)
 
+/** `useCheckoutReturn`: back from Stripe (`?checkout=complete`), waiting on the Autumn sync. */
+export const CheckoutReturn = Schema.Literals(["Idle", "Confirming", "TimedOut"])
+export type CheckoutReturn = typeof CheckoutReturn.Type
+
 export const Model = Schema.Struct({
 	isAdmin: Schema.Boolean,
+	checkoutReturn: CheckoutReturn,
 	plans: PlansData.schema,
 	usage: UsageData.schema,
 	daily: DailyData.schema,
@@ -84,7 +89,10 @@ export const Message = defineMessageUnion({
 	ClickedCompare: {},
 	GotCompareDialogMessage: { message: Dialog.Message },
 	ClickedSubscribe: { planId: Schema.String },
-	CompletedAttach: result(AttachResult),
+	CompletedAttach: { planId: Schema.String, ...result(AttachResult) },
+	ElapsedCheckoutPoll: {},
+	ElapsedCheckoutTimeout: {},
+	CompletedTrackProduct: {},
 	ClickedEditDetails: {},
 	GotDetailsMessage: { message: Details.Message },
 	ResolvedThemeColors: { colors: ThemeColors },
