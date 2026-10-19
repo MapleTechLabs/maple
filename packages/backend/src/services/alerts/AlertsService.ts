@@ -929,6 +929,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const evaluateRule = Effect.fn("AlertsService.evaluateRule")(function* (
 				orgId: OrgId,
 				rule: NormalizedRule,
+				windowEndMs?: number,
 			): Effect.fn.Return<
 				ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }>,
 				| AlertValidationError
@@ -939,8 +940,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": rule.id })
 				// Snapped, not raw `now`: excludes the still-filling current minute and
 				// lets rules over the same signal share one `qe-evaluate` entry within
-				// a tick. See `snapAlertWindowEndMs`.
-				const endMs = snapAlertWindowEndMs(yield* now)
+				// a tick. See `snapAlertWindowEndMs`. A scheduler tick passes its own.
+				const endMs = windowEndMs === undefined ? snapAlertWindowEndMs(yield* now) : windowEndMs
 				const startMs = endMs - rule.windowMinutes * 60_000
 				const plan = rule.compiledPlan
 				const source = yield* planEvaluateSource(plan, rule.windowMinutes)
@@ -4167,9 +4168,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const unavailableOrgs = yield* Ref.make(HashSet.empty<OrgId>())
 				const markOrgUnavailable = (orgId: OrgId) => Ref.update(unavailableOrgs, HashSet.add(orgId))
 
+				// One window for the whole tick: a rule that starts after the spread crossed a
+				// minute must not skip ahead of the rules that started before it.
+				const tickWindowEndMs = snapAlertWindowEndMs(tickStart)
 				const evaluateBeforeDeadline = (orgId: OrgId, rule: NormalizedRule) =>
 					Effect.flatMap(now, (startedAt) =>
-						evaluateRule(orgId, rule).pipe(
+						evaluateRule(orgId, rule, tickWindowEndMs).pipe(
 							Effect.timeoutOrElse({
 								duration: Duration.millis(
 									Math.max(

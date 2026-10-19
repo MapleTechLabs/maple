@@ -20,6 +20,7 @@ import {
 	Layer,
 	Logger,
 	Option,
+	Order,
 	Ref,
 	Schema,
 	Tracer,
@@ -56,7 +57,7 @@ import { AlertReadModelsService } from "./AlertReadModelsService"
 import { AlertRulesService } from "./AlertRulesService"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
-import { baselineWarehouseCapabilities } from "@maple/query-engine"
+import { baselineWarehouseCapabilities, formatWarehouseDateTime } from "@maple/query-engine"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
@@ -6494,6 +6495,60 @@ describe("AlertsService scheduler pool", () => {
 			assert.strictEqual(unpacedPeak, 5)
 			assert.isAtMost(pacedPeak, 2)
 		})
+	})
+
+	it.live("every rule in a tick reads the same window, even when the spread crosses a minute", () => {
+		const testDb = createTestDb(trackedDbs)
+		const shiftMs = Ref.makeUnsafe(0)
+		const shiftedNow = Effect.zipWith(
+			Clock.currentTimeMillis,
+			Ref.get(shiftMs),
+			(ms, shift) => ms + shift,
+		)
+		// The latest 'YYYY-MM-DD HH:MM:SS' literal in a rule's SQL is its window end.
+		const windowEnds = Ref.makeUnsafe(HashMap.empty<string, string>())
+		const recordWindowEnd = (orgId: string, sql: string) =>
+			Ref.update(windowEnds, (ends) => {
+				const latest = Arr.last(
+					Arr.sort(sql.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/g) ?? [], Order.String),
+				)
+				return Option.match(latest, {
+					onNone: () => ends,
+					onSome: (end) => HashMap.set(ends, orgId, end),
+				})
+			})
+		const base = makeSlowWarehouse(() => Effect.succeed(Duration.millis(FAST_EVAL_MS)))
+		const stub: WarehouseQueryServiceApi = {
+			...base.stub,
+			compiledQuery: (tenant, compiled, ...rest) =>
+				recordWindowEnd(tenant.orgId, compiledQueryOf(compiled).sql).pipe(
+					Effect.andThen(base.stub.compiledQuery(tenant, compiled, ...rest)),
+				),
+			compiledQueryWithCapabilities: (tenant, compile, ...rest) =>
+				recordWindowEnd(
+					tenant.orgId,
+					Effect.runSync(compile(baselineWarehouseCapabilities())).sql,
+				).pipe(Effect.andThen(base.stub.compiledQueryWithCapabilities(tenant, compile, ...rest))),
+		}
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			yield* createPoolRules(alerts)
+
+			// Start the tick 1.5 s before a minute boundary, so a 2 s spread crosses it.
+			const realNow = yield* Clock.currentTimeMillis
+			const tickAt = (Math.floor(realNow / 60_000) + 2) * 60_000 - 1_500
+			yield* Ref.set(shiftMs, tickAt - realNow)
+			const tick = yield* alerts.runSchedulerTick()
+
+			assert.strictEqual(tick.evaluatedCount, RULE_COUNT)
+			const ends = Arr.fromIterable(HashMap.values(yield* Ref.get(windowEnds)))
+			assert.strictEqual(ends.length, RULE_COUNT)
+			assert.deepStrictEqual(Arr.dedupe(ends), [formatWarehouseDateTime(tickAt - 58_500)])
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, stub, { fetch: okFetch, now: shiftedNow, schedulerSpreadMs: () => 2_000 }),
+			),
+		)
 	})
 
 	it.live("stops at the tick deadline and leads the next tick with the deferred rules", () => {
