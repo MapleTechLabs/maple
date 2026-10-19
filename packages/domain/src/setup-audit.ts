@@ -1533,8 +1533,8 @@ const TRACE_GAP_RATIO = 0.1
 /** Share of traces without a root span above which TRC-02 warns, and above which it is critical. */
 const ROOTLESS_WARN_RATIO = 0.001
 const ROOTLESS_CRITICAL_RATIO = 0.01
-/** A crashed request or a deploy restart leaves the odd rootless trace; fewer than this is not a setup fault. */
-const ROOTLESS_MIN_TRACES = 3
+/** One rootless trace is a crashed request or a restart; from two on, TRC-02 reports at least `info`. */
+const ROOTLESS_MIN_TRACES = 2
 /** Above this share, trace context is created upstream of everything instrumented. */
 const ROOTLESS_SYSTEMIC_RATIO = 0.95
 /** Share of orphans that must sit inside sampled traces before sampling is the better explanation. */
@@ -1582,7 +1582,7 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		needsWarehouse: true,
 		fixHint:
-			"A root span is exported when it ends, so it is the span most often lost: make sure the process flushes the exporter before it exits or is frozen (serverless handlers, CLI commands, worker shutdown). If an uninstrumented proxy or gateway starts the trace, instrument it or let your ingress service start the trace instead. A root that stays open for more than a few minutes (a WebSocket session, a long job) also reads as missing until it ends; start a new trace per message or step and link it instead.",
+			"A root span is exported when it ends, so it is the span most often lost: make sure the process flushes the exporter before it exits or is frozen (serverless handlers, CLI commands, worker shutdown). If an uninstrumented proxy or gateway starts the trace, instrument it or let your ingress service start the trace instead. A root that stays open for more than a few minutes (a WebSocket session, a long job) also reads as missing until it ends; start a new trace per message or step and link it instead. Guide: https://maple.dev/docs/concepts/missing-root-spans",
 		evaluate: ({ warehouse }) => {
 			const traces = warehouse?.traceCompleteness
 			if (!traces) return PASS
@@ -1593,10 +1593,15 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			}))
 			const total = rows.reduce((sum, row) => sum + row.traceCount, 0)
 			const missing = rows.reduce((sum, row) => sum + row.missing, 0)
-			if (total < TRACE_MIN_SAMPLE || missing < ROOTLESS_MIN_TRACES) return PASS
+			if (missing < ROOTLESS_MIN_TRACES) return PASS
 			const ratio = missing / total
-			if (ratio <= ROOTLESS_WARN_RATIO) return PASS
-			const severity = ratio > ROOTLESS_CRITICAL_RATIO ? "critical" : "warn"
+			// Below the minimum sample a rate is noise, so it never escalates past info.
+			const severity =
+				total < TRACE_MIN_SAMPLE || ratio <= ROOTLESS_WARN_RATIO
+					? "info"
+					: ratio > ROOTLESS_CRITICAL_RATIO
+						? "critical"
+						: "warn"
 
 			const affected = rows
 				.filter((row) => row.missing > 0)

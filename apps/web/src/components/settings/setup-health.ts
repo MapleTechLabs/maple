@@ -47,7 +47,7 @@ const GUIDES = new Map<string, { readonly label: string; readonly href: string }
 	["MAP-02", { label: "Read database guide", href: conventions("2-database-nodes") }],
 	["MAP-03", { label: "Read service map guide", href: conventions("4-pick-canonical-names") }],
 	["TRC-01", { label: "Read service map guide", href: conventions("1-service-to-service-edges") }],
-	["TRC-02", { label: "Read service map guide", href: conventions("service-map") }],
+	["TRC-02", { label: "Read root span guide", href: docsUrl("missingRootSpans") }],
 	["TRC-03", { label: "Read sampling guide", href: docsUrl("samplingThroughput") }],
 ])
 

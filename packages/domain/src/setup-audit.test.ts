@@ -113,7 +113,7 @@ const healthyWarehouse: WarehouseAuditInputs = {
 				sampleTraceIds: [],
 			},
 		],
-		rootless: [{ entryService: "api", traceCount: 10_000, rootlessCount: 3, sampledRootlessCount: 0 }],
+		rootless: [{ entryService: "api", traceCount: 10_000, rootlessCount: 1, sampledRootlessCount: 0 }],
 	},
 }
 
@@ -1473,8 +1473,17 @@ describe("trace completeness", () => {
 				})),
 			})
 
-		it("passes at or below 0.1% of traces", () => {
-			expect(check(rootless(["api", 9_000, 10], ["web", 1_000, 0]), "TRC-02").status).toBe("pass")
+		it("passes with a single trace that lacks a root", () => {
+			expect(check(rootless(["api", 9_000, 1]), "TRC-02").status).toBe("pass")
+		})
+
+		it("is info for two or more rootless traces at or below 0.1%", () => {
+			const report = rootless(["api", 9_000, 10], ["web", 1_000, 0])
+			const result = check(report, "TRC-02")
+			expect(result.status).toBe("fail")
+			expect(result.severity).toBe("info")
+			expect(result.detail).toContain("0.1% of traces have no root span: 10 of 10000 traces")
+			expect(report.summary.info).toBe(1)
 		})
 
 		it("warns above 0.1% of traces, measured across the whole org", () => {
@@ -1503,9 +1512,8 @@ describe("trace completeness", () => {
 			expect(check(rootless(["api", 1_000, 0]), "TRC-02").severity).toBe("warn")
 		})
 
-		it("ignores a couple of stray rootless traces in a small org", () => {
-			expect(check(rootless(["api", 200, 2]), "TRC-02").status).toBe("pass")
-			expect(check(rootless(["api", 40, 40]), "TRC-02").status).toBe("pass")
+		it("never escalates past info below 50 traces", () => {
+			expect(check(rootless(["api", 40, 40]), "TRC-02").severity).toBe("info")
 		})
 
 		it("does not count traces whose root the sampler dropped", () => {
