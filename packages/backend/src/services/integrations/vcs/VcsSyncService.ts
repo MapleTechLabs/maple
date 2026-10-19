@@ -60,7 +60,7 @@ const WORKFLOW_FAILED_CONCLUSIONS: ReadonlySet<string> = new Set(["failure", "ti
 const WORKFLOW_ANNOTATIONS_BUDGET = Duration.seconds(10)
 /**
  * How long a CI job's log may hold the consumer, which runs a batch's messages one after another:
- * about 14s waiting for GitHub to publish it, then the download and ingest. Past it, the batches
+ * the permission check, about 14s waiting for GitHub to publish the log, then the download and ingest. Past it, the batches
  * already sent stay and the rest of the log is dropped.
  */
 const WORKFLOW_LOG_BUDGET = Duration.seconds(30)
@@ -957,32 +957,32 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				yield* workflowSink.onWorkflowJob(installation.orgId, job, annotations)
 				// Logs ride on the spans just written. A job with no step that ran has nothing worth
 				// reading, and GitHub may have no log for it at all.
-				// An installation without access to logs would 403 on every download, so skip it.
 				const ref = workflowRepoRef(job)
-				const hasLog = job.steps.length > 0 && ref !== undefined
-				const canRead = hasLog
-					? yield* provider.canReadWorkflowLogs(installation).pipe(Effect.orElseSucceed(() => true))
-					: true
-				const forwardsLog = hasLog && canRead
-				yield* Effect.annotateCurrentSpan({ "vcs.workflow.log_forwarded": forwardsLog })
-				if (!canRead)
-					yield* Effect.annotateCurrentSpan({
-						"vcs.workflow.log_error": "installation has not granted actions: read",
-					})
-				if (forwardsLog)
-					yield* workflowSink
-						.onWorkflowJobLog(
-							installation.orgId,
-							job,
-							provider.streamWorkflowJobLog(installation, ref, job.jobId),
-						)
-						.pipe(
-							Effect.timeoutOrElse({
-								duration: WORKFLOW_LOG_BUDGET,
-								orElse: () =>
-									Effect.annotateCurrentSpan({ "vcs.workflow.log_error": "timed out" }),
-							}),
-						)
+				yield* Effect.annotateCurrentSpan({ "vcs.workflow.log_forwarded": false })
+				if (job.steps.length === 0 || ref === undefined) return
+				// One budget for the permission check and the log: a throttled token mint waits inline,
+				// and must not hold the rest of the batch any longer than a slow log would.
+				yield* Effect.gen(function* () {
+					// An installation without access to logs would 403 on every download, so skip it.
+					const canRead = yield* provider
+						.canReadWorkflowLogs(installation)
+						.pipe(Effect.orElseSucceed(() => true))
+					if (!canRead)
+						return yield* Effect.annotateCurrentSpan({
+							"vcs.workflow.log_error": "installation has not granted actions: read",
+						})
+					yield* Effect.annotateCurrentSpan({ "vcs.workflow.log_forwarded": true })
+					yield* workflowSink.onWorkflowJobLog(
+						installation.orgId,
+						job,
+						provider.streamWorkflowJobLog(installation, ref, job.jobId),
+					)
+				}).pipe(
+					Effect.timeoutOrElse({
+						duration: WORKFLOW_LOG_BUDGET,
+						orElse: () => Effect.annotateCurrentSpan({ "vcs.workflow.log_error": "timed out" }),
+					}),
+				)
 			})
 
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {

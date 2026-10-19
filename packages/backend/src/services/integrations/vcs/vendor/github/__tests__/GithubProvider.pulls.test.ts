@@ -711,6 +711,16 @@ describe("GithubProvider reading a CI job's log", () => {
 		},
 	)
 
+	it.effect("assumes logs readable when the token lists no permissions", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer([tokenResponse()], requests)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			assert.isTrue(yield* provider.canReadWorkflowLogs(INSTALLATION))
+			assert.lengthOf(requests, 1)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("reads the log of an installation with actions access on the same token", () => {
 		const requests: Array<string> = []
 		const layer = providerLayer(
