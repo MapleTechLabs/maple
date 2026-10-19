@@ -12,7 +12,7 @@ import type {
 	CloudflareZoneCacheBucket,
 	CloudflareZoneRow,
 	CloudflareZoneStatusBucket,
-} from "@/api/warehouse/cloudflare-infra"
+} from "@maple/web-data/warehouse/cloudflare-infra"
 
 // maple.dev, 2026-10-14 00:00-10:00 UTC, 30-minute buckets, copied from production.
 // [time, 2xx, 3xx, 4xx, 5xx]

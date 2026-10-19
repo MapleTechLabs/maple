@@ -1,7 +1,7 @@
 import { useLiveQuery } from "@tanstack/react-db"
 import { useMemo } from "react"
 import type { AlertRuleId } from "@maple/domain/http"
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import {
 	getOrgCollections,
 	useActiveOrgId,

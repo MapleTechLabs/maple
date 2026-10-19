@@ -2,7 +2,7 @@ import { CollectionError } from "@maple/unitflow/db"
 import type * as Db from "@maple/unitflow/db"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { describe, expect, it } from "vitest"
-import type { DashboardRow } from "@/lib/collections/dashboards"
+import type { DashboardRow } from "@maple/web-data/collections/dashboards"
 import { buildList, deriveDashboardsList } from "./dashboards-list-model"
 
 const ISO_OLD = "2026-01-01T00:00:00.000Z"

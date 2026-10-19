@@ -16,6 +16,7 @@ import {
 	ArrowPathIcon,
 	ArrowRightIcon,
 	ChevronRightIcon,
+	ConnectionIcon,
 	EyeIcon,
 	PaperPlaneIcon,
 	PulseIcon,
@@ -255,6 +256,17 @@ function EndpointAndKeysSection() {
 					value={ingestUrl}
 				/>
 				{isAdmin ? <IngestKeyRows /> : null}
+				<div className="text-muted-foreground flex items-center gap-2 px-4 py-2.5 text-xs">
+					<ConnectionIcon size={12} className="shrink-0" />
+					<span className="grow">Give each sender its own token, rules and pause switch.</span>
+					<Link
+						to="/sources"
+						className="text-foreground inline-flex items-center gap-1 hover:underline underline-offset-2"
+					>
+						Manage sources
+						<ChevronRightIcon size={12} />
+					</Link>
+				</div>
 			</div>
 		</SettingsSection>
 	)

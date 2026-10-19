@@ -32,6 +32,8 @@ import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { SourceId } from "@maple/domain/primitives"
 import { CloudflareAnalyticsService, hasAnalyticsScopes } from "./CloudflareAnalyticsService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
@@ -712,6 +714,21 @@ describe("CloudflareAnalyticsService", () => {
 			// the org to its own warehouse — managed Tinybird or BYO ClickHouse).
 			assert.isAbove(otlpCalls.length, 0)
 			assert.isTrue(otlpCalls.every((call) => call.authorization.startsWith("Bearer maple_pk_")))
+			// Every resource names the grant's pull source.
+			const source = yield* Effect.promise(() =>
+				queryFirstRow<{ id: string }>(testDb, "SELECT id FROM sources WHERE platform = 'cloudflare'"),
+			)
+			const expectedSource = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
+			const stamped = otlpCalls.flatMap((call) =>
+				call.payload.resourceMetrics.map(
+					(rm) =>
+						rm.resource.attributes.find((a) => a.key === "maple_source_id")?.value.stringValue,
+				),
+			)
+			assert.deepStrictEqual(
+				stamped,
+				stamped.map(() => expectedSource),
+			)
 			// Nothing bypassed the gateway via a direct warehouse ingest.
 			assert.strictEqual(captured.length, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls })))

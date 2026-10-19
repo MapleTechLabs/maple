@@ -2,7 +2,7 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { HistoryIcon } from "@/components/icons"
 import type { RecentTimeRange } from "@/hooks/use-recently-used-times"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 
 interface RecentlyUsedProps {
 	recentTimes: RecentTimeRange[]

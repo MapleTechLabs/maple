@@ -8,7 +8,7 @@ import { OpenDestinationDialogProvider } from "@/components/alerts/destination-m
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import { PlusIcon } from "@/components/icons"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
-import type { RuleBucket } from "@/lib/alerts/overview-derive"
+import type { RuleBucket } from "@maple/web-data/alerts/overview-derive"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Button } from "@maple/ui/components/ui/button"

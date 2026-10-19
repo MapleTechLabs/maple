@@ -12,8 +12,23 @@
  * with the org set's two invalidations — an org switch and a self-heal generation
  * bump both mint fresh streams here too.
  */
+import { InvestigationRowSchema } from "@maple/web-data/collections/investigations"
+import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
 import { cleanupCollectionWhenIdle, getCollectionsGeneration } from "./org-collections"
-import { createInvestigationCollection, type InvestigationCollection } from "./investigations"
+import { createSyncedCollection } from "./shape-fetch"
+
+// Read-only: the page writes through the v2 API, not the shape.
+export const createInvestigationCollection = (orgId: string, investigationId: string) =>
+	createSyncedCollection({
+		shape: "investigation_v2",
+		scope: investigationId,
+		orgId,
+		schema: InvestigationRowSchema,
+		parser: timestamptzParser,
+		getKey: (row) => row.id,
+	})
+
+export type InvestigationCollection = ReturnType<typeof createInvestigationCollection>
 
 export type InvestigationCollections = {
 	readonly key: string

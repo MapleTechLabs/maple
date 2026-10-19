@@ -1,0 +1,165 @@
+import { OrgId } from "@maple/domain"
+import { encodePublicId, PublicIdPrefixes, V2Source } from "@maple/domain/http/v2"
+import { Result, Schema } from "effect"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { describe, expect, test } from "vitest"
+import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
+import { toLoadFailure } from "../../../data/load-failure"
+import { AppRoute } from "../../../route"
+import { type PageContext, PageOutMessage } from "../../contract"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { init, routeChanged, update } from "./update"
+import { breadcrumbsOf, view as pageView } from "./view"
+
+const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
+const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+const view = withViewInputs(pageView, { context })()
+const NOW = Date.UTC(2026, 9, 1, 12)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const resolveTheme = Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+
+const UUID = "0199a0e1-0000-7000-8000-000000000002"
+const PUBLIC_ID = encodePublicId(PublicIdPrefixes.source, UUID)
+
+const source = (fields: Readonly<Record<string, unknown>> = {}) =>
+	Schema.decodeUnknownSync(V2Source)({
+		id: PUBLIC_ID,
+		object: "source",
+		name: "Checkout API",
+		description: null,
+		platform: "nodejs",
+		is_default: false,
+		key_prefix: "maple_src_Q7xZa",
+		status: "active",
+		allowed_signals: ["traces", "logs"],
+		rate_limit_rps: 200,
+		resource_attributes: [],
+		expires_at: null,
+		paused_at: null,
+		paused_until: null,
+		last_used_at: null,
+		rolled_at: null,
+		created_at: "2026-09-01T12:00:00.000Z",
+		updated_at: "2026-09-01T12:00:00.000Z",
+		health: { status: "healthy", last_data_at: "2026-10-01T11:56:00.000Z", problem: null },
+		...fields,
+	})
+
+const route = (tab?: "setup" | "settings", sourceId = PUBLIC_ID) =>
+	AppRoute.Source({ sourceId, search: tab === undefined ? {} : { tab } })
+
+const loaded = (row: V2Source, tab?: "setup" | "settings"): Model => {
+	const entered = init(route(tab), context).model
+	return [
+		Message.ReadClock({ nowMs: NOW }),
+		Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.succeed([row]) }),
+	].reduce((model, message) => pageUpdate(model, message).model, entered)
+}
+
+describe("source detail", () => {
+	test("an id that does not decode is not found without reading the list", () => {
+		const entered = init(route(undefined, "nope"), context)
+		expect(names(entered.commands)).toEqual(["ReadSourceClock", "LoadChartRuntime"])
+		expect(breadcrumbsOf(entered.model).map((crumb) => crumb.label)).toEqual(["Sources", "Not found"])
+		scene({ update: pageUpdate, view }, given(entered.model), resolveTheme, expectView(text("Source not found")).toExist())
+	})
+
+	test("the overview reads the usage once the list has the source", () => {
+		const entered = init(route(), context).model
+		const step = pageUpdate(
+			pageUpdate(entered, Message.ReadClock({ nowMs: NOW })).model,
+			Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.succeed([source()]) }),
+		)
+		expect(names(step.commands)).toEqual(["FetchSourceUsage"])
+		expect(breadcrumbsOf(step.model).map((crumb) => crumb.label)).toEqual(["Sources", "Checkout API"])
+		scene(
+			{ update: pageUpdate, view },
+			given(step.model),
+			resolveTheme,
+			expectView(role("button", { name: "Roll token" })).toExist(),
+			expectView(text("Volume, last 24 hours")).toExist(),
+			expectView(role("tab", { name: "Setup" })).toExist(),
+		)
+	})
+
+	test("another tab skips the usage until the overview shows", () => {
+		const onSetup = loaded(source(), "setup")
+		expect(onSetup.usage.key).toBeNull()
+		expect(names(routeChanged(onSetup, route(), context).commands)).toEqual(["FetchSourceUsage"])
+	})
+
+	test("the default source has no token actions", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(source({ is_default: true, key_prefix: null, name: "Default" }))),
+			resolveTheme,
+			expectView(role("button", { name: "Roll token" })).not.toExist(),
+		)
+	})
+
+	test("a pause refreshes the list and toasts; a failure toasts the error", () => {
+		const busy: Model["busy"] = "pause"
+		const model: Model = { ...loaded(source()), busy }
+		const done = pageUpdate(model, Message.CompletedPause({ result: Result.succeed(source({ status: "paused" })) }))
+		expect(names(done.commands)).toEqual(["FetchSourceDetailList"])
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Source paused. Takes effect within a minute.", description: "" }),
+		)
+		const failed = pageUpdate(model, Message.CompletedPause({ result: Result.fail(toLoadFailure(new Error("boom"))) }))
+		expect(failed.model.busy).toBeNull()
+		expect(failed.outMessage?._tag === "RequestedToast" && failed.outMessage.title).toBe("Failed to pause source")
+	})
+
+	test("a confirmed roll shows the new token above the tab", () => {
+		const confirmed = pageUpdate(loaded(source()), Message.ConfirmedRoll())
+		expect(names(confirmed.commands)).toEqual(["RollSourceToken"])
+		const rolled = pageUpdate(
+			confirmed.model,
+			Message.CompletedRoll({ result: Result.succeed({ ...source(), secret: "maple_src_secret" }) }),
+		)
+		expect(names(rolled.commands)).toContain("FetchSourceDetailList")
+		scene(
+			{ update: pageUpdate, view },
+			given(rolled.model),
+			resolveTheme,
+			expectView(text(/^Token rolled\./)).toExist(),
+		)
+	})
+
+	test("a deleted source navigates back to the list with a toast", () => {
+		const confirmed = pageUpdate(loaded(source()), Message.ConfirmedDelete())
+		const deleted = pageUpdate(confirmed.model, Message.CompletedDelete({ result: Result.succeed(undefined) }))
+		expect(deleted.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/sources",
+				isReplace: false,
+				toast: { type: "success", title: "Source deleted", description: "" },
+			}),
+		)
+	})
+})
+
+describe("source detail tabs", () => {
+	test("settings saves the rules for a token source and refreshes on success", () => {
+		const model = loaded(source(), "settings")
+		expect(model.settings?.name).toBe("Checkout API")
+		const saving = pageUpdate(model, Message.SubmittedSettings())
+		expect(names(saving.commands)).toEqual(["SaveSource"])
+		const saved = pageUpdate(saving.model, Message.CompletedSave({ result: Result.succeed(source()) }))
+		expect(names(saved.commands)).toEqual(["FetchSourceDetailList"])
+		expect(saved.model.settings?.isSaving).toBe(false)
+	})
+
+	test("an empty name blocks the save", () => {
+		const model = pageUpdate(loaded(source(), "settings"), Message.ChangedSettingsName({ value: "  " })).model
+		expect(pageUpdate(model, Message.SubmittedSettings()).commands ?? []).toEqual([])
+	})
+
+	test("leaving and reopening settings drops the unsaved edit", () => {
+		const edited = pageUpdate(loaded(source(), "settings"), Message.ChangedSettingsName({ value: "Renamed" })).model
+		const away = routeChanged(edited, route(), context).model
+		expect(away.settings).toBeNull()
+		expect(routeChanged(away, route("settings"), context).model.settings?.name).toBe("Checkout API")
+	})
+})

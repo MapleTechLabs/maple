@@ -6,7 +6,7 @@
 // the URL <-> request plumbing both pages share.
 
 import { Schema } from "effect"
-import { OptionalStringArrayParam } from "@/lib/search-params"
+import { OptionalStringArrayParam } from "../../../lib/search-params"
 
 /** URL search-param fields. Spread into a route's `validateSearch` schema. */
 export const cloudflareFilterSearchFields = {

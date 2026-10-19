@@ -5,8 +5,8 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { isChunkLoadError, shouldAttemptChunkReload } from "@/lib/chunk-reload"
-import { displayError } from "@/lib/error-messages"
+import { isChunkLoadError, shouldAttemptChunkReload } from "@maple/web-data/lib/chunk-reload"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { captureException } from "@/lib/services/common/otel-layer"
 
 interface AppErrorBoundaryProps {

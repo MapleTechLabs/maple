@@ -3,24 +3,23 @@
 import { Field as FieldPrimitive } from "@base-ui/react/field"
 import type React from "react"
 import { cn } from "../../lib/utils"
+import {
+	fieldDescriptionStyles,
+	fieldErrorStyles,
+	fieldGroupStyles,
+	fieldItemStyles,
+	fieldLabelStyles,
+	fieldStyles,
+} from "./field.styles"
 
 export function Field({ className, ...props }: FieldPrimitive.Root.Props): React.ReactElement {
-	return (
-		<FieldPrimitive.Root
-			className={cn("flex flex-col items-start gap-2", className)}
-			data-slot="field"
-			{...props}
-		/>
-	)
+	return <FieldPrimitive.Root className={cn(fieldStyles, className)} data-slot="field" {...props} />
 }
 
 export function FieldLabel({ className, ...props }: FieldPrimitive.Label.Props): React.ReactElement {
 	return (
 		<FieldPrimitive.Label
-			className={cn(
-				"inline-flex items-center gap-2 font-medium text-base/4.5 text-foreground data-disabled:opacity-64 sm:text-sm/4",
-				className,
-			)}
+			className={cn(fieldLabelStyles, className)}
 			data-slot="field-label"
 			{...props}
 		/>
@@ -28,7 +27,9 @@ export function FieldLabel({ className, ...props }: FieldPrimitive.Label.Props):
 }
 
 export function FieldItem({ className, ...props }: FieldPrimitive.Item.Props): React.ReactElement {
-	return <FieldPrimitive.Item className={cn("flex", className)} data-slot="field-item" {...props} />
+	return (
+		<FieldPrimitive.Item className={cn(fieldItemStyles, className)} data-slot="field-item" {...props} />
+	)
 }
 
 export function FieldDescription({
@@ -37,7 +38,7 @@ export function FieldDescription({
 }: FieldPrimitive.Description.Props): React.ReactElement {
 	return (
 		<FieldPrimitive.Description
-			className={cn("text-muted-foreground text-xs", className)}
+			className={cn(fieldDescriptionStyles, className)}
 			data-slot="field-description"
 			{...props}
 		/>
@@ -47,7 +48,7 @@ export function FieldDescription({
 export function FieldError({ className, ...props }: FieldPrimitive.Error.Props): React.ReactElement {
 	return (
 		<FieldPrimitive.Error
-			className={cn("text-destructive-foreground text-xs", className)}
+			className={cn(fieldErrorStyles, className)}
 			data-slot="field-error"
 			{...props}
 		/>
@@ -55,16 +56,7 @@ export function FieldError({ className, ...props }: FieldPrimitive.Error.Props):
 }
 
 export function FieldGroup({ className, ...props }: React.ComponentProps<"div">): React.ReactElement {
-	return (
-		<div
-			className={cn(
-				"group/field-group @container/field-group flex w-full flex-col gap-5 data-[slot=checkbox-group]:gap-3 [&>[data-slot=field-group]]:gap-4",
-				className,
-			)}
-			data-slot="field-group"
-			{...props}
-		/>
-	)
+	return <div className={cn(fieldGroupStyles, className)} data-slot="field-group" {...props} />
 }
 
 export const FieldControl: typeof FieldPrimitive.Control = FieldPrimitive.Control

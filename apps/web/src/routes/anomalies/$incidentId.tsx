@@ -3,7 +3,7 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { Exit, Schema } from "effect"
 
 import { PulseIcon } from "@/components/icons"

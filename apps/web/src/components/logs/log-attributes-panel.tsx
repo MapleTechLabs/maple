@@ -2,7 +2,7 @@ import { useCallback, useState } from "react"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { AttributesProvider, type AttributesConfig } from "@maple/ui/components/attributes"
 import { AttributesSection, ResourceAttributesSection } from "@/components/attributes"
-import type { Log } from "@/api/warehouse/logs"
+import type { Log } from "@maple/web-data/warehouse/logs"
 import type { LogAttributeFilter, LogAttributeSource } from "@/lib/logs/log-attribute-filters"
 
 type FilterByAttribute = NonNullable<AttributesConfig["onFilterByAttribute"]>

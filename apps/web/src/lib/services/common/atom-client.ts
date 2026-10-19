@@ -1,6 +1,10 @@
 import { AtomHttpApi } from "@/lib/effect-atom"
 import { MapleApi } from "@maple/domain/http"
-import { encodeOrgScopedKey, identityFromKey } from "@/lib/cache-key"
+import { encodeOrgScopedKey, identityFromKey } from "@maple/web-data/lib/cache-key"
+// Chunking pin: the cache key used to import time-utils, which put it (and the timezone and
+// atom modules it pulls) in the shared startup chunk. Without the edge they split into four
+// extra startup chunks and the bundle budget pays the per-chunk overhead.
+import "@/lib/time-utils"
 import { withRetention } from "@/lib/services/atoms/retained-atom"
 import { apiBaseUrl } from "./api-base-url"
 import { getActiveOrgId } from "./auth-headers"

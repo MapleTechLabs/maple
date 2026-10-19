@@ -3,7 +3,7 @@ import { useMemo, useState } from "react"
 import { Result } from "@/lib/effect-atom"
 import { cn } from "@maple/ui/lib/utils"
 
-import type { CloudflareBreakdownDimension } from "@/api/warehouse/cloudflare-infra"
+import type { CloudflareBreakdownDimension } from "@maple/web-data/warehouse/cloudflare-infra"
 import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import { CloudflareBreakdownPanelBody } from "@/components/infra/cloudflare/cloudflare-breakdown-panel"

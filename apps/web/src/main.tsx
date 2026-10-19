@@ -17,7 +17,7 @@ import { router, type RouterAuthContext } from "./router"
 import { AppErrorBoundary } from "./components/app-error-boundary"
 import { BootSplash } from "./components/boot-splash"
 import { appRegistry } from "./lib/registry"
-import { clearChunkReloadGuard, shouldAttemptChunkReload } from "./lib/chunk-reload"
+import { clearChunkReloadGuard, shouldAttemptChunkReload } from "@maple/web-data/lib/chunk-reload"
 import { initPerfVitals } from "./lib/perf-vitals"
 import "./styles.css"
 

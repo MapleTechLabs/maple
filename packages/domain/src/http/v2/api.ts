@@ -9,6 +9,7 @@ import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
 import { V2AuditLogApiGroup } from "./audit-log"
 import { V2DashboardsApiGroup } from "./dashboards"
 import { V2IngestKeysApiGroup } from "./ingest-keys"
+import { V2SourcesApiGroup } from "./sources"
 import { V2ChatIntegrationsApiGroup } from "./integrations-chat"
 import { V2GcpIntegrationsApiGroup } from "./integrations-gcp"
 import { V2PlanetScaleIntegrationsApiGroup } from "./integrations-planetscale"
@@ -97,6 +98,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AlertDestinationsApiGroup)
 	.add(V2AlertIncidentsApiGroup)
 	.add(V2IngestKeysApiGroup)
+	.add(V2SourcesApiGroup)
 	.add(V2ChatIntegrationsApiGroup)
 	.add(V2PlanetScaleIntegrationsApiGroup)
 	.add(V2GcpIntegrationsApiGroup)

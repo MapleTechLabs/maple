@@ -6,7 +6,7 @@ import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetim
 import type { DateRange } from "react-day-picker"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatForTinybird } from "@/lib/time-utils"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { Field, FieldLabel } from "@maple/ui/components/ui/field"
 
 interface CustomRangePickerProps {

@@ -3,7 +3,7 @@
 
 import { useMemo, type ReactNode } from "react"
 
-import type { CloudflareQueueRow, CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
+import type { CloudflareQueueRow, CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
 import { HeroChip } from "@/components/common/page-hero"
 import { FLEET_BAND_BOXED } from "../primitives/fleet-band"
 import { zoneAccountIds, type CloudflareAccount } from "./accounts"

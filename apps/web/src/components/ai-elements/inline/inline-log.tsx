@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router"
 import type { InlineLogData } from "@maple/domain/chat-annotations"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
-import { formatTimeInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatTimeInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { INLINE_CARD_ROW, inlineCardClass } from "./inline-card"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 

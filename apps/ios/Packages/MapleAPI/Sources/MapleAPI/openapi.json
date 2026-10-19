@@ -7854,6 +7854,10 @@
       "name": "Ingest Keys"
     },
     {
+      "description": "Everything that sends data to your organization: OpenTelemetry SDKs and collectors, Kubernetes clusters, Prometheus scrapes and cloud integrations. Push sources get their own token with allowed signals, a rate limit and resource attributes. All operations are admin-only.",
+      "name": "Sources"
+    },
+    {
       "description": "Link a chat workspace to your organization through a configured connector, and manage or remove the links that already exist. Where a connector's platform can say who acted, each member may also link their own chat account to their Maple user.",
       "name": "Chat Integrations"
     },

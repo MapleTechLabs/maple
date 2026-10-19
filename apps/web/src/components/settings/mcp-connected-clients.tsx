@@ -10,7 +10,7 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { toastExit } from "@/lib/error-toast"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
-import { formatDateInTimezone } from "@/lib/timezone-format"
+import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 
 function ConnectionRow({
 	connection,

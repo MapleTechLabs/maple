@@ -16,12 +16,12 @@ import {
 } from "@maple/ui/lib/format"
 import { CodeIcon, PulseIcon, ServerIcon, StopwatchIcon, UserIcon } from "@maple/ui/components/icons"
 
-import type { CloudflareWorkerDetail } from "@/api/warehouse/cloudflare-infra"
+import type { CloudflareWorkerDetail } from "@maple/web-data/warehouse/cloudflare-infra"
 import { HeroChip, PageHero } from "@/components/common/page-hero"
 import { CorrelationStrips, type StripSeries } from "../service-lens/correlation-strips"
 import type { ChartEventMarker } from "../primitives/chart-event-markers"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimeInTimezone } from "@/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import { workerHealth, type WorkerHealth, type WorkerListRow } from "./list-model"
 import {
 	DURABLE_OBJECT_COLORS,

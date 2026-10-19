@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { encodeKey } from "@/lib/cache-key"
+import { encodeKey } from "@maple/web-data/lib/cache-key"
 import { REPLAYS_PAGE_SIZE } from "@/hooks/use-infinite-replays"
 import { replaysFilterInputs, type ReplaysSearchState } from "./replays-filter-inputs"
 

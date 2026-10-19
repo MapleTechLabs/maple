@@ -18,8 +18,8 @@ import {
 	getServiceDetailOverviewResultAtom,
 	getServiceDetailThroughputRefinementResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { mergeExactThroughput } from "@/api/warehouse/custom-charts"
-import type { ServiceDetailTimeSeriesPoint } from "@/api/warehouse/services"
+import { mergeExactThroughput } from "@maple/web-data/warehouse/custom-charts"
+import type { ServiceDetailTimeSeriesPoint } from "@maple/web-data/warehouse/services"
 import { useCommitMarkers } from "@/components/vcs/commit-markers/use-commit-markers"
 import type { ReleasePoint } from "@/components/vcs/commit-markers/marker-layout"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"

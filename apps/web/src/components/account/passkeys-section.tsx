@@ -24,7 +24,7 @@ import { FingerprintIcon, PencilIcon, PlusIcon, TrashIcon } from "@/components/i
 import { settleClerk } from "@/components/account/account-errors"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatDateInTimezone } from "@/lib/timezone-format"
+import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AccountSectionSkeleton } from "@/components/account/account-section-skeleton"
 import { useAsyncAction } from "@/hooks/use-mutation-action"
 

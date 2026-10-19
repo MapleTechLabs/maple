@@ -91,6 +91,9 @@ import { Route as ReplaysSessionIdRouteImport } from './routes/replays/$sessionI
 import { Route as ServicesIndexRouteImport } from './routes/services/index'
 import { Route as ServicesServiceNameRouteImport } from './routes/services/$serviceName'
 import { Route as ShareTokenRouteImport } from './routes/share/$token'
+import { Route as SourcesIndexRouteImport } from './routes/sources/index'
+import { Route as SourcesSourceIdRouteImport } from './routes/sources/$sourceId'
+import { Route as SourcesNewRouteImport } from './routes/sources/new'
 import { Route as TracesIndexRouteImport } from './routes/traces/index'
 import { Route as TracesTraceIdRouteImport } from './routes/traces/$traceId'
 import { Route as AgentSessionsToolsIndexRouteImport } from './routes/agent-sessions/tools/index'
@@ -118,6 +121,12 @@ import { Route as LabBenchOverviewRouteImport } from './routes/lab/bench/overvie
 import { Route as LabBenchServiceDetailRouteImport } from './routes/lab/bench/service-detail'
 import { Route as LabBenchServiceMapRouteImport } from './routes/lab/bench/service-map'
 import { Route as LabBenchTanstackRouteImport } from './routes/lab/bench/tanstack'
+import { Route as LabKitButtonsRouteImport } from './routes/lab/kit/buttons'
+import { Route as LabKitContentRouteImport } from './routes/lab/kit/content'
+import { Route as LabKitDisplayRouteImport } from './routes/lab/kit/display'
+import { Route as LabKitFormsRouteImport } from './routes/lab/kit/forms'
+import { Route as LabKitNavigationRouteImport } from './routes/lab/kit/navigation'
+import { Route as LabKitOverlaysRouteImport } from './routes/lab/kit/overlays'
 import { Route as DashboardsDashboardIdWidgetsWidgetIdRouteImport } from './routes/dashboards/$dashboardId_.widgets.$widgetId'
 import { Route as InfraCloudflareWorkersScriptNameRouteImport } from './routes/infra/cloudflare/workers/$scriptName'
 import { Route as InfraGcpServiceNameRouteImport } from './routes/infra/gcp/$service/$name'
@@ -541,6 +550,21 @@ const ShareTokenRoute = ShareTokenRouteImport.update({
   path: '/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SourcesIndexRoute = SourcesIndexRouteImport.update({
+  id: '/sources/',
+  path: '/sources/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SourcesSourceIdRoute = SourcesSourceIdRouteImport.update({
+  id: '/sources/$sourceId',
+  path: '/sources/$sourceId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SourcesNewRoute = SourcesNewRouteImport.update({
+  id: '/sources/new',
+  path: '/sources/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TracesIndexRoute = TracesIndexRouteImport.update({
   id: '/traces/',
   path: '/traces/',
@@ -679,6 +703,36 @@ const LabBenchTanstackRoute = LabBenchTanstackRouteImport.update({
   path: '/bench/tanstack',
   getParentRoute: () => LabRouteRoute,
 } as any)
+const LabKitButtonsRoute = LabKitButtonsRouteImport.update({
+  id: '/kit/buttons',
+  path: '/kit/buttons',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabKitContentRoute = LabKitContentRouteImport.update({
+  id: '/kit/content',
+  path: '/kit/content',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabKitDisplayRoute = LabKitDisplayRouteImport.update({
+  id: '/kit/display',
+  path: '/kit/display',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabKitFormsRoute = LabKitFormsRouteImport.update({
+  id: '/kit/forms',
+  path: '/kit/forms',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabKitNavigationRoute = LabKitNavigationRouteImport.update({
+  id: '/kit/navigation',
+  path: '/kit/navigation',
+  getParentRoute: () => LabRouteRoute,
+} as any)
+const LabKitOverlaysRoute = LabKitOverlaysRouteImport.update({
+  id: '/kit/overlays',
+  path: '/kit/overlays',
+  getParentRoute: () => LabRouteRoute,
+} as any)
 const DashboardsDashboardIdWidgetsWidgetIdRoute =
   DashboardsDashboardIdWidgetsWidgetIdRouteImport.update({
     id: '/dashboards/$dashboardId_/widgets/$widgetId',
@@ -813,6 +867,8 @@ export interface FileRoutesByFullPath {
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/share/$token': typeof ShareTokenRoute
+  '/sources/$sourceId': typeof SourcesSourceIdRoute
+  '/sources/new': typeof SourcesNewRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/agent-sessions/': typeof AgentSessionsIndexRoute
   '/alerts/': typeof AlertsIndexRoute
@@ -829,6 +885,7 @@ export interface FileRoutesByFullPath {
   '/releases/': typeof ReleasesIndexRoute
   '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
+  '/sources/': typeof SourcesIndexRoute
   '/traces/': typeof TracesIndexRoute
   '/agent-sessions/tools/$toolName': typeof AgentSessionsToolsToolNameRoute
   '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
@@ -846,6 +903,12 @@ export interface FileRoutesByFullPath {
   '/lab/bench/service-detail': typeof LabBenchServiceDetailRoute
   '/lab/bench/service-map': typeof LabBenchServiceMapRoute
   '/lab/bench/tanstack': typeof LabBenchTanstackRoute
+  '/lab/kit/buttons': typeof LabKitButtonsRoute
+  '/lab/kit/content': typeof LabKitContentRoute
+  '/lab/kit/display': typeof LabKitDisplayRoute
+  '/lab/kit/forms': typeof LabKitFormsRoute
+  '/lab/kit/navigation': typeof LabKitNavigationRoute
+  '/lab/kit/overlays': typeof LabKitOverlaysRoute
   '/agent-sessions/tools/': typeof AgentSessionsToolsIndexRoute
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare/': typeof InfraCloudflareIndexRoute
@@ -934,6 +997,8 @@ export interface FileRoutesByTo {
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/share/$token': typeof ShareTokenRoute
+  '/sources/$sourceId': typeof SourcesSourceIdRoute
+  '/sources/new': typeof SourcesNewRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/agent-sessions': typeof AgentSessionsIndexRoute
   '/alerts': typeof AlertsIndexRoute
@@ -950,6 +1015,7 @@ export interface FileRoutesByTo {
   '/releases': typeof ReleasesIndexRoute
   '/replays': typeof ReplaysIndexRoute
   '/services': typeof ServicesIndexRoute
+  '/sources': typeof SourcesIndexRoute
   '/traces': typeof TracesIndexRoute
   '/agent-sessions/tools/$toolName': typeof AgentSessionsToolsToolNameRoute
   '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
@@ -967,6 +1033,12 @@ export interface FileRoutesByTo {
   '/lab/bench/service-detail': typeof LabBenchServiceDetailRoute
   '/lab/bench/service-map': typeof LabBenchServiceMapRoute
   '/lab/bench/tanstack': typeof LabBenchTanstackRoute
+  '/lab/kit/buttons': typeof LabKitButtonsRoute
+  '/lab/kit/content': typeof LabKitContentRoute
+  '/lab/kit/display': typeof LabKitDisplayRoute
+  '/lab/kit/forms': typeof LabKitFormsRoute
+  '/lab/kit/navigation': typeof LabKitNavigationRoute
+  '/lab/kit/overlays': typeof LabKitOverlaysRoute
   '/agent-sessions/tools': typeof AgentSessionsToolsIndexRoute
   '/errors/issues': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare': typeof InfraCloudflareIndexRoute
@@ -1057,6 +1129,8 @@ export interface FileRoutesById {
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/share/$token': typeof ShareTokenRoute
+  '/sources/$sourceId': typeof SourcesSourceIdRoute
+  '/sources/new': typeof SourcesNewRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/agent-sessions/': typeof AgentSessionsIndexRoute
   '/alerts/': typeof AlertsIndexRoute
@@ -1073,6 +1147,7 @@ export interface FileRoutesById {
   '/releases/': typeof ReleasesIndexRoute
   '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
+  '/sources/': typeof SourcesIndexRoute
   '/traces/': typeof TracesIndexRoute
   '/agent-sessions/tools/$toolName': typeof AgentSessionsToolsToolNameRoute
   '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
@@ -1090,6 +1165,12 @@ export interface FileRoutesById {
   '/lab/bench/service-detail': typeof LabBenchServiceDetailRoute
   '/lab/bench/service-map': typeof LabBenchServiceMapRoute
   '/lab/bench/tanstack': typeof LabBenchTanstackRoute
+  '/lab/kit/buttons': typeof LabKitButtonsRoute
+  '/lab/kit/content': typeof LabKitContentRoute
+  '/lab/kit/display': typeof LabKitDisplayRoute
+  '/lab/kit/forms': typeof LabKitFormsRoute
+  '/lab/kit/navigation': typeof LabKitNavigationRoute
+  '/lab/kit/overlays': typeof LabKitOverlaysRoute
   '/agent-sessions/tools/': typeof AgentSessionsToolsIndexRoute
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/infra/cloudflare/': typeof InfraCloudflareIndexRoute
@@ -1181,6 +1262,8 @@ export interface FileRouteTypes {
     | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/share/$token'
+    | '/sources/$sourceId'
+    | '/sources/new'
     | '/traces/$traceId'
     | '/agent-sessions/'
     | '/alerts/'
@@ -1197,6 +1280,7 @@ export interface FileRouteTypes {
     | '/releases/'
     | '/replays/'
     | '/services/'
+    | '/sources/'
     | '/traces/'
     | '/agent-sessions/tools/$toolName'
     | '/alerts/incidents/$incidentId'
@@ -1214,6 +1298,12 @@ export interface FileRouteTypes {
     | '/lab/bench/service-detail'
     | '/lab/bench/service-map'
     | '/lab/bench/tanstack'
+    | '/lab/kit/buttons'
+    | '/lab/kit/content'
+    | '/lab/kit/display'
+    | '/lab/kit/forms'
+    | '/lab/kit/navigation'
+    | '/lab/kit/overlays'
     | '/agent-sessions/tools/'
     | '/errors/issues/'
     | '/infra/cloudflare/'
@@ -1302,6 +1392,8 @@ export interface FileRouteTypes {
     | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/share/$token'
+    | '/sources/$sourceId'
+    | '/sources/new'
     | '/traces/$traceId'
     | '/agent-sessions'
     | '/alerts'
@@ -1318,6 +1410,7 @@ export interface FileRouteTypes {
     | '/releases'
     | '/replays'
     | '/services'
+    | '/sources'
     | '/traces'
     | '/agent-sessions/tools/$toolName'
     | '/alerts/incidents/$incidentId'
@@ -1335,6 +1428,12 @@ export interface FileRouteTypes {
     | '/lab/bench/service-detail'
     | '/lab/bench/service-map'
     | '/lab/bench/tanstack'
+    | '/lab/kit/buttons'
+    | '/lab/kit/content'
+    | '/lab/kit/display'
+    | '/lab/kit/forms'
+    | '/lab/kit/navigation'
+    | '/lab/kit/overlays'
     | '/agent-sessions/tools'
     | '/errors/issues'
     | '/infra/cloudflare'
@@ -1424,6 +1523,8 @@ export interface FileRouteTypes {
     | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/share/$token'
+    | '/sources/$sourceId'
+    | '/sources/new'
     | '/traces/$traceId'
     | '/agent-sessions/'
     | '/alerts/'
@@ -1440,6 +1541,7 @@ export interface FileRouteTypes {
     | '/releases/'
     | '/replays/'
     | '/services/'
+    | '/sources/'
     | '/traces/'
     | '/agent-sessions/tools/$toolName'
     | '/alerts/incidents/$incidentId'
@@ -1457,6 +1559,12 @@ export interface FileRouteTypes {
     | '/lab/bench/service-detail'
     | '/lab/bench/service-map'
     | '/lab/bench/tanstack'
+    | '/lab/kit/buttons'
+    | '/lab/kit/content'
+    | '/lab/kit/display'
+    | '/lab/kit/forms'
+    | '/lab/kit/navigation'
+    | '/lab/kit/overlays'
     | '/agent-sessions/tools/'
     | '/errors/issues/'
     | '/infra/cloudflare/'
@@ -1518,6 +1626,8 @@ export interface RootRouteChildren {
   ReplaysSessionIdRoute: typeof ReplaysSessionIdRoute
   ServicesServiceNameRoute: typeof ServicesServiceNameRoute
   ShareTokenRoute: typeof ShareTokenRoute
+  SourcesSourceIdRoute: typeof SourcesSourceIdRoute
+  SourcesNewRoute: typeof SourcesNewRoute
   TracesTraceIdRoute: typeof TracesTraceIdRoute
   AgentSessionsIndexRoute: typeof AgentSessionsIndexRoute
   AlertsIndexRoute: typeof AlertsIndexRoute
@@ -1533,6 +1643,7 @@ export interface RootRouteChildren {
   ReleasesIndexRoute: typeof ReleasesIndexRoute
   ReplaysIndexRoute: typeof ReplaysIndexRoute
   ServicesIndexRoute: typeof ServicesIndexRoute
+  SourcesIndexRoute: typeof SourcesIndexRoute
   TracesIndexRoute: typeof TracesIndexRoute
   AgentSessionsToolsToolNameRoute: typeof AgentSessionsToolsToolNameRoute
   AlertsIncidentsIncidentIdRoute: typeof AlertsIncidentsIncidentIdRoute
@@ -2140,6 +2251,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sources/': {
+      id: '/sources/'
+      path: '/sources'
+      fullPath: '/sources/'
+      preLoaderRoute: typeof SourcesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sources/$sourceId': {
+      id: '/sources/$sourceId'
+      path: '/sources/$sourceId'
+      fullPath: '/sources/$sourceId'
+      preLoaderRoute: typeof SourcesSourceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sources/new': {
+      id: '/sources/new'
+      path: '/sources/new'
+      fullPath: '/sources/new'
+      preLoaderRoute: typeof SourcesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/traces/': {
       id: '/traces/'
       path: '/traces'
@@ -2329,6 +2461,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabBenchTanstackRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/kit/buttons': {
+      id: '/lab/kit/buttons'
+      path: '/kit/buttons'
+      fullPath: '/lab/kit/buttons'
+      preLoaderRoute: typeof LabKitButtonsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/kit/content': {
+      id: '/lab/kit/content'
+      path: '/kit/content'
+      fullPath: '/lab/kit/content'
+      preLoaderRoute: typeof LabKitContentRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/kit/display': {
+      id: '/lab/kit/display'
+      path: '/kit/display'
+      fullPath: '/lab/kit/display'
+      preLoaderRoute: typeof LabKitDisplayRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/kit/forms': {
+      id: '/lab/kit/forms'
+      path: '/kit/forms'
+      fullPath: '/lab/kit/forms'
+      preLoaderRoute: typeof LabKitFormsRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/kit/navigation': {
+      id: '/lab/kit/navigation'
+      path: '/kit/navigation'
+      fullPath: '/lab/kit/navigation'
+      preLoaderRoute: typeof LabKitNavigationRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
+    '/lab/kit/overlays': {
+      id: '/lab/kit/overlays'
+      path: '/kit/overlays'
+      fullPath: '/lab/kit/overlays'
+      preLoaderRoute: typeof LabKitOverlaysRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/dashboards/$dashboardId_/widgets/$widgetId': {
       id: '/dashboards/$dashboardId_/widgets/$widgetId'
       path: '/dashboards/$dashboardId/widgets/$widgetId'
@@ -2448,6 +2622,12 @@ interface LabRouteRouteChildren {
   LabBenchServiceDetailRoute: typeof LabBenchServiceDetailRoute
   LabBenchServiceMapRoute: typeof LabBenchServiceMapRoute
   LabBenchTanstackRoute: typeof LabBenchTanstackRoute
+  LabKitButtonsRoute: typeof LabKitButtonsRoute
+  LabKitContentRoute: typeof LabKitContentRoute
+  LabKitDisplayRoute: typeof LabKitDisplayRoute
+  LabKitFormsRoute: typeof LabKitFormsRoute
+  LabKitNavigationRoute: typeof LabKitNavigationRoute
+  LabKitOverlaysRoute: typeof LabKitOverlaysRoute
 }
 
 const LabRouteRouteChildren: LabRouteRouteChildren = {
@@ -2489,6 +2669,12 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabBenchServiceDetailRoute: LabBenchServiceDetailRoute,
   LabBenchServiceMapRoute: LabBenchServiceMapRoute,
   LabBenchTanstackRoute: LabBenchTanstackRoute,
+  LabKitButtonsRoute: LabKitButtonsRoute,
+  LabKitContentRoute: LabKitContentRoute,
+  LabKitDisplayRoute: LabKitDisplayRoute,
+  LabKitFormsRoute: LabKitFormsRoute,
+  LabKitNavigationRoute: LabKitNavigationRoute,
+  LabKitOverlaysRoute: LabKitOverlaysRoute,
 }
 
 const LabRouteRouteWithChildren = LabRouteRoute._addFileChildren(
@@ -2534,6 +2720,8 @@ const rootRouteChildren: RootRouteChildren = {
   ReplaysSessionIdRoute: ReplaysSessionIdRoute,
   ServicesServiceNameRoute: ServicesServiceNameRoute,
   ShareTokenRoute: ShareTokenRoute,
+  SourcesSourceIdRoute: SourcesSourceIdRoute,
+  SourcesNewRoute: SourcesNewRoute,
   TracesTraceIdRoute: TracesTraceIdRoute,
   AgentSessionsIndexRoute: AgentSessionsIndexRoute,
   AlertsIndexRoute: AlertsIndexRoute,
@@ -2549,6 +2737,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReleasesIndexRoute: ReleasesIndexRoute,
   ReplaysIndexRoute: ReplaysIndexRoute,
   ServicesIndexRoute: ServicesIndexRoute,
+  SourcesIndexRoute: SourcesIndexRoute,
   TracesIndexRoute: TracesIndexRoute,
   AgentSessionsToolsToolNameRoute: AgentSessionsToolsToolNameRoute,
   AlertsIncidentsIncidentIdRoute: AlertsIncidentsIncidentIdRoute,

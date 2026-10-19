@@ -9,9 +9,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { RelativeTime } from "@/components/common/relative-time"
 import { StatRailItem } from "@/components/common/stat-rail"
 
-import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
+import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 
-import { severityLevel } from "../format"
 import {
 	ColumnHead,
 	DataTable,
@@ -23,40 +22,7 @@ import { MeterRows } from "../primitives/meter-rows"
 import { AvgPeak } from "../primitives/avg-peak"
 import { fleetSync, groupRailwayServices, type RailwaySync } from "./list-model"
 
-export type RailwayScope = "saturated" | "elevated" | "unbounded"
-
-/** Peak use against the service's own limit, 0..1, or NaN when Railway reported no limit. */
-const ofLimit = (peak: number, limit: number) => (limit > 0 ? peak / limit : Number.NaN)
-
-interface RailwayRowView extends RailwayServiceRow {
-	readonly cpuOfLimit: number
-	readonly memoryOfLimit: number
-	readonly peakOfLimit: number
-	readonly displayName: string
-}
-
-function toView(row: RailwayServiceRow): RailwayRowView {
-	const cpuOfLimit = ofLimit(row.cpuMax, row.cpuLimit)
-	const memoryOfLimit = ofLimit(row.memoryMax, row.memoryLimit)
-	const finite = [cpuOfLimit, memoryOfLimit].filter(Number.isFinite)
-	return {
-		...row,
-		cpuOfLimit,
-		memoryOfLimit,
-		peakOfLimit: finite.length > 0 ? Math.max(...finite) : 0,
-		displayName: row.serviceName || row.serviceId,
-	}
-}
-
-/** The overview's saturation check. The list no longer scopes by it: see `hasConfiguredLimits`. */
-export function railwayInScope(row: RailwayServiceRow, scope: RailwayScope): boolean {
-	const view = toView(row)
-	const bounded = Number.isFinite(view.cpuOfLimit) || Number.isFinite(view.memoryOfLimit)
-	if (scope === "unbounded") return !bounded
-	if (!bounded) return false
-	const level = severityLevel(view.peakOfLimit)
-	return scope === "saturated" ? level === "crit" : level === "warn"
-}
+import { toView, type RailwayRowView } from "./railway-scope"
 
 /** Heaviest services get their own slice of the memory strip; the rest share one. */
 const STRIP_SLICES = 6

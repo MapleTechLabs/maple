@@ -43,11 +43,11 @@ import {
 	pickDefaultDestination,
 	ruleToFormState,
 	type RuleFormState,
-} from "@/lib/alerts/form-utils"
-import { diffRuleForms, incidentsClearedByDraft } from "@/lib/alerts/preview-insights"
+} from "@maple/web-data/alerts/form-utils"
+import { diffRuleForms, incidentsClearedByDraft } from "@maple/web-data/alerts/preview-insights"
 import { toastExit } from "@/lib/error-toast"
 import { applyTemplate } from "@/lib/alerts/templates"
-import { switchSignalKind } from "@/lib/alerts/rule-modes"
+import { switchSignalKind } from "@maple/web-data/alerts/rule-modes"
 import type { WidgetAlertPrefillNotice } from "@/lib/alerts/widget-prefill"
 import { Result, useAtomSet } from "@/lib/effect-atom"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"

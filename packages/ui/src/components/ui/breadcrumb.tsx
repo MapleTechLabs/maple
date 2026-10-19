@@ -5,32 +5,26 @@ import { useRender } from "@base-ui/react/use-render"
 import { ChevronRightIcon, DotsIcon } from "../icons"
 import type * as React from "react"
 import { cn } from "../../lib/utils"
+import {
+	breadcrumbEllipsisIconStyles,
+	breadcrumbEllipsisLabelStyles,
+	breadcrumbItemStyles,
+	breadcrumbLinkStyles,
+	breadcrumbListStyles,
+	breadcrumbPageStyles,
+	breadcrumbSeparatorStyles,
+} from "./breadcrumb.styles"
 
 export function Breadcrumb({ ...props }: React.ComponentProps<"nav">): React.ReactElement {
 	return <nav aria-label="breadcrumb" data-slot="breadcrumb" {...props} />
 }
 
 export function BreadcrumbList({ className, ...props }: React.ComponentProps<"ol">): React.ReactElement {
-	return (
-		<ol
-			className={cn(
-				"wrap-break-word flex flex-wrap items-center gap-1.5 text-muted-foreground text-sm sm:gap-2.5",
-				className,
-			)}
-			data-slot="breadcrumb-list"
-			{...props}
-		/>
-	)
+	return <ol className={cn(breadcrumbListStyles, className)} data-slot="breadcrumb-list" {...props} />
 }
 
 export function BreadcrumbItem({ className, ...props }: React.ComponentProps<"li">): React.ReactElement {
-	return (
-		<li
-			className={cn("inline-flex items-center gap-1.5", className)}
-			data-slot="breadcrumb-item"
-			{...props}
-		/>
-	)
+	return <li className={cn(breadcrumbItemStyles, className)} data-slot="breadcrumb-item" {...props} />
 }
 
 export function BreadcrumbLink({
@@ -39,7 +33,7 @@ export function BreadcrumbLink({
 	...props
 }: useRender.ComponentProps<"a">): React.ReactElement {
 	const defaultProps = {
-		className: cn("transition-colors hover:text-foreground", className),
+		className: cn(breadcrumbLinkStyles, className),
 		"data-slot": "breadcrumb-link",
 	}
 
@@ -54,7 +48,7 @@ export function BreadcrumbPage({ className, ...props }: React.ComponentProps<"sp
 	return (
 		<span
 			aria-current="page"
-			className={cn("font-normal text-foreground", className)}
+			className={cn(breadcrumbPageStyles, className)}
 			data-slot="breadcrumb-page"
 			{...props}
 		/>
@@ -69,7 +63,7 @@ export function BreadcrumbSeparator({
 	return (
 		<li
 			aria-hidden="true"
-			className={cn("opacity-80 [&>svg]:size-4", className)}
+			className={cn(breadcrumbSeparatorStyles, className)}
 			data-slot="breadcrumb-separator"
 			role="presentation"
 			{...props}
@@ -91,8 +85,8 @@ export function BreadcrumbEllipsis({
 			role="presentation"
 			{...props}
 		>
-			<DotsIcon className="size-4" />
-			<span className="sr-only">More</span>
+			<DotsIcon className={breadcrumbEllipsisIconStyles} />
+			<span className={breadcrumbEllipsisLabelStyles}>More</span>
 		</span>
 	)
 }

@@ -3,9 +3,9 @@ import { useAtomValue } from "@/lib/effect-atom"
 import { ChartError, ChartLoading } from "@maple/ui/components/charts"
 
 import { containerInfraTimeseriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import type { ContainerInfraMetric } from "@/api/warehouse/infra"
+import type { ContainerInfraMetric } from "@maple/web-data/warehouse/infra"
 import { K8sMetricChartView } from "./k8s-detail-chart"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { ResultView } from "@/components/common/result-view"
 
 const CHART_HEIGHT = 280

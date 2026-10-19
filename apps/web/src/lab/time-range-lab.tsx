@@ -6,7 +6,7 @@ import { TimeRangePicker } from "@/components/time-range-picker/time-range-picke
 import { formatUtcOffset } from "@/components/time-range-picker/timezone-select"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { PRESET_OPTIONS } from "@/lib/time-utils"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 
 /**
  * The header time range picker with nothing behind it.

@@ -11,7 +11,7 @@ import {
 import { NoMetricsMessage } from "@/components/infra/primitives/no-metrics-message"
 import { formatPercent } from "@maple/ui/lib/format"
 
-import type { PodInfraMetric } from "@/api/warehouse/infra"
+import type { PodInfraMetric } from "@maple/web-data/warehouse/infra"
 import { ErrorState } from "@/components/common/error-state"
 import { FolderIcon } from "@/components/icons"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"

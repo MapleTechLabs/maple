@@ -21,8 +21,10 @@
 // A service whose routes share no stem (`/healthz`, `/graphql`, `/metrics`)
 // therefore produces no headers at all and degrades into a plain sorted list.
 
-import type { ServiceEndpoint } from "@/api/warehouse/service-endpoints"
-import type { SortDir } from "@/hooks/use-table-sort"
+import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
+
+// `use-table-sort`'s `SortDir`, spelled out so this module stays React-free (apps/web-foldkit imports it).
+type SortDir = "asc" | "desc"
 
 export type EndpointGroupKind = "stem" | "ungrouped" | "unrouted" | "probes"
 

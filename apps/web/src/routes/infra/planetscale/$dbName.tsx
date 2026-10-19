@@ -78,9 +78,9 @@ import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import type { PlanetScaleInfraTimeseriesRow } from "@/api/warehouse/planetscale-infra"
-import type { PlanetScaleBranchStat } from "@/api/warehouse/service-map"
-import type { PlanetScaleEventEntry } from "@/api/warehouse/planetscale-infra"
+import type { PlanetScaleInfraTimeseriesRow } from "@maple/web-data/warehouse/planetscale-infra"
+import type { PlanetScaleBranchStat } from "@maple/web-data/warehouse/service-map"
+import type { PlanetScaleEventEntry } from "@maple/web-data/warehouse/planetscale-infra"
 
 const planetscaleDbSearchSchema = Schema.Struct({
 	/**

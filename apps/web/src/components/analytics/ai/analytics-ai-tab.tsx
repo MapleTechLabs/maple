@@ -13,7 +13,7 @@ import {
 } from "@maple/ui/components/ui/empty"
 import { FaceRobotIcon } from "@/components/icons"
 
-import type { WebAnalyticsAiCrawlers } from "@/api/warehouse/web-analytics"
+import type { WebAnalyticsAiCrawlers } from "@maple/web-data/warehouse/web-analytics"
 import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { ResultView } from "@/components/common/result-view"
 import { StatRail, StatRailItem } from "@/components/common/stat-rail"

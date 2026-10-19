@@ -41,7 +41,7 @@ import {
 	defaultDestinationForm,
 	type DestinationFormState,
 	type RuleFormState,
-} from "@/lib/alerts/form-utils"
+} from "@maple/web-data/alerts/form-utils"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import {
 	ChevronDownIcon,

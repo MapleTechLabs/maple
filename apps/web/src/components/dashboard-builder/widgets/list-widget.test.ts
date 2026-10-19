@@ -4,13 +4,14 @@
 import { assert, beforeEach, describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { vi } from "vitest"
+import { mockedWarehouse } from "@maple/web-data/warehouse/testing"
 
 // This mock must be registered before importing its consumers.
 const runWarehouseQueryMock = vi.fn()
 
-vi.mock("@/api/warehouse/effect-utils", async () => {
-	const actual = await vi.importActual<typeof import("@/api/warehouse/effect-utils")>(
-		"@/api/warehouse/effect-utils",
+vi.mock("@maple/web-data/warehouse/effect-utils", async () => {
+	const actual = await vi.importActual<typeof import("@maple/web-data/warehouse/effect-utils")>(
+		"@maple/web-data/warehouse/effect-utils",
 	)
 	return {
 		...actual,
@@ -40,7 +41,7 @@ beforeEach(() => {
 	runWarehouseQueryMock.mockImplementation(defaultRunWarehouseQuery)
 })
 
-import { listLogs } from "@/api/warehouse/logs"
+import { listLogs } from "@maple/web-data/warehouse/logs"
 import { resolveFieldPath } from "@/lib/resolve-field-path"
 import { buildListLogsParams, listWhereClauseWarnings } from "@/lib/query-builder/widget-builder-shared"
 
@@ -62,7 +63,7 @@ describe("listLogs", () => {
 				body: "Connection refused",
 				logAttributes: { "http.method": "GET" },
 			})
-		}),
+		}).pipe(mockedWarehouse),
 	)
 })
 

@@ -188,3 +188,10 @@ runner replicated both projects, with unique browser instance names.
 [Measurements and validation](benchmarks/browser-mode-2026-09-22.json) record
 individual timings, report hashes, counts and versions. Install/build/download
 time is excluded; these numbers do not claim GitHub end-to-end latency.
+
+## Type-aware lint memory
+
+`bun run lint` runs three oxlint passes in a row (`lint:core`, then `lint:foldkit` for
+apps/web-foldkit and apps/local-ui-foldkit). One pass over everything peaked at about 16 GB
+locally, and on the 16 GB runner the effect-lint job was killed with SIGTERM after about three
+minutes. Split, the largest pass (apps/web-foldkit) peaks at about 13.5 GB.

@@ -26,7 +26,7 @@
  * both binds and consumes its stage's `maple-vcs-sync-pr-<n>` /
  * `maple-planetscale-webhooks-pr-<n>` queues (apps/api/src/resources/queues.ts), so
  * the sweep breaks the cycle in three passes:
- *   1. detach the consumer registrations of closed-PR queues,
+ *   1. detach the consumer registrations of retired-PR queues,
  *   2. delete the workers (their producer bindings die with them),
  *   3. delete the now-unreferenced queues.
  *
@@ -50,7 +50,7 @@
  * GITHUB_TOKEN/GH_TOKEN for the PR-state gate.
  */
 
-import { fetchPrState, hasPrStateCredentials, type PrState } from "./lib/pr-state.ts"
+import { fetchPreviewState, hasPrStateCredentials, type PreviewState } from "./lib/pr-state.ts"
 
 const FAILURE = 1
 
@@ -122,18 +122,18 @@ const main = async (): Promise<void> => {
 
 	// One PR-state lookup per PR number, shared across both passes — a stage
 	// leaks ~8 workers + 2 queues and they all share the same verdict.
-	const stateByPr = new Map<string, PrState>()
-	const prState = async (prNumber: string): Promise<PrState> => {
+	const stateByPr = new Map<string, PreviewState>()
+	const prState = async (prNumber: string): Promise<PreviewState> => {
 		let state = stateByPr.get(prNumber)
 		if (!state) {
-			state = await fetchPrState(prNumber)
+			state = await fetchPreviewState(prNumber)
 			stateByPr.set(prNumber, state)
 		}
 		return state
 	}
 	const failures: string[] = []
 
-	// Pass 1: detach consumer registrations from closed-PR queues, so the
+	// Pass 1: detach consumer registrations from retired-PR queues, so the
 	// worker deletions in pass 2 stop failing with 10064. The queues
 	// themselves are deleted in pass 3, after the workers' producer bindings
 	// are gone (deleting them here fails with 11005).
@@ -164,8 +164,8 @@ const main = async (): Promise<void> => {
 	for (const { id, name, match } of queueCandidates) {
 		const prNumber = match[2] as string
 		const state = await prState(prNumber)
-		if (state === "open") {
-			console.log(`… keeping ${name} (PR #${prNumber} is open)`)
+		if (state === "live") {
+			console.log(`… keeping ${name} (PR #${prNumber} has a live preview)`)
 			continue
 		}
 		if (state === "unknown") {
@@ -190,7 +190,9 @@ const main = async (): Promise<void> => {
 				failures.push(name)
 				continue
 			}
-			console.log(`… detaching consumer ${consumerRef} from ${name} (PR #${prNumber} is closed)`)
+			console.log(
+				`… detaching consumer ${consumerRef} from ${name} (PR #${prNumber} is closed or unlabelled)`,
+			)
 			const detached = await cfRequest(
 				token,
 				`/accounts/${accountId}/queues/${id}/consumers/${consumerRef}`,
@@ -227,15 +229,15 @@ const main = async (): Promise<void> => {
 	for (const { name, match } of candidates) {
 		const prNumber = match[2] as string
 		const state = await prState(prNumber)
-		if (state === "open") {
-			console.log(`… keeping ${name} (PR #${prNumber} is open)`)
+		if (state === "live") {
+			console.log(`… keeping ${name} (PR #${prNumber} has a live preview)`)
 			continue
 		}
 		if (state === "unknown") {
 			console.log(`⚠ skipping ${name} (PR #${prNumber} state unknown)`)
 			continue
 		}
-		console.log(`… deleting orphan ${name} (PR #${prNumber} is closed)`)
+		console.log(`… deleting orphan ${name} (PR #${prNumber} is closed or unlabelled)`)
 		const removed = await cfRequest(token, `/accounts/${accountId}/workers/scripts/${name}?force=true`, {
 			method: "DELETE",
 		})

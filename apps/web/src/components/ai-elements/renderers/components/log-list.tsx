@@ -1,6 +1,6 @@
 import type { RendererComponentProps } from "./types"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
-import { formatTimeInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatTimeInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { formatNumber } from "@maple/ui/lib/format"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 

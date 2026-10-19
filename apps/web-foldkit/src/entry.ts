@@ -1,0 +1,39 @@
+import "./styles.css"
+
+import { Runtime } from "foldkit"
+import type { UrlRequest } from "foldkit/navigation"
+import type { Url } from "foldkit/url"
+import { labEnabled, labPathOf, startLab } from "./lab/boot"
+import { Flags, flags, init, Message, Model, subscriptions, update, view } from "./main"
+import { ResourcesLive } from "./platform/resources"
+import { instrument } from "./platform/telemetry"
+
+const container = document.getElementById("app") ?? document.body
+
+const startApplication = () =>
+	Runtime.run(
+		Runtime.makeApplication(
+			instrument({
+				Model,
+				Flags,
+				init,
+				update,
+				view,
+				subscriptions,
+				resources: ResourcesLive,
+				container,
+				routing: {
+					// Typed: `instrument` passes the config through, so Foldkit cannot infer them.
+					onUrlRequest: (request: UrlRequest) => Message.ClickedLink({ request }),
+					onUrlChange: (url: Url) => Message.ChangedUrl({ url }),
+				},
+				devTools: { Message },
+			}),
+		),
+		{ flags },
+	)
+
+// `/lab/<path>` boots that lab page's own program instead of the app (parity scenarios, benches).
+const labPath = labEnabled ? labPathOf(location.pathname) : undefined
+if (labPath === undefined) startApplication()
+else void startLab(labPath, container)

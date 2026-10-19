@@ -8,13 +8,16 @@ import { coerceLogRow } from "@maple/query-engine"
 import { countLabel, formatBytes, formatPercent, formatUptime } from "@maple/ui/lib/format"
 import { formatClock } from "@maple/ui/lib/replay-format"
 
-import type { HostRow } from "@/components/infra/host-table"
-import type { Finding } from "@/components/infra/overview/summaries"
-import type { PodRow } from "@/components/infra/pod-table"
-import type { ReleaseServiceImpact } from "@/components/releases/release-model"
-import type { Log } from "@/api/warehouse/logs"
-import { domainThresholdToForm, formatSignalValue } from "@/lib/alerts/form-utils"
-import { formatUsage } from "@/lib/billing/usage"
+import type { ListHostsResponse, ListPodsResponse } from "@maple/domain/http"
+import type { Finding } from "../components/infra/overview/summaries"
+import type { ReleaseServiceImpact } from "../components/releases/release-model"
+import type { Log } from "@maple/web-data/warehouse/logs"
+import { domainThresholdToForm, formatSignalValue } from "@maple/web-data/alerts/form-utils"
+import { formatUsage } from "../lib/billing/usage"
+
+// Relative and domain-typed imports keep this fixture loadable from apps/web-foldkit.
+type HostRow = ListHostsResponse["data"][number]
+type PodRow = ListPodsResponse["data"][number]
 
 export type WorstCaseMode = "demo" | "worst"
 

@@ -1,19 +1,15 @@
 import type * as React from "react"
 import { cn } from "../../lib/utils"
-
-type StatFigureSize = "sm" | "md" | "lg"
-
-const FIGURE_VALUE: Record<StatFigureSize, string> = {
-	sm: "text-xl",
-	md: "text-2xl tracking-tight",
-	lg: "text-[26px] tracking-[-0.01em]",
-} satisfies Record<StatFigureSize, string>
-
-const FIGURE_UNIT: Record<StatFigureSize, string> = {
-	sm: "text-2xs",
-	md: "text-xs",
-	lg: "text-2xs",
-} satisfies Record<StatFigureSize, string>
+import {
+	type StatFigureSize,
+	statFigureStyles,
+	statFigureUnitSizeStyles,
+	statFigureUnitStyles,
+	statFigureValueDisplayStyles,
+	statFigureValueMonoStyles,
+	statFigureValueSizeStyles,
+	statFigureValueStyles,
+} from "./stat-figure.styles"
 
 /** A headline number with a muted unit or caption riding its baseline; never wraps. */
 export function StatFigure({
@@ -33,18 +29,20 @@ export function StatFigure({
 	valueClassName?: string
 }) {
 	return (
-		<span className={cn("flex items-baseline gap-1.5 whitespace-nowrap", className)}>
+		<span className={cn(statFigureStyles, className)}>
 			<span
 				className={cn(
-					"font-semibold tabular-nums leading-none",
-					mono ? "font-mono" : "font-display",
-					FIGURE_VALUE[size],
+					statFigureValueStyles,
+					mono ? statFigureValueMonoStyles : statFigureValueDisplayStyles,
+					statFigureValueSizeStyles[size],
 					valueClassName,
 				)}
 			>
 				{value}
 			</span>
-			{unit ? <span className={cn("text-muted-foreground", FIGURE_UNIT[size])}>{unit}</span> : null}
+			{unit ? (
+				<span className={cn(statFigureUnitStyles, statFigureUnitSizeStyles[size])}>{unit}</span>
+			) : null}
 		</span>
 	)
 }

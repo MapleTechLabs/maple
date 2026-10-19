@@ -191,7 +191,7 @@ export type PrReviewFeedbackScope = Schema.Schema.Type<typeof PrReviewFeedbackSc
  * a model the EU instance serves; there, a pick without it reviews on the region's default.
  */
 export const PR_REVIEW_MODELS = [
-	{ id: "deepseek/deepseek-v4.1-flash:nitro", label: "DeepSeek V4.1 Flash", eu: false },
+	{ id: "deepseek/deepseek-v4.1-flash-1017:nitro", label: "DeepSeek V4.1 Flash", eu: false },
 	{ id: "z-ai/glm-5.3-flash:nitro", label: "GLM 5.3 Flash", eu: false },
 	{ id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", eu: false },
 	{ id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", eu: false },

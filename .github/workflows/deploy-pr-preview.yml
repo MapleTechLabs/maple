@@ -15,8 +15,16 @@ on:
             - unlabeled
             - closed
 
+# Only runs that deploy or tear down share the PR's group (same test as deploy-pr-preview's
+# `if`). A run that skips both gets its own group, so a push to an unlabelled PR can't
+# cancel its teardown mid-destroy and leak the stack (#1564).
 concurrency:
-    group: pr-preview-${{ github.event.pull_request.number }}
+    group: >-
+        ${{ ((github.event.action == 'unlabeled' && github.event.label.name == 'preview')
+            || (github.event.action != 'unlabeled'
+                && contains(github.event.pull_request.labels.*.name, 'preview')))
+        && format('pr-preview-{0}', github.event.pull_request.number)
+        || format('pr-preview-noop-{0}', github.run_id) }}
     cancel-in-progress: true
 
 permissions:
@@ -57,8 +65,9 @@ jobs:
         env:
             # Set `PREVIEW_INFISICAL_ENV_SLUG` once a dedicated preview environment exists.
             INFISICAL_ENV_SLUG: ${{ vars.PREVIEW_INFISICAL_ENV_SLUG || 'dev' }}
-            # Each live preview holds one of the account's 25 Hyperdrive configs.
-            MAX_LIVE_PREVIEWS: 8
+            # Each live preview holds a VPC in the prd AWS account, whose us-east-1 quota of 5
+            # leaves 3 beside the default and prd VPCs (also 1 of 25 Hyperdrive configs).
+            MAX_LIVE_PREVIEWS: 3
             # `unlabeled` only reaches here for the `preview` label, so both mean teardown.
             TEARDOWN: ${{ (github.event.action == 'closed' || github.event.action == 'unlabeled') && 'true' || 'false' }}
             # Opt-in collector (prd-only otherwise, see `profile.deploys.collector`).
@@ -181,6 +190,7 @@ jobs:
                   SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
                   DESTROY_OUTCOME: ${{ steps.destroy.outcome }}
                   WEB_URL: ${{ steps.deploy.outputs.web_url }}
+                  WEB_FOLDKIT_URL: ${{ steps.deploy.outputs.web_foldkit_url }}
                   API_URL: ${{ steps.deploy.outputs.api_url }}
                   SYNC_URL: ${{ steps.deploy.outputs.sync_url }}
                   COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
@@ -222,6 +232,9 @@ jobs:
                       echo "| Service | Preview URL |"
                       echo "| :-- | :-- |"
                       printf '| Web | [%s](%s) |\n' "${WEB_URL#https://}" "$WEB_URL"
+                      if [ -n "$WEB_FOLDKIT_URL" ]; then
+                        printf '| Web (Foldkit) | [%s](%s) |\n' "${WEB_FOLDKIT_URL#https://}" "$WEB_FOLDKIT_URL"
+                      fi
                       printf '| API | [%s](%s) |\n' "${API_URL#https://}" "$API_URL"
                       printf '| Electric Sync | [%s](%s) |\n' "${SYNC_URL#https://}" "$SYNC_URL"
                       if [ -n "$INGEST_URL" ]; then

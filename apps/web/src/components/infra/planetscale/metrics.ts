@@ -53,6 +53,3 @@ export function abnormalState(state: string | null): string | null {
 	const normalized = state.toLowerCase()
 	return normalized === "ready" || normalized === "active" ? null : normalized
 }
-
-// PlanetScale's brand mark color lives with the service-map node that also uses it.
-export { PLANETSCALE_COLOR } from "@maple/ui/components/service-map/service-map-db"

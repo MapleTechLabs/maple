@@ -3,7 +3,7 @@ import { useAtomValue } from "@/lib/effect-atom"
 import { ChartError, ChartLoading, ChartPlotArea } from "@maple/ui/components/charts"
 
 import { hostInfraTimeseriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import type { HostInfraMetric } from "@/api/warehouse/infra"
+import type { HostInfraMetric } from "@maple/web-data/warehouse/infra"
 import { formatValueWithUnit } from "./chart-utils"
 import { SeriesLegend } from "@/components/common/series-legend"
 import { MiddleTruncate } from "@maple/ui/components/ui/middle-truncate"
@@ -12,7 +12,7 @@ import {
 	INFRA_METRIC_CHART_HEIGHT,
 	type InfraSeriesInfo,
 } from "./primitives/infra-metric-chart"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { ResultView } from "@/components/common/result-view"
 
 interface HostDetailChartProps {

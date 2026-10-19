@@ -16,7 +16,7 @@ import type {
 	CloudflareZoneLatencyBucket,
 	CloudflareZoneRow,
 	CloudflareZoneStatusBucket,
-} from "@/api/warehouse/cloudflare-infra"
+} from "@maple/web-data/warehouse/cloudflare-infra"
 import { CorrelationStrips, type StripSeries } from "@/components/infra/service-lens/correlation-strips"
 import {
 	cacheHitRows,

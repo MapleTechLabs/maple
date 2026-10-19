@@ -5,10 +5,10 @@ import { CopyableValue } from "@/components/attributes"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { IconButton } from "@maple/ui/components/ui/icon-button"
 import { shortId } from "@maple/ui/lib/ids"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { encodeLogKey, logPermalink } from "@/lib/log-key"
 import { buildLogJsonPayload } from "./log-raw-panel"
-import type { Log } from "@/api/warehouse/logs"
+import type { Log } from "@maple/web-data/warehouse/logs"
 
 interface LogMetaStripProps {
 	log: Log

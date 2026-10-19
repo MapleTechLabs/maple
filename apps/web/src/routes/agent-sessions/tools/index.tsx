@@ -24,7 +24,7 @@ import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-ran
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { fillSeriesBuckets } from "@/lib/agent-sessions/tool-analytics"
+import { fillSeriesBuckets } from "@maple/web-data/lib/tool-analytics"
 import {
 	TOOL_ANALYTICS_DEFAULT_PRESET,
 	ToolAnalyticsSearchFields,
@@ -186,7 +186,9 @@ function AgentToolsBody({
 				<Skeleton className="mx-6 h-80" />
 			</div>
 		))
-		.onError((error) => <ErrorState error={error} title="Failed to load agent tool analytics" onRetry={reload} />)
+		.onError((error) => (
+			<ErrorState error={error} title="Failed to load agent tool analytics" onRetry={reload} />
+		))
 		.onSuccess((totals, result) => (
 			<AgentToolsView
 				search={search}

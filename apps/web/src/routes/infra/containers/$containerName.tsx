@@ -24,7 +24,7 @@ import { formatSeconds } from "@/components/infra/chart-utils"
 import { severityLevel } from "@/components/infra/format"
 import { formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import type { ContainerInfraMetric } from "@/api/warehouse/infra"
+import type { ContainerInfraMetric } from "@maple/web-data/warehouse/infra"
 import type { TimeRange } from "@/components/time-range-picker/types"
 import {
 	TimeRangeSearchFields,

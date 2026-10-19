@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { defaultRuleForm } from "@/lib/alerts/form-utils"
+import { defaultRuleForm } from "@maple/web-data/alerts/form-utils"
 import { ALERT_TEMPLATES, applyTemplate } from "@/lib/alerts/templates"
 
 const template = (id: string) => {

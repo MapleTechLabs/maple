@@ -1,5 +1,26 @@
 import type * as React from "react"
 import { cn } from "../../lib/utils"
+import {
+	keyValueCopyButtonStyles,
+	keyValueGridStyles,
+	keyValueInlineStyles,
+	keyValueLabelOverlineStyles,
+	keyValueLabelStyles,
+	keyValueListDividedStyles,
+	keyValueListGridStyles,
+	keyValueListInlineStyles,
+	keyValueListSplitStyles,
+	keyValueListStackedStyles,
+	keyValueListStyles,
+	keyValueSplitStyles,
+	keyValueStackedStyles,
+	keyValueStyles,
+	keyValueValueFirstStyles,
+	keyValueValueMonoStyles,
+	keyValueValueStyles,
+	keyValueValueTruncateStyles,
+	keyValueValueWrapStyles,
+} from "./key-value.styles"
 import { CopyButton } from "./copy-button"
 
 type Layout = "split" | "grid" | "stacked" | "inline"
@@ -25,15 +46,15 @@ export function KeyValueList({
 	return (
 		<dl
 			className={cn(
-				"text-xs",
+				keyValueListStyles,
 				layout === "grid"
-					? "grid grid-cols-[minmax(6rem,max-content)_1fr] gap-x-4 gap-y-1.5"
+					? keyValueListGridStyles
 					: layout === "stacked"
-						? "grid gap-3"
+						? keyValueListStackedStyles
 						: layout === "inline"
-							? "flex flex-wrap items-baseline gap-x-4 gap-y-1"
-							: "flex flex-col gap-1.5",
-				divided && "gap-y-0 divide-y divide-border/60 [&>div]:py-1.5",
+							? keyValueListInlineStyles
+							: keyValueListSplitStyles,
+				divided && keyValueListDividedStyles,
 				className,
 			)}
 			data-layout={layout}
@@ -71,43 +92,30 @@ export function KeyValue({
 	return (
 		<div
 			className={cn(
-				"min-w-0",
-				"in-data-[layout=split]:flex in-data-[layout=split]:items-baseline in-data-[layout=split]:justify-between in-data-[layout=split]:gap-4",
-				"in-data-[layout=grid]:col-span-2 in-data-[layout=grid]:grid in-data-[layout=grid]:grid-cols-subgrid",
-				"in-data-[layout=stacked]:flex in-data-[layout=stacked]:flex-col in-data-[layout=stacked]:gap-0.5",
-				"in-data-[layout=inline]:flex in-data-[layout=inline]:max-w-full in-data-[layout=inline]:items-baseline in-data-[layout=inline]:gap-1.5",
-				"in-data-[value-first]:flex-row-reverse",
+				keyValueStyles,
+				keyValueSplitStyles,
+				keyValueGridStyles,
+				keyValueStackedStyles,
+				keyValueInlineStyles,
+				keyValueValueFirstStyles,
 				className,
 			)}
 			title={title}
 			data-slot="key-value"
 		>
-			<dt
-				className={cn(
-					"shrink-0 text-muted-foreground",
-					"in-data-[label=overline]:text-3xs in-data-[label=overline]:font-medium in-data-[label=overline]:uppercase in-data-[label=overline]:tracking-[0.12em]",
-				)}
-			>
-				{label}
-			</dt>
-			<dd
-				className={cn(
-					"flex min-w-0 items-center gap-1 text-foreground in-data-[layout=split]:justify-end in-data-[layout=split]:text-right",
-					mono && "font-mono tabular-nums",
-					valueClassName,
-				)}
-			>
+			<dt className={cn(keyValueLabelStyles, keyValueLabelOverlineStyles)}>{label}</dt>
+			<dd className={cn(keyValueValueStyles, mono && keyValueValueMonoStyles, valueClassName)}>
 				{wrap ? (
-					<div className="min-w-0 break-words">{children}</div>
+					<div className={keyValueValueWrapStyles}>{children}</div>
 				) : (
-					<span className="min-w-0 truncate">{children}</span>
+					<span className={keyValueValueTruncateStyles}>{children}</span>
 				)}
 				{copyValue ? (
 					<CopyButton
 						value={copyValue}
 						label={typeof label === "string" ? label : "value"}
 						size="icon-xs"
-						className="-my-1 shrink-0"
+						className={keyValueCopyButtonStyles}
 					/>
 				) : null}
 			</dd>

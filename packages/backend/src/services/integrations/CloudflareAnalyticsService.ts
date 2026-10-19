@@ -86,6 +86,11 @@ import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareO
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
+	ensureIntegrationSource,
+	integrationSourceName,
+	stampableSourceId,
+} from "@maple/backend/services/org/integration-sources"
+import {
 	mapDnsGroups,
 	mapDurableObjectsGroups,
 	mapFirewallGroups,
@@ -1695,10 +1700,10 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 * or {@link IngestRefused} when the gateway refuses the org (billing or a refused key).
 		 */
 		const emitMetrics = Effect.fn("CloudflareAnalyticsService.emitMetrics")(
-			function* (ingestKey: string, rows: CloudflareMetricRows) {
+			function* (ingestKey: string, rows: CloudflareMetricRows, sourceId: string | undefined) {
 				const total = rows.sumRows.length + rows.gaugeRows.length
 				if (total === 0) return 0
-				const payload = metricRowsToOtlp(rows.sumRows, rows.gaugeRows)
+				const payload = metricRowsToOtlp(rows.sumRows, rows.gaugeRows, { sourceId })
 				const request = HttpClientRequest.post(ingestMetricsUrl, {
 					headers: { authorization: `Bearer ${ingestKey}`, "content-type": "application/json" },
 				}).pipe(HttpClientRequest.bodyJsonUnsafe(payload))
@@ -1748,6 +1753,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				readonly accountId: string
 				readonly accessToken: string
 				readonly ingestKey: string
+				readonly sourceId: string | undefined
 				readonly liveScripts: ReadonlySet<string> | null
 			},
 			now: number,
@@ -1959,7 +1965,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					.filter((entry) => entry.part === part)
 					.reduce((sum, { rows }) => sum + rows.sumRows.length + rows.gaugeRows.length, 0)
 
-			const emitted = yield* emitMetrics(context.ingestKey, combined)
+			const emitted = yield* emitMetrics(context.ingestKey, combined, context.sourceId)
 			if (typeof emitted !== "number") return documentPlanBlocked(item, emitted.refused)
 			// Frontiers only advance after the gateway accepted the batch above.
 			const advanced = yield* Effect.forEach(cleanParts, (part) => {
@@ -2119,6 +2125,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 			// The org's ingest refusal this tick: every account posts with the same org key, so
 			// one refusal holds the siblings too instead of re-posting with a refused key.
 			orgRefusal: Ref.Ref<string | null>,
+			// The grant's pull source, stamped on every resource as `maple_source_id`.
+			sourceId: string | undefined,
 		) {
 			yield* Effect.annotateCurrentSpan({
 				orgId,
@@ -2340,7 +2348,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 								budget.calls += 1
 								const partResults = yield* pollDatasetChunk(
 									item,
-									{ orgId, accountId, accessToken, ingestKey, liveScripts },
+									{ orgId, accountId, accessToken, ingestKey, sourceId, liveScripts },
 									now,
 								).pipe(
 									Effect.catchTags({
@@ -2608,6 +2616,36 @@ export class CloudflareAnalyticsService extends Context.Service<
 			)
 		})
 
+		// The grant's pull source as its `src_` id; a failed lookup sends without it.
+		const resolveSourceId = (orgId: OrgId) =>
+			stampableSourceId(
+				Effect.gen(function* () {
+					const now = yield* Clock.currentTimeMillis
+					return yield* dbExecute((db) =>
+						Effect.gen(function* () {
+							const [connection] = yield* db.run(
+								PG.from(OAuthConnections)
+									.select("id", "externalAccountName")
+									.where(($) => [$.orgId.eq(orgId), $.provider.eq("cloudflare")])
+									.limit(1),
+							)
+							if (connection === undefined) return undefined
+							return yield* ensureIntegrationSource(
+								db,
+								orgId,
+								{
+									platform: "cloudflare",
+									integrationId: connection.id,
+									name: integrationSourceName.cloudflare(connection),
+								},
+								now,
+							)
+						}),
+					)
+				}),
+				{ orgId, platform: "cloudflare" },
+			)
+
 		/**
 		 * Poll every connected account of one org, sequentially, sharing ONE call budget —
 		 * Cloudflare meters the grant's holder, not the individual accounts, so a per-account
@@ -2647,8 +2685,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 							yield* Clock.currentTimeMillis,
 							grantCap,
 						)
+			const sourceId = plan.length === 0 ? undefined : yield* resolveSourceId(orgId)
 			const polled = yield* Effect.forEach(plan, ({ accountId, callLimit }) =>
-				pollConnection(orgId, accountId, budget, callLimit, orgRefusal),
+				pollConnection(orgId, accountId, budget, callLimit, orgRefusal, sourceId),
 			)
 			// A tick where every account skipped (e.g. still sitting out a backoff) says nothing
 			// about the limit, so the cap only moves after a tick that actually polled.

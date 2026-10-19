@@ -1,11 +1,13 @@
 import { Atom } from "@/lib/effect-atom"
 import { Effect, Schema } from "effect"
-import { encodeOrgScopedKey, identityFromKey, orgScopedKeyPayload } from "@/lib/cache-key"
+import { encodeOrgScopedKey, identityFromKey, orgScopedKeyPayload } from "@maple/web-data/lib/cache-key"
 import { nextRetentionNamespace, withRetention } from "@/lib/services/atoms/retained-atom"
 import { getActiveOrgId } from "@/lib/services/common/auth-headers"
 import { getGlobalNamespace } from "@/lib/services/common/global-namespace"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-import type { BackendError, WarehouseApiError } from "@/api/warehouse/effect-utils"
+import type { BackendError, WarehouseApiError } from "@maple/web-data/warehouse/effect-utils"
+import type { WarehouseServices } from "@maple/web-data/warehouse/warehouse-services"
+import { warehouseServicesLayer } from "@/lib/registry"
 import {
 	getCustomChartServiceSparklines,
 	getCustomChartTimeSeries,
@@ -13,9 +15,14 @@ import {
 	getOverviewTimeSeries,
 	getServiceDetailOverview,
 	getServiceDetailThroughputRefinement,
-} from "@/api/warehouse/custom-charts"
-import { getErrorsByType, getErrorsFacets, getErrorsSpark, getErrorsSummary } from "@/api/warehouse/errors"
-import { getReleaseDetail, getReleases } from "@/api/warehouse/releases"
+} from "@maple/web-data/warehouse/custom-charts"
+import {
+	getErrorsByType,
+	getErrorsFacets,
+	getErrorsSpark,
+	getErrorsSummary,
+} from "@maple/web-data/warehouse/errors"
+import { getReleaseDetail, getReleases } from "@maple/web-data/warehouse/releases"
 import {
 	getLog,
 	getLogAttributeKeys,
@@ -23,14 +30,14 @@ import {
 	getLogsFacetValues,
 	getLogsFacets,
 	listLogs,
-} from "@/api/warehouse/logs"
+} from "@maple/web-data/warehouse/logs"
 import {
 	getMetricAttributeKeys,
 	getMetricSparklines,
 	getMetricAttributeValues,
 	getMetricsSummary,
 	listMetrics,
-} from "@/api/warehouse/metrics"
+} from "@maple/web-data/warehouse/metrics"
 import {
 	getNodeFacets,
 	getPodFacets,
@@ -55,10 +62,10 @@ import {
 	listWorkloads,
 	workloadDetailSummary,
 	workloadInfraTimeseries,
-} from "@/api/warehouse/infra"
-import { getServiceUsage } from "@/api/warehouse/service-usage"
-import { getServiceEndpoints } from "@/api/warehouse/service-endpoints"
-import { getServiceOperations } from "@/api/warehouse/service-operations"
+} from "@maple/web-data/warehouse/infra"
+import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
+import { getServiceEndpoints } from "@maple/web-data/warehouse/service-endpoints"
+import { getServiceOperations } from "@maple/web-data/warehouse/service-operations"
 import {
 	getServiceDependenciesBundle,
 	getServiceMapBundle,
@@ -66,8 +73,8 @@ import {
 	getServiceMapCloudflare,
 	getServiceMapPlanetScale,
 	getServiceDbQuerySummary,
-} from "@/api/warehouse/service-map"
-import { getServiceWorkloads } from "@/api/warehouse/service-infra"
+} from "@maple/web-data/warehouse/service-map"
+import { getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
 import {
 	getCloudflarePlatformResources,
 	getCloudflareTopTraffic,
@@ -80,13 +87,13 @@ import {
 	getCloudflareZones,
 	getCloudflareZoneSecurity,
 	getCloudflareZoneTimeseries,
-} from "@/api/warehouse/cloudflare-infra"
+} from "@maple/web-data/warehouse/cloudflare-infra"
 import {
 	getPlanetScaleEvents,
 	getPlanetScaleInfraTimeseries,
 	getPlanetScaleQueryInsights,
-} from "@/api/warehouse/planetscale-infra"
-import { getRailwayServices, getRailwayServiceTimeseries } from "@/api/warehouse/railway-infra"
+} from "@maple/web-data/warehouse/planetscale-infra"
+import { getRailwayServices, getRailwayServiceTimeseries } from "@maple/web-data/warehouse/railway-infra"
 import {
 	getGcpCloudSqlInstancesOfDatabase,
 	getGcpCloudSqlTopQueries,
@@ -94,13 +101,13 @@ import {
 	getGcpInfraFleet,
 	getGcpInfraSparklines,
 	getGcpInfraTimeseries,
-} from "@/api/warehouse/gcp-infra"
+} from "@maple/web-data/warehouse/gcp-infra"
 import {
 	getServiceHealthBaseline,
 	getServiceHealthSnapshot,
 	getServiceOverview,
 	getServicesFacets,
-} from "@/api/warehouse/services"
+} from "@maple/web-data/warehouse/services"
 import {
 	getResourceAttributeKeys,
 	getResourceAttributeValues,
@@ -112,9 +119,9 @@ import {
 	getTracesFacetValues,
 	getTracesFacets,
 	listTraces,
-} from "@/api/warehouse/traces"
-import { getQueryBuilderTimeseries } from "@/api/warehouse/query-builder-timeseries"
-import { getQueryBuilderBreakdown } from "@/api/warehouse/query-builder-breakdown"
+} from "@maple/web-data/warehouse/traces"
+import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
+import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
 import {
 	getReplay,
 	getReplayEvents,
@@ -124,14 +131,14 @@ import {
 	getSessionTranscript,
 	getSessionTraceSummaries,
 	listReplays,
-} from "@/api/warehouse/replays"
+} from "@maple/web-data/warehouse/replays"
 import {
 	getAiSessionSpans,
 	getAiSessionSummary,
 	getAiSessionsDistributions,
 	getAiSessionsFacets,
 	listAiSessions,
-} from "@/api/warehouse/ai-sessions"
+} from "@maple/web-data/warehouse/ai-sessions"
 import {
 	getAiToolBreakdowns,
 	getAiToolErrorDetail,
@@ -139,7 +146,7 @@ import {
 	getAiToolErrors,
 	getAiToolSeries,
 	getAiToolTotals,
-} from "@/api/warehouse/ai-session-tools"
+} from "@maple/web-data/warehouse/ai-session-tools"
 import {
 	getWebAnalyticsAiCrawlers,
 	getWebAnalyticsAiReferrals,
@@ -150,13 +157,13 @@ import {
 	getWebAnalyticsPageviews,
 	getWebAnalyticsSummary,
 	getWebAnalyticsTimeseries,
-} from "@/api/warehouse/web-analytics"
+} from "@maple/web-data/warehouse/web-analytics"
 import {
 	getProductEventAttributeKeys,
 	getProductEventNames,
 	getProductEventsForTrace,
 	getProductEventTraceSamples,
-} from "@/api/warehouse/product-events"
+} from "@maple/web-data/warehouse/product-events"
 
 /**
  * The error union every warehouse server function fails with: the structured
@@ -164,7 +171,7 @@ import {
  */
 type QueryError = WarehouseApiError | BackendError
 
-type QueryEffect<Input, Output> = (input: Input) => Effect.Effect<Output, QueryError, never>
+type QueryEffect<Input, Output> = (input: Input) => Effect.Effect<Output, QueryError, WarehouseServices>
 
 interface QueryAtomOptions {
 	/**
@@ -267,6 +274,9 @@ function makeQueryAtomFamily<Input, Output>(query: QueryEffect<Input, Output>, o
 						}),
 				),
 				Effect.flatMap((input) => query(input as Input)),
+				// The family is this app's warehouse entrypoint and owns its service layer.
+				// oxlint-disable-next-line effecttsgo/strict-effect-provide
+				Effect.provide(warehouseServicesLayer),
 			),
 		)
 

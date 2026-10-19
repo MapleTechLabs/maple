@@ -26,17 +26,16 @@ import * as WorkersAiDecisionModel from "./WorkersAiDecisionModel"
 import { layerWorkersAi, type WorkersAiBinding } from "./WorkersAiHttpClient"
 
 /** Default triage/chat model on OpenRouter — the provider agents run on by default. */
-export const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3-flash:nitro"
+export const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4.1-flash-1017:nitro"
 
 /**
- * Default model for pull request reviews and replies, which run on their own model rather than the
- * triage default: glm-5.3-flash leaked 1.2% of its tool calls as text, which ended 8 of 14 early
- * reviews by 2026-09-24. Changing chat's model would have retuned investigations with it.
+ * Default model for pull request reviews and replies. Kept separate from the triage default so the
+ * two can move independently; both run on deepseek-v4.1-flash-1017 since 2026-10-19.
  *
  * `:nitro` routes to the fastest provider. Default routing picks the cheapest, which served a
  * 12-call review at ~50 tok/s and took 13 minutes; `:nitro` measured ~190 tok/s at twice the price.
  */
-export const DEFAULT_REVIEW_MODEL = "deepseek/deepseek-v4.1-flash:nitro"
+export const DEFAULT_REVIEW_MODEL = "deepseek/deepseek-v4.1-flash-1017:nitro"
 
 /**
  * Default decision model: Cloudflare's Clef, on Workers AI.
@@ -243,6 +242,8 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
 	"deepseek/deepseek-v4.1-flash": { context: 1_000_000, output: 128_000 },
 	"deepseek/deepseek-v4.1-flash:nitro": { context: 1_000_000, output: 128_000 },
+	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 393_216.
+	"deepseek/deepseek-v4.1-flash-1017:nitro": { context: 1_000_000, output: 128_000 },
 	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
 	"xiaomi/mimo-v2.6-pro": { context: 1_000_000, output: 128_000 },
 	// The EU default. OpenRouter's EU catalogue: context_length 1_050_000, max_completion_tokens 128_000.

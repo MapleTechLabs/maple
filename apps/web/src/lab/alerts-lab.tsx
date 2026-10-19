@@ -12,9 +12,9 @@ import { RulesTab } from "@/components/alerts/overview/rules-tab"
 import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"
 import { PlusIcon } from "@/components/icons"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { buildIncidentTimeline } from "@/lib/alerts/incident-timeline"
-import type { RuleBucket } from "@/lib/alerts/overview-derive"
-import type { AlertsOverviewReady } from "@/lib/models/alerts-overview-model"
+import { buildIncidentTimeline } from "@maple/web-data/alerts/incident-timeline"
+import type { RuleBucket } from "@maple/web-data/alerts/overview-derive"
+import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { type AlertsLabFixture, buildAlertsLabFixture } from "@/lab/alerts-fixture"
 
 /**

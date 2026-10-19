@@ -1,6 +1,7 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react"
 
 import type { AlertComparator, AlertSeverity } from "@maple/domain/http"
+import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
 import { Card } from "@maple/ui/components/ui/card"
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Field, FieldDescription, FieldLabel } from "@maple/ui/components/ui/field"
@@ -26,7 +27,7 @@ import {
 	thresholdUnitLabel,
 	type EscalationTierForm,
 	type RuleFormState,
-} from "@/lib/alerts/form-utils"
+} from "@maple/web-data/alerts/form-utils"
 
 const NUMERIC_CONTROL_CLASS =
 	"font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
@@ -100,6 +101,14 @@ export function describeRuleCondition(form: RuleFormState): string {
 			? ""
 			: `, critical ${COMPARATOR_WORDS[form.comparator].replace(/^is /, "")} ${value(escalation.threshold)},`
 	return `${severity} when ${conditionSubject(form)} ${COMPARATOR_WORDS[form.comparator]} ${threshold}${critical} ${when}`
+}
+
+/** The window field's hint: what a check reads and how often the scheduler runs one. */
+function windowDescription(windowMinutes: string): string {
+	const minutes = Number(windowMinutes.trim())
+	if (!Number.isFinite(minutes) || minutes <= 0) return "Each check looks at this much data."
+	const every = alertEvaluationIntervalMinutes(minutes)
+	return `Each check looks at this much data, checked every ${every === 1 ? "minute" : `${every} min`}.`
 }
 
 /** What crossing back looks like for a comparator, as the recovery field's label. */
@@ -282,7 +291,7 @@ export function RuleConditionFields({ form, onChange, saved }: RuleConditionFiel
 					<NumberField
 						id="rule-window-minutes"
 						label="Window"
-						description="Each check looks at this much data."
+						description={windowDescription(form.windowMinutes)}
 						value={form.windowMinutes}
 						unit="min"
 						previous={was((f) => f.windowMinutes)}
@@ -440,14 +449,13 @@ function NumberField({
 					</InputGroupAddon>
 				)}
 			</InputGroup>
-			{previous !== null ? (
+			{previous !== null && (
 				<WasNote>
 					{previous.length > 0 ? previous : "none"}
 					{previous.length > 0 && unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}
 				</WasNote>
-			) : (
-				description && <FieldDescription>{description}</FieldDescription>
 			)}
+			{description && <FieldDescription>{description}</FieldDescription>}
 		</Field>
 	)
 }

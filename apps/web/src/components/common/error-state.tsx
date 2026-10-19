@@ -1,6 +1,6 @@
 import { Button } from "@maple/ui/components/ui/button"
 import { useNetworkAutoRetry } from "@/hooks/use-network-auto-retry"
-import { displayError, isAutomaticRetryError } from "@/lib/error-messages"
+import { displayError, isAutomaticRetryError } from "@maple/web-data/lib/error-messages"
 import { cn } from "@maple/ui/lib/utils"
 
 /**

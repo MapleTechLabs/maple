@@ -5,8 +5,8 @@ import { Button, buttonVariants } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { useNetworkAutoRetry } from "@/hooks/use-network-auto-retry"
 import { useMountEffect } from "@/hooks/use-mount-effect"
-import { displayError, isAutomaticRetryError, isUnexpectedError } from "@/lib/error-messages"
-import { isChunkLoadError, shouldAttemptChunkReload } from "@/lib/chunk-reload"
+import { displayError, isAutomaticRetryError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
+import { isChunkLoadError, shouldAttemptChunkReload } from "@maple/web-data/lib/chunk-reload"
 import { captureException } from "@/lib/services/common/otel-layer"
 
 /**

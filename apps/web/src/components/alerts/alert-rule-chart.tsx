@@ -13,7 +13,7 @@ import type {
 	AlertRulePreviewResponse,
 	AlertSignalType,
 } from "@maple/domain/http"
-import { formatSignalValue } from "@/lib/alerts/form-utils"
+import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
 	clipToDomain,
@@ -27,8 +27,8 @@ import {
 	SINGLE_KEY,
 	type Band,
 	type SignalSource,
-} from "@/lib/alerts/chart-series"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+} from "@maple/web-data/alerts/chart-series"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import {
 	CursorPlot,
 	bucketTimeScale,
@@ -818,7 +818,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 
 			{showWouldFire && wouldFireBands.length > 0 && (
 				<p className="text-2xs text-muted-foreground">
-					Shaded: rule would have fired (approximate — the live scheduler evaluates every minute).
+					Shaded: rule would have fired (approximate: the live scheduler checks a sliding window).
 				</p>
 			)}
 			{hasSignal && heldBands.length > 0 && (

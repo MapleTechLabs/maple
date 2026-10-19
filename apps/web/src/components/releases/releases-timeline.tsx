@@ -17,7 +17,7 @@ import {
 	type ReleaseHealth,
 	type ReleaseServiceImpact,
 } from "./release-model"
-import { formatDateInTimezone, formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 
 /** Lanes beyond this fold into a trailing count; the table still lists every release. */
 const MAX_LANES = 12

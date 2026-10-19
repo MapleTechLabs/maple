@@ -25,7 +25,7 @@ import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { serviceMapLayoutAtomFamily } from "@/atoms/service-map-layout-atoms"
 import { serviceMapViewPrefsAtomFamily } from "@/atoms/service-map-view-prefs-atoms"
 import { Link } from "@tanstack/react-router"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { logClientError, logClientWarning } from "@/lib/services/common/telemetry"
 
 import { cn } from "@maple/ui/lib/utils"
@@ -79,9 +79,9 @@ import type {
 	ServiceDbQuerySummaryResponse,
 	ServiceEdge,
 	ServicePlatform,
-} from "@/api/warehouse/service-map"
-import type { ServiceOverview } from "@/api/warehouse/services"
-import type { ServiceWorkload } from "@/api/warehouse/service-infra"
+} from "@maple/web-data/warehouse/service-map"
+import type { ServiceOverview } from "@maple/web-data/warehouse/services"
+import type { ServiceWorkload } from "@maple/web-data/warehouse/service-infra"
 import {
 	ServiceMapFlowCanvas,
 	type ServiceMap3DRenderProps,

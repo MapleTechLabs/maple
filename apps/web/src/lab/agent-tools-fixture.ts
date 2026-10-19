@@ -24,7 +24,7 @@ import {
 	type ToolMeasures,
 	type ToolSeriesPoint,
 	type ToolTotals,
-} from "@/lib/agent-sessions/tool-analytics"
+} from "@maple/web-data/lib/tool-analytics"
 import type { ToolAnalyticsSearch } from "@/lib/agent-sessions/tool-search"
 import type { AgentToolsViewData } from "@/components/agent-sessions/tools/agent-tools-view"
 import type { ToolDetailViewData } from "@/components/agent-sessions/tools/tool-detail-view"
