@@ -72,7 +72,7 @@ const getQueryBuilderBreakdownEffect = Effect.fn("QueryEngine.getQueryBuilderBre
 			"@maple/query-engine/query-set/QuerySetInputError": (error) =>
 				invalidWarehouseInput("getQueryBuilderBreakdown", error.message),
 			"@maple/query-engine/query-set/QuerySetNoDataError": (error) =>
-				onNoData(error, run.failureTitle()),
+				onNoData(error, run.failureTitle(error.message)),
 		}),
 	)
 

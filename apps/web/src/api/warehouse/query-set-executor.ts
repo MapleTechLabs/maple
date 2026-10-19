@@ -38,20 +38,22 @@ export const makeWarehouseExecutor = (operation: string): QuerySetExecutor<Query
 })
 
 /**
- * `executor` for one run, keeping the first failure's own title. The runner reports a failed
- * query as text, and the chart titles its error card with this ("Google Cloud metrics are not
- * available") instead of a generic "Invalid query".
+ * `executor` for one run that remembers each failure's own title. The runner reports a failed
+ * query as text; `failureTitle(reported)` gives the title of the failure that text came from, so
+ * the chart's error card says e.g. "Google Cloud metrics are not available", not "Invalid query".
  */
 export const recordingFailureTitle = (executor: QuerySetExecutor<QuerySetExecuteError>) => {
-	let title: string | undefined
+	const failures: Array<{ readonly message: string; readonly title: string }> = []
 	return {
 		executor: {
 			...executor,
 			describeError: (error: QuerySetExecuteError) => {
-				title ??= displayError(error).title
-				return executor.describeError(error)
+				const message = executor.describeError(error)
+				failures.push({ message, title: displayError(error).title })
+				return message
 			},
 		} satisfies QuerySetExecutor<QuerySetExecuteError>,
-		failureTitle: () => title,
+		failureTitle: (reported: string) =>
+			failures.find((failure) => reported.includes(failure.message))?.title,
 	}
 }

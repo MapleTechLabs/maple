@@ -149,7 +149,11 @@ const getQueryBuilderTimeseriesEffect = Effect.fn("QueryEngine.getQueryBuilderTi
 							rows: [],
 							diagnostics: emptyTimeseriesResponse(input).diagnostics,
 						} satisfies TimeseriesQuerySetResult)
-					: querySetFailure("getQueryBuilderTimeseries", error.message, run.failureTitle()),
+					: querySetFailure(
+							"getQueryBuilderTimeseries",
+							error.message,
+							run.failureTitle(error.message),
+						),
 		}),
 	)
 
