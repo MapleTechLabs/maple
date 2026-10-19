@@ -74,6 +74,13 @@ describe("error issue", () => {
 		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toEqual(["FetchErrorIssueDetail"])
 	})
 
+	test("after a Reload a tab change keeps the window; a new preset re-resolves unsnapped", () => {
+		const reloaded = pageUpdate(windowed(), Message.ClickedReload()).model
+		expect(routeChanged(reloaded, { search: { tab: "activity" } }, context).commands).toBeUndefined()
+		const moved = routeChanged(reloaded, { search: { timePreset: "1d" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveIssueWindow", "Refresh"]])
+	})
+
 	test("a tab change keeps the window; a preset change navigates and re-resolves", () => {
 		const model = windowed()
 		expect(routeChanged(model, { search: { tab: "activity" } }, context).commands).toBeUndefined()

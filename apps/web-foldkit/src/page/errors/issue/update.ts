@@ -13,6 +13,7 @@ import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReloadSpin,
@@ -285,9 +286,6 @@ export const init = (
 	}
 }
 
-const isSameWindow = (a: Search, b: Search) =>
-	a.startTime === b.startTime && a.endTime === b.endTime && a.timePreset === b.timePreset
-
 /** A tab or window change: the tab only re-renders, a window re-resolves and re-asks the detail. */
 export const routeChanged = (
 	model: Model,
@@ -295,11 +293,10 @@ export const routeChanged = (
 	context: PageContext,
 ): Return => {
 	const next = { ...model, search: route.search }
-	if (isSameWindow(model.search, route.search)) return { model: next }
-	return {
-		model: next,
-		commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-	}
+	return routeWindowStep(model.search, route.search, {
+		resolve: (): Return => ({ model: next, commands: [resolveCommand(route.search, context, snapModeOf(model.refreshVersion))] }),
+		requestAll: () => ({ model: next }),
+	})
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => ({
