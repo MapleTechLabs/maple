@@ -39,7 +39,8 @@ const logsSection = (plan: GcpSetupPlan, logs: NonNullable<GcpSetupPlan["logs"]>
       member: \`serviceAccount:service-\${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com\`,
     })
 
-    // One LogEntry per request, unwrapped. noWrapper is sent as given though alchemy's type omits it.
+    // One LogEntry per request, unwrapped. noWrapper is sent as given though alchemy's type omits it,
+    // and only on create: an adopted subscription keeps its own setting (Maple's setups all unwrap).
     const pushConfig = {
       pushEndpoint: PUSH_ENDPOINT,
       noWrapper: { writeMetadata: false },
