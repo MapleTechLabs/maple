@@ -1,3 +1,4 @@
+import { clerkAuthCardAppearance } from "@maple/web/lib/clerk-appearance"
 import { Effect, Schema } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -17,7 +18,9 @@ export const MountClerkCard = Mount.define("MountClerkCard", {
 			Effect.sync(() => {
 				const clerk = window.Clerk
 				if (clerk === undefined || !(element instanceof HTMLDivElement)) return
-				const props = forceRedirectUrl === null ? {} : { forceRedirectUrl }
+				// `<SignIn appearance={clerkAuthCardAppearance}>`: the unboxed card AccountLayout expects.
+				const appearance = clerkAuthCardAppearance
+				const props = forceRedirectUrl === null ? { appearance } : { appearance, forceRedirectUrl }
 				if (component === "SignIn") clerk.mountSignIn(element, props)
 				else clerk.mountSignUp(element, props)
 			}),
