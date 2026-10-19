@@ -16,7 +16,7 @@ const envSnippet = (token: string, serviceName: string): SourceSnippet => ({
 	language: "shell",
 	code: [
 		`export OTEL_EXPORTER_OTLP_ENDPOINT="${ingestUrl}"`,
-		`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${token}"`,
+		`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${token}"`,
 		`export OTEL_SERVICE_NAME="${serviceName}"`,
 	].join("\n"),
 })
@@ -61,7 +61,7 @@ const claudeCodeSnippet = (token: string): SourceSnippet => ({
 		"export OTEL_METRICS_EXPORTER=otlp",
 		"export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf",
 		`export OTEL_EXPORTER_OTLP_ENDPOINT="${ingestUrl}"`,
-		`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${token}"`,
+		`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20${token}"`,
 	].join("\n"),
 })
 

@@ -1,8 +1,9 @@
-import { V2Source } from "@maple/domain/http/v2"
+import { V2Source, type V2SourceUsage } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { sourceSnippets } from "./snippets"
 import { orderSources } from "./sources-table"
+import { usageRows } from "./usage-chart"
 
 const decodeSource = Schema.decodeUnknownSync(V2Source)
 const source = (overrides: Record<string, unknown>) =>
@@ -47,5 +48,33 @@ describe("sourceSnippets", () => {
 		expect(node.map((snippet) => snippet.id)).toEqual(["env", "sdk"])
 		expect(node[0]?.code).toContain('OTEL_SERVICE_NAME="checkout-api"')
 		expect([...helm, ...node].filter((snippet) => !snippet.code.includes(token))).toEqual([])
+	})
+
+	it("URL-encodes the space in the OTLP headers variable", () => {
+		const [env] = sourceSnippets("nodejs", "maple_src_secret", "Checkout API")
+		expect(env?.code).toContain('OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20maple_src_secret"')
+	})
+})
+
+describe("usageRows", () => {
+	const usage = (windowEnd: string, hours: ReadonlyArray<string>): V2SourceUsage => ({
+		object: "source_usage",
+		window_start: new Date(new Date(windowEnd).getTime() - 24 * 3_600_000).toISOString(),
+		window_end: windowEnd,
+		buckets: hours.map((hour) => ({ hour, spans: 5, logs: 1 })),
+	})
+
+	it("keeps an hour-aligned window inside its 24 hours", () => {
+		const rows = usageRows(
+			usage("2026-10-18T12:00:00.000Z", ["2026-10-17T12:00:00.000Z", "2026-10-18T11:00:00.000Z"]),
+		)
+		expect(rows).toHaveLength(24)
+		expect(rows[0]).toEqual({ bucket: "2026-10-17T12:00:00.000Z", Spans: 5, Logs: 1 })
+		expect(rows[23]).toEqual({ bucket: "2026-10-18T11:00:00.000Z", Spans: 5, Logs: 1 })
+	})
+
+	it("ends on the current partial hour mid-hour", () => {
+		const rows = usageRows(usage("2026-10-18T12:30:00.000Z", []))
+		expect(rows[23]).toEqual({ bucket: "2026-10-18T12:00:00.000Z", Spans: 0, Logs: 0 })
 	})
 })

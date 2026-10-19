@@ -5,7 +5,8 @@ const HOUR_MS = 3_600_000
 
 /** 24 hourly rows ending at the window's end; hours the API omitted count as zero. */
 export const usageRows = (usage: V2SourceUsage): Record<string, unknown>[] => {
-	const end = Math.floor(new Date(usage.window_end).getTime() / HOUR_MS) * HOUR_MS
+	// `window_end` is exclusive: the last row is the hour holding the instant before it.
+	const end = Math.floor((new Date(usage.window_end).getTime() - 1) / HOUR_MS) * HOUR_MS
 	const byHour = new Map(usage.buckets.map((bucket) => [new Date(bucket.hour).getTime(), bucket]))
 	return Array.from({ length: 24 }, (_, index) => {
 		const hour = end - (23 - index) * HOUR_MS
