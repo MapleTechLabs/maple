@@ -123,6 +123,23 @@ const make = Effect.gen(function* () {
 			{ orgId, platform: "github" },
 		)
 
+	/**
+	 * Posts with the org's public key. A 401 or 403 can be a key rotated in another graph while this
+	 * one's memo holds the old key, so the memo entry is dropped and the post sent once more.
+	 */
+	const postAs = (orgId: OrgId, payload: OtlpTracesPayload | OtlpLogsPayload) => {
+		const send = ingestKeys
+			.getOrCreate(orgId, SYSTEM_USER_ID)
+			.pipe(Effect.flatMap((keys) => post(keys.publicKey, payload)))
+		return send.pipe(
+			Effect.catchTag("@maple/backend/integrations/CiTraceIngestError", (error) =>
+				error.status === 401 || error.status === 403
+					? ingestKeys.forget(orgId).pipe(Effect.andThen(send))
+					: Effect.fail(error),
+			),
+		)
+	}
+
 	// Total by contract: a lost CI span is logged, never a failed webhook job. The failure is
 	// swallowed outside the span, so the span itself still ends as Error.
 	const emit = (
@@ -135,8 +152,7 @@ const make = Effect.gen(function* () {
 			const payload = toPayload(yield* resolveSourceId(orgId, job))
 			const spanCount = payload.resourceSpans[0]?.scopeSpans[0]?.spans.length ?? 0
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.cicd.span_count": spanCount })
-			const keys = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID)
-			yield* post(keys.publicKey, payload)
+			yield* postAs(orgId, payload)
 		}).pipe(
 			Effect.tapCause((cause) =>
 				Effect.annotateCurrentSpan({
@@ -159,14 +175,13 @@ const make = Effect.gen(function* () {
 		lines: Stream.Stream<string, E>,
 	) =>
 		Effect.gen(function* () {
-			const keys = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID)
 			const sourceId = yield* resolveSourceId(orgId, job)
 			const sent = yield* jobLogRecords(job, lines).pipe(
 				Stream.grouped(LOG_BATCH_SIZE),
 				Stream.runFoldEffect(
 					() => 0,
 					(count, batch) =>
-						post(keys.publicKey, workflowJobLogsToOtlp(job, batch, sourceId)).pipe(
+						postAs(orgId, workflowJobLogsToOtlp(job, batch, sourceId)).pipe(
 							Effect.as(count + batch.length),
 						),
 				),

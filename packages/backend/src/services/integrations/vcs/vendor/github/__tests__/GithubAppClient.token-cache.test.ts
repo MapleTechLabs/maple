@@ -47,12 +47,25 @@ const recordingGithub = (paths: Array<string>) =>
 		return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 	})
 
+/** Mints `token-<n>` per mint and rejects the first token on every other call, as a revoked one. */
+const revokingGithub = (paths: Array<string>, auths: Array<string>, rejection: Response) =>
+	fakeGithubHttp(({ url, headers }) => {
+		const path = new URL(url).pathname
+		paths.push(path)
+		if (path.endsWith("/access_tokens")) {
+			const token = `token-${mints(paths).length}`
+			return Response.json({ token, expires_at: "2099-01-01T00:00:00Z" })
+		}
+		auths.push(headers["authorization"] ?? "")
+		return headers["authorization"] === "token token-1" ? rejection.clone() : Response.json([])
+	})
+
 // One batch's provider graph, built fresh the way each queue batch builds VcsSyncLive.
-const batchLayer = (paths: Array<string>) =>
+const batchLayer = (paths: Array<string>, github = recordingGithub(paths)) =>
 	Layer.effect(GithubProvider, GithubProvider.make).pipe(
 		Layer.provide(
 			Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
-				Layer.provide(recordingGithub(paths)),
+				Layer.provide(github),
 				Layer.provide(env),
 			),
 		),
@@ -82,6 +95,50 @@ describe("GitHub installation tokens across queue batches", () => {
 			yield* readAnnotations.pipe(Effect.provide(batchLayer(paths)))
 			yield* readAnnotations.pipe(Effect.provide(batchLayer(paths)))
 			assert.lengthOf(mints(paths), 2)
+		})
+	})
+
+	const rejections = [
+		["401", new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 })],
+		[
+			"403 Bad credentials",
+			new Response(JSON.stringify({ message: "Bad credentials" }), { status: 403 }),
+		],
+	] as const
+	rejections.forEach(([label, rejection]) =>
+		it.effect(`a cached token GitHub rejects with ${label} is evicted, so the next batch mints`, () => {
+			const paths: Array<string> = []
+			const auths: Array<string> = []
+			return Effect.gen(function* () {
+				const caches = yield* makeVcsSyncIsolateCaches
+				const batch = batchLayer(paths, revokingGithub(paths, auths, rejection)).pipe(
+					Layer.provide(caches),
+				)
+				yield* Effect.exit(readAnnotations.pipe(Effect.provide(batch)))
+				yield* Effect.exit(readAnnotations.pipe(Effect.provide(batch)))
+				assert.lengthOf(mints(paths), 2)
+				assert.deepStrictEqual(auths, ["token token-1", "token token-2"])
+			})
+		}),
+	)
+
+	it.effect("a 403 for a missing permission keeps the cached token", () => {
+		const paths: Array<string> = []
+		const auths: Array<string> = []
+		const forbidden = new Response(
+			JSON.stringify({ message: "Resource not accessible by integration" }),
+			{
+				status: 403,
+			},
+		)
+		return Effect.gen(function* () {
+			const caches = yield* makeVcsSyncIsolateCaches
+			const batch = batchLayer(paths, revokingGithub(paths, auths, forbidden)).pipe(
+				Layer.provide(caches),
+			)
+			yield* Effect.exit(readAnnotations.pipe(Effect.provide(batch)))
+			yield* Effect.exit(readAnnotations.pipe(Effect.provide(batch)))
+			assert.lengthOf(mints(paths), 1)
 		})
 	})
 })

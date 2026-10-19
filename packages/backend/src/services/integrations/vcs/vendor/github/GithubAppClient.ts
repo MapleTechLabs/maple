@@ -580,6 +580,17 @@ const pemToPkcs8 = (pem: string): ArrayBuffer => {
 	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
 }
 
+/** GitHub answers 401 to a revoked or expired token; some endpoints answer 403 "Bad credentials". */
+const rejectsCredentials = (response: HttpClientResponse.HttpClientResponse) =>
+	response.status === 401
+		? Effect.succeed(true)
+		: response.status === 403
+			? response.text.pipe(
+					Effect.map((body) => body.includes("Bad credentials")),
+					Effect.orElseSucceed(() => false),
+				)
+			: Effect.succeed(false)
+
 interface GithubRequestInit {
 	readonly method?: "GET" | "POST" | "PATCH" | "DELETE"
 	readonly headers: Readonly<Record<string, string>>
@@ -639,6 +650,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					Effect.mapError((cause) => new GithubAppError({ message: errorMessage, cause })),
 				)
 				yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+				// A cached installation token GitHub rejects is evicted, so the next call re-mints and
+				// sees the installation-gone answer the mint gives. The body read is memoized.
+				const sent = init?.headers["authorization"]
+				if (sent?.startsWith("token ") === true && (yield* rejectsCredentials(response))) {
+					yield* installationTokens.removeWhere(({ token }) => sent === `token ${token}`)
+					yield* Effect.annotateCurrentSpan({ "vcs.provider.token_evicted": true })
+				}
 				return response
 			})
 

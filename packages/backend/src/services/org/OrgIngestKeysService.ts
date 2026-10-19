@@ -392,9 +392,13 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				} satisfies ResolvedIngestKey)
 			})
 
+			/** Drops the org's memoized row, for a caller whose key the gateway just refused. */
+			const forget = (orgId: OrgId) => ingestKeysMemo.remove(orgId)
+
 			return {
 				getOrCreate,
 				getOrCreateMany,
+				forget,
 				rerollPublic,
 				rerollPrivate,
 				resolveIngestKey,
