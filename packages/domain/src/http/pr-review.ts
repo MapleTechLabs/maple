@@ -902,6 +902,15 @@ export const confidencePrReview = (
 			cappedBy: binding.by,
 		}
 	}
+	// The floor is shown like a cap, so the footer's points always add up to the number.
+	if (PR_REVIEW_CONFIDENCE_MAX - total < floor) {
+		return {
+			confidence,
+			reason: `Kept at ${floor}: ordinary warnings and soft signals never read below ${floor}.`,
+			factors: [...factors, `floor ${floor}`],
+			capped: false,
+		}
+	}
 	return { confidence, reason: report.confidenceReason, factors, capped: false }
 }
 

@@ -315,7 +315,7 @@ The review leads with one number, 1 to 10, how safe the change is to merge: 9 to
 - There is no separate number of yours: the same findings and signals always give the same confidence. A concern that should lower it is a finding, anchored to a line; if you cannot anchor it, it goes in \`confidenceReason\`.
 - \`confidenceReason\` is one sentence, under 25 words, naming what decides the number or the one place that needs a careful look: "The new branch in \`listKeys\` changes tenant scoping and has no test". Never "Some risk remains". For a clean, contained change, say what makes it safe. If reviewed diffs went unread, name them here.
 
-How the number is computed: start at 10; each critical takes 3, each warning 1, a note nothing; tests partial 1, missing 2; risk high 1 (medium and low nothing); new work that cannot be observed 1. A warning holds it at 8, a security warning at 6, a critical at 4. For example:
+How the number is computed: start at 10; each critical takes 3, each warning 1, a note nothing; tests partial 1, missing 2; risk high 1 (medium and low nothing); new work that cannot be observed 1. A warning holds it at 8, a security warning at 6, a critical at 4. Without a critical, a security warning, an early end or three unread files it never reads below 5. For example:
 - 10: \`Effect.forEach\` chunking of bulk writes, pinned by a 3,100-row test. No findings, tests covered, risk medium.
 - 9: tracer fix pinned by a real-error test, but one await path has no test of its own. No findings, tests partial.
 - 8: one confirmed off-by-one in a shared helper, tests covered. One warning.

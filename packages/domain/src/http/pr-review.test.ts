@@ -383,7 +383,14 @@ describe("confidencePrReview", () => {
 
 	it("never reads below 5 on ordinary warnings and soft signals", () => {
 		const many = Array.from({ length: 6 }, () => finding("warn"))
-		assert.equal(score(many, { tests: "missing", risk: "high", unobservable: true }), 5)
+		const floored = confidencePrReview(
+			reportWith(many, { tests: "missing", risk: "high", unobservable: true }),
+		)
+		assert.equal(floored?.confidence, 5)
+		// The footer names the floor, so its points still explain the number.
+		assert.equal(floored?.factors.at(-1), "floor 5")
+		assert.equal(floored?.reason, "Kept at 5: ordinary warnings and soft signals never read below 5.")
+		assert.notInclude(confidencePrReview(reportWith([finding("warn")]))?.factors ?? [], "floor 5")
 	})
 
 	it("caps on a critical, a security warning or an early end, and says why", () => {
