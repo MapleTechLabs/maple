@@ -650,7 +650,9 @@ export function auditRootlessTracesSQL(
 			}
 		})
 		.groupBy("entryService")
-		.orderBy(["rootlessCount", "desc"])
+		// Past the cap, drop the smallest services rather than the healthiest: the caller sums these
+		// rows into an org-wide rate, and cutting zero-rootless rows would inflate it.
+		.orderBy(["traceCount", "desc"])
 		.limit(1000)
 		.format("JSON")
 

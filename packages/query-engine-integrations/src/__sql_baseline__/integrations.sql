@@ -4073,7 +4073,7 @@ SELECT
           AND trace_list_mv.Timestamp < '2026-01-03 14:15:00'
         GROUP BY TraceId) AS r ON t.TraceId = r.TraceId
         GROUP BY entryService
-        ORDER BY rootlessCount DESC
+        ORDER BY traceCount DESC
         LIMIT 1000
         FORMAT JSON
 
