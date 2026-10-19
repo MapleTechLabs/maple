@@ -7,6 +7,8 @@ import { doc } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
 import { ListMetricsOutput } from "@maple/domain/mcp-outputs"
 import { MetricType } from "@maple/query-engine"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_DISCOVERY_MAX_HOURS })
 
@@ -30,7 +32,8 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 		name: "list_metrics",
 		title: "List Metrics",
 		description:
-			"Discover custom metrics with their type, unit, monotonicity and data volume. Pass a discovered `metric_name` and `metric_type` to query_data source=metrics.",
+			"Discover custom metrics with their type, unit, monotonicity and data volume. Pass a discovered `metric_name` and `metric_type` to query_data source=metrics. " +
+			"Google Cloud Monitoring metrics with data in the last day are listed too, under service `Google Cloud`, and are read live from Google.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
@@ -46,6 +49,7 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 		handler: Effect.fn("McpTool.listMetrics")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "list_metrics")
 			const tenant = yield* CurrentMcpTenant
+			const queryEngine = yield* QueryEngineService
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.ai.service": params.service ?? "all",
@@ -54,7 +58,7 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 				"maple.ai.offset": params.offset,
 			})
 
-			const [metricsResult, summaryResult] = yield* Effect.all(
+			const [metricsResult, summaryResult, gcpMetrics] = yield* Effect.all(
 				[
 					queryWarehouse<MetricListRow>("list_metrics", {
 						start_time: st,
@@ -70,21 +74,29 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 						end_time: et,
 						service: params.service,
 					}),
+					queryEngine.listGcpMetrics(tenant, {
+						service: params.service,
+						metricType: params.metric_type,
+						search: params.search,
+						limit: params.limit,
+						offset: params.offset,
+					}),
 				],
 				{ concurrency: "unbounded" },
 			)
 
-			const metrics = metricsResult.data
+			// Google rows ride on the first page; paging counts the warehouse's alone.
+			const hasMore = metricsResult.data.length === params.limit
+			const metrics: ReadonlyArray<MetricListRow> = [...metricsResult.data, ...gcpMetrics]
 			yield* Effect.annotateCurrentSpan("result.rowCount", metrics.length)
 
-			const hasMore = metrics.length === params.limit
 			return {
 				timeRange: { start: st, end: et },
 				pagination: {
 					offset: params.offset,
 					limit: params.limit,
 					hasMore,
-					...(hasMore ? { nextOffset: params.offset + metrics.length } : undefined),
+					...(hasMore ? { nextOffset: params.offset + metricsResult.data.length } : undefined),
 				},
 				summary: summaryResult.data.map((s) => ({
 					metricType: s.metricType,
@@ -164,7 +176,9 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 										m.isMonotonic ? "yes" : "-",
 										m.serviceName,
 										m.metricUnit || "-",
-										formatNumber(m.dataPointCount),
+										isGcpMetricType(m.metricName)
+											? "live"
+											: formatNumber(m.dataPointCount),
 									]),
 								),
 							]),

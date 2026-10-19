@@ -7,6 +7,7 @@ import { listMetricsResultAtom } from "@/lib/services/atoms/warehouse-query-atom
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { useWidgetBuilder } from "@/hooks/use-widget-builder"
 import { toNames } from "@/lib/query-builder/autocomplete-utils"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
 import { useFunnelSuggestions } from "@/components/funnels/use-funnel-suggestions"
 
@@ -82,8 +83,12 @@ export function useWidgetBuilderData() {
 
 	// Augment base autocomplete values with metric-specific services
 	const autocompleteValues = React.useMemo(() => {
+		// Google Cloud metrics carry no service.name to filter on.
 		const metricServices = toNames(
-			metricRows.map((row) => ({ name: row.serviceName })).filter((row) => row.name.trim()),
+			metricRows
+				.filter((row) => !isGcpMetricType(row.metricName))
+				.map((row) => ({ name: row.serviceName }))
+				.filter((row) => row.name.trim()),
 		)
 
 		return {

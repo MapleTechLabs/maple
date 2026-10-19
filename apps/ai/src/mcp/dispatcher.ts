@@ -30,6 +30,7 @@ import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCo
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { GcpLiveMetricsPort } from "@maple/backend/services/warehouse/GcpLiveMetricsPort"
 
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
@@ -278,6 +279,8 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 		),
 	),
 	Layer.provide(PullRequestLookupLive),
+	// Graph-wide, so every `QueryEngineService.layer` build (it is memoized) reads Google metrics.
+	Layer.provide(GcpLiveMetricsPort.layer),
 	Layer.provide(FetchHttpClient.layer),
 )
 

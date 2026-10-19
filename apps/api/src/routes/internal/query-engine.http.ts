@@ -1484,8 +1484,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("listMetrics", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.listMetrics, tenant, payload)
-						return new ListMetricsResponse({ data: rows })
+						const [rows, gcpRows] = yield* Effect.all(
+							[
+								runQuery(Queries.listMetrics, tenant, payload),
+								queryEngine.listGcpMetrics(tenant, payload),
+							],
+							{ concurrency: "unbounded" },
+						)
+						return new ListMetricsResponse({ data: [...rows, ...gcpRows] })
 					}),
 				)
 				.handle("metricsSummary", ({ payload }) =>

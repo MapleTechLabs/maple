@@ -43,6 +43,11 @@ import { EdgeCacheService } from "@maple/cache"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import * as QueryEngineMetrics from "@maple/backend/observability/QueryEngineMetrics"
 import { GcpLiveMetricsPort } from "@maple/backend/services/warehouse/GcpLiveMetricsPort"
+import {
+	listGcpMetricCatalog,
+	type GcpMetricCatalogRequest,
+	type GcpMetricCatalogRow,
+} from "@maple/backend/services/warehouse/gcp-metric-catalog"
 
 // QueryEngineService — caching + orchestration. The pure lowering (validation,
 // QuerySpec → CH, evaluate/raw-SQL) lives in `@maple/query-engine/runtime`; this
@@ -91,6 +96,11 @@ export interface QueryEngineServiceApi {
 		/** How the value crosses the cache's JSON round trip, when plain JSON would change it. */
 		schema?: Schema.Codec<A, unknown, never, never>,
 	) => Effect.Effect<A, E | QueryEngineTimeoutError>
+	/** Google Cloud metrics as `listMetrics` rows, for discovery surfaces to append to theirs. */
+	readonly listGcpMetrics: (
+		tenant: TenantContext,
+		request: GcpMetricCatalogRequest,
+	) => Effect.Effect<ReadonlyArray<GcpMetricCatalogRow>>
 }
 export class QueryEngineService extends Context.Service<QueryEngineService, QueryEngineServiceApi>()(
 	"@maple/api/services/QueryEngineService",
@@ -501,6 +511,7 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				evaluate: cachedEvaluate,
 				evaluateSeries,
 				cachedDirect,
+				listGcpMetrics: (tenant, request) => listGcpMetricCatalog(gcp, tenant, request),
 			} satisfies QueryEngineServiceApi
 		}),
 	},

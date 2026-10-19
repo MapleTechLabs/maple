@@ -98,7 +98,9 @@ type Params = typeof queryDataSchema.Type
 const queryDataDescription =
 	"Aggregate traces, logs, metrics or product events into a timeseries or a top-N breakdown. " +
 	"Start here for trends, comparisons and top-N; for errors prefer find_errors and error_detail; " +
-	"for a shape this tool cannot express, run_sql. Applied defaults are listed in the result."
+	"for a shape this tool cannot express, run_sql. Applied defaults are listed in the result. " +
+	"A Google Cloud Monitoring metric type (e.g. cloudsql.googleapis.com/database/cpu/utilization) works as metric_name and is read live from Google; " +
+	"it has no service, so filter and group by its labels with attribute_key (e.g. database_id, project_id, monitored_resource)."
 
 /** Default metric/group_by per source, as `[default, available]` for the decisions list. */
 const DEFAULT_METRIC = {

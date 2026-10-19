@@ -128,6 +128,7 @@ const queryEngineStub = (execute: QueryEngineServiceApi["execute"]): QueryEngine
 	evaluate: () => Effect.die(new Error("not used")),
 	evaluateSeries: () => Effect.die(new Error("not used")),
 	cachedDirect: (_tenant, _route, _payload, effect) => effect,
+	listGcpMetrics: () => Effect.die(new Error("not used")),
 })
 
 /** Grouped requests carry a `service` group-by; the ungrouped one does not. */

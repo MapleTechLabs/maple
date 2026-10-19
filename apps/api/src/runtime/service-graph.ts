@@ -73,6 +73,7 @@ import { ProductEventsService } from "@maple/backend/services/product-events/Pro
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { GcpLiveMetricsPort } from "@maple/backend/services/warehouse/GcpLiveMetricsPort"
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
@@ -157,5 +158,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	ChatWorkspaceService.layer,
 ).pipe(
 	Layer.provide(PullRequestLookupLive),
+	// Graph-wide, so every `QueryEngineService.layer` build (it is memoized) reads Google metrics.
+	Layer.provide(GcpLiveMetricsPort.layer),
 	Layer.provideMerge(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
 )

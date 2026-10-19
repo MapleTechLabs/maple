@@ -5,6 +5,7 @@ import { StatSparkline } from "@maple/ui/components/charts/sparkline/stat-sparkl
 import { MetricTypeBadge } from "./metric-type-badge"
 import type { MetricSparklinePoint } from "@/api/warehouse/metrics"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 
 export interface MetricPreviewEntry {
 	metricName: string
@@ -77,11 +78,13 @@ export function MetricPreviewCard({
 					/>
 				) : (
 					<div className="flex h-full items-center text-3xs text-muted-foreground">
-						{loading
-							? "Loading…"
-							: failed
-								? "Preview unavailable"
-								: "Not enough datapoints for a preview"}
+						{isGcpMetricType(entry.metricName)
+							? "Read live from Google Cloud: open to chart"
+							: loading
+								? "Loading…"
+								: failed
+									? "Preview unavailable"
+									: "Not enough datapoints for a preview"}
 					</div>
 				)}
 			</div>

@@ -1,6 +1,7 @@
 import { ErrorState } from "@/components/common/error-state"
 import { Panel } from "@maple/ui/components/ui/panel"
-import { countLabel, formatNumber } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -53,7 +54,7 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 
 			<KeyValueList className="gap-2">
 				<KeyValue label="Datapoints in range" mono>
-					{formatNumber(summary.dataPointCount)}
+					{isGcpMetricType(summary.metricName) ? EMPTY_VALUE : formatNumber(summary.dataPointCount)}
 				</KeyValue>
 				<KeyValue label="First seen" mono>
 					{formatTimestampInTimezone(summary.firstSeen, {

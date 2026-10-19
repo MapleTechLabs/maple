@@ -14,6 +14,7 @@ import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAu
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { GcpLiveMetricsPort } from "@maple/backend/services/warehouse/GcpLiveMetricsPort"
 
 // Select the already-decorated group: its session auth and error middleware
 // are exactly those of the complete internal API. The service key keeps the API id.
@@ -39,7 +40,7 @@ export const QueryRoutes = Layer.mergeAll(
 			WarehouseQueryService.layer,
 			AuditLogService.layer,
 			OrganizationRegionService.layer,
-		),
+		).pipe(Layer.provide(GcpLiveMetricsPort.layer)),
 	),
 	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
 )

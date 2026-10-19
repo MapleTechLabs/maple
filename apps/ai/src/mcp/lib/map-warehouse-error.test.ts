@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { WarehouseQueryError, WarehouseResultDecodeError, WarehouseSchemaDriftError } from "@maple/domain"
+import {
+	GcpLiveQueryFailedError,
+	GcpLiveQueryRejectedError,
+	GcpLiveQueryUnavailableError,
+} from "@maple/domain/http/gcp-live-query-errors"
 import { toMcpQueryError } from "./map-warehouse-error"
 
 describe("toMcpQueryError", () => {
@@ -36,5 +41,40 @@ describe("toMcpQueryError", () => {
 		const mcp = toMcpQueryError("service_overview")(err)
 		expect(mcp.message).toBe("row did not decode")
 		expect(mcp.message).not.toContain("schema apply")
+	})
+
+	it("makes a query Google refused the caller's to fix", () => {
+		const err = new GcpLiveQueryRejectedError({
+			message: "The query reaches 34 projects; filter on project_id",
+			reason: "too_many_projects",
+		})
+		const mcp = toMcpQueryError("query_data")(err)
+		expect(mcp._tag).toBe("@maple/mcp/errors/McpInvalidInputError")
+		expect(mcp.message).toBe("The query reaches 34 projects; filter on project_id")
+	})
+
+	it("reports Google Cloud metrics as unavailable when no connection reads them", () => {
+		const err = new GcpLiveQueryUnavailableError({
+			message: "No Google Cloud connection has metrics on.",
+		})
+		const mcp = toMcpQueryError("query_data")(err)
+		expect(mcp).toMatchObject({
+			_tag: "@maple/mcp/errors/McpUnavailableError",
+			message: "No Google Cloud connection has metrics on.",
+			capability: "google_cloud_metrics",
+		})
+	})
+
+	it("asks for a retry when Google did not answer", () => {
+		const err = new GcpLiveQueryFailedError({
+			message: "Google Cloud could not be read.",
+			failures: [{ scope: "projects/acme", message: "503" }],
+		})
+		const mcp = toMcpQueryError("query_data")(err)
+		expect(mcp).toMatchObject({
+			_tag: "@maple/mcp/errors/McpNotReadyError",
+			message: "Google Cloud could not be read.",
+			retryAfterSeconds: 60,
+		})
 	})
 })

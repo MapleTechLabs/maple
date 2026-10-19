@@ -1,10 +1,25 @@
 import { Effect } from "effect"
-import { type WarehouseError, WarehouseQuotaExceededError, WarehouseSchemaDriftError } from "@maple/domain"
+import {
+	type WarehouseError,
+	type WarehouseQuotaExceededError,
+	WarehouseSchemaDriftError,
+} from "@maple/domain"
 import {
 	warehouseHandlers,
 	warehouseReadHandlers,
 } from "@maple/backend/services/warehouse/warehouse-error-handlers"
-import { McpQueryBudgetError, McpQueryError } from "../tools/types"
+import type {
+	GcpLiveQueryFailedError,
+	GcpLiveQueryRejectedError,
+	GcpLiveQueryUnavailableError,
+} from "@maple/domain/http/gcp-live-query-errors"
+import {
+	McpInvalidInputError,
+	McpNotReadyError,
+	McpQueryBudgetError,
+	McpQueryError,
+	McpUnavailableError,
+} from "../tools/types"
 
 export { warehouseHandlers, warehouseReadHandlers }
 
@@ -33,23 +48,54 @@ const BUDGET_GUIDANCE = {
 	max_threads: "The query needed more parallelism than it is allowed. Scan less data.",
 } satisfies Record<WarehouseQuotaExceededError["setting"], string>
 
+/** Seconds the model waits before asking Google again. */
+const GCP_RETRY_AFTER_SECONDS = 60
+
+/** The MCP error a warehouse error becomes, per member, so reads that cannot reach Google keep a narrow type. */
+type McpErrorFor<E> = E extends GcpLiveQueryRejectedError
+	? McpInvalidInputError
+	: E extends GcpLiveQueryUnavailableError
+		? McpUnavailableError
+		: E extends GcpLiveQueryFailedError
+			? McpNotReadyError
+			: McpQueryError | McpQueryBudgetError
+
+const toMcpError = (pipe: string, error: WarehouseError) => {
+	switch (error._tag) {
+		case "@maple/http/errors/GcpLiveQueryRejectedError":
+			return new McpInvalidInputError({ message: error.message })
+		case "@maple/http/errors/GcpLiveQueryUnavailableError":
+			return new McpUnavailableError({ message: error.message, capability: "google_cloud_metrics" })
+		case "@maple/http/errors/GcpLiveQueryFailedError":
+			return new McpNotReadyError({
+				message: error.message,
+				retryAfterSeconds: GCP_RETRY_AFTER_SECONDS,
+			})
+		case "@maple/http/errors/WarehouseQuotaExceededError":
+			return new McpQueryBudgetError({
+				message: BUDGET_GUIDANCE[error.setting],
+				pipeName: pipe,
+				setting: error.setting,
+			})
+		default:
+			return new McpQueryError({ message: warehouseErrorText(error), pipeName: pipe, cause: error })
+	}
+}
+
 /**
  * Curry the pipe label so call sites read as
  * `Effect.mapError(toMcpQueryError("service_overview"))`.
  *
  * A budget breach gets its own error with guidance: the raw text is the vendor's ("Upgrade your
- * plan for higher capacity"), which no model can act on.
+ * plan for higher capacity"), which no model can act on. A metrics read answered live by Google
+ * fails like the tool's other dependencies: a refused query is the caller's to fix, no connection
+ * is unavailable, and Google not answering is worth a retry.
  */
 export const toMcpQueryError =
 	(pipe: string) =>
-	(error: WarehouseError): McpQueryError | McpQueryBudgetError =>
-		error instanceof WarehouseQuotaExceededError
-			? new McpQueryBudgetError({
-					message: BUDGET_GUIDANCE[error.setting],
-					pipeName: pipe,
-					setting: error.setting,
-				})
-			: new McpQueryError({ message: warehouseErrorText(error), pipeName: pipe, cause: error })
+	<E extends WarehouseError>(error: E): McpErrorFor<E> =>
+		// TypeScript cannot narrow a conditional return type through the switch.
+		toMcpError(pipe, error) as McpErrorFor<E>
 
 /**
  * `Effect.catchTags` handler map that converts every warehouse error tag into an

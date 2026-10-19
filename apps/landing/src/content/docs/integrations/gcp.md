@@ -150,6 +150,18 @@ One-minute resolution, named like OpenTelemetry metrics under `gcp.`:
 
 Every hour Maple lists projects, Cloud Run services and jobs, Cloud Functions, GKE clusters, Compute Engine instances, Cloud SQL instances, Pub/Sub topics and subscriptions, and load balancers from Cloud Asset Inventory, with their location, state and labels.
 
+## Query any Cloud Monitoring metric live
+
+Besides the `gcp.*` metrics Maple stores, you can query any Cloud Monitoring metric with data in the last 25 hours. Maple reads it live from Google. Use its metric type as the metric name, for example `cloudsql.googleapis.com/database/cpu/utilization`, in dashboards, alert rules and the MCP tools. The metrics explorer and the metric pickers list these metrics under the service **Google Cloud**. It needs a connection with **Metrics and resources** on.
+
+- Metric and resource labels form one set. Filter and group by them as `attr.<label>`, for example `attr.database_id` or `attr.project_id`. There is no `service.name` or `deployment.environment`.
+- `monitored_resource` is the resource type. Maple queries each type Google lists for the metric. When Google lists none, filter on it, for example `attr.monitored_resource = cloudsql_database`.
+- A query reads at most 20 projects. To query more, filter on `project_id`.
+- A query returns at most 500 series. Filter, or group by fewer labels.
+- Metrics with string or money values can't be charted.
+
+Google bills these reads per time series returned. See [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
+
 ## Infrastructure → Google Cloud
 
 While a connection has **Metrics and resources** on, **Infrastructure → Google Cloud** shows one tab per service with a row per workload, a band that counts saturated, elevated and erroring workloads, and a **Resources** tab with the inventory. Each workload opens a page with its charts and links to its logs, its traces and the Google Cloud console.

@@ -6,6 +6,7 @@ import { RelativeTime } from "@/components/common/relative-time"
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { toQueryBuilderMetricType } from "@maple/query-model"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -190,7 +191,10 @@ export function MetricsTable({
 										)}
 									</TableCell>
 									<TableCell className="hidden md:table-cell font-mono text-xs">
-										{formatNumber(metric.dataPointCount)}
+										{/* Google Cloud metrics are read live; Maple stores no points for them. */}
+										{isGcpMetricType(metric.metricName)
+											? EMPTY_VALUE
+											: formatNumber(metric.dataPointCount)}
 									</TableCell>
 									<TableCell className="hidden md:table-cell text-xs text-muted-foreground">
 										<RelativeTime value={metric.lastSeen} tooltip="title" />
