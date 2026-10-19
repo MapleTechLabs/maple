@@ -27,6 +27,7 @@ import {
 import { DismissQuotaBanner, OpenCustomerPortal } from "./billing-banners"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
+import * as ConnectPanel from "./connect-panel"
 import * as SupportChannel from "./support-channel"
 import { isSameMenu, popupIdOf, triggerIdOf } from "./menus"
 import { BUILT_COMMIT, CheckDeployedCommit, ReloadPage } from "./version"
@@ -120,6 +121,11 @@ export const isChecklistCounting = (model: Model): boolean => Checklist.isCounti
 
 export const checklistTicked = (nowMs: number): Message =>
 	Message.GotChecklistMessage({ message: Checklist.Message.TickedClock({ nowMs }) })
+
+/** The Connect panel's connection signal is polled while it is open. */
+export const isConnectPolling = (model: Model): boolean => ConnectPanel.isPolling(model.connect)
+
+export const connectPollTicked = (): Message => Message.GotConnectMessage({ message: ConnectPanel.Message.TickedPoll() })
 
 /**
  * A signed-in route outside the shell (`/cli-login`, `/quick-start`): legacy's root still mounts
@@ -387,6 +393,15 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 			return {
 				model: modifyFields(model, { checklist: () => next.model }),
 				commands: (next.commands ?? []).map(toChecklist),
+			}
+		},
+		GotConnectMessage: ({ message: child }) => {
+			const orgId = Option.getOrNull(model.maybeOrgId)
+			const pinnedNamespace = orgId === null ? null : (model.pinnedNamespaces[orgId] ?? null)
+			const next = ConnectPanel.update(model.connect, child, { orgId, pinnedNamespace })
+			return {
+				model: modifyFields(model, { connect: () => next.model }),
+				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotConnectMessage({ message })),
 			}
 		},
 		ClickedUpdatePaymentMethod: () => ({ model, commands: [OpenCustomerPortal()] }),

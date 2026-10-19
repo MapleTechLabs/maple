@@ -1,6 +1,7 @@
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as ChecklistView from "./onboarding-checklist-view"
+import * as ConnectPanelView from "./connect-panel-view"
 import {
 	breadcrumb,
 	breadcrumbItem,
@@ -47,24 +48,14 @@ const askMapleButton = (h: HtmlBuilder<Message>): Html =>
 		[icon(h, "ChatBubbleSparkleIcon")],
 	)
 
-/** `ConnectButton`'s popover trigger (the connect panel is not ported yet). */
-const connectButton = (h: HtmlBuilder<Message>): Html =>
-	button(
-		h,
-		{
-			size: "sm",
-			variant: "default",
-			className: "gap-2",
-			slot: "popover-trigger",
-			attributes: [
-				h.AriaExpanded(false),
-				h.AriaHasPopup("dialog"),
-				h.DataAttribute("base-ui-click-trigger", ""),
-				h.Tabindex(0),
-			],
-		},
-		[icon(h, "ConnectionIcon"), "Connect"],
-	)
+/** `ConnectButton`: the ingest endpoint, keys and MCP popover. */
+const connectButton = (h: HtmlBuilder<Message>, model: Model): Html =>
+	h.submodel({
+		slotId: "connect-panel",
+		model: model.connect,
+		view: ConnectPanelView.view,
+		toParentMessage: (message) => Message.GotConnectMessage({ message }),
+	})
 
 /** `OnboardingChecklistButton`: Clerk only, self-hosted has no billing to credit. */
 const checklistPill = (h: HtmlBuilder<Message>, model: Model): Html =>
@@ -110,7 +101,7 @@ export const topbar = (
 				[
 					askMapleButton(h),
 					...(isClerkAuthEnabled ? [checklistPill(h, model)] : []),
-					connectButton(h),
+					connectButton(h, model),
 					...railTriggers,
 					pageActions,
 				],

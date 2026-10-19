@@ -9,6 +9,7 @@ import * as Dialog from "../ui/dialog"
 import * as Tooltip from "../ui/tooltip"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
+import * as ConnectPanel from "./connect-panel"
 import * as SupportChannel from "./support-channel"
 import { PinnedDashboardRow } from "./dashboards-shape"
 import * as Palette from "./palette/model"
@@ -68,6 +69,8 @@ export const Model = Schema.Struct({
 	clerkOrgMenu: ClerkOrgSwitcher.Model,
 	/** Clerk: the onboarding reward pill in the top bar. */
 	checklist: Checklist.Model,
+	/** The top bar's Connect popover (`ConnectButton`). */
+	connect: ConnectPanel.Model,
 	/** Clerk: the shared Slack channel dialog of the Support menu. */
 	supportChannel: SupportChannel.Model,
 	/** `quota-banner-approaching` in sessionStorage: the approaching-quota banner was dismissed. */
@@ -139,6 +142,7 @@ export const init = (flags: ShellFlags): Model => ({
 	railTooltip: initRailTooltip(),
 	clerkOrgMenu: ClerkOrgSwitcher.init("shell-clerk-org-switcher"),
 	checklist: Checklist.init(),
+	connect: ConnectPanel.init(),
 	supportChannel: SupportChannel.init(),
 	isQuotaApproachingDismissed: flags.isQuotaApproachingDismissed ?? false,
 	palette: null,

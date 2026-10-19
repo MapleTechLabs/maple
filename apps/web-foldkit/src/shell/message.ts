@@ -8,6 +8,7 @@ import * as Dialog from "../ui/dialog"
 import * as Tooltip from "../ui/tooltip"
 import * as ClerkOrgSwitcher from "./clerk-org-switcher"
 import * as Checklist from "./onboarding-checklist"
+import * as ConnectPanel from "./connect-panel"
 import * as SupportChannel from "./support-channel"
 import { PinnedDashboardRow } from "./dashboards-shape"
 import * as Palette from "./palette/model"
@@ -81,6 +82,7 @@ export const Message = defineMessageUnion({
 	GotRailTooltipMessage: { message: Tooltip.Message },
 	GotClerkOrgMenuMessage: { message: ClerkOrgSwitcher.Message },
 	GotChecklistMessage: { message: Checklist.Message },
+	GotConnectMessage: { message: ConnectPanel.Message },
 	GotSupportChannelMessage: { message: SupportChannel.Message },
 	ClickedSupportChannel: {},
 	ClickedUpdatePaymentMethod: {},

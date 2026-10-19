@@ -71,6 +71,21 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				),
 		},
 	),
+	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })`: the Connect panel's poll, skipped while hidden. */
+	connectPoll: entry(
+		{ isPolling: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({ isPolling: Shell.isConnectPolling(model.shell) }),
+			dependenciesToStream: ({ isPolling }) =>
+				Stream.when(
+					Stream.fromSchedule(Schedule.spaced(Duration.seconds(15))).pipe(
+						Stream.filter(() => !document.hidden),
+						Stream.map(() => Message.GotShellMessage({ message: Shell.connectPollTicked() })),
+					),
+					Effect.sync(() => isPolling),
+				),
+		},
+	),
 	/** `useIsMobile` for the shell: the sidebar turns into a sheet below `md`. */
 	shellViewport: entry(
 		{},
