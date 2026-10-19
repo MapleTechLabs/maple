@@ -1,0 +1,582 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { getOffer, money, rateLabel } from "../../lib/pricing-offer";
+
+const pageTitle = "Sentry Pricing 2026: Plans, Free Tier Limits and Monthly Cost Examples";
+const pageDescription =
+    "Sentry pricing for 2026: the free Developer plan, Team and Business prices, quotas for errors, spans and replays, overage rates and two worked monthly bills.";
+const published = "2026-10-19";
+const updatedLabel = "October 19, 2026";
+const verified = "2026-10-19";
+
+const offer = await getOffer();
+const gb = offer.allotments.find((a) => a.unit === "gb");
+const sessions = offer.allotments.find((a) => a.unit === "sessions");
+
+const toc = [
+    ["plans", "Plans and prices"],
+    ["free-plan", "The free plan"],
+    ["quotas", "Quota units and rates"],
+    ["overage", "Overage and reserved volume"],
+    ["session-replay", "Session replay pricing"],
+    ["examples", "Worked monthly bills"],
+    ["reduce", "Keeping the bill down"],
+    ["maple", "Maple pricing"],
+] as const;
+const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
+
+const sentryInit = `import * as Sentry from "@sentry/browser"
+
+Sentry.init({
+  dsn: "https://<key>@o0.ingest.sentry.io/0",
+  integrations: [Sentry.browserTracingIntegration(), Sentry.replayIntegration()],
+
+  // Errors: keep every one, drop the noise before it is sent.
+  sampleRate: 1.0,
+  ignoreErrors: ["ResizeObserver loop completed with undelivered notifications"],
+  denyUrls: [/extensions\\//i, /^chrome:\\/\\//i],
+
+  // Spans: send 10% of traces instead of all of them.
+  tracesSampleRate: 0.1,
+
+  // Replays: record 1% of sessions, plus every session that hits an error.
+  replaysSessionSampleRate: 0.01,
+  replaysOnErrorSampleRate: 1.0,
+
+  beforeSend(event) {
+    if (event.environment === "development") return null
+    return event
+  },
+})`;
+
+const faqs = [
+    {
+        question: "Is Sentry free?",
+        answer:
+            "Yes, for one user. The Developer plan costs $0 and includes 5,000 errors, 5 million spans, 50 session replays, 5 GB of logs, 5 GB of application metrics, 1 GB of attachments, one cron monitor and one uptime monitor a month, with a 30-day lookback. It cannot add a pay-as-you-go budget, so data past those quotas is dropped until the next billing cycle. Self-hosted Sentry is also free to run under the Functional Source License; you pay for the servers.",
+    },
+    {
+        question: "How much does Sentry cost per month?",
+        answer:
+            "Team is $29 a month billed monthly or $26 a month billed annually, and Business is $89 or $80. Enterprise is priced by sales. Those are base prices; usage above the included 50,000 errors, 5 million spans, 50 replays and 5 GB of logs is billed per unit. A five-person team with moderate volume lands around $105 a month on Team, and a mid-sized team sending a million errors and 200 million spans pays around $1,570 on Business (prices verified 2026-10-19).",
+    },
+    {
+        question: "What counts as an error or event in Sentry?",
+        answer:
+            "An event is one payload an SDK sends, usually an error or a span. Every captured exception is one error and counts against the error quota, including repeats of an issue you resolved or ignored. The issue that groups them does not count. Events dropped by an inbound filter, a rate limit, SDK sampling, beforeSend, spike protection, or an issue set to Delete & Discard are not counted.",
+    },
+    {
+        question: "What happens when you exceed your Sentry quota?",
+        answer:
+            "Sentry first spends your pay-as-you-go budget, if you set one. Once included volume, reserved volume and that budget are used up, Sentry answers with HTTP 429 and drops new data for that category until the billing cycle resets. You are not charged for dropped data, but you have no monitoring for that category for the rest of the cycle.",
+    },
+    {
+        question: "Is self-hosted Sentry free?",
+        answer:
+            "The software is free. Sentry is published under the Functional Source License, which allows running it inside your company but not reselling it as a service, and each release becomes Apache 2.0 after two years. The cost is infrastructure and operations: Sentry's self-hosted docs ask for at least 4 CPU cores, 16 GB of RAM plus 16 GB of swap (32 GB recommended) and 20 GB of free disk, and scaling beyond a single machine is left to you.",
+    },
+    {
+        question: "How is Sentry session replay billed?",
+        answer:
+            "Per recorded session. Every plan includes 50 replays a month, and Team and Business pay the same rates above that: $0.00375 per replay on pay-as-you-go up to 5,000, falling to $0.002453 above 4.5 million, or 20% less with reserved volume. A session ends after 5 minutes without user interaction or at 60 minutes. Only sessions the SDK actually sends are counted, so replaysSessionSampleRate controls the bill.",
+    },
+    {
+        question: "What is the difference between Sentry Team and Business?",
+        answer:
+            "Both include the same base volume and unlimited users. Business adds anomaly detection, advanced inbound filtering, Code Owners, SAML and SCIM single sign-on, Relay and 1,000 metric monitors instead of 20. It also charges roughly twice as much per error and per span above the included volume, so the same traffic costs noticeably more on Business. Replay, log, attachment and monitor rates are the same on both.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Sentry pricing in 2026: plans, free tier limits and what a month costs",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: published,
+    author: { "@type": "Organization", name: "Maple" },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/sentry-pricing`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Sentry pricing" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto grid max-w-6xl gap-12 px-6 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.75fr)] lg:items-center lg:gap-16">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                        <span class="border border-primary/40 px-2 py-1 text-primary">Pricing</span>
+                        <span>12 min read</span>
+                    </div>
+                    <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                        Sentry pricing in 2026: plans, free tier and what a month costs
+                    </h1>
+                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
+                        Sentry charges a flat base price per plan, then meters errors, spans, replays, logs and monitors separately. This guide lists every plan and per-unit rate in USD, explains what happens past your quota, and works through a monthly bill for a small and a mid-sized team.
+                    </p>
+                    <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                        <span>By Maple</span>
+                        <time datetime={published}>Updated {updatedLabel}</time>
+                        <span>Prices last verified {verified}</span>
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-border bg-bg-deep p-4 shadow-2xl shadow-black/20 md:p-5" aria-label="Sentry pricing at a glance">
+                    <div class="flex items-center justify-between border-b border-border pb-3 font-mono text-[10px] text-fg-muted">
+                        <span>sentry pricing / at a glance</span>
+                        <span class="text-primary">USD</span>
+                    </div>
+                    <ol class="divide-y divide-border">
+                        {[
+                            ["01", "Developer", "5k errors, 5M spans, 50 replays", "free, 1 user"],
+                            ["02", "Team", "Unlimited users, 50k errors, integrations", "$29/mo or $26 annual"],
+                            ["03", "Business", "Anomaly detection, SAML and SCIM", "$89/mo or $80 annual"],
+                            ["04", "Enterprise", "Custom volume and support", "custom"],
+                            ["05", "Over quota", "Pay-as-you-go budget or reserved volume", "reserved is 20% cheaper"],
+                        ].map(([number, label, headline, detail]) => (
+                            <li class="grid grid-cols-[2rem_1fr] gap-3 py-3.5">
+                                <span class="font-mono text-[10px] text-primary">{number}</span>
+                                <div>
+                                    <div class="flex items-baseline justify-between gap-3">
+                                        <span class="text-xs font-medium text-fg">{label}</span>
+                                        <span class="font-mono text-[9px] text-fg-muted">{detail}</span>
+                                    </div>
+                                    <p class="mt-1 text-[11px] leading-relaxed text-fg-muted">{headline}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {toc.map(([id, label]) => (
+                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={tocHeadings} class="sticky top-28" />
+            </aside>
+
+            <article class="pricing-guide min-w-0">
+                <section id="plans" class="scroll-mt-24">
+                    <p class="guide-eyebrow">01 · Plans</p>
+                    <h2>Sentry plans and prices</h2>
+
+                    <div class="guide-answer">
+                        <p>
+                            Sentry sells a free <strong>Developer</strong> plan for one user, <strong>Team</strong> at <strong>$29 a month</strong> ($26 a month billed annually), <strong>Business</strong> at <strong>$89 a month</strong> ($80 billed annually) and <strong>Enterprise</strong> on custom terms. Every plan includes a monthly allowance of each data type. Anything above it is billed per unit from a pay-as-you-go budget or from reserved volume you prepay.
+                        </p>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Included per month</th><th>Developer</th><th>Team</th><th>Business</th><th>Enterprise</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Price, billed monthly</td><td>$0</td><td>$29</td><td>$89</td><td>Custom</td></tr>
+                                <tr><td>Price, billed annually</td><td>$0</td><td>$26 / month</td><td>$80 / month</td><td>Custom</td></tr>
+                                <tr><td>Users</td><td>1</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
+                                <tr><td>Errors</td><td>5,000</td><td>50,000</td><td>50,000</td><td>Custom</td></tr>
+                                <tr><td>Spans (tracing)</td><td>5M</td><td>5M</td><td>5M</td><td>Custom</td></tr>
+                                <tr><td>Session replays</td><td>50</td><td>50</td><td>50</td><td>Custom</td></tr>
+                                <tr><td>Logs</td><td>5 GB</td><td>5 GB</td><td>5 GB</td><td>Custom</td></tr>
+                                <tr><td>Application metrics</td><td>5 GB</td><td>5 GB</td><td>5 GB</td><td>Custom</td></tr>
+                                <tr><td>Attachments</td><td>1 GB</td><td>1 GB</td><td>1 GB</td><td>Custom</td></tr>
+                                <tr><td>Cron and uptime monitors</td><td>1 each</td><td>1 each</td><td>1 each</td><td>Custom</td></tr>
+                                <tr><td>Metric monitors</td><td>20</td><td>20</td><td>1,000</td><td>Custom</td></tr>
+                                <tr><td>Custom dashboards</td><td>10</td><td>20</td><td>Unlimited</td><td>Unlimited</td></tr>
+                                <tr><td>Data retention</td><td>30-day lookback</td><td>Up to 90 days</td><td>Up to 90 days, plus sampled retention</td><td>Custom</td></tr>
+                                <tr><td>Pay-as-you-go budget</td><td>No</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+                                <tr><td>API and third-party integrations</td><td>No</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+                                <tr><td>Anomaly detection, SAML and SCIM</td><td>No</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        The annual prices assume the default prepaid data and are paid up front for the year. Seer, Sentry's AI debugging agent, is a separate subscription on Team and Business at <strong>$40 per active contributor per month</strong>, where an active contributor is anyone who opens two or more pull requests in a month against a repository with Seer enabled. It does not draw from the pay-as-you-go budget.
+                    </p>
+                    <p>
+                        All prices are in US dollars and exclude tax. Customers in the EU and UK are charged VAT unless they supply a valid VAT ID, and US customers in the states Sentry lists are charged sales tax. Organizations that signed up before June 11, 2024 may still be on the older plans billed by transactions or performance units; the subscription page in Sentry's settings shows which applies.
+                    </p>
+                    <p class="guide-verified">
+                        Last verified 2026-10-19 against <a href="https://sentry.io/pricing/" target="_blank" rel="noopener noreferrer">sentry.io/pricing</a> and <a href="https://docs.sentry.io/pricing/" target="_blank" rel="noopener noreferrer">Sentry's pricing and billing docs</a>. Sentry rounds the per-unit prices it publishes.
+                    </p>
+                </section>
+
+                <section id="free-plan" class="scroll-mt-24">
+                    <p class="guide-eyebrow">02 · Free tier</p>
+                    <h2>Is Sentry free? The Developer plan in 2026</h2>
+                    <p>
+                        The Developer plan is free with no time limit, for a single user. It includes error monitoring and tracing, email alerts, release health, ownership rules and MCP access, with the monthly quotas in the table above: <strong>5,000 errors</strong>, 5 million spans, 50 replays, 5 GB of logs, 5 GB of application metrics, 1 GB of attachments, one cron monitor and one uptime monitor.
+                    </p>
+                    <p>
+                        The limits that matter in practice are the single seat and the absence of a pay-as-you-go budget. Sentry's docs state that the budget is only available on paid plans, so when a free organization uses up its 5,000 errors, further errors are dropped until the cycle resets. Alerts go to email only, because integrations such as Slack and the API start at Team.
+                    </p>
+
+                    <div class="guide-grid guide-grid--two">
+                        <div>
+                            <p class="guide-kicker">Trial</p>
+                            <h3>14 days of Business, then Developer</h3>
+                            <p>New accounts start on a 14-day Business trial. Without an upgrade they stay on the free Developer plan when it ends. Each product, such as replays, can also be trialled once for 14 days with unlimited events.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">New users</p>
+                            <h3>5,000 replays a month for 3 months</h3>
+                            <p>At the time of writing the pricing page offers new users 5,000 free session replays per month for their first three months.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">Self-hosted</p>
+                            <h3>Free software, your hardware</h3>
+                            <p>Self-hosted Sentry is free under the Functional Source License. The documented minimum is 4 CPU cores, 16 GB of RAM plus 16 GB of swap, and 20 GB of disk.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">Retention</p>
+                            <h3>30-day lookback</h3>
+                            <p>Free organizations can look back 30 days. Team and Business extend that to up to 90 days.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="quotas" class="scroll-mt-24">
+                    <p class="guide-eyebrow">03 · Quota units</p>
+                    <h2>Sentry quota units and per-unit rates</h2>
+                    <p>
+                        Each data type has its own quota and its own price. The table lists the pay-as-you-go rate at the first paid tier; errors, spans and replays get cheaper per unit as volume grows.
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Unit</th><th>Included</th><th>Team, pay-as-you-go</th><th>Business, pay-as-you-go</th><th>Counts</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Errors</td><td>50k</td><td>$0.0003625 each</td><td>$0.0011125 each</td><td>One per captured exception</td></tr>
+                                <tr><td>Spans</td><td>5M</td><td>$2.00 per million</td><td>$4.00 per million</td><td>Every operation in a trace</td></tr>
+                                <tr><td>Replays</td><td>50</td><td>$0.00375 each</td><td>$0.00375 each</td><td>One recorded browser or mobile session</td></tr>
+                                <tr><td>Logs</td><td>5 GB</td><td>$0.50 / GB</td><td>$0.50 / GB</td><td>Structured log data</td></tr>
+                                <tr><td>Application metrics</td><td>5 GB</td><td>$0.50 / GB</td><td>$0.50 / GB</td><td>Counters, gauges, distributions</td></tr>
+                                <tr><td>Attachments</td><td>1 GB</td><td>$0.3125 / GB</td><td>$0.3125 / GB</td><td>Files such as minidumps</td></tr>
+                                <tr><td>Cron monitors</td><td>1</td><td>$0.78 / monitor</td><td>$0.78 / monitor</td><td>Each scheduled job monitored</td></tr>
+                                <tr><td>Uptime monitors</td><td>1</td><td>$1.00 / monitor</td><td>$1.00 / monitor</td><td>Each URL checked</td></tr>
+                                <tr><td>Continuous profiling</td><td>None</td><td>$0.0315 / hour</td><td>$0.0315 / hour</td><td>Profile hours, prorated</td></tr>
+                                <tr><td>UI profiling</td><td>None</td><td>$0.25 / hour</td><td>$0.25 / hour</td><td>Profile hours, prorated</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        Logs, application metrics, monitors and profiling can only be bought through the pay-as-you-go budget. Errors, spans, replays and attachments can also be prepaid as reserved volume. Error rates per tier:
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Errors per month</th><th>Team reserved</th><th>Team PAYG</th><th>Business reserved</th><th>Business PAYG</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>50k to 100k</td><td>$0.0002900</td><td>$0.0003625</td><td>$0.0008900</td><td>$0.0011125</td></tr>
+                                <tr><td>100k to 500k</td><td>$0.0001750</td><td>$0.0002188</td><td>$0.0005000</td><td>$0.0006250</td></tr>
+                                <tr><td>500k to 10M</td><td>$0.0001500</td><td>$0.0001875</td><td>$0.0003000</td><td>$0.0003750</td></tr>
+                                <tr><td>10M to 20M</td><td>$0.0001300</td><td>$0.0001625</td><td>$0.0002600</td><td>$0.0003250</td></tr>
+                                <tr><td>Above 20M</td><td>$0.0001200</td><td>$0.0001500</td><td>$0.0002400</td><td>$0.0003000</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        Each rate applies to the volume inside its tier, the way Sentry's own calculator adds it up. Spans follow the same pattern: <strong>$2.00 per million</strong> on Team and $4.00 on Business between 5M and 100M, then $1.80 and $3.60 above 100M, with reserved volume at $1.60 and $3.20 per million in the first tier.
+                    </p>
+
+                    <h3>What counts as an error</h3>
+                    <p>
+                        An event is one payload an SDK sends to Sentry, usually an error or a span. Every captured exception is one error, and repeated occurrences each count, including repeats of an issue you resolved or chose to ignore. The issue that groups them is free. These do not count against the quota:
+                    </p>
+                    <ul class="guide-list">
+                        <li>events dropped by an inbound filter or a per-DSN rate limit;</li>
+                        <li>events never sent because of SDK sampling, <code>beforeSend</code> or SDK configuration;</li>
+                        <li>repeats of an issue set to <strong>Delete &amp; Discard</strong>;</li>
+                        <li>events dropped while spike protection is active, and events over size limits.</li>
+                    </ul>
+                </section>
+
+                <section id="overage" class="scroll-mt-24">
+                    <p class="guide-eyebrow">04 · Overage</p>
+                    <h2>Pay-as-you-go, reserved volume and what happens past your quota</h2>
+                    <p>
+                        Usage above the included volume is paid from reserved volume, a pay-as-you-go budget, or both.
+                    </p>
+
+                    <div class="guide-grid guide-grid--two">
+                        <div>
+                            <p class="guide-kicker">Reserved volume</p>
+                            <h3>Prepaid, 20% below pay-as-you-go</h3>
+                            <p>You commit to a volume per category for the month or year. Across Sentry's published tables the reserved rate is 20% below the pay-as-you-go rate. Unused reserved volume expires at the end of each billing month, and decreases only take effect at the end of the contract cycle.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">Pay-as-you-go budget</p>
+                            <h3>A monthly cap, charged only for use</h3>
+                            <p>You set a maximum, shared across categories on a first-come, first-served basis or split per category. Sentry bills only what you use up to it. Increases apply within minutes (24 hours at most); you cannot lower the budget below what you have already spent that cycle.</p>
+                        </div>
+                    </div>
+
+                    <div class="guide-callout">
+                        <p class="guide-kicker">Past the budget, data is dropped</p>
+                        <p>
+                            Once included volume, reserved volume and the pay-as-you-go budget are spent, Sentry responds to the SDK with HTTP <code>429</code> and a <code>Retry-After</code> header, and new data in that category is dropped for the rest of the billing cycle. You are not charged for it, and you also have no errors, spans or replays for that period.
+                        </p>
+                    </div>
+
+                    <p>
+                        On a monthly subscription the plan and reserved volume are billed at the start of each cycle, together with the previous cycle's pay-as-you-go usage. On an annual subscription the plan and reserved volume are billed once for the year and pay-as-you-go usage is invoiced monthly. Upgrading from Team to Business mid-cycle recalculates any pay-as-you-go budget at Business rates, so the same budget buys fewer events.
+                    </p>
+                </section>
+
+                <section id="session-replay" class="scroll-mt-24">
+                    <p class="guide-eyebrow">05 · Session replay</p>
+                    <h2>Sentry session replay pricing</h2>
+                    <p>
+                        Session replay is billed per replay, and a replay is one recorded user session. In the JavaScript SDK a session ends after 5 minutes without user interaction or at 60 minutes, whichever comes first, and closing the tab ends it immediately. Every plan includes 50 replays a month. Team and Business pay the same replay rates:
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Replays per month</th><th>Reserved</th><th>Pay-as-you-go</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>50 to 5k</td><td>$0.0030000</td><td>$0.0037500</td></tr>
+                                <tr><td>5k to 100k</td><td>$0.0028500</td><td>$0.0035630</td></tr>
+                                <tr><td>100k to 900k</td><td>$0.0025650</td><td>$0.0032060</td></tr>
+                                <tr><td>900k to 4.5M</td><td>$0.0023090</td><td>$0.0028860</td></tr>
+                                <tr><td>Above 4.5M</td><td>$0.0019620</td><td>$0.0024530</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        The SDK's sample rates decide the bill. <code>replaysSessionSampleRate</code> is the share of sessions recorded from start to finish. <code>replaysOnErrorSampleRate</code> is the share of the remaining sessions that keep the last minute in memory and upload it only when an error happens. A site with 100,000 sessions a month at a 10% session rate sends about 10,000 replays plus its error sessions; at pay-as-you-go rates 10,000 replays cost about <strong>$36.38</strong> a month. Spike protection does not cover replays, so the sample rate is the main control.
+                    </p>
+                </section>
+
+                <section id="examples" class="scroll-mt-24">
+                    <p class="guide-eyebrow">06 · Worked examples</p>
+                    <h2>Sentry cost: two worked monthly bills</h2>
+                    <p>
+                        Both examples use monthly billing, pay-as-you-go rates and the tiered calculation from Sentry's pricing calculator, with prices as of 2026-10-19.
+                    </p>
+
+                    <h3>Small team on Team: about $105 a month</h3>
+                    <p>
+                        Five developers with one web app and one API. 150,000 errors, 20 million spans, 2,000 replays, 15 GB of logs, five cron jobs and three uptime checks a month.
+                    </p>
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Line</th><th>Calculation</th><th>Cost</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Team plan</td><td>Base price</td><td>$29.00</td></tr>
+                                <tr><td>Errors</td><td>50k at $0.0003625 + 50k at $0.0002188</td><td>$29.07</td></tr>
+                                <tr><td>Spans</td><td>15M above the included 5M at $2.00 per million</td><td>$30.00</td></tr>
+                                <tr><td>Replays</td><td>1,950 at $0.00375</td><td>$7.31</td></tr>
+                                <tr><td>Logs</td><td>10 GB at $0.50</td><td>$5.00</td></tr>
+                                <tr><td>Cron monitors</td><td>4 at $0.78</td><td>$3.12</td></tr>
+                                <tr><td>Uptime monitors</td><td>2 at $1.00</td><td>$2.00</td></tr>
+                                <tr><td><strong>Total</strong></td><td></td><td><strong>$105.50</strong></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3>Mid-sized team on Business: about $1,574 a month</h3>
+                    <p>
+                        Twenty-five engineers across several services, on Business for SAML single sign-on. 1 million errors, 200 million spans, 50,000 replays, 100 GB of logs, 5 GB of attachments, 20 cron monitors and 10 uptime monitors.
+                    </p>
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Line</th><th>Calculation</th><th>Business</th><th>Same volume on Team</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Plan</td><td>Base price</td><td>$89.00</td><td>$29.00</td></tr>
+                                <tr><td>Errors</td><td>950k above the included 50k, across three tiers</td><td>$493.13</td><td>$199.40</td></tr>
+                                <tr><td>Spans</td><td>95M in the first tier, 100M above 100M</td><td>$740.00</td><td>$370.00</td></tr>
+                                <tr><td>Replays</td><td>4,950 at $0.00375 + 45,000 at $0.003563</td><td>$178.90</td><td>$178.90</td></tr>
+                                <tr><td>Logs</td><td>95 GB at $0.50</td><td>$47.50</td><td>$47.50</td></tr>
+                                <tr><td>Attachments</td><td>4 GB at $0.3125</td><td>$1.25</td><td>$1.25</td></tr>
+                                <tr><td>Cron monitors</td><td>19 at $0.78</td><td>$14.82</td><td>$14.82</td></tr>
+                                <tr><td>Uptime monitors</td><td>9 at $1.00</td><td>$9.00</td><td>$9.00</td></tr>
+                                <tr><td><strong>Total</strong></td><td></td><td><strong>$1,573.59</strong></td><td><strong>$849.86</strong></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Errors and spans make up most of the mid-sized bill, and they are the two categories where Business costs about twice as much per unit as Team. Reserving that volume instead of paying as you go takes 20% off the metered lines. Adding Seer for 15 active contributors would add $600 a month on either plan.
+                    </p>
+                </section>
+
+                <section id="reduce" class="scroll-mt-24">
+                    <p class="guide-eyebrow">07 · Cost control</p>
+                    <h2>How to keep a Sentry bill down</h2>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h3>Turn on spike protection for every project</h3><p>In <strong>Settings &gt; Spike Protection</strong>. It sets a per-project hourly threshold from the last 7 days of traffic and drops errors, spans and attachments above it. Turn it off for bursty projects such as job runners, where the bursts are expected.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h3>Set a pay-as-you-go budget per category</h3><p>A per-category budget stops one runaway category from spending the whole budget. Team and Business can also set spend notifications and a maximum spend threshold.</p></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h3>Filter before events count</h3><p>Inbound filters (browser extensions, legacy browsers, localhost, a bad release) and per-DSN rate limits drop events before they are counted. Set noisy issues you will never fix to <strong>Delete &amp; Discard</strong>, because ignored issues still count.</p></div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div><h3>Sample spans and replays in the SDK</h3><p>Span and replay volume grows with traffic, so sample those and keep every error.</p></div>
+                        </li>
+                        <li>
+                            <span>05</span>
+                            <div><h3>Reserve the volume you always use</h3><p>Prepay the steady baseline at the reserved rate and leave the pay-as-you-go budget for peaks. Check <strong>Stats &gt; Usage</strong> to see which projects consume the most.</p></div>
+                        </li>
+                    </ol>
+
+                    <p>
+                        A browser SDK configuration that applies those controls:
+                    </p>
+                    <pre><code>{sentryInit}</code></pre>
+                    <p>
+                        <code>tracesSampleRate: 0.1</code> cuts span volume by about 90%. Server SDKs take the same <code>sampleRate</code>, <code>tracesSampleRate</code> and <code>beforeSend</code> options, and many also accept a <code>tracesSampler</code> function to sample health checks at 0 and checkout at 1.
+                    </p>
+                </section>
+
+                <section id="maple" class="scroll-mt-24">
+                    <p class="guide-eyebrow">08 · Maple</p>
+                    <h2>Maple pricing for errors and session replay</h2>
+                    <p>
+                        Maple is an OpenTelemetry observability platform that also does error tracking and session replay. It bills by volume of data instead of by event, with no per-seat or per-host fees.
+                    </p>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Maple pricing</p>
+                        <h3>One plan at {money(offer.price)}{offer.interval}, billed by the gigabyte</h3>
+                        <p>
+                            The plan includes {gb?.included} GB each of logs, traces and metrics, then {rateLabel(gb?.rate ?? 0)} per GB, plus {(sessions?.included ?? 0).toLocaleString("en-US")} browser sessions with replay, then {rateLabel(sessions?.rate ?? 0)} per session. Errors are spans with an <code>Error</code> status in your OpenTelemetry traces. Maple fingerprints them and groups them into issues with a triage workflow and regression detection, and they bill as trace data rather than per error. Session replay comes from the <code>@maple-dev/browser</code> SDK, which tags every replay and span with the same <code>session.id</code>, so a replay links to the backend traces it caused. Retention is 30 days.
+                        </p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/pricing" class="guide-button guide-button--primary">See Maple pricing</a>
+                            <a href="/docs/errors/overview" class="guide-button">Errors and issues docs</a>
+                            <a href="/docs/session-replay/browser-sdk" class="guide-button">Browser SDK and replay</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://sentry.io/pricing/" target="_blank" rel="noopener noreferrer">Sentry: Pricing (verified 2026-10-19)</a></li>
+                        <li><a href="https://docs.sentry.io/pricing/" target="_blank" rel="noopener noreferrer">Sentry docs: Pricing and billing</a></li>
+                        <li><a href="https://docs.sentry.io/pricing/quotas/" target="_blank" rel="noopener noreferrer">Sentry docs: Billing quota management</a></li>
+                        <li><a href="https://docs.sentry.io/pricing/quotas/spike-protection/" target="_blank" rel="noopener noreferrer">Sentry docs: Spike protection</a></li>
+                        <li><a href="https://docs.sentry.io/pricing/quotas/manage-replay-quota/" target="_blank" rel="noopener noreferrer">Sentry docs: Manage your replay quota</a></li>
+                        <li><a href="https://docs.sentry.io/platforms/javascript/session-replay/" target="_blank" rel="noopener noreferrer">Sentry docs: Session replay for JavaScript</a></li>
+                        <li><a href="https://develop.sentry.dev/self-hosted/" target="_blank" rel="noopener noreferrer">Sentry developer docs: Self-hosted Sentry</a></li>
+                        <li><a href="/docs/errors/overview">Maple docs: Errors and issues</a></li>
+                        <li><a href="/docs/session-replay/replays">Maple docs: Replays</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .pricing-guide section + section { margin-top: 5.5rem; }
+    .pricing-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .pricing-guide h2 { max-width: 24ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .pricing-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .pricing-guide > section > p:not(.guide-eyebrow, .guide-kicker), .pricing-guide .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .pricing-guide .guide-verified { font-size: 13px !important; }
+    .pricing-guide strong { font-weight: 600; color: var(--foreground); }
+    .pricing-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .pricing-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .pricing-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .pricing-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .pricing-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1.25rem 1.35rem; }
+    .pricing-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
+    .pricing-guide table { width: 100%; min-width: 620px; margin: 1.6rem 0 2rem; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .pricing-guide th { border-bottom: 1px solid var(--border); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
+    .pricing-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .pricing-guide .guide-list { max-width: 70ch; margin: 0 0 1.5rem; padding-left: 1.2rem; list-style: disc; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .pricing-guide .guide-grid { display: grid; gap: 1px; margin-top: 2rem; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .pricing-guide .guide-grid > div { background: var(--background); padding: 1.5rem; }
+    .pricing-guide .guide-grid h3 { margin: 0.4rem 0 0.65rem; font-size: 1rem; }
+    .pricing-guide .guide-grid p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .pricing-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .pricing-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: var(--bg-deep); padding: 1.25rem 1.35rem; }
+    .pricing-guide .guide-callout p:not(.guide-kicker) { max-width: 68ch; margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .pricing-guide .guide-steps { margin: 2rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .pricing-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.35rem 0; }
+    .pricing-guide .guide-steps > li > span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .pricing-guide .guide-steps h3, .pricing-guide .guide-steps p { margin: 0; }
+    .pricing-guide .guide-steps h3 { font-size: 1rem; }
+    .pricing-guide .guide-steps p { margin-top: 0.45rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .pricing-guide .guide-maple { margin-top: 2rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .pricing-guide .guide-maple h3 { margin: 0.55rem 0 0.8rem; font-size: 1.35rem; }
+    .pricing-guide .guide-maple > p:not(.guide-kicker) { max-width: none; margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .pricing-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .pricing-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .pricing-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .pricing-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .pricing-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .pricing-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .pricing-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .pricing-guide .guide-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .pricing-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .pricing-guide a, .pricing-guide .guide-button { transition: none; }
+    }
+</style>
