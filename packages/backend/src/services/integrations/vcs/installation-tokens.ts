@@ -4,6 +4,8 @@ import type { ExpiringStore } from "@maple/backend/platform/expiring-store"
 export interface InstallationToken {
 	readonly token: string
 	readonly expiresAtMs: number
+	/** When it was minted, so a stale permissions snapshot can be re-checked. */
+	readonly mintedAtMs: number
 	/** What the installation has accepted; absent when the mint response did not list it. */
 	readonly permissions: Readonly<Record<string, string>> | undefined
 }

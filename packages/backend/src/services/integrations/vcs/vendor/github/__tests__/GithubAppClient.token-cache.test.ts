@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
 import { ConfigProvider, Effect, Layer } from "effect"
+import { TestClock } from "effect/testing"
 import type { VcsInstallation } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
@@ -141,4 +142,41 @@ describe("GitHub installation tokens across queue batches", () => {
 			assert.lengthOf(mints(paths), 1)
 		})
 	})
+
+	it.effect(
+		"a cached token without actions: read is re-minted after a few minutes, so an accepted permission applies",
+		() => {
+			const paths: Array<string> = []
+			const installation = { accepted: false }
+			const github = fakeGithubHttp(({ url }) => {
+				paths.push(new URL(url).pathname)
+				const actions = installation.accepted ? { actions: "read" } : {}
+				return Response.json({
+					token: "installation-token",
+					expires_at: "2099-01-01T00:00:00Z",
+					permissions: { contents: "read", ...actions },
+				})
+			})
+			const canReadActions = GithubAppClient.use((client) => client.canReadActions("42"))
+			return Effect.gen(function* () {
+				const caches = yield* makeVcsSyncIsolateCaches
+				const batch = () =>
+					Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
+						Layer.provide(github),
+						Layer.provide(env),
+						Layer.provide(caches),
+					)
+				assert.isFalse(yield* canReadActions.pipe(Effect.provide(batch())))
+				installation.accepted = true
+				// A minute later the denial is still served from the isolate cache.
+				yield* TestClock.adjust(60_000)
+				assert.isFalse(yield* canReadActions.pipe(Effect.provide(batch())))
+				assert.lengthOf(mints(paths), 1)
+				yield* TestClock.adjust(5 * 60_000)
+				assert.isTrue(yield* canReadActions.pipe(Effect.provide(batch())))
+				assert.isTrue(yield* canReadActions.pipe(Effect.provide(batch())))
+				assert.lengthOf(mints(paths), 2)
+			})
+		},
+	)
 })

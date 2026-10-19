@@ -116,6 +116,9 @@ const MAX_INLINE_RATE_LIMIT_RETRIES = 5
 // Retire a cached token this early so it never expires mid-request. Tokens last
 // ~1h, so the extra minute just costs an occasional re-mint.
 const INSTALLATION_TOKEN_EXPIRY_SKEW_MS = 60_000
+// A cached token that lacks `actions: read` is re-minted once it is this old, so a permission
+// accepted since the mint applies within minutes, not when the token expires.
+const PERMISSION_DENIAL_RECHECK_MS = 5 * 60_000
 
 // A GitHub rate-limit response is a 429, or a 403 that carries `retry-after` /
 // reports zero remaining (the secondary-limit shape). Plain 403s (permissions)
@@ -832,6 +835,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const minted: InstallationToken = {
 					token: decoded.token,
 					expiresAtMs: timestampMs(decoded.expires_at),
+					mintedAtMs: yield* Clock.currentTimeMillis,
 					permissions: decoded.permissions,
 				}
 				if (Number.isFinite(minted.expiresAtMs)) {
@@ -845,15 +849,19 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			// Job logs need `actions: read`. An installation that has not accepted it gets a 403 on
 			// every log download, so callers skip the download. No permissions listed: assume granted.
-			const canReadActions = (externalInstallationId: string) =>
-				installationToken(externalInstallationId).pipe(
-					Effect.map(
-						({ permissions }) =>
-							permissions === undefined ||
-							permissions["actions"] === "read" ||
-							permissions["actions"] === "write",
-					),
-				)
+			const grantsActions = ({ permissions }: InstallationToken) =>
+				permissions === undefined ||
+				permissions["actions"] === "read" ||
+				permissions["actions"] === "write"
+			const canReadActions = Effect.fnUntraced(function* (externalInstallationId: string) {
+				const token = yield* installationToken(externalInstallationId)
+				const now = yield* Clock.currentTimeMillis
+				if (grantsActions(token) || now - token.mintedAtMs < PERMISSION_DENIAL_RECHECK_MS) {
+					return grantsActions(token)
+				}
+				yield* installationTokens.remove(externalInstallationId)
+				return grantsActions(yield* installationToken(externalInstallationId))
+			})
 
 			const authedGet = (_config: ResolvedAppConfig, token: string, url: string) =>
 				rateLimitedFetch(
