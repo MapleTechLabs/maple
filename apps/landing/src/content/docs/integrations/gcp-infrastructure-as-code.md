@@ -16,7 +16,7 @@ The file carries no secret, so you can commit it: Pub/Sub signs each push as a p
 2. In **Method**, choose **Infrastructure as code**, then **Terraform** or **Alchemy**, and click **Continue**.
 3. Click **Copy**, or **Copy prompt for coding agent** (see [below](#with-a-coding-agent)).
 
-Alchemy can't grant roles on a folder or organization: a folder or organization connection with **Metrics and resources** uses Terraform. Without a script there is no sink filter to keep: the file sets the recommended filter, or the one chosen under **Log filter**.
+Without a script there is no sink filter to keep: the file sets the recommended filter, or the one chosen under **Log filter**.
 
 ## Terraform
 
@@ -34,6 +34,8 @@ If an earlier setup created the connection, the file has `import` blocks: Terraf
 2. With log forwarding, fill in `PROJECT_NUMBER` at the top: `gcloud projects describe HOST_PROJECT --format='value(projectNumber)'`.
 3. Switch the APIs on first with the `gcloud services enable` command. Alchemy doesn't wait for an API to be switched on.
 4. Deploy with the header's command. Alchemy creates the topic, the subscription and a project's sink in the project it signs in to, which must be the host project. After a setup by script the command has `--adopt`, which takes over what the script created.
+
+Alchemy's IAM resource grants roles on projects only. For a folder or organization with **Metrics and resources**, `maple.ts` defines its own small resource, `ScopeIamMember`, that grants the two read roles on the folder's or organization's IAM policy and removes them again on destroy. The account that deploys needs to be allowed to set that policy, as Folder IAM Admin or Organization Administrator, like Terraform.
 
 `bunx alchemy destroy maple.ts --stage maple` removes it again, with the state Alchemy keeps in `.alchemy/`. It deletes the topic right after the sink; to avoid a sink error, delete the sink in the console two minutes earlier.
 

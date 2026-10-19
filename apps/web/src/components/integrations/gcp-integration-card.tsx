@@ -54,6 +54,7 @@ import {
 	gcpLogState,
 	gcpMessageParts,
 	gcpMetricsState,
+	gcpNothingSeen,
 	gcpPendingChanges,
 	gcpRunAsked,
 	gcpScopeLabel,
@@ -218,9 +219,7 @@ function connectionIssues({
 		const lines =
 			needed === "setup-pending"
 				? [
-						connector.setup_reported_at === null &&
-						connector.applied_logs_enabled === null &&
-						connector.applied_metrics_enabled === null
+						gcpNothingSeen(connector)
 							? "Maple hasn't confirmed any of the setup yet. Finish it with the script, in the console or as code."
 							: "Part of the setup isn't confirmed yet. A script run continues where it stopped; a setup in the console or as code is confirmed by its first data.",
 					]
@@ -452,9 +451,7 @@ export function GcpConnection({
 		mode: "promiseExit",
 	})
 	const label = gcpScopeLabel(connector)
-	// No run has reported: as far as Maple knows, nothing exists in Google Cloud.
-	const neverReported =
-		connector.applied_logs_enabled === null && connector.applied_metrics_enabled === null
+	const neverReported = gcpNothingSeen(connector)
 	const cleanedUp = connector.applied_logs_enabled === false && connector.applied_metrics_enabled === false
 	const [disconnectOpen, setDisconnectOpen] = useState(false)
 

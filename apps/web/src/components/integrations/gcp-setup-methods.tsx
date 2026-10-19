@@ -37,12 +37,9 @@ const HINTS = { terraform: "maple.tf for the google provider", alchemy: "maple.t
 export function GcpMethodChoice({
 	method,
 	onMethod,
-	alchemyUnavailable,
 }: {
 	method: GcpSetupMethod
 	onMethod: (method: GcpSetupMethod) => void
-	/** Why Alchemy can't express this connection, or null. */
-	alchemyUnavailable: string | null
 }) {
 	const id = useId()
 	const row = method === "terraform" || method === "alchemy" ? "code" : method
@@ -89,18 +86,10 @@ export function GcpMethodChoice({
 										}}
 									>
 										<ToggleGroupItem value="terraform">Terraform</ToggleGroupItem>
-										<ToggleGroupItem
-											value="alchemy"
-											disabled={alchemyUnavailable !== null}
-										>
-											Alchemy
-										</ToggleGroupItem>
+										<ToggleGroupItem value="alchemy">Alchemy</ToggleGroupItem>
 									</ToggleGroup>
 									<span className={GCP_SMALL}>{HINTS[flavour]}</span>
 								</div>
-								{alchemyUnavailable === null ? null : (
-									<p className={GCP_SMALL}>{alchemyUnavailable}</p>
-								)}
 							</div>
 						) : null}
 					</div>

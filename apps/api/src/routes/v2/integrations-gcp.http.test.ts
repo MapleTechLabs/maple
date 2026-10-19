@@ -231,8 +231,7 @@ describe("v2 gcp integration over HTTP", () => {
 		expect(both.body.push_endpoint).toMatch(/^https:\/\/ingest\.test\/v1\/logpush\/gcp\/[0-9a-f-]{36}$/)
 		expect(both.body.terraform).toContain('resource "google_logging_folder_sink" "maple"')
 		expect(both.body.terraform).not.toMatch(/maple_gcp_|secret=/)
-		// Alchemy can't grant the read-only roles on a folder.
-		expect(both.body.alchemy).toBeNull()
+		expect(both.body.alchemy).toMatch(/^const SCOPE = "folders\/\d+"$/m)
 		expect(both.body.object).toBe("gcp_connector.setup_scripts")
 		expect(both.body.setup_script).toMatch(
 			/PUSH_ENDPOINT='https:\/\/ingest\.test\/v1\/logpush\/gcp\/[0-9a-f-]{36}\?secret=maple_gcp_/,

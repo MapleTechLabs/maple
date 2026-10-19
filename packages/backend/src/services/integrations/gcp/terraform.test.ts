@@ -95,9 +95,14 @@ describe("renderGcpAlchemy", () => {
 		expect(rendered).not.toMatch(/maple_gcp_|secret=|logging\.logWriter",/)
 	})
 
-	it("is unavailable where read-only access needs a folder or organization grant", () => {
-		expect(renderGcpAlchemy(plan(), NEW)).toBeNull()
+	// alchemy's IAM members stop at projects: the file brings its own grant for a folder's policy.
+	it("grants the read roles on a folder through its own resource, the quota role on the host", () => {
+		const folder = renderGcpAlchemy(plan(), NEW)
+		expect(literal(folder, '^const SCOPE = (".*")$')).toBe("folders/123456789012")
+		expect(folder).toContain("yield* ScopeIamMember(")
+		expect(folder).toMatch(/GCP\.IAM\.Member\("maple-reader-serviceusage\.serviceUsageConsumer", \{\n {6}kind: "project",/)
 		expect(renderGcpAlchemy(plan({ metricsEnabled: false }), NEW)).toContain('folderId: "123456789012"')
+		expect(renderGcpAlchemy(project(), NEW)).not.toContain("ScopeIamMember")
 	})
 
 	// Alchemy keys its state by stack name: two connections under one name would replace each other.

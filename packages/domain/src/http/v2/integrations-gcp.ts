@@ -273,9 +273,9 @@ export const V2GcpSetupScripts = Schema.Struct({
 			"The same setup as a self-contained Terraform file for the `google` provider. It carries no secret. Resources a setup script already created are imported.",
 		examples: [TERRAFORM_EXAMPLE],
 	}),
-	alchemy: Schema.NullOr(Schema.String).annotate({
+	alchemy: Schema.String.annotate({
 		description:
-			"The same setup as a self-contained Alchemy stack. It carries no secret. `null` for a folder or organization with `metrics_enabled`: Alchemy can't grant roles there.",
+			"The same setup as a self-contained Alchemy stack. It carries no secret. For a folder or organization with `metrics_enabled` it defines its own resource for the folder's or organization's IAM grants.",
 		examples: [ALCHEMY_EXAMPLE],
 	}),
 }).annotate({

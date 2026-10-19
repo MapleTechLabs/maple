@@ -111,10 +111,6 @@ const STATES = {
 	applied: { label: "Applied", note: "A reconfigured organization, receiving." },
 	method: { label: "Method", note: "The Method step, on the script." },
 	"method-code": { label: "Method · code", note: "Infrastructure as code picked, Terraform." },
-	"method-no-alchemy": {
-		label: "Method · no Alchemy",
-		note: "An organization with metrics: Alchemy can't grant its roles.",
-	},
 	"manual-project": {
 		label: "Manual · project",
 		note: "A project with logs and metrics, nothing confirmed.",
@@ -131,13 +127,17 @@ const STATES = {
 		note: "The regenerated file without log forwarding.",
 	},
 	alchemy: { label: "Alchemy", note: "The same project as an Alchemy stack." },
+	"alchemy-org": {
+		label: "Alchemy · org metrics",
+		note: "An organization's read roles, granted by the file's own ScopeIamMember resource.",
+	},
 	"method-confirmed": {
 		label: "Manual · confirmed",
 		note: "Both confirmed: the steps stay in view for a change or a repair.",
 	},
 } as const
 type LabState = keyof typeof STATES
-type MethodState = "method" | "method-code" | "method-no-alchemy"
+type MethodState = "method" | "method-code"
 type MethodApplyState =
 	| "manual-project"
 	| "manual-org"
@@ -146,6 +146,7 @@ type MethodApplyState =
 	| "terraform"
 	| "terraform-removal"
 	| "alchemy"
+	| "alchemy-org"
 	| "method-confirmed"
 type ScriptState = Exclude<LabState, "new" | "configure" | MethodState | MethodApplyState>
 
@@ -312,6 +313,15 @@ const METHOD_APPLY = {
 		failure: null,
 		confirmRemoval: NO_REMOVAL,
 	},
+	"alchemy-org": {
+		title: "Connect Google Cloud",
+		connector: connector({ ...ORGANIZATION, created_at: ago(1), logs_enabled: false, applied_logs_enabled: false }),
+		method: "alchemy",
+		logFilter: "Platform logs",
+		setup: GCP_SETUP_FIXTURES.organizationMetrics,
+		failure: null,
+		confirmRemoval: NO_REMOVAL,
+	},
 	"method-confirmed": {
 		title: "Connect Google Cloud",
 		connector: connector({
@@ -331,10 +341,6 @@ const METHOD_APPLY = {
 const METHOD_STEP = {
 	method: { connector: connector(), method: "script" },
 	"method-code": { connector: connector(), method: "terraform" },
-	"method-no-alchemy": {
-		connector: connector({ ...ORGANIZATION, created_at: ago(1) }),
-		method: "terraform",
-	},
 } satisfies {
 	readonly [State in MethodState]: { readonly connector: V2GcpConnector; readonly method: GcpSetupMethod }
 }

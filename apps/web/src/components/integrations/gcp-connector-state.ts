@@ -188,6 +188,14 @@ export const GCP_METRICS_STATUS = {
 
 type ConnectorFields = LogFields & MetricsFields
 
+/** No setup run reported and no data arrived: as far as Maple knows, nothing exists in Google Cloud. */
+export const gcpNothingSeen = (connector: V2GcpConnector) =>
+	connector.setup_reported_at === null &&
+	connector.last_log_received_at === null &&
+	connector.last_metrics_received_at === null &&
+	connector.applied_logs_enabled !== true &&
+	connector.applied_metrics_enabled !== true
+
 /**
  * What still waits on a re-run of the setup script, for a connection whose configuration disagrees
  * with what a run reported: a sentence per capability, saying what goes on until then. A capability

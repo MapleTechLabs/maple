@@ -87,6 +87,8 @@ describe("GcpConnectorService", () => {
 			assert.isNull(connector.lastLogReceivedAt)
 			assert.isNull(connector.lastLogError)
 			assert.isNull(connector.appliedLogsEnabled)
+			// Created off: known not to exist, so there is nothing to remove.
+			assert.isFalse(connector.appliedMetricsEnabled)
 			assert.isNull(connector.setupReportedAt)
 
 			const { setupScript } = yield* gcp.scripts(orgId, connector.id, scriptOptions)
@@ -511,8 +513,7 @@ describe("GcpConnectorService", () => {
 			assert.strictEqual(scripts.mapleServiceAccountEmail, MAPLE_ACCOUNT)
 			assert.match(scripts.terraform, new RegExp(`^  push_endpoint += "${pushEndpoint}"$`, "m"))
 			assert.notMatch(scripts.terraform, /maple_gcp_|secret=|^ {2}to = /m)
-			// Alchemy can't grant roles on an organization.
-			assert.isNull(scripts.alchemy)
+			assert.match(scripts.alchemy, /^const SCOPE = "organizations\/\d+"$/m)
 
 			// What a setup script created is taken over, not created a second time.
 			yield* Effect.promise(() =>

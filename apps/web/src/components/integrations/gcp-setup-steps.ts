@@ -313,11 +313,6 @@ export function gcpRemovalList(
 	}))
 }
 
-/** Whether Alchemy can express the connection: it can't grant roles on a folder or organization. */
-export const gcpAlchemyUnavailable = (connector: Pick<V2GcpConnector, "scope_type" | "metrics_enabled">) =>
-	connector.scope_type !== "project" && connector.metrics_enabled
-		? `Alchemy can't grant roles on ${connector.scope_type === "folder" ? "a folder" : "an organization"}. Use Terraform for this connection.`
-		: null
 
 /**
  * What a coding agent is asked to do with the generated file: put it in place, plan and apply only

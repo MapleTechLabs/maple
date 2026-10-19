@@ -88,7 +88,6 @@ import {
 import { GcpManualSteps, GcpMethodChoice, GcpValue } from "./gcp-setup-methods"
 import {
 	gcpAgentPrompt,
-	gcpAlchemyUnavailable,
 	gcpManualSteps,
 	gcpRemovalList,
 	type GcpSetupMethod,
@@ -1820,11 +1819,7 @@ export function GcpMethodStage({
 			<ConfigureHeader title={title} step={2} />
 			<DialogPanel className="flex flex-col gap-5">
 				<RunSummary connector={connector} logFilter={logFilter} onEdit={onBack} byScript={false} />
-				<GcpMethodChoice
-					method={method}
-					onMethod={onMethod}
-					alchemyUnavailable={gcpAlchemyUnavailable(connector)}
-				/>
+				<GcpMethodChoice method={method} onMethod={onMethod} />
 			</DialogPanel>
 			<DialogFooter>
 				<FooterNote>Each method creates the same resources.</FooterNote>
@@ -2110,10 +2105,7 @@ function ConnectionStages({
 		seen: saved.setup_reported_at,
 	})
 	// How Google Cloud is set up: asked before every Set up step, kept while the dialog is open.
-	const [picked, setMethod] = useState<GcpSetupMethod>("script")
-	// Alchemy can't grant roles on a folder or organization: switching metrics on there since it was
-	// picked leaves Terraform.
-	const method = picked === "alchemy" && gcpAlchemyUnavailable(connector) !== null ? "terraform" : picked
+	const [method, setMethod] = useState<GcpSetupMethod>("script")
 	// Whether a run was asked for when the Method step was left: found waiting on a first run, the
 	// status times it from the connection's creation; found any other way, nobody has said one is under way.
 	const [rerun, setRerun] = useState<boolean | null>(() =>

@@ -5,7 +5,7 @@ import { V2GcpConnector } from "@maple/domain/http/v2"
 
 import { GCP_SETUP_FIXTURES } from "@/lab/gcp-setup-fixtures"
 
-import { gcpAgentPrompt, gcpAlchemyUnavailable, gcpManualSteps, gcpRemovalList } from "./gcp-setup-steps"
+import { gcpAgentPrompt, gcpManualSteps, gcpRemovalList } from "./gcp-setup-steps"
 
 const connector = (over: Record<string, unknown> = {}) =>
 	Schema.decodeUnknownSync(V2GcpConnector)({
@@ -148,16 +148,6 @@ describe("gcpRemovalList", () => {
 				(item) => item.what,
 			),
 		).toEqual(["The read-only account's roles on the project and acme-prod", "Read-only service account"])
-	})
-})
-
-describe("gcpAlchemyUnavailable", () => {
-	it("sends a folder or organization with read-only access to Terraform", () => {
-		expect(gcpAlchemyUnavailable({ scope_type: "organization", metrics_enabled: true })).toContain(
-			"Terraform",
-		)
-		expect(gcpAlchemyUnavailable({ scope_type: "organization", metrics_enabled: false })).toBeNull()
-		expect(gcpAlchemyUnavailable({ scope_type: "project", metrics_enabled: true })).toBeNull()
 	})
 })
 

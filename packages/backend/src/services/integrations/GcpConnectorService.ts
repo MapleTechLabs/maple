@@ -122,7 +122,7 @@ export interface GcpConnectorServiceApi {
 			/** Null on a deployment without a Google identity. */
 			readonly mapleServiceAccountEmail: string | null
 			readonly terraform: string
-			readonly alchemy: string | null
+			readonly alchemy: string
 		},
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
@@ -394,6 +394,9 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 								id,
 								orgId,
 								...input,
+								// What is created off is known not to exist; switching it on later resets this to null.
+								appliedLogsEnabled: input.logsEnabled ? null : false,
+								appliedMetricsEnabled: input.metricsEnabled ? null : false,
 								secretCiphertext: encrypted.ciphertext,
 								secretIv: encrypted.iv,
 								secretTag: encrypted.tag,
