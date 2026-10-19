@@ -14,6 +14,8 @@ export const NAVIGATION_ARG = "maple.foldkit.navigation_id"
 
 type SpanOptions = Parameters<Tracer.Tracer["span"]>[0]
 
+const MAX_EARLY_PHASES = 50
+
 export const nowNanos = (): bigint =>
 	BigInt(Math.round((performance.timeOrigin + performance.now()) * 1_000_000))
 
@@ -26,6 +28,8 @@ interface Navigation {
 	readonly sampled: boolean
 	span: Tracer.Span | undefined
 	pending: number
+	/** Until its first Command starts, the navigation waits on the start grace, not the quiet period. */
+	hasCommand: boolean
 	lastEnd: bigint
 	quietTimer: ReturnType<typeof setTimeout> | undefined
 	readonly capTimer: ReturnType<typeof setTimeout>
@@ -40,6 +44,8 @@ export interface CommandTracingOptions {
 	readonly navigationSampleRate: number
 	/** A navigation ends this long after its last Command, unless another starts. */
 	readonly navigationQuietMs: number
+	/** How long a new navigation waits for its first Command before it ends with none. */
+	readonly navigationStartGraceMs: number
 	readonly navigationMaxMs: number
 }
 
@@ -49,6 +55,8 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 	let nextNavigationId = 1
 	let latestNavigation: Navigation | undefined
 	let inner: Tracer.Tracer | undefined
+	// Phase spans reported before Foldkit builds `resources` (the first Command or Subscription).
+	const earlyPhases: Array<(tracer: Tracer.Tracer) => void> = []
 
 	const navigationSpan = (navigation: Navigation, tracer: Tracer.Tracer): Tracer.Span => {
 		if (navigation.span !== undefined) return navigation.span
@@ -67,6 +75,21 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		return span
 	}
 
+	/**
+	 * The span to parent under: the navigation's own while it is open, or the one it ended with.
+	 * A navigation that closed before any child needed a span has none to end, so none is made.
+	 */
+	const parentSpanOf = (
+		navigation: Navigation | undefined,
+		tracer: Tracer.Tracer,
+	): Option.Option<Tracer.AnySpan> => {
+		if (navigation === undefined) return Option.none()
+		if (navigation.span !== undefined) return Option.some(navigation.span)
+		return navigations.has(navigation.id)
+			? Option.some(navigationSpan(navigation, tracer))
+			: Option.none()
+	}
+
 	const closeNavigation = (navigation: Navigation, endTime: bigint, interrupted: boolean): void => {
 		if (!navigations.has(navigation.id)) return
 		navigations.delete(navigation.id)
@@ -76,6 +99,14 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		if (navigation.span === undefined) return
 		if (interrupted) navigation.span.attribute("app.navigation.interrupted", true)
 		navigation.span.end(endTime, Exit.void)
+	}
+
+	const armQuietTimer = (navigation: Navigation, delayMs: number): void => {
+		if (navigation.quietTimer !== undefined) clearTimeout(navigation.quietTimer)
+		navigation.quietTimer = setTimeout(
+			() => closeNavigation(navigation, navigation.lastEnd, false),
+			delayMs,
+		)
 	}
 
 	const startNavigation = (input: {
@@ -91,6 +122,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 			sampled: Math.random() < options.navigationSampleRate,
 			span: undefined,
 			pending: 0,
+			hasCommand: false,
 			lastEnd: input.startTime,
 			quietTimer: undefined,
 			capTimer: setTimeout(
@@ -100,11 +132,14 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		}
 		navigations.set(id, navigation)
 		latestNavigation = navigation
+		// A navigation that starts no Command ends at its last phase span, not at the cap.
+		armQuietTimer(navigation, options.navigationStartGraceMs)
 		return id
 	}
 
 	const commandStarted = (navigation: Navigation): void => {
 		navigation.pending += 1
+		navigation.hasCommand = true
 		if (navigation.quietTimer !== undefined) clearTimeout(navigation.quietTimer)
 		navigation.quietTimer = undefined
 	}
@@ -114,10 +149,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		if (endTime > navigation.lastEnd) navigation.lastEnd = endTime
 		if (navigation.pending > 0) return
 		// A Command's result Message forks its follow-up Commands right after it ends.
-		navigation.quietTimer = setTimeout(
-			() => closeNavigation(navigation, navigation.lastEnd, false),
-			options.navigationQuietMs,
-		)
+		armQuietTimer(navigation, options.navigationQuietMs)
 	}
 
 	class CommandSpan implements Tracer.Span {
@@ -143,9 +175,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 			if (this.real !== undefined) return this.real
 			const navigation = this.navigation
 			const parent =
-				navigation === undefined
-					? this.options.parent
-					: Option.some(navigationSpan(navigation, this.tracer))
+				navigation === undefined ? this.options.parent : parentSpanOf(navigation, this.tracer)
 			const rate = options.sampleRates[this.name]
 			const sampled =
 				navigation === undefined
@@ -154,7 +184,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 			const real = this.tracer.span({
 				...this.options,
 				parent,
-				root: navigation === undefined,
+				root: navigation === undefined || Option.isNone(parent),
 				sampled,
 			})
 			for (const [key, value] of this.buffered) real.attribute(key, value)
@@ -221,6 +251,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 
 	const wrap = (tracer: Tracer.Tracer): Tracer.Tracer => {
 		inner = tracer
+		for (const record of earlyPhases.splice(0)) record(tracer)
 		return Tracer.make({
 			context: tracer.context,
 			span(spanOptions) {
@@ -242,20 +273,30 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		endTime: bigint,
 		attributes: Record<string, unknown>,
 	): void => {
-		if (inner === undefined) return
 		const navigation = latestNavigation
-		const span = inner.span({
-			name,
-			parent: navigation === undefined ? Option.none() : Option.some(navigationSpan(navigation, inner)),
-			annotations: Context.empty(),
-			links: [],
-			startTime,
-			kind: "internal",
-			root: navigation === undefined,
-			sampled: navigation?.sampled ?? true,
-		})
-		for (const key of Object.keys(attributes)) span.attribute(key, attributes[key])
-		span.end(endTime, Exit.void)
+		if (navigation !== undefined && endTime > navigation.lastEnd) {
+			navigation.lastEnd = endTime
+			if (navigation.hasCommand && navigation.pending === 0)
+				armQuietTimer(navigation, options.navigationQuietMs)
+		}
+		const record = (tracer: Tracer.Tracer): void => {
+			const parent = parentSpanOf(navigation, tracer)
+			const span = tracer.span({
+				name,
+				parent,
+				annotations: Context.empty(),
+				links: [],
+				startTime,
+				kind: "internal",
+				root: Option.isNone(parent),
+				// A navigation sampled out keeps its phases out even once it has closed.
+				sampled: navigation?.sampled ?? true,
+			})
+			for (const key of Object.keys(attributes)) span.attribute(key, attributes[key])
+			span.end(endTime, Exit.void)
+		}
+		if (inner !== undefined) return record(inner)
+		if (earlyPhases.length < MAX_EARLY_PHASES) earlyPhases.push(record)
 	}
 
 	/** Ends every open navigation, e.g. when the page goes away. */
