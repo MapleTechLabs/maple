@@ -8,7 +8,8 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { RateLimiterApi } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
-import { McpToolExecutor, type McpToolExecutorApi } from "./dispatcher"
+import type { McpToolExecutorApi } from "./dispatcher"
+import { McpToolExecutorLoader } from "./executor-loader"
 import { McpLive } from "./app"
 
 const createdDbs: TestDb[] = []
@@ -18,10 +19,12 @@ const makeMcpToolExecutorStubLayer = (
 	execute: McpToolExecutorApi["execute"] = () =>
 		Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
 ) =>
-	Layer.succeed(McpToolExecutor, {
-		execute,
-		prepareRepository: () => Effect.void,
-		prepareConnectedRepositories: () => Effect.void,
+	Layer.succeed(McpToolExecutorLoader, {
+		load: Effect.succeed({
+			execute,
+			prepareRepository: () => Effect.void,
+			prepareConnectedRepositories: () => Effect.void,
+		}),
 	})
 
 const makeRateLimiterStubLayer = (

@@ -2,7 +2,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import { AI_SESSION_SPANS_MAX_SPANS } from "@maple/domain/http"
 import { mapleToolCatalog, toInputSchema } from "../registry"
 import { clipPayload, MCP_AGENT_SESSION_MAX_SPANS } from "../../lib/agent-sessions"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
+import {
+	installFakeWarehouse,
+	readsTraceSpans,
+	restoreWarehouse,
+	type FixtureRule,
+} from "../../__evals__/fake-warehouse"
 import { aiSpanRow } from "../../__evals__/fixtures"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import type { McpToolResult } from "../types"
@@ -142,12 +147,12 @@ const bigSessionSpanRows = [
 /** The cursor the first page ends on — the second page's SQL names it. */
 const BIG_PAGE_CURSOR_SPAN_ID = bigSpanId(AI_SESSION_SPANS_MAX_SPANS - 1)
 
-// First match wins: the reads over `trace_detail_spans` are told apart by the
+// First match wins: the span reads over `traces` are told apart by the
 // session ids their SQL names.
 const fixtures: FixtureRule[] = [
 	{ match: (sql) => sql.includes(EMPTY_SESSION_ID), rows: [] },
 	{ match: (sql) => sql.includes(BIG_SESSION_ID), rows: bigSessionSpanRows },
-	{ match: (sql) => sql.includes("trace_detail_spans"), rows: sessionSpanRows },
+	{ match: (sql) => readsTraceSpans(sql), rows: sessionSpanRows },
 	{
 		match: (sql) => /\bfrom\s+traces\b/i.test(sql),
 		rows: [

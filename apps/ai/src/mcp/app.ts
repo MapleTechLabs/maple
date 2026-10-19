@@ -10,7 +10,7 @@ import { DebugErrorsPrompt } from "./prompts/debug-errors"
 import { LatencyAnalysisPrompt } from "./prompts/latency-analysis"
 import { IncidentTriagePrompt } from "./prompts/incident-triage"
 import { InstructionsResource } from "./resources/instructions"
-import type { McpToolExecutor } from "./dispatcher"
+import type { McpToolExecutorLoader } from "./executor-loader"
 import { CurrentMcpRequestTenant, CurrentMcpTenant, resolveHttpMcpTenant } from "./lib/query-warehouse"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { INTERNAL_SERVICE_PREFIX } from "./lib/resolve-tenant"
@@ -219,7 +219,7 @@ const McpHttpLive = layerStatelessMcpServer({
 export const McpLive: Layer.Layer<
 	never,
 	Cause.IllegalArgumentError,
-	HttpRouter.HttpRouter | ApiKeysService | AuthService | Env | McpToolExecutor | McpToolRateLimiter
+	HttpRouter.HttpRouter | ApiKeysService | AuthService | Env | McpToolExecutorLoader | McpToolRateLimiter
 > = Layer.mergeAll(
 	McpHttpLive,
 	DebugErrorsPrompt,

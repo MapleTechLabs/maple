@@ -1,4 +1,10 @@
-import { gcpConnectorResourceNames } from "@maple/domain/gcp"
+import {
+	GCP_LOG_APIS,
+	GCP_METRIC_APIS,
+	GCP_READER_PROJECT_ROLE,
+	GCP_READER_SCOPE_ROLES,
+	gcpConnectorResourceNames,
+} from "@maple/domain/gcp"
 import { IntegrationsPersistenceError } from "@maple/domain/http"
 import {
 	type GcpConnectorId,
@@ -279,17 +285,6 @@ unbind() {
 }
 `
 
-// APIs in the host project. Cloud Resource Manager is what gcloud reads projects and grants
-// roles through.
-const LOG_APIS = ["pubsub.googleapis.com", "logging.googleapis.com", "cloudresourcemanager.googleapis.com"]
-const METRIC_APIS = [
-	"monitoring.googleapis.com",
-	"cloudasset.googleapis.com",
-	"iam.googleapis.com",
-	"iamcredentials.googleapis.com",
-	"cloudresourcemanager.googleapis.com",
-]
-
 // gcloud's calls are counted against the host project (CLOUDSDK_CORE_PROJECT), or for a service
 // account against its own project. With the Cloud Resource Manager API off there, every describe
 // and role grant fails.
@@ -523,7 +518,7 @@ DESTINATION="pubsub.googleapis.com/projects/$PROJECT_ID/topics/$TOPIC"
 
 # APIs in ${hostProject(scopeType)}: Pub/Sub carries the log entries, Cloud Logging routes them,
 # and Cloud Resource Manager is what gcloud grants the roles below through.
-apis "Pub/Sub, Cloud Logging, Cloud Resource Manager" ${LOG_APIS.join(" ")}
+apis "Pub/Sub, Cloud Logging, Cloud Resource Manager" ${GCP_LOG_APIS.join(" ")}
 
 if exists gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
   ok "Topic already exists"
@@ -633,7 +628,7 @@ section "Metrics and resources"
 #   iamcredentials.googleapis.com  short-lived tokens for that account; no key is ever created
 #   cloudresourcemanager.googleapis.com  what gcloud grants the roles below through
 apis "Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager" \\
-  ${METRIC_APIS.join(" ")}
+  ${GCP_METRIC_APIS.join(" ")}
 
 # A service account that an earlier run deleted (metrics switched off) fails this describe as
 # well and is created again. Google makes that a new account under the same name, with none of
@@ -652,7 +647,7 @@ fi
 #   roles/cloudasset.viewer  list resources (cloudasset.assets.searchAllResources)
 # These are the narrowest predefined roles for the two calls. Both are read-only, and broader
 # than the calls: Cloud Asset Viewer can also read resource metadata and IAM policies.
-for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
+for ROLE in ${GCP_READER_SCOPE_ROLES.join(" ")}; do
   grant "Couldn't grant the read-only roles." "$IAM_ROLE" \\
     ${SCOPES[scopeType].gcloud} add-iam-policy-binding "$SCOPE_ID" \\
     ${serviceAccountMember} --role="$ROLE" --condition=None
@@ -661,7 +656,7 @@ done
 # serviceusage.services.use on it.
 grant "Couldn't grant the read-only roles." "$OWNER" \\
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
-  ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --condition=None
+  ${serviceAccountMember} --role=${GCP_READER_PROJECT_ROLE} --condition=None
 ok "Read-only roles granted (Monitoring Viewer, Cloud Asset Viewer, Service Usage Consumer)"
 
 # Maple's own account may mint short-lived tokens for this one service account, nothing else.
@@ -692,12 +687,12 @@ account_remains() {
 if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
   --filter="email=$SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
   # Role bindings first: once the account is deleted they can no longer be removed by name.
-  for ROLE in roles/monitoring.viewer roles/cloudasset.viewer; do
+  for ROLE in ${GCP_READER_SCOPE_ROLES.join(" ")}; do
     unbind "$IAM_ROLE" ${SCOPES[scopeType].gcloud} remove-iam-policy-binding "$SCOPE_ID" \\
       ${serviceAccountMember} --role="$ROLE" --all
   done
   unbind "$OWNER" gcloud projects remove-iam-policy-binding "$PROJECT_ID" \\
-    ${serviceAccountMember} --role=roles/serviceusage.serviceUsageConsumer --all
+    ${serviceAccountMember} --role=${GCP_READER_PROJECT_ROLE} --all
   ok "Read-only roles removed"
   remove "Read-only service account deleted" "Couldn't delete the service account." "$OWNER" \\
     gcloud iam service-accounts delete "$SERVICE_ACCOUNT_EMAIL" --project="$PROJECT_ID" --quiet
@@ -847,7 +842,7 @@ ${logs || metrics === "on" ? GRANT : ""}${logs && metrics === "on" ? "" : REMOVA
 printf 'Maple setup for %s\\n' "$SCOPE"
 printf '  Log forwarding          %s\\n  Metrics and resources   %s\\n' ${sh(state(logs))} ${sh(metricsState)}
 ${access(scopeType, {
-	apis: [...new Set([...(logs ? LOG_APIS : []), ...(metrics === "on" ? METRIC_APIS : [])])],
+	apis: [...new Set([...(logs ? GCP_LOG_APIS : []), ...(metrics === "on" ? GCP_METRIC_APIS : [])])],
 	sink: logs ? SCOPES[scopeType].sink : undefined,
 	scopeMustOpen: metrics === "on",
 	billing: metrics === "on",

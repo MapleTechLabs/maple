@@ -64,7 +64,10 @@ export const AuditResources = {
 	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
 	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
-	gcp_connector: { prefix: PublicIdPrefixes.gcpConnector, verbs: ["created", "updated", "deleted"] },
+	gcp_connector: {
+		prefix: PublicIdPrefixes.gcpConnector,
+		verbs: ["created", "updated", "removal_confirmed", "deleted"],
+	},
 	/** Anything that sends data; a token source's secret is never in `changes`. */
 	source: {
 		prefix: PublicIdPrefixes.source,
@@ -225,6 +228,7 @@ export const AuditActionLabels = {
 	"error_issue.verification_verdict": "Recorded fix verification result",
 	"gcp_connector.created": "Connected Google Cloud",
 	"gcp_connector.updated": "Updated Google Cloud connector",
+	"gcp_connector.removal_confirmed": "Confirmed Google Cloud resources removed",
 	"gcp_connector.deleted": "Removed Google Cloud connector",
 	"ingest_key.rolled": "Rolled ingest key",
 	"source.created": "Created source",

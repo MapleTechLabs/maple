@@ -8,6 +8,12 @@ import type { MapleDeployment } from "./cloudflare/stage.ts"
  */
 export type MapleDatabaseMode = "ref" | "declared" | "managed" | "preview"
 
+/**
+ * The AWS account security baseline (`@maple/infra/security-baseline`). `regional` is AWS Config
+ * and GuardDuty in the instance's region; `account` adds the account's one multi-region trail.
+ */
+export type AwsSecurityBaseline = "none" | "regional" | "account"
+
 export interface TaskSize {
 	/** ECS CPU units. 1024 = 1 vCPU. */
 	readonly cpu: number
@@ -44,6 +50,8 @@ export interface MapleProfile {
 		readonly sandbox: boolean
 		/** Session-replay payloads as R2 objects instead of inline. Flipping this is the rollback lever. */
 		readonly replayBlobs: boolean
+		/** prd only: previews and dev share the AWS account and must not own its audit controls. */
+		readonly awsSecurityBaseline: AwsSecurityBaseline
 	}
 	readonly ingest: {
 		/** The per-org replay byte budget is process-local, so it scales with this. */
@@ -85,6 +93,7 @@ const US_PRD: MapleProfile = {
 		electric: true,
 		sandbox: true,
 		replayBlobs: true,
+		awsSecurityBaseline: "account",
 	},
 	ingest: {
 		desiredCount: 2,
@@ -104,7 +113,7 @@ const US_PRD: MapleProfile = {
 const EU_PRD: MapleProfile = {
 	...US_PRD,
 	database: "declared",
-	deploys: { ...US_PRD.deploys, sharedApps: false },
+	deploys: { ...US_PRD.deploys, sharedApps: false, awsSecurityBaseline: "regional" },
 	ingest: {
 		desiredCount: 1,
 		scaling: scaling(1, 3),
@@ -137,6 +146,7 @@ const PR: MapleProfile = {
 		electric: true,
 		sandbox: false,
 		replayBlobs: false,
+		awsSecurityBaseline: "none",
 	},
 	ingest: SMALL_INGEST,
 	electric: { taskSize: { cpu: 256, memory: 512 }, dbPoolSize: undefined },
