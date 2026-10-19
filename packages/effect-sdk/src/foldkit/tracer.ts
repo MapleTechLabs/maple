@@ -272,7 +272,8 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 				startTime,
 				kind: "internal",
 				root: parent === undefined,
-				sampled: parent?.sampled ?? true,
+				// A navigation sampled out keeps its phases out even once it has closed.
+				sampled: navigation?.sampled ?? true,
 			})
 			for (const key of Object.keys(attributes)) span.attribute(key, attributes[key])
 			span.end(endTime, Exit.void)

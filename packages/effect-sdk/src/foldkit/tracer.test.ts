@@ -5,13 +5,17 @@ import { makeArgsScrubber, REDACTED } from "./args.js"
 import { makeFoldkitTracing, NAVIGATION_ARG, nowNanos } from "./tracer.js"
 
 const setup = (
-	options: { readonly keepCommands?: ReadonlyArray<string>; readonly startGraceMs?: number } = {},
+	options: {
+		readonly keepCommands?: ReadonlyArray<string>
+		readonly startGraceMs?: number
+		readonly navigationSampleRate?: number
+	} = {},
 ) => {
 	const buffer = makeSpanBuffer()
 	const tracing = makeFoldkitTracing({
 		keepCommands: new Set(options.keepCommands ?? []),
 		sampleRates: {},
-		navigationSampleRate: 1,
+		navigationSampleRate: options.navigationSampleRate ?? 1,
 		navigationQuietMs: 0,
 		navigationStartGraceMs: options.startGraceMs ?? 1_000,
 		navigationMaxMs: 30_000,
@@ -116,6 +120,21 @@ describe("Foldkit phase spans", () => {
 		await runCommand("FocusSearch", {}, Effect.void)
 		const view = byName(buffer.drain(), "foldkit.view")
 		expect(view?.endTimeUnixNano).toBe(end.toString())
+	})
+
+	it("keeps a queued phase out when its navigation was sampled out and closed first", async () => {
+		const { buffer, tracing, runCommand } = setup({ startGraceMs: 1, navigationSampleRate: 0 })
+		tracing.startNavigation({
+			kind: "navigate",
+			route: "/settings",
+			path: "/settings",
+			startTime: nowNanos(),
+		})
+		const end = nowNanos()
+		tracing.recordPhase("foldkit.view", end - 1_000_000n, end, { "maple.foldkit.phase": "View" })
+		await new Promise((resolve) => setTimeout(resolve, 20))
+		await runCommand("FocusSearch", {}, Effect.void)
+		expect(buffer.drain()).toEqual([])
 	})
 
 	it("ends a navigation that started no Command at its last phase span", async () => {

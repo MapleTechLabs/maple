@@ -9,6 +9,8 @@ interface OtlpBody {
 		readonly scopeSpans: ReadonlyArray<{
 			readonly spans: ReadonlyArray<{
 				readonly name: string
+				readonly traceId: string
+				readonly parentSpanId?: string
 				readonly attributes: ReadonlyArray<{ readonly key: string; readonly value: unknown }>
 			}>
 		}>
@@ -122,6 +124,56 @@ describe("MapleFoldkit.make", () => {
 		)
 		await maple.dispose()
 		expect(spans().map((span) => span.name)).toContain("pageload /services")
+	})
+
+	it("puts the Commands a page load's result Message starts in the page load's trace", async () => {
+		const { maple, spans } = setup()
+		const app = maple.instrument({
+			resources: Layer.empty,
+			init: (_flags: undefined, _url: { readonly pathname: string }) => ({
+				model: {},
+				commands: [
+					{
+						name: "LoadServices",
+						args: {},
+						effect: Effect.succeed({ _tag: "LoadedServices" }).pipe(
+							Effect.withSpan("http.client GET"),
+						),
+					},
+				],
+			}),
+			update: (model: TestModel, message: { readonly _tag: string }) => ({
+				model,
+				commands:
+					message._tag === "LoadedServices"
+						? [
+								{
+									name: "LoadAlerts",
+									args: {},
+									effect: Effect.succeed({ _tag: "LoadedAlerts" }).pipe(
+										Effect.withSpan("http.client GET"),
+									),
+								},
+							]
+						: [],
+			}),
+		})
+		// What Foldkit's runtime does: run each Command, then feed its Message to update.
+		const run = (command: (typeof commands)[number]) =>
+			Effect.runPromise(
+				command.effect.pipe(
+					Effect.withSpan(command.name, { attributes: command.args }),
+					Effect.provide(app.resources),
+				),
+			)
+		const { commands } = app.init(undefined, { pathname: "/services" })
+		const [loaded] = await Promise.all(commands.map(run))
+		const followUps = app.update({ filter: "" }, loaded).commands
+		await Promise.all(followUps.map(run))
+		await maple.dispose()
+		const pageload = spans().find((span) => span.name === "pageload /services")
+		const loadAlerts = spans().find((span) => span.name === "LoadAlerts")
+		expect(loadAlerts?.traceId).toBe(pageload?.traceId)
 	})
 
 	it("reports a crash with the Message that caused it and the recent Messages", async () => {
