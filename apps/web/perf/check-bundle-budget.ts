@@ -123,7 +123,10 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // measured in CI at 706.7 against main's 706.0 — the setup_scripts fields and the
 // confirm_removal endpoint on the v2 contract every page's client carries. The method step and
 // manual steps stay in their route chunks.
-const maxGzipBytes = 707.5 * 1024
+// 710 KB from the Vercel integration (#1583, 2026-10-19): measured in CI at 709.4 — the Vercel
+// integration and query-engine endpoints on the contracts every page's client carries, plus the
+// sidebar's Vercel status read. The card, connect dialog and infra pages stay in their route chunks.
+const maxGzipBytes = 710 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
