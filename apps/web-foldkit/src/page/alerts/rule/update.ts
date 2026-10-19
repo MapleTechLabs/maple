@@ -12,6 +12,7 @@ import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Menu from "../../../ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { alertsHref } from "../shared/links"
 import {
@@ -146,16 +147,14 @@ export const init = (route: RuleRoute, context: PageContext): Return => {
 	}
 }
 
-const isSameWindowSearch = (a: Model["search"], b: Model["search"]) =>
-	a.startTime === b.startTime && a.endTime === b.endTime && a.timePreset === b.timePreset
-
-export const routeChanged = (model: Model, route: RuleRoute, context: PageContext): Return =>
-	isSameWindowSearch(model.search, route.search)
-		? { model: { ...model, search: route.search } }
-		: {
-				model: { ...model, search: route.search },
-				commands: [resolveCommand({ ...model, search: route.search }, context, model.refreshVersion > 0 ? "Refresh" : "Load")],
-			}
+/** A tab change only re-renders; a moved window re-resolves. */
+export const routeChanged = (model: Model, route: RuleRoute, context: PageContext): Return => {
+	const next = { ...model, search: route.search }
+	return routeWindowStep(model.search, route.search, {
+		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		requestAll: () => ({ model: next }),
+	})
+}
 
 const navigate = (model: Model, search: Model["search"]): Return => ({
 	model,

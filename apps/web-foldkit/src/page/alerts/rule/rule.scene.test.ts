@@ -21,7 +21,7 @@ import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from
 import { ToggleRuleEnabled } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
@@ -108,6 +108,15 @@ describe("alert rule", () => {
 			expectView(role("link", { name: "History" })).toHaveAttr("href", href("history")),
 			expectView(role("link", { name: "Overview" })).toHaveAttr("href", href("overview")),
 		)
+	})
+
+	test("after a Reload a tab change keeps the window; a new preset re-resolves unsnapped", () => {
+		const reloaded = pageUpdate(loaded(), Message.ClickedReload()).model
+		const tabbed = routeChanged(reloaded, route({ tab: "history" }), context)
+		expect(tabbed.commands ?? []).toEqual([])
+		expect(tabbed.model.search).toEqual({ tab: "history" })
+		const moved = routeChanged(tabbed.model, route({ tab: "history", timePreset: "1h" }), context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveAlertRuleWindow", "Refresh"]])
 	})
 
 	test("an unknown rule says so", () => {
