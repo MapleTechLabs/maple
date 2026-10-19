@@ -28,7 +28,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
-import { rendersShell } from "./page/chrome"
+import { isRedirectOnlyRoute, rendersShell } from "./page/chrome"
 import * as Onboarding from "./page/onboarding"
 import {
 	accessOf,
@@ -792,7 +792,8 @@ const changedUrlStep = (model: Model, changedUrl: Url): UpdateReturn => {
 		route: () => nextRoute,
 		signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
 	})
-	return Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag, rendersShell(nextRoute))), settle])(routed)
+	const hasTopBar = rendersShell(nextRoute) && !isRedirectOnlyRoute(model.route)
+	return Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag, hasTopBar)), settle])(routed)
 }
 
 /** The Command behind a root toast action. */
