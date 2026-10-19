@@ -238,7 +238,7 @@ processors:
 
 exporters:
   otlphttp/maple:
-    endpoint: https://ingest.maple.dev
+    endpoint: https://ingest.maple.dev # EU organizations: https://ingest.eu.maple.dev
     compression: gzip
     headers:
       x-maple-ingest-key: \${env:MAPLE_INGEST_KEY}
