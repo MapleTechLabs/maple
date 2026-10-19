@@ -178,13 +178,13 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 		sampleRates: config.sampleCommands ?? {},
 		navigationSampleRate: config.navigationSampleRate ?? 1,
 		navigationQuietMs: 150,
+		navigationStartGraceMs: 1_000,
 		navigationMaxMs: 30_000,
 	})
 	// Registered before `makeFlushable` adds its own `pagehide` flush, and in the capture phase:
 	// either way it runs first, so the open navigation ends while that flush can still send it.
-	if (typeof globalThis.addEventListener === "function") {
-		globalThis.addEventListener("pagehide", tracing.interruptAll, { capture: true })
-	}
+	const canListen = typeof globalThis.addEventListener === "function"
+	if (canListen) globalThis.addEventListener("pagehide", tracing.interruptAll, { capture: true })
 	const telemetry = makeFlushable(config)
 	const scrubArgs = makeArgsScrubber(config.commandArgs)
 	const recent = makeRecentMessages(20)
@@ -328,5 +328,12 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 		}
 	}
 
-	return { ...telemetry, layer, instrument }
+	const dispose = async (): Promise<void> => {
+		if (canListen) globalThis.removeEventListener("pagehide", tracing.interruptAll, { capture: true })
+		// Open navigations go out with the final flush rather than ending after it.
+		tracing.interruptAll()
+		await telemetry.dispose()
+	}
+
+	return { ...telemetry, layer, instrument, dispose }
 }

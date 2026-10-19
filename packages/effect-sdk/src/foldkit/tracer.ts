@@ -14,6 +14,8 @@ export const NAVIGATION_ARG = "maple.foldkit.navigation_id"
 
 type SpanOptions = Parameters<Tracer.Tracer["span"]>[0]
 
+const MAX_EARLY_PHASES = 50
+
 export const nowNanos = (): bigint =>
 	BigInt(Math.round((performance.timeOrigin + performance.now()) * 1_000_000))
 
@@ -40,6 +42,8 @@ export interface CommandTracingOptions {
 	readonly navigationSampleRate: number
 	/** A navigation ends this long after its last Command, unless another starts. */
 	readonly navigationQuietMs: number
+	/** How long a new navigation waits for its first Command before it ends with none. */
+	readonly navigationStartGraceMs: number
 	readonly navigationMaxMs: number
 }
 
@@ -49,6 +53,8 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 	let nextNavigationId = 1
 	let latestNavigation: Navigation | undefined
 	let inner: Tracer.Tracer | undefined
+	// Phase spans reported before Foldkit builds `resources` (the first Command or Subscription).
+	const earlyPhases: Array<(tracer: Tracer.Tracer) => void> = []
 
 	const navigationSpan = (navigation: Navigation, tracer: Tracer.Tracer): Tracer.Span => {
 		if (navigation.span !== undefined) return navigation.span
@@ -78,6 +84,14 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		navigation.span.end(endTime, Exit.void)
 	}
 
+	const armQuietTimer = (navigation: Navigation, delayMs: number): void => {
+		if (navigation.quietTimer !== undefined) clearTimeout(navigation.quietTimer)
+		navigation.quietTimer = setTimeout(
+			() => closeNavigation(navigation, navigation.lastEnd, false),
+			delayMs,
+		)
+	}
+
 	const startNavigation = (input: {
 		readonly kind: "pageload" | "navigate"
 		readonly route: string
@@ -100,6 +114,8 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		}
 		navigations.set(id, navigation)
 		latestNavigation = navigation
+		// A navigation that starts no Command ends at its last phase span, not at the cap.
+		armQuietTimer(navigation, options.navigationStartGraceMs)
 		return id
 	}
 
@@ -114,10 +130,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		if (endTime > navigation.lastEnd) navigation.lastEnd = endTime
 		if (navigation.pending > 0) return
 		// A Command's result Message forks its follow-up Commands right after it ends.
-		navigation.quietTimer = setTimeout(
-			() => closeNavigation(navigation, navigation.lastEnd, false),
-			options.navigationQuietMs,
-		)
+		armQuietTimer(navigation, options.navigationQuietMs)
 	}
 
 	class CommandSpan implements Tracer.Span {
@@ -221,6 +234,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 
 	const wrap = (tracer: Tracer.Tracer): Tracer.Tracer => {
 		inner = tracer
+		for (const record of earlyPhases.splice(0)) record(tracer)
 		return Tracer.make({
 			context: tracer.context,
 			span(spanOptions) {
@@ -242,20 +256,29 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		endTime: bigint,
 		attributes: Record<string, unknown>,
 	): void => {
-		if (inner === undefined) return
 		const navigation = latestNavigation
-		const span = inner.span({
-			name,
-			parent: navigation === undefined ? Option.none() : Option.some(navigationSpan(navigation, inner)),
-			annotations: Context.empty(),
-			links: [],
-			startTime,
-			kind: "internal",
-			root: navigation === undefined,
-			sampled: navigation?.sampled ?? true,
-		})
-		for (const key of Object.keys(attributes)) span.attribute(key, attributes[key])
-		span.end(endTime, Exit.void)
+		if (navigation !== undefined && endTime > navigation.lastEnd) {
+			navigation.lastEnd = endTime
+			if (navigation.pending === 0) armQuietTimer(navigation, options.navigationQuietMs)
+		}
+		const record = (tracer: Tracer.Tracer): void => {
+			// A navigation that ended before the tracer existed has no span to parent under.
+			const parent = navigation !== undefined && navigations.has(navigation.id) ? navigation : undefined
+			const span = tracer.span({
+				name,
+				parent: parent === undefined ? Option.none() : Option.some(navigationSpan(parent, tracer)),
+				annotations: Context.empty(),
+				links: [],
+				startTime,
+				kind: "internal",
+				root: parent === undefined,
+				sampled: parent?.sampled ?? true,
+			})
+			for (const key of Object.keys(attributes)) span.attribute(key, attributes[key])
+			span.end(endTime, Exit.void)
+		}
+		if (inner !== undefined) return record(inner)
+		if (earlyPhases.length < MAX_EARLY_PHASES) earlyPhases.push(record)
 	}
 
 	/** Ends every open navigation, e.g. when the page goes away. */

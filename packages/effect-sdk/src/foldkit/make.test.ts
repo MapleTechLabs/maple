@@ -92,6 +92,38 @@ describe("MapleFoldkit.make", () => {
 		await maple.dispose()
 	})
 
+	it("sends a navigation still open at dispose with the final flush", async () => {
+		const { maple, spans } = setup()
+		const app = maple.instrument({
+			resources: Layer.empty,
+			init: (_flags: undefined, _url: { readonly pathname: string }) => ({
+				model: {},
+				commands: [
+					{
+						name: "LoadServices",
+						args: { environmentId: "env_1" },
+						effect: Effect.succeed({ _tag: "LoadedServices" }).pipe(
+							Effect.withSpan("http.client GET"),
+						),
+					},
+				],
+			}),
+		})
+		const { commands } = app.init(undefined, { pathname: "/services" })
+		await Promise.all(
+			commands.map((command) =>
+				Effect.runPromise(
+					command.effect.pipe(
+						Effect.withSpan(command.name, { attributes: command.args }),
+						Effect.provide(app.resources),
+					),
+				),
+			),
+		)
+		await maple.dispose()
+		expect(spans().map((span) => span.name)).toContain("pageload /services")
+	})
+
 	it("reports a crash with the Message that caused it and the recent Messages", async () => {
 		const { maple, spans } = setup()
 		const app = maple.instrument({
