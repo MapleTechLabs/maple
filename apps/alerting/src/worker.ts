@@ -36,7 +36,7 @@ import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
-import { FetchHttpClient, HttpServerResponse } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
 import { lookupColo } from "./worker-colo.ts"
@@ -147,9 +147,10 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		const loggedNonProdSkip = yield* Ref.make(false)
 		// Once per isolate too: an isolate never changes data center. A failed lookup stays
 		// "unknown" for the isolate rather than costing every fire another timeout.
+		const http = yield* HttpClient.HttpClient
 		const isolateColo = yield* Effect.cached(
 			lookupColo().pipe(
-				Effect.provide(FetchHttpClient.layer),
+				Effect.provideService(HttpClient.HttpClient, http),
 				Effect.tapError((error) => Effect.logWarning("Alerting colo lookup failed", error)),
 				Effect.orElseSucceed(() => "unknown"),
 			),
@@ -276,6 +277,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 				Cloudflare.Hyperdrive.ConnectBinding,
 				Cloudflare.Email.SendBinding,
 				Cloudflare.Workers.CronEventSourceLive,
+				FetchHttpClient.layer,
 				WorkerTelemetry({
 					serviceName: "alerting",
 					anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,

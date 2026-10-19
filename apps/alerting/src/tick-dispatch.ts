@@ -97,8 +97,6 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 		Effect.provideService(HttpClient.HttpClient, client),
 		Effect.mapError((cause) => new TickDispatchError({ message: "Placed tick request failed", cause })),
 	)
-	// Set by Cloudflare when placement routed the hop (`remote-IAD`, `local-FRA`); absent otherwise.
-	yield* Effect.annotateCurrentSpan("maple.placement", response.headers["cf-placement"] ?? "none")
 	if (response.status === 204) return
 	// The handler did not run the tick: a token mismatch or a version without the route.
 	if (response.status === 401 || response.status === 404) {
