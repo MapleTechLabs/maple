@@ -279,6 +279,25 @@ const mergePage = <A, E>(
 	return { rows: [...previous, ...next.rows], total: next.total, page, isFetchingMore: false }
 }
 
+/**
+ * A page answer: page 1 settles the slot; a failed later page keeps the rows and stops the
+ * spinner, as Clerk's `fetchNext` does, so Load more can be pressed again.
+ */
+const settlePage = <A, E>(
+	current: AsyncData.AsyncData<
+		{ readonly rows: ReadonlyArray<A>; readonly total: number; readonly page: number; readonly isFetchingMore: boolean },
+		E
+	>,
+	page: number,
+	result: Result.Result<{ readonly rows: ReadonlyArray<A>; readonly total: number }, E>,
+) =>
+	page > 1 && Result.isFailure(result)
+		? Option.match(AsyncData.getData(current), {
+				onNone: () => AsyncData.settle(current, Result.map(result, (next) => mergePage(current, page, next))),
+				onSome: (data) => AsyncData.Success({ data: { ...data, isFetchingMore: false } }),
+			})
+		: AsyncData.settle(current, Result.map(result, (next) => mergePage(current, page, next)))
+
 export const hasMore = (data: { readonly rows: ReadonlyArray<unknown>; readonly total: number }): boolean =>
 	data.rows.length < data.total
 
@@ -322,16 +341,13 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedFetchMembers: ({ page, result }) => ({
 			model: {
 				...model,
-				members: AsyncData.settle(model.members, Result.map(result, (next) => mergePage(model.members, page, next))),
+				members: settlePage(model.members, page, result),
 			},
 		}),
 		CompletedFetchInvitations: ({ page, result }) => ({
 			model: {
 				...model,
-				invitations: AsyncData.settle(
-					model.invitations,
-					Result.map(result, (next) => mergePage(model.invitations, page, next)),
-				),
+				invitations: settlePage(model.invitations, page, result),
 			},
 		}),
 		ClickedLoadMoreMembers: () =>
