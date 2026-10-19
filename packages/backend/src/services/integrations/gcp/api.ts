@@ -16,7 +16,11 @@ import {
 	type GcpMetric,
 	type GcpMetricGroup,
 } from "@maple/domain/gcp-metrics"
-import { GcpMetricDescriptor, type GcpPromQlSeries } from "@maple/domain/gcp-live-metrics"
+import {
+	GcpMetricDescriptor,
+	type GcpMonitoredResourceType,
+	type GcpPromQlSeries,
+} from "@maple/domain/gcp-live-metrics"
 import { GcpLiveQueryRejectedError } from "@maple/domain/http/gcp-live-query-errors"
 import type { GcpConnectorId, GcpProjectId } from "@maple/domain/primitives"
 import { Duration, Effect, Option, Redacted, Schema, Stream } from "effect"
@@ -627,7 +631,7 @@ export const listActiveMetricDescriptorsPage = (
 		{ maxBytes: MAX_BODY_BYTES },
 	).pipe(
 		Effect.map((page) => ({
-			descriptors: (page.metricDescriptors ?? []).flatMap((descriptor): Array<GcpMetricDescriptor> => {
+			items: (page.metricDescriptors ?? []).flatMap((descriptor): Array<GcpMetricDescriptor> => {
 				const { metricKind = "", valueType = "" } = descriptor
 				if (!isMetricKind(metricKind) || !isValueType(valueType)) return []
 				return [
@@ -642,6 +646,45 @@ export const listActiveMetricDescriptorsPage = (
 					},
 				]
 			}),
+			nextPageToken: page.nextPageToken,
+		})),
+	)
+
+const decodeResourceDescriptorsPage = Schema.decodeUnknownEffect(
+	Schema.Struct({
+		resourceDescriptors: Schema.optionalKey(
+			Schema.Array(
+				Schema.Struct({
+					type: Schema.String,
+					labels: Schema.optionalKey(Schema.Array(Schema.Struct({ key: Schema.String }))),
+				}),
+			),
+		),
+		nextPageToken: Schema.optionalKey(Schema.String),
+	}),
+)
+
+/** One page of Google's monitored resource types, each with its label keys. */
+export const listMonitoredResourceTypesPage = (
+	httpClient: HttpClient.HttpClient,
+	reader: GcpReader,
+	projectId: GcpProjectId,
+	pageToken: string | undefined,
+) =>
+	call(
+		httpClient,
+		"Cloud Monitoring",
+		HttpClientRequest.get(
+			`https://monitoring.googleapis.com/v3/projects/${projectId}/monitoredResourceDescriptors`,
+		).pipe(asReader(reader), HttpClientRequest.setUrlParams({ pageToken })),
+		decodeResourceDescriptorsPage,
+		{ maxBytes: MAX_BODY_BYTES },
+	).pipe(
+		Effect.map((page) => ({
+			items: (page.resourceDescriptors ?? []).map((descriptor): GcpMonitoredResourceType => ({
+				type: descriptor.type,
+				labels: (descriptor.labels ?? []).map((label) => label.key),
+			})),
 			nextPageToken: page.nextPageToken,
 		})),
 	)

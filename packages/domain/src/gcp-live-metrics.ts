@@ -25,6 +25,13 @@ export const GcpMetricDescriptor = Schema.Struct({
 })
 export type GcpMetricDescriptor = typeof GcpMetricDescriptor.Type
 
+/** A monitored resource type (Cloud Monitoring `monitoredResourceDescriptors`) and its label keys. */
+export const GcpMonitoredResourceType = Schema.Struct({
+	type: Schema.String,
+	labels: Schema.Array(Schema.String),
+})
+export type GcpMonitoredResourceType = typeof GcpMonitoredResourceType.Type
+
 /** How Maple's query builder treats a Cloud Monitoring metric; undefined for value types PromQL cannot chart. */
 export const gcpMetricMapleType = (descriptor: GcpMetricDescriptor): MetricType | undefined => {
 	if (descriptor.valueType === "STRING" || descriptor.valueType === "MONEY") return undefined

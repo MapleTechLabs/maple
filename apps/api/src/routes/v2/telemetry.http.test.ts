@@ -698,12 +698,12 @@ describe("v2 telemetry reads over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("lists Google Cloud metrics after the warehouse's on the first page", async () => {
-		const gcpRequests: Array<Parameters<QueryEngineServiceApi["listGcpMetrics"]>[1]> = []
+	it("leaves Google Cloud metrics out of /v2/metrics, so its pages stay the warehouse's", async () => {
+		let gcpReads = 0
 		const queryEngine: QueryEngineServiceApi = {
 			...queryEngineStub,
-			listGcpMetrics: (_tenant, request) => {
-				gcpRequests.push(request)
+			listGcpMetrics: () => {
+				gcpReads += 1
 				return Effect.succeed([
 					{
 						metricName: "cloudsql.googleapis.com/database/cpu/utilization",
@@ -726,15 +726,8 @@ describe("v2 telemetry reads over HTTP", () => {
 		expect(metrics.status).toBe(200)
 		expect(metrics.body.data.map((metric: { name: string }) => metric.name)).toEqual([
 			"http.server.duration",
-			"cloudsql.googleapis.com/database/cpu/utilization",
 		])
-		expect(metrics.body.data[1]).toMatchObject({
-			type: "gauge",
-			service_name: "Google Cloud",
-			is_monotonic: false,
-			last_seen: "2026-07-15T12:00:00.000Z",
-		})
-		expect(gcpRequests).toEqual([{ search: "cpu", limit: 20 }])
+		expect(gcpReads).toBe(0)
 		await harness.dispose()
 	})
 

@@ -47,6 +47,7 @@ const fakePort = (answer: Effect.Effect<ReadonlyArray<GcpMetricDescriptor>, GcpL
 	const port: GcpLiveMetrics = {
 		queryRange: unused,
 		queryInstant: unused,
+		listResourceTypes: unused,
 		listMetrics: (_tenant, scope) => {
 			calls.listMetrics += 1
 			calls.scopes.push(scope)

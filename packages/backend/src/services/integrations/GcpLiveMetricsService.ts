@@ -8,7 +8,11 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { EdgeCacheService } from "@maple/cache"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
-import { GcpMetricDescriptor, type GcpPromQlSeries } from "@maple/domain/gcp-live-metrics"
+import {
+	GcpMetricDescriptor,
+	GcpMonitoredResourceType,
+	type GcpPromQlSeries,
+} from "@maple/domain/gcp-live-metrics"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
 	GCP_LIVE_METRICS_NOT_AVAILABLE,
@@ -32,6 +36,7 @@ import {
 	importServiceAccountKey,
 	impersonateReader,
 	listActiveMetricDescriptorsPage,
+	listMonitoredResourceTypesPage,
 	MetricsScope,
 	promQlQuery,
 } from "./gcp/api"
@@ -44,9 +49,11 @@ const CONCURRENCY = 4
 const MAX_PROJECTS = 20
 /** Series Google returns across a query's projects. */
 const MAX_SERIES = 500
-/** 10,000 descriptors a page; a project rarely fills one. */
-const MAX_DESCRIPTOR_PAGES = 5
+/** Pages a listing reads: 10,000 metric descriptors a page, which a project rarely fills. */
+const MAX_LIST_PAGES = 5
 const HOUR_SECONDS = 3_600
+/** Google's resource types change with its releases, not with the project. */
+const DAY_SECONDS = 86_400
 /** Above the default: a miss here costs a Google call, not a row lookup. */
 const CACHE_READ_TIMEOUT_MS = 250
 const API_ERROR = "@maple/api/integrations/GcpApiError"
@@ -330,7 +337,8 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 									.filter((row) => row.connectorId === connector.id)
 									.map((row) => row.projectId)
 					// A synced folder with no active project is just empty.
-					const unsynced = connector.resourcesSyncedAt === null || connector.lastResourcesError !== null
+					const unsynced =
+						connector.resourcesSyncedAt === null || connector.lastResourcesError !== null
 					if (projectIds.length === 0 && unsynced) notListed.push(unlisted(connector))
 					for (const projectId of projectIds) {
 						if (isProjectId(projectId) && !targets.has(projectId))
@@ -462,21 +470,29 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 				return series
 			})
 
-			const listDescriptors = Effect.fnUntraced(function* (reader: GcpReader, projectId: GcpProjectId) {
-				const descriptors: Array<GcpMetricDescriptor> = []
+			/** Every page of a project's listing, at most `MAX_LIST_PAGES`. */
+			const listAll = Effect.fnUntraced(function* <A>(
+				listPage: (
+					httpClient: HttpClient.HttpClient,
+					reader: GcpReader,
+					projectId: GcpProjectId,
+					pageToken: string | undefined,
+				) => Effect.Effect<
+					{ readonly items: ReadonlyArray<A>; readonly nextPageToken?: string | undefined },
+					GcpApiError
+				>,
+				reader: GcpReader,
+				projectId: GcpProjectId,
+			) {
+				const items: Array<A> = []
 				let pageToken: string | undefined
-				for (let page = 0; page < MAX_DESCRIPTOR_PAGES; page++) {
-					const body = yield* listActiveMetricDescriptorsPage(
-						httpClient,
-						reader,
-						projectId,
-						pageToken,
-					)
-					descriptors.push(...body.descriptors)
+				for (let page = 0; page < MAX_LIST_PAGES; page++) {
+					const body = yield* listPage(httpClient, reader, projectId, pageToken)
+					items.push(...body.items)
 					pageToken = body.nextPageToken
 					if (pageToken === undefined) break
 				}
-				return descriptors
+				return items
 			})
 
 			return {
@@ -521,7 +537,7 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 										readTimeoutMs: CACHE_READ_TIMEOUT_MS,
 										schema: Schema.Array(GcpMetricDescriptor),
 									},
-									listDescriptors(target.reader, target.projectId),
+									listAll(listActiveMetricDescriptorsPage, target.reader, target.projectId),
 								)
 								.pipe(
 									Effect.map(({ value }) => value),
@@ -542,6 +558,39 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 						return yield* readFailed(failures)
 					}
 					return mergeDescriptors(lists)
+				}),
+				listResourceTypes: Effect.fn("GcpLiveMetricsService.listResourceTypes")(function* (
+					tenant: QueryTenant,
+					options: GcpReadScope,
+				) {
+					const key = yield* signingKey
+					const selected = yield* selectTargets(yield* targetsOf(tenant.orgId), options)
+					const failures: Array<Failure> = [...selected.failures]
+					const signedIn = yield* signIn(key, selected.targets, failures)
+					// The types are Google's, the same in every project: the first project that answers speaks.
+					for (const target of signedIn) {
+						const types = yield* edgeCache
+							.getOrCompute(
+								{
+									bucket: "gcp-resource-types",
+									key: `${tenant.orgId}:${target.projectId}`,
+									ttlSeconds: DAY_SECONDS,
+									readTimeoutMs: CACHE_READ_TIMEOUT_MS,
+									schema: Schema.Array(GcpMonitoredResourceType),
+								},
+								listAll(listMonitoredResourceTypesPage, target.reader, target.projectId),
+							)
+							.pipe(
+								Effect.map(({ value }) => value),
+								Effect.catchTag(
+									API_ERROR,
+									recordFailure(failures, `projects/${target.projectId}`, target.connector),
+								),
+							)
+						if (types !== undefined) return types
+					}
+					yield* logFailures(failures)
+					return failures.length > 0 ? yield* readFailed(failures) : []
 				}),
 			} satisfies Port
 		}),

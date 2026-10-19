@@ -2155,7 +2155,6 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(
 				metricName: request.query.metricName,
 				scope: request.query.scope,
 				limit: request.query.limit,
-				endMs: range.endMs,
 			})
 			return new QueryEngineExecuteResponse({
 				result: { kind: "attributeKeys", source: "metrics", data },

@@ -42,11 +42,12 @@ interface Calls {
 	readonly range: Array<Parameters<GcpLiveMetrics["queryRange"]>[1]>
 	readonly instant: Array<Parameters<GcpLiveMetrics["queryInstant"]>[1]>
 	readonly listed: Array<GcpReadScope>
+	readonly resourceTypes: Array<GcpReadScope>
 	warehouse: number
 }
 
 const makeFakes = (answer: (query: string) => ReadonlyArray<GcpPromQlSeries> = () => []) => {
-	const calls: Calls = { range: [], instant: [], listed: [], warehouse: 0 }
+	const calls: Calls = { range: [], instant: [], listed: [], resourceTypes: [], warehouse: 0 }
 	const gcp: GcpLiveMetrics = {
 		queryRange: (_tenant, request) => {
 			calls.range.push(request)
@@ -59,6 +60,13 @@ const makeFakes = (answer: (query: string) => ReadonlyArray<GcpPromQlSeries> = (
 		listMetrics: (_tenant, request) => {
 			calls.listed.push(request)
 			return Effect.succeed([transactions, latencies])
+		},
+		listResourceTypes: (_tenant, request) => {
+			calls.resourceTypes.push(request)
+			return Effect.succeed([
+				{ type: "cloudsql_database", labels: ["project_id", "database_id", "region"] },
+				{ type: "gce_instance", labels: ["project_id", "instance_id", "zone"] },
+			])
 		},
 	}
 	const warehouse: QueryEngineWarehouse = {
@@ -90,9 +98,8 @@ const execute = (
 		}),
 	)
 
-type DataOf<Kind> = Extract<QueryEngineResult, { kind: Kind }> extends { readonly data: infer Data }
-	? Data
-	: never
+type DataOf<Kind> =
+	Extract<QueryEngineResult, { kind: Kind }> extends { readonly data: infer Data } ? Data : never
 
 const dataOf = <Kind extends QueryEngineResult["kind"]>(
 	response: { readonly result: QueryEngineResult },
@@ -224,6 +231,19 @@ describe("Google Cloud metrics routing", () => {
 				]),
 				{ all: 2 },
 			)
+		}),
+	)
+
+	it.effect("averages every sample alike, not each series' mean", () =>
+		Effect.gen(function* () {
+			// One series with a single 0 and another with five 10s: Google sums 50 over 6 samples.
+			const fakes = makeFakes(() => [
+				series({ project_id: "alpha", maple_part: "sum" }, [["2026-10-19T10:05:00Z", 50]]),
+				series({ project_id: "alpha", maple_part: "count" }, [["2026-10-19T10:05:00Z", 6]]),
+			])
+			const response = yield* execute(fakes, timeseries({ metric: "avg" }))
+			assert.include(fakes.calls.range[0]?.query ?? "", "sum by (project_id) (count_over_time(")
+			assert.deepStrictEqual(dataOf(response, "timeseries")[0]?.series, { all: 50 / 6 })
 		}),
 	)
 
@@ -377,7 +397,9 @@ describe("Google Cloud metric discovery", () => {
 				metricName: TX,
 			})
 			assert.isTrue(
-				[...fakes.calls.listed, ...fakes.calls.instant].every((call) => call.discovery === true),
+				[...fakes.calls.listed, ...fakes.calls.resourceTypes, ...fakes.calls.instant].every(
+					(call) => call.discovery === true,
+				),
 			)
 		}),
 	)
@@ -392,7 +414,7 @@ describe("Google Cloud metric discovery", () => {
 			)
 			assert.deepStrictEqual(
 				dataOf(keys, "attributeKeys").map((item) => item.key),
-				["log", "monitored_resource", "project_id", "severity"],
+				["severity", "log", "project_id", "monitored_resource"],
 			)
 			const values = yield* execute(
 				{ warehouse: fakes.warehouse, gcp },
@@ -406,6 +428,7 @@ describe("Google Cloud metric discovery", () => {
 			)
 			assert.deepStrictEqual(dataOf(values, "attributeValues"), [])
 			assert.lengthOf(fakes.calls.instant, 0)
+			assert.lengthOf(fakes.calls.resourceTypes, 0)
 
 			// A chart still asks for the resource type.
 			const chart = yield* Effect.flip(
@@ -416,20 +439,16 @@ describe("Google Cloud metric discovery", () => {
 		}),
 	)
 
-	it.effect("lists the descriptor's labels and the labels seen on recent series", () =>
+	it.effect("lists the metric's labels, then its resource types' labels, without reading series", () =>
 		Effect.gen(function* () {
-			const fakes = makeFakes(() => [
-				series(
-					{ __name__: TX, project_id: "alpha", database_id: "a", transaction_type: "commit" },
-					[],
-				),
-				series({ __name__: TX, project_id: "alpha", database_id: "b" }, []),
-			])
+			const fakes = makeFakes()
 			const all = yield* execute(fakes, { kind: "attributeKeys", source: "metrics", metricName: TX })
 			assert.deepStrictEqual(dataOf(all, "attributeKeys"), [
-				{ key: "database_id", count: 2 },
-				{ key: "project_id", count: 2 },
-				{ key: "transaction_type", count: 1 },
+				{ key: "transaction_type", count: 0 },
+				{ key: "project_id", count: 0 },
+				{ key: "database_id", count: 0 },
+				{ key: "region", count: 0 },
+				{ key: "monitored_resource", count: 0 },
 			])
 			const resource = yield* execute(fakes, {
 				kind: "attributeKeys",
@@ -439,8 +458,9 @@ describe("Google Cloud metric discovery", () => {
 			})
 			assert.deepStrictEqual(
 				dataOf(resource, "attributeKeys").map((item) => item.key),
-				["database_id", "project_id"],
+				["project_id", "database_id", "region", "monitored_resource"],
 			)
+			assert.lengthOf(fakes.calls.instant, 0)
 		}),
 	)
 

@@ -149,7 +149,7 @@ const byLabels = (groupLabel: string | undefined): string =>
 		? "project_id"
 		: `${labelName(groupLabel)}, project_id`
 
-/** The series discovery and sample counts read: a distribution answers as `_count` / `_sum`. */
+/** The series label values and sample counts read: a distribution answers as `_count` / `_sum`. */
 const seriesName = (descriptor: GcpMetricDescriptor): string =>
 	descriptor.valueType === "DISTRIBUTION" ? `${descriptor.type}_count` : descriptor.type
 
@@ -242,10 +242,11 @@ export const compileGcpMetricQuery = Effect.fnUntraced(function* (
 	const gauge = descriptor.metricKind === "GAUGE"
 	switch (metric) {
 		case "avg":
+			// Every sample weighs the same, as in ClickHouse: not a mean of per-series means.
 			return {
 				query: avgParts(
-					aggregate("sum", type, "avg_over_time"),
-					aggregate("count", type, "avg_over_time"),
+					aggregate("sum", type, "sum_over_time"),
+					aggregate("sum", type, "count_over_time"),
 				),
 				merge: "avg",
 			} satisfies GcpPromQl
@@ -284,12 +285,6 @@ export const compileGcpSampleCount = Effect.fnUntraced(function* (
 		query: `sum by (${byLabels(request.groupLabel)}) (${union(seriesName(descriptor), "count_over_time", request.windowSeconds)})`,
 		merge: "sum",
 	} satisfies GcpPromQl
-})
-
-/** A few recent series of the metric, to read which labels it carries. */
-export const compileGcpLabelSample = Effect.fnUntraced(function* (descriptor: GcpMetricDescriptor) {
-	const union = yield* compileUnion(descriptor, [])
-	return `topk(5, ${union(seriesName(descriptor), "last_over_time", 3_600)})`
 })
 
 /** Series per value of one label (and project) over the window. */

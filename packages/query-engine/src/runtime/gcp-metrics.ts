@@ -10,7 +10,6 @@ import {
 import type { MetricsFilters, QuerySpec } from "@maple/domain/query-engine"
 import { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
 import {
-	compileGcpLabelSample,
 	compileGcpLabelValues,
 	compileGcpMetricQuery,
 	compileGcpSampleCount,
@@ -272,7 +271,11 @@ export const gcpMetricsAlertBuckets = Effect.fnUntraced(function* <T extends Que
 	})
 })
 
-/** Label keys: the descriptor's metric labels plus those seen on a few recent series. */
+/**
+ * Label keys from Google's descriptors, without reading series: the metric's own labels, then
+ * the labels of its active resource types, `project_id` and `monitored_resource`. `scope:
+ * "resource"` asks for the latter alone. Google has no usage count; each key counts 0.
+ */
 export const gcpMetricAttributeKeys = Effect.fnUntraced(function* <T extends QueryTenant>(
 	gcp: GcpLiveMetrics<T> | undefined,
 	tenant: T,
@@ -280,38 +283,20 @@ export const gcpMetricAttributeKeys = Effect.fnUntraced(function* <T extends Que
 		readonly metricName: string
 		readonly scope?: "span" | "resource"
 		readonly limit?: number
-		readonly endMs: number
 	},
 ) {
 	const { port, read, descriptor } = yield* describe(gcp, tenant, request.metricName, { discovery: true })
 	if (descriptor === undefined) return []
-	// `scope: "resource"` asks for the labels Google adds beyond the metric's own.
-	const resourceOnly = request.scope === "resource"
-	// No resource type to select by: list what every Google series carries, without reading.
-	if (descriptor.monitoredResourceTypes.length === 0) {
-		return [...(resourceOnly ? [] : descriptor.labels), "monitored_resource", "project_id"]
-			.sort()
-			.map((key) => ({ key, count: 0 }))
-			.slice(0, request.limit ?? 200)
-	}
-	const sample = yield* compileGcpLabelSample(descriptor)
-	yield* annotate(sample)
-	const series = yield* port.queryInstant(tenant, {
-		...read,
-		query: sample,
-		timeSeconds: Math.floor(request.endMs / 1000),
-	})
-	const counts = new Map<string, number>(resourceOnly ? [] : descriptor.labels.map((label) => [label, 0]))
-	for (const s of series) {
-		for (const key of Object.keys(s.labels)) {
-			if (key === "__name__" || (resourceOnly && descriptor.labels.includes(key))) continue
-			counts.set(key, (counts.get(key) ?? 0) + 1)
-		}
-	}
-	return [...counts]
-		.map(([key, count]) => ({ key, count }))
-		.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
-		.slice(0, request.limit ?? 200)
+	const active = new Set(descriptor.monitoredResourceTypes)
+	const resourceTypes = active.size === 0 ? [] : yield* port.listResourceTypes(tenant, read)
+	const resourceLabels = resourceTypes.flatMap((type) => (active.has(type.type) ? type.labels : []))
+	const keys = new Set([
+		...(request.scope === "resource" ? [] : descriptor.labels),
+		...resourceLabels,
+		"project_id",
+		"monitored_resource",
+	])
+	return [...keys].slice(0, request.limit ?? 200).map((key) => ({ key, count: 0 }))
 })
 
 /** Values of one label with their series counts over the range, summed across projects. */

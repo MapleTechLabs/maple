@@ -8,7 +8,6 @@ import {
 	TraceId,
 } from "@maple/domain/http"
 import {
-	LIST_LIMIT_DEFAULT,
 	MapleApiV2,
 	paginateOffsetQuery,
 	timestamp,
@@ -64,7 +63,6 @@ import {
 	type ServiceBaselines,
 } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import type { ListMetricsOutput } from "@maple/query-engine/ch"
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeSpanId = Schema.decodeSync(SpanId)
@@ -803,52 +801,37 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 					const window = yield* parseWindow(query.start_time, query.end_time, {
 						precision: "second",
 					})
-					const toMetric = (row: ListMetricsOutput): V2Metric => ({
-						object: "metric",
-						name: decodeMetricName(row.metricName),
-						type: row.metricType,
-						service_name: row.serviceName,
-						description: row.metricDescription,
-						unit: row.metricUnit,
-						is_monotonic: row.isMonotonic !== 0,
-						data_point_count: row.dataPointCount,
-						first_seen: timestamp(DateTime.formatIso(row.firstSeen)),
-						last_seen: timestamp(DateTime.formatIso(row.lastSeen)),
-					})
-					const [page, gcpRows] = yield* Effect.all(
-						[
-							paginateOffsetQuery(query, ({ limit, offset }) =>
-								telemetry
-									.listMetrics(
-										tenant,
-										{
-											serviceName: query.service_name,
-											metricType: query.metric_type,
-											search: query.search,
-											limit,
-											offset,
-										},
-										window,
-									)
-									.pipe(Effect.map((rows) => rows.map(toMetric))),
+					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
+						telemetry
+							.listMetrics(
+								tenant,
+								{
+									serviceName: query.service_name,
+									metricType: query.metric_type,
+									search: query.search,
+									limit,
+									offset,
+								},
+								window,
+							)
+							.pipe(
+								Effect.map((rows): ReadonlyArray<V2Metric> =>
+									rows.map((row) => ({
+										object: "metric",
+										name: decodeMetricName(row.metricName),
+										type: row.metricType,
+										service_name: row.serviceName,
+										description: row.metricDescription,
+										unit: row.metricUnit,
+										is_monotonic: row.isMonotonic !== 0,
+										data_point_count: row.dataPointCount,
+										first_seen: timestamp(DateTime.formatIso(row.firstSeen)),
+										last_seen: timestamp(DateTime.formatIso(row.lastSeen)),
+									})),
+								),
 							),
-							// Google Cloud metrics ride on the first page, after the warehouse's.
-							query.cursor === undefined
-								? queryEngine.listGcpMetrics(tenant, {
-										service: query.service_name,
-										metricType: query.metric_type,
-										search: query.search,
-										limit: query.limit ?? LIST_LIMIT_DEFAULT,
-									})
-								: Effect.succeed([]),
-						],
-						{ concurrency: "unbounded" },
 					)
-					return {
-						object: "list" as const,
-						...page,
-						data: [...page.data, ...gcpRows.map(toMetric)],
-					}
+					return { object: "list" as const, ...page }
 				}),
 			)
 			.handle("timeseries", ({ payload }) =>

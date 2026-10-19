@@ -1,5 +1,9 @@
 import type { Effect } from "effect"
-import type { GcpMetricDescriptor, GcpPromQlSeries } from "@maple/domain/gcp-live-metrics"
+import type {
+	GcpMetricDescriptor,
+	GcpMonitoredResourceType,
+	GcpPromQlSeries,
+} from "@maple/domain/gcp-live-metrics"
 import type { GcpLiveQueryError } from "@maple/domain/http/gcp-live-query-errors"
 import type { QueryTenant } from "./query-engine"
 
@@ -44,4 +48,9 @@ export interface GcpLiveMetrics<T extends QueryTenant = QueryTenant> {
 		tenant: T,
 		request: GcpReadScope,
 	) => Effect.Effect<ReadonlyArray<GcpMetricDescriptor>, GcpLiveQueryError>
+	/** Google's monitored resource types with their label keys (cached a day). */
+	readonly listResourceTypes: (
+		tenant: T,
+		request: GcpReadScope,
+	) => Effect.Effect<ReadonlyArray<GcpMonitoredResourceType>, GcpLiveQueryError>
 }

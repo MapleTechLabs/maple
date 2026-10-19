@@ -92,6 +92,8 @@ interface Calls {
 	/** `project pageToken` per descriptor page read. */
 	readonly descriptors: Array<string>
 	readonly scopes: Array<string>
+	/** `project pageToken` per resource type page read. */
+	readonly resourceTypes: Array<string>
 	/** Requests no stub answers for: every test expects none. */
 	readonly unexpected: Array<string>
 }
@@ -103,6 +105,8 @@ interface StubOptions {
 	readonly promql?: (call: PromQlCall) => Response | Promise<Response> | undefined
 	/** A project's active descriptors, by page token (`""` for the first page). */
 	readonly descriptors?: (project: string, pageToken: string) => Response | undefined
+	/** A project's monitored resource types, by page token (`""` for the first page). */
+	readonly resourceTypes?: (project: string, pageToken: string) => Response | undefined
 	/** Projects a project's metrics scope reads besides itself. */
 	readonly scopes?: Record<string, ReadonlyArray<string>>
 }
@@ -172,6 +176,12 @@ const stubFetch = (calls: Calls, options: StubOptions) =>
 			calls.descriptors.push(`${descriptors[1]} ${pageToken}`.trim())
 			return options.descriptors?.(descriptors[1]!, pageToken) ?? json({})
 		}
+		const resourceTypes = /^\/v3\/projects\/([^/]+)\/monitoredResourceDescriptors$/.exec(url.pathname)
+		if (url.host === "monitoring.googleapis.com" && resourceTypes !== null) {
+			const pageToken = url.searchParams.get("pageToken") ?? ""
+			calls.resourceTypes.push(`${resourceTypes[1]} ${pageToken}`.trim())
+			return options.resourceTypes?.(resourceTypes[1]!, pageToken) ?? json({})
+		}
 		calls.unexpected.push(url.href)
 		return json({}, 418)
 	}) as typeof fetch
@@ -182,6 +192,7 @@ const makeCalls = (): Calls => ({
 	promql: [],
 	descriptors: [],
 	scopes: [],
+	resourceTypes: [],
 	unexpected: [],
 })
 
@@ -1125,6 +1136,52 @@ describe("GcpLiveMetricsService.listMetrics", () => {
 					error.failures.map((failure) => failure.scope),
 					["projects/acme-prod"],
 				)
+			}),
+		)
+	})
+})
+
+describe("GcpLiveMetricsService.listResourceTypes", () => {
+	it.effect("reads Google's resource types from the first project that answers, cached a day", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		const types = () => GcpLiveMetricsService.use((gcp) => gcp.listResourceTypes(TENANT, {}))
+		return run(
+			testDb,
+			calls,
+			{
+				resourceTypes: (project, pageToken) =>
+					project === "acme-data"
+						? denied()
+						: pageToken === ""
+							? json({
+									resourceDescriptors: [
+										{
+											type: "cloudsql_database",
+											labels: [
+												{ key: "project_id" },
+												{ key: "database_id" },
+												{ key: "region" },
+											],
+										},
+									],
+									nextPageToken: "page-2",
+								})
+							: json({ resourceDescriptors: [{ type: "global" }] }),
+			},
+			Effect.gen(function* () {
+				yield* insertConnectors(testDb)
+				const expected = [
+					{ type: "cloudsql_database", labels: ["project_id", "database_id", "region"] },
+					{ type: "global", labels: [] },
+				]
+				// acme-data comes first and is refused; acme-prod answers for every project.
+				assert.deepStrictEqual(yield* types(), expected)
+				assert.deepStrictEqual(calls.resourceTypes, ["acme-data", "acme-prod", "acme-prod page-2"])
+
+				yield* TestClock.adjust("23 hours")
+				assert.deepStrictEqual(yield* types(), expected)
+				assert.lengthOf(calls.resourceTypes, 4)
 			}),
 		)
 	})

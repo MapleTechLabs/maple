@@ -20,6 +20,8 @@ interface MetricMetadataPanelProps {
 
 export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetadataPanelProps) {
 	const { effectiveTimezone } = useTimezonePreference()
+	// Google metrics are read live: no stored datapoints, no usage count per label.
+	const isGcp = isGcpMetricType(summary.metricName)
 	const keysResult = useAtomValue(
 		getMetricAttributeKeysResultAtom({
 			data: {
@@ -54,7 +56,7 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 
 			<KeyValueList className="gap-2">
 				<KeyValue label="Datapoints in range" mono>
-					{isGcpMetricType(summary.metricName) ? EMPTY_VALUE : formatNumber(summary.dataPointCount)}
+					{isGcp ? EMPTY_VALUE : formatNumber(summary.dataPointCount)}
 				</KeyValue>
 				<KeyValue label="First seen" mono>
 					{formatTimestampInTimezone(summary.firstSeen, {
@@ -117,9 +119,11 @@ export function MetricMetadataPanel({ summary, startTime, endTime }: MetricMetad
 										className="flex items-center justify-between gap-2 text-xs"
 									>
 										<span className="truncate font-mono">{row.attributeKey}</span>
-										<span className="shrink-0 font-mono text-muted-foreground">
-											{formatNumber(row.usageCount)}
-										</span>
+										{isGcp ? null : (
+											<span className="shrink-0 font-mono text-muted-foreground">
+												{formatNumber(row.usageCount)}
+											</span>
+										)}
 									</li>
 								))}
 							</ul>

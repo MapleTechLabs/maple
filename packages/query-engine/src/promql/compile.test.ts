@@ -5,7 +5,6 @@ import type { AttributeFilter, MetricsFilters, MetricsMetric } from "@maple/doma
 import { Effect } from "effect"
 import { QueryEngineValidationError } from "@maple/domain/http"
 import {
-	compileGcpLabelSample,
 	compileGcpLabelValues,
 	compileGcpMetricQuery,
 	compileGcpSampleCount,
@@ -103,8 +102,8 @@ describe("compileGcpMetricQuery", () => {
 			[
 				"avg",
 				avgParts(
-					`sum by (project_id) (avg_over_time(${CPU}[60s]))`,
-					`count by (project_id) (avg_over_time(${CPU}[60s]))`,
+					`sum by (project_id) (sum_over_time(${CPU}[60s]))`,
+					`sum by (project_id) (count_over_time(${CPU}[60s]))`,
 				),
 				"avg",
 			],
@@ -472,15 +471,6 @@ describe("compileGcpSampleCount", () => {
 })
 
 describe("discovery", () => {
-	it.effect("samples recent series of a distribution through its _count series", () =>
-		Effect.gen(function* () {
-			assert.strictEqual(
-				yield* compileGcpLabelSample(latencies),
-				`topk(5, last_over_time(${LAT("count")}[3600s]))`,
-			)
-		}),
-	)
-
 	it.effect("counts series per label value and project", () =>
 		Effect.gen(function* () {
 			assert.strictEqual(
