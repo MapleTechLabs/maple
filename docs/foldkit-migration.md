@@ -21,7 +21,7 @@ Phases 0 to 4 and 7 done; cutover (6) open. Decision records: [S1 skeleton](fold
 | -------- | ------------------------------------------------------------------------------------------------------- |
 | Pages    | Every `apps/web` route and lab page ported, plus command palette and shortcuts                          |
 | Local UI | `apps/local-ui-foldkit`: all routes, mobile sheets, map cache                                           |
-| Parity   | Last full run (6 of 8 chunks): about 2,700 identical, 504 pass, 9 fail, 0 missing                       |
+| Parity   | Last full run (5 of 7 foldkit chunks): 2,188 identical, 485 pass, 9 fail, 0 missing                    |
 | Tests    | `apps/web-foldkit` 180 files, 964 Scene and unit tests                                                  |
 
 Open fails from that run: `lab-worst-case` (known race, also on the old build),
