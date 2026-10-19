@@ -1,0 +1,733 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import nginxCollectorConfig from "./_log-parsing/nginx-collector.yaml?raw";
+
+const pageTitle = "Log Parsing: Regex, Grok, Linux Commands and the OTel Collector | Maple";
+const pageDescription =
+    "Log parsing turns raw log lines into structured fields. Parse syslog, nginx, JSON and multiline logs with regex, grok, Linux commands and the OTel Collector.";
+const published = "2026-10-19";
+const updatedLabel = "October 19, 2026";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const toc = [
+    ["definition", "Log parsing defined"],
+    ["formats", "Common log formats"],
+    ["techniques", "Parsing techniques"],
+    ["linux", "Linux commands"],
+    ["collector", "Collector operators"],
+    ["nginx", "Full nginx config"],
+    ["ottl", "OTTL transform"],
+    ["maple", "Parsed logs in Maple"],
+    ["structured", "Structured logging"],
+] as const;
+const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
+
+const nginxLine = String.raw`203.0.113.7 - - [19/Oct/2026:14:02:11 +0000] "GET /api/orders/42?expand=items HTTP/1.1" 200 1532 "https://shop.example.com/cart" "Mozilla/5.0 (X11; Linux x86_64)"`;
+
+const parsedFields = [
+    ["Timestamp", "2026-10-19 14:02:11 UTC"],
+    ["SeverityText", "INFO"],
+    ["client.address", "203.0.113.7"],
+    ["http.request.method", "GET"],
+    ["url.path", "/api/orders/42"],
+    ["http.response.status_code", "200"],
+    ["http.response.body.size", "1532"],
+    ["user_agent.original", "Mozilla/5.0 (X11; Linux x86_64)"],
+];
+
+const formatSamples = String.raw`# syslog, RFC 3164 (BSD)
+<34>Oct 19 14:02:11 web-01 sshd[2211]: Failed password for invalid user admin from 198.51.100.4 port 52113 ssh2
+
+# syslog, RFC 5424
+<34>1 2026-10-19T14:02:11.003Z web-01 sshd 2211 - - Failed password for invalid user admin from 198.51.100.4 port 52113 ssh2
+
+# nginx / Apache combined
+${nginxLine}
+
+# JSON
+{"ts":"2026-10-19T14:02:11.482Z","level":"error","msg":"payment declined","order_id":"ord_8812","attempt":2}
+
+# logfmt
+time=2026-10-19T14:02:11Z level=warn msg="cache miss" key=user:42 duration_ms=18
+
+# multiline (Java stack trace)
+2026-10-19 14:02:11,482 ERROR [http-nio-8080-exec-3] c.e.CheckoutController - Checkout failed
+java.lang.IllegalStateException: cart is empty
+	at com.example.CheckoutService.submit(CheckoutService.java:88)
+	at com.example.CheckoutController.post(CheckoutController.java:41)`;
+
+const nginxRegex = String.raw`^(?P<client_address>\S+) \S+ \S+ \[(?P<time_local>[^\]]+)\] "(?P<method>[A-Z]+) (?P<path>[^ ?"]+)[^ "]* HTTP/[0-9.]+" (?P<status>\d{3}) (?P<body_bytes>\d+) "[^"]*" "(?P<user_agent>[^"]*)"$`;
+
+const pythonParser = String.raw`import re
+import sys
+from collections import Counter
+
+LINE = re.compile(
+    r'(?P<client>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] '
+    r'"(?P<method>[A-Z]+) (?P<path>[^ ?"]+)[^"]* HTTP/[0-9.]+" '
+    r'(?P<status>\d{3}) (?P<bytes>\d+)'
+)
+
+errors = Counter()
+with open(sys.argv[1]) as f:
+    for line in f:
+        m = LINE.match(line)
+        if m and m["status"].startswith("5"):
+            errors[m["path"]] += 1
+
+for path, count in errors.most_common(10):
+    print(count, path)`;
+
+const linuxCommands = String.raw`# Count 5xx responses. The leading quote stops the byte count from matching.
+grep -c '" 5[0-9][0-9] ' /var/log/nginx/access.log
+
+# Responses per status code. Splitting on " keeps the status in the same
+# field even when a malformed request line has no spaces.
+awk -F'"' '{split($3, a, " "); print a[1]}' /var/log/nginx/access.log \
+  | sort | uniq -c | sort -rn
+
+# Paths that returned 5xx, query strings stripped first
+sed -E 's/\?[^ "]*//' /var/log/nginx/access.log \
+  | awk -F'"' '{split($3, a, " "); if (a[1] >= 500) { split($2, r, " "); print r[2] } }' \
+  | sort | uniq -c | sort -rn | head
+
+# Follow the log live and print only 5xx lines
+tail -F /var/log/nginx/access.log | grep --line-buffered '" 5[0-9][0-9] '`;
+
+const jqCommands = String.raw`# Errors from a JSON log, three fields per line
+jq -c 'select(.level == "error") | {ts, msg, order_id}' app.log
+
+# Same filter on a file that mixes JSON with plain-text lines
+jq -cR 'fromjson? | select(.level == "error") | .msg' app.log
+
+# One field out of a logfmt line
+grep -oE 'duration_ms=[0-9]+' app.log | cut -d= -f2 | sort -n | tail -1`;
+
+const journalctlCommands = String.raw`# Warnings and worse from one unit in the last hour
+journalctl -u nginx --since "1 hour ago" -p warning
+
+# Lines from a unit that match a pattern
+journalctl -u myapp --since today -g "payment declined"
+
+# Journal entries as JSON, filtered with jq (PRIORITY 3 is err)
+journalctl -u myapp --since today -o json \
+  | jq -r 'select((.PRIORITY | tonumber) <= 3) | .MESSAGE'`;
+
+const jsonOperators = String.raw`receivers:
+    filelog/app:
+        include: [/var/log/app/app.json.log]
+        operators:
+            - type: json_parser
+              timestamp:
+                  parse_from: attributes.ts
+                  layout_type: gotime
+                  layout: "2006-01-02T15:04:05Z07:00"
+              severity:
+                  parse_from: attributes.level
+            - type: move
+              from: attributes.msg
+              to: body`;
+
+const logfmtOperators = String.raw`receivers:
+    filelog/worker:
+        include: [/var/log/worker/worker.log]
+        operators:
+            - type: key_value_parser
+              timestamp:
+                  parse_from: attributes.time
+                  layout_type: gotime
+                  layout: "2006-01-02T15:04:05Z07:00"
+              severity:
+                  parse_from: attributes.level`;
+
+const multilineOperators = String.raw`receivers:
+    filelog/java:
+        include: [/var/log/checkout/app.log]
+        multiline:
+            line_start_pattern: '^\d{4}-\d{2}-\d{2} '
+        operators:
+            - type: regex_parser
+              regex: '(?s)^(?P<time>\S+ \S+) (?P<level>[A-Z]+)\s+\[(?P<thread>[^\]]+)\] (?P<logger>\S+) - (?P<message>.*)$'
+            - type: time_parser
+              parse_from: attributes.time
+              layout: "%Y-%m-%d %H:%M:%S,%L"
+              location: UTC
+            - type: severity_parser
+              parse_from: attributes.level`;
+
+const syslogOperators = String.raw`receivers:
+    filelog/syslog:
+        include: [/var/log/remote/hosts.log]
+        operators:
+            - type: syslog_parser
+              protocol: rfc5424`;
+
+const debugOutput = String.raw`Timestamp: 2026-10-19 14:02:12 +0000 UTC
+SeverityText: ERROR
+SeverityNumber: Error(17)
+Body: Str(198.51.100.23 - alice [19/Oct/2026:14:02:12 +0000] "POST /api/checkout HTTP/2.0" 502 157 "-" "curl/8.5.0")
+Attributes:
+     -> client.address: Str(198.51.100.23)
+     -> http.request.method: Str(POST)
+     -> url.path: Str(/api/checkout)
+     -> http.response.status_code: Int(502)
+     -> http.response.body.size: Int(157)
+     -> user_agent.original: Str(curl/8.5.0)
+     -> log.file.name: Str(access.log)`;
+
+const debugOverride = String.raw`# debug.yaml: print parsed records instead of exporting them
+exporters:
+    debug:
+        verbosity: detailed
+
+service:
+    pipelines:
+        logs:
+            exporters: [debug]`;
+
+const transformConfig = String.raw`processors:
+    transform/parse:
+        error_mode: ignore
+        log_statements:
+            - merge_maps(log.attributes, ParseJSON(log.body), "upsert") where IsMatch(log.body, "^\\{")
+            - merge_maps(log.attributes, ParseKeyValue(log.body), "upsert") where IsMatch(log.body, "^time=")
+            - merge_maps(log.attributes, ExtractGrokPatterns(log.body, "%{HTTPD_COMBINEDLOG}", true), "upsert") where log.attributes["log.file.name"] == "access.log"`;
+
+const slogExample = String.raw`logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+logger.Error("payment declined", "order_id", "ord_8812", "attempt", 2)
+
+// {"time":"2026-10-19T14:02:11.482Z","level":"ERROR","msg":"payment declined","order_id":"ord_8812","attempt":2}`;
+
+const faqs = [
+    {
+        question: "What is log parsing?",
+        answer:
+            "Log parsing is the process of extracting named fields from raw log lines. A parser matches each line against a known format, such as a regular expression, a grok pattern, JSON or key=value pairs, and writes the timestamp, severity and values like status code or path to their own fields. Once parsed, logs can be filtered, counted and charted by field instead of searched as text.",
+    },
+    {
+        question: "Should I use regex or grok to parse logs?",
+        answer:
+            "Grok is regex with a library of named, reusable fragments such as %{IP} or %{HTTPDATE}, plus optional type casts. Use a stock grok pattern when one already exists for your format, for example %{HTTPD_COMBINEDLOG} for nginx and Apache access logs. Write a plain regular expression with named capture groups when the format is your own, when you want full control over field names, or when the parser you use has no grok support. In the OpenTelemetry Collector, the filelog regex_parser takes Go RE2 regex, and grok is available through the OTTL ExtractGrokPatterns function in the transform processor.",
+    },
+    {
+        question: "How do I parse JSON logs?",
+        answer:
+            "On the command line, use jq: jq -c 'select(.level == \"error\")' app.log, or jq -R 'fromjson?' for files that mix JSON with plain text. In the OpenTelemetry Collector, add a json_parser operator to the filelog receiver; it writes every key to the log attributes and can set the timestamp and severity from fields in the same step. For logs that are already OTLP, use merge_maps(log.attributes, ParseJSON(log.body), \"upsert\") in the transform processor.",
+    },
+    {
+        question: "How do I parse multiline logs such as stack traces?",
+        answer:
+            "Join the lines into one record before parsing. In the Collector's filelog receiver, set multiline.line_start_pattern to a regex that matches the first line of each entry, usually its timestamp. Every line that does not match is appended to the previous entry, so the stack trace stays with its error message. Then parse the record with a regex that uses the (?s) flag so the message group can span newlines. If the lines were already split upstream, the recombine operator can join them.",
+    },
+    {
+        question: "What are the best Linux log parser commands?",
+        answer:
+            "grep filters lines, awk splits them into fields and aggregates, sed rewrites them, sort | uniq -c counts values, jq parses JSON, and journalctl reads the systemd journal with filters for unit (-u), time (--since) and priority (-p). They are the fastest way to answer a question on one host. For parsing every line consistently and keeping the results, move the parsing into a pipeline such as the OpenTelemetry Collector.",
+    },
+    {
+        question: "Can I parse logs in Python?",
+        answer:
+            "Yes. Python's re module uses the same (?P<name>...) named-group syntax as Go's RE2, so the regex from a Collector config can usually be reused unchanged. Compile the pattern once, call match() on each line and read groups by name. For JSON logs, json.loads() on each line does the job. A script fits one-off analysis; for continuous parsing, a pipeline avoids maintaining the script on every host.",
+    },
+    {
+        question: "Does Maple parse logs?",
+        answer:
+            "No. Maple stores the log records it receives over OTLP, with their attributes as sent. Parsing happens before export, usually in the OpenTelemetry Collector. Parsed fields then appear as log attributes in Maple, where you can read them on each record, pin them as columns on the Logs page and use them in dashboard queries.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Log parsing: from raw lines to structured fields",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: published,
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/log-parsing`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Log parsing" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto grid max-w-6xl gap-12 px-6 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.85fr)] lg:items-center lg:gap-16">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                        <span class="border border-primary/40 px-2 py-1 text-primary">Logs</span>
+                        <span>14 min read</span>
+                    </div>
+                    <h1 class="mt-6 max-w-[16ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                        Log parsing: from raw lines to structured fields
+                    </h1>
+                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
+                        Parse syslog, nginx, JSON, logfmt and multiline logs with regex, grok and the Linux command line, then move the parsing into an OpenTelemetry Collector pipeline with a config you can run as written.
+                    </p>
+                    <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                        <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                            <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                            <span>By {author.name}</span>
+                        </a>
+                        <time datetime={published}>Updated {updatedLabel}</time>
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-border bg-bg-deep p-4 shadow-2xl shadow-black/20 md:p-5" aria-label="One nginx access log line before and after parsing">
+                    <div class="flex items-center justify-between border-b border-border pb-3 font-mono text-[10px] text-fg-muted">
+                        <span>access.log / one line</span>
+                        <span class="text-primary">parsed</span>
+                    </div>
+                    <p class="mt-3 break-all font-mono text-[10px] leading-relaxed text-fg-muted">{nginxLine}</p>
+                    <dl class="mt-3 divide-y divide-border border-t border-border">
+                        {parsedFields.map(([key, value]) => (
+                            <div class="grid grid-cols-[minmax(0,11rem)_1fr] gap-3 py-2">
+                                <dt class="truncate font-mono text-[10px] text-primary">{key}</dt>
+                                <dd class="truncate font-mono text-[10px] text-fg">{value}</dd>
+                            </div>
+                        ))}
+                    </dl>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {toc.map(([id, label]) => (
+                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={tocHeadings} class="sticky top-28" />
+            </aside>
+
+            <article class="parsing-guide min-w-0">
+                <section id="definition" class="scroll-mt-24">
+                    <p class="guide-eyebrow">01 · Definition</p>
+                    <h2>Log parsing turns a line of text into named fields</h2>
+
+                    <div class="guide-answer">
+                        <p>
+                            <strong>Log parsing</strong> extracts named, typed fields from raw log lines. A parser matches each line against a known format (a regular expression, a grok pattern, JSON or key=value pairs) and writes the timestamp, severity and values such as status code or path to fields of their own.
+                        </p>
+                    </div>
+
+                    <p>
+                        The nginx line at the top of this page holds a client address, a timestamp, a path, a status code and more, but to a log store it is one string. Asking "how many 5xx responses did <code>/api/checkout</code> return in the last hour" means running a regex over every line at query time. Once <code>http.response.status_code</code> and <code>url.path</code> are fields, it is a filter and a group-by. Parsing also assigns types: a status code stored as the integer 502 can be compared with <code>&gt;= 500</code>.
+                    </p>
+                    <p>
+                        The earlier parsing happens, the less work every later reader has to repeat.
+                    </p>
+
+                    <div class="guide-table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>Where</th><th>Tools</th><th>Good for</th><th>Cost</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><strong>On the host, at read time</strong></td><td>grep, awk, sed, jq, journalctl</td><td>A question during an incident, on one machine</td><td>Re-parsed on every run; no history beyond the files</td></tr>
+                                <tr><td><strong>In the pipeline</strong></td><td>OpenTelemetry Collector, Fluent Bit, Vector, Logstash</td><td>Every line from software you don't control</td><td>A parser config to maintain per format</td></tr>
+                                <tr><td><strong>In the application</strong></td><td>Structured logging, OpenTelemetry log bridges</td><td>Code you own</td><td>None at read time; fields exist from the start</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="formats" class="scroll-mt-24">
+                    <p class="guide-eyebrow">02 · Formats</p>
+                    <h2>Common log formats and the parser each one needs</h2>
+                    <p>
+                        Most logs on a Linux server come in a handful of formats. Recognizing the format tells you which parser to reach for.
+                    </p>
+
+                    <pre><code>{formatSamples}</code></pre>
+
+                    <div class="guide-table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>Format</th><th>Written by</th><th>Parse with</th><th>Watch out for</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><strong>Syslog RFC 3164</strong></td><td>Older syslog daemons, network gear</td><td>Syslog parser</td><td>No year and no time zone in the timestamp</td></tr>
+                                <tr><td><strong>Syslog RFC 5424</strong></td><td>rsyslog, syslog-ng, appliances</td><td>Syslog parser</td><td>Structured-data blocks between the header and message</td></tr>
+                                <tr><td><strong>nginx / Apache combined</strong></td><td>Web servers, load balancers</td><td>Regex or grok</td><td>Malformed request lines; quoted fields with spaces</td></tr>
+                                <tr><td><strong>JSON lines</strong></td><td>Modern application loggers</td><td>JSON parser</td><td>Nested objects; numbers parsed as floats</td></tr>
+                                <tr><td><strong>logfmt</strong></td><td>Go and Ruby services, Heroku-style apps</td><td>Key-value parser</td><td>Quoted values; every value is a string</td></tr>
+                                <tr><td><strong>Multiline</strong></td><td>Java, Python and .NET stack traces</td><td>Line joining, then regex</td><td>Line-based tools treat each stack frame as a separate log</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        The nginx default, <code>combined</code>, is defined as <code>$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"</code>. Apache's combined format writes the same fields in the same order, so one parser handles both.
+                    </p>
+                </section>
+
+                <section id="techniques" class="scroll-mt-24">
+                    <p class="guide-eyebrow">03 · Techniques</p>
+                    <h2>Log parsing techniques: regex, grok, JSON and key-value</h2>
+
+                    <h3>Regular expressions with named capture groups</h3>
+                    <p>
+                        A regular expression with named groups is the general-purpose log parser. Each <code>(?P&lt;name&gt;...)</code> group becomes a field. This pattern parses the nginx combined format and is the one used in the Collector config later in this guide:
+                    </p>
+                    <pre><code>{nginxRegex}</code></pre>
+                    <p>
+                        Anchor the pattern with <code>^</code> and <code>$</code> so a partial match cannot produce half-filled fields, and prefer negated classes such as <code>[^"]*</code> over <code>.*</code>. They stop at the delimiter instead of backtracking across the rest of the line. The path group stops at <code>?</code>, so query strings, which often carry tokens and IDs, are left out.
+                    </p>
+                    <p>
+                        Python's <code>re</code> module uses the same named-group syntax, so the pattern carries over to a quick Python log parser. This one prints the paths that returned 5xx most often:
+                    </p>
+                    <pre><code>{pythonParser}</code></pre>
+
+                    <h3>Grok patterns</h3>
+                    <p>
+                        Grok is regex with a library of named fragments. <code>%&#123;IP:client&#125;</code> matches an IP address and names it <code>client</code>; <code>%&#123;NUMBER:bytes:int&#125;</code> also casts the value. Grok is best known from Logstash and is available in several pipelines, including the OpenTelemetry Collector through the OTTL function <code>ExtractGrokPatterns</code>, which ships Elastic's go-grok pattern set. With it, one stock pattern, <code>%&#123;HTTPD_COMBINEDLOG&#125;</code>, parses the whole nginx line.
+                    </p>
+                    <div class="guide-table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th></th><th>Regex with named groups</th><th>Grok</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><strong>Readability</strong></td><td>Dense once a pattern passes one line</td><td>Reads as a sequence of named parts</td></tr>
+                                <tr><td><strong>Field names</strong></td><td>Yours, but limited to letters, digits and <code>_</code></td><td>Set by the stock pattern; go-grok's use dotted ECS-style names</td></tr>
+                                <tr><td><strong>Type conversion</strong></td><td>Separate step</td><td>Inline (<code>:int</code>, <code>:float</code>)</td></tr>
+                                <tr><td><strong>Portability</strong></td><td>Any language or tool</td><td>Tools that implement grok and ship the same pattern library</td></tr>
+                                <tr><td><strong>Best for</strong></td><td>Your own formats; full control</td><td>Well-known formats that already have a pattern</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3>JSON parsing</h3>
+                    <p>
+                        JSON logs need no pattern. Every key becomes a field and nested objects stay nested. A few details still need attention: JSON numbers usually come out as floating point (the Collector's <code>json_parser</code> converts them to <code>float64</code> unless <code>parse_ints</code> is set), timestamps are strings that still need a time parser, and a file that mixes JSON lines with plain text needs a guard so the plain lines pass through untouched.
+                    </p>
+
+                    <h3>Key-value and logfmt parsing</h3>
+                    <p>
+                        <code>key=value</code> logs, including logfmt, split on two delimiters: one between key and value, one between pairs. Values in double quotes may contain spaces. Every value comes out as a string, so convert numbers you want to compare.
+                    </p>
+                </section>
+
+                <section id="linux" class="scroll-mt-24">
+                    <p class="guide-eyebrow">04 · Command line</p>
+                    <h2>Linux log parser commands: grep, awk, sed, jq and journalctl</h2>
+                    <p>
+                        During an incident on one host, the shell is the fastest way to an answer. The examples below run against an nginx access log in the combined format, a JSON application log and the systemd journal.
+                    </p>
+
+                    <h3>grep, awk and sed for text logs</h3>
+                    <pre><code>{linuxCommands}</code></pre>
+                    <p>
+                        Many awk one-liners for nginx use <code>$9</code> for the status. That works only while every request line has exactly three space-separated parts. A scanner sending binary data on the HTTP port produces a request line with none, every field after it shifts, and the status count gains a row for <code>"-"</code>. Splitting on the double quote instead puts the request in <code>$2</code> and the status at the start of <code>$3</code> on every line.
+                    </p>
+
+                    <h3>jq for JSON logs</h3>
+                    <pre><code>{jqCommands}</code></pre>
+
+                    <h3>journalctl for the systemd journal</h3>
+                    <p>
+                        Services managed by systemd often log to the journal instead of a file. The journal already stores fields such as unit, priority and PID, so <code>journalctl</code> filters on them directly. <code>-p warning</code> includes every priority from <code>warning</code> up to <code>emerg</code>, and <code>-o json</code> prints each entry as one JSON object for jq.
+                    </p>
+                    <pre><code>{journalctlCommands}</code></pre>
+                    <p>
+                        These commands re-parse the files every time, see only the host they run on, and lose history when logs rotate. When the same question comes up every week, or spans more than one machine, parse in a pipeline instead.
+                    </p>
+                </section>
+
+                <section id="collector" class="scroll-mt-24">
+                    <p class="guide-eyebrow">05 · Pipeline</p>
+                    <h2>Parse logs in the OpenTelemetry Collector with filelog operators</h2>
+                    <p>
+                        The Collector's <code>filelog</code> receiver tails files and turns each line into a log record whose body is the raw line. An optional list of <strong>operators</strong> then runs on each record, in order. The receiver is part of the <code>otelcol-contrib</code> distribution.
+                    </p>
+
+                    <div class="guide-table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>Operator</th><th>Does</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><code>regex_parser</code></td><td>Matches a Go RE2 regex; each named group becomes a field</td></tr>
+                                <tr><td><code>json_parser</code></td><td>Parses a JSON string into fields</td></tr>
+                                <tr><td><code>key_value_parser</code></td><td>Splits <code>key=value</code> pairs; <code>delimiter</code> and <code>pair_delimiter</code> are configurable</td></tr>
+                                <tr><td><code>syslog_parser</code></td><td>Parses RFC 3164 or RFC 5424 syslog</td></tr>
+                                <tr><td><code>time_parser</code></td><td>Sets the record's timestamp from a field (<code>strptime</code>, <code>gotime</code> or <code>epoch</code> layouts)</td></tr>
+                                <tr><td><code>severity_parser</code></td><td>Sets severity number and text from a field, with an optional value mapping</td></tr>
+                                <tr><td><code>move</code></td><td>Moves or renames a field</td></tr>
+                                <tr><td><code>remove</code></td><td>Deletes a field</td></tr>
+                                <tr><td><code>recombine</code></td><td>Joins consecutive records into one, for logs split before they reach the parser</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        The parsers write their output to <code>attributes</code> by default, set with <code>parse_to</code>, and leave the body as it was. Each one also accepts embedded <code>timestamp</code> and <code>severity</code> blocks that run right after a successful parse, which saves a separate <code>time_parser</code> or <code>severity_parser</code> step. Fields are addressed as <code>body</code>, <code>attributes.name</code> or <code>resource.name</code>; keys that contain dots use brackets, as in <code>attributes["url.path"]</code>.
+                    </p>
+                    <p>
+                        When an operator fails, its <code>on_error</code> setting decides what happens. The default, <code>send</code>, logs the error and passes the record on unchanged. <code>send_quiet</code> does the same at debug level, and <code>drop</code> discards the record.
+                    </p>
+
+                    <h3>JSON logs</h3>
+                    <pre><code>{jsonOperators}</code></pre>
+                    <p>
+                        Every key lands in the attributes, the record takes its timestamp and severity from <code>ts</code> and <code>level</code>, and <code>move</code> puts the human-readable message back in the body. The <code>gotime</code> layout uses Go's reference time and accepts the fractional seconds in <code>11.482Z</code> without spelling them out.
+                    </p>
+
+                    <h3>logfmt and key-value logs</h3>
+                    <pre><code>{logfmtOperators}</code></pre>
+                    <p>
+                        With the default delimiters, <code>msg="cache miss"</code> comes out as <code>cache miss</code> and <code>duration_ms=18</code> as the string <code>"18"</code>.
+                    </p>
+
+                    <h3>Multiline logs and stack traces</h3>
+                    <pre><code>{multilineOperators}</code></pre>
+                    <p>
+                        <code>multiline.line_start_pattern</code> tells the receiver where an entry begins. Lines that don't match, such as <code>at com.example...</code> and <code>Caused by:</code>, are appended to the previous entry, so the stack trace reaches the parser as one record. The <code>(?s)</code> flag lets <code>.</code> match newlines, so the <code>message</code> group captures the whole trace. Use <code>line_end_pattern</code> instead when entries are easier to recognize by their last line. Container runtimes that split long lines before the Collector sees them need the <code>recombine</code> operator instead.
+                    </p>
+
+                    <h3>Syslog</h3>
+                    <pre><code>{syslogOperators}</code></pre>
+                    <p>
+                        <code>syslog_parser</code> sets the timestamp and severity and writes <code>hostname</code>, <code>appname</code>, <code>proc_id</code>, <code>facility</code> and <code>message</code> to the attributes. Set <code>protocol: rfc3164</code> for BSD-style lines, along with <code>location</code> for the time zone they were written in. For syslog sent over the network rather than written to a file, the Collector's <code>syslog</code> receiver accepts TCP or UDP and parses the same way.
+                    </p>
+                </section>
+
+                <section id="nginx" class="scroll-mt-24">
+                    <p class="guide-eyebrow">06 · Worked example</p>
+                    <h2>A full Collector config that parses nginx access logs</h2>
+                    <p>
+                        This config tails the nginx access log, parses each line into OpenTelemetry semantic-convention attributes, sets timestamp and severity, and exports the result over OTLP to Maple. It was run against <code>otelcol-contrib</code> 0.163.1. Save it as <code>config.yaml</code>:
+                    </p>
+                    <pre><code>{nginxCollectorConfig}</code></pre>
+
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div>
+                                <h3>One regex, timestamp and severity in one operator</h3>
+                                <p>The <code>regex_parser</code> captures each field as a named group. Its embedded <code>timestamp</code> block reads <code>[19/Oct/2026:14:02:11 +0000]</code> with the layout <code>%d/%b/%Y:%H:%M:%S %z</code>. The <code>severity</code> block maps status codes to levels with the <code>2xx</code>-style placeholders, and <code>overwrite_text: true</code> stores <code>INFO</code>, <code>WARN</code> or <code>ERROR</code> as the severity text instead of the raw <code>502</code>.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div>
+                                <h3>Moves to semantic-convention names</h3>
+                                <p>Go regex group names can't contain dots, so <code>move</code> renames each field to its OpenTelemetry name: <code>client.address</code>, <code>http.request.method</code>, <code>url.path</code>, <code>http.response.status_code</code>, <code>http.response.body.size</code> and <code>user_agent.original</code>. Backends that understand the conventions can then treat these as HTTP fields. <code>remove</code> drops <code>time_local</code> once it has become the record's timestamp.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div>
+                                <h3>Unmatched lines pass through raw</h3>
+                                <p>A line the regex can't match, such as a TLS handshake sent to the plain-HTTP port, is logged once by <code>regex_parser</code> and sent on with its raw body. The later operators set <code>on_error: send_quiet</code> so that line doesn't log another error for every field that was never created.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div>
+                                <h3>Types and service name in the transform processor</h3>
+                                <p>The regex captures strings. The transform processor converts status and body size to integers with OTTL's <code>Int()</code>, skipping records where the field is missing, and sets the <code>service.name</code> resource attribute so the logs are grouped under <code>nginx</code> instead of an unknown service.</p>
+                            </div>
+                        </li>
+                    </ol>
+
+                    <p>
+                        Before exporting anything, check the parsing with the <code>debug</code> exporter. The Collector merges multiple <code>--config</code> files, so a small override replaces the exporter list without editing the main file:
+                    </p>
+                    <pre><code>{debugOverride}</code></pre>
+                    <pre><code>MAPLE_INGEST_KEY=unused otelcol-contrib --config config.yaml --config debug.yaml</code></pre>
+                    <p>The 502 line from the sample log comes out as:</p>
+                    <pre><code>{debugOutput}</code></pre>
+                    <p>
+                        A few operational details: <code>filelog</code> starts at the end of the file by default, so only new lines are read; set <code>start_at: beginning</code> to backfill. The Collector needs read access to <code>/var/log/nginx</code>, which on Debian and Ubuntu means membership in the <code>adm</code> group. To keep file offsets across Collector restarts, add the <code>file_storage</code> extension and point the receiver's <code>storage</code> setting at it.
+                    </p>
+                </section>
+
+                <section id="ottl" class="scroll-mt-24">
+                    <p class="guide-eyebrow">07 · OTTL</p>
+                    <h2>Parse logs with OTTL in the transform processor</h2>
+                    <p>
+                        Operators run only inside receivers such as <code>filelog</code>. Logs that arrive already as OTLP, from an SDK, another Collector or a Kubernetes agent, skip them. The <code>transform</code> processor runs OpenTelemetry Transformation Language (OTTL) statements on any logs pipeline, and OTTL has its own parsing functions:
+                    </p>
+                    <pre><code>{transformConfig}</code></pre>
+                    <p>
+                        <code>ParseJSON</code>, <code>ParseKeyValue</code> and <code>ExtractGrokPatterns</code> each return a map, and <code>merge_maps</code> copies it into the attributes. The <code>where</code> clause limits each statement to the records it fits. With <code>error_mode: ignore</code>, a statement that fails on one record is logged and skipped while the others still run. The grok statement turns the nginx line into go-grok's names: <code>source.address</code>, <code>url.original</code>, <code>http.request.method</code>, <code>http.response.status_code</code> and <code>http.response.body.size</code>, already typed as integers. Rename the ones that differ from the OpenTelemetry conventions with <code>set</code> and <code>delete_key</code> if you want consistent names across sources.
+                    </p>
+                    <p>
+                        Operators are the natural place for file-based parsing because they run before the record leaves the receiver. OTTL fits the clean-up after it (type conversion, renames, dropping noisy attributes) and any parsing of logs that never touched a file.
+                    </p>
+                </section>
+
+                <section id="maple" class="scroll-mt-24">
+                    <p class="guide-eyebrow">08 · In Maple</p>
+                    <h2>Reading parsed logs in Maple</h2>
+                    <p>
+                        Maple does not parse logs. It stores the records it receives over OTLP with their attributes as sent, so the parsing above happens in the Collector before export. The exporter in the config is the one from the <a href="/docs/infrastructure/hosts">Hosts setup</a>: <code>otlphttp</code> to <code>https://ingest.maple.dev</code> with a private ingest key in the <code>x-maple-ingest-key</code> header.
+                    </p>
+
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div>
+                                <h3>Start the Collector with your ingest key</h3>
+                                <p>Copy a private ingest key (<code>maple_sk_…</code>) from <strong>Settings → Ingestion</strong> and run <code>MAPLE_INGEST_KEY=YOUR_INGEST_KEY otelcol-contrib --config config.yaml</code>. EU organizations use <code>https://ingest.eu.maple.dev</code> as the endpoint.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div>
+                                <h3>Filter on the Logs page</h3>
+                                <p>Open <strong>Logs</strong>. The <strong>Service</strong> filter lists <code>nginx</code> from the <code>service.name</code> set in the transform processor, and <strong>Severity</strong> lists the <code>INFO</code>, <code>WARN</code> and <code>ERROR</code> values from the status mapping. Exclude <code>INFO</code> to see only 4xx and 5xx responses.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div>
+                                <h3>Read and pin the parsed attributes</h3>
+                                <p>Open a record: its <strong>Attributes</strong> tab lists <code>url.path</code>, <code>http.response.status_code</code> and the other parsed fields under <strong>Log Attributes</strong>. Use <strong>Columns</strong> in the table toolbar to pin <code>url.path</code> and <code>http.response.status_code</code> next to the message; the pinned columns are saved in the URL, so the view can be shared.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div>
+                                <h3>Chart them on a dashboard</h3>
+                                <p>A Query Builder chart over <strong>Logs</strong> can filter and group by parsed attributes with the <code>attr.</code> prefix, for example a log count grouped by <code>attr.url.path</code>. See <a href="/docs/dashboards/build-dashboards">Build dashboards</a>.</p>
+                            </div>
+                        </li>
+                    </ol>
+
+                    <p>
+                        The Logs search box matches message text and trace IDs; it has no <code>key:value</code> syntax. Maple also ranks <code>http.response.status_code</code> near the top of the attribute chips on each log row, one of the reasons to use the <a href="/docs/concepts/otel-conventions">OpenTelemetry attribute names</a> rather than your own. For container logs, the <a href="/docs/infrastructure/docker">Docker agent</a> collects them from Docker's <code>json-file</code> log directory. For logs you haven't parsed yet, the MCP tool <code>mine_log_patterns</code> groups recent messages into templates such as <code>GET /api/users/&lt;*&gt; 200 in &lt;*&gt;ms</code> with a count for each (<a href="/docs/reference/mcp">MCP server</a>).
+                    </p>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Logs page reference</p>
+                        <h3>Filters, columns and the log detail sheet</h3>
+                        <p>
+                            The Logs documentation covers search, the sidebar filters, pinned columns, and moving from a log line to the trace it belongs to.
+                        </p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/explore/logs" class="guide-button guide-button--primary">Read the Logs docs</a>
+                            <a href="/docs/infrastructure/hosts" class="guide-button">Set up the Collector on a host</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="structured" class="scroll-mt-24">
+                    <p class="guide-eyebrow">09 · At the source</p>
+                    <h2>Structured logging at the source beats parsing later</h2>
+                    <p>
+                        Every parser in this guide reverses a formatting step: a program had the values as separate fields, printed them into a sentence, and the parser pulls them back out. The regex breaks the day someone adds a field to <code>log_format</code> or changes a message.
+                    </p>
+                    <p>
+                        For code you own, skip the round trip and log structured data. Most languages have a logger that writes JSON with the fields kept separate, such as Go's <code>log/slog</code>:
+                    </p>
+                    <pre><code>{slogExample}</code></pre>
+                    <p>
+                        A JSON line like that needs only <code>json_parser</code>. Going one step further, an OpenTelemetry log bridge on your existing logger sends records over OTLP with attributes already set, and attaches the trace and span ID when the log is written inside an active span, which links each log to its trace. The <a href="/docs/instrumentation">instrumentation guides</a> cover the setup per language. Keep text parsing for software you don't control: web servers, databases, system daemons and vendor appliances.
+                    </p>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/filelogreceiver/README.md" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: filelog receiver</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/pkg/stanza/docs/operators" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: filelog operators</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector: transform processor</a></li>
+                        <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/ottl/ottlfuncs/README.md" target="_blank" rel="noopener noreferrer">OTTL functions (ParseJSON, ParseKeyValue, ExtractGrokPatterns)</a></li>
+                        <li><a href="https://opentelemetry.io/docs/specs/semconv/http/http-spans/" target="_blank" rel="noopener noreferrer">OpenTelemetry: HTTP semantic conventions</a></li>
+                        <li><a href="https://nginx.org/en/docs/http/ngx_http_log_module.html#log_format" target="_blank" rel="noopener noreferrer">nginx: log_format and the combined format</a></li>
+                        <li><a href="https://datatracker.ietf.org/doc/html/rfc3164" target="_blank" rel="noopener noreferrer">RFC 3164: The BSD syslog Protocol</a></li>
+                        <li><a href="https://datatracker.ietf.org/doc/html/rfc5424" target="_blank" rel="noopener noreferrer">RFC 5424: The Syslog Protocol</a></li>
+                        <li><a href="https://github.com/elastic/go-grok" target="_blank" rel="noopener noreferrer">Elastic go-grok patterns</a></li>
+                        <li><a href="https://jqlang.org/manual/" target="_blank" rel="noopener noreferrer">jq manual</a></li>
+                        <li><a href="https://www.freedesktop.org/software/systemd/man/latest/journalctl.html" target="_blank" rel="noopener noreferrer">journalctl man page</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .parsing-guide section + section { margin-top: 5.5rem; }
+    .parsing-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .parsing-guide h2 { max-width: 24ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .parsing-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .parsing-guide > section > p:not(.guide-eyebrow, .guide-kicker), .parsing-guide .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .parsing-guide strong { font-weight: 600; color: var(--foreground); }
+    .parsing-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .parsing-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .parsing-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); overflow-wrap: anywhere; }
+    .parsing-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); tab-size: 4; }
+    .parsing-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1.25rem 1.35rem; }
+    .parsing-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
+    .parsing-guide .guide-table-wrap { max-width: 100%; overflow-x: auto; }
+    .parsing-guide table { width: 100%; min-width: 640px; margin: 1.6rem 0 2rem; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .parsing-guide th { border-bottom: 1px solid var(--border); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
+    .parsing-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .parsing-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .parsing-guide .guide-steps { margin: 2rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .parsing-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.35rem 0; }
+    .parsing-guide .guide-steps li > div { min-width: 0; }
+    .parsing-guide .guide-steps > li > span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .parsing-guide .guide-steps h3, .parsing-guide .guide-steps p { margin: 0; }
+    .parsing-guide .guide-steps h3 { font-size: 1rem; }
+    .parsing-guide .guide-steps p { margin-top: 0.45rem; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .parsing-guide .guide-maple { margin-top: 3.5rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .parsing-guide .guide-maple h3 { margin: 0.55rem 0 0.8rem; font-size: 1.35rem; }
+    .parsing-guide .guide-maple > p:not(.guide-kicker) { max-width: none; margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .parsing-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .parsing-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .parsing-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .parsing-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .parsing-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .parsing-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .parsing-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .parsing-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .parsing-guide a, .parsing-guide .guide-button { transition: none; }
+    }
+</style>
