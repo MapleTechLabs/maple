@@ -1,3 +1,4 @@
+import { Cause } from "effect"
 import * as React from "react"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -149,6 +150,12 @@ export function MetricBreakdown({
 					/>
 				) : Result.isInitial(keysResult) ? (
 					<SkeletonList rows={5} rowClassName="h-6" gap="2" />
+				) : Result.isFailure(keysResult) ? (
+					<ErrorState
+						error={Cause.squash(keysResult.cause)}
+						title="Failed to load labels"
+						variant="inline"
+					/>
 				) : (
 					<EmptyMessage>No labels to break down by in the selected range.</EmptyMessage>
 				)}

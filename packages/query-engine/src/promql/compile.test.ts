@@ -111,8 +111,8 @@ describe("compileGcpMetricQuery", () => {
 			["max", `max by (project_id) (max_over_time(${CPU}[60s]))`, "max"],
 			["sum", `sum by (project_id) (sum_over_time(${CPU}[60s]))`, "sum"],
 			["count", `sum by (project_id) (count_over_time(${CPU}[60s]))`, "sum"],
-			["rate", `sum by (project_id) (rate(${CPU}[60s]))`, "sum"],
-			["increase", `sum by (project_id) (increase(${CPU}[60s]))`, "sum"],
+			["rate", `sum by (project_id) (rate(${CPU}[120s]))`, "sum"],
+			["increase", `sum by (project_id) (rate(${CPU}[120s])) * 60`, "sum"],
 		]))
 
 	describe("DELTA", () =>

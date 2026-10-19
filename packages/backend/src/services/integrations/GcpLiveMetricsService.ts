@@ -298,7 +298,11 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 								"lastResourcesError",
 								"resourcesSyncedAt",
 							)
-							.where(($) => [$.orgId.eq(orgId), $.appliedMetricsEnabled.eq(true)])
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.metricsEnabled.eq(true),
+								$.appliedMetricsEnabled.eq(true),
+							])
 							.orderBy(($) => [
 								[$.createdAt, "asc"],
 								[$.id, "asc"],

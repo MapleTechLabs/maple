@@ -152,7 +152,7 @@ Every hour Maple lists projects, Cloud Run services and jobs, Cloud Functions, G
 
 ## Query any Cloud Monitoring metric live
 
-With **Metrics and resources** on, you can chart and alert on any Cloud Monitoring metric that had data in the last day. Maple reads it live from Google. The metrics explorer lists them under the service **Google Cloud**. In dashboards, alert rules and the MCP tools, use the metric type as the metric name, e.g. `cloudsql.googleapis.com/database/cpu/utilization`.
+With **Metrics and resources** on, you can chart and alert on any Cloud Monitoring metric with numeric, boolean or distribution values that had data in the last day. Maple reads it live from Google. The metrics explorer lists them under the service **Google Cloud**. In dashboards, alert rules and the MCP tools, use the metric type as the metric name, e.g. `cloudsql.googleapis.com/database/cpu/utilization`.
 
 - Filter and group by the metric's labels as `attr.<label>` (e.g. `attr.database_id`, `attr.project_id`). There is no `service.name` or `deployment.environment`.
 - One query reads up to 20 projects and returns up to 500 series. Filter on `project_id` or other labels to stay under.

@@ -262,12 +262,12 @@ export const compileGcpMetricQuery = Effect.fnUntraced(function* (
 			return { query: total(type), merge: "sum" } satisfies GcpPromQl
 		case "increase":
 			return {
-				query: gauge ? aggregate("sum", type, "increase") : total(type),
+				query: gauge ? `${aggregate("sum", type, "rate", counterWindow)} * ${w}` : total(type),
 				merge: "sum",
 			} satisfies GcpPromQl
 		case "rate":
 			return {
-				query: gauge ? aggregate("sum", type, "rate") : perSecond(type),
+				query: gauge ? aggregate("sum", type, "rate", counterWindow) : perSecond(type),
 				merge: "sum",
 			} satisfies GcpPromQl
 		default:

@@ -254,8 +254,8 @@ const insertConnector = (
 			testDb,
 			`INSERT INTO gcp_connectors
 			   (id, org_id, scope_type, scope_id, project_id, secret_ciphertext, secret_iv, secret_tag,
-			    secret_hash, applied_metrics_enabled, created_by, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, 'c', 'i', 't', $1, $6, 'user_1', now(), now())`,
+			    secret_hash, metrics_enabled, applied_metrics_enabled, created_by, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, 'c', 'i', 't', $1, true, $6, 'user_1', now(), now())`,
 			[
 				id,
 				options.orgId ?? ORG,
@@ -783,6 +783,14 @@ describe("GcpLiveMetricsService.queryRange", () => {
 					error.message,
 					"Connect Google Cloud with metrics on to query Google Cloud metrics.",
 				)
+
+				// Switching metrics off stops live reads at once, before the setup removal runs.
+				yield* Effect.promise(() =>
+					executeSql(testDb, "UPDATE gcp_connectors SET metrics_enabled = false WHERE id = $1", [
+						PROJECT_CONNECTOR,
+					]),
+				)
+				assert.instanceOf(yield* Effect.flip(range("up")), GcpLiveQueryUnavailableError)
 			}),
 		)
 	})
