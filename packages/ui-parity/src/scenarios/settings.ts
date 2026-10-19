@@ -352,6 +352,14 @@ const aiInteractions: ReadonlyArray<Scenario> = [
 			await target.getByText("Switched to Maple managed").waitFor()
 		},
 	}),
+	page("ai-add-on", "AI: a lapsed add-on, offered again behind a confirm", AI, {
+		dataset: "settings-ai-add-on-lapsed",
+		steps: async (target) => {
+			await target.getByRole("radio", { name: "Your OpenRouter key" }).click()
+			await target.getByRole("button", { name: "Add to plan" }).click()
+			await target.getByRole("alertdialog").waitFor()
+		},
+	}),
 ]
 
 const AUTOMATION = "/settings?tab=automation"
@@ -402,6 +410,13 @@ const auditInteractions: ReadonlyArray<Scenario> = [
 	}),
 	page("audit-log-refresh", "Audit log: refresh", AUDIT, {
 		steps: (target) => target.getByRole("button", { name: "Refresh audit log" }).click(),
+	}),
+	page("clerk-audit-log-person", "Audit log (Clerk): the Person filter lists members", AUDIT, {
+		dataset: CLERK,
+		steps: async (target) => {
+			await target.getByRole("combobox", { name: "Person" }).click()
+			await target.getByRole("listbox").waitFor()
+		},
 	}),
 ]
 
@@ -523,6 +538,10 @@ const clerkInteractions: ReadonlyArray<Scenario> = [
 			await target.getByRole("button", { name: "Save", exact: true }).click()
 			await target.getByText("Logs cap saved").waitFor()
 		},
+	}),
+	// Back from Stripe with the plan already on the customer: the wait ends and the marker leaves.
+	page("clerk-billing-checkout-return", "Billing: back from Stripe Checkout, plan confirmed", `${BILLING}&checkout=complete`, {
+		dataset: CLERK,
 	}),
 	page("clerk-billing-set-caps", "Billing: Set caps opens the first uncapped row", BILLING, {
 		dataset: CLERK,
