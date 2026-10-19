@@ -143,6 +143,15 @@ describe("traces list", () => {
 		expect(allRows(returned.model)).toHaveLength(3)
 	})
 
+	test("after a Reload a filter reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(loaded(page(3)), Message.ClickedReload()).model
+		const filtered = routeChanged(reloaded, { search: { hasError: true } }, context)
+		expect(names(filtered.commands)).toEqual([FetchFirstPage.name])
+		expect(filtered.model.window).toEqual(window)
+		const moved = routeChanged(filtered.model, { search: { hasError: true, timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveTracesWindow", "Refresh"]])
+	})
+
 	test("a short first page has no next page, and a failed next page stops pagination", () => {
 		expect(names(pageUpdate(loaded(page(40)), windowOver(20, 40)).commands)).toEqual([])
 		const asked = pageUpdate(loaded(page(100)), windowOver(70, 95)).model

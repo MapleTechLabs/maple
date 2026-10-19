@@ -8,6 +8,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
+import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReloadSpin,
@@ -266,10 +267,11 @@ export const routeChanged = (
 		search: route.search,
 		durationDraft: isSameDuration ? model.durationDraft : durationDraftOf(route.search),
 	}
-	return {
-		model: next,
-		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-	}
+	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	return routeWindowStep(model.search, route.search, {
+		resolve,
+		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+	})
 }
 
 /** A pin re-requests the same window; a new zone re-resolves it, as "today" moves. */
