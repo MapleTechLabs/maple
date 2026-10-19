@@ -772,7 +772,10 @@ describe("PrReviewService.submitReview", () => {
 			assert.equal(stored.commentUrl, "https://github.com/octo/repo/pull/612#issuecomment-1")
 			assert.equal(stored.score, 90)
 			assert.equal(publication.summaryComment.marker, prReviewCommentMarker(started.reviewId!))
-			assert.include(publication.summaryComment.body, "90/100")
+			assert.include(
+				publication.summaryComment.body,
+				"<sub>1 warning −1 · 0/1 new units observable −1</sub>",
+			)
 			assert.isNotNull(stored.reviewUrl)
 			assert.isNull(stored.publishError)
 			assert.equal(stored.report?.findings.length, 1)
@@ -904,8 +907,8 @@ describe("PrReviewService.submitReview", () => {
 			)
 			assert.include(publication.summaryComment.body, "### Still open from earlier reviews")
 			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
-			// Two warnings (quality 80) and an unobservable route.
-			assert.equal(publication.title, "Confidence 5/10 · 2 issues to address")
+			// Two warnings and an unobservable route: 10 − 2 − 1.
+			assert.equal(publication.title, "Confidence 7/10 · 2 issues to address")
 			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
 			assert.deepEqual(
@@ -1366,8 +1369,8 @@ describe("buildPublication", () => {
 		assert.equal(publication.annotations[1]!.level, "notice")
 		assert.equal(publication.conclusion, "neutral")
 		assert.include(publication.reviewBody ?? "", "1 inline note")
-		// Quality 88 reads 4, less half a point for the unobservable route.
-		assert.equal(publication.title, "Confidence 6/10 · 1 issue to address")
+		// The note costs nothing; the warning and the unobservable route take one point each.
+		assert.equal(publication.title, "Confidence 8/10 · 1 issue to address")
 	})
 
 	it("always writes the summary comment, even with nothing to say inline", () => {
@@ -1385,7 +1388,7 @@ describe("buildPublication", () => {
 		assert.isTrue(publication.summaryComment.body.startsWith(prReviewCommentMarker(UNKNOWN_REVIEW)))
 		assert.include(
 			publication.summaryComment.body,
-			"## Maple review\n\n🟢 **Confidence 9/10** · safe to merge\n<sub>quality 100/100 · no findings · 0/1 new units observable</sub>",
+			"## Maple review\n\n🟢 **Confidence 9/10** · safe to merge\n<sub>no findings · 0/1 new units observable −1</sub>",
 		)
 	})
 
@@ -1440,7 +1443,7 @@ describe("buildPublication", () => {
 		})
 		assert.include(comment, `(${REPO_URL}/blob/${HEAD}/src/a%20b.ts#L4-L6)`)
 		assert.include(comment, "🔴 **Confidence 4/10** · risky as written")
-		assert.include(comment, "<sub>quality 75/100 · 1 critical · 0/1 new units observable</sub>")
+		assert.include(comment, "<sub>1 critical −3 · 0/1 new units observable −1</sub>")
 		assert.include(comment, "Observability coverage: 0 of 1 changes observable")
 		assert.include(comment, "<details><summary>🔴 <b>Critical</b> · gap</summary>")
 	})
@@ -1490,7 +1493,7 @@ describe("buildPublication", () => {
 		assert.isBelow(comment.indexOf("<b>Critical</b>"), comment.indexOf("<b>Note</b>"))
 		assert.include(comment, "<code>listKeys</code> skips the &lt;tenant&gt; filter</summary>")
 		assert.include(comment, "Adds one route.\n\n- `listKeys` reads from the new table")
-		assert.include(comment, "1 critical · 1 note")
+		assert.include(comment, "1 critical −3 · 1 note")
 	})
 
 	it("folds what was checked away, with findings or without", () => {
@@ -1533,7 +1536,7 @@ describe("buildPublication", () => {
 			})
 		assert.include(
 			render([]),
-			"🟢 **Confidence 10/10** · safe to merge\nSmall change, verified end to end.\n<sub>quality 100/100 · no findings · tests covered · risk low</sub>",
+			"🟢 **Confidence 10/10** · safe to merge\nSmall change, verified end to end.\n<sub>no findings · tests covered · risk low</sub>",
 		)
 		const critical = render([
 			{ path: "a.ts", line: 1, category: "correctness", severity: "critical", title: "t", body: "b" },
@@ -1551,25 +1554,23 @@ describe("buildPublication", () => {
 	})
 
 	it("is green only for a finished review that is confident the change is safe", () => {
-		const conclusion = (confidence: number | undefined, partial = false) =>
+		const conclusion = (
+			signals: { readonly tests: "partial" | "missing"; readonly risk: "medium" | "high" },
+			partial = false,
+		) =>
 			buildPublication({
 				reviewId: UNKNOWN_REVIEW,
 				number: 1,
 				headSha: HEAD,
 				partial,
 				repositoryUrl: REPO_URL,
-				// Signals read 7: an unobservable unit, partial tests and a medium-risk area.
-				report: new PrReviewReport({
-					...report([]),
-					tests: "partial",
-					risk: "medium",
-					...(confidence === undefined ? undefined : { confidence }),
-				}),
+				// The reviewer's own number never moves the check.
+				report: new PrReviewReport({ ...report([]), ...signals, confidence: 1 }),
 			}).conclusion
-		assert.equal(conclusion(undefined), "success")
-		assert.equal(conclusion(8), "success")
-		assert.equal(conclusion(6), "neutral")
-		assert.equal(conclusion(undefined, true), "neutral")
+		// An unobservable unit and partial tests read 8; missing tests in a high-risk area read 6.
+		assert.equal(conclusion({ tests: "partial", risk: "medium" }), "success")
+		assert.equal(conclusion({ tests: "missing", risk: "high" }), "neutral")
+		assert.equal(conclusion({ tests: "partial", risk: "medium" }, true), "neutral")
 	})
 
 	it("fences code that itself holds a fence with a longer fence", () => {
