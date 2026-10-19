@@ -3547,6 +3547,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			// age below SCHEDULER_LOCK_TTL_MS; a larger chunk only defers more rules.
 			const RULE_CLAIM_CHUNK_SIZE = 25
 
+			// Time kept clear at the end of a tick for evaluations started late in its
+			// spread: the last rule starts at least this long before the deadline.
+			const SCHEDULER_SPREAD_TAIL_MS = 10_000
+
 			// Unchanged-state ticks skip the alert_rule_states upsert so the Electric
 			// shape stays quiet; lastEvaluatedAt is refreshed at most this often.
 			const STATE_HEARTBEAT_MS = 5 * 60_000
@@ -4403,6 +4407,22 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Lock ages stay bounded by a chunk's queueing, as before, but one slow
 				// rule no longer idles the other lanes until its chunk drains.
 				const lastClaimedAt = yield* loadLastClaimTimes(rows)
+
+				// Space rule starts across the spread so a tick is not one warehouse CPU burst.
+				// Windows snap to the minute, so a later start reads the same data; a tick that
+				// starts late gets a shorter spread, never deferrals.
+				const spreadStart = yield* now
+				const spreadMs = Math.max(
+					0,
+					Math.min(runtime.schedulerSpreadMs(), deadline - SCHEDULER_SPREAD_TAIL_MS - spreadStart),
+				)
+				const startSpacingMs = rows.length > 0 ? spreadMs / rows.length : 0
+				const waitForStartSlot = (index: number) =>
+					Effect.flatMap(now, (time) => {
+						const waitMs = spreadStart + index * startSpacingMs - time
+						return waitMs > 0 ? Effect.sleep(Duration.millis(waitMs)) : Effect.void
+					})
+
 				yield* Stream.fromIterable(
 					Arr.chunksOf(
 						interleaveAlertRulesByOrg(orderAlertRulesByLastClaim(rows, lastClaimedAt)),
@@ -4437,6 +4457,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						}),
 					),
 					Stream.flattenIterable,
+					// One at a time, so the next chunk is claimed only when its first rule's slot comes up.
+					Stream.mapEffect((claimed, index) => Effect.as(waitForStartSlot(index), claimed)),
 					Stream.mapEffect(
 						({ row, timestamp }) =>
 							Effect.flatMap(now, (startedAt) =>

@@ -15,6 +15,7 @@ import {
 	Duration,
 	Effect,
 	Exit,
+	HashMap,
 	HashSet,
 	Layer,
 	Logger,
@@ -217,6 +218,8 @@ const defaultTestRuntime: AlertRuntimeApi = {
 	deliveryTimeoutMs: () => 15_000,
 	schedulerTickBudgetMs: () => 25_000,
 	schedulerEvalTimeoutMs: () => 15_000,
+	// Unpaced, so a tick runs as fast as its evaluations; the pacing tests opt in.
+	schedulerSpreadMs: () => 0,
 }
 
 interface TestOverrides extends Partial<AlertRuntimeApi> {
@@ -6273,6 +6276,85 @@ describe("AlertsService scheduler pool", () => {
 
 			assert.isBelow(wallMs, SLOW_EVAL_MS * 1.5)
 		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
+	})
+
+	// Records when each org's first warehouse query started, i.e. when its rule began evaluating.
+	const makeStartRecorder = () => {
+		const firstQueryAt = Ref.makeUnsafe(HashMap.empty<string, number>())
+		const { stub } = makeSlowWarehouse((orgId) =>
+			Clock.currentTimeMillis.pipe(
+				Effect.tap((ms) =>
+					Ref.update(firstQueryAt, (starts) =>
+						HashMap.has(starts, orgId) ? starts : HashMap.set(starts, orgId, ms),
+					),
+				),
+				Effect.as(Duration.millis(FAST_EVAL_MS)),
+			),
+		)
+		const startOffsets = (tickStartedAt: number) =>
+			Ref.get(firstQueryAt).pipe(
+				Effect.map((starts) =>
+					Arr.map(Arr.range(0, RULE_COUNT - 1), (index) =>
+						Option.match(HashMap.get(starts, orgAt(index)), {
+							onNone: () => Number.NaN,
+							onSome: (ms) => ms - tickStartedAt,
+						}),
+					),
+				),
+			)
+		return { stub, startOffsets }
+	}
+
+	it.live("spaces rule starts evenly across the spread", () => {
+		const testDb = createTestDb(trackedDbs)
+		const spreadMs = 1_000
+		const { stub, startOffsets } = makeStartRecorder()
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			yield* createPoolRules(alerts)
+
+			const startedAt = yield* Clock.currentTimeMillis
+			const tick = yield* alerts.runSchedulerTick()
+			const offsets = yield* startOffsets(startedAt)
+
+			assert.strictEqual(tick.evaluatedCount, RULE_COUNT)
+			assert.strictEqual(tick.deferredCount, 0)
+			// Rule i waits for its slot at i * spreadMs / RULE_COUNT; slack covers a loaded runner.
+			const slotMs = spreadMs / RULE_COUNT
+			Arr.forEach(offsets, (offset, index) => {
+				assert.isAtLeast(offset, index * slotMs)
+				assert.isBelow(offset, index * slotMs + 500)
+			})
+		}).pipe(
+			Effect.provide(makeLayer(testDb, stub, { fetch: okFetch, schedulerSpreadMs: () => spreadMs })),
+		)
+	})
+
+	it.live("shortens the spread to fit the tick deadline instead of deferring rules", () => {
+		const testDb = createTestDb(trackedDbs)
+		// 10 s of the 11 s budget stays clear at the end, so 1 s is left to spread over.
+		const roomMs = 1_000
+		const { stub, startOffsets } = makeStartRecorder()
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			yield* createPoolRules(alerts)
+
+			const startedAt = yield* Clock.currentTimeMillis
+			const tick = yield* alerts.runSchedulerTick()
+			const offsets = yield* startOffsets(startedAt)
+
+			assert.strictEqual(tick.evaluatedCount, RULE_COUNT)
+			assert.strictEqual(tick.deferredCount, 0)
+			assert.isBelow(Math.max(...offsets), roomMs + 500)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, stub, {
+					fetch: okFetch,
+					schedulerTickBudgetMs: () => 10_000 + roomMs,
+					schedulerSpreadMs: () => 60_000,
+				}),
+			),
+		)
 	})
 
 	it.live("stops at the tick deadline and leads the next tick with the deferred rules", () => {
