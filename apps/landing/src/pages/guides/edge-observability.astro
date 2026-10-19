@@ -100,6 +100,7 @@ processors:
 
 exporters:
     otlphttp/maple:
+        # EU organizations: https://ingest.eu.maple.dev
         endpoint: https://ingest.maple.dev
         compression: gzip
         timeout: 30s
@@ -165,7 +166,9 @@ helm upgrade --install maple-k8s-infra \\
   --namespace maple \\
   --set maple.ingestKey.existingSecret.name=maple-ingest-key \\
   --set maple.ingestKey.existingSecret.key=ingest-key \\
-  --set-string global.clusterName=store-0142`;
+  --set-string global.clusterName=store-0142
+# EU organizations add:
+#   --set-string maple.ingest.endpoint=https://ingest.eu.maple.dev`;
 
 const wranglerConfig = `// wrangler.jsonc
 {
@@ -428,6 +431,8 @@ const articleJsonLd = {
                         <li><strong>The queue directory must be writable</strong> by the user the Collector runs as. On a fresh Docker volume the first start failed with <code>permission denied</code> until the volume was owned by the Collector's user.</li>
                         <li><strong>Set <code>limit_mib</code> to what the box can spare.</strong> 200 MiB with a 40 MiB spike allowance suits a gateway with a gigabyte or more. <code>limit_percentage</code> works instead on hosts where the memory size varies.</li>
                         <li><strong>The <code>*.utilization</code> metrics are off by default</strong> in <code>hostmetrics</code>. They are enabled here because CPU, memory and disk views (including Maple's <a href="/docs/infrastructure/hosts">Hosts</a> page) read them.</li>
+                        <li><strong>The OTLP receivers accept unauthenticated data</strong> from anything that can reach ports 4317 and 4318, and forward it under the site's ingest key. Bind them to the site LAN's interface address instead of <code>0.0.0.0</code>, and firewall both ports from other networks.</li>
+                        <li><strong>The ingest key is region-specific.</strong> An EU organization's key sent to <code>ingest.maple.dev</code> gets a <code>401</code>, which the exporter does not retry, so set the EU endpoint before rollout.</li>
                         <li><strong>In a container</strong>, mount the host's root filesystem and set <code>root_path</code> on <code>hostmetrics</code>, or it reports the container's own filesystem.</li>
                         <li><strong>The filter syntax</strong> (<code>trace_conditions</code>, <code>log_conditions</code>) is the one current Collector releases document. Older releases use <code>traces: span:</code> and <code>logs: log_record:</code>.</li>
                         <li><strong>Component names:</strong> 0.163 logs deprecation warnings for <code>otlphttp</code>, <code>resourcedetection</code> and <code>hostmetrics</code>, which it now calls <code>otlp_http</code>, <code>resource_detection</code> and <code>host_metrics</code>. The old names still run, on old releases too.</li>
@@ -531,6 +536,9 @@ const articleJsonLd = {
                     </p>
                     <pre><code>{helmCommand}</code></pre>
                     <p>
+                        The chart sets <code>k8s.cluster.name</code> from <code>global.clusterName</code>, which serves as the site identity for these sites. Its Maple exporter uses the Collector's default in-memory queue and five-minute retry, so it covers short drops, but a long outage or a pod restart loses the backlog. At a site that goes offline for hours, send application telemetry through a standalone Collector with the persistent queue from the config above.
+                    </p>
+                    <p>
                         On a single box that runs Docker without Kubernetes, the <a href="/docs/infrastructure/docker">Docker agent</a> collects per-container metrics and logs, and the host itself is covered by the <a href="/docs/infrastructure/hosts">Hosts</a> Collector config.
                     </p>
                 </section>
@@ -566,7 +574,7 @@ const articleJsonLd = {
 
                     <ol class="guide-steps">
                         <li><span>01</span><div><h3>Edge sites</h3><p>Run the Collector config above at each site. Each gateway appears under <strong>Infrastructure → Hosts</strong> within about a minute, keyed on <code>host.name</code>. Edge Kubernetes sites use the Helm chart instead.</p></div></li>
-                        <li><span>02</span><div><h3>Filter by site</h3><p>In <strong>Explore → Traces</strong>, open <strong>Advanced Filter</strong> and query <code>resource.acme.site.id = "store-0142"</code> to see one site's traces.</p></div></li>
+                        <li><span>02</span><div><h3>Filter by site</h3><p>In <strong>Explore → Traces</strong>, open <strong>Advanced Filter</strong> and query <code>resource.acme.site.id = "store-0142"</code> to see one site's traces. For sites installed with the Helm chart, query <code>resource.k8s.cluster.name = "store-0142"</code>.</p></div></li>
                         <li><span>03</span><div><h3>Workers traces and logs</h3><p>In Cloudflare, open <strong>Workers &amp; Pages → Observability → Destinations</strong> and add a Traces destination for <code>https://ingest.maple.dev/v1/traces</code> and a Logs destination for <code>/v1/logs</code>, each with an <code>Authorization: Bearer</code> header carrying the key. Reference them from the Worker's config and deploy. Maple shows a <strong>Cloudflare Worker</strong> panel on each span with the script, CPU and wall time, and edge location.</p></div></li>
                         <li><span>04</span><div><h3>Workers metrics</h3><p>Connect the Cloudflare integration from <strong>Integrations → Cloudflare</strong> with OAuth. Maple polls Workers invocations, errors and CPU time every 5 minutes, and a traced Worker gets a <strong>Cloudflare edge</strong> section on the service map.</p></div></li>
                     </ol>
