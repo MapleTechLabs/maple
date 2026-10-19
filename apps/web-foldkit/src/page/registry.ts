@@ -74,6 +74,9 @@ import * as Settings from "./settings"
 import * as Account from "./settings/account"
 import * as McpPage from "./settings/mcp-page"
 import * as Share from "./share"
+import * as SourcesList from "./sources/list"
+import * as SourcesNew from "./sources/new"
+import * as SourceDetail from "./sources/detail"
 import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
 
@@ -138,6 +141,9 @@ export const pages = [
 	InvestigationDetail.page,
 	Settings.page,
 	McpPage.page,
+	SourcesList.page,
+	SourcesNew.page,
+	SourceDetail.page,
 	Account.page,
 	ReplaysList.page,
 	ReplayDetail.page,

@@ -23,6 +23,12 @@ describe("routes", () => {
 	test("a literal sibling wins over a param route", () => {
 		expect(parse("/infra/hosts")._tag).toBe("InfraHosts")
 		expect(parse("/alerts/create")._tag).toBe("AlertsCreate")
+		expect(parse("/sources/new")._tag).toBe("SourcesNew")
+		expect(parse("/sources/src_abc?tab=%22setup%22")).toMatchObject({
+			_tag: "Source",
+			sourceId: "src_abc",
+			search: { tab: "setup" },
+		})
 	})
 
 	test("sign-in round-trips its redirect_url", () => {

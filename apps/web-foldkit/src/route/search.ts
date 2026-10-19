@@ -14,6 +14,7 @@ import {
 	PrReviewSeverity,
 	VcsRepositoryId,
 } from "@maple/domain/http"
+import { PushSourcePlatform } from "@maple/domain/primitives"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 
 // apps/web/src/lib/search-params.ts
@@ -338,6 +339,18 @@ export const DashboardSearch = Schema.StructWithRest(
 	}),
 	[variableSearchRest],
 )
+
+// apps/web/src/routes/sources/new.tsx, $sourceId.tsx (`SOURCE_TABS`, components/sources/source-tabs.ts)
+export const SourcesNewSearch = Schema.Struct({
+	platform: Schema.optional(PushSourcePlatform),
+})
+
+export const SOURCE_TABS = ["overview", "setup", "settings"] as const
+export type SourceTab = (typeof SOURCE_TABS)[number]
+
+export const SourceSearch = Schema.Struct({
+	tab: Schema.optional(Schema.Literals(SOURCE_TABS)),
+})
 
 export const DashboardsTemplatesSearch = Schema.Struct({
 	template: Schema.optional(Schema.String),

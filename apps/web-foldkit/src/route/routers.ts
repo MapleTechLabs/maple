@@ -39,6 +39,14 @@ const routers = {
 	SelectPlan: pipe(path("select-plan"), search(Search.SelectPlanSearch), Route.mapTo(AppRoute.SelectPlan)),
 	ServiceMap: pipe(path("service-map"), search(Search.ServiceMapSearch), Route.mapTo(AppRoute.ServiceMap)),
 	Settings: pipe(path("settings"), search(Search.SettingsSearch), Route.mapTo(AppRoute.Settings)),
+	Sources: pipe(path("sources"), Route.mapTo(AppRoute.Sources)),
+	SourcesNew: pipe(path("sources", "new"), search(Search.SourcesNewSearch), Route.mapTo(AppRoute.SourcesNew)),
+	Source: pipe(
+		path("sources"),
+		slash(segment("sourceId")),
+		search(Search.SourceSearch),
+		Route.mapTo(AppRoute.Source),
+	),
 	SignIn: pipe(path("sign-in"), search(Search.SignInSearch), Route.mapTo(AppRoute.SignIn)),
 	SignUp: pipe(path("sign-up"), search(Search.SignUpSearch), Route.mapTo(AppRoute.SignUp)),
 	Unsubscribe: pipe(
@@ -330,6 +338,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 	Route.oneOf(
 		routers.AlertsCreate,
 		routers.DashboardsTemplates,
+		routers.SourcesNew,
 		routers.InfraDiscover,
 		routers.InfraCloudflare,
 		routers.InfraContainers,

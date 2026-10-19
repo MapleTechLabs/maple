@@ -196,7 +196,7 @@ export const shellSidebarHeader = (
 const footerNavRow = (
 	h: HtmlBuilder<Message>,
 	currentPath: string,
-	options: Readonly<{ href: string; title: string; icon: "GridIcon" | "GearIcon" }>,
+	options: Readonly<{ href: string; title: string; icon: "ConnectionIcon" | "GearIcon"; alsoActive?: string }>,
 	tip: RailTip,
 ): Html =>
 	sidebarMenuItem(h, undefined, [
@@ -204,7 +204,9 @@ const footerNavRow = (
 			h,
 			{
 				className: ACTIVE_RAIL,
-				isActive: currentPath === options.href || currentPath.startsWith(`${options.href}/`),
+				isActive: [options.href, ...(options.alsoActive === undefined ? [] : [options.alsoActive])].some(
+					(path) => currentPath === path || currentPath.startsWith(`${path}/`),
+				),
 				link: { href: options.href, currentPath },
 				hasTooltip: true,
 				attributes: tip(options.title),
@@ -289,7 +291,8 @@ export const shellSidebarFooter = (
 			footerNavRow(
 				h,
 				currentPath,
-				{ href: "/integrations", title: "Integrations", icon: "GridIcon" },
+				// Sources stands for Integrations too: they open from its picker.
+				{ href: "/sources", title: "Sources", icon: "ConnectionIcon", alsoActive: "/integrations" },
 				tip,
 			),
 			footerNavRow(h, currentPath, { href: "/settings", title: "Settings", icon: "GearIcon" }, tip),

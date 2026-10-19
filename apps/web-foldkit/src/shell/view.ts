@@ -56,7 +56,7 @@ const RAIL_TIP_PREFIX = "shell-rail-tip-"
 const RAIL_TIP_TITLES = [
 	"Search",
 	...shellNavGroups().flatMap((group) => group.items.map((item) => item.title)),
-	"Integrations",
+	"Sources",
 	"Settings",
 ]
 

@@ -111,7 +111,25 @@ const endpointAndKeysSection = (h: H, model: Model): Html =>
 						onCopy: (text) => Message.GotEndpointCopyMessage({ message: CopyButton.Message.ClickedCopy({ text }) }),
 					}),
 					...(model.isAdmin ? ingestKeyRows(h, model) : []),
+					manageSourcesRow(h),
 				],
+			),
+		],
+	)
+
+/** The pointer to `/sources` under the keys. */
+const manageSourcesRow = (h: H): Html =>
+	h.div(
+		[h.Class("text-muted-foreground flex items-center gap-2 px-4 py-2.5 text-xs")],
+		[
+			icon(h, "ConnectionIcon", { size: 12, className: "shrink-0" }),
+			h.span([h.Class("grow")], ["Give each sender its own token, rules and pause switch."]),
+			h.a(
+				[
+					h.Href("/sources"),
+					h.Class("text-foreground inline-flex items-center gap-1 hover:underline underline-offset-2"),
+				],
+				["Manage sources", icon(h, "ChevronRightIcon", { size: 12 })],
 			),
 		],
 	)

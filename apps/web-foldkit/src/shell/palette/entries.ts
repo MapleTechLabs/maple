@@ -90,6 +90,14 @@ const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
 
 const footerEntries: ReadonlyArray<PaletteEntry> = [
 	{
+		id: "nav:/sources",
+		title: "Sources",
+		group: "Navigation",
+		keywords: "go to sources connect sdk collector ingest tokens",
+		glyph: icon("ConnectionIcon"),
+		target: href("/sources"),
+	},
+	{
 		id: "nav:/integrations",
 		title: "Integrations",
 		group: "Navigation",
