@@ -7,6 +7,7 @@ import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as Menu from "../../../../ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
+import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
@@ -147,16 +148,10 @@ export const routeChanged = (
 ): Return => {
 	if (hrefOfSearch(model.search) === hrefOfSearch(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const windowChanged =
-		next.search.startTime !== model.search.startTime ||
-		next.search.endTime !== model.search.endTime ||
-		next.search.timePreset !== model.search.timePreset
-	return windowChanged
-		? {
-				model: next,
-				commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-			}
-		: { model: next }
+	return routeWindowStep(model.search, route.search, {
+		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		requestAll: (): Return => ({ model: next }),
+	})
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => sync(model, context, "Load")

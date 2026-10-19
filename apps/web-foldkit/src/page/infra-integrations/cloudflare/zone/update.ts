@@ -12,6 +12,7 @@ import * as FilterSections from "../../../../ui/filters/filter-sections"
 import * as Popover from "../../../../ui/popover"
 import * as Tooltip from "../../../../ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
+import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
@@ -185,16 +186,10 @@ export const init = (route: Route, context: PageContext): Return => {
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	if (hrefOfSearch(model, model.search) === hrefOfSearch(model, route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const windowChanged =
-		next.search.startTime !== model.search.startTime ||
-		next.search.endTime !== model.search.endTime ||
-		next.search.timePreset !== model.search.timePreset
-	return windowChanged
-		? {
-				model: next,
-				commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-			}
-		: sync(next, context, "Load")
+	return routeWindowStep(model.search, route.search, {
+		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		requestAll: (mode) => sync(next, context, mode),
+	})
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => sync(model, context, "Load")

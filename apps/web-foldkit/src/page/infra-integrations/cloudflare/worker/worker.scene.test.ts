@@ -5,7 +5,7 @@ import type { PageContext } from "../../../contract"
 import { type Release, Status, type WorkerRow } from "../data"
 import { pageOf } from "./derive"
 import { Message, type Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { ingestPhaseOf } from "../ingest"
 import { dataOf } from "../list/derive"
 
@@ -52,6 +52,15 @@ const loaded = (model: Model, workers: ReadonlyArray<WorkerRow>, releases: Reado
 	].reduce((next, message) => pageUpdate(next, message).model, model)
 
 describe("cloudflare worker", () => {
+	test("after a Reload an account change reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(windowed().model, Message.ClickedReload()).model
+		const scoped = routeChanged(reloaded, { scriptName: "edge-router", search: { account: "acct_b" } }, context)
+		expect(names(scoped.commands)).not.toContain("ResolveCloudflareWorkerWindow")
+		expect(scoped.model.window).toEqual(window)
+		const moved = routeChanged(scoped.model, { scriptName: "edge-router", search: { account: "acct_b", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveCloudflareWorkerWindow", "Refresh"]])
+	})
+
 	test("the window asks for the detail, the list rollups and the releases of the script", () => {
 		expect(names(windowed().commands)).toEqual([
 			"FetchCloudflareWorkerDetail",
