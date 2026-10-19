@@ -179,12 +179,12 @@ describe("trace-completeness joins", () => {
 		expect(sql).toContain("sampledOrphanCount")
 	})
 
-	it("auditRootlessTracesSQL joins observed traces against the root-span index", () => {
+	it("auditRootlessTracesSQL joins every observed trace against the root-span index", () => {
 		const { sql } = Effect.runSync(auditRootlessTracesSQL(window))
 		expect(sql).toContain("FROM trace_list_mv")
-		expect(sql).toContain(
-			"argMin(service_map_children.ServiceName, service_map_children.Timestamp) AS entryService",
-		)
+		// Every span, not only entry spans: a trace whose lost root was its only Server span still counts.
+		expect(sql).toContain("FROM traces\n")
+		expect(sql).toContain("argMin(traces.ServiceName, traces.Timestamp) AS entryService")
 		expect(sql).toContain("countIf(r.TraceId = '')")
 		expect(sql).toContain("GROUP BY TraceId")
 	})

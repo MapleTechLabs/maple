@@ -27,6 +27,7 @@ import {
 	ServiceMapSpans,
 	ServiceOverviewHourly,
 	TraceListMv,
+	Traces,
 	TracesAggregatesHourly,
 	orgIdParam,
 	utcSecondsParam,
@@ -563,22 +564,25 @@ export interface AuditRootlessTraceRow {
 }
 
 /**
- * Traces observed with no root span anywhere. `trace_list_mv` is populated strictly from
- * `ParentSpanId = ''` spans of every kind, so it *is* the root-span index — the join is a lookup, not
- * a scan.
+ * Every trace observed in the window, and whether its root span ever arrived. `trace_list_mv` is
+ * populated strictly from `ParentSpanId = ''` spans of every kind, so it *is* the root-span index —
+ * the join is a lookup, not a scan.
+ *
+ * The trace side reads every span from `traces`, not just entry spans: the commonest gap is a root
+ * that was never exported (a serverless runtime frozen before the root span ended and flushed), and
+ * those traces may hold no other Server/Consumer span at all. The caller sums the rows into an
+ * org-wide rate, so the row cap sits far above any real service count.
  *
  * Attribution uses `argMin(ServiceName, Timestamp)`: the earliest service Maple actually observed.
  * When the true root belongs to an uninstrumented upstream, that names the first instrumented hop,
- * which is exactly where the fix goes. The systemic case — an edge proxy or gateway injecting
- * `traceparent` without exporting spans — shows up as a near-total, uniform rootless rate, and the
- * caller collapses it into one finding rather than one per service.
+ * which is exactly where the fix goes.
  */
 export function auditRootlessTracesSQL(
 	params: AuditTraceWindowParams,
 ): Effect.Effect<CompiledQuery<AuditRootlessTraceRow>, QueryBuilderError> {
 	const modulus = normalizeModulus(params.traceSampleModulus)
 
-	const traces = from(ServiceMapChildren)
+	const traces = from(Traces)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			entryService: CH.argMin($.ServiceName, $.Timestamp),
@@ -618,7 +622,7 @@ export function auditRootlessTracesSQL(
 		})
 		.groupBy("entryService")
 		.orderBy(["rootlessCount", "desc"])
-		.limit(200)
+		.limit(1000)
 		.format("JSON")
 
 	return compile(query, {

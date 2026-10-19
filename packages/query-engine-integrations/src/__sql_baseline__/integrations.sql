@@ -4055,13 +4055,13 @@ SELECT
           countIf(r.TraceId = '') AS rootlessCount,
           countIf((r.TraceId = '' AND t.isSampled = 1)) AS sampledRootlessCount
         FROM (SELECT
-          service_map_children.TraceId AS TraceId,
-          argMin(service_map_children.ServiceName, service_map_children.Timestamp) AS entryService,
-          max(match(service_map_children.TraceState, 'th:[0-9a-f]+')) AS isSampled
-        FROM service_map_children
-        WHERE service_map_children.OrgId = 'org_sql_catalog'
-          AND service_map_children.Timestamp >= '2026-01-01 10:30:00'
-          AND service_map_children.Timestamp < '2026-01-03 14:15:00'
+          traces.TraceId AS TraceId,
+          argMin(traces.ServiceName, traces.Timestamp) AS entryService,
+          max(match(traces.TraceState, 'th:[0-9a-f]+')) AS isSampled
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp < '2026-01-03 14:15:00'
         GROUP BY TraceId) AS t
         LEFT JOIN (SELECT
           trace_list_mv.TraceId AS TraceId
@@ -4072,7 +4072,7 @@ SELECT
         GROUP BY TraceId) AS r ON t.TraceId = r.TraceId
         GROUP BY entryService
         ORDER BY rootlessCount DESC
-        LIMIT 200
+        LIMIT 1000
         FORMAT JSON
 
 -- builder:setup-audit:auditSamplingByServiceQuery:default

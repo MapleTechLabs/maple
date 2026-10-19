@@ -8,7 +8,9 @@
 // every `needsWarehouse` check emits `skip` and the report still returns the config findings.
 //
 // Severity is fixed per check, never computed inside `evaluate`. Conditional severity ("critical if
-// referenced, warn otherwise") is a smell — split it into two checks or pick the honest one.
+// referenced, warn otherwise") is a smell — split it into two checks or pick the honest one. The one
+// exception is a rate with tiered thresholds (TRC-02): one condition, so one check, and its evaluation
+// names the tier it crossed.
 //
 // Checks deliberately NOT included, so nobody re-adds them: escalation policy disabled (defaults to
 // false — would fire on nearly every org), AI triage disabled (opt-in by design), no scrape targets /
@@ -75,6 +77,8 @@ export interface AuditEvaluation {
 	readonly affected?: ReadonlyArray<AuditAffectedEntity>
 	/** Total affected before capping; defaults to `affected.length`. */
 	readonly affectedCount?: number
+	/** The tier a tiered-rate check crossed; defaults to the check's own severity. */
+	readonly severity?: AuditSeverity
 }
 
 export interface AuditCheck {
@@ -363,6 +367,12 @@ const briefError = (message: string): string =>
 
 const percent = (numerator: number, denominator: number): string =>
 	denominator === 0 ? "0%" : `${Math.round((numerator / denominator) * 100)}%`
+
+/** Like `percent`, with two significant digits below 10% so a 0.1% threshold reads as one. */
+const sharePercent = (numerator: number, denominator: number): string => {
+	const share = denominator === 0 ? 0 : (numerator / denominator) * 100
+	return share >= 10 ? `${Math.round(share)}%` : `${Number(share.toPrecision(2))}%`
+}
 
 const keysForScope = (warehouse: WarehouseAuditInputs, scope: string): Set<string> =>
 	new Set(warehouse.attributeKeys.filter((row) => row.scope === scope).map((row) => row.key))
@@ -1517,9 +1527,14 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 
 /** Below this many observed children a service's orphan rate is noise. */
 const TRACE_MIN_SAMPLE = 50
-/** Orphan / rootless share above which the gap is structural rather than incidental. */
+/** Orphan share above which the gap is structural rather than incidental. */
 const TRACE_GAP_RATIO = 0.1
-/** Above this share, a rootless rate is systemic — one upstream finding, not one per service. */
+/** Share of traces without a root span above which TRC-02 warns, and above which it is critical. */
+const ROOTLESS_WARN_RATIO = 0.001
+const ROOTLESS_CRITICAL_RATIO = 0.01
+/** A crashed request or a deploy restart leaves the odd rootless trace; fewer than this is not a setup fault. */
+const ROOTLESS_MIN_TRACES = 3
+/** Above this share, trace context is created upstream of everything instrumented. */
 const ROOTLESS_SYSTEMIC_RATIO = 0.95
 /** Share of orphans that must sit inside sampled traces before sampling is the better explanation. */
 const SAMPLING_EXPLAINS_RATIO = 0.5
@@ -1566,35 +1581,46 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		needsWarehouse: true,
 		fixHint:
-			"Instrument the first hop that creates trace context, or let your ingress service start the trace instead of continuing one from upstream.",
+			"A root span is exported when it ends, so it is the span most often lost: make sure the process flushes the exporter before it exits or is frozen (serverless handlers, CLI commands, worker shutdown). If an uninstrumented proxy or gateway starts the trace, instrument it or let your ingress service start the trace instead.",
 		evaluate: ({ warehouse }) => {
 			const traces = warehouse?.traceCompleteness
 			if (!traces) return PASS
-			const eligible = traces.rootless.filter((row) => row.traceCount >= TRACE_MIN_SAMPLE)
-			const gaps = eligible.filter(
-				(row) => (row.rootlessCount - row.sampledRootlessCount) / row.traceCount > TRACE_GAP_RATIO,
-			)
-			if (gaps.length === 0) return PASS
+			// Rootless traces inside sampling-marked traces are the sampler's doing, not a lost root.
+			const rows = traces.rootless.map((row) => ({
+				...row,
+				missing: row.rootlessCount - row.sampledRootlessCount,
+			}))
+			const total = rows.reduce((sum, row) => sum + row.traceCount, 0)
+			const missing = rows.reduce((sum, row) => sum + row.missing, 0)
+			if (total < TRACE_MIN_SAMPLE || missing < ROOTLESS_MIN_TRACES) return PASS
+			const ratio = missing / total
+			if (ratio <= ROOTLESS_WARN_RATIO) return PASS
+			const severity = ratio > ROOTLESS_CRITICAL_RATIO ? "critical" : "warn"
 
-			// A near-total, uniform rootless rate is one architectural fact — trace context is being
-			// created upstream of anything instrumented — not N independent per-service defects.
-			const systemic =
-				gaps.length === eligible.length &&
-				eligible.every((row) => row.rootlessCount / row.traceCount > ROOTLESS_SYSTEMIC_RATIO)
-			if (systemic) {
-				return fail(
-					"Essentially every trace arrives without a root span, across all services. Trace context is being created upstream of your instrumented services — typically a proxy, gateway or load balancer that injects `traceparent` but exports no spans of its own.",
-				)
+			if (ratio > ROOTLESS_SYSTEMIC_RATIO) {
+				return {
+					...fail(
+						"Essentially every trace arrives without a root span, across all services. Trace context is being created upstream of your instrumented services — typically a proxy, gateway or load balancer that injects `traceparent` but exports no spans of its own.",
+					),
+					severity,
+				}
 			}
 
-			return fail(
-				`${plural(gaps.length, "service")} ${conj(gaps.length, "starts", "start")} traces that have no root span. Trace duration and the waterfall's origin are both wrong for them.`,
-				gaps.map((row) => ({
-					kind: "service" as const,
-					name: row.entryService,
-					note: `${percent(row.rootlessCount - row.sampledRootlessCount, row.traceCount)} of traces entering here have no root`,
-				})),
-			)
+			const sample = traces.traceSampleModulus > 1 ? ` (1 in ${traces.traceSampleModulus} sampled)` : ""
+			return {
+				...fail(
+					`${sharePercent(missing, total)} of traces have no root span: ${missing} of ${total} traces over ${plural(traces.windowMinutes, "minute")}${sample}. Their duration and waterfall start at the first span that did arrive, so both are wrong.`,
+					rows
+						.filter((row) => row.missing > 0)
+						.sort((a, b) => b.missing - a.missing)
+						.map((row) => ({
+							kind: "service" as const,
+							name: row.entryService,
+							note: `${sharePercent(row.missing, row.traceCount)} of traces starting here have no root (${row.missing} of ${row.traceCount})`,
+						})),
+				),
+				severity,
+			}
 		},
 	},
 	{
@@ -1690,14 +1716,15 @@ export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 		}
 
 		const evaluation = check.evaluate(inputs)
+		const severity = evaluation.severity ?? check.severity
 		if (evaluation.status === "pass") summary.pass += 1
-		else summary[check.severity] += 1
+		else summary[severity] += 1
 
 		checks.push({
 			id: check.id,
 			category: check.category,
 			title: check.title,
-			severity: check.severity,
+			severity,
 			status: evaluation.status,
 			detail: evaluation.detail ?? null,
 			affected: evaluation.affected ?? [],
