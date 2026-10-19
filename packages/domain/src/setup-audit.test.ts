@@ -603,7 +603,13 @@ describe("CFG-ANOM-01 — anomaly detection", () => {
 describe("CFG-SAMP-01 — sampling is understood", () => {
 	it("passes at a ratio of exactly 1", () => {
 		const report = runSetupAudit(
-			inputs({ samplingPolicy: { traceSampleRatio: 1, alwaysKeepErrorSpans: true } }),
+			inputs({
+				samplingPolicy: {
+					traceSampleRatio: 1,
+					alwaysKeepErrorSpans: true,
+					alwaysKeepSlowSpansMs: null,
+				},
+			}),
 		)
 		expect(check(report, "CFG-SAMP-01").status).toBe("pass")
 	})
@@ -614,7 +620,13 @@ describe("CFG-SAMP-01 — sampling is understood", () => {
 
 	it("reports the ratio as a percentage and notes that errors are kept", () => {
 		const report = runSetupAudit(
-			inputs({ samplingPolicy: { traceSampleRatio: 0.1, alwaysKeepErrorSpans: true } }),
+			inputs({
+				samplingPolicy: {
+					traceSampleRatio: 0.1,
+					alwaysKeepErrorSpans: true,
+					alwaysKeepSlowSpansMs: null,
+				},
+			}),
 		)
 		const result = check(report, "CFG-SAMP-01")
 		expect(result.status).toBe("fail")
@@ -624,7 +636,13 @@ describe("CFG-SAMP-01 — sampling is understood", () => {
 
 	it("warns harder when error spans are sampled too", () => {
 		const report = runSetupAudit(
-			inputs({ samplingPolicy: { traceSampleRatio: 0.05, alwaysKeepErrorSpans: false } }),
+			inputs({
+				samplingPolicy: {
+					traceSampleRatio: 0.05,
+					alwaysKeepErrorSpans: false,
+					alwaysKeepSlowSpansMs: null,
+				},
+			}),
 		)
 		expect(check(report, "CFG-SAMP-01").detail).toContain("errors can be missed entirely")
 	})
@@ -1504,11 +1522,21 @@ describe("trace completeness", () => {
 			expect(check(report, "TRC-02").detail).toContain("(1 in 4 sampled)")
 		})
 
-		it("collapses a near-total rate into one upstream finding", () => {
+		it("warns, not escalates, at exactly 1% of traces", () => {
+			expect(check(rootless(["api", 1_000, 10]), "TRC-02").severity).toBe("warn")
+		})
+
+		it("blames upstream when every service's traces arrive without a root", () => {
 			const result = check(rootless(["api", 800, 800], ["checkout", 800, 796]), "TRC-02")
 			expect(result.severity).toBe("critical")
-			expect(result.affected).toEqual([])
 			expect(result.detail).toContain("created upstream of your instrumented services")
+			expect(result.affected.map((entity) => entity.name)).toEqual(["api", "checkout"])
+		})
+
+		it("names the service when one dominant service is the whole problem", () => {
+			const result = check(rootless(["gateway-fronted", 9_700, 9_700], ["billing", 300, 0]), "TRC-02")
+			expect(result.detail).toContain("97% of traces have no root span")
+			expect(result.affected.map((entity) => entity.name)).toEqual(["gateway-fronted"])
 		})
 	})
 })

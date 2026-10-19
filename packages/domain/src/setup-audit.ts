@@ -181,6 +181,7 @@ export interface ConfigAuditInputs {
 	readonly samplingPolicy: {
 		readonly traceSampleRatio: number
 		readonly alwaysKeepErrorSpans: boolean
+		readonly alwaysKeepSlowSpansMs: number | null
 	} | null
 	readonly attributeMappings: ReadonlyArray<AuditAttributeMapping>
 	/** Null when the org is on managed Tinybird rather than BYO ClickHouse. */
@@ -1581,7 +1582,7 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		needsWarehouse: true,
 		fixHint:
-			"A root span is exported when it ends, so it is the span most often lost: make sure the process flushes the exporter before it exits or is frozen (serverless handlers, CLI commands, worker shutdown). If an uninstrumented proxy or gateway starts the trace, instrument it or let your ingress service start the trace instead.",
+			"A root span is exported when it ends, so it is the span most often lost: make sure the process flushes the exporter before it exits or is frozen (serverless handlers, CLI commands, worker shutdown). If an uninstrumented proxy or gateway starts the trace, instrument it or let your ingress service start the trace instead. A root that stays open for more than a few minutes (a WebSocket session, a long job) also reads as missing until it ends; start a new trace per message or step and link it instead.",
 		evaluate: ({ warehouse }) => {
 			const traces = warehouse?.traceCompleteness
 			if (!traces) return PASS
@@ -1597,10 +1598,26 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			if (ratio <= ROOTLESS_WARN_RATIO) return PASS
 			const severity = ratio > ROOTLESS_CRITICAL_RATIO ? "critical" : "warn"
 
-			if (ratio > ROOTLESS_SYSTEMIC_RATIO) {
+			const affected = rows
+				.filter((row) => row.missing > 0)
+				.sort((a, b) => b.missing - a.missing)
+				.map((row) => ({
+					kind: "service" as const,
+					name: row.entryService,
+					note: `${sharePercent(row.missing, row.traceCount)} of traces starting here have no root (${row.missing} of ${row.traceCount})`,
+				}))
+
+			// One upstream fact, not N service defects — but only when every sizable service shows it.
+			const systemic =
+				ratio > ROOTLESS_SYSTEMIC_RATIO &&
+				rows
+					.filter((row) => row.traceCount >= TRACE_MIN_SAMPLE)
+					.every((row) => row.missing / row.traceCount > ROOTLESS_SYSTEMIC_RATIO)
+			if (systemic) {
 				return {
 					...fail(
 						"Essentially every trace arrives without a root span, across all services. Trace context is being created upstream of your instrumented services — typically a proxy, gateway or load balancer that injects `traceparent` but exports no spans of its own.",
+						affected,
 					),
 					severity,
 				}
@@ -1610,14 +1627,7 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 			return {
 				...fail(
 					`${sharePercent(missing, total)} of traces have no root span: ${missing} of ${total} traces over ${plural(traces.windowMinutes, "minute")}${sample}. Their duration and waterfall start at the first span that did arrive, so both are wrong.`,
-					rows
-						.filter((row) => row.missing > 0)
-						.sort((a, b) => b.missing - a.missing)
-						.map((row) => ({
-							kind: "service" as const,
-							name: row.entryService,
-							note: `${sharePercent(row.missing, row.traceCount)} of traces starting here have no root (${row.missing} of ${row.traceCount})`,
-						})),
+					affected,
 				),
 				severity,
 			}

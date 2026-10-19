@@ -6,9 +6,10 @@
 //     denominator — never a division. The builder's arithmetic follows SQL precedence rather than
 //     call order, and mixing Float64 quotients into otherwise-integer result sets is how UNION type
 //     unification breaks; returning counts sidesteps both, and `nan`/`ifNotFinite` handling with it.
-//  2. **Pre-aggregated MVs over raw scans.** Only `auditLogCorrelationQuery` touches a raw table, and
-//     it reads three narrow columns over a hard-clamped window. Attribute *values* are never scanned
-//     org-wide: a `Map` re-read at that scale is what previously exhausted query memory.
+//  2. **Pre-aggregated MVs over raw scans.** Only `auditLogCorrelationQuery` and
+//     `auditRootlessTracesSQL` touch a raw table, each reading a few narrow columns over a
+//     hard-clamped window. Attribute *values* are never scanned org-wide: a `Map` re-read at that
+//     scale is what previously exhausted query memory.
 //
 // Every builder filters `OrgId` (enforced at execution) and every count/sum/uniq column needs
 // `CHNumber` in the caller's `rowSchema` — ClickHouse serializes 64-bit integers as JSON strings, so
@@ -423,10 +424,11 @@ export function auditLogCorrelationQuery() {
 
 // B2 / B3 — trace completeness
 //
-// Both mirror the service-map edge join, which is the same join over the same two tables and the
-// same window size that `ServiceMapRollupService` already runs once per org per hour in production.
-// That is the cost precedent these rely on — do not widen the window, and never put them on a
-// dashboard-polled path.
+// The orphan join mirrors the service-map edge join, which is the same join over the same two tables
+// and the same window size that `ServiceMapRollupService` already runs once per org per hour in
+// production. The rootless join reads raw `traces` over the same two hours, narrow columns only, so
+// trace sampling bounds its hash side but not its scan. Do not widen either window, and never put
+// them on a dashboard-polled path.
 //
 // What they can and cannot say: the warehouse only ever sees what arrived, so neither query can
 // detect ingest loss. They are *internal consistency* checks — spans that reference a parent nobody
@@ -556,6 +558,15 @@ export function auditOrphanSpansSQL(
 	})
 }
 
+/**
+ * Spans the org's ingest sampler keeps even from traces it drops (`org_ingest_sampling_policies`).
+ * A rootless trace made only of such spans is the sampler's doing, not a lost root.
+ */
+export interface AuditSamplingOverrides {
+	readonly keepErrorSpans: boolean
+	readonly slowSpanNs: number | null
+}
+
 export interface AuditRootlessTraceRow {
 	readonly entryService: string
 	readonly traceCount: number
@@ -564,14 +575,19 @@ export interface AuditRootlessTraceRow {
 }
 
 /**
- * Every trace observed in the window, and whether its root span ever arrived. `trace_list_mv` is
+ * Every trace that starts in the window, and whether its root span ever arrived. `trace_list_mv` is
  * populated strictly from `ParentSpanId = ''` spans of every kind, so it *is* the root-span index —
  * the join is a lookup, not a scan.
  *
  * The trace side reads every span from `traces`, not just entry spans: the commonest gap is a root
  * that was never exported (a serverless runtime frozen before the root span ended and flushed), and
- * those traces may hold no other Server/Consumer span at all. The caller sums the rows into an
- * org-wide rate, so the row cap sits far above any real service count.
+ * those traces may hold no other Server/Consumer span at all. It reads from `parentStart` and keeps
+ * only traces whose first span is inside the window, so a long-running trace that began earlier is
+ * not mistaken for one whose root went missing. The caller sums the rows into an org-wide rate, so
+ * the row cap sits far above any real service count.
+ *
+ * `sampledRootlessCount` covers both ways a sampler explains a missing root: a `th:` TraceState, and
+ * a trace made only of spans the ingest sampler keeps from dropped traces (`overrides`).
  *
  * Attribution uses `argMin(ServiceName, Timestamp)`: the earliest service Maple actually observed.
  * When the true root belongs to an uninstrumented upstream, that names the first instrumented hop,
@@ -579,24 +595,35 @@ export interface AuditRootlessTraceRow {
  */
 export function auditRootlessTracesSQL(
 	params: AuditTraceWindowParams,
+	overrides: AuditSamplingOverrides | null,
 ): Effect.Effect<CompiledQuery<AuditRootlessTraceRow>, QueryBuilderError> {
 	const modulus = normalizeModulus(params.traceSampleModulus)
 
 	const traces = from(Traces)
-		.select(($) => ({
-			TraceId: $.TraceId,
-			entryService: CH.argMin($.ServiceName, $.Timestamp),
-			// `match` returns UInt8, so max() over the trace's spans is "any span
-			// carried a sampling threshold".
-			isSampled: CH.max(CH.match($.TraceState, SAMPLED_TRACE_STATE_PATTERN)),
-		}))
+		.select(($) => {
+			const kept = [
+				overrides?.keepErrorSpans === true ? $.StatusCode.eq("Error") : undefined,
+				overrides?.slowSpanNs != null ? $.Duration.gte(overrides.slowSpanNs) : undefined,
+			].filter((condition) => condition !== undefined)
+			const keptBySampler = kept.length === 0 ? undefined : kept.reduce((a, b) => a.or(b))
+			return {
+				TraceId: $.TraceId,
+				entryService: CH.argMin($.ServiceName, $.Timestamp),
+				// `match` returns UInt8, so max() over the trace's spans is "any span
+				// carried a sampling threshold".
+				thresholdSampled: CH.max(CH.match($.TraceState, SAMPLED_TRACE_STATE_PATTERN)),
+				// Zero when every span is one the ingest sampler keeps from dropped traces.
+				unkeptSpans: keptBySampler === undefined ? CH.count() : CH.countIf(CH.not(keptBySampler)),
+			}
+		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(utcSecondsParam("childStart")),
+			$.Timestamp.gte(utcSecondsParam("parentStart")),
 			$.Timestamp.lt(utcSecondsParam("childEnd")),
 			modulusFilter($.TraceId, modulus),
 		])
 		.groupBy("TraceId")
+		.having(($) => [CH.min($.Timestamp).gte(utcSecondsParam("childStart"))])
 
 	const roots = from(TraceListMv)
 		.select(($) => ({ TraceId: $.TraceId }))
@@ -617,7 +644,9 @@ export function auditRootlessTracesSQL(
 				entryService: $.entryService,
 				traceCount: CH.count(),
 				rootlessCount: CH.countIf(noRoot),
-				sampledRootlessCount: CH.countIf(noRoot.and($.isSampled.eq(1))),
+				sampledRootlessCount: CH.countIf(
+					noRoot.and($.thresholdSampled.eq(1).or($.unkeptSpans.eq(0))),
+				),
 			}
 		})
 		.groupBy("entryService")
