@@ -139,6 +139,8 @@ export const linkIssueDialog = (h: H, model: Model, incident: AnomalyIncidentDoc
 		view: dialogView,
 		viewInputs: {
 			hasTrigger: false,
+			// Legacy's controlled dialog has no trigger: closing leaves focus on the body.
+			isReturningFocus: false,
 			toView: ({ portal }) => portal,
 			toContent: () =>
 				model.linkDialog.isOpen

@@ -6,6 +6,7 @@ import { expect as expectView, given, Mount, scene, text, withViewInputs } from 
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
+import { Message as DialogMessage, MountDialog } from "../../../ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -96,6 +97,21 @@ describe("anomaly detail", () => {
 		const scoped = pageUpdate(opened.model, Message.ToggledLinkScope())
 		expect(names(scoped.commands)).toEqual(["FetchAnomalyLinkIssues"])
 		expect(scoped.model.linkAllServices).toBe(true)
+	})
+
+	test("closing the link dialog leaves focus on the body, like legacy's trigger-less dialog", () => {
+		const opened = pageUpdate(loaded().model, Message.ClickedLinkIssue()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			themed(),
+			// Resolving by instance asserts the args: no focus is handed back on close.
+			Mount.resolve(
+				MountDialog({ id: "anomaly-link-issue", hasTrigger: false, isPopupFocused: false, isReturningFocus: false }),
+				DialogMessage.CompletedMountDialog(),
+			),
+			expectView(text(/^Scoped to/)).toExist(),
+		)
 	})
 
 	test("a live tick reads the clock, so an open incident that went quiet turns stale", () => {
