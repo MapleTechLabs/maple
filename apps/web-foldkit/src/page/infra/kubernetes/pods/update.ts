@@ -9,7 +9,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../../cont
 import type { SortDir } from "../../../kit/table-sort"
 import { excludedValue, type FacetLists, onlyValue, toggledValue } from "../../kit/facets"
 import * as Frame from "../../kit/frame"
-import { liftFrame, resolveFrame } from "../../kit/frame-step"
+import { liftFrame, resolveFrame, routeFrame } from "../../kit/frame-step"
 import * as InstallModal from "../../kit/install-modal"
 import { applySteps, keyed, type Step } from "../../kit/requests"
 import { pickTimeSearch } from "../../kit/view-tabs"
@@ -244,18 +244,13 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
-const isSameWindow = (a: Search, b: Search) =>
-	a.startTime === b.startTime && a.endTime === b.endTime && a.timePreset === b.timePreset
-
 export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	const href = (search: Search) => hrefOf(AppRoute.InfraKubernetesPods({ search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	const debounce =
 		(model.search.q ?? "") === (route.search.q ?? "") ? [] : [DebounceSearch({ query: route.search.q ?? "" })]
-	if (!isSameWindow(model.search, route.search))
-		return { model: next, commands: [resolveFrame(next.frame, scopeOf(next, context), toFrame), ...debounce] }
-	const requested = requestAll(next, context, "Load")
+	const requested = routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
 	return { ...requested, commands: [...(requested.commands ?? []), ...debounce] }
 }
 

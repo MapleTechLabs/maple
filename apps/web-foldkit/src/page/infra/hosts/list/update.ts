@@ -4,6 +4,7 @@ import { requestKey } from "../../../../data/request-key"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import * as Frame from "../../kit/frame"
+import { routeFrame } from "../../kit/frame-step"
 import * as InstallModal from "../../kit/install-modal"
 import { applySteps, keyed } from "../../kit/requests"
 import { nextSort } from "../../../kit/table-sort"
@@ -84,20 +85,8 @@ export const routeChanged = (
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const isSameWindow =
-		model.search.startTime === route.search.startTime &&
-		model.search.endTime === route.search.endTime &&
-		model.search.timePreset === route.search.timePreset
-	return isSameWindow
-		? { model: next }
-		: {
-				model: next,
-				commands: [
-					Command.mapMessage(Frame.resolve(next.frame, scopeOf(next, context)), (message) =>
-						Message.GotFrameMessage({ message }),
-					),
-				],
-			}
+	const toFrame = (message: Frame.Message) => Message.GotFrameMessage({ message })
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>

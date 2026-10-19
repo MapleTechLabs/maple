@@ -7,7 +7,7 @@ import type { PageContext } from "../../../contract"
 import * as Frame from "../../kit/frame"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -32,6 +32,16 @@ describe("pod detail", () => {
 			"FetchInfraPodDetailRestarts",
 			"FetchInfraPodSeries",
 		])
+	})
+
+	test("after a Reload a namespace change reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(windowed().model, Message.GotFrameMessage({ message: Frame.Message.ClickedReload() })).model
+		const moved = routeChanged(reloaded, { ...route, search: { namespace: "billing" } }, context)
+		expect((moved.commands ?? []).map(({ name }) => name)).not.toContain("ResolveInfraWindow")
+		expect((moved.commands ?? []).map(({ name }) => name)).toContain("FetchInfraPodSummary")
+		expect(moved.model.frame.window).toEqual(window)
+		const represet = routeChanged(moved.model, { ...route, search: { namespace: "billing", timePreset: "6h" } }, context)
+		expect(represet.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveInfraWindow", "Refresh"]])
 	})
 
 	test("restarted containers get their own table", () => {

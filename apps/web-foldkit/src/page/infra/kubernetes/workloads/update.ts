@@ -7,7 +7,7 @@ import * as FilterSections from "../../../../ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { toggledValue } from "../../kit/facets"
 import * as Frame from "../../kit/frame"
-import { liftFrame, resolveFrame } from "../../kit/frame-step"
+import { liftFrame, resolveFrame, routeFrame } from "../../kit/frame-step"
 import * as InstallModal from "../../kit/install-modal"
 import { applySteps, keyed, type Step } from "../../kit/requests"
 import { nextSort } from "../../../kit/table-sort"
@@ -104,17 +104,12 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
-const isSameWindow = (a: Search, b: Search) =>
-	a.startTime === b.startTime && a.endTime === b.endTime && a.timePreset === b.timePreset
-
 /** `q` and `status` filter the loaded list; the facets and the window re-request. */
 export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	const href = (search: Search) => hrefOf(AppRoute.InfraKubernetesWorkloads({ search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return isSameWindow(model.search, route.search)
-		? requestAll(next, context, "Load")
-		: { model: next, commands: [resolveFrame(next.frame, scopeOf(next, context), toFrame)] }
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")

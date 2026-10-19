@@ -7,7 +7,7 @@ import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import * as Frame from "../../kit/frame"
-import { liftFrame, resolveFrame } from "../../kit/frame-step"
+import { liftFrame, resolveFrame, routeFrame } from "../../kit/frame-step"
 import { applySteps, keyed, type Step } from "../../kit/requests"
 import * as Rail from "../lens/rail"
 import type { PodsInput } from "../pod-data"
@@ -163,10 +163,6 @@ const lensHref = (serviceName: string | null, search: Search) =>
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	const serviceName = route.serviceName ?? null
 	if (lensHref(model.serviceName, model.search) === lensHref(serviceName, route.search)) return { model }
-	const isSameWindow =
-		model.search.startTime === route.search.startTime &&
-		model.search.endTime === route.search.endTime &&
-		model.search.timePreset === route.search.timePreset
 	const next: Model =
 		serviceName === model.serviceName
 			? { ...model, search: route.search }
@@ -180,9 +176,7 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 					pods: Keyed.idle(),
 					charts: {},
 				}
-	return isSameWindow
-		? requestAll(next, context, "Load")
-		: { model: next, commands: [resolveFrame(next.frame, scopeOf(next, context), toFrame)] }
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")

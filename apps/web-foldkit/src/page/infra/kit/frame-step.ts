@@ -1,5 +1,6 @@
 import { Command } from "foldkit"
 import type { PageReturn } from "../../contract"
+import { routeWindowStep } from "../../kit/route-window"
 import * as Frame from "./frame"
 
 // A page's `GotFrameMessage` handler: runs the frame's update, then lets the page act on a resolved
@@ -36,3 +37,21 @@ export const resolveFrame = <Message>(
 	wrap: (message: Frame.Message) => Message,
 	mode?: Frame.RequestMode,
 ) => Command.mapMessage(Frame.resolve(frame, scope, mode), wrap)
+
+/**
+ * A page's `routeChanged` over the frame: a moved window re-resolves (unsnapped after a Reload);
+ * any other change reads under the kept window in `Load`, which starts nothing for an unmoved key.
+ */
+export const routeFrame = <Model extends FrameHost, Message>(
+	previous: Frame.Scope["search"],
+	next: Model,
+	scope: Frame.Scope,
+	wrap: (message: Frame.Message) => Message,
+	requestAll: (model: Model, mode: Frame.RequestMode) => PageReturn<Model, Message>,
+): PageReturn<Model, Message> => {
+	const resolve = (): PageReturn<Model, Message> => ({ model: next, commands: [resolveFrame(next.frame, scope, wrap)] })
+	return routeWindowStep(previous, scope.search, {
+		resolve,
+		requestAll: (mode) => (next.frame.window === null ? resolve() : requestAll(next, mode)),
+	})
+}

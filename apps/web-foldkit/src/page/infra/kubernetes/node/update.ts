@@ -7,7 +7,7 @@ import { requestKey } from "../../../../data/request-key"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import * as Frame from "../../kit/frame"
-import { liftFrame, resolveFrame } from "../../kit/frame-step"
+import { liftFrame, resolveFrame, routeFrame } from "../../kit/frame-step"
 import { applySteps, keyed, seriesSteps } from "../../kit/requests"
 import { FetchPods, FetchSeries, FetchSummary, type SeriesInput } from "./message"
 
@@ -118,7 +118,7 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 	const href = (search: Search) => hrefOf(AppRoute.InfraKubernetesNode({ nodeName: model.nodeName, search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return { model: next, commands: [resolveFrame(next.frame, scopeOf(next, context), toFrame)] }
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
