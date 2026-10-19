@@ -482,6 +482,26 @@ describe("VercelIntegrationService", () => {
 		)
 	})
 
+	it.effect("all picked projects deleted on Vercel empties the selection and writes no drain", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect({ projectIds: ["prj_gone"] })
+				for (const drain of fake.drains.values()) drain.body = { ...drain.body, projectIds: [] }
+				fake.drains.delete("drn_2")
+				yield* TestClock.adjust("61 minutes")
+				yield* poll()
+				yield* poll()
+				assert.deepStrictEqual((yield* status()).projectIds, [])
+				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 0)
+				assert.strictEqual(callsTo(fake, "POST", "/v1/drains").length, 2)
+			}),
+		)
+	})
+
 	it.effect("a poll re-creates a drain that was deleted on Vercel", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFake()

@@ -48,7 +48,7 @@ A lower sampling rate lowers both charges. Forwarding only the projects you need
 
 Each log is stored with the project name as `service.name` and `cloud.provider` set to `vercel`, plus the project id, deployment id, environment and branch as resource attributes. Vercel's `level` maps to the log severity: `info` to INFO, `warning` to WARN, `error` to ERROR and `fatal` to FATAL.
 
-Request logs carry `http.request.method`, `url.path`, `http.response.status_code`, `user_agent.original` and `vercel.cache` (`HIT`, `MISS`, `STALE` and so on). Every log carries `vercel.source` (`build`, `edge`, `lambda`, `static`, `external`, `firewall` or `redirect`) and, where Vercel sends them, the request id, entrypoint, execution region and trace id. A log with a trace id links to its trace.
+Request logs carry `http.request.method`, `url.path` (and `url.query` when the request has one), `http.response.status_code`, `user_agent.original` and `vercel.cache` (`HIT`, `MISS`, `STALE` and so on). Every log carries `vercel.source` (`build`, `edge`, `lambda`, `static`, `external`, `firewall` or `redirect`) and, where Vercel sends them, the request id, entrypoint, execution region and trace id. A log with a trace id links to its trace.
 
 ### Traces
 

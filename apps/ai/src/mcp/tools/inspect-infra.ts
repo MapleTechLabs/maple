@@ -77,6 +77,9 @@ const vercelInventoryDetails = (orgId: OrgId, projectId: string | undefined) =>
 					]
 					return Object.fromEntries(fields.flatMap(([k, v]) => (v === undefined ? [] : [[k, v]])))
 				}),
+				Effect.tapError((error) =>
+					Effect.logWarning("inspect_infra could not read the Vercel inventory", error.message),
+				),
 				Effect.orElseSucceed(() => ({})),
 			)
 

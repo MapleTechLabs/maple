@@ -82,16 +82,26 @@ const DRAIN_LABEL = {
 	unknown: { label: "Not checked yet", tone: "neutral" },
 } satisfies Record<VercelDrainStatus["status"], { label: string; tone: "ok" | "warn" | "crit" | "neutral" }>
 
-/** The warehouse's last 24 hours for the card; `null` while loading. */
+/** The warehouse's last 24 hours for the card; `null` while loading, `"failed"` when the read failed. */
 export interface VercelUsage {
 	readonly projects: ReadonlyArray<VercelInfraProject> | null | "failed"
-	readonly buckets: ReadonlyArray<VercelInfraRequestBucket> | null
-	readonly gateway: VercelAiGatewayResponse | null
+	readonly buckets: ReadonlyArray<VercelInfraRequestBucket> | null | "failed"
+	readonly gateway: VercelAiGatewayResponse | null | "failed"
+	/** The first failed read's cause, `null` when none failed. */
+	readonly error: unknown
+	/** Re-runs the reads. */
+	readonly retry: () => void
 }
 
 const projectsAtom = vercelProjectsResultAtom({ data: DAY })
 const timeseriesAtom = vercelRequestTimeseriesResultAtom({ data: DAY_HOURLY })
 const gatewayAtom = vercelAiGatewayResultAtom({ data: DAY_HOURLY })
+
+const readOf = <A, B>(result: AsyncResult.AsyncResult<A, unknown>, value: (a: A) => B) =>
+	Result.isSuccess(result) ? value(result.value) : Result.isFailure(result) ? ("failed" as const) : null
+
+const causeOf = (result: AsyncResult.AsyncResult<unknown, unknown>) =>
+	Result.isFailure(result) ? result.cause : null
 
 /** While `settling`, re-reads on the status's interval, so first deliveries fill the band too. */
 function useVercelUsage(settling: boolean): VercelUsage {
@@ -101,22 +111,18 @@ function useVercelUsage(settling: boolean): VercelUsage {
 	const refreshProjects = useAtomRefresh(projectsAtom)
 	const refreshTimeseries = useAtomRefresh(timeseriesAtom)
 	const refreshGateway = useAtomRefresh(gatewayAtom)
-	useIntervalRefresh(
-		() => {
-			refreshProjects()
-			refreshTimeseries()
-			refreshGateway()
-		},
-		{ intervalMs: SETTLING_REFRESH_MS, enabled: settling },
-	)
+	const retry = () => {
+		refreshProjects()
+		refreshTimeseries()
+		refreshGateway()
+	}
+	useIntervalRefresh(retry, { intervalMs: SETTLING_REFRESH_MS, enabled: settling })
 	return {
-		projects: Result.isSuccess(projectsResult)
-			? projectsResult.value.projects
-			: Result.isFailure(projectsResult)
-				? "failed"
-				: null,
-		buckets: Result.isSuccess(timeseriesResult) ? timeseriesResult.value.buckets : null,
-		gateway: Result.isSuccess(gatewayResult) ? gatewayResult.value : null,
+		projects: readOf(projectsResult, (response) => response.projects),
+		buckets: readOf(timeseriesResult, (response) => response.buckets),
+		gateway: readOf(gatewayResult, (response) => response),
+		error: causeOf(projectsResult) ?? causeOf(timeseriesResult) ?? causeOf(gatewayResult),
+		retry,
 	}
 }
 
@@ -270,12 +276,19 @@ function IssueAlert({
 
 /** The 24h readout: traffic, failures and AI Gateway spend. */
 function VercelQuickMetrics({ status, usage }: { status: VercelIntegrationStatus; usage: VercelUsage }) {
-	// The band is a readout on top of the status: a failed read hides it rather than erroring.
-	if (usage.projects === "failed") return null
-	if (usage.projects === null) return <StatRailLoading count={3} columns={3} />
+	const { projects: rows, buckets, gateway } = usage
+	if (rows === "failed" || buckets === "failed" || gateway === "failed") {
+		return (
+			<ErrorState
+				error={usage.error}
+				title="Failed to load the last 24 hours"
+				onRetry={usage.retry}
+				variant="row"
+			/>
+		)
+	}
+	if (rows === null) return <StatRailLoading count={3} columns={3} />
 
-	const rows = usage.projects
-	const { buckets, gateway } = usage
 	const requests = rows.reduce((sum, row) => sum + row.requests, 0)
 	const failed = rows.reduce((sum, row) => sum + row.requests5xx, 0)
 	const errorLogs = rows.reduce((sum, row) => sum + row.errorLogs, 0)
@@ -347,21 +360,31 @@ function ProductionCell({ project }: { project: VercelProjectStatus }) {
 
 function VercelProjects({
 	status,
-	usage,
+	usage: { projects: rows, error, retry },
 }: {
 	status: VercelIntegrationStatus
-	usage: ReadonlyMap<string, VercelInfraProject> | null
+	usage: VercelUsage
 }) {
+	const byProject = Array.isArray(rows) ? new Map(rows.map((row) => [row.projectId, row])) : null
 	// Forwarded first, then by traffic: the projects Maple watches lead.
 	const projects = status.projects.toSorted(
 		(a, b) =>
 			Number(b.forwarded) - Number(a.forwarded) ||
-			(usage?.get(b.id)?.requests ?? 0) - (usage?.get(a.id)?.requests ?? 0) ||
+			(byProject?.get(b.id)?.requests ?? 0) - (byProject?.get(a.id)?.requests ?? 0) ||
 			a.name.localeCompare(b.name),
 	)
 	return (
 		<Panel className="min-w-0 flex-1 overflow-hidden">
 			<PanelHeader title={`Projects (${status.projects.length})`} />
+			{rows === "failed" ? (
+				<ErrorState
+					error={error}
+					title="Failed to load the request counts"
+					onRetry={retry}
+					variant="inline"
+					className="border-b px-4 py-3"
+				/>
+			) : null}
 			<DataTable.Root ariaLabel="Vercel projects" className="border-y-0" maxHeight={420}>
 				<DataTable.Head>
 					<ColumnHead label="Project" width="w-0 min-w-44 flex-1" />
@@ -375,7 +398,7 @@ function VercelProjects({
 					</DataTable.Empty>
 				) : (
 					projects.map((project) => {
-						const row = usage?.get(project.id)
+						const row = byProject?.get(project.id)
 						return (
 							<Link
 								key={project.id}
@@ -400,7 +423,9 @@ function VercelProjects({
 									<ProductionCell project={project} />
 								</span>
 								<span className="w-28 shrink-0 text-right tabular-nums">
-									{usage === null ? (
+									{rows === "failed" ? (
+										<span className="text-muted-foreground">—</span>
+									) : byProject === null ? (
 										<Skeleton className="ml-auto h-4 w-12" />
 									) : (
 										formatNumber(row?.requests ?? 0)
@@ -414,7 +439,7 @@ function VercelProjects({
 											: "text-muted-foreground",
 									)}
 								>
-									{usage === null ? "" : formatNumber(row?.requests5xx ?? 0)}
+									{byProject === null ? "" : formatNumber(row?.requests5xx ?? 0)}
 								</span>
 							</Link>
 						)
@@ -554,9 +579,6 @@ export function VercelConnectedView({
 	isAdmin: boolean
 	onToken: () => void
 }) {
-	const byProject = Array.isArray(usage.projects)
-		? new Map(usage.projects.map((row) => [row.projectId, row]))
-		: null
 	return (
 		<div className="flex flex-col gap-4">
 			{vercelIssues(status).map((issue) => (
@@ -564,7 +586,7 @@ export function VercelConnectedView({
 			))}
 			<VercelQuickMetrics status={status} usage={usage} />
 			<div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-				<VercelProjects status={status} usage={byProject} />
+				<VercelProjects status={status} usage={usage} />
 				<VercelDrains status={status} />
 			</div>
 			{isAdmin ? null : (

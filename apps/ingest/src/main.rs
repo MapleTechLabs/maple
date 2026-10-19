@@ -5672,6 +5672,16 @@ fn decode_vercel_logs(
     }
     let mut request = vercel_logs::build_logs_request(&parsed.entries, current_time_unix_nano());
     enrich_logs_request(&mut request, resolved_key);
+    // The drain's source replaces the OTLP gateway's that enrichment stamps.
+    for resource_log in &mut request.resource_logs {
+        if let Some(resource) = &mut resource_log.resource {
+            upsert_string_attribute(
+                &mut resource.attributes,
+                "maple_ingest_source",
+                vercel_logs::INGEST_SOURCE,
+            );
+        }
+    }
     Ok(DecodedPayload::Logs(request))
 }
 
@@ -7974,6 +7984,36 @@ mod tests {
             self_managed: false,
             clickhouse_ready: false,
         }
+    }
+
+    #[test]
+    fn vercel_logs_keep_the_drain_source_through_enrichment() {
+        let Ok(DecodedPayload::Logs(request)) =
+            decode_vercel_logs(br#"{"projectId":"prj_1"}"#, &test_key())
+        else {
+            panic!("a drain delivery decodes to logs");
+        };
+        let attributes = &request.resource_logs[0]
+            .resource
+            .as_ref()
+            .unwrap()
+            .attributes;
+        let value = |key: &str| {
+            attributes
+                .iter()
+                .find(|attribute| attribute.key == key)
+                .and_then(|attribute| attribute.value.clone()?.value)
+        };
+        assert_eq!(
+            value("maple_ingest_source"),
+            Some(any_value::Value::StringValue(
+                vercel_logs::INGEST_SOURCE.to_owned()
+            ))
+        );
+        assert_eq!(
+            value("maple_org_id"),
+            Some(any_value::Value::StringValue("org_real".to_owned()))
+        );
     }
 
     fn decode_json(signal: Signal, payload: &str) -> Result<DecodedPayload, ApiError> {

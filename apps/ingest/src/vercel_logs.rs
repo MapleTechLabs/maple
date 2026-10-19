@@ -11,10 +11,13 @@ use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, Instrumentatio
 use opentelemetry_proto::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
 use opentelemetry_proto::tonic::resource::v1::Resource;
 use serde_json::{Map as JsonMap, Value as JsonValue};
+use std::collections::hash_map::{Entry, HashMap};
 
+/// The `maple_ingest_source` the gateway stamps on a drain's resources.
 pub const INGEST_SOURCE: &str = "vercel_log_drain";
 
 type JsonObject = JsonMap<String, JsonValue>;
+type ResourceAttributes = Vec<(&'static str, String)>;
 
 /// Top-level string fields copied verbatim.
 const LOG_ATTRIBUTES: &[(&str, &str)] = &[
@@ -35,7 +38,6 @@ const LOG_ATTRIBUTES: &[(&str, &str)] = &[
 const PROXY_ATTRIBUTES: &[(&str, &str)] = &[
     ("method", "http.request.method"),
     ("host", "server.address"),
-    ("path", "url.path"),
     ("scheme", "url.scheme"),
     ("region", "vercel.proxy.region"),
     ("clientIp", "client.address"),
@@ -106,18 +108,20 @@ pub fn parse(payload: &[u8]) -> Result<Parsed, serde_json::Error> {
 /// Every entry with a `projectId` (which every Vercel log has) as a record,
 /// grouped under its resource.
 pub fn build_logs_request(entries: &[JsonObject], now_unix_nano: u64) -> ExportLogsServiceRequest {
-    let mut groups: Vec<(Vec<KeyValue>, Vec<LogRecord>)> = Vec::new();
+    // Groups in first-seen order, found by resource through `index`.
+    let mut groups: Vec<(ResourceAttributes, Vec<LogRecord>)> = Vec::new();
+    let mut index: HashMap<ResourceAttributes, usize> = HashMap::new();
     for entry in entries {
         let Some(resource) = resource_attributes(entry) else {
             continue;
         };
         let record = log_record(entry, now_unix_nano);
-        match groups
-            .iter_mut()
-            .find(|(attributes, _)| *attributes == resource)
-        {
-            Some((_, records)) => records.push(record),
-            None => groups.push((resource, vec![record])),
+        match index.entry(resource) {
+            Entry::Occupied(group) => groups[*group.get()].1.push(record),
+            Entry::Vacant(group) => {
+                groups.push((group.key().clone(), vec![record]));
+                group.insert(groups.len() - 1);
+            }
         }
     }
     ExportLogsServiceRequest {
@@ -125,7 +129,10 @@ pub fn build_logs_request(entries: &[JsonObject], now_unix_nano: u64) -> ExportL
             .into_iter()
             .map(|(attributes, log_records)| ResourceLogs {
                 resource: Some(Resource {
-                    attributes,
+                    attributes: attributes
+                        .iter()
+                        .map(|(key, value)| attribute(key, value))
+                        .collect(),
                     ..Default::default()
                 }),
                 scope_logs: vec![ScopeLogs {
@@ -142,29 +149,30 @@ pub fn build_logs_request(entries: &[JsonObject], now_unix_nano: u64) -> ExportL
     }
 }
 
-fn resource_attributes(entry: &JsonObject) -> Option<Vec<KeyValue>> {
+fn resource_attributes(entry: &JsonObject) -> Option<ResourceAttributes> {
     let project_id = text(entry, "projectId")?;
     let project_name = text(entry, "projectName");
     let service_name = project_name.map_or_else(|| format!("vercel/{project_id}"), str::to_owned);
-    let mut attributes = vec![
-        attribute("service.name", &service_name),
-        attribute("cloud.provider", "vercel"),
-        attribute("cloud.platform", "vercel"),
-        attribute("vercel.project.id", project_id),
-        attribute("maple.ingest.source", INGEST_SOURCE),
+    let optional = [
+        ("vercel.project.name", project_name),
+        ("vercel.deployment.id", text(entry, "deploymentId")),
+        (
+            "deployment.environment.name",
+            text(entry, "customEnvironment").or_else(|| text(entry, "environment")),
+        ),
+        ("vcs.ref.head.name", text(entry, "branch")),
     ];
-    push(&mut attributes, "vercel.project.name", project_name);
-    push(
-        &mut attributes,
-        "vercel.deployment.id",
-        text(entry, "deploymentId"),
+    let mut attributes = vec![
+        ("service.name", service_name),
+        ("cloud.provider", "vercel".to_owned()),
+        ("cloud.platform", "vercel".to_owned()),
+        ("vercel.project.id", project_id.to_owned()),
+    ];
+    attributes.extend(
+        optional
+            .into_iter()
+            .filter_map(|(key, value)| Some((key, value?.to_owned()))),
     );
-    push(
-        &mut attributes,
-        "deployment.environment.name",
-        text(entry, "customEnvironment").or_else(|| text(entry, "environment")),
-    );
-    push(&mut attributes, "vcs.ref.head.name", text(entry, "branch"));
     Some(attributes)
 }
 
@@ -215,6 +223,20 @@ fn log_record(entry: &JsonObject, now_unix_nano: u64) -> LogRecord {
     if let Some(proxy) = proxy {
         for (field, key) in PROXY_ATTRIBUTES {
             push(&mut attributes, key, text(proxy, field));
+        }
+        // The proxy's `path` is the request target, query string included.
+        if let Some(target) = text(proxy, "path") {
+            let (path, query) = target.split_once('?').unwrap_or((target, ""));
+            push(
+                &mut attributes,
+                "url.path",
+                Some(path).filter(|path| !path.is_empty()),
+            );
+            push(
+                &mut attributes,
+                "url.query",
+                Some(query).filter(|query| !query.is_empty()),
+            );
         }
         let user_agent = proxy
             .get("userAgent")
@@ -382,7 +404,6 @@ mod tests {
             resource["vercel.deployment.id"],
             string("dpl_233NRGRjVZX1caZrXWtz5g1TAksD")
         );
-        assert_eq!(resource["maple.ingest.source"], string("vercel_log_drain"));
         assert!(!resource.contains_key("deployment.environment.name"));
 
         assert_eq!(record.time_unix_nano, 1_573_817_187_330_000_000);
@@ -434,7 +455,8 @@ mod tests {
         let attributes = values(&record.attributes);
         assert_eq!(attributes["http.request.method"], string("GET"));
         assert_eq!(attributes["server.address"], string("my-app.vercel.app"));
-        assert_eq!(attributes["url.path"], string("/api/users?page=1"));
+        assert_eq!(attributes["url.path"], string("/api/users"));
+        assert_eq!(attributes["url.query"], string("page=1"));
         assert_eq!(attributes["url.scheme"], string("https"));
         assert_eq!(attributes["user_agent.original"], string("Mozilla/5.0..."));
         assert_eq!(attributes["vercel.proxy.region"], string("sfo1"));
@@ -455,6 +477,30 @@ mod tests {
         assert_eq!(attributes["vercel.entrypoint"], string("api/index.js"));
         assert_eq!(attributes["vercel.path"], string("/api/users"));
         assert_eq!(attributes["vercel.execution_region"], string("sfo1"));
+    }
+
+    #[test]
+    fn proxy_path_splits_into_path_and_query() {
+        for (target, path, query) in [
+            ("/docs", Some("/docs"), None),
+            ("/docs?", Some("/docs"), None),
+            ("/?a=1&b=2", Some("/"), Some("a=1&b=2")),
+        ] {
+            let request =
+                build(&json!({ "projectId": "prj_1", "proxy": { "path": target } }).to_string());
+            let (_, record) = only_record(&request);
+            let attributes = values(&record.attributes);
+            assert_eq!(
+                attributes.get("url.path"),
+                path.map(string).as_ref(),
+                "{target}"
+            );
+            assert_eq!(
+                attributes.get("url.query"),
+                query.map(string).as_ref(),
+                "{target}"
+            );
+        }
     }
 
     #[test]

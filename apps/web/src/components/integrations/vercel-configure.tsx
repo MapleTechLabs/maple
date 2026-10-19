@@ -588,16 +588,16 @@ function SettingsFlow({ status, onClose }: { status: VercelIntegrationStatus; on
 	const stops = stoppedByDraft(saved, draft, projectNames)
 	const problem = draftProblem(draft)
 
+	// Resolves either way, so the confirm closes and a failure shows in the alert below.
 	const [apply, applying] = useAsyncAction(async () => {
 		setError(null)
 		const result = await save({ payload: new VercelSettingsRequest(patch), reactivityKeys: REACTIVITY })
 		if (Exit.isFailure(result)) {
 			setError(errorMessage(result, "Failed to update the drains."))
-			return false
+			return
 		}
 		toastManager.add({ type: "success", title: "Drains updated on Vercel" })
 		onClose()
-		return true
 	})
 
 	return (

@@ -475,8 +475,11 @@ export class VercelIntegrationService extends Context.Service<
 			const extraError = yield* deleteEach(token, owner.teamId, extras)
 			// Vercel may redact headers in the listing, so the stored key hash says whether they are current.
 			const rekey = owner.drainKeyHash !== ingestKey.hash
-			const write =
-				kept === undefined
+			// Every picked project was deleted on Vercel: there is nothing to forward, and no valid body.
+			const nothingPicked = forwarding.projectScope === "some" && forwarding.projectIds.length === 0
+			const write = nothingPicked
+				? undefined
+				: kept === undefined
 					? createDrain(
 							httpClient,
 							token,
@@ -1137,8 +1140,7 @@ export class VercelIntegrationService extends Context.Service<
 						// Vercel drops a deleted project from the drain; forget it too, or the drain reads as drifted forever.
 						const listed = new Set(projects.success.projects.map((project) => project.id))
 						const kept = claimed.projectIds.filter((id) => listed.has(id))
-						const prune =
-							projects.success.complete && kept.length > 0 && kept.length < claimed.projectIds.length
+						const prune = projects.success.complete && kept.length < claimed.projectIds.length
 						if (prune) forwarding = { ...claimed, projectIds: kept }
 						yield* write(prune ? { discoveredAt: now, projectIds: kept } : { discoveredAt: now })
 					} else if (yield* stopFor(projects.failure)) {

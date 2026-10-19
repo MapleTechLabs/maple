@@ -24,6 +24,7 @@ import {
 	type VercelUsage,
 } from "@/components/integrations/vercel-integration-card"
 import { DEFAULT_VERCEL_DRAFT, type VercelDraft } from "@/components/integrations/vercel-model"
+import { VERCEL_READ_FAILURE } from "./vercel-infra-fixtures"
 
 const NOW = Date.now()
 const minutesAgo = (minutes: number) => NOW - minutes * 60_000
@@ -157,6 +158,8 @@ const usage = (gatewayRequests: number): VercelUsage => {
 		],
 		buckets: BUCKETS,
 		gateway,
+		error: null,
+		retry: () => undefined,
 	}
 }
 
@@ -192,7 +195,18 @@ const SCENARIOS: ReadonlyArray<{ title: string; status: VercelIntegrationStatus;
 			projectIds: [],
 			samplingRate: 1,
 		}),
-		usage: { projects: [], buckets: [], gateway: null },
+		usage: { projects: [], buckets: [], gateway: null, error: null, retry: () => undefined },
+	},
+	{
+		title: "Usage reads failed",
+		status: status(),
+		usage: {
+			projects: "failed",
+			buckets: "failed",
+			gateway: "failed",
+			error: VERCEL_READ_FAILURE,
+			retry: () => undefined,
+		},
 	},
 ]
 
