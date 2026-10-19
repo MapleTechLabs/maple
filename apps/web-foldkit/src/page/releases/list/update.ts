@@ -12,6 +12,7 @@ import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReleasesReloadSpin,
@@ -132,10 +133,18 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Releases({ search }))
 
+/** The releases read, then the table's reads that follow it. */
+const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return =>
+	chain(requestReleases(model, context, window, mode), (next) => followTable(next, context, mode))
+
 export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return { model: next, commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	return routeWindowStep(model.search, route.search, {
+		resolve,
+		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+	})
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
@@ -165,8 +174,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				commands: Command.mapMessages(next.commands ?? [], (overlay) => Message.GotOverlaysMessage({ message: overlay })),
 			}
 		},
-		CompletedResolveWindow: ({ window, nowMs, mode }) =>
-			chain(requestReleases({ ...model, nowMs }, context, window, mode), (next) => followTable(next, context, mode)),
+		CompletedResolveWindow: ({ window, nowMs, mode }) => requestAll({ ...model, nowMs }, context, window, mode),
 		CompletedFetchReleases: ({ key, result }) =>
 			followTable({ ...model, releases: Keyed.accept(model.releases, key, result) }, context, "Load"),
 		CompletedFetchIssues: ({ key, result }) => ({ model: { ...model, issues: Keyed.accept(model.issues, key, result) } }),

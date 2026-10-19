@@ -6,7 +6,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message } from "./message"
 import { ReleasesData, type Model } from "./model"
-import { contextChanged, init, update } from "./update"
+import { contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
@@ -68,6 +68,15 @@ describe("releases list", () => {
 			Message.CompletedFetchReleases({ key: resolved.releases.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
 		).model
 		scene({ update: pageUpdate, view }, given(failed), expectView(text("Failed to load releases")).toExist())
+	})
+
+	test("after a Reload an environment filter reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(loaded(), Message.ClickedReload()).model
+		const filtered = routeChanged(reloaded, { search: { environments: ["production"] } }, context)
+		expect(names(filtered.commands)).toEqual(["FetchReleases"])
+		expect(filtered.commands?.[0]?.args).toMatchObject({ input: { startTime: window.startTime, environments: ["production"] } })
+		const moved = routeChanged(filtered.model, { search: { environments: ["production"], timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveReleasesWindow", "Refresh"]])
 	})
 
 	test("health is single-select through the URL", () => {

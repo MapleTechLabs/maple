@@ -9,7 +9,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { ReleasesData } from "../list/model"
 import { Message } from "./message"
 import { type Model, ReleaseDetail } from "./model"
-import { contextChanged, init, update } from "./update"
+import { contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const context: PageContext = {
@@ -170,6 +170,15 @@ describe("release detail", () => {
 			expectView(text("Failed to load release")).toExist(),
 		)
 		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toEqual(["FetchReleaseDetail"])
+	})
+
+	test("after a Reload picking a service reads its bundle under the kept window; a new preset re-resolves", () => {
+		const reloaded = pageUpdate(withReleases().model, Message.ClickedReload()).model
+		const picked = routeChanged(reloaded, { ...route(), search: { service: "payment-svc" } }, context)
+		expect(names(picked.commands)).not.toContain("ResolveReleaseWindow")
+		expect(names(picked.commands)).toContain("FetchReleaseDetail")
+		const moved = routeChanged(picked.model, { ...route(), search: { service: "payment-svc", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveReleaseWindow", "Refresh"]])
 	})
 
 	test("Reload re-resolves the window unsnapped and spins", () => {

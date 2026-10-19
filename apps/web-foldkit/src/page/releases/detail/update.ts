@@ -13,6 +13,7 @@ import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { commitRangesKey, isResolvableSha } from "../kit"
 import { DEFAULT_PRESET } from "../list/derive"
@@ -177,14 +178,19 @@ export const init = (route: ReleaseRoute, context: PageContext): Return => {
 const searchHref = (commitSha: string, search: Model["search"]) =>
 	hrefOf(AppRoute.Release({ commitSha, search }))
 
+/** The releases read, then the deploy's reads that follow it. */
+const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return =>
+	chain(requestReleases(model, context, window, mode), (next) => followDeploy(next, context, mode))
+
 export const routeChanged = (model: Model, route: ReleaseRoute, context: PageContext): Return => {
 	if (searchHref(model.commitSha, model.search) === searchHref(route.commitSha, route.search))
 		return { model }
 	const next = { ...model, search: route.search }
-	return {
-		model: next,
-		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-	}
+	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	return routeWindowStep(model.search, route.search, {
+		resolve,
+		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+	})
 }
 
 /** A pin or zone change re-resolves the window: the zone moves it, the pin re-keys the reads. */
@@ -210,10 +216,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				commands: Command.mapMessages(next.commands ?? [], (overlay) => Message.GotOverlaysMessage({ message: overlay })),
 			}
 		},
-		CompletedResolveWindow: ({ window, nowMs, mode }) =>
-			chain(requestReleases({ ...model, nowMs }, context, window, mode), (next) =>
-				followDeploy(next, context, mode),
-			),
+		CompletedResolveWindow: ({ window, nowMs, mode }) => requestAll({ ...model, nowMs }, context, window, mode),
 		CompletedFetchCommit: ({ key, result }) => ({
 			model: { ...model, commit: Keyed.accept(model.commit, key, result) },
 		}),
