@@ -437,6 +437,15 @@ describe("GcpLiveMetricsService.queryRange", () => {
 					calls.promql.slice(20).map((call) => call.project),
 					["acme-prod", "acme-team-10"],
 				)
+
+				// A project reached only through a metrics scope cannot narrow the read.
+				const outside = yield* Effect.flip(range("up", { projects: ["acme-monitored"] }))
+				assert.instanceOf(outside, GcpLiveQueryRejectedError)
+				assert.include(
+					outside.message,
+					"acme-monitored, which no connection reads as its own project",
+				)
+				assert.lengthOf(calls.promql, 22)
 			}),
 		)
 	})
@@ -636,6 +645,72 @@ describe("GcpLiveMetricsService.queryRange", () => {
 						{ service: "checkout", metrics_scope: "acme-data" },
 						{ service: "checkout", project_id: "acme-prod" },
 					],
+				)
+			}),
+		)
+	})
+
+	it.effect("reads a target whose scope is only partly covered by a wider one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			calls,
+			{
+				// acme-data's scope holds acme-shop, but acme-shop's own holds acme-orders too.
+				scopes: { "acme-data": ["acme-shop", "acme-logs"], "acme-shop": ["acme-orders"] },
+				promql: oneSeries,
+			},
+			Effect.gen(function* () {
+				yield* insertConnectors(testDb)
+				yield* range("up")
+				assert.sameMembers(
+					calls.promql.map((call) => call.project),
+					["acme-data", "acme-shop", "acme-prod"],
+				)
+			}),
+		)
+	})
+
+	it.effect("fails a folder whose projects are not listed yet, not answering it as empty", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			calls,
+			{ promql: oneSeries },
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, FOLDER_CONNECTOR, { projectId: "acme-host", folder: "123" })
+				const empty = yield* Effect.flip(range("up"))
+				assert.instanceOf(empty, GcpLiveQueryUnavailableError)
+				assert.include(
+					empty.message,
+					"folders/123: Maple has not listed this connection's projects yet. They appear after its first resource sync.",
+				)
+
+				yield* Effect.promise(() =>
+					executeSql(testDb, "UPDATE gcp_connectors SET last_resources_error = $1 WHERE id = $2", [
+						"Cloud Asset Viewer is missing.",
+						FOLDER_CONNECTOR,
+					]),
+				)
+				const denied = yield* Effect.flip(range("up"))
+				assert.instanceOf(denied, GcpLiveQueryUnavailableError)
+				assert.include(
+					denied.message,
+					"folders/123: Maple could not list this connection's projects: Cloud Asset Viewer is missing.",
+				)
+
+				// Another connection still answers, unless every project must.
+				yield* insertConnector(testDb, PROJECT_CONNECTOR)
+				const series = yield* range("up")
+				assert.deepStrictEqual(
+					series.map((one) => one.labels.project_id),
+					["acme-prod"],
+				)
+				assert.instanceOf(
+					yield* Effect.flip(range("up", { requireComplete: true })),
+					GcpLiveQueryUnavailableError,
 				)
 			}),
 		)
@@ -981,7 +1056,7 @@ describe("GcpLiveMetricsService.listMetrics", () => {
 		)
 	})
 
-	it.effect("reads past the first 20 projects when a project_id filter names one", () => {
+	it.effect("lists the first 20 projects for discovery, and refuses more for a query's lookup", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
 		const many = Array.from({ length: 25 }, (_, index) => [`acme-team-${index + 10}`, "ACTIVE"] as const)
@@ -995,12 +1070,18 @@ describe("GcpLiveMetricsService.listMetrics", () => {
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, FOLDER_CONNECTOR, { projectId: "acme-host", folder: "123" })
 				yield* insertInventory(testDb, FOLDER_CONNECTOR, many)
-				// Without a filter the listing reads the first 20 projects only.
+				// The metrics list reads the first 20 projects only.
 				assert.deepStrictEqual(
-					yield* GcpLiveMetricsService.use((gcp) => gcp.listMetrics(TENANT, {})),
+					yield* GcpLiveMetricsService.use((gcp) => gcp.listMetrics(TENANT, { discovery: true })),
 					[],
 				)
 				assert.lengthOf(calls.descriptors, 20)
+				// A query's lookup selects like the query: it would miss acme-team-34, so it is refused.
+				const refused = yield* Effect.flip(
+					GcpLiveMetricsService.use((gcp) => gcp.listMetrics(TENANT, {})),
+				)
+				assert.instanceOf(refused, GcpLiveQueryRejectedError)
+				assert.strictEqual(refused.reason, "too_many_projects")
 				const named = yield* GcpLiveMetricsService.use((gcp) =>
 					gcp.listMetrics(TENANT, { projects: ["acme-team-34"] }),
 				)

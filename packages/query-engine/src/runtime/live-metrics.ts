@@ -5,13 +5,15 @@ import type { QueryTenant } from "./query-engine"
 
 /**
  * Which projects a read covers. `projects` narrows it to those (from a `project_id` filter) when
- * the org's connections reach each directly; otherwise every project is read. `requireComplete`
- * fails the read when any project or connection fails, instead of answering with the rest: an
- * alert must not resolve on a project it could not read.
+ * the org's connections reach each directly; otherwise every project is read, and past 20 the
+ * read is refused, except for `discovery` (the metrics list), which reads the first 20.
+ * `requireComplete` fails the read when any project or connection fails, instead of answering
+ * with the rest: an alert must not resolve on a project it could not read.
  */
 export interface GcpReadScope {
 	readonly projects?: ReadonlyArray<string> | undefined
 	readonly requireComplete?: boolean | undefined
+	readonly discovery?: boolean | undefined
 }
 
 /**

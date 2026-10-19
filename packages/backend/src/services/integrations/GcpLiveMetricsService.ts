@@ -53,7 +53,10 @@ const API_ERROR = "@maple/api/integrations/GcpApiError"
 
 const isProjectId = Schema.is(GcpProjectId)
 
-type Connector = Pick<GcpConnectorRow, "id" | "scopeType" | "scopeId" | "projectId" | "lastMetricsReceivedAt">
+type Connector = Pick<
+	GcpConnectorRow,
+	"id" | "scopeType" | "scopeId" | "projectId" | "lastMetricsReceivedAt" | "lastResourcesError"
+>
 type Port = GcpLiveMetrics<QueryTenant>
 interface Target {
 	readonly projectId: GcpProjectId
@@ -62,23 +65,34 @@ interface Target {
 
 const scopeName = (connector: Connector) => `${connector.scopeType}s/${connector.scopeId}`
 
-/** A connection or project Google did not answer for, and why. */
+/**
+ * A connection or project that could not be read. `transient`: Google did not answer.
+ * `refusal`: Google would not finish the query (422 `execution`). `setup`: anything a retry
+ * does not fix (a missing role, API or billing account, projects not listed yet).
+ */
 interface Failure {
 	readonly scope: string
 	readonly message: string
-	readonly error: GcpApiError
+	readonly cause: "transient" | "refusal" | "setup"
 }
+
+const causeOf = (error: GcpApiError): Failure["cause"] =>
+	error.kind === "rate_limited" || error.kind === "upstream"
+		? "transient"
+		: error.kind === "invalid" && error.reason === "QUERY_EXECUTION"
+			? "refusal"
+			: "setup"
 
 /** A `catchTag` handler that records a Google failure and goes on without the answer. */
 const recordFailure =
 	(failures: Array<Failure>, scope: string, connector: Connector) => (error: GcpApiError) => {
-		failures.push({ scope, message: describeGcpApiError(error, connector, "live"), error })
+		failures.push({
+			scope,
+			message: describeGcpApiError(error, connector, "live"),
+			cause: causeOf(error),
+		})
 		return Effect.succeed(undefined)
 	}
-
-const isTransient = (error: GcpApiError) => error.kind === "rate_limited" || error.kind === "upstream"
-/** Google refused to finish the query itself (422 `execution`). */
-const isQueryRefusal = (error: GcpApiError) => error.kind === "invalid" && error.reason === "QUERY_EXECUTION"
 
 /**
  * A read that failed. Worth a retry only when Google did not answer; a query Google would not
@@ -87,13 +101,13 @@ const isQueryRefusal = (error: GcpApiError) => error.kind === "invalid" && error
  */
 const readFailed = (failures: ReadonlyArray<Failure>) => {
 	const text = `Google Cloud could not be read. ${failures.map((failure) => `${failure.scope}: ${failure.message}`).join(" ")}`
-	if (failures.every((failure) => isTransient(failure.error))) {
+	if (failures.every((failure) => failure.cause === "transient")) {
 		return new GcpLiveQueryFailedError({
 			message: text,
 			failures: failures.map(({ scope, message }) => ({ scope, message })),
 		})
 	}
-	if (failures.every((failure) => isTransient(failure.error) || isQueryRefusal(failure.error))) {
+	if (failures.every((failure) => failure.cause !== "setup")) {
 		return new GcpLiveQueryRejectedError({ message: text, reason: "invalid_query" })
 	}
 	return new GcpLiveQueryUnavailableError({ message: text })
@@ -123,17 +137,52 @@ const mapleSignInFailed = () =>
 		failures: [],
 	})
 
+/** A folder or organization whose inventory sync has found no project yet: nothing to read it by. */
+const unlisted = (connector: Connector): Failure => ({
+	scope: scopeName(connector),
+	message:
+		connector.lastResourcesError === null
+			? "Maple has not listed this connection's projects yet. They appear after its first resource sync."
+			: `Maple could not list this connection's projects: ${connector.lastResourcesError}`,
+	cause: "setup",
+})
+
 /**
- * The targets a read covers: the projects it names when each is a target, else all of them. A
- * project reached only through another's metrics scope is read through that one, and the
- * query's `project_id` matcher keeps it alone.
+ * The targets a read covers: the projects it names when each is a target, else all of them, with
+ * the connections whose projects are not known. A project reached only through another's
+ * metrics scope is read through that one, and the query's `project_id` matcher keeps it alone.
+ * Past `MAX_PROJECTS` a query must name its projects; discovery reads the first ones instead.
  */
-const selectTargets = (targets: ReadonlyArray<Target>, requested: ReadonlyArray<string> | undefined) => {
-	if (requested === undefined) return targets
-	const named = targets.filter((target) => requested.includes(target.projectId))
-	return requested.every((projectId) => named.some((target) => target.projectId === projectId))
-		? named
-		: targets
+const selectTargets = (
+	all: { readonly targets: ReadonlyArray<Target>; readonly unlisted: ReadonlyArray<Failure> },
+	scope: GcpReadScope,
+): Effect.Effect<
+	{ readonly targets: ReadonlyArray<Target>; readonly failures: ReadonlyArray<Failure> },
+	GcpLiveQueryRejectedError
+> => {
+	const requested = scope.projects
+	const known = new Set(all.targets.map((target) => target.projectId))
+	if (requested !== undefined && requested.every((projectId) => known.has(projectId))) {
+		const named = all.targets.filter((target) => requested.includes(target.projectId))
+		return Effect.succeed({ targets: named, failures: [] })
+	}
+	if (all.targets.length <= MAX_PROJECTS || scope.discovery) {
+		return Effect.succeed({ targets: all.targets.slice(0, MAX_PROJECTS), failures: all.unlisted })
+	}
+	const outside = requested?.filter((projectId) => !known.has(projectId)) ?? []
+	const examples = all.targets
+		.slice(0, 5)
+		.map((target) => target.projectId)
+		.join(", ")
+	return Effect.fail(
+		new GcpLiveQueryRejectedError({
+			message:
+				outside.length > 0
+					? `The project_id filter names ${outside.join(", ")}, which no connection reads as its own project (it is reached through a metrics scope), so Maple cannot narrow the read to it, and the connections reach ${all.targets.length} projects, more than the ${MAX_PROJECTS} one query reads. Filter on the projects whose metrics scopes hold it instead.`
+					: `The Google Cloud connections reach ${all.targets.length} projects, and one query reads at most ${MAX_PROJECTS}. Filter on project_id to choose them, e.g. ${examples}.`,
+			reason: "too_many_projects",
+		}),
+	)
 }
 
 /** Every project's descriptors as one list: a type's resource types and labels are the union. */
@@ -219,12 +268,22 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 				return reader
 			})
 
-			/** Every project the org's metrics-on connections reach, each with the connection that reads it, by id. */
+			/**
+			 * Every project the org's metrics-on connections reach, each with the connection that reads
+			 * it, by id, and the folders and organizations with no project listed.
+			 */
 			const targetsOf = Effect.fnUntraced(function* (orgId: OrgId) {
 				const connectors = yield* dbExecute((db) =>
 					db.run(
 						PG.from(GcpConnectors)
-							.select("id", "scopeType", "scopeId", "projectId", "lastMetricsReceivedAt")
+							.select(
+								"id",
+								"scopeType",
+								"scopeId",
+								"projectId",
+								"lastMetricsReceivedAt",
+								"lastResourcesError",
+							)
 							.where(($) => [$.orgId.eq(orgId), $.appliedMetricsEnabled.eq(true)])
 							.orderBy(($) => [
 								[$.createdAt, "asc"],
@@ -255,6 +314,7 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 							)
 				// Overlapping connections read a project through the oldest.
 				const targets = new Map<string, Target>()
+				const notListed: Array<Failure> = []
 				for (const connector of connectors) {
 					const projectIds =
 						connector.scopeType === "project"
@@ -262,12 +322,16 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 							: inventory
 									.filter((row) => row.connectorId === connector.id)
 									.map((row) => row.projectId)
+					if (projectIds.length === 0) notListed.push(unlisted(connector))
 					for (const projectId of projectIds) {
 						if (isProjectId(projectId) && !targets.has(projectId))
 							targets.set(projectId, { projectId, connector })
 					}
 				}
-				return [...targets.values()].sort((a, b) => a.projectId.localeCompare(b.projectId))
+				return {
+					targets: [...targets.values()].sort((a, b) => a.projectId.localeCompare(b.projectId)),
+					unlisted: notListed,
+				}
 			})
 
 			/** Signs each connection in once, so one that cannot fails once, not once per project. */
@@ -300,20 +364,14 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 				params: GcpPromQlParams,
 			) {
 				const key = yield* signingKey
-				const selected = selectTargets(yield* targetsOf(orgId), options.projects)
-				if (selected.length > MAX_PROJECTS) {
-					const named = selected.slice(0, 5).map((target) => target.projectId)
-					return yield* new GcpLiveQueryRejectedError({
-						message: `The Google Cloud connections reach ${selected.length} projects, and one query reads at most ${MAX_PROJECTS}. Filter on project_id to choose them, e.g. ${named.join(", ")}.`,
-						reason: "too_many_projects",
-					})
-				}
-				yield* Effect.annotateCurrentSpan({ "maple.gcp.project_count": selected.length })
-				const failures: Array<Failure> = []
-				const signedIn = yield* signIn(key, selected, failures)
+				const selected = yield* selectTargets(yield* targetsOf(orgId), options)
+				yield* Effect.annotateCurrentSpan({ "maple.gcp.project_count": selected.targets.length })
+				const failures: Array<Failure> = [...selected.failures]
+				const signedIn = yield* signIn(key, selected.targets, failures)
 
-				// A query on a project reads its whole metrics scope, so a target that another target's
-				// scope holds is answered through that one, not read twice.
+				// A query on a project reads its whole metrics scope, so a target whose whole scope wider
+				// ones already read is answered through them, not read again. Partly covered scopes are
+				// read; the engine drops the series two scopes both return.
 				const scoped = yield* Effect.forEach(
 					signedIn,
 					(target) =>
@@ -343,7 +401,7 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 					// Widest scopes first.
 					.sort((a, b) => b.scope.monitored.length - a.scope.monitored.length)
 					.filter((target) => {
-						if (covered.has(target.scope.number)) return false
+						if (target.scope.monitored.every((number) => covered.has(number))) return false
 						for (const number of target.scope.monitored) covered.add(number)
 						return true
 					})
@@ -438,14 +496,10 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 					options: GcpReadScope,
 				) {
 					const key = yield* signingKey
-					// Discovery has no project picker: past the cap, the first projects speak.
-					const selected = selectTargets(yield* targetsOf(tenant.orgId), options.projects).slice(
-						0,
-						MAX_PROJECTS,
-					)
-					yield* Effect.annotateCurrentSpan({ "maple.gcp.project_count": selected.length })
-					const failures: Array<Failure> = []
-					const signedIn = yield* signIn(key, selected, failures)
+					const selected = yield* selectTargets(yield* targetsOf(tenant.orgId), options)
+					yield* Effect.annotateCurrentSpan({ "maple.gcp.project_count": selected.targets.length })
+					const failures: Array<Failure> = [...selected.failures]
+					const signedIn = yield* signIn(key, selected.targets, failures)
 					const listed = yield* Effect.forEach(
 						signedIn,
 						(target) =>

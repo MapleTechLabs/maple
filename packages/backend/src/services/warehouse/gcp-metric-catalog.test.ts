@@ -9,7 +9,7 @@ import {
 	type GcpLiveQueryError,
 } from "@maple/domain/http/gcp-live-query-errors"
 import { OrgId } from "@maple/domain/primitives"
-import type { GcpLiveMetrics } from "@maple/query-engine/runtime"
+import type { GcpLiveMetrics, GcpReadScope } from "@maple/query-engine/runtime"
 import { listGcpMetricCatalog } from "./gcp-metric-catalog"
 
 const NOW = Date.UTC(2026, 9, 15, 12, 0, 0)
@@ -42,13 +42,14 @@ const DESCRIPTORS = [
 
 /** A port answering `listMetrics` with `answer`, counting the calls. */
 const fakePort = (answer: Effect.Effect<ReadonlyArray<GcpMetricDescriptor>, GcpLiveQueryError>) => {
-	const calls = { listMetrics: 0 }
+	const calls = { listMetrics: 0, scopes: [] as Array<GcpReadScope> }
 	const unused = () => Effect.die("not used")
 	const port: GcpLiveMetrics = {
 		queryRange: unused,
 		queryInstant: unused,
-		listMetrics: () => {
+		listMetrics: (_tenant, scope) => {
 			calls.listMetrics += 1
+			calls.scopes.push(scope)
 			return answer
 		},
 	}
@@ -65,8 +66,10 @@ describe("listGcpMetricCatalog", () => {
 	it.effect("lists Google's chartable metrics as Google Cloud catalog rows", () =>
 		run(
 			Effect.gen(function* () {
-				const { port } = fakePort(Effect.succeed(DESCRIPTORS))
+				const { port, calls } = fakePort(Effect.succeed(DESCRIPTORS))
 				const rows = yield* listGcpMetricCatalog(port, TENANT, {})
+				// The list reads the first 20 projects rather than refusing more.
+				assert.deepStrictEqual(calls.scopes, [{ discovery: true }])
 				assert.deepStrictEqual(
 					rows.map((row) => [row.metricName, row.metricType, row.isMonotonic]),
 					[

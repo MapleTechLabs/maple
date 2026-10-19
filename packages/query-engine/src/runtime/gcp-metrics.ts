@@ -37,7 +37,11 @@ const describe = Effect.fnUntraced(function* <T extends QueryTenant>(
 	gcp: GcpLiveMetrics<T> | undefined,
 	tenant: T,
 	metricName: string,
-	scope: { readonly filters?: MetricsFilters; readonly requireComplete?: boolean } = {},
+	scope: {
+		readonly filters?: MetricsFilters
+		readonly requireComplete?: boolean
+		readonly discovery?: boolean
+	} = {},
 ) {
 	if (gcp === undefined) {
 		return yield* new GcpLiveQueryUnavailableError({ message: GCP_LIVE_METRICS_NOT_AVAILABLE })
@@ -45,6 +49,7 @@ const describe = Effect.fnUntraced(function* <T extends QueryTenant>(
 	const read = {
 		projects: scope.filters === undefined ? undefined : gcpFilterProjects(scope.filters),
 		requireComplete: scope.requireComplete,
+		discovery: scope.discovery,
 	}
 	const metrics = yield* gcp.listMetrics(tenant, read)
 	return { port: gcp, read, descriptor: metrics.find((metric) => metric.type === metricName) }
@@ -59,6 +64,12 @@ const groupLabelOf = (groupBy: ReadonlyArray<string>, filters: MetricsFilters): 
 	if (groupBy.includes("resource_attribute")) return filters.groupByResourceAttributeKey
 	return undefined
 }
+
+/**
+ * Google can take up to ~4 minutes to make a sample visible. An alert evaluating a short window
+ * at its end would read it empty, so its read ends this much earlier.
+ */
+const GCP_INGESTION_DELAY_SECONDS = 240
 
 /** A whole-range window: whole seconds, at least one Google sample period. */
 const wholeWindowSeconds = (rangeSeconds: number): number => Math.max(60, Math.ceil(rangeSeconds))
@@ -233,7 +244,7 @@ export const gcpMetricsAlertBuckets = Effect.fnUntraced(function* <T extends Que
 	const samples = yield* compileGcpSampleCount(request, descriptor)
 	yield* annotate(value.query)
 
-	const endSeconds = Math.floor(range.endMs / 1000)
+	const endSeconds = Math.floor(range.endMs / 1000) - GCP_INGESTION_DELAY_SECONDS
 	const run = (compiled: GcpPromQl) =>
 		window
 			? port.queryRange(tenant, { ...read, query: compiled.query, ...window })
@@ -272,16 +283,24 @@ export const gcpMetricAttributeKeys = Effect.fnUntraced(function* <T extends Que
 		readonly endMs: number
 	},
 ) {
-	const { port, descriptor } = yield* describe(gcp, tenant, request.metricName)
+	const { port, read, descriptor } = yield* describe(gcp, tenant, request.metricName, { discovery: true })
 	if (descriptor === undefined) return []
+	// `scope: "resource"` asks for the labels Google adds beyond the metric's own.
+	const resourceOnly = request.scope === "resource"
+	// No resource type to select by: list what every Google series carries, without reading.
+	if (descriptor.monitoredResourceTypes.length === 0) {
+		return [...(resourceOnly ? [] : descriptor.labels), "monitored_resource", "project_id"]
+			.sort()
+			.map((key) => ({ key, count: 0 }))
+			.slice(0, request.limit ?? 200)
+	}
 	const sample = yield* compileGcpLabelSample(descriptor)
 	yield* annotate(sample)
 	const series = yield* port.queryInstant(tenant, {
+		...read,
 		query: sample,
 		timeSeconds: Math.floor(request.endMs / 1000),
 	})
-	// `scope: "resource"` asks for the labels Google adds beyond the metric's own.
-	const resourceOnly = request.scope === "resource"
 	const counts = new Map<string, number>(resourceOnly ? [] : descriptor.labels.map((label) => [label, 0]))
 	for (const s of series) {
 		for (const key of Object.keys(s.labels)) {
@@ -307,8 +326,9 @@ export const gcpMetricAttributeValues = Effect.fnUntraced(function* <T extends Q
 		readonly rangeSeconds: number
 	},
 ) {
-	const { port, descriptor } = yield* describe(gcp, tenant, request.metricName)
-	if (descriptor === undefined) return []
+	const { port, read, descriptor } = yield* describe(gcp, tenant, request.metricName, { discovery: true })
+	// Without a resource type to select by, values are read only through a filtered chart.
+	if (descriptor === undefined || descriptor.monitoredResourceTypes.length === 0) return []
 	const promQl = yield* compileGcpLabelValues(
 		descriptor,
 		request.attributeKey,
@@ -316,6 +336,7 @@ export const gcpMetricAttributeValues = Effect.fnUntraced(function* <T extends Q
 	)
 	yield* annotate(promQl)
 	const series = yield* port.queryInstant(tenant, {
+		...read,
 		query: promQl,
 		timeSeconds: Math.floor(request.endMs / 1000),
 	})

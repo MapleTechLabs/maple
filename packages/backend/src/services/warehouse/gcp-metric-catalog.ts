@@ -35,7 +35,9 @@ export const listGcpMetricCatalog = Effect.fn("QueryEngineService.listGcpMetrics
 	if ((request.offset ?? 0) !== 0) return []
 	if (request.service !== undefined && request.service !== GCP_METRICS_SERVICE_NAME) return []
 	// Typed failures only: a defect is a bug, not Google being unavailable.
-	const descriptors = yield* gcp.listMetrics(tenant, {}).pipe(Effect.orElseSucceed(() => []))
+	const descriptors = yield* gcp
+		.listMetrics(tenant, { discovery: true })
+		.pipe(Effect.orElseSucceed(() => []))
 	const nowMs = yield* Clock.currentTimeMillis
 	const search = request.search?.toLowerCase()
 	const lastSeen = DateTime.makeUnsafe(nowMs)

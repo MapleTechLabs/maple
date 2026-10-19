@@ -144,6 +144,7 @@ describe("Google Cloud metrics routing", () => {
 						stepSeconds: 300,
 						projects: undefined,
 						requireComplete: undefined,
+						discovery: undefined,
 					},
 				])
 				assert.deepStrictEqual(dataOf(response, "timeseries"), [
@@ -276,7 +277,10 @@ describe("Google Cloud metrics routing", () => {
 					},
 				}),
 			)
-			assert.deepStrictEqual(fakes.calls.listed, [{ projects: ["alpha"], requireComplete: undefined }])
+			// A chart lists with the query's own project selection, never discovery's first 20.
+			assert.deepStrictEqual(fakes.calls.listed, [
+				{ projects: ["alpha"], requireComplete: undefined, discovery: undefined },
+			])
 			assert.deepStrictEqual(fakes.calls.range[0]?.projects, ["alpha"])
 			assert.include(fakes.calls.range[0]?.query ?? "", `project_id="alpha"`)
 		}),
@@ -329,6 +333,7 @@ describe("Google Cloud metrics breakdown", () => {
 					timeSeconds: seconds("2026-10-19T10:15:00Z"),
 					projects: undefined,
 					requireComplete: undefined,
+					discovery: undefined,
 				},
 			])
 			assert.deepStrictEqual(dataOf(response, "breakdown"), [
@@ -347,7 +352,66 @@ describe("Google Cloud metrics breakdown", () => {
 	)
 })
 
+const ENTRIES = "logging.googleapis.com/log_entry_count"
+const entries: GcpMetricDescriptor = {
+	...transactions,
+	type: ENTRIES,
+	monitoredResourceTypes: [],
+	labels: ["severity", "log"],
+}
+
 describe("Google Cloud metric discovery", () => {
+	it.effect("reads labels as discovery: the first 20 projects past the cap, not a refusal", () =>
+		Effect.gen(function* () {
+			const fakes = makeFakes()
+			yield* execute(fakes, { kind: "attributeKeys", source: "metrics", metricName: TX })
+			yield* execute(fakes, {
+				kind: "attributeValues",
+				source: "metrics",
+				scope: "metric",
+				attributeKey: "database_id",
+				metricName: TX,
+			})
+			assert.isTrue(
+				[...fakes.calls.listed, ...fakes.calls.instant].every((call) => call.discovery === true),
+			)
+		}),
+	)
+
+	it.effect("lists a metric without resource types by its labels, without reading Google", () =>
+		Effect.gen(function* () {
+			const fakes = makeFakes()
+			const gcp: GcpLiveMetrics = { ...fakes.gcp, listMetrics: () => Effect.succeed([entries]) }
+			const keys = yield* execute(
+				{ warehouse: fakes.warehouse, gcp },
+				{ kind: "attributeKeys", source: "metrics", metricName: ENTRIES },
+			)
+			assert.deepStrictEqual(
+				dataOf(keys, "attributeKeys").map((item) => item.key),
+				["log", "monitored_resource", "project_id", "severity"],
+			)
+			const values = yield* execute(
+				{ warehouse: fakes.warehouse, gcp },
+				{
+					kind: "attributeValues",
+					source: "metrics",
+					scope: "metric",
+					attributeKey: "severity",
+					metricName: ENTRIES,
+				},
+			)
+			assert.deepStrictEqual(dataOf(values, "attributeValues"), [])
+			assert.lengthOf(fakes.calls.instant, 0)
+
+			// A chart still asks for the resource type.
+			const chart = yield* Effect.flip(
+				execute({ warehouse: fakes.warehouse, gcp }, timeseries({ filters: metricFilters(ENTRIES) })),
+			)
+			assert.instanceOf(chart, QueryEngineValidationError)
+			assert.include(chart.message, "filter on monitored_resource")
+		}),
+	)
+
 	it.effect("lists the descriptor's labels and the labels seen on recent series", () =>
 		Effect.gen(function* () {
 			const fakes = makeFakes(() => [
@@ -424,6 +488,7 @@ describe("Google Cloud metric alerts", () => {
 				]
 	const grouped = byDatabase({ bucketSeconds: 60 })
 
+	// The window's end, four minutes back: Google's ingestion delay.
 	it.effect("evaluates the window as one instant query per group, merged across projects", () =>
 		Effect.gen(function* () {
 			const fakes = makeFakes(answer)
@@ -436,11 +501,11 @@ describe("Google Cloud metric alerts", () => {
 				[
 					[
 						`sum by (database_id, project_id) (sum_over_time(${SELECTOR}[300s]))`,
-						seconds("2026-10-19T10:05:00Z"),
+						seconds("2026-10-19T10:01:00Z"),
 					],
 					[
 						`sum by (database_id, project_id) (count_over_time(${SELECTOR}[300s]))`,
-						seconds("2026-10-19T10:05:00Z"),
+						seconds("2026-10-19T10:01:00Z"),
 					],
 				],
 			)
@@ -487,6 +552,8 @@ describe("Google Cloud metric alerts", () => {
 				alertRequest(grouped),
 			)
 			assert.strictEqual(fakes.calls.range.length, 2)
+			// The preview charts what has arrived, like the chart itself: no ingestion-delay shift.
+			assert.strictEqual(fakes.calls.range[0]?.endSeconds, seconds("2026-10-19T10:06:00Z"))
 			assert.deepStrictEqual(result[0], {
 				bucket: "2026-10-19T10:04:00.000Z",
 				groupKey: "a",
