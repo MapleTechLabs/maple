@@ -13,7 +13,7 @@ import type { Model } from "./model"
 // The rail's writes (`transitionTo`, `claim`, `heartbeat`, `release`, `changeSeverity` in the route).
 
 type Return = PageReturn<Model, Message>
-type Busy = NonNullable<Model["busy"]>
+type Busy = Model["busy"][number]
 
 const BUSY = {
 	Transition: "state",
@@ -50,14 +50,28 @@ const successTitle = (write: IssueWrite, severity: string | null): string => {
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
-/** Starts a write unless one is in flight (`busy` guards the rail like legacy's disabled controls). */
-export const startWrite = (model: Model, write: IssueWrite): Return =>
-	model.busy !== null
+/** Starts a write unless the same kind is in flight; a severity write always goes (latest pick wins). */
+export const startWrite = (model: Model, write: IssueWrite): Return => {
+	const kind = BUSY[write._tag]
+	return kind !== "severity" && model.busy.includes(kind)
 		? { model }
 		: {
-				model: { ...model, busy: BUSY[write._tag] },
+				model: { ...model, busy: [...model.busy, kind] },
 				commands: [RunIssueWrite({ issueId: model.issueId, write })],
 			}
+}
+
+/** Drops one in-flight entry of the write's kind. */
+const settledBusy = (busy: Model["busy"], kind: Busy): Model["busy"] => {
+	const at = busy.indexOf(kind)
+	return at === -1 ? busy : [...busy.slice(0, at), ...busy.slice(at + 1)]
+}
+
+const BUSY_PRIORITY: ReadonlyArray<Busy> = ["state", "severity", "heartbeat", "release", "claim"]
+
+/** Legacy's `sidebarBusy`: the first in-flight kind by its priority chain. */
+export const sidebarBusy = (model: Model): Busy | null =>
+	BUSY_PRIORITY.find((kind) => model.busy.includes(kind)) ?? null
 
 const currentIssue = (model: Model) => Option.getOrNull(AsyncData.getData(model.detail.data))
 
@@ -140,7 +154,7 @@ export const completedWrite = (
 		readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>>
 	},
 ): Return => {
-	const settled = { ...model, busy: null }
+	const settled = { ...model, busy: settledBusy(model.busy, BUSY[write._tag]) }
 	return Result.match(result, {
 		onFailure: (failure) => ({
 			model: settled,

@@ -58,8 +58,8 @@ export const Model = Schema.Struct({
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
 	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
-	/** The rail write in flight (`sidebarBusy`), one at a time. */
-	busy: Schema.NullOr(Schema.Literals(["state", "severity", "claim", "heartbeat", "release"])),
+	/** The rail writes in flight, one entry per write (legacy runs one `useMutationAction` per kind). */
+	busy: Schema.Array(Schema.Literals(["state", "severity", "claim", "heartbeat", "release"])),
 	/** The severity raise waiting on "Notify escalation destinations?". */
 	/** `startingInvestigation`: the create is in flight. */
 	isStartingInvestigation: Schema.Boolean,

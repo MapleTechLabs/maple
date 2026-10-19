@@ -6,6 +6,7 @@ import type {
 import { countLabel } from "@maple/ui/lib/format"
 import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { badge, kbd, kbdGroup } from "../../../ui/display"
@@ -363,6 +364,12 @@ export const commentComposer = (
 									h.Value(options.draft),
 									h.Placeholder("Context, findings, links… markdown supported"),
 									h.OnInput((value) => Message.ChangedCommentDraft({ value })),
+									// Mod+Enter submits (`ClickedComment` guards empty and double sends).
+									h.OnKeyDownPreventDefault((key, modifiers) =>
+										key === "Enter" && (modifiers.metaKey || modifiers.ctrlKey)
+											? Option.some(Message.ClickedComment())
+											: Option.none(),
+									),
 								],
 							}),
 							h.div(

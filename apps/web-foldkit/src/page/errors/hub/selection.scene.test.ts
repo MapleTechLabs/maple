@@ -131,6 +131,24 @@ describe("errors hub selection", () => {
 		expect(done.model.writingIds).toEqual([])
 	})
 
+	test("a row still being written is written again: the newest pick is sent, not dropped", () => {
+		const press = (model: Model, key: string) => pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
+		const selected = press(press(loaded(), "j"), "x")
+		const first = pageUpdate(selected, Message.ClickedBulkClaim()).model
+		const again = pageUpdate(press(first, "x"), Message.ClickedBulkClaim())
+		expect(names(again.commands)).toEqual(["RunErrorsHubWrite"])
+		const done = pageUpdate(
+			again.model,
+			Message.CompletedHubWrite({
+				ids: [selected.focusedId ?? ""],
+				write: { _tag: "Claim" },
+				isBulk: true,
+				outcome: { succeeded: 1, failed: 0, firstFailure: null },
+			}),
+		)
+		expect(done.model.writingIds).toEqual([selected.focusedId])
+	})
+
 	test("a single row's write keeps the selection: only the bulk bar clears it", () => {
 		const press = (model: Model, key: string) => pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
 		const selected = press(press(press(press(loaded(), "j"), "x"), "j"), "x")

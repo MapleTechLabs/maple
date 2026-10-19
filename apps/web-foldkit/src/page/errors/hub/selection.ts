@@ -103,20 +103,26 @@ export const pressedListKey = (
 	}
 }
 
-/** Starts a write; rows already being written are left alone. */
+/** Starts a write; like `useIssueMutations` there is no per-row guard, so the newest pick is sent too. */
 export const startHubWrite = (
 	model: Model,
 	ids: ReadonlyArray<ErrorIssueId>,
 	write: HubWrite,
 	isBulk: boolean,
-): Return => {
-	const free = ids.filter((id) => !model.writingIds.includes(id))
-	if (free.length === 0) return { model }
-	return {
-		model: { ...model, writingIds: [...model.writingIds, ...free] },
-		commands: [RunHubWrite({ ids: free, write, isBulk })],
-	}
-}
+): Return =>
+	ids.length === 0
+		? { model }
+		: {
+				model: { ...model, writingIds: [...model.writingIds, ...ids] },
+				commands: [RunHubWrite({ ids, write, isBulk })],
+			}
+
+/** Drops one in-flight entry per written id (a row can have two writes out). */
+const settledWriting = (writing: ReadonlyArray<string>, ids: ReadonlyArray<string>) =>
+	ids.reduce((left, id) => {
+		const at = left.indexOf(id)
+		return at === -1 ? left : [...left.slice(0, at), ...left.slice(at + 1)]
+	}, writing)
 
 /** The bulk bar acts on the selection and clears it at once (`onClear` after each action). */
 export const bulkWrite = (model: Model, write: HubWrite): Return => {
@@ -174,7 +180,7 @@ export const completedHubWrite = (
 	outcome: WriteOutcome,
 	pageQuery: PageQuery,
 ): Return => {
-	const settled = { ...model, writingIds: model.writingIds.filter((id) => !ids.includes(id)) }
+	const settled = { ...model, writingIds: settledWriting(model.writingIds, ids) }
 	const toast = outcomeToast(write, outcome, isBulk)
 	if (outcome.succeeded === 0) return { model: settled, outMessage: toast }
 	// Only the bulk bar clears the selection, when it is clicked (`bulkWrite`); a row's write keeps it.
