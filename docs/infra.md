@@ -497,6 +497,10 @@ services.
 - `profile.deploys.ingest` alone decides which stages get a fleet: prd **and PR previews**. Dev
   stages run the gateway through `cargo run` under `bun dev`. Do not reintroduce a global
   on/off env flag; say it in `profile.deploys.ingest`, where it is typed and unit-tested.
+- **The account security baseline** (`@maple/infra/security-baseline`) is prd-only because every
+  stage shares the account: `profile.deploys.awsSecurityBaseline` gives US prd the one
+  multi-region CloudTrail trail (S3 + CloudWatch Logs) plus Config and GuardDuty in us-east-1,
+  and EU prd Config and GuardDuty in eu-central-1. Its buckets and log group are retained.
 - **Every workflow that deploys the stack must set `AWS_ACCOUNT_ID`.** Without it alchemy's
   `CI=true` credential path self-deadlocks on an STS lookup with no log line (#378).
 - **The binary is compiled outside the image build** (`build-ingest-binary.yml`, native

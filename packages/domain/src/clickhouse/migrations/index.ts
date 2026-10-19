@@ -40,6 +40,9 @@ import { migration_0038_external_edges_legacy_db_system } from "./0038_external_
 import { migration_0039_error_fingerprint_v3 } from "./0039_error_fingerprint_v3"
 import { migration_0040_error_fingerprint_span_name_frames } from "./0040_error_fingerprint_span_name_frames"
 import { migration_0041_alert_checks_level } from "./0041_alert_checks_level"
+import { migration_0042_trace_index } from "./0042_trace_index"
+import { migration_0043_traces_span_name_index } from "./0043_traces_span_name_index"
+import { migration_0044_drop_trace_detail_spans } from "./0044_drop_trace_detail_spans"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -112,6 +115,9 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0039_error_fingerprint_v3,
 	migration_0040_error_fingerprint_span_name_frames,
 	migration_0041_alert_checks_level,
+	migration_0042_trace_index,
+	migration_0043_traces_span_name_index,
+	migration_0044_drop_trace_detail_spans,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

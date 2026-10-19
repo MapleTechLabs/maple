@@ -42,7 +42,6 @@ import {
 	buildResolved,
 	fetchTransport,
 	guardFlush,
-	makeSerializedFlush,
 	type Resolved,
 	runFlush,
 	type SignalState,
@@ -50,12 +49,15 @@ import {
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
+import type { MapleSpanOptions } from "../shared/span-options.js"
+
+export type { FinishedSpan, MapleSpanOptions } from "../shared/span-options.js"
 import { makeNoOpNotice } from "../shared/no-op-notice.js"
 import { resolveResourceFromEnv } from "../server/resource.js"
 import { SDK_VERSION } from "../version.js"
 import type { MapleRegion } from "@maple/browser-session/region"
 
-export interface Config {
+export interface Config extends MapleSpanOptions {
 	/**
 	 * Service name reported in traces, logs, and metrics. Defaults to `env.OTEL_SERVICE_NAME`,
 	 * then `"unknown"`.
@@ -94,21 +96,6 @@ export interface Config {
 	readonly attributes?: Record<string, unknown> | undefined
 	/** Skip Effect log spans in OTLP log attributes. Default `false`. */
 	readonly excludeLogSpans?: boolean | undefined
-	/**
-	 * Span names whose prefix matches an entry here are dropped before they
-	 * reach the OTLP exporter. Useful for suppressing protocol-level chatter
-	 * (e.g. `"McpServer/Notifications."` for MCP notification spam).
-	 */
-	readonly dropSpanNames?: ReadonlyArray<string> | undefined
-	/**
-	 * Stable `_tag` / `Error.name` identifiers of anticipated 4xx failures. A span
-	 * whose failure is caused entirely by these is exported with status `Ok` and
-	 * no `exception` event, so it stays visible as a trace but never counts as an
-	 * error.
-	 */
-	readonly anticipatedErrorIdentifiers?: ReadonlyArray<string> | undefined
-	/** @deprecated Use `anticipatedErrorIdentifiers`. */
-	readonly anticipatedErrorTags?: ReadonlyArray<string> | undefined
 	/** OTLP traces path appended to `endpoint`. Default `/v1/traces`. */
 	readonly tracesPath?: string | undefined
 	/** OTLP logs path appended to `endpoint`. Default `/v1/logs`. */
@@ -170,21 +157,7 @@ const resolveOnce = (env: Record<string, unknown>, config: Config): Resolved => 
 }
 
 export const make = (config: Config = {}): Telemetry => {
-	const dropPrefixes = config.dropSpanNames
-	const dropSpan =
-		dropPrefixes !== undefined && dropPrefixes.length > 0
-			? (name: string) => dropPrefixes.some((prefix) => name.startsWith(prefix))
-			: undefined
-	const anticipatedErrorIdentifiers = [
-		...(config.anticipatedErrorIdentifiers ?? []),
-		...(config.anticipatedErrorTags ?? []),
-	]
-	const anticipatedIdentifiers =
-		anticipatedErrorIdentifiers.length > 0 ? new Set(anticipatedErrorIdentifiers) : undefined
-	const spans: SpanBuffer = makeSpanBuffer({
-		dropSpan,
-		anticipatedErrorIdentifiers: anticipatedIdentifiers,
-	})
+	const spans: SpanBuffer = makeSpanBuffer(config)
 	const logs: LogBuffer = makeLogBuffer({ excludeLogSpans: config.excludeLogSpans })
 	const metrics = makeMetricBuffer()
 
@@ -198,38 +171,36 @@ export const make = (config: Config = {}): Telemetry => {
 
 	// Never rejects: this runs inside `ctx.waitUntil`, where a rejection would
 	// surface as an unhandled Worker error caused purely by telemetry.
-	const flush = makeSerializedFlush(
-		guardFlush("[MapleCloudflareSDK]", async (env: Record<string, unknown>): Promise<void> => {
-			// Effect defers work onto the scheduler's next macrotask
-			// (`scheduleTask(task, 0)`) — including `HttpMiddleware.tracer`'s
-			// `span.end` and `withSpan` finalizers — while the drain below is
-			// synchronous. Flushing in the same task therefore misses exactly the
-			// spans the request just produced, and an isolated request (e.g. a lone
-			// webhook) can freeze the isolate before a later flush rescues them.
-			// Yield one macrotask so those tasks run first. This sits INSIDE the
-			// serialized body, so overlapping flushes still queue rather than
-			// interleave.
-			await new Promise<void>((resolve) => setTimeout(resolve, 0))
+	//
+	// Not serialized: each call drains and POSTs whatever is buffered at that
+	// moment, and never awaits a promise from another invocation. workerd cancels
+	// the I/O of an invocation that has ended, so a shared chain could stay
+	// pending forever and stop every later export in the isolate.
+	const flush = guardFlush("[MapleCloudflareSDK]", async (env: Record<string, unknown>): Promise<void> => {
+		// Effect defers work onto the scheduler's next macrotask
+		// (`scheduleTask(task, 0)`), including `HttpMiddleware.tracer`'s
+		// `span.end` and `withSpan` finalizers, while the drain below is
+		// synchronous. Yield one macrotask so the spans this request just
+		// produced are in the buffer before the drain.
+		await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-			if (resolved === undefined) {
-				resolved = resolveOnce(env, config)
-			}
+		if (resolved === undefined) {
+			resolved = resolveOnce(env, config)
+		}
 
-			await runFlush({
-				resolved,
-				spans,
-				logs,
-				metrics,
-				tracesState,
-				logsState,
-				metricsState,
-				transport: fetchTransport,
-				logPrefix: "[MapleCloudflareSDK]",
-				onNoOp: noOpNotice,
-			})
-		}),
-		{ coalesceSameArguments: true },
-	)
+		await runFlush({
+			resolved,
+			spans,
+			logs,
+			metrics,
+			tracesState,
+			logsState,
+			metricsState,
+			transport: fetchTransport,
+			logPrefix: "[MapleCloudflareSDK]",
+			onNoOp: noOpNotice,
+		})
+	})
 
 	const requestLayer = Layer.mergeAll(
 		layer,

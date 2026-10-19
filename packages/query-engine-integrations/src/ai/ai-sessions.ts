@@ -36,9 +36,8 @@
 //     sessions by their first agent span, and yields one page of rows — every
 //     fact the list row shows, measured over the session's agent spans. The
 //     list renders from this read alone.
-//   details — `aiSessionDetailsQuery`, over `trace_detail_spans`, restricted
-//     to that page's traces by `TraceId IN (…)`. `TraceId` is a sort-key
-//     prefix there (`(OrgId, TraceId, SpanId)`), so this is a seek — but a
+//   details — `aiSessionDetailsQuery`, over `traces`, restricted to that
+//     page's traces through `trace_index` (`inTraces`), so this is a seek — but a
 //     seek on object storage that costs ~0.4s per partition the page spans
 //     warm and seconds cold, measured in production on 2026-09-10, whatever
 //     columns it reads (dropping the attribute map changed nothing). So it
@@ -65,7 +64,7 @@
 //
 // The fan-out used to run over every qualifying trace in the window and page
 // with LIMIT/OFFSET afterwards, and that shape cannot be saved either — by the
-// index or by anything else. `trace_detail_spans` sits on object storage, and
+// index or by anything else. `traces` sits on object storage, and
 // what a seek costs there is set by the partitions it touches, not by the rows
 // it returns: measured 2026-09-02 in production, five trace ids across the 32
 // retained partitions ran past 10s, while a page's worth of sessions inside
@@ -94,7 +93,7 @@
 // The window predicate on the fan-out is the PAGE's, not the caller's: the
 // bounds of the page's agent spans as the page rows report them, padded by
 // `FAN_OUT_PAD_SECONDS` so a trace's non-agent spans on either side are
-// counted too. `trace_detail_spans` is `PARTITION BY toDate(Timestamp)`, so
+// counted too. `traces` is `PARTITION BY toDate(Timestamp)`, so
 // the predicate is the only thing that prunes partitions there, and the
 // padded extent is cut at every midnight into one read per partition. At
 // production volume a page of sessions ordered by start spans hours — one
@@ -112,8 +111,7 @@
 // A `trace:` id needs neither the attribute detection nor the fan-out: it names
 // the trace outright, so `aiTraceWindowQuery`/`aiTraceSpansQuery` are the same
 // two reads with `TraceId = {traceId}` in place of the detection subquery —
-// `idx_trace_id` on `traces` for the bounds, the `(OrgId, TraceId, SpanId)`
-// sort key on `trace_detail_spans` for the spans.
+// `trace_index` locating the trace's granules in `traces` for both.
 //
 // Tenant scoping: a subquery contributes nothing to the outer query's scope, so
 // every level that reads a table repeats `OrgId = {orgId}` itself. The outermost
@@ -136,7 +134,14 @@ import {
 	type ColumnAccessor,
 	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
-import { AiTraceIndex, TraceDetailSpans, Traces, exactDateTime64, orgIdParam } from "@maple/query-engine/ch/tables"
+import {
+	AiTraceIndex,
+	Traces,
+	exactDateTime64,
+	inTraces,
+	orgIdParam,
+	paramTraceWindow,
+} from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
@@ -193,7 +198,7 @@ export const sessionOrderSentinel = () =>
 	CH.compileTypedFnCall("toDateTime", T.dateTime.schema, CH.lit(SESSION_ORDER_SENTINEL))
 
 /**
- * How far past the page's own agent-span bounds the `trace_detail_spans`
+ * How far past the page's own agent-span bounds the `traces`
  * fan-out reads, in seconds — applied by `aiSessionDetailsSlices`, which cuts
  * the padded extent into the reads `aiSessionDetailsQuery` is run as.
  *
@@ -598,11 +603,7 @@ const indexTraces = <Bounds extends IndexBounds>(
 		// `argMinIf`.
 		// A trace that names no agent at all ties every span at the sentinel,
 		// and the tie is harmless because every candidate's name is `''`.
-		const agentOrder = CH.if_(
-			$.AgentName.neq(""),
-			$.Timestamp,
-			sessionOrderSentinel(),
-		)
+		const agentOrder = CH.if_($.AgentName.neq(""), $.Timestamp, sessionOrderSentinel())
 		// Ranks the trace's spans for the vendor `argMin`s: session-bearing
 		// first, then the rest, and inside each rank the earliest — the order
 		// the fan-out once ranked the raw spans by, less the rank for an
@@ -947,7 +948,7 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
  * level resolves a page trace exactly as the page did without the caller's
  * window. The fan-out runs inside `spansStart`/`spansEnd`: one slice of the
  * padded extent, as `aiSessionDetailsSlices` cuts it, so a read touches one
- * partition of `trace_detail_spans`; the caller runs the slices side by side
+ * partition of `traces`; the caller runs the slices side by side
  * and folds the rows with `mergeAiSessionDetails`.
  *
  * The filters land on the index level, which means "the trace's agent spans
@@ -992,7 +993,7 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 
 	// Per trace: every span of a page trace, session-bearing or not, inside the
 	// page's padded window.
-	const perTrace = from(TraceDetailSpans)
+	const perTrace = from(Traces)
 		.select(($) => {
 			return {
 				traceId: $.TraceId,
@@ -1037,7 +1038,7 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("spansStart")),
 			$.Timestamp.lte(param.dateTime("spansEnd")),
-			inSubquery($.TraceId, pageTraceIds),
+			inTraces((id) => inSubquery(id, pageTraceIds), paramTraceWindow("spansStart", "spansEnd")),
 		])
 		.groupBy("traceId")
 
@@ -1065,7 +1066,7 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 		.format("JSON")
 }
 
-/** One read of `aiSessionDetailsQuery`: the bounds of its `trace_detail_spans`
+/** One read of `aiSessionDetailsQuery`: the bounds of its `traces`
  *  seek, warehouse datetime literals — the `spansStart`/`spansEnd` params. */
 export interface AiSessionDetailsSlice {
 	readonly spansStart: string
@@ -1098,7 +1099,7 @@ const nextUtcMidnight = (nanos: bigint): bigint => {
 /**
  * The reads one page's details are split into: the page's extent, padded by
  * `FAN_OUT_PAD_SECONDS`, cut at every midnight — one slice per partition of
- * `trace_detail_spans` (`PARTITION BY toDate(Timestamp)`), contiguous to the
+ * `traces` (`PARTITION BY toDate(Timestamp)`), contiguous to the
  * nanosecond, for the caller to run side by side.
  *
  * A seek on that table costs by the partitions it touches, and a cold one
@@ -1180,7 +1181,7 @@ export type AiSessionFacetType = "vendor" | "service" | "environment" | "model" 
  * sidebar: vendor, service, environment, model, agent and tool.
  *
  * This is the page's index scan (`indexTraces`) and nothing else — no
- * `trace_detail_spans` fan-out, which is the expensive half. It can be: every
+ * `traces` fan-out, which is the expensive half. It can be: every
  * one of the list's counted filters is applied at that level, so the population
  * a facet describes is exactly the population its filter selects. The
  * session-level filters (errors, the ranges) have no facet here for the same
@@ -1419,7 +1420,11 @@ export function aiTraceWindowQuery() {
 			endTime: CH.toString_(CH.intervalAdd(CH.max_($.Timestamp), WINDOW_PAD_SECONDS)),
 			spanCount: CH.count(),
 		}))
-		.where(($) => [$.OrgId.eq(orgIdParam), $.TraceId.eq(param.string("traceId"))])
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.TraceId.eq(param.string("traceId")),
+			inTraces((id) => id.eq(param.string("traceId")), undefined),
+		])
 		.format("JSON")
 }
 
@@ -1489,7 +1494,7 @@ export const aiSpanAttributes = (
 
 /** Shared by both span reads, so a session keyed by id and one keyed by trace
  *  cannot drift apart in shape — {@link aiSessionSpansRowSchema} decodes both. */
-const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => ({
+const spanProjection = ($: ColumnAccessor<typeof Traces.columns>) => ({
 	traceId: $.TraceId,
 	spanId: $.SpanId,
 	parentSpanId: $.ParentSpanId,
@@ -1515,8 +1520,7 @@ const spanProjection = ($: ColumnAccessor<typeof TraceDetailSpans.columns>) => (
  * Even so, a content-heavy vendor puts whole prompts in `gen_ai.input.messages`,
  * so callers should still expect megabyte-scale payloads at the default limit.
  *
- * No scope columns: `trace_detail_spans` does not carry `ScopeName`/`ScopeVersion`,
- * and the read path does not need them. The ingest gateway already did the
+ * No scope columns: the read path does not need `ScopeName`/`ScopeVersion`. The ingest gateway already did the
  * scope-based vendor detection at write time and encoded its verdict in
  * `maple_ai.vendor.id`; re-deriving the dialect here would only second-guess it.
  *
@@ -1542,13 +1546,13 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 	const sessionTraceIds = sessionTraceIdsSubquery()
 
 	return (
-		from(TraceDetailSpans)
+		from(Traces)
 			.select(spanProjection)
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
 				$.Timestamp.gte(param.dateTime("startTime")),
 				$.Timestamp.lte(param.dateTime("endTime")),
-				inSubquery($.TraceId, sessionTraceIds),
+				inTraces((id) => inSubquery(id, sessionTraceIds), paramTraceWindow()),
 				scopePredicate($, opts.scope),
 				opts.after === undefined ? undefined : afterCursor($, opts.after),
 			])
@@ -1562,7 +1566,7 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 	)
 }
 
-type SpanColumns = ColumnAccessor<typeof TraceDetailSpans.columns>
+type SpanColumns = ColumnAccessor<typeof Traces.columns>
 
 /** The traces carrying the session id, within the window — the detection half
  *  of every session-keyed read. */
@@ -1605,27 +1609,27 @@ const afterCursor = ($: SpanColumns, after: { readonly timestamp: string; readon
  * Every span of ONE trace, oldest first — the spans of a `trace:` session.
  *
  * {@link aiSessionSpansQuery} without its detection half: the id already names
- * the trace, so there is nothing to resolve and `TraceId` is a sort-key prefix
- * of `trace_detail_spans`. Everything else is identical, deliberately — same
+ * the trace, so there is nothing to resolve and `trace_index` locates its
+ * granules. Everything else is identical, deliberately — same
  * projection, same row schema, same tie-broken order, same truncation contract —
  * so the detail page reads one shape whichever kind of session it opened.
  *
- * The window is still required and still bounds the read: `TraceId` prunes the
- * sort key, the `Timestamp` predicate prunes partitions, and only both together
- * keep this off every partition the table retains.
+ * The window is still required and still bounds the read: it prunes the
+ * partitions the index lookup is matched against.
  */
 export function aiTraceSpansQuery(opts: AiTraceSpansOpts = {}) {
 	const limit = opts.limit ?? AI_SESSION_SPANS_MAX_SPANS
+	const traceIds = opts.traceIds
 
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(spanProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			opts.traceIds === undefined
-				? $.TraceId.eq(param.string("traceId"))
-				: CH.inList($.TraceId, opts.traceIds),
+			traceIds === undefined
+				? inTraces((id) => id.eq(param.string("traceId")), paramTraceWindow())
+				: inTraces((id) => CH.inList(id, traceIds), paramTraceWindow()),
 			scopePredicate($, opts.scope),
 			opts.after === undefined ? undefined : afterCursor($, opts.after),
 		])
@@ -1907,13 +1911,13 @@ const totalsProjection = ($: SpanColumns) => {
  * span read — required, bounding both levels.
  */
 export function aiSessionSummaryQuery() {
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(summaryProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			inSubquery($.TraceId, sessionTraceIdsSubquery()),
+			inTraces((id) => inSubquery(id, sessionTraceIdsSubquery()), paramTraceWindow()),
 		])
 		.groupBy("turnKey")
 		.orderBy(["startTime", "asc"])
@@ -1923,13 +1927,13 @@ export function aiSessionSummaryQuery() {
 
 /** The summary of a `trace:` session — {@link aiTraceSpansQuery}'s shape. */
 export function aiTraceSummaryQuery() {
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(summaryProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			$.TraceId.eq(param.string("traceId")),
+			inTraces((id) => id.eq(param.string("traceId")), paramTraceWindow()),
 		])
 		.groupBy("turnKey")
 		.orderBy(["startTime", "asc"])
@@ -1939,26 +1943,26 @@ export function aiTraceSummaryQuery() {
 
 /** The whole session's measures in one row — {@link aiSessionSummaryQuery} ungrouped. */
 export function aiSessionTotalsQuery() {
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(totalsProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			inSubquery($.TraceId, sessionTraceIdsSubquery()),
+			inTraces((id) => inSubquery(id, sessionTraceIdsSubquery()), paramTraceWindow()),
 		])
 		.format("JSON")
 }
 
 /** The whole `trace:` session's measures in one row. */
 export function aiTraceTotalsQuery() {
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(totalsProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			$.TraceId.eq(param.string("traceId")),
+			inTraces((id) => id.eq(param.string("traceId")), paramTraceWindow()),
 		])
 		.format("JSON")
 }

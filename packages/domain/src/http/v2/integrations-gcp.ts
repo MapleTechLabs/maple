@@ -235,6 +235,10 @@ export type V2GcpSetupScriptsRequest = Schema.Schema.Type<typeof V2GcpSetupScrip
 // What a script field holds: the script as a here-document for a bash process of its own.
 const SCRIPT_EXAMPLE =
 	" { …\nbash /dev/fd/3 3<<'MAPLE_SETUP_SCRIPT'\n#!/usr/bin/env bash\n…\nMAPLE_SETUP_SCRIPT\n}\n"
+const TERRAFORM_EXAMPLE =
+	'# Maple connection for Google Cloud project acme-prod\n…\nresource "google_pubsub_topic" "maple" {\n  …\n}\n'
+const ALCHEMY_EXAMPLE =
+	'// Maple connection for Google Cloud project acme-prod\nimport * as Alchemy from "alchemy"\n…\n'
 
 export const V2GcpSetupScripts = Schema.Struct({
 	object: Schema.Literal("gcp_connector.setup_scripts").annotate({
@@ -250,15 +254,45 @@ export const V2GcpSetupScripts = Schema.Struct({
 			"Text to paste into Cloud Shell that removes everything the setup script created and tells Maple that it ran. It embeds the connector's push secret: treat it as a credential.",
 		examples: [SCRIPT_EXAMPLE],
 	}),
+	push_endpoint: Schema.String.annotate({
+		description:
+			"For a setup in the console: the push subscription's endpoint and token audience. It carries no secret: Pub/Sub signs each push as the connector's push service account.",
+		examples: ["https://ingest.maple.dev/v1/logpush/gcp/018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8"],
+	}),
+	log_filter: Schema.String.annotate({
+		description:
+			"For a setup in the console or as code: the log sink's filter for `application_logs`. Omitted, it is the recommended filter: without the script there is no filter to keep.",
+	}),
+	maple_service_account_email: Schema.NullOr(Schema.String).annotate({
+		description:
+			"Maple's own service account, granted Service Account Token Creator on the read-only account. `null` when `metrics_available` is `false`.",
+		examples: ["collector@maple-prod.iam.gserviceaccount.com"],
+	}),
+	terraform: Schema.String.annotate({
+		description:
+			"The same setup as a self-contained Terraform file for the `google` provider. It carries no secret. Resources a setup script already created are imported.",
+		examples: [TERRAFORM_EXAMPLE],
+	}),
+	alchemy: Schema.String.annotate({
+		description:
+			"The same setup as a self-contained Alchemy stack. It carries no secret. For a folder or organization with `metrics_enabled` it defines its own resource for the folder's or organization's IAM grants.",
+		examples: [ALCHEMY_EXAMPLE],
+	}),
 }).annotate({
 	identifier: "GcpSetupScripts",
 	title: "Google Cloud setup scripts",
-	description: "The scripts that connect and disconnect one Google Cloud project, folder or organization.",
+	description:
+		"The ways to connect one Google Cloud project, folder or organization: the scripts, or the same resources in the console or as code. Without the script, the first log push confirms log forwarding and the first metrics read confirms read-only access.",
 	examples: [
 		wireExample({
 			object: "gcp_connector.setup_scripts",
 			setup_script: SCRIPT_EXAMPLE,
 			cleanup_script: SCRIPT_EXAMPLE,
+			push_endpoint: "https://ingest.maple.dev/v1/logpush/gcp/018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+			log_filter: 'NOT log_id("cloudaudit.googleapis.com/data_access") AND …',
+			maple_service_account_email: "collector@maple-prod.iam.gserviceaccount.com",
+			terraform: TERRAFORM_EXAMPLE,
+			alchemy: ALCHEMY_EXAMPLE,
 		}),
 	],
 })
@@ -367,7 +401,21 @@ export class V2GcpIntegrationsApiGroup extends HttpApiGroup.make("gcpIntegration
 				identifier: "renderGcpConnectorSetupScripts",
 				summary: "Render a connector's setup and cleanup scripts",
 				description:
-					"Returns the `gcloud` scripts for one connector. Rendering changes nothing, but both scripts carry the connector's push secret, so this requires an org-admin role and the `integrations:write` scope.",
+					"Returns the `gcloud` scripts for one connector, and the same setup for the console, Terraform and Alchemy. Rendering changes nothing, but both scripts carry the connector's push secret, so this requires an org-admin role and the `integrations:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("confirmRemoval", "/connectors/:id/confirm_removal", {
+			params: { id: GcpConnectorPublicId },
+			success: V2GcpConnector,
+			error: [V2InsufficientPermissions.schema, connectorNotFound, integrationPersistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "confirmGcpConnectorRemoval",
+				summary: "Confirm a removal made without the script",
+				description:
+					"Records that what `logs_enabled` or `metrics_enabled`, now `false`, had set up was removed from Google Cloud in the console or as code, which sends Maple no report. Maple takes the caller's word. Requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)

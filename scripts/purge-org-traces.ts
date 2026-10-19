@@ -65,7 +65,6 @@ const TARGETS: ReadonlyArray<Target> = [
 	raw("service_map_children"),
 	raw("service_overview_spans"),
 	raw("trace_list_mv"),
-	raw("trace_detail_spans"),
 	raw("traces"),
 ]
 

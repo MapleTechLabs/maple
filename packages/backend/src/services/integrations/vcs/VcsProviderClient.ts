@@ -502,4 +502,12 @@ export interface VcsProviderClient {
 		string,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
+
+	/** Whether the installation has granted the provider access to CI job logs. */
+	readonly canReadWorkflowLogs: (
+		installation: VcsInstallation,
+	) => Effect.Effect<
+		boolean,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
 }

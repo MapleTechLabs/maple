@@ -690,6 +690,58 @@ describe("GithubProvider reading a CI job's log", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	const tokenWithPermissions = (permissions: Record<string, string>) =>
+		jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z", permissions })
+
+	it.effect(
+		"reports logs unreadable for an installation without actions access, asking GitHub once",
+		() => {
+			const requests: Array<string> = []
+			const layer = providerLayer(
+				[tokenWithPermissions({ contents: "read", metadata: "read" })],
+				requests,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				assert.isFalse(yield* provider.canReadWorkflowLogs(INSTALLATION))
+				assert.isFalse(yield* provider.canReadWorkflowLogs(INSTALLATION))
+				assert.lengthOf(requests, 1)
+				assert.isTrue(requests[0]!.endsWith("/app/installations/42/access_tokens"))
+			}).pipe(Effect.provide(layer))
+		},
+	)
+
+	it.effect("assumes logs readable when the token lists no permissions", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer([tokenResponse()], requests)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			assert.isTrue(yield* provider.canReadWorkflowLogs(INSTALLATION))
+			assert.lengthOf(requests, 1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("reads the log of an installation with actions access on the same token", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenWithPermissions({ actions: "read", contents: "read" }),
+				redirect(),
+				new Response("2026-08-20T10:00:00.1000000Z first\n"),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			assert.isTrue(yield* provider.canReadWorkflowLogs(INSTALLATION))
+			const lines = yield* provider
+				.streamWorkflowJobLog(INSTALLATION, REPO, "555")
+				.pipe(Stream.runCollect)
+			assert.deepStrictEqual(lines, ["2026-08-20T10:00:00.1000000Z first"])
+			assert.lengthOf(requests, 3)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("waits out a log that is not uploaded yet", () => {
 		const requests: Array<string> = []
 		const layer = providerLayer(

@@ -30,6 +30,7 @@ import {
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { type CaptureExceptionOptions, makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
+import type { MapleSpanOptions } from "../shared/span-options.js"
 import { browserDocument, browserNavigator } from "./browser-globals.js"
 import { trySyncOrUndefined } from "../shared/try-sync.js"
 import { type ClientReplayConfig, startClientSession } from "./replay-loader.js"
@@ -47,7 +48,7 @@ const browserInstanceId =
 	globalThis.crypto?.randomUUID?.() ??
 	`browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 
-export interface MapleClientFlushableConfig {
+export interface MapleClientFlushableConfig extends MapleSpanOptions {
 	/** Service name reported in traces, logs, and metrics. */
 	readonly serviceName: string
 	/**
@@ -77,16 +78,6 @@ export interface MapleClientFlushableConfig {
 	readonly attributes?: Record<string, unknown> | undefined
 	/** Skip Effect log spans in OTLP log attributes. Default `false`. */
 	readonly excludeLogSpans?: boolean | undefined
-	/** Span name prefixes to drop before OTLP export. */
-	readonly dropSpanNames?: ReadonlyArray<string> | undefined
-	/**
-	 * Stable `_tag` / `Error.name` identifiers of anticipated 4xx failures. Spans
-	 * failing entirely with these export as status `Ok` (no `exception` event),
-	 * so they stay visible but never count as errors.
-	 */
-	readonly anticipatedErrorIdentifiers?: ReadonlyArray<string> | undefined
-	/** @deprecated Use `anticipatedErrorIdentifiers`. */
-	readonly anticipatedErrorTags?: ReadonlyArray<string> | undefined
 	/** OTLP traces path appended to `endpoint`. Default `/v1/traces`. */
 	readonly tracesPath?: string | undefined
 	/** OTLP logs path appended to `endpoint`. Default `/v1/logs`. */
@@ -210,17 +201,6 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 }
 
 export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => {
-	const dropPrefixes = config.dropSpanNames
-	const dropSpan =
-		dropPrefixes !== undefined && dropPrefixes.length > 0
-			? (name: string) => dropPrefixes.some((prefix) => name.startsWith(prefix))
-			: undefined
-	const anticipatedErrorIdentifiers = [
-		...(config.anticipatedErrorIdentifiers ?? []),
-		...(config.anticipatedErrorTags ?? []),
-	]
-	const anticipatedIdentifiers =
-		anticipatedErrorIdentifiers.length > 0 ? new Set(anticipatedErrorIdentifiers) : undefined
 	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
 	warnIfKeylessMapleIngest({
 		logPrefix: "[MapleClientSDK]",
@@ -256,11 +236,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		}
 	}
 
-	const spans: SpanBuffer = makeSpanBuffer({
-		dropSpan,
-		anticipatedErrorIdentifiers: anticipatedIdentifiers,
-		watchConnection,
-	})
+	const spans: SpanBuffer = makeSpanBuffer({ ...config, watchConnection })
 	const logs: LogBuffer = makeLogBuffer({
 		excludeLogSpans: config.excludeLogSpans,
 	})

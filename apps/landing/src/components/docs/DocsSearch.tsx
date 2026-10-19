@@ -11,6 +11,7 @@ import {
 	CommandList,
 } from "@maple/ui/components/ui/command"
 import { isEditableTarget } from "@maple/ui/lib/keyboard"
+import { cn } from "@maple/ui/lib/utils"
 import { MagnifierIcon } from "@maple/ui/components/icons/magnifier"
 import Fuse, { type IFuseOptions } from "fuse.js"
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -21,6 +22,7 @@ import {
 	toRecords,
 	type SearchDoc,
 	type SearchHit,
+	type SearchIndexPayload,
 	type SearchRecord,
 } from "../../lib/docs-search"
 import { groupRank } from "../../lib/docs-nav"
@@ -40,8 +42,7 @@ const FUZZY_OPTIONS: IFuseOptions<SearchRecord> = {
 	minMatchCharLength: 3,
 }
 
-interface SearchIndex {
-	docs: SearchDoc[]
+interface SearchIndex extends SearchIndexPayload {
 	records: SearchRecord[]
 	fuzzy: Fuse<SearchRecord>
 }
@@ -52,10 +53,10 @@ let indexPromise: Promise<SearchIndex> | null = null
 function loadIndex() {
 	if (!indexPromise) {
 		indexPromise = fetch("/docs/search-index.json")
-			.then((res) => res.json() as Promise<SearchDoc[]>)
-			.then((docs) => {
+			.then((res) => res.json() as Promise<SearchIndexPayload>)
+			.then(({ docs, icons }) => {
 				const records = toRecords(docs)
-				return { docs, records, fuzzy: new Fuse(records, FUZZY_OPTIONS) }
+				return { docs, icons, records, fuzzy: new Fuse(records, FUZZY_OPTIONS) }
 			})
 			.catch((err) => {
 				indexPromise = null // allow retry on next open
@@ -101,6 +102,19 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
 	return <>{parts}</>
 }
 
+// Build-time SVG from our own icon components (see search-index.json.ts).
+// Category glyphs paint in currentColor, so they follow the highlighted row.
+function Icon({ svg, className }: { svg: string | undefined; className?: string }) {
+	if (!svg) return null
+	return (
+		<span
+			aria-hidden="true"
+			className={cn("flex shrink-0", className)}
+			dangerouslySetInnerHTML={{ __html: svg }}
+		/>
+	)
+}
+
 function Tag({ doc }: { doc: SearchDoc }) {
 	return (
 		<span className="ms-auto shrink-0 whitespace-nowrap border border-current/25 px-1.5 py-0.5 font-medium text-[9px] text-current/70 uppercase leading-none tracking-wider">
@@ -109,12 +123,17 @@ function Tag({ doc }: { doc: SearchDoc }) {
 	)
 }
 
-// Items inherit the row's text color (the base component flips it to the dark
-// accent-foreground when highlighted) and lean on opacity for hierarchy, so
-// both states stay legible — fixed fg/fg-muted colors clash on the amber row.
-function PageItem({ doc }: { doc: SearchDoc }) {
+type Icons = SearchIndexPayload["icons"]
+
+// The highlighted row mirrors the sidebar's active link: a primary tint and a
+// primary left bar. Text keeps the foreground color and leans on opacity for hierarchy.
+const ITEM_CLASS =
+	"flex items-center gap-3 rounded-none data-highlighted:bg-primary/10 data-highlighted:text-fg data-highlighted:shadow-[inset_2px_0_0_var(--primary)]"
+
+function PageItem({ doc, icons }: { doc: SearchDoc; icons: Icons }) {
 	return (
-		<CommandItem value={doc.url} render={<a href={doc.url} />} className="flex items-center gap-3">
+		<CommandItem value={doc.url} render={<a href={doc.url} />} className={ITEM_CLASS}>
+			<Icon svg={doc.icon && icons[doc.icon]} className="opacity-80" />
 			<span className="flex min-w-0 flex-col">
 				<span className="truncate text-sm">{doc.title}</span>
 				<span className="truncate text-xs opacity-65">{doc.description}</span>
@@ -124,11 +143,12 @@ function PageItem({ doc }: { doc: SearchDoc }) {
 	)
 }
 
-function HitItem({ hit, terms }: { hit: SearchHit; terms: string[] }) {
+function HitItem({ hit, terms, icons }: { hit: SearchHit; terms: string[]; icons: Icons }) {
 	const { record, snippet } = hit
 	const detail = snippet || (record.section ? "" : record.doc.description)
 	return (
-		<CommandItem value={record.url} render={<a href={record.url} />} className="flex items-center gap-3">
+		<CommandItem value={record.url} render={<a href={record.url} />} className={ITEM_CLASS}>
+			<Icon svg={record.doc.icon && icons[record.doc.icon]} className="opacity-80" />
 			<span className="flex min-w-0 flex-col">
 				{record.section && (
 					<span className="truncate text-[11px] opacity-55">{record.doc.title}</span>
@@ -151,6 +171,7 @@ export default function DocsSearch() {
 	const [open, setOpen] = useState(false)
 	const [query, setQuery] = useState("")
 	const [docs, setDocs] = useState<SearchDoc[]>([])
+	const [icons, setIcons] = useState<Icons>({})
 	const indexRef = useRef<SearchIndex | null>(null)
 
 	const ensureIndex = useCallback(() => {
@@ -158,6 +179,7 @@ export default function DocsSearch() {
 			.then((index) => {
 				indexRef.current = index
 				setDocs(index.docs)
+				setIcons(index.icons)
 			})
 			.catch(() => {
 				/* keep palette usable; results just stay empty */
@@ -258,9 +280,15 @@ export default function DocsSearch() {
 								{results === null ? (
 									grouped.map(([group, items]) => (
 										<CommandGroup key={group}>
-											<CommandGroupLabel>{group}</CommandGroupLabel>
+											<CommandGroupLabel className="flex items-center gap-1.5">
+												<Icon
+													svg={icons[`group:${group}`]}
+													className="text-primary/80 [&_svg]:size-3"
+												/>
+												{group}
+											</CommandGroupLabel>
 											{items.map((doc) => (
-												<PageItem key={doc.id} doc={doc} />
+												<PageItem key={doc.id} doc={doc} icons={icons} />
 											))}
 										</CommandGroup>
 									))
@@ -268,7 +296,7 @@ export default function DocsSearch() {
 									<CommandEmpty>No results for “{query}”.</CommandEmpty>
 								) : (
 									results.map((hit) => (
-										<HitItem key={hit.record.url} hit={hit} terms={terms} />
+										<HitItem key={hit.record.url} hit={hit} terms={terms} icons={icons} />
 									))
 								)}
 							</CommandList>

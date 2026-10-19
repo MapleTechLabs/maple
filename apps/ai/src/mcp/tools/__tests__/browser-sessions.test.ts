@@ -5,7 +5,12 @@ import {
 	GetSessionTranscriptOutput,
 	SearchSessionsOutput,
 } from "@maple/domain/mcp-outputs"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
+import {
+	installFakeWarehouse,
+	readsTraceSpans,
+	restoreWarehouse,
+	type FixtureRule,
+} from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import type { McpToolResult } from "../types"
 
@@ -103,7 +108,7 @@ const fixtures: FixtureRule[] = [
 		rows: [{ sessionId: SESSION_ID, activeTimeMs: "4000", idleTimeMs: "1000", eventCount: "2" }],
 	},
 	{
-		match: (sql) => sql.includes("trace_detail_spans"),
+		match: (sql) => readsTraceSpans(sql),
 		rows: [
 			{
 				traceId: TRACE_ID,
