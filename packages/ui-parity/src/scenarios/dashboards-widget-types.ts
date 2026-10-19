@@ -38,6 +38,18 @@ const typeWhere = (text: string): ReadonlyArray<(page: Page) => Promise<void>> =
 	(page) => page.getByRole("listbox", { name: "Where clause suggestions" }).waitFor(),
 ]
 
+/**
+ * Focus a labelled where editor and type into it until its suggestions open, then step down a row
+ * and accept it with Enter.
+ */
+const acceptWhere = (label: string, text: string): ReadonlyArray<(page: Page) => Promise<void>> => [
+	(page) => page.getByRole("textbox", { name: label }).click(),
+	(page) => page.keyboard.type(text),
+	(page) => page.getByRole("listbox", { name: "Where clause suggestions" }).waitFor(),
+	(page) => page.keyboard.press("ArrowDown"),
+	(page) => page.keyboard.press("Enter"),
+]
+
 /** The attribute keys answered, so Enter applies a key rather than the bare `attr.` prefix. */
 const keysListed = (page: Page) => page.getByRole("option", { name: /^attr\.[a-z]/ }).first().waitFor()
 
@@ -178,6 +190,53 @@ export const widgetTypeScenarios: ReadonlyArray<Scenario> = [
 	dashboard("widget-where-picked", "Widget editor: a suggestion clicked into the where clause", throughput, {
 		steps: act(...typeWhere("service.name = "), (page) => page.getByRole("option").first().click()),
 	}),
+	dashboard("widget-list-where", "Widget editor: a list filter's service suggestion accepted with Enter, then Apply", throughput, {
+		steps: act(clickButton("List"), ...acceptWhere("List filter", "service.name = "), clickButton("Apply")),
+	}),
+	dashboard("widget-list-where-open", "Widget editor: a list filter's service suggestions, the second row active", throughput, {
+		steps: act(
+			clickButton("List"),
+			(page) => page.getByRole("textbox", { name: "List filter" }).click(),
+			(page) => page.keyboard.type("service.name = "),
+			(page) => page.getByRole("listbox", { name: "Where clause suggestions" }).waitFor(),
+			(page) => page.keyboard.press("ArrowDown"),
+		),
+	}),
+	dashboard("widget-list-where-attr", "Widget editor: a list filter's attribute key applied with Enter, its values asked for", throughput, {
+		steps: act(
+			clickButton("List"),
+			(page) => page.getByRole("textbox", { name: "List filter" }).click(),
+			(page) => page.keyboard.type("attr."),
+			keysListed,
+			(page) => page.keyboard.press("Enter"),
+			(page) => page.waitForTimeout(700),
+		),
+	}),
+	foldkitOnly(dashboard("widget-funnel-where", "Widget editor: a funnel population's visitor type accepted, then Apply", editorOf("traces-funnel"), {
+		steps: act(
+			pickOption("Query source", "Product events"),
+			fillText("Step 1 event name", "product_viewed"),
+			...acceptWhere("Funnel population filter", "visitor_type = "),
+			clickButton("Apply"),
+		),
+	})),
+	foldkitOnly(dashboard("widget-funnel-step-where", "Widget editor: a funnel step filter's operator accepted, then Apply", editorOf("traces-funnel"), {
+		steps: act(
+			pickOption("Query source", "Product events"),
+			fillText("Step 1 event name", "product_viewed"),
+			...acceptWhere("Step 1 attribute filter", "plan "),
+			(page) => page.keyboard.type('"pro"'),
+			clickButton("Apply"),
+		),
+	})),
+	foldkitOnly(dashboard("widget-paths-where", "Widget editor: a paths population's visitor type accepted, then Apply", throughput, {
+		steps: act(
+			clickButton("Paths"),
+			fillText("Step 1 event name", "checkout_started"),
+			...acceptWhere("Paths population filter", "visitor_type = "),
+			clickButton("Apply"),
+		),
+	})),
 	// A key typed in full puts the caret in its value: the metric's values for it are asked for.
 	dashboard("widget-metric-where", "Widget editor: a metric attribute's value suggestions asked for", editorOf("cpu-line"), {
 		steps: act(
