@@ -374,12 +374,17 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 
 			// Not edge-cached: the window end moves every tick, so a key only repeats
 			// within one tick (1.5% hits) and every miss paid a read and a write.
-			// In-tick sharing is `withAlertEvaluationScope`. Named apart from the inner span.
-			const evaluate = Effect.fn("QueryEngineService.evaluateAlert")(function* (
+			// In-tick sharing is `withAlertEvaluationScope`. The span keeps its name for the
+			// "Query Engine Cache" dashboard; `cache.hit` false makes its hit rate read 0.
+			const evaluate = Effect.fn("QueryEngineService.cachedEvaluate")(function* (
 				tenant: TenantContext,
 				request: AlertEvaluateRequest,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "cache.path": "none" })
+				yield* Effect.annotateCurrentSpan({
+					orgId: tenant.orgId,
+					"cache.path": "none",
+					"cache.hit": false,
+				})
 				return yield* withTimeout(evaluateImpl(tenant, request))
 			})
 

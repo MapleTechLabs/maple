@@ -1,6 +1,7 @@
 import { describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Option, Ref, Schema } from "effect"
 import { strict as assert } from "node:assert"
+import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { OrgId, UserId } from "@maple/domain"
 import { baselineWarehouseCapabilities, type QueryEngineEvaluateRequest } from "@maple/query-engine"
 import type { CompiledQuery } from "@maple/query-engine/ch"
@@ -479,17 +480,29 @@ describe("QueryEngineService.evaluate", () => {
 				Layer.provide(makeConfig()),
 			)
 
+			const { spans, tracer } = makeRecordingTracer()
 			const [first, second] = yield* Effect.gen(function* () {
 				const qe = yield* QueryEngineService
 				const request = countRequest("sum")
 				return [yield* qe.evaluate(tenant, request), yield* qe.evaluate(tenant, request)] as const
-			}).pipe(Effect.provide(layer))
+			}).pipe(Effect.provide(layer), Effect.withTracer(tracer))
 
 			const expected = yield* makeQueryEngineEvaluate(evalStub(COUNT_ROWS))(tenant, countRequest("sum"))
 			assert.deepStrictEqual(first, expected)
 			assert.deepStrictEqual(second, expected)
 			assert.deepStrictEqual(yield* Ref.get(edgeOps), [])
 			assert.strictEqual(yield* Ref.get(queries), 2)
+			// The "Query Engine Cache" dashboard reads this span; every evaluation is now a miss.
+			assert.deepStrictEqual(
+				spansNamed(spans, "QueryEngineService.cachedEvaluate").map((span) => [
+					span.attributes.get("cache.hit"),
+					span.attributes.get("cache.path"),
+				]),
+				[
+					[false, "none"],
+					[false, "none"],
+				],
+			)
 		}),
 	)
 })
