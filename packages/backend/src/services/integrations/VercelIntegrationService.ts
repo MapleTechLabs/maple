@@ -361,6 +361,7 @@ export class VercelIntegrationService extends Context.Service<
 			forwarding: VercelForwarding,
 			ingestKey: string,
 			update: boolean,
+			reenable: boolean,
 		): VercelDrainBody => {
 			const headers = { authorization: `Bearer ${ingestKey}` }
 			const endpoint = drainEndpoint(kind, orgId)
@@ -385,8 +386,8 @@ export class VercelIntegrationService extends Context.Service<
 						? { type: "http", endpoint, encoding: "ndjson", compression: "none", headers }
 						: { type: "otlphttp", endpoint: { traces: endpoint }, encoding: "proto", headers },
 				...(sampling === undefined ? undefined : { sampling }),
-				// Re-applying the settings also turns a disabled drain back on.
-				...(update ? { status: "enabled" as const } : undefined),
+				// Saving the settings turns a disabled drain back on; the poll leaves the owner's choice alone.
+				...(update && reenable ? { status: "enabled" as const } : undefined),
 			}
 		}
 
@@ -396,6 +397,7 @@ export class VercelIntegrationService extends Context.Service<
 			orgId: OrgId,
 			drain: VercelListedDrain,
 			forwarding: VercelForwarding,
+			reenable: boolean,
 		) => {
 			const [rule, ...more] = drain.sampling
 			const samplingMatches =
@@ -403,13 +405,13 @@ export class VercelIntegrationService extends Context.Service<
 					? rule !== undefined &&
 						more.length === 0 &&
 						rule.type === "head_sampling" &&
-						rule.rate === forwarding.samplingRate &&
+						Math.abs(rule.rate - forwarding.samplingRate) < 1e-6 &&
 						rule.env === undefined &&
 						rule.requestPath === undefined
 					: rule === undefined
 			return (
 				drain.endpoint !== drainEndpoint(kind, orgId) ||
-				drain.status === "disabled" ||
+				(reenable && drain.status === "disabled") ||
 				!samplingMatches ||
 				!sameIds(drain.projectIds, forwarding.projectScope === "some" ? forwarding.projectIds : [])
 			)
@@ -445,6 +447,7 @@ export class VercelIntegrationService extends Context.Service<
 			token: string,
 			forwarding: VercelForwarding,
 			ingestKey: { readonly key: string; readonly hash: string },
+			reenable: boolean,
 		) {
 			const own = ownDrains(drains, kind, owner)
 			const enabled = kind === "logs" ? forwarding.logsEnabled : forwarding.tracesEnabled
@@ -478,15 +481,15 @@ export class VercelIntegrationService extends Context.Service<
 							httpClient,
 							token,
 							owner.teamId,
-							drainBody(kind, owner.orgId, forwarding, ingestKey.key, false),
+							drainBody(kind, owner.orgId, forwarding, ingestKey.key, false, reenable),
 						)
-					: rekey || drifted(kind, owner.orgId, kept, forwarding)
+					: rekey || drifted(kind, owner.orgId, kept, forwarding, reenable)
 						? updateDrain(
 								httpClient,
 								token,
 								owner.teamId,
 								kept.id,
-								drainBody(kind, owner.orgId, forwarding, ingestKey.key, true),
+								drainBody(kind, owner.orgId, forwarding, ingestKey.key, true, reenable),
 							).pipe(Effect.map((drain) => ({ ...drain, id: kept.id })))
 						: undefined
 			if (write === undefined) {
@@ -527,10 +530,12 @@ export class VercelIntegrationService extends Context.Service<
 			token: string,
 			forwarding: VercelForwarding,
 			ingestKey: { readonly key: string; readonly hash: string },
+			/** Settings saves turn disabled drains back on; the poll does not. */
+			reenable: boolean,
 		) {
 			const drains = yield* listDrains(httpClient, token, owner.teamId)
-			const logs = yield* reconcileDrain("logs", drains, owner, token, forwarding, ingestKey)
-			const traces = yield* reconcileDrain("traces", drains, owner, token, forwarding, ingestKey)
+			const logs = yield* reconcileDrain("logs", drains, owner, token, forwarding, ingestKey, reenable)
+			const traces = yield* reconcileDrain("traces", drains, owner, token, forwarding, ingestKey, reenable)
 			return { logs, traces } satisfies DrainOutcomes
 		})
 
@@ -979,7 +984,7 @@ export class VercelIntegrationService extends Context.Service<
 				})
 			}
 			yield* storeProjects(orgId, team.id, projects, now)
-			const reconciled = yield* Effect.result(reconcileDrains(connection, token, request, ingestKey))
+			const reconciled = yield* Effect.result(reconcileDrains(connection, token, request, ingestKey, true))
 			if (Result.isSuccess(reconciled)) {
 				yield* saveOutcomes(connection, reconciled.success, ingestKey.hash, now)
 			}
@@ -1024,7 +1029,7 @@ export class VercelIntegrationService extends Context.Service<
 			yield* updateConnection(orgId, connection.teamId, { ...forwarding, updatedAt: now })
 			const token = yield* decryptToken(connection)
 			const ingestKey = yield* drainKey(orgId, SYSTEM_USER_ID)
-			const outcomes = yield* reconcileDrains(connection, token, forwarding, ingestKey).pipe(
+			const outcomes = yield* reconcileDrains(connection, token, forwarding, ingestKey, true).pipe(
 				Effect.mapError(toDrainError),
 			)
 			yield* saveOutcomes(connection, outcomes, ingestKey.hash, now)
@@ -1123,12 +1128,19 @@ export class VercelIntegrationService extends Context.Service<
 
 			const body = Effect.gen(function* () {
 				const token = yield* decryptToken(claimed)
+				let forwarding: VercelForwarding = claimed
 
 				if (claimed.discoveredAt === null || now - claimed.discoveredAt >= DISCOVERY_TTL_MS) {
 					const projects = yield* Effect.result(listProjects(httpClient, token, claimed.teamId))
 					if (Result.isSuccess(projects)) {
 						yield* storeProjects(orgId, claimed.teamId, projects.success, now)
-						yield* write({ discoveredAt: now })
+						// Vercel drops a deleted project from the drain; forget it too, or the drain reads as drifted forever.
+						const listed = new Set(projects.success.projects.map((project) => project.id))
+						const kept = claimed.projectIds.filter((id) => listed.has(id))
+						const prune =
+							projects.success.complete && kept.length > 0 && kept.length < claimed.projectIds.length
+						if (prune) forwarding = { ...claimed, projectIds: kept }
+						yield* write(prune ? { discoveredAt: now, projectIds: kept } : { discoveredAt: now })
 					} else if (yield* stopFor(projects.failure)) {
 						return { ...skip(projects.failure.kind), failures: 1 }
 					} else {
@@ -1164,7 +1176,7 @@ export class VercelIntegrationService extends Context.Service<
 					yield* recordError(ingestKey.failure.message)
 				} else {
 					const reconciled = yield* Effect.result(
-						reconcileDrains(claimed, token, claimed, ingestKey.success),
+						reconcileDrains(claimed, token, forwarding, ingestKey.success, false),
 					)
 					if (Result.isFailure(reconciled)) {
 						// A drain 403 is the team's plan, not the token: only these two end the pass.

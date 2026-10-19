@@ -429,7 +429,7 @@ describe("VercelIntegrationService", () => {
 		)
 	})
 
-	it.effect("a poll patches a drain edited or disabled on Vercel back to the settings", () => {
+	it.effect("a poll patches a drain edited on Vercel back to the settings and leaves a disabled one off", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFake()
 		return run(
@@ -441,22 +441,43 @@ describe("VercelIntegrationService", () => {
 				logs.body = { ...logs.body, sampling: [], projectIds: ["prj_other"] }
 				fake.drains.get("drn_2")!.status = "disabled"
 				const summary = yield* poll()
-				assert.strictEqual(summary.drainsRepaired, 2)
+				assert.strictEqual(summary.drainsRepaired, 1)
 				const patched = callsTo(fake, "PATCH", "/v1/drains")
 				assert.deepStrictEqual(
 					patched.map((call) => call.path),
-					["/v1/drains/drn_1", "/v1/drains/drn_2"],
+					["/v1/drains/drn_1"],
 				)
-				for (const call of patched) {
-					assert.deepInclude(call.body, {
-						projectIds: ["prj_web"],
-						sampling: [{ type: "head_sampling", rate: 0.5 }],
-						status: "enabled",
-					})
-				}
-				assert.strictEqual((yield* status()).drains.traces?.status, "enabled")
+				assert.deepInclude(patched[0]?.body, {
+					projectIds: ["prj_web"],
+					sampling: [{ type: "head_sampling", rate: 0.5 }],
+				})
+				// The team's owner may have turned it off on purpose: only a settings save turns it back on.
+				assert.notProperty(asObject(patched[0]?.body), "status")
+				assert.strictEqual((yield* status()).drains.traces?.status, "disabled")
 				yield* poll()
-				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 2)
+				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 1)
+
+				yield* VercelIntegrationService.use((vercel) => vercel.updateSettings(orgId, {}))
+				assert.deepInclude(callsTo(fake, "PATCH", "/v1/drains/drn_2")[0]?.body, { status: "enabled" })
+				assert.strictEqual((yield* status()).drains.traces?.status, "enabled")
+			}),
+		)
+	})
+
+	it.effect("a picked project deleted on Vercel is dropped from the settings instead of patched every poll", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect({ projectIds: ["prj_web", "prj_gone"] })
+				// Vercel drops a deleted project from every drain that named it.
+				for (const drain of fake.drains.values()) drain.body = { ...drain.body, projectIds: ["prj_web"] }
+				yield* TestClock.adjust("61 minutes")
+				yield* poll()
+				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 0)
+				assert.deepStrictEqual((yield* status()).projectIds, ["prj_web"])
 			}),
 		)
 	})
@@ -717,7 +738,8 @@ describe("VercelIntegrationService", () => {
 			fake,
 			Effect.gen(function* () {
 				yield* connect()
-				fake.drains.get("drn_1")!.status = "disabled"
+				const logs = fake.drains.get("drn_1")!
+				logs.body = { ...logs.body, sampling: [] }
 				fake.respond = (call) =>
 					call.method === "PATCH" && call.path === "/v1/drains/drn_1"
 						? vercelError(403, "Drains are not available on the Hobby plan")
@@ -727,7 +749,7 @@ describe("VercelIntegrationService", () => {
 				const after = yield* status()
 				assert.isFalse(after.authFailed)
 				assert.include(after.lastError ?? "", "Hobby plan")
-				assert.strictEqual(after.drains.logs?.status, "disabled")
+				assert.strictEqual(after.drains.logs?.status, "enabled")
 				assert.include(after.drains.logs?.lastError ?? "", "Hobby plan")
 				assert.strictEqual(after.drains.traces?.status, "enabled")
 			}),
