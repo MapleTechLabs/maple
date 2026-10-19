@@ -52,7 +52,15 @@ const search = (
 	context: Context,
 ): ReadonlyArray<Command.Command<Message, never, Resources>> => {
 	const query = model.list.inputValue.trim()
-	return query === "" ? [] : [SearchPalette({ query, entries: searchEntriesOf(entriesOf(model, context)) })]
+	return query === ""
+		? []
+		: [
+				SearchPalette({
+					query,
+					serviceCount: model.serviceNames.length,
+					entries: searchEntriesOf(entriesOf(model, context)),
+				}),
+			]
 }
 
 /** A pick: links navigate, actions run; either way the palette closes. */
@@ -131,9 +139,9 @@ export const update = (model: Model, message: Message, context: Context): Update
 			return { model: loaded, commands: search(loaded, context) }
 		},
 		FailedLoadServices: () => ({ model }),
-		// An answer for an older query is dropped; the newer one is in flight.
-		RankedEntries: ({ query, ids }) =>
-			query === model.list.inputValue.trim()
+		// An answer for an older query, or for the list before the services landed, is dropped.
+		RankedEntries: ({ query, serviceCount, ids }) =>
+			query === model.list.inputValue.trim() && serviceCount === model.serviceNames.length
 				? rankedStep(
 						{ ...model, ranked: ids, rankedQuery: query, pendingEnter: null },
 						model.pendingEnter,

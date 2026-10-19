@@ -130,13 +130,13 @@ export const PreloadFuse = Command.define("PreloadFuse", {
 
 /** `fuse.search(query)`: every match, best first. */
 export const SearchPalette = Command.define("SearchPalette", {
-	args: { query: Schema.String, entries: Schema.Array(SearchEntry) },
+	args: { query: Schema.String, serviceCount: Schema.Number, entries: Schema.Array(SearchEntry) },
 	messages: [Message.RankedEntries],
-	execute: ({ query, entries }) =>
+	execute: ({ query, serviceCount, entries }) =>
 		Effect.promise(() => import("fuse.js")).pipe(
 			Effect.map(({ default: Fuse }) => {
 				const ids = new Fuse(entries, FUSE_OPTIONS).search(query).map(({ item }) => item.id)
-				return Message.RankedEntries({ query, ids })
+				return Message.RankedEntries({ query, serviceCount, ids })
 			}),
 		),
 })

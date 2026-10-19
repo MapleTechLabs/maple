@@ -43,7 +43,8 @@ export const Message = defineMessageUnion({
 	PressedEnter: { isReleasesVisible: Schema.Boolean },
 	SucceededLoadServices: { serviceNames: Schema.Array(Schema.String) },
 	FailedLoadServices: {},
-	RankedEntries: { query: Schema.String, ids: Schema.Array(Schema.String) },
+	/** `serviceCount`: the services the ranked entries held; a ranking of the list before they landed is stale. */
+	RankedEntries: { query: Schema.String, serviceCount: Schema.Number, ids: Schema.Array(Schema.String) },
 	CompletedReleaseServices: {},
 	CompletedPreloadFuse: {},
 	ElapsedCloseDelay: {},
