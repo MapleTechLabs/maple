@@ -38,6 +38,9 @@ export const Model = Schema.Struct({
 	isBare: Schema.Boolean,
 	/** Base UI `initialFocus`: the popup itself (default) or its first tabbable element. */
 	initialFocus: Schema.Literals(["popup", "first-tabbable"]),
+	/** `PopoverContent`'s side and align; `side`/`align` are where it last landed (after a flip). */
+	requestedSide: Side,
+	requestedAlign: Align,
 })
 export type Model = typeof Model.Type
 
@@ -68,6 +71,8 @@ export const init = (
 	sideOffset: options.sideOffset ?? 4,
 	isBare: options.isBare ?? false,
 	initialFocus: options.initialFocus ?? "popup",
+	requestedSide: options.side ?? "bottom",
+	requestedAlign: options.align ?? "center",
 })
 
 // MESSAGE
@@ -113,7 +118,9 @@ const transition = makeTransition<Model, Message>(
 	(message) => Message.GotAnimationMessage({ message }),
 	"WaitForPopoverExit",
 )
-export const open = transition.open
+/** Each opening is placed afresh from the requested side, as Base UI's positioner does. */
+export const open = (model: Model): Update.Return<Model, Message> =>
+	transition.open(model.isOpen ? model : { ...model, side: model.requestedSide, align: model.requestedAlign })
 export const WaitForPopoverExit = transition.WaitForExit
 export const close = transition.close
 
@@ -246,8 +253,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.OnMount(
 				MountPopover({
 					id: model.id,
-					align: model.align,
-					side: model.side,
+					align: model.requestedAlign,
+					side: model.requestedSide,
 					sideOffset: model.sideOffset,
 					isBare: model.isBare,
 					initialFocus: model.initialFocus,

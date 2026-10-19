@@ -105,7 +105,7 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 		FocusedVisibleTrigger: ({ triggerId }) =>
 			model.isInitialFocusPointer
 				? { model }
-				: updateTooltip(model, Tooltip.Message.FocusedTrigger({ triggerId })),
+				: updateTooltip(model, Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true })),
 		ClickedNewChat: () => (model.orgId === null ? { model } : { model, commands: [CreateSheetTab({ orgId: model.orgId })] }),
 		// A fresh conversation mounts a fresh empty state, which asks for the signal presence again.
 		CreatedSheetTab: ({ orgId: forOrg, tabId, referrerPath }) =>

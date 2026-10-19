@@ -77,6 +77,7 @@ export const Message = defineMessageUnion({
 	PressedTrigger: {},
 	FocusedTrigger: { triggerId: Schema.String },
 	BlurredTrigger: {},
+	CheckedFocusVisible: { triggerId: Schema.String, isFocusVisible: Schema.Boolean },
 	ElapsedOpenDelay: { generation: Schema.Number },
 	PressedEscape: {},
 	CompletedMountTooltip: {},
@@ -93,6 +94,19 @@ export const WaitOpenDelay = Command.define("WaitOpenDelay", {
 	messages: [Message.ElapsedOpenDelay],
 	execute: ({ generation, millis }) =>
 		Effect.sleep(Duration.millis(millis)).pipe(Effect.as(Message.ElapsedOpenDelay({ generation }))),
+})
+
+/** Base UI opens on focus only when it is `:focus-visible`: focus returned by a closing popup is not. */
+export const CheckFocusVisible = Command.define("CheckTooltipFocusVisible", {
+	args: { triggerId: Schema.String },
+	messages: [Message.CheckedFocusVisible],
+	execute: ({ triggerId: focusedId }) =>
+		Effect.sync(() =>
+			Message.CheckedFocusVisible({
+				triggerId: focusedId,
+				isFocusVisible: document.getElementById(focusedId)?.matches(":focus-visible") === true,
+			}),
+		),
 })
 
 const transition = makeTransition<Model, Message>(
@@ -128,7 +142,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		FocusedTrigger: ({ triggerId: focusedId }) =>
 			model.isPressingTrigger
 				? { model: { ...model, isPressingTrigger: false } }
-				: transition.open({ ...cancelled(model), triggerId: focusedId }),
+				: { model, commands: [CheckFocusVisible({ triggerId: focusedId })] },
+		CheckedFocusVisible: ({ triggerId: focusedId, isFocusVisible }) =>
+			isFocusVisible ? transition.open({ ...cancelled(model), triggerId: focusedId }) : { model },
 		BlurredTrigger: () => (model.isOpen ? close(model) : { model }),
 		ElapsedOpenDelay: ({ generation }) =>
 			generation === model.hoverGeneration ? transition.open(model) : { model },

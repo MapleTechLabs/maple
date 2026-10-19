@@ -87,18 +87,49 @@ export const markOutside = (
 			Effect.sync(() => changed.forEach(({ element: other, name }) => other.removeAttribute(name))),
 	).pipe(Effect.asVoid)
 
-/** Base UI's scroll lock for a page without a scrollbar: `overflow: hidden` on `<body>`. */
+/**
+ * Base UI's scroll lock for a page without a scrollbar: `overflow: hidden` on `<body>`. Locks
+ * nest (a menu closing as its dialog opens): the count lives on `<body>`, the first saves overflow.
+ */
 export const lockBodyScroll: Effect.Effect<void, never, Scope.Scope> = Effect.acquireRelease(
 	Effect.sync(() => {
-		const previous = document.body.style.overflow
-		document.body.style.overflow = "hidden"
-		return previous
+		const body = document.body
+		const count = Number(body.dataset["scrollLocks"] ?? "0")
+		if (count === 0) {
+			body.dataset["scrollLockOverflow"] = body.style.overflow
+			body.style.overflow = "hidden"
+		}
+		body.dataset["scrollLocks"] = String(count + 1)
 	}),
-	(previous) =>
+	() =>
 		Effect.sync(() => {
-			document.body.style.overflow = previous
+			const body = document.body
+			const count = Number(body.dataset["scrollLocks"] ?? "1") - 1
+			if (count > 0) {
+				body.dataset["scrollLocks"] = String(count)
+				return
+			}
+			body.style.overflow = body.dataset["scrollLockOverflow"] ?? ""
+			delete body.dataset["scrollLocks"]
+			delete body.dataset["scrollLockOverflow"]
 		}),
-).pipe(Effect.asVoid)
+)
+
+/**
+ * An open popup's Escape stays inside it: keydowns reaching `container` stop there, so an
+ * enclosing dialog's Escape handler does not also close (Base UI closes only the popup).
+ */
+export const containEscape = (container: EventTarget): Effect.Effect<void, never, Scope.Scope> =>
+	Effect.acquireRelease(
+		Effect.sync(() => {
+			const onKeyDown = (event: Event) => {
+				if ("key" in event && event.key === "Escape") event.stopPropagation()
+			}
+			container.addEventListener("keydown", onKeyDown)
+			return onKeyDown
+		}),
+		(onKeyDown) => Effect.sync(() => container.removeEventListener("keydown", onKeyDown)),
+	).pipe(Effect.asVoid)
 
 const TABBABLE =
 	"a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]"

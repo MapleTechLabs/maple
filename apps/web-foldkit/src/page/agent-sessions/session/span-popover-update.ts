@@ -148,7 +148,7 @@ export const stepCloseTooltip = (model: Model, message: Tooltip.Message): Return
 
 export const checkedCloseFocus = (model: Model, triggerId: string, isFocusVisible: boolean): Return =>
 	isFocusVisible
-		? liftTooltip(model, Tooltip.update(model.closeTooltip, Tooltip.Message.FocusedTrigger({ triggerId })))
+		? liftTooltip(model, Tooltip.update(model.closeTooltip, Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true })))
 		: { model }
 
 /** The Messages tab's markdown bodies, when that tab is the one open. */

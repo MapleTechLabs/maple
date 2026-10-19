@@ -85,6 +85,34 @@ describe("popover scene", () => {
 		)
 	})
 
+	test("a flipped popover reopens on its requested side, not the side it flipped to", () => {
+		scene(
+			config,
+			given(init(ID, { isOpen: true })),
+			Mount.resolve(MountPopover, Message.ChangedPlacement({ side: "top", align: "center" })),
+			click(trigger),
+			...exited(1),
+			click(trigger),
+			Mount.expectHas(
+				MountPopover({
+					id: ID,
+					align: "center",
+					side: "bottom",
+					sideOffset: 4,
+					isBare: false,
+					initialFocus: "popup",
+				}),
+			),
+			Mount.resolve(MountPopover, Message.CompletedMountPopover()),
+			paint(2),
+			Command.resolve(
+				Animation.WaitForAnimationSettled,
+				Animation.Message.EndedAnimation({ generation: 2 }),
+			),
+			expect(popup).toHaveAttr("data-side", "bottom"),
+		)
+	})
+
 	test("Escape closes it", () => {
 		scene(
 			config,

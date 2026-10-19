@@ -1,8 +1,9 @@
 import * as Animation from "@foldkit/ui/animation"
-import { Array, Option, Schema, Stream } from "effect"
+import { Array, Effect, Option, Schema, Stream } from "effect"
 import { Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
+import { containEscape } from "./overlay/portal"
 import { initPopup, makeTransition, PopupState } from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
 import { isRovingKey, nextIndex } from "./overlay/roving"
@@ -235,5 +236,15 @@ export const MountCombobox = Mount.defineStream("MountCombobox", {
 						return Message.PressedOutside()
 				}
 			}),
+			Stream.merge(escapeContained(anchorSelector)),
 		),
 })
+
+/** While the list is open, Escape in the input closes it and stops short of an enclosing dialog. */
+const escapeContained = (anchorSelector: string): Stream.Stream<never> =>
+	Stream.callback<never>(() =>
+		Option.match(Option.fromNullishOr(document.querySelector(anchorSelector)), {
+			onNone: () => Effect.never,
+			onSome: (anchor) => containEscape(anchor).pipe(Effect.andThen(Effect.never)),
+		}),
+	)

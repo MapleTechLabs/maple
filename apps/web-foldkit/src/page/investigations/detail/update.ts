@@ -233,7 +233,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CheckedTipFocus: ({ triggerId, isFocusVisible }) => {
 			if (!isFocusVisible) return { model }
-			const step = Tooltip.update(model.traceTooltip, Tooltip.Message.FocusedTrigger({ triggerId }))
+			const step = Tooltip.update(model.traceTooltip, Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true }))
 			return {
 				model: { ...model, traceTooltip: step.model },
 				commands: Command.mapMessages(step.commands ?? [], (tooltip) => Message.GotTraceTooltipMessage({ message: tooltip })),

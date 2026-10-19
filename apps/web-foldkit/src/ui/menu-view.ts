@@ -108,12 +108,17 @@ export type MenuEntry =
 	  }>
 	| Readonly<{ _tag: "Separator" }>
 
+const itemRefOf = (entry: MenuItemEntry): ItemRef =>
+	entry.isDisabled === true
+		? { kind: "Item", value: entry.value, isDisabled: true }
+		: { kind: "Item", value: entry.value }
+
 /** The highlightable entries in document order. */
 export const itemRefs = (entries: ReadonlyArray<MenuEntry>): ReadonlyArray<ItemRef> =>
 	entries.flatMap((entry): ReadonlyArray<ItemRef> => {
 		switch (entry._tag) {
 			case "Item":
-				return [{ kind: "Item", value: entry.value }]
+				return [itemRefOf(entry)]
 			case "Submenu":
 				return [{ kind: "Submenu", value: entry.value }]
 			case "Checkbox":
@@ -207,7 +212,7 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 			const item = menuItem(
 				h,
 				{
-					...row(model, index, { kind: "Item", value: entry.value }),
+					...row(model, index, itemRefOf(entry)),
 					variant: entry.variant,
 					isDisabled: entry.isDisabled,
 					className: entry.className,
@@ -337,7 +342,7 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 								keyHandler(h, SUBMENU_KEYS, (key) =>
 									Message.PressedSubmenuKey({
 										key,
-										values: items.map((item) => item.value),
+										values: items.map((item) => (item.isDisabled === true ? null : item.value)),
 									}),
 								),
 							],

@@ -21,7 +21,12 @@ import * as Tooltip from "./tooltip"
 export const ItemKind = Schema.Literals(["Item", "Submenu", "Checkbox", "Radio"])
 export type ItemKind = typeof ItemKind.Type
 
-export const ItemRef = Schema.Struct({ kind: ItemKind, value: Schema.String })
+/** A disabled item stays reachable by arrows (Base UI's empty `disabledIndices`) but never runs. */
+export const ItemRef = Schema.Struct({
+	kind: ItemKind,
+	value: Schema.String,
+	isDisabled: Schema.optionalKey(Schema.Boolean),
+})
 export type ItemRef = typeof ItemRef.Type
 
 // MODEL
@@ -75,7 +80,8 @@ export const Message = defineMessageUnion({
 	ClickedItem: { index: Schema.Number, item: ItemRef },
 	LeftMenu: {},
 	ElapsedSubmenuDelay: { generation: Schema.Number, index: Schema.Number, value: Schema.String },
-	PressedSubmenuKey: { key: Schema.String, values: Schema.Array(Schema.String) },
+	/** `null` marks a disabled item: reachable, never selected. */
+	PressedSubmenuKey: { key: Schema.String, values: Schema.Array(Schema.NullOr(Schema.String)) },
 	HoveredSubmenuItem: { index: Schema.Number },
 	ClickedSubmenuItem: { value: Schema.String },
 	CompletedFocusMenuItem: {},
@@ -153,6 +159,7 @@ const openSubmenu = (model: Model, index: number, value: string, isKeyboard: boo
 })
 
 const activate = (model: Model, index: number, item: ItemRef, isKeyboard: boolean): UpdateReturn => {
+	if (item.isDisabled === true) return { model }
 	switch (item.kind) {
 		case "Item":
 			return closeWith(model, OutMessage.SelectedItem({ value: item.value }))
@@ -189,7 +196,7 @@ const pressMenuKey = (model: Model, key: string, items: ReadonlyArray<ItemRef>):
 	return key === "Enter" || key === " " ? activate(model, model.highlighted, current, true) : { model }
 }
 
-const pressSubmenuKey = (model: Model, key: string, values: ReadonlyArray<string>): UpdateReturn => {
+const pressSubmenuKey = (model: Model, key: string, values: ReadonlyArray<string | null>): UpdateReturn => {
 	const submenu = model.submenu
 	if (submenu === null) return { model }
 	if (key === "Escape") return close(model)
@@ -204,7 +211,7 @@ const pressSubmenuKey = (model: Model, key: string, values: ReadonlyArray<string
 		})
 	}
 	const value = submenu.highlighted === null ? undefined : values[submenu.highlighted]
-	return (key === "Enter" || key === " ") && value !== undefined
+	return (key === "Enter" || key === " ") && value !== undefined && value !== null
 		? closeWith(model, OutMessage.SelectedSubmenuItem({ submenu: submenu.value, value }))
 		: { model }
 }
