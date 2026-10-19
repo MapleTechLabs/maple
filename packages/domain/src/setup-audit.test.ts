@@ -1541,6 +1541,20 @@ describe("trace completeness", () => {
 			expect(result.detail).toContain("100% of traces have no root span: 40 of 40 traces")
 		})
 
+		it("does not blame upstream when the row cap cut services it cannot see", () => {
+			const api = {
+				entryService: "api",
+				traceCount: 9_800,
+				rootlessCount: 9_800,
+				sampledRootlessCount: 0,
+				orgTraceCount: 10_000,
+				orgRootlessCount: 9_800,
+				orgSampledRootlessCount: 0,
+			}
+			const result = check(traces({ rootless: [api] }), "TRC-02")
+			expect(result.detail).toContain("98% of traces have no root span: 9800 of 10000 traces")
+		})
+
 		it("rates the whole org, including services past the row cap", () => {
 			// The query returned only api; the org totals also count 90,000 healthy traces it cut.
 			const api = {

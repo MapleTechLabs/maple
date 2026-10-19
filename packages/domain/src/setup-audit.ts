@@ -1617,10 +1617,13 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 					note: `${sharePercent(row.missing, row.traceCount)} of traces starting here have no root (${row.missing} of ${row.traceCount})`,
 				}))
 
-			// One upstream fact, not N service defects — but only when every sizable service shows it.
+			// One upstream fact, not N service defects — but only when every sizable service shows it,
+			// so the rows must cover every trace (none cut by the query's row cap).
 			const sizable = rows.filter((row) => row.traceCount >= TRACE_MIN_SAMPLE)
+			const everyService = rows.reduce((sum, row) => sum + row.traceCount, 0) === total
 			const systemic =
 				ratio > ROOTLESS_SYSTEMIC_RATIO &&
+				everyService &&
 				sizable.length > 0 &&
 				sizable.every((row) => row.missing / row.traceCount > ROOTLESS_SYSTEMIC_RATIO)
 			if (systemic) {
