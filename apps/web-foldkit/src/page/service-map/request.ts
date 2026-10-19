@@ -70,7 +70,7 @@ export const facetsStep = (model: Model, context: PageContext, mode: RequestMode
 		requestKey(context.orgId, "getServicesFacets", { data: window }),
 		mode,
 		(facets) => ({ facets }),
-		(key) => FetchFacets({ key, window }),
+		(key) => FetchFacets({ key, window, refresh: mode === "Refresh" }),
 	)
 }
 

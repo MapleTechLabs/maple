@@ -112,10 +112,11 @@ export const MapInput = Schema.Struct({
 export type MapInput = typeof MapInput.Type
 
 export const FetchFacets = Command.define("FetchServiceMapFacets", {
-	args: { key: Schema.String, window: TimeWindow },
+	/** `refresh`: Reload and Try again revalidate past the read cache (`useAtomRefresh`). */
+	args: { key: Schema.String, window: TimeWindow, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
-	execute: ({ key, window }) =>
-		loadServicesFacets(window, { key }).pipe(
+	execute: ({ key, window, refresh }) =>
+		loadServicesFacets(window, { key, refresh }).pipe(
 			Effect.map(({ data }) => data.environments.map((environment) => environment.name)),
 			Effect.mapError(toLoadFailure),
 			Effect.result,

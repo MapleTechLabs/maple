@@ -1,11 +1,11 @@
 import { OrgId } from "@maple/domain"
 import { Option, Result, Schema } from "effect"
-import { Command, expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
 import * as ServiceMap from "../../service-map/map/service-map"
 import { PageOutMessage, type PageContext } from "../contract"
-import { LoadSignalPresence, MountEmptyState } from "./command"
+import { CompleteReloadSpin, FetchBundle, FetchFacets, LoadSignalPresence, MountEmptyState, ResolveWindow } from "./command"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
@@ -162,6 +162,34 @@ describe("service map page: requests", () => {
 		).model
 		expect(stale.map).toEqual(Option.none())
 		expect(Option.isSome(withBundle(model, BUNDLE).map)).toBe(true)
+	})
+
+	test("Reload revalidates the environment facets past the read cache, as legacy's refresh", () => {
+		const windowedModel = windowed()
+		const loaded = pageUpdate(
+			windowedModel,
+			Message.CompletedFetchFacets({ key: windowedModel.facets.key ?? "", result: Result.succeed(["production"]) }),
+		).model
+		const empty = withBundle(loaded, EMPTY_BUNDLE)
+		const refreshed = Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Refresh" })
+		scene(
+			{ update: pageUpdate, view },
+			given(empty),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
+			Command.resolve(LoadSignalPresence, Message.CompletedLoadSignalPresence({ result: Result.succeed({}) })),
+			click(role("button", { name: "Reload" })),
+			Command.resolve(ResolveWindow, refreshed),
+			Command.expectHas(FetchFacets({ key: empty.facets.key ?? "", window: facetsWindow, refresh: true })),
+			Command.resolveAll(
+				[CompleteReloadSpin, Message.CompletedReloadSpin({ version: 1 })],
+				[FetchFacets, Message.CompletedFetchFacets({ key: empty.facets.key ?? "", result: Result.succeed(["production"]) })],
+				[FetchBundle, Message.CompletedFetchBundle({ key: empty.bundle.key ?? "", result: Result.succeed(new MapBundle(EMPTY_BUNDLE)) })],
+			),
+		)
+		const entry = pageUpdate(windowedModel, Message.CompletedFetchFacets({ key: windowedModel.facets.key ?? "", result: Result.succeed([]) }))
+		const reentered = pageUpdate(entry.model, Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Load" }))
+		expect(names(reentered.commands)).not.toContain("FetchServiceMapFacets")
 	})
 
 	test("selecting a database node requests its query summary", () => {

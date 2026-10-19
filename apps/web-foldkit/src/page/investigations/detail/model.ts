@@ -40,6 +40,8 @@ export const Model = Schema.Struct({
 	search: InvestigationSearch,
 	nowMs: Schema.Number,
 	sync: Sync,
+	/** Bumped by Retry: a new subscription dependency, so the live query reads a fresh collection. */
+	syncAttempt: Schema.Number,
 	logs: KeyedSchema(Schema.Array(LogBucket), LoadFailure),
 	traces: KeyedSchema(Schema.Array(OverviewRow), LoadFailure),
 	escalation: KeyedSchema(Schema.NullOr(Escalation), LoadFailure),

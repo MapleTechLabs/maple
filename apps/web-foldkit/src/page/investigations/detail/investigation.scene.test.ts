@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { InvestigationRowSchema, rowsToInvestigation } from "@maple/web-data/collections/investigations"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { AppRoute } from "../../../route"
@@ -11,6 +11,7 @@ import * as Canvas from "../../../service-map/xyflow/canvas"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -75,7 +76,7 @@ const investigationOf = (overrides: Readonly<Record<string, unknown>> = {}): V2I
 
 const entered = (search: Model["search"] = {}) => ({ ...init(AppRoute.Investigation({ id: ID, search }), context).model, nowMs: NOW })
 const synced = (model: Model, investigation: V2Investigation) =>
-	pageUpdate(model, Message.SyncedInvestigation({ orgId: ORG, id: ID, sync: { _tag: "Ready", investigation } }))
+	pageUpdate(model, Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Ready", investigation } }))
 
 describe("investigation detail", () => {
 	test("entry reads the clock and waits on the live shape", () => {
@@ -91,8 +92,23 @@ describe("investigation detail", () => {
 	})
 
 	test("a lost live connection offers a retry", () => {
-		const failed = pageUpdate(entered(), Message.SyncedInvestigation({ orgId: ORG, id: ID, sync: { _tag: "Failed" } })).model
+		const failed = pageUpdate(entered(), Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Failed" } })).model
 		scene({ update: pageUpdate, view }, given(failed), expectView(text("This investigation could not be loaded")).toExist())
+	})
+
+	test("Try again resubscribes the live shape, and the dropped stream's answer is ignored", () => {
+		const failed = pageUpdate(entered(), Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Failed" } })).model
+		const deps = (model: Model) => subscriptions.investigation.modelToDependencies({ model, context })
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			click(role("button", { name: "Try again" })),
+			expectView(role("img", { name: "Loading the provenance graph" })).toExist(),
+		)
+		const retried = pageUpdate(failed, Message.ClickedRetrySync()).model
+		expect(deps(retried)).not.toEqual(deps(failed))
+		const stale = pageUpdate(retried, Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Failed" } }))
+		expect(stale.model.sync._tag).toBe("Loading")
 	})
 
 	test("a diagnosis renders the verdict and reads the signals card's two series", () => {

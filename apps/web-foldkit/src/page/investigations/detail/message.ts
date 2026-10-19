@@ -13,8 +13,8 @@ const result = <A extends Schema.Top>(schema: A) => ({ key: Schema.String, resul
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
 	TickedClock: { nowMs: Schema.Number },
-	/** The scoped shape's answer, for the org and investigation it was read for. */
-	SyncedInvestigation: { orgId: Schema.String, id: Schema.String, sync: Sync },
+	/** The scoped shape's answer, for the org, investigation and retry attempt it was read for. */
+	SyncedInvestigation: { orgId: Schema.String, id: Schema.String, attempt: Schema.Number, sync: Sync },
 	CompletedFetchLogs: result(Schema.Array(LogBucket)),
 	CompletedFetchTraces: result(Schema.Array(OverviewRow)),
 	CompletedFetchEscalation: result(Schema.NullOr(Escalation)),

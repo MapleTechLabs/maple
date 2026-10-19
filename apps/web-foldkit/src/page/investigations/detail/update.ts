@@ -100,6 +100,7 @@ export const init = (route: InvestigationRoute, _context: PageContext): Return =
 		search: route.search,
 		nowMs: 0,
 		sync: Option.isNone(decodeId(route.id)) ? { _tag: "Missing" } : { _tag: "Loading" },
+		syncAttempt: 0,
 		logs: Keyed.idle(),
 		traces: Keyed.idle(),
 		escalation: Keyed.idle(),
@@ -156,8 +157,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		TickedClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		SyncedInvestigation: ({ orgId, id, sync }) => {
-			if (orgId !== context.orgId || id !== model.id) return { model }
+		SyncedInvestigation: ({ orgId, id, attempt, sync }) => {
+			if (orgId !== context.orgId || id !== model.id || attempt !== model.syncAttempt) return { model }
 			const next = { ...model, sync }
 			return chain(
 				chain(chain(followOverview(next, context), sheetFor), (placed) => ({ model: replace(placed, context.timeZone) })),
@@ -172,8 +173,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onNone: () => ({ model }),
 				onSome: (investigation) => startWrite(model, primaryKind(investigation)),
 			}),
-		// TODO(sync-failed): legacy retries the org collections; a new instance re-subscribes here.
-		ClickedRetrySync: () => ({ model: { ...model, sync: { _tag: "Loading" } } }),
+		// `retryOrgCollections` mints a fresh scoped collection; the bumped attempt resubscribes onto one.
+		ClickedRetrySync: () => ({ model: { ...model, sync: { _tag: "Loading" }, syncAttempt: model.syncAttempt + 1 } }),
 		CompletedResolve: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({ model: { ...model, busy: null }, outMessage: toast("success", "Investigation resolved") }),

@@ -100,6 +100,13 @@ const clerkFaultScenarios: ReadonlyArray<Scenario> = [
 	page("clerk-billing-error", "Billing: daily spend, invoices and details fail", "/settings?tab=billing", {
 		dataset: CLERK,
 		...failing("billing.getDailySpend", "billing.listInvoices", "billing.getBillingProfile"),
+		// These GETs retry a 500 on a 300 ms backoff (`withMapleRetryPolicy`): wait out every retry,
+		// or the capture lands mid-backoff and its call count follows machine load.
+		steps: async (target) => {
+			await target.getByText("Couldn't load daily spend").waitFor()
+			await target.getByText(/^Couldn't load invoices\./).waitFor()
+			await target.getByText(/^Billing details aren't available right now\./).waitFor()
+		},
 	}),
 	page("account-email-preferences-loading", "Email preferences: loading", "/account?tab=email-preferences", {
 		dataset: CLERK,

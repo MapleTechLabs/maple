@@ -8,7 +8,7 @@ import {
 import { buildCheckoutSuccessUrl } from "@maple/web/lib/billing/checkout-return"
 import { parseCapInput, spendLimitFor, uncappedFeatures, updateFeatureControls } from "@maple/web/lib/billing/controls"
 import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "@maple/web/lib/billing/spend"
-import { Effect, Option, Result, Schema } from "effect"
+import { Cause, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command, Dom } from "foldkit"
 import * as Chart from "../../../charts/chart"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -46,10 +46,16 @@ const FetchUsage = Command.define("FetchBillingUsage", {
 	).pipe(loaded((result) => Message.CompletedFetchUsage({ result }))),
 })
 
+/**
+ * `SpendChartError` renders `dailySpendResult.cause`, which apps/web's `displayError` reads as the
+ * unexpected body (a retry button), so the slot keeps that body too.
+ */
 const FetchDaily = Command.define("FetchBillingDailySpend", {
 	messages: [Message.CompletedFetchDaily],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getDailySpend()).pipe(
-		loaded((result) => Message.CompletedFetchDaily({ result })),
+		Effect.mapError((error) => toLoadFailure(Cause.die(error))),
+		Effect.result,
+		Effect.map((result) => Message.CompletedFetchDaily({ result })),
 	),
 })
 
