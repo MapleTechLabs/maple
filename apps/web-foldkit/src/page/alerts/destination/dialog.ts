@@ -68,7 +68,12 @@ export const Message = defineMessageUnion({
 	ChangedField: { field: TextField, value: Schema.String },
 	ToggledEnabled: {},
 	ClickedDetectChats: {},
-	CompletedDetectChats: { result: Schema.Result(Schema.Array(V2TelegramChat), Schema.String) },
+	/** Keyed by the open and the token it was sent for: a stale answer never fills a newer form. */
+	CompletedDetectChats: {
+		openCount: Schema.Number,
+		botToken: Schema.String,
+		result: Schema.Result(Schema.Array(V2TelegramChat), Schema.String),
+	},
 	ClickedTelegramChat: { chatId: Schema.String },
 	ClickedCancel: {},
 	ClickedSave: {},
@@ -104,10 +109,10 @@ const FetchChatConnectors = Command.define("FetchChatConnectors", {
 	}).pipe(Effect.orElseSucceed(() => Message.CompletedFetchConnectors({ connectors: [] }))),
 })
 
-const DetectTelegramChats = Command.define("DetectTelegramChats", {
-	args: { botToken: Schema.String },
+export const DetectTelegramChats = Command.define("DetectTelegramChats", {
+	args: { openCount: Schema.Number, botToken: Schema.String },
 	messages: [Message.CompletedDetectChats],
-	execute: ({ botToken }) =>
+	execute: ({ openCount, botToken }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const result = yield* client.alertDestinations.telegramChats({ payload: { bot_token: botToken } })
@@ -115,7 +120,7 @@ const DetectTelegramChats = Command.define("DetectTelegramChats", {
 		}).pipe(
 			Effect.mapError((error) => displayError(error).message),
 			Effect.result,
-			Effect.map((result) => Message.CompletedDetectChats({ result })),
+			Effect.map((result) => Message.CompletedDetectChats({ openCount, botToken, result })),
 		),
 })
 
@@ -124,14 +129,54 @@ const failure = (error: unknown) => {
 	return { title: body.title, message: body.message }
 }
 
-export const CreateDestination = Command.define("CreateAlertDestination", {
+// The client takes one request shape per payload member, so the union is split on `type`
+// here instead of apps/web's `as never`.
+const createRequest = (payload: V2AlertDestinationCreateParams) => {
+	switch (payload.type) {
+		case "pagerduty":
+			return { payload }
+		case "webhook":
+			return { payload }
+		case "hazel-oauth":
+			return { payload }
+		case "discord":
+			return { payload }
+		case "telegram":
+			return { payload }
+		case "email":
+			return { payload }
+		case "chat":
+			return { payload }
+	}
+}
+
+const updateRequest = (id: AlertDestinationId, payload: V2AlertDestinationUpdateParams) => {
+	const params = { id }
+	switch (payload.type) {
+		case "pagerduty":
+			return { params, payload }
+		case "webhook":
+			return { params, payload }
+		case "hazel-oauth":
+			return { params, payload }
+		case "discord":
+			return { params, payload }
+		case "telegram":
+			return { params, payload }
+		case "email":
+			return { params, payload }
+		case "chat":
+			return { params, payload }
+	}
+}
+
+export const CreateDestination =Command.define("CreateAlertDestination", {
 	args: { openCount: Schema.Number, payload: V2AlertDestinationCreateParams },
 	messages: [Message.CompletedSave],
 	execute: ({ openCount, payload }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			// `as never`, as apps/web: the generated client collapses this union payload to one member.
-			const created = yield* client.alertDestinations.create({ payload: payload as never })
+			const created = yield* client.alertDestinations.create(createRequest(payload))
 			return created.id
 		}).pipe(
 			Effect.mapError(failure),
@@ -146,7 +191,7 @@ const UpdateDestination = Command.define("UpdateAlertDestinationFromDialog", {
 	execute: ({ openCount, id, payload }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const updated = yield* client.alertDestinations.update({ params: { id }, payload: payload as never })
+			const updated = yield* client.alertDestinations.update(updateRequest(id, payload))
 			return updated.id
 		}).pipe(
 			Effect.mapError(failure),
@@ -189,7 +234,7 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 
 /** A save in flight stays in flight across a reopen (legacy's `useAsyncAction`): no second submit. */
 const open = (model: Model, patch: Partial<Model>): Return => {
-	const next = { ...model, ...patch, openCount: model.openCount + 1, telegramChats: null, telegramError: null }
+	const next = { ...model, ...patch, openCount: model.openCount + 1, telegramChats: null, telegramError: null, isDetectingChats: false }
 	const opened = liftDialog(next, Dialog.open(model.dialog))
 	// `ProviderPicker` reads the connectors; it renders only for a new, unlocked destination.
 	const needsConnectors = next.editingId === null && !next.isProviderLocked && next.connectors === null
@@ -227,6 +272,23 @@ const save = (model: Model): Return => {
 	}
 }
 
+/** One chat is the common case (the bot was just added to a group): it fills the field. */
+const detected = (model: Model, result: Result.Result<ReadonlyArray<V2TelegramChat>, string>): Return =>
+	Result.match(result, {
+		onSuccess: (chats) => {
+			const [only] = chats
+			return {
+				model: {
+					...model,
+					isDetectingChats: false,
+					telegramChats: chats,
+					form: chats.length === 1 && only !== undefined ? { ...model.form, telegramChatId: only.id } : model.form,
+				},
+			}
+		},
+		onFailure: (error) => ({ model: { ...model, isDetectingChats: false, telegramError: error } }),
+	})
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: child }) => liftDialog(model, Dialog.update(model.dialog, child)),
@@ -252,23 +314,14 @@ export const update = (model: Model, message: Message): Return =>
 				? { model }
 				: {
 						model: { ...model, isDetectingChats: true, telegramChats: null, telegramError: null },
-						commands: [DetectTelegramChats({ botToken: model.form.telegramBotToken.trim() })],
+						commands: [DetectTelegramChats({ openCount: model.openCount, botToken: model.form.telegramBotToken.trim() })],
 					},
-		CompletedDetectChats: ({ result }) =>
-			Result.match(result, {
-				onSuccess: (chats) => {
-					const [only] = chats
-					return {
-						model: {
-							...model,
-							isDetectingChats: false,
-							telegramChats: chats,
-							form: chats.length === 1 && only !== undefined ? { ...model.form, telegramChatId: only.id } : model.form,
-						},
-					}
-				},
-				onFailure: (error) => ({ model: { ...model, isDetectingChats: false, telegramError: error } }),
-			}),
+		CompletedDetectChats: ({ openCount, botToken, result }) =>
+			openCount !== model.openCount
+				? { model }
+				: botToken !== model.form.telegramBotToken.trim()
+					? { model: { ...model, isDetectingChats: false } }
+					: detected(model, result),
 		ClickedTelegramChat: ({ chatId }) => ({ model: { ...model, form: { ...model.form, telegramChatId: chatId } } }),
 		ClickedCancel: () => close(model),
 		ClickedSave: () => save(model),

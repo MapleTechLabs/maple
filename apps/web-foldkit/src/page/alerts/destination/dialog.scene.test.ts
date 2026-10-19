@@ -1,7 +1,9 @@
 import { AlertDestinationId } from "@maple/domain/http"
+import type { V2TelegramChat } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import {
 	click,
+	expect as expectView,
 	Command,
 	expectOutMessage,
 	given,
@@ -14,7 +16,7 @@ import {
 import { describe, expect, test } from "vitest"
 import * as Dialog from "../../../ui/dialog"
 import { MountDialog } from "../../../ui/dialog"
-import { CreateDestination, Message, OutMessage, init, openNew, update } from "./dialog"
+import { CreateDestination, DetectTelegramChats, Message, OutMessage, init, openNew, update } from "./dialog"
 import { view as dialogView } from "./view"
 
 const view = withViewInputs(dialogView, { id: "test-destination" })()
@@ -47,6 +49,41 @@ describe("destination dialog", () => {
 		const created = update(saving, Message.CompletedSave({ openCount: 1, isCreate: true, result: Result.succeed(CREATED) }))
 		expect(created.outMessage).toEqual(OutMessage.CreatedDestination({ id: CREATED }))
 		expect(created.model.dialog.isOpen).toBe(false)
+	})
+
+	test("Detect chats fills its own token's only chat, never an older token's", () => {
+		const token = "123456:abcdefghijklmnopqrstuvwxyz0123456789"
+		const chat: V2TelegramChat = { id: "-100777", title: "On-call", type: "group" }
+		const detect = (botToken: string) =>
+			Command.resolve(
+				DetectTelegramChats,
+				Message.CompletedDetectChats({ openCount: 1, botToken, result: Result.succeed([chat]) }),
+			)
+		scene(
+			{ update, view },
+			given(opened()),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			click(role("button", { name: /^Telegram/ })),
+			type(role("textbox", { name: "Bot token" }), token),
+			click(role("button", { name: "Detect chats" })),
+			detect("999999:an-older-token-the-form-no-longer-holds"),
+			expectView(role("textbox", { name: "Chat ID" })).toHaveValue(""),
+			click(role("button", { name: "Detect chats" })),
+			detect(token),
+			expectView(role("textbox", { name: "Chat ID" })).toHaveValue("-100777"),
+		)
+	})
+
+	test("a Detect chats answer from before a reopen never fills the reopened form", () => {
+		const token = "123456:abcdefghijklmnopqrstuvwxyz0123456789"
+		const chat: V2TelegramChat = { id: "-100777", title: "On-call", type: "group" }
+		const telegram = { ...opened(), form: { ...opened().form, type: "telegram" as const, telegramBotToken: token } }
+		const detecting = update(telegram, Message.ClickedDetectChats()).model
+		const reopened = openNew(update(detecting, Message.ClickedCancel()).model).model
+		const onB = { ...reopened, form: { ...reopened.form, type: "telegram" as const, telegramBotToken: token } }
+		expect(onB.isDetectingChats).toBe(false)
+		const late = update(onB, Message.CompletedDetectChats({ openCount: 1, botToken: token, result: Result.succeed([chat]) }))
+		expect(late.model.form.telegramChatId).toBe("")
 	})
 
 	test("a save is in flight once; a failure keeps the dialog open and reports the error", () => {
