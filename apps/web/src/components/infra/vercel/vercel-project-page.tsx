@@ -178,7 +178,9 @@ function TopPaths({ paths }: { paths: VercelInfraProjectDetailResponse["paths"] 
 									{formatErrorRate(errors)}
 								</span>
 								<span className={cn(NUM, "w-[64px]")}>
-									{formatPercent(rate(path.cacheHits, path.requests))}
+									{path.cacheLookups === 0
+										? EMPTY_VALUE
+										: formatPercent(rate(path.cacheHits, path.cacheLookups))}
 								</span>
 							</div>
 						)
@@ -243,10 +245,10 @@ function TopErrors({ errors }: { errors: VercelInfraProjectDetailResponse["error
 
 function Deployments({
 	deployments,
-	failed,
+	error,
 }: {
 	deployments: ReadonlyArray<VercelDeploymentSummary> | null
-	failed: boolean
+	error: ReactNode | undefined
 }) {
 	return (
 		<section className="space-y-3">
@@ -264,8 +266,8 @@ function Deployments({
 					<ColumnHead label="Created" width="w-[72px]" align="right" />
 					<ColumnHead label="" width="w-[16px]" />
 				</DataTable.Head>
-				{failed ? (
-					<DataTable.Empty>Couldn't load deployments. Reload to try again.</DataTable.Empty>
+				{error !== undefined ? (
+					error
 				) : deployments === null ? (
 					<DataTable.SkeletonRows count={3}>
 						<Skeleton className="h-3 w-full" />
@@ -343,10 +345,12 @@ export function VercelProjectPage({
 	buckets,
 	detail,
 	deployments,
-	deploymentsFailed = false,
+	deploymentsError,
 	aiGateway,
 	aiTimeseries,
 	error,
+	detailError,
+	aiGatewayError,
 	timeSearch,
 }: {
 	projectId: string
@@ -358,11 +362,16 @@ export function VercelProjectPage({
 	buckets: ReadonlyArray<VercelInfraRequestBucket> | null
 	detail: VercelInfraProjectDetailResponse | null
 	deployments: ReadonlyArray<VercelDeploymentSummary> | null
-	deploymentsFailed?: boolean
+	/** Replaces the deployment rows when their read failed. */
+	deploymentsError?: ReactNode
 	aiGateway: VercelAiGatewayResponse | null
 	aiTimeseries: ReadonlyArray<VercelAiGatewayBucket>
-	/** Replaces the stats and charts when the warehouse reads failed. */
+	/** Replaces the stats and charts when their warehouse reads failed. */
 	error?: ReactNode
+	/** Replaces the top paths and errors when their read failed. */
+	detailError?: ReactNode
+	/** Replaces the AI Gateway section when its read failed. */
+	aiGatewayError?: ReactNode
 	timeSearch: TimeRangeSearch
 }) {
 	const production = project?.productionDeployment ?? null
@@ -427,37 +436,39 @@ export function VercelProjectPage({
 					</>
 				}
 			/>
-			{error ?? (
-				<>
-					{row === null || buckets === null ? (
-						<>
-							<StatRailLoading count={5} columns={5} />
-							<div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-								<ChartLoading
-									variant="area"
-									height={CHART_HEIGHT}
-									className="lg:col-span-2"
-								/>
-								<ChartLoading variant="area" height={CHART_HEIGHT} />
-								<ChartLoading variant="area" height={CHART_HEIGHT} />
-							</div>
-						</>
-					) : (
-						<>
-							<Stats row={row} buckets={buckets} />
-							<Charts buckets={buckets} />
-						</>
-					)}
-					{detail === null ? null : (
-						<div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-							<TopPaths paths={detail.paths} />
-							<TopErrors errors={detail.errors} />
+			{error ??
+				(row === null || buckets === null ? (
+					<>
+						<StatRailLoading count={5} columns={5} />
+						<div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+							<ChartLoading variant="area" height={CHART_HEIGHT} className="lg:col-span-2" />
+							<ChartLoading variant="area" height={CHART_HEIGHT} />
+							<ChartLoading variant="area" height={CHART_HEIGHT} />
 						</div>
-					)}
-				</>
-			)}
-			<Deployments deployments={deployments} failed={deploymentsFailed} />
-			{aiGateway !== null && aiGateway.summary.requests > 0 ? (
+					</>
+				) : (
+					<>
+						<Stats row={row} buckets={buckets} />
+						<Charts buckets={buckets} />
+					</>
+				))}
+			{detailError ??
+				(detail === null ? null : (
+					<div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+						<TopPaths paths={detail.paths} />
+						<TopErrors errors={detail.errors} />
+					</div>
+				))}
+			<Deployments deployments={deployments} error={deploymentsError} />
+			{aiGatewayError !== undefined ? (
+				<section className="space-y-3">
+					<SectionHeading
+						title="AI Gateway"
+						hint="requests this project made through Vercel AI Gateway"
+					/>
+					{aiGatewayError}
+				</section>
+			) : aiGateway !== null && aiGateway.summary.requests > 0 ? (
 				<section className="space-y-3">
 					<SectionHeading
 						title="AI Gateway"

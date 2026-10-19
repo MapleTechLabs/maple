@@ -53,8 +53,8 @@ export function VercelFleetBand({
 	totals: VercelFleetTotals
 	projectCount: number
 	buckets: ReadonlyArray<VercelInfraRequestBucket>
-	/** Null while AI Gateway usage loads. */
-	aiGateway: { summary: VercelAiGatewaySummary; spark: ReadonlyArray<number> } | null
+	/** Null while AI Gateway usage loads; "failed" when its read failed. */
+	aiGateway: { summary: VercelAiGatewaySummary; spark: ReadonlyArray<number> } | "failed" | null
 	onOpenAiGateway: () => void
 }) {
 	return (
@@ -87,6 +87,14 @@ export function VercelFleetBand({
 			/>
 			{aiGateway === null ? (
 				<StatRailItemSkeleton />
+			) : aiGateway === "failed" ? (
+				<StatRailItem
+					eyebrow="AI Gateway spend"
+					value={EMPTY_VALUE}
+					subline="couldn't load · see why"
+					onSelect={onOpenAiGateway}
+					ariaLabel="Open AI Gateway usage"
+				/>
 			) : (
 				<StatRailItem
 					eyebrow="AI Gateway spend"

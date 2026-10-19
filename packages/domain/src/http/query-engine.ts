@@ -569,6 +569,8 @@ export const VercelInfraPath = Schema.Struct({
 	requests4xx: Schema.Number,
 	requests5xx: Schema.Number,
 	cacheHits: Schema.Number,
+	/** Requests Vercel reported a cache status for: the hit-rate denominator. */
+	cacheLookups: Schema.Number,
 })
 export type VercelInfraPath = typeof VercelInfraPath.Type
 

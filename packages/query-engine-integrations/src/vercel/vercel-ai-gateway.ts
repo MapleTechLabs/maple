@@ -1,9 +1,10 @@
 // Vercel AI Gateway usage (/infra/vercel, AI Gateway section)
 //
 // A trace drain carries AI Gateway traces as service `ai-gateway` in namespace
-// `vercel`. The root span of each trace is one gateway request and carries the
-// usage, the model and the cost (`vercel.ai_gateway.cost.total`, a decimal string
-// in USD). Child spans (routing, model attempts) are not counted.
+// `vercel`. Each gateway request is one server span carrying the usage, the model
+// and the cost (`vercel.ai_gateway.cost.total`, a decimal string). Keying on the
+// kind, not on an empty parent, keeps requests whose caller propagated a trace
+// context. Child spans (routing, model attempts) are not counted.
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
@@ -19,7 +20,11 @@ const numberAttribute = ($: TraceColumns, key: string) => CH.toFloat64OrZero($.S
 
 const usageColumns = ($: TraceColumns) => ({
 	requests: CH.count(),
-	costUsd: CH.sum(numberAttribute($, "vercel.ai_gateway.cost.total")),
+	/** USD only (an absent currency is USD), so the "$" in the UI holds. */
+	costUsd: CH.sumIf(
+		numberAttribute($, "vercel.ai_gateway.cost.total"),
+		CH.inList($.SpanAttributes.get("vercel.ai_gateway.cost.currency"), ["", "USD"]),
+	),
 	inputTokens: CH.sum(numberAttribute($, "gen_ai.usage.input_tokens")),
 	outputTokens: CH.sum(numberAttribute($, "gen_ai.usage.output_tokens")),
 	errors: CH.countIf($.StatusCode.eq("Error")),
@@ -30,7 +35,7 @@ const gatewayWhere = ($: TraceColumns, scope: VercelProjectScope) => [
 	$.ServiceName.eq(VERCEL_AI_GATEWAY_SERVICE),
 	$.Timestamp.gte(param.dateTime("startTime")),
 	$.Timestamp.lte(param.dateTime("endTime")),
-	$.ParentSpanId.eq(""),
+	$.SpanKind.eq("Server"),
 	$.ResourceAttributes.get("service.namespace").eq("vercel"),
 	CH.when(scope.projectId, (id) => $.SpanAttributes.get("vercel.project.id").eq(id)),
 ]

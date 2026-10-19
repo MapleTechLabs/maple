@@ -85,7 +85,10 @@ describe("inspect_infra provider kinds", () => {
 			"Requests by status class",
 			"Requests by cache status",
 		])
-		expect(markdown(result)).toContain('section="security"')
+		const text = markdown(result)
+		expect(text).toContain('section="security"')
+		// Zone logs carry no resource attribute naming the zone, so there is no logs drill-down.
+		expect(text).not.toContain("attribute_key=")
 	})
 
 	it("lists the firewall rules that fired in the security section", async () => {

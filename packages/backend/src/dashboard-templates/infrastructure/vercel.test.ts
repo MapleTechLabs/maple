@@ -47,4 +47,30 @@ describe("Vercel dashboard template", () => {
 			}
 		}),
 	)
+
+	it("counts AI Gateway requests by server span, spends only USD and names models by response first", () => {
+		const gateway = rawSqlOf({}).filter(({ sql }) => sql.includes("FROM traces"))
+		expect(gateway.map(({ id }) => id)).toContain("kpi-gateway-requests")
+		for (const { id, sql } of gateway) {
+			expect(sql, id).toContain("SpanKind = 'Server'")
+			expect(sql, id).not.toContain("ParentSpanId")
+			if (sql.includes("cost.total")) {
+				expect(sql, id).toContain("SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')")
+			}
+			if (sql.includes("gen_ai.request.model")) {
+				expect(sql, id).toContain(
+					"if(SpanAttributes['gen_ai.response.model'] != '', SpanAttributes['gen_ai.response.model'], SpanAttributes['gen_ai.request.model'])",
+				)
+			}
+		}
+		// Every gateway widget is SQL: the traces builder can filter neither kind nor fall back between models.
+		const builderTraces = vercelTemplate
+			.build({})
+			.widgets.filter(
+				(widget) =>
+					widget.dataSource.kind !== "raw_sql" &&
+					JSON.stringify(widget.dataSource).includes("traces"),
+			)
+		expect(builderTraces).toEqual([])
+	})
 })

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, VercelConnectRequest } from "@maple/domain/http"
@@ -38,6 +38,7 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 interface VercelCall {
 	readonly method: string
 	readonly path: string
+	readonly teamId: string | null
 	readonly body: unknown
 	readonly authorization: string | null
 }
@@ -50,21 +51,26 @@ interface Deployment {
 	readonly projectId: string
 }
 
-/** A fake Vercel team: one project, its deployments, and the drains created on it. */
+/** A fake Vercel account: its teams, one project, its deployments, and the drains created on it. */
 interface Fake {
 	readonly calls: Array<VercelCall>
-	/** Drain ids Vercel answers 404 for. */
+	/** Drain ids Vercel answers 404 for; a deleted drain joins them. */
 	readonly missingDrains: Set<string>
 	mode: "ok" | "token_rejected"
+	teams: ReadonlyArray<{ readonly id: string; readonly slug: string; readonly name: string }>
 	deployments: ReadonlyArray<Deployment>
 	drainsCreated: number
+	/** Answers a call before the default handling when it returns a response. */
+	respond: (call: VercelCall) => Response | Promise<Response> | undefined
 }
 
 const makeFake = (deployments?: ReadonlyArray<Deployment>): Fake => ({
 	calls: [],
 	missingDrains: new Set(),
 	mode: "ok",
+	teams: [{ id: "team_1", slug: "acme", name: "Acme" }],
 	drainsCreated: 0,
+	respond: () => undefined,
 	deployments: deployments ?? [
 		{
 			uid: "dpl_1",
@@ -95,17 +101,20 @@ const fakeFetch = (fake: Fake): typeof fetch =>
 		)
 		const method = init?.method ?? "GET"
 		const text = await new Response(init?.body ?? null).text()
-		fake.calls.push({
+		const call: VercelCall = {
 			method,
 			path: url.pathname,
+			teamId: url.searchParams.get("teamId"),
 			body: text === "" ? null : decodeJson(text),
 			authorization: new Headers(init?.headers).get("authorization"),
-		})
+		}
+		fake.calls.push(call)
+		const response = await fake.respond(call)
+		if (response !== undefined) return response
 		if (fake.mode === "token_rejected") {
 			return json({ error: { code: "forbidden", message: "Not authorized" } }, 403)
 		}
-		if (url.pathname === "/v2/teams")
-			return json({ teams: [{ id: "team_1", slug: "acme", name: "Acme" }] })
+		if (url.pathname === "/v2/teams") return json({ teams: fake.teams, pagination: { next: null } })
 		if (url.pathname === "/v10/projects") {
 			return json({
 				projects: [
@@ -138,7 +147,10 @@ const fakeFetch = (fake: Fake): typeof fetch =>
 		if (drainId !== undefined && fake.missingDrains.has(drainId)) {
 			return json({ error: { code: "not_found", message: "Drain not found" } }, 404)
 		}
-		if (method === "DELETE") return new Response(null, { status: 204 })
+		if (method === "DELETE" && drainId !== undefined) {
+			fake.missingDrains.add(drainId)
+			return new Response(null, { status: 204 })
+		}
 		return json({ id: drainId, status: "enabled" })
 	}) as typeof fetch
 
@@ -181,6 +193,11 @@ const connect = (overrides: Partial<VercelConnectRequest> = {}) =>
 
 const callsTo = (fake: Fake, method: string, path: string) =>
 	fake.calls.filter((call) => call.method === method && call.path.startsWith(path))
+
+const vercelError = (status: number, message: string) => json({ error: { message } }, status)
+
+const poll = () => VercelIntegrationService.use((vercel) => vercel.pollOrg(orgId))
+const status = () => VercelIntegrationService.use((vercel) => vercel.getStatus(orgId))
 
 describe("VercelIntegrationService", () => {
 	it.effect("connect creates a log drain and a trace drain carrying the org's private ingest key", () => {
@@ -266,8 +283,8 @@ describe("VercelIntegrationService", () => {
 				assert.notProperty(created[0]?.body, "projectIds")
 
 				fake.mode = "token_rejected"
-				const exit = yield* Effect.exit(connect())
-				assert.isTrue(Exit.isFailure(exit))
+				const error = yield* Effect.flip(connect())
+				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			}),
 		)
 	})
@@ -292,8 +309,8 @@ describe("VercelIntegrationService", () => {
 					patched.map((call) => call.path),
 					["/v1/drains/drn_2"],
 				)
-				// An update clears the sampling rule the drain was created with.
-				assert.deepInclude(patched[0]?.body, { sampling: [] })
+				// An update clears the sampling rule the drain was created with and re-enables the drain.
+				assert.deepInclude(patched[0]?.body, { sampling: [], status: "enabled" })
 				assert.isNull(status.drains.logs)
 				assert.strictEqual(status.drains.traces?.id, "drn_2")
 				assert.isFalse(status.logsEnabled)
@@ -458,4 +475,234 @@ describe("VercelIntegrationService", () => {
 			assert.strictEqual(count?.count, 50)
 		})
 	})
+
+	it.effect(
+		"reconnecting to another team deletes the old team's drains after the new connection is saved",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			fake.teams = [
+				{ id: "team_1", slug: "acme", name: "Acme" },
+				{ id: "team_2", slug: "beta", name: "Beta" },
+			]
+			const savedTeamAtDelete: Array<string | undefined> = []
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect()
+					fake.respond = async (call) => {
+						if (call.method !== "DELETE") return undefined
+						const row = await queryFirstRow<{ team_id: string }>(
+							testDb,
+							"SELECT team_id FROM vercel_connections WHERE org_id = $1",
+							[orgId],
+						)
+						savedTeamAtDelete.push(row?.team_id)
+						// The old team's trace drain cannot be deleted: the new connection still stands.
+						return call.path.endsWith("drn_2") ? vercelError(500, "internal") : undefined
+					}
+					const reconnected = yield* connect({ token: "vc_token_456", teamId: "team_2" })
+					assert.deepStrictEqual(
+						callsTo(fake, "DELETE", "/v1/drains").map((call) => [
+							call.path,
+							call.teamId,
+							call.authorization,
+						]),
+						[
+							["/v1/drains/drn_1", "team_1", "Bearer vc_token_123"],
+							["/v1/drains/drn_2", "team_1", "Bearer vc_token_123"],
+						],
+					)
+					assert.deepStrictEqual(savedTeamAtDelete, ["team_2", "team_2"])
+					assert.strictEqual(reconnected.team?.id, "team_2")
+					assert.deepStrictEqual(
+						[reconnected.drains.logs?.id, reconnected.drains.traces?.id],
+						["drn_3", "drn_4"],
+					)
+				}),
+			)
+		},
+	)
+
+	it.effect("a failed trace drain create deletes the log drain the same connect just created", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		fake.respond = (call) =>
+			call.method === "POST" &&
+			call.path === "/v1/drains" &&
+			JSON.stringify(call.body).includes("Maple traces")
+				? vercelError(500, "internal")
+				: undefined
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				const error = yield* Effect.flip(connect())
+				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsUpstreamError")
+				assert.deepStrictEqual(
+					callsTo(fake, "DELETE", "/v1/drains").map((call) => call.path),
+					["/v1/drains/drn_1"],
+				)
+				assert.isFalse((yield* status()).connected)
+			}),
+		)
+	})
+
+	it.effect("a drain 403 while polling is recorded on the drain without pausing the token", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect()
+				fake.respond = (call) =>
+					call.method === "GET" && call.path === "/v1/drains/drn_1"
+						? vercelError(403, "Drains are not available on the Hobby plan")
+						: undefined
+				const summary = yield* poll()
+				assert.strictEqual(summary.failures, 1)
+				const after = yield* status()
+				assert.isFalse(after.authFailed)
+				assert.include(after.lastError ?? "", "Hobby plan")
+				assert.include(after.drains.logs?.lastError ?? "", "Hobby plan")
+				assert.strictEqual(after.drains.traces?.status, "enabled")
+			}),
+		)
+	})
+
+	it.effect("a re-key that fails on one drain is retried on the next poll", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect()
+				yield* OrgIngestKeysService.use((keys) => keys.rerollPrivate(orgId, userId))
+				fake.respond = (call) =>
+					call.method === "PATCH" && call.path === "/v1/drains/drn_2"
+						? vercelError(500, "internal")
+						: undefined
+				yield* poll()
+				fake.respond = () => undefined
+				const retried = yield* poll()
+				assert.strictEqual(retried.drainsRepaired, 2)
+				assert.deepStrictEqual(
+					callsTo(fake, "PATCH", "/v1/drains").map((call) => call.path),
+					["/v1/drains/drn_1", "/v1/drains/drn_2", "/v1/drains/drn_1", "/v1/drains/drn_2"],
+				)
+			}),
+		)
+	})
+
+	it.effect("a 429 holds the org off polling and shows as its last error", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect()
+				fake.respond = (call) =>
+					call.path === "/v6/deployments" ? vercelError(429, "Too many requests") : undefined
+				const limited = yield* poll()
+				assert.strictEqual(limited.skipped, "rate_limited")
+				assert.include((yield* status()).lastError ?? "", "429")
+				fake.respond = () => undefined
+				assert.strictEqual((yield* poll()).skipped, "lease held")
+			}),
+		)
+	})
+
+	it.effect("disconnect still deletes the trace drain when the log drain delete fails", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect()
+				fake.respond = (call) =>
+					call.method === "DELETE" && call.path === "/v1/drains/drn_1"
+						? vercelError(502, "bad gateway")
+						: undefined
+				const result = yield* VercelIntegrationService.use((vercel) => vercel.disconnect(orgId))
+				assert.deepStrictEqual(result, { disconnected: true, drainsRemoved: false })
+				assert.deepStrictEqual(
+					callsTo(fake, "DELETE", "/v1/drains").map((call) => call.path),
+					["/v1/drains/drn_1", "/v1/drains/drn_2"],
+				)
+				assert.isFalse((yield* status()).connected)
+			}),
+		)
+	})
+
+	it.effect("disconnect counts a drain Vercel answers 410 Gone for as removed", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect()
+				fake.respond = (call) =>
+					call.method === "DELETE" && call.path === "/v1/drains/drn_2"
+						? vercelError(410, "Gone")
+						: undefined
+				const result = yield* VercelIntegrationService.use((vercel) => vercel.disconnect(orgId))
+				assert.deepStrictEqual(result, { disconnected: true, drainsRemoved: true })
+			}),
+		)
+	})
+
+	it.effect(
+		"a poll racing a settings change neither overwrites its drains nor leaves a drain behind",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			let reached = (): void => undefined
+			const pollReachedDrain = new Promise<void>((resolve) => {
+				reached = resolve
+			})
+			let release = (): void => undefined
+			const settingsSaved = new Promise<void>((resolve) => {
+				release = resolve
+			})
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect()
+					// The poll checks the log drain, stalls, and reads it as deleted once the settings ran.
+					fake.respond = async (call) => {
+						if (call.method !== "GET" || call.path !== "/v1/drains/drn_1") return undefined
+						reached()
+						await settingsSaved
+						return undefined
+					}
+					const polling = yield* Effect.forkChild(poll())
+					yield* Effect.promise(() => pollReachedDrain)
+					const updated = yield* VercelIntegrationService.use((vercel) =>
+						vercel.updateSettings(orgId, { logsEnabled: false }),
+					)
+					assert.isNull(updated.drains.logs)
+					release()
+					const summary = yield* Fiber.join(polling)
+					assert.strictEqual(summary.skipped, "lease lost")
+					const after = yield* status()
+					assert.isNull(after.drains.logs)
+					assert.strictEqual(after.drains.traces?.id, "drn_2")
+					// The drain the stale poll re-created is deleted again.
+					assert.deepStrictEqual(
+						callsTo(fake, "DELETE", "/v1/drains").map((call) => call.path),
+						["/v1/drains/drn_1", "/v1/drains/drn_3"],
+					)
+					// The lease is free again: the next poll runs.
+					assert.isNull((yield* poll()).skipped)
+				}),
+			)
+		},
+	)
 })

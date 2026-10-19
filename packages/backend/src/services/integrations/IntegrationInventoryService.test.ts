@@ -44,12 +44,7 @@ describe("IntegrationInventoryService", () => {
 			const database = yield* Database
 			yield* database.execute((db) =>
 				Effect.all([
-					db.run(
-						PG.insertInto(RailwayConnections).values([
-							railwayConnection("org_a"),
-							railwayConnection("org_b"),
-						]),
-					),
+					db.run(PG.insertInto(RailwayConnections).values([railwayConnection("org_a"), railwayConnection("org_b")])),
 					db.run(
 						PG.insertInto(RailwayEnvironments).values({
 							id: "env_1",
@@ -88,7 +83,9 @@ describe("IntegrationInventoryService", () => {
 			assert.strictEqual(railway?.account, "org_a-workspace")
 			assert.strictEqual(railway?.status, "healthy")
 			assert.strictEqual(railway?.resources[0]?.note, "2 services")
-		}).pipe(Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))))
+		}).pipe(
+			Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))),
+		)
 	})
 
 	it.effect("reports a Vercel drain the poller found missing", () => {

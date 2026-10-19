@@ -20,7 +20,7 @@ import {
 	zeroRequestBucket,
 } from "@/components/infra/vercel/list-model"
 import { VercelProjectPage } from "@/components/infra/vercel/vercel-project-page"
-import { vercelStatusAtom } from "@/components/integrations/vercel-status"
+import { VERCEL_STATUS_REACTIVITY_KEY, vercelStatusAtom } from "@/components/integrations/vercel-status"
 import { DashboardPage } from "@/components/layout/dashboard-page"
 import {
 	TimeRangeSearchFields,
@@ -75,7 +75,9 @@ function VercelProjectRoute() {
 		.onSuccess((status): ReadonlyArray<VercelProjectStatus> | null => status.projects)
 		.orElse((): ReadonlyArray<VercelProjectStatus> | null => null)
 	// The list's own read: picking this project's row shares its cached atom.
-	const projectsResult = useRefreshableAtomValue(vercelProjectsResultAtom({ data: { startTime, endTime } }))
+	const projectsAtom = vercelProjectsResultAtom({ data: { startTime, endTime } })
+	const projectsResult = useRefreshableAtomValue(projectsAtom)
+	const refreshProjects = useAtomRefresh(projectsAtom)
 	const projects = Result.builder(projectsResult)
 		.onSuccess((response): ReadonlyArray<VercelInfraProject> | null => response.projects)
 		.orElse((): ReadonlyArray<VercelInfraProject> | null => null)
@@ -87,24 +89,26 @@ function VercelProjectRoute() {
 		.onSuccess((response): ReadonlyArray<VercelInfraRequestBucket> | null => response.buckets)
 		.orElse((): ReadonlyArray<VercelInfraRequestBucket> | null => null)
 
-	const detailResult = useRefreshableAtomValue(
-		vercelProjectDetailResultAtom({ data: { startTime, endTime, projectId } }),
-	)
+	const detailAtom = vercelProjectDetailResultAtom({ data: { startTime, endTime, projectId } })
+	const detailResult = useRefreshableAtomValue(detailAtom)
+	const refreshDetail = useAtomRefresh(detailAtom)
 	const detail = Result.builder(detailResult)
 		.onSuccess((response): VercelInfraProjectDetailResponse | null => response)
 		.orElse((): VercelInfraProjectDetailResponse | null => null)
 
-	const deploymentsResult = useRefreshableAtomValue(
-		retainedInternalQuery("integrations", "vercelDeployments", {
-			query: { projectId, limit: DEPLOYMENTS_LIMIT },
-			reactivityKeys: ["vercelIntegrationStatus"],
-		}),
-	)
+	const deploymentsAtom = retainedInternalQuery("integrations", "vercelDeployments", {
+		query: { projectId, limit: DEPLOYMENTS_LIMIT },
+		reactivityKeys: [VERCEL_STATUS_REACTIVITY_KEY],
+	})
+	const deploymentsResult = useRefreshableAtomValue(deploymentsAtom)
+	const refreshDeployments = useAtomRefresh(deploymentsAtom)
 	const deployments = Result.builder(deploymentsResult)
 		.onSuccess((response): ReadonlyArray<VercelDeploymentSummary> | null => response.deployments)
 		.orElse((): ReadonlyArray<VercelDeploymentSummary> | null => null)
 
-	const aiResult = useRefreshableAtomValue(vercelAiGatewayResultAtom({ data: range }))
+	const aiAtom = vercelAiGatewayResultAtom({ data: range })
+	const aiResult = useRefreshableAtomValue(aiAtom)
+	const refreshAi = useAtomRefresh(aiAtom)
 	const aiGateway = Result.builder(aiResult)
 		.onSuccess((response): VercelAiGatewayResponse | null => response)
 		.orElse((): VercelAiGatewayResponse | null => null)
@@ -149,15 +153,49 @@ function VercelProjectRoute() {
 				buckets={buckets}
 				detail={detail}
 				deployments={deployments}
-				deploymentsFailed={Result.isFailure(deploymentsResult) && deployments === null}
+				deploymentsError={
+					Result.isFailure(deploymentsResult) && deployments === null ? (
+						<ErrorState
+							error={deploymentsResult.cause}
+							title="Failed to load deployments"
+							onRetry={refreshDeployments}
+							variant="inline"
+							className="px-4"
+						/>
+					) : undefined
+				}
 				aiGateway={aiGateway}
 				aiTimeseries={aiTimeseries}
 				error={
-					Result.isFailure(timeseriesResult) && rawBuckets === null ? (
+					Result.isFailure(projectsResult) && projects === null ? (
+						<ErrorState
+							error={projectsResult.cause}
+							title="Failed to load this project's requests"
+							onRetry={refreshProjects}
+						/>
+					) : Result.isFailure(timeseriesResult) && rawBuckets === null ? (
 						<ErrorState
 							error={timeseriesResult.cause}
 							title="Failed to load this project's requests"
 							onRetry={refreshTimeseries}
+						/>
+					) : undefined
+				}
+				detailError={
+					Result.isFailure(detailResult) && detail === null ? (
+						<ErrorState
+							error={detailResult.cause}
+							title="Failed to load top paths and errors"
+							onRetry={refreshDetail}
+						/>
+					) : undefined
+				}
+				aiGatewayError={
+					Result.isFailure(aiResult) && aiGateway === null ? (
+						<ErrorState
+							error={aiResult.cause}
+							title="Failed to load AI Gateway usage"
+							onRetry={refreshAi}
 						/>
 					) : undefined
 				}

@@ -999,7 +999,8 @@ const VercelSamplingRate = Schema.Number.check(
 	Schema.isGreaterThanOrEqualTo(0.01),
 	Schema.isLessThanOrEqualTo(1),
 )
-const VercelToken = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(8), Schema.isMaxLength(512))
+/** Trimmed on decode: a pasted token often carries a trailing newline. */
+const VercelToken = Schema.Trim.check(Schema.isMinLength(8), Schema.isMaxLength(512))
 const VercelTeamId = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(128))
 
 export class VercelTeam extends Schema.Class<VercelTeam>("VercelTeam")({
@@ -1009,7 +1010,8 @@ export class VercelTeam extends Schema.Class<VercelTeam>("VercelTeam")({
 }) {}
 
 export class VercelDrainStatus extends Schema.Class<VercelDrainStatus>("VercelDrainStatus")({
-	id: Schema.String,
+	/** Null when the drain is missing on Vercel and could not be re-created. */
+	id: Schema.NullOr(Schema.String),
 	status: VercelDrainStatusValue,
 	lastError: Schema.NullOr(Schema.String),
 }) {}

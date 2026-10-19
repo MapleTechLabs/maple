@@ -3,13 +3,14 @@
  * No Effect SDK exists, so this decodes only the fields Maple reads. Failures fold into one
  * {@link VercelApiError} whose `kind` drives the poller (auth failure, back-off, missing drain).
  */
-import { Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 
 const BASE_URL = "https://api.vercel.com"
 const REQUEST_TIMEOUT = Duration.seconds(20)
 const PAGE_SIZE = 100
 const MAX_PROJECT_PAGES = 10
+const MAX_TEAM_PAGES = 10
 
 export class VercelApiError extends Schema.TaggedError<VercelApiError>()(
 	"@maple/backend/integrations/VercelApiError",
@@ -17,6 +18,7 @@ export class VercelApiError extends Schema.TaggedError<VercelApiError>()(
 		message: Schema.String,
 		kind: Schema.Literals(["unauthorized", "forbidden", "rate_limited", "not_found", "upstream"]),
 		status: Schema.optionalKey(Schema.Number),
+		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
 
@@ -30,7 +32,7 @@ const errorKind = (status: number): VercelApiError["kind"] =>
 		? "unauthorized"
 		: status === 403
 			? "forbidden"
-			: status === 404
+			: status === 404 || status === 410
 				? "not_found"
 				: status === 429
 					? "rate_limited"
@@ -42,15 +44,13 @@ const call = <S extends Schema.Top>(
 	request: HttpClientRequest.HttpClientRequest,
 	schema: S,
 ): Effect.Effect<S["Type"], VercelApiError, S["DecodingServices"]> => {
-	const failed = (what: string) => () =>
-		Effect.fail(new VercelApiError({ message: `Vercel API ${what}`, kind: "upstream" }))
+	const failed = (what: string) => (cause: unknown) =>
+		Effect.fail(new VercelApiError({ message: `Vercel API ${what}`, kind: "upstream", cause }))
 	return Effect.gen(function* () {
 		const response = yield* httpClient.execute(HttpClientRequest.bearerToken(request, token))
 		const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
 		if (response.status >= 300) {
-			const detail = decodeErrorBody(body).pipe((option) =>
-				option._tag === "Some" ? option.value.error.message : undefined,
-			)
+			const detail = Option.getOrUndefined(decodeErrorBody(body))?.error.message
 			return yield* new VercelApiError({
 				message: `Vercel API returned ${response.status}${detail === undefined ? "" : `: ${detail.slice(0, 300)}`}`,
 				kind: errorKind(response.status),
@@ -72,11 +72,20 @@ const call = <S extends Schema.Top>(
 const teamUrl = (path: string, teamId: string, params: Record<string, string> = {}) =>
 	HttpClientRequest.setUrlParams(HttpClientRequest.get(`${BASE_URL}${path}`), { teamId, ...params })
 
-/** The next page of a listing: Vercel pages backwards with `until=<pagination.next>`. */
-const pageFrom = (request: HttpClientRequest.HttpClientRequest, until: number | null) =>
-	until === null ? request : HttpClientRequest.setUrlParam(request, "until", String(until))
+/**
+ * The next page of a listing. Vercel pages backwards with `until=<timestamp>`; a listing that
+ * answers with a continuation token instead takes it back as `from=<token>`.
+ */
+const pageFrom = (request: HttpClientRequest.HttpClientRequest, next: string | number | null) =>
+	next === null
+		? request
+		: typeof next === "string"
+			? HttpClientRequest.setUrlParam(request, "from", next)
+			: HttpClientRequest.setUrlParam(request, "until", String(next))
 
-const Pagination = Schema.Struct({ next: Schema.optionalKey(Schema.NullOr(Schema.Number)) })
+const Pagination = Schema.Struct({
+	next: Schema.optionalKey(Schema.NullOr(Schema.Union([Schema.String, Schema.Number]))),
+})
 
 // Teams
 
@@ -94,25 +103,35 @@ const TeamsBody = Schema.Struct({
 			name: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		}),
 	),
+	pagination: Schema.optionalKey(Pagination),
 })
 
+/** Every team the token sees, up to {@link MAX_TEAM_PAGES} pages. */
 export const listTeams = Effect.fn("VercelApi.listTeams")(function* (
 	httpClient: HttpClient.HttpClient,
 	token: string,
 ) {
-	const body = yield* call(
-		httpClient,
-		token,
-		HttpClientRequest.setUrlParams(HttpClientRequest.get(`${BASE_URL}/v2/teams`), {
-			limit: String(PAGE_SIZE),
-		}),
-		TeamsBody,
-	)
-	return body.teams.map((team): VercelTeamInfo => ({
-		id: team.id,
-		slug: team.slug,
-		name: team.name ?? team.slug,
-	}))
+	const teams: Array<VercelTeamInfo> = []
+	let next: string | number | null = null
+	for (let page = 0; page < MAX_TEAM_PAGES; page++) {
+		const body: typeof TeamsBody.Type = yield* call(
+			httpClient,
+			token,
+			pageFrom(
+				HttpClientRequest.setUrlParams(HttpClientRequest.get(`${BASE_URL}/v2/teams`), {
+					limit: String(PAGE_SIZE),
+				}),
+				next,
+			),
+			TeamsBody,
+		)
+		for (const team of body.teams) {
+			teams.push({ id: team.id, slug: team.slug, name: team.name ?? team.slug })
+		}
+		next = body.pagination?.next ?? null
+		if (next === null) break
+	}
+	return teams
 })
 
 // Projects
@@ -142,19 +161,25 @@ const ProjectsBody = Schema.Struct({
 	pagination: Schema.optionalKey(Pagination),
 })
 
-/** Every project of the team, following `pagination.next` up to {@link MAX_PROJECT_PAGES} pages. */
+export interface VercelProjectListing {
+	readonly projects: ReadonlyArray<VercelProjectInfo>
+	/** False when the page cap cut the listing short: projects past it were not seen. */
+	readonly complete: boolean
+}
+
+/** The team's projects, following `pagination.next` up to {@link MAX_PROJECT_PAGES} pages. */
 export const listProjects = Effect.fn("VercelApi.listProjects")(function* (
 	httpClient: HttpClient.HttpClient,
 	token: string,
 	teamId: string,
 ) {
 	const projects: Array<VercelProjectInfo> = []
-	let until: number | null = null
+	let next: string | number | null = null
 	for (let page = 0; page < MAX_PROJECT_PAGES; page++) {
 		const body: typeof ProjectsBody.Type = yield* call(
 			httpClient,
 			token,
-			pageFrom(teamUrl("/v10/projects", teamId, { limit: String(PAGE_SIZE) }), until),
+			pageFrom(teamUrl("/v10/projects", teamId, { limit: String(PAGE_SIZE) }), next),
 			ProjectsBody,
 		)
 		for (const project of body.projects) {
@@ -165,11 +190,14 @@ export const listProjects = Effect.fn("VercelApi.listProjects")(function* (
 				productionDeploymentId: project.targets?.production?.id ?? null,
 			})
 		}
-		until = body.pagination?.next ?? null
-		if (until === null) break
+		next = body.pagination?.next ?? null
+		if (next === null) break
 	}
-	yield* Effect.annotateCurrentSpan("maple.vercel.projects", projects.length)
-	return projects
+	yield* Effect.annotateCurrentSpan({
+		"maple.vercel.projects": projects.length,
+		"maple.vercel.projects_complete": next === null,
+	})
+	return { projects, complete: next === null } satisfies VercelProjectListing
 })
 
 // Deployments
@@ -230,14 +258,14 @@ export const listDeployments = Effect.fn("VercelApi.listDeployments")(function* 
 	maxPages: number,
 ) {
 	const deployments: Array<VercelDeploymentInfo> = []
-	let until: number | null = null
+	let next: string | number | null = null
 	for (let page = 0; page < maxPages; page++) {
 		const body: typeof DeploymentsBody.Type = yield* call(
 			httpClient,
 			token,
 			pageFrom(
 				teamUrl("/v6/deployments", teamId, { limit: String(PAGE_SIZE), since: String(sinceMs) }),
-				until,
+				next,
 			),
 			DeploymentsBody,
 		)
@@ -259,8 +287,8 @@ export const listDeployments = Effect.fn("VercelApi.listDeployments")(function* 
 				inspectorUrl: d.inspectorUrl ?? null,
 			})
 		}
-		until = body.pagination?.next ?? null
-		if (until === null) break
+		next = body.pagination?.next ?? null
+		if (next === null) break
 	}
 	yield* Effect.annotateCurrentSpan("maple.vercel.deployments", deployments.length)
 	return deployments
@@ -276,6 +304,8 @@ export interface VercelDrainBody {
 	readonly schemas: Readonly<Record<string, { readonly version: string }>>
 	readonly delivery: Readonly<Record<string, unknown>>
 	readonly sampling?: ReadonlyArray<{ readonly type: "head_sampling"; readonly rate: number }>
+	/** Update only: re-enables a drain Vercel or the team disabled. */
+	readonly status?: "enabled"
 }
 
 const DrainBody = Schema.Struct({
@@ -341,7 +371,7 @@ export const getDrain = Effect.fn("VercelApi.getDrain")(function* (
 	)
 })
 
-/** Deletes a drain; one that is already gone counts as deleted. */
+/** Deletes a drain; one that is already gone (404/410) counts as deleted. */
 export const deleteDrain = Effect.fn("VercelApi.deleteDrain")(function* (
 	httpClient: HttpClient.HttpClient,
 	token: string,

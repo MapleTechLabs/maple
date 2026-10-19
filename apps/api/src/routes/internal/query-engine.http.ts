@@ -872,16 +872,36 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							{ concurrency: 2 },
 						)
 						const latencyByProject = new Map(latencyRows.map((row) => [row.projectId, row]))
+						const withLogs = new Set(requestRows.map((row) => row.projectId))
 						return new VercelInfraProjectsResponse({
-							projects: requestRows.map((row) => {
-								const latency = latencyByProject.get(row.projectId)
-								return {
-									...row,
-									lastSeen: DateTime.formatIso(row.lastSeen),
-									p50DurationMs: latency?.p50DurationMs ?? null,
-									p95DurationMs: latency?.p95DurationMs ?? null,
-								}
-							}),
+							projects: [
+								...requestRows.map((row) => {
+									const latency = latencyByProject.get(row.projectId)
+									return {
+										...row,
+										lastSeen: DateTime.formatIso(row.lastSeen),
+										p50DurationMs: latency?.p50DurationMs ?? null,
+										p95DurationMs: latency?.p95DurationMs ?? null,
+									}
+								}),
+								// Projects that only send traces: the logs drain is off, or not delivering.
+								...latencyRows
+									.filter((row) => !withLogs.has(row.projectId))
+									.map((row) => ({
+										projectId: row.projectId,
+										projectName: "",
+										serviceName: row.serviceName,
+										requests: 0,
+										requests4xx: 0,
+										requests5xx: 0,
+										cacheHits: 0,
+										cacheLookups: 0,
+										errorLogs: 0,
+										lastSeen: DateTime.formatIso(row.lastSeen),
+										p50DurationMs: row.p50DurationMs,
+										p95DurationMs: row.p95DurationMs,
+									})),
+							],
 						})
 					}),
 				)

@@ -166,8 +166,10 @@ function VercelConnected({
 
 	const projectsEmpty = projects !== null && projects.length === 0
 	const aiEmpty = aiGateway !== null && aiGateway.summary.requests === 0
-	useIntervalRefresh(refreshProjects, { intervalMs: EMPTY_REFRESH_MS, enabled: projectsEmpty })
-	useIntervalRefresh(refreshTimeseries, { intervalMs: EMPTY_REFRESH_MS, enabled: projectsEmpty })
+	// Without the logs drain an empty page has nothing on the way worth polling for.
+	const pollEmpty = projectsEmpty && status.logsEnabled
+	useIntervalRefresh(refreshProjects, { intervalMs: EMPTY_REFRESH_MS, enabled: pollEmpty })
+	useIntervalRefresh(refreshTimeseries, { intervalMs: EMPTY_REFRESH_MS, enabled: pollEmpty })
 	useIntervalRefresh(refreshAi, {
 		intervalMs: EMPTY_REFRESH_MS,
 		enabled: aiEmpty && state.view === "aiGateway",
@@ -186,6 +188,25 @@ function VercelConnected({
 						error={projectsResult.cause}
 						title="Failed to load Vercel projects"
 						onRetry={refreshProjects}
+					/>
+				) : undefined
+			}
+			bucketsError={
+				Result.isFailure(timeseriesResult) && rawBuckets === NO_BUCKETS ? (
+					<ErrorState
+						error={timeseriesResult.cause}
+						title="Failed to load the request series"
+						onRetry={refreshTimeseries}
+						variant="row"
+					/>
+				) : undefined
+			}
+			aiGatewayError={
+				Result.isFailure(aiResult) && aiGateway === null ? (
+					<ErrorState
+						error={aiResult.cause}
+						title="Failed to load AI Gateway usage"
+						onRetry={refreshAi}
 					/>
 				) : undefined
 			}

@@ -61,9 +61,9 @@ import {
 	vercelIssues,
 	type VercelIssue,
 } from "./vercel-model"
-import { vercelStatusAtom } from "./vercel-status"
+import { VERCEL_STATUS_REACTIVITY_KEY, vercelStatusAtom } from "./vercel-status"
 
-const REACTIVITY = ["vercelIntegrationStatus"]
+const REACTIVITY = [VERCEL_STATUS_REACTIVITY_KEY]
 
 /** Until the first sync lands, re-read often enough to see the drains and projects arrive. */
 const SETTLING_REFRESH_MS = 15_000
@@ -87,10 +87,26 @@ export interface VercelUsage {
 	readonly gateway: VercelAiGatewayResponse | null
 }
 
-function useVercelUsage(): VercelUsage {
-	const projectsResult = useAtomValue(vercelProjectsResultAtom({ data: DAY }))
-	const timeseriesResult = useAtomValue(vercelRequestTimeseriesResultAtom({ data: DAY_HOURLY }))
-	const gatewayResult = useAtomValue(vercelAiGatewayResultAtom({ data: DAY_HOURLY }))
+const projectsAtom = vercelProjectsResultAtom({ data: DAY })
+const timeseriesAtom = vercelRequestTimeseriesResultAtom({ data: DAY_HOURLY })
+const gatewayAtom = vercelAiGatewayResultAtom({ data: DAY_HOURLY })
+
+/** While `settling`, re-reads on the status's interval, so first deliveries fill the band too. */
+function useVercelUsage(settling: boolean): VercelUsage {
+	const projectsResult = useAtomValue(projectsAtom)
+	const timeseriesResult = useAtomValue(timeseriesAtom)
+	const gatewayResult = useAtomValue(gatewayAtom)
+	const refreshProjects = useAtomRefresh(projectsAtom)
+	const refreshTimeseries = useAtomRefresh(timeseriesAtom)
+	const refreshGateway = useAtomRefresh(gatewayAtom)
+	useIntervalRefresh(
+		() => {
+			refreshProjects()
+			refreshTimeseries()
+			refreshGateway()
+		},
+		{ intervalMs: SETTLING_REFRESH_MS, enabled: settling },
+	)
 	return {
 		projects: Result.isSuccess(projectsResult)
 			? projectsResult.value.projects
@@ -145,6 +161,21 @@ export function VercelHeaderActions() {
 
 	if (!isAdmin || status === null || !status.connected) return null
 	const team = status.team?.name ?? "the team"
+	const drainNames =
+		status.logsEnabled && status.tracesEnabled ? (
+			<>
+				the <span className="font-mono text-foreground">Maple logs</span> and{" "}
+				<span className="font-mono text-foreground">Maple traces</span> drains
+			</>
+		) : (
+			<>
+				the{" "}
+				<span className="font-mono text-foreground">
+					{status.logsEnabled ? "Maple logs" : "Maple traces"}
+				</span>{" "}
+				drain
+			</>
+		)
 
 	return (
 		<div className="flex items-center gap-2">
@@ -176,8 +207,7 @@ export function VercelHeaderActions() {
 					<div>
 						<dt className="font-medium">On Vercel, right away</dt>
 						<dd className="text-pretty text-muted-foreground">
-							Deletes the <span className="font-mono text-foreground">Maple logs</span> and{" "}
-							<span className="font-mono text-foreground">Maple traces</span> drains on {team}.
+							Deletes {drainNames} on {team}.
 						</dd>
 					</div>
 					<div>
@@ -207,18 +237,14 @@ function IssueAlert({
 			<CircleWarningIcon />
 			<AlertTitle>{issue.title}</AlertTitle>
 			<AlertDescription>
-				{issue.fix === "reapply" ? (
-					<span>Re-applying the settings creates it again on Vercel.</span>
-				) : (
-					<span>{issue.detail}</span>
-				)}
-				{issue.fix === "reapply" && issue.detail !== null ? (
+				<span>{issue.description}</span>
+				{issue.vercelError !== null ? (
 					<span className="font-mono text-2xs [overflow-wrap:anywhere]">
-						Vercel: {issue.detail}
+						Vercel: {issue.vercelError}
 					</span>
 				) : null}
 			</AlertDescription>
-			{isAdmin && issue.fix !== null ? (
+			{isAdmin ? (
 				<AlertAction>
 					{issue.fix === "token" ? (
 						<Button size="sm" onClick={onToken}>
@@ -416,7 +442,7 @@ function DrainRow({
 			<StatusDot tone={state.tone} />
 			<span className="flex min-w-0 flex-1 flex-col">
 				<span className="font-mono text-xs text-foreground">{name}</span>
-				{drain !== null && enabled ? (
+				{enabled && drain !== null && drain.id !== null ? (
 					<TruncatedText text={drain.id} mono className="text-2xs text-muted-foreground" />
 				) : null}
 			</span>
@@ -587,7 +613,12 @@ export function VercelIntegrationCard() {
 			{status === null || !status.connected ? (
 				<VercelNotConnected isAdmin={isAdmin} onConnect={() => setTarget("connect")} />
 			) : (
-				<VercelConnectedCard status={status} isAdmin={isAdmin} onToken={() => setTarget("token")} />
+				<VercelConnectedCard
+					status={status}
+					settling={settling}
+					isAdmin={isAdmin}
+					onToken={() => setTarget("token")}
+				/>
 			)}
 			{configure}
 		</>
@@ -597,14 +628,21 @@ export function VercelIntegrationCard() {
 /** Reads the warehouse only once connected. */
 function VercelConnectedCard({
 	status,
+	settling,
 	isAdmin,
 	onToken,
 }: {
 	status: VercelIntegrationStatus
+	settling: boolean
 	isAdmin: boolean
 	onToken: () => void
 }) {
 	return (
-		<VercelConnectedView status={status} usage={useVercelUsage()} isAdmin={isAdmin} onToken={onToken} />
+		<VercelConnectedView
+			status={status}
+			usage={useVercelUsage(settling)}
+			isAdmin={isAdmin}
+			onToken={onToken}
+		/>
 	)
 }

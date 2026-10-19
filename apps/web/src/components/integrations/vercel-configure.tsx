@@ -50,9 +50,10 @@ import {
 	stoppedByDraft,
 	type VercelDraft,
 } from "./vercel-model"
+import { VERCEL_STATUS_REACTIVITY_KEY } from "./vercel-status"
 
 const TOKENS_URL = "https://vercel.com/account/settings/tokens"
-const REACTIVITY = ["vercelIntegrationStatus"]
+const REACTIVITY = [VERCEL_STATUS_REACTIVITY_KEY]
 const SMALL = "text-xs/5 text-pretty text-muted-foreground"
 const TITLE = "text-sm/5 font-medium"
 
@@ -432,12 +433,13 @@ function ConnectFlow({ onClose }: { onClose: () => void }) {
 		setTeams(found.teams)
 		const only = found.teams.length === 1 ? found.teams[0]!.id : undefined
 		const team = forTeam ?? only
+		// A pick made for an earlier token must not carry over to this one.
+		setTeamId(team ?? null)
 		if (team === undefined) {
 			if (found.teams.length === 0)
 				setError("This token can't see any team. Create it with a team scope.")
 			return
 		}
-		setTeamId(team)
 		setProjects(found.projects)
 		setDraft(DEFAULT_VERCEL_DRAFT)
 	})
@@ -490,7 +492,10 @@ function ConnectFlow({ onClose }: { onClose: () => void }) {
 						onClick={() => {
 							setProjects(null)
 							setError(null)
-							if ((teams?.length ?? 0) < 2) setTeams(null)
+							if ((teams?.length ?? 0) < 2) {
+								setTeams(null)
+								setTeamId(null)
+							}
 						}}
 					>
 						Back
@@ -513,7 +518,14 @@ function ConnectFlow({ onClose }: { onClose: () => void }) {
 				</DialogPanel>
 				<DialogFooter>
 					<FooterNote>Nothing changes on Vercel until you connect.</FooterNote>
-					<Button variant="outline" disabled={busy} onClick={() => setTeams(null)}>
+					<Button
+						variant="outline"
+						disabled={busy}
+						onClick={() => {
+							setTeams(null)
+							setTeamId(null)
+						}}
+					>
 						Back
 					</Button>
 					<Button

@@ -69,8 +69,9 @@ const PROJECTS = [
 	project("prj_old", "legacy-landing", "gatsby", null, false),
 ]
 
+// A deleted drain has no id left to show.
 const drain = (status: VercelDrainStatus["status"], lastError: string | null = null) =>
-	new VercelDrainStatus({ id: `drn_${status}_8sK2`, status, lastError })
+	new VercelDrainStatus({ id: status === "missing" ? null : `drn_${status}_8sK2`, status, lastError })
 
 const status = (over: Partial<ConstructorParameters<typeof VercelIntegrationStatus>[0]> = {}) =>
 	new VercelIntegrationStatus({
@@ -177,6 +178,11 @@ const SCENARIOS: ReadonlyArray<{ title: string; status: VercelIntegrationStatus;
 		usage: usage(0),
 	},
 	{ title: "Token rejected", status: status({ authFailed: true }), usage: usage(3120) },
+	{
+		title: "Traces only",
+		status: status({ logsEnabled: false, drains: { logs: null, traces: drain("enabled") } }),
+		usage: usage(3120),
+	},
 	{
 		title: "Just connected, first sync pending",
 		status: status({

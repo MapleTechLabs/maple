@@ -4117,7 +4117,7 @@ SELECT
           if(traces.SpanAttributes['gen_ai.response.model'] != '', traces.SpanAttributes['gen_ai.response.model'], traces.SpanAttributes['gen_ai.request.model']) AS model,
           any(traces.SpanAttributes['vercel.ai_gateway.provider']) AS provider,
           count() AS requests,
-          sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd,
+          sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd,
           sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
           sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
           countIf(traces.StatusCode = 'Error') AS errors,
@@ -4127,7 +4127,7 @@ SELECT
           AND traces.ServiceName = 'ai-gateway'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
-          AND traces.ParentSpanId = ''
+          AND traces.SpanKind = 'Server'
           AND traces.ResourceAttributes['service.namespace'] = 'vercel'
         GROUP BY model
         ORDER BY costUsd DESC, requests DESC
@@ -4138,7 +4138,7 @@ SELECT
 SELECT
           traces.SpanAttributes['vercel.project.id'] AS projectId,
           count() AS requests,
-          sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd,
+          sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd,
           sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
           sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
           countIf(traces.StatusCode = 'Error') AS errors
@@ -4147,7 +4147,7 @@ SELECT
           AND traces.ServiceName = 'ai-gateway'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
-          AND traces.ParentSpanId = ''
+          AND traces.SpanKind = 'Server'
           AND traces.ResourceAttributes['service.namespace'] = 'vercel'
         GROUP BY projectId
         ORDER BY costUsd DESC, requests DESC
@@ -4157,7 +4157,7 @@ SELECT
 -- builder:vercel-ai-gateway:vercelAiGatewaySummarySQL:default
 SELECT
           count() AS requests,
-          sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd,
+          sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd,
           sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
           sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
           countIf(traces.StatusCode = 'Error') AS errors,
@@ -4168,14 +4168,14 @@ SELECT
           AND traces.ServiceName = 'ai-gateway'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
-          AND traces.ParentSpanId = ''
+          AND traces.SpanKind = 'Server'
           AND traces.ResourceAttributes['service.namespace'] = 'vercel'
         FORMAT JSON
 
 -- builder:vercel-ai-gateway:vercelAiGatewaySummarySQL:project
 SELECT
           count() AS requests,
-          sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd,
+          sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd,
           sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
           sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
           countIf(traces.StatusCode = 'Error') AS errors,
@@ -4186,7 +4186,7 @@ SELECT
           AND traces.ServiceName = 'ai-gateway'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
-          AND traces.ParentSpanId = ''
+          AND traces.SpanKind = 'Server'
           AND traces.ResourceAttributes['service.namespace'] = 'vercel'
           AND traces.SpanAttributes['vercel.project.id'] = 'prj_sql_catalog'
         FORMAT JSON
@@ -4195,7 +4195,7 @@ SELECT
 SELECT
           formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
           count() AS requests,
-          sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd,
+          sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd,
           sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
           sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
           countIf(traces.StatusCode = 'Error') AS errors
@@ -4204,7 +4204,7 @@ SELECT
           AND traces.ServiceName = 'ai-gateway'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
-          AND traces.ParentSpanId = ''
+          AND traces.SpanKind = 'Server'
           AND traces.ResourceAttributes['service.namespace'] = 'vercel'
         GROUP BY bucket
         ORDER BY bucket ASC
@@ -4214,13 +4214,16 @@ SELECT
 -- builder:vercel-infra:vercelProjectLatencySQL:default
 SELECT
           traces.ResourceAttributes['vercel.projectId'] AS projectId,
+          any(traces.ServiceName) AS serviceName,
           count() AS spans,
           quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
-          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          max(traces.Timestamp) AS lastSeen
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
           AND traces.ResourceAttributes['vercel.projectId'] != ''
           AND traces.ParentSpanId = ''
         GROUP BY projectId
@@ -4278,7 +4281,8 @@ SELECT
           count() AS requests,
           countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499) AS requests4xx,
           countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599) AS requests5xx,
-          countIf(logs.LogAttributes['vercel.cache'] = 'HIT') AS cacheHits
+          countIf(logs.LogAttributes['vercel.cache'] = 'HIT') AS cacheHits,
+          countIf(logs.LogAttributes['vercel.cache'] != '') AS cacheLookups
         FROM logs
         WHERE logs.OrgId = 'org_sql_catalog'
           AND logs.TimestampTime >= '2026-01-01 10:30:00'

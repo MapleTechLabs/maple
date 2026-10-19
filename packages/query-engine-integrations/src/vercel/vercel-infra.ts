@@ -95,6 +95,7 @@ export function vercelProjectTopPathsSQL() {
 			requests4xx: CH.countIf(statusCode($).between(400, 499)),
 			requests5xx: CH.countIf(statusCode($).between(500, 599)),
 			cacheHits: CH.countIf($.LogAttributes.get("vercel.cache").eq("HIT")),
+			cacheLookups: CH.countIf($.LogAttributes.get("vercel.cache").neq("")),
 		}))
 		.where(($) => [
 			...vercelLogsWhere($),
@@ -135,14 +136,19 @@ export function vercelProjectLatencySQL() {
 	return from(Traces)
 		.select(($) => ({
 			projectId: $.ResourceAttributes.get("vercel.projectId"),
+			serviceName: CH.any_($.ServiceName),
 			spans: CH.count(),
 			p50DurationMs: CH.quantile(0.5)($.Duration).div(1_000_000),
 			p95DurationMs: CH.quantile(0.95)($.Duration).div(1_000_000),
+			lastSeen: CH.max_($.Timestamp),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
+			// The key test lets the `mapKeys(ResourceAttributes)` bloom index skip
+			// granules of non-Vercel traces; the value test drops empty ids.
+			CH.mapContains($.ResourceAttributes, "vercel.projectId"),
 			$.ResourceAttributes.get("vercel.projectId").neq(""),
 			$.ParentSpanId.eq(""),
 		])

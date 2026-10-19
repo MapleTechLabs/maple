@@ -48,28 +48,59 @@ const PROXY_ATTRIBUTES: &[(&str, &str)] = &[
     ("vercelId", "vercel.proxy.id"),
 ];
 
+/// The log objects of a delivery, and how many NDJSON lines were not JSON.
+#[derive(Debug)]
+pub struct Parsed {
+    pub entries: Vec<JsonObject>,
+    pub malformed_lines: usize,
+}
+
 /// The log objects in a delivery. A JSON array or NDJSON; an empty body or
 /// array (the drain's test delivery) is no logs. Entries that are not objects
-/// are skipped.
-pub fn parse(payload: &[u8]) -> Result<Vec<JsonObject>, serde_json::Error> {
+/// are skipped, and so are NDJSON lines that are not JSON, so one bad line
+/// does not drop the batch. A body with no line that parsed is an error.
+pub fn parse(payload: &[u8]) -> Result<Parsed, serde_json::Error> {
     let starts_array = payload
         .iter()
         .find(|byte| !byte.is_ascii_whitespace())
         .is_some_and(|byte| *byte == b'[');
-    let values: Vec<JsonValue> = if starts_array {
-        serde_json::from_slice(payload)?
-    } else {
-        serde_json::Deserializer::from_slice(payload)
+    let objects = |values: Vec<JsonValue>| -> Vec<JsonObject> {
+        values
             .into_iter()
-            .collect::<Result<_, _>>()?
+            .filter_map(|value| match value {
+                JsonValue::Object(entry) => Some(entry),
+                _ => None,
+            })
+            .collect()
     };
-    Ok(values
-        .into_iter()
-        .filter_map(|value| match value {
-            JsonValue::Object(entry) => Some(entry),
-            _ => None,
-        })
-        .collect())
+    if starts_array {
+        return Ok(Parsed {
+            entries: objects(serde_json::from_slice(payload)?),
+            malformed_lines: 0,
+        });
+    }
+    let mut values = Vec::new();
+    let mut malformed_lines = 0;
+    let mut first_error = None;
+    for line in payload.split(|byte| *byte == b'\n') {
+        if line.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        match serde_json::from_slice::<JsonValue>(line) {
+            Ok(value) => values.push(value),
+            Err(error) => {
+                malformed_lines += 1;
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    match first_error {
+        Some(error) if values.is_empty() => Err(error),
+        _ => Ok(Parsed {
+            entries: objects(values),
+            malformed_lines,
+        }),
+    }
 }
 
 /// Every entry with a `projectId` (which every Vercel log has) as a record,
@@ -217,8 +248,7 @@ fn log_record(entry: &JsonObject, now_unix_nano: u64) -> LogRecord {
     LogRecord {
         time_unix_nano: entry
             .get("timestamp")
-            .and_then(JsonValue::as_u64)
-            .and_then(|millis| millis.checked_mul(1_000_000))
+            .and_then(timestamp_nanos)
             .unwrap_or(now_unix_nano),
         observed_time_unix_nano: now_unix_nano,
         severity_number,
@@ -235,14 +265,35 @@ fn log_record(entry: &JsonObject, now_unix_nano: u64) -> LogRecord {
     }
 }
 
+/// Epoch milliseconds, whole or fractional, as nanoseconds. Whole and
+/// fractional parts convert apart: an f64 cannot hold epoch nanoseconds exactly.
+fn timestamp_nanos(millis: &JsonValue) -> Option<u64> {
+    if let Some(whole) = millis.as_u64() {
+        return whole.checked_mul(1_000_000);
+    }
+    let millis = millis.as_f64().filter(|m| m.is_finite() && *m >= 0.0)?;
+    let whole = millis.trunc();
+    if whole >= u64::MAX as f64 {
+        return None;
+    }
+    (whole as u64)
+        .checked_mul(1_000_000)?
+        .checked_add(((millis - whole) * 1_000_000.0).round() as u64)
+}
+
 /// `len` bytes from exactly `2 * len` hex digits, empty for anything else.
+/// An all-zero id is OTLP's "no id", so it is empty too.
 fn hex_bytes(hex: &str, len: usize) -> Vec<u8> {
     if hex.len() != len * 2 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Vec::new();
     }
-    (0..len)
+    let bytes: Vec<u8> = (0..len)
         .filter_map(|index| u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).ok())
-        .collect()
+        .collect();
+    if bytes.iter().all(|byte| *byte == 0) {
+        return Vec::new();
+    }
+    bytes
 }
 
 fn text<'a>(parent: &'a JsonObject, key: &str) -> Option<&'a str> {
@@ -276,7 +327,10 @@ mod tests {
     const NOW: u64 = 1_800_000_000_000_000_000;
 
     fn build(payload: &str) -> ExportLogsServiceRequest {
-        build_logs_request(&parse(payload.as_bytes()).expect("valid drain body"), NOW)
+        build_logs_request(
+            &parse(payload.as_bytes()).expect("valid drain body").entries,
+            NOW,
+        )
     }
 
     fn values(attributes: &[KeyValue]) -> HashMap<String, any_value::Value> {
@@ -501,11 +555,48 @@ mod tests {
     }
 
     #[test]
-    fn test_deliveries_are_no_logs_and_malformed_json_is_an_error() {
+    fn test_deliveries_are_no_logs_and_a_body_with_nothing_parsed_is_an_error() {
         for payload in ["", "[]", " \n", "{}", "[{}]"] {
             assert!(build(payload).resource_logs.is_empty(), "{payload:?}");
         }
         assert!(parse(b"[{\"projectId\":").is_err());
-        assert!(parse(b"{\"projectId\":\"a\"}\nnot json").is_err());
+        assert!(parse(b"not json\n{\"projectId\":").is_err());
+    }
+
+    #[test]
+    fn malformed_ndjson_lines_are_skipped_and_counted() {
+        let payload = format!("{BUILD_LOG}\nnot json\n{{\"projectId\":\n{REQUEST_LOG}\n");
+        let parsed = parse(payload.as_bytes()).expect("the good lines parse");
+        assert_eq!(parsed.malformed_lines, 2);
+        let request = build_logs_request(&parsed.entries, NOW);
+        let records: usize = request
+            .resource_logs
+            .iter()
+            .map(|logs| logs.scope_logs[0].log_records.len())
+            .sum();
+        assert_eq!(records, 2);
+    }
+
+    #[test]
+    fn fractional_timestamps_keep_their_sub_millisecond_part() {
+        let request =
+            build(&json!({ "projectId": "prj_1", "timestamp": 1_573_817_187_330.5 }).to_string());
+        let (_, record) = only_record(&request);
+        assert_eq!(record.time_unix_nano, 1_573_817_187_330_500_000);
+    }
+
+    #[test]
+    fn all_zero_trace_and_span_ids_are_no_ids() {
+        let request = build(
+            &json!({
+                "projectId": "prj_1",
+                "traceId": "00000000000000000000000000000000",
+                "spanId": "0000000000000000",
+            })
+            .to_string(),
+        );
+        let (_, record) = only_record(&request);
+        assert!(record.trace_id.is_empty());
+        assert!(record.span_id.is_empty());
     }
 }

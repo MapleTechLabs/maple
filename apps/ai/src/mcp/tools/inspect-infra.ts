@@ -95,10 +95,10 @@ const resourceKeyFor = (kind: (typeof ENTITY_KINDS)[number], workloadKind: strin
 			return "host.name"
 		case "workload":
 			return workloadKind === undefined ? undefined : `k8s.${workloadKind}.name`
-		case "cloudflare_zone":
-		case "cloudflare_worker":
 		case "vercel_project":
 			return "vercel.project.name"
+		case "cloudflare_zone":
+		case "cloudflare_worker":
 		case "railway_service":
 		case "planetscale_database":
 			return undefined

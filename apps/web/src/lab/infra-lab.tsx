@@ -42,8 +42,12 @@ import {
 	VERCEL_BUCKETS,
 	VERCEL_EMPTY_AI_GATEWAY,
 	VERCEL_PROJECTS,
+	VERCEL_READ_FAILURE,
 	VERCEL_STATUS,
+	VERCEL_TRACES_ONLY_PROJECTS,
+	VERCEL_TRACES_ONLY_STATUS,
 } from "./vercel-infra-fixtures"
+import { ErrorState } from "@/components/common/error-state"
 
 const NOW = Date.now()
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
@@ -362,6 +366,97 @@ export function InfraLab() {
 					aiTimeseries={[]}
 					state={{ view: "aiGateway" }}
 					onStateChange={() => undefined}
+					timeSearch={{}}
+				/>
+			</Frame>
+
+			<Frame label="/infra/vercel (traces only)">
+				<VercelListPage
+					status={VERCEL_TRACES_ONLY_STATUS}
+					projects={VERCEL_TRACES_ONLY_PROJECTS}
+					buckets={[]}
+					aiGateway={VERCEL_AI_GATEWAY}
+					aiTimeseries={VERCEL_AI_TIMESERIES}
+					state={{}}
+					onStateChange={() => undefined}
+					timeSearch={{}}
+				/>
+			</Frame>
+
+			<Frame label="/infra/vercel (traces only, nothing yet)">
+				<VercelListPage
+					status={VERCEL_TRACES_ONLY_STATUS}
+					projects={[]}
+					buckets={[]}
+					aiGateway={VERCEL_EMPTY_AI_GATEWAY}
+					aiTimeseries={[]}
+					state={{}}
+					onStateChange={() => undefined}
+					timeSearch={{}}
+				/>
+			</Frame>
+
+			<Frame label="/infra/vercel (request series and AI Gateway reads failed)">
+				<VercelListPage
+					status={VERCEL_STATUS}
+					projects={VERCEL_PROJECTS}
+					buckets={[]}
+					aiGateway={null}
+					aiTimeseries={[]}
+					bucketsError={
+						<ErrorState
+							error={VERCEL_READ_FAILURE}
+							title="Failed to load the request series"
+							onRetry={() => undefined}
+							variant="row"
+						/>
+					}
+					aiGatewayError={
+						<ErrorState
+							error={VERCEL_READ_FAILURE}
+							title="Failed to load AI Gateway usage"
+							onRetry={() => undefined}
+						/>
+					}
+					state={{}}
+					onStateChange={() => undefined}
+					timeSearch={{}}
+				/>
+			</Frame>
+
+			<Frame label="/infra/vercel/$projectId (detail, deployments and AI Gateway reads failed)">
+				<VercelProjectPage
+					projectId="prj_api"
+					project={VERCEL_STATUS.projects.find((project) => project.id === "prj_api") ?? null}
+					row={vercelProjectRow("prj_api", VERCEL_STATUS.projects, VERCEL_PROJECTS)}
+					buckets={VERCEL_BUCKETS}
+					detail={null}
+					detailError={
+						<ErrorState
+							error={VERCEL_READ_FAILURE}
+							title="Failed to load top paths and errors"
+							onRetry={() => undefined}
+						/>
+					}
+					deployments={null}
+					deploymentsError={
+						<ErrorState
+							error={VERCEL_READ_FAILURE}
+							title="Failed to load deployments"
+							onRetry={() => undefined}
+							variant="inline"
+							className="px-4"
+						/>
+					}
+					aiGateway={null}
+					aiGatewayError={
+						<ErrorState
+							error={VERCEL_READ_FAILURE}
+							title="Failed to load AI Gateway usage"
+							onRetry={() => undefined}
+						/>
+					}
+					aiTimeseries={[]}
 					timeSearch={{}}
 				/>
 			</Frame>

@@ -104,20 +104,37 @@ export interface VercelIssue {
 	readonly key: string
 	readonly tone: "crit" | "warn"
 	readonly title: string
-	readonly detail: string | null
+	/** What it means and what fixes it. */
+	readonly description: string
+	/** Vercel's own reason, when it gave one. */
+	readonly vercelError: string | null
 	/** What fixes it from the card. */
-	readonly fix: "token" | "reapply" | null
+	readonly fix: "token" | "reapply"
 }
 
-/** What went wrong with a drain Vercel reports, or null when it is fine or not checked yet. */
-function drainProblem(status: VercelDrainStatus["status"]): string | null {
-	switch (status) {
-		case "missing":
-			return "was deleted on Vercel"
+/** What went wrong with a drain and how re-applying helps, or null when it is fine or not checked yet. */
+function drainProblem(
+	drain: VercelDrainStatus | null,
+): { readonly problem: string; readonly description: string } | null {
+	if (drain === null || drain.status === "missing") {
+		return {
+			problem: drain === null ? "is missing on Vercel" : "was deleted on Vercel",
+			description: "Re-applying the settings creates it again on Vercel.",
+		}
+	}
+	switch (drain.status) {
 		case "errored":
-			return "is failing on Vercel"
+			return {
+				problem: "is failing on Vercel",
+				description:
+					"Vercel can't deliver to Maple, usually because the ingest key changed. Re-applying the settings sends Maple's current ingest key to the drain.",
+			}
 		case "disabled":
-			return "is disabled on Vercel"
+			return {
+				problem: "is disabled on Vercel",
+				description:
+					"Re-applying the settings sends Maple's current ingest key to the drain. If it stays disabled, turn it on in the team's drain settings.",
+			}
 		default:
 			return null
 	}
@@ -131,7 +148,9 @@ export function vercelIssues(status: VercelIntegrationStatus): ReadonlyArray<Ver
 				key: "token",
 				tone: "crit",
 				title: "Vercel rejected the saved token",
-				detail: "Maple stopped checking the drains and deployments. Drains keep delivering until the token's access ends.",
+				description:
+					"Maple can't check, fix or remove the drains, or read deployments, until a new token is pasted.",
+				vercelError: null,
 				fix: "token",
 			},
 		]
@@ -143,13 +162,14 @@ export function vercelIssues(status: VercelIntegrationStatus): ReadonlyArray<Ver
 	] as const
 	for (const [name, enabled, drain] of drains) {
 		if (!enabled) continue
-		const problem = drain === null ? "is missing on Vercel" : drainProblem(drain.status)
-		if (problem === null) continue
+		const found = drainProblem(drain)
+		if (found === null) continue
 		issues.push({
 			key: name,
 			tone: "warn",
-			title: `The ${name.toLowerCase()} drain ${problem}`,
-			detail: drain?.lastError ?? null,
+			title: `The ${name.toLowerCase()} drain ${found.problem}`,
+			description: found.description,
+			vercelError: drain?.lastError ?? null,
 			fix: "reapply",
 		})
 	}

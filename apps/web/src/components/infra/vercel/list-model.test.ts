@@ -54,6 +54,16 @@ describe("vercelProjectRows", () => {
 		])
 	})
 
+	it("names a project that only sends traces from the inventory, with latency and no rates", () => {
+		const rows = vercelProjectRows(
+			[project("p1", "web")],
+			[row("p1", { projectName: "", requests: 0, p95DurationMs: 120 })],
+		)
+		expect(rows.map((r) => [r.name, r.p95DurationMs, r.errorPercent, r.cacheHitPercent])).toEqual([
+			["web", 120, null, null],
+		])
+	})
+
 	it("keeps a project that delivered data but is missing from the inventory", () => {
 		const rows = vercelProjectRows([], [row("prj_9", { projectName: "" })])
 		expect(rows.map((r) => [r.projectId, r.name, r.framework])).toEqual([["prj_9", "prj_9", null]])

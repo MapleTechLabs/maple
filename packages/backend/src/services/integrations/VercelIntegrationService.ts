@@ -11,7 +11,7 @@ import {
 	IntegrationsPersistenceError,
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
-	OrgId,
+	type OrgId,
 	UserId,
 	VercelDeploymentSummary,
 	VercelDiscoverResponse,
@@ -33,7 +33,7 @@ import {
 	type VercelConnectionRow,
 	type VercelDeploymentRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Ref, Schema } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Ref, Result, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -53,7 +53,7 @@ import {
 	type VercelDeploymentInfo,
 	type VercelDrainBody,
 	type VercelDrainInfo,
-	type VercelProjectInfo,
+	type VercelProjectListing,
 	type VercelTeamInfo,
 } from "./vercel/api"
 
@@ -71,7 +71,6 @@ const ORG_CONCURRENCY = 3
 /** Connect and sync run one poll inline; what does not finish is left to the cron. */
 const SYNC_NOW_TIMEOUT = Duration.seconds(20)
 
-const decodeOrgId = Schema.decodeUnknownSync(OrgId)
 const decodeUserId = Schema.decodeUnknownSync(UserId)
 const SYSTEM_USER_ID = decodeUserId("system-vercel-integration")
 
@@ -137,14 +136,16 @@ const toListError = (error: VercelApiError) =>
 const toDrainError = (error: VercelApiError) =>
 	error.kind === "unauthorized"
 		? tokenRejected()
-		: error.status !== undefined && error.status >= 400 && error.status < 500 && error.status !== 429
+		: error.kind === "forbidden"
 			? new IntegrationsValidationError({
 					message: `Vercel refused the drain (drains need a Pro or Enterprise team). ${error.message}`,
 				})
-			: new IntegrationsUpstreamError({
-					message: error.message,
-					...(error.status === undefined ? undefined : { status: error.status }),
-				})
+			: error.status !== undefined && error.status >= 400 && error.status < 500 && error.status !== 429
+				? new IntegrationsValidationError({ message: `Vercel refused the drain. ${error.message}` })
+				: new IntegrationsUpstreamError({
+						message: error.message,
+						...(error.status === undefined ? undefined : { status: error.status }),
+					})
 
 const validateForwarding = (forwarding: VercelForwarding) =>
 	forwarding.projectScope === "some" && forwarding.projectIds.length === 0
@@ -325,6 +326,8 @@ export class VercelIntegrationService extends Context.Service<
 								headers,
 							},
 				...(sampling === undefined ? undefined : { sampling }),
+				// Re-applying the settings also turns a disabled drain back on.
+				...(update ? { status: "enabled" as const } : undefined),
 			}
 		}
 
@@ -440,10 +443,13 @@ export class VercelIntegrationService extends Context.Service<
 			} satisfies DrainSet
 		})
 
-		/** Upserts the discovered projects; deletes the ones (and their deployments) that are gone. */
+		/**
+		 * Upserts the discovered projects. Deletes the ones (and their deployments) that are gone,
+		 * but only from a complete listing: a capped one never saw the projects past the cap.
+		 */
 		const reconcileProjects = Effect.fn("VercelIntegrationService.reconcileProjects")(function* (
 			connection: Pick<VercelConnectionRow, "id" | "orgId">,
-			projects: ReadonlyArray<VercelProjectInfo>,
+			{ projects, complete }: VercelProjectListing,
 			now: number,
 		) {
 			yield* Effect.annotateCurrentSpan("maple.vercel.projects", projects.length)
@@ -477,6 +483,7 @@ export class VercelIntegrationService extends Context.Service<
 					),
 				)
 			}
+			if (!complete) return
 			const seen = projects.map((project) => project.id)
 			yield* dbExecute((db) =>
 				Effect.all([
@@ -626,7 +633,7 @@ export class VercelIntegrationService extends Context.Service<
 				id === null && state === null
 					? null
 					: new VercelDrainStatus({
-							id: id ?? "",
+							id,
 							status: state?.status ?? "unknown",
 							lastError: state?.lastError ?? null,
 						})
@@ -674,10 +681,9 @@ export class VercelIntegrationService extends Context.Service<
 		})
 
 		const discover = Effect.fn("VercelIntegrationService.discover")(function* (
-			rawToken: string,
+			token: string,
 			teamId: string | undefined,
 		) {
-			const token = rawToken.trim()
 			const teams = yield* listTeams(httpClient, token).pipe(Effect.mapError(toListError))
 			const team =
 				teamId === undefined
@@ -693,7 +699,8 @@ export class VercelIntegrationService extends Context.Service<
 			const projects =
 				team === undefined
 					? []
-					: yield* listProjects(httpClient, token, team.id).pipe(Effect.mapError(toListError))
+					: (yield* listProjects(httpClient, token, team.id).pipe(Effect.mapError(toListError)))
+							.projects
 			return new VercelDiscoverResponse({
 				teams: teams.map((t) => new VercelTeam(t)),
 				projects: projects
@@ -715,177 +722,33 @@ export class VercelIntegrationService extends Context.Service<
 				}),
 			)
 
-		const connect = Effect.fn("VercelIntegrationService.connect")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			request: VercelConnectRequest,
-		) {
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.vercel.team_id": request.teamId })
-			yield* validateForwarding(request)
-			const token = request.token.trim()
-			const team = yield* listTeams(httpClient, token).pipe(
-				Effect.mapError(toListError),
-				Effect.flatMap((teams) => findTeam(teams, request.teamId)),
-			)
-			const projects = yield* listProjects(httpClient, token, team.id).pipe(
-				Effect.mapError(toListError),
-			)
-			const existing = yield* loadConnection(orgId)
-			// Drains on another team belong to the old token; remove them before replacing the row.
-			const sameTeam = existing !== null && existing.teamId === team.id
-			if (existing !== null && !sameTeam) {
-				yield* Effect.gen(function* () {
-					const oldToken = yield* decryptToken(existing)
-					for (const drainId of [existing.logDrainId, existing.traceDrainId]) {
-						if (drainId !== null)
-							yield* deleteDrain(httpClient, oldToken, existing.teamId, drainId)
-					}
-				}).pipe(Effect.ignore)
-			}
-			const ingestKey = yield* drainKey(orgId, userId)
-			const drains = yield* applyDrains(
-				team.id,
-				token,
-				request,
-				{
-					logDrainId: sameTeam ? existing.logDrainId : null,
-					traceDrainId: sameTeam ? existing.traceDrainId : null,
-				},
-				ingestKey.key,
-			).pipe(Effect.mapError(toDrainError))
-			const encrypted = yield* encryptAes256Gcm(
-				token,
-				encryptionKey,
-				(message) => new IntegrationsPersistenceError({ message }),
-				tokenAad(orgId),
-			)
-			const now = yield* Clock.currentTimeMillis
-			const fields = {
-				teamId: team.id,
-				teamSlug: team.slug,
-				teamName: team.name,
-				tokenCiphertext: encrypted.ciphertext,
-				tokenIv: encrypted.iv,
-				tokenTag: encrypted.tag,
-				connectedByUserId: userId,
-				projectScope: request.projectScope,
-				projectIds: request.projectIds,
-				samplingRate: request.samplingRate,
-				logsEnabled: request.logsEnabled,
-				tracesEnabled: request.tracesEnabled,
-				...drains,
-				drainKeyHash: ingestKey.hash,
-				authFailedAt: null,
-				discoveredAt: now,
-				lastError: null,
-				lastErrorAt: null,
-				updatedAt: now,
-			}
-			const [connection] = yield* dbExecute((db) =>
+		/**
+		 * A poll's writes to the connection row land only while it still holds the lease it claimed:
+		 * a settings change, reconnect or disconnect takes the lease, so a stale pass writes nothing.
+		 */
+		const updateLeased = (
+			connectionId: string,
+			leaseUntil: number,
+			set: PG.UpdateSetOf<typeof VercelConnections>,
+		) =>
+			dbExecute((db) =>
 				db.run(
-					PG.insertInto(VercelConnections)
-						.values({ id: randomUUID(), orgId, ...fields, createdAt: now })
-						.onConflictDoUpdate({
-							target: ["orgId"],
-							// A new team starts its deployment history over.
-							set: () => (sameTeam ? fields : { ...fields, deploymentsWatermarkAt: null }),
-						})
-						.returning(),
+					PG.update(VercelConnections)
+						.set(set)
+						.where(($) => [$.id.eq(connectionId), $.leaseUntil.eq(leaseUntil)])
+						.returning("id"),
 				),
-			)
-			if (connection === undefined) {
-				return yield* new IntegrationsPersistenceError({
-					message: "Failed to save the Vercel connection",
-				})
-			}
-			yield* reconcileProjects(connection, projects, now)
-			yield* pollNow(orgId)
-			return yield* getStatus(orgId)
-		})
+			).pipe(Effect.map((rows) => rows.length > 0))
 
-		const updateSettings = Effect.fn("VercelIntegrationService.updateSettings")(function* (
-			orgId: OrgId,
-			request: VercelSettingsRequest,
-		) {
-			yield* Effect.annotateCurrentSpan({ orgId })
-			const connection = yield* loadConnection(orgId)
-			if (connection === null) {
-				return yield* new IntegrationsNotConnectedError({ message: "Vercel is not connected" })
-			}
-			const forwarding: VercelForwarding = {
-				projectScope: request.projectScope ?? connection.projectScope,
-				projectIds: request.projectIds ?? connection.projectIds,
-				samplingRate: request.samplingRate ?? connection.samplingRate,
-				logsEnabled: request.logsEnabled ?? connection.logsEnabled,
-				tracesEnabled: request.tracesEnabled ?? connection.tracesEnabled,
-			}
-			yield* validateForwarding(forwarding)
-			const token = yield* decryptToken(connection)
-			const ingestKey = yield* drainKey(orgId, SYSTEM_USER_ID)
-			const drains = yield* applyDrains(
-				connection.teamId,
-				token,
-				forwarding,
-				connection,
-				ingestKey.key,
-			).pipe(Effect.mapError(toDrainError))
-			const now = yield* Clock.currentTimeMillis
-			yield* updateConnection(connection.id, {
-				...forwarding,
-				...drains,
-				drainKeyHash: ingestKey.hash,
-				updatedAt: now,
-			})
-			return yield* getStatus(orgId)
-		})
-
-		const disconnect = Effect.fn("VercelIntegrationService.disconnect")(function* (orgId: OrgId) {
-			yield* Effect.annotateCurrentSpan({ orgId })
-			const connection = yield* loadConnection(orgId)
-			if (connection === null) return { disconnected: false, drainsRemoved: true }
-			const drainsRemoved = yield* Effect.gen(function* () {
-				const token = yield* decryptToken(connection)
-				for (const drainId of [connection.logDrainId, connection.traceDrainId]) {
-					if (drainId !== null) yield* deleteDrain(httpClient, token, connection.teamId, drainId)
-				}
-			}).pipe(
-				Effect.as(true),
-				Effect.catchCause((cause) =>
-					Cause.hasInterruptsOnly(cause)
-						? Effect.interrupt
-						: Effect.logWarning("vercel drain removal failed", {
-								orgId,
-								error: summarizeCause(cause),
-							}).pipe(Effect.as(false)),
-				),
-			)
-			yield* Effect.annotateCurrentSpan("maple.vercel.drains_removed", drainsRemoved)
-			yield* dbExecute((db) =>
-				Effect.all([
-					db.run(PG.deleteFrom(VercelDeployments).where(($) => [$.orgId.eq(orgId)])),
-					db.run(PG.deleteFrom(VercelProjects).where(($) => [$.orgId.eq(orgId)])),
-					db.run(PG.deleteFrom(VercelConnections).where(($) => [$.orgId.eq(orgId)])),
-				]),
-			)
-			return { disconnected: true, drainsRemoved }
-		})
-
-		const deployments = Effect.fn("VercelIntegrationService.deployments")(function* (
-			orgId: OrgId,
-			projectId: string,
-			limit: number,
-		) {
-			const rows = yield* dbExecute((db) =>
+		const holdsLease = (connectionId: string, leaseUntil: number) =>
+			dbExecute((db) =>
 				db.run(
-					PG.from(VercelDeployments)
-						.select()
-						.where(($) => [$.orgId.eq(orgId), $.projectId.eq(projectId)])
-						.orderBy(["createdAtVercel", "desc"])
-						.limit(limit),
+					PG.from(VercelConnections)
+						.select("id")
+						.where(($) => [$.id.eq(connectionId), $.leaseUntil.eq(leaseUntil)])
+						.limit(1),
 				),
-			)
-			return rows.map(toSummary)
-		})
+			).pipe(Effect.map((rows) => rows.length > 0))
 
 		const claimLease = (connectionId: string, now: number) =>
 			dbExecute((db) =>
@@ -905,23 +768,252 @@ export class VercelIntegrationService extends Context.Service<
 				),
 			).pipe(Effect.map((rows) => rows[0] ?? null))
 
-		/** Compare-and-set on our own claim so a late tick never clears a successor's lease. */
-		const releaseLease = (
-			connectionId: string,
-			claimedUntil: number | null,
-			holdUntilMs: number | null,
-			now: number,
+		/** Compare-and-set on our own claim so a late release never clears a successor's lease. */
+		const releaseLease = (connectionId: string, claimedUntil: number, holdUntilMs: number | null) =>
+			Clock.currentTimeMillis.pipe(
+				Effect.flatMap((now) =>
+					updateLeased(connectionId, claimedUntil, { leaseUntil: holdUntilMs, updatedAt: now }),
+				),
+				Effect.ignore,
+			)
+
+		/**
+		 * Takes the lease from any poll in flight, for a write that changes the drains. The new value
+		 * is above the old one, so a poll claimed in the same millisecond still loses it.
+		 */
+		const takeLease = Effect.fn("VercelIntegrationService.takeLease")(function* (orgId: OrgId) {
+			for (;;) {
+				const connection = yield* loadConnection(orgId)
+				if (connection === null) return null
+				const now = yield* Clock.currentTimeMillis
+				const leaseUntil = Math.max(now + LEASE_MS, (connection.leaseUntil ?? 0) + 1)
+				const [taken] = yield* dbExecute((db) =>
+					db.run(
+						PG.update(VercelConnections)
+							.set({ leaseUntil, updatedAt: now })
+							.where(($) => [
+								$.id.eq(connection.id),
+								connection.leaseUntil === null
+									? $.leaseUntil.isNull()
+									: $.leaseUntil.eq(connection.leaseUntil),
+							])
+							.returning(),
+					),
+				)
+				// Lost to a concurrent claim or release: read the row again.
+				if (taken !== undefined) return { connection: taken, leaseUntil }
+			}
+		})
+
+		/** Runs `write` holding the lease; `connection` is null when the org has none yet. */
+		const underLease = <A, E, R>(
+			orgId: OrgId,
+			write: (connection: VercelConnectionRow | null) => Effect.Effect<A, E, R>,
 		) =>
-			dbExecute((db) =>
-				db.run(
-					PG.update(VercelConnections)
-						.set({ leaseUntil: holdUntilMs, updatedAt: now })
-						.where(($) => [
-							$.id.eq(connectionId),
-							claimedUntil === null ? $.leaseUntil.isNull() : $.leaseUntil.eq(claimedUntil),
-						]),
+			takeLease(orgId).pipe(
+				Effect.flatMap((taken) =>
+					taken === null
+						? write(null)
+						: write(taken.connection).pipe(
+								Effect.ensuring(releaseLease(taken.connection.id, taken.leaseUntil, null)),
+							),
 				),
 			)
+
+		/** Deletes each drain on its own so one failure does not skip the other; true when all are gone. */
+		const removeDrains = Effect.fn("VercelIntegrationService.removeDrains")(function* (
+			connection: VercelConnectionRow,
+		) {
+			const drainIds = [connection.logDrainId, connection.traceDrainId].filter(
+				(id): id is string => id !== null,
+			)
+			if (drainIds.length === 0) return true
+			const context = { orgId: connection.orgId, teamId: connection.teamId }
+			const token = yield* Effect.result(decryptToken(connection))
+			if (Result.isFailure(token)) {
+				yield* Effect.logWarning("vercel drain removal failed", {
+					...context,
+					error: token.failure.message,
+				})
+				return false
+			}
+			const removed = yield* Effect.forEach(drainIds, (drainId) =>
+				deleteDrain(httpClient, token.success, connection.teamId, drainId).pipe(
+					Effect.as(true),
+					Effect.catch((error) =>
+						Effect.logWarning("vercel drain removal failed", {
+							...context,
+							drainId,
+							error: error.message,
+						}).pipe(Effect.as(false)),
+					),
+				),
+			)
+			return removed.every(Boolean)
+		})
+
+		const connect = Effect.fn("VercelIntegrationService.connect")(function* (
+			orgId: OrgId,
+			userId: UserId,
+			request: VercelConnectRequest,
+		) {
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.vercel.team_id": request.teamId })
+			yield* validateForwarding(request)
+			const token = request.token
+			const team = yield* listTeams(httpClient, token).pipe(
+				Effect.mapError(toListError),
+				Effect.flatMap((teams) => findTeam(teams, request.teamId)),
+			)
+			const projects = yield* listProjects(httpClient, token, team.id).pipe(
+				Effect.mapError(toListError),
+			)
+			yield* underLease(orgId, (existing) =>
+				Effect.gen(function* () {
+					const sameTeam = existing !== null && existing.teamId === team.id
+					const ingestKey = yield* drainKey(orgId, userId)
+					const drains = yield* applyDrains(
+						team.id,
+						token,
+						request,
+						{
+							logDrainId: sameTeam ? existing.logDrainId : null,
+							traceDrainId: sameTeam ? existing.traceDrainId : null,
+						},
+						ingestKey.key,
+					).pipe(Effect.mapError(toDrainError))
+					const encrypted = yield* encryptAes256Gcm(
+						token,
+						encryptionKey,
+						(message) => new IntegrationsPersistenceError({ message }),
+						tokenAad(orgId),
+					)
+					const now = yield* Clock.currentTimeMillis
+					const fields = {
+						teamId: team.id,
+						teamSlug: team.slug,
+						teamName: team.name,
+						tokenCiphertext: encrypted.ciphertext,
+						tokenIv: encrypted.iv,
+						tokenTag: encrypted.tag,
+						connectedByUserId: userId,
+						projectScope: request.projectScope,
+						projectIds: request.projectIds,
+						samplingRate: request.samplingRate,
+						logsEnabled: request.logsEnabled,
+						tracesEnabled: request.tracesEnabled,
+						...drains,
+						drainKeyHash: ingestKey.hash,
+						authFailedAt: null,
+						discoveredAt: now,
+						leaseUntil: null,
+						lastError: null,
+						lastErrorAt: null,
+						updatedAt: now,
+					}
+					const [connection] = yield* dbExecute((db) =>
+						db.run(
+							PG.insertInto(VercelConnections)
+								.values({ id: randomUUID(), orgId, ...fields, createdAt: now })
+								.onConflictDoUpdate({
+									target: ["orgId"],
+									// A new team starts its deployment history over.
+									set: () =>
+										sameTeam ? fields : { ...fields, deploymentsWatermarkAt: null },
+								})
+								.returning(),
+						),
+					)
+					if (connection === undefined) {
+						return yield* new IntegrationsPersistenceError({
+							message: "Failed to save the Vercel connection",
+						})
+					}
+					yield* reconcileProjects(connection, projects, now)
+					// The old team's drains go only once the new connection is saved, with the old token.
+					if (existing !== null && !sameTeam) yield* removeDrains(existing)
+				}),
+			)
+			yield* pollNow(orgId)
+			return yield* getStatus(orgId)
+		})
+
+		const updateSettings = Effect.fn("VercelIntegrationService.updateSettings")(function* (
+			orgId: OrgId,
+			request: VercelSettingsRequest,
+		) {
+			yield* Effect.annotateCurrentSpan({ orgId })
+			yield* underLease(orgId, (connection) =>
+				Effect.gen(function* () {
+					if (connection === null) {
+						return yield* new IntegrationsNotConnectedError({
+							message: "Vercel is not connected",
+						})
+					}
+					const forwarding: VercelForwarding = {
+						projectScope: request.projectScope ?? connection.projectScope,
+						projectIds: request.projectIds ?? connection.projectIds,
+						samplingRate: request.samplingRate ?? connection.samplingRate,
+						logsEnabled: request.logsEnabled ?? connection.logsEnabled,
+						tracesEnabled: request.tracesEnabled ?? connection.tracesEnabled,
+					}
+					yield* validateForwarding(forwarding)
+					const token = yield* decryptToken(connection)
+					const ingestKey = yield* drainKey(orgId, SYSTEM_USER_ID)
+					const drains = yield* applyDrains(
+						connection.teamId,
+						token,
+						forwarding,
+						connection,
+						ingestKey.key,
+					).pipe(Effect.mapError(toDrainError))
+					const now = yield* Clock.currentTimeMillis
+					yield* updateConnection(connection.id, {
+						...forwarding,
+						...drains,
+						drainKeyHash: ingestKey.hash,
+						leaseUntil: null,
+						updatedAt: now,
+					})
+				}),
+			)
+			return yield* getStatus(orgId)
+		})
+
+		const disconnect = Effect.fn("VercelIntegrationService.disconnect")(function* (orgId: OrgId) {
+			yield* Effect.annotateCurrentSpan({ orgId })
+			return yield* underLease(orgId, (connection) =>
+				Effect.gen(function* () {
+					if (connection === null) return { disconnected: false, drainsRemoved: true }
+					const drainsRemoved = yield* removeDrains(connection)
+					yield* Effect.annotateCurrentSpan("maple.vercel.drains_removed", drainsRemoved)
+					yield* dbExecute((db) =>
+						Effect.all([
+							db.run(PG.deleteFrom(VercelDeployments).where(($) => [$.orgId.eq(orgId)])),
+							db.run(PG.deleteFrom(VercelProjects).where(($) => [$.orgId.eq(orgId)])),
+							db.run(PG.deleteFrom(VercelConnections).where(($) => [$.orgId.eq(orgId)])),
+						]),
+					)
+					return { disconnected: true, drainsRemoved }
+				}),
+			)
+		})
+
+		const deployments = Effect.fn("VercelIntegrationService.deployments")(function* (
+			orgId: OrgId,
+			projectId: string,
+			limit: number,
+		) {
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(VercelDeployments)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.projectId.eq(projectId)])
+						.orderBy(["createdAtVercel", "desc"])
+						.limit(limit),
+				),
+			)
+			return rows.map(toSummary)
+		})
 
 		const pollOrg = Effect.fn("VercelIntegrationService.pollOrg")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
@@ -938,8 +1030,12 @@ export class VercelIntegrationService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			const claimed = yield* claimLease(connection.id, now)
 			if (claimed === null) return skip("lease held")
+			const lease = now + LEASE_MS
 			yield* Effect.annotateCurrentSpan("maple.vercel.team_id", claimed.teamId)
 
+			const write = (set: PG.UpdateSetOf<typeof VercelConnections>) =>
+				updateLeased(claimed.id, lease, { ...set, updatedAt: now })
+			const leaseLost = skip("lease lost")
 			const holdUntilRef = yield* Ref.make<number | null>(null)
 			const errorsRef = yield* Ref.make<ReadonlyArray<string>>([])
 			const recordError = (message: string) => Ref.update(errorsRef, (errors) => [...errors, message])
@@ -948,17 +1044,12 @@ export class VercelIntegrationService extends Context.Service<
 			const stopFor = (error: VercelApiError) =>
 				Effect.gen(function* () {
 					if (isTokenRejection(error)) {
-						yield* updateConnection(claimed.id, {
-							authFailedAt: now,
-							lastError: error.message,
-							lastErrorAt: now,
-							updatedAt: now,
-						})
+						yield* write({ authFailedAt: now, lastError: error.message, lastErrorAt: now })
 						return true
 					}
 					if (error.kind === "rate_limited") {
 						yield* Ref.set(holdUntilRef, now + RATE_LIMIT_HOLD_MS)
-						yield* recordError(error.message)
+						yield* write({ lastError: error.message, lastErrorAt: now })
 						return true
 					}
 					return false
@@ -969,9 +1060,10 @@ export class VercelIntegrationService extends Context.Service<
 
 				if (claimed.discoveredAt === null || now - claimed.discoveredAt >= DISCOVERY_TTL_MS) {
 					const projects = yield* Effect.result(listProjects(httpClient, token, claimed.teamId))
-					if (projects._tag === "Success") {
+					if (Result.isSuccess(projects)) {
+						if (!(yield* holdsLease(claimed.id, lease))) return leaseLost
 						yield* reconcileProjects(claimed, projects.success, now)
-						yield* updateConnection(claimed.id, { discoveredAt: now, updatedAt: now })
+						yield* write({ discoveredAt: now })
 					} else if (yield* stopFor(projects.failure)) {
 						return { ...skip(projects.failure.kind), failures: 1 }
 					} else {
@@ -987,18 +1079,15 @@ export class VercelIntegrationService extends Context.Service<
 				const listed = yield* Effect.result(
 					listDeployments(httpClient, token, claimed.teamId, since, DEPLOYMENT_PAGES_PER_TICK),
 				)
-				if (listed._tag === "Success") {
+				if (Result.isSuccess(listed)) {
+					if (!(yield* holdsLease(claimed.id, lease))) return leaseLost
 					yield* storeDeployments(claimed, listed.success, now)
 					deploymentsUpserted = listed.success.length
 					const newest = Math.max(
 						claimed.deploymentsWatermarkAt ?? 0,
 						...listed.success.map((d) => d.createdAt),
 					)
-					if (newest > 0)
-						yield* updateConnection(claimed.id, {
-							deploymentsWatermarkAt: newest,
-							updatedAt: now,
-						})
+					if (newest > 0) yield* write({ deploymentsWatermarkAt: newest })
 				} else if (yield* stopFor(listed.failure)) {
 					return { ...skip(listed.failure.kind), failures: 1 }
 				} else {
@@ -1007,18 +1096,19 @@ export class VercelIntegrationService extends Context.Service<
 
 				const ingestKey = yield* Effect.result(drainKey(orgId, SYSTEM_USER_ID))
 				let drainsRepaired = 0
-				if (ingestKey._tag === "Failure") {
+				let drainsHealthy = false
+				if (Result.isFailure(ingestKey)) {
 					yield* recordError(ingestKey.failure.message)
 				} else {
 					// A rotated ingest key means every drain still sends the old one: rewrite them.
 					const rekey = claimed.drainKeyHash !== ingestKey.success.hash
 					yield* Effect.annotateCurrentSpan("maple.vercel.rekey", rekey)
-					let drainsHealthy = true
-					const drains: Array<DrainOutcome> = []
+					drainsHealthy = true
 					for (const kind of ["logs", "traces"] as const) {
 						const drainId = kind === "logs" ? claimed.logDrainId : claimed.traceDrainId
 						const previous = kind === "logs" ? claimed.logDrainState : claimed.traceDrainState
-						const outcome = yield* Effect.result(
+						if (!(yield* holdsLease(claimed.id, lease))) return leaseLost
+						const result = yield* Effect.result(
 							reconcileDrain(
 								kind,
 								claimed.teamId,
@@ -1029,47 +1119,61 @@ export class VercelIntegrationService extends Context.Service<
 								rekey ? "apply" : "check",
 							),
 						)
-						if (outcome._tag === "Failure") {
+						let outcome: DrainOutcome
+						if (Result.isFailure(result)) {
 							drainsHealthy = false
 							// A drain 403 is the team's plan, not the token: only these two end the pass.
-							if (isFatal(outcome.failure) && (yield* stopFor(outcome.failure))) {
-								return { ...skip(outcome.failure.kind), failures: 1 }
+							if (isFatal(result.failure) && (yield* stopFor(result.failure))) {
+								return { ...skip(result.failure.kind), failures: 1 }
 							}
-							yield* recordError(outcome.failure.message)
-							drains.push({
+							yield* recordError(result.failure.message)
+							outcome = {
 								id: drainId,
 								state: {
 									status: previous?.status ?? "unknown",
-									lastError: outcome.failure.message,
+									lastError: result.failure.message,
 								},
 								created: false,
-							})
-							continue
+							}
+						} else {
+							outcome = result.success
+							if (outcome.created || (rekey && outcome.id !== null)) drainsRepaired++
+							if (outcome.state?.status === "missing") drainsHealthy = false
 						}
-						if (outcome.success.created || (rekey && outcome.success.id !== null))
-							drainsRepaired++
-						if (outcome.success.state?.status === "missing") drainsHealthy = false
-						drains.push(outcome.success)
+						// Saved at once so a pass that ends early still keeps a drain it re-created.
+						const saved = yield* write(
+							kind === "logs"
+								? { logDrainId: outcome.id, logDrainState: outcome.state }
+								: { traceDrainId: outcome.id, traceDrainState: outcome.state },
+						)
+						if (!saved) {
+							// A settings change or disconnect took over; the drain made here is not on record.
+							if (outcome.created && outcome.id !== null) {
+								yield* deleteDrain(httpClient, token, claimed.teamId, outcome.id).pipe(
+									Effect.catch((error) =>
+										Effect.logWarning("vercel orphan drain removal failed", {
+											orgId,
+											drainId: outcome.id,
+											error: error.message,
+										}),
+									),
+								)
+							}
+							return leaseLost
+						}
 					}
-					const [logs, traces] = drains
-					yield* updateConnection(claimed.id, {
-						logDrainId: logs?.id ?? null,
-						traceDrainId: traces?.id ?? null,
-						logDrainState: logs?.state ?? null,
-						traceDrainState: traces?.state ?? null,
-						// Only once every enabled drain carries the current key; otherwise retry next tick.
-						...(drainsHealthy ? { drainKeyHash: ingestKey.success.hash } : undefined),
-						updatedAt: now,
-					})
 				}
 
 				const errors = yield* Ref.get(errorsRef)
-				yield* updateConnection(
-					claimed.id,
-					errors.length === 0
-						? { lastSuccessAt: now, lastError: null, lastErrorAt: null, updatedAt: now }
-						: { lastError: (errors[0] ?? "").slice(0, 500), lastErrorAt: now, updatedAt: now },
-				)
+				yield* write({
+					// Only once every enabled drain carries the current key; otherwise retry next tick.
+					...(drainsHealthy && Result.isSuccess(ingestKey)
+						? { drainKeyHash: ingestKey.success.hash }
+						: undefined),
+					...(errors.length === 0
+						? { lastSuccessAt: now, lastError: null, lastErrorAt: null }
+						: { lastError: (errors[0] ?? "").slice(0, 500), lastErrorAt: now }),
+				})
 				yield* Effect.annotateCurrentSpan({
 					"maple.vercel.deployments_upserted": deploymentsUpserted,
 					"maple.vercel.drains_repaired": drainsRepaired,
@@ -1087,14 +1191,15 @@ export class VercelIntegrationService extends Context.Service<
 			return yield* body.pipe(
 				Effect.timeoutOrElse({
 					duration: POLL_BUDGET,
-					orElse: () => Effect.succeed({ ...skip("timed out"), failures: 1 }),
+					orElse: () =>
+						write({
+							lastError: "The Vercel sync ran out of time; it resumes on the next tick.",
+							lastErrorAt: now,
+						}).pipe(Effect.as({ ...skip("timed out"), failures: 1 })),
 				}),
 				Effect.ensuring(
 					Ref.get(holdUntilRef).pipe(
-						Effect.flatMap((holdUntil) =>
-							releaseLease(claimed.id, claimed.leaseUntil, holdUntil, now),
-						),
-						Effect.ignore,
+						Effect.flatMap((holdUntil) => releaseLease(claimed.id, lease, holdUntil)),
 					),
 				),
 			)
@@ -1111,7 +1216,7 @@ export class VercelIntegrationService extends Context.Service<
 			const summaries = yield* Effect.forEach(
 				connections,
 				(row) =>
-					pollOrg(decodeOrgId(row.orgId)).pipe(
+					pollOrg(row.orgId).pipe(
 						Effect.catchCause((cause) =>
 							Cause.hasInterruptsOnly(cause)
 								? Effect.interrupt
@@ -1120,7 +1225,7 @@ export class VercelIntegrationService extends Context.Service<
 										error: summarizeCause(cause),
 									}).pipe(
 										Effect.as<VercelPollOrgSummary>({
-											orgId: decodeOrgId(row.orgId),
+											orgId: row.orgId,
 											skipped: "org poll failed",
 											deploymentsUpserted: 0,
 											drainsRepaired: 0,

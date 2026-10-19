@@ -44,15 +44,27 @@ export const VERCEL_DESCRIPTION =
 
 /** Nothing in the window: either nothing is forwarded yet, or the drains have not delivered. */
 function NoDataYet({ status }: { status: VercelIntegrationStatus }) {
+	const { title, description } = status.logsEnabled
+		? {
+				title: "Waiting for Vercel's first logs",
+				description:
+					"The logs drain delivers within a minute of a request reaching a forwarded project. This page updates on its own; a quiet project needs one request.",
+			}
+		: status.tracesEnabled
+			? {
+					title: "No deployment traces in this window",
+					description:
+						"Only traces are forwarded, so projects appear here once they send deployment traces. Turn logs on for the connection to count requests, cache hits and errors.",
+				}
+			: {
+					title: "Nothing is forwarded",
+					description: "Turn logs or traces on for the connection to fill this page.",
+				}
 	return (
 		<IntegrationNotConnected
 			icon={<VercelIcon size={16} className="text-foreground" />}
-			title={status.logsEnabled ? "Waiting for Vercel's first logs" : "Logs are not forwarded"}
-			description={
-				status.logsEnabled
-					? "The logs drain delivers within a minute of a request reaching a forwarded project. This page updates on its own; a quiet project needs one request."
-					: "This page counts requests from the logs drain. Turn logs on for the connection to fill it."
-			}
+			title={title}
+			description={description}
 			integration="vercel"
 			actionLabel="Check the connection"
 			actionVariant="outline"
@@ -68,6 +80,8 @@ export function VercelListPage({
 	aiGateway,
 	aiTimeseries,
 	projectsError,
+	bucketsError,
+	aiGatewayError,
 	state,
 	onStateChange,
 	timeSearch,
@@ -84,6 +98,10 @@ export function VercelListPage({
 	aiTimeseries: ReadonlyArray<VercelAiGatewayBucket>
 	/** Shown in place of the projects when their read failed. */
 	projectsError?: ReactNode
+	/** Shown under the fleet band when the request series failed. */
+	bucketsError?: ReactNode
+	/** Shown in place of AI Gateway usage when its read failed. */
+	aiGatewayError?: ReactNode
 	state: VercelListState
 	onStateChange: (patch: Partial<VercelListState>) => void
 	timeSearch: TimeRangeSearch
@@ -123,12 +141,18 @@ export function VercelListPage({
 					projectCount={projects.length}
 					buckets={buckets}
 					aiGateway={
-						aiGateway === null
-							? null
-							: { summary: aiGateway.summary, spark: aiTimeseries.map((row) => row.costUsd) }
+						aiGatewayError !== undefined
+							? "failed"
+							: aiGateway === null
+								? null
+								: {
+										summary: aiGateway.summary,
+										spark: aiTimeseries.map((row) => row.costUsd),
+									}
 					}
 					onOpenAiGateway={() => onStateChange({ view: "aiGateway" })}
 				/>
+				{bucketsError}
 				<SearchToolbar
 					value={state.q ?? ""}
 					onChange={(next) => onStateChange({ q: next || undefined })}
@@ -154,6 +178,7 @@ export function VercelListPage({
 	}
 
 	const aiGatewayBody = (): ReactNode => {
+		if (aiGatewayError !== undefined) return aiGatewayError
 		if (aiGateway === null) {
 			return (
 				<>

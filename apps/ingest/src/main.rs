@@ -5662,9 +5662,15 @@ fn decode_vercel_logs(
     payload: &[u8],
     resolved_key: &ResolvedIngestKey,
 ) -> Result<DecodedPayload, ApiError> {
-    let entries = vercel_logs::parse(payload)
+    let parsed = vercel_logs::parse(payload)
         .map_err(|e| ApiError::bad_request(format!("Invalid Vercel log drain payload: {e}")))?;
-    let mut request = vercel_logs::build_logs_request(&entries, current_time_unix_nano());
+    if parsed.malformed_lines > 0 {
+        warn!(
+            malformed_lines = parsed.malformed_lines,
+            "Vercel log drain delivery had lines that are not JSON; skipped them"
+        );
+    }
+    let mut request = vercel_logs::build_logs_request(&parsed.entries, current_time_unix_nano());
     enrich_logs_request(&mut request, resolved_key);
     Ok(DecodedPayload::Logs(request))
 }

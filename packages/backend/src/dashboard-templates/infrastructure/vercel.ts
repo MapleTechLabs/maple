@@ -17,13 +17,12 @@ import type { TemplateDefinition, WidgetDef } from "@maple/backend/dashboard-tem
 
 // The log drain lands Vercel request, function, build and edge logs with resource
 // `cloud.provider=vercel` and `service.name` = the project name; a request is a record with
-// `http.request.method` set. The trace drain carries AI Gateway requests as root spans of service
-// `ai-gateway` in namespace `vercel`. Counts use the query builder; status classes, ratios, top-N
-// tables and attribute sums are SQL, which the logs builder (no attribute group-by) and the traces
-// builder (no attribute sums) cannot express.
+// `http.request.method` set. The trace drain carries AI Gateway requests as server spans of service
+// `ai-gateway` in namespace `vercel`. Log counts use the query builder; status classes, ratios, top-N
+// tables and every AI Gateway widget are SQL, which the logs builder (no attribute group-by) and the
+// traces builder (no span-kind filter, no attribute sums) cannot express.
 
 const REQUESTS_WHERE = `resource.cloud.provider = "vercel" AND attr.http.request.method exists`
-const GATEWAY_WHERE = `root_only = true AND service.name = "ai-gateway" AND resource.service.namespace = "vercel"`
 
 function logsSql(projectName?: string): string {
 	const project = projectName ? ` AND ServiceName = '${escapeClickHouseString(projectName)}'` : ""
@@ -35,9 +34,10 @@ const STATUS_SQL = `toUInt16OrZero(LogAttributes['http.response.status_code'])`
 const CACHE_SQL = `LogAttributes['vercel.cache']`
 const CACHE_HIT_RATIO_SQL = `countIf(${CACHE_SQL} = 'HIT') / nullIf(countIf(${CACHE_SQL} != ''), 0)`
 
-const GATEWAY_SQL = `$__orgFilter AND $__timeFilter(Timestamp) AND ServiceName = 'ai-gateway' AND ParentSpanId = '' AND ResourceAttributes['service.namespace'] = 'vercel'`
+const GATEWAY_SQL = `$__orgFilter AND $__timeFilter(Timestamp) AND ServiceName = 'ai-gateway' AND SpanKind = 'Server' AND ResourceAttributes['service.namespace'] = 'vercel'`
 const spanNumber = (key: string) => `sum(toFloat64OrZero(SpanAttributes['${key}']))`
-const COST_SQL = spanNumber("vercel.ai_gateway.cost.total")
+/** USD only (an absent currency is USD), so the "$" on the widgets holds. */
+const COST_SQL = `sumIf(toFloat64OrZero(SpanAttributes['vercel.ai_gateway.cost.total']), SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD'))`
 const INPUT_TOKENS_SQL = spanNumber("gen_ai.usage.input_tokens")
 const OUTPUT_TOKENS_SQL = spanNumber("gen_ai.usage.output_tokens")
 const MODEL_SQL = `if(SpanAttributes['gen_ai.response.model'] != '', SpanAttributes['gen_ai.response.model'], SpanAttributes['gen_ai.request.model'])`
@@ -65,45 +65,29 @@ function sqlWidget(opts: {
 	}
 }
 
-function countStat(opts: {
-	id: string
-	dataSource: "logs" | "traces"
-	where: string
-	title: string
-	layout: WidgetDef["layout"]
-}): WidgetDef {
-	return {
-		id: opts.id,
-		visualization: "stat",
-		dataSource: {
-			...makeQueryBuilderTimeseriesDataSource([
-				makeQueryDraft({
-					id: opts.id,
-					name: "Requests",
-					dataSource: opts.dataSource,
-					aggregation: "count",
-					whereClause: opts.where,
-				}),
-			]),
-			transform: { reduceToValue: { field: "Requests", aggregate: "sum" } },
-		},
-		display: { title: opts.title, unit: "number" },
-		layout: opts.layout,
-	}
-}
-
 function widgets(projectName?: string): WidgetDef[] {
 	const requestsWhere = combineWhere(REQUESTS_WHERE, serviceWhereClause(projectName))
 	const logs = logsSql(projectName)
 	const requests = `${logs} AND ${REQUEST_SQL}`
 	return [
-		countStat({
+		{
 			id: "kpi-requests",
-			dataSource: "logs",
-			where: requestsWhere,
-			title: "Requests",
+			visualization: "stat",
+			dataSource: {
+				...makeQueryBuilderTimeseriesDataSource([
+					makeQueryDraft({
+						id: "kpi-requests",
+						name: "Requests",
+						dataSource: "logs",
+						aggregation: "count",
+						whereClause: requestsWhere,
+					}),
+				]),
+				transform: { reduceToValue: { field: "Requests", aggregate: "sum" } },
+			},
+			display: { title: "Requests", unit: "number" },
 			layout: { x: 0, y: 0, w: 3, h: 2 },
-		}),
+		},
 		sqlWidget({
 			id: "kpi-cache-hit-rate",
 			visualization: "stat",
@@ -195,11 +179,11 @@ function widgets(projectName?: string): WidgetDef[] {
 			display: { title: "AI Gateway Spend (USD)", unit: "number" },
 			layout: { x: 0, y: 20, w: 3, h: 2 },
 		}),
-		countStat({
+		sqlWidget({
 			id: "kpi-gateway-requests",
-			dataSource: "traces",
-			where: GATEWAY_WHERE,
-			title: "AI Gateway Requests",
+			visualization: "stat",
+			sql: `SELECT count() AS value FROM traces WHERE ${GATEWAY_SQL}`,
+			display: { title: "AI Gateway Requests", unit: "number" },
 			layout: { x: 3, y: 20, w: 3, h: 2 },
 		}),
 		sqlWidget({
@@ -231,22 +215,13 @@ function widgets(projectName?: string): WidgetDef[] {
 			display: { title: "AI Gateway Tokens", ...CHART_DISPLAY_AREA, unit: "number" },
 			layout: { x: 6, y: 22, w: 6, h: 6 },
 		}),
-		{
-			id: "gateway-requests-by-model",
+		sqlWidget({
+			id: "gateway-requests",
 			visualization: "chart",
-			dataSource: makeQueryBuilderTimeseriesDataSource([
-				makeQueryDraft({
-					id: "vercel-gateway-requests",
-					name: "Requests",
-					dataSource: "traces",
-					aggregation: "count",
-					whereClause: GATEWAY_WHERE,
-					groupBy: ["attr.gen_ai.request.model"],
-				}),
-			]),
-			display: { title: "AI Gateway Requests by Model", ...CHART_DISPLAY_AREA, unit: "number" },
+			sql: `SELECT $__timeGroup(Timestamp) AS bucket, count() AS requests, countIf(StatusCode = 'Error') AS errors FROM traces WHERE ${GATEWAY_SQL} GROUP BY bucket ORDER BY bucket`,
+			display: { title: "AI Gateway Requests", ...CHART_DISPLAY_AREA, unit: "number" },
 			layout: { x: 0, y: 28, w: 6, h: 6 },
-		},
+		}),
 		sqlWidget({
 			id: "gateway-by-model",
 			visualization: "table",

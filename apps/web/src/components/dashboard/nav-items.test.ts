@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
 	isNavItemActive,
-	NAV_PREVIEW_MAX_GLYPHS,
 	isPathActive,
 	navGroups,
+	navPreview,
 	paletteNavItems,
 	matchSubItem,
 	partitionInfraSubItems,
@@ -115,14 +115,8 @@ describe("navGroups", () => {
 		}
 	})
 
-	it("keeps Infrastructure at seven sources with seven unique glyphs", () => {
-		// Seven is exactly NavRow's all-or-nothing preview cap, so an eighth unique
-		// glyph here would drop the closed row's miniatures entirely rather than
-		// truncate them. A new Kubernetes view goes in `views` (free); a new
-		// child with a new glyph is not free. Overview is the section's own page
-		// and stays out of the preview.
-		const infra = findItem("Infrastructure")
-		expect(infra.subItems?.map((sub) => sub.title)).toEqual([
+	it("lists Infrastructure's sources, Overview first", () => {
+		expect(findItem("Infrastructure").subItems?.map((sub) => sub.title)).toEqual([
 			"Overview",
 			"Hosts",
 			"Kubernetes",
@@ -132,8 +126,6 @@ describe("navGroups", () => {
 			"Vercel",
 			"Google Cloud",
 		])
-		const sources = infra.subItems?.filter((sub) => sub.href !== infra.href)
-		expect(new Set(sources?.map((sub) => sub.icon)).size).toBe(NAV_PREVIEW_MAX_GLYPHS)
 	})
 
 	it("folds the Kubernetes views behind one row that points at the section root", () => {
@@ -193,6 +185,37 @@ describe("paletteNavItems", () => {
 	it("emits no duplicate ids", () => {
 		const ids = paletteNavItems().map((entry) => entry.id)
 		expect(new Set(ids).size).toBe(ids.length)
+	})
+})
+
+describe("navPreview", () => {
+	it("counts the sources past the cap instead of dropping the preview", () => {
+		const preview = navPreview(findItem("Infrastructure"))
+		// Overview is the section's own page, not one of its contents.
+		expect(preview?.glyphs.map((sub) => sub.title)).toEqual([
+			"Hosts",
+			"Kubernetes",
+			"Cloudflare",
+			"PlanetScale",
+			"Railway",
+		])
+		expect(preview?.more).toBe(2)
+	})
+
+	it("shows each glyph once when they fit", () => {
+		const mark = findItem("Infrastructure").subItems!.find((sub) => sub.title === "PlanetScale")!
+		const item: NavItem = {
+			...findItem("Infrastructure"),
+			subItems: [
+				{ ...mark, title: "A", href: "/a" },
+				{ ...mark, title: "B", href: "/b" },
+			],
+		}
+		expect(navPreview(item)).toEqual({ glyphs: [item.subItems![0]], more: 0 })
+	})
+
+	it("draws nothing for a section without brand marks", () => {
+		expect(navPreview(findItem("Explore"))).toBeUndefined()
 	})
 })
 

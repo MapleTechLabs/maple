@@ -145,7 +145,8 @@ const vercelLogs = (sql: string) => mentions(sql, "= 'vercel'")
 export const providerFixtureRules = (): FixtureRule[] => [
 	// Vercel projects, from the log drain.
 	{
-		match: (sql) => vercelLogs(sql) && has(sql, "cacheLookups"),
+		// The busiest-paths query counts cache lookups too; it is matched below.
+		match: (sql) => vercelLogs(sql) && has(sql, "cacheLookups") && !has(sql, "path"),
 		rows: VERCEL_PROJECTS.map((p) => ({
 			projectId: p.id,
 			projectName: p.name,
@@ -176,8 +177,22 @@ export const providerFixtureRules = (): FixtureRule[] => [
 	{
 		match: (sql) => vercelLogs(sql) && has(sql, "path"),
 		rows: [
-			{ path: "/api/checkout", requests: 9_400, requests4xx: 120, requests5xx: 3_800, cacheHits: 0 },
-			{ path: "/", requests: 30_000, requests4xx: 40, requests5xx: 20, cacheHits: 27_000 },
+			{
+				path: "/api/checkout",
+				requests: 9_400,
+				requests4xx: 120,
+				requests5xx: 3_800,
+				cacheHits: 0,
+				cacheLookups: 0,
+			},
+			{
+				path: "/",
+				requests: 30_000,
+				requests4xx: 40,
+				requests5xx: 20,
+				cacheHits: 27_000,
+				cacheLookups: 29_000,
+			},
 		],
 	},
 	{

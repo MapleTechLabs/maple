@@ -65,6 +65,7 @@ describe("vercelProjectTopPathsSQL", () => {
 		expect(sql).toContain("LogAttributes['url.path'] AS path")
 		expect(sql).toContain("ResourceAttributes['vercel.project.id'] = 'prj_1'")
 		expect(sql).toContain("AND logs.LogAttributes['http.request.method'] != ''")
+		expect(sql).toContain("countIf(logs.LogAttributes['vercel.cache'] != '') AS cacheLookups")
 		expect(sql).toContain("ORDER BY requests DESC")
 	})
 })
@@ -83,19 +84,22 @@ describe("vercelProjectLatencySQL", () => {
 		const { sql } = compileUnsafe(vercelProjectLatencySQL(), window)
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("ResourceAttributes['vercel.projectId'] AS projectId")
+		expect(sql).toContain("AND mapContains(traces.ResourceAttributes, 'vercel.projectId')")
+		expect(sql).toContain("AND traces.ResourceAttributes['vercel.projectId'] != ''")
 		expect(sql).toContain("traces.ParentSpanId = ''")
 		expect(sql).toContain("quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs")
 	})
 })
 
 describe("AI Gateway", () => {
-	it("counts gateway root spans and sums the decimal cost", () => {
+	it("counts gateway server spans, parented or not, and sums the USD cost", () => {
 		const { sql } = compileUnsafe(vercelAiGatewaySummarySQL(), window)
 		expect(sql).toContain("traces.ServiceName = 'ai-gateway'")
-		expect(sql).toContain("traces.ParentSpanId = ''")
+		expect(sql).toContain("traces.SpanKind = 'Server'")
+		expect(sql).not.toContain("ParentSpanId")
 		expect(sql).toContain("ResourceAttributes['service.namespace'] = 'vercel'")
 		expect(sql).toContain(
-			"sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd",
+			"sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd",
 		)
 		expect(sql).toContain("gen_ai.usage.input_tokens")
 		expect(sql).toContain("gen_ai.usage.output_tokens")

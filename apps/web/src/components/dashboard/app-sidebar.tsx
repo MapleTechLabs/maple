@@ -18,12 +18,11 @@ import {
 	isNavItemActive,
 	isPathActive,
 	matchSubItem,
-	NAV_PREVIEW_MAX_GLYPHS,
+	navPreview,
 	navGroups,
 	partitionInfraSubItems,
 	type NavGroup,
 	type NavItem,
-	type NavSubItem,
 	type NavSurface,
 } from "@/components/dashboard/nav-items"
 import { openCommandPalette, showKeyboardShortcuts } from "@/components/command-palette/global-shortcuts"
@@ -293,26 +292,7 @@ function NavRow({
 	// what the section covers, and an org running only hosts should still see
 	// that Docker, Kubernetes, Cloudflare and PlanetScale live behind the row.
 	// The pruning is about how many rows you scroll past when it's open.
-	const preview = useMemo(() => {
-		if (isOpen || !item.subItems?.every((sub) => sub.icon)) return undefined
-		// Only brand marks earn the slot. Explore's children are generic signal
-		// glyphs — at 12px, in muted ink, five of them were a grey smudge that
-		// said nothing "Explore" didn't, and the real rows appear once it opens.
-		if (!item.subItems.some((sub) => sub.iconColor)) return undefined
-		const seen = new Set<NavSubItem["icon"]>()
-		const unique: NavSubItem[] = []
-		for (const sub of item.subItems) {
-			// The section's own front door (Infrastructure's Overview) is not one of its contents.
-			if (!sub.icon || sub.href === item.href || seen.has(sub.icon)) continue
-			seen.add(sub.icon)
-			unique.push(sub)
-		}
-		// Truncating by position would silently drop whichever brand lands last
-		// — the same partial-run problem as the every-child guard above — so the
-		// preview is all or nothing. Six fits both sections we ship (Explore
-		// with Agent Sessions on, Infrastructure) at the tightened gap below.
-		return unique.length > NAV_PREVIEW_MAX_GLYPHS ? undefined : unique
-	}, [isOpen, item.subItems, item.href])
+	const preview = useMemo(() => (isOpen ? undefined : navPreview(item)), [isOpen, item])
 
 	// The sub-list can't render at 48px, so the rail turns the row into a menu.
 	// Without this, every child route is stranded while the sidebar is collapsed
@@ -382,7 +362,7 @@ function NavRow({
 					// Non-brand children (Explore's signals, Hosts) stay muted. The 2px gap
 					// is what fits six marks beside "Infrastructure" without truncating it.
 					<span className="flex shrink-0 items-center gap-0.5 text-muted-foreground group-data-[collapsible=icon]:hidden">
-						{preview.map((sub) =>
+						{preview.glyphs.map((sub) =>
 							sub.icon ? (
 								<sub.icon
 									className="size-3"
@@ -391,6 +371,9 @@ function NavRow({
 								/>
 							) : null,
 						)}
+						{preview.more > 0 ? (
+							<span className="font-mono text-3xs tabular-nums">+{preview.more}</span>
+						) : null}
 					</span>
 				) : null}
 			</SidebarMenuButton>

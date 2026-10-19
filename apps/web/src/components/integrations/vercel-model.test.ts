@@ -98,10 +98,12 @@ describe("stoppedByDraft", () => {
 
 describe("draftProblem", () => {
 	it("refuses a draft that forwards nothing", () => {
-		expect(
-			draftProblem({ ...DEFAULT_VERCEL_DRAFT, logsEnabled: false, tracesEnabled: false }),
-		).not.toBeNull()
-		expect(draftProblem({ ...DEFAULT_VERCEL_DRAFT, projectScope: "some" })).not.toBeNull()
+		expect(draftProblem({ ...DEFAULT_VERCEL_DRAFT, logsEnabled: false, tracesEnabled: false })).toBe(
+			"Forward logs, traces or both.",
+		)
+		expect(draftProblem({ ...DEFAULT_VERCEL_DRAFT, projectScope: "some" })).toBe(
+			"Pick at least one project.",
+		)
 		expect(draftProblem(DEFAULT_VERCEL_DRAFT)).toBeNull()
 	})
 })
@@ -123,7 +125,17 @@ describe("vercelIssues", () => {
 		)
 		expect(issues).toHaveLength(1)
 		expect(issues[0]?.title).toBe("The logs drain is failing on Vercel")
-		expect(issues[0]?.detail).toBe("endpoint returned 401")
+		expect(issues[0]?.vercelError).toBe("endpoint returned 401")
+	})
+
+	it("re-keys a failing drain and re-creates a deleted one", () => {
+		const issues = vercelIssues(
+			connected({ drains: { logs: drain("errored"), traces: drain("missing") } }),
+		)
+		expect(issues.map((issue) => issue.description)).toEqual([
+			"Vercel can't deliver to Maple, usually because the ingest key changed. Re-applying the settings sends Maple's current ingest key to the drain.",
+			"Re-applying the settings creates it again on Vercel.",
+		])
 	})
 
 	it("treats an enabled signal without a drain as broken", () => {

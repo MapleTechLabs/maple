@@ -106,8 +106,8 @@ const overviewItem: NavItem = {
  * connected; the ones it doesn't have are offered on the Overview instead of
  * padded into the nav. Containers folds into Hosts as a view, the way Pods,
  * Nodes and Workloads fold into Kubernetes, and stays typeable in the palette
- * through `views`. The seven sources' marks are exactly `NavRow`'s preview cap, which
- * leaves the Overview row's own glyph out.
+ * through `views`. Past `NavRow`'s preview cap the closed row counts the extra marks
+ * ("+N"); the Overview row's own glyph is left out.
  */
 const infrastructureItem: NavItem = {
 	title: "Infrastructure",
@@ -145,8 +145,37 @@ const infrastructureItem: NavItem = {
 	],
 }
 
-/** Most brand glyphs a closed section previews; past this the preview is dropped. */
-export const NAV_PREVIEW_MAX_GLYPHS = 7
+/**
+ * Most slots a closed section's preview takes: six fit beside "Infrastructure" without
+ * truncating it. Past this, the last slot becomes a "+N" count.
+ */
+export const NAV_PREVIEW_MAX_GLYPHS = 6
+
+export interface NavPreview {
+	readonly glyphs: ReadonlyArray<NavSubItem>
+	/** Glyphs left out for room, shown as "+N"; 0 when all fit. */
+	readonly more: number
+}
+
+/**
+ * The closed row's miniatures: each child's glyph once, in order. Only for sections whose
+ * children all have a mark and include a brand mark; the section's own page is not one of its
+ * contents. Past the cap the overflow is counted rather than dropped silently.
+ */
+export function navPreview(item: NavItem): NavPreview | undefined {
+	const subItems = item.subItems
+	if (!subItems?.every((sub) => sub.icon) || !subItems.some((sub) => sub.iconColor)) return undefined
+	const seen = new Set<NavSubItem["icon"]>()
+	const unique: NavSubItem[] = []
+	for (const sub of subItems) {
+		if (sub.href === item.href || seen.has(sub.icon)) continue
+		seen.add(sub.icon)
+		unique.push(sub)
+	}
+	if (unique.length <= NAV_PREVIEW_MAX_GLYPHS) return { glyphs: unique, more: 0 }
+	const glyphs = unique.slice(0, NAV_PREVIEW_MAX_GLYPHS - 1)
+	return { glyphs, more: unique.length - glyphs.length }
+}
 
 export interface InfraSubItemSplit {
 	/** What the org has, rendered directly under the section. */

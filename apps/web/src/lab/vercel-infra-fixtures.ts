@@ -134,6 +134,20 @@ export const VERCEL_PROJECTS: ReadonlyArray<VercelInfraProject> = [
 	infraProject("prj_docs", "docs", 211_000, 0, 198_000, 205_000, 0, null),
 ]
 
+/** A traces-only connection: projects arrive with latency and no request counts. */
+export const VERCEL_TRACES_ONLY_STATUS = new VercelIntegrationStatus({
+	...VERCEL_STATUS,
+	logsEnabled: false,
+	drains: { logs: null, traces: VERCEL_STATUS.drains.traces },
+})
+export const VERCEL_TRACES_ONLY_PROJECTS: ReadonlyArray<VercelInfraProject> = [
+	infraProject("prj_storefront", "", 0, 0, 0, 0, 0, 182),
+	infraProject("prj_api", "", 0, 0, 0, 0, 0, 412),
+]
+
+/** What a failed warehouse read hands `ErrorState`. */
+export const VERCEL_READ_FAILURE = { message: "The warehouse didn't answer in time." }
+
 const wave = (i: number, base: number) =>
 	Math.round(base * (1 + 0.6 * Math.sin((i / BUCKETS) * Math.PI * 2 - 1.2)))
 const bucketAt = (i: number) =>
@@ -263,6 +277,8 @@ export const VERCEL_API_DETAIL = new VercelInfraProjectDetailResponse({
 		requests4xx: Math.round(Number(requests) * 0.015),
 		requests5xx: Math.round(Number(requests) * Number(share5xx)),
 		cacheHits: Math.round(Number(requests) * Number(cached)),
+		// A path Vercel never caches reports no cache status at all.
+		cacheLookups: Number(cached) === 0 ? 0 : Math.round(Number(requests) * 0.9),
 	})),
 	errors: [
 		{
