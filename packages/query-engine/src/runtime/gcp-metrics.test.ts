@@ -90,12 +90,16 @@ const execute = (
 		}),
 	)
 
+type DataOf<Kind> = Extract<QueryEngineResult, { kind: Kind }> extends { readonly data: infer Data }
+	? Data
+	: never
+
 const dataOf = <Kind extends QueryEngineResult["kind"]>(
 	response: { readonly result: QueryEngineResult },
 	kind: Kind,
-): Extract<QueryEngineResult, { kind: Kind }>["data"] =>
+): DataOf<Kind> =>
 	response.result.kind === kind
-		? (response.result as Extract<QueryEngineResult, { kind: Kind }>).data
+		? (response.result.data as DataOf<Kind>)
 		: assert.fail(`expected a ${kind} result, got ${response.result.kind}`)
 
 const metricFilters = (metricName: string) => ({
