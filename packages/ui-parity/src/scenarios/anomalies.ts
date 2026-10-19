@@ -123,9 +123,6 @@ export const anomaliesArea: AreaModule = {
 				(page) => page.keyboard.press("ArrowDown"),
 				(page) => page.keyboard.press("Enter"),
 				waitForText("Linked to issue"),
-				// The returned focus ring is the dialog primitive's (focus-visible after a keyboard close),
-				// reported apart; a pointer press settles it so this scenario diffs the link write.
-				(page) => page.getByRole("heading").first().click(),
 			),
 		}),
 		anomaly("list-keys", "The row cursor moved with j and ArrowDown", ALL, {
