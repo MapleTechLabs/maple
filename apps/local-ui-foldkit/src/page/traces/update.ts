@@ -158,7 +158,10 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		FoundCachedTraces: ({ key, cached }) => {
 			if (model.traces.key !== key) return { model }
 			const next = { ...model, traces: acceptCached(model.traces, key, cached, cached.isFresh), tracesUpdatedAtMs: cached.updatedAtMs }
-			return { model: settleRefresh(next), commands: fetchAfterCache(next, context, "traces", cached.isFresh) }
+			const step = { model: settleRefresh(next), commands: fetchAfterCache(next, context, "traces", cached.isFresh) }
+			// A cached empty list renders `SignalEmptyState` as a fetched one does.
+			const isEmpty = Option.exists(AsyncData.getData(next.traces.data), (data) => data.pages.every((page) => page.length === 0))
+			return isEmpty ? { ...step, outMessage: PageOutMessage.RequestedSignalPresence() } : step
 		},
 		FoundCachedFacets: ({ key, cached }) => {
 			if (model.facets.key !== key) return { model }

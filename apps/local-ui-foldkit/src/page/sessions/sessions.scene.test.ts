@@ -93,4 +93,11 @@ describe("local sessions list", () => {
 		expect(pending.sessions.isPlaceholder).toBe(true)
 		expect(names(update(pending, Message.ClickedLoadMore(), filtered).commands)).toEqual([])
 	})
+
+	test("a fresh cached empty list asks for signal presence like a fetched one", () => {
+		const base = clocked().model
+		const cached = { data: { pages: [[]], hasNextPage: false }, updatedAtMs: NOW - 5_000, isStandIn: false, isFresh: true }
+		const found = pageUpdate(base, Message.FoundCachedSessions({ key: base.sessions.key ?? "", cached }))
+		expect(found.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
+	})
 })

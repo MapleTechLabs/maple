@@ -178,4 +178,11 @@ describe("local logs", () => {
 		const late = Message.SucceededFetchNextPage({ key: reloaded.logs.key ?? "", generation: scrolled.pageGeneration, page: [log(99)] })
 		expect(pageUpdate(reloaded, late).model.logs).toEqual(reloaded.logs)
 	})
+
+	test("a fresh cached empty window asks for signal presence like a fetched one", () => {
+		const base = entered()
+		const cached = { data: { pages: [[]], hasNextPage: false }, updatedAtMs: NOW - 5_000, isStandIn: false, isFresh: true }
+		const found = pageUpdate(base, Message.FoundCachedLogs({ key: base.logs.key ?? "", cached }))
+		expect(found.outMessage?._tag).toBe("RequestedSignalPresence")
+	})
 })

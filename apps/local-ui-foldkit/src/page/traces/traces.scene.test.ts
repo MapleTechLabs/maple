@@ -130,4 +130,11 @@ describe("local traces list", () => {
 		// It is stopped too, so it never writes its stale pages into the cache.
 		expect(names(stopSuperseded(lanes(more.model), lanes(reloaded), outcomeOf))).toContain("FetchNextLocalTracesPage.Interrupt")
 	})
+
+	test("a fresh cached empty list asks for signal presence like a fetched one", () => {
+		const base = anchored().model
+		const cached = { data: { pages: [[]], hasNextPage: false }, updatedAtMs: NOW - 5_000, isStandIn: false, isFresh: true }
+		const found = pageUpdate(base, Message.FoundCachedTraces({ key: base.traces.key ?? "", cached }))
+		expect(found.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
+	})
 })

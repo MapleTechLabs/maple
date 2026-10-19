@@ -2,7 +2,7 @@ import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "@maple/local-ui/lib/time"
 import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
 import { Option, Result } from "effect"
-import { Command } from "foldkit"
+import { AsyncData, Command } from "foldkit"
 import { accept, acceptCached, idle } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage } from "../contract"
@@ -83,7 +83,10 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		FoundCachedSessions: ({ key, cached }) => {
 			if (model.sessions.key !== key) return { model }
 			const next = { ...model, sessions: acceptCached(model.sessions, key, cached, cached.isFresh), sessionsUpdatedAtMs: cached.updatedAtMs }
-			return { model: settleRefresh(next), commands: fetchAfterCache(next, context, "sessions", cached.isFresh) }
+			const step = { model: settleRefresh(next), commands: fetchAfterCache(next, context, "sessions", cached.isFresh) }
+			// A cached empty list renders `SignalEmptyState` as a fetched one does.
+			const isEmpty = Option.exists(AsyncData.getData(next.sessions.data), (data) => data.pages.every((page) => page.length === 0))
+			return isEmpty ? { ...step, outMessage: PageOutMessage.RequestedSignalPresence() } : step
 		},
 		FoundCachedFacets: ({ key, cached }) => {
 			if (model.facets.key !== key) return { model }
