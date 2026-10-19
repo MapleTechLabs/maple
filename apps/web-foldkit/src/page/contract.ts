@@ -26,6 +26,8 @@ export interface PageViewInputs {
 	readonly isMobile?: boolean
 	/** `useMediaQuery("max-sm")`, likewise (the analytics chart's narrow margin). */
 	readonly isBelowSm?: boolean
+	/** `useMediaQuery("max-lg")`, likewise (the templates panel becomes a sheet). */
+	readonly isBelowLg?: boolean
 }
 
 /** What a page's Subscriptions see: its own Model plus the context. */
@@ -325,6 +327,7 @@ export const definePage = <
 							context: inputs.context,
 							isMobile: inputs.isMobile ?? false,
 							isBelowSm: inputs.isBelowSm ?? false,
+							isBelowLg: inputs.isBelowLg ?? false,
 						},
 						toParentMessage: wrapFor(slot.key, slot.orgId),
 					})
@@ -343,6 +346,7 @@ export const definePage = <
 								context: inputs.context,
 								isMobile: inputs.isMobile ?? false,
 								isBelowSm: inputs.isBelowSm ?? false,
+								isBelowLg: inputs.isBelowLg ?? false,
 							},
 							toParentMessage: wrapFor(slot.key, slot.orgId),
 						})
