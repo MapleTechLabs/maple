@@ -12,7 +12,10 @@ import {
 import { Clock, Effect, Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
+import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
+import { memberDisplayName } from "../kit/members"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SettingsSearch as SettingsSearchSchema } from "../../../route/search"
 import * as CopyButton from "../../../ui/copy-button"
@@ -56,12 +59,20 @@ const sameRequest = (a: PageRequest, b: PageRequest) =>
 
 /** `auditLogPageAtom`: one page, newest first; a preset window resolves against the clock now. */
 const FetchAuditPage = Command.define("FetchAuditLogPage", {
-	args: { request: PageRequest, presetMs: Schema.NullOr(Schema.Number) },
+	args: { request: PageRequest, presetMs: Schema.NullOr(Schema.Number), resolvedSince: Schema.NullOr(Schema.String) },
 	messages: [Message.CompletedFetchPage],
-	execute: ({ request, presetMs }) =>
+	execute: ({ request, presetMs, resolvedSince }) => {
+		// A later page or a retry reuses the window its list started with.
+		const resolve = Effect.map(Clock.currentTimeMillis, (now) =>
+			presetMs === null ? null : (resolvedSince ?? new Date(now - presetMs).toISOString()),
+		)
+		return Effect.flatMap(resolve, (presetSince) => fetchPage(request, presetSince))
+	},
+})
+
+const fetchPage = (request: PageRequest, presetSince: string | null) =>
 		Effect.gen(function* () {
-			const now = yield* Clock.currentTimeMillis
-			const since = presetMs === null ? request.since : new Date(now - presetMs).toISOString()
+			const since = presetSince ?? request.since
 			const client = yield* MapleApiV2Client
 			const response = yield* client.auditLog.list({
 				query: {
@@ -78,18 +89,36 @@ const FetchAuditPage = Command.define("FetchAuditLogPage", {
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedFetchPage({ request, result })),
+			Effect.map((result) => Message.CompletedFetchPage({ request, resolvedSince: presetSince, result })),
+		)
+
+/** `useOrganization({ memberships: { pageSize: 100 } })`: members by user id; none on a failed read. */
+const FetchAuditMembers = Command.define("FetchAuditLogMembers", {
+	messages: [Message.CompletedFetchMembers],
+	execute: currentClerkOrganization.pipe(
+		Effect.flatMap((organization) => clerkTry("", () => organization.getMemberships({ pageSize: 100 }))),
+		Effect.map((page) =>
+			page.data.flatMap((membership) => {
+				const userId = membership.publicUserData?.userId
+				return userId === undefined || userId === null
+					? []
+					: [{ value: userId, label: memberDisplayName(membership.publicUserData) ?? userId }]
+			}),
 		),
+		Effect.orElseSucceed(() => []),
+		Effect.map((members) => Message.CompletedFetchMembers({ members })),
+	),
 })
 
-const fetch = (model: Model, request: PageRequest, search: SettingsSearch): Return => ({
+/** `resolvedSince`: `null` starts the list's window afresh; a later page or a retry passes its own. */
+const fetch = (model: Model, request: PageRequest, search: SettingsSearch, resolvedSince: string | null = null): Return => ({
 	// A cursor-less request starts a list; a later page keeps the filters it continues.
 	model: { ...model, request, base: request.cursor === undefined ? request : model.base, isWaiting: true, failure: null },
-	commands: [FetchAuditPage({ request, presetMs: presetMsOf(parseAuditLogSearch(search).range) })],
+	commands: [FetchAuditPage({ request, presetMs: presetMsOf(parseAuditLogSearch(search).range), resolvedSince })],
 })
 
-export const init = (search: SettingsSearch): Return =>
-	fetch(
+export const init = (search: SettingsSearch): Return => {
+	const started = fetch(
 		{
 			request: {},
 			base: {},
@@ -97,6 +126,8 @@ export const init = (search: SettingsSearch): Return =>
 			failure: null,
 			view: null,
 			pinnedUntil: null,
+			resolvedSince: null,
+			members: [],
 			expanded: [],
 			copies: {},
 			personSelect: Select.init("audit-person", { value: ANYONE, selectedIndex: 0 }),
@@ -105,6 +136,9 @@ export const init = (search: SettingsSearch): Return =>
 		baseRequestOf(parseAuditLogSearch(search)),
 		search,
 	)
+	// Self-hosted runs without Clerk: there is no member directory to list.
+	return { ...started, commands: [...(started.commands ?? []), ...(isClerkAuthEnabled ? [FetchAuditMembers()] : [])] }
+}
 
 /** A filter change (toolbar, shared link, back/forward) restarts the list. */
 export const searchChanged = (model: Model, search: SettingsSearch): Return => {
@@ -134,12 +168,14 @@ const toggled = (values: ReadonlyArray<string>, value: string) =>
 export const update = (model: Model, message: Message, search: SettingsSearch): Return => {
 	const filters = parseAuditLogSearch(search)
 	return Message.match<Return>(message, {
-		CompletedFetchPage: ({ request, result }) => {
+		CompletedFetchMembers: ({ members }) => ({ model: { ...model, members } }),
+		CompletedFetchPage: ({ request, resolvedSince, result }) => {
 			if (!sameRequest(request, model.request)) return { model }
 			return Result.match(result, {
 				onSuccess: (page) => ({
 					model: {
 						...model,
+						resolvedSince,
 						isWaiting: false,
 						failure: null,
 						view: {
@@ -149,11 +185,11 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 						},
 					},
 				}),
-				onFailure: (failure) => ({ model: { ...model, isWaiting: false, failure } }),
+				onFailure: (failure) => ({ model: { ...model, resolvedSince, isWaiting: false, failure } }),
 			})
 		},
 		ClickedRefresh: () => fetch({ ...model, pinnedUntil: null }, baseRequestOf(filters), search),
-		ClickedRetry: () => fetch(model, model.request, search),
+		ClickedRetry: () => fetch(model, model.request, search, model.resolvedSince),
 		ClickedLoadMore: () => {
 			const view = model.view
 			if (view === null || view.nextCursor === null || model.isWaiting) return { model }
@@ -162,6 +198,7 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 				{ ...model, pinnedUntil },
 				{ ...baseRequestOf(filters), cursor: view.nextCursor, ...(pinnedUntil !== null && { until: pinnedUntil }) },
 				search,
+				model.resolvedSince,
 			)
 		},
 		ToggledEntry: ({ id }) => ({ model: { ...model, expanded: toggled(model.expanded, id) } }),

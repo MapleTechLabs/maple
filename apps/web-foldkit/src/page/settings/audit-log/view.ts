@@ -178,11 +178,14 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 const personFilter = (h: H, model: Model, actorId: string | undefined, apiKeys: ReadonlyArray<V2ApiKey>): Html => {
 	// Audit rows name a key by its public `key_…` id; the synced rows carry the internal one.
 	const keyOptions = apiKeys.map((key) => ({ value: encodePublicId(PublicIdPrefixes.apiKey, key.id), label: key.name }))
-	const selected = keyOptions.find((option) => option.value === actorId)
+	const selected = [...model.members, ...keyOptions].find((option) => option.value === actorId)
 	const label = actorId === undefined ? "Anyone" : (selected?.label ?? actorId)
+	const group = (groupLabel: string, items: ReadonlyArray<SelectView.SelectOption>): ReadonlyArray<SelectView.SelectEntry> =>
+		items.length > 0 ? [{ _tag: "Group", label: groupLabel, items }] : []
 	const entries: ReadonlyArray<SelectView.SelectEntry> = [
 		{ _tag: "Item", item: { value: ANYONE, label: "Anyone" } },
-		...(keyOptions.length > 0 ? [{ _tag: "Group" as const, label: "API keys", items: keyOptions }] : []),
+		...group("Members", model.members),
+		...group("API keys", keyOptions),
 	]
 	return h.submodel({
 		slotId: "audit-person",
