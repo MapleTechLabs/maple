@@ -63,7 +63,14 @@ export type StaticResponse =
 export const resolveStatic = (build: StaticBuild, pathname: string, headScript = ""): StaticResponse => {
 	// Never serve the service worker: it would cache across runs.
 	if (pathname === "/sw.js" || pathname.startsWith("/workbox-")) return { kind: "not-found" }
-	const filePath = normalize(join(build.dir, decodeURIComponent(pathname)))
+	// A malformed percent escape names no file, so it falls through to the client route.
+	const decoded = Effect.runSync(
+		Effect.orElseSucceed(
+			Effect.try(() => decodeURIComponent(pathname)),
+			() => "/",
+		),
+	)
+	const filePath = normalize(join(build.dir, decoded))
 	const isAsset =
 		pathname !== "/" &&
 		filePath.startsWith(build.dir) &&
