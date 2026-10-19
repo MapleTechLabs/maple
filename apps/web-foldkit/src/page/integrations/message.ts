@@ -233,12 +233,21 @@ export const Message = defineMessageUnion({
 	ClickedGcpForwardOutput: {},
 	ClickedGcpUseOpenTelemetry: {},
 	ToggledGcpRuntime: { runtime: GcpLogRuntime },
-	CompletedGcpCreate: { connector: Schema.NullOr(V2GcpConnector), failure: Schema.NullOr(LoadFailure) },
+	CompletedGcpCreate: {
+		opens: Schema.Number,
+		connector: Schema.NullOr(V2GcpConnector),
+		failure: Schema.NullOr(LoadFailure),
+	},
 	/** The data step's Continue, Save or "Save and continue". */
 	ClickedGcpChooseApply: {},
 	GotGcpConfirmDialogMessage: { message: Dialog.Message },
 	ConfirmedGcpSave: {},
-	CompletedGcpUpdate: { id: GcpConnectorId, flags: GcpFlags, failure: Schema.NullOr(LoadFailure) },
+	CompletedGcpUpdate: {
+		opens: Schema.Number,
+		id: GcpConnectorId,
+		flags: GcpFlags,
+		failure: Schema.NullOr(LoadFailure),
+	},
 	ClickedGcpRunEdit: {},
 	CompletedGcpConfigureScripts: {
 		key: Schema.String,

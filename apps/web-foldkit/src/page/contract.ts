@@ -1,5 +1,5 @@
 import type { OrgId } from "@maple/domain"
-import { Array, Option, Schema } from "effect"
+import { Array, Option, Schema, Stream } from "effect"
 import { Command, Submodel, Subscription, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../platform/resources"
@@ -133,8 +133,11 @@ export interface PageSlotBase {
 	readonly key: string
 	readonly orgId: string
 }
+/** A page Message stamped with the instance (slot key and org) it was produced for. */
 export interface PageMessageBase {
 	readonly _tag: string
+	readonly key: string
+	readonly orgId: string
 }
 /** The root as page Subscriptions see it. */
 export interface PageHost {
@@ -148,7 +151,10 @@ export interface PageStep<Slot, Wrapped> {
 	readonly outMessage: Option.Option<PageOutMessage>
 }
 
-/** The page lives in the root Model as `{ _tag: id, key, orgId, model }`, its Messages as `{ _tag: id, message }`. */
+/**
+ * The page lives in the root Model as `{ _tag: id, key, orgId, model }`, its Messages as
+ * `{ _tag: id, key, orgId, message }`: an older instance's late Messages are dropped centrally.
+ */
 export const definePage = <
 	const Id extends string,
 	Tags extends RouteTag,
@@ -162,45 +168,103 @@ export const definePage = <
 	type Model = ModelSchema["Type"]
 	type Message = MessageSchema["Type"]
 	const Slot = Schema.TaggedStruct(id, { key: Schema.String, orgId: Schema.String, model: schemas.Model })
-	const Wrapped = Schema.TaggedStruct(id, { message: schemas.Message })
+	const Wrapped = Schema.TaggedStruct(id, {
+		key: Schema.String,
+		orgId: Schema.String,
+		message: schemas.Message,
+	})
 	type SlotType = { readonly _tag: Id; readonly key: string; readonly orgId: string; readonly model: Model }
-	type WrappedType = { readonly _tag: Id; readonly message: Message }
+	type WrappedType = {
+		readonly _tag: Id
+		readonly key: string
+		readonly orgId: string
+		readonly message: Message
+	}
 
 	// Ids are unique across the registry, so a matching tag is this page's slot or Message.
 	const isOwnSlot = (slot: PageSlotBase): slot is SlotType => slot._tag === id
 	const isOwnMessage = (message: PageMessageBase): message is WrappedType => message._tag === id
+	/** The Message was produced by this very instance, not an older one of the same page. */
+	const isForInstance = (slot: PageSlotBase, message: PageMessageBase) =>
+		message.key === slot.key && message.orgId === slot.orgId
 	const ownsRoute = (route: AppRoute): route is RouteOf<Tags> =>
 		Array.some(spec.routes, (tag) => tag === route._tag)
-	const wrap = (message: Message): WrappedType => ({ _tag: id, message })
+	const wrapFor =
+		(key: string, orgId: string) =>
+		(message: Message): WrappedType => ({ _tag: id, key, orgId, message })
 	const keyOf = (route: RouteOf<Tags>) => (spec.key ? spec.key(route) : route._tag)
 
 	const isOwnPageMessage = Schema.is(schemas.Message)
 	/** A toast's action is the page's own Message; it travels wrapped, like every page Message. */
-	const wrapOut = (out: PageOutMessage): PageOutMessage =>
-		out._tag === "RequestedToast" &&
-		out.action !== null &&
-		out.action !== undefined &&
-		isOwnPageMessage(out.action.message)
-			? { ...out, action: { ...out.action, message: wrap(out.action.message) } }
-			: out
+	const wrapOut =
+		(wrap: (message: Message) => WrappedType) =>
+		(out: PageOutMessage): PageOutMessage =>
+			out._tag === "RequestedToast" &&
+			out.action !== null &&
+			out.action !== undefined &&
+			isOwnPageMessage(out.action.message)
+				? { ...out, action: { ...out.action, message: wrap(out.action.message) } }
+				: out
 
 	const step = (
 		key: string,
 		context: PageContext,
 		result: PageReturn<Model, Message>,
-	): PageStep<SlotType, WrappedType> => ({
-		slot: { _tag: id, key, orgId: context.orgId, model: result.model },
-		commands: Command.mapMessages(result.commands ?? [], wrap),
-		outMessage: Option.map(Option.fromNullishOr(result.outMessage), wrapOut),
-	})
+	): PageStep<SlotType, WrappedType> => {
+		const wrap = wrapFor(key, context.orgId)
+		return {
+			slot: { _tag: id, key, orgId: context.orgId, model: result.model },
+			commands: Command.mapMessages(result.commands ?? [], wrap),
+			outMessage: Option.map(Option.fromNullishOr(result.outMessage), wrapOut(wrap)),
+		}
+	}
 
-	const lifted = Subscription.lift(spec.subscriptions ?? {})<PageHost, WrappedType>({
-		read: (host) =>
-			host.page !== null && host.context !== null && isOwnSlot(host.page)
-				? Option.some({ model: host.page.model, context: host.context })
-				: Option.none(),
-		toParentMessage: wrap,
-	})
+	/**
+	 * Each Subscription restarts per instance and stamps its Messages with that instance's key and
+	 * org, so a Message queued by an older instance's stream is dropped like a late Command result.
+	 */
+	const stamped = Subscription.make<PageHost, WrappedType, Resources>()((entry) =>
+		Object.fromEntries(
+			Object.entries(spec.subscriptions ?? {}).map(([name, inner]) => [
+				name,
+				entry(
+					{
+						maybeInstance: Schema.Option(
+							Schema.Struct({
+								key: Schema.String,
+								orgId: Schema.String,
+								inner: inner.dependenciesSchema,
+							}),
+						),
+					},
+					{
+						modelToDependencies: (host) => ({
+							maybeInstance:
+								host.page !== null && host.context !== null && isOwnSlot(host.page)
+									? Option.some({
+											key: host.page.key,
+											orgId: host.page.orgId,
+											inner: inner.modelToDependencies({
+												model: host.page.model,
+												context: host.context,
+											}),
+										})
+									: Option.none(),
+						}),
+						dependenciesToStream: ({ maybeInstance }) =>
+							Option.match(maybeInstance, {
+								onNone: () => Stream.empty,
+								onSome: ({ key, orgId, inner: dependencies }) =>
+									Stream.map(
+										inner.dependenciesToStream(dependencies, () => dependencies),
+										wrapFor(key, orgId),
+									),
+							}),
+					},
+				),
+			]),
+		),
+	)
 
 	return {
 		id,
@@ -215,10 +279,15 @@ export const definePage = <
 		/** The route's preload Commands, wrapped; `None` when the page has none or does not own the route. */
 		preload: (route: AppRoute, context: PageContext, nowMs: number) =>
 			ownsRoute(route) && spec.preload
-				? Option.some(Command.mapMessages(spec.preload(route, context, nowMs), wrap))
+				? Option.some(
+						Command.mapMessages(
+							spec.preload(route, context, nowMs),
+							wrapFor(keyOf(route), context.orgId),
+						),
+					)
 				: Option.none<ReadonlyArray<Command.Command<WrappedType, never, Resources>>>(),
 		update: (slot: PageSlotBase, message: PageMessageBase, context: PageContext) =>
-			isOwnSlot(slot) && isOwnMessage(message)
+			isOwnSlot(slot) && isOwnMessage(message) && isForInstance(slot, message)
 				? Option.some(step(slot.key, context, spec.update(slot.model, message.message, context)))
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		routeChanged: (slot: PageSlotBase, route: AppRoute, context: PageContext) =>
@@ -243,7 +312,7 @@ export const definePage = <
 							isMobile: inputs.isMobile ?? false,
 							isBelowSm: inputs.isBelowSm ?? false,
 						},
-						toParentMessage: wrap,
+						toParentMessage: wrapFor(slot.key, slot.orgId),
 					})
 				: null,
 		),
@@ -257,18 +326,18 @@ export const definePage = <
 							model: slot.model,
 							view: actions,
 							viewInputs: {
-							context: inputs.context,
-							isMobile: inputs.isMobile ?? false,
-							isBelowSm: inputs.isBelowSm ?? false,
-						},
-							toParentMessage: wrap,
+								context: inputs.context,
+								isMobile: inputs.isMobile ?? false,
+								isBelowSm: inputs.isBelowSm ?? false,
+							},
+							toParentMessage: wrapFor(slot.key, slot.orgId),
 						})
 					: null
 			},
 		),
 		/** Keys are prefixed with the page id: Subscription keys share one namespace. */
 		subscriptions: Object.fromEntries(
-			Object.entries(lifted).map(([key, entry]) => [`${id}.${key}`, entry]),
+			Object.entries(stamped).map(([key, entry]) => [`${id}.${key}`, entry]),
 		),
 	}
 }

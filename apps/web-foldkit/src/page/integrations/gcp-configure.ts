@@ -64,9 +64,9 @@ export const initConfigure = (
 }
 
 export const CreateConnector = Command.define("CreateGcpConnector", {
-	args: { request: V2GcpCreateConnectorRequest },
+	args: { opens: Schema.Number, request: V2GcpCreateConnectorRequest },
 	messages: [Message.CompletedGcpCreate],
-	execute: ({ request }) =>
+	execute: ({ opens, request }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			// The client takes one object per payload variant: both branches make the same call.
@@ -76,25 +76,25 @@ export const CreateConnector = Command.define("CreateGcpConnector", {
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedGcpCreate({ connector: null, failure: toLoadFailure(error) }),
-				onSuccess: (connector) => Message.CompletedGcpCreate({ connector, failure: null }),
+					Message.CompletedGcpCreate({ opens, connector: null, failure: toLoadFailure(error) }),
+				onSuccess: (connector) => Message.CompletedGcpCreate({ opens, connector, failure: null }),
 			}),
 		),
 })
 
 /** Only what changed is sent: an omitted capability stays as it is. */
 export const UpdateConnector = Command.define("UpdateGcpConnector", {
-	args: { id: GcpConnectorId, payload: V2GcpUpdateConnectorRequest, flags: GcpFlags },
+	args: { opens: Schema.Number, id: GcpConnectorId, payload: V2GcpUpdateConnectorRequest, flags: GcpFlags },
 	messages: [Message.CompletedGcpUpdate],
-	execute: ({ id, payload, flags }) =>
+	execute: ({ opens, id, payload, flags }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.gcpIntegration.updateConnector({ params: { id }, payload })
 		}).pipe(
 			Effect.match({
 				onFailure: (error) =>
-					Message.CompletedGcpUpdate({ id, flags, failure: toLoadFailure(error) }),
-				onSuccess: () => Message.CompletedGcpUpdate({ id, flags, failure: null }),
+					Message.CompletedGcpUpdate({ opens, id, flags, failure: toLoadFailure(error) }),
+				onSuccess: () => Message.CompletedGcpUpdate({ opens, id, flags, failure: null }),
 			}),
 		),
 })

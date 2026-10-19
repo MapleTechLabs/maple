@@ -98,7 +98,7 @@ export const Message = defineMessageUnion({
 	ClickedClearScopeFilter: {},
 	ClickedCancel: {},
 	ClickedCreate: {},
-	CompletedCreate: { result: Schema.Result(V2ApiKeyWithSecret, LoadFailure) },
+	CompletedCreate: { kind: ApiKeyKind, result: Schema.Result(V2ApiKeyWithSecret, LoadFailure) },
 	GotSecretCopyMessage: { message: CopyButton.Message },
 	ToggledSecretVisible: {},
 })
@@ -113,16 +113,16 @@ export type OutMessage = typeof OutMessage.Type
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
 export const CreateApiKey = Command.define("CreateApiKey", {
-	args: { payload: V2ApiKeyCreateParams },
+	args: { kind: ApiKeyKind, payload: V2ApiKeyCreateParams },
 	messages: [Message.CompletedCreate],
-	execute: ({ payload }) =>
+	execute: ({ kind, payload }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.apiKeys.create({ payload })
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedCreate({ result })),
+			Effect.map((result) => Message.CompletedCreate({ kind, result })),
 		),
 })
 
@@ -162,15 +162,24 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
 })
 
-/** `handleClose(false)`: the form resets as the dialog closes. */
-const reset = (model: Model): Model => ({ ...init(model.dialog.id), kind: model.kind, dialog: model.dialog })
+/**
+ * `handleClose(false)`: the form resets as the dialog closes, but a create in flight stays in
+ * flight (legacy's `useAsyncAction`), so its secret lands in `created` and no second create starts.
+ */
+const reset = (model: Model): Model => ({
+	...init(model.dialog.id),
+	kind: model.kind,
+	dialog: model.dialog,
+	isCreating: model.isCreating,
+})
 
 const close = (model: Model): Return => liftDialog(reset(model), Dialog.close(model.dialog))
 
-/** Opens empty for `kind` (`openCreate`). */
+/** Opens empty for `kind` (`openCreate`); a key created while it was closed is shown, as legacy does. */
 export const open = (model: Model, kind: ApiKeyKind): Return => {
 	const fresh = init(model.dialog.id)
-	return liftDialog({ ...fresh, kind, dialog: model.dialog }, Dialog.open(model.dialog))
+	const kept = { isCreating: model.isCreating, created: model.created }
+	return liftDialog({ ...fresh, ...kept, kind, dialog: model.dialog }, Dialog.open(model.dialog))
 }
 
 const create = (model: Model): Return => {
@@ -180,7 +189,7 @@ const create = (model: Model): Return => {
 	const expiry: ApiKeyCreateOptions = expiration === "never" ? {} : { expiresInSeconds: Number(expiration) * 86_400 }
 	const options: ApiKeyCreateOptions = scopes === undefined ? expiry : { ...expiry, scopes }
 	const payload = buildApiKeyCreatePayload(model.name.value, model.description.value, model.kind, options)
-	return { model: { ...model, isCreating: true }, commands: [CreateApiKey({ payload })] }
+	return { model: { ...model, isCreating: true }, commands: [CreateApiKey({ kind: model.kind, payload })] }
 }
 
 const field = (current: Field.Model, message: Field.Message): Field.Model => Field.update(current, message).model
@@ -216,7 +225,7 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedClearScopeFilter: () => ({ model: { ...model, scopeFilter: "" } }),
 		ClickedCancel: () => close(model),
 		ClickedCreate: () => create(model),
-		CompletedCreate: ({ result }) =>
+		CompletedCreate: ({ kind, result }) =>
 			Result.match(result, {
 				onSuccess: (created) => ({
 					model: { ...model, isCreating: false, created },
@@ -226,7 +235,7 @@ export const update = (model: Model, message: Message): Return =>
 					model: { ...model, isCreating: false },
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
-						title: model.kind === "mcp" ? "Failed to create MCP key" : "Failed to create API key",
+						title: kind === "mcp" ? "Failed to create MCP key" : "Failed to create API key",
 						description: error.message,
 					}),
 				}),

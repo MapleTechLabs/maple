@@ -430,6 +430,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: liftForm(model, "repo", RulesForm.update(model.repoForm, inner)),
 		CompletedSaveRepoConfig: ({ repositoryId, fullName, result }) => {
 			const failure = result._tag === "Failure" ? Option.some(result.failure) : Option.none()
+			// Legacy's per-row dialog: another repository's form only gets the success toast.
+			if (model.configuring !== repositoryId)
+				return Option.isSome(failure)
+					? { model }
+					: { model, outMessage: toast("success", `Rules saved for ${fullName}`) }
 			const form = model.repoForm
 			const next: Model = {
 				...model,

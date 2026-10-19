@@ -124,8 +124,14 @@ const enterApply = (model: Model, context: PageContext, rerun: boolean): Return 
 }
 
 export const openConfigure = (model: Model, context: PageContext, target: ConfigureTarget): Return => {
-	const configure = initConfigure(target, gcpConnectors(model), metricsAvailable(model))
-	const shown = dialogStep(updateGcpCard(model, { configure }).model, Dialog.open(configure.dialog))
+	const pending = model.gcpCard.pendingWrite
+	const configure = {
+		...initConfigure(target, gcpConnectors(model), metricsAvailable(model)),
+		isCreating: pending === "create",
+		isSaving: pending === "update",
+	}
+	const opened = updateGcpCard(model, { configure, configureOpens: model.gcpCard.configureOpens + 1 }).model
+	const shown = dialogStep(opened, Dialog.open(configure.dialog))
 	const saved = savedConnector(shown.model, configure)
 	if (target._tag === "New" || target.stage === "choose" || saved === undefined) return shown
 	// Found waiting on a first run, the status times it from the connection's creation.
@@ -196,20 +202,40 @@ export const submittedCreate = (model: Model): Return => {
 	return Option.match(createRequest(configure), {
 		onNone: () => ({ model }),
 		onSome: (request) => ({
-			model: withConfigure(model, () => ({ isCreating: true, createError: null })),
-			commands: [CreateConnector({ request })],
+			model: withConfigure(updateGcpCard(model, { pendingWrite: "create" }).model, () => ({
+				isCreating: true,
+				createError: null,
+			})),
+			commands: [CreateConnector({ opens: model.gcpCard.configureOpens, request })],
 		}),
 	})
+}
+
+/** The write settled; `true` when the wizard it was sent from is still the one open. */
+const settleWrite = (model: Model, opens: number): { readonly model: Model; readonly isCurrent: boolean } => ({
+	model: updateGcpCard(model, { pendingWrite: null }).model,
+	isCurrent: model.gcpCard.configure !== null && model.gcpCard.configureOpens === opens,
+})
+
+/** A write from a wizard closed or reopened since: the reopened one is free again, its reads refresh. */
+const staleWrite = (model: Model, context: PageContext, isSaved: boolean): Return => {
+	const freed = withConfigure(model, () => ({ isCreating: false, isSaving: false }))
+	return isSaved
+		? chain(freed, [(next) => requestStatus(next, context, "gcp", "Refresh"), refreshInventory])
+		: { model: freed }
 }
 
 /** A refused scope keeps its message on screen; a created one leads into the run step. */
 export const completedCreate = (
 	model: Model,
 	context: PageContext,
+	opens: number,
 	connector: V2GcpConnector | null,
 	failure: LoadFailure | null,
 ): Return => {
-	const settled = withConfigure(model, () => ({ isCreating: false }))
+	const write = settleWrite(model, opens)
+	if (!write.isCurrent) return staleWrite(write.model, context, connector !== null)
+	const settled = withConfigure(write.model, () => ({ isCreating: false }))
 	if (connector === null)
 		return {
 			model: withConfigure(settled, () => ({
@@ -315,8 +341,8 @@ const save = (model: Model): Return => {
 				? { logs_enabled: draft.logs_enabled }
 				: { metrics_enabled: draft.metrics_enabled }
 	return {
-		model: withConfigure(model, () => ({ isSaving: true })),
-		commands: [UpdateConnector({ id: connector.id, payload, flags: draft })],
+		model: withConfigure(updateGcpCard(model, { pendingWrite: "update" }).model, () => ({ isSaving: true })),
+		commands: [UpdateConnector({ opens: model.gcpCard.configureOpens, id: connector.id, payload, flags: draft })],
 	}
 }
 
@@ -337,10 +363,15 @@ export const confirmedSave = save
 export const completedUpdate = (
 	model: Model,
 	context: PageContext,
+	opens: number,
 	flags: GcpFlags,
 	failure: LoadFailure | null,
 ): Return => {
-	const settled = withConfigure(model, () => ({ isSaving: false }))
+	const write = settleWrite(model, opens)
+	if (failure === null && !write.isCurrent) return staleWrite(write.model, context, true)
+	const settled = write.isCurrent
+		? withConfigure(write.model, () => ({ isSaving: false }))
+		: staleWrite(write.model, context, false).model
 	if (failure !== null)
 		return {
 			model: settled,

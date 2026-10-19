@@ -1,6 +1,7 @@
-import { V2ApiKey } from "@maple/domain/http/v2"
+import { V2ApiKey, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
+import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 import { PageOutMessage } from "../../contract"
 import * as CreateDialog from "./create-dialog"
@@ -51,6 +52,23 @@ describe("keys tab", () => {
 		expect(submitted.commands?.[0]).toMatchObject({
 			args: { payload: { name: "Grafana", kind: "standard", scopes: ["dashboards:read"] } },
 		})
+	})
+
+	test("Escape mid-create keeps the create in flight; reopening shows the one-time secret", () => {
+		const opened = update(loaded(), Message.ClickedCreateKey()).model
+		const named = steps(opened, [
+			create(CreateDialog.Message.GotNameMessage({ message: Field.Message.ChangedValue({ value: "Grafana" }) })),
+		])
+		const creating = update(named, create(CreateDialog.Message.ClickedCreate())).model
+		const dismissed = steps(creating, [create(CreateDialog.Message.GotDialogMessage({ message: Dialog.Message.PressedEscape() }))])
+		const reopened = update(dismissed, Message.ClickedCreateKey()).model
+		const refilled = steps(reopened, [
+			create(CreateDialog.Message.GotNameMessage({ message: Field.Message.ChangedValue({ value: "Again" }) })),
+		])
+		expect(names(update(refilled, create(CreateDialog.Message.ClickedCreate())).commands)).toEqual([])
+		const secret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({ ...Schema.encodeSync(V2ApiKey)(key), secret: "maple_ak_secret" })
+		const landed = steps(dismissed, [create(CreateDialog.Message.CompletedCreate({ kind: "standard", result: Result.succeed(secret) }))])
+		expect(update(landed, Message.ClickedCreateKey()).model.create.created?.secret).toBe("maple_ak_secret")
 	})
 
 	test("revoking asks first, then toasts and closes", () => {
