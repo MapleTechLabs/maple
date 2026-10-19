@@ -1,10 +1,12 @@
 import { OrgId } from "@maple/domain"
 import { HazelIntegrationStatus } from "@maple/domain/http"
+import { V2ChatConnectorList } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
+import { integrationOfSearch } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -128,6 +130,36 @@ describe("integrations hub", () => {
 				description: "",
 			}),
 		)
+	})
+
+	test("every chat connector has a tile for every org, Discord included", () => {
+		const model = entered()
+		const discord = Schema.decodeUnknownSync(V2ChatConnectorList)({
+			object: "chat_connector_list",
+			data: [
+				{
+					id: "discord",
+					object: "chat_connector",
+					name: "Discord",
+					available: true,
+					supports_identity: true,
+					workspaces: [],
+				},
+			],
+		})
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedLoadChat({
+				key: model.statuses.chat.key ?? "",
+				result: Result.succeed(discord),
+			}),
+		).model
+		scene({ update: pageUpdate, view }, given(loaded), expectView(text("Discord")).toExist())
+	})
+
+	test("a Discord link opens its card rather than falling back to the hub", () => {
+		expect(integrationOfSearch("chat-discord")).toBe("chat-discord")
+		expect(integrationOfSearch("chat-nope")).toBeNull()
 	})
 })
 

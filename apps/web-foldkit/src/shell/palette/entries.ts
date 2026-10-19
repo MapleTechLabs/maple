@@ -2,7 +2,7 @@ import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { Array as Arr, Option, Schema } from "effect"
 import { DashboardId } from "@maple/domain/http"
-import { CATALOG, isIntegrationVisible } from "../../page/integrations/catalog"
+import { CATALOG } from "../../page/integrations/catalog"
 import { AppRoute, hrefOf } from "../../route"
 import type { IconName } from "../../ui/icon"
 import type { PinnedDashboardRow } from "../dashboards-shape"
@@ -131,7 +131,7 @@ const integrationGlyph = (entry: (typeof CATALOG)[number]): Glyph =>
 
 // Every provider is typeable as "Connect <name>", so trying "railway" finds it from anywhere.
 const integrationEntries = (): ReadonlyArray<PaletteEntry> =>
-	CATALOG.filter((entry) => isIntegrationVisible(entry.id)).map((entry) => ({
+	CATALOG.map((entry) => ({
 		id: `integration:${entry.id}`,
 		title: `Connect ${entry.name}`,
 		group: "Integrations",

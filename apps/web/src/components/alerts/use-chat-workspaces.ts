@@ -4,7 +4,6 @@ import type { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/primitives"
 import type { V2ChatConnector } from "@maple/domain/http/v2"
 
 import { useOAuthPopupFlow } from "@/components/integrations/integration-connect"
-import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 
@@ -19,13 +18,10 @@ const connectorsQuery = () =>
 
 /** The chat connectors this org may use, Slack first, with their linked workspaces. Empty until the list answers. */
 export function useChatConnectors(): ReadonlyArray<V2ChatConnector> {
-	const gate = useChatConnectorGate()
 	const result = useAtomValue(connectorsQuery())
 	return Result.builder(result)
 		.onSuccess((response) =>
-			response.data
-				.filter((connector) => gate(connector.id))
-				.sort((a, b) => Number(b.id === "slack") - Number(a.id === "slack")),
+			[...response.data].sort((a, b) => Number(b.id === "slack") - Number(a.id === "slack")),
 		)
 		.orElse(() => [])
 }

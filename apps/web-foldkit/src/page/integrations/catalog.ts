@@ -169,15 +169,6 @@ export const catalogEntry = (id: IntegrationId): CatalogEntry =>
 export const isIntegrationId = (value: string): value is IntegrationId =>
 	CATALOG.some((entry) => entry.id === value)
 
-/**
- * `useIsIntegrationVisible`: chat connectors roll out per org; self-hosted shows every connector.
- * TODO(clerk): the Clerk gate (`<id>_bot` rollout flags, `released`) is not ported.
- */
-export const isIntegrationVisible = (_id: IntegrationId): boolean => true
-
-export const visibleCatalog = (): ReadonlyArray<CatalogEntry> =>
-	CATALOG.filter((entry) => isIntegrationVisible(entry.id))
-
-/** The `?integration=` the page shows: a known, visible id, else the hub. */
+/** The `?integration=` the page shows: a known id, else the hub. */
 export const integrationOfSearch = (value: string | undefined): IntegrationId | null =>
-	value !== undefined && isIntegrationId(value) && isIntegrationVisible(value) ? value : null
+	value !== undefined && isIntegrationId(value) ? value : null

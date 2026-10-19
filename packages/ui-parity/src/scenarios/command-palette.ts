@@ -84,6 +84,11 @@ export const commandPaletteArea: AreaModule = {
 		palette("dashboard", "a dashboard", pick("checkout health", "Checkout health")),
 		palette("integrations", "integrations", search("connect")),
 		palette("integration", "an integration", pick("railway", "Connect Railway")),
+		palette(
+			"chat-connector",
+			"a chat connector, offered to every org",
+			pick("discord", "Connect Discord"),
+		),
 		palette("theme", "the theme action", pick("mode", /Switch to (light|dark) mode/)),
 		palette("ask-ai", "Ask Maple AI", pick("ask maple", /^Ask Maple AI/)),
 		palette("shortcuts-action", "the shortcuts action", pick("keyboard", /^Keyboard shortcuts/)),

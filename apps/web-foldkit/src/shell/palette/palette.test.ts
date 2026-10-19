@@ -80,6 +80,11 @@ describe("command palette", () => {
 		)
 	})
 
+	test("every chat connector is typeable as Connect <name>, with no per-org gate", () => {
+		const titles = paletteEntries({ ...context, serviceNames: [] }).map((entry) => entry.title)
+		expect(titles).toEqual(expect.arrayContaining(["Connect Slack", "Connect Discord"]))
+	})
+
 	test("a flagged-off Releases row is not shown", () => {
 		const titles = (isReleasesVisible: boolean) =>
 			shownEntries(open().model, context, isReleasesVisible).entries.map((entry) => entry.title)
