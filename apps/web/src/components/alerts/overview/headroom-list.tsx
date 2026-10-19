@@ -7,8 +7,8 @@ import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 
 import { ROW_STRETCHED_LINK_CLASS } from "@/components/common/data-table"
-import { displaySignalType, formatSignalValue } from "@/lib/alerts/form-utils"
-import type { RuleHeadroom } from "@/lib/alerts/headroom"
+import { displaySignalType, formatSignalValue } from "@maple/web-data/alerts/form-utils"
+import type { RuleHeadroom } from "@maple/web-data/alerts/headroom"
 
 const MAX_ROWS = 8
 const ROW_GRID = "grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_130px_44px] items-center gap-4"

@@ -5,11 +5,11 @@ import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { ErrorState } from "@/components/common/error-state"
 import { cn } from "@maple/ui/lib/utils"
 import { getSeverityColor } from "@maple/ui/lib/severity"
-import type { Log, LogsResponse } from "@/api/warehouse/logs"
-import type { SpanHierarchyResponse } from "@/api/warehouse/traces"
+import type { Log, LogsResponse } from "@maple/web-data/warehouse/logs"
+import type { SpanHierarchyResponse } from "@maple/web-data/warehouse/traces"
 import { listLogsResultAtom, getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
-import { computeTraceTimeWindow } from "@/lib/trace-time-window"
+import { computeTraceTimeWindow } from "@maple/web-data/lib/trace-time-window"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 import { formatDuration } from "@maple/domain/format"
@@ -103,7 +103,9 @@ export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelinePr
 					<ErrorState error={error} title="Failed to load trace logs" variant="inline" />
 				))
 				.onSuccess((data) => {
-					const logs = data.data.toSorted((a, b) => a.exactTimestamp.localeCompare(b.exactTimestamp))
+					const logs = data.data.toSorted((a, b) =>
+						a.exactTimestamp.localeCompare(b.exactTimestamp),
+					)
 
 					if (logs.length <= 1) {
 						return <EmptyMessage>No other logs in this trace</EmptyMessage>

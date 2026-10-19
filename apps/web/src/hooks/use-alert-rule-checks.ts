@@ -1,7 +1,7 @@
 import { AlertRuleId, IsoDateTimeString, type AlertCheckDocument } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { Atom, Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
-import { v2CheckToDocument } from "@/lib/alerts/form-utils"
+import { v2CheckToDocument } from "@maple/web-data/alerts/form-utils"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 
 const asAlertRuleId = Schema.decodeSync(AlertRuleId)

@@ -33,7 +33,7 @@ import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
-import { toIsoBucket } from "@/api/warehouse/timeseries-utils"
+import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
 
 const workerSearchSchema = Schema.Struct({
 	...TimeRangeSearchFields,

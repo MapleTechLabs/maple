@@ -36,7 +36,7 @@ import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { useDebouncedValue } from "@maple/ui/hooks/use-debounced-value"
-import type { ContainerSortKey, SortDirection } from "@/api/warehouse/infra"
+import type { ContainerSortKey, SortDirection } from "@maple/web-data/warehouse/infra"
 import { OffsetPager, pageRangeLabel, useResettingPage } from "@/components/infra/primitives/offset-pager"
 
 const PAGE_SIZE = 50

@@ -9,6 +9,7 @@ import { cn } from "../../lib/utils"
 import { badgeVariants } from "./badge"
 import { copyTooltipText } from "./copy-button"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip"
+import { copyableBadgeStyles } from "./copyable-badge.styles"
 
 export interface CopyableBadgeProps {
 	/** The full value written to the clipboard (may differ from the displayed children). */
@@ -40,7 +41,7 @@ export function CopyableBadge({
 				render={<button type="button" />}
 				onClick={() => void copy(value)}
 				aria-label={`Copy ${label}`}
-				className={cn(badgeVariants({ variant, size }), "max-w-full", className)}
+				className={cn(badgeVariants({ variant, size }), copyableBadgeStyles, className)}
 			>
 				{children ?? value}
 			</TooltipTrigger>

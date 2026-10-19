@@ -7,7 +7,7 @@ import { ToolbarStat, ToolbarStats } from "@maple/ui/components/toolbar"
 import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getErrorsSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import type { GetErrorsSummaryInput } from "@/api/warehouse/errors"
+import type { GetErrorsSummaryInput } from "@maple/web-data/warehouse/errors"
 
 /**
  * Window totals for the current filters.

@@ -1,6 +1,6 @@
 import { AtomHttpApi } from "@/lib/effect-atom"
 import { MapleInternalApi } from "@maple/domain/http"
-import { encodeOrgScopedKey, identityFromKey } from "@/lib/cache-key"
+import { encodeOrgScopedKey, identityFromKey } from "@maple/web-data/lib/cache-key"
 import { withRetention } from "@/lib/services/atoms/retained-atom"
 import { apiBaseUrl } from "./api-base-url"
 import { getActiveOrgId } from "./auth-headers"

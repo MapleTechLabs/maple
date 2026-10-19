@@ -13,7 +13,7 @@ import {
 	formatNumber,
 	formatPercent,
 } from "@maple/ui/lib/format"
-import { gcpMetricsState } from "@/components/integrations/gcp-connector-state"
+import { gcpMetricsState } from "../../integrations/gcp-connector-state"
 
 /** One metric and label value of one workload: `total` over `samples` points. */
 export interface GcpMetricValue {

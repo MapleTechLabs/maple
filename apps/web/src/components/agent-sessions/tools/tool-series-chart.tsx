@@ -31,7 +31,7 @@ import {
 	type ToolMetric,
 	type ToolPercentile,
 	type ToolSeriesPoint,
-} from "@/lib/agent-sessions/tool-analytics"
+} from "@maple/web-data/lib/tool-analytics"
 
 import { seriesLines, valueAt, type ChartRow, type ChartSeries, type PlotCell } from "./tool-chart-marks"
 

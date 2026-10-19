@@ -3,7 +3,7 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { formatTimeInTimezone } from "@/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 /**

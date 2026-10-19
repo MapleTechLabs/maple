@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Result } from "@/lib/effect-atom"
 
-import { listLogs, type Log, type LogsResponse } from "@/api/warehouse/logs"
+import { listLogs, type Log, type LogsResponse } from "@maple/web-data/warehouse/logs"
 import { listLogsResultAtom, type QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"

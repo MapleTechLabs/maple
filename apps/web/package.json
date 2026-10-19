@@ -42,6 +42,7 @@
 		"@maple/query-model": "workspace:*",
 		"@maple/ui": "workspace:*",
 		"@maple/unitflow": "workspace:*",
+		"@maple/web-data": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"@react-three/fiber": "^9.8.1",
 		"@rrweb/replay": "^2.1.7",

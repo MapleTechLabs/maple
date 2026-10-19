@@ -27,7 +27,7 @@ import { ErrorState } from "@/components/common/error-state"
 import { RelativeTime } from "@/components/common/relative-time"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { sessionRowId } from "@maple/agent-sessions"
 import {
 	formatDurationNs,
@@ -37,7 +37,7 @@ import {
 	type ToolErrorOccurrenceRow,
 	type ToolErrorSessionRow,
 	type ToolErrorVariantRow,
-} from "@/lib/agent-sessions/tool-analytics"
+} from "@maple/web-data/lib/tool-analytics"
 import {
 	errorTextTokens,
 	errorTrendBucket,

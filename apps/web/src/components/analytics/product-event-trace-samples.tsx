@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { productEventTraceSamplesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { ChartBarTrendUpIcon } from "@/components/icons"
 import { TruncatedId } from "@maple/ui/components/ui/truncated-id"

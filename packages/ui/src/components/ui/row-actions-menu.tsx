@@ -4,6 +4,7 @@ import type React from "react"
 import { DotsVerticalIcon } from "../icons"
 import { Button } from "./button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./dropdown-menu"
+import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "./row-actions-menu.styles"
 
 export interface RowActionsMenuProps {
 	/** Trigger aria-label. */
@@ -37,9 +38,9 @@ export function RowActionsMenu({
 					/>
 				}
 			>
-				<DotsVerticalIcon className="size-4" />
+				<DotsVerticalIcon className={rowActionsMenuIconStyles} />
 			</DropdownMenuTrigger>
-			<DropdownMenuContent align={align} className="w-auto min-w-40">
+			<DropdownMenuContent align={align} className={rowActionsMenuContentStyles}>
 				{children}
 			</DropdownMenuContent>
 		</DropdownMenu>

@@ -192,7 +192,7 @@ export function inferRangeMs(data: ReadonlyArray<Record<string, unknown>>): numb
  */
 export function formatBucketLabel(
 	value: unknown,
-	context: { rangeMs: number; bucketSeconds: number | undefined; timeZone?: string },
+	context: { rangeMs: number; bucketSeconds: number | undefined; timeZone?: string; locale?: string },
 	mode: "tick" | "tooltip",
 ): string {
 	if (typeof value !== "string") return ""
@@ -207,11 +207,13 @@ export function formatBucketLabel(
 	// The viewer's selected zone when the chart sits under a `PlotTimeZoneProvider`;
 	// the browser's otherwise.
 	const timeZone = context.timeZone
+	// The browser's locale unless the caller read one (Foldkit views stay pure).
+	const locale = context.locale
 
 	if (mode === "tooltip") {
 		// The tooltip header always carries the full date — ticks stay terse, but a
 		// hovered point should never make the reader work out which day it was.
-		return date.toLocaleString(undefined, {
+		return date.toLocaleString(locale, {
 			timeZone,
 			year: "numeric",
 			month: "short",
@@ -224,10 +226,10 @@ export function formatBucketLabel(
 
 	if (includeDate) {
 		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60) {
-			return date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" })
+			return date.toLocaleDateString(locale, { timeZone, month: "short", day: "numeric" })
 		}
 		return date
-			.toLocaleString(undefined, {
+			.toLocaleString(locale, {
 				timeZone,
 				month: "short",
 				day: "numeric",
@@ -238,7 +240,7 @@ export function formatBucketLabel(
 	}
 
 	return date
-		.toLocaleTimeString(undefined, {
+		.toLocaleTimeString(locale, {
 			timeZone,
 			hour: "2-digit",
 			minute: "2-digit",
@@ -348,8 +350,8 @@ export function pluralize(count: number, singular: string, plural: string = `${s
 }
 
 /** A count with its noun: `countLabel(3, "host")` is "3 hosts". The number is not compacted. */
-export function countLabel(count: number, singular: string, plural?: string): string {
-	return `${count.toLocaleString()} ${pluralize(count, singular, plural)}`
+export function countLabel(count: number, singular: string, plural?: string, locale?: string): string {
+	return `${count.toLocaleString(locale)} ${pluralize(count, singular, plural)}`
 }
 
 /**

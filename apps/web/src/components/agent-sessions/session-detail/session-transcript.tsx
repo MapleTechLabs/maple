@@ -50,7 +50,7 @@ import {
 	type TranscriptPayload,
 	type TranscriptRow,
 } from "@maple/agent-sessions"
-import { formatClockInTimezone } from "@/lib/timezone-format"
+import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import { ClampedText, firstLine } from "./clamped-text"
 import { disclosed, MessageBody, useJsonPayload, useMessageBody, ViewSwitch } from "./payload-view"
 import { ToolIo, ToolIoSummary } from "./tool-io"

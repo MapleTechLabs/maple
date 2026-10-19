@@ -1,7 +1,7 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import { Effect } from "effect"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
-import { collectV2Pages } from "@/lib/services/common/v2-pagination"
+import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 
 const PAGE_LIMIT = 100
 

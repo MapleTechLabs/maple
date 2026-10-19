@@ -13,7 +13,8 @@ import { VerdictCard } from "@/components/investigations/verdict-card"
 import { LogsTableView } from "@/components/logs/logs-table"
 import { ReleaseComparison } from "@/components/releases/release-detail-panels"
 import { buildErrorsLabFixture } from "@/lab/errors-fixture"
-import { actorIdentities, errorSignal, rulesFixture, sampleTraces, verdict } from "@/lab/worst-case-docs"
+import { actorIdentities } from "@/lab/worst-case-actors"
+import { errorSignal, rulesFixture, sampleTraces, verdict } from "@/lab/worst-case-docs"
 import { attributes, logs, releaseImpact, type WorstCaseMode } from "@/lab/worst-case-fixture"
 
 export function WcSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {

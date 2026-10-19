@@ -12,7 +12,7 @@ import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { highlightCode } from "@/lib/sugar-high"
 import { SeverityBadge, severityLabel } from "@maple/ui/components/logs/severity-badge"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
-import type { Log } from "@/api/warehouse/logs"
+import type { Log } from "@maple/web-data/warehouse/logs"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { LogTextButton } from "./log-text-button"
 

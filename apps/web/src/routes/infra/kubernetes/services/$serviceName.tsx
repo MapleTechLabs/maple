@@ -24,7 +24,7 @@ import { ErrorState } from "@/components/common/error-state"
 import { PageHero } from "@/components/common/page-hero"
 import { PodTable, PodTableLoading } from "@/components/infra/pod-table"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
-import { toIsoBucket } from "@/api/warehouse/timeseries-utils"
+import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
 import { CorrelationStrips, type StripSeries } from "@/components/infra/service-lens/correlation-strips"
 import { unifiedBucketDomain } from "@/components/infra/service-lens/bucket-domain"
 import { ServiceLensShell } from "@/components/infra/service-lens/service-lens-shell"
@@ -39,7 +39,7 @@ import {
 	listPodsResultAtom,
 	workloadInfraTimeseriesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import type { WorkloadKind } from "@/api/warehouse/infra"
+import type { WorkloadKind } from "@maple/web-data/warehouse/infra"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"

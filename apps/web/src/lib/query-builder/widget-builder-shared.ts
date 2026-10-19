@@ -10,7 +10,7 @@ import {
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
 import type { ListColumnDraft, ListDataSource } from "@/lib/query-builder/list-widget-config"
-import type { ListLogsInput } from "@/api/warehouse/logs"
+import type { ListLogsInput } from "@maple/web-data/warehouse/logs"
 import type {
 	TimeRange,
 	ValueUnit,

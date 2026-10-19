@@ -16,7 +16,7 @@ import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { PlayRotateClockwiseIcon } from "@/components/icons"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
-import type { WebAnalyticsBreakdowns, WebAnalyticsEvent } from "@/api/warehouse/web-analytics"
+import type { WebAnalyticsBreakdowns, WebAnalyticsEvent } from "@maple/web-data/warehouse/web-analytics"
 import type { QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	AnalyticsBreakdownPanel,
@@ -389,7 +389,11 @@ function AnalyticsContent({
 					</>
 				))
 				.onError((error) => (
-					<ErrorState error={error} title="Failed to load analytics summary" onRetry={retrySummary} />
+					<ErrorState
+						error={error}
+						title="Failed to load analytics summary"
+						onRetry={retrySummary}
+					/>
 				))
 				.onSuccess((summary) => {
 					const source: AnalyticsMetricSource = { summary, timeseries, pageviews }

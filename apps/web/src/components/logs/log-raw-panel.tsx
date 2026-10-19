@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { highlightCode } from "@/lib/sugar-high"
-import type { Log } from "@/api/warehouse/logs"
+import type { Log } from "@maple/web-data/warehouse/logs"
 
 /** Serialize a log into the pretty-printed JSON shown in the Raw panel. */
 export function buildLogJsonPayload(log: Log): string {

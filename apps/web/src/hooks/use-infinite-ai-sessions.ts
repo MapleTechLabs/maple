@@ -2,7 +2,11 @@ import * as React from "react"
 import { Result } from "@/lib/effect-atom"
 import { AI_SESSION_DETAILS_MAX_SESSIONS, type AiSessionDetailsItem } from "@maple/domain/http"
 
-import { getAiSessionDetails, listAiSessions, type ListAiSessionsInput } from "@/api/warehouse/ai-sessions"
+import {
+	getAiSessionDetails,
+	listAiSessions,
+	type ListAiSessionsInput,
+} from "@maple/web-data/warehouse/ai-sessions"
 import { listAiSessionsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { AgentSessionRow } from "@/components/agent-sessions/agent-sessions-list"

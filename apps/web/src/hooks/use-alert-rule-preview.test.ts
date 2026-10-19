@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildRuleCreateParamsV2, defaultRuleForm } from "@/lib/alerts/form-utils"
+import { buildRuleCreateParamsV2, defaultRuleForm } from "@maple/web-data/alerts/form-utils"
 import { toPreviewForm } from "@/hooks/use-alert-rule-preview"
 
 describe("toPreviewForm", () => {

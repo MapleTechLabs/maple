@@ -23,7 +23,7 @@ import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { CHART_EMPTY_MESSAGE, ChartCard } from "@/components/common/chart-card"
 import { SeriesLegend } from "@/components/common/series-legend"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { errorRate, formatDurationNs, type ToolSeriesPoint } from "@/lib/agent-sessions/tool-analytics"
+import { errorRate, formatDurationNs, type ToolSeriesPoint } from "@maple/web-data/lib/tool-analytics"
 
 import { seriesLines, valueAt, type ChartRow, type ChartSeries, type PlotCell } from "./tool-chart-marks"
 

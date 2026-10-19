@@ -1,0 +1,14 @@
+/* apps/local-ui's stylesheet, imported in place so both builds emit the same rules. */
+@import "../../local-ui/src/styles.css";
+
+/* apps/local-ui's utilities come from scanning its own sources; scan them too, plus this app's views. */
+@source "../../local-ui/src";
+@source "./";
+
+/* Base UI injects this rule from `utils/styles.mjs` for scroll area viewports and select lists. */
+.base-ui-disable-scrollbar {
+	scrollbar-width: none;
+}
+.base-ui-disable-scrollbar::-webkit-scrollbar {
+	display: none;
+}

@@ -26,7 +26,7 @@ import {
 	toolsTableFooter,
 	type ToolBreakdownRow,
 	type ToolPercentile,
-} from "@/lib/agent-sessions/tool-analytics"
+} from "@maple/web-data/lib/tool-analytics"
 
 /* -------------------------------------------------------------------------------------------------
  * Table chrome shared by every table on the tools pages
@@ -383,7 +383,9 @@ export function ToolsTable({
 					) : loading ? (
 						<SkeletonList rows={3} rowClassName="h-[38px]" className="gap-1.5 px-2.5 py-3" />
 					) : sorted.length === 0 ? (
-						<EmptyMessage className="py-12 font-mono">No tool calls in the selected window.</EmptyMessage>
+						<EmptyMessage className="py-12 font-mono">
+							No tool calls in the selected window.
+						</EmptyMessage>
 					) : (
 						sorted.map((row) => {
 							const color = colorFor(row.key)

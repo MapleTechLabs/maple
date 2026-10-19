@@ -13,14 +13,14 @@ import { Card } from "@maple/ui/components/ui/card"
 import { cn } from "@maple/ui/lib/utils"
 import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { CheckIcon, ChevronDownIcon, CircleWarningIcon } from "@/components/icons"
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import {
 	buildDiagnosis,
 	diagnosisVerdict,
 	type DiagnosisStage,
 	type DiagnosisStageStatus,
-} from "@/lib/alerts/diagnosis"
-import { worstState } from "@/lib/alerts/rule-status"
+} from "@maple/web-data/alerts/diagnosis"
+import { worstState } from "@maple/web-data/alerts/rule-status"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 

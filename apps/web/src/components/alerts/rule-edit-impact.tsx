@@ -6,9 +6,9 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
-import { breachStatsFromPreview, formatBreachDuration } from "@/lib/alerts/breach-stats"
-import { formatSignalValue, type RuleFormState, displaySignalType } from "@/lib/alerts/form-utils"
-import type { RuleFieldChange } from "@/lib/alerts/preview-insights"
+import { breachStatsFromPreview, formatBreachDuration } from "@maple/web-data/alerts/breach-stats"
+import { formatSignalValue, type RuleFormState, displaySignalType } from "@maple/web-data/alerts/form-utils"
+import type { RuleFieldChange } from "@maple/web-data/alerts/preview-insights"
 
 interface RuleEditImpactProps {
 	/** The saved rule replayed over the same window as the draft. */

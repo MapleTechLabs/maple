@@ -4,7 +4,7 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { useAtomValue } from "@/lib/effect-atom"
 
-import { type ListMetricsInput } from "@/api/warehouse/metrics"
+import { type ListMetricsInput } from "@maple/web-data/warehouse/metrics"
 import { getMetricsSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 
 export type MetricType = NonNullable<ListMetricsInput["metricType"]>
@@ -67,7 +67,9 @@ export function MetricsTypeFilter({
 							<span
 								className="flex w-full items-center justify-between gap-6"
 								title={
-									dataPoints !== undefined ? `${formatNumber(dataPoints)} data points` : undefined
+									dataPoints !== undefined
+										? `${formatNumber(dataPoints)} data points`
+										: undefined
 								}
 							>
 								{item.label}

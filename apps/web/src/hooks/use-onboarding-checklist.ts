@@ -7,7 +7,7 @@ import { Result, useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { trackProduct } from "@/lib/analytics"
-import { displayError } from "@/lib/error-messages"
+import { displayError } from "@maple/web-data/lib/error-messages"
 import { onboardingRewardSeenAtomFamily } from "@/atoms/onboarding-reward-atoms"
 import {
 	claimOnboardingRewardMutation,

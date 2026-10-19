@@ -5,9 +5,9 @@ import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { cn } from "@maple/ui/lib/utils"
 
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
-import { formatSignalValue } from "@/lib/alerts/form-utils"
-import { conditionPhrase, incidentGroup, signalTitle } from "@/lib/alerts/incident-timeline"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
+import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
+import { conditionPhrase, incidentGroup, signalTitle } from "@maple/web-data/alerts/incident-timeline"
 
 const GROUP_ROW_LIMIT = 8
 const DAY_MS = 24 * 60 * 60 * 1000

@@ -20,7 +20,7 @@ import {
 import { ChartLoading } from "@maple/ui/components/charts"
 import { cn } from "@maple/ui/lib/utils"
 
-import type { PlanetScaleInfraTimeseriesRow } from "@/api/warehouse/planetscale-infra"
+import type { PlanetScaleInfraTimeseriesRow } from "@maple/web-data/warehouse/planetscale-infra"
 import { formatNumber } from "@maple/ui/lib/format"
 import {
 	chartEventMarkerMarks,

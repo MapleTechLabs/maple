@@ -1,6 +1,7 @@
 import { formatWarehouseDateTime, resolveRelativeRangeToWarehouse } from "@maple/query-engine"
 import { getEffectiveTimezone } from "@/atoms/timezone-preference-atoms"
-import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
+import { resolveTimeRangeAt } from "@maple/web-data/lib/time-range"
+import { formatTimestampInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 
 /**
  * Floor a resolved range to the cache-key snap grid, scaled to the window
@@ -13,6 +14,19 @@ import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezo
  * instant they actually chose.
  */
 export { snapRangeForCache } from "@maple/query-engine"
+
+/** `resolveTimeRangeAt` against the clock, in the selected zone unless one is given. */
+export function resolveTimeRangeNow(
+	startTime: string | undefined,
+	endTime: string | undefined,
+	defaultRange: string,
+	options?: { readonly timeZone?: string | undefined; readonly snap?: boolean | undefined },
+): { startTime: string; endTime: string } {
+	return resolveTimeRangeAt(Date.now(), startTime, endTime, defaultRange, {
+		timeZone: options?.timeZone ?? getEffectiveTimezone(),
+		snap: options?.snap,
+	})
+}
 
 /**
  * Format a Date as the ClickHouse/Tinybird `YYYY-MM-DD HH:mm:ss` shape.
@@ -209,18 +223,3 @@ export const QUICK_SELECT_OPTIONS: QuickSelectOption[] = [
 	{ label: "2mo", value: "2mo" },
 	{ label: "today", value: "today" },
 ]
-
-const CACHE_SNAP_INTERVAL_S = 15
-
-/**
- * Snap a Tinybird-format datetime string ("YYYY-MM-DD HH:mm:ss") to the
- * nearest floor of CACHE_SNAP_INTERVAL_S seconds for cache key deduplication.
- * Returns the original string unchanged if it doesn't match the format.
- */
-export function snapTimestamp(value: string): string {
-	if (value.length !== 19 || value[4] !== "-" || value[10] !== " ") return value
-	const seconds = parseInt(value.slice(17, 19), 10)
-	if (Number.isNaN(seconds)) return value
-	const snapped = seconds - (seconds % CACHE_SNAP_INTERVAL_S)
-	return value.slice(0, 17) + snapped.toString().padStart(2, "0")
-}

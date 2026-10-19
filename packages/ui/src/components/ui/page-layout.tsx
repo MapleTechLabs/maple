@@ -1,6 +1,28 @@
 import * as React from "react"
 
 import { cn } from "../../lib/utils"
+import {
+	pageBodyStyles,
+	pageContentStyles,
+	pageDescriptionStyles,
+	pageFillStyles,
+	pageFilterSheetHeaderStyles,
+	pageFilterSheetStyles,
+	pageFilterSidebarStyles,
+	pageFilterSidebarWidthStyles,
+	pageHeaderActionsStyles,
+	pageHeaderStyles,
+	pageHeaderTextStyles,
+	pageLayoutStyles,
+	pageRightSheetHeaderStyles,
+	pageRightSheetStyles,
+	pageRightSidebarStyles,
+	pageRightSidebarWidthStyles,
+	pageScrollAreaStyles,
+	pageStickyAreaScrolledStyles,
+	pageStickyAreaStyles,
+	pageTitleStyles,
+} from "./page-layout.styles"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "./sheet"
 import { useMediaQuery } from "../../hooks/use-media-query"
 
@@ -95,7 +117,7 @@ function Root({ children, className }: { children: React.ReactNode; className?: 
 
 	return (
 		<PageLayoutContext value={ctx}>
-			<div data-slot="page-layout" className={cn("flex min-h-0 flex-1 flex-col", className)}>
+			<div data-slot="page-layout" className={cn(pageLayoutStyles, className)}>
 				{children}
 			</div>
 		</PageLayoutContext>
@@ -123,14 +145,7 @@ function Title({
 	className?: string
 }) {
 	return (
-		<h1
-			data-slot="page-title"
-			className={cn(
-				"font-display text-2xl font-semibold tracking-tight truncate leading-[1.1]",
-				className,
-			)}
-			title={title}
-		>
+		<h1 data-slot="page-title" className={cn(pageTitleStyles, className)} title={title}>
 			{children}
 		</h1>
 	)
@@ -138,7 +153,7 @@ function Title({
 
 function Description({ children, className }: { children: React.ReactNode; className?: string }) {
 	return (
-		<p data-slot="page-description" className={cn("text-muted-foreground", className)}>
+		<p data-slot="page-description" className={cn(pageDescriptionStyles, className)}>
 			{children}
 		</p>
 	)
@@ -157,14 +172,8 @@ function Header({ children, title, titleContent, description, className }: Heade
 	if (!hasContent) return null
 
 	return (
-		<div
-			data-slot="page-header"
-			className={cn(
-				"flex flex-col gap-2 @2xl/page:flex-row @2xl/page:items-start @2xl/page:justify-between @2xl/page:gap-4",
-				className,
-			)}
-		>
-			<div className="min-w-0 flex-1">
+		<div data-slot="page-header" className={cn(pageHeaderStyles, className)}>
+			<div className={pageHeaderTextStyles}>
 				{/* `title`/`description` stay plain strings — that's data, and it's the
 				    30-site happy path. They render *through* `Title`/`Description` so
 				    there is exactly one implementation of each. */}
@@ -186,7 +195,7 @@ function HeaderActions({ children, className }: { children: React.ReactNode; cla
 			data-slot="page-header-actions"
 			// Only pinned to its natural width once the header goes side-by-side. Below that it must
 			// be free to shrink, or children that wrap internally never get the chance to.
-			className={cn("min-w-0 @2xl/page:shrink-0", className)}
+			className={cn(pageHeaderActionsStyles, className)}
 		>
 			{children}
 		</div>
@@ -203,11 +212,7 @@ function StickyArea({ children, className }: { children: React.ReactNode; classN
 	return (
 		<div
 			data-slot="page-sticky-area"
-			className={cn(
-				"shrink-0 space-y-4 p-4 transition-shadow",
-				isScrolled && "shadow-[0_2px_8px_rgba(0,0,0,0.08)]",
-				className,
-			)}
+			className={cn(pageStickyAreaStyles, isScrolled && pageStickyAreaScrolledStyles, className)}
 		>
 			{children}
 		</div>
@@ -220,7 +225,7 @@ function StickyArea({ children, className }: { children: React.ReactNode; classN
 
 function Body({ children, className }: { children: React.ReactNode; className?: string }) {
 	return (
-		<div data-slot="page-body" className={cn("flex min-h-0 flex-1 overflow-hidden", className)}>
+		<div data-slot="page-body" className={cn(pageBodyStyles, className)}>
 			{children}
 		</div>
 	)
@@ -233,7 +238,7 @@ function Body({ children, className }: { children: React.ReactNode; className?: 
 function FilterSidebar({
 	children,
 	className,
-	width = "w-64",
+	width = pageFilterSidebarWidthStyles,
 }: {
 	children: React.ReactNode
 	className?: string
@@ -253,8 +258,8 @@ function FilterSidebar({
 	if (filterSidebarCollapsed) {
 		return (
 			<Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
-				<SheetContent side="left" className="w-72 p-4 overflow-y-auto">
-					<SheetHeader className="sr-only">
+				<SheetContent side="left" className={pageFilterSheetStyles}>
+					<SheetHeader className={pageFilterSheetHeaderStyles}>
 						<SheetTitle>Filters</SheetTitle>
 						<SheetDescription>Filter options for this page.</SheetDescription>
 					</SheetHeader>
@@ -265,10 +270,7 @@ function FilterSidebar({
 	}
 
 	return (
-		<aside
-			data-slot="page-filter-sidebar"
-			className={cn("sticky top-0 h-full shrink-0 overflow-y-auto border-r p-4", width, className)}
-		>
+		<aside data-slot="page-filter-sidebar" className={cn(pageFilterSidebarStyles, width, className)}>
 			{children}
 		</aside>
 	)
@@ -280,11 +282,7 @@ function FilterSidebar({
 
 function Content({ children, className }: { children: React.ReactNode; className?: string }) {
 	return (
-		<main
-			id="main-content"
-			data-slot="page-content"
-			className={cn("@container/page flex min-h-0 min-w-0 flex-1 flex-col", className)}
-		>
+		<main id="main-content" data-slot="page-content" className={cn(pageContentStyles, className)}>
 			{children}
 		</main>
 	)
@@ -300,7 +298,7 @@ function ScrollArea({ children, className }: { children: React.ReactNode; classN
 	return (
 		<div
 			data-slot="page-scroll-area"
-			className={cn("flex min-h-0 flex-1 flex-col overflow-auto p-4", className)}
+			className={cn(pageScrollAreaStyles, className)}
 			onScroll={(e) => setIsScrolled(e.currentTarget.scrollTop > 0)}
 		>
 			{children}
@@ -320,7 +318,7 @@ function ScrollArea({ children, className }: { children: React.ReactNode; classN
  */
 function Fill({ children, className }: { children: React.ReactNode; className?: string }) {
 	return (
-		<div data-slot="page-fill" className={cn("flex min-h-0 min-w-0 flex-1 flex-col", className)}>
+		<div data-slot="page-fill" className={cn(pageFillStyles, className)}>
 			{children}
 		</div>
 	)
@@ -341,7 +339,7 @@ function RightSidebar({
 	children,
 	className,
 	title = "Details",
-	width = "w-72",
+	width = pageRightSidebarWidthStyles,
 	open,
 	onOpenChange,
 }: {
@@ -376,8 +374,8 @@ function RightSidebar({
 					onOpenChange?.(next)
 				}}
 			>
-				<SheetContent side="right" className="w-80 overflow-y-auto p-4">
-					<SheetHeader className="sr-only">
+				<SheetContent side="right" className={pageRightSheetStyles}>
+					<SheetHeader className={pageRightSheetHeaderStyles}>
 						<SheetTitle>{title}</SheetTitle>
 						<SheetDescription>Context for this page.</SheetDescription>
 					</SheetHeader>
@@ -388,10 +386,7 @@ function RightSidebar({
 	}
 
 	return (
-		<aside
-			data-slot="page-right-sidebar"
-			className={cn("hidden shrink-0 overflow-y-auto border-l lg:block", width, className)}
-		>
+		<aside data-slot="page-right-sidebar" className={cn(pageRightSidebarStyles, width, className)}>
 			{children}
 		</aside>
 	)

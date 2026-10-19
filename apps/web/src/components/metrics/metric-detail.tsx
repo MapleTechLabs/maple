@@ -18,7 +18,7 @@ import {
 	listMetricsResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import type { Metric } from "@/api/warehouse/metrics"
+import type { Metric } from "@maple/web-data/warehouse/metrics"
 import {
 	resetAggregationForMetricType,
 	type MetricsQueryDraft,

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { useState } from "react"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { defaultRuleForm, type RuleFormState } from "@/lib/alerts/form-utils"
+import { defaultRuleForm, type RuleFormState } from "@maple/web-data/alerts/form-utils"
 import { describeRuleCondition, RuleConditionFields } from "./rule-condition-bar"
 
 afterEach(cleanup)

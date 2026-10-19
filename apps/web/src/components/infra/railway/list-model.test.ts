@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { RailwayEnvironmentStatus } from "@maple/domain/http"
 
-import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
+import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 
 import { fleetSync, groupRailwayServices, hasConfiguredLimits } from "./list-model"
 

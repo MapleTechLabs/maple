@@ -10,7 +10,7 @@ import {
 import { DurationRangeFilter } from "./duration-range-filter"
 import { PinnedNamespaceNotice } from "@/components/filters/pinned-namespace-notice"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
-import type { TracesFacetsResponse } from "@/api/warehouse/traces"
+import type { TracesFacetsResponse } from "@maple/web-data/warehouse/traces"
 import {
 	FilterSidebarBody,
 	FilterSidebarEmpty,

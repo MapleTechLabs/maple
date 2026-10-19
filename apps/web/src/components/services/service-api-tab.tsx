@@ -16,7 +16,7 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceEndpointsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { ErrorState } from "@/components/common/error-state"
 import { DocsLink } from "@/components/common/docs-link"
-import type { ServiceEndpoint } from "@/api/warehouse/service-endpoints"
+import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
 import {
 	BarCell,
 	MobileListRow,
@@ -29,7 +29,7 @@ import { SampledValue } from "./sampled-value"
 import { useSortState } from "@/hooks/use-table-sort"
 import { ENDPOINTS_LIMIT, isTruncated, serviceEndpointsQueryInput } from "./service-endpoints"
 import { callsPerSecond, operationTraceSearch, windowSeconds } from "./service-operations"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { groupEndpoints, leafLabel, type EndpointGroup, type EndpointSort } from "./endpoint-grouping"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
 

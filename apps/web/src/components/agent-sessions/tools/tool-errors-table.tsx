@@ -15,11 +15,7 @@ import { ErrorState } from "@/components/common/error-state"
 import { RelativeTime } from "@/components/common/relative-time"
 import { ChevronRightIcon } from "@/components/icons"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import {
-	formatToolCount,
-	UNGROUPED_FINGERPRINT,
-	type ToolErrorRow,
-} from "@/lib/agent-sessions/tool-analytics"
+import { formatToolCount, UNGROUPED_FINGERPRINT, type ToolErrorRow } from "@maple/web-data/lib/tool-analytics"
 import {
 	commonErrorPrefix,
 	errorTextTokens,

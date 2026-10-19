@@ -22,7 +22,7 @@ import { Skeleton, SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@maple/ui/components/ui/resizable"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
-import { type Span, type SpanNode, type SpanHierarchyResponse } from "@/api/warehouse/traces"
+import { type Span, type SpanNode, type SpanHierarchyResponse } from "@maple/web-data/warehouse/traces"
 import {
 	getSpanHierarchyResultAtom,
 	getTraceSpanEventsResultAtom,

@@ -37,7 +37,7 @@ import { SettingsSection, SettingsSections } from "@/components/settings/setting
 import { UnsavedChangesGuard } from "@/components/settings/settings-save-bar"
 import { useSettingsDraft } from "@/components/settings/settings-draft"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { RelativeTime } from "@/components/common/relative-time"
 import { ErrorState } from "@/components/common/error-state"
 import {

@@ -7,7 +7,7 @@ import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 
-import type { CloudflareQueueRow, CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
+import type { CloudflareQueueRow, CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
 import { PageHero } from "@/components/common/page-hero"
 import { SearchToolbar } from "@/components/common/search-toolbar"
 import { FLEET_BAND_BOXED } from "../primitives/fleet-band"

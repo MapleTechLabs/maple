@@ -65,13 +65,7 @@ export const SEVERITY_LABEL: Record<IssueSeverity, string> = {
 	low: "Low",
 } satisfies Record<IssueSeverity, string>
 
-export const SEVERITY_ORDER: ReadonlyArray<IssueSeverity> = ["critical", "high", "medium", "low"]
-
-/** Sort rank: critical first, unset last. */
-export function severityRank(severity: IssueSeverity | null): number {
-	if (severity === null) return SEVERITY_ORDER.length
-	return SEVERITY_ORDER.indexOf(severity)
-}
+export { SEVERITY_ORDER, severityRank } from "@maple/web-data/investigations/display"
 
 export function SeverityBadge({
 	severity,

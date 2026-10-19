@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { RuleLiveChartHero } from "./rule-live-chart-hero"
-import { defaultRuleForm } from "@/lib/alerts/form-utils"
+import { defaultRuleForm } from "@maple/web-data/alerts/form-utils"
 
 afterEach(() => {
 	cleanup()

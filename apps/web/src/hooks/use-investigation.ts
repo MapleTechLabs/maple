@@ -13,7 +13,7 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 import { getInvestigationCollections } from "@/lib/collections/investigation-collections"
 import { useCollectionLoadFailed } from "@/lib/collections/collection-load"
 import { useActiveOrgId, useCollectionsGeneration } from "@/lib/collections/org-collections"
-import { rowsToInvestigation } from "@/lib/collections/investigations"
+import { rowsToInvestigation } from "@maple/web-data/collections/investigations"
 
 export type InvestigationSync =
 	| { readonly state: "loading" }

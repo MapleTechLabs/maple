@@ -1,5 +1,5 @@
-import type { GetServiceOperationsInput } from "@/api/warehouse/service-operations"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import type { GetServiceOperationsInput } from "@maple/web-data/warehouse/service-operations"
+import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 
 /** Matches the chart grid's density: ~50 whole-minute buckets, ≥1 minute. */
 export const OPERATIONS_SPARKLINE_BUCKETS = 50

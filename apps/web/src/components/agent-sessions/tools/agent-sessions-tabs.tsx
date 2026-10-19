@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 
-import { formatToolCount } from "@/lib/agent-sessions/tool-analytics"
+import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import { cn } from "@maple/ui/lib/utils"
 
 import { UnderlineTabStrip, underlineTabClass } from "@/components/common/underline-link-tabs"

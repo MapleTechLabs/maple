@@ -2,9 +2,9 @@
 // each source's own list page already fetches. Nothing here queries: the
 // overview reads the same atoms the list pages do, so the numbers agree.
 
-import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
-import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
-import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
+import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
+import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
+import type { PlanetScaleDatabaseStat } from "@maple/web-data/warehouse/service-map"
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { countLabel, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
@@ -16,12 +16,14 @@ import {
 	gcpWorkloadTone,
 	type GcpFleetService,
 } from "../gcp/tabs"
-import type { ContainerScopeCounts } from "../container-summary-band"
-import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-summary-band"
-import type { HostRow } from "../host-table"
+import type { ContainerScopeCounts } from "../container-scopes"
+import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-scopes"
+import type { ListHostsResponse } from "@maple/domain/http"
 import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../planetscale/metrics"
-import { railwayInScope } from "../railway/railway-service-table"
+import { railwayInScope } from "../railway/railway-scope"
 import type { Tone } from "../severity-tokens"
+
+type HostRow = ListHostsResponse["data"][number]
 
 export type SourceId =
 	| "hosts"

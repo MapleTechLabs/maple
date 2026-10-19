@@ -5,7 +5,7 @@ import { ServerIcon } from "@/components/icons"
 import type { HostDetailSummaryResponse } from "@maple/domain/http"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
-import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 
 interface HostMetadataPanelProps {
 	summary: HostDetailSummaryResponse["data"]

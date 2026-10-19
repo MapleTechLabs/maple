@@ -18,7 +18,8 @@ import * as Stream from "effect/Stream"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 
 import type { Dashboard } from "@/components/dashboard-builder/types"
-import { type DashboardRow, rowToDashboard } from "@/lib/collections/dashboards"
+import type { DashboardRow } from "@maple/web-data/collections/dashboards"
+import { rowToDashboard } from "@/lib/collections/dashboards"
 import {
 	type DashboardsFallbackState,
 	makeDashboardsFallbackStore,

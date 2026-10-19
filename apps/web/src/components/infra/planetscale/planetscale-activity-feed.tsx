@@ -1,6 +1,6 @@
 import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import type { PlanetScaleEventEntry } from "@/api/warehouse/planetscale-infra"
+import type { PlanetScaleEventEntry } from "@maple/web-data/warehouse/planetscale-infra"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { RelativeTime } from "@/components/common/relative-time"
 import { cn } from "@maple/ui/lib/utils"

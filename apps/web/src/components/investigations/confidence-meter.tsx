@@ -5,12 +5,6 @@ import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
-/** Sort rank: most confident first, unset last. */
-export const CONFIDENCE_RANK: Record<Confidence, number> = { high: 0, medium: 1, low: 2 } satisfies Record<
-	Confidence,
-	number
->
-
 /**
  * The word's tint, alongside this file's other confidence vocabulary. It lived on
  * the chat report card, which meant three surfaces in `investigations/` reached

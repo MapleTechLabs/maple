@@ -5,8 +5,8 @@ import { StatusDot } from "@maple/ui/components/ui/status-dot"
 import { TONE_BORDER } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 
-import type { IncidentTimelineEntry } from "@/lib/alerts/incident-timeline"
-import { formatDateInTimezone, formatTimeInTimezone } from "@/lib/timezone-format"
+import type { IncidentTimelineEntry } from "@maple/web-data/alerts/incident-timeline"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 
 function sameDay(a: number, b: number, timeZone: string): boolean {
 	return formatDateInTimezone(a, { timeZone }) === formatDateInTimezone(b, { timeZone })
