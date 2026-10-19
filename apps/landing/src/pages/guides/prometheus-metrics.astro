@@ -1,0 +1,648 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+
+const pageTitle = "Prometheus metrics: the 4 metric types, PromQL and Grafana | Maple";
+const pageDescription =
+    "Prometheus metrics explained: the exposition format, the 4 metric types (counter, gauge, histogram, summary) with PromQL, naming, cardinality and Grafana.";
+const published = "2026-10-19";
+const updatedLabel = "October 19, 2026";
+
+const toc = [
+    ["definition", "Anatomy of a metric"],
+    ["metric-types", "The 4 metric types"],
+    ["counter", "Counter"],
+    ["gauge", "Gauge"],
+    ["histogram", "Histogram"],
+    ["summary", "Summary"],
+    ["native-histograms", "Native histograms"],
+    ["naming", "Naming conventions"],
+    ["cardinality", "Cardinality"],
+    ["grafana", "Prometheus in Grafana"],
+    ["opentelemetry", "Mapping to OpenTelemetry"],
+    ["maple", "Scraping into Maple"],
+] as const;
+const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
+
+const exposition = `# HELP http_requests_total Total HTTP requests handled.
+# TYPE http_requests_total counter
+http_requests_total{method="GET",route="/api/orders",status="200"} 10432
+http_requests_total{method="POST",route="/api/orders",status="500"} 17
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 5.2953088e+07
+# HELP http_request_duration_seconds Request latency.
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{route="/api/orders",le="0.05"} 8121
+http_request_duration_seconds_bucket{route="/api/orders",le="0.1"} 9630
+http_request_duration_seconds_bucket{route="/api/orders",le="0.25"} 10210
+http_request_duration_seconds_bucket{route="/api/orders",le="0.5"} 10391
+http_request_duration_seconds_bucket{route="/api/orders",le="1"} 10440
+http_request_duration_seconds_bucket{route="/api/orders",le="+Inf"} 10449
+http_request_duration_seconds_sum{route="/api/orders"} 712.4
+http_request_duration_seconds_count{route="/api/orders"} 10449
+# HELP rpc_duration_seconds Latency of calls to the payment service.
+# TYPE rpc_duration_seconds summary
+rpc_duration_seconds{quantile="0.5"} 0.012
+rpc_duration_seconds{quantile="0.99"} 0.231
+rpc_duration_seconds_sum 1830.2
+rpc_duration_seconds_count 120394`;
+
+const pythonClient = `from prometheus_client import Counter, Gauge, Histogram, start_http_server
+
+REQUESTS = Counter("http_requests", "Total HTTP requests handled.", ["method", "route", "status"])
+IN_FLIGHT = Gauge("http_requests_in_flight", "Requests currently being served.")
+LATENCY = Histogram(
+    "http_request_duration_seconds",
+    "Request latency.",
+    ["route"],
+    buckets=[0.05, 0.1, 0.25, 0.5, 1],
+)
+
+start_http_server(8000)  # serves /metrics on port 8000
+
+def handle(method, route):
+    with IN_FLIGHT.track_inprogress(), LATENCY.labels(route).time():
+        status = serve(method, route)
+    REQUESTS.labels(method, route, str(status)).inc()`;
+
+const scrapeConfig = `scrape_configs:
+  - job_name: api
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["api:8000"]`;
+
+const counterQueries = `# Requests per second, averaged over the last 5 minutes
+rate(http_requests_total[5m])
+
+# Requests in the last hour
+increase(http_requests_total[1h])
+
+# Error ratio per route: rate each series first, then sum
+sum by (route) (rate(http_requests_total{status=~"5.."}[5m]))
+  /
+sum by (route) (rate(http_requests_total[5m]))`;
+
+const gaugeQueries = `# Current resident memory per instance
+process_resident_memory_bytes
+
+# Peak over the last hour
+max_over_time(process_resident_memory_bytes[1h])
+
+# Disks that will be full within 4 hours at the current trend
+predict_linear(node_filesystem_avail_bytes[6h], 4 * 3600) < 0`;
+
+const histogramQueries = `# p95 latency per route
+histogram_quantile(
+  0.95,
+  sum by (le, route) (rate(http_request_duration_seconds_bucket[5m]))
+)
+
+# Mean latency
+rate(http_request_duration_seconds_sum[5m])
+  /
+rate(http_request_duration_seconds_count[5m])
+
+# Share of requests served in 250ms or less
+sum(rate(http_request_duration_seconds_bucket{le="0.25"}[5m]))
+  /
+sum(rate(http_request_duration_seconds_count[5m]))`;
+
+const summaryQueries = `# The client already computed the quantile; read it directly
+rpc_duration_seconds{quantile="0.99"}
+
+# Mean latency still aggregates correctly across instances
+sum(rate(rpc_duration_seconds_sum[5m])) / sum(rate(rpc_duration_seconds_count[5m]))`;
+
+const nativeQuery = `histogram_quantile(0.95, sum by (route) (rate(http_request_duration_seconds[5m])))`;
+
+const cardinalityQuery = `# The ten metric names with the most series
+topk(10, count by (__name__) ({__name__=~".+"}))`;
+
+const grafanaProvisioning = `apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true`;
+
+const grafanaPanelQuery = `sum by (route) (rate(http_requests_total[$__rate_interval]))`;
+
+const collectorConfig = `receivers:
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: api
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["api.internal:8000"]
+
+exporters:
+  otlphttp:
+    endpoint: https://ingest.maple.dev
+    headers:
+      Authorization: Bearer \${env:MAPLE_INGEST_KEY}
+
+service:
+  pipelines:
+    metrics:
+      receivers: [prometheus]
+      exporters: [otlphttp]`;
+
+const faqs = [
+    {
+        question: "What are the 4 types of metrics in Prometheus?",
+        answer:
+            "Counter, gauge, histogram and summary. A counter only increases (requests served, errors, bytes sent) and resets to zero on restart. A gauge goes up and down (memory in use, queue depth). A histogram counts observations into configurable buckets so you can compute percentiles at query time. A summary computes quantiles inside the client and exposes them directly.",
+    },
+    {
+        question: "What is the difference between a counter and a gauge in Prometheus?",
+        answer:
+            "A counter is cumulative and only goes up, so you query its rate of change with rate() or increase() rather than its raw value. A gauge is a snapshot of a current value that can rise or fall, so you read it directly or with functions like avg_over_time() and max_over_time(). If a value can ever decrease for a reason other than a process restart, it is a gauge.",
+    },
+    {
+        question: "Should I use a histogram or a summary?",
+        answer:
+            "Use a histogram in almost every case. Histogram buckets can be summed across instances, so you can compute a p95 for a whole service, and you can choose the quantile at query time. Summary quantiles are computed per process and cannot be meaningfully averaged or summed. A summary is only the better choice when you need an exact quantile from a single process and cannot pick sensible bucket boundaries in advance.",
+    },
+    {
+        question: "How do I see Prometheus metrics in Grafana?",
+        answer:
+            "Add Prometheus as a data source under Connections, Data sources, Add new data source, Prometheus, enter the server URL (for example http://prometheus:9090) and click Save & test. Then create a dashboard, add a visualization, select the Prometheus data source and enter a PromQL query such as sum by (route) (rate(http_requests_total[$__rate_interval])). Explore in Grafana lets you run ad hoc queries without building a dashboard.",
+    },
+    {
+        question: "How do Prometheus metrics map to OpenTelemetry?",
+        answer:
+            "A Prometheus counter becomes an OpenTelemetry monotonic cumulative Sum, a gauge becomes a Gauge, a classic histogram becomes a Histogram with explicit bucket bounds, and a native histogram can become an exponential histogram. Summaries map to the OTLP Summary type, which many backends convert or drop. Untyped metrics become gauges.",
+    },
+    {
+        question: "Why does my counter's raw value keep dropping to zero?",
+        answer:
+            "The process restarted. Counters live in memory and start again from zero, which is why you should never chart a raw counter. rate() and increase() detect the drop as a reset and compensate for it, provided you apply them to each series before summing, as in sum(rate(x[5m])) rather than rate(sum(x)[5m]).",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Prometheus metrics: the four types and how to query them",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: published,
+    author: { "@type": "Organization", name: "Maple" },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/prometheus-metrics`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Prometheus metrics" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto grid max-w-6xl gap-12 px-6 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.75fr)] lg:items-center lg:gap-16">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                        <span class="border border-primary/40 px-2 py-1 text-primary">Metrics</span>
+                        <span>11 min read</span>
+                    </div>
+                    <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                        Prometheus metrics: the four types and how to query them
+                    </h1>
+                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
+                        What a <code>/metrics</code> endpoint actually contains, which of the four Prometheus metric types to reach for, the PromQL that goes with each, and how the same data appears in Grafana and OpenTelemetry.
+                    </p>
+                    <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                        <span>By Maple</span>
+                        <time datetime={published}>Updated {updatedLabel}</time>
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-border bg-bg-deep p-4 shadow-2xl shadow-black/20 md:p-5" aria-label="Prometheus metric types at a glance">
+                    <div class="flex items-center justify-between border-b border-border pb-3 font-mono text-[10px] text-fg-muted">
+                        <span>prometheus / metric types</span>
+                        <span class="text-primary">PromQL</span>
+                    </div>
+                    <ol class="divide-y divide-border">
+                        {[
+                            ["01", "Counter", "Only goes up, resets on restart", "rate(), increase()"],
+                            ["02", "Gauge", "A current value that rises and falls", "avg_over_time()"],
+                            ["03", "Histogram", "Observations counted into buckets", "histogram_quantile()"],
+                            ["04", "Summary", "Quantiles computed in the client", "{quantile=\"0.99\"}"],
+                        ].map(([number, label, headline, detail]) => (
+                            <li class="grid grid-cols-[2rem_1fr] gap-3 py-3.5">
+                                <span class="font-mono text-[10px] text-primary">{number}</span>
+                                <div>
+                                    <div class="flex items-baseline justify-between gap-3">
+                                        <span class="text-xs font-medium text-fg">{label}</span>
+                                        <span class="font-mono text-[9px] text-fg-muted">{detail}</span>
+                                    </div>
+                                    <p class="mt-1 text-[11px] leading-relaxed text-fg-muted">{headline}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {toc.map(([id, label]) => (
+                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={tocHeadings} class="sticky top-28" />
+            </aside>
+
+            <article class="prom-guide min-w-0">
+                <section id="definition" class="scroll-mt-24">
+                    <p class="guide-eyebrow">01 · Definition</p>
+                    <h2>A Prometheus metric is a name, a set of labels and a stream of samples</h2>
+
+                    <div class="guide-answer">
+                        <p>
+                            A <strong>Prometheus metric</strong> is a named measurement, such as <code>http_requests_total</code>, split into <strong>time series</strong> by key-value <strong>labels</strong> like <code>route="/api/orders"</code>. Each series is a sequence of <strong>samples</strong>: a 64-bit float value and a millisecond timestamp. Applications expose their current values as plain text on an HTTP endpoint, usually <code>/metrics</code>, and Prometheus scrapes that endpoint on an interval.
+                        </p>
+                    </div>
+
+                    <p>
+                        The metric name and the full set of labels together identify one series. <code>http_requests_total&#123;status="200"&#125;</code> and <code>http_requests_total&#123;status="500"&#125;</code> are two series of the same metric. Prometheus adds a <code>job</code> label from the scrape config and an <code>instance</code> label with the target's host and port, so the same metric from two replicas is also two series.
+                    </p>
+
+                    <h3>The exposition format</h3>
+                    <p>
+                        This is what a scrape returns. <code># HELP</code> carries a description, <code># TYPE</code> declares the metric type, and every other line is <code>name&#123;labels&#125; value</code>, with an optional timestamp at the end that is almost never set.
+                    </p>
+                    <pre><code>{exposition}</code></pre>
+                    <p>
+                        The counter has a series per label combination. The gauge has a single unlabelled series. The histogram expands into a <code>_bucket</code> series per boundary plus <code>_sum</code> and <code>_count</code>. The summary exposes precomputed quantiles plus <code>_sum</code> and <code>_count</code>.
+                    </p>
+
+                    <h3>Producing it from code</h3>
+                    <p>
+                        Client libraries keep the values in memory and render the text on each scrape. With the official Python client:
+                    </p>
+                    <pre><code>{pythonClient}</code></pre>
+                    <p>
+                        The Python client appends <code>_total</code> to counter names, so <code>Counter("http_requests", ...)</code> is exposed as <code>http_requests_total</code>. A minimal <code>prometheus.yml</code> that scrapes it:
+                    </p>
+                    <pre><code>{scrapeConfig}</code></pre>
+                </section>
+
+                <section id="metric-types" class="scroll-mt-24">
+                    <p class="guide-eyebrow">02 · Metric types</p>
+                    <h2>The 4 types of metrics in Prometheus</h2>
+                    <p>
+                        Prometheus stores every type as plain float series; the type tells you which PromQL functions produce a meaningful answer.
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Type</th><th>Behaviour</th><th>Use it for</th><th>Query with</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><strong>Counter</strong></td><td>Only increases; resets to 0 on restart</td><td>Requests, errors, bytes sent, jobs processed</td><td><code>rate()</code>, <code>increase()</code></td></tr>
+                                <tr><td><strong>Gauge</strong></td><td>Goes up and down</td><td>Memory, queue depth, in-flight requests, temperature</td><td>Raw value, <code>avg_over_time()</code>, <code>max_over_time()</code></td></tr>
+                                <tr><td><strong>Histogram</strong></td><td>Counts observations into cumulative buckets</td><td>Latency, response size, anything you want percentiles of</td><td><code>histogram_quantile()</code> over <code>rate()</code></td></tr>
+                                <tr><td><strong>Summary</strong></td><td>Client computes quantiles over a sliding window</td><td>Exact quantiles from a single process</td><td>Read <code>&#123;quantile="0.99"&#125;</code> directly</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p>
+                        A metric exposed without a <code># TYPE</code> line is <strong>untyped</strong>, and Prometheus treats it as a gauge. Separately, PromQL has its own data types (instant vector, range vector, scalar and string), which describe query results rather than stored metrics. <code>http_requests_total</code> is an instant vector; <code>http_requests_total[5m]</code> is a range vector, which is what <code>rate()</code> takes as input.
+                    </p>
+                </section>
+
+                <section id="counter" class="scroll-mt-24">
+                    <p class="guide-eyebrow">03 · Counter</p>
+                    <h2>Prometheus counter: a running total you query as a rate</h2>
+                    <p>
+                        A counter's raw value is the total since the process started, which tells you little on its own and drops to zero on every deploy. You almost always want its rate of change. <code>rate()</code> returns the per-second average over a window, and <code>increase()</code> returns the total added over that window. Both detect resets and compensate for them.
+                    </p>
+                    <pre><code>{counterQueries}</code></pre>
+                    <div class="guide-callout">
+                        <p class="guide-kicker">Rate first, then aggregate</p>
+                        <p>
+                            Write <code>sum(rate(x[5m]))</code>, never <code>rate(sum(x)[5m])</code>. Reset detection works per series. Summing first merges a restarted replica's drop to zero into the total, and <code>rate()</code> reads the dip as a reset of the whole sum, producing a spike.
+                        </p>
+                    </div>
+                    <p>
+                        Pick a window of at least four scrape intervals, so with a 15 second interval use <code>[1m]</code> or longer. Shorter windows can contain fewer than two samples, and <code>rate()</code> returns nothing for them.
+                    </p>
+                </section>
+
+                <section id="gauge" class="scroll-mt-24">
+                    <p class="guide-eyebrow">04 · Gauge</p>
+                    <h2>Prometheus gauge: a value that can go down</h2>
+                    <p>
+                        A gauge is a snapshot. Read it directly, or summarise it over time with the <code>_over_time</code> functions. Never apply <code>rate()</code> to a gauge: a falling value would be misread as a counter reset. To see how fast a gauge changes, use <code>deriv()</code> or <code>delta()</code>.
+                    </p>
+                    <pre><code>{gaugeQueries}</code></pre>
+                    <p>
+                        A useful test: if the value can decrease for any reason other than a restart, it is a gauge. "Items in the queue" is a gauge; "items ever enqueued" and "items ever dequeued" are two counters, and their difference is the queue depth.
+                    </p>
+                </section>
+
+                <section id="histogram" class="scroll-mt-24">
+                    <p class="guide-eyebrow">05 · Histogram</p>
+                    <h2>Prometheus histogram: buckets you turn into percentiles</h2>
+                    <p>
+                        A histogram counts each observation into buckets with an upper bound, the <code>le</code> ("less than or equal") label. Buckets are cumulative: in the example above, the <code>le="0.25"</code> bucket's 10,210 requests include the 9,630 counted in <code>le="0.1"</code>. The <code>+Inf</code> bucket always equals <code>_count</code>.
+                    </p>
+                    <p>
+                        <code>histogram_quantile()</code> estimates a percentile from the bucket rates. Keep <code>le</code> in the <code>by</code> clause, together with any label you want one line per.
+                    </p>
+                    <pre><code>{histogramQueries}</code></pre>
+                    <p>
+                        The estimate assumes observations are spread evenly inside a bucket, so its accuracy depends on the boundaries. Place them around the values you care about: if your latency target is 300ms, have a bucket at <code>0.3</code>. The last query above needs no estimation at all, which makes "share of requests under the target" more exact than the p95 when the target is a bucket boundary.
+                    </p>
+                </section>
+
+                <section id="summary" class="scroll-mt-24">
+                    <p class="guide-eyebrow">06 · Summary</p>
+                    <h2>Prometheus summary metric: quantiles computed in the client</h2>
+                    <p>
+                        A summary tracks observations in the client process and exposes chosen quantiles, such as the median and p99, as series with a <code>quantile</code> label. It also exposes <code>_sum</code> and <code>_count</code>, which behave like a histogram's.
+                    </p>
+                    <pre><code>{summaryQueries}</code></pre>
+                    <p>
+                        The quantiles are exact for one process and cannot be combined. Averaging the p99 of ten replicas gives a number that is not the p99 of anything, so a summary cannot answer "what is the p99 of this service" once it runs on more than one instance.
+                    </p>
+
+                    <h3>Histogram vs summary</h3>
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th></th><th>Histogram</th><th>Summary</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Aggregate across instances</td><td>Yes, sum the bucket rates</td><td>No, only <code>_sum</code> and <code>_count</code></td></tr>
+                                <tr><td>Choose the quantile</td><td>At query time</td><td>In client code, before deploy</td></tr>
+                                <tr><td>Accuracy</td><td>Estimate, limited by bucket boundaries</td><td>Exact within a configured error</td></tr>
+                                <tr><td>Client cost</td><td>A counter increment per observation</td><td>Streaming quantile computation</td></tr>
+                                <tr><td>Series per label set</td><td>One per bucket, plus 2</td><td>One per quantile, plus 2</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Default to a histogram. A summary fits a single process where you need one precise quantile and cannot predict the value range well enough to place buckets.
+                    </p>
+                </section>
+
+                <section id="native-histograms" class="scroll-mt-24">
+                    <p class="guide-eyebrow">07 · Native histograms</p>
+                    <h2>Native histograms: no bucket boundaries to choose</h2>
+                    <p>
+                        Native histograms store a histogram as a single series with exponentially spaced buckets that the client picks automatically, instead of one series per <code>le</code> boundary. You get better resolution at a fraction of the series count, and the query drops the <code>_bucket</code> suffix and the <code>le</code> label:
+                    </p>
+                    <pre><code>{nativeQuery}</code></pre>
+                    <p>
+                        They arrived as an experimental feature in Prometheus 2.40 and are stable from 3.8. From 3.9 you turn on scraping them with the <code>scrape_native_histograms: true</code> setting. The classic text format cannot carry them, so the target must serve the protobuf exposition format. Client libraries can expose a classic and a native version of the same histogram during a migration.
+                    </p>
+                </section>
+
+                <section id="naming" class="scroll-mt-24">
+                    <p class="guide-eyebrow">08 · Naming</p>
+                    <h2>Prometheus metric naming conventions</h2>
+                    <p>
+                        Names that follow the conventions tell a reader the unit and the type before they open the docs.
+                    </p>
+                    <div class="guide-checklist">
+                        {[
+                            ["snake_case with a domain prefix", "http_server_requests_total, payments_refunds_total. The prefix groups a subsystem's metrics together in autocomplete."],
+                            ["Base units, in the name", "Seconds not milliseconds, bytes not megabytes: http_request_duration_seconds, process_resident_memory_bytes."],
+                            ["Counters end in _total", "So rate() is the obvious next step. Do not put _total on a gauge."],
+                            ["Ratios from 0 to 1", "Use _ratio for a value between 0 and 1 rather than a percentage, so it divides and multiplies cleanly."],
+                            ["Dimensions are labels", "http_requests_total{method=\"POST\"}, not http_post_requests_total. Labels can be filtered and summed; names cannot."],
+                            ["_info for metadata", "build_info{version=\"1.4.2\"} 1 carries attributes as labels with a constant value, joined onto other series when needed."],
+                        ].map(([title, body], index) => (
+                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{body}</p></div></div>
+                        ))}
+                    </div>
+                    <p>
+                        Classic names must match <code>[a-zA-Z_:][a-zA-Z0-9_:]*</code>, and label names starting with <code>__</code> are reserved for Prometheus itself. Prometheus 3.0 added support for UTF-8 metric and label names, which lets OpenTelemetry names with dots such as <code>http.server.request.duration</code> be stored as they are, though many tools still expect the classic character set.
+                    </p>
+                </section>
+
+                <section id="cardinality" class="scroll-mt-24">
+                    <p class="guide-eyebrow">09 · Cardinality</p>
+                    <h2>Cardinality: how a label multiplies your series</h2>
+                    <p>
+                        Every unique label combination is a separate series, held in memory and indexed. The number of series for one metric is the product of the number of values of each label. The histogram in the example, with 6 buckets plus <code>_sum</code> and <code>_count</code>, across 40 routes is 320 series per instance. Add a <code>user_id</code> label with 50,000 users and it becomes 16 million.
+                    </p>
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Avoid as a label</th><th>Use instead</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>User, session, request or trace IDs</td><td>Traces or logs, where each event is a record</td></tr>
+                                <tr><td>Raw URL paths such as <code>/orders/8812</code></td><td>The route template, <code>/orders/:id</code></td></tr>
+                                <tr><td>Error messages</td><td>An error class or status code</td></tr>
+                                <tr><td>Email addresses, IPs, timestamps</td><td>Nothing; these belong in logs</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        To find the worst offenders, open <strong>Status → TSDB Status</strong> in the Prometheus UI, or run this query (expensive on a large server, so run it once rather than on a dashboard):
+                    </p>
+                    <pre><code>{cardinalityQuery}</code></pre>
+                </section>
+
+                <section id="grafana" class="scroll-mt-24">
+                    <p class="guide-eyebrow">10 · Grafana</p>
+                    <h2>How to see Prometheus metrics in Grafana</h2>
+                    <p>
+                        Grafana reads from Prometheus over its HTTP API. Prometheus stores the data and evaluates PromQL; Grafana draws the result.
+                    </p>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h3>Add the data source</h3><p>Go to <strong>Connections → Data sources → Add new data source → Prometheus</strong>. Set <strong>Prometheus server URL</strong> to the address Grafana can reach, such as <code>http://prometheus:9090</code>, then click <strong>Save &amp; test</strong>.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h3>Check the metric exists</h3><p>Open <strong>Explore</strong>, pick the Prometheus data source and start typing a metric name. Autocomplete lists what Prometheus has scraped.</p></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h3>Build a panel</h3><p>Create a dashboard, click <strong>Add visualization</strong>, choose the data source, switch the query editor to <strong>Code</strong> and enter PromQL. Set <strong>Legend</strong> to <code>&#123;&#123;route&#125;&#125;</code> to label each line, and set the unit under <strong>Standard options</strong>.</p></div>
+                        </li>
+                    </ol>
+                    <p>A panel query for request rate per route:</p>
+                    <pre><code>{grafanaPanelQuery}</code></pre>
+                    <p>
+                        <code>$__rate_interval</code> is a Grafana variable that picks a window of at least four scrape intervals for the current zoom level, which avoids the empty-<code>rate()</code> problem from the counter section. To create the data source from configuration instead of the UI, drop a file into <code>/etc/grafana/provisioning/datasources/</code>:
+                    </p>
+                    <pre><code>{grafanaProvisioning}</code></pre>
+                </section>
+
+                <section id="opentelemetry" class="scroll-mt-24">
+                    <p class="guide-eyebrow">11 · OpenTelemetry</p>
+                    <h2>Prometheus metric types in OpenTelemetry</h2>
+                    <p>
+                        OpenTelemetry has its own metric data model, and the OpenTelemetry specification defines how the two convert. Data scraped by the Collector's <code>prometheus</code> receiver arrives as these OTLP types:
+                    </p>
+                    <div class="overflow-x-auto">
+                        <table>
+                            <thead>
+                                <tr><th>Prometheus</th><th>OpenTelemetry</th><th>Notes</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Counter</td><td>Sum, monotonic, cumulative</td><td>The value keeps counting from process start</td></tr>
+                                <tr><td>Gauge</td><td>Gauge</td><td>Untyped metrics also become gauges</td></tr>
+                                <tr><td>Classic histogram</td><td>Histogram</td><td><code>le</code> boundaries become explicit bucket bounds</td></tr>
+                                <tr><td>Native histogram</td><td>Exponential histogram</td><td>Both use exponentially spaced buckets</td></tr>
+                                <tr><td>Summary</td><td>Summary</td><td>A legacy OTLP type; many backends convert or drop it</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Going the other way, an OpenTelemetry monotonic Sum exports as a counter with <code>_total</code> appended, and a non-monotonic Sum (an UpDownCounter) exports as a gauge. Exporters translate the name too: <code>http.server.request.duration</code> with unit <code>s</code> becomes <code>http_server_request_duration_seconds</code> unless UTF-8 names are kept. Prometheus needs cumulative values, so delta-temporality sums have to be converted to cumulative before export.
+                    </p>
+                </section>
+
+                <section id="maple" class="scroll-mt-24">
+                    <p class="guide-eyebrow">12 · In practice</p>
+                    <h2>Scrape Prometheus metrics into Maple</h2>
+                    <p>
+                        Maple scrapes any endpoint that serves the Prometheus or OpenMetrics text format, converts the samples to OpenTelemetry metrics, and stores them next to traces and logs sent over OTLP.
+                    </p>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h3>Add a target</h3><p>Open <strong>Integrations → Prometheus</strong> and click <strong>Add Target</strong>. Enter a <strong>Name</strong>, an optional <strong>Service Name</strong> (it becomes <code>service.name</code> and the <code>job</code> attribute), the full <strong>URL</strong> such as <code>https://myapp.com:9090/metrics</code>, a <strong>Scrape Interval</strong> between 5 and 300 seconds, and <strong>Authentication</strong>: none, a bearer token or basic auth.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h3>Test the scrape</h3><p>Click <strong>Test</strong> on the target row. Maple runs a scrape immediately and reports success or the exact failure, such as an HTTP status, a timeout or a TLS error. After one interval the badge changes to <strong>Up</strong>.</p></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h3>Chart and alert</h3><p>Search for the metric name in the metrics explorer. Counters arrive as monotonic sums and chart as <code>rate</code> by default, histograms keep their original bucket bounds, and summaries become <code>_sum</code> and <code>_count</code> sums plus a quantile gauge. From a chart, <strong>Add to dashboard</strong> or <strong>Create alert</strong>.</p></div>
+                        </li>
+                    </ol>
+                    <p>
+                        The target URL must be reachable from the public internet; loopback and private addresses are rejected. For an endpoint inside your network, run an OpenTelemetry Collector there with a <code>prometheus</code> receiver and an OTLP exporter pointed at Maple's ingest endpoint:
+                    </p>
+                    <pre><code>{collectorConfig}</code></pre>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Prometheus in Maple</p>
+                        <h3>Scraped metrics in the same explorer as your OTLP metrics</h3>
+                        <p>
+                            The integration doc covers every target field, the labels added to each data point, how each metric type is converted, check history and troubleshooting. The metrics explorer doc covers aggregations, filters and group-by.
+                        </p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/integrations/prometheus" class="guide-button guide-button--primary">Set up Prometheus scraping</a>
+                            <a href="/docs/explore/metrics" class="guide-button">Explore metrics</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://prometheus.io/docs/concepts/metric_types/" target="_blank" rel="noopener noreferrer">Prometheus: Metric types</a></li>
+                        <li><a href="https://prometheus.io/docs/instrumenting/exposition_formats/" target="_blank" rel="noopener noreferrer">Prometheus: Exposition formats</a></li>
+                        <li><a href="https://prometheus.io/docs/practices/naming/" target="_blank" rel="noopener noreferrer">Prometheus: Metric and label naming</a></li>
+                        <li><a href="https://prometheus.io/docs/practices/histograms/" target="_blank" rel="noopener noreferrer">Prometheus: Histograms and summaries</a></li>
+                        <li><a href="https://prometheus.io/docs/specs/native_histograms/" target="_blank" rel="noopener noreferrer">Prometheus: Native histograms specification</a></li>
+                        <li><a href="https://grafana.com/docs/grafana/latest/datasources/prometheus/" target="_blank" rel="noopener noreferrer">Grafana: Prometheus data source</a></li>
+                        <li><a href="https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/" target="_blank" rel="noopener noreferrer">OpenTelemetry: Prometheus and OpenMetrics compatibility</a></li>
+                        <li><a href="/docs/integrations/prometheus">Maple docs: Prometheus scraping</a></li>
+                        <li><a href="/docs/explore/metrics">Maple docs: Metrics</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .prom-guide section + section { margin-top: 5.5rem; }
+    .prom-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .prom-guide h2 { max-width: 22ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .prom-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .prom-guide > section > p:not(.guide-eyebrow, .guide-kicker), .prom-guide .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .prom-guide strong { font-weight: 600; color: var(--foreground); }
+    .prom-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .prom-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .prom-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .prom-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .prom-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1.25rem 1.35rem; }
+    .prom-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
+    .prom-guide table { width: 100%; min-width: 620px; margin: 1.6rem 0 2rem; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .prom-guide th { border-bottom: 1px solid var(--border); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
+    .prom-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .prom-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .prom-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: var(--bg-deep); padding: 1.25rem 1.35rem; }
+    .prom-guide .guide-callout p:not(.guide-kicker) { max-width: 68ch; margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .prom-guide .guide-steps { margin: 2rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .prom-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.35rem 0; }
+    .prom-guide .guide-steps > li > span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .prom-guide .guide-steps h3, .prom-guide .guide-steps p { margin: 0; }
+    .prom-guide .guide-steps h3 { font-size: 1rem; }
+    .prom-guide .guide-steps p { margin-top: 0.45rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .prom-guide .guide-checklist { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .prom-guide .guide-checklist > div { display: grid; grid-template-columns: 2rem 1fr; gap: 0.8rem; background: var(--background); padding: 1.15rem 1.25rem; }
+    .prom-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--primary); }
+    .prom-guide .guide-checklist h3, .prom-guide .guide-checklist p { margin: 0; }
+    .prom-guide .guide-checklist h3 { font-size: 0.95rem; }
+    .prom-guide .guide-checklist p { margin-top: 0.35rem; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
+    .prom-guide .guide-maple { margin-top: 3.5rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .prom-guide .guide-maple h3 { margin: 0.55rem 0 0.8rem; font-size: 1.35rem; }
+    .prom-guide .guide-maple > p:not(.guide-kicker) { max-width: none; margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .prom-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .prom-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .prom-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .prom-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .prom-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .prom-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .prom-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .prom-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .prom-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .prom-guide a, .prom-guide .guide-button { transition: none; }
+    }
+</style>
