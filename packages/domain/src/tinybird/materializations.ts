@@ -634,8 +634,6 @@ export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_exte
 	description:
 		"Pre-aggregates Client/Producer spans without a database system into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
 	datasource: serviceExternalEdgesHourly,
-	// No `alter`: the traces re-key migrates this chain, and Tinybird refuses `alter` then.
-	// The target's forward query keeps its history; the new SELECT applies to new rows.
 	nodes: [
 		node({
 			name: "service_external_edges_hourly_mv_node",
@@ -944,8 +942,6 @@ export const errorEventsMv = defineMaterializedView("error_events_mv", {
 	description:
 		"Materializes per-occurrence error events from traces. Unwraps the first OTel exception event (falling back to exception.* / error.* span attributes) and computes a cityHash64 FingerprintHash for issue grouping.",
 	datasource: errorEvents,
-	// No `alter`: the traces re-key migrates this chain, and Tinybird refuses `alter` then.
-	// The target's forward query keeps its history; the new SELECT applies to new rows.
 	nodes: [
 		node({
 			name: "error_events_mv_node",
@@ -966,8 +962,6 @@ export const errorEventsByTimeMv = defineMaterializedView("error_events_by_time_
 	description:
 		"Time-ordered copy of error_events_mv's projection, written to error_events_by_time (sorted by OrgId, Timestamp, FingerprintHash) for recent-window error scans.",
 	datasource: errorEventsByTime,
-	// No `alter`: the traces re-key migrates this chain, and Tinybird refuses `alter` then.
-	// The target's forward query keeps its history; the new SELECT applies to new rows.
 	nodes: [
 		node({
 			name: "error_events_by_time_mv_node",
