@@ -27,6 +27,19 @@ export const windowOf = (model: Model, context: PageContext) => {
 	)
 }
 
+/** What the canvas draws: a previewed version's snapshot once loaded, else the live board. */
+export const shownDocumentOf = (model: Model): DashboardDocument | null =>
+	model.history.previewed === null
+		? model.document
+		: AsyncData.match(model.history.snapshot, {
+				onIdle: () => null,
+				onLoading: () => null,
+				onFailure: () => null,
+				onSuccess: (snapshot) => snapshot,
+				onRefreshing: (snapshot) => snapshot,
+				onStale: ({ data }) => data,
+			})
+
 const EMPTY_SLOT: WidgetSlot = { isRevealed: false, widthPx: null, gate: null }
 
 export const slotOf = (model: Model, widgetId: string): WidgetSlot => model.widgets[widgetId] ?? EMPTY_SLOT
@@ -76,9 +89,15 @@ export const variablesOf = (model: Model, context: PageContext) => {
 	}
 }
 
+type OptionsPlan = Readonly<{ variableOptions: Model["variableOptions"]; commands: ReadonlyArray<FetchCommand> }>
+
 /** Asks for every query variable's option list for the current window. */
 const planVariableOptions = (model: Model, context: PageContext, mode: Keyed.RequestMode) => {
 	const window = windowOf(model, context)
+	const initial: OptionsPlan = {
+		variableOptions: model.variableOptions,
+		commands: [],
+	}
 	return (model.document?.variables ?? []).reduce(
 		(state, variable) => {
 			const source = optionsSourceOf(context.orgId, variable, window)
@@ -95,7 +114,7 @@ const planVariableOptions = (model: Model, context: PageContext, mode: Keyed.Req
 				}),
 			})
 		},
-		{ variableOptions: model.variableOptions, commands: [] as ReadonlyArray<FetchCommand> },
+		initial,
 	)
 }
 
@@ -157,7 +176,7 @@ export const replan = (
 	context: PageContext,
 	mode: Keyed.RequestMode,
 ): { readonly model: Model; readonly commands: ReadonlyArray<FetchCommand> } => {
-	const document = model.document
+	const document = shownDocumentOf(model)
 	if (document === null) return { model, commands: [] }
 	const window = windowOf(model, context)
 	const options = planVariableOptions(model, context, mode)

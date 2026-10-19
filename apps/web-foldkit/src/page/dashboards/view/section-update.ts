@@ -43,12 +43,17 @@ type SectionMessage = Extract<
 
 export const sectionMenuIdOf = (sectionId: string): string => `dashboard-section-menu-${sectionId}`
 
-/** `applySectionView`: the update applied to the picked controls, `mode` re-added while editing. */
+/**
+ * `applySectionView`: the update applied to the picked controls, `mode` kept as the URL had it.
+ * A previewed version's groups are browsed locally (`PreviewedCanvas`), never in the URL.
+ */
 const applySectionView = (model: Model, update: (search: SectionViewSearch) => SectionViewSearch): Return => {
+	if (model.history.previewed !== null)
+		return { model: { ...model, history: { ...model.history, sectionView: update(model.history.sectionView) } } }
 	const { collapsed, expanded, tab, widget, ...rest } = pickDashboardControlParams(model.search)
 	// The update may drop a key (an emptied list); only what it hands back is written.
 	const controls = { ...rest, ...update({ collapsed, expanded, tab, widget }) }
-	const search = isEditing(model) ? { ...controls, mode: "edit" as const } : controls
+	const search = model.search.mode === "edit" ? { ...controls, mode: "edit" as const } : controls
 	return {
 		model,
 		outMessage: PageOutMessage.RequestedNavigation({

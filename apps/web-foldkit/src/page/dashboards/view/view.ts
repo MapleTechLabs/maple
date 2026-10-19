@@ -1,3 +1,4 @@
+import type { DashboardDocument } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
@@ -226,17 +227,18 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 	const previewed = model.history.previewed
 	if (previewed !== null) {
 		const clock = { nowMs: model.nowMs ?? 0, timeZone }
+		const { collapsed: _c, expanded: _e, tab: _t, widget: _w, ...controls } = model.search
+		const search = { ...controls, ...model.history.sectionView }
+		const canvas = (snap: DashboardDocument) =>
+			dashboardSections(h, { model: { ...model, document: snap, search }, timeZone, variables: variablesOf(model, context).values }, snap)
 		// `PreviewedCanvas`: the snapshot through the sectioned canvas, read-only.
 		const snapshot = AsyncData.match(model.history.snapshot, {
 			onIdle: () => viewSkeleton(h),
 			onLoading: () => viewSkeleton(h),
 			onFailure: (failure) => errorState(h, { failure, title: "Couldn't load version snapshot" }),
-			onSuccess: (snap) =>
-				dashboardSections(h, { model: { ...model, document: snap }, timeZone, variables: variablesOf(model, context).values }, snap),
-			onRefreshing: (snap) =>
-				dashboardSections(h, { model: { ...model, document: snap }, timeZone, variables: variablesOf(model, context).values }, snap),
-			onStale: ({ data }) =>
-				dashboardSections(h, { model: { ...model, document: data }, timeZone, variables: variablesOf(model, context).values }, data),
+			onSuccess: canvas,
+			onRefreshing: canvas,
+			onStale: ({ data }) => canvas(data),
 		})
 		return [...banner, h.div([], [...previewBanner(h, model, previewed, clock), snapshot])]
 	}

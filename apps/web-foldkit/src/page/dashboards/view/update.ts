@@ -205,9 +205,11 @@ const pickRefreshInterval = (
 	refreshIntervalSeconds: DashboardRefreshIntervalSeconds,
 ): Return => {
 	const controls = pickDashboardControlParams(model.search)
-	const search = isEditing(model)
-		? { ...controls, mode: "edit" as const, refresh: refreshIntervalSeconds }
-		: { ...controls, refresh: refreshIntervalSeconds }
+	// `mode` stays as the URL had it; only a writable edit session saves the default.
+	const search =
+		model.search.mode === "edit"
+			? { ...controls, mode: "edit" as const, refresh: refreshIntervalSeconds }
+			: { ...controls, refresh: refreshIntervalSeconds }
 	return {
 		model,
 		commands: isEditing(model)
@@ -224,6 +226,12 @@ const pickRefreshInterval = (
 			isReplace: true,
 		}),
 	}
+}
+
+/** A step that may change which document the canvas shows, then the plan for that document. */
+const replanAfter = (stepped: Return, context: PageContext): Return => {
+	const planned = replan(stepped.model, context, "Load")
+	return { ...stepped, model: planned.model, commands: [...(stepped.commands ?? []), ...planned.commands] }
 }
 
 const withReplan = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
@@ -641,15 +649,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CommittedVariableDraft: (m) => variableStep(model, context, m),
 		ClickedManageVariables: () => openVariablesManager(model),
 		GotVariablesManagerMessage: ({ message: inner }) => managerStep(model, context, inner),
-		ClickedCloseHistory: (m) => historyStep(model, m),
-		CompletedFetchVersions: (m) => historyStep(model, m),
-		ClickedVersion: (m) => historyStep(model, m),
-		CompletedFetchSnapshot: (m) => historyStep(model, m),
-		ClickedCancelPreview: (m) => historyStep(model, m),
-		ClickedRestoreVersion: (m) => historyStep(model, m),
-		GotRestoreDialogMessage: (m) => historyStep(model, m),
-		ConfirmedRestore: (m) => historyStep(model, m),
-		CompletedRestore: (m) => historyStep(model, m),
+		ClickedCloseHistory: (m) => replanAfter(historyStep(model, m), context),
+		CompletedFetchVersions: (m) => replanAfter(historyStep(model, m), context),
+		ClickedVersion: (m) => replanAfter(historyStep(model, m), context),
+		CompletedFetchSnapshot: (m) => replanAfter(historyStep(model, m), context),
+		ClickedCancelPreview: (m) => replanAfter(historyStep(model, m), context),
+		ClickedRestoreVersion: (m) => replanAfter(historyStep(model, m), context),
+		GotRestoreDialogMessage: (m) => replanAfter(historyStep(model, m), context),
+		ConfirmedRestore: (m) => replanAfter(historyStep(model, m), context),
+		CompletedRestore: (m) => replanAfter(historyStep(model, m), context),
 		ClickedSectionChevron: (m) => sectionStep(model, context, m),
 		ClickedSectionTab: (m) => sectionStep(model, context, m),
 		ClickedAddSectionWidget: (m) => sectionStep(model, context, m),

@@ -51,12 +51,13 @@ const preview = (model: Model, versionId: string): Return => {
 	const version = AsyncData.getOrElse(model.history.versions, () => []).find((row) => row.id === versionId)
 	if (version === undefined || model.history.previewed?.id === versionId) return { model }
 	return {
-		model: withHistory(model, { previewed: version, snapshot: AsyncData.Loading() }),
+		model: withHistory(model, { previewed: version, snapshot: AsyncData.Loading(), sectionView: {} }),
 		commands: [FetchSnapshot({ dashboardId: model.dashboardId, versionId })],
 	}
 }
 
-const closePreview = (model: Model): Model => withHistory(model, { previewed: null, snapshot: AsyncData.Idle() })
+const closePreview = (model: Model): Model =>
+	withHistory(model, { previewed: null, snapshot: AsyncData.Idle(), sectionView: {} })
 
 const toast = (type: "success" | "error", title: string, description: string) =>
 	PageOutMessage.RequestedToast({ type, title, description, timeoutMs: null, action: null })
