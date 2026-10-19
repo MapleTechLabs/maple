@@ -4417,6 +4417,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Math.min(runtime.schedulerSpreadMs(), deadline - SCHEDULER_SPREAD_TAIL_MS - spreadStart),
 				)
 				const startSpacingMs = rows.length > 0 ? spreadMs / rows.length : 0
+				yield* Effect.annotateCurrentSpan("maple.alerting.spread_ms", Math.round(spreadMs))
 				const waitForStartSlot = (index: number) =>
 					Effect.flatMap(now, (time) => {
 						const waitMs = spreadStart + index * startSpacingMs - time
