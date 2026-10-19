@@ -1,5 +1,5 @@
 import { Cause, Clock, Context, Effect, Layer, Result } from "effect"
-import type { InternalScrapeTarget } from "@maple/domain/http"
+import { type InternalScrapeTarget, SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
 import {
 	convertFamiliesToOtlp,
 	countSamples,
@@ -39,6 +39,7 @@ export const otlpContext = (target: InternalScrapeTarget, scrapeTimeMs: number):
 			"service.name": serviceName,
 			maple_scrape_target_id: target.id,
 			maple_scrape_target_name: target.name,
+			...(target.sourceId === undefined ? undefined : { [SOURCE_ID_ATTRIBUTE]: target.sourceId }),
 		},
 		scopeName: "maple-prometheus-scraper",
 		job: serviceName,
@@ -106,6 +107,9 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 						...(target.subTargetKey
 							? { "maple.scraper.sub_target_key": target.subTargetKey }
 							: undefined),
+						...(target.sourceId === undefined
+							? undefined
+							: { "maple.source.id": target.sourceId }),
 					},
 				}),
 			)

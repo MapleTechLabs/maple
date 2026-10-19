@@ -99,6 +99,56 @@ describe("ScrapeTargetsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("sourceIds gives each target its pull source, stable across calls", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const create = (orgId: string, name: string) =>
+				service.create(
+					asOrgId(orgId),
+					new CreateScrapeTargetRequest({
+						name,
+						url: `https://${name}.example.com/metrics`,
+						scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+					}),
+				)
+			const plain = yield* create("org_1", "node")
+			const managed = yield* create("org_1", "branches")
+			const other = yield* create("org_2", "node")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE scrape_targets SET managed_by = 'planetscale:conn_1', discovery_config_json = $1::jsonb WHERE id = $2",
+					[JSON.stringify({ organization: "acme" }), managed.id],
+				),
+			)
+			const rows = yield* service.listAllEnabled()
+			const first = yield* service.sourceIds(rows)
+			const second = yield* service.sourceIds(rows)
+			assert.deepStrictEqual([...second.entries()].sort(), [...first.entries()].sort())
+			assert.strictEqual(first.size, 3)
+			const ids = [plain.id, managed.id, other.id].map((id) => first.get(id))
+			assert.isTrue(ids.every((id) => id?.startsWith("src_")))
+			assert.strictEqual(new Set(ids).size, 3)
+			const sources = yield* Effect.promise(() =>
+				testDb.pglite.query<{
+					org_id: string
+					platform: string
+					integration_id: string
+					name: string
+				}>("SELECT org_id, platform, integration_id, name FROM sources ORDER BY org_id, name"),
+			)
+			assert.deepStrictEqual(
+				sources.rows.map((row) => [row.org_id, row.platform, row.integration_id, row.name]),
+				[
+					["org_1", "planetscale", "conn_1", "PlanetScale acme"],
+					["org_1", "prometheus", plain.id, "node"],
+					["org_2", "prometheus", other.id, "node"],
+				],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("listAllEnabled lists a target whose stored labels are malformed, labels as stored", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { SourceInsert } from "@maple/db/tables"
-import { type OrgId, SourceId } from "@maple/domain/primitives"
+import { type OrgId, type PullSourcePlatform, SourceId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 
 const decodeSourceIdSync = Schema.decodeUnknownSync(SourceId)
@@ -31,3 +31,20 @@ const systemSourceRow = (
 /** The org's default source, standing for its public/private ingest key pair. */
 export const defaultSourceRow = (orgId: OrgId, now: number) =>
 	systemSourceRow({ orgId, name: "Default", platform: "opentelemetry", isDefault: true }, now)
+
+export interface PullSourceRef {
+	readonly platform: PullSourcePlatform
+	/** Id of the integration row the source stands for (scrape target, GCP connector, ...). */
+	readonly integrationId: string
+	readonly name: string
+}
+
+/** An integration's source, keyed by its platform and integration row. */
+export const pullSourceRow = (orgId: OrgId, ref: PullSourceRef, now: number): SourceInsert => ({
+	...systemSourceRow({ orgId, name: ref.name, platform: ref.platform, isDefault: false }, now),
+	integrationId: ref.integrationId,
+})
+
+/** Identity of a pull source within an org. */
+export const pullSourceKey = (platform: string, integrationId: string | null) =>
+	`${platform}:${integrationId}`

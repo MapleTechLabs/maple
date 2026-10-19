@@ -41,6 +41,7 @@ const sourceExample = {
 	rolled_at: "2026-07-01T12:00:00.000Z",
 	created_at: "2026-07-01T12:00:00.000Z",
 	updated_at: "2026-07-15T09:12:00.000Z",
+	health: { status: "healthy", last_data_at: "2026-07-15T09:14:00.000Z", problem: null },
 } as const
 
 const allowedSignalsField = Schema.NullOr(Schema.Array(SourceSignal)).annotate({
@@ -82,6 +83,25 @@ const resourceAttributesField = Schema.Array(V2SourceResourceAttribute).annotate
 
 const expiresAtField = Schema.NullOr(Timestamp).annotate({
 	description: "When the source token stops being accepted, or `null` if it never expires.",
+})
+
+const V2SourceHealth = Schema.Struct({
+	status: Schema.Literals(["disconnected", "failing", "stale", "paused", "pending", "healthy"]).annotate({
+		description:
+			"`healthy`: data is arriving. `pending`: nothing has arrived yet. `stale`: data stopped arriving (a day for push sources; for pull sources, longer than the integration normally goes between collections). `failing`: the last attempt failed. `paused`: data is dropped on purpose. `disconnected`: the token expired or the integration was removed.",
+		examples: ["healthy"],
+	}),
+	last_data_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"When data last arrived from a push source, or when the integration last collected successfully. `null` if never.",
+	}),
+	problem: Schema.NullOr(Schema.String).annotate({
+		description: "One line on why the source is not healthy, or `null` when it is.",
+	}),
+}).annotate({
+	identifier: "SourceHealth",
+	title: "Source health",
+	description: "Whether data from the source is arriving.",
 })
 
 export const V2Source = Schema.Struct({
@@ -132,6 +152,7 @@ export const V2Source = Schema.Struct({
 	}),
 	created_at: Timestamp.annotate({ description: "When the source was created." }),
 	updated_at: Timestamp.annotate({ description: "When the source was last updated." }),
+	health: V2SourceHealth,
 }).annotate({
 	identifier: "Source",
 	title: "Source",

@@ -458,7 +458,7 @@ const PLANETSCALE_PERMISSION_FEEDS = [
 const permissionFeed = (permission: string) =>
 	PLANETSCALE_PERMISSION_FEEDS.find(([key]) => key === permission)?.[1] ?? "unknown use"
 
-const scrapeResource = (
+export const scrapeResource = (
 	target: IntegrationInventoryInputs["scrapeTargets"][number],
 	now: number,
 	kind: string,
