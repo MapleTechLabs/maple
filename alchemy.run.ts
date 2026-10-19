@@ -51,6 +51,7 @@ import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
 import LocalUi from "./apps/local-ui/src/worker.ts"
 import Web from "./apps/web/src/worker.ts"
+import WebFoldkit from "./apps/web-foldkit/src/worker.ts"
 
 // Infisical defines CLOUDFLARE_DEFAULT_ACCOUNT_ID; alchemy reads CLOUDFLARE_ACCOUNT_ID.
 if (!process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_DEFAULT_ACCOUNT_ID) {
@@ -332,6 +333,9 @@ export default Alchemy.Stack(
 		// A vite-source Worker: alchemy owns its build and dev server. Binds api as `API`.
 		const web = yield* Effect.provideService(Web, ApiWorker, api)
 		yield* serveWorker("web", web)
+		// The Foldkit dashboard beside it, on PR previews only (`fk-pr-<n>.maple.dev`).
+		const webFoldkit =
+			stage.kind === "pr" ? yield* Effect.provideService(WebFoldkit, ApiWorker, api) : undefined
 
 		// StaticSites run their production build even on `alchemy dev`, so dev uses
 		// `DEV_PROCESS_APPS` instead. Shared across instances: deployed by `us` alone.
@@ -363,6 +367,7 @@ export default Alchemy.Stack(
 			ingestUrl: urls.ingest,
 			electricSyncUrl: urls.electricSync,
 			webUrl: domains.web ? `https://${domains.web}` : "",
+			webFoldkitUrl: stage.kind === "pr" ? `https://fk-pr-${stage.prNumber}.maple.dev` : "",
 			landingUrl: domains.landing ? `https://${domains.landing}` : "",
 			localUiUrl: domains.local ? `https://${domains.local}` : "",
 		}
@@ -371,6 +376,7 @@ export default Alchemy.Stack(
 		yield* Effect.sync(() =>
 			appendStepOutputs([
 				`web_url=${summary.webUrl}`,
+				`web_foldkit_url=${summary.webFoldkitUrl}`,
 				`api_url=${summary.apiUrl}`,
 				`sync_url=${summary.electricSyncUrl}`,
 				`ingest_url=${ingest && domains.ingest ? `https://${domains.ingest}` : ""}`,
@@ -386,6 +392,7 @@ export default Alchemy.Stack(
 			apiWorker: api.workerName,
 			electricSyncWorker: electricSync.workerName,
 			webWorker: web?.workerName,
+			webFoldkitWorker: webFoldkit?.workerName,
 			landingWorker: landing?.workerName,
 			localUiWorker: localUi?.workerName,
 			alertingWorker: alerting.workerName,
