@@ -4188,8 +4188,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						Chunk.appendAll(
 							Chunk.fromIterable(
 								Arr.filterMap(chunk, (row) => {
+									// A live claim belongs to another tick still evaluating the rule.
 									const claimedAt = lastClaimedAt.get(row.id) ?? 0
-									return claimedAt > 0
+									return claimedAt > 0 && claimedAt < tickStart - SCHEDULER_LOCK_TTL_MS
 										? Result.succeed({ id: row.id, timestamp: claimedAt })
 										: Result.failVoid
 								}),
