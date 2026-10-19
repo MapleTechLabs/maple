@@ -22,6 +22,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import * as LogDetail from "../detail"
 import { copyToast } from "../../kit/clipboard"
 import { SignalPresenceData } from "../../kit/signal-presence"
+import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReloadSpin,
@@ -380,11 +381,12 @@ export const routeChanged = (
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = setStreamRows({ ...model, search: route.search }, context)
-	// After a Reload the page keeps resolving unsnapped (`refreshVersion > 0`), like legacy.
-	return {
-		model: next,
-		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-	}
+	// A moved window re-resolves, unsnapped after a Reload; any other change reads under the kept one.
+	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	return routeWindowStep(model.search, route.search, {
+		resolve,
+		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+	})
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>

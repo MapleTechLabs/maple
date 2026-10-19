@@ -32,7 +32,7 @@ import {
 import { listInput } from "./derive"
 import { Message } from "./message"
 import type { LogRowSchema, Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -239,6 +239,15 @@ describe("logs list", () => {
 		const reloaded = pageUpdate(withFirstPage(), Message.ClickedReload())
 		expect(names(reloaded.commands)).toEqual(["ResolveLogsWindow", "CompleteLogsReloadSpin"])
 		expect(reloaded.model.isReloading).toBe(true)
+	})
+
+	test("after a Reload a severity filter reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(withFirstPage(), Message.ClickedReload()).model
+		const filtered = routeChanged(reloaded, { search: { severities: ["ERROR"] } }, context)
+		expect(names(filtered.commands)).not.toContain("ResolveLogsWindow")
+		expect(filtered.commands?.[0]?.args).toMatchObject({ window, search: { severities: ["ERROR"] } })
+		const moved = routeChanged(filtered.model, { search: { severities: ["ERROR"], timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveLogsWindow", "Refresh"]])
 	})
 
 	test("dragging across the volume bars zooms to those buckets, as a replace", () => {
