@@ -1,4 +1,5 @@
 import type { AlertSeverity } from "@maple/domain/http"
+import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
 import { comparatorSupportsTiers, isRangeComparator, thresholdUnitLabel } from "@maple/web-data/alerts/form-utils"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -196,6 +197,14 @@ const criticalRow = (
 		],
 	)
 
+/** `windowDescription`: what a check reads and how often the scheduler runs one. */
+const windowDescription = (windowMinutes: string): string => {
+	const minutes = Number(windowMinutes.trim())
+	if (!Number.isFinite(minutes) || minutes <= 0) return "Each check looks at this much data."
+	const every = alertEvaluationIntervalMinutes(minutes)
+	return `Each check looks at this much data, checked every ${every === 1 ? "minute" : `${every} min`}.`
+}
+
 const checksSection = (h: H, model: Model, form: RuleForm, saved: RuleForm | null): Html => {
 	const values = valuesOf(model, form, saved)
 	return h.div(
@@ -208,7 +217,7 @@ const checksSection = (h: H, model: Model, form: RuleForm, saved: RuleForm | nul
 					numberField(h, {
 						id: "rule-window-minutes",
 						label: "Window",
-						description: "Each check looks at this much data.",
+						description: windowDescription(form.windowMinutes),
 						unit: "min",
 						onInput: changed("windowMinutes"),
 						...values((f) => f.windowMinutes),

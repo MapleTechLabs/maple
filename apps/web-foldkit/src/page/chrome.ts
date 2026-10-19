@@ -1,8 +1,10 @@
 import { pageContentStyles } from "@maple/ui/styles/ui/page-layout"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, isPublicRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
 import { pageBody } from "./kit/dashboard-page"
+import { resolveLegacySettingsTab } from "./settings/nav"
 
 /**
  * Signed-in routes legacy renders without `DashboardLayout`: onboarding and auth handoffs with
@@ -17,6 +19,13 @@ const isBareRoute = AppRoute.isAnyOf([
 ])
 
 export const rendersShell = (route: AppRoute): boolean => !isPublicRoute(route) && !isBareRoute(route)
+
+/**
+ * A retired settings tab: legacy renders only `<Navigate replace>` there, no `DashboardLayout`,
+ * so the top bar's pill is not mounted and the redirect's `onResolved` re-reads nothing.
+ */
+export const isRedirectOnlyRoute = (route: AppRoute): boolean =>
+	route._tag === "Settings" && Option.isSome(resolveLegacySettingsTab(route.search.tab))
 
 /** The trail each page passes to `DashboardPage`; unported pages show their route tag. */
 export const breadcrumbsOf = (route: AppRoute): ReadonlyArray<BreadcrumbEntry> =>

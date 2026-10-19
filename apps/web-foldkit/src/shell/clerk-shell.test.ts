@@ -4,6 +4,8 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, role, scene, text } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { isRedirectOnlyRoute } from "../page/chrome"
+import { AppRoute } from "../route"
 import * as Popover from "../ui/popover"
 import { billingBanners } from "./billing-banners"
 import { Message as ShellMessage, type Message } from "./message"
@@ -55,6 +57,13 @@ describe("onboarding reward pill", () => {
 		expect(names({ commands: checklistRefreshOnNavigation(shell, true, true) })).toEqual(["LoadOnboardingChecklist"])
 		expect(checklistRefreshOnNavigation(shell, false, true)).toEqual([])
 		expect(checklistRefreshOnNavigation({ ...base, checklist: Checklist.init() }, true, true)).toEqual([])
+	})
+
+	test("leaving a retired settings tab's redirect is not a navigation the pill saw", () => {
+		expect(isRedirectOnlyRoute(AppRoute.Settings({ search: { tab: "organization" } }))).toBe(true)
+		expect(isRedirectOnlyRoute(AppRoute.Settings({ search: { tab: "notifications" } }))).toBe(true)
+		expect(isRedirectOnlyRoute(AppRoute.Settings({ search: { tab: "general" } }))).toBe(false)
+		expect(isRedirectOnlyRoute(AppRoute.Settings({ search: {} }))).toBe(false)
 	})
 
 	test("a refused claim shows why", () => {

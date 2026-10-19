@@ -87,6 +87,24 @@ describe("alert rule editor", () => {
 		scene({ update: pageUpdate, view }, given(ready), themeResolved(), expectView(text("Save changes")).toExist())
 	})
 
+	test("the window hint says how often the window is checked, beside the saved value while editing", () => {
+		const hint = (every: string) => text(`Each check looks at this much data, checked every ${every}.`)
+		const draft = withLists(entered({ template: "slow_p95" }))
+		const withWindow = (model: Model, value: string) => run(model, [Message.ChangedField({ field: "windowMinutes", value })])
+		scene({ update: pageUpdate, view }, given(withWindow(draft, "5")), themeResolved(), expectView(hint("minute")).toExist())
+		scene({ update: pageUpdate, view }, given(withWindow(draft, "15")), themeResolved(), expectView(hint("3 min")).toExist())
+		const editing = withLists(entered({ ruleId: ruleId(2) }))
+		const saved = editing.savedForm?.windowMinutes ?? ""
+		expect(saved).not.toBe("60")
+		scene(
+			{ update: pageUpdate, view },
+			given(withWindow(editing, "60")),
+			themeResolved(),
+			expectView(text(`${saved} min`)).toExist(),
+			expectView(hint("5 min")).toExist(),
+		)
+	})
+
 	test("a new rule starts on the destination the org's rules use", () => {
 		const ready = withLists(entered({ template: "slow_p95" }))
 		expect(ready.form?.destinationIds).toEqual([destinationRow().id])

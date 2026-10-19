@@ -55,7 +55,7 @@ export const wasNote = (h: H, children: ReadonlyArray<string>): Html =>
 
 export const numberField = (h: H, options: NumberFieldOptions): Html => {
 	const previous = options.previous ?? null
-	const description = previous === null ? options.description : undefined
+	const description = options.description
 	const state = fieldStateOf(options.value, options.mounted)
 	const ids = idsOf(options.id, description !== undefined)
 	const described = ids.description
@@ -83,15 +83,14 @@ export const numberField = (h: H, options: NumberFieldOptions): Html => {
 				? []
 				: [inputGroupAddon(h, { align: "inline-end" }, [inputGroupText(h, {}, [unit])])]),
 		]),
-		...(previous !== null
-			? [
+		...(previous === null
+			? []
+			: [
 					wasNote(h, [
 						previous.length > 0 ? previous : "none",
 						previous.length > 0 && unit !== null ? (unit === "%" ? "%" : ` ${unit}`) : "",
 					]),
-				]
-			: description === undefined
-				? []
-				: [fieldDescription(h, { ids, state }, description)]),
+				]),
+		...(description === undefined ? [] : [fieldDescription(h, { ids, state }, description)]),
 	])
 }
