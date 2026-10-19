@@ -13,7 +13,7 @@ import type { Model, Sync } from "./model"
  * `useInvestigation`: the `investigation_v2` shape scoped to this id, as a live query. The
  * collection is minted per (org, id) and released once the Subscription's live query lets go.
  */
-const investigationStream = (orgId: string, id: string) =>
+const investigationStream = (orgId: string, id: string, attempt: number) =>
 	Stream.unwrap(
 		Effect.gen(function* () {
 			const collections = yield* OrgCollections
@@ -29,7 +29,7 @@ const investigationStream = (orgId: string, id: string) =>
 							: investigation === null
 								? { _tag: "Failed" }
 								: { _tag: "Ready", investigation }
-					return Message.SyncedInvestigation({ orgId, id, sync })
+					return Message.SyncedInvestigation({ orgId, id, attempt, sync })
 				},
 			).pipe(Stream.ensuring(collections.releaseInvestigation(collection)))
 		}),
@@ -44,10 +44,10 @@ const clock = Stream.tick(Duration.seconds(1)).pipe(
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
 	investigation: entry(
-		{ orgId: Schema.String, id: Schema.String },
+		{ orgId: Schema.String, id: Schema.String, attempt: Schema.Number },
 		{
-			modelToDependencies: ({ model, context }) => ({ orgId: context.orgId, id: model.id }),
-			dependenciesToStream: ({ orgId, id }) => investigationStream(orgId, id),
+			modelToDependencies: ({ model, context }) => ({ orgId: context.orgId, id: model.id, attempt: model.syncAttempt }),
+			dependenciesToStream: ({ orgId, id, attempt }) => investigationStream(orgId, id, attempt),
 		},
 	),
 	/** The thread's live turn, while one runs (`useMapleChat`'s tail). */
