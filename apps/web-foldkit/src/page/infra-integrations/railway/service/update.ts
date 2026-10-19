@@ -8,6 +8,7 @@ import { requestKey } from "../../../../data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
+import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import {
 	CompleteReloadSpin,
@@ -106,10 +107,11 @@ const searchHref = (model: Model, search: Search) =>
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	if (searchHref(model, model.search) === searchHref(model, route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return {
-		model: next,
-		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-	}
+	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	return routeWindowStep(model.search, route.search, {
+		resolve,
+		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+	})
 }
 
 export const contextChanged = (model: Model): Return => ({ model })

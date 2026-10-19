@@ -8,7 +8,7 @@ import type { PageContext } from "../../../contract"
 import type { RailwayServiceRow } from "../model"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, timeseriesInput, update } from "./update"
+import { init, routeChanged, timeseriesInput, update } from "./update"
 import { titleOf, view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -46,6 +46,15 @@ const windowed = (): Model =>
 		.model
 
 describe("railway service", () => {
+	test("after a Reload an environment change reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(windowed(), Message.ClickedReload()).model
+		const scoped = routeChanged(reloaded, { ...route, search: { environmentId: "env_staging" } }, context)
+		expect(names(scoped.commands)).toContain("FetchRailwayServiceTimeseries")
+		expect(names(scoped.commands)).not.toContain("ResolveRailwayServiceWindow")
+		const moved = routeChanged(scoped.model, { ...route, search: { environmentId: "env_staging", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveRailwayServiceWindow", "Refresh"]])
+	})
+
 	test("the window brings the fleet read and the service's series, bucketed for ~100 points", () => {
 		const entered = init(route, context)
 		expect(names(entered.commands)).toEqual(["ResolveRailwayServiceWindow", "LoadChartRuntime"])

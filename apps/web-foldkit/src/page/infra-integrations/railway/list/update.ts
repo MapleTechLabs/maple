@@ -8,6 +8,7 @@ import { AppRoute, hrefOf } from "../../../../route"
 import * as Field from "../../../../ui/field"
 import * as Tooltip from "../../../../ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
+import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { nextSort } from "../../../kit/table-sort"
 import { connectedToastOf } from "../../../integrations/railway"
@@ -101,16 +102,10 @@ export const routeChanged = (
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const windowChanged =
-		next.search.startTime !== model.search.startTime ||
-		next.search.endTime !== model.search.endTime ||
-		next.search.timePreset !== model.search.timePreset
-	return windowChanged
-		? {
-				model: next,
-				commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
-			}
-		: { model: next }
+	return routeWindowStep(model.search, route.search, {
+		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		requestAll: (): Return => ({ model: next }),
+	})
 }
 
 export const contextChanged = (model: Model): Return => ({ model })
