@@ -3,7 +3,7 @@ import { DashboardDocument } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes, V2ChatConnector } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import * as Animation from "@foldkit/ui/animation"
-import { click, Command, expect as expectView, given, hover, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { all, click, Command, expect as expectView, expectAll, given, hover, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import * as Menu from "../../../ui/menu"
@@ -85,6 +85,17 @@ describe("alert rule editor", () => {
 		expect(ready.savedForm).toEqual(ready.form)
 		expect(ready.editingRuleId).toBe(ruleId(2))
 		scene({ update: pageUpdate, view }, given(ready), themeResolved(), expectView(text("Save changes")).toExist())
+	})
+
+	test("the severity radios each keep their own hidden input, so the field label names neither", () => {
+		const draft = withLists(entered({ template: "slow_p95" }))
+		scene(
+			{ update: pageUpdate, view },
+			given(draft),
+			themeResolved(),
+			expectAll(all.role("radio", { name: "Warning" })).toHaveCount(1),
+			expectAll(all.selector("#rule-severity-input")).toHaveCount(0),
+		)
 	})
 
 	test("the window hint says how often the window is checked, beside the saved value while editing", () => {

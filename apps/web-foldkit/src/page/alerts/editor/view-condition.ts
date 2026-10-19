@@ -49,7 +49,7 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 		items: SEVERITY_OPTIONS.map((option) => ({
 			value: option.value,
 			id: `rule-severity-${option.value}`,
-			inputId: "rule-severity-input",
+			inputId: `rule-severity-${option.value}-input`,
 		})),
 	}
 	const ids = { control: "rule-severity-input", label: "rule-severity-label", error: "rule-severity-error" }
