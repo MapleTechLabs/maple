@@ -52,4 +52,17 @@ describe("RuleConditionFields check cadence", () => {
 		fireEvent.change(window, { target: { value: "60" } })
 		expect(screen.getByText(/checked every 5 min\./)).toBeTruthy()
 	})
+
+	it("keeps the cadence hint next to the previous value while editing a rule", () => {
+		const saved = { ...defaultRuleForm(), windowMinutes: "5" }
+		function EditHarness() {
+			const [form, setForm] = useState(saved)
+			return <RuleConditionFields form={form} onChange={setForm} saved={saved} />
+		}
+		render(<EditHarness />)
+
+		fireEvent.change(screen.getByLabelText("Window"), { target: { value: "30" } })
+		expect(screen.getByText(/^Was/).textContent).toBe("Was 5 min")
+		expect(screen.getByText(/checked every 5 min\./)).toBeTruthy()
+	})
 })

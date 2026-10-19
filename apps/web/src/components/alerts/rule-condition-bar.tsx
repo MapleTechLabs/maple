@@ -449,14 +449,13 @@ function NumberField({
 					</InputGroupAddon>
 				)}
 			</InputGroup>
-			{previous !== null ? (
+			{previous !== null && (
 				<WasNote>
 					{previous.length > 0 ? previous : "none"}
 					{previous.length > 0 && unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}
 				</WasNote>
-			) : (
-				description && <FieldDescription>{description}</FieldDescription>
 			)}
+			{description && <FieldDescription>{description}</FieldDescription>}
 		</Field>
 	)
 }
