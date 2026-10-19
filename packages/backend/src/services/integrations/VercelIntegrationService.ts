@@ -1033,7 +1033,10 @@ export class VercelIntegrationService extends Context.Service<
 			const ingestKey = yield* drainKey(connection, userId, now)
 			const reconciled = yield* Effect.result(reconcileDrains(connection, token, request, ingestKey, true))
 			if (Result.isSuccess(reconciled)) {
-				yield* saveOutcomes(connection, reconciled.success, ingestKey.hash, now)
+				if (!(yield* saveOutcomes(connection, reconciled.success, ingestKey.hash, now))) {
+					// Disconnected or moved team while this ran: take back what it may have created.
+					yield* removeDrains(connection, token)
+				}
 			}
 			const failure = Result.isFailure(reconciled) ? reconciled.failure : firstError(reconciled.success)
 			if (failure !== null) {
@@ -1079,7 +1082,10 @@ export class VercelIntegrationService extends Context.Service<
 			const outcomes = yield* reconcileDrains(connection, token, forwarding, ingestKey, true).pipe(
 				Effect.mapError(toDrainError),
 			)
-			yield* saveOutcomes(connection, outcomes, ingestKey.hash, now)
+			if (!(yield* saveOutcomes(connection, outcomes, ingestKey.hash, now))) {
+				// Disconnected or moved team while this ran: take back what it may have created.
+				yield* removeDrains(connection, token)
+			}
 			const failure = firstError(outcomes)
 			if (failure !== null) return yield* toDrainError(failure)
 			return yield* getStatus(orgId)

@@ -661,6 +661,46 @@ describe("VercelIntegrationService", () => {
 		)
 	})
 
+	it.effect("a settings save that finds the org disconnected meanwhile deletes the drain it created", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		let reached = (): void => undefined
+		const listing = new Promise<void>((resolve) => {
+			reached = resolve
+		})
+		let release = (): void => undefined
+		const disconnected = new Promise<void>((resolve) => {
+			release = resolve
+		})
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect({ logsEnabled: false })
+				let held = false
+				fake.respond = async (call) => {
+					if (held || call.method !== "GET" || call.path !== "/v1/drains") return undefined
+					held = true
+					reached()
+					await disconnected
+					return undefined
+				}
+				const saving = yield* Effect.forkChild(
+					Effect.exit(
+						VercelIntegrationService.use((vercel) => vercel.updateSettings(orgId, { logsEnabled: true })),
+					),
+				)
+				yield* Effect.promise(() => listing)
+				assert.deepStrictEqual(yield* disconnect(), { disconnected: true, drainsRemoved: true })
+				release()
+				yield* Fiber.join(saving)
+				// The save created the log drain after the disconnect, then took it back.
+				assert.isAbove(callsTo(fake, "POST", "/v1/drains").length, 1)
+				assert.strictEqual(fake.drains.size, 0)
+			}),
+		)
+	})
+
 	it.effect("a poll that finds the org disconnected meanwhile deletes the drains it re-created", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFake()
