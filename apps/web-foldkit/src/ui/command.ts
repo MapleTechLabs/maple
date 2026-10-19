@@ -80,7 +80,9 @@ const commandItem = <M>(
 	toMessage: (message: Message) => M,
 	options: ListOptions<M>,
 ): Html => {
+	// Keyed like cmdk's items, so a re-ranked row keeps its node (a pending click stays on it).
 	const attributes = [
+		h.Key(valueOf(item)),
 		h.Class(cn(A.autocompleteItemStyles, commandItemStyles, options.itemClassName)),
 		...(model.highlighted === index ? [h.DataAttribute("highlighted", "")] : []),
 		h.DataAttribute("slot", "command-item"),
@@ -148,6 +150,7 @@ export const commandList = <M>(
 			start + group.items.length,
 			h.div(
 				[
+					h.Key(group.label),
 					h.AriaLabelledBy(labelId),
 					h.Class(cn(A.autocompleteGroupStyles)),
 					h.DataAttribute("slot", "command-group"),

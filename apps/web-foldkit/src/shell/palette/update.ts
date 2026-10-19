@@ -1,5 +1,6 @@
 import { Array as Arr, Option } from "effect"
 import { Command, type Update } from "foldkit"
+import Fuse from "fuse.js"
 import * as Combobox from "../../ui/combobox"
 import * as Dialog from "../../ui/dialog"
 import type { Resources } from "../../platform/resources"
@@ -12,7 +13,7 @@ import {
 	paletteEntries,
 	searchEntriesOf,
 } from "./entries"
-import { LoadPaletteServices, PreloadFuse, ScrollHighlighted, SearchPalette } from "./command"
+import { LoadPaletteServices, ScrollHighlighted } from "./command"
 import { init, Message, type Model, OutMessage } from "./model"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
@@ -25,15 +26,28 @@ const entriesOf = (model: Model, context: Context) =>
 
 export type Shown = Readonly<{ entries: ReadonlyArray<PaletteEntry>; isSearch: boolean }>
 
-/** Browse mode for an empty query; otherwise fuse's top matches, best first. */
+/** `FUSE_OPTIONS`: title-weighted, location-free, threshold 0.35. */
+const FUSE_OPTIONS = {
+	keys: [
+		{ name: "title", weight: 0.7 },
+		{ name: "keywords", weight: 0.3 },
+	],
+	ignoreLocation: true,
+	threshold: 0.35,
+}
+
+/** `fuse.search(query)` over every entry (flagged rows included): the ids, best first. */
+const rankedIds = (entries: ReadonlyArray<PaletteEntry>, query: string): ReadonlyArray<string> =>
+	new Fuse(searchEntriesOf(entries), FUSE_OPTIONS).search(query).map(({ item }) => item.id)
+
+/** Browse mode for an empty query; otherwise fuse's top matches, ranked in render as cmdk does. */
 export const shownEntries = (model: Model, context: Context, isReleasesVisible: boolean): Shown => {
-	const entries = entriesOf(model, context).filter((entry) => entry.isFlagged !== true || isReleasesVisible)
-	if (model.list.inputValue.trim() === "") return { entries: browseEntries(entries), isSearch: false }
-	// The ranking is a moment away (legacy ranks in render): an empty list, never a stale one.
-	if (model.ranked === null || model.rankedQuery !== model.list.inputValue.trim())
-		return { entries: [], isSearch: false }
+	const all = entriesOf(model, context)
+	const entries = all.filter((entry) => entry.isFlagged !== true || isReleasesVisible)
+	const query = model.list.inputValue.trim()
+	if (query === "") return { entries: browseEntries(entries), isSearch: false }
 	const byId = new Map(entries.map((entry) => [entry.id, entry]))
-	const ranked = model.ranked.flatMap((id) => byId.get(id) ?? []).slice(0, MAX_RESULTS)
+	const ranked = rankedIds(all, query).flatMap((id) => byId.get(id) ?? []).slice(0, MAX_RESULTS)
 	return { entries: ranked, isSearch: true }
 }
 
@@ -44,24 +58,7 @@ const listedEntries = (model: Model, context: Context, isReleasesVisible: boolea
 	)
 
 /** Opening mounts the palette, whose services read goes out with it. */
-export const open = (): UpdateReturn => ({ model: init(), commands: [LoadPaletteServices(), PreloadFuse()] })
-
-/** fuse ranks the trimmed query; an empty one is browse mode and needs no search. */
-const search = (
-	model: Model,
-	context: Context,
-): ReadonlyArray<Command.Command<Message, never, Resources>> => {
-	const query = model.list.inputValue.trim()
-	return query === ""
-		? []
-		: [
-				SearchPalette({
-					query,
-					serviceCount: model.serviceNames.length,
-					entries: searchEntriesOf(entriesOf(model, context)),
-				}),
-			]
-}
+export const open = (): UpdateReturn => ({ model: init(), commands: [LoadPaletteServices()] })
 
 /** A pick: links navigate, actions run; either way the palette closes. */
 const picked = (model: Model, entry: PaletteEntry | undefined): UpdateReturn =>
@@ -85,9 +82,6 @@ const toDialog = Command.mapMessage((message: Dialog.Message) => Message.GotDial
 const enter = (model: Model, context: Context, isReleasesVisible: boolean): UpdateReturn =>
 	picked(model, listedEntries(model, context, isReleasesVisible)[model.list.highlighted ?? -1])
 
-const rankedStep = (model: Model, pendingEnter: boolean | null, context: Context): UpdateReturn =>
-	pendingEnter === null ? { model } : enter(model, context, pendingEnter)
-
 /** The inline autocomplete: typing searches, arrows move the highlight into view, Enter picks. */
 const listStep = (model: Model, child: Combobox.Message, context: Context): UpdateReturn => {
 	const next = Combobox.update(model.list, child)
@@ -96,8 +90,6 @@ const listStep = (model: Model, child: Combobox.Message, context: Context): Upda
 		return picked(model, findEntry(model, context, out.value))
 	const stepped: Model = { ...model, list: next.model }
 	const commands = (next.commands ?? []).map(toList)
-	if (child._tag === "ChangedInput")
-		return { model: stepped, commands: [...commands, ...search(stepped, context)] }
 	const highlighted = stepped.list.highlighted
 	const isMove =
 		child._tag === "PressedInputKey" && highlighted !== null && highlighted !== model.list.highlighted
@@ -120,13 +112,7 @@ export const update = (model: Model, message: Message, context: Context): Update
 			}
 		},
 		GotListMessage: ({ message: child }) => listStep(model, child, context),
-		// Enter waits for the ranking of what was typed, which legacy computes in the same render.
-		PressedEnter: ({ isReleasesVisible }) => {
-			const query = model.list.inputValue.trim()
-			return query !== "" && model.rankedQuery !== query
-				? { model: { ...model, pendingEnter: isReleasesVisible } }
-				: enter(model, context, isReleasesVisible)
-		},
+		PressedEnter: ({ isReleasesVisible }) => enter(model, context, isReleasesVisible),
 		ClickedEntry: ({ id }) => {
 			const entry = findEntry(model, context, id)
 			// A link's own click navigates (the root routes it), so only the palette closes.
@@ -134,22 +120,9 @@ export const update = (model: Model, message: Message, context: Context): Update
 				? { model, outMessage: OutMessage.Closed() }
 				: picked(model, entry)
 		},
-		SucceededLoadServices: ({ serviceNames }) => {
-			const loaded: Model = { ...model, serviceNames }
-			return { model: loaded, commands: search(loaded, context) }
-		},
+		SucceededLoadServices: ({ serviceNames }) => ({ model: { ...model, serviceNames } }),
 		FailedLoadServices: () => ({ model }),
-		// An answer for an older query, or for the list before the services landed, is dropped.
-		RankedEntries: ({ query, serviceCount, ids }) =>
-			query === model.list.inputValue.trim() && serviceCount === model.serviceNames.length
-				? rankedStep(
-						{ ...model, ranked: ids, rankedQuery: query, pendingEnter: null },
-						model.pendingEnter,
-						context,
-					)
-				: { model },
 		CompletedReleaseServices: () => ({ model }),
-		CompletedPreloadFuse: () => ({ model }),
 		ElapsedCloseDelay: () => ({ model, outMessage: OutMessage.Closed() }),
 		CompletedMeasureList: () => ({ model }),
 		CompletedScrollHighlighted: () => ({ model }),

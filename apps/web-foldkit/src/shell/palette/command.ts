@@ -4,7 +4,6 @@ import { Command, Mount } from "foldkit"
 import { ReadCache } from "../../data/read-cache"
 import { requestKey } from "../../data/request-key"
 import { applyScrollOverflow, trackScrollbar } from "../../ui/scroll-area"
-import { SearchEntry } from "./entries"
 import { Message } from "./model"
 
 /** `getTracesFacetValuesResultAtom`'s `staleTime`, counted from the palette closing (its unmount). */
@@ -95,16 +94,6 @@ export const ScrollHighlighted = Command.define("ScrollHighlighted", {
 		}),
 })
 
-/** `FUSE_OPTIONS`: title-weighted, location-free, threshold 0.35. */
-const FUSE_OPTIONS = {
-	keys: [
-		{ name: "title", weight: 0.7 },
-		{ name: "keywords", weight: 0.3 },
-	],
-	ignoreLocation: true,
-	threshold: 0.35,
-}
-
 const nextFrame = Effect.callback<void>((resume) => {
 	requestAnimationFrame(() => resume(Effect.void))
 })
@@ -120,23 +109,4 @@ export const DelayClose = Command.define("DelayClose", {
 		Effect.andThen(nextFrame),
 		Effect.as(Message.ElapsedCloseDelay()),
 	),
-})
-
-/** fuse comes with legacy's lazy palette chunk: loading it on open keeps the first search quick. */
-export const PreloadFuse = Command.define("PreloadFuse", {
-	messages: [Message.CompletedPreloadFuse],
-	execute: Effect.promise(() => import("fuse.js")).pipe(Effect.as(Message.CompletedPreloadFuse())),
-})
-
-/** `fuse.search(query)`: every match, best first. */
-export const SearchPalette = Command.define("SearchPalette", {
-	args: { query: Schema.String, serviceCount: Schema.Number, entries: Schema.Array(SearchEntry) },
-	messages: [Message.RankedEntries],
-	execute: ({ query, serviceCount, entries }) =>
-		Effect.promise(() => import("fuse.js")).pipe(
-			Effect.map(({ default: Fuse }) => {
-				const ids = new Fuse(entries, FUSE_OPTIONS).search(query).map(({ item }) => item.id)
-				return Message.RankedEntries({ query, serviceCount, ids })
-			}),
-		),
 })
