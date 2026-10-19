@@ -125,12 +125,14 @@ function Tag({ doc }: { doc: SearchDoc }) {
 
 type Icons = SearchIndexPayload["icons"]
 
-// Items inherit the row's text color (the base component flips it to the dark
-// accent-foreground when highlighted) and lean on opacity for hierarchy, so
-// both states stay legible — fixed fg/fg-muted colors clash on the amber row.
+// The highlighted row mirrors the sidebar's active link: a primary tint and a
+// primary left bar. Text keeps the foreground color and leans on opacity for hierarchy.
+const ITEM_CLASS =
+	"flex items-center gap-3 rounded-none data-highlighted:bg-primary/10 data-highlighted:text-fg data-highlighted:shadow-[inset_2px_0_0_var(--primary)]"
+
 function PageItem({ doc, icons }: { doc: SearchDoc; icons: Icons }) {
 	return (
-		<CommandItem value={doc.url} render={<a href={doc.url} />} className="flex items-center gap-3">
+		<CommandItem value={doc.url} render={<a href={doc.url} />} className={ITEM_CLASS}>
 			<Icon svg={doc.icon && icons[doc.icon]} className="opacity-80" />
 			<span className="flex min-w-0 flex-col">
 				<span className="truncate text-sm">{doc.title}</span>
@@ -145,7 +147,7 @@ function HitItem({ hit, terms, icons }: { hit: SearchHit; terms: string[]; icons
 	const { record, snippet } = hit
 	const detail = snippet || (record.section ? "" : record.doc.description)
 	return (
-		<CommandItem value={record.url} render={<a href={record.url} />} className="flex items-center gap-3">
+		<CommandItem value={record.url} render={<a href={record.url} />} className={ITEM_CLASS}>
 			<Icon svg={record.doc.icon && icons[record.doc.icon]} className="opacity-80" />
 			<span className="flex min-w-0 flex-col">
 				{record.section && (
