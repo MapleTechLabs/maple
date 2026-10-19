@@ -18,6 +18,9 @@ import {
 } from "../kit/portable"
 import { awaitTxid, deleteDashboard, errorMessageOf, mutateDashboard, readDocument } from "../kit/store"
 import { readLocale } from "../../kit/locale"
+import type { V2Dashboard } from "@maple/domain/http/v2"
+import { documentOf } from "../view/command-history"
+import { toListDashboard } from "./derive"
 import { Message } from "./message"
 
 /** `dashboardSortAtom`'s key: the default sort for a URL without `?sort`. */
@@ -90,7 +93,7 @@ const createFromPortable = (orgId: string, portable: PortableDashboard) =>
 		const client = yield* MapleApiV2Client
 		const created = yield* client.dashboards.create({ payload: createPayload(portable) })
 		yield* awaitTxid(orgId, created.txid)
-		return { id: created.id, name: created.name, isPerses: false }
+		return { id: created.id, name: created.name, isPerses: false, warnings: [] }
 	})
 
 const toResult = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -156,7 +159,12 @@ export const ImportDashboard = Command.define("ImportDashboard", {
 							payload: { dashboard: parsed },
 						})
 						yield* awaitTxid(orgId, imported.dashboard.txid)
-						return { id: imported.dashboard.id, name: imported.dashboard.name, isPerses: true }
+						return {
+							id: imported.dashboard.id,
+							name: imported.dashboard.name,
+							isPerses: true,
+							warnings: imported.warnings,
+						}
 					}
 					return yield* createFromPortable(orgId, yield* parsePortable(parsed))
 				}),
@@ -184,5 +192,45 @@ export const SaveTags = Command.define("SaveDashboardTags", {
 				mutateDashboard(orgId, id, (document, nowIso) => ({ ...document, tags, updatedAt: nowIso })),
 			),
 			(result) => Message.CompletedSaveTags({ result }),
+		),
+})
+
+/** `fetchDashboardsOverHttp`'s page size and ceiling (`LIST_LIMIT_MAX`, 20 pages). */
+const FALLBACK_PAGE_SIZE = 100
+const FALLBACK_MAX_PAGES = 20
+
+/** The cursor-paginated list, newest-updated first, walked page by page. */
+const listPages = (
+	client: MapleApiV2Client["Service"],
+	cursor: string | null,
+	page: number,
+	read: ReadonlyArray<V2Dashboard>,
+): Effect.Effect<ReadonlyArray<V2Dashboard>, unknown> =>
+	Effect.flatMap(
+		client.dashboards.list({
+			query: cursor === null ? { limit: FALLBACK_PAGE_SIZE } : { limit: FALLBACK_PAGE_SIZE, cursor },
+		}),
+		(response) => {
+			const all = [...read, ...response.data]
+			return !response.has_more || response.next_cursor === null || page + 1 >= FALLBACK_MAX_PAGES
+				? Effect.succeed(all)
+				: listPages(client, response.next_cursor, page + 1, all)
+		},
+	)
+
+/** `useDashboardsFallback`: the list over plain HTTP while the shape stream is down. */
+export const FetchDashboardsFallback = Command.define("FetchDashboardsFallback", {
+	args: { orgId: Schema.String },
+	messages: [Message.CompletedFetchFallback],
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			const dashboards = yield* listPages(client, null, 0, [])
+			const documents = yield* Effect.forEach(dashboards, (dashboard) => Effect.option(documentOf(dashboard)))
+			return documents.flatMap((document) => Option.toArray(Option.map(document, toListDashboard)))
+		}).pipe(
+			Effect.mapError(errorMessageOf),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchFallback({ orgId, result })),
 		),
 })

@@ -50,6 +50,10 @@ export const PageOutMessage = defineMessageUnion({
 		toast: Schema.optionalKey(
 			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
 		),
+		/** A second toast after the first (a Perses import's "Imported with N warnings"). */
+		followUpToast: Schema.optionalKey(
+			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
+		),
 	},
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
@@ -60,6 +64,8 @@ export const PageOutMessage = defineMessageUnion({
 	 * shell owns those reads; below `md` its sidebar is unmounted, so the page is what asks for them.
 	 */
 	RequestedInfraSurfaces: {},
+	/** `retryOrgCollections` / `handleCollectionStuck`: recreate the org's synced collections. */
+	RequestedReconnectOrgCollections: {},
 	/**
 	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
 	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.

@@ -18,7 +18,7 @@ import { collectTags, displayName, queryOf, scopeOf, sectionsOf, sortOf, tagsOf 
 import * as TagEditor from "../kit/tag-editor"
 import { Message } from "./message"
 import type { ListDashboard, Model, Scope } from "./model"
-import { rowMenuIdOf } from "./update"
+import { isReadOnly, rowMenuIdOf } from "./update"
 import { deleteDialog } from "./view-dialogs"
 import { tagFilterView } from "./view-tag-filter"
 
@@ -138,15 +138,23 @@ const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, s
 	)
 }
 
-const ROW_MENU_ENTRIES: ReadonlyArray<MenuView.MenuEntry> = [
+/** The reason in the menu itself: a tooltip would break the menu's roving focus. */
+const READ_ONLY_NOTE: ReadonlyArray<MenuView.MenuEntry> = [
+	{ _tag: "Separator" },
+	{ _tag: "Label", label: "Dashboard store unreachable, writes are disabled", className: "font-normal text-3xs leading-snug" },
+]
+
+/** Export reads what the list holds, so it survives a write failure; the rest write, so they don't. */
+const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 	{
 		_tag: "Group",
 		entries: [
 			{ _tag: "Item", value: "export", label: "Export JSON" },
-			{ _tag: "Item", value: "duplicate", label: "Duplicate" },
-			{ _tag: "Item", value: "tags", label: "Edit tags…" },
+			{ _tag: "Item", value: "duplicate", label: "Duplicate", isDisabled: isReadOnly },
+			{ _tag: "Item", value: "tags", label: "Edit tags…", isDisabled: isReadOnly },
 			{ _tag: "Separator" },
-			{ _tag: "Item", value: "delete", label: "Delete…", variant: "destructive" },
+			{ _tag: "Item", value: "delete", label: "Delete…", variant: "destructive", isDisabled: isReadOnly },
+			...(isReadOnly ? READ_ONLY_NOTE : []),
 		],
 	},
 ]
@@ -159,7 +167,7 @@ const rowMenu = (h: H, model: Model, dashboard: ListDashboard): Html => {
 		model: menu,
 		view: MenuView.view,
 		viewInputs: {
-			entries: ROW_MENU_ENTRIES,
+			entries: rowMenuEntries(isReadOnly(model)),
 			align: "end",
 			className: rowActionsMenuContentStyles,
 			toView: ({ trigger, withTrigger }) =>
@@ -492,10 +500,10 @@ export const listBody = (
 	const sections = sectionsOf(model, dashboards)
 	const isFiltering = queryOf(model.search).trim().length > 0 || tagsOf(model.search).length > 0
 	const isNothingAtAll = dashboards.length === 0
-	const isReadOnly = model.persistenceError !== null
+	const isWriteDisabled = isReadOnly(model)
 	const context: RowContext = { model, nowMs, timeZone }
 	const body: ReadonlyArray<Html> = isNothingAtAll
-		? [firstRunEmpty(h, isReadOnly)]
+		? [firstRunEmpty(h, isWriteDisabled)]
 		: sections.matched === 0
 			? [nothingMatched(h, model)]
 			: sections.scoped === 0
@@ -525,7 +533,7 @@ export const listBody = (
 										dashboardRow(h, context, dashboard, false),
 									),
 								]),
-						createRow(h, isReadOnly),
+						createRow(h, isWriteDisabled),
 					]
 	return h.div(
 		[h.Class("flex shrink-0 flex-col pb-6")],

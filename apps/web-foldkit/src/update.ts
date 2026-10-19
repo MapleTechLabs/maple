@@ -250,9 +250,21 @@ const writePage =
 			),
 			{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
 		)
-		const held = Preload.held(toasted.model.preload, pageIdentity(transition.slot), transition.commands)
+		const followUp = Option.flatMap(transition.outMessage, (out) =>
+			out._tag === "RequestedNavigation" && out.followUpToast !== undefined
+				? Option.some(PageOutMessage.RequestedToast({ ...out.followUpToast, timeoutMs: null, action: null }))
+				: Option.none(),
+		)
+		const followed = Option.match(followUp, {
+			onNone: () => toasted,
+			onSome: (request) => {
+				const shown = showPageToast(toasted.model, request)
+				return { model: shown.model, commands: [...toasted.commands, ...shown.commands] }
+			},
+		})
+		const held = Preload.held(followed.model.preload, pageIdentity(transition.slot), transition.commands)
 		return {
-			model: modifyFields(toasted.model, { page: () => transition.slot, preload: () => held.model }),
+			model: modifyFields(followed.model, { page: () => transition.slot, preload: () => held.model }),
 			commands: [
 				...(held.isNewHolder
 					? [ReleaseReads({ orgId: transition.slot?.orgId ?? null, keys: held.released })]
@@ -270,9 +282,10 @@ const writePage =
 						RequestedSidebarToggle: () => [],
 						RequestedInfraSurfaces: () => [],
 						RequestedToast: () => [],
+						RequestedReconnectOrgCollections: () => [ReconnectOrgCollections()],
 					}),
 				}),
-				...toasted.commands,
+				...followed.commands,
 			],
 		}
 	}

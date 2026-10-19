@@ -107,6 +107,8 @@ export type MenuEntry =
 			isItemLabelWrapped?: boolean
 	  }>
 	| Readonly<{ _tag: "Separator" }>
+	/** A `DropdownMenuLabel` that is not a group's name (a note after the items). */
+	| Readonly<{ _tag: "Label"; label: string; className?: string }>
 
 /** The highlightable entries in document order. */
 export const itemRefs = (entries: ReadonlyArray<MenuEntry>): ReadonlyArray<ItemRef> =>
@@ -123,6 +125,7 @@ export const itemRefs = (entries: ReadonlyArray<MenuEntry>): ReadonlyArray<ItemR
 			case "Group":
 				return itemRefs(entry.entries)
 			case "Separator":
+			case "Label":
 				return []
 		}
 	})
@@ -268,6 +271,8 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 		}
 		case "Separator":
 			return menuSeparator(h)
+		case "Label":
+			return menuLabel(h, `${model.id}-label-${index}`, [entry.label], entry.className)
 	}
 }
 

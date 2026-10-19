@@ -1,50 +1,17 @@
-import type { DashboardDocument } from "@maple/domain/http"
 import type { DashboardRow } from "@maple/web-data/collections/dashboards"
-import { Array as Arr, Option, Order, Schema } from "effect"
+import { Array as Arr, Duration, Effect, Option, Order, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { liveQueryStream } from "../../../data/live-query"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
 import { orgLive } from "../../../data/collections/org-collections"
-import { dashboardDomains, readsFromLabel } from "../kit/summary"
 import { Message } from "./message"
-import type { Glyph, ListDashboard, Model } from "./model"
+import { toListDashboard } from "./derive"
+import type { ListDashboard, Model } from "./model"
 
-/** `dashboardGlyph`. */
-const glyphOf = (document: DashboardDocument): Glyph => {
-	if (document.widgets.length === 0) return "GridIcon"
-	switch (dashboardDomains(document)[0]) {
-		case "Traces":
-			return "PulseIcon"
-		case "Logs":
-			return "TextWrapIcon"
-		case "Errors":
-			return "CircleWarningIcon"
-		case "Metrics":
-			return "ChartBarIcon"
-		case "Raw SQL":
-			return "CodeIcon"
-		case undefined:
-			return "FileIcon"
-	}
-}
-
-const toListDashboard = (document: DashboardDocument): ListDashboard => {
-	const reads = readsFromLabel(document)
-	return {
-		id: document.id,
-		name: document.name,
-		description: document.description ?? null,
-		tags: document.tags ?? [],
-		widgetCount: document.widgets.length,
-		readsShort: reads.short,
-		readsFull: reads.full,
-		glyph: glyphOf(document),
-		createdAt: document.createdAt,
-		updatedAt: document.updatedAt,
-	}
-}
+/** `COLLECTION_LOAD_TIMEOUT_MS`: how long the live list may load before the snapshot stands in. */
+export const COLLECTION_LOAD_TIMEOUT_MS = 30_000
 
 const byUpdatedDesc = Order.flip(Order.mapInput(Order.String, (row: DashboardRow) => row.updated_at))
 
@@ -70,6 +37,24 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			{
 				modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
 				dependenciesToStream: ({ orgId }) => dashboards(orgId),
+			},
+		),
+		/** `useCollectionLoadFailed`: a live list still loading after the bounded wait has failed. */
+		loadWatchdog: entry(
+			{ orgId: Schema.NullOr(Schema.String) },
+			{
+				modelToDependencies: ({ model, context }) => ({
+					orgId: model.dashboards === null && model.fallback._tag === "Idle" ? context.orgId : null,
+				}),
+				dependenciesToStream: ({ orgId }) =>
+					orgId === null
+						? Stream.empty
+						: Stream.fromEffect(
+								Effect.as(
+									Effect.sleep(Duration.millis(COLLECTION_LOAD_TIMEOUT_MS)),
+									Message.TimedOutLiveDashboards({ orgId }),
+								),
+							),
 			},
 		),
 	}),
