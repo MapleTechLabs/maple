@@ -151,6 +151,8 @@ export interface ClerkOrganizationResource {
 	readonly update: Write<{ name: string }>
 	readonly setLogo: Write<{ file: Blob | null }>
 	readonly inviteMember: Write<{ emailAddress: string; role: string }>
+	/** Re-reads the org, so its new public metadata reaches the listeners. */
+	readonly reload: () => Promise<unknown>
 }
 interface ClerkGlobal extends ClerkResources {
 	readonly load: (options: Readonly<Record<string, unknown>>) => Promise<void>

@@ -73,38 +73,32 @@ export type OptionCardOptions<M> = Readonly<{
 	name?: string
 	isChecked: boolean
 	onChange: M
+	isDisabled?: boolean
 	label: string
 	title: string
 	description: string
 	media: Html
+	/** `row`: media, text, check side by side. `stacked`: media and check above the text. */
+	layout?: "row" | "stacked"
+	/** Content pinned to the bottom of a `stacked` card. */
+	footer?: Html
+	/** Hex colour that replaces primary for the selected border and tint. */
+	accent?: string
+	/** Classes for the selected check, paired with `accent`. */
+	checkClassName?: string
 }>
 
-/** `OptionCard layout="row"`: a hidden native input behind a bordered card. */
-export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>): Html =>
-	h.label(
-		[h.Class("group relative cursor-pointer")],
-		[
-			h.input([
-				h.Type(options.type),
-				...(options.name === undefined ? [] : [h.Name(options.name)]),
-				h.Class("peer sr-only"),
-				h.Checked(options.isChecked),
-				h.AriaLabel(options.label),
-				h.OnChange(() => options.onChange),
-			]),
-			h.div(
-				[
-					h.Class(
-						cn(
-							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
-							"items-start gap-3 p-4",
-							!options.isChecked
-								? "border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]"
-								: "border-primary bg-primary/5",
-						),
-					),
-				],
-				[
+/** `OptionCard`: a hidden native input behind a bordered card. */
+export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>): Html => {
+	const layout = options.layout ?? "row"
+	const check = drawnCheck(
+		h,
+		options.isChecked,
+		cn(layout === "row" && "mt-0.5", options.isChecked ? options.checkClassName : options.type === "radio" && "opacity-0"),
+	)
+	const body: ReadonlyArray<Html> =
+		layout === "row"
+			? [
 					options.media,
 					h.div(
 						[h.Class("min-w-0 flex-1 pt-px")],
@@ -113,11 +107,50 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 							h.span([h.Class("mt-1 block text-xs leading-relaxed text-muted-foreground")], [options.description]),
 						],
 					),
-					drawnCheck(h, options.isChecked, cn("mt-0.5", !options.isChecked && options.type === "radio" && "opacity-0")),
+					check,
+				]
+			: [
+					h.div([h.Class("flex items-start justify-between")], [options.media, check]),
+					h.div(
+						[h.Class("space-y-1")],
+						[
+							h.span([h.Class("block text-base font-semibold tracking-tight")], [options.title]),
+							h.span([h.Class("block text-sm text-muted-foreground")], [options.description]),
+						],
+					),
+					...(options.footer === undefined ? [] : [h.div([h.Class("mt-auto flex")], [options.footer])]),
+				]
+	const isAccented = options.isChecked && options.accent !== undefined
+	return h.label(
+		[h.Class("group relative cursor-pointer")],
+		[
+			h.input([
+				h.Type(options.type),
+				...(options.name === undefined ? [] : [h.Name(options.name)]),
+				h.Class("peer sr-only"),
+				h.Checked(options.isChecked),
+				...(options.isDisabled === true ? [h.Disabled(true)] : []),
+				h.AriaLabel(options.label),
+				h.OnChange(() => options.onChange),
+			]),
+			h.div(
+				[
+					...(isAccented ? [h.Style({ "border-color": options.accent ?? "", "background-color": `${options.accent ?? ""}0F` })] : []),
+					h.Class(
+						cn(
+							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+							layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
+							!options.isChecked
+								? "border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]"
+								: options.accent === undefined && "border-primary bg-primary/5",
+						),
+					),
 				],
+				body,
 			),
 		],
 	)
+}
 
 export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelected: boolean): Html => {
 	const segments = rasterOrder(PIXEL_GLYPHS[name])

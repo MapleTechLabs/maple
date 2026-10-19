@@ -1,9 +1,15 @@
 import { ONBOARDING_INTENT_IDS } from "@maple/web/lib/onboarding-intent"
 import { ONBOARDING_ROLE_IDS } from "@maple/web/lib/onboarding-role"
+import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
+import { MapleRegion } from "@maple/domain/organization-regions"
+import { currentRegion, regionAppUrl } from "@maple/web/lib/region"
 import { Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { load } from "foldkit/navigation"
+import { MapleInternalApiClient } from "../../platform/api-clients"
+import { clerkTry, currentClerkOrganization } from "../../platform/clerk"
 import type { Resources } from "../../platform/resources"
 import * as PricingCards from "./pricing-cards"
 import { LoadTeam, loadingTeam, selfHostedTeam, Team, TeamMessage, updateTeam } from "./quick-start-team"
@@ -23,6 +29,14 @@ import {
 
 export const Step = Schema.Literals(STEP_IDS)
 
+/** `StepRegion`: the picked card, the save in flight, and the API's refusal. */
+export const RegionChoice = Schema.Struct({
+	selected: MapleRegion,
+	isSaving: Schema.Boolean,
+	errorMessage: Schema.NullOr(Schema.String),
+})
+export type RegionChoice = typeof RegionChoice.Type
+
 export const Model = Schema.TaggedStruct("QuickStart", {
 	storageKey: Schema.String,
 	/** `null` until the saved progress is read. */
@@ -34,6 +48,9 @@ export const Model = Schema.TaggedStruct("QuickStart", {
 	isPlansRequested: Schema.Boolean,
 	/** Back from Stripe (`?checkout=complete`): the plan step's cards wait on the sync. */
 	isCheckoutReturn: Schema.Boolean,
+	region: RegionChoice,
+	/** Counted for the rest of the visit once shown, so the step total does not shrink. */
+	isRegionStepShown: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -47,6 +64,12 @@ export const Message = defineMessageUnion({
 	ClickedContinue: { step: Step },
 	ClickedBack: { to: Step },
 	CompletedSaveQuickStartState: {},
+	PickedRegion: { region: MapleRegion },
+	ClickedRegionContinue: {},
+	SucceededChooseRegion: { region: MapleRegion },
+	FailedChooseRegion: { message: Schema.String },
+	CompletedReloadOrganization: {},
+	CompletedLeaveForRegion: {},
 })
 export type Message = typeof Message.Type
 
@@ -63,13 +86,50 @@ export const SaveQuickStartState = Command.define("SaveQuickStartState", {
 		writeQuickStartState(key, state).pipe(Effect.as(Message.CompletedSaveQuickStartState())),
 })
 
+/** `organizationRegion.choose`: answers with the region stored, which another admin may have set first. */
+export const ChooseRegion = Command.define("ChooseOrganizationRegion", {
+	args: { region: MapleRegion },
+	messages: [Message.SucceededChooseRegion, Message.FailedChooseRegion],
+	execute: ({ region }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			const result = yield* client.organizationRegion.choose({ payload: new ChooseOrganizationRegionRequest({ region }) })
+			return Message.SucceededChooseRegion({ region: result.region })
+		}).pipe(Effect.catch((error) => Effect.succeed(Message.FailedChooseRegion({ message: error.message })))),
+})
+
+type FollowedRegion = ReturnType<typeof Message.CompletedLeaveForRegion | typeof Message.CompletedReloadOrganization>
+
+/**
+ * Another region continues onboarding on its own dashboard (the save stays pending as the page
+ * leaves); this one reloads the org, and the step closes once Clerk hands back the region.
+ */
+export const FollowChosenRegion = Command.define("FollowChosenRegion", {
+	args: { region: MapleRegion },
+	messages: [Message.CompletedLeaveForRegion, Message.CompletedReloadOrganization],
+	execute: ({ region }) =>
+		Effect.suspend((): Effect.Effect<FollowedRegion> => {
+			const url = region === currentRegion ? undefined : regionAppUrl(region)
+			return url === undefined
+				? currentClerkOrganization.pipe(
+						Effect.flatMap((organization) => clerkTry("", () => organization.reload())),
+						Effect.ignore,
+						Effect.as(Message.CompletedReloadOrganization()),
+					)
+				: load(`${url}/quick-start`).pipe(Effect.as(Message.CompletedLeaveForRegion()))
+		}),
+})
+
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PricingCards.OutMessage, Resources>
 
-export const init = (storageKey: string, isCheckoutReturn = false): UpdateReturn => ({
+/** `needsRegion`: the org has no region yet, so the region step comes first. */
+export const init = (storageKey: string, isCheckoutReturn = false, needsRegion = false): UpdateReturn => ({
 	model: {
 		_tag: "QuickStart",
 		storageKey,
 		isCheckoutReturn,
+		region: { selected: currentRegion, isSaving: false, errorMessage: null },
+		isRegionStepShown: needsRegion,
 		state: null,
 		team: isClerkAuthEnabled ? loadingTeam() : selfHostedTeam(),
 		pricing: PricingCards.init(),
@@ -165,4 +225,22 @@ const step = (model: Model, message: Message): UpdateReturn =>
 				: { model },
 		ClickedBack: ({ to }) => saved(model, (state) => ({ ...state, activeStep: to })),
 		CompletedSaveQuickStartState: () => ({ model }),
+		PickedRegion: ({ region }) =>
+			model.region.isSaving ? { model } : { model: { ...model, region: { ...model.region, selected: region } } },
+		ClickedRegionContinue: () =>
+			model.region.isSaving
+				? { model }
+				: {
+						model: { ...model, isRegionStepShown: true, region: { ...model.region, isSaving: true, errorMessage: null } },
+						commands: [ChooseRegion({ region: model.region.selected })],
+					},
+		SucceededChooseRegion: ({ region }) => ({ model, commands: [FollowChosenRegion({ region })] }),
+		FailedChooseRegion: ({ message: failure }) => ({
+			model: {
+				...model,
+				region: { ...model.region, isSaving: false, errorMessage: failure === "" ? "Could not save the data region" : failure },
+			},
+		}),
+		CompletedReloadOrganization: () => ({ model: { ...model, region: { ...model.region, isSaving: false } } }),
+		CompletedLeaveForRegion: () => ({ model }),
 	})

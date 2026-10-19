@@ -8,7 +8,7 @@ import { clearSessionToken } from "../../platform/auth-api"
 import { signOutOfClerk } from "../../platform/clerk"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
-import { wrongRegionOf } from "./plan-gate"
+import { needsRegion, wrongRegionOf } from "./plan-gate"
 import * as OrgSwitcher from "../../shell/clerk-org-switcher"
 import * as Menu from "../../ui/menu"
 import * as CliLogin from "./cli-login"
@@ -153,7 +153,11 @@ export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Optio
 			CliLogin: ({ search }) => fresh(key, CliLogin.init(search.user_code), toCliLogin),
 			McpAuthorize: ({ search }) => fresh(key, McpAuthorize.init(search.request_id), toMcpAuthorize),
 			QuickStart: ({ search }) =>
-				fresh(key, QuickStart.init(storageKeyOf(inputs.maybeOrgId), search.checkout === "complete"), toQuickStart),
+				fresh(
+					key,
+					QuickStart.init(storageKeyOf(inputs.maybeOrgId), search.checkout === "complete", needsRegion(inputs.maybeOrganization)),
+					toQuickStart,
+				),
 			SelectPlan: ({ search }) => fresh(key, SelectPlan.init(search.checkout === "complete"), toSelectPlan),
 			Unsubscribe: ({ search }) => fresh(key, { model: Unsubscribe.init(search.token) }, toUnsubscribe),
 			SignIn: ({ search }) =>

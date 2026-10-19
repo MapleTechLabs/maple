@@ -126,6 +126,7 @@ const quickStartView = Submodel.defineView<
 		? bootSplash(h)
 		: QuickStartView.view(h, model, {
 				accountCluster: inputs.accountCluster,
+				needsRegion: needsRegion(inputs.maybeOrganization),
 				teamStep: () => QuickStartTeamView.teamStep(h, model.team),
 				planStep: QuickStartTeamView.planStep(
 					h,
