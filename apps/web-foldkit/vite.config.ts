@@ -3,6 +3,7 @@ import { foldkit } from "@foldkit/vite-plugin"
 import tailwindcss from "@tailwindcss/vite"
 import { defineConfig, loadEnv } from "vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
+import { versionManifest } from "../web/vite-plugin-version-manifest.ts"
 
 const envDir = path.resolve(import.meta.dirname, "../..")
 
@@ -55,6 +56,8 @@ export default defineConfig(({ mode, command }) => {
 			tailwindcss(),
 			// The DevTools MCP relay only exists on the dev server.
 			foldkit(command === "serve" ? {} : { devToolsMcpPort: false }),
+			// `/version.json`, which open tabs poll to offer a reload after a deploy (shell/version.ts).
+			versionManifest(process.env.VITE_COMMIT_SHA?.trim() || ""),
 		],
 		// No `build.target`: apps/web uses Vite's default, and the target decides CSS colour syntax.
 		build: { manifest: true },
