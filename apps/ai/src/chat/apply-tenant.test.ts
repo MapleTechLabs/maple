@@ -238,6 +238,17 @@ describe("whose authority a connector turn reads under", () => {
 		}),
 	)
 
+	it.effect("refuses a linked id that does not decode, rather than reading as the connector", () =>
+		Effect.gen(function* () {
+			const failure = yield* run({ ...APPROVER, actingUserId: "" }).pipe(
+				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+				Effect.flip,
+			)
+
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
+		}),
+	)
+
 	it.effect("reads as the connector, with no roles, when nobody is named", () =>
 		Effect.gen(function* () {
 			const tenant = yield* run(asking()).pipe(
