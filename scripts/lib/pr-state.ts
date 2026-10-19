@@ -1,21 +1,34 @@
 /**
- * The PR-state gate shared by the preview orphan sweeps (cleanup-preview-orphans.yml).
+ * The preview-state gate shared by the preview orphan sweeps (cleanup-preview-orphans.yml).
  *
  * Auth: GITHUB_REPOSITORY + GITHUB_TOKEN/GH_TOKEN.
  */
 
-export type PrState = "open" | "closed" | "unknown"
+/** `live`: open and labelled `preview`. `retired`: closed, or open without the label. */
+export type PreviewState = "live" | "retired" | "unknown"
+
+export const PREVIEW_LABEL = "preview"
 
 export const hasPrStateCredentials = (): boolean =>
 	Boolean(
 		process.env.GITHUB_REPOSITORY?.trim() && (process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN)?.trim(),
 	)
 
+/** An open PR that lost its label is retired too: a cancelled teardown leaves its stage up. */
+export const previewStateOf = (pull: {
+	state?: string
+	labels?: ReadonlyArray<{ name?: string }>
+}): PreviewState => {
+	if (pull.state === "closed") return "retired"
+	if (pull.state !== "open") return "unknown"
+	return pull.labels?.some((label) => label.name === PREVIEW_LABEL) ? "live" : "retired"
+}
+
 /**
- * PR state via the GitHub REST API. Returns "unknown" when the API call
- * fails; callers must treat "unknown" as "don't delete", never as "closed".
+ * Preview state via the GitHub REST API. Returns "unknown" when the API call
+ * fails; callers must treat "unknown" as "don't delete", never as "retired".
  */
-export const fetchPrState = async (prNumber: string): Promise<PrState> => {
+export const fetchPreviewState = async (prNumber: string): Promise<PreviewState> => {
 	const repo = process.env.GITHUB_REPOSITORY?.trim()
 	const token = (process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN)?.trim()
 	if (!repo || !token) return "unknown"
@@ -31,8 +44,9 @@ export const fetchPrState = async (prNumber: string): Promise<PrState> => {
 			console.log(`⚠ Could not look up PR #${prNumber} state (HTTP ${response.status})`)
 			return "unknown"
 		}
-		const parsed = (await response.json()) as { state?: string }
-		return parsed.state === "open" ? "open" : parsed.state === "closed" ? "closed" : "unknown"
+		return previewStateOf(
+			(await response.json()) as { state?: string; labels?: ReadonlyArray<{ name?: string }> },
+		)
 	} catch (error) {
 		console.log(
 			`⚠ Could not look up PR #${prNumber} state (${error instanceof Error ? error.message : String(error)})`,

@@ -9,7 +9,7 @@ when the label comes off or the PR closes (`.github/workflows/deploy-pr-preview.
 | :------------------------------------------------------ | :----------------------------------------------------- | :------------------------------------------------------------------------------------- |
 | web, api, ai, alerting, chat-bot, electric-sync Workers | `app-pr-<n>`, `api-pr-<n>`, `sync-pr-<n>` `.maple.dev` | Clerk development instance                                                             |
 | Postgres                                                | Neon branch `pr-<n>` of `NEON_PROJECT_ID`              | Migrated by the deploy (`declarePreviewDb` in `alchemy.run.ts`), deleted on destroy    |
-| Hyperdrive                                              | `maple-db-pr-<n>`, shared by every Worker              | One of the account's 25 configs, hence the live-preview cap                            |
+| Hyperdrive                                              | `maple-db-pr-<n>`, shared by every Worker              | One of the account's 25 configs                                                        |
 | Warehouse                                               | Tinybird branch `pr_<n>`                               | Empty; `scripts/tinybird-pr-branch.ts` swaps host, token, signing key and workspace id |
 | Ingest gateway                                          | `ingest-pr-<n>.maple.dev` (ECS on EC2)                 | Reads ingest keys from the preview's own branch                                        |
 | Electric                                                | `electric-pr-<n>.maple.dev` (ECS Fargate)              | Replicates from the branch; electric-sync points at it                                 |
@@ -48,11 +48,14 @@ and fails the job if a Postgres- or warehouse-backed route returns a 5xx. Withou
 
 ## Limits and cost
 
-- At most `MAX_LIVE_PREVIEWS` (8) open PRs may carry `preview`; the deploy refuses the next one.
+- At most `MAX_LIVE_PREVIEWS` (3) open PRs may carry `preview`; the deploy refuses the next one.
+  Each preview's ingest needs a VPC in the prd AWS account, and us-east-1 allows 5: the default
+  VPC and prd hold 2.
 - A preview runs an EC2 host, two ALBs and a Fargate task while it is live. Neon compute stays
   awake while Electric holds its replication slot.
-- `cleanup-preview-orphans.yml` destroys the stage of any closed PR whose resources are still
-  around (`scripts/preview-stage-orphan-sweep.ts`), then sweeps Tinybird, Workers and Hyperdrive.
+- `cleanup-preview-orphans.yml` destroys the stage of any PR that is closed or no longer carries
+  `preview` (`scripts/preview-stage-orphan-sweep.ts`), then sweeps Tinybird, Workers and
+  Hyperdrive. That also reaps a stage whose teardown was cancelled.
 
 ## One-time setup
 
