@@ -173,7 +173,6 @@ const isUpdateReturn = (value: unknown): value is FoldkitUpdateReturn => Predica
  * ```
  */
 export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
-	const telemetry = makeFlushable(config)
 	const tracing: FoldkitTracing = makeFoldkitTracing({
 		keepCommands: new Set(config.keepCommands ?? []),
 		sampleRates: config.sampleCommands ?? {},
@@ -181,16 +180,16 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 		navigationQuietMs: 150,
 		navigationMaxMs: 30_000,
 	})
+	// Registered before `makeFlushable` adds its own `pagehide` flush, and in the capture phase:
+	// either way it runs first, so the open navigation ends while that flush can still send it.
+	if (typeof globalThis.addEventListener === "function") {
+		globalThis.addEventListener("pagehide", tracing.interruptAll, { capture: true })
+	}
+	const telemetry = makeFlushable(config)
 	const scrubArgs = makeArgsScrubber(config.commandArgs)
 	const recent = makeRecentMessages(20)
 	const marks = makeNavigationMarks()
 	const routeOf = (url: FoldkitUrl): string => scrubUrl(config.routeName?.(url.pathname) ?? url.pathname)
-
-	if (typeof globalThis.addEventListener === "function") {
-		// Capture: at the target, capture listeners run before `makeFlushable`'s own `pagehide`
-		// flush, so the open navigation is ended while that flush can still send it.
-		globalThis.addEventListener("pagehide", tracing.interruptAll, { capture: true })
-	}
 
 	const layer = Layer.effect(Tracer.Tracer, Effect.map(Effect.tracer, tracing.wrap)).pipe(
 		Layer.provideMerge(telemetry.layer),
