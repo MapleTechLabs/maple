@@ -148,7 +148,16 @@ const rateLimitWaitSeconds = (response: HttpClientResponse.HttpClientResponse, n
 const GithubInstallationTokenResponse = Schema.Struct({
 	token: Schema.String,
 	expires_at: Schema.String,
+	// What the installation has accepted, e.g. `{ actions: "read" }`. A permission it never
+	// accepted is absent, so its calls would 403.
+	permissions: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 })
+
+interface InstallationToken {
+	readonly token: string
+	readonly expiresAtMs: number
+	readonly permissions: Readonly<Record<string, string>> | undefined
+}
 
 // `GET /app/installations/{id}` (App-JWT auth): the installed account + which
 // repositories the installation can see. Used by the dashboard connect flow to
@@ -596,7 +605,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			// Reuse one token per installation instead of minting a fresh one per repo.
 			// Tokens last ~1h; cache is per-isolate (externalInstallationId → token + expiry).
-			const installationTokens = new Map<string, { token: string; expiresAtMs: number }>()
+			const installationTokens = new Map<string, InstallationToken>()
 
 			// Every GitHub REST call goes through here so the dependency is a real
 			// Client-kind span: `peer.service` is what draws the GitHub node/edge on
@@ -760,7 +769,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					),
 				)
 
-			const mintInstallationToken = Effect.fn("GithubAppClient.mintInstallationToken")(function* (
+			const installationToken = Effect.fn("GithubAppClient.mintInstallationToken")(function* (
 				externalInstallationId: string,
 			) {
 				// Return a cached token if it's still good, so we don't re-mint per repo.
@@ -768,7 +777,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const cached = installationTokens.get(externalInstallationId)
 				if (cached !== undefined && cached.expiresAtMs - INSTALLATION_TOKEN_EXPIRY_SKEW_MS > now) {
 					yield* Effect.annotateCurrentSpan({ "vcs.provider.token_cache": "hit" })
-					return cached.token
+					return cached
 				}
 				yield* Effect.annotateCurrentSpan({ "vcs.provider.token_cache": "miss" })
 
@@ -803,12 +812,31 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 				// Cache it. If we can't read the expiry, skip caching rather than risk
 				// reusing a token forever.
-				const expiresAtMs = timestampMs(decoded.expires_at)
-				if (Number.isFinite(expiresAtMs)) {
-					installationTokens.set(externalInstallationId, { token: decoded.token, expiresAtMs })
+				const minted: InstallationToken = {
+					token: decoded.token,
+					expiresAtMs: timestampMs(decoded.expires_at),
+					permissions: decoded.permissions,
 				}
-				return decoded.token
+				if (Number.isFinite(minted.expiresAtMs)) {
+					installationTokens.set(externalInstallationId, minted)
+				}
+				return minted
 			})
+
+			const mintInstallationToken = (externalInstallationId: string) =>
+				installationToken(externalInstallationId).pipe(Effect.map((minted) => minted.token))
+
+			// Job logs need `actions: read`. An installation that has not accepted it gets a 403 on
+			// every log download, so callers skip the download. No permissions listed: assume granted.
+			const canReadActions = (externalInstallationId: string) =>
+				installationToken(externalInstallationId).pipe(
+					Effect.map(
+						({ permissions }) =>
+							permissions === undefined ||
+							permissions["actions"] === "read" ||
+							permissions["actions"] === "write",
+					),
+				)
 
 			const authedGet = (_config: ResolvedAppConfig, token: string, url: string) =>
 				rateLimitedFetch(
@@ -1956,8 +1984,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			})
 
 			// An Actions job's log as text lines, read as it downloads so a long log never sits in
-			// memory and a caller that stops early stops the download. Needs `actions: read`, which the
-			// App holds for its workflow webhooks. GitHub redirects to a short-lived signed URL on
+			// memory and a caller that stops early stops the download. Needs `actions: read`
+			// (`canReadActions`). GitHub redirects to a short-lived signed URL on
 			// another host; the redirect is followed by hand so the installation token is not sent there.
 			const streamJobLog = (
 				externalInstallationId: string,
@@ -2140,6 +2168,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				getSourceFile,
 				listCheckRunAnnotations,
 				streamJobLog,
+				canReadActions,
 				mintCloneCredentials,
 				getInstallation,
 				exchangeUserOAuthCode,

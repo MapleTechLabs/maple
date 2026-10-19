@@ -1673,6 +1673,10 @@ describe("VcsSyncService orchestrator", () => {
 		readonly workflowLog?: ReadonlyArray<string>
 		/** Completed when the stubbed provider is asked for a log it then never finishes sending. */
 		readonly workflowLogHang?: Deferred.Deferred<void>
+		/** False when the stubbed installation has not granted access to CI logs. */
+		readonly workflowLogsReadable?: boolean
+		/** Job ids whose log the stubbed provider was asked to stream. */
+		readonly workflowLogRequests?: Array<string>
 		readonly repos?: ReadonlyArray<{
 			externalRepoId: string
 			owner: string
@@ -1743,14 +1747,17 @@ describe("VcsSyncService orchestrator", () => {
 					: opts.workflowAnnotationsError
 						? Effect.fail(opts.workflowAnnotationsError)
 						: Effect.succeed(opts.workflowAnnotations ?? []),
-			streamWorkflowJobLog: () =>
-				opts.workflowLogHang
+			canReadWorkflowLogs: () => Effect.succeed(opts.workflowLogsReadable ?? true),
+			streamWorkflowJobLog: (_installation, _repo, jobId) => {
+				opts.workflowLogRequests?.push(jobId)
+				return opts.workflowLogHang
 					? Stream.fromEffect(
 							Deferred.succeed(opts.workflowLogHang, undefined).pipe(
 								Effect.andThen(Effect.never),
 							),
 						)
-					: Stream.fromIterable(opts.workflowLog ?? []),
+					: Stream.fromIterable(opts.workflowLog ?? [])
+			},
 		}
 		const registry = Layer.succeed(VcsProviderRegistry, {
 			ids: ["github"],
@@ -2057,6 +2064,36 @@ describe("VcsSyncService orchestrator", () => {
 			),
 		)
 	})
+
+	it.effect(
+		"skips the log of an installation that has not granted access to it, keeping the traces",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+			const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
+			const workflowLogRequests: Array<string> = []
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				yield* seedInstallation(repo, asOrgId("org_ci"))
+				yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42")))
+				assert.lengthOf(forwardedWorkflows, 1)
+				assert.lengthOf(forwardedLogs, 0)
+				assert.lengthOf(workflowLogRequests, 0)
+			}).pipe(
+				Effect.provide(
+					orchestratorLayer(testDb, {
+						sent: [],
+						forwardedWorkflows,
+						forwardedLogs,
+						workflowLog: ["first", "second"],
+						workflowLogsReadable: false,
+						workflowLogRequests,
+					}),
+				),
+			)
+		},
+	)
 
 	it.effect("lets go of a job's log that outlasts its budget, so the rest of the batch moves on", () => {
 		const testDb = createTestDb(trackedDbs)

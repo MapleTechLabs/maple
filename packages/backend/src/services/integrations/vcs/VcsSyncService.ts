@@ -957,9 +957,18 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				yield* workflowSink.onWorkflowJob(installation.orgId, job, annotations)
 				// Logs ride on the spans just written. A job with no step that ran has nothing worth
 				// reading, and GitHub may have no log for it at all.
+				// An installation without access to logs would 403 on every download, so skip it.
 				const ref = workflowRepoRef(job)
-				const forwardsLog = job.steps.length > 0 && ref !== undefined
+				const hasLog = job.steps.length > 0 && ref !== undefined
+				const canRead = hasLog
+					? yield* provider.canReadWorkflowLogs(installation).pipe(Effect.orElseSucceed(() => true))
+					: true
+				const forwardsLog = hasLog && canRead
 				yield* Effect.annotateCurrentSpan({ "vcs.workflow.log_forwarded": forwardsLog })
+				if (!canRead)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.workflow.log_error": "installation has not granted actions: read",
+					})
 				if (forwardsLog)
 					yield* workflowSink
 						.onWorkflowJobLog(
