@@ -6,6 +6,7 @@ import { expect as expectView, given, Mount, scene, text, withViewInputs } from 
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import type { PageContext } from "../../contract"
+import { MountRightRail } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { subscriptions } from "./subscription"
@@ -87,6 +88,8 @@ describe("error issue lease countdown", () => {
 
 	test("each tick counts the ring down", () => {
 		const ticked = pageUpdate(loaded(true), Message.TickedLeaseClock({ nowMs: NOW + 61_000 }))
-		scene({ update: pageUpdate, view }, given(ticked.model), Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })), expectView(text("3:59")).toExist())
+		scene({ update: pageUpdate, view }, given({ ...ticked.model, isRightRailMounted: true }),
+			Mount.resolve(MountRightRail, Message.MountedRightRail()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })), expectView(text("3:59")).toExist())
 	})
 })

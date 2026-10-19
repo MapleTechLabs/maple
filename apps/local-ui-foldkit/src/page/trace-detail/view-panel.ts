@@ -1,4 +1,5 @@
 import * as Keyed from "@maple/web-foldkit/data/keyed"
+import * as InfraCorrelation from "@maple/web-foldkit/page/kit/infra-correlation/update"
 import type { TimeFormat } from "../kit/local-time"
 import type * as SpanPanelMessage from "@maple/web-foldkit/page/traces/detail/span-panel/message"
 import type * as SpanPanel from "@maple/web-foldkit/page/traces/detail/span-panel/model"
@@ -33,6 +34,8 @@ const partsModel = (panel: PanelModel, traceStartTime: string, totalDurationMs: 
 	copies: panel.copies,
 	openIds: [],
 	isErrorExpanded: panel.isErrorExpanded,
+	// The local panel has no Infrastructure tab.
+	infra: InfraCorrelation.init(`local-span-${panel.span.spanId}-infra`, ""),
 })
 
 const toParts = (message: SpanPanelMessage.Message) =>

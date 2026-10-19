@@ -188,6 +188,7 @@ describe("logs list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 			expectView(text("06:00")).toExist(),
 		)

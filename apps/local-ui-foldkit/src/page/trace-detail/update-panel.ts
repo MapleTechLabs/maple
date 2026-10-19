@@ -104,6 +104,7 @@ const updateParts = (panel: PanelModel, message: SpanPanelMessage.Message): Pane
 		ToggledCollapsible: () => ({ panel }),
 		ClickedAttributeFilter: () => ({ panel }),
 		GotTabsMessage: () => ({ panel }),
+		GotInfraMessage: () => ({ panel }),
 	})
 
 export const updatePanel = (panel: PanelModel, message: Message): PanelReturn =>
