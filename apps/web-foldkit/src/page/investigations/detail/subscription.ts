@@ -33,7 +33,14 @@ const investigationStream = (orgId: string, id: string, attempt: number) =>
 				},
 			).pipe(Stream.ensuring(collections.releaseInvestigation(collection)))
 		}),
-	)
+	).pipe((live) => withLoadWatchdog(live, Message.SyncedInvestigation({ orgId, id, attempt, sync: { _tag: "Failed" } })))
+
+/** `COLLECTION_LOAD_TIMEOUT_MS`: how long the shape may stay loading before legacy calls it lost. */
+export const LOAD_TIMEOUT = Duration.seconds(30)
+
+/** `useCollectionLoadFailed`: nothing synced within the timeout means the connection is lost (with Retry). */
+export const withLoadWatchdog = <A, E, R>(live: Stream.Stream<A, E, R>, failed: A, timeout: Duration.Input = LOAD_TIMEOUT) =>
+	Stream.race(live, Stream.fromEffect(Effect.as(Effect.sleep(timeout), failed)))
 
 /** `useTickingNow`: a running pass's elapsed time counts up once a second. */
 const clock = Stream.tick(Duration.seconds(1)).pipe(

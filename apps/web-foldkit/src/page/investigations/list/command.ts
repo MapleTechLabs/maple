@@ -1,8 +1,10 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
+import { readIsAdmin } from "../../alerts/shared/commands"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
+import { clickStream, factsOf, rowClickId } from "../clicks"
 import { Message } from "./message"
 
 export const PAGE_SIZE = 100
@@ -106,4 +108,21 @@ export const MountHero = Mount.define("MountInvestigationsHero", {
 			const handle = requestAnimationFrame(() => requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedHero()))))
 			return Effect.sync(() => cancelAnimationFrame(handle))
 		}),
+})
+
+/** `InvestigationRow`'s `openRow`, for every row of the list at once. */
+export const MountInvestigationRows = Mount.defineStream("MountInvestigationRows", {
+	messages: [Message.ClickedRow],
+	execute: ({ element }) =>
+		clickStream<ReturnType<typeof Message.ClickedRow>>(element, false, (event, emit) => {
+			const id = rowClickId(factsOf(event))
+			if (id !== null) emit(Message.ClickedRow({ id }))
+		}),
+})
+
+/** `useIsOrgAdmin`: the shared session read, so the budget notice can offer "Raise the limit". */
+export const ReadInvestigationsIsAdmin = Command.define("ReadInvestigationsIsAdmin", {
+	args: { orgId: Schema.String },
+	messages: [Message.CompletedReadIsAdmin],
+	execute: ({ orgId }) => Effect.map(readIsAdmin, (isAdmin) => Message.CompletedReadIsAdmin({ orgId, isAdmin })),
 })

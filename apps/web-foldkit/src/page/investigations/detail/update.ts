@@ -23,7 +23,7 @@ import {
 	RestartInvestigation,
 } from "./command"
 import { investigationOf, openActionIndexOf, signalServiceOf, signalWindowOf, tabOf } from "./derive"
-import { placeGraph } from "./graph"
+import { graphOf, placeGraph } from "./graph"
 import { followConversation, openReportAction, stepConversation, stepReportSheet } from "./conversation"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -84,8 +84,20 @@ const followOverview = (model: Model, context: PageContext): Return =>
 		},
 	})
 
-const sheetFor = (model: Model): Return => {
-	const isOpen = openActionIndexOf(model) !== null
+/** `ProvenanceCanvas` holds the sheet: it opens only on Overview, for an action the graph drew. */
+const hasOpenAction = (model: Model, timeZone: string): boolean => {
+	const index = openActionIndexOf(model)
+	return (
+		index !== null &&
+		tabOf(model) === "overview" &&
+		Option.exists(investigationOf(model), (investigation) =>
+			graphOf(investigation, timeZone).nodes.some((node) => node.type === "action" && node.data.index === index),
+		)
+	)
+}
+
+const sheetFor = (model: Model, timeZone: string): Return => {
+	const isOpen = hasOpenAction(model, timeZone)
 	if (isOpen === model.actionSheet.isOpen) return { model }
 	const step = isOpen ? Dialog.open(model.actionSheet) : Dialog.close(model.actionSheet)
 	return {
@@ -118,7 +130,7 @@ export const init = (route: InvestigationRoute, _context: PageContext): Return =
 }
 
 export const routeChanged = (model: Model, route: InvestigationRoute, context: PageContext): Return =>
-	chain(chain(followOverview({ ...model, search: route.search }, context), sheetFor), (next) =>
+	chain(chain(followOverview({ ...model, search: route.search }, context), (next) => sheetFor(next, context.timeZone)), (next) =>
 		followConversation(next, context),
 	)
 
@@ -161,7 +173,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (orgId !== context.orgId || id !== model.id || attempt !== model.syncAttempt) return { model }
 			const next = { ...model, sync }
 			return chain(
-				chain(chain(followOverview(next, context), sheetFor), (placed) => ({ model: replace(placed, context.timeZone) })),
+				chain(chain(followOverview(next, context), (opened) => sheetFor(opened, context.timeZone)), (placed) => ({ model: replace(placed, context.timeZone) })),
 				(placed) => followConversation(placed, context),
 			)
 		},
