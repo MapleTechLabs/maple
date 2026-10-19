@@ -71,11 +71,18 @@ export const separator = <Message>(
 
 /**
  * `<Avatar><AvatarImage><AvatarFallback>`: the initials, with `imageUrl` (a Clerk avatar, an org
- * logo) laid over them. Until it loads, or if it fails (`alt=""` draws nothing), the initials show.
+ * logo) laid over them. Until it loads, or if it fails (`alt=""` draws nothing), the initials show;
+ * assistive tech reads the image, named `imageLabel` (`AvatarImage alt`), as Base UI leaves it.
  */
 export const avatarFallback = <Message>(
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ className?: string; fallbackClassName?: string; imageUrl?: string; imageClassName?: string }>,
+	options: Readonly<{
+		className?: string
+		fallbackClassName?: string
+		imageUrl?: string
+		imageLabel?: string
+		imageClassName?: string
+	}>,
 	initials: string,
 ): Html => {
 	const imageUrl = options.imageUrl ?? ""
@@ -86,6 +93,7 @@ export const avatarFallback = <Message>(
 				[
 					h.Class(cn(avatarFallbackStyles, options.fallbackClassName)),
 					h.DataAttribute("slot", "avatar-fallback"),
+					...(imageUrl === "" ? [] : [h.AriaHidden(true)]),
 				],
 				[initials],
 			),
@@ -95,6 +103,7 @@ export const avatarFallback = <Message>(
 						h.img([
 							h.Src(imageUrl),
 							h.Alt(""),
+							...(options.imageLabel === undefined ? [] : [h.AriaLabel(options.imageLabel)]),
 							h.Class(cn(avatarImageStyles, "absolute inset-0", options.imageClassName)),
 							h.DataAttribute("slot", "avatar-image"),
 						]),

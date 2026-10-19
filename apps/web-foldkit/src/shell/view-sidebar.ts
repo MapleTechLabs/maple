@@ -214,13 +214,19 @@ const footerNavRow = (
 	])
 
 /** `UserAvatar` (dashboard/user-avatar.tsx): the Clerk image over the initials. */
-export const userAvatar = (h: HtmlBuilder<Message>, initials: string, className?: string, imageUrl?: string): Html =>
+export const userAvatar = (
+	h: HtmlBuilder<Message>,
+	initials: string,
+	className?: string,
+	image?: Readonly<{ url: string; label: string }>,
+): Html =>
 	avatarFallback(
 		h,
 		{
 			className: cn("bg-muted", className ?? "size-6 rounded-md text-3xs"),
 			fallbackClassName: "rounded-[inherit] font-medium text-muted-foreground",
-			imageUrl,
+			imageUrl: image?.url,
+			imageLabel: image?.label,
 		},
 		initials,
 	)
@@ -299,7 +305,7 @@ export const shellSidebarFooter = (
 			),
 			footerNavRow(h, currentPath, { href: "/settings", title: "Settings", icon: "GearIcon" }, tip),
 		]),
-		h.div([h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")], [footerCluster(h, model, userAvatar(h, initialsOf(clerk), undefined, userImageOf(clerk)), userNameOf(clerk))]),
+		h.div([h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")], [footerCluster(h, model, userAvatar(h, initialsOf(clerk), undefined, { url: userImageOf(clerk), label: userNameOf(clerk) }), userNameOf(clerk))]),
 	])
 
 /** `Code Review`'s "Beta" tag. */

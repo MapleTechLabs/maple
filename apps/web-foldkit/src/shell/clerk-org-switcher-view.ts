@@ -59,6 +59,7 @@ export const orgAvatar = <M>(h: HtmlBuilder<M>, name: string, className?: string
 			className: cn("size-8 rounded-md bg-transparent", className),
 			fallbackClassName: "rounded-[inherit] bg-primary text-primary-foreground text-xs font-semibold",
 			imageUrl,
+			imageLabel: name,
 			imageClassName: "object-cover",
 		},
 		initialsFrom(name),

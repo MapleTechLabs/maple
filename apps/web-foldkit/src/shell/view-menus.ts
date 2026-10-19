@@ -254,7 +254,7 @@ const clerkUserMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu, clerk:
 				h.div(
 					[h.Class("flex items-center gap-2 py-1 text-left text-sm")],
 					[
-						userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs", userImageOf(clerk)),
+						userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs", { url: userImageOf(clerk), label: name }),
 						h.div(
 							[h.Class("grid flex-1 text-left text-sm leading-tight")],
 							[
