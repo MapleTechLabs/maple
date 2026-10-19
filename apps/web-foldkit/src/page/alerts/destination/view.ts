@@ -18,14 +18,14 @@ import { switchControl } from "../../../ui/switch"
 import { destinationProvider, providerLogo, providerOf, destinationTypesFor } from "../shared/providers"
 import { isFormReady, isValidPagerDutyKey, isValidTelegramToken, Message, type Model } from "./dialog"
 import { chatFields } from "./chat-fields-view"
+import { emailFields } from "./email-fields-view"
+import { hazelFields } from "./hazel-fields-view"
 import { waitingFor } from "../shared/chat-connect"
 import { spinner } from "../../../ui/spinner"
 import { type TextField, toFormState } from "./form"
 
 // `DestinationDialog` (components/alerts/destination-dialog.tsx).
-// TODO(destination-dialog): the Hazel OAuth fields, the email member picker (Clerk), a chat
-// destination's channel picker and the connector install popup are not ported; picking those
-// providers shows their tile and the Name field only.
+// The Email, Hazel and chat fields live in `*-fields-view.ts`.
 
 type H = HtmlBuilder<Message>
 
@@ -268,8 +268,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 			]
 		case "email":
 			return isClerkAuthEnabled
-				? // TODO(destination-dialog): `EmailMemberPicker` (Clerk memberships) is not ported.
-					[]
+				? [emailFields(h, { model: model.email, form, toMessage: (message) => Message.GotEmailFieldsMessage({ message }) })]
 				: [
 						h.p(
 							[h.Class("text-2xs text-muted-foreground")],
@@ -278,6 +277,15 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 							],
 						),
 					]
+		case "hazel-oauth":
+			return [
+				hazelFields(h, {
+					model: model.hazel,
+					form,
+					isEditing,
+					toMessage: (message) => Message.GotHazelFieldsMessage({ message }),
+				}),
+			]
 		case "chat":
 			return [
 				chatFields(h, {

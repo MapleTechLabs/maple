@@ -18,6 +18,7 @@ import { Effect, Option, Result, Schema, Stream } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { ChatWorkspaceId } from "@maple/domain/primitives"
+import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
@@ -25,6 +26,8 @@ import * as Dialog from "../../../ui/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import * as ChatConnectStream from "../shared/chat-connect-stream"
 import * as ChatFields from "./chat-fields"
+import * as EmailFields from "./email-fields"
+import * as HazelFields from "./hazel-fields"
 import { DestinationForm, TextField, toFormState } from "./form"
 
 // `DestinationDialog` and the `useDestinationManager` state it is driven by
@@ -49,6 +52,10 @@ export const Model = Schema.Struct({
 	chat: ChatFields.Model,
 	/** `useChatWorkspaceConnect` behind the connect tiles. */
 	chatConnect: ChatConnect.Model,
+	/** `EmailMemberPicker`: the org's members, read from Clerk once the picker mounts. */
+	email: EmailFields.Model,
+	/** `HazelOAuthFields`: the connection, its organizations and the picked one's channels. */
+	hazel: HazelFields.Model,
 	brokenLogos: Schema.Array(Schema.String),
 })
 export type Model = typeof Model.Type
@@ -67,6 +74,8 @@ export const init = (id: string): Model => ({
 	brokenLogos: [],
 	chat: ChatFields.init(),
 	chatConnect: ChatConnect.init(),
+	email: EmailFields.init(),
+	hazel: HazelFields.init(),
 })
 
 export const Message = defineMessageUnion({
@@ -96,6 +105,8 @@ export const Message = defineMessageUnion({
 	GotChatFieldsMessage: { message: ChatFields.Message },
 	ClickedConnectChat: { connector: Schema.String },
 	GotChatConnectMessage: { message: ChatConnect.Message },
+	GotEmailFieldsMessage: { message: EmailFields.Message },
+	GotHazelFieldsMessage: { message: HazelFields.Message },
 })
 export type Message = typeof Message.Type
 
@@ -255,11 +266,25 @@ const liftChat = (model: Model, step: ChatFields.Return): Return => ({
 	commands: Command.mapMessages(step.commands, (message) => Message.GotChatFieldsMessage({ message })),
 })
 
-/** The provider's own fields mount with the form: a chat destination's channel list loads. */
-const mountFields = (step: Return): Return =>
-	step.model.form.type === "chat"
-		? withCommands(liftChat(step.model, ChatFields.reset(step.model.chat, step.model.form)), step.commands)
-		: step
+const liftEmail = (model: Model, step: EmailFields.Return): Return => ({
+	model: { ...model, email: step.model, form: step.form === undefined ? model.form : { ...model.form, ...step.form } },
+	commands: Command.mapMessages(step.commands, (message) => Message.GotEmailFieldsMessage({ message })),
+})
+
+const liftHazel = (model: Model, step: HazelFields.Return): Return => ({
+	model: { ...model, hazel: step.model, form: step.form === undefined ? model.form : { ...model.form, ...step.form } },
+	commands: Command.mapMessages(step.commands, (message) => Message.GotHazelFieldsMessage({ message })),
+})
+
+/** The provider's own fields mount with the form: a chat channel list, or the email members, load. */
+const mountFields = (step: Return): Return => {
+	const { form } = step.model
+	if (form.type === "chat") return withCommands(liftChat(step.model, ChatFields.reset(step.model.chat, form)), step.commands)
+	if (form.type === "hazel-oauth") return withCommands(liftHazel(step.model, HazelFields.reset(step.model.hazel, form)), step.commands)
+	if (form.type === "email" && isClerkAuthEnabled)
+		return withCommands(liftEmail(step.model, EmailFields.reset(step.model.email, form)), step.commands)
+	return step
+}
 
 /** A save in flight stays in flight across a reopen (legacy's `useAsyncAction`): no second submit. */
 const open = (model: Model, patch: Partial<Model>): Return => {
@@ -366,7 +391,7 @@ export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: child }) => liftDialog(model, Dialog.update(model.dialog, child)),
 		CompletedFetchConnectors: ({ connectors }) => connectorsAnswered(model, connectors),
-		ClickedProvider: ({ type }) => ({ model: { ...model, form: defaultDestinationForm(type) } }),
+		ClickedProvider: ({ type }) => mountFields({ model: { ...model, form: defaultDestinationForm(type) } }),
 		ClickedChatWorkspace: ({ connector, workspaceId }) =>
 			Option.match(
 				Option.flatMap(Option.fromNullishOr(model.connectors), (connectors) =>
@@ -425,4 +450,6 @@ export const update = (model: Model, message: Message): Return =>
 		GotChatFieldsMessage: ({ message: inner }) => liftChat(model, ChatFields.update(model.chat, inner, model.form)),
 		ClickedConnectChat: ({ connector }) => connectChat(model, connector),
 		GotChatConnectMessage: ({ message: inner }) => chatConnectStep(model, inner),
+		GotEmailFieldsMessage: ({ message: inner }) => liftEmail(model, EmailFields.update(model.email, inner)),
+		GotHazelFieldsMessage: ({ message: inner }) => liftHazel(model, HazelFields.update(model.hazel, inner, model.form)),
 	})

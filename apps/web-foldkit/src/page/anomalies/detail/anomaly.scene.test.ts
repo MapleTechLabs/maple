@@ -173,6 +173,7 @@ describe("anomaly link dialog by keyboard", () => {
 			themed(),
 			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
 			type(input, "Timeout"),
+			expectView(role("option", { name: /ConnectionTimeout/ })).toExist(),
 			keydown(input, "ArrowDown"),
 			keydown(input, "Enter"),
 			Command.expectHas(SetIncidentIssue({ id: ID, issueId: timeout })),
