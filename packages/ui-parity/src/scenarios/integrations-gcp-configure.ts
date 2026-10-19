@@ -300,7 +300,15 @@ const controls: ReadonlyArray<Scenario> = [
 		await page.keyboard.press("Escape")
 		await dialog(page).waitFor({ state: "detached" })
 	}),
-	wizard("close-x", "the dialog's close button", async (page) => {
+	// Focus back on <body>, as after the focused control re-renders away: Escape still closes it.
+	wizard("escape-body-focus", "Escape closes the wizard with focus outside it", async (page) => {
+		await openNew(page)
+		await dialog(page).getByRole("textbox", { name: "Project ID" }).waitFor()
+		await page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined))
+		await page.keyboard.press("Escape")
+		await dialog(page).waitFor({ state: "detached" })
+	}),
+	wizard("close-x","the dialog's close button", async (page) => {
 		await openNew(page)
 		await dialog(page).getByRole("button", { name: "Close", exact: true }).click()
 		await dialog(page).waitFor({ state: "detached" })

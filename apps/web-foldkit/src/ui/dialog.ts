@@ -3,7 +3,7 @@ import { Effect, Option, Schema, Stream } from "effect"
 import { Command, Dom, Mount, Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import { outsidePresses } from "./overlay/anchored"
+import { outsidePresses, strayEscapes } from "./overlay/anchored"
 import { lockBodyScroll, manageFocus, markOutside, portalToBody, trapFocus } from "./overlay/portal"
 
 /**
@@ -133,7 +133,7 @@ export const MountDialog = Mount.defineStream("MountDialog", {
 		isPopupFocused: Schema.Boolean,
 		isReturningFocus: Schema.Boolean,
 	},
-	messages: [Message.CompletedMountDialog, Message.PressedOutside],
+	messages: [Message.CompletedMountDialog, Message.PressedOutside, Message.PressedEscape],
 	execute: ({ element, id, hasTrigger, isPopupFocused, isReturningFocus }) =>
 		Stream.unwrap(
 			Effect.gen(function* () {
@@ -151,8 +151,9 @@ export const MountDialog = Mount.defineStream("MountDialog", {
 				})
 				return Stream.concat(
 					mounted,
-					outsidePresses(popup, [nestedPopups(element)]).pipe(
-						Stream.map(() => Message.PressedOutside()),
+					Stream.merge(
+						outsidePresses(popup, [nestedPopups(element)]).pipe(Stream.map(() => Message.PressedOutside())),
+						strayEscapes(element).pipe(Stream.map(() => Message.PressedEscape())),
 					),
 				)
 			}),
