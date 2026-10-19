@@ -527,7 +527,7 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 								]
 							: []
 					}
-					// The scheduler re-claims each rule every tick under a 30s lock, so a claim this old
+					// The scheduler claims each rule at least every 5 minutes, so a claim this old
 					// means the rule has fallen out of the rotation entirely.
 					const age = now - rule.lastScheduledAt
 					return age > RULE_SCHEDULE_STALE_MS

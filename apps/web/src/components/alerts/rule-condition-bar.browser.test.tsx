@@ -37,3 +37,32 @@ describe("RuleConditionFields tiers", () => {
 		expect(screen.queryByLabelText("Recovers below")).toBeNull()
 	})
 })
+
+describe("RuleConditionFields check cadence", () => {
+	it("says how often the window is checked as the window changes", () => {
+		render(<Harness initial={defaultRuleForm()} />)
+		const window = screen.getByLabelText("Window")
+
+		fireEvent.change(window, { target: { value: "5" } })
+		expect(screen.getByText(/checked every minute\./)).toBeTruthy()
+
+		fireEvent.change(window, { target: { value: "15" } })
+		expect(screen.getByText(/checked every 3 min\./)).toBeTruthy()
+
+		fireEvent.change(window, { target: { value: "60" } })
+		expect(screen.getByText(/checked every 5 min\./)).toBeTruthy()
+	})
+
+	it("keeps the cadence hint next to the previous value while editing a rule", () => {
+		const saved = { ...defaultRuleForm(), windowMinutes: "5" }
+		function EditHarness() {
+			const [form, setForm] = useState(saved)
+			return <RuleConditionFields form={form} onChange={setForm} saved={saved} />
+		}
+		render(<EditHarness />)
+
+		fireEvent.change(screen.getByLabelText("Window"), { target: { value: "30" } })
+		expect(screen.getByText(/^Was/).textContent).toBe("Was 5 min")
+		expect(screen.getByText(/checked every 5 min\./)).toBeTruthy()
+	})
+})
