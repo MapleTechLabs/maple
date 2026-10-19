@@ -2,6 +2,7 @@ import { OrgId } from "@maple/domain"
 import { V2ErrorIssue } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "../../../data/load-failure"
 import type { PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -146,5 +147,25 @@ describe("errors hub selection", () => {
 		)
 		expect(names(done.commands)).toContain("FetchErrorIssuesPage")
 		expect(done.model.selectedIds).toEqual(selected.selectedIds)
+	})
+
+	test("a second write's refresh restarts the first one's re-read, whose late answer is dropped", () => {
+		const completed = (model: Model, id: string) =>
+			pageUpdate(
+				model,
+				Message.CompletedHubWrite({
+					ids: [id],
+					write: { _tag: "Claim" },
+					isBulk: false,
+					outcome: { succeeded: 1, failed: 0, firstFailure: null },
+				}),
+			)
+		const first = completed(loaded(), ids[0] ?? "")
+		const second = completed(first.model, ids[1] ?? "")
+		expect(names(second.commands)).toEqual(["FetchErrorIssuesPage", "FetchErrorIssueServiceCounts"])
+		const firstKey = first.model.pages[0]?.page.key ?? ""
+		expect(second.model.pages[0]?.page.key).not.toBe(firstKey)
+		const late = pageUpdate(second.model, Message.CompletedFetchPage({ key: firstKey, result: Result.fail(toLoadFailure("old")) }))
+		expect(late.model.pages).toEqual(second.model.pages)
 	})
 })

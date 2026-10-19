@@ -128,18 +128,14 @@ export const bulkWrite = (model: Model, write: HubWrite): Return => {
 type PageQuery = (model: Model, cursor: string | null) => Parameters<typeof FetchPage>[0]["query"]
 
 const refreshIssues = (model: Model, context: PageContext, pageQuery: PageQuery): Return => {
-	const pages = model.pages.map((slot) =>
-		slot.page.key === null
-			? { slot, command: Option.none() }
-			: Option.match(Keyed.request(slot.page, slot.page.key, "Refresh"), {
-					onNone: () => ({ slot, command: Option.none() }),
-					onSome: (page) => ({ slot: { ...slot, page }, command: Option.some(slot) }),
-				}),
-	)
-	const counts = Keyed.request(
-		model.serviceCounts,
-		requestKey(context.orgId, "errorIssues.serviceCounts", {}),
-		"Refresh",
+	// Invalidation restarts reads already in flight: an answer from before the write is dropped.
+	const pages = model.pages.map((slot) => {
+		if (slot.page.key === null) return { slot, command: Option.none<typeof slot>() }
+		const next = { ...slot, page: Keyed.supersede(slot.page, slot.page.key) }
+		return { slot: next, command: Option.some(next) }
+	})
+	const counts = Option.some(
+		Keyed.supersede(model.serviceCounts, requestKey(context.orgId, "errorIssues.serviceCounts", {})),
 	)
 	return {
 		model: {

@@ -69,16 +69,19 @@ type Step = Readonly<{ patch: Partial<Model>; commands: ReadonlyArray<Cmd> }>
 
 const NO_STEP: Step = { patch: {}, commands: [] }
 
+/** `Supersede`: a post-write re-read, which restarts a read already in flight (reactivity invalidation). */
+type SlotMode = Keyed.RequestMode | "Supersede"
+
 const keyed = <A, E>(
 	slot: Keyed.Keyed<A, E>,
 	key: string,
-	mode: Keyed.RequestMode,
+	mode: SlotMode,
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Cmd,
 ): Step =>
-	Option.match(Keyed.request(slot, key, mode), {
+	Option.match(mode === "Supersede" ? Option.some(Keyed.supersede(slot, key)) : Keyed.request(slot, key, mode), {
 		onNone: () => NO_STEP,
-		onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
+		onSome: (next) => ({ patch: write(next), commands: [fetch(next.key ?? key)] }),
 	})
 
 const applySteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>): Return =>
@@ -178,7 +181,7 @@ const loadedReads =
 	}
 
 const detailStep =
-	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
+	(context: PageContext, window: TimeWindow, mode: RequestMode | "Supersede") =>
 	(model: Model): Step => {
 		const query = detailQueryOf(window)
 		return keyed(
@@ -341,12 +344,12 @@ const refreshAfterWrite =
 		const key = (operation: string) => requestKey(context.orgId, operation, model.issueId)
 		const issueId = model.issueId
 		const result = applySteps(model, [
-			...(model.window === null ? [] : [detailStep(context, model.window, "Refresh")]),
+			...(model.window === null ? [] : [detailStep(context, model.window, "Supersede")]),
 			(m) =>
 				keyed(
 					m.events,
 					key("errors.listIssueEvents"),
-					"Refresh",
+					"Supersede",
 					(events) => ({ events }),
 					(k) => FetchEvents({ key: k, issueId }),
 				),
@@ -354,7 +357,7 @@ const refreshAfterWrite =
 				keyed(
 					m.escalations,
 					key("errors.listIssueEscalations"),
-					"Refresh",
+					"Supersede",
 					(escalations) => ({ escalations }),
 					(k) => FetchEscalations({ key: k, issueId }),
 				),
@@ -362,7 +365,7 @@ const refreshAfterWrite =
 				keyed(
 					m.pullRequests,
 					key("errors.listIssuePullRequests"),
-					"Refresh",
+					"Supersede",
 					(pullRequests) => ({ pullRequests }),
 					(k) => FetchPullRequests({ key: k, issueId }),
 				),
@@ -370,7 +373,7 @@ const refreshAfterWrite =
 				keyed(
 					m.verifications,
 					key("errors.listIssueVerifications"),
-					"Refresh",
+					"Supersede",
 					(verifications) => ({ verifications }),
 					(k) => FetchVerifications({ key: k, issueId }),
 				),
@@ -448,7 +451,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetry: () =>
 			model.window === null
 				? { model }
-				: applySteps(model, [detailStep(context, model.window, "Refresh")]),
+				: applySteps(model, [detailStep(context, model.window, "Supersede")]),
 		ClickedResetTimeRange: () =>
 			navigateSearch(model, {
 				...model.search,

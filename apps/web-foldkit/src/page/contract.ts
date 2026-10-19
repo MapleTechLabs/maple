@@ -128,16 +128,22 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 
 // ERASED PAGE (what the registry and root consume)
 
+/** Preload Commands' Messages are stamped for no instance: the root drops them (their answer is cached). */
+export const PRELOAD_INSTANCE = -1
+
 export interface PageSlotBase {
 	readonly _tag: string
 	readonly key: string
 	readonly orgId: string
+	/** Bumped by the root on every instance build: A -> B -> A is a second instance of A. */
+	readonly instance: number
 }
-/** A page Message stamped with the instance (slot key and org) it was produced for. */
+/** A page Message stamped with the instance (slot key, org and build number) it was produced for. */
 export interface PageMessageBase {
 	readonly _tag: string
 	readonly key: string
 	readonly orgId: string
+	readonly instance: number
 }
 /** The root as page Subscriptions see it. */
 export interface PageHost {
@@ -167,17 +173,30 @@ export const definePage = <
 ) => {
 	type Model = ModelSchema["Type"]
 	type Message = MessageSchema["Type"]
-	const Slot = Schema.TaggedStruct(id, { key: Schema.String, orgId: Schema.String, model: schemas.Model })
+	const Slot = Schema.TaggedStruct(id, {
+		key: Schema.String,
+		orgId: Schema.String,
+		instance: Schema.Number,
+		model: schemas.Model,
+	})
 	const Wrapped = Schema.TaggedStruct(id, {
 		key: Schema.String,
 		orgId: Schema.String,
+		instance: Schema.Number,
 		message: schemas.Message,
 	})
-	type SlotType = { readonly _tag: Id; readonly key: string; readonly orgId: string; readonly model: Model }
+	type SlotType = {
+		readonly _tag: Id
+		readonly key: string
+		readonly orgId: string
+		readonly instance: number
+		readonly model: Model
+	}
 	type WrappedType = {
 		readonly _tag: Id
 		readonly key: string
 		readonly orgId: string
+		readonly instance: number
 		readonly message: Message
 	}
 
@@ -186,12 +205,12 @@ export const definePage = <
 	const isOwnMessage = (message: PageMessageBase): message is WrappedType => message._tag === id
 	/** The Message was produced by this very instance, not an older one of the same page. */
 	const isForInstance = (slot: PageSlotBase, message: PageMessageBase) =>
-		message.key === slot.key && message.orgId === slot.orgId
+		message.key === slot.key && message.orgId === slot.orgId && message.instance === slot.instance
 	const ownsRoute = (route: AppRoute): route is RouteOf<Tags> =>
 		Array.some(spec.routes, (tag) => tag === route._tag)
 	const wrapFor =
-		(key: string, orgId: string) =>
-		(message: Message): WrappedType => ({ _tag: id, key, orgId, message })
+		(key: string, orgId: string, instance: number) =>
+		(message: Message): WrappedType => ({ _tag: id, key, orgId, instance, message })
 	const keyOf = (route: RouteOf<Tags>) => (spec.key ? spec.key(route) : route._tag)
 
 	const isOwnPageMessage = Schema.is(schemas.Message)
@@ -208,12 +227,13 @@ export const definePage = <
 
 	const step = (
 		key: string,
+		instance: number,
 		context: PageContext,
 		result: PageReturn<Model, Message>,
 	): PageStep<SlotType, WrappedType> => {
-		const wrap = wrapFor(key, context.orgId)
+		const wrap = wrapFor(key, context.orgId, instance)
 		return {
-			slot: { _tag: id, key, orgId: context.orgId, model: result.model },
+			slot: { _tag: id, key, orgId: context.orgId, instance, model: result.model },
 			commands: Command.mapMessages(result.commands ?? [], wrap),
 			outMessage: Option.map(Option.fromNullishOr(result.outMessage), wrapOut(wrap)),
 		}
@@ -233,6 +253,7 @@ export const definePage = <
 							Schema.Struct({
 								key: Schema.String,
 								orgId: Schema.String,
+								instance: Schema.Number,
 								inner: inner.dependenciesSchema,
 							}),
 						),
@@ -244,6 +265,7 @@ export const definePage = <
 									? Option.some({
 											key: host.page.key,
 											orgId: host.page.orgId,
+											instance: host.page.instance,
 											inner: inner.modelToDependencies({
 												model: host.page.model,
 												context: host.context,
@@ -254,10 +276,10 @@ export const definePage = <
 						dependenciesToStream: ({ maybeInstance }) =>
 							Option.match(maybeInstance, {
 								onNone: () => Stream.empty,
-								onSome: ({ key, orgId, inner: dependencies }) =>
+								onSome: ({ key, orgId, instance, inner: dependencies }) =>
 									Stream.map(
 										inner.dependenciesToStream(dependencies, () => dependencies),
-										wrapFor(key, orgId),
+										wrapFor(key, orgId, instance),
 									),
 							}),
 					},
@@ -272,9 +294,9 @@ export const definePage = <
 		Wrapped,
 		keyOf: (route: AppRoute): Option.Option<string> =>
 			ownsRoute(route) ? Option.some(keyOf(route)) : Option.none(),
-		init: (route: AppRoute, context: PageContext) =>
+		init: (route: AppRoute, context: PageContext, instance: number) =>
 			ownsRoute(route)
-				? Option.some(step(keyOf(route), context, spec.init(route, context)))
+				? Option.some(step(keyOf(route), instance, context, spec.init(route, context)))
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		/** The route's preload Commands, wrapped; `None` when the page has none or does not own the route. */
 		preload: (route: AppRoute, context: PageContext, nowMs: number) =>
@@ -282,21 +304,21 @@ export const definePage = <
 				? Option.some(
 						Command.mapMessages(
 							spec.preload(route, context, nowMs),
-							wrapFor(keyOf(route), context.orgId),
+							wrapFor(keyOf(route), context.orgId, PRELOAD_INSTANCE),
 						),
 					)
 				: Option.none<ReadonlyArray<Command.Command<WrappedType, never, Resources>>>(),
 		update: (slot: PageSlotBase, message: PageMessageBase, context: PageContext) =>
 			isOwnSlot(slot) && isOwnMessage(message) && isForInstance(slot, message)
-				? Option.some(step(slot.key, context, spec.update(slot.model, message.message, context)))
+				? Option.some(step(slot.key, slot.instance, context, spec.update(slot.model, message.message, context)))
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		routeChanged: (slot: PageSlotBase, route: AppRoute, context: PageContext) =>
 			isOwnSlot(slot) && ownsRoute(route) && spec.routeChanged
-				? Option.some(step(slot.key, context, spec.routeChanged(slot.model, route, context)))
+				? Option.some(step(slot.key, slot.instance, context, spec.routeChanged(slot.model, route, context)))
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		contextChanged: (slot: PageSlotBase, context: PageContext) =>
 			isOwnSlot(slot) && spec.contextChanged
-				? Option.some(step(slot.key, context, spec.contextChanged(slot.model, context)))
+				? Option.some(step(slot.key, slot.instance, context, spec.contextChanged(slot.model, context)))
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		breadcrumbs: (slot: PageSlotBase): ReadonlyArray<BreadcrumbEntry> =>
 			isOwnSlot(slot) ? spec.breadcrumbs(slot.model) : [],
@@ -312,7 +334,7 @@ export const definePage = <
 							isMobile: inputs.isMobile ?? false,
 							isBelowSm: inputs.isBelowSm ?? false,
 						},
-						toParentMessage: wrapFor(slot.key, slot.orgId),
+						toParentMessage: wrapFor(slot.key, slot.orgId, slot.instance),
 					})
 				: null,
 		),
@@ -330,7 +352,7 @@ export const definePage = <
 								isMobile: inputs.isMobile ?? false,
 								isBelowSm: inputs.isBelowSm ?? false,
 							},
-							toParentMessage: wrapFor(slot.key, slot.orgId),
+							toParentMessage: wrapFor(slot.key, slot.orgId, slot.instance),
 						})
 					: null
 			},

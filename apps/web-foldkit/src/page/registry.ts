@@ -177,9 +177,14 @@ const pageById = (id: string) => Array.findFirst(pages, (page) => page.id === id
 
 /**
  * Route entry: keep the instance when its key and org are unchanged (it gets `routeChanged`),
- * otherwise build the route's page and drop the previous one (React's unmount on navigation).
+ * otherwise build the route's page as instance `nextInstance` and drop the previous one.
  */
-export const enterRoute = (current: PageSlot | null, route: AppRoute, context: PageContext): PageTransition =>
+export const enterRoute = (
+	current: PageSlot | null,
+	route: AppRoute,
+	context: PageContext,
+	nextInstance: number,
+): PageTransition =>
 	Option.match(
 		Array.findFirst(pages, (page) => Option.isSome(page.keyOf(route))),
 		{
@@ -192,7 +197,7 @@ export const enterRoute = (current: PageSlot | null, route: AppRoute, context: P
 					Option.contains(page.keyOf(route), current.key)
 				return isSameInstance
 					? toTransition(page.routeChanged(current, route, context), current)
-					: toTransition(page.init(route, context), null)
+					: toTransition(page.init(route, context, nextInstance), null)
 			},
 		},
 	)
@@ -215,7 +220,7 @@ export const preloadRoute = (
 
 /** A page instance's identity: a new one starts with nothing held. */
 export const pageIdentity = (slot: PageSlotBase | null): string =>
-	slot === null ? "" : `${slot._tag}:${slot.key}:${slot.orgId}`
+	slot === null ? "" : `${slot._tag}:${slot.key}:${slot.orgId}:${slot.instance}`
 
 export const updatePage = (
 	current: PageSlot | null,
@@ -244,7 +249,10 @@ export const pageSubscriptions = Subscription.aggregate<PageHost, PageMessage, R
 	...pages.map((page) => page.subscriptions),
 )
 
-/** Embeds the active page. `slotId` includes the key, so a new instance gets a fresh boundary. */
+/** The page's view boundary: a new instance (another org on the same route, too) mounts afresh. */
+export const pageSlotId = (slot: PageSlotBase): string => `page:${pageIdentity(slot)}`
+
+/** Embeds the active page under `pageSlotId`. */
 export const viewPage = <ParentMessage>(
 	h: HtmlBuilder<ParentMessage>,
 	slot: PageSlotBase,
@@ -255,7 +263,7 @@ export const viewPage = <ParentMessage>(
 		onNone: () => h.empty,
 		onSome: (page) =>
 			h.submodel({
-				slotId: `page:${slot._tag}:${slot.key}`,
+				slotId: pageSlotId(slot),
 				model: slot,
 				view: page.hostView,
 				viewInputs: inputs,
@@ -274,7 +282,7 @@ export const viewPageTopbarActions = <ParentMessage>(
 		onNone: () => h.empty,
 		onSome: (page) =>
 			h.submodel({
-				slotId: `page-topbar:${slot._tag}:${slot.key}`,
+				slotId: `page-topbar:${pageIdentity(slot)}`,
 				model: slot,
 				view: page.hostTopbarActions,
 				viewInputs: inputs,

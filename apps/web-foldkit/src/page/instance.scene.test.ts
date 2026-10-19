@@ -34,10 +34,11 @@ const documentOf = (id: string) =>
 const routeOf = (id: string, isEdit: boolean) =>
 	AppRoute.Dashboard({ dashboardId: Schema.decodeSync(DashboardId)(id), search: isEdit ? { mode: "edit" } : {} })
 
-const stamp = (key: string, message: Message, org: string = orgId): PageMessage => ({
+const stamp = (key: string, instance: number, message: Message, org: string = orgId): PageMessage => ({
 	_tag: "DashboardView",
 	key,
 	orgId: org,
+	instance,
 	message,
 })
 
@@ -45,17 +46,18 @@ const isPageMessage = Schema.is(PageMessage)
 
 const send = (slot: PageSlot | null, message: PageMessage) => updatePage(slot, message, context)
 
-/** Dashboard `id` entered in edit mode, clocked and holding its document. */
-const opened = (current: PageSlot | null, id: string): PageSlot | null =>
+/** Dashboard `id` entered in edit mode as build `instance`, clocked and holding its document. */
+const opened = (current: PageSlot | null, id: string, instance: number): PageSlot | null =>
 	[Message.CompletedReadClock({ nowMs: NOW }), Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(documentOf(id)) })]
-		.map((message) => stamp(id, message))
-		.reduce((slot, message) => send(slot, message).slot, enterRoute(current, routeOf(id, true), context).slot)
+		.map((message) => stamp(id, instance, message))
+		.reduce((slot, message) => send(slot, message).slot, enterRoute(current, routeOf(id, true), context, instance).slot)
 
-const deleteTile = (slot: PageSlot | null, id: string) =>
+const deleteTile = (slot: PageSlot | null, id: string, instance: number) =>
 	send(
 		slot,
 		stamp(
 			id,
+			instance,
 			Message.GotWidgetMenuMessage({
 				widgetId: "total-errors",
 				message: { _tag: "ClickedItem", index: 3, item: { kind: "Item", value: "delete" } },
@@ -75,10 +77,10 @@ const names = (step: { readonly commands: ReadonlyArray<{ readonly name: string 
 
 describe("page instances", () => {
 	test("Undo on dashboard A's toast, clicked after B opened, does not restore A's tile into B", () => {
-		const onA = opened(null, "dash_a")
-		const undo = Option.getOrThrow(undoOf(deleteTile(onA, "dash_a")))
+		const onA = opened(null, "dash_a", 1)
+		const undo = Option.getOrThrow(undoOf(deleteTile(onA, "dash_a", 1)))
 		expect(names(send(onA, undo))).toEqual(["RestoreDashboardWidget"])
-		const onB = opened(onA, "dash_b")
+		const onB = opened(onA, "dash_b", 2)
 		expect(onB?.key).toBe("dash_b")
 		const clicked = send(onB, undo)
 		expect(clicked.commands).toEqual([])
@@ -86,14 +88,22 @@ describe("page instances", () => {
 	})
 
 	test("dashboard A's late failed write does not make B read-only", () => {
-		const onB = opened(opened(null, "dash_a"), "dash_b")
-		const late = send(onB, stamp("dash_a", Message.CompletedWrite({ result: Result.fail("Write failed") })))
+		const onB = opened(opened(null, "dash_a", 1), "dash_b", 2)
+		const late = send(onB, stamp("dash_a", 1, Message.CompletedWrite({ result: Result.fail("Write failed") })))
 		expect(late.slot?._tag === "DashboardView" ? late.slot.model.persistenceError : "missing").toBeNull()
 	})
 
 	test("a Message stamped for another org's instance of the same dashboard is dropped", () => {
-		const onA = opened(null, "dash_a")
-		const late = send(onA, stamp("dash_a", Message.CompletedWrite({ result: Result.fail("Write failed") }), otherOrgId))
+		const onA = opened(null, "dash_a", 1)
+		const late = send(onA, stamp("dash_a", 1, Message.CompletedWrite({ result: Result.fail("Write failed") }), otherOrgId))
 		expect(late.slot).toBe(onA)
+	})
+
+	test("A -> B -> A: a late answer from the first visit is dropped by the second", () => {
+		const backOnA = opened(opened(opened(null, "dash_a", 1), "dash_b", 2), "dash_a", 3)
+		const failed = Message.CompletedWrite({ result: Result.fail("Write failed") })
+		expect(send(backOnA, stamp("dash_a", 1, failed)).slot).toBe(backOnA)
+		const current = send(backOnA, stamp("dash_a", 3, failed)).slot
+		expect(current?._tag === "DashboardView" ? current.model.persistenceError : null).not.toBeNull()
 	})
 })

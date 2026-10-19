@@ -54,4 +54,28 @@ describe("Keyed slots", () => {
 			AsyncData.Stale({ data: 1, error: "timeout" }),
 		)
 	})
+
+	test("a new key's failure shows the error, not the previous key's rows", () => {
+		const switched = requested(loaded(morning, 1), evening)
+		expect(Keyed.accept(switched, evening, Result.fail("timeout")).data).toEqual(
+			AsyncData.Failure({ error: "timeout" }),
+		)
+		const settled = Keyed.accept(switched, evening, Result.succeed(2))
+		const refreshed = requested(settled, evening, "Refresh")
+		expect(Keyed.accept(refreshed, evening, Result.fail("timeout")).data).toEqual(
+			AsyncData.Stale({ data: 2, error: "timeout" }),
+		)
+	})
+
+	test("a post-write re-read supersedes the read in flight: the older answer is dropped", () => {
+		const reloading = requested(loaded(morning, 1), morning, "Refresh")
+		const superseded = Keyed.supersede(reloading, morning)
+		expect(superseded.key).not.toBe(morning)
+		const afterOld = Keyed.accept(superseded, morning, Result.succeed(1))
+		expect(afterOld).toEqual(superseded)
+		const key = superseded.key ?? ""
+		expect(Keyed.accept(afterOld, key, Result.succeed(2)).data).toEqual(AsyncData.Success({ data: 2 }))
+		expect(Keyed.request(Keyed.accept(afterOld, key, Result.succeed(2)), morning, "Load")).toEqual(Option.none())
+		expect(Keyed.supersede(superseded, morning).key).not.toBe(key)
+	})
 })

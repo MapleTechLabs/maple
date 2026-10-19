@@ -4,7 +4,7 @@ import { Option } from "effect"
 import { describe, expect, test } from "vitest"
 import type { ClerkOrganization } from "../../platform/clerk"
 import { AppRoute, hrefOf } from "../../route"
-import { CustomerData, type CustomerSlot, planGate } from "./plan-gate"
+import { CustomerData, type CustomerSlot, isRouteHeld, planGate } from "./plan-gate"
 
 const organization: ClerkOrganization = {
 	id: OrgId.make("org_1"),
@@ -59,6 +59,12 @@ describe("plan gate", () => {
 			redirect: Option.none(),
 			isSplash: false,
 		})
+	})
+
+	test("the route mounts (its page is built) only once the gate lets the app render", () => {
+		expect(isRouteHeld(gate(home, loading))).toBe(true)
+		expect(isRouteHeld(gate(home, customerWith(null)))).toBe(true)
+		expect(isRouteHeld(gate(home, loading, true))).toBe(false)
 	})
 
 	test("the unsubscribe page never reads the plan", () => {

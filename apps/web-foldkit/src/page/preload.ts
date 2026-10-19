@@ -60,16 +60,49 @@ export const elapsed = (model: Model, href: string, version: number): Option.Opt
 export const keysOf = (commands: ReadonlyArray<PageCommand>): ReadonlyArray<string> =>
 	commands.flatMap((command) => Option.toArray(keyOfCommand(command)))
 
+/** A `Keyed` slot's key: `{ key: string, data: AsyncData }`. */
+const slotKeyOf = (value: { readonly [x: PropertyKey]: unknown }): Option.Option<string> => {
+	const key = value["key"]
+	const data = value["data"]
+	return Predicate.isString(key) && Predicate.isReadonlyObject(data) && Predicate.isString(data["_tag"])
+		? Option.some(key)
+		: Option.none()
+}
+
+/** The keys a page Model's `Keyed` slots stand on (their `data` is not walked: rows hold no slots). */
+export const liveKeysOf = (value: unknown): ReadonlyArray<string> =>
+	Array.isArray(value)
+		? value.flatMap(liveKeysOf)
+		: Predicate.isReadonlyObject(value)
+			? Option.match(slotKeyOf(value), {
+					onSome: (key) => [key],
+					onNone: () => Object.values(value).flatMap(liveKeysOf),
+				})
+			: []
+
 /**
  * A page step's keys join its instance's held keys. A new instance (`holder`) releases what the
  * previous one held and no longer asks for: the read cache starts their idle TTL, as an unmount does.
+ * A step that asks for new keys also releases held keys no slot in `liveKeys` stands on any more
+ * (a superseded window: the atom it read unmounted).
  */
-export const held = (model: Model, holder: string, commands: ReadonlyArray<PageCommand>) => {
+export const held = (
+	model: Model,
+	holder: string,
+	commands: ReadonlyArray<PageCommand>,
+	liveKeys: ReadonlyArray<string> = [],
+) => {
 	const keys = keysOf(commands)
 	const isSameHolder = holder === model.holder
-	const kept = isSameHolder ? model.heldKeys : []
+	const added = keys.filter((key) => !model.heldKeys.includes(key))
+	const isPruning = isSameHolder && added.length > 0
+	const kept = !isSameHolder
+		? []
+		: isPruning
+			? model.heldKeys.filter((key) => liveKeys.includes(key) || keys.includes(key))
+			: model.heldKeys
 	const heldKeys = [...kept, ...keys.filter((key) => !kept.includes(key))]
-	const released = isSameHolder ? [] : model.heldKeys.filter((key) => !heldKeys.includes(key))
+	const released = isSameHolder && !isPruning ? [] : model.heldKeys.filter((key) => !heldKeys.includes(key))
 	return { model: { ...model, holder, heldKeys }, released, isNewHolder: !isSameHolder }
 }
 

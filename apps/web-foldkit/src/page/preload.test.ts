@@ -3,7 +3,7 @@ import { Option, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "./contract"
 import * as Preload from "./preload"
-import { pageIdentity, preloadRoute } from "./registry"
+import { pageIdentity, pageSlotId, preloadRoute } from "./registry"
 import { AppRoute } from "../route"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -13,7 +13,7 @@ const traceRoute = AppRoute.Trace({ traceId: TRACE, search: {} })
 
 const preloaded = () => preloadRoute(traceRoute, context, 0)
 const keyOf = () => Option.getOrThrow(Preload.keyOfCommand(preloaded()[0]!))
-const holder = pageIdentity({ _tag: "TraceDetail", key: TRACE, orgId })
+const holder = pageIdentity({ _tag: "TraceDetail", key: TRACE, orgId, instance: 1 })
 
 describe("intent preload", () => {
 	test("a link's delay only fires while it is still hovered or focused", () => {
@@ -37,6 +37,23 @@ describe("intent preload", () => {
 		const left = Preload.held(entered.model, "Overview::org_acme", [])
 		expect(left.released).toEqual([keyOf()])
 		expect(left.model.heldKeys).toEqual([])
+	})
+
+	test("an open instance's new window releases the keys no slot stands on any more", () => {
+		const nextWindow = preloadRoute(AppRoute.Trace({ traceId: "a".repeat(32), search: {} }), context, 0)
+		const nextKey = Option.getOrThrow(Preload.keyOfCommand(nextWindow[0]!))
+		const entered = Preload.held(Preload.init(), holder, preloaded(), [keyOf()])
+		const moved = Preload.held(entered.model, holder, nextWindow, Preload.liveKeysOf({ slot: { key: nextKey, data: { _tag: "Loading" } } }))
+		expect(moved.released).toEqual([keyOf()])
+		expect(moved.model.heldKeys).toEqual([nextKey])
+		const stillShown = Preload.held(entered.model, holder, nextWindow, [keyOf(), nextKey])
+		expect(stillShown.released).toEqual([])
+		expect(Preload.held(entered.model, holder, [], []).released).toEqual([])
+	})
+
+	test("another org's instance on the same route gets its own view boundary", () => {
+		const slot = { _tag: "ServicesList", key: "Services", orgId, instance: 1 }
+		expect(pageSlotId({ ...slot, orgId: "org_other", instance: 2 })).not.toBe(pageSlotId(slot))
 	})
 
 	test("a key the next page asks for again is not released", () => {

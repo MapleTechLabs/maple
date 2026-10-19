@@ -28,7 +28,15 @@ import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { rendersShell } from "./page/chrome"
 import * as Onboarding from "./page/onboarding"
-import { accessOf, CustomerData, customerOf, type CustomerSlot, type Gate, planGate } from "./page/onboarding/plan-gate"
+import {
+	accessOf,
+	CustomerData,
+	customerOf,
+	type CustomerSlot,
+	type Gate,
+	isRouteHeld,
+	planGate,
+} from "./page/onboarding/plan-gate"
 import { type PageContext, PageOutMessage } from "./page/contract"
 import * as Preload from "./page/preload"
 import {
@@ -105,7 +113,7 @@ const shellFoldConfig = {
 		RequestedSignOut: () => (model) => ({ model, commands: [SignOutOfClerk()] }),
 		RequestedNavigation:
 			({ url }) =>
-			(model) => ({ model, commands: [NavigateInternal({ url })] }),
+			(model) => ({ model, commands: [navigateTo(model, url, false)] }),
 		RequestedCustomerRefresh: () => (model) =>
 			model.customer.orgId === null
 				? { model }
@@ -230,6 +238,13 @@ const showPageToast = (model: Model, request: PageToast) => {
 	}
 }
 
+/** A toast left the screen: its action button is gone, so is what it would send. */
+const withoutToastActions = (model: Model, toastId: string): Model =>
+	modifyFields(model, {
+		toastActions: (actions) => Struct.omit(actions, [toastId]),
+		toastRootActions: (actions) => Struct.omit(actions, [toastId]),
+	})
+
 const writePage =
 	(transition: PageTransition): Step =>
 	(model) => {
@@ -249,11 +264,20 @@ const writePage =
 			),
 			{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
 		)
-		const held = Preload.held(toasted.model.preload, pageIdentity(transition.slot), transition.commands)
+		const held = Preload.held(
+			toasted.model.preload,
+			pageIdentity(transition.slot),
+			transition.commands,
+			Preload.liveKeysOf(transition.slot?.model),
+		)
 		return {
-			model: modifyFields(toasted.model, { page: () => transition.slot, preload: () => held.model }),
+			model: modifyFields(toasted.model, {
+				page: () => transition.slot,
+				pageInstances: (built) => Math.max(built, transition.slot?.instance ?? 0),
+				preload: () => held.model,
+			}),
 			commands: [
-				...(held.isNewHolder
+				...(held.isNewHolder || held.released.length > 0
 					? [ReleaseReads({ orgId: transition.slot?.orgId ?? null, keys: held.released })]
 					: []),
 				...transition.commands.map(
@@ -263,7 +287,7 @@ const writePage =
 					onNone: () => [],
 					onSome: PageOutMessage.match({
 						RequestedNavigation: ({ url, isReplace }) => [
-							isReplace ? ReplaceUrl({ url }) : NavigateInternal({ url }),
+							navigateTo(model, url, isReplace),
 						],
 						RequestedNamespacePin: () => [],
 						RequestedSidebarToggle: () => [],
@@ -295,10 +319,17 @@ const foldChatSheet = (model: Model, message: ChatSheet.Message) => {
 }
 
 /** Route entry or leave: the route's page is built, kept (same key) or dropped. */
+/** `ClerkReverseRedirects` renders a splash or redirects before the route mounts: no page yet. */
+const isPlanGated = (model: Model) => Option.exists(planGateOf(model), isRouteHeld)
+
 const loadPage: Step = (model) =>
-	Option.match(pageContextOf(model), {
-		onNone: () => ({ model: model.page === null ? model : modifyFields(model, { page: () => null }) }),
-		onSome: (context) => applyPage(enterRoute(model.page, model.route, context))(model),
+	Option.match(Option.filter(pageContextOf(model), () => !isPlanGated(model)), {
+		// Leaving every page (signed out) releases what the last one held, like any page change.
+		onNone: () =>
+			model.page === null && model.preload.holder === ""
+				? { model }
+				: writePage({ slot: null, commands: [], outMessage: Option.none() })(model),
+		onSome: (context) => applyPage(enterRoute(model.page, model.route, context, model.pageInstances + 1))(model),
 	})
 
 // ONBOARDING
@@ -517,7 +548,7 @@ const followRedirects: Step = (model) => {
 		onNone: () => ({ model }),
 		onSome: ({ url, isReplace }) => ({
 			model,
-			commands: [isReplace ? ReplaceUrl({ url }) : NavigateInternal({ url })],
+			commands: [navigateTo(model, url, isReplace)],
 		}),
 	})
 }
@@ -627,6 +658,18 @@ const sessionRangeUrl = (model: Model, url: Url): Option.Option<string> => {
 		: withSessionRange(urlToAppRoute(url), pathOf(url), state.value, state.nowMs, model.timeZone)
 }
 
+/**
+ * `navigate()`/`<Link>`: TanStack runs the search middleware in `buildLocation`, so the remembered
+ * window joins the URL a navigation builds; Back/Forward (`ChangedUrl` alone) are left as they are.
+ */
+const navigateTo = (model: Model, url: string, isReplace: boolean) => {
+	const target = Option.getOrElse(
+		Option.flatMap(urlFromString(new URL(url, "http://app.invalid").href), (parsed) => sessionRangeUrl(model, parsed)),
+		() => url,
+	)
+	return isReplace ? ReplaceUrl({ url: target }) : NavigateInternal({ url: target })
+}
+
 /** Everything that reads the route or the session. */
 export const settle: Step = Update.combine([
 	followRedirects,
@@ -702,29 +745,18 @@ export const update = (model: Model, message: Message) =>
 	Message.match<UpdateReturn>(message, {
 		ClickedLink: ({ request }) =>
 			UrlRequest.match<UpdateReturn>(request, {
-				Internal: ({ url }) => ({ model, commands: [NavigateInternal({ url: urlToString(url) })] }),
+				Internal: ({ url }) => ({ model, commands: [navigateTo(model, urlToString(url), false)] }),
 				External: ({ href }) => ({ model, commands: [LoadExternal({ href })] }),
 			}),
-		ChangedUrl: ({ url: changedUrl }) => {
-			const injected = sessionRangeUrl(model, changedUrl)
-			const url = Option.getOrElse(
-				Option.flatMap(injected, (path) => urlFromString(new URL(path, urlToString(changedUrl)).href)),
-				() => changedUrl,
-			)
+		// The remembered window was added where the navigation was built (`navigateTo`), never here.
+		ChangedUrl: ({ url }) => {
 			const nextRoute = urlToAppRoute(url)
 			const isEnteringSignIn = Transition.isEntering(Transition.make(model.route, nextRoute), "SignIn")
 			const routed = modifyFields(model, {
 				route: () => nextRoute,
 				signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
 			})
-			const routedStep = Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
-			return Option.match(injected, {
-				onNone: () => routedStep,
-				onSome: (injectedUrl) => ({
-					...routedStep,
-					commands: [ReplaceUrl({ url: injectedUrl }), ...(routedStep.commands ?? [])],
-				}),
-			})
+			return Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
 		},
 		CompletedNavigateInternal: () => ({ model }),
 		CompletedReplaceUrl: () => ({ model }),
@@ -751,7 +783,9 @@ export const update = (model: Model, message: Message) =>
 				? toPage(model, model.toastActions[message.toastId])
 				: message._tag === "ClickedToastAction" && model.toastRootActions[message.toastId] !== undefined
 					? { model, commands: [ReconnectOrgCollections()] }
-					: foldToasts(model, message),
+					: message._tag === "EndedToastTransition"
+						? foldToasts(withoutToastActions(model, message.toastId), message)
+						: foldToasts(model, message),
 		CompletedReconnectOrgCollections: () => ({ model }),
 		GotPageMessage: ({ message }) => toPage(model, message),
 		GotChatSheetMessage: ({ message }) => foldChatSheet(model, message),

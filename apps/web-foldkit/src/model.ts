@@ -48,6 +48,8 @@ export const Model = Schema.Struct({
 	chatSheet: ChatSheet.Model,
 	/** The routed page (`page/registry.ts`): built on route entry, dropped on leave. */
 	page: Schema.NullOr(PageSlot),
+	/** Page instances built so far; the next build is stamped `pageInstances + 1`. */
+	pageInstances: Schema.Number,
 	/** The open onboarding or auth-handoff screen (`page/onboarding`): outside the shell and `PageContext`. */
 	onboarding: Schema.NullOr(Onboarding.Model),
 	/** The last Clerk emit (`useUser`, `useOrganization`, `useOrganizationList`), Clerk mode only. */

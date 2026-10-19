@@ -46,8 +46,27 @@ describe("error issue writes", () => {
 		)
 		expect(done.model.busy).toBeNull()
 		expect(done.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success", title: "Claimed" })
-		// Reads still in flight are not asked twice; the settled timeline is re-read.
-		expect(names(done.commands)).toEqual(["FetchErrorIssueEvents"])
+		// Every invalidated read restarts, including the ones still in flight.
+		expect(names(done.commands)).toEqual([
+			"FetchErrorIssueDetail",
+			"FetchErrorIssueEvents",
+			"FetchErrorIssueEscalations",
+			"FetchErrorIssuePullRequests",
+			"FetchErrorIssueVerifications",
+		])
+	})
+
+	test("a pre-write read landing after the write's re-read started is dropped", () => {
+		const model = windowed()
+		const staleKey = model.detail.key ?? ""
+		const claiming = pageUpdate(model, Message.ClickedClaim()).model
+		const done = pageUpdate(
+			claiming,
+			Message.CompletedIssueWrite({ write: { _tag: "Claim" }, result: Result.succeed({ severity: null }) }),
+		).model
+		expect(done.detail.key).not.toBe(staleKey)
+		const late = pageUpdate(done, Message.CompletedFetchDetail({ key: staleKey, result: Result.fail(toLoadFailure("old")) }))
+		expect(late.model.detail).toEqual(done.detail)
 	})
 
 	test("a failed write toasts the error and re-reads nothing", () => {

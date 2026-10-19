@@ -69,6 +69,9 @@ const app: Gate = { redirect: Option.none(), isSplash: false }
 const splash: Gate = { redirect: Option.none(), isSplash: true }
 const redirectTo = (url: string): Gate => ({ redirect: Option.some({ url, isReplace: true }), isSplash: false })
 
+/** `ClerkReverseRedirects` renders a splash or redirects instead of the route: nothing mounts yet. */
+export const isRouteHeld = (gate: Gate): boolean => gate.isSplash || Option.isSome(gate.redirect)
+
 /** `/quick-start` asks for the region first (`needsRegion`): a new org another region would serve. */
 export const needsRegion = (organization: Option.Option<ClerkOrganization>): boolean =>
 	Option.exists(organization, (org) => org.isRegionOpen && (hasMultipleRegions || !org.isServedHere))
