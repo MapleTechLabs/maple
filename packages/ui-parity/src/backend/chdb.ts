@@ -65,9 +65,34 @@ const runWith =
 				buffer === null ? "" : decoder.decode(new Uint8Array(toArrayBuffer(buffer, 0, length)))
 			symbols.chdb_destroy_query_result(result)
 			return failure.length > 0
-				? Effect.fail(new ParityChdbError({ message: failure, sql }))
+				? Effect.andThen(
+						drainPartialOutput(symbols, conn, 3),
+						Effect.fail(new ParityChdbError({ message: failure, sql })),
+					)
 				: Effect.succeed(text)
 		})
+
+const DRAIN_SENTINEL = "maple-chdb-drain"
+const DRAIN_SQL = cstr(`SELECT '${DRAIN_SENTINEL}' FORMAT RawBLOB`)
+const DRAIN_FORMAT = cstr("RawBLOB")
+
+/**
+ * libchdb prepends a query's partial output after a mid-stream failure to the NEXT result, so read
+ * it off with probes until one answers with only the sentinel, as `apps/cli`'s `Chdb` does.
+ */
+const drainPartialOutput = (symbols: Symbols, conn: Pointer, attemptsLeft: number): Effect.Effect<void> =>
+	Effect.suspend(() => {
+		if (attemptsLeft === 0) return Effect.void
+		const result = symbols.chdb_query(conn, ptr(DRAIN_SQL), ptr(DRAIN_FORMAT))
+		if (result === null) return Effect.void
+		const errorPtr = symbols.chdb_result_error(result)
+		const clean = errorPtr === null || new CString(errorPtr).toString().length === 0
+		const length = Number(symbols.chdb_result_length(result))
+		symbols.chdb_destroy_query_result(result)
+		return clean && length === DRAIN_SENTINEL.length
+			? Effect.void
+			: drainPartialOutput(symbols, conn, attemptsLeft - 1)
+	})
 
 const Row = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
 const decodeRow = Schema.decodeUnknownEffect(Row)

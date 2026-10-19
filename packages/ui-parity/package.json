@@ -4,9 +4,9 @@
 	"type": "module",
 	"scripts": {
 		"parity": "bun run src/cli.ts",
-		"test": "vitest run --exclude src/backend/server.test.ts --exclude src/backend/endpoints.test.ts",
+		"test": "vitest run --exclude src/backend/server.test.ts --exclude src/backend/endpoints.test.ts --exclude src/backend/chdb.test.ts",
 		"typecheck": "tsrs --noEmit",
-		"test:backend": "vitest run src/backend/server.test.ts src/backend/endpoints.test.ts"
+		"test:backend": "vitest run src/backend/server.test.ts src/backend/endpoints.test.ts src/backend/chdb.test.ts"
 	},
 	"dependencies": {
 		"@maple/ai-model-catalog": "workspace:*",
