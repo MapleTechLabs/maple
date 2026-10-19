@@ -1,4 +1,5 @@
-import type { V2DashboardTemplate } from "@maple/domain/http/v2"
+import type { V2DashboardTemplate, V2DashboardTemplatePreview } from "@maple/domain/http/v2"
+import { ALL_VALUE, type ResolvedVariable, type VariableValues } from "@maple/query-engine"
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import type { IconName } from "../../../ui/icon"
@@ -157,3 +158,18 @@ export const computeReadiness = (
 		}),
 	)
 }
+
+/**
+ * `previewVariableValues`: what a template's variables start on with no options loaded, the
+ * declared default, else All. Without these a `"$project"` filter reaches the query literally.
+ */
+export const previewVariableValues = (variables: V2DashboardTemplatePreview["variables"]): VariableValues =>
+	Object.fromEntries(
+		variables.flatMap((variable): ReadonlyArray<readonly [string, ResolvedVariable]> =>
+			variable.defaultValue !== undefined && variable.defaultValue !== ""
+				? [[variable.name, { value: variable.defaultValue, isAll: false, options: [] }]]
+				: variable.includeAll === true
+					? [[variable.name, { value: ALL_VALUE, isAll: true, options: [] }]]
+					: [],
+		),
+	)

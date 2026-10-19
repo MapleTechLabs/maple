@@ -1,5 +1,6 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
+import type { VariableValues } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
 import { fieldDescriptionStyles, fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
@@ -15,6 +16,7 @@ import { input } from "../../../ui/input"
 import { dataStateOf } from "../kit/data-state"
 import { widgetTile } from "../kit/tiles"
 import { MeasurePreview } from "./command"
+import { previewVariableValues } from "./derive"
 import {
 	CATEGORY_LABELS,
 	compositionLabel,
@@ -104,12 +106,12 @@ const livePreview = (h: H, model: Model, timeZone: string): Html =>
 					"Couldn't build the preview. You can still create the dashboard.",
 				],
 			),
-		onStale: () => previewBody(h, model, timeZone),
-		onRefreshing: () => previewBody(h, model, timeZone),
-		onSuccess: () => previewBody(h, model, timeZone),
+		onStale: ({ data }) => previewBody(h, model, timeZone, previewVariableValues(data.variables)),
+		onRefreshing: (data) => previewBody(h, model, timeZone, previewVariableValues(data.variables)),
+		onSuccess: (data) => previewBody(h, model, timeZone, previewVariableValues(data.variables)),
 	})
 
-const previewBody = (h: H, model: Model, timeZone: string): Html => {
+const previewBody = (h: H, model: Model, timeZone: string, variables: VariableValues): Html => {
 	const preview = { widgets: model.previewWidgets }
 	if (preview.widgets.length === 0)
 		return h.p(
@@ -159,6 +161,7 @@ const previewBody = (h: H, model: Model, timeZone: string): Html => {
 									nowMs: model.nowMs,
 									timeZone,
 									tableSort: model.tableSorts[widget.id] ?? { key: null, dir: "desc" },
+									variables,
 									onChart: (message) =>
 										Message.GotChartMessage({ widgetId: widget.id, message }),
 									onSort: (field, isText) =>

@@ -23,6 +23,7 @@ import {
 	WaitPreviewDelay,
 	WaitSearchDebounce,
 } from "./command"
+import { previewVariableValues } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -126,6 +127,13 @@ const requestPreview = (model: Model, context: PageContext): Return => {
 	})
 }
 
+type PreviewPlan = Readonly<{
+	gates: Model["gates"]
+	requests: Model["requests"]
+	commands: ReadonlyArray<ReturnType<typeof FetchWidget>>
+	asked: ReadonlyArray<string>
+}>
+
 /** Plans the shown preview widgets over the preview's own range; tiles fetch at once. */
 const planPreview = (model: Model, context: PageContext): Return => {
 	const preview = Option.getOrUndefined(AsyncData.getData(model.preview.data))
@@ -135,6 +143,9 @@ const planPreview = (model: Model, context: PageContext): Return => {
 		nowMs: model.nowMs,
 	})
 	const shown = model.previewWidgets.slice(0, MAX_PREVIEW_WIDGETS)
+	// `ResolvedDashboardVariablesProvider` declares no variables, so nothing waits on one.
+	const variables = { names: [], values: previewVariableValues(preview.variables) }
+	const initial: PreviewPlan = { gates: model.gates, requests: model.requests, commands: [], asked: [] }
 	const planned = shown.reduce(
 		(state, widget) => {
 			const gate = planWidget({
@@ -142,6 +153,7 @@ const planPreview = (model: Model, context: PageContext): Return => {
 				dataSource: widget.dataSource,
 				window,
 				...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
+				variables,
 			})
 			const gates = { ...state.gates, [widget.id]: gate }
 			if (gate._tag !== "Request" || state.asked.includes(gate.request.key)) return { ...state, gates }
@@ -156,12 +168,7 @@ const planPreview = (model: Model, context: PageContext): Return => {
 				}),
 			})
 		},
-		{
-			gates: model.gates,
-			requests: model.requests,
-			commands: [] as ReadonlyArray<ReturnType<typeof FetchWidget>>,
-			asked: [] as ReadonlyArray<string>,
-		},
+		initial,
 	)
 	return {
 		model: {
