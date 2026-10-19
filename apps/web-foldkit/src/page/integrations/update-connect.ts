@@ -5,6 +5,7 @@ import { ConnectProvider, type ConnectModel, PROVIDERS } from "./connect"
 import type { Message } from "./message"
 import type { Model, Statuses } from "./model"
 import { chain, requestStatus, type StatusMode } from "./update-status"
+import { TrackConnected } from "./command"
 import * as Cloudflare from "./update-cloudflare"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
@@ -113,8 +114,7 @@ const CONNECTED_TITLE = {
 	planetscale: null,
 } satisfies { readonly [K in ConnectProvider]: string | null }
 
-/** `useIntegrationMessage`: the callback page's verdict. */
-// TODO(analytics): legacy fires `trackProduct("integration_connected", { provider })` on success.
+/** `useIntegrationMessage`: the callback page's verdict; a success is `integration_connected`. */
 export const receivedCallback = (
 	model: Model,
 	context: PageContext,
@@ -126,6 +126,7 @@ export const receivedCallback = (
 	if (status === "success") {
 		const title = CONNECTED_TITLE[provider]
 		return chain(model, [
+			(next) => ({ model: next, commands: [TrackConnected({ provider })] }),
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
 				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),

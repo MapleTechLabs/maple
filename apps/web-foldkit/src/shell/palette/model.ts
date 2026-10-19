@@ -14,11 +14,6 @@ export const Model = Schema.Struct({
 	list: Combobox.Model,
 	/** `getTracesFacetValuesResultAtom({ data: { facet: "service" } })`; empty until it answers. */
 	serviceNames: Schema.Array(Schema.String),
-	/** fuse's ranking (every match, best first) for `rankedQuery`; `null` before the first search. */
-	ranked: Schema.NullOr(Schema.Array(Schema.String)),
-	rankedQuery: Schema.String,
-	/** Enter pressed before the ranking of the typed query arrived: the releases flag to pick with. */
-	pendingEnter: Schema.NullOr(Schema.Boolean),
 	/** An action opened another overlay; the palette goes once focus has moved there. */
 	isClosing: Schema.Boolean,
 })
@@ -28,9 +23,6 @@ export const init = (): Model => ({
 	dialog: Dialog.init(PALETTE_ID, "command-dialog", { isOpen: true }),
 	list: Combobox.init(`${PALETTE_ID}-list`, "autocomplete", { isOpen: true, autoHighlight: true }),
 	serviceNames: [],
-	ranked: null,
-	rankedQuery: "",
-	pendingEnter: null,
 	isClosing: false,
 })
 
@@ -43,10 +35,7 @@ export const Message = defineMessageUnion({
 	PressedEnter: { isReleasesVisible: Schema.Boolean },
 	SucceededLoadServices: { serviceNames: Schema.Array(Schema.String) },
 	FailedLoadServices: {},
-	/** `serviceCount`: the services the ranked entries held; a ranking of the list before they landed is stale. */
-	RankedEntries: { query: Schema.String, serviceCount: Schema.Number, ids: Schema.Array(Schema.String) },
 	CompletedReleaseServices: {},
-	CompletedPreloadFuse: {},
 	ElapsedCloseDelay: {},
 	CompletedMeasureList: {},
 	CompletedScrollHighlighted: {},

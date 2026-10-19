@@ -18,45 +18,35 @@ const commandNames = (result: { commands?: ReadonlyArray<{ name: string }> }) =>
 const typed = (model: Model, value: string) =>
 	update(model, Message.GotListMessage({ message: Combobox.Message.ChangedInput({ value }) }), context)
 
+const loadedWith = (serviceNames: ReadonlyArray<string>) =>
+	update(open().model, Message.SucceededLoadServices({ serviceNames }), context).model
+
 describe("command palette", () => {
-	test("opening reads the services and loads fuse", () => {
-		expect(commandNames(open())).toEqual(["LoadPaletteServices", "PreloadFuse"])
+	test("the input's own update shows the ranked results, with no browse list in between", () => {
+		const model = typed(loadedWith(["storefront", "payments"]), "store").model
+		const shown = shownEntries(model, context, true)
+		expect(shown.isSearch).toBe(true)
+		expect(shown.entries[0]?.id).toBe("service:storefront")
 	})
 
-	test("a query is ranked by fuse; an empty one is browse mode and searches nothing", () => {
-		expect(commandNames(typed(open().model, "logs"))).toEqual(["SearchPalette"])
-		expect(commandNames(typed(open().model, "  "))).toEqual([])
+	test("opening reads the services; typing sends nothing", () => {
+		expect(commandNames(open())).toEqual(["LoadPaletteServices"])
+		expect(commandNames(typed(open().model, "logs"))).toEqual([])
 	})
 
-	test("an answer for an older query is dropped", () => {
-		const model = typed(open().model, "logs").model
-		const stale = update(model, Message.RankedEntries({ query: "log", serviceCount: 0, ids: ["nav:Overview"] }), context)
-		expect(stale.model.ranked).toBeNull()
-	})
-
-	test("a ranking of the list before the services landed, arriving last, does not replace the newer one", () => {
+	test("services landing after the query re-rank it in place", () => {
 		const typedStore = typed(open().model, "store").model
+		expect(shownEntries(typedStore, context, true).entries.map((entry) => entry.id)).not.toContain(
+			"service:storefront",
+		)
 		const loaded = update(typedStore, Message.SucceededLoadServices({ serviceNames: ["storefront"] }), context)
-		expect(commandNames(loaded)).toEqual(["SearchPalette"])
-		const ranked = update(
-			loaded.model,
-			Message.RankedEntries({ query: "store", serviceCount: 1, ids: ["service:storefront", "dashboard:dsh_1"] }),
-			context,
-		).model
-		const late = update(ranked, Message.RankedEntries({ query: "store", serviceCount: 0, ids: ["dashboard:dsh_1"] }), context)
-		expect(late.model.ranked).toEqual(["service:storefront", "dashboard:dsh_1"])
+		expect(shownEntries(loaded.model, context, true).entries[0]?.id).toBe("service:storefront")
 	})
 
-	test("Enter before the ranking arrives picks the top match once it does", () => {
+	test("Enter right after typing picks the top match", () => {
 		const model = typed(open().model, "logs").model
 		const pressed = update(model, Message.PressedEnter({ isReleasesVisible: true }), context)
-		expect(pressed.outMessage).toBeUndefined()
-		const ranked = update(
-			pressed.model,
-			Message.RankedEntries({ query: "logs", serviceCount: 0, ids: ["nav:Explore:Logs", "nav:Overview"] }),
-			context,
-		)
-		expect(ranked.outMessage).toEqual(OutMessage.Navigated({ href: "/logs" }))
+		expect(pressed.outMessage).toEqual(OutMessage.Navigated({ href: "/logs" }))
 	})
 
 	test("clicking a link only closes (the link navigates); an action runs", () => {

@@ -51,13 +51,16 @@ export type ViewInputs = Readonly<{
 
 type H = HtmlBuilder<Message>
 
-/** `OrgAvatar`: the org's initials on the primary colour (no image in a stubbed or fresh org). */
-export const orgAvatar = <M>(h: HtmlBuilder<M>, name: string, className?: string): Html =>
+/** `OrgAvatar`: the org's logo over its initials on the primary colour. */
+export const orgAvatar = <M>(h: HtmlBuilder<M>, name: string, className?: string, imageUrl?: string): Html =>
 	avatarFallback(
 		h,
 		{
 			className: cn("size-8 rounded-md bg-transparent", className),
 			fallbackClassName: "rounded-[inherit] bg-primary text-primary-foreground text-xs font-semibold",
+			imageUrl,
+			imageLabel: name,
+			imageClassName: "object-cover",
 		},
 		initialsFrom(name),
 	)
@@ -77,7 +80,7 @@ const organizationItem = (h: H, organization: ClerkOrganization, isActive: boole
 	value: `${ORG_PREFIX}${organization.id}`,
 	label: organization.name,
 	content: [
-		orgAvatar(h, organization.name),
+		orgAvatar(h, organization.name, undefined, organization.imageUrl),
 		h.span([h.Class("truncate"), h.Title(organization.name)], [organization.name]),
 		...(hasMultipleRegions && !organization.isRegionOpen ? [regionBadge(h, organization.homeRegion, "ml-auto")] : []),
 		...(isActive ? [icon(h, "CheckIcon", hasMultipleRegions ? {} : { className: "ml-auto" })] : []),

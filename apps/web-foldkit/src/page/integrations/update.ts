@@ -27,7 +27,8 @@ import * as Prometheus from "./update-prometheus"
 import { ChartRuntime } from "../../charts/chart-runtime"
 import { isMultiAccount } from "./view-cloudflare"
 import * as Connect from "./update-connect"
-import { LoadCustomer, ReadClock, StripChatParams } from "./command"
+import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { LoadCustomer, LoadSession, ReadClock, StripChatParams } from "./command"
 import { chain, requestStatus, STATUS_NAMES } from "./update-status"
 import { Message } from "./message"
 import type { Model, Statuses } from "./model"
@@ -90,6 +91,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			scrapeTargets: Keyed.idle(),
 		},
 		customer: Keyed.idle(),
+		isAdmin: !isClerkAuthEnabled,
 		connect: initConnect(),
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: { busy: null, confirmId: null, identityBusy: false },
@@ -106,7 +108,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		(next: Model) => enterIntegration(next, context),
 		(next: Model) => handleChatCallback(next, false),
 	])
-	return { ...loaded, commands: [ReadClock(), ...(loaded.commands ?? [])] }
+	const session = isClerkAuthEnabled ? [LoadSession()] : []
+	return { ...loaded, commands: [ReadClock(), ...session, ...(loaded.commands ?? [])] }
 }
 
 export const routeChanged = (
@@ -188,6 +191,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadCustomer: ({ key, result }) => ({
 			model: { ...model, customer: Keyed.accept(model.customer, key, result) },
 		}),
+		CompletedLoadSession: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedTrackConnected: () => ({ model }),
 		ClickedIntegration: ({ integration }) =>
 			navigateTo(model, hrefOfSearch(integration === null ? {} : { integration }), false),
 		ClickedSettingsTab: ({ tab }) => navigateTo(model, `/settings?tab=${encodeURIComponent(tab)}`, false),

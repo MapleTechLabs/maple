@@ -61,9 +61,11 @@ export const start = (model: Model, connector: V2ChatConnector): Model => {
 	}
 }
 
-/** `waitingFor`: the connector whose popup is out (or whose install is starting), if any. */
-export const waitingFor = (model: Model): ChatConnectorId | null =>
-	model.active !== null && (model.active.isStarting || model.active.phase === "popup") ? model.active.connector : null
+/**
+ * `waitingFor` (`flow.busy || flow.popupActive`): the connector being installed, its popup out or
+ * in the close grace (Slack's consent page severs the opener, so the popup reads closed early).
+ */
+export const waitingFor = (model: Model): ChatConnectorId | null => model.active?.connector ?? null
 
 const current = (model: Model, attempt: number): Option.Option<ChatConnectAttempt> =>
 	Option.filter(Option.fromNullishOr(model.active), (active) => active.attempt === attempt)
@@ -78,7 +80,8 @@ export const update = (model: Model, message: Message): Step =>
 		SucceededStart: ({ attempt }) =>
 			Option.match(current(model, attempt), {
 				onNone: () => settled(model),
-				onSome: (active) => settled(patch(model, active, { isStarting: false })),
+				// The install mutation's `reactivityKeys: ["chatIntegration"]` re-read the connectors.
+				onSome: (active) => settled(patch(model, active, { isStarting: false }), true),
 			}),
 		FailedStart: ({ attempt, description }) =>
 			Option.isNone(current(model, attempt))

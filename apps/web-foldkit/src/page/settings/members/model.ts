@@ -17,6 +17,8 @@ export const MemberRow = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,
 	identifier: Schema.String,
+	/** `publicUserData.imageUrl`, `""` without one. */
+	imageUrl: Schema.String,
 	role: Schema.String,
 	createdAtMs: Schema.Number,
 	isCurrentUser: Schema.Boolean,

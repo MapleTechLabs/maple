@@ -51,6 +51,8 @@ export const Model = Schema.Struct({
 	statuses: Statuses,
 	/** `useMapleCustomer` (the settings nav's Data platform gate under Clerk). */
 	customer: keyed(BillingCustomer),
+	/** `useIsOrgAdmin()`: the session's roles (`false` until it loads under Clerk). */
+	isAdmin: Schema.Boolean,
 	/** The OAuth popup flow of the page's integration (`IntegrationConnectProvider`). */
 	connect: ConnectModel,
 	/** The page's disconnect confirmation and its in-flight flag (one integration shows at a time). */

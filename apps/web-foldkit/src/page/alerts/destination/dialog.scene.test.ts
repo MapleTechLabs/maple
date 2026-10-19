@@ -175,6 +175,32 @@ describe("destination dialog", () => {
 		expect(names(linked.commands)).toEqual(["FetchAlertChatChannels"])
 	})
 
+	test("the Slack tile says to finish in its window while the popup is out and through the close grace", () => {
+		const unlinked = update(opened(), Message.CompletedFetchConnectors({ connectors: [slack([])] })).model
+		const connecting = update(unlinked, Message.ClickedConnectChat({ connector: "slack" })).model
+		const attempt = connecting.chatConnect.active?.attempt ?? 0
+		const chat = (message: ChatConnect.Message) => (model: typeof unlinked) =>
+			update(model, Message.GotChatConnectMessage({ message })).model
+		const started = chat(ChatConnect.Message.SucceededStart({ attempt }))(connecting)
+		// The install's reactivity keys re-read the connectors, as legacy's mutation does.
+		const startStep = update(connecting, Message.GotChatConnectMessage({ message: ChatConnect.Message.SucceededStart({ attempt }) }))
+		expect(names(startStep.commands)).toEqual(["FetchChatConnectors"])
+		// Slack's consent page severs the opener: the popup reads closed while the user still authorizes.
+		const severed = chat(ChatConnect.Message.ClosedPopup({ attempt }))(started)
+		const waiting = "Finish in the Slack window. This form stays as it is."
+		const shows = (model: typeof unlinked, line: string) =>
+			scene(
+				{ update, view },
+				given(model),
+				Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+				expectView(text(line)).toExist(),
+			)
+		shows(connecting, waiting)
+		shows(started, waiting)
+		shows(severed, waiting)
+		shows(chat(ChatConnect.Message.EndedGrace({ attempt }))(severed), "Connect a Slack workspace, then pick a channel.")
+	})
+
 	test("a save is in flight once; a failure keeps the dialog open and reports the error", () => {
 		const saving = update({ ...opened(), form: { ...opened().form, type: "webhook" } }, Message.ClickedSave())
 		expect((saving.commands ?? []).map(({ name }) => name)).toEqual(["CreateAlertDestination"])

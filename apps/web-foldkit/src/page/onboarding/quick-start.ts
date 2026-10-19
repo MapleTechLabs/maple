@@ -8,6 +8,7 @@ import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { load } from "foldkit/navigation"
+import { trackProduct } from "../../data/analytics"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { clerkTry, currentClerkOrganization } from "../../platform/clerk"
 import type { Resources } from "../../platform/resources"
@@ -64,6 +65,8 @@ export const Message = defineMessageUnion({
 	ClickedContinue: { step: Step },
 	ClickedBack: { to: Step },
 	CompletedSaveQuickStartState: {},
+	/** `trackProduct("onboarding_step_completed")` was handed to the session SDK. */
+	CompletedTrackStepCompleted: {},
 	PickedRegion: { region: MapleRegion },
 	ClickedRegionContinue: {},
 	SucceededChooseRegion: { region: MapleRegion },
@@ -77,6 +80,14 @@ export const LoadQuickStartState = Command.define("LoadQuickStartState", {
 	args: { key: Schema.String },
 	messages: [Message.LoadedQuickStartState],
 	execute: ({ key }) => Effect.map(readQuickStartState(key), (state) => Message.LoadedQuickStartState({ state })),
+})
+
+/** `completeStep(id)`'s funnel event, sent once per Continue. */
+export const TrackStepCompleted = Command.define("TrackOnboardingStepCompleted", {
+	args: { step: Schema.String },
+	messages: [Message.CompletedTrackStepCompleted],
+	execute: ({ step }) =>
+		trackProduct("onboarding_step_completed", { step }).pipe(Effect.as(Message.CompletedTrackStepCompleted())),
 })
 
 export const SaveQuickStartState = Command.define("SaveQuickStartState", {
@@ -219,12 +230,14 @@ const step = (model: Model, message: Message): UpdateReturn =>
 			saved(model, (state) => ({ ...state, qualifyAnswers: pickedRole(state.qualifyAnswers, "other", value) })),
 		ToggledIntent: ({ intent }) =>
 			saved(model, (state) => ({ ...state, qualifyAnswers: toggledIntent(state.qualifyAnswers, intent) })),
-		ClickedContinue: ({ step }) =>
-			model.state !== null && canContinue(model.state, step)
-				? saved(model, (state) => completeStep(state, step))
-				: { model },
+		ClickedContinue: ({ step }) => {
+			if (model.state === null || !canContinue(model.state, step)) return { model }
+			const next = saved(model, (state) => completeStep(state, step))
+			return { ...next, commands: [TrackStepCompleted({ step }), ...(next.commands ?? [])] }
+		},
 		ClickedBack: ({ to }) => saved(model, (state) => ({ ...state, activeStep: to })),
 		CompletedSaveQuickStartState: () => ({ model }),
+		CompletedTrackStepCompleted: () => ({ model }),
 		PickedRegion: ({ region }) =>
 			model.region.isSaving ? { model } : { model: { ...model, region: { ...model.region, selected: region } } },
 		ClickedRegionContinue: () =>

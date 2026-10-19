@@ -4,6 +4,7 @@ import { displayError } from "@maple/web-data/lib/error-messages"
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import { trackProduct } from "../data/analytics"
 import { SessionTenant } from "../data/session-tenant"
 import { MapleApiV2Client } from "../platform/api-clients"
 import type { Resources } from "../platform/resources"
@@ -155,6 +156,8 @@ export const ClaimReward = Command.define("ClaimOnboardingReward", {
 	execute: Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		yield* client.onboardingChecklist.claim()
+		// `onboarding_reward_claimed` once the credit landed.
+		yield* trackProduct("onboarding_reward_claimed")
 		return Message.SucceededClaim()
 	}).pipe(Effect.catch((error) => Effect.succeed(Message.FailedClaim({ message: displayError(error).message })))),
 })

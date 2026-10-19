@@ -169,16 +169,22 @@ export const enterBare = (model: Model): UpdateReturn =>
  * rails' sheets live in the page's `PageLayout.Root`: they survive a search change, not a new page.
  */
 export const routeChanged =
-	(isSamePage: boolean) =>
+	(isSamePage: boolean, hasTopBar = true) =>
 	(model: Model): UpdateReturn => ({
 	model: modifyFields(closeMenu(model), {
 		isMobileNavOpen: () => false,
 		filterSheet: (sheet) => (isSamePage ? sheet : initFilterSheet()),
 		rightSheet: (sheet) => (isSamePage ? sheet : initRightSheet()),
 	}),
-	// Every checklist step is done on another page: a navigation re-reads it (`onResolved`).
-	commands: isClerkAuthEnabled && model.checklist.checklist !== null ? [toChecklist(Checklist.LoadChecklist())] : [],
+	commands: checklistRefreshOnNavigation(model, hasTopBar, isClerkAuthEnabled),
 })
+
+/**
+ * Every checklist step is done on another page: a navigation re-reads it (`onResolved`), but only
+ * where the top bar's pill is mounted. `/chat` has no top bar, so legacy's subscription is gone there.
+ */
+export const checklistRefreshOnNavigation = (model: Model, hasTopBar: boolean, isClerk: boolean) =>
+	isClerk && hasTopBar && model.checklist.checklist !== null ? [toChecklist(Checklist.LoadChecklist())] : []
 
 const toggleSidebar = (model: Model): UpdateReturn =>
 	model.isMobile

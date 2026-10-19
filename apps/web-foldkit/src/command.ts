@@ -14,6 +14,8 @@ import { ReadCache } from "./data/read-cache"
 import { OrgCollections } from "./data/collections/org-collections"
 import { readSessionTimeRange, writeSessionTimeRange } from "./platform/session-time-range"
 import { SessionTimeRange } from "./route/session-time-range"
+import { identifySession } from "./data/analytics"
+import { SessionIdentity } from "./platform/session-identity"
 
 /** How long a signed-out Clerk answer may still turn into a session on a hard refresh (main.tsx). */
 const AUTH_SETTLE_TIMEOUT = Duration.seconds(2)
@@ -101,6 +103,13 @@ export const WaitForAuthSettle = Command.define("WaitForAuthSettle", {
 export const SignOutOfClerk = Command.define("SignOutOfClerk", {
 	messages: [Message.CompletedSignOutOfClerk],
 	execute: signOutOfClerk.pipe(Effect.as(Message.CompletedSignOutOfClerk())),
+})
+
+/** `ClerkAuthBridge`'s `identify(...)`: the session's rows and product events name the user and org. */
+export const IdentifySession = Command.define("IdentifySession", {
+	args: { identity: Schema.NullOr(SessionIdentity) },
+	messages: [Message.CompletedIdentifySession],
+	execute: ({ identity }) => identifySession(identity).pipe(Effect.as(Message.CompletedIdentifySession())),
 })
 
 /** `billingCustomerAtom`: `GET /internal/billing/customer`, for the org it was asked for. */

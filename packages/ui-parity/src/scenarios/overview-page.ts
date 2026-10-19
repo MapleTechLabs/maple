@@ -17,6 +17,12 @@ const overview = (
 	area: "overview",
 })
 
+/** Clerk mode with no telemetry yet: `SetupChecklist`'s "Connect your app" card heads the page. */
+const clerkSetup = (id: string, title: string, steps?: Scenario["steps"]): Scenario => ({
+	...overview(id, title, { steps }),
+	dataset: "settings-clerk",
+})
+
 /** Held far past any capture, so the screenshot is the loading state. */
 const HELD_MS = 60_000
 
@@ -89,5 +95,14 @@ export const overviewPageArea: AreaModule = {
 		overview("time-range", "last 6 hours from the time range picker", {
 			steps: (page) => pickPreset(page, "Last 6 hours"),
 		}),
+		// Acme already sends telemetry, so the card is the first-trace celebration.
+		clerkSetup("clerk-setup", "Clerk: the setup checklist card"),
+		clerkSetup("clerk-setup-explore", "Clerk: setup card, Explore your traces", async (page) => {
+			await page.getByRole("button", { name: "Explore your traces" }).click()
+			await page.waitForURL(/\/traces/)
+		}),
+		clerkSetup("clerk-setup-dismiss", "Clerk: setup card dismissed", (page) =>
+			page.getByRole("button", { name: "Dismiss", exact: true }).click(),
+		),
 	],
 }

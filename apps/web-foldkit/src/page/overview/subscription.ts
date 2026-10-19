@@ -7,6 +7,8 @@ import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { Message as SetupMessage } from "./setup-checklist"
+import { isMounted } from "./setup-checklist-update"
 
 const withSet = (
 	orgId: string,
@@ -58,5 +60,21 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		incidents: entry({ orgId: Schema.String }, byOrg(incidents)),
 		rules: entry({ orgId: Schema.String }, byOrg(rules)),
 		ruleStates: entry({ orgId: Schema.String }, byOrg(ruleStates)),
+		/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the setup card is mounted. */
+		setupPoll: entry(
+			{ isPolling: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({
+					isPolling: model.setup !== null && isMounted(model.setup) && model.setup.window !== null,
+				}),
+				dependenciesToStream: ({ isPolling }) =>
+					isPolling
+						? Stream.tick("15 seconds").pipe(
+								Stream.drop(1),
+								Stream.map(() => Message.GotSetupMessage({ message: SetupMessage.TickedPoll() })),
+							)
+						: Stream.empty,
+			},
+		),
 	}),
 )

@@ -8,7 +8,7 @@ import * as Popover from "../ui/popover"
 import { billingBanners } from "./billing-banners"
 import { Message as ShellMessage, type Message } from "./message"
 import { init } from "./model"
-import { update } from "./update"
+import { checklistRefreshOnNavigation, update } from "./update"
 import * as Checklist from "./onboarding-checklist"
 import * as SupportChannel from "./support-channel"
 
@@ -47,6 +47,14 @@ describe("onboarding reward pill", () => {
 		expect(names(claimed)).toEqual(["LoadOnboardingChecklist"])
 		const open = { ...claimed.model, popover: { ...claimed.model.popover, isOpen: true } }
 		expect(Checklist.update(open, Checklist.Message.ClickedDone()).model.isJustClaimed).toBe(false)
+	})
+
+	test("a navigation re-reads the checklist only onto a page with the top bar (not /chat)", () => {
+		const base = init({ isMobile: false, theme: "light", pinnedNamespaces: {}, dashboardFavorites: [] })
+		const shell = { ...base, checklist: loaded }
+		expect(names({ commands: checklistRefreshOnNavigation(shell, true, true) })).toEqual(["LoadOnboardingChecklist"])
+		expect(checklistRefreshOnNavigation(shell, false, true)).toEqual([])
+		expect(checklistRefreshOnNavigation({ ...base, checklist: Checklist.init() }, true, true)).toEqual([])
 	})
 
 	test("a refused claim shows why", () => {

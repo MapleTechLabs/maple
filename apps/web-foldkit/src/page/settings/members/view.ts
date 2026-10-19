@@ -93,7 +93,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 				h.div(
 					[h.Class("flex items-center gap-3")],
 					[
-						avatarFallback(h, { className: "size-6 shrink-0" }, initialsFrom(member.name)),
+						avatarFallback(h, { className: "size-6 shrink-0", imageUrl: member.imageUrl }, initialsFrom(member.name)),
 						h.div(
 							[h.Class("min-w-0")],
 							[

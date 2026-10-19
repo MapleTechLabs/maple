@@ -91,6 +91,11 @@ export const shellClerkArea: AreaModule = {
 		shell("user-menu", "User menu open", "clerk-acme", (page) =>
 			page.getByRole("button", { name: /Ada Lovelace/ }).click(),
 		),
+		// A profile photo and an org logo: the avatars draw the images over the initials.
+		shell("user-menu-images", "User menu open, with a profile photo", "settings-clerk-images", (page) =>
+			page.getByRole("button", { name: /Ada Lovelace/ }).click(),
+		),
+		shell("org-switcher-images", "Org switcher open, with an org logo", "settings-clerk-images", openOrgSwitcher),
 		shell("support-menu", "Support menu open", "clerk-acme", (page) =>
 			page.getByRole("button", { name: "Support" }).click(),
 		),

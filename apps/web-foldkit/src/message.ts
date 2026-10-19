@@ -37,6 +37,8 @@ export const Message = defineMessageUnion({
 	CompletedReconnectOrgCollections: {},
 	CompletedRestoreDashboardWidgets: {},
 	CompletedSignOutOfClerk: {},
+	/** The Clerk identity was handed to the telemetry session (`identify`). */
+	CompletedIdentifySession: {},
 	GotSignInMessage: { message: SignIn.Message },
 	GotShellMessage: { message: Shell.Message },
 	GotToastMessage: { message: Toast.Message },

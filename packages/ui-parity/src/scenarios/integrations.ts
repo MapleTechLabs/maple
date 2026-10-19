@@ -60,6 +60,10 @@ export const integrationsArea: AreaModule = {
 	scenarios: [
 		page("hub", "Integrations hub", "/integrations"),
 		page("hub-empty", "Integrations hub (empty org)", "/integrations", { dataset: "empty" }),
+		// The settings rail gated by the Clerk session (admin rows, account tabs).
+		page("clerk-hub", "Integrations hub (Clerk): the settings rail", "/integrations", {
+			dataset: "settings-clerk",
+		}),
 		timed(
 			"hub-loading",
 			"Hub: statuses loading",

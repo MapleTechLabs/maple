@@ -20,6 +20,7 @@ import {
 	ReplaceUrl,
 	SaveSelectedPlanKnown,
 	SignOutOfClerk,
+	IdentifySession,
 	SaveSessionToken,
 	WaitForAuthSettle,
 	WaitPreloadDelay,
@@ -54,6 +55,7 @@ import {
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import type { ClerkSnapshot } from "./platform/clerk"
+import { identityOf, isSameIdentity } from "./platform/session-identity"
 import { AppRoute, hrefOf, isPublicRoute, type Redirect, routeRedirect, urlToAppRoute } from "./route"
 import { completeRangeOf, isWithin, withSessionRange } from "./route/session-time-range"
 import * as Shell from "./shell"
@@ -729,8 +731,16 @@ const appliedClerkSnapshot =
 	(snapshot: ClerkSnapshot, isFirstAnswer: boolean): Step =>
 	(previous) => {
 		const model = modifyFields(previous, { clerkSnapshot: () => snapshot })
+		const identity = identityOf(snapshot)
+		const known = previous.clerkSnapshot === null ? undefined : identityOf(previous.clerkSnapshot)
+		const identify = known !== undefined && isSameIdentity(known, identity) ? [] : [IdentifySession({ identity })]
 		if (Option.isSome(snapshot.maybeUserId)) {
-			return signedIn(snapshot.maybeOrgId)(model)
+			const step = signedIn(snapshot.maybeOrgId)(model)
+			return { ...step, commands: [...identify, ...(step.commands ?? [])] }
+		}
+		if (identify.length > 0 && model.session._tag !== "Resolving") {
+			const step = signedOut(model)
+			return { ...step, commands: [...identify, ...(step.commands ?? [])] }
 		}
 		if (model.session._tag !== "Resolving") {
 			return signedOut(model)
@@ -782,7 +792,7 @@ const changedUrlStep = (model: Model, changedUrl: Url): UpdateReturn => {
 		route: () => nextRoute,
 		signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
 	})
-	return Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
+	return Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag, rendersShell(nextRoute))), settle])(routed)
 }
 
 /** The Command behind a root toast action. */
@@ -839,6 +849,7 @@ export const update = (model: Model, message: Message) =>
 		FailedLoadCustomer: ({ orgId }) => settledCustomer(model, orgId, CustomerData.Failure({ error: "Failed" })),
 		CompletedSaveSelectedPlanKnown: () => ({ model }),
 		CompletedSignOutOfClerk: () => ({ model }),
+		CompletedIdentifySession: () => ({ model }),
 		GotSignInMessage: ({ message }) => foldSignIn(model, message),
 		GotShellMessage: ({ message }) => foldShell(model, message),
 		GotToastMessage: ({ message }) =>

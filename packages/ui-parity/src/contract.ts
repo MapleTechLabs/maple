@@ -54,6 +54,9 @@ export interface DatasetIdentity {
 	readonly role: "admin" | "member"
 	/** Clerk only: the organization's public metadata (rollout flags, regions). Empty when absent. */
 	readonly orgPublicMetadata?: Readonly<Record<string, unknown>>
+	/** Clerk only: the user's and the organization's `imageUrl` (a `data:` URL needs no request). */
+	readonly imageUrl?: string
+	readonly orgImageUrl?: string
 }
 
 export interface DatasetSummary {

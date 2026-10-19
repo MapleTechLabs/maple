@@ -8,6 +8,7 @@ import { LoadFailure } from "../../data/load-failure"
 import * as Select from "../../ui/select"
 import { SignalPresences } from "../kit/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import * as SetupChecklist from "./setup-checklist"
 import {
 	FacetsHint,
 	HealthSnapshot,
@@ -58,5 +59,6 @@ export const Message = defineMessageUnion({
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
+	GotSetupMessage: { message: SetupChecklist.Message },
 })
 export type Message = typeof Message.Type
