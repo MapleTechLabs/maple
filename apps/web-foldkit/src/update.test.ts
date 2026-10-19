@@ -55,6 +55,15 @@ describe("root navigation", () => {
 		expect(popped.model.route).toEqual(AppRoute.Services({ search: {} }))
 	})
 
+	test("a new zone preference becomes the page context: the open page re-resolves under it", () => {
+		const entered = settle(base(AppRoute.AgentSessionTools({ search: {} }))).model
+		const zoned = update(entered, Message.ChangedTimeZonePreference({ timeZone: "Asia/Tokyo" }))
+		expect(zoned.model.timeZone).toBe("Asia/Tokyo")
+		const resolve = commandsOf(zoned).filter(({ args }) => JSON.stringify(args).includes("Asia/Tokyo"))
+		expect(resolve).toHaveLength(1)
+		expect(update(zoned.model, Message.ChangedTimeZonePreference({ timeZone: "Asia/Tokyo" })).commands ?? []).toEqual([])
+	})
+
 	test("a closed toast's action entries are dropped", () => {
 		const model = { ...base(AppRoute.Logs({ search: {} })), toastRootActions: { t1: "ReconnectOrgCollections" as const } }
 		const ended = update(model, Message.GotToastMessage({ message: Toast.Message.EndedToastTransition({ toastId: "t1" }) }))

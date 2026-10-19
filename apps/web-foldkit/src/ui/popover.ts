@@ -176,7 +176,8 @@ export const MountPopover = Mount.defineStream("MountPopover", {
 				sideOffset,
 				adaptiveOrigin: !isBare,
 			},
-			insideSelectors: [`#${CSS.escape(triggerId(id))}`],
+			// A child popup portalled out of this one (`nestedIn`) counts as inside, as a FloatingTree child does.
+			insideSelectors: [`#${CSS.escape(triggerId(id))}`, `[data-nested-in="${CSS.escape(id)}"]`],
 			markOutside: Option.some({ mark: true, ariaHidden: false }),
 			lockScroll: false,
 			focus: Option.some({ returnFocusId: Option.some(triggerId(id)), initialFocus }),

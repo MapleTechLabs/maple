@@ -222,6 +222,12 @@ export type PopupOptions = Readonly<{
 	/** `<ComboboxItem className>`. */
 	itemClassName?: (value: string) => string | undefined
 	listClassName?: string
+	/** A custom `filter` already applied: `items` are the matches, empty means "no match". */
+	isPrefiltered?: boolean
+	/** `<ComboboxContent positionerClassName>` (a list above a popover: `z-60`). */
+	positionerClassName?: string
+	/** The id of the popover this list opens from: a press in the list is not outside it. */
+	nestedIn?: string
 }>
 
 /** `ComboboxPopup` / `AutocompletePopup` with `Empty` and `List` (in a ScrollArea) inside. */
@@ -229,12 +235,15 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 	const styles = SLOT_STYLES[options.slot]
 	const state = stateAttributes(h, model.isOpen, model.animation)
 	const placement = [h.DataAttribute("align", model.align), ...state, h.DataAttribute("side", model.side)]
-	const filtered = options.isUnfiltered === true ? options.items : visibleItems(model, options.items)
-	const isEmpty = options.isUnfiltered === true ? queryOf(model).trim() !== "" : filtered.length === 0
+	const filtered =
+		options.isUnfiltered === true || options.isPrefiltered === true ? options.items : visibleItems(model, options.items)
+	const isEmpty =
+		options.isUnfiltered === true && options.isPrefiltered !== true ? queryOf(model).trim() !== "" : filtered.length === 0
 	return h.div(
 		[
 			h.Key(portalId(model.id)),
 			h.DataAttribute("base-ui-portal", ""),
+			...(options.nestedIn === undefined ? [] : [h.DataAttribute("nested-in", options.nestedIn)]),
 			h.Id(portalId(model.id)),
 			h.OnMount(
 				MountCombobox({
@@ -249,7 +258,7 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 		[
 			h.div(
 				[
-					h.Class(styles.positioner),
+					h.Class(cn(styles.positioner, options.positionerClassName)),
 					...placement,
 					h.DataAttribute("slot", `${options.slot}-positioner`),
 					h.Role("presentation"),

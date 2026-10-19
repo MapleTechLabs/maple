@@ -13,8 +13,13 @@ import { defineMessageUnion } from "foldkit/message"
 import { button } from "../../ui/button"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
+import * as Combobox from "../../ui/combobox"
 import * as Popover from "../../ui/popover"
+import { readEffectiveTimeZone, readSelectedTimeZone, SYSTEM_VALUE, writeSelectedTimeZone } from "../../platform/time-zone"
 import { PageOutMessage } from "../contract"
+import { zoneListView } from "./timezone-select-view"
+import { formatUtcOffset, readZoneRows, ZoneRow } from "./timezone-zones"
+import { isMounted } from "../../ui/overlay/transition"
 import * as CustomRange from "./custom-range"
 import * as CustomRangeView from "./custom-range-view"
 import { presetLabel, timeRangeTriggerContent } from "./time-controls"
@@ -35,8 +40,16 @@ export const Model = Schema.Struct({
 	/** `ShorthandInput`: the typed duration and whether Enter rejected it. */
 	shorthand: Schema.String,
 	isShorthandInvalid: Schema.Boolean,
-	/** The footer's `formatUtcOffset(timeZone)`, read when the footer mounts (each open). */
-	utcOffset: Schema.NullOr(Schema.Struct({ timeZone: Schema.String, label: Schema.String })),
+	/**
+	 * The footer's `useTimezonePreference()`: the effective zone, its `formatUtcOffset` and whether
+	 * it is the system zone, read when the footer mounts (each open) and after a pick.
+	 */
+	utcOffset: Schema.NullOr(
+		Schema.Struct({ timeZone: Schema.String, label: Schema.String, isSystem: Schema.optionalKey(Schema.Boolean) }),
+	),
+	/** `TimezoneSelect`'s combobox and its rows, frozen at its open. */
+	zones: Combobox.Model,
+	zoneRows: Schema.Array(ZoneRow),
 })
 export type Model = typeof Model.Type
 
@@ -47,6 +60,8 @@ export const init = (id: string): Model => ({
 	shorthand: "",
 	isShorthandInvalid: false,
 	utcOffset: null,
+	zones: Combobox.init(`${id}-timezone`, "single"),
+	zoneRows: [],
 })
 
 /** The page's `maxRangeSeconds`, carried by the Messages that pick a range. */
@@ -57,7 +72,10 @@ export const Message = defineMessageUnion({
 	ClickedPreset: { value: Schema.String, maxRangeSeconds: MaxRange },
 	ChangedShorthand: { value: Schema.String },
 	PressedShorthandEnter: { maxRangeSeconds: MaxRange },
-	ResolvedUtcOffset: { timeZone: Schema.String, label: Schema.String },
+	ResolvedUtcOffset: { timeZone: Schema.String, label: Schema.String, isSystem: Schema.optionalKey(Schema.Boolean) },
+	ClickedTimeZoneTrigger: {},
+	ResolvedZoneRows: { rows: Schema.Array(ZoneRow) },
+	GotTimeZoneComboboxMessage: { message: Combobox.Message },
 	/** "Custom range…": the tab opens on the shown window once the clock gave today. */
 	ClickedCustomRange: {
 		startTime: Schema.NullOr(Schema.String),
@@ -183,9 +201,24 @@ const customStep = (model: Model, custom: CustomRange.Model, inner: CustomRange.
 	})
 }
 
+/** `TimezoneSelect`'s combobox; `onValueChange` stores the pick (the picker itself stays open). */
+const zonesStep = (model: Model, inner: Combobox.Message): Return => {
+	const next = Combobox.update(model.zones, inner)
+	const commands = Command.mapMessages(next.commands ?? [], (message) => Message.GotTimeZoneComboboxMessage({ message }))
+	return next.outMessage?._tag === "ChangedValue" && next.outMessage.value.length > 0
+		? { model: { ...model, zones: next.model }, commands: [...commands, SelectTimeZone({ value: next.outMessage.value })] }
+		: { model: { ...model, zones: next.model }, commands }
+}
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		GotPopoverMessage: ({ message: inner }) => liftPopover(model, Popover.update(model.popover, inner)),
+		GotPopoverMessage: ({ message: inner }) => {
+			const next = liftPopover(model, Popover.update(model.popover, inner))
+			// The zone list unmounts with the picker; it reopens closed.
+			return next.model.popover.isOpen || !model.zones.isOpen
+				? next
+				: { ...next, model: { ...next.model, zones: Combobox.init(model.zones.id, "single") } }
+		},
 		ClickedPreset: ({ value, maxRangeSeconds }) => pickedPreset(model, value, maxRangeSeconds),
 		ChangedShorthand: ({ value }) => ({
 			model: { ...model, shorthand: value, isShorthandInvalid: false },
@@ -198,7 +231,19 @@ export const update = (model: Model, message: Message): Return =>
 						maxRangeSeconds,
 					)
 				: { model: { ...model, isShorthandInvalid: true } },
-		ResolvedUtcOffset: ({ timeZone, label }) => ({ model: { ...model, utcOffset: { timeZone, label } } }),
+		ResolvedUtcOffset: ({ _tag, ...utcOffset }) => ({ model: { ...model, utcOffset } }),
+		ClickedTimeZoneTrigger: () =>
+			model.zones.isOpen
+				? zonesStep(model, Combobox.Message.ClickedTrigger())
+				: { model, commands: [ReadZoneRows()] },
+		ResolvedZoneRows: ({ rows }) => {
+			const value = model.utcOffset?.isSystem === false ? model.utcOffset.timeZone : SYSTEM_VALUE
+			return zonesStep(
+				{ ...model, zoneRows: rows, zones: { ...model.zones, selected: [value], inputValue: "" } },
+				Combobox.Message.ClickedTriggerOf({ items: rows.map((row) => row.value) }),
+			)
+		},
+		GotTimeZoneComboboxMessage: ({ message: inner }) => zonesStep(model, inner),
 		ClickedCustomRange: ({ _tag, ...seed }) => ({ model, commands: [ResolveCustomToday(seed)] }),
 		ResolvedCustomToday: (seed) => ({ model: { ...model, tab: "custom", custom: CustomRange.init(seed) } }),
 		GotCustomRangeMessage: ({ message: inner, maxRangeSeconds }) =>
@@ -378,29 +423,39 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 		],
 	)
 
-/** An unknown zone throws in the constructor; legacy then shows `UTC`. */
-const offsetFormatter = Option.liftThrowable(
-	(timeZone: string) => new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" }),
+export { formatUtcOffset }
+
+/** `useTimezonePreference()` now: the effective zone, its offset, and whether it is the system's. */
+const readPreference = Effect.map(
+	Effect.all([readEffectiveTimeZone, readSelectedTimeZone, Clock.currentTimeMillis]),
+	([timeZone, selected, nowMs]) =>
+		Message.ResolvedUtcOffset({ timeZone, label: formatUtcOffset(timeZone, nowMs), isSystem: Option.isNone(selected) }),
 )
 
-/** `formatUtcOffset`: `UTC+2`, `UTC-5:30`, `UTC`, the offset a zone is on at `atMs`. */
-export const formatUtcOffset = (timeZone: string, atMs: number): string => {
-	const part = Option.match(offsetFormatter(timeZone), {
-		onNone: () => "GMT",
-		onSome: (formatter) => formatter.formatToParts(atMs).find((entry) => entry.type === "timeZoneName")?.value ?? "GMT",
-	})
-	const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(part)
-	if (match === null) return "UTC"
-	const [, sign, hours, minutes] = match
-	return `UTC${sign}${Number(hours)}${minutes !== undefined && minutes !== "00" ? `:${minutes}` : ""}`
-}
-
-/** The footer mounted (the popover opened): its zone's offset now; a DST change shows on the next open. */
+/**
+ * The footer mounted (the popover opened): the stored zone preference and its offset now, so
+ * every picker shows the app's zone whatever its page passed; a DST change shows on the next open.
+ */
 export const MountUtcOffset = Mount.define("MountTimeRangeUtcOffset", {
 	args: { timeZone: Schema.String },
 	messages: [Message.ResolvedUtcOffset],
-	execute: ({ timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ResolvedUtcOffset({ timeZone, label: formatUtcOffset(timeZone, nowMs) })),
+	execute: () => readPreference,
+})
+
+/** `onOpenChange(true)`: the zone list with its clocks frozen at this open. */
+export const ReadZoneRows = Command.define("ReadTimeZoneRows", {
+	messages: [Message.ResolvedZoneRows],
+	execute: Effect.map(readZoneRows, (rows) => Message.ResolvedZoneRows({ rows })),
+})
+
+/** `setSelectedTimezone(next === SYSTEM_VALUE ? null : next)`: stored, then read back for the footer. */
+export const SelectTimeZone = Command.define("SelectTimeZone", {
+	args: { value: Schema.String },
+	messages: [Message.ResolvedUtcOffset],
+	execute: ({ value }) =>
+		writeSelectedTimeZone(value === SYSTEM_VALUE ? Option.none() : Option.some(value)).pipe(
+			Effect.andThen(readPreference),
+		),
 })
 
 /** Marks the page-level picker's trigger, the one "D" opens. */
@@ -431,18 +486,29 @@ export const openOnHotkey = <A>(): Stream.Stream<A> =>
 	})
 
 /**
- * `TimezoneSelect`'s closed trigger, on the system zone.
- * TODO(timezone): the zone list (a searchable combobox) is not ported; the trigger is inert.
+ * `TimezoneSelect`: the `zone · UTC±n` trigger and its searchable zone list. `timeZone` is what the
+ * page passed, shown until the footer's Mount read the stored preference.
  */
-const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between gap-3 border-t border-border/70 bg-muted/20 px-4 py-2")],
+const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: string): Html => {
+	const timeZone = model.utcOffset?.timeZone ?? fallbackZone
+	const triggerId = `${model.zones.id}-trigger`
+	const anchorId = `${model.zones.id}-anchor`
+	const isListShown = isMounted(model.zones.isOpen, model.zones.animation)
+	return h.div(
+		[
+			h.Id(anchorId),
+			h.Class("flex items-center justify-between gap-3 border-t border-border/70 bg-muted/20 px-4 py-2"),
+		],
 		[
 			eyebrow(h, {}, ["Timezone"]),
 			h.button(
 				[
+					h.Id(triggerId),
 					h.AriaLabel("Timezone"),
-					h.AriaExpanded(false),
+					h.AriaExpanded(model.zones.isOpen),
+					...(isListShown ? [h.AriaControls(`${model.zones.id}-popup`)] : []),
+					...(model.zones.isOpen ? [h.DataAttribute("popup-open", "")] : []),
+					h.OnClick(Message.ClickedTimeZoneTrigger()),
 					h.AriaHasPopup("dialog"),
 					h.Class(
 						cn(
@@ -460,22 +526,41 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, timeZone: string)
 					icon(h, "GlobeIcon", { className: "size-3 shrink-0 text-muted-foreground/70" }),
 					h.span([h.Class("truncate font-mono text-foreground/90")], [timeZone]),
 					h.keyed("span")(
-						`utc-offset-${timeZone}`,
-						[h.Class("shrink-0 font-mono text-muted-foreground/70"), h.OnMount(MountUtcOffset({ timeZone }))],
-						[model.utcOffset?.timeZone === timeZone ? model.utcOffset.label : ""],
-					),
-					h.span(
+						`utc-offset-${fallbackZone}`,
 						[
-							h.Class(cn(badgeVariants({ variant: "tag", className: "shrink-0" }))),
-							h.DataAttribute("slot", "badge"),
+							h.Class("shrink-0 font-mono text-muted-foreground/70"),
+							h.OnMount(MountUtcOffset({ timeZone: fallbackZone })),
 						],
-						["System"],
+						[model.utcOffset?.label ?? ""],
 					),
+					...(model.utcOffset?.isSystem === false
+						? []
+						: [
+								h.span(
+									[
+										h.Class(cn(badgeVariants({ variant: "tag", className: "shrink-0" }))),
+										h.DataAttribute("slot", "badge"),
+									],
+									["System"],
+								),
+							]),
 					icon(h, "ChevronDownIcon", { size: 12, className: "shrink-0 text-muted-foreground" }),
 				],
 			),
+			...(isListShown
+				? [
+						h.submodel({
+							slotId: "timezone-list",
+							model: model.zones,
+							view: zoneListView,
+							viewInputs: { rows: model.zoneRows, triggerId, anchorId, popoverId: model.popover.id },
+							toParentMessage: (message) => Message.GotTimeZoneComboboxMessage({ message }),
+						}),
+					]
+				: []),
 		],
 	)
+}
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 	h.submodel({

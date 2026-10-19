@@ -5,6 +5,7 @@ import { Message } from "./message"
 import type { Resources } from "./platform/resources"
 import type { Model } from "./model"
 import { SELF_HOSTED_AUTH_EVENT } from "./platform/auth-api"
+import { readEffectiveTimeZone, TIME_ZONE_PREFERENCE_EVENT, TIMEZONE_STORAGE_KEY } from "./platform/time-zone"
 import { rendersShell } from "./page/chrome"
 import * as Preload from "./page/preload"
 import { pageSubscriptions } from "./page/registry"
@@ -30,6 +31,22 @@ const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 })
 
 const selfHostedAuthTarget: Dom.TypedEventTarget<{ [SELF_HOSTED_AUTH_EVENT]: Event }> = window
+
+const timeZoneTarget: Dom.TypedEventTarget<{ [TIME_ZONE_PREFERENCE_EVENT]: Event; storage: StorageEvent }> = window
+
+/** `useTimezonePreference`: this tab's pick, or another tab's `storage` write of the key. */
+export const timeZonePreferenceChanges: Stream.Stream<Message> = Stream.merge(
+	Dom.streamFromEvent({ target: timeZoneTarget, type: TIME_ZONE_PREFERENCE_EVENT, mapEvent: () => true }),
+	Dom.streamFromEvent({
+		target: timeZoneTarget,
+		type: "storage",
+		mapEvent: (event) => event.key === TIMEZONE_STORAGE_KEY,
+	}),
+).pipe(
+	Stream.filter((isPreference) => isPreference),
+	Stream.mapEffect(() => readEffectiveTimeZone),
+	Stream.map((timeZone) => Message.ChangedTimeZonePreference({ timeZone })),
+)
 
 /** Every page's Subscriptions, lifted onto the root (`page/registry.ts`). */
 const pages = Subscription.lift(pageSubscriptions)<Model, Message>({
@@ -210,6 +227,14 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 		{
 			modelToDependencies: () => ({}),
 			dependenciesToStream: () => altClickExclude,
+		},
+	),
+	/** The zone preference changed here or in another tab. */
+	timeZonePreference: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () => timeZonePreferenceChanges,
 		},
 	),
 	/** "D" opens the page-level time range picker (`useAppHotkey("time.open")`). */

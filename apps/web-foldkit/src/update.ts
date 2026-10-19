@@ -822,6 +822,15 @@ export const update = (model: Model, message: Message) =>
 						modifyFields(model, { sessionTimeRange: () => ({ orgId, value, nowMs, isLoaded: true }) }),
 					)
 				: { model },
+		// Every reader of `effectiveTimezone` re-renders: the open page re-resolves under the new zone.
+		ChangedTimeZonePreference: ({ timeZone }) => {
+			if (timeZone === model.timeZone) return { model }
+			const zoned = modifyFields(model, { timeZone: () => timeZone })
+			return Option.match(pageContextOf(zoned), {
+				onNone: () => ({ model: zoned }),
+				onSome: (context) => applyPage(changeContext(zoned.page, context))(zoned),
+			})
+		},
 		CompletedWriteSessionTimeRange: ({ nowMs }) => ({
 			model: modifyFields(model, {
 				sessionTimeRange: (state) => (state === null ? null : { ...state, nowMs }),

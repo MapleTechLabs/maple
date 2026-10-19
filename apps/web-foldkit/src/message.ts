@@ -51,5 +51,7 @@ export const Message = defineMessageUnion({
 	CompletedReleaseReads: {},
 	LoadedSessionTimeRange: { orgId: Schema.String, value: SessionTimeRange, nowMs: Schema.Number },
 	CompletedWriteSessionTimeRange: { nowMs: Schema.Number },
+	/** `timezonePreferenceAtom` changed (a pick here, or another tab's `storage` event): the effective zone. */
+	ChangedTimeZonePreference: { timeZone: Schema.String },
 })
 export type Message = typeof Message.Type
