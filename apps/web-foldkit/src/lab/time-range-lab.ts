@@ -25,6 +25,8 @@ export const Model = Schema.Struct({
 	range: Schema.NullOr(Range),
 	selectedTimeZone: Schema.NullOr(Schema.String),
 	effectiveTimeZone: Schema.String,
+	/** The boot clock: the zone's UTC offset is the one in force then. */
+	nowMs: Schema.Number,
 })
 export type Model = typeof Model.Type
 
@@ -71,6 +73,7 @@ export const init = (flags: Flags): Return => ({
 		range: rangeOf("5m", flags.nowMs, flags.effectiveTimeZone),
 		selectedTimeZone: flags.selectedTimeZone,
 		effectiveTimeZone: flags.effectiveTimeZone,
+		nowMs: flags.nowMs,
 	},
 })
 
@@ -105,7 +108,7 @@ export const rowsOf = (model: Model) => {
 		value === undefined ? undefined : formatTimestampInTimezone(value, { timeZone: zone })
 	return [
 		{ label: "Preference", value: model.selectedTimeZone ?? "System" },
-		{ label: "Effective zone", value: `${zone} (${TimeRangePicker.formatUtcOffset(zone)})` },
+		{ label: "Effective zone", value: `${zone} (${TimeRangePicker.formatUtcOffset(zone, model.nowMs)})` },
 		{ label: "Preset", value: model.range?.presetValue ?? "—" },
 		{ label: "Start (warehouse)", value: model.range?.startTime },
 		{ label: "End (warehouse)", value: model.range?.endTime },

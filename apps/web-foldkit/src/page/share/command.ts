@@ -15,6 +15,12 @@ export const ResolveClock = Command.define("ResolveShareClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveClock({ nowMs })),
 })
 
+/** A Reload re-resolves a relative window at the current time (legacy's `useMemo` on `refreshTick`). */
+export const ResolveReloadClock = Command.define("ResolveShareReloadClock", {
+	messages: [Message.CompletedResolveReloadClock],
+	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveReloadClock({ nowMs })),
+})
+
 const decodeDashboard = Schema.decodeUnknownEffect(SharedDashboard)
 
 const decodeEnvelope = Schema.decodeUnknownOption(Schema.Struct({ error: Schema.Struct({ _tag: Schema.String }) }))

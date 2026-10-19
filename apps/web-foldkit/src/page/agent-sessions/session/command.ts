@@ -55,9 +55,10 @@ export const FetchMorePage = Command.define("FetchAgentSessionMorePage", {
 		scope: SpanScope,
 		after: AiSessionSpanCursor,
 		limit: Schema.Number,
+		index: Schema.Number,
 	},
 	messages: [Message.CompletedFetchMorePage],
-	execute: ({ key, sessionId, window, scope, after, limit }) =>
+	execute: ({ key, sessionId, window, scope, after, limit, index }) =>
 		getAiSessionSpans({ data: { ...sessionInput(sessionId, window), scope, after, limit } }).pipe(
 			Effect.map((page) => ({ data: page.data, nextCursor: page.nextCursor ?? null })),
 			Effect.mapError(toLoadFailure),
@@ -65,6 +66,7 @@ export const FetchMorePage = Command.define("FetchAgentSessionMorePage", {
 			Effect.map((result) =>
 				Message.CompletedFetchMorePage({
 					key,
+					index,
 					scope,
 					result,
 					isTooLarge: result._tag === "Failure" && result.failure._tag === SESSION_TOO_LARGE_TAG,

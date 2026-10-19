@@ -177,7 +177,8 @@ export const completedHubWrite = (
 	const settled = { ...model, writingIds: model.writingIds.filter((id) => !ids.includes(id)) }
 	const toast = outcomeToast(write, outcome, isBulk)
 	if (outcome.succeeded === 0) return { model: settled, outMessage: toast }
-	const refreshed = refreshIssues(cleared(settled), context, pageQuery)
+	// Only the bulk bar clears the selection, when it is clicked (`bulkWrite`); a row's write keeps it.
+	const refreshed = refreshIssues(settled, context, pageQuery)
 	return { ...refreshed, outMessage: toast }
 }
 

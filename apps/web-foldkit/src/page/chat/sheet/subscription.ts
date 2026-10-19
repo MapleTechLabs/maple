@@ -67,7 +67,7 @@ export const subscriptions = Subscription.make<SheetHost, Message, Resources>()(
 		{
 			modelToDependencies: ({ sheet }) => ({ tails: sheet.conversation === null ? [] : tailOf(sheet.conversation) }),
 			dependenciesToStream: ({ tails }) =>
-				tails.length === 0 ? Stream.empty : tailsMessages(tails, (_tabId, message) => Message.GotConversationMessage({ message })),
+				tails.length === 0 ? Stream.empty : tailsMessages(tails, (tabId, message) => Message.GotConversationMessage({ tabId, message })),
 		},
 	),
 }))

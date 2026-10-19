@@ -23,6 +23,8 @@ export const Message = defineMessageUnion({
 	/** A background page; `isTooLarge` asks again at half the page size. */
 	CompletedFetchMorePage: {
 		key: Schema.String,
+		/** How many later pages had landed when it was asked for: a page answers one position. */
+		index: Schema.Number,
 		scope: SpanScope,
 		result: Schema.Result(SpansPage, LoadFailure),
 		isTooLarge: Schema.Boolean,

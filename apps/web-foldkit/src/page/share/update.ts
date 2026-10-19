@@ -9,7 +9,7 @@ import { AppRoute, hrefOf } from "../../route"
 import * as Menu from "../../ui/menu"
 import { type PageReturn, PageOutMessage } from "../contract"
 import { presetLabel } from "../kit/time-controls"
-import { FetchBatch, GoToSignIn, ResolveClock, ResolveShare, WaitFlushFrame } from "./command"
+import { FetchBatch, GoToSignIn, ResolveClock, ResolveReloadClock, ResolveShare, WaitFlushFrame } from "./command"
 import { Message } from "./message"
 import type { Model, SharedDashboard, ShareWindow } from "./model"
 
@@ -174,8 +174,9 @@ export const update = (model: Model, message: Message): Return =>
 			commands: next === undefined ? [] : [FetchBatch({ token: model.token, ...next })],
 			}
 		},
-		ClickedReload: () => reload(model),
-		TickedAutoRefresh: () => reload(model),
+		ClickedReload: () => ({ model, commands: [ResolveReloadClock()] }),
+		TickedAutoRefresh: () => ({ model, commands: [ResolveReloadClock()] }),
+		CompletedResolveReloadClock: ({ nowMs }) => reload({ ...model, nowMs }),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),

@@ -145,11 +145,11 @@ export const FetchFirstPage = Command.define("FetchTracesFirstPage", {
 
 /** `fetchNextPage`: offset counts warehouse rows consumed, a page per page. */
 export const FetchNextPage = Command.define("FetchTracesNextPage", {
-	args: { ...PageArgs, offset: Schema.Number },
+	args: { ...PageArgs, offset: Schema.Number, generation: Schema.Number },
 	messages: [Message.CompletedFetchNextPage],
-	execute: ({ key, search, window, pinnedNamespace, offset }) =>
+	execute: ({ key, search, window, pinnedNamespace, offset, generation }) =>
 		Effect.map(fetchPage(search, window, pinnedNamespace, offset), (result) =>
-			Message.CompletedFetchNextPage({ key, result }),
+			Message.CompletedFetchNextPage({ key, generation, offset, result }),
 		),
 })
 

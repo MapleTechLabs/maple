@@ -3,7 +3,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { type Elapsed, splitDuration } from "@maple/web-data/investigations/display"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { Option } from "effect"
-import type { Model } from "./model"
+import type { Model, OverviewRow } from "./model"
 
 export const investigationOf = (model: Model): Option.Option<V2Investigation> =>
 	model.sync._tag === "Ready" ? Option.some(model.sync.investigation) : Option.none()
@@ -72,6 +72,10 @@ export const signalWindowOf = (investigation: V2Investigation): SignalWindow | n
 }
 
 /** `resolveService`: the one service the signals card can speak for. */
+/** The overview is per service and environment; the busiest row for the service is the incident's. */
+export const busiestRowOf = (rows: ReadonlyArray<OverviewRow>, service: string): OverviewRow | null =>
+	rows.filter((row) => row.serviceName === service).toSorted((left, right) => right.spanCount - left.spanCount)[0] ?? null
+
 export const signalServiceOf = (investigation: V2Investigation): string | null => {
 	const named = investigation.snapshot.serviceName?.trim()
 	if (named) return named

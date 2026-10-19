@@ -7,6 +7,7 @@ import * as Menu from "../../../../ui/menu"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import type { FleetRead } from "../data"
 import { Message, type Model } from "./model"
+import { subscriptions } from "./subscription"
 import { init, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -19,7 +20,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
 
-const status = (connected: boolean) =>
+const status = (connected: boolean, overrides: Readonly<Record<string, unknown>> = {}) =>
 	Schema.decodeUnknownSync(V2GcpIntegration)({
 		object: "gcp_integration",
 		metrics_available: true,
@@ -46,6 +47,7 @@ const status = (connected: boolean) =>
 						last_metrics_error: null,
 						discovered_project_count: 1,
 						last_resources_error: null,
+						...overrides,
 					},
 				]
 			: [],
@@ -147,5 +149,23 @@ describe("google cloud list", () => {
 		expect(picked.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/infra/gcp?project=acme-data", isReplace: false }),
 		)
+	})
+
+	test("the live clock ages a connector out of settling, so the 10 s poll stops", () => {
+		// Read access just confirmed, nothing read yet and an error: waiting, then failing past the grace.
+		const waiting = status(true, {
+			setup_reported_at: iso(NOW - 60_000),
+			last_metrics_received_at: null,
+			last_metrics_error: "permission denied",
+		})
+		const windowed = pageUpdate(init({ search: {} }, context).model, Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" })).model
+		const model = pageUpdate(windowed, Message.CompletedLoadStatus({ key: windowed.status.key ?? "", result: Result.succeed(waiting) })).model
+		const deps = (next: Model) => ({
+			clock: subscriptions.liveClock.modelToDependencies({ model: next, context }),
+			cadence: subscriptions.statusRefresh.modelToDependencies({ model: next, context }),
+		})
+		expect(deps(model)).toEqual({ clock: { hasStatus: true }, cadence: { cadence: "settling" } })
+		const aged = pageUpdate(model, Message.TickedLiveClock({ nowMs: NOW + 11 * 60_000 })).model
+		expect(deps(aged).cadence).toEqual({ cadence: "steady" })
 	})
 })

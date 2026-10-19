@@ -217,6 +217,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return { model: { ...model, status }, commands }
 		},
 		TickedFleetRefresh: () => sync(model, context, "Refresh"),
+		TickedLiveClock: ({ nowMs }) => sync({ ...model, nowMs }, context, "Load"),
 		ClickedRetryFleet: () => sync(model, context, "Refresh"),
 		TickedResourcesRefresh: () => {
 			const query = resourcesQueryOf(model.search)

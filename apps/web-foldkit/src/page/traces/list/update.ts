@@ -87,8 +87,9 @@ const firstPageKey = (model: Model, context: PageContext, window: TimeWindow) =>
 		data: listInput(model.search, window, context.pinnedNamespace, 0),
 	})
 
-const freshPagination = (key: string | null): Pagination => ({
+const freshPagination = (key: string | null, generation: number): Pagination => ({
 	key,
+	generation,
 	pages: [],
 	isFetching: false,
 	isStopped: false,
@@ -127,11 +128,14 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 				cached === undefined
 					? Option.getOrElse(firstPage, () => model.firstPage)
 					: { key: listKey, data: AsyncData.Success({ data: cached }) },
-			pagination: model.pagination.key === listKey ? model.pagination : freshPagination(listKey),
+			pagination:
+				model.pagination.key === listKey ? model.pagination : freshPagination(listKey, model.pagination.generation + 1),
 		},
 		commands,
 	}
 }
+
+const nextOffset = (pagination: Pagination): number => (pagination.pages.length + 1) * PAGE_SIZE
 
 /** `useVirtualReachEnd`: the rendered window nears the end of the loaded rows. */
 const reachEnd = (model: Model, context: PageContext): Return => {
@@ -158,7 +162,8 @@ const reachEnd = (model: Model, context: PageContext): Return => {
 				search: model.search,
 				window,
 				pinnedNamespace: context.pinnedNamespace,
-				offset: (pagination.pages.length + 1) * PAGE_SIZE,
+				offset: nextOffset(pagination),
+				generation: pagination.generation,
 			}),
 		],
 	}
@@ -178,7 +183,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		nowMs: 0,
 		facets: Keyed.idle(),
 		firstPage: Keyed.idle(),
-		pagination: freshPagination(null),
+		pagination: freshPagination(null, 0),
 		firstPageCache: {},
 		virtualRows: [],
 		totalSize: 0,
@@ -319,8 +324,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const peeked = syncPeek(done.model, context)
 			return { ...peeked, commands: [...(done.commands ?? []), ...(peeked.commands ?? [])] }
 		},
-		CompletedFetchNextPage: ({ key, result }) => {
-			if (key !== model.pagination.key) return { model }
+		// Accepted only for the exact request it answers: the key, its set of pages and the offset.
+		CompletedFetchNextPage: ({ key, generation, offset, result }) => {
+			const { pagination: current } = model
+			if (key !== current.key || generation !== current.generation || !current.isFetching || offset !== nextOffset(current))
+				return { model }
 			const pagination: Pagination = Result.match(result, {
 				onSuccess: (page) => ({
 					...model.pagination,

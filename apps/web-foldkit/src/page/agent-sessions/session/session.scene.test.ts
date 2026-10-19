@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import { AiSessionSpanCursor } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
@@ -41,6 +42,23 @@ describe("agent session detail", () => {
 		)
 		expect(landed.outMessage).toBeUndefined()
 		expect(names(landed.commands)).toEqual([])
+	})
+
+	test("a dropped later page asks for nothing: each page is fetched once", () => {
+		const { model } = entered()
+		const key = model.firstPage.key ?? ""
+		const cursor = (spanId: string) => Schema.decodeSync(AiSessionSpanCursor)({ timestamp: "2026-10-01 12:00:00", spanId })
+		const first = pageUpdate(model, Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: cursor("s1") }) }))
+		expect(names(first.commands)).toEqual(["FetchAgentSessionMorePage"])
+		const page = (at: number, next: string | null) =>
+			Message.CompletedFetchMorePage({ key, index: at, scope: "ai", isTooLarge: false, result: Result.succeed({ data: [], nextCursor: next === null ? null : cursor(next) }) })
+		const stale = pageUpdate(first.model, Message.CompletedFetchMorePage({ key: "old", index: 0, scope: "ai", isTooLarge: false, result: Result.succeed({ data: [], nextCursor: null }) }))
+		expect(names(stale.commands)).toEqual([])
+		const second = pageUpdate(stale.model, page(0, "s2"))
+		expect(names(second.commands)).toEqual(["FetchAgentSessionMorePage"])
+		const duplicate = pageUpdate(second.model, page(0, "s2"))
+		expect(names(duplicate.commands)).toEqual([])
+		expect(duplicate.model.more.agentPages).toHaveLength(1)
 	})
 
 	test("a stale first page is dropped", () => {

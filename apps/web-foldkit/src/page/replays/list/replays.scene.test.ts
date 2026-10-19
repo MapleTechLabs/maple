@@ -126,6 +126,30 @@ describe("replays list", () => {
 		expect(names(pageUpdate(loaded(page([session("a")])), Message.ReachedListEnd()).commands)).toEqual([])
 	})
 
+	test("page 2 under a new search waits for its own first page and its cursor", () => {
+		const model = loaded(page([session("a")], "cursor-1"))
+		const filtered = routeChanged(model, { search: { browser: "Safari" } }, context).model
+		const moved = pageUpdate(filtered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
+		expect(names(pageUpdate(moved, Message.ReachedListEnd()).commands)).toEqual([])
+		const own = Message.CompletedFetchFirstPage({ key: moved.firstPage.key ?? "", result: Result.succeed(page([session("b")], "cursor-2")) })
+		const settled = pageUpdate(moved, own).model
+		expect(pageUpdate(settled, Message.ReachedListEnd()).commands?.[0]?.args).toMatchObject({ cursor: "cursor-2" })
+	})
+
+	test("a Reload under the same key drops the page 2 already in flight: it is appended once", () => {
+		const model = loaded(page([session("a")], "cursor-1"))
+		const first = pageUpdate(model, Message.ReachedListEnd())
+		const answer = (generation: number) =>
+			Message.CompletedFetchNextPage({ key: model.pagination.key ?? "", generation, cursor: "cursor-1", result: Result.succeed(page([session("b")])) })
+		const reloaded = pageUpdate(first.model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" })).model
+		const late = pageUpdate(reloaded, answer(first.model.pagination.generation)).model
+		const refreshed = Message.CompletedFetchFirstPage({ key: late.firstPage.key ?? "", result: Result.succeed(page([session("a")], "cursor-1")) })
+		const again = pageUpdate(pageUpdate(late, refreshed).model, Message.ReachedListEnd())
+		expect(names(again.commands)).toEqual([FetchNextPage.name])
+		const appended = pageUpdate(again.model, answer(again.model.pagination.generation)).model
+		expect(allRows(pageUpdate(appended, answer(again.model.pagination.generation)).model).map((row) => row.sessionId)).toEqual(["a", "b"])
+	})
+
 	test("the errors chip and a sidebar option navigate with the new search", () => {
 		const model = loaded(page([session("a")]))
 		expect(pageUpdate(model, Message.ToggledErrorsOnly()).outMessage).toEqual(
@@ -167,7 +191,7 @@ describe("replays list", () => {
 			Mount.resolve(WatchListEnd, Message.ReachedListEnd()),
 			Command.resolve(
 				FetchNextPage,
-				Message.CompletedFetchNextPage({ key: "", result: Result.succeed(page([])) }),
+				Message.CompletedFetchNextPage({ key: "", generation: 0, cursor: "cursor-1", result: Result.succeed(page([])) }),
 			),
 			expectView(text("Maria Garcia")).toExist(),
 		)

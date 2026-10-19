@@ -47,7 +47,8 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 
 const liftConversation = (model: Model, step: Conversation.Return): Return => {
 	const next: Model = { ...model, conversation: step.model }
-	const commands = Command.mapMessages(step.commands ?? [], (message) => Message.GotConversationMessage({ message }))
+	const tabId = step.model.tabId
+	const commands = Command.mapMessages(step.commands ?? [], (message) => Message.GotConversationMessage({ tabId, message }))
 	const out = Option.fromNullishOr(step.outMessage)
 	const lifted: Return = Option.match(out, {
 		onNone: () => ({ model: next, commands }),
@@ -119,8 +120,10 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 				: withCommands(liftDialog(model, Dialog.close(model.dialog)), [EnsureStoredTab({ orgId: model.orgId, tabId: model.tabId })]),
 		CompletedEnsureStoredTab: () => ({ model }),
 		CompletedRenameStoredTab: () => ({ model }),
-		GotConversationMessage: ({ message: child }) =>
-			model.conversation === null ? { model } : liftConversation(model, Conversation.update(model.conversation, child, sendContext(model))),
+		GotConversationMessage: ({ tabId, message: child }) =>
+			model.conversation === null || model.conversation.tabId !== tabId
+				? { model }
+				: liftConversation(model, Conversation.update(model.conversation, child, sendContext(model))),
 		PaintedEmptyState: () =>
 			model.isPresenceRequested
 				? { model }

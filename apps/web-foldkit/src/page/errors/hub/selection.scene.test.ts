@@ -130,4 +130,21 @@ describe("errors hub selection", () => {
 		expect(names(done.commands)).toContain("FetchErrorIssuesPage")
 		expect(done.model.writingIds).toEqual([])
 	})
+
+	test("a single row's write keeps the selection: only the bulk bar clears it", () => {
+		const press = (model: Model, key: string) => pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
+		const selected = press(press(press(press(loaded(), "j"), "x"), "j"), "x")
+		expect(selected.selectedIds).toHaveLength(2)
+		const done = pageUpdate(
+			selected,
+			Message.CompletedHubWrite({
+				ids: [ids[2] ?? ""],
+				write: { _tag: "Claim" },
+				isBulk: false,
+				outcome: { succeeded: 1, failed: 0, firstFailure: null },
+			}),
+		)
+		expect(names(done.commands)).toContain("FetchErrorIssuesPage")
+		expect(done.model.selectedIds).toEqual(selected.selectedIds)
+	})
 })

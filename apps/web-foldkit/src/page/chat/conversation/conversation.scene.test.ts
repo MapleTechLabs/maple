@@ -1,7 +1,9 @@
 import { ChatEvent } from "@maple/domain/chat-session"
-import { Result, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
+import { parseMarkdownTexts } from "../../kit/markdown"
 import { TURN_IN_FLIGHT_MESSAGE } from "../kit/chat-api"
+import { TextPart } from "../kit/ui-message"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -142,5 +144,39 @@ describe("chat conversation", () => {
 		)
 		expect(applied.model.resolvedApprovals).toEqual({ c4: "applied" })
 		expect(applied.outMessage).toEqual(OutMessage.RequestedToast({ type: "success", title: "Change applied" }))
+	})
+
+	test("a send before the history is read keeps the draft, and the history still lands", () => {
+		const entered = init("default", "org_acme:default").model
+		const typed = step(entered, Message.ChangedDraft({ text: "Hi" })).model
+		const early = step(typed, Message.SubmittedComposer())
+		expect(early.commands ?? []).toEqual([])
+		expect(early.outMessage).toBeUndefined()
+		expect(early.model.draft).toBe("Hi")
+		const earlier = { id: "m1", role: "user" as const, parts: [TextPart.make({ text: "Earlier", state: "done" })] }
+		const history = Message.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [earlier], cursor: 3, running: false }) })
+		const loaded = step(early.model, history).model
+		expect(loaded.messages.map((message) => message.id)).toEqual(["m1"])
+		const sent = step(loaded, Message.SubmittedComposer())
+		expect(sent.outMessage).toBeUndefined()
+		expect(names(sent.commands)).toContain("PostChatMessage")
+	})
+
+	test("a streaming answer parses one version at a time, keeps the last parse on screen and only on-screen bodies", async () => {
+		const sending = step(ready(), Message.ClickedSuggestion({ text: "Hi" })).model
+		const accepted = step(
+			sending,
+			Message.CompletedPostMessage({ generation: sending.generation, localId: `local-${sending.generation}`, raw: "Hi", result: Result.succeed({ cursor: 0, messageId: "u" }) }),
+		).model
+		const delta = (seq: number, text: string) => events(sending.generation, [{ type: "text-delta", seq, messageId: "r", text }])
+		const first = step(accepted, delta(1, "All "))
+		expect(first.commands?.find((command) => command.name === "ParseChatMarkdown")?.args).toEqual({ texts: ["All "] })
+		const second = step(first.model, delta(2, "good"))
+		expect(names(second.commands)).not.toContain("ParseChatMarkdown")
+		const parsed = await Effect.runPromise(parseMarkdownTexts(["Hi", "All "]))
+		const landed = step(second.model, Message.CompletedParseMarkdown({ parsed }))
+		expect(landed.commands?.find((command) => command.name === "ParseChatMarkdown")?.args).toEqual({ texts: ["All good"] })
+		expect(Object.keys(landed.model.markdown).toSorted()).toEqual(["All good", "Hi"])
+		expect(landed.model.markdown["All good"]).toEqual({ document: parsed[1]?.document, isStale: true })
 	})
 })

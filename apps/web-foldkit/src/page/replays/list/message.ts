@@ -30,7 +30,7 @@ const Bound = Schema.UndefinedOr(Schema.Number)
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
 	CompletedFetchFirstPage: result(ReplaysPage),
-	CompletedFetchNextPage: result(ReplaysPage),
+	CompletedFetchNextPage: { ...result(ReplaysPage), generation: Schema.Number, cursor: Schema.String },
 	CompletedFetchFacets: result(ReplaysFacets),
 	ReachedListEnd: {},
 	ChangedVirtualWindow: { window: VirtualWindow },

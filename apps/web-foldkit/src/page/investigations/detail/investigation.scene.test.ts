@@ -108,6 +108,28 @@ describe("investigation detail", () => {
 		)
 	})
 
+	test("the traces row follows the investigation's service over the same window's overview", () => {
+		const first = synced(entered(), investigationOf())
+		const traces = first.commands?.find((command) => command.name === "FetchInvestigationSignalTraces")
+		const key = traces?.args !== undefined && "key" in traces.args ? String(traces.args.key) : ""
+		const rows = [
+			{ serviceName: "checkout-api", spanCount: 457, p95LatencyMs: 12, errorRate: 0 },
+			{ serviceName: "payment-svc", spanCount: 731, p95LatencyMs: 40, errorRate: 0 },
+		]
+		const loaded = pageUpdate(first.model, Message.CompletedFetchTraces({ key, result: Result.succeed(rows) })).model
+		const evidence = [{ traceIds: [], logPatterns: [], relatedServices: ["payment-svc"], note: "Pool wait dominates." }]
+		const moved = investigationOf({ report_json: { ...row({}).report_json, evidence } })
+		const resynced = synced(loaded, moved)
+		expect(names(resynced.commands)).not.toContain("FetchInvestigationSignalTraces")
+		scene(
+			{ update: pageUpdate, view },
+			given(resynced.model),
+			paned(),
+			expectView(text("731")).toExist(),
+			expectView(text("457")).not.toExist(),
+		)
+	})
+
 	test("the Evidence tab reads no signals and lists the findings", () => {
 		const step = synced(entered({ tab: "evidence" }), investigationOf())
 		expect(names(step.commands)).toEqual([])

@@ -64,6 +64,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchGithubStatus: result(GithubIntegrationStatus),
 	CompletedFetchVcsPullRequests: result(VcsPullRequestsResponse),
 	UpdatedDestinations: { orgId: Schema.String, destinations: Schema.Array(DestinationName) },
+	TickedLeaseClock: { nowMs: Schema.Number },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },

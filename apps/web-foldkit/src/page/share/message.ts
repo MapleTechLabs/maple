@@ -20,6 +20,8 @@ export const Message = defineMessageUnion({
 	},
 	ClickedReload: {},
 	TickedAutoRefresh: {},
+	/** The clock a Reload or an auto-refresh tick resolves its relative window at. */
+	CompletedResolveReloadClock: { nowMs: Schema.Number },
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

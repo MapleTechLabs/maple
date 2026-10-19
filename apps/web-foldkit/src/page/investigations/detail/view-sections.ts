@@ -16,9 +16,9 @@ import { skeleton } from "../../../ui/skeleton"
 import { serviceDot } from "../../../ui/values"
 import { sectionHeading } from "../../kit/section-heading"
 import { ORIGIN } from "../kit"
-import { type ChipPlace, servicesTouched, signalServiceOf, signalWindowOf, traceTipId } from "./derive"
+import { busiestRowOf, type ChipPlace, servicesTouched, signalServiceOf, signalWindowOf, traceTipId } from "./derive"
 import { Message } from "./message"
-import type { Escalation, LogBucket, Model, TracesRow } from "./model"
+import type { Escalation, LogBucket, Model, OverviewRow, TracesRow } from "./model"
 
 // The Overview's lower sections and the Evidence tab: `ImpactStrip`, `SignalsCard`, `InvestigationMeta`,
 // `FollowUpComposer`, `CauseRecap`, `EvidenceTab` and `EvidenceChips` (components/investigations/).
@@ -188,7 +188,8 @@ export const signalsCard = (h: H, model: Model, investigation: V2Investigation):
 		onSuccess: (points) => logsRow(h, points),
 		onRefreshing: (points) => logsRow(h, points),
 	})
-	const tracesRow = (row: typeof TracesRow.Type | null) =>
+	const tracesRow = (rows: ReadonlyArray<OverviewRow>) => tracesFigures(busiestRowOf(rows, service))
+	const tracesFigures = (row: typeof TracesRow.Type | null) =>
 		row === null
 			? rowNote(h, "Traces", "No spans in this window")
 			: h.div(

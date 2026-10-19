@@ -66,7 +66,8 @@ describe("chat page", () => {
 	})
 
 	test("the first message renames its tab to its first 40 characters", () => {
-		const model = loaded().model
+		const history = ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor: 0, running: false }) })
+		const model = step(loaded().model, Message.GotConversationMessage({ tabId: "default", message: history })).model
 		const typed = step(model, Message.GotConversationMessage({ tabId: "default", message: ConversationMessage.ClickedSuggestion({ text: "Which services have the highest error rate this week?" }) }))
 		expect(names(typed.commands)).toContain("StampChatRename")
 		const renamed = step(typed.model, Message.StampedRename({ id: "default", title: "Which services have the highest error ra", nowMs: NOW + 1 }))

@@ -40,7 +40,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchFacets: result(TracesFacets),
 	CompletedFetchFirstPage: result(TracesPage),
 	/** A later page; `key` is the first page's key it continues. */
-	CompletedFetchNextPage: result(TracesPage),
+	CompletedFetchNextPage: { ...result(TracesPage), generation: Schema.Number, offset: Schema.Number },
 	ChangedVirtualWindow: { rows: Schema.Array(VirtualRow), totalSize: Schema.Number },
 	PaintedEmptyState: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
