@@ -244,10 +244,11 @@ def work(n):
 
 
 if __name__ == "__main__":
-    logger.remove()
-    logger.add("logs/workers.log", enqueue=True)
-
     context = multiprocessing.get_context("spawn")
+
+    logger.remove()
+    logger.add("logs/workers.log", enqueue=True, context=context)
+
     with context.Pool(4, initializer=set_logger, initargs=(logger,)) as pool:
         pool.map(work, range(8))
 
@@ -649,7 +650,7 @@ const articleJsonLd = {
                     </p>
                     <Code code={enqueueCode} lang="python" theme={codeTheme} />
                     <p>
-                        <code>logger.complete()</code> waits until the queue is empty. Call it before the process exits, or the last records can be lost.
+                        <code>context=</code> builds the sink's queue with the same start method as the pool. Without it, the queue uses the interpreter's default, and on a Linux Python where that default is <code>fork</code>, a <code>spawn</code> pool refuses to receive it. <code>logger.complete()</code> waits until the queue is empty. Call it before the process exits, or the last records can be lost.
                     </p>
 
                     <h3>Async sinks</h3>
