@@ -939,8 +939,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			> {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": rule.id })
 				// Snapped, not raw `now`: excludes the still-filling current minute and
-				// lets rules over the same signal share one `qe-evaluate` entry within
-				// a tick. See `snapAlertWindowEndMs`. A scheduler tick passes its own.
+				// lets rules over the same signal share bucket reads within a tick. See
+				// `snapAlertWindowEndMs`. A scheduler tick passes its own.
 				const endMs = windowEndMs === undefined ? snapAlertWindowEndMs(yield* now) : windowEndMs
 				const startMs = endMs - rule.windowMinutes * 60_000
 				const plan = rule.compiledPlan

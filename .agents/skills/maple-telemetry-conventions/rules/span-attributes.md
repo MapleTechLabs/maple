@@ -134,7 +134,7 @@ Source: `packages/query-engine/src/caching/bucket-cache.ts`, `packages/backend/s
 | `cache.segments_hit` / `_missed` / `_timed_out` / `_skipped` / `_errored` | int | `bucket-cache.ts` | Per-segment outcomes |
 | `cache.hit` | bool | `QueryEngineService.ts` | Cache hit or miss |
 | `cache.ttlSeconds` | int | `QueryEngineService.ts` | TTL of the cached entry |
-| `cache.path` | string | `QueryEngineService.ts` | `"blob"` or `"bucket"` |
+| `cache.path` | string | `QueryEngineService.ts` | `"blob"`, `"bucket"`, or `"none"` (alert evaluate, uncached) |
 
 ---
 

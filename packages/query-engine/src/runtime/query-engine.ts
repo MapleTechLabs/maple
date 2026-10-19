@@ -321,8 +321,6 @@ export function snapToWindow(dateStr: string, windowSeconds: number): string {
 	return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`
 }
 
-const snapSeconds = (dateStr: string): string => snapToWindow(dateStr, CACHE_SNAP_S)
-
 /**
  * Discovery queries (attribute keys/values, facets) change slowly because
  * they're driven by what's been ingested. Use a wider snap window so
@@ -371,16 +369,6 @@ export function cacheTtlForQueryKind(kind: string): number {
 export function buildCacheKey(orgId: string, request: QueryEngineExecuteRequest): string {
 	const snap = snapWindowForQueryKind(request.query.kind)
 	return `${orgId}:${snapToWindow(request.startTime, snap)}:${snapToWindow(request.endTime, snap)}:${canonicalJSON(request.query)}`
-}
-
-export function buildEvaluateCacheKey(orgId: string, request: AlertEvaluateRequest): string {
-	// `source.kind` is part of the key so a spec plan and a raw-SQL plan can
-	// never share an entry.
-	const source =
-		request.source.kind === "spec"
-			? `spec:${canonicalJSON(request.source.query)}`
-			: `raw:${request.source.windowMinutes}:${request.source.sql}`
-	return `eval:${orgId}:${snapSeconds(request.startTime)}:${snapSeconds(request.endTime)}:${request.reducer}:${request.sampleCountStrategy}:${source}`
 }
 
 const DIRECT_CACHE_SNAP_KEYS = new Set(["startTime", "endTime"])
@@ -2853,8 +2841,8 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 			wholeRange: true,
 		}
 		const load = computeAlertBuckets(warehouse, tenant, bucketRequest, bucketSeconds)
-		// Raw SQL may contain volatile functions. Keep its existing whole-result
-		// cache policy; only structured queries share buckets across reducers.
+		// Raw SQL may contain volatile functions, so it always runs; only
+		// structured queries share buckets across reducers.
 		const obs = yield* request.source.kind === "spec"
 			? memoizeAlertBuckets(
 					warehouse,

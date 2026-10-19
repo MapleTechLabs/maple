@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Ref, Schema } from "effect"
 import { strict as assert } from "node:assert"
 import { OrgId, UserId } from "@maple/domain"
 import { baselineWarehouseCapabilities, type QueryEngineEvaluateRequest } from "@maple/query-engine"
@@ -438,6 +438,60 @@ describe("QueryEngineService.cachedDirect TTL", () => {
 			)
 		}).pipe(Effect.provide(layer))
 	})
+})
+
+describe("QueryEngineService.evaluate", () => {
+	it.effect("runs every alert evaluation against the warehouse without touching the edge cache", () =>
+		Effect.gen(function* () {
+			const edgeOps = yield* Ref.make<ReadonlyArray<string>>([])
+			const queries = yield* Ref.make(0)
+			const recordEdge = (op: string) => Ref.update(edgeOps, (ops) => [...ops, op])
+			const countQuery = Ref.update(queries, (n) => n + 1)
+			const base = makeFullStub(COUNT_ROWS, { n: 0 })
+			const warehouse: WarehouseQueryServiceApi = {
+				...base,
+				compiledQuery: (tenant, compiled, options) =>
+					countQuery.pipe(Effect.andThen(base.compiledQuery(tenant, compiled, options))),
+				compiledQueryWithCapabilities: (tenant, compile, options) =>
+					countQuery.pipe(
+						Effect.andThen(base.compiledQueryWithCapabilities(tenant, compile, options)),
+					),
+			}
+			const edge: EdgeCacheServiceApi = {
+				getOrCompute: (_options, compute) =>
+					recordEdge("getOrCompute").pipe(
+						Effect.andThen(Effect.map(compute, (value) => ({ value, hit: false }))),
+					),
+				invalidate: () => recordEdge("invalidate"),
+				rawGetDetailed: () =>
+					recordEdge("rawGetDetailed").pipe(
+						Effect.as({ status: "miss" as const, value: Option.none(), readMs: 0 }),
+					),
+				rawGet: () => recordEdge("rawGet").pipe(Effect.as(Option.none())),
+				rawPut: () => recordEdge("rawPut"),
+				rawDelete: () => recordEdge("rawDelete"),
+			}
+			const edgeLayer = Layer.succeed(EdgeCacheService, edge)
+			const layer = Layer.effect(QueryEngineService, QueryEngineService.make).pipe(
+				Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
+				Layer.provide(edgeLayer),
+				Layer.provide(BucketCacheService.layer.pipe(Layer.provide(edgeLayer))),
+				Layer.provide(makeConfig()),
+			)
+
+			const [first, second] = yield* Effect.gen(function* () {
+				const qe = yield* QueryEngineService
+				const request = countRequest("sum")
+				return [yield* qe.evaluate(tenant, request), yield* qe.evaluate(tenant, request)] as const
+			}).pipe(Effect.provide(layer))
+
+			const expected = yield* makeQueryEngineEvaluate(evalStub(COUNT_ROWS))(tenant, countRequest("sum"))
+			assert.deepStrictEqual(first, expected)
+			assert.deepStrictEqual(second, expected)
+			assert.deepStrictEqual(yield* Ref.get(edgeOps), [])
+			assert.strictEqual(yield* Ref.get(queries), 2)
+		}),
+	)
 })
 
 describe("traceCacheTtlSeconds", () => {

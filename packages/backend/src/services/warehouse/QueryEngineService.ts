@@ -5,7 +5,6 @@ import type { QueryEngineTimeoutError } from "@maple/domain/http"
 import {
 	buildCacheKey,
 	buildDirectRouteCacheKey,
-	buildEvaluateCacheKey,
 	cacheTtlForQueryKind,
 	computeBucketSeconds,
 	makeQueryEngineEvaluate,
@@ -373,28 +372,15 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				)
 			})
 
-			const cachedEvaluate = Effect.fn("QueryEngineService.cachedEvaluate")(function* (
+			// Not edge-cached: the window end moves every tick, so a key only repeats
+			// within one tick (1.5% hits) and every miss paid a read and a write.
+			// In-tick sharing is `withAlertEvaluationScope`. Named apart from the inner span.
+			const evaluate = Effect.fn("QueryEngineService.evaluateAlert")(function* (
 				tenant: TenantContext,
 				request: AlertEvaluateRequest,
 			) {
-				return yield* withTimeout(
-					Effect.gen(function* () {
-						// Alert evaluations are small and use a short whole-result cache.
-						// The TTL must outlive one scheduler tick: rules are claimed in
-						// chunks at concurrency 5 and interleaved across orgs, so two rules
-						// over the same signal can be minutes apart within a single tick.
-						// At the old 30s — shorter than the 60s tick — an entry expired
-						// before any sibling rule could reach it.
-						const key = buildEvaluateCacheKey(tenant.orgId, request)
-						const { value, hit } = yield* edgeCache.getOrCompute(
-							{ bucket: "qe-evaluate", key, ttlSeconds: 90 },
-							evaluateImpl(tenant, request),
-						)
-						yield* recordCacheOutcome(hit)
-						yield* Effect.annotateCurrentSpan("cache.hit", hit)
-						return value
-					}),
-				)
+				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "cache.path": "none" })
+				return yield* withTimeout(evaluateImpl(tenant, request))
 			})
 
 			const cachedDirect = Effect.fn("QueryEngineService.cachedDirect")(function* <
@@ -488,7 +474,7 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 
 			return {
 				execute,
-				evaluate: cachedEvaluate,
+				evaluate,
 				evaluateSeries,
 				cachedDirect,
 			} satisfies QueryEngineServiceApi
