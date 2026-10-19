@@ -9,7 +9,9 @@ import { ConnectProvider } from "./connect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { navShell } from "../settings/kit/nav-shell"
+import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { visibleSections } from "../settings/nav"
+import { settingsNavVisibility } from "./derive"
 import { entryGlyph } from "./view-entry"
 import { chatCard } from "./view-chat-card"
 import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
@@ -72,7 +74,7 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 	dashboardPage(
 		h,
 		{
-			filters: settingsNav(h),
+			filters: settingsNav(h, model),
 			titleContent: integrationHeader(h, model, integration, {
 				connect: connectButton(h, model, integration),
 				actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
@@ -83,11 +85,11 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 		cardView(h, model, integration, timeZone),
 	)
 
-/** The self-hosted settings rail with "Integrations" the active link. TODO(clerk): the Clerk-mode rows. */
-const settingsNav = (h: HtmlBuilder<Message>): Html =>
+/** The settings rail with "Integrations" the active link, gated like `/settings`. */
+const settingsNav = (h: HtmlBuilder<Message>, model: Model): Html =>
 	navShell(
 		h,
-		visibleSections({ isClerk: false, isAdmin: true, canAccessDataPlatform: true }),
+		visibleSections(settingsNavVisibility(model, isClerkAuthEnabled)),
 		"integrations",
 		(tab) => Message.ClickedSettingsTab({ tab }),
 	)
@@ -98,7 +100,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		? dashboardPage(
 				h,
 				{
-					filters: settingsNav(h),
+					filters: settingsNav(h, model),
 					actions: integrationsSummary(h, model) ?? h.empty,
 				},
 				[integrationCatalog(h, model, selectIntegration)],

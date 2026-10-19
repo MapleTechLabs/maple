@@ -10,7 +10,9 @@ import { Array, DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Keyed } from "../../data/keyed"
 import { CATALOG, chatIntegrationId, type IntegrationId } from "./catalog"
-import type { Statuses } from "./model"
+import { hasBringYourOwnCloudAddOn } from "@maple/web/lib/billing/plan-gating"
+import type { Visibility } from "../settings/nav"
+import type { Model, Statuses } from "./model"
 
 // `useIntegrationStatuses` and `useIntegrationOverviews` (integration-catalog.tsx), as pure folds.
 
@@ -482,4 +484,14 @@ export const summaryOf = (
 		connected: connected.length,
 		attention: connected.filter((value) => value.health === "attention").length,
 	}
+}
+
+/** `useVisibleSettingsSections()` on `/integrations`: the session's admin flag and the BYOC add-on. */
+export const settingsNavVisibility = (
+	model: Pick<Model, "isAdmin" | "customer">,
+	isClerk: boolean,
+): Visibility => {
+	if (!isClerk) return { isClerk, isAdmin: true, canAccessDataPlatform: true }
+	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn), () => false)
+	return { isClerk, isAdmin: model.isAdmin, canAccessDataPlatform: model.isAdmin && hasByoc }
 }

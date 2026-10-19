@@ -60,3 +60,9 @@ export class SessionTenant extends Context.Service<SessionTenant, { readonly get
 		}),
 	).pipe(Layer.provide([MapleApiClient.layer, SessionBearer.layer]))
 }
+
+/** `useIsOrgAdmin()`: the session's roles allow org administration; `false` when it fails. */
+export const readIsOrgAdmin = Effect.gen(function* () {
+	const session = yield* (yield* SessionTenant).get
+	return session.roles.some((role) => role === "root" || role === "org:admin")
+}).pipe(Effect.orElseSucceed(() => false))
