@@ -19,14 +19,6 @@ export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) 
  * read matches `(ServiceName, <this>, TraceId)` against the index, so the
  * expression must stay byte-identical in both places.
  */
-/**
- * Re-sorting `traces` makes Tinybird rebuild every datasource fed from it. With
- * this forward query it copies their rows from the live deployment instead of
- * re-running the view over the 30 days `traces` keeps, which would lose the
- * history of every rollup kept longer. Remove once that deploy is live.
- */
-export const TRACES_REKEY_FORWARD_QUERY = "SELECT *"
-
 export const TRACE_BUCKET_FN = "toStartOfFiveMinutes"
 export const TRACE_BUCKET_EXPR = `${TRACE_BUCKET_FN}(Timestamp)`
 
@@ -355,7 +347,6 @@ export type ServiceUsageRow = InferRow<typeof serviceUsage>
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceMapSpans = defineDatasource("service_map_spans", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Lightweight projection of traces for service map JOIN queries. Pre-extracts deployment.environment from Map columns. Populated by materialized view.",
@@ -389,7 +380,6 @@ export type ServiceMapSpansRow = InferRow<typeof serviceMapSpans>
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceMapChildren = defineDatasource("service_map_children", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Server/Consumer spans with ParentSpanId for efficient service map child-side JOIN lookups. Populated by materialized view.",
@@ -503,7 +493,6 @@ export type ServiceMapEdgesHourlyRow = InferRow<typeof serviceMapEdgesHourly>
  * distinct service-map nodes. Populated by materialized view, not direct ingestion.
  */
 export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_hourly", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Pre-aggregated hourly service-to-database edges (one row per service/db.system.name/db.namespace) for the service map's database-node query. Uses AggregatingMergeTree for incremental aggregation. Populated by materialized view.",
@@ -563,7 +552,6 @@ export type ServiceMapDbEdgesHourlyRow = InferRow<typeof serviceMapDbEdgesHourly
  * Populated by `service_map_db_query_shapes_hourly_mv`.
  */
 export const serviceMapDbQuerySignaturesHourly = defineDatasource("service_map_db_query_shapes_hourly", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Pre-aggregated hourly database query shapes (one row per service/db.system/query-shape) for the service map's database detail panel. Uses AggregatingMergeTree with a sample-weighted t-digest state for true p50/p95. Populated by materialized view.",
@@ -629,7 +617,6 @@ export type ServiceMapDbQuerySignaturesHourlyRow = InferRow<typeof serviceMapDbQ
  * LEFT ANTI JOIN against `service_address_resolutions_hourly`.
  */
 export const serviceExternalEdgesHourly = defineDatasource("service_external_edges_hourly", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Pre-aggregated hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab. Captures Client/Producer spans without db.system.name or db.system. Populated by materialized view.",
@@ -724,7 +711,6 @@ export type ServiceAddressResolutionsHourlyRow = InferRow<typeof serviceAddressR
  * Populated by materialized view, not direct ingestion.
  */
 export const servicePlatformsHourly = defineDatasource("service_platforms_hourly", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Pre-aggregated hourly per-service platform/runtime attributes (k8s, cloud, faas) for the service map's hosting-icon resolver. Populated by materialized view.",
@@ -763,7 +749,6 @@ export type ServicePlatformsHourlyRow = InferRow<typeof servicePlatformsHourly>
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceOverviewSpans = defineDatasource("service_overview_spans", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Lightweight projection of service entry point spans (Server/Consumer + root) for service overview queries. Pre-extracts deployment attributes from ResourceAttributes. Populated by materialized view.",
@@ -812,7 +797,6 @@ export type ServiceOverviewSpansRow = InferRow<typeof serviceOverviewSpans>
  * retention window.
  */
 export const serviceOverviewHourly = defineDatasource("service_overview_hourly", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Hourly service entry-point aggregates with release dimensions, sampling-aware counts, latency states, and fixed-500ms Apdex counts.",
@@ -863,7 +847,6 @@ export type ServiceOverviewHourlyRow = InferRow<typeof serviceOverviewHourly>
  * rebuilt past the 30-day source retention.
  */
 export const serviceOverviewMinutely = defineDatasource("service_overview_minutely", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Minutely service entry-point aggregates with release dimensions, sampling-aware counts, latency states, and fixed-500ms Apdex counts. Serves sub-hour buckets that the hourly rollup cannot.",
@@ -909,7 +892,6 @@ export type ServiceOverviewMinutelyRow = InferRow<typeof serviceOverviewMinutely
  * and scanning recent activity stay on the sort-key prefix.
  */
 export const errorEvents = defineDatasource("error_events", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Per-error-occurrence rows for the triageable-errors system. Unwraps OTel exception events and computes a stable FingerprintHash for grouping into issues. Populated by materialized view.",
@@ -959,7 +941,6 @@ export type ErrorEventsRow = InferRow<typeof errorEvents>
  * sorting key differs.
  */
 export const errorEventsByTime = defineDatasource("error_events_by_time", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Time-ordered sibling of error_events (sorted by OrgId, Timestamp, FingerprintHash) for recent-window error scans (errorIssuesScan tick + dashboard error queries). Populated by materialized view.",
@@ -1008,7 +989,6 @@ export type ErrorEventsByTimeRow = InferRow<typeof errorEventsByTime>
  * fingerprint last (highest cardinality).
  */
 export const errorFingerprintsMinutely = defineDatasource("error_fingerprints_minutely", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Minute-grain per-fingerprint error aggregates for the scheduled issue evaluator. Cascaded from error_events to avoid re-running fingerprint extraction.",
@@ -1052,7 +1032,6 @@ export type ErrorFingerprintsMinutelyRow = InferRow<typeof errorFingerprintsMinu
  * Populated by materialized view, not direct ingestion.
  */
 export const traceListMv = defineDatasource("trace_list_mv", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Pre-materialized root spans for the trace list view. Extracts HTTP attributes and normalizes span names at write time. Populated by materialized view.",
@@ -1098,7 +1077,6 @@ export type TraceListMvRow = InferRow<typeof traceListMv>
  * collapse to a few hundred rows per org-hour.
  */
 export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Hourly root-span counts and duration state per service, span name, HTTP method/status, environment, namespace and error flag. Traces sidebar facets. Populated by materialized view from trace_list_mv.",
@@ -1202,7 +1180,6 @@ export type TraceIndexRow = InferRow<typeof traceIndex>
  * documented in `query-engine-integrations/src/ai/ai-sessions.ts`.
  */
 export const aiTraceIndex = defineDatasource("ai_trace_index", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"GenAI agent spans only (maple_ai.vendor.id stamped), pre-extracted to plain columns. Detection/facet surface for the Agent Sessions pages. Populated by materialized view.",
@@ -1283,7 +1260,6 @@ export type AiTraceIndexRow = InferRow<typeof aiTraceIndex>
  * One row per span, so read requests as `uniq(TraceId)`: a proxied request has several.
  */
 export const aiCrawlerRequests = defineDatasource("ai_crawler_requests", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Server spans from AI crawlers (GPTBot, ClaudeBot, PerplexityBot, ...) with the crawler, host, path and HTTP status pre-extracted. Web Analytics AI tab. Populated by materialized view.",
@@ -1822,7 +1798,6 @@ export type AuditLogRow = InferRow<typeof auditLog>
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceOperationsMinutely = defineDatasource("service_operations_minutely", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Minute-grain service operation metrics with normalized HTTP names, exact and sampling-weighted counts, and unweighted duration t-digest state.",
@@ -1883,7 +1858,6 @@ export type ServiceOperationsMinutelyRow = InferRow<typeof serviceOperationsMinu
  * the minute-level row cardinality for the full horizon.
  */
 export const serviceOperationsHourly = defineDatasource("service_operations_hourly", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Hourly service operation metrics merged from the minutely rollup for one-year operation history.",
@@ -1946,7 +1920,6 @@ export type ServiceOperationsHourlyRow = InferRow<typeof serviceOperationsHourly
  * changes — see docs/persistence.md.
  */
 export const tracesAggregatesHourly = defineDatasource("traces_aggregates_hourly", {
-	forwardQuery: TRACES_REKEY_FORWARD_QUERY,
 	tenantColumn: "OrgId",
 	description:
 		"Hourly pre-aggregated trace metrics with sampling-weighted state columns. Generalized MV target for timeseries/breakdown/service-overview queries. AggregatingMergeTree.",

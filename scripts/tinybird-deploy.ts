@@ -11,6 +11,9 @@
  * the check first and stops on any failure, so no region gets a deployment the
  * other refused. Tinybird allows one non-live deployment per workspace.
  *
+ * `--allow-destructive-operations` lets `check` and `start` delete datasources
+ * and materialized views the project no longer defines; they are refused without it.
+ *
  * Credentials come from `TINYBIRD_<US|EU>_HOST` / `_TOKEN`, else from Infisical
  * (`prod` for US, `prod-eu` for EU; needs `infisical login`). Tokens are passed
  * to `tb` but never printed.
@@ -43,14 +46,21 @@ const fail = (message: string): never => {
 const isCommand = (value: string | undefined): value is Command =>
 	COMMANDS.some((command) => command === value)
 
-const parseArgs = (): { command: Command; regions: ReadonlyArray<Region> } => {
+const DESTRUCTIVE_FLAG = "--allow-destructive-operations"
+
+const parseArgs = (): {
+	command: Command
+	regions: ReadonlyArray<Region>
+	destructive: ReadonlyArray<string>
+} => {
 	const [, , rawCommand, ...rest] = process.argv
-	const usage = `Usage: bun run tinybird:deploy <${COMMANDS.join("|")}> [--region us|eu]`
+	const usage = `Usage: bun run tinybird:deploy <${COMMANDS.join("|")}> [--region us|eu] [${DESTRUCTIVE_FLAG}]`
 	if (!isCommand(rawCommand)) return fail(usage)
+	const destructive = rest.includes(DESTRUCTIVE_FLAG) ? [DESTRUCTIVE_FLAG] : []
 	const flag = rest.indexOf("--region")
-	if (flag === -1) return { command: rawCommand, regions: REGIONS }
+	if (flag === -1) return { command: rawCommand, regions: REGIONS, destructive }
 	const region = REGIONS.find((r) => r.id === rest[flag + 1])
-	return region === undefined ? fail(usage) : { command: rawCommand, regions: [region] }
+	return region === undefined ? fail(usage) : { command: rawCommand, regions: [region], destructive }
 }
 
 const infisicalSecrets = (env: string): Auth => {
@@ -87,14 +97,14 @@ const runTb = (region: Region, auth: Auth, args: ReadonlyArray<string>): boolean
 	return proc.status === 0
 }
 
+const { command, regions, destructive } = parseArgs()
+
 const ARGS = {
-	check: ["deploy", "--check"],
+	check: ["deploy", "--check", ...destructive],
 	status: ["deployment", "ls"],
 	promote: ["deployment", "promote"],
 	discard: ["deployment", "discard"],
 } as const satisfies Record<Exclude<Command, "start">, ReadonlyArray<string>>
-
-const { command, regions } = parseArgs()
 const targets = regions.map((region) => ({ region, auth: authFor(region) }))
 const revision = writeTinybirdDatafiles()
 console.log(`Tinybird project ${revision}, regions: ${regions.map((r) => r.id).join(", ")}`)
@@ -105,7 +115,7 @@ if (command === "start") {
 		fail(`Check failed for ${refused.map((t) => t.region.id).join(", ")}; no deployment was created.`)
 	}
 	const failed = targets.filter(
-		({ region, auth }) => !runTb(region, auth, ["deployment", "create", "--no-auto", "--no-wait"]),
+		({ region, auth }) => !runTb(region, auth, ["deployment", "create", "--no-auto", "--no-wait", ...destructive]),
 	)
 	if (failed.length > 0)
 		fail(`Could not create a deployment for ${failed.map((t) => t.region.id).join(", ")}.`)
