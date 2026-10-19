@@ -123,6 +123,25 @@ describe("chat conversation", () => {
 		expect(late.model.messages).toHaveLength(1)
 	})
 
+	test("a send stopped before its POST answered still tails the turn, so the server's turn-end settles it", () => {
+		const sending = step(ready(), Message.ClickedSuggestion({ text: "Hi" })).model
+		const stopped = step(sending, Message.ClickedStop()).model
+		const accepted = step(
+			stopped,
+			Message.CompletedPostMessage({ generation: sending.generation, localId: `local-${sending.generation}`, raw: "Hi", result: Result.succeed({ cursor: 3, messageId: "u" }) }),
+		).model
+		expect(accepted.stream).toEqual({ generation: accepted.generation, cursor: 3 })
+		expect(accepted.messages[0]?.id).toBe("u")
+		const reply = step(accepted, events(accepted.generation, [
+			{ type: "turn-start", seq: 4, messageId: "r" },
+			{ type: "text-delta", seq: 5, messageId: "r", text: "Hello" },
+		])).model
+		expect(reply.status).toBe("streaming")
+		const ended = step(reply, events(accepted.generation, [{ type: "turn-end", seq: 6, messageId: "r", reason: "stop" }])).model
+		expect(ended.status).toBe("ready")
+		expect(ended.messages[1]?.parts[0]).toMatchObject({ text: "Hello" })
+	})
+
 	test("a lost stream surfaces as the turn's error", () => {
 		const sending = step(ready(), Message.ClickedSuggestion({ text: "Hi" })).model
 		const accepted = step(

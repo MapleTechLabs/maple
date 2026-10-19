@@ -277,13 +277,26 @@ const writePage =
 	}
 
 /** The chat sheet's step: its Commands lifted, its toast shown like a page's. */
-const foldChatSheet = (model: Model, message: ChatSheet.Message) => {
-	const orgId = Session.match(model.session, {
+const chatSheetOrgOf = (model: Model): string | null =>
+	Session.match(model.session, {
 		Resolving: () => null,
 		SignedOut: () => null,
 		SignedIn: ({ maybeOrgId }) => Option.getOrNull(maybeOrgId),
 	})
-	const step = ChatSheet.update(model.chatSheet, message, orgId)
+
+/** An org switch or sign-out under the open sheet moves it to the new org, or closes it. */
+const followChatSheetOrg: Step = (model) => {
+	const step = ChatSheet.sessionChanged(model.chatSheet, chatSheetOrgOf(model))
+	return step.model === model.chatSheet
+		? { model }
+		: {
+				model: modifyFields(model, { chatSheet: () => step.model }),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotChatSheetMessage({ message: child })),
+			}
+}
+
+const foldChatSheet = (model: Model, message: ChatSheet.Message) => {
+	const step = ChatSheet.update(model.chatSheet, message, chatSheetOrgOf(model))
 	const next = modifyFields(model, { chatSheet: () => step.model })
 	const commands = Command.mapMessages(step.commands ?? [], (child) => Message.GotChatSheetMessage({ message: child }))
 	if (step.outMessage === undefined) return { model: next, commands }
@@ -635,6 +648,7 @@ export const settle: Step = Update.combine([
 	loadPage,
 	loadOnboarding,
 	syncSessionTimeRange,
+	followChatSheetOrg,
 ])
 
 // SESSION
