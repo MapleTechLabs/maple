@@ -192,6 +192,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, customer: Keyed.accept(model.customer, key, result) },
 		}),
 		CompletedLoadSession: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedTrackConnected: () => ({ model }),
 		ClickedIntegration: ({ integration }) =>
 			navigateTo(model, hrefOfSearch(integration === null ? {} : { integration }), false),
 		ClickedSettingsTab: ({ tab }) => navigateTo(model, `/settings?tab=${encodeURIComponent(tab)}`, false),

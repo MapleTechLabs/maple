@@ -69,6 +69,8 @@ export const Message = defineMessageUnion({
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
 	CompletedLoadCustomer: result(BillingCustomer),
+	/** `trackProduct("integration_connected")` was handed to the session SDK. */
+	CompletedTrackConnected: {},
 	/** The shared session read answered (`useIsOrgAdmin`). */
 	CompletedLoadSession: { isAdmin: Schema.Boolean },
 	/** A catalog row or card, or the header's back button (`navigate({ search })`). */

@@ -24,6 +24,7 @@ import {
 	LoadHistory,
 	ParseMarkdown,
 	PostMessage,
+	TrackMessageSent,
 } from "./command"
 import { Message, OutMessage } from "./message"
 import { isLoading, type Model, type ReadOnly } from "./model"
@@ -121,8 +122,7 @@ export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null
 	commands: [LoadHistory({ sessionId, generation: 1 })],
 })
 
-/** `sendMessage`: the optimistic bubble, `submitted`, and the POST; nothing while a turn runs. */
-// TODO(analytics): `trackProduct("chat_message_sent", { turn })` (chat-conversation.tsx).
+/** `handleSend`: `chat_message_sent`, the optimistic bubble, `submitted` and the POST; nothing while a turn runs. */
 const send = (model: Model, raw: string, context: SendContext): Return => {
 	const trimmed = raw.trim()
 	if (trimmed === "" || !model.historyReady || isLoading(model) || model.readOnly !== null) return { model }
@@ -139,7 +139,10 @@ const send = (model: Model, raw: string, context: SendContext): Return => {
 			failedSend: null,
 			generation,
 		},
-		commands: [PostMessage({ sessionId: model.sessionId, generation, localId, text: outgoing, raw: trimmed })],
+		commands: [
+			TrackMessageSent({ turn: isFirst ? "first" : "followup" }),
+			PostMessage({ sessionId: model.sessionId, generation, localId, text: outgoing, raw: trimmed }),
+		],
 	}
 	return isFirst ? { ...sent, outMessage: OutMessage.SentFirstMessage({ title: trimmed.slice(0, 40) }) } : sent
 }
@@ -203,6 +206,7 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 				onFailure: (error) => ({ model: { ...model, historyReady: true, error } }),
 			})
 		},
+		CompletedTrackMessageSent: () => ({ model }),
 		ChangedDraft: ({ text }) => ({ model: { ...model, draft: text } }),
 		// `form.reset()` runs before `onSubmit`, so the composer clears even when nothing is sent.
 		// Before the history is read the draft stays: a send then would drop the history.

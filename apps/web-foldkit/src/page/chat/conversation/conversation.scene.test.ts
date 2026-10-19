@@ -47,13 +47,21 @@ describe("chat conversation", () => {
 		expect(sent.model.draft).toBe("")
 		expect(sent.model.status).toBe("submitted")
 		expect(sent.model.messages.map((message) => message.role)).toEqual(["user"])
-		expect(names(sent.commands)).toEqual(["PostChatMessage", "ParseChatMarkdown"])
+		expect(names(sent.commands)).toEqual(["TrackChatMessageSent", "PostChatMessage", "ParseChatMarkdown"])
 		expect(sent.outMessage).toEqual(OutMessage.SentFirstMessage({ title: "Why is checkout slow?" }))
+	})
+
+	test("each send is a chat_message_sent product event: the first turn, then follow-ups", () => {
+		const first = step(ready(), Message.ClickedSuggestion({ text: "Health?" }))
+		const turnOf = (result: typeof first) => result.commands?.find(({ name }) => name === "TrackChatMessageSent")?.args
+		expect(turnOf(first)).toEqual({ turn: "first" })
+		const settled: Model = { ...first.model, status: "ready" }
+		expect(turnOf(step(settled, Message.ClickedSuggestion({ text: "And now?" })))).toEqual({ turn: "followup" })
 	})
 
 	test("the first message carries the page context fenced ahead of the user's words", () => {
 		const sent = update(ready(), Message.ClickedSuggestion({ text: "What's wrong here?" }), { preamble: "## Current Page Context" })
-		const [post] = sent.commands ?? []
+		const post = sent.commands?.find(({ name }) => name === "PostChatMessage")
 		expect(post?.args).toMatchObject({ raw: "What's wrong here?" })
 		expect(JSON.stringify(post?.args)).toContain("<!--maple:context-->")
 	})

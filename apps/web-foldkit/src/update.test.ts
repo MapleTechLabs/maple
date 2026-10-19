@@ -1,4 +1,4 @@
-import { OrgId } from "@maple/domain"
+import { OrgId, UserId } from "@maple/domain"
 import { Option, Schema } from "effect"
 import { UrlRequest } from "foldkit/navigation"
 import { fromString as urlFromString } from "foldkit/url"
@@ -79,5 +79,24 @@ describe("root navigation", () => {
 		const result = settle(model)
 		expect(commandsOf(result)).toContainEqual({ name: "ReleaseReads", args: { orgId: null, keys: ["k1"] } })
 		expect(result.model.preload.heldKeys).toEqual([])
+	})
+})
+
+describe("telemetry identity", () => {
+	test("the first Clerk answer identifies the session; an unchanged emit does not again", () => {
+		const snapshot = {
+			maybeUserId: Option.some(UserId.make("user_ada")),
+			maybeOrgId: Option.some(orgId),
+			maybeUser: Option.some({ fullName: "Ada Lovelace", email: "ada@acme.test", imageUrl: "" }),
+			maybeOrganization: Option.none(),
+			memberships: [],
+		}
+		const loaded = update(base(AppRoute.Services({ search: {} })), Message.CompletedLoadClerk({ snapshot }))
+		expect(commandsOf(loaded)).toContainEqual({
+			name: "IdentifySession",
+			args: { identity: { id: "user_ada", username: "Ada Lovelace", email: "ada@acme.test", groupId: "org_acme" } },
+		})
+		const again = update(loaded.model, Message.ChangedClerkSession({ snapshot }))
+		expect(commandsOf(again).map(({ name }) => name)).not.toContain("IdentifySession")
 	})
 })

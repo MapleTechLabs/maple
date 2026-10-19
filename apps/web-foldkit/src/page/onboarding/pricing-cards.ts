@@ -45,6 +45,8 @@ export const Message = defineMessageUnion({
 	CompletedOpenEnterpriseContact: {},
 	CompletedOpenCheckout: {},
 	CompletedTrackCheckoutStarted: {},
+	/** `trackProduct("plan_checkout_returned")` was handed to the session SDK. */
+	CompletedTrackCheckoutReturned: {},
 	ElapsedCheckoutPoll: {},
 	ElapsedCheckoutTimeout: {},
 })
@@ -90,6 +92,14 @@ export const OpenCheckout = Command.define("OpenCheckout", {
 	args: { url: Schema.String },
 	messages: [Message.CompletedOpenCheckout],
 	execute: ({ url }) => load(url).pipe(Effect.as(Message.CompletedOpenCheckout())),
+})
+
+/** `useCheckoutReturn`: the wait on the Autumn sync ended; `confirmed` says whether the plan showed. */
+export const TrackCheckoutReturned = Command.define("TrackCheckoutReturned", {
+	args: { confirmed: Schema.Boolean },
+	messages: [Message.CompletedTrackCheckoutReturned],
+	execute: ({ confirmed }) =>
+		trackProduct("plan_checkout_returned", { confirmed }).pipe(Effect.as(Message.CompletedTrackCheckoutReturned())),
 })
 
 /** `useBillingActions().attach`: checkout intent, recorded before the tab leaves for Stripe. */
@@ -176,12 +186,17 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		CompletedOpenEnterpriseContact: () => ({ model }),
 		CompletedOpenCheckout: () => ({ model }),
 		CompletedTrackCheckoutStarted: () => ({ model }),
+		CompletedTrackCheckoutReturned: () => ({ model }),
 		ElapsedCheckoutPoll: () =>
 			model.checkoutReturn === "Confirming"
 				? { model, commands: [WaitCheckoutPoll()], outMessage: OutMessage.RequestedCustomerRefresh() }
 				: { model },
 		ElapsedCheckoutTimeout: () =>
 			model.checkoutReturn === "Confirming"
-				? { model: { ...model, checkoutReturn: "TimedOut" }, outMessage: OutMessage.RequestedClearCheckoutMarker() }
+				? {
+						model: { ...model, checkoutReturn: "TimedOut" },
+						commands: [TrackCheckoutReturned({ confirmed: false })],
+						outMessage: OutMessage.RequestedClearCheckoutMarker(),
+					}
 				: { model },
 	})

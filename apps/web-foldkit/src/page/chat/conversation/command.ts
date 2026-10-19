@@ -9,6 +9,7 @@ import { prepareMath } from "../kit/math"
 import { renderMermaid } from "../kit/mermaid"
 import { abortTurn, loadHistory, postMessage } from "../kit/chat-api"
 import { historyMessageToUIMessage } from "../kit/fold"
+import { trackProduct } from "../../../data/analytics"
 import { Message } from "./message"
 
 const errorText = (error: { readonly message: string }): string => error.message
@@ -39,6 +40,13 @@ export const PostMessage = Command.define("PostChatMessage", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedPostMessage({ generation, localId, raw, result })),
 		),
+})
+
+/** `chat_message_sent`: whether it opened the conversation; the text stays out of the event. */
+export const TrackMessageSent = Command.define("TrackChatMessageSent", {
+	args: { turn: Schema.Literals(["first", "followup"]) },
+	messages: [Message.CompletedTrackMessageSent],
+	execute: ({ turn }) => trackProduct("chat_message_sent", { turn }).pipe(Effect.as(Message.CompletedTrackMessageSent())),
 })
 
 export const AbortTurn = Command.define("AbortChatTurn", {

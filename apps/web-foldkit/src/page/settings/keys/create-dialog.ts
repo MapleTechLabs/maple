@@ -7,6 +7,7 @@ import {
 import { Effect, Result, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import { trackProduct } from "../../../data/analytics"
 import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
@@ -16,7 +17,7 @@ import * as Field from "../../../ui/field"
 import * as Select from "../../../ui/select"
 
 // `CreateApiKeyDialog` (apps/web/src/components/settings/create-api-key-dialog.tsx), as one
-// Submodel shared by the Keys and MCP tabs. TODO(analytics): `trackProduct("api_key_created")`.
+// Submodel shared by the Keys and MCP tabs.
 
 export const EXPIRATION_OPTIONS = [
 	{ value: "never", label: "Never" },
@@ -101,6 +102,8 @@ export const Message = defineMessageUnion({
 	CompletedCreate: { kind: ApiKeyKind, result: Schema.Result(V2ApiKeyWithSecret, LoadFailure) },
 	GotSecretCopyMessage: { message: CopyButton.Message },
 	ToggledSecretVisible: {},
+	/** `trackProduct("api_key_created")` was handed to the session SDK. */
+	CompletedTrackKeyCreated: {},
 })
 export type Message = typeof Message.Type
 
@@ -124,6 +127,14 @@ export const CreateApiKey = Command.define("CreateApiKey", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedCreate({ kind, result })),
 		),
+})
+
+/** `api_key_created`: the key's kind and access (an MCP key is always full access). */
+export const TrackKeyCreated = Command.define("TrackApiKeyCreated", {
+	args: { kind: ApiKeyKind, access: Schema.String },
+	messages: [Message.CompletedTrackKeyCreated],
+	execute: ({ kind, access }) =>
+		trackProduct("api_key_created", { kind, access }).pipe(Effect.as(Message.CompletedTrackKeyCreated())),
 })
 
 // DERIVED
@@ -229,6 +240,7 @@ export const update = (model: Model, message: Message): Return =>
 			Result.match(result, {
 				onSuccess: (created) => ({
 					model: { ...model, isCreating: false, created },
+					commands: [TrackKeyCreated({ kind, access: kind === "mcp" ? "full" : model.accessMode })],
 					outMessage: OutMessage.CreatedKey({ secret: created.secret }),
 				}),
 				onFailure: (error) => ({
@@ -248,4 +260,5 @@ export const update = (model: Model, message: Message): Return =>
 			}
 		},
 		ToggledSecretVisible: () => ({ model: { ...model, isSecretVisible: !model.isSecretVisible } }),
+		CompletedTrackKeyCreated: () => ({ model }),
 	})

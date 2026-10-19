@@ -11,6 +11,7 @@ import { errorState } from "../../../ui/error-state"
 import { input } from "../../../ui/input"
 import { defineMessageUnion } from "foldkit/message"
 import { rowToDocument } from "../../../data/collections/dashboards"
+import { trackProduct } from "../../../data/analytics"
 import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { liveQueryStream } from "../../../data/live-query"
 import { orgLive } from "../../../data/collections/org-collections"
@@ -109,6 +110,8 @@ export const CreateDashboard = Command.define("CreateDashboardWithMetricWidget",
 					widgets: [{ ...widget, layout: { x: 0, y: 0, ...defaultWidgetLayout("chart") } }],
 				}),
 			})
+			// `importDashboard`'s `dashboard_created`, with the one widget.
+			yield* trackProduct("dashboard_created", { widgets: 1 })
 			yield* awaitTxid(orgId, created.txid)
 			return created.id
 		}).pipe(

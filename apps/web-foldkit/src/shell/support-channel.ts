@@ -2,6 +2,7 @@ import { V2SupportChannel } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import { trackProduct } from "../data/analytics"
 import { LoadFailure, toLoadFailure } from "../data/load-failure"
 import { MapleApiV2Client } from "../platform/api-clients"
 import type { Resources } from "../platform/resources"
@@ -93,6 +94,8 @@ export const InviteToChannel = Command.define("InviteToSupportChannel", {
 	execute: Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		const channel = yield* client.supportChannel.invite()
+		// `support_channel_invite_sent` once the invite went out.
+		yield* trackProduct("support_channel_invite_sent")
 		return Message.SucceededInvite({ channel })
 	}).pipe(Effect.catch((error) => Effect.succeed(Message.FailedInvite({ failure: toLoadFailure(error) })))),
 })

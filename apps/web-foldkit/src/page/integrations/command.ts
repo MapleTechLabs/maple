@@ -8,6 +8,7 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-cli
 import { Message } from "./message"
 import { BillingCustomerCache } from "../../data/billing-customer"
 import { readIsOrgAdmin } from "../../data/session-tenant"
+import { trackProduct } from "../../data/analytics"
 
 const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
@@ -157,6 +158,14 @@ export const LoadScrapeTargets = Command.define("LoadIntegrationsScrapeTargets",
 			settle,
 			Effect.map((result) => Message.CompletedLoadScrapeTargets({ key, result })),
 		),
+})
+
+/** `useIntegrationMessage`: a successful callback is the `integration_connected` product event. */
+export const TrackConnected = Command.define("TrackIntegrationConnected", {
+	args: { provider: Schema.String },
+	messages: [Message.CompletedTrackConnected],
+	execute: ({ provider }) =>
+		trackProduct("integration_connected", { provider }).pipe(Effect.as(Message.CompletedTrackConnected())),
 })
 
 /** `useIsOrgAdmin()`: the session the shell already read (`SessionTenant`), for the settings rail. */

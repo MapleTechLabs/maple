@@ -2,6 +2,7 @@ import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage
 import { Clock, Duration, Effect, Option, Result, Schema } from "effect"
 import { Command, Dom } from "foldkit"
 import { File as FoldkitFile } from "foldkit/file"
+import { trackProduct } from "../../../data/analytics"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import {
 	DASHBOARD_FAVORITES_EVENT,
@@ -92,6 +93,8 @@ const createFromPortable = (orgId: string, portable: PortableDashboard) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		const created = yield* client.dashboards.create({ payload: createPayload(portable) })
+		// Blank, imported or duplicated: every create is one `dashboard_created`.
+		yield* trackProduct("dashboard_created", { widgets: portable.widgets.length })
 		yield* awaitTxid(orgId, created.txid)
 		return { id: created.id, name: created.name, isPerses: false, warnings: [] }
 	})
