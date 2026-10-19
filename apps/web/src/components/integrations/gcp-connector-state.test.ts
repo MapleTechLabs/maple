@@ -45,6 +45,7 @@ const connector = (over: Partial<Parameters<typeof gcpConnectionState>[0]> = {})
 	last_metrics_error: null as string | null,
 	discovered_project_count: 1,
 	last_resources_error: null as string | null,
+	created_at: ago(120),
 	...over,
 })
 /** As created: nothing reported, nothing arrived. */
@@ -145,9 +146,15 @@ describe("gcpMetricsState", () => {
 		})
 	})
 
-	it("is setup pending until a run reports, and hides the poller's sign-in error", () => {
-		expect(metrics({ ...fresh, ...NEVER, last_metrics_error: SIGN_IN })).toEqual({
+	it("is setup pending until a run reports, and hides the poller's sign-in error for a new grant's grace", () => {
+		expect(metrics({ ...fresh, ...NEVER, last_metrics_error: SIGN_IN, created_at: ago(5) })).toEqual({
 			kind: "setup-pending",
+		})
+		// A setup without the script never reports: past the grace, the poller says what is missing.
+		expect(metrics({ ...fresh, ...NEVER, last_metrics_error: SIGN_IN, created_at: ago(20) })).toEqual({
+			kind: "failing",
+			error: SIGN_IN,
+			lastMetricsReceivedAt: null,
 		})
 	})
 
@@ -308,13 +315,13 @@ describe("gcpPendingChanges", () => {
 		expect(changes({ ...fresh, ...NEVER })).toEqual([])
 	})
 
-	const LOGS_START = "Log forwarding starts once the script has created the log sink."
+	const LOGS_START = "Log forwarding starts once the log sink exists in Google Cloud."
 	const LOGS_STOP =
-		"Google Cloud keeps forwarding logs, billed by Google, until the script has removed the log sink."
+		"Google Cloud keeps forwarding logs, billed by Google, until the log sink is removed."
 	const METRICS_START =
-		"Metrics and resources start once the script has created the read-only service account."
+		"Metrics and resources start once the read-only service account exists in Google Cloud."
 	const METRICS_STOP =
-		"The read-only service account stays in Google Cloud until the script has removed it."
+		"The read-only service account stays in Google Cloud until it is removed."
 
 	it("says what goes on until a re-run removes and creates", () => {
 		expect(changes({ logs_enabled: false })).toEqual([LOGS_STOP])
