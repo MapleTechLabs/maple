@@ -116,4 +116,5 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			}
 		},
 		GotPageMessage: ({ message: child }) => updatePageMessage(model, child),
+		CompletedCancelPageFetch: () => ({ model }),
 	})

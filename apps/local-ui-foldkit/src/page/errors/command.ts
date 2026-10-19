@@ -38,6 +38,7 @@ const same = <A>(data: A) => data
 export const FetchSummary = Command.define("FetchLocalErrorsSummary", {
 	args: { ...RequestArgs, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchSummary, Message.FailedFetchSummary, Message.FoundCachedSummary],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
 		withCache({
 			key: errorsKey("summary", { search, startTime, endTime }),
@@ -53,6 +54,7 @@ export const FetchSummary = Command.define("FetchLocalErrorsSummary", {
 export const FetchByType = Command.define("FetchLocalErrorsByType", {
 	args: { ...RequestArgs, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchByType, Message.FailedFetchByType, Message.FoundCachedByType],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
 		withCache({
 			key: errorsKey("by-type", { search, startTime, endTime }),
@@ -68,6 +70,7 @@ export const FetchByType = Command.define("FetchLocalErrorsByType", {
 export const FetchFacets = Command.define("FetchLocalErrorsFacets", {
 	args: { ...RequestArgs, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchFacets, Message.FailedFetchFacets, Message.FoundCachedFacets],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
 		withCache({
 			key: errorsKey("facets", { search, startTime, endTime }),
@@ -83,6 +86,7 @@ export const FetchFacets = Command.define("FetchLocalErrorsFacets", {
 export const FetchTraces = Command.define("FetchLocalErrorTraces", {
 	args: { ...RequestArgs, fingerprintHash: Schema.String, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchTraces, Message.FailedFetchTraces, Message.FoundCachedTraces],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, fingerprintHash, search, startTime, endTime, apiBase, readsCache }) =>
 		withCache({
 			key: tracesKey(fingerprintHash, { search, startTime, endTime }),

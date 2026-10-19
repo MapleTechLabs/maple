@@ -4,6 +4,7 @@ import * as Tabs from "@maple/web-foldkit/ui/tabs"
 import * as Toast from "@maple/web-foldkit/ui/toast"
 import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
 import { Schema } from "effect"
+import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { UrlRequest } from "foldkit/navigation"
 import { Url } from "foldkit/url"
@@ -38,5 +39,7 @@ export const Message = defineMessageUnion({
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 	GotToastMessage: { message: Toast.Message },
 	GotPageMessage: { message: PageMessage },
+	/** A request the open page superseded or left behind was stopped. */
+	CompletedCancelPageFetch: { outcome: Command.Interruptible.Outcome },
 })
 export type Message = typeof Message.Type

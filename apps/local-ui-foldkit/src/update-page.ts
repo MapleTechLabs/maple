@@ -8,7 +8,8 @@ import { initFilterDrawer, type Model } from "./model"
 import { canGoBack } from "./navigation"
 import { shownDataOf } from "./data/shown"
 import { type PageContext, PageOutMessage } from "./page/contract"
-import { initPage, locationChanged, pageKeyOf, type PageMessage, refreshPage, updatePage } from "./page/registry"
+import { stopSuperseded } from "./data/lanes"
+import { initPage, lanesOf, locationChanged, pageKeyOf, type PageMessage, refreshPage, updatePage } from "./page/registry"
 
 export type RootReturn = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }>
 
@@ -73,7 +74,8 @@ const applyPage = (
 	step: Readonly<{ model: Model["page"]; commands?: ReadonlyArray<Command.Command<PageMessage, never, Resources>>; outMessage?: PageOutMessage }>,
 ): RootReturn => {
 	const withPage = { ...model, page: step.model, hasCache: model.hasCache || shownDataOf(step.model, 0).hasData }
-	const pageCommands = Command.mapMessages(step.commands ?? [], toPageMessage)
+	const stops = stopSuperseded(lanesOf(model.page), lanesOf(step.model), (outcome) => Message.CompletedCancelPageFetch({ outcome }))
+	const pageCommands = [...stops, ...Command.mapMessages(step.commands ?? [], toPageMessage)]
 	if (step.outMessage === undefined) return { model: withPage, commands: pageCommands }
 	const folded = foldPageOut(withPage, step.outMessage)
 	return { model: folded.model, commands: [...pageCommands, ...(folded.commands ?? [])] }

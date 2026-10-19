@@ -4,6 +4,7 @@ import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { AppRoute } from "../route"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Lane } from "../data/lanes"
 import type { PageContext, PageOutMessage } from "./contract"
 import type { PageViewInputs } from "./kit/inputs"
 import * as Errors from "./errors"
@@ -172,6 +173,23 @@ export const locationChanged = (page: PageModel, context: PageContext): PageRetu
 	if (page._tag === "SessionDetailPage") return lift(SessionDetail.locationChanged(page, context), toSessionDetail)
 	if (page._tag === "QueryPage") return lift(Query.locationChanged(page, context), toQuery)
 	return { model: page }
+}
+
+/** The requests the page may have in flight; the root stops those a step supersedes or abandons. */
+export const lanesOf = (page: PageModel): ReadonlyArray<Lane> => {
+	if (page._tag === "TracesPage") return Traces.lanes(page)
+	if (page._tag === "TraceDetailPage") return TraceDetail.lanes(page)
+	if (page._tag === "LogsPage") return Logs.lanes(page)
+	if (page._tag === "MetricsPage") return Metrics.lanes(page)
+	if (page._tag === "MetricDetailPage") return MetricDetail.lanes(page)
+	if (page._tag === "ServicesPage") return Services.lanes(page)
+	if (page._tag === "ServiceDetailPage") return ServiceDetail.lanes(page)
+	if (page._tag === "ServiceMapPage") return ServiceMap.lanes(page)
+	if (page._tag === "ErrorsPage") return Errors.lanes(page)
+	if (page._tag === "SessionsPage") return Sessions.lanes(page)
+	if (page._tag === "SessionDetailPage") return SessionDetail.lanes(page)
+	if (page._tag === "QueryPage") return Query.lanes(page)
+	return []
 }
 
 /** The open page as a Submodel view; its Messages arrive lifted into `PageMessage`. */

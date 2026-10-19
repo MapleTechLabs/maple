@@ -3,7 +3,9 @@ import { click, expect as expectView, expectOutMessage, given, role, scene, text
 import { describe, expect, test } from "vitest"
 import { type PageContext, PageOutMessage } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
+import { outcomeOf, stopSuperseded } from "../../data/lanes"
 import { FetchFacets, FetchTraces } from "./command"
+import { lanes } from "./lanes"
 import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
 import { PAGE_SIZE } from "./fetch-traces"
@@ -125,5 +127,7 @@ describe("local traces list", () => {
 		const reloaded = pageUpdate(more.model, Message.CompletedReadRefreshClock({ nowMs: NOW })).model
 		const late = Message.SucceededFetchNextPage({ key: reloaded.traces.key ?? "", generation: more.model.pageGeneration, page: [row("late")] })
 		expect(pageUpdate(reloaded, late).model.traces).toEqual(reloaded.traces)
+		// It is stopped too, so it never writes its stale pages into the cache.
+		expect(names(stopSuperseded(lanes(more.model), lanes(reloaded), outcomeOf))).toContain("FetchNextLocalTracesPage.Interrupt")
 	})
 })

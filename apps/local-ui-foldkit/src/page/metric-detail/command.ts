@@ -23,6 +23,7 @@ const same = <A>(data: A) => data
 export const FetchEntry = Command.define("FetchLocalMetricEntry", {
 	args: { ...EntryRequest.fields, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchEntry, Message.FailedFetchEntry, Message.FoundCachedEntry],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ readsCache, ...request }) =>
 		withCache({
 			key: ["local", "metrics", "entry", request.metricName, windowKey(request)],
@@ -38,6 +39,7 @@ export const FetchEntry = Command.define("FetchLocalMetricEntry", {
 export const FetchTimeseries = Command.define("FetchLocalMetricTimeseries", {
 	args: { ...TimeseriesRequest.fields, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchTimeseries, Message.FailedFetchTimeseries, Message.FoundCachedTimeseries],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ readsCache, ...request }) =>
 		withCache({
 			key: [
@@ -65,6 +67,7 @@ export const FetchTimeseries = Command.define("FetchLocalMetricTimeseries", {
 export const FetchBreakdown = Command.define("FetchLocalMetricBreakdown", {
 	args: { ...BreakdownRequest.fields, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchBreakdown, Message.FailedFetchBreakdown, Message.FoundCachedBreakdown],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ readsCache, ...request }) =>
 		withCache({
 			key: ["local", "metrics", "breakdown", request.entry.metricName, request.entry.metricType, windowKey(request)],

@@ -23,6 +23,7 @@ const same = <A>(data: A) => data
 export const FetchOverview = Command.define("FetchLocalServiceOverview", {
 	args: { ...Window, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchOverview, Message.FailedFetchOverview, Message.FoundCachedOverview],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, serviceName, startTime, endTime, apiBase, readsCache }) =>
 		withCache({
 			key: ["local", "services", "overview", serviceName, windowKey(startTime, endTime)],
@@ -38,6 +39,7 @@ export const FetchOverview = Command.define("FetchLocalServiceOverview", {
 export const FetchOperations = Command.define("FetchLocalServiceOperations", {
 	args: { ...Window, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchOperations, Message.FailedFetchOperations, Message.FoundCachedOperations],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, serviceName, startTime, endTime, apiBase, readsCache }) =>
 		withCache({
 			key: ["local", "services", "operations", serviceName, windowKey(startTime, endTime)],
@@ -53,6 +55,7 @@ export const FetchOperations = Command.define("FetchLocalServiceOperations", {
 export const FetchTimeseries = Command.define("FetchLocalServiceOperationsTimeseries", {
 	args: { ...Window, spanNames: Schema.Array(Schema.String), bucketSeconds: Schema.Number, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchTimeseries, Message.FailedFetchTimeseries, Message.FoundCachedTimeseries],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, serviceName, startTime, endTime, apiBase, spanNames, bucketSeconds, readsCache }) =>
 		withCache({
 			key: ["local", "services", "operations-ts", serviceName, spanNames, bucketSeconds, windowKey(startTime, endTime)],
@@ -68,6 +71,7 @@ export const FetchTimeseries = Command.define("FetchLocalServiceOperationsTimese
 export const FetchGoldenSignals = Command.define("FetchLocalServiceGoldenSignals", {
 	args: { ...Window, bucketSeconds: Schema.Number, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchGoldenSignals, Message.FailedFetchGoldenSignals, Message.FoundCachedGoldenSignals],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, serviceName, startTime, endTime, apiBase, bucketSeconds, readsCache }) =>
 		withCache({
 			key: ["local", "services", "golden-signals", serviceName, bucketSeconds, windowKey(startTime, endTime)],

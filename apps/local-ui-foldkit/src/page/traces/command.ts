@@ -46,6 +46,7 @@ const fetchPages = <R>(
 export const FetchTraces = Command.define("FetchLocalTraces", {
 	args: { ...RequestArgs, pageCount: Schema.Number, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchTraces, Message.FailedFetchTraces, Message.FoundCachedTraces],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, pageCount, readsCache }) =>
 		Effect.gen(function* () {
 			const cacheKey = tracesKey({ search, startTime, endTime })
@@ -99,6 +100,7 @@ const FACETS_STALE_MS = 15_000
 export const FetchFacets = Command.define("FetchLocalTraceFacets", {
 	args: { ...RequestArgs, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchFacets, Message.FailedFetchFacets, Message.FoundCachedFacets],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
 		Effect.gen(function* () {
 			const cacheKey = facetsKey({ search, startTime, endTime })

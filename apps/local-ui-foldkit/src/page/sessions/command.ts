@@ -43,6 +43,7 @@ const fetchPages = <R>(
 export const FetchSessions = Command.define("FetchLocalSessions", {
 	args: { ...RequestArgs, pageCount: Schema.Number, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchSessions, Message.FailedFetchSessions, Message.FoundCachedSessions],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, pageCount, readsCache }) => {
 		const filters = filtersOf(new URLSearchParams(search))
 		const run = (cursor: SessionCursor | undefined) => fetchSessionPage(filters, { startTime, endTime }, cursor, apiBase)
@@ -97,6 +98,7 @@ const FACETS_STALE_MS = 30_000
 export const FetchFacets = Command.define("FetchLocalSessionFacets", {
 	args: { ...RequestArgs, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchFacets, Message.FailedFetchFacets, Message.FoundCachedFacets],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
 		withCache({
 			key: facetsKey({ search, startTime, endTime }),

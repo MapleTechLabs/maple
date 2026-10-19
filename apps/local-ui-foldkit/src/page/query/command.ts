@@ -17,6 +17,7 @@ export const ReadPlatform = Command.define("ReadQueryConsolePlatform", {
 export const FetchTables = Command.define("FetchQueryConsoleTables", {
 	args: { key: Schema.String, apiBase: Schema.String, readsCache: Schema.Boolean },
 	messages: [Message.SucceededFetchTables, Message.FailedFetchTables, Message.FoundCachedTables],
+	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, apiBase, readsCache }) =>
 		withCache({
 			key: ["local", "query-console", "tables"],

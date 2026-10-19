@@ -6,7 +6,11 @@ import { FetchSignalPresence, ProbeServer } from "./command"
 import { init } from "./main"
 import type { Model } from "./model"
 import { PageOutMessage } from "./page/contract"
-import { foldPageOut } from "./update-page"
+import { Message as LogsMessage } from "./page/logs/message"
+import { PageMessage } from "./page/registry"
+import { update } from "./update"
+import { foldPageOut, updatePageMessage } from "./update-page"
+import { Message } from "./message"
 
 const flags = {
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
@@ -40,5 +44,43 @@ describe("refresh in place", () => {
 	test("without a refresh, a fresh presence read is offered for reuse", () => {
 		const requested = foldPageOut(settled(), PageOutMessage.RequestedSignalPresence())
 		expect(argsOf(requested.commands)).toEqual([{ apiBase: "", lastReadAtMs: 1_000 }])
+	})
+})
+
+describe("superseded requests", () => {
+	const urlOf = (hash: string) => Option.getOrThrow(fromString(`http://localhost/${hash}`))
+	const NOW = Date.parse("2026-10-01T12:00:30Z")
+	/** /logs with its list and both facets in flight. */
+	const loadingLogs = (): Model => {
+		const opened = update(settled(), Message.ChangedUrl({ url: urlOf("#/logs") })).model
+		const clocked = PageMessage.GotLogsMessage({ message: LogsMessage.CompletedReadClock({ nowMs: NOW }) })
+		return updatePageMessage(opened, clocked).model
+	}
+	const stops = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+		names(commands).filter((name) => name.endsWith(".Interrupt"))
+
+	test("a new search stops the list and facet requests it supersedes", () => {
+		const searched = update(loadingLogs(), Message.ChangedUrl({ url: urlOf("#/logs?q=timeout") }))
+		expect(stops(searched.commands)).toEqual([
+			"FetchLocalLogs.Interrupt",
+			"FetchLocalLogServices.Interrupt",
+			"FetchLocalLogSeverities.Interrupt",
+		])
+	})
+
+	test("leaving the page stops what it still has in flight", () => {
+		const left = update(loadingLogs(), Message.ChangedUrl({ url: urlOf("#/traces") }))
+		expect(stops(left.commands)).toEqual([
+			"FetchLocalLogs.Interrupt",
+			"FetchLocalLogServices.Interrupt",
+			"FetchLocalLogSeverities.Interrupt",
+		])
+	})
+
+	test("an answer that lands stops nothing", () => {
+		const model = loadingLogs()
+		const key = model.page._tag === "LogsPage" ? (model.page.logs.key ?? "") : ""
+		const answer = LogsMessage.SucceededFetchLogs({ key, data: { pages: [[]], hasNextPage: false }, fetchedAtMs: NOW })
+		expect(stops(updatePageMessage(model, PageMessage.GotLogsMessage({ message: answer })).commands)).toEqual([])
 	})
 })
