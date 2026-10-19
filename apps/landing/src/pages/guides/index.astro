@@ -66,6 +66,13 @@ const investigationGuides = [
         description: "Measure the right latency clock, isolate the slow requests, and trace a regression to the release and operation responsible.",
         read: "14 min",
     },
+    {
+        href: "/guides/windows-server-monitoring",
+        label: "Infrastructure",
+        title: "Windows server monitoring tools and an OpenTelemetry setup",
+        description: "The Performance Monitor counters and event IDs to watch, the built-in tools, the types of monitoring tools, and a Collector config for metrics, services and event logs.",
+        read: "12 min",
+    },
 ];
 
 const fieldNotes = (await getCollection("blog") as BlogPost[])
