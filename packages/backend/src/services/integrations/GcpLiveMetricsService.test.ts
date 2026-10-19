@@ -701,6 +701,21 @@ describe("GcpLiveMetricsService.queryRange", () => {
 					"folders/123: Maple could not list this connection's projects: Cloud Asset Viewer is missing.",
 				)
 
+				// A folder that synced and holds no active project is empty, not a failure.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"UPDATE gcp_connectors SET last_resources_error = NULL, resources_synced_at = now() WHERE id = $1",
+						[FOLDER_CONNECTOR],
+					),
+				)
+				assert.deepStrictEqual(yield* range("up", { requireComplete: true }), [])
+				yield* Effect.promise(() =>
+					executeSql(testDb, "UPDATE gcp_connectors SET resources_synced_at = NULL WHERE id = $1", [
+						FOLDER_CONNECTOR,
+					]),
+				)
+
 				// Another connection still answers, unless every project must.
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
 				const series = yield* range("up")

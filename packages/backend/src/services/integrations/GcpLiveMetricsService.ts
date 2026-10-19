@@ -55,7 +55,13 @@ const isProjectId = Schema.is(GcpProjectId)
 
 type Connector = Pick<
 	GcpConnectorRow,
-	"id" | "scopeType" | "scopeId" | "projectId" | "lastMetricsReceivedAt" | "lastResourcesError"
+	| "id"
+	| "scopeType"
+	| "scopeId"
+	| "projectId"
+	| "lastMetricsReceivedAt"
+	| "lastResourcesError"
+	| "resourcesSyncedAt"
 >
 type Port = GcpLiveMetrics<QueryTenant>
 interface Target {
@@ -137,7 +143,7 @@ const mapleSignInFailed = () =>
 		failures: [],
 	})
 
-/** A folder or organization whose inventory sync has found no project yet: nothing to read it by. */
+/** A folder or organization not synced yet, or whose sync failed: nothing to read it by. */
 const unlisted = (connector: Connector): Failure => ({
 	scope: scopeName(connector),
 	message:
@@ -283,6 +289,7 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 								"projectId",
 								"lastMetricsReceivedAt",
 								"lastResourcesError",
+								"resourcesSyncedAt",
 							)
 							.where(($) => [$.orgId.eq(orgId), $.appliedMetricsEnabled.eq(true)])
 							.orderBy(($) => [
@@ -322,7 +329,9 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 							: inventory
 									.filter((row) => row.connectorId === connector.id)
 									.map((row) => row.projectId)
-					if (projectIds.length === 0) notListed.push(unlisted(connector))
+					// A synced folder with no active project is just empty.
+					const unsynced = connector.resourcesSyncedAt === null || connector.lastResourcesError !== null
+					if (projectIds.length === 0 && unsynced) notListed.push(unlisted(connector))
 					for (const projectId of projectIds) {
 						if (isProjectId(projectId) && !targets.has(projectId))
 							targets.set(projectId, { projectId, connector })
