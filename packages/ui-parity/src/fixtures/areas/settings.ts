@@ -552,6 +552,17 @@ const settingsClerk: Dataset = {
 	telemetry: emptyTelemetry,
 }
 
+/** A 1x1 SVG as a `data:` URL: an image Clerk would serve, loaded without a request. */
+const svgImage = (color: string) =>
+	`data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect width="1" height="1" fill="${color}"/></svg>`)}`
+
+/** `settings-clerk` with a profile photo and an org logo (the avatars draw images, not initials). */
+const settingsClerkImages: Dataset = {
+	...settingsClerk,
+	name: "settings-clerk-images",
+	identity: { ...acmeAdmin, imageUrl: svgImage("#2f7d6d"), orgImageUrl: svgImage("#c2410c") },
+}
+
 export const fixtureArea: FixtureArea = {
 	area: "settings",
 	endpoints: (warehouse) => ({
@@ -598,5 +609,5 @@ export const fixtureArea: FixtureArea = {
 		...clerkBillingEndpoints(warehouse),
 	}),
 	defaultSynced: { api_keys: API_KEYS },
-	datasets: [settingsClerk, settingsMcpClients, settingsAiAddOnLapsed, settingsIngestionRules, settingsDataPlatformDrift],
+	datasets: [settingsClerk, settingsClerkImages, settingsMcpClients, settingsAiAddOnLapsed, settingsIngestionRules, settingsDataPlatformDrift],
 }

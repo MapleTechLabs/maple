@@ -52,6 +52,7 @@ const memberRow = (member: ClerkMembershipResource, userId: string | null): Memb
 	id: member.id,
 	name: memberDisplayName(member.publicUserData) ?? "Unknown",
 	identifier: member.publicUserData?.identifier ?? "",
+	imageUrl: member.publicUserData?.imageUrl ?? "",
 	role: member.role,
 	createdAtMs: member.createdAt.getTime(),
 	isCurrentUser: userId !== null && member.publicUserData?.userId === userId,

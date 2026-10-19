@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { avatarFallbackStyles, avatarStyles } from "@maple/ui/styles/ui/avatar"
+import { avatarFallbackStyles, avatarImageStyles, avatarStyles } from "@maple/ui/styles/ui/avatar"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { kbdGroupStyles, kbdStyles } from "@maple/ui/styles/ui/kbd"
 import { separatorStyles } from "@maple/ui/styles/ui/separator"
@@ -70,16 +70,17 @@ export const separator = <Message>(
 	)
 
 /**
- * `<Avatar><AvatarFallback>`: Base UI renders the fallback while there is no loaded image. Images
- * (Clerk avatars, org logos) are not rendered yet: they need the Base UI load-status Mount.
+ * `<Avatar><AvatarImage><AvatarFallback>`: the initials, with `imageUrl` (a Clerk avatar, an org
+ * logo) laid over them. Until it loads, or if it fails (`alt=""` draws nothing), the initials show.
  */
 export const avatarFallback = <Message>(
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ className?: string; fallbackClassName?: string }>,
+	options: Readonly<{ className?: string; fallbackClassName?: string; imageUrl?: string; imageClassName?: string }>,
 	initials: string,
-): Html =>
-	h.span(
-		[h.Class(cn(avatarStyles, options.className)), h.DataAttribute("slot", "avatar")],
+): Html => {
+	const imageUrl = options.imageUrl ?? ""
+	return h.span(
+		[h.Class(cn(avatarStyles, imageUrl === "" ? undefined : "relative", options.className)), h.DataAttribute("slot", "avatar")],
 		[
 			h.span(
 				[
@@ -88,5 +89,16 @@ export const avatarFallback = <Message>(
 				],
 				[initials],
 			),
+			...(imageUrl === ""
+				? []
+				: [
+						h.img([
+							h.Src(imageUrl),
+							h.Alt(""),
+							h.Class(cn(avatarImageStyles, "absolute inset-0", options.imageClassName)),
+							h.DataAttribute("slot", "avatar-image"),
+						]),
+					]),
 		],
 	)
+}

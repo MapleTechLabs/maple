@@ -1,11 +1,13 @@
 import { AsyncData } from "foldkit"
 import { Result } from "effect"
+import { expect as expectView, given, scene, selector, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
-import { Message } from "./model"
+import { Message, type Model } from "./model"
 import { init, update } from "./update"
+import { view } from "./view"
 
-const member = (id: string) => ({ id, name: id, identifier: `${id}@acme.test`, role: "org:member", createdAtMs: 0, isCurrentUser: false })
+const member = (id: string) => ({ id, name: id, identifier: `${id}@acme.test`, imageUrl: "", role: "org:member", createdAtMs: 0, isCurrentUser: false })
 
 describe("members tab", () => {
 	test("a failed Load more keeps the rows and frees the button for another try", () => {
@@ -23,5 +25,23 @@ describe("members tab", () => {
 		expect(update(failed, Message.ClickedLoadMoreMembers()).commands?.map((command) => command.name)).toEqual([
 			"FetchClerkMemberships",
 		])
+	})
+})
+
+describe("members avatars", () => {
+	test("a member's Clerk image is drawn over the initials", () => {
+		const withOrg = update(init(true).model, Message.CompletedFetchOrganization({ name: "Acme" })).model
+		const rows = [{ ...member("ada"), imageUrl: "https://img.clerk.test/ada.png" }, member("bob")]
+		const page = Result.succeed({ rows, total: 2 })
+		const loaded = update(withOrg, Message.CompletedFetchMembers({ page: 1, result: page })).model
+		const image = selector('[data-slot="avatar-image"]')
+		scene(
+			{
+				update: (model: Model, message: Message) => update(model, message),
+				view: withViewInputs(view, { nowMs: 0, timeZone: "UTC" })(),
+			},
+			given(loaded),
+			expectView(image).toHaveAttr("src", "https://img.clerk.test/ada.png"),
+		)
 	})
 })

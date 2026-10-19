@@ -14,6 +14,7 @@ export interface ClerkStubIdentity {
 	readonly firstName: string
 	readonly lastName: string
 	readonly imageUrl: string
+	readonly orgImageUrl: string
 	readonly clerkOrgId: string | null
 	readonly orgName: string
 	readonly orgSlug: string
@@ -31,7 +32,8 @@ export const clerkIdentityFor = (dataset: DatasetSummary): ClerkStubIdentity | n
 		email: identity.email,
 		firstName,
 		lastName: rest.join(" "),
-		imageUrl: "",
+		imageUrl: identity.imageUrl ?? "",
+		orgImageUrl: identity.orgImageUrl ?? "",
 		// An empty slug marks a signed-in user with no active organization (`/org-required`).
 		clerkOrgId: identity.orgSlug === "" ? null : identity.orgId,
 		orgName: identity.orgName,
@@ -80,8 +82,8 @@ export const installClerkStub = (identity: ClerkStubIdentity | null) => {
 					id: id.clerkOrgId,
 					name: id.orgName,
 					slug: id.orgSlug,
-					imageUrl: "",
-					hasImage: false,
+					imageUrl: id.orgImageUrl,
+					hasImage: id.orgImageUrl !== "",
 					publicMetadata: id.orgPublicMetadata,
 					createdAt,
 					updatedAt: createdAt,

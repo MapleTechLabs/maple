@@ -154,7 +154,7 @@ const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellCle
 								h,
 								{ size: "lg", className: OPEN_STATE, slot: "dropdown-menu-trigger", attributes: trigger },
 								[
-									orgAvatar(h, orgName),
+									orgAvatar(h, orgName, undefined, Option.match(clerk.maybeOrganization, { onNone: () => "", onSome: (org) => org.imageUrl })),
 									h.div(
 										[h.Class("grid flex-1 text-left text-sm leading-tight")],
 										[
@@ -213,13 +213,14 @@ const footerNavRow = (
 		),
 	])
 
-/** `UserAvatar` (dashboard/user-avatar.tsx) with no image: the initials fallback. */
-export const userAvatar = (h: HtmlBuilder<Message>, initials: string, className?: string): Html =>
+/** `UserAvatar` (dashboard/user-avatar.tsx): the Clerk image over the initials. */
+export const userAvatar = (h: HtmlBuilder<Message>, initials: string, className?: string, imageUrl?: string): Html =>
 	avatarFallback(
 		h,
 		{
 			className: cn("bg-muted", className ?? "size-6 rounded-md text-3xs"),
 			fallbackClassName: "rounded-[inherit] font-medium text-muted-foreground",
+			imageUrl,
 		},
 		initials,
 	)
@@ -235,6 +236,10 @@ export const userNameOf = (clerk: ShellClerk | null): string =>
 			})
 
 const initialsOf = (clerk: ShellClerk | null): string => (clerk === null ? "RT" : initialsFrom(userNameOf(clerk)))
+
+/** `user.imageUrl`, empty without a Clerk user. */
+export const userImageOf = (clerk: ShellClerk | null): string =>
+	clerk === null ? "" : Option.match(clerk.maybeUser, { onNone: () => "", onSome: (user) => user.imageUrl })
 
 const footerCluster = (h: HtmlBuilder<Message>, model: Model, avatar: Html, name: string): Html =>
 	sidebarMenu(h, undefined, [
@@ -294,7 +299,7 @@ export const shellSidebarFooter = (
 			),
 			footerNavRow(h, currentPath, { href: "/settings", title: "Settings", icon: "GearIcon" }, tip),
 		]),
-		h.div([h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")], [footerCluster(h, model, userAvatar(h, initialsOf(clerk)), userNameOf(clerk))]),
+		h.div([h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")], [footerCluster(h, model, userAvatar(h, initialsOf(clerk), undefined, userImageOf(clerk)), userNameOf(clerk))]),
 	])
 
 /** `Code Review`'s "Beta" tag. */

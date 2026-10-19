@@ -650,6 +650,9 @@ export const settingsArea: AreaModule = {
 			dataset: CLERK,
 			steps: (page) => page.getByRole("button", { name: "Invite member" }).click(),
 		}),
+		page("clerk-members-images", "Members: a member's profile photo", "/settings?tab=members", {
+			dataset: "settings-clerk-images",
+		}),
 		...CLERK_TABS.map((tab) =>
 			page(`clerk-${tab}`, `Settings (Clerk): ${tab}`, `/settings?tab=${tab}`, { dataset: CLERK }),
 		),

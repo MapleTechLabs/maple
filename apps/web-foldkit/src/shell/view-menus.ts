@@ -15,7 +15,7 @@ import { Menu, Message } from "./message"
 import type { Model, ShellClerk } from "./model"
 import { partitionSubItems } from "./nav"
 import { shellNavGroups, surfacesOf } from "./view-nav"
-import { pinnedNamespaceOf, userAvatar, userNameOf } from "./view-sidebar"
+import { pinnedNamespaceOf, userAvatar, userImageOf, userNameOf } from "./view-sidebar"
 
 // The open menu's content: GuestMenu, SupportMenu, the self-hosted org switcher's namespace list
 // and the collapsed rail's section menus (app-sidebar.tsx, namespace-scope-menu.tsx).
@@ -254,7 +254,7 @@ const clerkUserMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu, clerk:
 				h.div(
 					[h.Class("flex items-center gap-2 py-1 text-left text-sm")],
 					[
-						userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs"),
+						userAvatar(h, initialsFrom(name), "size-8 rounded-md text-xs", userImageOf(clerk)),
 						h.div(
 							[h.Class("grid flex-1 text-left text-sm leading-tight")],
 							[
