@@ -91,11 +91,6 @@ export interface ChatConnectorManifest {
 	/** Brand accent for the icon plate wash, as a CSS color. */
 	readonly accent: string
 	readonly settingsFields: ReadonlyArray<ChatConnectorSettingsField>
-	/**
-	 * Shown to every organization. Without it the dashboard offers the connector
-	 * only to organizations whose `<id>_bot` rollout flag is set.
-	 */
-	readonly released?: boolean
 }
 
 export interface ChatInstallStart {
