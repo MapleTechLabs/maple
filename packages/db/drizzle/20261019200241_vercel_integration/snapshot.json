@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "6ef4867d8f48878e83feb2d6985a8e0e24c50a7336a975de4bfd0af15984f886",
+	"id": "7fc1ade36ae90c0fc1d04652b466913962e12d6a24fcf0190358ceecdd787393",
 	"prevIds": [
-		"38f536dabd1b4b041c1aecc2dbde113378874aeb9c7aef40da11c459f790c881"
+		"a88fc245ecbb455bc7d1caa5d2b62725564fe88ab7b9369316d03c754cfc61fd"
 	],
 	"entities": [
 		{
@@ -721,6 +721,16 @@
 			"name": "scrape_targets",
 			"primaryKey": {
 				"name": "scrape_targets_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "sources",
+			"primaryKey": {
+				"name": "sources_pkey",
 				"columns": [
 					"id"
 				]
@@ -10798,6 +10808,216 @@
 		},
 		{
 			"kind": "column",
+			"table": "sources",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "name",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "description",
+			"position": 3,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "platform",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "is_default",
+			"position": 5,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "integration_id",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "key_hash",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "key_prefix",
+			"position": 8,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "allowed_signals",
+			"position": 9,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "rate_limit_rps",
+			"position": 10,
+			"type": "integer",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "resource_attributes",
+			"position": 11,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'[]'::jsonb",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "expires_at",
+			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "paused_at",
+			"position": 13,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "paused_until",
+			"position": 14,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "last_used_at",
+			"position": 15,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "rolled_at",
+			"position": 16,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "created_at",
+			"position": 17,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "updated_at",
+			"position": 18,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "created_by",
+			"position": 19,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "updated_by",
+			"position": 20,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "vcs_commits",
 			"name": "id",
 			"position": 0,
@@ -13557,6 +13777,52 @@
 				"\"org_id\""
 			],
 			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "sources",
+			"name": "sources_key_hash_unique",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"key_hash\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "sources",
+			"name": "sources_org_default_unique",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": "\"is_default\" = TRUE"
+		},
+		{
+			"kind": "index",
+			"table": "sources",
+			"name": "sources_org_id_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "sources",
+			"name": "sources_org_integration_unique",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"platform\"",
+				"\"integration_id\""
+			],
+			"where": "\"integration_id\" IS NOT NULL"
 		},
 		{
 			"kind": "index",
