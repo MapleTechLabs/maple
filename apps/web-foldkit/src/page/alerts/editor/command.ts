@@ -139,6 +139,15 @@ export const FocusSqlCaret = Command.define("FocusAlertSqlCaret", {
 		}),
 })
 
+/** `onRetry={() => window.location.reload()}`: a live query past its recovery has no other retry. */
+export const ReloadPage = Command.define("ReloadAlertEditorPage", {
+	messages: [Message.ReloadedPage],
+	execute: Effect.sync(() => {
+		window.location.reload()
+		return Message.ReloadedPage()
+	}),
+})
+
 /** `trackProduct("alert_rule_created", { signal })` after a create lands. */
 export const TrackRuleCreated = Command.define("TrackAlertRuleCreated", {
 	args: { signal: Schema.String },

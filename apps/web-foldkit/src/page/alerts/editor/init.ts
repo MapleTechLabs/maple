@@ -4,6 +4,7 @@ import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
 import type { AppRoute } from "../../../route"
 import * as Dialog from "../../../ui/dialog"
+import * as Tooltip from "../../../ui/tooltip"
 import type { PageContext, PageReturn } from "../../contract"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -32,6 +33,9 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		states: null,
 		incidents: null,
 		destinations: null,
+		isRulesLoadFailed: false,
+		sourceDashboards: null,
+		isDashboardsLoadFailed: false,
 		isAdmin: false,
 		isDefaultDestinationApplied: false,
 		connectors: null,
@@ -57,6 +61,7 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		combos: {},
 		menus: {},
 		destinationDialog: DestinationDialog.init("alert-rule-destination"),
+		issuesTooltip: Tooltip.init("alert-rule-issues"),
 		brokenLogos: [],
 		timePicker: TimeRangePicker.init("alert-rule-preview-range"),
 		chart: Chart.init(),

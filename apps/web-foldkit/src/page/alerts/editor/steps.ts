@@ -25,6 +25,7 @@ export const initialize = (model: Model, context: PageContext): Return => {
 	if (model.form !== null || model.draftId === null) return { model }
 	const draft = initialization(model, model.draftId)
 	if (draft._tag === "Loading") return { model }
+	if (draft._tag === "Failed") return { model: { ...model, status: "Failed" } }
 	const form = draft.form
 	const ready: Model = {
 		...model,
