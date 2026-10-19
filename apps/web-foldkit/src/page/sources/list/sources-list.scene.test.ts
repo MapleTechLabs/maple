@@ -4,6 +4,7 @@ import { Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
+import { orderSources } from "../kit/shared"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -55,7 +56,18 @@ describe("sources list", () => {
 		expect(names(init({ _tag: "Sources" }, context).commands)).toEqual(["ReadSourcesClock", "FetchSourcesList"])
 	})
 
-	test("the default source comes first and alone shows the empty state", () => {
+	test("the default source is listed before the sources added ahead of it", () => {
+		const added = source(2, { name: "Checkout" })
+		expect(orderSources([added, defaultSource]).map(({ name }) => name)).toEqual(["Default", "Checkout"])
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([added, defaultSource])),
+			expectView(role("link", { name: "Default" })).toExist(),
+			expectView(role("link", { name: "Checkout" })).toExist(),
+		)
+	})
+
+	test("the default source alone shows the empty state", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([defaultSource])),
