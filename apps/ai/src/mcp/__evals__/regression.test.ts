@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { InspectSpanOutput, InspectTraceOutput, SearchLogsOutput } from "@maple/domain/mcp-outputs"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
+import { installFakeWarehouse, readsTraceSpans, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "./eval-runtime"
 import {
 	AI_SPAN_SPAN_ID,
@@ -85,11 +85,11 @@ const regressionFixtures: FixtureRule[] = [
 	},
 	// Small trace (≤ overview budget) → renders in full.
 	{
-		match: (sql) => sql.includes(SMALL_TRACE_ID) && sql.includes("trace_detail_spans"),
+		match: (sql) => sql.includes(SMALL_TRACE_ID) && readsTraceSpans(sql),
 		rows: makeSmallTraceSpans(),
 	},
 	// Large trace (> budget) → bounded overview. Fallback for any other span tree.
-	{ match: (sql) => sql.includes("trace_detail_spans"), rows: makeLargeTraceSpans() },
+	{ match: (sql) => readsTraceSpans(sql), rows: makeLargeTraceSpans() },
 	// search_logs' total, read alongside the page.
 	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql) && /\bAS\s+total\b/i.test(sql), rows: [{ total: 3 }] },
 	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql), rows: makeTraceLogs() },
@@ -190,10 +190,12 @@ describe("inspect_span drill-down", () => {
 	// The decode is an add-on to the raw attributes: a trace too large to read
 	// costs the decoded view and nothing else.
 	it("keeps the raw attributes when the decode read is refused as too large", async () => {
+		// Only the decode's span read is refused; the trace-bounds read (`spanCount`) still answers.
 		responseTooLargeFor = (sql) =>
-			sql.includes("trace_detail_spans") &&
+			readsTraceSpans(sql) &&
 			sql.includes(AI_SPAN_TRACE_ID) &&
-			!sql.includes(AI_SPAN_SPAN_ID)
+			!sql.includes(AI_SPAN_SPAN_ID) &&
+			!sql.includes("AS spanCount")
 		const result = await runToolDirect(rt, "inspect_span", {
 			trace_id: AI_SPAN_TRACE_ID,
 			span_id: AI_SPAN_SPAN_ID,

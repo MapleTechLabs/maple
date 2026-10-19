@@ -91,6 +91,9 @@ const hierarchyRow = {
 	relationship: "related",
 }
 
+/** A read of one trace's spans: `traces` seeked through the `trace_index` subquery. */
+const readsTraceSpans = (sql: string) => /\bFROM traces\b/.test(sql) && sql.includes("FROM trace_index")
+
 const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 	if (sql.includes("FROM trace_list_mv")) {
 		const rows = [
@@ -127,11 +130,8 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 		]
 		return sql.includes("TraceId <") ? rows.slice(1) : rows
 	}
-	if (sql.includes("FROM trace_detail_spans") && sql.includes("AS relationship")) return [hierarchyRow]
-	if (
-		sql.includes("FROM trace_detail_spans") &&
-		sql.includes("toJSONString(trace_detail_spans.SpanAttributes)")
-	) {
+	if (readsTraceSpans(sql) && sql.includes("AS relationship")) return [hierarchyRow]
+	if (readsTraceSpans(sql) && sql.includes("toJSONString(traces.SpanAttributes)")) {
 		return [
 			{
 				...hierarchyRow,
@@ -637,8 +637,10 @@ describe("v2 telemetry reads over HTTP", () => {
 		observedSql.length = 0
 		const trace = await harness.request("GET", `/v2/traces/${TRACE_ID}`, key.secret)
 		expect(trace.status).toBe(200)
-		const hierarchySql = observedSql.find((sql) => sql.includes("FROM trace_detail_spans"))
-		expect(hierarchySql).toContain(`TraceId = '${TRACE_ID}'`)
+		const hierarchySql = observedSql.find(
+			(sql) => readsTraceSpans(sql) && sql.includes("AS relationship"),
+		)
+		expect(hierarchySql).toContain(`trace_index.TraceId = '${TRACE_ID}'`)
 		expect(hierarchySql).not.toContain("Timestamp >=")
 		expect(hierarchySql).not.toContain("Timestamp <=")
 		expect(hierarchySql).toContain("LIMIT 5001")

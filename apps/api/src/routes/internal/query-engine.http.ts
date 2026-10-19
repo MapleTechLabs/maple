@@ -477,10 +477,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							"spanHierarchy",
 							payload,
 							// Wrapped in cachedDirect's effect so the probe only fires on a
-							// cache miss. `trace_detail_spans` is partitioned by
-							// `toDate(Timestamp)`. Without a time predicate the hierarchy query
-							// seeks across every daily partition (~30) — p95 ~8.8s vs ~2.3s when
-							// pruned to one. When the caller has no timestamp (direct URL,
+							// cache miss. `traces` is partitioned by `toDate(Timestamp)`;
+							// without a time predicate the hierarchy query seeks every daily
+							// partition (~30). When the caller has no timestamp (direct URL,
 							// shared link, AI link), resolve one via a cheap LIMIT-1 probe and
 							// derive a ±1h window so the main query can prune. The probe itself
 							// tries the recent window first (see PROBE_RECENT_WINDOW_MS).
@@ -531,8 +530,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const tenant = yield* CurrentTenant.Context
 						const row = yield* runQueryFirst(Queries.spanDetail, tenant, payload)
 						if (!row) return new SpanDetailResponse({ data: null })
-						// `trace_detail_spans` has no Events columns; read them off `traces`
-						// by the sorting key the detail row just resolved.
+						// Events are read separately: the detail row resolves the span's
+						// service and start second, which seek its granules.
 						const startMs = DateTime.toEpochMillis(row.startTime)
 						const events = yield* runQueryFirst(Queries.spanEvents, tenant, {
 							traceId: row.traceId,
@@ -903,7 +902,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						const rows = yield* runQuery(Queries.gcpCloudSqlDatabases, tenant, payload)
-						return new GcpCloudSqlDatabasesResponse({ databases: rows.map((row) => row.database) })
+						return new GcpCloudSqlDatabasesResponse({
+							databases: rows.map((row) => row.database),
+						})
 					}),
 				)
 				.handle("cloudflareInfraZones", ({ payload }) =>

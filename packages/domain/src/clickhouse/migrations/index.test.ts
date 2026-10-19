@@ -234,10 +234,10 @@ describe("ClickHouse migrations", () => {
 		// scratch (DROP TABLE IF EXISTS <fresh> + rename swap), or scoped-deleted
 		// for a dual-fed target (0021). An additive INSERT…SELECT into a surviving
 		// table doubles on the rerun and nothing downstream can detect it.
-		// identity_links is exempt because a replay is a merge no-op: its only
-		// aggregate is SimpleAggregateFunction(min) keyed by the full sorting key,
-		// so re-inserted rows collapse to the values already stored.
-		const mergeIdempotentTargets = new Set(["identity_links"])
+		// identity_links and trace_index are exempt because a replay is a merge
+		// no-op: their only aggregates are SimpleAggregateFunction(min/max) keyed by
+		// the full sorting key, so re-inserted rows collapse to the values stored.
+		const mergeIdempotentTargets = new Set(["identity_links", "trace_index"])
 		for (const migration of migrations) {
 			migration.statements.forEach((stmt, index) => {
 				if (!isBackfill(stmt) || mergeIdempotentTargets.has(stmt.target)) return

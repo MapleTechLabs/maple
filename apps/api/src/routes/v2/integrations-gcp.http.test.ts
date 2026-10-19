@@ -5,7 +5,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -120,6 +120,7 @@ const makeHarness = (options: { readonly metricsAvailable: boolean } = { metrics
 		request,
 		adminKey,
 		memberKey,
+		testDb,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -216,7 +217,21 @@ describe("v2 gcp integration over HTTP", () => {
 			application_logs: ["cloud_run", "cloud_functions", "app_engine", "gke"],
 		})
 		expect(both.status).toBe(200)
-		expect(Object.keys(both.body).sort()).toEqual(["cleanup_script", "object", "setup_script"])
+		expect(Object.keys(both.body).sort()).toEqual([
+			"alchemy",
+			"cleanup_script",
+			"log_filter",
+			"maple_service_account_email",
+			"object",
+			"push_endpoint",
+			"setup_script",
+			"terraform",
+		])
+		// Without the script, Pub/Sub signs each push: nothing it is given carries the secret.
+		expect(both.body.push_endpoint).toMatch(/^https:\/\/ingest\.test\/v1\/logpush\/gcp\/[0-9a-f-]{36}$/)
+		expect(both.body.terraform).toContain('resource "google_logging_folder_sink" "maple"')
+		expect(both.body.terraform).not.toMatch(/maple_gcp_|secret=/)
+		expect(both.body.alchemy).toMatch(/^const SCOPE = "folders\/\d+"$/m)
 		expect(both.body.object).toBe("gcp_connector.setup_scripts")
 		expect(both.body.setup_script).toMatch(
 			/PUSH_ENDPOINT='https:\/\/ingest\.test\/v1\/logpush\/gcp\/[0-9a-f-]{36}\?secret=maple_gcp_/,
@@ -288,6 +303,29 @@ describe("v2 gcp integration over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("records a removal made without the script, for what is off and still set up", async () => {
+		const harness = makeHarness()
+		const admin = await harness.adminKey()
+		const created = await harness.request("POST", CONNECTORS, admin.secret, organizationConnector)
+		const path = `${CONNECTORS}/${created.body.id}`
+		// What a setup run reported: both in place.
+		await executeSql(
+			harness.testDb,
+			"UPDATE gcp_connectors SET applied_logs_enabled = true, applied_metrics_enabled = true",
+		)
+		await harness.request("PATCH", path, admin.secret, { logs_enabled: false })
+
+		const confirmed = await harness.request("POST", `${path}/confirm_removal`, admin.secret)
+		expect(confirmed.status).toBe(200)
+		expect(confirmed.body).toMatchObject({
+			id: created.body.id,
+			logs_enabled: false,
+			applied_logs_enabled: false,
+			applied_metrics_enabled: true,
+		})
+		await harness.dispose()
+	})
+
 	it("keeps the push secret from non-admin members and from read-scoped keys", async () => {
 		const harness = makeHarness()
 		const admin = await harness.adminKey()
@@ -300,6 +338,7 @@ describe("v2 gcp integration over HTTP", () => {
 			["POST", CONNECTORS, { scope_type: "project", scope_id: "other-project" }],
 			["PATCH", path, { metrics_enabled: true }],
 			["POST", `${path}/setup_scripts`, {}],
+			["POST", `${path}/confirm_removal`, undefined],
 			["DELETE", path, undefined],
 		] as const) {
 			const asMember = await harness.request(method, target, member.secret, body)

@@ -87,6 +87,8 @@ describe("GcpConnectorService", () => {
 			assert.isNull(connector.lastLogReceivedAt)
 			assert.isNull(connector.lastLogError)
 			assert.isNull(connector.appliedLogsEnabled)
+			// Created off: known not to exist, so there is nothing to remove.
+			assert.isFalse(connector.appliedMetricsEnabled)
 			assert.isNull(connector.setupReportedAt)
 
 			const { setupScript } = yield* gcp.scripts(orgId, connector.id, scriptOptions)
@@ -498,6 +500,64 @@ describe("GcpConnectorService", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsPersistenceError")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
+
+	it.effect("renders the setup without a script: signed pushes, the requested filter, no secret", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, organizationScope)
+			const scripts = yield* gcp.scripts(orgId, connector.id, { applicationLogs: ["cloud_run"] })
+			const pushEndpoint = `https://ingest.test/v1/logpush/gcp/${connector.id}`
+			assert.strictEqual(scripts.pushEndpoint, pushEndpoint)
+			assert.strictEqual(scripts.logFilter, /^LOG_FILTER='(.*)'$/m.exec(scripts.setupScript)?.[1])
+			assert.strictEqual(scripts.mapleServiceAccountEmail, MAPLE_ACCOUNT)
+			assert.match(scripts.terraform, new RegExp(`^  push_endpoint += "${pushEndpoint}"$`, "m"))
+			assert.notMatch(scripts.terraform, /maple_gcp_|secret=|^ {2}to = /m)
+			assert.match(scripts.alchemy, /^const SCOPE = "organizations\/\d+"$/m)
+
+			// What a setup script created is taken over, not created a second time.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE gcp_connectors SET applied_logs_enabled = true WHERE id = $1", [
+					connector.id,
+				]),
+			)
+			const taken = yield* gcp.scripts(orgId, connector.id, scriptOptions)
+			assert.include(taken.terraform, "to = google_logging_organization_sink.maple")
+			assert.include(taken.terraform, "# import {\n#   to = google_service_account.maple_reader")
+		}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
+	})
+
+	it.effect(
+		"records a removal on the caller's word, and confirms a capability switched back on again",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const gcp = yield* GcpConnectorService
+				const connector = yield* gcp.create(orgId, userId, organizationScope)
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"UPDATE gcp_connectors SET applied_logs_enabled = true, applied_metrics_enabled = true WHERE id = $1",
+						[connector.id],
+					),
+				)
+				yield* gcp.update(orgId, connector.id, { logsEnabled: false })
+				// Only what is off and still recorded as set up changes.
+				const removed = yield* gcp.confirmRemoval(orgId, connector.id)
+				assert.deepStrictEqual(
+					[removed.appliedLogsEnabled, removed.appliedMetricsEnabled],
+					[false, true],
+				)
+				assert.deepStrictEqual((yield* gcp.status(orgId)).connectors, [removed])
+
+				// Back on, nothing is known to be set up: the first push confirms it.
+				const backOn = yield* gcp.update(orgId, connector.id, { logsEnabled: true })
+				assert.isNull(backOn.appliedLogsEnabled)
+				const foreign = yield* Effect.flip(gcp.confirmRemoval(otherOrgId, connector.id))
+				assert.strictEqual(foreign._tag, "@maple/http/errors/IntegrationsNotFoundError")
+			}).pipe(Effect.provide(makeLayer(testDb, MAPLE_ACCOUNT)))
+		},
+	)
 
 	it.effect("scopes updates, scripts and deletion to the owning organization", () => {
 		const testDb = createTestDb(trackedDbs)

@@ -17,6 +17,7 @@ import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-sco
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import type { AiPortsLayer } from "./bindings"
 import { healthResponse } from "../routes/health"
+import { McpToolExecutorLoader } from "../mcp/executor-loader"
 
 /**
  * The route graph as the bridge's handler, built for the isolate.
@@ -38,14 +39,12 @@ export const buildIsolateHandler = <ROut, E>(
 /** The route graph as one request handler, built once per isolate on the first request. */
 export const buildApp = (isolate: Context.Context<never>, ports: AiPortsLayer) =>
 	Effect.gen(function* () {
-		const [{ McpServicesLive }, { AllRoutes, AiAuthLive }] = yield* Effect.all([
-			Effect.promise(() => import("../runtime/mcp-service-graph")),
-			Effect.promise(() => import("../runtime/http-graph")),
-		])
+		const { AllRoutes, AiAuthLive } = yield* Effect.promise(() => import("../runtime/http-graph"))
 		return yield* buildIsolateHandler(
 			isolate,
 			AllRoutes.pipe(
-				Layer.provideMerge(McpServicesLive),
+				// The tool executor's graph loads on the first `tools/*` request, not here.
+				Layer.provideMerge(McpToolExecutorLoader.layer),
 				Layer.provideMerge(AiAuthLive),
 				Layer.provideMerge(WorkerPlatformLive),
 				Layer.provideMerge(DatabasePgLive),
