@@ -30,13 +30,11 @@ describe("sessionTraceSummariesQuery", () => {
 	it("projects the root span kind + attributes for HTTP label formatting", () => {
 		const q = sessionTraceSummariesQuery({ traceIds: ["abc123"] })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM trace_detail_spans")
+		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("AS rootSpanName")
+		expect(sql).toContain("anyIf(traces.SpanKind, traces.ParentSpanId = '') AS rootSpanKind")
 		expect(sql).toContain(
-			"anyIf(trace_detail_spans.SpanKind, trace_detail_spans.ParentSpanId = '') AS rootSpanKind",
-		)
-		expect(sql).toContain(
-			"anyIf(toJSONString(trace_detail_spans.SpanAttributes), trace_detail_spans.ParentSpanId = '') AS rootSpanAttributes",
+			"anyIf(toJSONString(traces.SpanAttributes), traces.ParentSpanId = '') AS rootSpanAttributes",
 		)
 		expect(sql).toContain("GROUP BY traceId")
 		expect(sql).toContain("FORMAT JSON")
@@ -45,8 +43,14 @@ describe("sessionTraceSummariesQuery", () => {
 	it("scopes to org and the requested trace ids", () => {
 		const q = sessionTraceSummariesQuery({ traceIds: ["t1", "t2"] })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("TraceId IN ('t1', 't2')")
+		expect(sql).toContain("traces.OrgId = 'org_1'")
+		// The trace ids select the spans through the trace_index seek.
+		expect(sql).toContain(
+			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
+		)
+		expect(sql).toMatch(
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('t1', 't2'\)\)/,
+		)
 	})
 
 	// The table is PARTITION BY toDate(Timestamp); the session window prunes the

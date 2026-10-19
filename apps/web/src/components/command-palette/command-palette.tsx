@@ -31,7 +31,7 @@ import { openGlobalChat } from "@/components/chat/global-chat-sheet"
 import { paletteNavItems } from "@/components/dashboard/nav-items"
 import {
 	catalogEntry,
-	useVisibleCatalog,
+	CATALOG,
 	type IntegrationId,
 } from "@/components/integrations/integration-catalog"
 import { useDashboardPreferences } from "@/hooks/use-dashboard-preferences"
@@ -150,7 +150,6 @@ function PaletteContent({
 	// Flagged-off pages must not be findable by name either, so the palette reads
 	// the same flags the sidebar does and passes them to the same builder.
 	const { flags: featureFlags } = useOrganizationFeatureFlags()
-	const catalog = useVisibleCatalog()
 
 	const entries = useMemo<PaletteEntry[]>(() => {
 		// Sections *and* their children — Traces, Logs, Metrics, Replays, Hosts,
@@ -198,7 +197,7 @@ function PaletteContent({
 		]
 
 		// Every provider is typeable as "Connect <name>", so trying "railway" finds it from anywhere.
-		const integrationEntries: PaletteEntry[] = catalog.map((entry) => ({
+		const integrationEntries: PaletteEntry[] = CATALOG.map((entry) => ({
 			id: `integration:${entry.id}`,
 			title: `Connect ${entry.name}`,
 			group: "Integrations",
@@ -260,7 +259,7 @@ function PaletteContent({
 		]
 
 		return [...navigation, ...serviceEntries, ...dashboardEntries, ...integrationEntries, ...actions]
-	}, [dashboards, favorites, serviceNames, theme, setTheme, onShowShortcuts, featureFlags, catalog])
+	}, [dashboards, favorites, serviceNames, theme, setTheme, onShowShortcuts, featureFlags])
 
 	// Browse mode shows only a taste of the services list — the full set stays
 	// searchable, but dozens of service rows shouldn't bury Dashboards/Actions.

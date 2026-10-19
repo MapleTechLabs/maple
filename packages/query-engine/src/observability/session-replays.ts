@@ -11,8 +11,8 @@ const MAX_TRACE_LIMIT = 100
 
 /**
  * Bound the number of correlated trace ids summarized in one call. A long
- * session can observe many traces, and each id widens the `TraceId IN (...)`
- * scan over `trace_detail_spans`, so we cap the fan-out (matching the
+ * session can observe many traces, and each id widens the `trace_index` seek
+ * over `traces`, so we cap the fan-out (matching the
  * list-query guardrail applied throughout the MCP layer).
  */
 function clampTraceLimit(value: number | undefined): number {
@@ -49,7 +49,7 @@ export interface SessionTracesOutput {
  * confirms it *is* a browser session) plus a summary of each backend trace it
  * observed. Two warehouse reads: the session row (O(log N) by the
  * `(OrgId, SessionId)` sort-key prefix), then one grouped pass over
- * `trace_detail_spans` for the correlated trace ids.
+ * `traces` for the correlated trace ids.
  *
  * This is the session→traces counterpart to `searchSessions(traceId=...)`
  * (which goes trace→session). Mirrors the web replay route's `getReplay` +

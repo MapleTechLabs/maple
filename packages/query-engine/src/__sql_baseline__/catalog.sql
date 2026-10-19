@@ -889,19 +889,27 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:errors:errorOccurrenceSpansQuery:default  [416b86f9]
+-- builder:errors:errorOccurrenceSpansQuery:default  [de3e74bc]
 SELECT
-          trace_detail_spans.SpanId AS spanId,
-          trace_detail_spans.SpanName AS spanName,
-          trace_detail_spans.SpanAttributes['http.request.method'] AS httpMethod,
-          trace_detail_spans.SpanAttributes['http.route'] AS httpRoute,
-          if(trace_detail_spans.SpanAttributes['http.response.status_code'] != '', trace_detail_spans.SpanAttributes['http.response.status_code'], trace_detail_spans.SpanAttributes['http.status_code']) AS httpStatus
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
-          AND trace_detail_spans.SpanId IN ('b7ad6b7169203331')
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.SpanAttributes['http.request.method'] AS httpMethod,
+          traces.SpanAttributes['http.route'] AS httpRoute,
+          if(traces.SpanAttributes['http.response.status_code'] != '', traces.SpanAttributes['http.response.status_code'], traces.SpanAttributes['http.status_code']) AS httpStatus
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
+          AND traces.SpanId IN ('b7ad6b7169203331')
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
         LIMIT 1
         FORMAT JSON
 
@@ -979,53 +987,69 @@ SELECT
         GROUP BY fingerprintHash
         FORMAT JSON
 
--- builder:errors:spanDetailQuery:default  [a53b55ab]
+-- builder:errors:spanDetailQuery:default  [93123089]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          trace_detail_spans.ParentSpanId AS parentSpanId,
-          if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
-          trace_detail_spans.SpanName AS rawSpanName,
-          trace_detail_spans.ServiceName AS serviceName,
-          trace_detail_spans.SpanKind AS spanKind,
-          trace_detail_spans.Duration / 1000000 AS durationMs,
-          trace_detail_spans.Timestamp AS startTime,
-          trace_detail_spans.StatusCode AS statusCode,
-          trace_detail_spans.StatusMessage AS statusMessage,
-          toJSONString(trace_detail_spans.SpanAttributes) AS spanAttributes,
-          toJSONString(trace_detail_spans.ResourceAttributes) AS resourceAttributes
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND trace_detail_spans.SpanId = 'b7ad6b7169203331'
-          AND trace_detail_spans.OrgId = 'org_sql_catalog'
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.ParentSpanId AS parentSpanId,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
+          traces.SpanName AS rawSpanName,
+          traces.ServiceName AS serviceName,
+          traces.SpanKind AS spanKind,
+          traces.Duration / 1000000 AS durationMs,
+          traces.Timestamp AS startTime,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          toJSONString(traces.SpanAttributes) AS spanAttributes,
+          toJSONString(traces.ResourceAttributes) AS resourceAttributes
+        FROM traces
+        WHERE traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND traces.SpanId = 'b7ad6b7169203331'
+          AND traces.OrgId = 'org_sql_catalog'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c')
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:spanDetailQuery:narrowByTime  [695c65dd]
+-- builder:errors:spanDetailQuery:narrowByTime  [42a87429]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          trace_detail_spans.ParentSpanId AS parentSpanId,
-          if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
-          trace_detail_spans.SpanName AS rawSpanName,
-          trace_detail_spans.ServiceName AS serviceName,
-          trace_detail_spans.SpanKind AS spanKind,
-          trace_detail_spans.Duration / 1000000 AS durationMs,
-          trace_detail_spans.Timestamp AS startTime,
-          trace_detail_spans.StatusCode AS statusCode,
-          trace_detail_spans.StatusMessage AS statusMessage,
-          toJSONString(trace_detail_spans.SpanAttributes) AS spanAttributes,
-          toJSONString(trace_detail_spans.ResourceAttributes) AS resourceAttributes
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND trace_detail_spans.SpanId = 'b7ad6b7169203331'
-          AND trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.ParentSpanId AS parentSpanId,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
+          traces.SpanName AS rawSpanName,
+          traces.ServiceName AS serviceName,
+          traces.SpanKind AS spanKind,
+          traces.Duration / 1000000 AS durationMs,
+          traces.Timestamp AS startTime,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          toJSONString(traces.SpanAttributes) AS spanAttributes,
+          toJSONString(traces.ResourceAttributes) AS resourceAttributes
+        FROM traces
+        WHERE traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND traces.SpanId = 'b7ad6b7169203331'
+          AND traces.OrgId = 'org_sql_catalog'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:spanEventsByTraceQuery:default  [b03e077c]
+-- builder:errors:spanEventsByTraceQuery:default  [7d3c75cf]
 SELECT
           traces.SpanId AS spanId,
           toString(traces.Timestamp) AS spanStart,
@@ -1036,6 +1060,15 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
           AND notEmpty(traces.EventsName)
         ORDER BY spanStart ASC
         LIMIT 5000
@@ -6578,22 +6611,28 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:session-replays:sessionTraceSummariesQuery:default  [fbd46ea2]
+-- builder:session-replays:sessionTraceSummariesQuery:default  [bbb74197]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          min(trace_detail_spans.Timestamp) AS startTime,
-          if(maxIf(trace_detail_spans.Duration, trace_detail_spans.ParentSpanId = '') / 1000000 > 0, maxIf(trace_detail_spans.Duration, trace_detail_spans.ParentSpanId = '') / 1000000, max(trace_detail_spans.Duration) / 1000000) AS durationMs,
-          coalesce(nullIf(anyIf(trace_detail_spans.SpanName, trace_detail_spans.ParentSpanId = ''), ''), any(trace_detail_spans.SpanName)) AS rootSpanName,
-          coalesce(nullIf(anyIf(trace_detail_spans.ServiceName, trace_detail_spans.ParentSpanId = ''), ''), any(trace_detail_spans.ServiceName)) AS rootServiceName,
-          anyIf(trace_detail_spans.SpanKind, trace_detail_spans.ParentSpanId = '') AS rootSpanKind,
-          anyIf(toJSONString(trace_detail_spans.SpanAttributes), trace_detail_spans.ParentSpanId = '') AS rootSpanAttributes,
+          traces.TraceId AS traceId,
+          min(traces.Timestamp) AS startTime,
+          if(maxIf(traces.Duration, traces.ParentSpanId = '') / 1000000 > 0, maxIf(traces.Duration, traces.ParentSpanId = '') / 1000000, max(traces.Duration) / 1000000) AS durationMs,
+          coalesce(nullIf(anyIf(traces.SpanName, traces.ParentSpanId = ''), ''), any(traces.SpanName)) AS rootSpanName,
+          coalesce(nullIf(anyIf(traces.ServiceName, traces.ParentSpanId = ''), ''), any(traces.ServiceName)) AS rootServiceName,
+          anyIf(traces.SpanKind, traces.ParentSpanId = '') AS rootSpanKind,
+          anyIf(toJSONString(traces.SpanAttributes), traces.ParentSpanId = '') AS rootSpanAttributes,
           count() AS spanCount,
-          if(countIf(trace_detail_spans.StatusCode = 'Error') > 0, 1, 0) AS hasError
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          if(countIf(traces.StatusCode = 'Error') > 0, 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN ('0af7651916cd43dd8448eb211c80319c'))
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
         ORDER BY startTime ASC
         LIMIT 200
@@ -6667,16 +6706,24 @@ SELECT
         LIMIT 2
         FORMAT JSON
 
--- builder:traces:traceSpanStatsByTraceIdsQuery:page-enrichment  [4ede1db9]
+-- builder:traces:traceSpanStatsByTraceIdsQuery:page-enrichment  [755f61aa]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
+          traces.TraceId AS traceId,
           count() AS spanCount,
-          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(trace_detail_spans.ServiceName)), argMin(trace_detail_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736')
-          AND trace_detail_spans.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
-          AND trace_detail_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(traces.ServiceName)), argMin(traces.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
+          AND traces.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND traces.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
         GROUP BY traceId
         LIMIT 2
         FORMAT JSON
@@ -9079,29 +9126,29 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:error_detail_traces:default:baseline  [86726288]
+-- pipe:error_detail_traces:default:baseline  [15f8e52e]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          min(trace_detail_spans.Timestamp) AS startTime,
-          intDiv(max(trace_detail_spans.Duration), 1000) AS durationMicros,
+          traces.TraceId AS traceId,
+          min(traces.Timestamp) AS startTime,
+          intDiv(max(traces.Duration), 1000) AS durationMicros,
           count() AS spanCount,
-          groupUniqArray(trace_detail_spans.ServiceName) AS services,
-          anyIf(trace_detail_spans.SpanName, trace_detail_spans.ParentSpanId = '') AS rootSpanName,
-          anyIf(trace_detail_spans.StatusMessage, trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorMessage,
-          anyIf(trace_detail_spans.SpanId, trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorSpanId,
-          anyIf(trace_detail_spans.SpanName, trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorSpanName,
-          anyIf(trace_detail_spans.ServiceName, trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorServiceName,
-          anyIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorModel,
-          anyIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorToolName,
-          anyIf(trace_detail_spans.SpanAttributes['http.request.method'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpMethod,
-          anyIf(trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpRoute,
-          anyIf(if(trace_detail_spans.SpanAttributes['http.response.status_code'] != '', trace_detail_spans.SpanAttributes['http.response.status_code'], trace_detail_spans.SpanAttributes['http.status_code']), trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpStatus,
-          anyIf(trace_detail_spans.SpanAttributes['query.context'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorQueryContext,
-          anyIf(trace_detail_spans.SpanAttributes['error.type'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorType,
+          groupUniqArray(traces.ServiceName) AS services,
+          anyIf(traces.SpanName, traces.ParentSpanId = '') AS rootSpanName,
+          anyIf(traces.StatusMessage, traces.SpanId = occurrence.occurrenceSpanId) AS errorMessage,
+          anyIf(traces.SpanId, traces.SpanId = occurrence.occurrenceSpanId) AS errorSpanId,
+          anyIf(traces.SpanName, traces.SpanId = occurrence.occurrenceSpanId) AS errorSpanName,
+          anyIf(traces.ServiceName, traces.SpanId = occurrence.occurrenceSpanId) AS errorServiceName,
+          anyIf(traces.SpanAttributes['gen_ai.request.model'], traces.SpanId = occurrence.occurrenceSpanId) AS errorModel,
+          anyIf(traces.SpanAttributes['gen_ai.tool.name'], traces.SpanId = occurrence.occurrenceSpanId) AS errorToolName,
+          anyIf(traces.SpanAttributes['http.request.method'], traces.SpanId = occurrence.occurrenceSpanId) AS errorHttpMethod,
+          anyIf(traces.SpanAttributes['http.route'], traces.SpanId = occurrence.occurrenceSpanId) AS errorHttpRoute,
+          anyIf(if(traces.SpanAttributes['http.response.status_code'] != '', traces.SpanAttributes['http.response.status_code'], traces.SpanAttributes['http.status_code']), traces.SpanId = occurrence.occurrenceSpanId) AS errorHttpStatus,
+          anyIf(traces.SpanAttributes['query.context'], traces.SpanId = occurrence.occurrenceSpanId) AS errorQueryContext,
+          anyIf(traces.SpanAttributes['error.type'], traces.SpanId = occurrence.occurrenceSpanId) AS errorType,
           any(occurrence.occurrenceLabel) AS errorLabel,
           any(occurrence.occurrenceExceptionType) AS exceptionType,
           any(occurrence.occurrenceExceptionMessage) AS exceptionMessage
-        FROM trace_detail_spans
+        FROM traces
         INNER JOIN (SELECT
           error_events.TraceId AS TraceId,
           max(error_events.Timestamp) AS lastErrorSeen,
@@ -9116,9 +9163,15 @@ SELECT
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY TraceId
         ORDER BY lastErrorSeen DESC, TraceId DESC
-        LIMIT 10) AS occurrence ON trace_detail_spans.TraceId = occurrence.TraceId
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.TraceId IN (SELECT
+        LIMIT 10) AS occurrence ON traces.TraceId = occurrence.TraceId
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT
           matching_traces.TraceId AS TraceId
         FROM (SELECT
           error_events.TraceId AS TraceId,
@@ -9135,8 +9188,10 @@ SELECT
         GROUP BY TraceId
         ORDER BY lastErrorSeen DESC, TraceId DESC
         LIMIT 10) AS matching_traces)
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
         ORDER BY startTime DESC
         FORMAT JSON
@@ -11708,50 +11763,66 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:span_hierarchy:unwindowed:baseline  [9349142e]
+-- pipe:span_hierarchy:unwindowed:baseline  [ce7c380b]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          trace_detail_spans.ParentSpanId AS parentSpanId,
-          if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
-          trace_detail_spans.SpanName AS rawSpanName,
-          trace_detail_spans.ServiceName AS serviceName,
-          trace_detail_spans.SpanKind AS spanKind,
-          trace_detail_spans.Duration / 1000000 AS durationMs,
-          trace_detail_spans.Timestamp AS startTime,
-          trace_detail_spans.StatusCode AS statusCode,
-          trace_detail_spans.StatusMessage AS statusMessage,
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.ParentSpanId AS parentSpanId,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
+          traces.SpanName AS rawSpanName,
+          traces.ServiceName AS serviceName,
+          traces.SpanKind AS spanKind,
+          traces.Duration / 1000000 AS durationMs,
+          traces.Timestamp AS startTime,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'url.full', SpanAttributes['url.full'], 'http.url', SpanAttributes['http.url'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'url.path', SpanAttributes['url.path'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'cache.system', SpanAttributes['cache.system'], 'cache.result', SpanAttributes['cache.result'], 'cache.name', SpanAttributes['cache.name'], 'cache.operation', SpanAttributes['cache.operation'], 'cache.lookup_performed', SpanAttributes['cache.lookup_performed'], 'db.system.name', SpanAttributes['db.system.name'], 'db.system', SpanAttributes['db.system'], 'cloud.platform', SpanAttributes['cloud.platform'], 'cloudflare.colo', SpanAttributes['cloudflare.colo'], 'faas.invoked_region', SpanAttributes['faas.invoked_region'], 'cloudflare.outcome', SpanAttributes['cloudflare.outcome'])) AS spanAttributes,
           toJSONString(map('deployment.environment', ResourceAttributes['deployment.environment'], 'vcs.ref.head.revision', ResourceAttributes['vcs.ref.head.revision'])) AS resourceAttributes,
           'related' AS relationship
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND trace_detail_spans.OrgId = 'org_sql_catalog'
+        FROM traces
+        WHERE traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND traces.OrgId = 'org_sql_catalog'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c')
         ORDER BY startTime ASC
         LIMIT 5000
         FORMAT JSON
 
--- pipe:span_hierarchy:windowed:baseline  [6e432111]
+-- pipe:span_hierarchy:windowed:baseline  [c4559257]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          trace_detail_spans.ParentSpanId AS parentSpanId,
-          if(((trace_detail_spans.SpanName LIKE 'http.server %' OR trace_detail_spans.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (trace_detail_spans.SpanAttributes['http.route'] != '' OR trace_detail_spans.SpanAttributes['url.path'] != '')), concat(if(trace_detail_spans.SpanName LIKE 'http.server %', replaceOne(trace_detail_spans.SpanName, 'http.server ', ''), trace_detail_spans.SpanName), ' ', if(trace_detail_spans.SpanAttributes['http.route'] != '', trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanAttributes['url.path'])), trace_detail_spans.SpanName) AS spanName,
-          trace_detail_spans.SpanName AS rawSpanName,
-          trace_detail_spans.ServiceName AS serviceName,
-          trace_detail_spans.SpanKind AS spanKind,
-          trace_detail_spans.Duration / 1000000 AS durationMs,
-          trace_detail_spans.Timestamp AS startTime,
-          trace_detail_spans.StatusCode AS statusCode,
-          trace_detail_spans.StatusMessage AS statusMessage,
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.ParentSpanId AS parentSpanId,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
+          traces.SpanName AS rawSpanName,
+          traces.ServiceName AS serviceName,
+          traces.SpanKind AS spanKind,
+          traces.Duration / 1000000 AS durationMs,
+          traces.Timestamp AS startTime,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
           toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'url.full', SpanAttributes['url.full'], 'http.url', SpanAttributes['http.url'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'url.path', SpanAttributes['url.path'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'cache.system', SpanAttributes['cache.system'], 'cache.result', SpanAttributes['cache.result'], 'cache.name', SpanAttributes['cache.name'], 'cache.operation', SpanAttributes['cache.operation'], 'cache.lookup_performed', SpanAttributes['cache.lookup_performed'], 'db.system.name', SpanAttributes['db.system.name'], 'db.system', SpanAttributes['db.system'], 'cloud.platform', SpanAttributes['cloud.platform'], 'cloudflare.colo', SpanAttributes['cloudflare.colo'], 'faas.invoked_region', SpanAttributes['faas.invoked_region'], 'cloudflare.outcome', SpanAttributes['cloudflare.outcome'])) AS spanAttributes,
           toJSONString(map('deployment.environment', ResourceAttributes['deployment.environment'], 'vcs.ref.head.revision', ResourceAttributes['vcs.ref.head.revision'])) AS resourceAttributes,
-          if(trace_detail_spans.SpanId = '00f067aa0ba902b7', 'target', 'related') AS relationship
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
+          if(traces.SpanId = '00f067aa0ba902b7', 'target', 'related') AS relationship
+        FROM traces
+        WHERE traces.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND traces.OrgId = 'org_sql_catalog'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
         ORDER BY startTime ASC
         LIMIT 5000
         FORMAT JSON
@@ -14774,29 +14845,35 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:baseline  [8e705c5c]
+-- spec:traces-list-grouped-attr-fallback:baseline  [3ca37cb7]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
-          toDateTime(argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - min(toUnixTimestamp64Nano(trace_detail_spans.Timestamp)), 1000) AS durationMicros,
-          intDiv(argMin(trace_detail_spans.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
+          traces.TraceId AS traceId,
+          argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - min(toUnixTimestamp64Nano(traces.Timestamp)), 1000) AS durationMicros,
+          intDiv(argMin(traces.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
           count() AS spanCount,
-          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(trace_detail_spans.ServiceName)), argMin(trace_detail_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
-          argMin(trace_detail_spans.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
-          argMin(trace_detail_spans.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
-          argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(if(trace_detail_spans.SpanAttributes['http.method'] != '', trace_detail_spans.SpanAttributes['http.method'], trace_detail_spans.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
-          argMin(trace_detail_spans.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(if(trace_detail_spans.SpanAttributes['http.status_code'] != '', trace_detail_spans.SpanAttributes['http.status_code'], trace_detail_spans.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(traces.ServiceName)), argMin(traces.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
+          argMin(traces.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
+          argMin(traces.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
+          argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
+          argMin(if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(traces.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
+          argMin(if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
-          if(argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
-          AND trace_detail_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
-          AND TraceId IN (SELECT traceId FROM (SELECT
+          if(argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND traces.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT traceId FROM (SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS ts,
           traces.Duration AS d
@@ -14810,34 +14887,42 @@ SELECT
           AND traces.ParentSpanId = ''
         ORDER BY ts DESC, traceId DESC
         LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startTime DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:bloom  [3fd93e22]
+-- spec:traces-list-grouped-attr-fallback:bloom  [ccbf5975]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
-          toDateTime(argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - min(toUnixTimestamp64Nano(trace_detail_spans.Timestamp)), 1000) AS durationMicros,
-          intDiv(argMin(trace_detail_spans.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
+          traces.TraceId AS traceId,
+          argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - min(toUnixTimestamp64Nano(traces.Timestamp)), 1000) AS durationMicros,
+          intDiv(argMin(traces.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
           count() AS spanCount,
-          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(trace_detail_spans.ServiceName)), argMin(trace_detail_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
-          argMin(trace_detail_spans.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
-          argMin(trace_detail_spans.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
-          argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(if(trace_detail_spans.SpanAttributes['http.method'] != '', trace_detail_spans.SpanAttributes['http.method'], trace_detail_spans.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
-          argMin(trace_detail_spans.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(if(trace_detail_spans.SpanAttributes['http.status_code'] != '', trace_detail_spans.SpanAttributes['http.status_code'], trace_detail_spans.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(traces.ServiceName)), argMin(traces.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
+          argMin(traces.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
+          argMin(traces.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
+          argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
+          argMin(if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(traces.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
+          argMin(if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
-          if(argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
-          AND trace_detail_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
-          AND TraceId IN (SELECT traceId FROM (SELECT
+          if(argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND traces.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT traceId FROM (SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS ts,
           traces.Duration AS d
@@ -14851,34 +14936,42 @@ SELECT
           AND traces.ParentSpanId = ''
         ORDER BY ts DESC, traceId DESC
         LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startTime DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:text  [f7e16154]
+-- spec:traces-list-grouped-attr-fallback:text  [707255d9]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
-          toDateTime(argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - min(toUnixTimestamp64Nano(trace_detail_spans.Timestamp)), 1000) AS durationMicros,
-          intDiv(argMin(trace_detail_spans.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
+          traces.TraceId AS traceId,
+          argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - min(toUnixTimestamp64Nano(traces.Timestamp)), 1000) AS durationMicros,
+          intDiv(argMin(traces.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
           count() AS spanCount,
-          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(trace_detail_spans.ServiceName)), argMin(trace_detail_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
-          argMin(trace_detail_spans.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
-          argMin(trace_detail_spans.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
-          argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(if(trace_detail_spans.SpanAttributes['http.method'] != '', trace_detail_spans.SpanAttributes['http.method'], trace_detail_spans.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
-          argMin(trace_detail_spans.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(if(trace_detail_spans.SpanAttributes['http.status_code'] != '', trace_detail_spans.SpanAttributes['http.status_code'], trace_detail_spans.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(traces.ServiceName)), argMin(traces.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
+          argMin(traces.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
+          argMin(traces.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
+          argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
+          argMin(if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(traces.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
+          argMin(if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
-          if(argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
-          AND trace_detail_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
-          AND TraceId IN (SELECT traceId FROM (SELECT
+          if(argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND traces.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT traceId FROM (SELECT
           traces.TraceId AS traceId,
           traces.Timestamp AS ts,
           traces.Duration AS d
@@ -14892,34 +14985,42 @@ SELECT
           AND traces.ParentSpanId = ''
         ORDER BY ts DESC, traceId DESC
         LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startTime DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-duration-sort:baseline  [31bf5ac8]
+-- spec:traces-list-grouped-duration-sort:baseline  [b5c0e18d]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
-          toDateTime(argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - min(toUnixTimestamp64Nano(trace_detail_spans.Timestamp)), 1000) AS durationMicros,
-          intDiv(argMin(trace_detail_spans.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
+          traces.TraceId AS traceId,
+          argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - min(toUnixTimestamp64Nano(traces.Timestamp)), 1000) AS durationMicros,
+          intDiv(argMin(traces.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
           count() AS spanCount,
-          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(trace_detail_spans.ServiceName)), argMin(trace_detail_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
-          argMin(trace_detail_spans.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
-          argMin(trace_detail_spans.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
-          argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(if(trace_detail_spans.SpanAttributes['http.method'] != '', trace_detail_spans.SpanAttributes['http.method'], trace_detail_spans.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
-          argMin(trace_detail_spans.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(if(trace_detail_spans.SpanAttributes['http.status_code'] != '', trace_detail_spans.SpanAttributes['http.status_code'], trace_detail_spans.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(traces.ServiceName)), argMin(traces.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
+          argMin(traces.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
+          argMin(traces.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
+          argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
+          argMin(if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(traces.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
+          argMin(if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
-          if(argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
-          AND trace_detail_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
-          AND TraceId IN (SELECT traceId FROM (SELECT
+          if(argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND traces.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT traceId FROM (SELECT
           trace_list_mv.TraceId AS traceId,
           trace_list_mv.Timestamp AS ts,
           trace_list_mv.Duration AS d
@@ -14932,34 +15033,42 @@ SELECT
         ORDER BY d DESC, ts DESC, traceId DESC
         LIMIT 50
         OFFSET 100))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY rootDurationMicros DESC, startSecond DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:baseline  [a0e94af9]
+-- spec:traces-list-grouped:baseline  [d3989738]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
-          toDateTime(argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - min(toUnixTimestamp64Nano(trace_detail_spans.Timestamp)), 1000) AS durationMicros,
-          intDiv(argMin(trace_detail_spans.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
+          traces.TraceId AS traceId,
+          argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - min(toUnixTimestamp64Nano(traces.Timestamp)), 1000) AS durationMicros,
+          intDiv(argMin(traces.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
           count() AS spanCount,
-          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(trace_detail_spans.ServiceName)), argMin(trace_detail_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
-          argMin(trace_detail_spans.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
-          argMin(trace_detail_spans.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
-          argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(if(trace_detail_spans.SpanAttributes['http.method'] != '', trace_detail_spans.SpanAttributes['http.method'], trace_detail_spans.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
-          argMin(trace_detail_spans.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(if(trace_detail_spans.SpanAttributes['http.status_code'] != '', trace_detail_spans.SpanAttributes['http.status_code'], trace_detail_spans.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(traces.ServiceName)), argMin(traces.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
+          argMin(traces.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
+          argMin(traces.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
+          argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
+          argMin(if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(traces.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
+          argMin(if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
-          if(argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
-          AND trace_detail_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
-          AND TraceId IN (SELECT traceId FROM (SELECT
+          if(argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND traces.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT traceId FROM (SELECT
           trace_list_mv.TraceId AS traceId,
           trace_list_mv.Timestamp AS ts,
           trace_list_mv.Duration AS d
@@ -14971,34 +15080,42 @@ SELECT
           AND trace_list_mv.DeploymentEnv = 'production'
         ORDER BY ts DESC, traceId DESC
         LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startSecond DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:bloom  [a0e94af9]
+-- spec:traces-list-grouped:bloom  [d3989738]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
-          toDateTime(argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - min(toUnixTimestamp64Nano(trace_detail_spans.Timestamp)), 1000) AS durationMicros,
-          intDiv(argMin(trace_detail_spans.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
+          traces.TraceId AS traceId,
+          argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - min(toUnixTimestamp64Nano(traces.Timestamp)), 1000) AS durationMicros,
+          intDiv(argMin(traces.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
           count() AS spanCount,
-          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(trace_detail_spans.ServiceName)), argMin(trace_detail_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
-          argMin(trace_detail_spans.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
-          argMin(trace_detail_spans.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
-          argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(if(trace_detail_spans.SpanAttributes['http.method'] != '', trace_detail_spans.SpanAttributes['http.method'], trace_detail_spans.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
-          argMin(trace_detail_spans.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(if(trace_detail_spans.SpanAttributes['http.status_code'] != '', trace_detail_spans.SpanAttributes['http.status_code'], trace_detail_spans.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(traces.ServiceName)), argMin(traces.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
+          argMin(traces.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
+          argMin(traces.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
+          argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
+          argMin(if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(traces.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
+          argMin(if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
-          if(argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
-          AND trace_detail_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
-          AND TraceId IN (SELECT traceId FROM (SELECT
+          if(argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND traces.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT traceId FROM (SELECT
           trace_list_mv.TraceId AS traceId,
           trace_list_mv.Timestamp AS ts,
           trace_list_mv.Duration AS d
@@ -15010,34 +15127,42 @@ SELECT
           AND trace_list_mv.DeploymentEnv = 'production'
         ORDER BY ts DESC, traceId DESC
         LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startSecond DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:text  [a0e94af9]
+-- spec:traces-list-grouped:text  [d3989738]
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
-          toDateTime(argMin(trace_detail_spans.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - min(toUnixTimestamp64Nano(trace_detail_spans.Timestamp)), 1000) AS durationMicros,
-          intDiv(argMin(trace_detail_spans.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
+          traces.TraceId AS traceId,
+          argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(traces.Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - min(toUnixTimestamp64Nano(traces.Timestamp)), 1000) AS durationMicros,
+          intDiv(argMin(traces.Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
           count() AS spanCount,
-          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(trace_detail_spans.ServiceName)), argMin(trace_detail_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
-          argMin(trace_detail_spans.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
-          argMin(trace_detail_spans.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
-          argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
-          argMin(if(trace_detail_spans.SpanAttributes['http.method'] != '', trace_detail_spans.SpanAttributes['http.method'], trace_detail_spans.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
-          argMin(trace_detail_spans.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
-          argMin(if(trace_detail_spans.SpanAttributes['http.status_code'] != '', trace_detail_spans.SpanAttributes['http.status_code'], trace_detail_spans.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(traces.ServiceName)), argMin(traces.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services,
+          argMin(traces.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName,
+          argMin(traces.SpanKind, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanKind,
+          argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanStatusCode,
+          argMin(if(traces.SpanAttributes['http.method'] != '', traces.SpanAttributes['http.method'], traces.SpanAttributes['http.request.method']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpMethod,
+          argMin(traces.SpanAttributes['http.route'], (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpRoute,
+          argMin(if(traces.SpanAttributes['http.status_code'] != '', traces.SpanAttributes['http.status_code'], traces.SpanAttributes['http.response.status_code']), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootHttpStatusCode,
           argMin(toJSONString(map('http.method', SpanAttributes['http.method'], 'http.request.method', SpanAttributes['http.request.method'], 'http.route', SpanAttributes['http.route'], 'http.target', SpanAttributes['http.target'], 'http.status_code', SpanAttributes['http.status_code'], 'http.response.status_code', SpanAttributes['http.response.status_code'], 'http.url', SpanAttributes['http.url'], 'url.full', SpanAttributes['url.full'], 'url.path', SpanAttributes['url.path'], 'server.address', SpanAttributes['server.address'], 'net.peer.name', SpanAttributes['net.peer.name'], 'screen.name', SpanAttributes['screen.name'])), (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanAttributes,
-          if(argMin(trace_detail_spans.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
-          AND trace_detail_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
-          AND TraceId IN (SELECT traceId FROM (SELECT
+          if(argMin(traces.StatusCode, (if(ParentSpanId = '', 0, 1), Timestamp)) = 'Error', 1, 0) AS hasError
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND traces.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT traceId FROM (SELECT
           trace_list_mv.TraceId AS traceId,
           trace_list_mv.Timestamp AS ts,
           trace_list_mv.Duration AS d
@@ -15049,6 +15174,8 @@ SELECT
           AND trace_list_mv.DeploymentEnv = 'production'
         ORDER BY ts DESC, traceId DESC
         LIMIT 50))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
         GROUP BY traceId
         ORDER BY startSecond DESC, traceId DESC
         LIMIT 50

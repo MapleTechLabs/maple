@@ -30,7 +30,7 @@ describe("ClickHouse DDL emitter", () => {
 		const ddl = emitCreateTable(traces!)
 		expect(ddl).not.toContain("`json:")
 		expect(ddl).toContain("OrgId LowCardinality(String)")
-		expect(ddl).toContain("ORDER BY (OrgId, ServiceName, SpanName, toDateTime(Timestamp))")
+		expect(ddl).toContain("ORDER BY (OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId)")
 		expect(ddl).toContain("PARTITION BY toDate(Timestamp)")
 		expect(ddl).toContain("TTL toDate(Timestamp) + INTERVAL 30 DAY")
 	})

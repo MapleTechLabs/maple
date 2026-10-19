@@ -1673,6 +1673,12 @@ describe("VcsSyncService orchestrator", () => {
 		readonly workflowLog?: ReadonlyArray<string>
 		/** Completed when the stubbed provider is asked for a log it then never finishes sending. */
 		readonly workflowLogHang?: Deferred.Deferred<void>
+		/** False when the stubbed installation has not granted access to CI logs. */
+		readonly workflowLogsReadable?: boolean
+		/** Completed when the first permission check starts, which then never answers. */
+		readonly workflowLogsCheckHang?: Deferred.Deferred<void>
+		/** Job ids whose log the stubbed provider was asked to stream. */
+		readonly workflowLogRequests?: Array<string>
 		readonly repos?: ReadonlyArray<{
 			externalRepoId: string
 			owner: string
@@ -1743,14 +1749,23 @@ describe("VcsSyncService orchestrator", () => {
 					: opts.workflowAnnotationsError
 						? Effect.fail(opts.workflowAnnotationsError)
 						: Effect.succeed(opts.workflowAnnotations ?? []),
-			streamWorkflowJobLog: () =>
-				opts.workflowLogHang
+			canReadWorkflowLogs: () =>
+				opts.workflowLogsCheckHang === undefined
+					? Effect.succeed(opts.workflowLogsReadable ?? true)
+					: Deferred.succeed(opts.workflowLogsCheckHang, undefined).pipe(
+							// Only the first check stalls, as a throttled token mint would.
+							Effect.flatMap((first) => (first ? Effect.never : Effect.succeed(true))),
+						),
+			streamWorkflowJobLog: (_installation, _repo, jobId) => {
+				opts.workflowLogRequests?.push(jobId)
+				return opts.workflowLogHang
 					? Stream.fromEffect(
 							Deferred.succeed(opts.workflowLogHang, undefined).pipe(
 								Effect.andThen(Effect.never),
 							),
 						)
-					: Stream.fromIterable(opts.workflowLog ?? []),
+					: Stream.fromIterable(opts.workflowLog ?? [])
+			},
 		}
 		const registry = Layer.succeed(VcsProviderRegistry, {
 			ids: ["github"],
@@ -2058,6 +2073,36 @@ describe("VcsSyncService orchestrator", () => {
 		)
 	})
 
+	it.effect(
+		"skips the log of an installation that has not granted access to it, keeping the traces",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+			const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
+			const workflowLogRequests: Array<string> = []
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				yield* seedInstallation(repo, asOrgId("org_ci"))
+				yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42")))
+				assert.lengthOf(forwardedWorkflows, 1)
+				assert.lengthOf(forwardedLogs, 0)
+				assert.lengthOf(workflowLogRequests, 0)
+			}).pipe(
+				Effect.provide(
+					orchestratorLayer(testDb, {
+						sent: [],
+						forwardedWorkflows,
+						forwardedLogs,
+						workflowLog: ["first", "second"],
+						workflowLogsReadable: false,
+						workflowLogRequests,
+					}),
+				),
+			)
+		},
+	)
+
 	it.effect("lets go of a job's log that outlasts its budget, so the rest of the batch moves on", () => {
 		const testDb = createTestDb(trackedDbs)
 		const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
@@ -2086,6 +2131,47 @@ describe("VcsSyncService orchestrator", () => {
 			),
 		)
 	})
+
+	it.effect(
+		"bounds a stalled permission check by the log budget, so the next job in the batch runs",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+			const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
+			const workflowLogRequests: Array<string> = []
+			const checking = Deferred.makeUnsafe<void>()
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				yield* seedInstallation(repo, asOrgId("org_ci"))
+				const batch = [workflowJob("42"), { ...workflowJob("42"), jobId: "556" }]
+				const processing = yield* Effect.forkChild(
+					Effect.forEach(batch, (job) => svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))),
+				)
+				yield* Deferred.await(checking)
+				yield* TestClock.adjust(Duration.seconds(31))
+				assert.isTrue(Exit.isSuccess(yield* Fiber.await(processing)))
+				assert.lengthOf(forwardedWorkflows, 2)
+				// The stalled check never reached the log; the next job's log went out.
+				assert.deepStrictEqual(workflowLogRequests, ["556"])
+				assert.deepStrictEqual(
+					forwardedLogs.map((log) => log.jobId),
+					["556"],
+				)
+			}).pipe(
+				Effect.provide(
+					orchestratorLayer(testDb, {
+						sent: [],
+						forwardedWorkflows,
+						forwardedLogs,
+						workflowLog: ["first"],
+						workflowLogsCheckHang: checking,
+						workflowLogRequests,
+					}),
+				),
+			)
+		},
+	)
 
 	it.effect("still forwards a failed CI job when its annotations cannot be read", () => {
 		const testDb = createTestDb(trackedDbs)

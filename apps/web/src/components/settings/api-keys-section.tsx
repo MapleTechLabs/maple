@@ -1,11 +1,10 @@
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
 import type { ApiKeyKind } from "@maple/domain/http"
-import type { V2ApiKey, V2IngestKeys } from "@maple/domain/http/v2"
+import type { V2ApiKey } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Alert, AlertAction, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { ConfirmDialog } from "@maple/ui/components/ui/confirm-dialog"
@@ -22,7 +21,7 @@ import { SearchInput } from "@maple/ui/components/ui/search-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { SkeletonList } from "@maple/ui/components/ui/skeleton"
 import { TruncatedText } from "@maple/ui/components/ui/truncated-text"
-import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
+import { useAtomSet } from "@/lib/effect-atom"
 import { SegmentedSelect } from "@/components/common/segmented-select"
 import { ColumnHead, DataTable } from "@/components/common/data-table"
 import { RelativeTime } from "@/components/common/relative-time"
@@ -38,27 +37,22 @@ import {
 import { useApiKeyMutationSync, useApiKeysList } from "@/hooks/use-api-keys"
 import { useIsOrgAdmin, useSessionUserId } from "@/hooks/use-is-org-admin"
 import { useLiveClock } from "@/hooks/use-live-clock"
-import { useAsyncAction } from "@/hooks/use-mutation-action"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { retryOrgCollections } from "@/lib/collections/org-collections"
 import { toastExit } from "@/lib/error-toast"
-import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
+import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { formatDateInTimezone } from "@/lib/timezone-format"
 import { SettingsSection, SettingsSections } from "@/components/settings/settings-section"
 import { AdminOnlyNotice } from "./admin-only-notice"
 import { apiKeyRowPermissions } from "./api-key-permissions"
 import { ApiReference } from "./api-reference"
 import { CreateApiKeyDialog } from "./create-api-key-dialog"
-import { IngestKeyValue } from "./ingest-key-value"
 import {
-	apiKeysFailureDisplay,
 	buildKeyRows,
 	filterKeyRows,
 	hasPendingStatusBoundary,
 	KEY_TYPE_LABELS,
 	keyAccessSummary,
-	type ApiKeyRow,
-	type IngestKeyRow,
 	type KeyRow,
 	type KeyStatusFilter,
 	type KeyType,
@@ -66,32 +60,8 @@ import {
 } from "./keys-table"
 import { RollApiKeyDialog } from "./roll-api-key-dialog"
 
-/** `null` for members: the ingest pair is admin-only, so they never see those rows. */
-type IngestKeysState = {
-	readonly keys: V2IngestKeys | null
-	readonly failed: boolean
-	readonly refresh: () => void
-} | null
-
-export function ApiKeysSection() {
-	const isAdmin = useIsOrgAdmin()
-	if (!isAdmin) return <KeysTab ingest={null} />
-	return <WithIngestKeys>{(ingest) => <KeysTab ingest={ingest} />}</WithIngestKeys>
-}
-
-function WithIngestKeys({ children }: { children: (ingest: NonNullable<IngestKeysState>) => ReactNode }) {
-	const queryAtom = retainedQueryV2("ingestKeys", "retrieve", {})
-	const result = useAtomValue(queryAtom)
-	const refresh = useAtomRefresh(queryAtom)
-	const keys = Result.builder(result)
-		.onSuccess((v): V2IngestKeys | null => v)
-		.orElse(() => null)
-	return children({ keys, failed: Result.isFailure(result), refresh })
-}
-
 const TYPE_FILTER_LABELS = {
 	all: "All",
-	ingest: "Ingest",
 	api: "API",
 	mcp: "MCP",
 } satisfies Record<KeyTypeFilter, string>
@@ -103,11 +73,9 @@ const STATUS_LABELS = {
 } satisfies Record<KeyStatusFilter, string>
 
 const TYPE_BADGE = {
-	ingest_public: "info",
-	ingest_private: "outline",
 	api: "muted",
 	mcp: "ok",
-} as const satisfies Record<KeyType, "info" | "outline" | "muted" | "ok">
+} as const satisfies Record<KeyType, "muted" | "ok">
 
 // Shared column lanes so the header and rows stay aligned. Lanes collapse on the table's own width
 // (container queries), so they fit the settings column at any viewport. The type badge rides by the name.
@@ -120,7 +88,7 @@ const COL = {
 	menu: "w-7 shrink-0",
 }
 
-function KeysTab({ ingest }: { ingest: IngestKeysState }) {
+export function ApiKeysSection() {
 	const isAdmin = useIsOrgAdmin()
 	const userId = useSessionUserId()
 	const [typeFilter, setTypeFilter] = useState<KeyTypeFilter>("all")
@@ -132,25 +100,17 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 	const [revokingKey, setRevokingKey] = useState<V2ApiKey | null>(null)
 	const [rollOpen, setRollOpen] = useState(false)
 	const [rollingKey, setRollingKey] = useState<V2ApiKey | null>(null)
-	const [ingestRollOpen, setIngestRollOpen] = useState(false)
-	const [ingestRollType, setIngestRollType] = useState<IngestKeyRow["type"]>("ingest_public")
 
 	const { keys, isLoading, isError } = useApiKeysList()
 	const { prepareForMutation, reconcileTxid } = useApiKeyMutationSync()
 	const revokeMutation = useAtomSet(MapleApiV2AtomClient.mutation("apiKeys", "revoke"), {
 		mode: "promiseExit",
 	})
-	const rollPublic = useAtomSet(MapleApiV2AtomClient.mutation("ingestKeys", "rollPublic"), {
-		mode: "promiseExit",
-	})
-	const rollPrivate = useAtomSet(MapleApiV2AtomClient.mutation("ingestKeys", "rollPrivate"), {
-		mode: "promiseExit",
-	})
 
 	// The collection only emits when rows change, so a key expiring while the page is open needs a
 	// ticking clock to move buckets. The timer stops once no key has an expiry ahead of it.
 	const now = useLiveClock({ enabled: hasPendingStatusBoundary(keys, Date.now()) })
-	const rows = buildKeyRows({ apiKeys: keys, ingestKeys: ingest?.keys ?? null, now })
+	const rows = buildKeyRows({ apiKeys: keys, now })
 	const { visible, typeCounts, statusCounts } = filterKeyRows(rows, {
 		type: typeFilter,
 		status: statusFilter,
@@ -172,29 +132,15 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 		return ok
 	}
 
-	const [handleIngestRoll, ingestRolling] = useAsyncAction(async () => {
-		const isPublic = ingestRollType === "ingest_public"
-		const result = isPublic ? await rollPublic({}) : await rollPrivate({})
-		const ok = toastExit(result, {
-			success: `${isPublic ? "Public" : "Private"} ingest key rolled. The previous key stopped working immediately.`,
-			error: "Unable to roll the ingest key",
-		})
-		if (ok) ingest?.refresh()
-		setIngestRollOpen(false)
-	})
-
-	const ingestLoading = ingest !== null && ingest.keys === null && !ingest.failed
-	const apiKeysFailure = apiKeysFailureDisplay({ apiKeysFailed: isError, rows })
-	const showSkeleton = isLoading || (ingestLoading && keys.length === 0)
 	const needle = search.trim()
 
 	return (
 		<SettingsSections width="wide">
 			{/* Members may still create MCP keys and revoke their own, so the notice names what is admin-only. */}
-			<AdminOnlyNotice subject="API keys or ingest keys" />
+			<AdminOnlyNotice subject="API keys" />
 			<SettingsSection
 				title="Keys"
-				description="Every credential that sends data to Maple or reads from it."
+				description="Keys for the Maple API and MCP clients. Ingest keys live in Ingestion."
 				framed={false}
 				width="wide"
 				actions={<CreateKeyButton isAdmin={isAdmin} onCreate={openCreate} />}
@@ -205,13 +151,10 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 						aria-label="Key type"
 						value={typeFilter}
 						onChange={setTypeFilter}
-						options={(["all", "ingest", "api", "mcp"] as const)
-							// Members never see ingest keys, so that chip would always read 0.
-							.filter((type) => type !== "ingest" || ingest !== null)
-							.map((type) => ({
-								value: type,
-								label: `${TYPE_FILTER_LABELS[type]} · ${typeCounts[type]}`,
-							}))}
+						options={(["all", "api", "mcp"] as const).map((type) => ({
+							value: type,
+							label: `${TYPE_FILTER_LABELS[type]} · ${typeCounts[type]}`,
+						}))}
 					/>
 					<Select value={statusFilter} onValueChange={(value) => value && setStatusFilter(value)}>
 						<SelectTrigger size="sm" className="w-36" aria-label="Key status">
@@ -234,37 +177,10 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 					/>
 				</div>
 
-				{apiKeysFailure === "inline" ? (
-					<Alert size="sm" variant="crit">
-						<AlertDescription>
-							Couldn't load the API and MCP keys. Your keys are unaffected; this is a read
-							problem.
-						</AlertDescription>
-						<AlertAction>
-							<Button size="sm" variant="outline" onClick={retryOrgCollections}>
-								Retry
-							</Button>
-						</AlertAction>
-					</Alert>
-				) : null}
-
-				{ingest?.failed ? (
-					<Alert size="sm" variant="crit">
-						<AlertDescription>
-							Couldn't load the ingest keys. API and MCP keys below are unaffected.
-						</AlertDescription>
-						<AlertAction>
-							<Button size="sm" variant="outline" onClick={ingest.refresh}>
-								Retry
-							</Button>
-						</AlertAction>
-					</Alert>
-				) : null}
-
 				<Panel>
-					{showSkeleton ? (
+					{isLoading ? (
 						<SkeletonList rows={3} rowClassName="h-[52px]" gap="2" className="p-4" />
-					) : apiKeysFailure === "replace" ? (
+					) : isError ? (
 						<SyncUnavailable
 							title="Couldn't load keys"
 							description="The key list couldn't be synced. Your keys are unaffected; this is a read problem."
@@ -291,10 +207,6 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 							rows={visible}
 							now={now}
 							viewer={{ isAdmin, userId }}
-							onIngestRoll={(type) => {
-								setIngestRollType(type)
-								setIngestRollOpen(true)
-							}}
 							onRoll={(key) => {
 								setRollingKey(key)
 								setRollOpen(true)
@@ -332,27 +244,11 @@ function KeysTab({ ingest }: { ingest: IngestKeysState }) {
 				confirmLabel="Revoke key"
 				onConfirm={handleRevoke}
 			/>
-			<ConfirmDialog
-				open={ingestRollOpen}
-				onOpenChange={setIngestRollOpen}
-				title={`Roll ${ingestRollType === "ingest_public" ? "public" : "private"} ingest key?`}
-				description={
-					<>
-						This action cannot be undone. Everything sending telemetry with this key will be
-						rejected immediately. You will need to update your{" "}
-						{ingestRollType === "ingest_public" ? "client-side SDKs" : "server configurations"}{" "}
-						with the new key.
-					</>
-				}
-				confirmLabel="Roll key"
-				onConfirm={() => void handleIngestRoll()}
-				pending={ingestRolling}
-			/>
 		</SettingsSections>
 	)
 }
 
-/** Ingest keys are a fixed pair, so only API and MCP keys can be created. Members may create MCP keys. */
+/** Members may create MCP keys only. */
 function CreateKeyButton({ isAdmin, onCreate }: { isAdmin: boolean; onCreate: (kind: ApiKeyKind) => void }) {
 	if (!isAdmin) {
 		return (
@@ -397,14 +293,12 @@ function KeysTable({
 	rows,
 	now,
 	viewer,
-	onIngestRoll,
 	onRoll,
 	onRevoke,
 }: {
 	rows: ReadonlyArray<KeyRow>
 	now: number
 	viewer: { readonly isAdmin: boolean; readonly userId: string | null }
-	onIngestRoll: (type: IngestKeyRow["type"]) => void
 	onRoll: (key: V2ApiKey) => void
 	onRevoke: (key: V2ApiKey) => void
 }) {
@@ -422,16 +316,6 @@ function KeysTable({
 				<span className={COL.menu} />
 			</DataTable.Head>
 			{rows.map((row) => {
-				if (row.source === "ingest") {
-					return (
-						<IngestRow
-							key={row.id}
-							row={row}
-							formatDate={formatDate}
-							onRoll={viewer.isAdmin ? () => onIngestRoll(row.type) : undefined}
-						/>
-					)
-				}
 				const can = apiKeyRowPermissions(row.key, viewer)
 				return (
 					<ApiRow
@@ -459,49 +343,6 @@ function TypeBadge({ type }: { type: KeyType }) {
 	)
 }
 
-function IngestRow({
-	row,
-	formatDate,
-	onRoll,
-}: {
-	row: IngestKeyRow
-	formatDate: (timestamp: string) => string
-	onRoll?: () => void
-}) {
-	return (
-		<div className={cn(ROW_CLASS, "hover:bg-muted/20")}>
-			<div className={cn(COL.name, "flex flex-col gap-1")}>
-				<div className="flex min-w-0 items-center gap-2">
-					<TruncatedText text={row.name} className="text-foreground text-sm font-medium" />
-					<TypeBadge type={row.type} />
-				</div>
-				<TruncatedText text={row.purpose} className="text-muted-foreground text-2xs" />
-				<IngestKeyValue label={row.name} value={row.value} />
-				<span className="text-muted-foreground truncate text-2xs">
-					Rotated {formatDate(row.rotatedAt)}
-				</span>
-			</div>
-			<TruncatedText
-				text={keyAccessSummary(row)}
-				className={cn(COL.access, "text-foreground/80 text-2xs")}
-			/>
-			<span className={cn(COL.createdBy, "text-muted-foreground text-2xs")}>Organization</span>
-			<span className={cn(COL.lastUsed, "text-muted-foreground text-2xs")}>n/a</span>
-			<span className={cn(COL.expires, "text-muted-foreground text-2xs")}>Never</span>
-			<div className={cn(COL.menu, "flex items-center justify-end")}>
-				{onRoll && (
-					<RowActionsMenu label={`Actions for ${row.name.toLowerCase()}`}>
-						<DropdownMenuItem onClick={onRoll}>
-							<ArrowPathIcon />
-							Roll key
-						</DropdownMenuItem>
-					</RowActionsMenu>
-				)}
-			</div>
-		</div>
-	)
-}
-
 /** "In 3 days" / "Today": the urgency. The date sits under it. */
 function expiresInLabel(expiresAt: number, now: number): string {
 	const days = Math.floor((expiresAt - now) / 86_400_000)
@@ -516,7 +357,7 @@ function ApiRow({
 	onRoll,
 	onRevoke,
 }: {
-	row: ApiKeyRow
+	row: KeyRow
 	/** The clock the status was derived from, so the badge cannot disagree with the bucket. */
 	now: number
 	formatDate: (timestamp: string) => string

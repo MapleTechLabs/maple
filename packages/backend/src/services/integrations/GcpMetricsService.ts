@@ -139,21 +139,21 @@ const explainApiError = (
 		return `The ${host} has no active billing account, and ${error.api} only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=${connector.projectId} Maple retries every 5 minutes.`
 	}
 	if (error.reason === "SERVICE_DISABLED") {
-		return `The ${error.api} API is switched off in the ${host}. Run the setup script again: it switches the API on.`
+		return `The ${error.api} API is switched off in the ${host}. Switch it on in the console, or run the setup script again.`
 	}
 	if (error.kind === "denied" || error.kind === "not_found") {
 		if (error.api === "IAM Credentials") {
 			// A connection that has been read before lost its account or its grant.
 			if (connector.lastMetricsReceivedAt !== null) {
-				return "Maple can no longer sign in as this connection's read-only service account. The account was deleted, or the grant to Maple was removed or is blocked by an organization policy. Run the setup script again: it restores both, or says what blocks it."
+				return "Maple can no longer sign in as this connection's read-only service account. The account was deleted, or the grant to Maple was removed or is blocked by an organization policy. Run the setup script again or redo the read-only steps: either restores both."
 			}
-			// Shown both before the script ever ran and for the minute or two after a run in
-			// which Google does not accept the new grant yet, so it has to read right in both.
-			return "Maple can't sign in as this connection's read-only service account yet. After a setup run Google needs a few minutes to accept the new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: run the setup script and read its last lines."
+			// Shown both before any setup and for the minutes after one in which Google does not
+			// accept the new grant yet, so it has to read right in both.
+			return "Maple can't sign in as this connection's read-only service account yet. Google needs a few minutes to accept a new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: finish the read-only account steps of a manual setup, or run the setup script again."
 		}
 		return reading === "metrics"
-			? `Google denied Maple's read of ${scope}: the read-only roles are missing. Run the setup script again: it grants them. A new grant can take a few minutes.`
-			: `Google denied the resource listing for ${scope}. Run the setup script again: it grants Cloud Asset Viewer.`
+			? `Google denied Maple's read of ${scope}: the read-only roles are missing. Grant them with the setup script, the console steps or your Terraform. A new grant can take a few minutes.`
+			: `Google denied the resource listing for ${scope}. Cloud Asset Viewer is missing. Grant it with the setup script, the console steps or your Terraform.`
 	}
 	// Signing in is counted against Maple's own project, not the host project.
 	if (error.kind === "rate_limited" && error.api !== "IAM Credentials") {
@@ -664,6 +664,19 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						lastMetricsReceivedAt: tick.now,
 						lastMetricsError: notes.length === 0 ? null : notes.join(" "),
 					})
+					// A read proves the read-only account is set up, however it was: a setup in the console
+					// or as code sends no report. Not after a switch-off or a removal made during the read.
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(GcpConnectors)
+								.set({ appliedMetricsEnabled: true })
+								.where(($) => [
+									$.id.eq(connector.id),
+									$.metricsEnabled.eq(true),
+									$.appliedMetricsEnabled.isNull(),
+								]),
+						),
+					)
 					yield* Effect.annotateCurrentSpan({
 						"maple.gcp.rows_ingested": rowsIngested,
 						"maple.gcp.metric_queries_failed": failed,

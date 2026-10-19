@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
+import { Clock, ConfigProvider, Effect, Layer, Schema, Semaphore } from "effect"
 import {
 	AiTriageResult,
 	ErrorIssueId,
@@ -308,6 +308,38 @@ describe("maybeEnqueueTriage", () => {
 				enqueued: false,
 				reason: "daily_cap",
 			})
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("holds the daily cap when one org's starts run concurrently under one admission", () =>
+		Effect.gen(function* () {
+			yield* enableSettings
+			const chat = fakeChatSession()
+			const admission = yield* Semaphore.make(1)
+			// A classifier that yields, so every start has read the quota before any inserts.
+			const slowClassifier = Layer.succeed(IncidentClassifier, {
+				classify: () => Effect.yieldNow.pipe(Effect.repeat({ times: 5 }), Effect.as(null)),
+			})
+			// Every statement yields first, as a network round trip would, so the
+			// starts interleave between their quota read and their insert.
+			const database = yield* Database
+			const roundTrips = Layer.succeed(Database, {
+				...database,
+				execute: (run) =>
+					Effect.andThen(Effect.yieldNow.pipe(Effect.repeat({ times: 3 })), database.execute(run)),
+			})
+			const results = yield* Effect.forEach(
+				["incident-1", "incident-2", "incident-3", "incident-4", "incident-5"],
+				(id) =>
+					maybeEnqueueTriage({ ...baseInput(id, chat.chatSessions), admission }).pipe(
+						Effect.provide(Layer.merge(slowClassifier, roundTrips)),
+					),
+				{ concurrency: "unbounded" },
+			)
+
+			assert.strictEqual(results.filter((result) => result.enqueued).length, 2)
+			assert.strictEqual(results.filter((result) => result.reason === "daily_cap").length, 3)
+			assert.lengthOf(chat.turns, 2)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 

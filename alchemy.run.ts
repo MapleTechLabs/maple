@@ -37,6 +37,7 @@ import {
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import * as Acm from "@maple/infra/acm"
+import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
 import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
@@ -296,6 +297,13 @@ export default Alchemy.Stack(
 			? yield* createMapleIngest({ stage, region, domains, profile, dbLogin: db?.ingest })
 			: undefined
 
+		// Account audit controls (CloudTrail, Config, GuardDuty): prd instances only.
+		const { awsSecurityBaseline } = profile.deploys
+		const securityBaseline =
+			awsSecurityBaseline === "none"
+				? undefined
+				: yield* createAwsSecurityBaseline({ stage, region, baseline: awsSecurityBaseline })
+
 		// Yielded here first so its `MAPLE_PG_URL` read happens outside any Worker init,
 		// where alchemy would bind it as a secret.
 		if (profile.database === "managed") yield* ManagedMapleDb
@@ -383,6 +391,8 @@ export default Alchemy.Stack(
 			ingestServiceUrl: ingest?.serviceUrl,
 			ingestCollectorEndpoint: ingest?.collectorEndpoint,
 			electricServiceUrl: electric?.serviceUrl,
+			auditTrailArn: securityBaseline?.trailArn,
+			guardDutyDetectorId: securityBaseline?.guardDutyDetectorId,
 			apiWorker: api.workerName,
 			electricSyncWorker: electricSync.workerName,
 			webWorker: web?.workerName,

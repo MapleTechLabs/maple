@@ -119,9 +119,13 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // settings on the inventory schema, and two lab registry entries. The pages stay in their
 // route chunks.
 // 706.5 KB with main's 1 KB from #1494, #1500, #1502 merged up the stack.
+// 707.5 KB from the Google Cloud connect methods (#1533, 2026-10-18): ~0.7 KB of startup
+// measured in CI at 706.7 against main's 706.0 — the setup_scripts fields and the
+// confirm_removal endpoint on the v2 contract every page's client carries. The method step and
+// manual steps stay in their route chunks.
 // 710.5 KB from the sources API (#1535, 2026-10-17): ~2.6 KB of startup measured in CI at
-// 709.1 against 706.5, the /v2/sources group and its schemas on the contract every page's
-// client carries. The Sources pages stay in their route chunks.
+// 709.1 against 706.5 (~709.3 with #1533 above), the /v2/sources group and its schemas on
+// the contract every page's client carries. The Sources pages stay in their route chunks.
 const maxGzipBytes = 710.5 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 

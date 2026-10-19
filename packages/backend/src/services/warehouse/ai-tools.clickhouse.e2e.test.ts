@@ -55,7 +55,7 @@ const BASE_MS = Math.floor((Date.now() - 2 * HOUR_MS) / 1000) * 1000
 const LATER_MS = BASE_MS + 1_800_000
 
 /** One tool's two failures, a day apart by the calendar and both well before the
- *  window the rest of this suite reads. `trace_detail_spans` and
+ *  window the rest of this suite reads. `traces` and
  *  `ai_trace_index` partition by `toDate(Timestamp)`, so these sit in different
  *  partitions — which is the shape the failure reads had to stop paying for. */
 const FLAKY_RECENT_MS = BASE_MS - 26 * HOUR_MS
@@ -470,7 +470,7 @@ const readErrorGroups = async (
 		{ rowSchema: Integrations.aiToolErrorsRowSchema },
 	)
 	// The table reads the index alone, however many partitions its window opens.
-	assert.isFalse(compiled.sql.includes("trace_detail_spans"))
+	assert.isFalse(/\bFROM traces\b/.test(compiled.sql))
 	return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
 }
 

@@ -27,4 +27,17 @@ describe("resolveMapleProfile", () => {
 		expect(profile("prd-eu").deploys.sharedApps).toBe(false)
 		expect(profile("dev-alice").deploys.ingest).toBe(false)
 	})
+
+	// Every stage deploys into the same AWS account: one owner per account-region control.
+	it("puts the AWS security baseline on the prd instances alone, with one account trail", () => {
+		expect(
+			Object.fromEntries(DEPLOYMENTS.map((raw) => [raw, profile(raw).deploys.awsSecurityBaseline])),
+		).toEqual({
+			prd: "account",
+			"prd-eu": "regional",
+			"pr-12": "none",
+			"dev-alice": "none",
+			"dev-alice-eu": "none",
+		})
+	})
 })

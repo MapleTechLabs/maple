@@ -15,6 +15,14 @@ export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) 
 	t.dateTime64(precision).brand(CH.dateTime64.schema)
 
 /**
+ * The time bucket in `traces`' sort key, and `trace_index.Bucket`. A trace-id
+ * read matches `(ServiceName, <this>, TraceId)` against the index, so the
+ * expression must stay byte-identical in both places.
+ */
+export const TRACE_BUCKET_FN = "toStartOfFiveMinutes"
+export const TRACE_BUCKET_EXPR = `${TRACE_BUCKET_FN}(Timestamp)`
+
+/**
  * OpenTelemetry logs datasource
  * Matches the official OpenTelemetry Collector Tinybird exporter format
  */
@@ -242,6 +250,13 @@ export const traces = defineDatasource("traces", {
 			granularity: 1,
 		},
 		{
+			// SpanName left the sort key; this keeps rare-name filters pruning granules.
+			name: "idx_span_name",
+			expr: "SpanName",
+			type: "bloom_filter(0.01)",
+			granularity: 1,
+		},
+		{
 			name: "idx_span_attr_keys",
 			expr: "mapKeys(SpanAttributes)",
 			type: "bloom_filter(0.01)",
@@ -278,9 +293,12 @@ export const traces = defineDatasource("traces", {
 			granularity: 1,
 		},
 	],
+	// A trace's spans sit together inside each (service, 5-minute) bucket, so a
+	// trace-id read through `trace_index` seeks a few granules. Measured
+	// 2026-10-19 against the prod workload: `docs/warehouse-rollups.md`.
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
-		sortingKey: ["OrgId", "ServiceName", "SpanName", "toDateTime(Timestamp)"],
+		sortingKey: ["OrgId", "ServiceName", TRACE_BUCKET_EXPR, "TraceId"],
 		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
@@ -1098,39 +1116,32 @@ export const traceFacetsHourly = defineDatasource("trace_facets_hourly", {
 export type TraceFacetsHourlyRow = InferRow<typeof traceFacetsHourly>
 
 /**
- * All spans for a given trace, re-sorted by TraceId for fast detail lookups.
- * Populated by materialized view, not direct ingestion.
- * Sorting key (OrgId, TraceId, SpanId) enables O(log N) primary-key lookup
- * instead of bloom-filter scanning across all partitions.
+ * Where each trace's spans live in `traces`: one row per (trace, service,
+ * 5-minute bucket), the sort-key prefix a trace-id read seeks with
+ * `(ServiceName, TRACE_BUCKET_EXPR, TraceId) IN (...)`. Replaced the full
+ * TraceId-sorted copy of `traces` (`trace_detail_spans`) at ~9% of its size.
  */
-export const traceDetailSpans = defineDatasource("trace_detail_spans", {
+export const traceIndex = defineDatasource("trace_index", {
 	tenantColumn: "OrgId",
 	description:
-		"All spans for a trace, sorted by TraceId for fast detail lookups. Populated by materialized view.",
+		"Where each trace's spans live in traces: one row per (trace, service, 5-minute bucket) with the bucket's first and last span start. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: utcDateTime64(9),
 		TraceId: t.string(),
-		SpanId: t.string(),
-		ParentSpanId: t.string(),
-		SpanName: t.string().lowCardinality(),
-		SpanKind: t.string().lowCardinality(),
 		ServiceName: t.string().lowCardinality(),
-		Duration: t.uint64().default(0),
-		StatusCode: t.string().lowCardinality(),
-		StatusMessage: t.string(),
-		SpanAttributes: t.map(t.string().lowCardinality(), t.string()),
-		ResourceAttributes: t.map(t.string().lowCardinality(), t.string()),
+		Bucket: utcDateTime(),
+		MinTimestamp: t.simpleAggregateFunction("min", utcDateTime64(9)),
+		MaxTimestamp: t.simpleAggregateFunction("max", utcDateTime64(9)),
 	},
-	engine: engine.mergeTree({
-		partitionKey: "toDate(Timestamp)",
-		sortingKey: ["OrgId", "TraceId", "SpanId"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Bucket)",
+		sortingKey: ["OrgId", "TraceId", "ServiceName", "Bucket"],
+		ttl: "toDate(Bucket) + INTERVAL 30 DAY",
 	}),
 })
 
-export type TraceDetailSpansRow = InferRow<typeof traceDetailSpans>
+export type TraceIndexRow = InferRow<typeof traceIndex>
 
 /**
  * Filtered projection of GenAI agent spans — every span the ingest gateway
@@ -2492,17 +2503,11 @@ export const productEvents = defineDatasource("product_events", {
 		/** The annotated span within {@link TraceId}. `''` on non-trace rows. */
 		SpanId: t.string().default(""),
 	},
-	// REQUIRED, proven against a real deploy: without it Tinybird REBUILDS this
-	// table from its 30-day sources to satisfy the new columns, dropping history
-	// past 30 days and every `/v1/events` row at any age (they have no source).
-	// `DEPLOYMENT_METHOD alter` on the view does not substitute — tested. Do not
-	// follow Tinybird's later suggestion to drop it in favour of ALTER TABLE.
-	// Every column must be listed; the two new ones take their type default.
-	forwardQuery: `SELECT
-		OrgId, Timestamp, Source, SessionId, Seq, VisitorId, UserId, GroupId, Kind, EventName,
-		Host, PagePath, Url, ServiceName, Attributes,
-		defaultValueOfTypeName('String') AS TraceId,
-		defaultValueOfTypeName('String') AS SpanId`,
+	// REQUIRED: without it Tinybird REBUILDS this table from its 30-day sources,
+	// dropping history past 30 days and every `/v1/events` row at any age (they
+	// have no source). `SELECT *` since the TraceId/SpanId columns shipped: the
+	// one-shot that defaulted them would now wipe them on every copy.
+	forwardQuery: "SELECT *",
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "VisitorId", "SessionId", "Seq"],
