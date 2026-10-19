@@ -344,7 +344,7 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
 }
 
-/** The "More dashboard actions" menu. TODO(toolbar): share. */
+/** The "More dashboard actions" menu: tags, history, variables, groups, layout, share, export. */
 const moreAction = (model: Model, context: PageContext, value: string): Return => {
 	switch (value) {
 		case "tags": {
