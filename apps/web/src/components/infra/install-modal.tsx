@@ -53,7 +53,7 @@ function maskToken(token: string) {
 	return token.startsWith(prefix) ? `${prefix}${"•".repeat(24)}` : "•".repeat(24)
 }
 
-function helmCommand(token: string) {
+export function helmCommand(token: string) {
 	const lines = [
 		"helm upgrade --install maple-k8s-infra \\",
 		"  oci://ghcr.io/mapletechlabs/charts/maple-k8s-infra \\",
@@ -72,7 +72,7 @@ function helmCommand(token: string) {
 
 // The agent must run as root: the docker socket and the json-file log
 // directory are not readable by the image's nonroot user.
-function dockerCommand(token: string) {
+export function dockerCommand(token: string) {
 	const lines = [
 		"docker run -d --name maple-agent \\",
 		"  --restart unless-stopped --user 0:0 \\",
@@ -92,7 +92,7 @@ function dockerCommand(token: string) {
 
 // The hostmetrics config from the hosts docs. It reads the key from the environment, so it
 // carries no secret. The three `*.utilization` metrics are off by default and the page needs them.
-const HOST_CONFIG = `receivers:
+export const HOST_CONFIG = `receivers:
     hostmetrics:
         collection_interval: 30s
         scrapers:
@@ -130,7 +130,7 @@ service:
             processors: [resourcedetection, batch]
             exporters: [otlphttp/maple]`
 
-function hostCommand(token: string) {
+export function hostCommand(token: string) {
 	return `MAPLE_INGEST_KEY=${token} otelcol-contrib --config config.yaml`
 }
 

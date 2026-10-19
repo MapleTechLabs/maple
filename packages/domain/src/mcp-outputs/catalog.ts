@@ -4,6 +4,7 @@
  */
 import { SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
+import { ListSourcesOutput } from "./sources"
 import {
 	DeleteScrapeTargetOutput,
 	ListIntegrationsOutput,
@@ -158,6 +159,7 @@ export const McpToolOutputs = {
 	list_error_issues: ListErrorIssuesOutput,
 	list_infra: ListInfraOutput,
 	list_integrations: ListIntegrationsOutput,
+	list_sources: ListSourcesOutput,
 	list_metrics: ListMetricsOutput,
 	list_product_events: ListProductEventsOutput,
 	list_services: ListServicesOutput,

@@ -35,6 +35,7 @@ import {
 	Phase1ResourceStubsLayer,
 	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
+	SourcesServiceStubsLayer,
 } from "./v2-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
@@ -132,6 +133,7 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 		SharedDashboardService.layer,
 		IngestAttributeMappingService.layer,
 		OrgIngestKeysService.layer,
+		SourcesServiceStubsLayer,
 		Layer.effect(RecommendationIssueService, RecommendationIssueService.make).pipe(
 			Layer.provide(warehouseLive),
 		),

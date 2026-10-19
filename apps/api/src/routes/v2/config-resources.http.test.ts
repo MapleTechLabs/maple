@@ -31,6 +31,7 @@ import {
 	SetupAuditServiceStubLayer,
 	SignalPresenceServiceStubLayer,
 	TelemetryServiceStubsLayer,
+	SourcesServiceStubsLayer,
 } from "./v2-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
@@ -104,6 +105,7 @@ const makeHarness = () => {
 		SharedDashboardService.layer,
 		IngestAttributeMappingService.layer,
 		OrgIngestKeysService.layer,
+		SourcesServiceStubsLayer,
 		Layer.effect(RecommendationIssueService, RecommendationIssueService.make).pipe(
 			Layer.provide(warehouseLive),
 		),

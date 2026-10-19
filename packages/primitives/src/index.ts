@@ -262,6 +262,82 @@ export const IngestMappingOperation = Schema.Literals(["move", "copy"]).annotate
 })
 export type IngestMappingOperation = Schema.Schema.Type<typeof IngestMappingOperation>
 
+export const SourceId = MapleUuidId("@maple/SourceId", "Source ID")
+export type SourceId = Schema.Schema.Type<typeof SourceId>
+
+/** Platforms that send telemetry to Maple with their own source token. */
+export const PUSH_SOURCE_PLATFORMS = [
+	"opentelemetry",
+	"nodejs",
+	"python",
+	"go",
+	"java",
+	"dotnet",
+	"ruby",
+	"php",
+	"rust",
+	"browser",
+	"kubernetes",
+	"docker",
+	"host",
+	"cloudflare_ai_gateway",
+	"claude_code",
+] as const
+
+/** Platforms Maple pulls from; their config lives in the integration's own table. */
+export const PULL_SOURCE_PLATFORMS = [
+	"prometheus",
+	"cloudflare",
+	"gcp",
+	"railway",
+	"planetscale",
+	"github",
+] as const
+
+export const PushSourcePlatform = Schema.Literals(PUSH_SOURCE_PLATFORMS).annotate({
+	identifier: "@maple/PushSourcePlatform",
+	title: "Push Source Platform",
+})
+export type PushSourcePlatform = Schema.Schema.Type<typeof PushSourcePlatform>
+
+export const PullSourcePlatform = Schema.Literals(PULL_SOURCE_PLATFORMS).annotate({
+	identifier: "@maple/PullSourcePlatform",
+	title: "Pull Source Platform",
+})
+export type PullSourcePlatform = Schema.Schema.Type<typeof PullSourcePlatform>
+
+export const SourcePlatform = Schema.Literals([...PUSH_SOURCE_PLATFORMS, ...PULL_SOURCE_PLATFORMS]).annotate({
+	identifier: "@maple/SourcePlatform",
+	title: "Source Platform",
+})
+export type SourcePlatform = Schema.Schema.Type<typeof SourcePlatform>
+
+export const isPushSourcePlatform = Schema.is(PushSourcePlatform)
+
+/** Signal families a source can be limited to; `sessions` covers replays and session events. */
+export const SourceSignal = Schema.Literals(["traces", "logs", "metrics", "sessions", "events"]).annotate({
+	identifier: "@maple/SourceSignal",
+	title: "Source Signal",
+})
+export type SourceSignal = Schema.Schema.Type<typeof SourceSignal>
+
+/** `set` always overwrites the resource attribute; `default` only fills it when the sender left it out. */
+export const SourceAttributeMode = Schema.Literals(["set", "default"]).annotate({
+	identifier: "@maple/SourceAttributeMode",
+	title: "Source Attribute Mode",
+})
+export type SourceAttributeMode = Schema.Schema.Type<typeof SourceAttributeMode>
+
+export const SourceResourceAttribute = Schema.Struct({
+	key: Schema.String,
+	value: Schema.String,
+	mode: SourceAttributeMode,
+}).annotate({
+	identifier: "@maple/SourceResourceAttribute",
+	title: "Source Resource Attribute",
+})
+export type SourceResourceAttribute = Schema.Schema.Type<typeof SourceResourceAttribute>
+
 export const RecommendationIssueId = MapleUuidId("@maple/RecommendationIssueId", "Recommendation Issue ID")
 export type RecommendationIssueId = Schema.Schema.Type<typeof RecommendationIssueId>
 

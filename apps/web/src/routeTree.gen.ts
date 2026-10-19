@@ -92,6 +92,9 @@ import { Route as ReplaysSessionIdRouteImport } from './routes/replays/$sessionI
 import { Route as ServicesIndexRouteImport } from './routes/services/index'
 import { Route as ServicesServiceNameRouteImport } from './routes/services/$serviceName'
 import { Route as ShareTokenRouteImport } from './routes/share/$token'
+import { Route as SourcesIndexRouteImport } from './routes/sources/index'
+import { Route as SourcesSourceIdRouteImport } from './routes/sources/$sourceId'
+import { Route as SourcesNewRouteImport } from './routes/sources/new'
 import { Route as TracesIndexRouteImport } from './routes/traces/index'
 import { Route as TracesTraceIdRouteImport } from './routes/traces/$traceId'
 import { Route as AgentSessionsToolsIndexRouteImport } from './routes/agent-sessions/tools/index'
@@ -549,6 +552,21 @@ const ShareTokenRoute = ShareTokenRouteImport.update({
   path: '/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SourcesIndexRoute = SourcesIndexRouteImport.update({
+  id: '/sources/',
+  path: '/sources/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SourcesSourceIdRoute = SourcesSourceIdRouteImport.update({
+  id: '/sources/$sourceId',
+  path: '/sources/$sourceId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SourcesNewRoute = SourcesNewRouteImport.update({
+  id: '/sources/new',
+  path: '/sources/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TracesIndexRoute = TracesIndexRouteImport.update({
   id: '/traces/',
   path: '/traces/',
@@ -832,6 +850,8 @@ export interface FileRoutesByFullPath {
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/share/$token': typeof ShareTokenRoute
+  '/sources/$sourceId': typeof SourcesSourceIdRoute
+  '/sources/new': typeof SourcesNewRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/agent-sessions/': typeof AgentSessionsIndexRoute
   '/alerts/': typeof AlertsIndexRoute
@@ -848,6 +868,7 @@ export interface FileRoutesByFullPath {
   '/releases/': typeof ReleasesIndexRoute
   '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
+  '/sources/': typeof SourcesIndexRoute
   '/traces/': typeof TracesIndexRoute
   '/agent-sessions/tools/$toolName': typeof AgentSessionsToolsToolNameRoute
   '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
@@ -956,6 +977,8 @@ export interface FileRoutesByTo {
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/share/$token': typeof ShareTokenRoute
+  '/sources/$sourceId': typeof SourcesSourceIdRoute
+  '/sources/new': typeof SourcesNewRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/agent-sessions': typeof AgentSessionsIndexRoute
   '/alerts': typeof AlertsIndexRoute
@@ -972,6 +995,7 @@ export interface FileRoutesByTo {
   '/releases': typeof ReleasesIndexRoute
   '/replays': typeof ReplaysIndexRoute
   '/services': typeof ServicesIndexRoute
+  '/sources': typeof SourcesIndexRoute
   '/traces': typeof TracesIndexRoute
   '/agent-sessions/tools/$toolName': typeof AgentSessionsToolsToolNameRoute
   '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
@@ -1082,6 +1106,8 @@ export interface FileRoutesById {
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/share/$token': typeof ShareTokenRoute
+  '/sources/$sourceId': typeof SourcesSourceIdRoute
+  '/sources/new': typeof SourcesNewRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/agent-sessions/': typeof AgentSessionsIndexRoute
   '/alerts/': typeof AlertsIndexRoute
@@ -1098,6 +1124,7 @@ export interface FileRoutesById {
   '/releases/': typeof ReleasesIndexRoute
   '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
+  '/sources/': typeof SourcesIndexRoute
   '/traces/': typeof TracesIndexRoute
   '/agent-sessions/tools/$toolName': typeof AgentSessionsToolsToolNameRoute
   '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
@@ -1209,6 +1236,8 @@ export interface FileRouteTypes {
     | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/share/$token'
+    | '/sources/$sourceId'
+    | '/sources/new'
     | '/traces/$traceId'
     | '/agent-sessions/'
     | '/alerts/'
@@ -1225,6 +1254,7 @@ export interface FileRouteTypes {
     | '/releases/'
     | '/replays/'
     | '/services/'
+    | '/sources/'
     | '/traces/'
     | '/agent-sessions/tools/$toolName'
     | '/alerts/incidents/$incidentId'
@@ -1333,6 +1363,8 @@ export interface FileRouteTypes {
     | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/share/$token'
+    | '/sources/$sourceId'
+    | '/sources/new'
     | '/traces/$traceId'
     | '/agent-sessions'
     | '/alerts'
@@ -1349,6 +1381,7 @@ export interface FileRouteTypes {
     | '/releases'
     | '/replays'
     | '/services'
+    | '/sources'
     | '/traces'
     | '/agent-sessions/tools/$toolName'
     | '/alerts/incidents/$incidentId'
@@ -1458,6 +1491,8 @@ export interface FileRouteTypes {
     | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/share/$token'
+    | '/sources/$sourceId'
+    | '/sources/new'
     | '/traces/$traceId'
     | '/agent-sessions/'
     | '/alerts/'
@@ -1474,6 +1509,7 @@ export interface FileRouteTypes {
     | '/releases/'
     | '/replays/'
     | '/services/'
+    | '/sources/'
     | '/traces/'
     | '/agent-sessions/tools/$toolName'
     | '/alerts/incidents/$incidentId'
@@ -1554,6 +1590,8 @@ export interface RootRouteChildren {
   ReplaysSessionIdRoute: typeof ReplaysSessionIdRoute
   ServicesServiceNameRoute: typeof ServicesServiceNameRoute
   ShareTokenRoute: typeof ShareTokenRoute
+  SourcesSourceIdRoute: typeof SourcesSourceIdRoute
+  SourcesNewRoute: typeof SourcesNewRoute
   TracesTraceIdRoute: typeof TracesTraceIdRoute
   AgentSessionsIndexRoute: typeof AgentSessionsIndexRoute
   AlertsIndexRoute: typeof AlertsIndexRoute
@@ -1569,6 +1607,7 @@ export interface RootRouteChildren {
   ReleasesIndexRoute: typeof ReleasesIndexRoute
   ReplaysIndexRoute: typeof ReplaysIndexRoute
   ServicesIndexRoute: typeof ServicesIndexRoute
+  SourcesIndexRoute: typeof SourcesIndexRoute
   TracesIndexRoute: typeof TracesIndexRoute
   AgentSessionsToolsToolNameRoute: typeof AgentSessionsToolsToolNameRoute
   AlertsIncidentsIncidentIdRoute: typeof AlertsIncidentsIncidentIdRoute
@@ -2185,6 +2224,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sources/': {
+      id: '/sources/'
+      path: '/sources'
+      fullPath: '/sources/'
+      preLoaderRoute: typeof SourcesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sources/$sourceId': {
+      id: '/sources/$sourceId'
+      path: '/sources/$sourceId'
+      fullPath: '/sources/$sourceId'
+      preLoaderRoute: typeof SourcesSourceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sources/new': {
+      id: '/sources/new'
+      path: '/sources/new'
+      fullPath: '/sources/new'
+      preLoaderRoute: typeof SourcesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/traces/': {
       id: '/traces/'
       path: '/traces'
@@ -2595,6 +2655,8 @@ const rootRouteChildren: RootRouteChildren = {
   ReplaysSessionIdRoute: ReplaysSessionIdRoute,
   ServicesServiceNameRoute: ServicesServiceNameRoute,
   ShareTokenRoute: ShareTokenRoute,
+  SourcesSourceIdRoute: SourcesSourceIdRoute,
+  SourcesNewRoute: SourcesNewRoute,
   TracesTraceIdRoute: TracesTraceIdRoute,
   AgentSessionsIndexRoute: AgentSessionsIndexRoute,
   AlertsIndexRoute: AlertsIndexRoute,
@@ -2610,6 +2672,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReleasesIndexRoute: ReleasesIndexRoute,
   ReplaysIndexRoute: ReplaysIndexRoute,
   ServicesIndexRoute: ServicesIndexRoute,
+  SourcesIndexRoute: SourcesIndexRoute,
   TracesIndexRoute: TracesIndexRoute,
   AgentSessionsToolsToolNameRoute: AgentSessionsToolsToolNameRoute,
   AlertsIncidentsIncidentIdRoute: AlertsIncidentsIncidentIdRoute,

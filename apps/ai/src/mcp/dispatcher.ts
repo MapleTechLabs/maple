@@ -29,6 +29,7 @@ import { VercelIntegrationService } from "@maple/backend/services/integrations/V
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
+import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 
@@ -262,6 +263,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	ErrorPolicyService.layer,
 	ErrorsService.layer,
 	IntegrationInventoryService.layer,
+	SourcesService.layer,
 	IssueFixVerificationService.layer,
 	QueryEngineService.layer,
 	RailwayMetricsService.layer,

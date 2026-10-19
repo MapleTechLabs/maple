@@ -32,6 +32,11 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import {
+	ensureIntegrationSource,
+	integrationSourceName,
+	stampableSourceId,
+} from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
 import { mapRailwayMetrics } from "./railway/mapping"
@@ -441,11 +446,15 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				)
 
 			const emitMetrics = Effect.fn("RailwayMetricsService.emitMetrics")(
-				function* (ingestKey: string, rows: ReturnType<typeof mapRailwayMetrics>) {
+				function* (
+					ingestKey: string,
+					rows: ReturnType<typeof mapRailwayMetrics>,
+					sourceId: string | undefined,
+				) {
 					if (rows.length === 0) return 0
 					const request = HttpClientRequest.post(ingestMetricsUrl, {
 						headers: { authorization: `Bearer ${ingestKey}`, "content-type": "application/json" },
-					}).pipe(HttpClientRequest.bodyJsonUnsafe(metricRowsToOtlp([], rows)))
+					}).pipe(HttpClientRequest.bodyJsonUnsafe(metricRowsToOtlp([], rows, { sourceId })))
 					const response = yield* httpClient.execute(request).pipe(
 						Effect.annotateSpans("peer.service", "ingest"),
 						Effect.mapError(
@@ -477,6 +486,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				token: string,
 				ingestKey: string,
 				window: { readonly startMs: number; readonly endMs: number },
+				sourceId: string | undefined,
 			) {
 				yield* Effect.annotateCurrentSpan({
 					"maple.railway.environment_id": row.environmentId,
@@ -499,10 +509,33 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					results,
 					window,
 				)
-				const ingested = yield* emitMetrics(ingestKey, rows)
+				const ingested = yield* emitMetrics(ingestKey, rows, sourceId)
 				yield* Effect.annotateCurrentSpan("maple.railway.rows_ingested", ingested)
 				return ingested
 			})
+
+			// The connection's pull source (`maple_source_id`); a failed lookup sends without it.
+			const resolveSourceId = (
+				orgId: OrgId,
+				connectionId: string,
+				workspaceNames: string | null,
+				now: number,
+			) =>
+				stampableSourceId(
+					dbExecute((db) =>
+						ensureIntegrationSource(
+							db,
+							orgId,
+							{
+								platform: "railway",
+								integrationId: connectionId,
+								name: integrationSourceName.railway({ workspaceNames }),
+							},
+							now,
+						),
+					),
+					{ orgId, platform: "railway" },
+				)
 
 			const pollOrg = Effect.fn("RailwayMetricsService.pollOrg")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
@@ -569,6 +602,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					)
 					if (ingestKey._tag === "None")
 						return { ...skip("ingest key unavailable"), callsMade: discoveryCalls }
+					const sourceId = yield* resolveSourceId(orgId, claimed.id, claimed.workspaceNames, now)
 
 					const environments = (yield* loadEnvironments(orgId))
 						.filter((row) => row.enabled)
@@ -599,7 +633,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 										}
 										const called = { ...tally, callsMade: tally.callsMade + 1 }
 										const result = yield* Effect.result(
-											pollEnvironment(row, token, ingestKey.value, window),
+											pollEnvironment(row, token, ingestKey.value, window, sourceId),
 										)
 										if (result._tag === "Success") {
 											yield* updateEnvironment(row.id, {

@@ -123,10 +123,17 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // measured in CI at 706.7 against main's 706.0 — the setup_scripts fields and the
 // confirm_removal endpoint on the v2 contract every page's client carries. The method step and
 // manual steps stay in their route chunks.
-// 710 KB from the Vercel integration (#1583, 2026-10-19): measured in CI at 709.4 — the Vercel
-// integration and query-engine endpoints on the contracts every page's client carries, plus the
-// sidebar's Vercel status read. The card, connect dialog and infra pages stay in their route chunks.
-const maxGzipBytes = 710 * 1024
+// 710.5 KB from the sources API (#1535, 2026-10-17): ~2.6 KB of startup measured in CI at
+// 709.1 against 706.5 (~709.3 with #1533 above), the /v2/sources group and its schemas on
+// the contract every page's client carries. The Sources pages stay in their route chunks.
+// 712 KB from the Sources pages (#1538, 2026-10-17): ~0.4 KB of startup measured locally at
+// 710.9, the sidebar entry, the palette item and three route-tree entries. The pages stay in
+// their route chunks; the detail route's search schema reads only `source-tabs.ts`.
+// 714 KB from the Vercel integration (#1583, 2026-10-19): ~1.9 KB of startup measured in CI at
+// 709.4 against 707.5 before #1535/#1538 — the Vercel integration and query-engine endpoints on
+// the contracts every page's client carries, plus the sidebar's Vercel status read. The card,
+// connect dialog and infra pages stay in their route chunks.
+const maxGzipBytes = 714 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

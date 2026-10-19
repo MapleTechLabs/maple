@@ -83,6 +83,25 @@ describe("OrgIngestKeysService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("creates the org's default source with its keys", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* OrgIngestKeysService
+			yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ count: number; name: string; key_hash: string | null }>(
+					testDb,
+					"SELECT count(*)::int AS count, min(name) AS name, min(key_hash) AS key_hash FROM sources WHERE org_id = $1 AND is_default",
+					["org_a"],
+				),
+			)
+			assert.deepStrictEqual(row, { count: 1, name: "Default", key_hash: null })
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("returns stable keys when called repeatedly without reroll", () => {
 		const testDb = createTestDb(trackedDbs)
 
@@ -322,8 +341,8 @@ describe("OrgIngestKeysService", () => {
 				return cold
 			}).pipe(Effect.provide(makeLayer(testDb)))
 
-			// One batched SELECT for all four orgs, then org_d's first-use create path.
-			assert.deepStrictEqual(coldBatch.verbs(), ["SELECT", "SELECT", "INSERT", "SELECT"])
+			// One batched SELECT for all four orgs, then org_d's first-use create path (keys, default source).
+			assert.deepStrictEqual(coldBatch.verbs(), ["SELECT", "SELECT", "INSERT", "INSERT", "SELECT"])
 			// Every org is memoized after the first batch: no statements at all.
 			assert.deepStrictEqual(warmBatch.verbs(), [])
 			assert.strictEqual(keys.size, 4)

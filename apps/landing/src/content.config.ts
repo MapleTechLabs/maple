@@ -32,6 +32,8 @@ const docs = defineCollection({
 		// Brand mark on the sidebar row, for guides that aren't a language (`sdk`),
 		// like the frontend framework guides.
 		icon: z.enum(Object.keys(BRAND_MARKS) as [BrandMarkId, ...BrandMarkId[]]).optional(),
+		// Key of CONTRIBUTORS in lib/changelog-meta.ts, shown as a byline under the description.
+		author: z.enum(CONTRIBUTOR_IDS).optional(),
 	}),
 })
 
