@@ -185,7 +185,8 @@ False
 >>> logging.getLevelName("INFO")   # works, but only for backward compatibility
 20`;
 
-const otelCode = `# telemetry.py, after logger_provider is created as in the Python guide
+const otelCode = `# telemetry.py: replaces the guide's last line,
+# logging.getLogger().addHandler(LoggingHandler(logger_provider=logger_provider))
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
 
@@ -509,7 +510,7 @@ const articleJsonLd = {
                         <li>With the zero-code <code>opentelemetry-instrument</code> setup and <code>OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true</code>, the SDK keeps its handler attached across <code>basicConfig</code> and <code>dictConfig</code> calls, so those set the level as usual.</li>
                     </ul>
                     <p>
-                        To keep DEBUG in your terminal while sending INFO and above to Maple, give the handler its own level and keep chatty libraries out of both:
+                        To keep DEBUG in your terminal while sending INFO and above to Maple, give the handler its own level. In <code>telemetry.py</code>, replace the line that adds the <code>LoggingHandler</code> with this block, so the root logger has a single OpenTelemetry handler:
                     </p>
                     <pre><code>{otelCode}</code></pre>
                     <p>
