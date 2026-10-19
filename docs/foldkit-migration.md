@@ -9,24 +9,33 @@ Acceptance test: `packages/ui-parity`. A screen is ported when every scenario fo
 `identical` (or `pass` with 0 perceptual px), with 0 behavior diffs, no console errors and no
 unmocked endpoints.
 
-## Status (2026-10-17, branch `fk/parity-harness`)
+## Status (2026-10-19, branch `fk/parity-harness`, PR #1544)
 
-Phase 0 done, go. Decision records: [S1 skeleton](foldkit-decisions/s1-skeleton.md),
-[S2 bundle](foldkit-decisions/s2-bundle.md) (one program at about 1.5 MB gzip startup, under
-conditions), [S3 charts](foldkit-decisions/s3-charts.md), [S4 tables](foldkit-decisions/s4-tables.md)
-(Foldkit scroll script 316 ms vs legacy 429), [S5 service map](foldkit-decisions/s5-service-map.md)
-(`@xyflow/system` in a Mount), [S6 data](foldkit-decisions/s6-data.md),
-[S7 overlays](foldkit-decisions/s7-overlays.md).
+Phases 0 to 4 and 7 done; cutover (6) open. Decision records: [S1 skeleton](foldkit-decisions/s1-skeleton.md),
+[S2 bundle](foldkit-decisions/s2-bundle.md), [S3 charts](foldkit-decisions/s3-charts.md),
+[S4 tables](foldkit-decisions/s4-tables.md), [S5 service map](foldkit-decisions/s5-service-map.md),
+[S6 data](foldkit-decisions/s6-data.md), [S7 overlays](foldkit-decisions/s7-overlays.md),
+[S8 pages](foldkit-decisions/s8-pages.md).
 
-| Piece       | State                                                                                                                                                                |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Harness     | Fixture backend on the real HttpApi + chDB warehouse + Electric; full-page captures with inner scrollers grown; behavior diff; discovered scenario and fixture areas |
-| Foundations | `@maple/ui` `*.styles.ts` (76 modules), `@maple/web-data` (warehouse queries and collection schemas, React-free), one generated icon set                             |
-| Kit         | buttons, forms, display, content, overlays identical; tooltip, dropdown-menu item, navigation in progress                                                            |
-| Shell       | identical (12 scenarios, Clerk-mode menus not ported)                                                                                                                |
-| Pages       | sign-in identical; `/services` in progress as the page template                                                                                                      |
-| Coverage    | 34/81 routes on the branch, about 80 with the infra and admin branch                                                                                                 |
-| Local UI    | `apps/local-ui-foldkit` on the web-foldkit kit (`@maple/web-foldkit/*`): all 12 routes and the saved query cache, 172 `local-*` variants identical or 0 perceptual px; mobile drawers, map drag and cutover open |
+| Piece    | State                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------- |
+| Pages    | Every `apps/web` route and lab page ported, plus command palette and shortcuts                          |
+| Local UI | `apps/local-ui-foldkit`: all routes, mobile sheets, map cache                                           |
+| Parity   | Last full run (6 of 8 chunks): about 2,700 identical, 504 pass, 9 fail, 0 missing                       |
+| Tests    | `apps/web-foldkit` 180 files, 964 Scene and unit tests                                                  |
+
+Open fails from that run: `lab-worst-case` (known race, also on the old build),
+`settings-clerk-billing-error` (fixed in `c6a1d0d08`, not yet rerun), and behavior-only diffs in
+`dashboards-view-behind-reconnect`, `integrations-slack-add-workspace`,
+`integrations-discord-install`, `agent-sessions-tools-search` (dark only). The services/traces/logs
+chunk and the local chunk were not rerun after the last merges.
+
+Deliberate deviations from legacy: a late save no longer closes another dialog, a reopened GCP
+wizard does not create twice, chat refuses a send before history loads, some error states show a
+toast instead of a banner.
+
+Not ported: rows sliding aside during a list column drag, copy toasts in local-ui, the Clerk per-org
+chat connector gate, the palette on standalone lab pages.
 
 Legacy bug found by the harness: the infra service lens fires `workloadInfraTimeseries` once
 with an empty workload name before the workload resolves (excluded via `pageCalls`).
