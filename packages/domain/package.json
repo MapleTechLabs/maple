@@ -20,6 +20,7 @@
 		"./http": "./src/http/index.ts",
 		"./incident-context": "./src/incident-context.ts",
 		"./http/v2": "./src/http/v2/index.ts",
+		"./http/vcs": "./src/http/vcs.ts",
 		"./http/v2-worker-unavailable": "./src/http/v2/worker-unavailable.ts",
 		"./integration-inventory": "./src/integration-inventory.ts",
 		"./llm": "./src/llm.ts",

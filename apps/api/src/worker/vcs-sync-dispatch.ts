@@ -7,9 +7,11 @@
 import { internalTokenFor, selfFetcher } from "@maple/backend/platform/self-binding"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import type { Message } from "@cloudflare/workers-types"
+// The subpath, not the barrel: this module loads with the Worker.
+import { VcsSyncJob } from "@maple/domain/http/vcs"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Stream } from "effect"
 import { HttpClient, HttpClientRequest, HttpIncomingMessage, HttpServerRequest } from "effect/http"
 
 /**
@@ -24,6 +26,12 @@ export const VCS_SYNC_BATCH_PATH = "/internal/vcs-sync/batch"
 // The binding routes by name; the origin is the formality `Request` insists on.
 const VCS_SYNC_BATCH_URL = `https://maple-api.internal${VCS_SYNC_BATCH_PATH}`
 
+/** The consumer's `batchSize` and `maxRetries`; a delivery past `maxRetries` is the last one. */
+export const VCS_SYNC_BATCH_SIZE = 10
+export const VCS_SYNC_MAX_RETRIES = 3
+/** A full batch of messages at the queue's 128 KB message limit, plus the envelope. */
+export const VCS_SYNC_BATCH_MAX_BYTES = VCS_SYNC_BATCH_SIZE * 128 * 1024 + 16 * 1024
+
 /** A queue message as it crosses the hop: the parts processing reads. */
 export const PlacedMessage = Schema.Struct({
 	id: Schema.String,
@@ -32,7 +40,13 @@ export const PlacedMessage = Schema.Struct({
 })
 export type PlacedMessage = typeof PlacedMessage.Type
 
-export const VcsSyncBatchRequest = Schema.Struct({ messages: Schema.Array(PlacedMessage) })
+/** What the route accepts: at most one queue batch of real jobs. */
+export const VcsSyncBatchRequest = Schema.Struct({
+	messages: Schema.Array(
+		Schema.Struct({ id: Schema.String, body: VcsSyncJob, attempts: Schema.Number }),
+	).check(Schema.isMaxLength(VCS_SYNC_BATCH_SIZE)),
+})
+const decodeBatchRequest = Schema.decodeUnknownEffect(Schema.fromJsonString(VcsSyncBatchRequest))
 
 /** What to do with one message: done (or recorded as exhausted), or deliver it again. */
 export const MessageOutcome = Schema.Union([
@@ -71,7 +85,7 @@ export class VcsSyncBatchRefused extends Schema.TaggedError<VcsSyncBatchRefused>
 	"@maple/api/errors/VcsSyncBatchRefused",
 	{
 		message: Schema.String,
-		status: Schema.Literals([400, 401]),
+		status: Schema.Literals([400, 401, 404]),
 	},
 ) {}
 
@@ -155,18 +169,51 @@ export const toPlacedMessage = (message: Message<unknown>): PlacedMessage => ({
 	attempts: message.attempts,
 })
 
-/** Validates a request to the batch route against `env`'s internal token and decodes its messages. */
+const refused = (status: 400 | 401 | 404, message: string) => new VcsSyncBatchRefused({ message, status })
+
+/** The body as text, refused once it passes `VCS_SYNC_BATCH_MAX_BYTES`, before it is all buffered. */
+const readBoundedBody = (request: HttpServerRequest.HttpServerRequest) =>
+	Stream.runFoldEffect(
+		request.stream.pipe(Stream.mapError(() => refused(400, "Unreadable batch"))),
+		() => ({ bytes: 0, chunks: Array.of<Uint8Array>() }),
+		(read, chunk) =>
+			read.bytes + chunk.byteLength > VCS_SYNC_BATCH_MAX_BYTES
+				? Effect.fail(refused(400, "Batch too large"))
+				: Effect.succeed({ bytes: read.bytes + chunk.byteLength, chunks: [...read.chunks, chunk] }),
+	).pipe(
+		Effect.map(({ bytes, chunks }) => {
+			const joined = new Uint8Array(bytes)
+			chunks.reduce((offset, chunk) => (joined.set(chunk, offset), offset + chunk.byteLength), 0)
+			return new TextDecoder().decode(joined)
+		}),
+	)
+
+/**
+ * Validates a request to the batch route and decodes its messages. The route serves only the self
+ * binding: Cloudflare stamps `cf-connecting-ip` on every request from the internet and a client
+ * cannot remove it, while a binding call carries only the headers the consumer set.
+ */
 export const authorizeVcsSyncBatchRequest = Effect.fnUntraced(function* (env: Record<string, unknown>) {
 	const request = yield* HttpServerRequest.HttpServerRequest
+	// A 404, as if the route were absent; a binding call refused this way still runs inline.
+	if (request.headers["cf-connecting-ip"] !== undefined) {
+		return yield* refused(404, "Not found")
+	}
 	const authorized = Option.match(yield* internalTokenFor(env), {
 		onNone: () => false,
 		onSome: (expected) => isValidInternalBearer(request.headers["authorization"], expected),
 	})
 	if (!authorized) {
-		return yield* new VcsSyncBatchRefused({ message: "Missing or invalid internal bearer", status: 401 })
+		return yield* refused(401, "Missing or invalid internal bearer")
 	}
-	const body = yield* HttpServerRequest.schemaBodyJson(VcsSyncBatchRequest).pipe(
-		Effect.mapError(() => new VcsSyncBatchRefused({ message: "Unreadable batch", status: 400 })),
+	if (Number(request.headers["content-length"] ?? 0) > VCS_SYNC_BATCH_MAX_BYTES) {
+		return yield* refused(400, "Batch too large")
+	}
+	const body = yield* readBoundedBody(request).pipe(
+		Effect.flatMap(decodeBatchRequest),
+		Effect.mapError((error) =>
+			error._tag === "@maple/api/errors/VcsSyncBatchRefused" ? error : refused(400, "Unreadable batch"),
+		),
 	)
 	return {
 		messages: body.messages,

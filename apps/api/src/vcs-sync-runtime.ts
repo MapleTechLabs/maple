@@ -24,11 +24,13 @@ import {
 import { CiTraceSinkLive } from "@maple/backend/services/integrations/ci-traces/CiTraceService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
+import type { Message } from "@cloudflare/workers-types"
 import {
 	applyOutcome,
 	type MessageOutcome,
 	type PlacedMessage,
 	toPlacedMessage,
+	VCS_SYNC_MAX_RETRIES,
 	vcsSyncTelemetry,
 } from "./worker/vcs-sync-dispatch"
 
@@ -102,9 +104,8 @@ export const runScheduledSync = Effect.gen(function* () {
 	Effect.withSpan("VcsScheduledSync.tick"),
 )
 
-// Must match the consumer's `maxRetries` in worker.ts. No DLQ exists, so on the
-// final delivery (attempt > max_retries) we persist a terminal status instead of silently dropping.
-const VCS_SYNC_MAX_RETRIES = 3
+// No DLQ exists, so on the final delivery (attempt > max_retries) we persist a terminal status
+// instead of silently dropping.
 
 const settleMessage = (service: VcsSyncService["Service"], message: PlacedMessage) =>
 	service.processMessage(message.body).pipe(
@@ -205,3 +206,32 @@ export const processPlacedBatch = (messages: ReadonlyArray<PlacedMessage>, place
 		yield* Effect.annotateCurrentSpan("maple.placement", placement)
 		return yield* Effect.forEach(messages, (message) => settleMessage(service, message))
 	}).pipe(batchSpan(messages.length, "placed"))
+
+/**
+ * Final deliveries whose placed run failed with an unknown outcome: no redelivery is left, so the
+ * terminal status is recorded and the message acked, as a failed final attempt inline would be.
+ */
+export const recordExhaustedBatch = (messages: ReadonlyArray<Message<unknown>>) =>
+	Effect.gen(function* () {
+		const service = yield* VcsSyncService
+		yield* Effect.forEach(
+			messages,
+			(message) =>
+				Effect.logError("[VCS] sync message exhausted after a failed placed run").pipe(
+					Effect.annotateLogs({ attempt: message.attempts, outcome: "exhausted", exhausted: true }),
+					Effect.andThen(service.recordExhaustedFailure(message.body)),
+					Effect.andThen(Effect.sync(() => message.ack())),
+				),
+			{ discard: true },
+		)
+	}).pipe(
+		Effect.withSpan("VcsSyncQueue.recordExhausted", {
+			kind: "consumer",
+			attributes: {
+				"messaging.system": MESSAGING_SYSTEM,
+				"messaging.destination.name": MESSAGING_DESTINATION,
+				"messaging.operation.name": "settle",
+				"messaging.batch.message_count": messages.length,
+			},
+		}),
+	)

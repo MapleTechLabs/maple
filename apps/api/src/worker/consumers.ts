@@ -13,14 +13,15 @@ import type { ApiPortsLayer } from "./bindings"
 import { runEvent } from "./events"
 import { auditEventsModule, planetScaleWebhookModule } from "./modules"
 import { consumeVcsSyncBatch } from "./vcs-sync"
+import { VCS_SYNC_BATCH_SIZE, VCS_SYNC_MAX_RETRIES } from "./vcs-sync-dispatch"
 
 // Consumer settings. The audit consumer's `maxRetries` must stay in sync with
 // AUDIT_EVENTS_MAX_RETRIES in audit-events-runtime.ts, which logs the drop on
-// the final attempt; the VCS one with VCS_SYNC_MAX_RETRIES in vcs-sync-runtime.ts.
+// the final attempt. The VCS one reads its constants from the batch route, which caps a request at them.
 const VCS_SYNC_CONSUMER = {
-	batchSize: 10,
+	batchSize: VCS_SYNC_BATCH_SIZE,
 	maxConcurrency: 2,
-	maxRetries: 3,
+	maxRetries: VCS_SYNC_MAX_RETRIES,
 	maxWaitTime: "5 seconds",
 } satisfies Cloudflare.Queues.MessagesProps
 const PLANETSCALE_WEBHOOKS_CONSUMER = VCS_SYNC_CONSUMER

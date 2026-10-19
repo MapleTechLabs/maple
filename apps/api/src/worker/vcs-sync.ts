@@ -16,13 +16,22 @@ import {
 	type MessageOutcome,
 	type PlacedMessage,
 	toPlacedMessage,
+	VCS_SYNC_MAX_RETRIES,
 	vcsSyncTelemetry,
 } from "./vcs-sync-dispatch"
 
+/** What the consumer still owes the batch after the hop. */
+export type HandOff =
+	| { readonly run: "placed" }
+	| { readonly run: "inline" }
+	| { readonly run: "exhausted"; readonly messages: ReadonlyArray<Message<unknown>> }
+
+const isFinalDelivery = (message: Message<unknown>) => message.attempts > VCS_SYNC_MAX_RETRIES
+
 /**
- * Hands `messages` to the placed fetch handler and applies its outcomes. Answers whether the batch
- * still has to run inline: only when nothing ran there. A hop that failed after it may have started
- * retries every message instead, so none runs twice in this invocation.
+ * Hands `messages` to the placed fetch handler and applies its outcomes. The whole batch runs
+ * inline only when nothing ran there. A hop that failed after it may have started retries every
+ * message, except those on their final delivery: those still get their terminal status recorded.
  */
 export const handOffVcsSyncBatch = (
 	env: Record<string, unknown>,
@@ -31,22 +40,24 @@ export const handOffVcsSyncBatch = (
 	dispatchVcsSyncBatch(messages.map(toPlacedMessage), env).pipe(
 		Effect.flatMap((outcomes) => applyOutcomes(messages, outcomes)),
 		Effect.andThen(Effect.annotateCurrentSpan("maple.vcs.dispatch", "placed")),
-		Effect.as(false),
+		Effect.as<HandOff>({ run: "placed" }),
 		Effect.catchTags({
 			"@maple/api/errors/VcsSyncDispatchUnavailable": (error) =>
 				Effect.annotateCurrentSpan({
 					"maple.vcs.dispatch": "inline",
 					"maple.vcs.dispatch.reason": error.reason,
-				}).pipe(Effect.as(true)),
+				}).pipe(Effect.as<HandOff>({ run: "inline" })),
 			"@maple/api/errors/VcsSyncDispatchError": (error) =>
 				Effect.logError("Placed VCS sync batch failed; retrying its messages", error).pipe(
 					Effect.andThen(Effect.annotateCurrentSpan("maple.vcs.dispatch", "failed")),
 					Effect.andThen(
-						Effect.forEach(messages, (message) => applyOutcome(message, undefined), {
-							discard: true,
-						}),
+						Effect.forEach(
+							messages.filter((message) => !isFinalDelivery(message)),
+							(message) => applyOutcome(message, undefined),
+							{ discard: true },
+						),
 					),
-					Effect.as(false),
+					Effect.as<HandOff>({ run: "exhausted", messages: messages.filter(isFinalDelivery) }),
 				),
 		}),
 		Effect.withSpan("VcsSyncQueue.dispatch", {
@@ -97,13 +108,19 @@ export const consumeVcsSyncBatch = (
 		// Released here, which flushes the dispatch span before an inline run builds its own graph.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the event IS the boundary the layer belongs to.
 		Effect.provide(vcsSyncTelemetry.pipe(Layer.provideMerge(ports))),
-		Effect.flatMap((inline) =>
-			inline
-				? Effect.flatMap(
+		Effect.flatMap((handOff) =>
+			handOff.run === "placed" || (handOff.run === "exhausted" && handOff.messages.length === 0)
+				? Effect.void
+				: Effect.flatMap(
 						Effect.all([vcsSyncModule, vcsSyncLayer(ports)]),
-						([{ processBatch }, layer]) => runEvent(processBatch({ messages }), layer),
-					)
-				: Effect.void,
+						([{ processBatch, recordExhaustedBatch }, layer]) =>
+							runEvent(
+								handOff.run === "inline"
+									? processBatch({ messages })
+									: recordExhaustedBatch(handOff.messages),
+								layer,
+							),
+					),
 		),
 	)
 

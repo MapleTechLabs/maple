@@ -7,19 +7,28 @@ import {
 } from "@maple/backend/services/integrations/vcs/VcsSyncService"
 import { Effect, Layer, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { processBatch, processPlacedBatch } from "../vcs-sync-runtime"
+import { processBatch, processPlacedBatch, recordExhaustedBatch } from "../vcs-sync-runtime"
 import { handOffVcsSyncBatch, serveVcsSyncBatch } from "./vcs-sync"
 import {
 	type MessageOutcome,
 	type PlacedMessage,
 	SELF_BINDING,
+	VCS_SYNC_BATCH_MAX_BYTES,
 	VCS_SYNC_BATCH_PATH,
+	VCS_SYNC_BATCH_SIZE,
 } from "./vcs-sync-dispatch"
 
 const TOKEN = "secret-token"
 const ENV = { INTERNAL_SERVICE_TOKEN: TOKEN }
 
-const Job = Schema.Struct({ kind: Schema.Literals(["ok", "rate-limited", "broken"]) })
+// The route takes only real jobs; the installation id says how the fake service treats one.
+const Job = Schema.Struct({ externalInstallationId: Schema.Literals(["ok", "rate-limited", "broken"]) })
+const job = (kind: string) => ({
+	kind: "installation-sync",
+	provider: "github",
+	externalInstallationId: kind,
+	reason: "created",
+})
 
 /** A sync service whose jobs succeed, hit a rate limit, or fail; it records exhausted ones. */
 const syncService = (exhausted: Array<unknown>) =>
@@ -27,7 +36,7 @@ const syncService = (exhausted: Array<unknown>) =>
 		processMessage: (raw) =>
 			Schema.decodeUnknownEffect(Job)(raw).pipe(
 				Effect.orDie,
-				Effect.flatMap(({ kind }) =>
+				Effect.flatMap(({ externalInstallationId: kind }) =>
 					kind === "ok"
 						? Effect.void
 						: kind === "rate-limited"
@@ -44,7 +53,7 @@ const syncService = (exhausted: Array<unknown>) =>
 const message = (id: string, kind: string, settled: Array<string>, attempts = 1): Message<unknown> => ({
 	id,
 	timestamp: new Date(0),
-	body: { kind },
+	body: job(kind),
 	attempts,
 	ack: () => settled.push(`${id}:ack`),
 	retry: (options) =>
@@ -87,15 +96,15 @@ describe("VCS sync batches over the self binding", () => {
 			const exhausted: Array<unknown> = []
 			const seen: Array<Request> = []
 			const env = { ...ENV, [SELF_BINDING]: selfBinding(ENV, placedRun(exhausted), seen) }
-			const inline = yield* handOffVcsSyncBatch(env, [
+			const handOff = yield* handOffVcsSyncBatch(env, [
 				message("a", "ok", settled),
 				message("b", "rate-limited", settled),
 				message("c", "broken", settled, 4),
 				message("d", "broken", settled),
 			])
-			assert.isFalse(inline)
+			assert.deepStrictEqual(handOff, { run: "placed" })
 			assert.deepStrictEqual(settled, ["a:ack", "b:retry:120", "c:ack", "d:retry"])
-			assert.deepStrictEqual(exhausted, [{ kind: "broken" }])
+			assert.deepStrictEqual(exhausted, [job("broken")])
 			assert.strictEqual(new URL(seen[0]!.url).pathname, VCS_SYNC_BATCH_PATH)
 			assert.strictEqual(seen[0]!.headers.get("authorization"), `Bearer ${TOKEN}`)
 		}),
@@ -105,10 +114,12 @@ describe("VCS sync batches over the self binding", () => {
 		Effect.gen(function* () {
 			const settled: Array<string> = []
 			const batch = [message("a", "ok", settled)]
-			assert.isTrue(yield* handOffVcsSyncBatch(ENV, batch))
+			assert.deepStrictEqual(yield* handOffVcsSyncBatch(ENV, batch), { run: "inline" })
 			// The handler holds a different token: a 401, so nothing ran there.
 			const refusing = selfBinding({ INTERNAL_SERVICE_TOKEN: "other" }, placedRun([]))
-			assert.isTrue(yield* handOffVcsSyncBatch({ ...ENV, [SELF_BINDING]: refusing }, batch))
+			assert.deepStrictEqual(yield* handOffVcsSyncBatch({ ...ENV, [SELF_BINDING]: refusing }, batch), {
+				run: "inline",
+			})
 			assert.deepStrictEqual(settled, [])
 		}),
 	)
@@ -121,7 +132,7 @@ describe("VCS sync batches over the self binding", () => {
 				message("a", "ok", settled),
 				message("b", "ok", settled),
 			])
-			assert.isFalse(failed)
+			assert.deepStrictEqual(failed, { run: "exhausted", messages: [] })
 			assert.deepStrictEqual(settled, ["a:retry", "b:retry"])
 
 			settled.length = 0
@@ -134,6 +145,25 @@ describe("VCS sync batches over the self binding", () => {
 		}),
 	)
 
+	it.effect("records the terminal status of a final delivery whose placed run failed, and acks it", () =>
+		Effect.gen(function* () {
+			const settled: Array<string> = []
+			const exhausted: Array<unknown> = []
+			const failing = selfBinding(ENV, () => Effect.fail("pool exhausted"))
+			const handOff = yield* handOffVcsSyncBatch({ ...ENV, [SELF_BINDING]: failing }, [
+				message("a", "ok", settled),
+				message("c", "ok", settled, 4),
+			])
+			// The retry goes out at once; the final delivery waits for its terminal record.
+			assert.deepStrictEqual(settled, ["a:retry"])
+			assert.strictEqual(handOff.run, "exhausted")
+			if (handOff.run !== "exhausted") return
+			yield* recordExhaustedBatch(handOff.messages).pipe(Effect.provide(syncService(exhausted)))
+			assert.deepStrictEqual(settled, ["a:retry", "c:ack"])
+			assert.deepStrictEqual(exhausted, [job("ok")])
+		}),
+	)
+
 	it.effect("inline, settles each message as it finishes, the same way", () =>
 		Effect.gen(function* () {
 			const settled: Array<string> = []
@@ -141,6 +171,87 @@ describe("VCS sync batches over the self binding", () => {
 				messages: [message("a", "ok", settled), message("b", "rate-limited", settled)],
 			}).pipe(Effect.provide(syncService([])))
 			assert.deepStrictEqual(settled, ["a:ack", "b:retry:120"])
+		}),
+	)
+})
+
+describe("the VCS sync batch route", () => {
+	/** Serves one request through the real route; the run records that it was reached. */
+	const serve = (headers: Record<string, string>, body: string) =>
+		Effect.gen(function* () {
+			const ran: Array<number> = []
+			const request = new Request(`https://api.example${VCS_SYNC_BATCH_PATH}`, {
+				method: "POST",
+				headers: { authorization: `Bearer ${TOKEN}`, ...headers },
+				body,
+			})
+			const response = yield* serveVcsSyncBatch(ENV, (messages) =>
+				Effect.sync(() => ran.push(messages.length)).pipe(Effect.as([])),
+			).pipe(
+				Effect.provideService(
+					HttpServerRequest.HttpServerRequest,
+					HttpServerRequest.fromWeb(request),
+				),
+			)
+			return { status: HttpServerResponse.toWeb(response).status, ran }
+		})
+	const batchOf = (count: number) =>
+		JSON.stringify({
+			messages: Array.from({ length: count }, (_, i) => ({
+				id: `m${i}`,
+				body: job("ok"),
+				attempts: 1,
+			})),
+		})
+
+	it.effect("serves a full queue batch of real jobs", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(yield* serve({}, batchOf(VCS_SYNC_BATCH_SIZE)), { status: 200, ran: [10] })
+		}),
+	)
+
+	it.effect("answers 404 to a request from the internet, even with the bearer", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(yield* serve({ "cf-connecting-ip": "203.0.113.7" }, batchOf(1)), {
+				status: 404,
+				ran: [],
+			})
+		}),
+	)
+
+	it.effect("refuses more messages than a queue batch, bodies that are not jobs, and oversize bodies", () =>
+		Effect.gen(function* () {
+			const refused = { status: 400, ran: [] }
+			assert.deepStrictEqual(yield* serve({}, batchOf(VCS_SYNC_BATCH_SIZE + 1)), refused)
+			const notAJob = JSON.stringify({
+				messages: [{ id: "m", body: { kind: "drop-tables" }, attempts: 1 }],
+			})
+			assert.deepStrictEqual(yield* serve({}, notAJob), refused)
+			// No content-length on this request: the bounded read is what refuses it.
+			const oversize = JSON.stringify({ messages: [], pad: "x".repeat(VCS_SYNC_BATCH_MAX_BYTES) })
+			assert.deepStrictEqual(yield* serve({}, oversize), refused)
+			assert.deepStrictEqual(
+				yield* serve({ "content-length": String(VCS_SYNC_BATCH_MAX_BYTES + 1) }, "{}"),
+				refused,
+			)
+		}),
+	)
+
+	it.effect("a binding call refused as public still runs the batch inline", () =>
+		Effect.gen(function* () {
+			const settled: Array<string> = []
+			const stamped = {
+				fetch: (input: RequestInfo, init?: RequestInit) => {
+					const request = new Request(input, init)
+					request.headers.set("cf-connecting-ip", "203.0.113.7")
+					return selfBinding(ENV, placedRun([])).fetch(request)
+				},
+			}
+			const handOff = yield* handOffVcsSyncBatch({ ...ENV, [SELF_BINDING]: stamped }, [
+				message("a", "ok", settled),
+			])
+			assert.deepStrictEqual(handOff, { run: "inline" })
+			assert.deepStrictEqual(settled, [])
 		}),
 	)
 })
