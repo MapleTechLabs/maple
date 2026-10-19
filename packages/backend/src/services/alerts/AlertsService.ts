@@ -13,6 +13,7 @@ import {
 import {
 	ENGINE_UNGROUPED_GROUP_KEY,
 	formatWarehouseDateTime,
+	isAlertRuleDue,
 	snapAlertWindowEndMs,
 	warehouseDateTime64,
 	parseWarehouseDateTime,
@@ -1522,9 +1523,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * evaluation window, so what this returns is what the tracking chart
 			 * shows once the rule is live.
 			 *
-			 * Fidelity caveat: the live scheduler slides its window every tick
-			 * (~1 min) while the preview uses tumbling windows, so `wouldFire` spans
-			 * are approximate between bucket boundaries.
+			 * Fidelity caveat: the live scheduler slides its window every check
+			 * (`alertEvaluationIntervalMinutes`) while the preview uses tumbling
+			 * windows, so `wouldFire` spans are approximate between bucket boundaries.
 			 */
 			const previewRule = Effect.fn("AlertsService.previewRule")(function* (
 				orgId: OrgId,
@@ -3931,7 +3932,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				)
 				yield* Metric.update(AlertingMetrics.activeRulesGauge, rows.length)
 
-				const prefetch = yield* loadTickPrefetch(rows)
+				// A rule is checked every fifth of its window (1-5 min), not every tick.
+				const lastClaimedAt = yield* loadLastClaimTimes(rows)
+				const dueRows = Arr.filter(rows, (row) =>
+					isAlertRuleDue({
+						ruleId: row.id,
+						windowMinutes: row.windowMinutes,
+						updatedAt: row.updatedAt,
+						lastClaimedAt: lastClaimedAt.get(row.id),
+						windowEndMs: tickWindowEndMs,
+					}),
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.alerting.rules_enabled": rows.length,
+					"maple.alerting.rules_due": dueRows.length,
+				})
+
+				const prefetch = yield* loadTickPrefetch(dueRows)
 
 				// Warm the org warehouse-config memo for the whole tick in one read,
 				// before the per-rule forEach below fans out at concurrency 5.
@@ -3947,7 +3964,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Best-effort: priming is an optimization, and a failure here must not
 				// take down a tick that would otherwise resolve each config on demand.
 				yield* orgChSettings
-					.primeRuntimeConfigs(Arr.dedupe(Arr.map(rows, (row) => row.orgId)))
+					.primeRuntimeConfigs(Arr.dedupe(Arr.map(dueRows, (row) => row.orgId)))
 					.pipe(Effect.ignore({ log: "Warn", message: "Failed to prime alert runtime configs" }))
 
 				// Incremented from fibers running under the concurrent per-rule forEach
@@ -4414,8 +4431,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// next chunk is claimed only when the current one is fully handed out.
 				// Lock ages stay bounded by a chunk's queueing, as before, but one slow
 				// rule no longer idles the other lanes until its chunk drains.
-				const lastClaimedAt = yield* loadLastClaimTimes(rows)
-
 				// Space rule starts across the spread so a tick is not one warehouse CPU burst.
 				// Windows snap to the minute, so a later start reads the same data; a tick that
 				// starts late gets a shorter spread, never deferrals.
@@ -4424,7 +4439,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					0,
 					Math.min(runtime.schedulerSpreadMs(), deadline - SCHEDULER_SPREAD_TAIL_MS - spreadStart),
 				)
-				const startSpacingMs = rows.length > 0 ? spreadMs / rows.length : 0
+				const startSpacingMs = dueRows.length > 0 ? spreadMs / dueRows.length : 0
 				yield* Effect.annotateCurrentSpan("maple.alerting.spread_ms", Math.round(spreadMs))
 				const waitForStartSlot = (index: number) =>
 					Effect.flatMap(now, (time) => {
@@ -4434,7 +4449,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				yield* Stream.fromIterable(
 					Arr.chunksOf(
-						interleaveAlertRulesByOrg(orderAlertRulesByLastClaim(rows, lastClaimedAt)),
+						interleaveAlertRulesByOrg(orderAlertRulesByLastClaim(dueRows, lastClaimedAt)),
 						RULE_CLAIM_CHUNK_SIZE,
 					),
 				).pipe(

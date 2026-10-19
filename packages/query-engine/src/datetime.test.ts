@@ -3,7 +3,9 @@ import {
 	bucketTimeline,
 	BUCKET_POLICIES,
 	cacheSnapSecondsForRange,
+	alertEvaluationIntervalMinutes,
 	alertWindowBucketSeconds,
+	isAlertRuleDue,
 	computeBucketSeconds,
 	computeBucketSecondsForRange,
 	computeBucketSecondsForWidth,
@@ -285,6 +287,76 @@ describe("alertWindowBucketSeconds", () => {
 	it("floors at 60s — a zero-width bucket is not a bucket", () => {
 		expect(alertWindowBucketSeconds(0)).toBe(60)
 		expect(alertWindowBucketSeconds(-1)).toBe(60)
+	})
+})
+
+describe("alertEvaluationIntervalMinutes", () => {
+	it("checks a fifth of the window, from every minute up to every five", () => {
+		expect([1, 5, 9, 10, 15, 30, 60, 1440].map(alertEvaluationIntervalMinutes)).toEqual([
+			1, 1, 1, 2, 3, 5, 5, 5,
+		])
+	})
+})
+
+describe("isAlertRuleDue", () => {
+	const minute = (n: number) => n * 60_000
+	const base = { ruleId: "rule-a", windowMinutes: 15, updatedAt: 0 }
+	// Ticks over 30 minutes, the rule claimed whenever it is due.
+	const dueMinutes = (input: { ruleId: string; windowMinutes: number }) => {
+		const due: number[] = []
+		let lastClaimedAt = minute(1000) + 17_000
+		for (let n = 1001; n <= 1030; n++) {
+			if (isAlertRuleDue({ ...input, updatedAt: 0, lastClaimedAt, windowEndMs: minute(n) })) {
+				due.push(n)
+				lastClaimedAt = minute(n) + 17_000
+			}
+		}
+		return due
+	}
+
+	it("runs a 15-minute rule every third minute once it has been claimed", () => {
+		const due = dueMinutes(base)
+		expect(due).toHaveLength(10)
+		expect(new Set(due.map((n) => n % 3)).size).toBe(1)
+	})
+
+	it("runs a 5-minute rule every minute", () => {
+		expect(dueMinutes({ ruleId: "rule-a", windowMinutes: 5 })).toHaveLength(30)
+	})
+
+	it("spreads rules sharing an interval across its minutes", () => {
+		const phases = new Set(
+			Array.from(
+				{ length: 50 },
+				(_, i) => dueMinutes({ ruleId: `rule-${i}`, windowMinutes: 30 })[0]! % 5,
+			),
+		)
+		expect(phases.size).toBe(5)
+	})
+
+	it("runs a rule that was never claimed, or whose claim was released", () => {
+		expect(isAlertRuleDue({ ...base, lastClaimedAt: undefined, windowEndMs: minute(1001) })).toBe(true)
+		expect(isAlertRuleDue({ ...base, lastClaimedAt: 0, windowEndMs: minute(1001) })).toBe(true)
+	})
+
+	it("runs a rule edited since its last claim on the next tick", () => {
+		const notDue = [1001, 1002, 1003].find(
+			(n) => !isAlertRuleDue({ ...base, lastClaimedAt: minute(1000), windowEndMs: minute(n) }),
+		)!
+		expect(
+			isAlertRuleDue({
+				...base,
+				updatedAt: minute(1000) + 1,
+				lastClaimedAt: minute(1000),
+				windowEndMs: minute(notDue),
+			}),
+		).toBe(true)
+	})
+
+	it("catches up a rule that missed its slot instead of waiting a full interval", () => {
+		const claimedAt = minute(1000) + 17_000
+		// 4 minutes after a 3-minute rule's claim, it is due whatever its phase.
+		expect(isAlertRuleDue({ ...base, lastClaimedAt: claimedAt, windowEndMs: minute(1005) })).toBe(true)
 	})
 })
 

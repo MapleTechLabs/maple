@@ -57,7 +57,12 @@ import { AlertReadModelsService } from "./AlertReadModelsService"
 import { AlertRulesService } from "./AlertRulesService"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
-import { baselineWarehouseCapabilities, formatWarehouseDateTime } from "@maple/query-engine"
+import {
+	baselineWarehouseCapabilities,
+	formatWarehouseDateTime,
+	isAlertRuleDue,
+	snapAlertWindowEndMs,
+} from "@maple/query-engine"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
@@ -6186,6 +6191,105 @@ describe("AlertsService held incidents", () => {
 			yield* tickAfter(state, alerts, 1)
 			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).status, "resolved")
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
+	})
+})
+
+describe("AlertsService evaluation cadence", () => {
+	const createCadenceRule = (alerts: AlertsServiceApi, orgId: OrgId, windowMinutes: number) =>
+		createWebhookDestination(alerts, orgId, asUserId("user_cadence")).pipe(
+			Effect.flatMap((destination) =>
+				alerts.createRule(
+					orgId,
+					asUserId("user_cadence"),
+					adminRoles,
+					new AlertRuleUpsertRequest({
+						name: `Cadence ${windowMinutes}m`,
+						severity: "warning",
+						enabled: true,
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes,
+						destinationIds: [destination.id],
+					}),
+				),
+			),
+		)
+
+	// Runs `count` ticks a minute apart and returns each tick's evaluated count.
+	const tickEveryMinute = (alerts: AlertsServiceApi, count: number) =>
+		Effect.forEach(Arr.range(1, count), () =>
+			alerts.runSchedulerTick().pipe(
+				Effect.map((tick) => tick.evaluatedCount),
+				Effect.tap(() => TestClock.adjust(Duration.minutes(1))),
+			),
+		)
+
+	it.effect("checks a 15-minute rule every third minute and a 5-minute rule every minute", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createCadenceRule(alerts, asOrgId("org_cadence_short_a"), 5)
+			yield* createCadenceRule(alerts, asOrgId("org_cadence_long"), 15)
+			yield* createCadenceRule(alerts, asOrgId("org_cadence_short_b"), 5)
+
+			const counts = yield* tickEveryMinute(alerts, 10)
+
+			// Both 5-minute rules run every tick; the long rule adds one on its own minutes.
+			const longTicks = Arr.filter(Arr.range(0, counts.length - 1), (index) => counts[index] === 3)
+			assert.isTrue(counts.every((count) => count === 2 || count === 3))
+			// The first tick runs it (never claimed), then it settles onto every third minute.
+			assert.strictEqual(longTicks[0], 0)
+			const settled = longTicks.slice(1)
+			assert.isAtLeast(settled.length, 3)
+			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i]!, 3))
+			assert.isAtMost(settled[0]!, 3)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+
+	it.effect("checks an edited rule on the next tick instead of waiting for its slot", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_cadence_edit")
+			const rule = yield* createCadenceRule(alerts, orgId, 30)
+			const claimedAt = yield* Clock.currentTimeMillis
+			yield* alerts.runSchedulerTick()
+
+			// One of the next two minutes is off the rule's every-fifth-minute phase.
+			const idle = [1, 2].find(
+				(n) =>
+					!isAlertRuleDue({
+						ruleId: rule.id,
+						windowMinutes: 30,
+						updatedAt: claimedAt,
+						lastClaimedAt: claimedAt,
+						windowEndMs: snapAlertWindowEndMs(claimedAt + n * 60_000),
+					}),
+			)!
+			yield* TestClock.adjust(Duration.minutes(idle))
+			// Back on an idle minute: an edit makes the rule due there.
+			yield* alerts.updateRule(
+				orgId,
+				asUserId("user_cadence"),
+				adminRoles,
+				rule.id,
+				new AlertRuleUpsertRequest({
+					name: "Edited",
+					severity: "warning",
+					enabled: true,
+					signalType: rule.signalType,
+					comparator: rule.comparator,
+					threshold: 10,
+					windowMinutes: rule.windowMinutes,
+					destinationIds: [...rule.destinationIds],
+				}),
+			)
+			const afterEdit = yield* alerts.runSchedulerTick()
+			assert.strictEqual(afterEdit.evaluatedCount, 1)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
 	})
 })
 

@@ -818,7 +818,7 @@ export const AlertRuleChart = React.memo(function AlertRuleChart({
 
 			{showWouldFire && wouldFireBands.length > 0 && (
 				<p className="text-2xs text-muted-foreground">
-					Shaded: rule would have fired (approximate — the live scheduler evaluates every minute).
+					Shaded: rule would have fired (approximate, the live scheduler checks a sliding window).
 				</p>
 			)}
 			{hasSignal && heldBands.length > 0 && (
