@@ -20,7 +20,7 @@ In Maple, open **Integrations → Google Cloud**, click **Connect Google Cloud**
 
 ## Step by step
 
-The screenshots show a project connection. Steps 2 to 7 are for **Log forwarding**, steps 8 to 10 for **Metrics and resources**: the dialog leaves out what you didn't choose.
+The screenshots show a project connection. Steps 2 to 7 are for **Log forwarding**, the rest for **Metrics and resources**: the dialog leaves out what you didn't choose. A folder or organization has one more step, Service Usage Consumer on the host project.
 
 ### 1. Enable the APIs
 
