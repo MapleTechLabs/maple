@@ -187,6 +187,8 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 	const routeOf = (url: FoldkitUrl): string => scrubUrl(config.routeName?.(url.pathname) ?? url.pathname)
 
 	if (typeof globalThis.addEventListener === "function") {
+		// Capture: at the target, capture listeners run before `makeFlushable`'s own `pagehide`
+		// flush, so the open navigation is ended while that flush can still send it.
 		globalThis.addEventListener("pagehide", tracing.interruptAll, { capture: true })
 	}
 
