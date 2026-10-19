@@ -10,7 +10,12 @@ import { planWidget, type WidgetGate } from "../kit/widget-data"
 import { FetchVariableOptions, FetchWidget } from "./command"
 import { variableValuesFromSearch } from "@maple/web/lib/dashboard-controls/search-params"
 import { AsyncData } from "foldkit"
-import { type OptionsState, optionsSourceOf, resolveVariableValues } from "../kit/variables"
+import {
+	optionsByNameOf as optionsByNameFor,
+	type OptionsState,
+	planOptionRequests,
+	planVariablesOf,
+} from "../kit/variables"
 import type { Model, WidgetSlot } from "./model"
 
 // Which tiles fetch what: the window every tile shares, and each revealed tile's request.
@@ -27,6 +32,19 @@ export const windowOf = (model: Model, context: PageContext) => {
 	)
 }
 
+/** What the canvas draws: a previewed version's snapshot once loaded, else the live board. */
+export const shownDocumentOf = (model: Model): DashboardDocument | null =>
+	model.history.previewed === null
+		? model.document
+		: AsyncData.match(model.history.snapshot, {
+				onIdle: () => null,
+				onLoading: () => null,
+				onFailure: () => null,
+				onSuccess: (snapshot) => snapshot,
+				onRefreshing: (snapshot) => snapshot,
+				onStale: ({ data }) => data,
+			})
+
 const EMPTY_SLOT: WidgetSlot = { isRevealed: false, widthPx: null, gate: null }
 
 export const slotOf = (model: Model, widgetId: string): WidgetSlot => model.widgets[widgetId] ?? EMPTY_SLOT
@@ -38,65 +56,29 @@ export const withCharts = (model: Model, widgets: ReadonlyArray<Widget>): Model[
 type FetchCommand = ReturnType<typeof FetchWidget> | ReturnType<typeof FetchVariableOptions>
 
 /** `optionsByName`: inline lists, fetched lists, and the loading state of the rest. */
-export const optionsByNameOf = (model: Model, context: PageContext): Record<string, OptionsState> => {
-	const window = windowOf(model, context)
-	return Object.fromEntries(
-		(model.document?.variables ?? []).map((variable) => {
-			const source = optionsSourceOf(context.orgId, variable, window)
-			if (source._tag === "Inline") return [variable.name, { options: source.options, loading: false }]
-			if (source._tag === "None")
-				return [variable.name, { options: [], loading: variable.type === "query" }]
-			const slot = model.variableOptions[variable.name]
-			const data = slot === undefined || slot.key !== source.key ? AsyncData.Idle() : slot.data
-			return [
-				variable.name,
-				AsyncData.match(data, {
-					onIdle: () => ({ options: [], loading: true }),
-					onLoading: () => ({ options: [], loading: true }),
-					onFailure: () => ({ options: [], loading: false }),
-					onSuccess: (options) => ({ options, loading: false }),
-					onRefreshing: (options) => ({ options, loading: true }),
-					onStale: ({ data: options }) => ({ options, loading: false }),
-				}),
-			]
-		}),
-	)
-}
+export const optionsByNameOf = (model: Model, context: PageContext): Record<string, OptionsState> =>
+	optionsByNameFor(context.orgId, model.document?.variables ?? [], model.variableOptions, windowOf(model, context))
 
 /** The board's variables as a tile plans with them: their names and resolved values. */
-export const variablesOf = (model: Model, context: PageContext) => {
-	const variables = model.document?.variables ?? []
-	return {
-		names: variables.map((variable) => variable.name),
-		values: resolveVariableValues(
-			variables,
-			variableValuesFromSearch(model.search),
-			optionsByNameOf(model, context),
-		),
-	}
-}
+export const variablesOf = (model: Model, context: PageContext) =>
+	planVariablesOf(
+		context.orgId,
+		model.document?.variables ?? [],
+		variableValuesFromSearch(model.search),
+		model.variableOptions,
+		windowOf(model, context),
+	)
 
 /** Asks for every query variable's option list for the current window. */
 const planVariableOptions = (model: Model, context: PageContext, mode: Keyed.RequestMode) => {
-	const window = windowOf(model, context)
-	return (model.document?.variables ?? []).reduce(
-		(state, variable) => {
-			const source = optionsSourceOf(context.orgId, variable, window)
-			if (source._tag !== "Query" || window === null) return state
-			const slot = state.variableOptions[variable.name] ?? Keyed.idle()
-			return Option.match(Keyed.request(slot, source.key, mode), {
-				onNone: () => state,
-				onSome: (next) => ({
-					variableOptions: { ...state.variableOptions, [variable.name]: next },
-					commands: [
-						...state.commands,
-						FetchVariableOptions({ name: variable.name, key: source.key, variable, window }),
-					],
-				}),
-			})
-		},
-		{ variableOptions: model.variableOptions, commands: [] as ReadonlyArray<FetchCommand> },
+	const planned = planOptionRequests(
+		context.orgId,
+		model.document?.variables ?? [],
+		model.variableOptions,
+		windowOf(model, context),
+		mode,
 	)
+	return { variableOptions: planned.slots, commands: planned.requests.map((request) => FetchVariableOptions(request)) }
 }
 
 type PlanState = Readonly<{
@@ -157,7 +139,7 @@ export const replan = (
 	context: PageContext,
 	mode: Keyed.RequestMode,
 ): { readonly model: Model; readonly commands: ReadonlyArray<FetchCommand> } => {
-	const document = model.document
+	const document = shownDocumentOf(model)
 	if (document === null) return { model, commands: [] }
 	const window = windowOf(model, context)
 	const options = planVariableOptions(model, context, mode)
@@ -180,6 +162,7 @@ export const replan = (
 			...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
 			maxDataPoints: maxDataPointsForWidth(slot.widthPx ?? DEFAULT_WIDGET_WIDTH_PX, panelType),
 			variables,
+			isNarrowed: slot.isNarrowed === true,
 		})
 		const sparkGate = sparklineGate(context, widget, window, state.requests, gate, variables)
 		const widgets = { ...state.widgets, [widget.id]: { ...slot, gate, sparkGate } }

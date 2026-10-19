@@ -32,6 +32,8 @@ export const WidgetSlot = Schema.Struct({
 	gate: Schema.NullOr(WidgetGate),
 	/** A stat's sparkline series (`StatSparklineLoader`), planned once the stat itself has data. */
 	sparkGate: Schema.optionalKey(Schema.NullOr(WidgetGate)),
+	/** `narrowedToCap`: the viewer pulled this list back to the list cap. */
+	isNarrowed: Schema.optionalKey(Schema.Boolean),
 })
 export type WidgetSlot = typeof WidgetSlot.Type
 

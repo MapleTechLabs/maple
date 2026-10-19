@@ -9,7 +9,9 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { headerSummary } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { isDegraded, isLoadFailed, isReadOnly, listedOf } from "./update"
 import { listBody, listSkeleton } from "./view-list"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 
 // `DashboardListPage` (apps/web/src/routes/dashboards/index.tsx): `PageShell` around the list.
 
@@ -74,27 +76,76 @@ const persistenceBanner = (h: H, error: string | null): Html | undefined =>
 				),
 			])
 
+/** `SyncUnavailable` (components/common/sync-unavailable.tsx) as `ListLoadError`. */
+const listLoadError = (h: H): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { size: 18 })]),
+				emptyTitle(h, ["Couldn’t load dashboards"]),
+				emptyDescription(h, [
+					"The sync stream dropped and the list couldn’t be read over HTTP either. Your dashboards are safe; this is a read problem.",
+				]),
+			]),
+			emptyContent(h, [
+				button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetrySync())] }, [
+					"Try again",
+				]),
+			]),
+		],
+		"py-12",
+	)
+
+/** `SyncDegradedBanner`: the rows are a frozen HTTP snapshot and writes are off. */
+const degradedBanner = (h: H): Html =>
+	h.div(
+		[h.Class("mb-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground")],
+		[
+			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0" }),
+			h.span(
+				[h.Class("flex-1")],
+				[
+					"Live sync is unavailable, so this is a snapshot loaded over HTTP. It won’t update on its own and editing is disabled.",
+				],
+			),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					className: "-my-1 h-6 shrink-0 px-2 text-xs hover:text-foreground",
+					attributes: [h.OnClick(Message.ClickedRetrySync())],
+				},
+				["Retry sync"],
+			),
+		],
+	)
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
-	const isReady = model.dashboards !== null && model.nowMs !== null && model.isPrefsLoaded
+	const listed = listedOf(model)
+	const isReady = listed !== null && model.nowMs !== null && model.isPrefsLoaded
 	const summary =
-		isReady && model.dashboards !== null && model.nowMs !== null
+		isReady && listed !== null && model.nowMs !== null
 			? h.div(
 					[h.Class("text-muted-foreground mt-1 font-mono text-2xs")],
-					[headerSummary(model.dashboards, model.nowMs, inputs.context.timeZone, model.locale)],
+					[headerSummary(listed, model.nowMs, inputs.context.timeZone, model.locale)],
 				)
 			: undefined
-	const isReadOnly = model.persistenceError !== null
 	return dashboardPage(
 		h,
 		{
 			titleContent: summary,
-			actions: actions(h, isReadOnly),
+			actions: actions(h, isReadOnly(model)),
 			sticky: persistenceBanner(h, model.persistenceError),
 		},
-		[
-			isReady && model.dashboards !== null && model.nowMs !== null
-				? listBody(h, model, model.dashboards, model.nowMs, inputs.context.timeZone)
-				: listSkeleton(h),
-		],
+		isLoadFailed(model)
+			? [listLoadError(h)]
+			: [
+					...(isDegraded(model) ? [degradedBanner(h)] : []),
+					isReady && listed !== null && model.nowMs !== null
+						? listBody(h, model, listed, model.nowMs, inputs.context.timeZone)
+						: listSkeleton(h),
+				],
 	)
 })

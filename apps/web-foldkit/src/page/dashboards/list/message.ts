@@ -9,7 +9,13 @@ import { ListDashboard, Scope } from "./model"
 import { WriteSync } from "../kit/store"
 
 /** A created dashboard: its id to open and its name for the toast. */
-const Created = Schema.Struct({ id: Schema.String, name: Schema.String, isPerses: Schema.Boolean })
+const Created = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	isPerses: Schema.Boolean,
+	/** A Perses import's conversion warnings (unsupported or changed panels). */
+	warnings: Schema.Array(Schema.String),
+})
 
 /** A write's outcome: the failure is the message `getErrorMessage` would show. */
 const WriteResult = Schema.Result(WriteSync, Schema.String)
@@ -19,6 +25,10 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number, locale: Schema.String },
 	CompletedLoadPreferences: { favorites: Schema.Array(Schema.String), sort: Schema.String },
 	UpdatedDashboards: { orgId: Schema.String, dashboards: Schema.Array(ListDashboard) },
+	/** The live list sat loading past the timeout (`useCollectionLoadFailed`). */
+	TimedOutLiveDashboards: { orgId: Schema.String },
+	CompletedFetchFallback: { orgId: Schema.String, result: Schema.Result(Schema.Array(ListDashboard), Schema.String) },
+	ClickedRetrySync: {},
 	ChangedSearchDraft: { value: Schema.String },
 	ElapsedSearchDebounce: { generation: Schema.Number },
 	ChangedScope: { scope: Scope },

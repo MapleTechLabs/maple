@@ -12,8 +12,11 @@ import {
 	getSpanAttributeValues,
 	getTracesFacetValues,
 } from "@maple/web-data/warehouse/traces"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
+import { AsyncData } from "foldkit"
+import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
+import type { WidgetFailure } from "./widget-data"
 
 // `DashboardVariablesProvider` (dashboard-builder/dashboard-variables-context.tsx), React-free: the
 // option list each variable reads, and the value it resolves to from the URL, its default or the list.
@@ -91,3 +94,72 @@ export const resolveVariableValues = (
 				: [[variable.name, { value, isAll: value === ALL_VALUE, options: [...options.options] }]]
 		}),
 	)
+
+// OPTION SLOTS
+
+/** Each query variable's fetched option list, by variable name. */
+export type OptionsSlots = Readonly<Record<string, Keyed.Keyed<ReadonlyArray<string>, WidgetFailure>>>
+export type OptionsRequest = Readonly<{ name: string; key: string; variable: Variable; window: Window }>
+type OptionsPlan = Readonly<{ slots: OptionsSlots; requests: ReadonlyArray<OptionsRequest> }>
+
+/** Asks for every query variable's option list for the window; a held fresh key is not asked again. */
+export const planOptionRequests = (
+	orgId: string,
+	variables: ReadonlyArray<Variable>,
+	slots: OptionsSlots,
+	window: Window | null,
+	mode: Keyed.RequestMode,
+): OptionsPlan => {
+	const initial: OptionsPlan = { slots, requests: [] }
+	return variables.reduce((state, variable) => {
+		const source = optionsSourceOf(orgId, variable, window)
+		if (source._tag !== "Query" || window === null) return state
+		return Option.match(Keyed.request(state.slots[variable.name] ?? Keyed.idle(), source.key, mode), {
+			onNone: () => state,
+			onSome: (next) => ({
+				slots: { ...state.slots, [variable.name]: next },
+				requests: [...state.requests, { name: variable.name, key: source.key, variable, window }],
+			}),
+		})
+	}, initial)
+}
+
+/** `optionsByName`: inline lists, fetched lists, and the loading state of the rest. */
+export const optionsByNameOf = (
+	orgId: string,
+	variables: ReadonlyArray<Variable>,
+	slots: OptionsSlots,
+	window: Window | null,
+): Record<string, OptionsState> =>
+	Object.fromEntries(
+		variables.map((variable) => {
+			const source = optionsSourceOf(orgId, variable, window)
+			if (source._tag === "Inline") return [variable.name, { options: source.options, loading: false }]
+			if (source._tag === "None") return [variable.name, { options: [], loading: variable.type === "query" }]
+			const slot = slots[variable.name]
+			const data = slot === undefined || slot.key !== source.key ? AsyncData.Idle() : slot.data
+			return [
+				variable.name,
+				AsyncData.match(data, {
+					onIdle: () => ({ options: [], loading: true }),
+					onLoading: () => ({ options: [], loading: true }),
+					onFailure: () => ({ options: [], loading: false }),
+					onSuccess: (options) => ({ options, loading: false }),
+					onRefreshing: (options) => ({ options, loading: true }),
+					onStale: ({ data: options }) => ({ options, loading: false }),
+				}),
+			]
+		}),
+	)
+
+/** The board's variables as a tile plans with them: their names and resolved values. */
+export const planVariablesOf = (
+	orgId: string,
+	variables: ReadonlyArray<Variable>,
+	urlValues: Readonly<Record<string, string>>,
+	slots: OptionsSlots,
+	window: Window | null,
+) => ({
+	names: variables.map((variable) => variable.name),
+	values: resolveVariableValues(variables, urlValues, optionsByNameOf(orgId, variables, slots, window)),
+})

@@ -1,3 +1,4 @@
+import { DashboardWidgetSchema } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { Array, Option, Schema, Stream } from "effect"
@@ -36,6 +37,8 @@ export interface PageViewInputs {
 	readonly isMobile?: boolean
 	/** `useMediaQuery("max-sm")`, likewise (the analytics chart's narrow margin). */
 	readonly isBelowSm?: boolean
+	/** `useMediaQuery("max-lg")`, likewise (the templates panel becomes a sheet). */
+	readonly isBelowLg?: boolean
 }
 
 /** What a page's Subscriptions see: its own Model plus the context. */
@@ -45,7 +48,18 @@ export interface PageSubscriptionInput<Model> {
 }
 
 /** A toast action the root runs itself, whichever page is open (`retryOrgCollections`). */
-export const RootToastAction = Schema.Literals(["ReconnectOrgCollections"])
+/**
+ * A toast action the root runs itself, so it outlives the page that raised it: a reconnect, or
+ * a dashboard's Undo (the user may have left the board inside the toast's 6 s).
+ */
+export const RootToastAction = Schema.Union([
+	Schema.TaggedStruct("ReconnectOrgCollections", {}),
+	Schema.TaggedStruct("RestoreDashboardWidgets", {
+		orgId: Schema.String,
+		dashboardId: Schema.String,
+		widgets: Schema.Array(DashboardWidgetSchema),
+	}),
+])
 export type RootToastAction = typeof RootToastAction.Type
 
 /** Facts a page reports to the root; the root owns the URL. */
@@ -58,6 +72,10 @@ export const PageOutMessage = defineMessageUnion({
 		toast: Schema.optionalKey(
 			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
 		),
+		/** A second toast after the first (a Perses import's "Imported with N warnings"). */
+		followUpToast: Schema.optionalKey(
+			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
+		),
 	},
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
@@ -68,6 +86,8 @@ export const PageOutMessage = defineMessageUnion({
 	 * shell owns those reads; below `md` its sidebar is unmounted, so the page is what asks for them.
 	 */
 	RequestedInfraSurfaces: {},
+	/** `retryOrgCollections` / `handleCollectionStuck`: recreate the org's synced collections. */
+	RequestedReconnectOrgCollections: {},
 	/**
 	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
 	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.
@@ -134,6 +154,12 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly breadcrumbs: (model: Model) => ReadonlyArray<BreadcrumbEntry>
 	/** `DashboardPage`'s `topbarActions`: the page's own controls after the shell's top-bar buttons. */
 	readonly topbarActions?: Submodel.View<Model, Message, PageViewInputs>
+	/**
+	 * `useBlocker`: while this holds, a link or Back that leaves the page asks first. The root
+	 * keeps the page and hands it `blockedNavigation` with where the user was going.
+	 */
+	readonly isBlockingNavigation?: (model: Model) => boolean
+	readonly blockedNavigation?: (model: Model, url: string, context: PageContext) => PageReturn<Model, Message>
 }
 
 // ERASED PAGE (what the registry and root consume)
@@ -304,6 +330,14 @@ export const definePage = <
 			isOwnSlot(slot) && ownsRoute(route) && spec.routeChanged
 				? Option.some(step(slot.key, context, spec.routeChanged(slot.model, route, context)))
 				: Option.none<PageStep<SlotType, WrappedType>>(),
+		/** A navigation away from this instance, held: the page's confirm step, or `None` if it allows it. */
+		blockedNavigation: (slot: PageSlotBase, url: string, context: PageContext) =>
+			isOwnSlot(slot) &&
+			spec.isBlockingNavigation !== undefined &&
+			spec.blockedNavigation !== undefined &&
+			spec.isBlockingNavigation(slot.model)
+				? Option.some(step(slot.key, context, spec.blockedNavigation(slot.model, url, context)))
+				: Option.none<PageStep<SlotType, WrappedType>>(),
 		contextChanged: (slot: PageSlotBase, context: PageContext) =>
 			isOwnSlot(slot) && spec.contextChanged
 				? Option.some(step(slot.key, context, spec.contextChanged(slot.model, context)))
@@ -321,6 +355,7 @@ export const definePage = <
 							context: inputs.context,
 							isMobile: inputs.isMobile ?? false,
 							isBelowSm: inputs.isBelowSm ?? false,
+							isBelowLg: inputs.isBelowLg ?? false,
 						},
 						toParentMessage: wrapFor(slot.key, slot.orgId),
 					})
@@ -339,6 +374,7 @@ export const definePage = <
 								context: inputs.context,
 								isMobile: inputs.isMobile ?? false,
 								isBelowSm: inputs.isBelowSm ?? false,
+								isBelowLg: inputs.isBelowLg ?? false,
 							},
 							toParentMessage: wrapFor(slot.key, slot.orgId),
 						})

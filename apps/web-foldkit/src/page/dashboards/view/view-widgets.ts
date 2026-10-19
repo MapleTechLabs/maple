@@ -166,6 +166,8 @@ export const tileContext = (
 		onChart: (message) => Message.GotChartMessage({ widgetId: widget.id, message }),
 		onSort: (field, isText) => Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
 		sparkline: sparklineState(model, widget),
+		narrowRange:
+			slotOf(model, widget.id).gate?._tag === "Range" ? Message.ClickedNarrowRange({ widgetId: widget.id }) : null,
 		variables,
 		sparklineChart: model.charts[`${widget.id}:spark`] ?? Chart.init(),
 		onSparklineChart: (message) => Message.GotChartMessage({ widgetId: `${widget.id}:spark`, message }),

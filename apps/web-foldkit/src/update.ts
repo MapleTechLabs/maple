@@ -16,6 +16,7 @@ import {
 	ReadSessionTimeRange,
 	NavigateInternal,
 	ReconnectOrgCollections,
+	RestoreDashboardWidgets,
 	ReplaceUrl,
 	SaveSelectedPlanKnown,
 	SignOutOfClerk,
@@ -29,10 +30,11 @@ import { ClerkPhase, type Model, Session } from "./model"
 import { rendersShell } from "./page/chrome"
 import * as Onboarding from "./page/onboarding"
 import { accessOf, CustomerData, customerOf, type CustomerSlot, type Gate, planGate } from "./page/onboarding/plan-gate"
-import { type PageContext, PageOutMessage } from "./page/contract"
+import { type PageContext, PageOutMessage, type RootToastAction } from "./page/contract"
 import * as Preload from "./page/preload"
 import {
 	changeContext,
+	blockNavigation,
 	enterRoute,
 	isBarePageRoute,
 	PageMessage,
@@ -251,9 +253,21 @@ const writePage =
 			),
 			{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
 		)
-		const held = Preload.held(toasted.model.preload, pageIdentity(transition.slot), transition.commands)
+		const followUp = Option.flatMap(transition.outMessage, (out) =>
+			out._tag === "RequestedNavigation" && out.followUpToast !== undefined
+				? Option.some(PageOutMessage.RequestedToast({ ...out.followUpToast, timeoutMs: null, action: null }))
+				: Option.none(),
+		)
+		const followed = Option.match(followUp, {
+			onNone: () => toasted,
+			onSome: (request) => {
+				const shown = showPageToast(toasted.model, request)
+				return { model: shown.model, commands: [...toasted.commands, ...shown.commands] }
+			},
+		})
+		const held = Preload.held(followed.model.preload, pageIdentity(transition.slot), transition.commands)
 		return {
-			model: modifyFields(toasted.model, { page: () => transition.slot, preload: () => held.model }),
+			model: modifyFields(followed.model, { page: () => transition.slot, preload: () => held.model }),
 			commands: [
 				...(held.isNewHolder
 					? [ReleaseReads({ orgId: transition.slot?.orgId ?? null, keys: held.released })]
@@ -271,9 +285,10 @@ const writePage =
 						RequestedSidebarToggle: () => [],
 						RequestedInfraSurfaces: () => [],
 						RequestedToast: () => [],
+						RequestedReconnectOrgCollections: () => [ReconnectOrgCollections()],
 					}),
 				}),
-				...toasted.commands,
+				...followed.commands,
 			],
 		}
 	}
@@ -712,36 +727,65 @@ const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 		},
 	)
 
+/** A new URL: the route, the session range carried into it, and the page it enters. */
+const changedUrlStep = (model: Model, changedUrl: Url): UpdateReturn => {
+	const injected = sessionRangeUrl(model, changedUrl)
+	const url = Option.getOrElse(
+		Option.flatMap(injected, (path) => urlFromString(new URL(path, urlToString(changedUrl)).href)),
+		() => changedUrl,
+	)
+	const nextRoute = urlToAppRoute(url)
+	const isEnteringSignIn = Transition.isEntering(Transition.make(model.route, nextRoute), "SignIn")
+	const routed = modifyFields(model, {
+		route: () => nextRoute,
+		signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
+	})
+	const routedStep = Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
+	return Option.match(injected, {
+		onNone: () => routedStep,
+		onSome: (injectedUrl) => ({
+			...routedStep,
+			commands: [ReplaceUrl({ url: injectedUrl }), ...(routedStep.commands ?? [])],
+		}),
+	})
+}
+
+/** The Command behind a root toast action. */
+const rootToastCommand = (action: RootToastAction | undefined) =>
+	action !== undefined && action._tag === "RestoreDashboardWidgets"
+		? RestoreDashboardWidgets(action)
+		: ReconnectOrgCollections()
+
+/** `useBlocker`: the open page holds a navigation that would leave it, and asks instead. */
+const heldNavigation = (model: Model, url: Url): Option.Option<UpdateReturn> =>
+	Option.flatMap(pageContextOf(model), (context) =>
+		Option.map(blockNavigation(model.page, urlToAppRoute(url), urlToString(url), context), (transition) =>
+			applyPage(transition)(model),
+		),
+	)
+
 // UPDATE
 
 export const update = (model: Model, message: Message) =>
 	Message.match<UpdateReturn>(message, {
 		ClickedLink: ({ request }) =>
 			UrlRequest.match<UpdateReturn>(request, {
-				Internal: ({ url }) => ({ model, commands: [NavigateInternal({ url: urlToString(url) })] }),
+				Internal: ({ url }) =>
+					Option.getOrElse(heldNavigation(model, url), () => ({
+						model,
+						commands: [NavigateInternal({ url: urlToString(url) })],
+					})),
 				External: ({ href }) => ({ model, commands: [LoadExternal({ href })] }),
 			}),
-		ChangedUrl: ({ url: changedUrl }) => {
-			const injected = sessionRangeUrl(model, changedUrl)
-			const url = Option.getOrElse(
-				Option.flatMap(injected, (path) => urlFromString(new URL(path, urlToString(changedUrl)).href)),
-				() => changedUrl,
-			)
-			const nextRoute = urlToAppRoute(url)
-			const isEnteringSignIn = Transition.isEntering(Transition.make(model.route, nextRoute), "SignIn")
-			const routed = modifyFields(model, {
-				route: () => nextRoute,
-				signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
-			})
-			const routedStep = Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag)), settle])(routed)
-			return Option.match(injected, {
-				onNone: () => routedStep,
-				onSome: (injectedUrl) => ({
-					...routedStep,
-					commands: [ReplaceUrl({ url: injectedUrl }), ...(routedStep.commands ?? [])],
-				}),
-			})
-		},
+		ChangedUrl: ({ url: changedUrl }) =>
+			Option.getOrElse(
+				// Back or Forward away from a page that blocks it: the URL goes back while it asks.
+				Option.map(heldNavigation(model, changedUrl), (held) => ({
+					...held,
+					commands: [NavigateInternal({ url: hrefOf(model.route) }), ...(held.commands ?? [])],
+				})),
+				() => changedUrlStep(model, changedUrl),
+			),
 		CompletedNavigateInternal: () => ({ model }),
 		CompletedReplaceUrl: () => ({ model }),
 		CompletedLoadExternal: () => ({ model }),
@@ -766,9 +810,10 @@ export const update = (model: Model, message: Message) =>
 			message._tag === "ClickedToastAction" && model.toastActions[message.toastId] !== undefined
 				? toPage(model, model.toastActions[message.toastId])
 				: message._tag === "ClickedToastAction" && model.toastRootActions[message.toastId] !== undefined
-					? { model, commands: [ReconnectOrgCollections()] }
+					? { model, commands: [rootToastCommand(model.toastRootActions[message.toastId])] }
 					: foldToasts(model, message),
 		CompletedReconnectOrgCollections: () => ({ model }),
+		CompletedRestoreDashboardWidgets: () => ({ model }),
 		GotPageMessage: ({ message }) => toPage(model, message),
 		GotChatSheetMessage: ({ message }) => foldChatSheet(model, message),
 		GotOnboardingMessage: ({ message }) => updateOnboarding(model, message),

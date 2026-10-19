@@ -34,6 +34,15 @@ export const ListDashboard = Schema.Struct({
 })
 export type ListDashboard = typeof ListDashboard.Type
 
+/** `useDashboardsFallback`: the HTTP snapshot read while live sync is down. */
+export const Fallback = Schema.Union([
+	Schema.TaggedStruct("Idle", {}),
+	Schema.TaggedStruct("Loading", {}),
+	Schema.TaggedStruct("Ready", { dashboards: Schema.Array(ListDashboard) }),
+	Schema.TaggedStruct("Failed", {}),
+])
+export type Fallback = typeof Fallback.Type
+
 export const Scope = Schema.Literals(["all", "favorites"])
 export type Scope = typeof Scope.Type
 
@@ -64,5 +73,7 @@ export const Model = Schema.Struct({
 	/** `persistenceErrorAtom`: a failed write turns the list read-only with this reason. */
 	persistenceError: Schema.NullOr(Schema.String),
 	isCreating: Schema.Boolean,
+	/** The live list never answered within `COLLECTION_LOAD_TIMEOUT_MS`: the HTTP snapshot's state. */
+	fallback: Fallback,
 })
 export type Model = typeof Model.Type

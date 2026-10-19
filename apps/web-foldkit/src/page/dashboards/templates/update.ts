@@ -11,6 +11,7 @@ import { requestKey } from "../../../data/request-key"
 import { AppRoute, hrefOf } from "../../../route"
 import type { DashboardsTemplatesSearch } from "../../../route/search"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import * as Dialog from "../../../ui/dialog"
 import { planWidget } from "../kit/widget-data"
 import {
 	AwaitCreated,
@@ -23,6 +24,7 @@ import {
 	WaitPreviewDelay,
 	WaitSearchDebounce,
 } from "./command"
+import { previewVariableValues } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -71,6 +73,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			isCreating: false,
 			themeColors: null,
 			chartRuntime: { _tag: "Loading" },
+			panelSheet: openPanelSheet(),
 		},
 		commands: [
 			ReadClock(),
@@ -87,11 +90,17 @@ export const templatesOf = (model: Model): ReadonlyArray<V2DashboardTemplate> =>
 export const selectedOf = (model: Model): V2DashboardTemplate | null =>
 	templatesOf(model).find((template) => template.id === model.search.template) ?? null
 
+export const PANEL_SHEET_ID = "dashboard-template-panel"
+
+/** `<Sheet open={selected !== null}>`: each selection opens it afresh. */
+const openPanelSheet = () => Dialog.init(PANEL_SHEET_ID, "sheet", { isOpen: true })
+
 /** A new selection drops the old preview and starts the 250 ms arming delay (the panel remounts). */
 const reselect = (model: Model): Return => {
 	const previewGeneration = model.previewGeneration + 1
 	const next: Model = {
 		...model,
+		panelSheet: openPanelSheet(),
 		previewGeneration,
 		isPreviewArmed: false,
 		preview: Keyed.idle(),
@@ -126,6 +135,13 @@ const requestPreview = (model: Model, context: PageContext): Return => {
 	})
 }
 
+type PreviewPlan = Readonly<{
+	gates: Model["gates"]
+	requests: Model["requests"]
+	commands: ReadonlyArray<ReturnType<typeof FetchWidget>>
+	asked: ReadonlyArray<string>
+}>
+
 /** Plans the shown preview widgets over the preview's own range; tiles fetch at once. */
 const planPreview = (model: Model, context: PageContext): Return => {
 	const preview = Option.getOrUndefined(AsyncData.getData(model.preview.data))
@@ -135,6 +151,9 @@ const planPreview = (model: Model, context: PageContext): Return => {
 		nowMs: model.nowMs,
 	})
 	const shown = model.previewWidgets.slice(0, MAX_PREVIEW_WIDGETS)
+	// `ResolvedDashboardVariablesProvider` declares no variables, so nothing waits on one.
+	const variables = { names: [], values: previewVariableValues(preview.variables) }
+	const initial: PreviewPlan = { gates: model.gates, requests: model.requests, commands: [], asked: [] }
 	const planned = shown.reduce(
 		(state, widget) => {
 			const gate = planWidget({
@@ -142,6 +161,7 @@ const planPreview = (model: Model, context: PageContext): Return => {
 				dataSource: widget.dataSource,
 				window,
 				...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
+				variables,
 			})
 			const gates = { ...state.gates, [widget.id]: gate }
 			if (gate._tag !== "Request" || state.asked.includes(gate.request.key)) return { ...state, gates }
@@ -156,12 +176,7 @@ const planPreview = (model: Model, context: PageContext): Return => {
 				}),
 			})
 		},
-		{
-			gates: model.gates,
-			requests: model.requests,
-			commands: [] as ReadonlyArray<ReturnType<typeof FetchWidget>>,
-			asked: [] as ReadonlyArray<string>,
-		},
+		initial,
 	)
 	return {
 		model: {
@@ -273,6 +288,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedFilter: ({ filter }) => ({ model: { ...model, filter } }),
 		ClickedTemplate: ({ templateId }) => navigate(model, selectionHref(templateId), true),
 		ClickedBack: () => navigate(model, hrefOf(AppRoute.Dashboards({ search: {} })), false),
+		// `onOpenChange(false)`: dismissing the sheet clears the selection.
+		GotPanelSheetMessage: ({ message: inner }) => {
+			const next = Dialog.update(model.panelSheet, inner)
+			const stepped = {
+				model: { ...model, panelSheet: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (dialog) => Message.GotPanelSheetMessage({ message: dialog })),
+			}
+			return next.outMessage?._tag === "Closed"
+				? { ...stepped, outMessage: PageOutMessage.RequestedNavigation({ url: selectionHref(undefined), isReplace: true }) }
+				: stepped
+		},
 		ClickedRetry: () =>
 			Option.match(Keyed.request(model.templates, templatesKey(context), "Refresh"), {
 				onNone: () => ({ model }),

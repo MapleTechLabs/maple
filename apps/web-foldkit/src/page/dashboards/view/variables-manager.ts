@@ -24,7 +24,8 @@ export const managerStep = (model: Model, context: PageContext, message: Manager
 	const next = VariablesManager.update(model.variablesManager, message)
 	const commands = Command.mapMessages(next.commands ?? [], wrap)
 	const updated = { ...model, variablesManager: next.model }
-	return next.outMessage === undefined || model.persistenceError !== null
+	// Not gated on `persistenceError`: the dialog closed on Save, and a success clears the banner.
+	return next.outMessage === undefined
 		? { model: updated, commands }
 		: {
 				model: updated,

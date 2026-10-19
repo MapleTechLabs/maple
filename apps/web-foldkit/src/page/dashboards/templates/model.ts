@@ -7,6 +7,7 @@ import { ThemeColors } from "../../../charts/theme-colors"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import { DashboardsTemplatesSearch } from "../../../route/search"
+import * as Dialog from "../../../ui/dialog"
 import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 
@@ -47,5 +48,7 @@ export const Model = Schema.Struct({
 	isCreating: Schema.Boolean,
 	themeColors: Schema.NullOr(ThemeColors),
 	chartRuntime: ChartRuntime,
+	/** Below `lg` the detail panel is a right sheet, open while a template is selected. */
+	panelSheet: Dialog.Model,
 })
 export type Model = typeof Model.Type

@@ -70,6 +70,12 @@ export const HistoryState = Schema.Struct({
 	snapshot: SnapshotData.schema,
 	restoreDialog: Dialog.Model,
 	isRestoring: Schema.Boolean,
+	/** `PreviewedCanvas`'s local section state: browsing a preview's groups never touches the URL. */
+	sectionView: Schema.Struct({
+		collapsed: Schema.optionalKey(Schema.String),
+		expanded: Schema.optionalKey(Schema.String),
+		tab: Schema.optionalKey(Schema.String),
+	}),
 })
 export type HistoryState = typeof HistoryState.Type
 
@@ -80,6 +86,7 @@ export const initHistory = (): HistoryState => ({
 	snapshot: AsyncData.Idle(),
 	restoreDialog: Dialog.init("dashboard-restore-version", "alert-dialog"),
 	isRestoring: false,
+	sectionView: {},
 })
 
 /** `actorInitials`: the first two alphanumerics of the opaque user id. */

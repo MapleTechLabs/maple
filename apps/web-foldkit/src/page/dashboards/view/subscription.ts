@@ -135,13 +135,13 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ widgetId }) => (widgetId === null ? Stream.empty : pointerEvents(widgetId)),
 			},
 		),
-		/** `useIntervalRefresh`: paused in edit mode, and a hidden tab skips its ticks. */
+		/** `useIntervalRefresh`: paused in edit mode and in a preview; a hidden tab skips its ticks. */
 		autoRefresh: entry(
 			{ seconds: Schema.Number },
 			{
 				modelToDependencies: ({ model }) => ({
 					seconds:
-						isEditing(model) || model.document === null
+						isEditing(model) || model.history.previewed !== null || model.document === null
 							? 0
 							: resolveRefreshIntervalSeconds(
 									model.search.refresh,

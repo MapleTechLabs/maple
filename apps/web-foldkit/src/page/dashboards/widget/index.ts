@@ -3,7 +3,7 @@ import { Message } from "./message"
 import { Model } from "./model"
 import { update } from "./page-update"
 import { subscriptions } from "./subscription"
-import { init, routeChanged, widgetOf } from "./update"
+import { askToLeave, init, isBlockingNavigation, routeChanged, widgetOf } from "./update"
 import { topbarActions, view } from "./view"
 
 /** `/dashboards/$dashboardId/widgets/$widgetId`: one instance per widget. */
@@ -19,6 +19,8 @@ export const page = definePage(
 		view,
 		topbarActions,
 		subscriptions,
+		isBlockingNavigation,
+		blockedNavigation: (model, url) => askToLeave(model, url),
 		breadcrumbs: (model) =>
 			model.document !== null && widgetOf(model) !== null
 				? [

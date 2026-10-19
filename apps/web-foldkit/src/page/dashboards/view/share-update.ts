@@ -40,9 +40,12 @@ export const openShare = (model: Model): Return => {
 	}
 }
 
-/** A chart's "Embed chart": on a public board without a chart link, mounting mints one. */
+/**
+ * A chart's "Embed chart": on a public board without a chart link, mounting mints one. A list
+ * that failed to re-read still opens the dialog, which shows the error.
+ */
 export const openEmbed = (model: Model, widgetId: string): Return => {
-	if (!AsyncData.isSuccess(model.sharing.shares)) return { model }
+	if (!AsyncData.isSuccess(model.sharing.shares) && !AsyncData.isFailure(model.sharing.shares)) return { model }
 	const opened = Dialog.open(model.sharing.embedDialog)
 	const shares = sharesOf(model)
 	const next = withSharing(model, {
@@ -56,13 +59,17 @@ export const openEmbed = (model: Model, widgetId: string): Return => {
 		...Command.mapMessages(opened.commands ?? [], (message) => wrap(ShareMessage.GotEmbedDialogMessage({ message }))),
 		ReadOrigin(),
 	]
-	const mint = boardShareOf(shares)?.mode === "public" && chartShareOf(shares, widgetId) === undefined
+	const mint =
+		AsyncData.isSuccess(model.sharing.shares) &&
+		boardShareOf(shares)?.mode === "public" &&
+		chartShareOf(shares, widgetId) === undefined
 	if (!mint) return { model: next, commands }
 	const minted = write(model, next, { _tag: "MintChart", widgetId })
 	return { ...minted, commands: [...commands, ...(minted.commands ?? [])] }
 }
 
 const fetched = (model: Model, result: ShareMessage & { _tag: "CompletedFetchShares" }): Return => {
+	if (result.seq !== model.sharing.fetchSeq) return { model }
 	const shares = Result.match(result.result, {
 		onSuccess: (rows) => AsyncData.succeed(rows),
 		onFailure: (failure) => AsyncData.fail(failure),
@@ -135,11 +142,12 @@ export const shareStep = (model: Model, _context: PageContext, message: ShareMes
 			const queued = model.sharing.queuedChart
 			if (error !== null)
 				return { model: withSharing(model, { isBusy: false, error, pendingAccess: null, queuedChart: null }) }
-			const refetch = FetchShares({ dashboardId: model.dashboardId })
+			const fetchSeq = model.sharing.fetchSeq + 1
+			const refetch = FetchShares({ dashboardId: model.dashboardId, seq: fetchSeq })
 			return queued === null
-				? { model: withSharing(model, { isBusy: false }), commands: [refetch] }
+				? { model: withSharing(model, { isBusy: false, fetchSeq }), commands: [refetch] }
 				: {
-						model: withSharing(model, { queuedChart: null }),
+						model: withSharing(model, { queuedChart: null, fetchSeq }),
 						commands: [
 							refetch,
 							WriteShare({ dashboardId: model.dashboardId, write: { _tag: "MintChart", widgetId: queued } }),

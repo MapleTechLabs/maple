@@ -79,7 +79,7 @@ const moreEntries = (isEdit: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 	},
 ]
 
-/** `RowActionsMenu label="More dashboard actions"`. TODO(toolbar): only Export acts; the rest are inert. */
+/** `RowActionsMenu label="More dashboard actions"`. */
 const moreMenu = (h: H, model: Model): Html =>
 	h.submodel({
 		slotId: model.moreMenu.id,

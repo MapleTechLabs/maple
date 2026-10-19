@@ -4,6 +4,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { LoadFailure } from "../../../data/load-failure"
+import * as Dialog from "../../../ui/dialog"
 import { WidgetFailure } from "../kit/widget-data"
 import { MetricSeen, ReadinessFilter } from "./model"
 
@@ -30,6 +31,7 @@ export const Message = defineMessageUnion({
 	ChangedFilter: { filter: ReadinessFilter },
 	ClickedTemplate: { templateId: Schema.String },
 	ClickedBack: {},
+	GotPanelSheetMessage: { message: Dialog.Message },
 	ClickedRetry: {},
 	ChangedParameter: { key: Schema.String, value: Schema.String },
 	ClickedCreate: { templateId: Schema.String },

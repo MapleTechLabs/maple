@@ -19,7 +19,7 @@ import type { WidgetDataState } from "./data-state"
 import { renderMarkdown } from "./markdown"
 import { widgetEmptyState, widgetFrame, widgetShell } from "./tile-shell"
 import { chartWidgetTile, CHART_WIDGETS } from "./tiles-chart"
-import { frame, titleOf } from "./tiles-frame"
+import { frame, timeRangeLabelOf, titleOf } from "./tiles-frame"
 import { gaugeDial } from "./gauge-view"
 import { statTile, thresholdColor } from "./tiles-stat"
 
@@ -29,7 +29,7 @@ export { formatStatValue } from "./tiles-stat"
 // chart through `chartWidgetTile` (./tiles-chart.ts).
 
 /** What a tile reads of its widget; a share's redacted widget satisfies it too. */
-export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "display"> &
+export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "display" | "timeRange"> &
 	Readonly<{ visualization: string; dataSource: unknown }>
 type Widget = TileWidget
 type Row = Readonly<Record<string, unknown>>
@@ -67,6 +67,8 @@ export type TileContext<M> = Readonly<{
 	variables?: VariableValues
 	/** "Fix with AI" on a decode error, when the surface offers it. */
 	fix?: M | null
+	/** "Show last 7 days" on a list wider than the cap, when the surface offers narrowing. */
+	narrowRange?: M | null
 	/** The "Details" popover under a failed tile's message, when the surface renders one. */
 	errorDetails?: ((message: string) => Html) | null
 }>
@@ -361,6 +363,7 @@ const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget)
 			hasGrip: ctx.hasGrip,
 			menu: ctx.menu,
 			isMenuOpen: ctx.isMenuOpen,
+			timeRangeLabel: timeRangeLabelOf(ctx, widget),
 			contentClassName: "flex-1 min-h-0 overflow-auto p-2 @min-[220px]/widget:p-3",
 		},
 		[

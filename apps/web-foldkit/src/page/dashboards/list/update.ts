@@ -20,7 +20,9 @@ import {
 	SaveTags,
 	WaitSearchDebounce,
 	FocusTagSearch,
+	FetchDashboardsFallback,
 } from "./command"
+import { countLabel } from "@maple/ui/lib/format"
 import * as TagEditor from "../kit/tag-editor"
 import { displayName, queryOf, tagsOf } from "./derive"
 import * as Combobox from "../../../ui/combobox"
@@ -57,6 +59,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		tagFilter: Combobox.init(TAG_FILTER_ID, "multiple", { selected: tagsOf(route.search) }),
 		persistenceError: null,
 		isCreating: false,
+		fallback: { _tag: "Idle" },
 	},
 	commands: [ReadClock(), LoadPreferences()],
 })
@@ -96,7 +99,17 @@ const dashboardHref = (id: string, mode?: "edit") =>
 		}),
 	)
 
-const isReadOnly = (model: Model): boolean => model.persistenceError !== null
+/** Live rows win; the HTTP snapshot stands in only while the live list never answered. */
+export const listedOf = (model: Model): ReadonlyArray<ListDashboard> | null =>
+	model.dashboards ?? (model.fallback._tag === "Ready" ? model.fallback.dashboards : null)
+
+/** `degraded`: reading the snapshot, so writes are off. */
+export const isDegraded = (model: Model): boolean => model.dashboards === null && model.fallback._tag === "Ready"
+
+/** `isError`: neither the live list nor the snapshot could be read. */
+export const isLoadFailed = (model: Model): boolean => model.dashboards === null && model.fallback._tag === "Failed"
+
+export const isReadOnly = (model: Model): boolean => model.persistenceError !== null || isDegraded(model)
 
 /** `navigate(...)` then a success toast. */
 const navigateWithToast = (model: Model, url: string, title: string): Return => ({
@@ -121,7 +134,7 @@ const toastFailure = (model: Model, message: string): Return => ({
 })
 
 const findDashboard = (model: Model, id: string): Option.Option<ListDashboard> =>
-	Option.fromNullishOr((model.dashboards ?? []).find((dashboard) => dashboard.id === id))
+	Option.fromNullishOr((listedOf(model) ?? []).find((dashboard) => dashboard.id === id))
 
 const dialogStep = (
 	model: Model,
@@ -222,6 +235,15 @@ const sortMenuStep = (model: Model, message: Menu.Message): Return => {
 	}
 }
 
+/** "Imported with N warnings": the first three, then "+N more". */
+type WarningToast = Readonly<{ type: "warning"; title: string; description: string }>
+
+const warningsToast = (warnings: ReadonlyArray<string>): WarningToast => ({
+	type: "warning",
+	title: `Imported with ${countLabel(warnings.length, "warning")}`,
+	description: `${warnings.slice(0, 3).join("\n")}${warnings.length > 3 ? `\n+${warnings.length - 3} more` : ""}`,
+})
+
 /** The editor's pending input committed as tags (`commit`). */
 const failedWrite = (model: Model, message: string): Return => ({
 	model: { ...model, persistenceError: message, isCreating: false },
@@ -235,6 +257,32 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		UpdatedDashboards: ({ orgId, dashboards }) =>
 			orgId === context.orgId ? { model: { ...model, dashboards } } : { model },
+		// `handleCollectionStuck` recreates the collections while the snapshot loads.
+		TimedOutLiveDashboards: ({ orgId }) =>
+			orgId !== context.orgId || model.dashboards !== null || model.fallback._tag !== "Idle"
+				? { model }
+				: {
+						model: { ...model, fallback: { _tag: "Loading" } },
+						commands: [FetchDashboardsFallback({ orgId })],
+						outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
+					},
+		CompletedFetchFallback: ({ orgId, result }) =>
+			orgId !== context.orgId
+				? { model }
+				: {
+						model: {
+							...model,
+							fallback: Result.match(result, {
+								onSuccess: (dashboards) => ({ _tag: "Ready", dashboards }),
+								onFailure: () => ({ _tag: "Failed" }),
+							}),
+						},
+					},
+		// `retryOrgCollections`: a failed snapshot may be read again after the reconnect.
+		ClickedRetrySync: () => ({
+			model: model.fallback._tag === "Failed" ? { ...model, fallback: { _tag: "Idle" } } : model,
+			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
+		}),
 		ChangedSearchDraft: ({ value }) => {
 			const searchGeneration = model.searchGeneration + 1
 			return {
@@ -262,7 +310,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					},
 		CompletedCreateDashboard: ({ result }) =>
 			Result.match(result, {
-				onFailure: (error) => failedWrite(model, error),
+				onFailure: (error) => toastFailure(failedWrite(model, error).model, error),
 				onSuccess: (id) => navigateTo({ ...model, isCreating: false }, dashboardHref(id, "edit")),
 			}),
 		ClickedImport: () => (isReadOnly(model) ? { model } : { model, commands: [OpenImportPicker()] }),
@@ -276,14 +324,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedImportDashboard: ({ result }) =>
 			Result.match(result, {
 				onFailure: (error) => toastFailure(model, error),
-				onSuccess: (created) =>
-					navigateWithToast(
+				onSuccess: (created) => {
+					const navigation = navigateWithToast(
 						model,
 						dashboardHref(created.id),
 						created.isPerses
 							? `Dashboard "${created.name}" imported from Perses`
 							: `Dashboard "${created.name}" imported`,
-					),
+					)
+					const out = navigation.outMessage
+					return created.warnings.length === 0 || out?._tag !== "RequestedNavigation"
+						? navigation
+						: { ...navigation, outMessage: { ...out, followUpToast: warningsToast(created.warnings) } }
+				},
 			}),
 		ToggledFavorite: ({ id }) => {
 			const favorites = model.favorites.includes(id)
@@ -323,7 +376,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedDeleteDashboard: ({ result }) =>
 			Result.match(result, {
 				onFailure: (error) => failedWrite(model, error),
-				onSuccess: () => ({ model: { ...model, persistenceError: null } }),
+				onSuccess: (sync) =>
+					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
 			}),
 		GotTagEditorMessage: ({ message: inner }) => {
 			const next = TagEditor.update(model.tagEditor, inner)

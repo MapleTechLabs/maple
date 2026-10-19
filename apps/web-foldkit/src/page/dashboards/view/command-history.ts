@@ -14,7 +14,7 @@ const decodeVersionId = Schema.decodeUnknownEffect(DashboardVersionId)
 const decodeDocument = Schema.decodeUnknownEffect(DashboardDocument)
 
 /** A version's snapshot read as the board document the canvas renders. */
-const documentOf = (snapshot: V2Dashboard) =>
+export const documentOf = (snapshot: V2Dashboard) =>
 	decodeDocument({
 		id: snapshot.id,
 		name: snapshot.name,

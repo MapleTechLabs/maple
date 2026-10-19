@@ -8,6 +8,7 @@ import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { isEmptyError, type WidgetDataState } from "./data-state"
+import { NARROW_RANGE_LABEL } from "./widget-data"
 
 /** `useId` of the grid's hidden rearranging instructions, which every grip describes itself by. */
 export const GRID_INSTRUCTIONS_ID = "dashboard-grid-instructions"
@@ -178,6 +179,7 @@ const mutedError = <M>(
 	h: HtmlBuilder<M>,
 	state: Extract<WidgetDataState, { _tag: "Error" }>,
 	configure: M | null,
+	narrowRange: M | null,
 ): Html =>
 	h.div(
 		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
@@ -198,7 +200,20 @@ const mutedError = <M>(
 							[state.message],
 						),
 					]),
-			// TODO(range): "Show last 7 days" (narrowing a list's range) is not ported.
+			...(state.kind === "range" && narrowRange !== null
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "xs",
+								className: "mt-1 h-6 gap-1 text-3xs",
+								attributes: [h.OnClick(narrowRange)],
+							},
+							[icon(h, "ClockIcon"), NARROW_RANGE_LABEL],
+						),
+					]
+				: []),
 			...(state.kind === "config" && configure !== null
 				? [
 						button(
@@ -268,6 +283,7 @@ export type FrameOptions<M> = ShellOptions &
 		loadingSkeleton: Html
 		configure: M | null
 		fix?: M | null | undefined
+		narrowRange?: M | null | undefined
 		errorDetails?: ((message: string) => Html) | null | undefined
 	}>
 
@@ -285,7 +301,7 @@ export const widgetFrame = <M>(
 				? isEmptyError(state)
 					? [widgetEmptyState(h)]
 					: state.kind === "range" || state.kind === "config"
-						? [mutedError(h, state, options.configure)]
+						? [mutedError(h, state, options.configure, options.narrowRange ?? null)]
 						: [failedState(h, state, options)]
 				: content()
 	return widgetShell(h, { ...options, footer: state._tag === "Ready" ? options.footer : undefined }, body)
