@@ -154,7 +154,11 @@ export const init = (_route: unknown, context: PageContext, carried: Carried = n
 		repoConfig: Keyed.idle(),
 		repoForm: null,
 	}
-	return combine(readSettings(model, context, "Load"), (next) => ({
+	// Legacy pins on mount from whatever status it has, a handed-over one included.
+	const pinned: Model = AsyncData.isSuccess(model.githubStatus.data)
+		? { ...model, repoList: pinOnce(model.repoList, activeRepositories(model)) }
+		: model
+	return combine(readSettings(pinned, context, "Load"), (next) => ({
 		model: next,
 		commands: isClerkAuthEnabled ? [ReadIsAdmin()] : [],
 	}))
