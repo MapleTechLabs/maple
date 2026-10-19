@@ -96,7 +96,7 @@ export const behindToast = () =>
 		description: "The change reached the server; this tab’s live sync didn’t catch up, so it isn’t shown yet.",
 		timeoutMs: 10000,
 		action: null,
-		rootAction: { label: "Reconnect", action: "ReconnectOrgCollections" },
+		rootAction: { label: "Reconnect", action: { _tag: "ReconnectOrgCollections" } },
 	})
 
 /** A transaction's settlement as an Effect; a rejection keeps its cause for the message. */

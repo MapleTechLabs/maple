@@ -1,4 +1,4 @@
-import { DashboardDocument, DashboardWidgetSchema } from "@maple/domain/http"
+import { DashboardDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../charts/chart"
@@ -92,9 +92,7 @@ export const Message = defineMessageUnion({
 	BlurredGrip: { widgetId: Schema.String },
 	CompletedWrite: { result: WriteResult },
 	/** "Undo" on the "Widget removed" toast: the removed tile, as it was stored. */
-	ClickedUndoRemoveWidget: { widget: DashboardWidgetSchema },
 	/** "Undo" after a group was deleted with its widgets: they come back on the board, the group does not. */
-	ClickedUndoDeleteSection: { widgets: Schema.Array(DashboardWidgetSchema) },
 	CompletedExport: {},
 	/** A group's chevron: this viewer's collapse, in the URL. */
 	ClickedSectionChevron: { sectionId: Schema.String, collapsed: Schema.Boolean },

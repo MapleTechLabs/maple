@@ -238,7 +238,16 @@ export const sectionStep = (model: Model, context: PageContext, message: Section
 								title: `Group and ${removed.length === 1 ? "its widget" : `${removed.length} widgets`} deleted`,
 								description: "",
 								timeoutMs: 6000,
-								action: { label: "Undo", message: Message.ClickedUndoDeleteSection({ widgets: removed }) },
+								action: null,
+								rootAction: {
+									label: "Undo",
+									action: {
+										_tag: "RestoreDashboardWidgets",
+										orgId: context.orgId,
+										dashboardId: model.dashboardId,
+										widgets: removed,
+									},
+								},
 							}),
 						}),
 			}

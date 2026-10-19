@@ -1,3 +1,4 @@
+import { DashboardWidgetSchema } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
 import { Array, Option, Schema, Stream } from "effect"
 import { Command, Submodel, Subscription, type Update } from "foldkit"
@@ -37,7 +38,18 @@ export interface PageSubscriptionInput<Model> {
 }
 
 /** A toast action the root runs itself, whichever page is open (`retryOrgCollections`). */
-export const RootToastAction = Schema.Literals(["ReconnectOrgCollections"])
+/**
+ * A toast action the root runs itself, so it outlives the page that raised it: a reconnect, or
+ * a dashboard's Undo (the user may have left the board inside the toast's 6 s).
+ */
+export const RootToastAction = Schema.Union([
+	Schema.TaggedStruct("ReconnectOrgCollections", {}),
+	Schema.TaggedStruct("RestoreDashboardWidgets", {
+		orgId: Schema.String,
+		dashboardId: Schema.String,
+		widgets: Schema.Array(DashboardWidgetSchema),
+	}),
+])
 export type RootToastAction = typeof RootToastAction.Type
 
 /** Facts a page reports to the root; the root owns the URL. */

@@ -3,7 +3,6 @@ import {
 	defaultWidgetLayout,
 	DashboardRefreshIntervalSeconds,
 	DashboardVariableSchema,
-	DashboardWidgetSchema,
 	TimeRangeSchema,
 } from "@maple/domain/http"
 import { Clock, Duration, Effect, Queue, Random, Result, Schema, Stream } from "effect"
@@ -157,20 +156,6 @@ export const CloneWidget = Command.define("CloneDashboardWidget", {
 				),
 			)
 		}),
-})
-
-/** `restoreWidget`: idempotent, a refetch may already have put it back. */
-export const RestoreWidget = Command.define("RestoreDashboardWidget", {
-	args: { ...Target, widget: DashboardWidgetSchema },
-	messages: [Message.CompletedWrite],
-	execute: ({ orgId, dashboardId, widget }) =>
-		toWriteMessage(
-			mutateDashboard(orgId, dashboardId, (document, nowIso) =>
-				document.widgets.some((existing) => existing.id === widget.id)
-					? document
-					: { ...document, widgets: [...document.widgets, widget], updatedAt: nowIso },
-			),
-		),
 })
 
 /** `updateWidgetLayouts`: one commit per finished drag or resize, only the changed boxes. */

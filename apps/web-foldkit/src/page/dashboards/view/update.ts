@@ -26,7 +26,6 @@ import {
 	ReadClock,
 	RemoveWidget,
 	RenameDashboard,
-	RestoreWidget,
 	AddWidget,
 	AutoLayout,
 	SaveTags,
@@ -432,9 +431,15 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 							title: "Widget removed",
 							description: "",
 							timeoutMs: 6000,
-							action: {
+							action: null,
+							rootAction: {
 								label: "Undo",
-								message: Message.ClickedUndoRemoveWidget({ widget: removed }),
+								action: {
+									_tag: "RestoreDashboardWidgets",
+									orgId: context.orgId,
+									dashboardId: model.dashboardId,
+									widgets: [removed],
+								},
 							},
 						}),
 					}
@@ -698,16 +703,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotTabDialogMessage: (m) => sectionStep(model, context, m),
 		ConfirmedDeleteSection: (m) => sectionStep(model, context, m),
 		ConfirmedDeleteTab: (m) => sectionStep(model, context, m),
-		ClickedUndoDeleteSection: ({ widgets }) => ({
-			model,
-			commands: widgets.map((widget) =>
-				RestoreWidget({ orgId: context.orgId, dashboardId: model.dashboardId, widget }),
-			),
-		}),
-		ClickedUndoRemoveWidget: ({ widget }) => ({
-			model,
-			commands: [RestoreWidget({ orgId: context.orgId, dashboardId: model.dashboardId, widget })],
-		}),
 	})
 
 export const errorDetailsIdOf = (widgetId: string): string => `dashboard-error-details-${widgetId}`

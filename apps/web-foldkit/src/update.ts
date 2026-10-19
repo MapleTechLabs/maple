@@ -16,6 +16,7 @@ import {
 	ReadSessionTimeRange,
 	NavigateInternal,
 	ReconnectOrgCollections,
+	RestoreDashboardWidgets,
 	ReplaceUrl,
 	SaveSelectedPlanKnown,
 	SignOutOfClerk,
@@ -29,7 +30,7 @@ import { ClerkPhase, type Model, Session } from "./model"
 import { rendersShell } from "./page/chrome"
 import * as Onboarding from "./page/onboarding"
 import { accessOf, CustomerData, customerOf, type CustomerSlot, type Gate, planGate } from "./page/onboarding/plan-gate"
-import { type PageContext, PageOutMessage } from "./page/contract"
+import { type PageContext, PageOutMessage, type RootToastAction } from "./page/contract"
 import * as Preload from "./page/preload"
 import {
 	changeContext,
@@ -733,6 +734,12 @@ const changedUrlStep = (model: Model, changedUrl: Url): UpdateReturn => {
 	})
 }
 
+/** The Command behind a root toast action. */
+const rootToastCommand = (action: RootToastAction | undefined) =>
+	action !== undefined && action._tag === "RestoreDashboardWidgets"
+		? RestoreDashboardWidgets(action)
+		: ReconnectOrgCollections()
+
 /** `useBlocker`: the open page holds a navigation that would leave it, and asks instead. */
 const heldNavigation = (model: Model, url: Url): Option.Option<UpdateReturn> =>
 	Option.flatMap(pageContextOf(model), (context) =>
@@ -787,9 +794,10 @@ export const update = (model: Model, message: Message) =>
 			message._tag === "ClickedToastAction" && model.toastActions[message.toastId] !== undefined
 				? toPage(model, model.toastActions[message.toastId])
 				: message._tag === "ClickedToastAction" && model.toastRootActions[message.toastId] !== undefined
-					? { model, commands: [ReconnectOrgCollections()] }
+					? { model, commands: [rootToastCommand(model.toastRootActions[message.toastId])] }
 					: foldToasts(model, message),
 		CompletedReconnectOrgCollections: () => ({ model }),
+		CompletedRestoreDashboardWidgets: () => ({ model }),
 		GotPageMessage: ({ message }) => toPage(model, message),
 		GotChatSheetMessage: ({ message }) => foldChatSheet(model, message),
 		GotOnboardingMessage: ({ message }) => updateOnboarding(model, message),
