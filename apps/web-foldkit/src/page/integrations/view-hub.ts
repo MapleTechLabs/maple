@@ -6,7 +6,7 @@ import { icon } from "../../ui/icon"
 import { panel } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
-import { type CatalogEntry, INTEGRATION_CATEGORIES, type IntegrationId, visibleCatalog } from "./catalog"
+import { CATALOG, type CatalogEntry, INTEGRATION_CATEGORIES, type IntegrationId } from "./catalog"
 import {
 	type AvailableOverview,
 	type ConnectedOverview,
@@ -179,7 +179,7 @@ const skeletonRow = (h: H): Html =>
 	)
 
 export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html => {
-	const rows = visibleCatalog().map((entry) => ({
+	const rows = CATALOG.map((entry) => ({
 		entry,
 		overview: overviewOf(model.statuses, model.nowMs, entry.id),
 	}))
