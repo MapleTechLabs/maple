@@ -1,4 +1,4 @@
-import { AiTriageSettingsDocument, OpenRouterKeyDocument } from "@maple/domain/http"
+import { AiTriageSettingsDocument, AttachResult, OpenRouterKeyDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -30,6 +30,9 @@ export const Model = Schema.Struct({
 	isSavingKey: Schema.Boolean,
 	removeDialog: Dialog.Model,
 	isRemoving: Schema.Boolean,
+	/** `AddOnUpsell`: the confirm before attaching the OpenRouter add-on, and the attach in flight. */
+	addOnDialog: Dialog.Model,
+	isAttachingAddOn: Schema.Boolean,
 	triage: TriageData.schema,
 	isToggling: Schema.Boolean,
 	limits: Schema.NullOr(LimitsDraft),
@@ -61,6 +64,11 @@ export const Message = defineMessageUnion({
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
 	CompletedRemoveKey: done(OpenRouterKeyDocument),
+	ClickedAddOn: {},
+	GotAddOnDialogMessage: { message: Dialog.Message },
+	ClickedConfirmAddOn: {},
+	CompletedAttachAddOn: done(AttachResult),
+	CompletedOpenAddOnCheckout: {},
 	ToggledTriage: {},
 	CompletedToggleTriage: { isEnabled: Schema.Boolean, ...done(AiTriageSettingsDocument) },
 	ChangedLimit: { field: LimitField, value: Schema.String },
