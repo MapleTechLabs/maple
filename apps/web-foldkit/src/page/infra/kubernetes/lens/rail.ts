@@ -43,11 +43,29 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
+export const NamesInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	namespaces: Schema.optionalKey(Schema.Array(Schema.String)),
+})
+export type NamesInput = typeof NamesInput.Type
+
+/** `getServiceOverviewResultAtom` is `globalNamespace: "top"`: the pin goes into the payload and key. */
+export const namesInput = (window: TimeWindow, pinnedNamespace: string | null): NamesInput =>
+	pinnedNamespace === null
+		? { startTime: window.startTime, endTime: window.endTime }
+		: { startTime: window.startTime, endTime: window.endTime, namespaces: [pinnedNamespace] }
+
 export const FetchNames = Command.define("FetchLensServiceNames", {
-	args: { key: Schema.String, window: Schema.Struct({ startTime: Schema.String, endTime: Schema.String }) },
+	args: { key: Schema.String, input: NamesInput },
 	messages: [Message.CompletedFetchNames],
-	execute: ({ key, window }) =>
-		getServiceOverview({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
+	execute: ({ key, input }) =>
+		getServiceOverview({
+			data:
+				input.namespaces === undefined
+					? { startTime: input.startTime, endTime: input.endTime }
+					: { startTime: input.startTime, endTime: input.endTime, namespaces: [...input.namespaces] },
+		}).pipe(
 			Effect.map((response) => [...new Set(response.data.map((row) => row.serviceName))].sort()),
 			Effect.mapError(toLoadFailure),
 			Effect.result,
@@ -91,17 +109,19 @@ const workloadsStep = (model: Model, context: PageContext, window: TimeWindow, m
 }
 
 /** The names for the window, and the join over whatever names are known (empty until they land). */
-export const request = (model: Model, context: PageContext, window: TimeWindow, mode: Keyed.RequestMode): Return =>
-	applySteps<Model, Message>(model, [
+export const request = (model: Model, context: PageContext, window: TimeWindow, mode: Keyed.RequestMode): Return => {
+	const input = namesInput(window, context.pinnedNamespace)
+	return applySteps<Model, Message>(model, [
 		keyed(
 			model.names,
-			requestKey(context.orgId, "getServiceOverview", { data: window }),
+			requestKey(context.orgId, "getServiceOverview", { data: input }),
 			mode,
 			(names) => ({ names }),
-			(key) => FetchNames({ key, window }),
+			(key) => FetchNames({ key, input }),
 		),
 		workloadsStep(model, context, window, mode),
 	])
+}
 
 export const update = (model: Model, message: Message, context: PageContext, window: TimeWindow | null): Return =>
 	Message.match<Return>(message, {

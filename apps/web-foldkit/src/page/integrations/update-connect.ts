@@ -114,6 +114,7 @@ const CONNECTED_TITLE = {
 } satisfies { readonly [K in ConnectProvider]: string | null }
 
 /** `useIntegrationMessage`: the callback page's verdict. */
+// TODO(analytics): legacy fires `trackProduct("integration_connected", { provider })` on success.
 export const receivedCallback = (
 	model: Model,
 	context: PageContext,

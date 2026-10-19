@@ -31,8 +31,8 @@ export const GithubCardModel = Schema.Struct({
 	branchQuery: Schema.String,
 	pendingBranch: Schema.NullOr(Schema.Struct({ repoId: VcsRepositoryId, branch: Schema.String })),
 	branchDialog: Dialog.Model,
-	/** The optimistic tracked branch while its save is in flight. */
-	savingBranch: Schema.NullOr(Schema.Struct({ repoId: VcsRepositoryId, branch: Schema.String })),
+	/** The optimistic tracked branches whose saves are in flight, one per repository (`useAsyncAction` per row). */
+	savingBranches: Schema.Array(Schema.Struct({ repoId: VcsRepositoryId, branch: Schema.String })),
 })
 export type GithubCardModel = typeof GithubCardModel.Type
 
@@ -54,7 +54,7 @@ export const initGithubCard = (): GithubCardModel => ({
 	branchQuery: "",
 	pendingBranch: null,
 	branchDialog: Dialog.init("github-branch-change", "alert-dialog"),
-	savingBranch: null,
+	savingBranches: [],
 })
 
 const failureOf = (error: unknown): LoadFailure => toLoadFailure(error)

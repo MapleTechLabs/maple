@@ -99,6 +99,27 @@ describe("github card", () => {
 		).not.toContain("SetGithubTrackedBranch")
 	})
 
+	test("a second repository can change branch while the first one's save is in flight", () => {
+		const other = "0199a005-0000-7000-8000-000000000002"
+		const [first] = status.repositories
+		const twoRepos = Schema.decodeUnknownSync(GithubIntegrationStatus)({
+			...Schema.encodeSync(GithubIntegrationStatus)(status),
+			repositories: [first, { ...first, id: other, fullName: "acme-shop/api" }],
+		})
+		const base = init({ search: { integration: "github" } }, context).model
+		const model = pageUpdate(
+			base,
+			Message.CompletedLoadGithub({ key: base.statuses.github.key ?? "", result: Result.succeed(twoRepos) }),
+		).model
+		const otherId = twoRepos.repositories[1]?.id ?? repoId
+		const confirm = (from: Model, id: typeof repoId) =>
+			pageUpdate(pageUpdate(from, Message.ClickedBranch({ repoId: id, branch: "release" })).model, Message.ConfirmedBranch())
+		const savingFirst = confirm(model, repoId)
+		const savingBoth = confirm(savingFirst.model, otherId)
+		expect(names(savingBoth.commands)).toContain("SetGithubTrackedBranch")
+		expect(names(confirm(savingBoth.model, otherId).commands)).not.toContain("SetGithubTrackedBranch")
+	})
+
 	test("refresh re-reads the status and spins until its timer", () => {
 		const refreshed = pageUpdate(loaded(), Message.ClickedGithubRefresh())
 		expect(names(refreshed.commands)).toEqual(["LoadIntegrationsGithubStatus", "SpinGithubRefresh"])

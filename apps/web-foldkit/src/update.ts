@@ -49,6 +49,7 @@ import { completeRangeOf, isWithin, withSessionRange } from "./route/session-tim
 import * as Shell from "./shell"
 import * as ChatSheet from "./page/chat/sheet"
 import * as OrgSwitcher from "./shell/clerk-org-switcher"
+import { presenceOf } from "./shell/view-nav"
 import * as Toast from "./ui/toast"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
@@ -170,6 +171,7 @@ export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 					orgId,
 					pinnedNamespace: model.shell.pinnedNamespaces[orgId] ?? null,
 					timeZone: model.timeZone,
+					infra: { presence: presenceOf(model.shell), integrations: model.shell.integrations },
 				})),
 			),
 	})

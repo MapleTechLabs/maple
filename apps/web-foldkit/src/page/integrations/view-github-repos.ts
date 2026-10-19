@@ -389,7 +389,7 @@ const branchSelector = (h: H, model: Model, repo: GithubRepoSummary): Html => {
 		model.githubCard.branchRepo === repo.id
 			? model.githubCard.branchPopover
 			: Popover.init(branchPopoverId(repo.id), { align: "end" })
-	const saving = model.githubCard.savingBranch?.repoId === repo.id
+	const saving = model.githubCard.savingBranches.some((entry) => entry.repoId === repo.id)
 	return h.submodel({
 		slotId: branchPopoverId(repo.id),
 		model: popover,

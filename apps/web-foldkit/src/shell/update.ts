@@ -100,7 +100,7 @@ const requestInfraSurfaces = (model: Model): UpdateReturn =>
 		: {
 				model: modifyFields(model, { infraPresence: () => InfraPresenceData.Loading() }),
 				commands: [
-					LoadInfraPresence(),
+					LoadInfraPresence({ orgId: model.maybeOrgId.value }),
 					LoadCloudflareStatus(),
 					LoadPlanetscaleStatus(),
 					LoadRailwayStatus(),

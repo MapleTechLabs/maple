@@ -1,21 +1,16 @@
-import { InfraPresenceRequest } from "@maple/domain/http"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
-import { Clock, Effect } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { lastHourWindow, loadInfraPresence } from "../data/infra-surfaces"
 import { IntegrationStatuses } from "../data/integration-statuses"
 import { loadServicesFacets } from "../data/services-facets-probe"
 import { SessionTenant } from "../data/session-tenant"
-import { MapleInternalApiClient } from "../platform/api-clients"
 import { Message } from "./message"
 
 /**
  * Everything the shell loads at boot, over the S1 API clients. The data layer (S6) is designed in
  * parallel, so the loaders stay here, one Command per legacy request, each reporting one Message.
  */
-
-/** `useInfraSurfaces`: the last hour, snapped to 5 minutes so the key holds still. */
-const PRESENCE_WINDOW_MS = 60 * 60 * 1000
-const PRESENCE_BUCKET_MS = 5 * 60 * 1000
 
 /** Every failure collapses like legacy's `orElse`: the nav shows what it would without the answer. */
 const failed =
@@ -34,20 +29,15 @@ export const LoadTenant = Command.define("LoadTenant", {
 
 /** `infraPresenceResultAtom`: which OTel infrastructure surfaces reported in the last hour. */
 export const LoadInfraPresence = Command.define("LoadInfraPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.SucceededLoadInfraPresence, Message.FailedLoadInfraPresence],
-	execute: Effect.gen(function* () {
-		const now = yield* Clock.currentTimeMillis
-		const end = Math.floor(now / PRESENCE_BUCKET_MS) * PRESENCE_BUCKET_MS
-		const client = yield* MapleInternalApiClient
-		const response = yield* client.queryEngine.infraPresence({
-			payload: new InfraPresenceRequest({
-				startTime: formatWarehouseDateTime(end - PRESENCE_WINDOW_MS),
-				endTime: formatWarehouseDateTime(end),
-			}),
-		})
-		return Message.SucceededLoadInfraPresence({ surfaces: response.surfaces })
-	}).pipe(failed(Message.FailedLoadInfraPresence())),
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const surfaces = yield* loadInfraPresence(orgId, lastHourWindow(yield* Clock.currentTimeMillis))
+			return Message.SucceededLoadInfraPresence({ surfaces })
+		}).pipe(failed(Message.FailedLoadInfraPresence())),
 })
+
 // INTEGRATIONS
 
 const integrationMessages = [Message.SucceededLoadIntegration, Message.FailedLoadIntegration] as const
