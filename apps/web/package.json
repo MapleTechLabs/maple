@@ -37,7 +37,6 @@
 		"@maple/domain": "workspace:*",
 		"@maple/effect-db": "workspace:*",
 		"@maple/grid-engine": "workspace:*",
-		"@maple/infra": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/ui": "workspace:*",
