@@ -97,6 +97,24 @@ describe("Foldkit command tracing", () => {
 		expect(spans.some((span) => attribute(span, NAVIGATION_ARG) !== undefined)).toBe(false)
 	})
 
+	it("makes a Command whose navigation closed before it had a span a root, not a child of nothing", async () => {
+		const { buffer, tracing, runCommand } = setup()
+		const id = tracing.startNavigation({
+			kind: "navigate",
+			route: "/chat/:id",
+			path: "/chat/1",
+			startTime: nowNanos(),
+		})
+		// The page goes away while the Command is still running, before its first child span.
+		const work = Effect.sync(() => tracing.interruptAll()).pipe(
+			Effect.andThen(Effect.void.pipe(Effect.withSpan("RpcClient.load"))),
+		)
+		await runCommand("LoadMessages", { [NAVIGATION_ARG]: id }, work)
+		const spans = buffer.drain()
+		expect(spans.map((span) => span.name).sort()).toEqual(["LoadMessages", "RpcClient.load"])
+		expect(byName(spans, "LoadMessages")?.parentSpanId).toBeUndefined()
+	})
+
 	it("exports nothing for a navigation whose Commands were all UI work", async () => {
 		const { buffer, tracing, runCommand } = setup()
 		const id = tracing.startNavigation({

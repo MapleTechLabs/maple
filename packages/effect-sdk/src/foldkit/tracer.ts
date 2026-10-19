@@ -73,6 +73,21 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		return span
 	}
 
+	/**
+	 * The span to parent under: the navigation's own while it is open, or the one it ended with.
+	 * A navigation that closed before any child needed a span has none to end, so none is made.
+	 */
+	const parentSpanOf = (
+		navigation: Navigation | undefined,
+		tracer: Tracer.Tracer,
+	): Option.Option<Tracer.AnySpan> => {
+		if (navigation === undefined) return Option.none()
+		if (navigation.span !== undefined) return Option.some(navigation.span)
+		return navigations.has(navigation.id)
+			? Option.some(navigationSpan(navigation, tracer))
+			: Option.none()
+	}
+
 	const closeNavigation = (navigation: Navigation, endTime: bigint, interrupted: boolean): void => {
 		if (!navigations.has(navigation.id)) return
 		navigations.delete(navigation.id)
@@ -156,9 +171,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 			if (this.real !== undefined) return this.real
 			const navigation = this.navigation
 			const parent =
-				navigation === undefined
-					? this.options.parent
-					: Option.some(navigationSpan(navigation, this.tracer))
+				navigation === undefined ? this.options.parent : parentSpanOf(navigation, this.tracer)
 			const rate = options.sampleRates[this.name]
 			const sampled =
 				navigation === undefined
@@ -167,7 +180,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 			const real = this.tracer.span({
 				...this.options,
 				parent,
-				root: navigation === undefined,
+				root: navigation === undefined || Option.isNone(parent),
 				sampled,
 			})
 			for (const [key, value] of this.buffered) real.attribute(key, value)
@@ -262,16 +275,15 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 			if (navigation.pending === 0) armQuietTimer(navigation, options.navigationQuietMs)
 		}
 		const record = (tracer: Tracer.Tracer): void => {
-			// A navigation that ended before the tracer existed has no span to parent under.
-			const parent = navigation !== undefined && navigations.has(navigation.id) ? navigation : undefined
+			const parent = parentSpanOf(navigation, tracer)
 			const span = tracer.span({
 				name,
-				parent: parent === undefined ? Option.none() : Option.some(navigationSpan(parent, tracer)),
+				parent,
 				annotations: Context.empty(),
 				links: [],
 				startTime,
 				kind: "internal",
-				root: parent === undefined,
+				root: Option.isNone(parent),
 				// A navigation sampled out keeps its phases out even once it has closed.
 				sampled: navigation?.sampled ?? true,
 			})
