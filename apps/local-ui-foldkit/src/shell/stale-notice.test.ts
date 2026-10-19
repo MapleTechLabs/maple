@@ -1,3 +1,4 @@
+import { Result } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { shownDataOf } from "../data/shown"
@@ -45,5 +46,10 @@ describe("stale data notice", () => {
 
 	test("an older day shows its date", () => {
 		expect(notice(shownAt(NOW - 26 * 3_600_000, { isStandIn: true }))?.text).toBe("Loading newer results. Showing results from Sep 30, 10:00 AM.")
+	})
+
+	test("an expanded error card's failed traces refresh counts as a failed refresh", () => {
+		const refreshed = { ...shownAt(NOW - 60_000).rows, data: AsyncData.settle(AsyncData.Refreshing({ data: [1] }), Result.fail({ message: "down" })) }
+		expect(shownDataOf({ cards: { abc: { isExpanded: true, traces: refreshed } } }, NOW).refreshFailed).toBe(true)
 	})
 })
