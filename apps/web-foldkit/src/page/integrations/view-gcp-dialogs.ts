@@ -1,6 +1,7 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import { GCP_SCOPE_NAMES, gcpScopeLabel } from "@maple/web/components/integrations/gcp-connector-state"
+import { gcpRemovalList } from "@maple/web/components/integrations/gcp-setup-steps"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
@@ -8,10 +9,12 @@ import { confirmDialog } from "../../ui/confirm-dialog"
 import * as DialogView from "../../ui/dialog-view"
 import { icon } from "../../ui/icon"
 import { relativeTime } from "../kit/relative-time"
+import { IAC_DOCS } from "./gcp-configure-copy"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { gcpConnectors, neverReported } from "./update-gcp"
 import { openCloudShellButton, type ScriptFailure, SMALL, scriptBlock, step } from "./view-gcp-parts"
+import { removalItem } from "./view-gcp-setup-methods"
 
 // `GcpDisconnectDialog` (gcp-configure.tsx), and the `ConfirmDialog`s of `GcpConnection` and
 // `GcpIntegrationCard`.
@@ -49,7 +52,7 @@ const quietDisconnect = (h: H, model: Model, connector: V2GcpConnector): Html =>
 							h.dd(
 								[h.Class("text-pretty text-muted-foreground")],
 								[
-									"Nothing should exist: Maple hasn't seen the setup script run. If it ran part of the way, Maple offers the cleanup script afterwards.",
+									"Maple hasn't seen a setup finish or any data arrive. If you created anything, in the console or as code, delete it there. Maple also offers the cleanup script afterwards, which removes it however it was made.",
 								],
 							),
 						],
@@ -69,6 +72,16 @@ const settledScript = (model: Model): string | null => {
 	const data = model.gcpCard.scripts.data
 	return AsyncData.isSuccess(data) ? data.data.cleanup_script : null
 }
+
+/** What the cleanup deletes: only the capabilities a run may have set up. */
+const deletesText = (connector: V2GcpConnector): string =>
+	`${[
+		connector.applied_logs_enabled === false ? null : "the log sink, subscription, topic and push service account",
+		connector.applied_metrics_enabled === false ? null : "the read-only service account and its roles",
+	]
+		.filter((part) => part !== null)
+		.join(", and ")
+		.replace(/^./, (first) => first.toUpperCase())}.`
 
 /** `GcpDisconnectDialog`: the cleanup script first, then the disconnect. */
 const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZone: string): Html => {
@@ -121,7 +134,17 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 													".",
 												]
 											: [
-													`Run the cleanup script in Cloud Shell. Takes ${connector.applied_logs_enabled === true ? "one to two minutes" : "about a minute"}.`,
+													`Run the cleanup script in Cloud Shell, about ${connector.applied_logs_enabled === true ? "two minutes" : "a minute"}, or delete them in the console below. Set up with Terraform or Alchemy? `,
+													h.a(
+														[
+															h.Href(`${IAC_DOCS}#change-or-remove`),
+															h.Target("_blank"),
+															h.Rel("noreferrer"),
+															h.Class("underline"),
+														],
+														["Destroy it there"],
+													),
+													", then disconnect.",
 												],
 								},
 								cleaned
@@ -134,7 +157,7 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 													h.dd(
 														[h.Class("text-pretty text-muted-foreground")],
 														[
-															"The log sink, topic, subscription and read-only service account.",
+															deletesText(connector),
 														],
 													),
 													h.dt([h.Class("text-foreground")], ["Keeps"]),
@@ -155,9 +178,23 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 												},
 												[openCloudShellButton(h, connector.project_id)],
 											),
+											h.details(
+												[h.Class("text-xs/5")],
+												[
+													h.summary([h.Class("cursor-pointer text-foreground")], ["Delete them in the console instead"]),
+													h.ol(
+														[h.Class("mt-2 flex list-decimal flex-col gap-2 pl-5")],
+														gcpRemovalList(connector, "all").map((item) => removalItem(h, model, item)),
+													),
+												],
+											),
 											h.p(
 												[h.Class(cn(SMALL, "text-foreground/80"))],
-												["Waiting for the cleanup script. This updates on its own."],
+												[
+													connector.setup_reported_at === null
+														? "Maple sees the cleanup script finish. Removed them another way? Disconnect anyway."
+														: "Waiting for the cleanup script. This updates on its own.",
+												],
 											),
 										],
 							),
@@ -185,7 +222,9 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 											size: 12,
 											className: "mt-1 shrink-0 text-severity-warn",
 										}),
-										"Disconnecting before the cleanup leaves Google Cloud publishing logs to Pub/Sub, billed by Google.",
+										connector.applied_logs_enabled === false
+											? "If they're still there, disconnecting leaves the read-only service account in Google Cloud."
+											: "If they're still there, disconnecting leaves Google Cloud publishing logs to Pub/Sub, billed by Google.",
 									],
 								),
 							]),

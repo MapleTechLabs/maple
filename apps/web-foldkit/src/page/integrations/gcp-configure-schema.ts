@@ -30,6 +30,10 @@ export const ApplyOpened = Schema.Struct({
 })
 export type ApplyOpened = typeof ApplyOpened.Type
 
+/** `GcpSetupMethod`: how Google Cloud is set up, asked before every Set up step. */
+export const SetupMethod = Schema.Literals(["script", "manual", "terraform", "alchemy"])
+export type SetupMethod = typeof SetupMethod.Type
+
 export const Capability = Schema.Literals(["logs", "metrics"])
 export type Capability = typeof Capability.Type
 
@@ -62,5 +66,20 @@ export const ConfigureModel = Schema.Struct({
 	/** `useGcpScripts` for the run step, and its "Show all". */
 	scripts: KeyedSchema(V2GcpSetupScripts, LoadFailure),
 	isScriptExpanded: Schema.Boolean,
+	/** `ConnectionStages`: the Method step or the data step, while `opened` is null. */
+	connectionStage: Schema.Literals(["choose", "method"]),
+	method: SetupMethod,
+	/** Whether a run was asked for when the Method step was left; null before the data step. */
+	rerun: Schema.NullOr(Schema.Boolean),
+	flavourGroup: ToggleGroup.Model,
+	/** `MethodApplyStage`: whether logs were confirmed when the step opened. */
+	sinkExisted: Schema.Boolean,
+	/** `GcpManualSteps`: the open step; untouched, the first one is. */
+	manualOpen: Schema.NullOr(Schema.String),
+	isManualTouched: Schema.Boolean,
+	/** `FileCard`: the coding-agent prompt in the file's place, and whether its copy worked. */
+	isPromptShown: Schema.Boolean,
+	promptCopied: Schema.NullOr(Schema.Boolean),
+	isConfirmingRemoval: Schema.Boolean,
 })
 export type ConfigureModel = typeof ConfigureModel.Type

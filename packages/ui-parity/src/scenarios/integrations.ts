@@ -422,6 +422,14 @@ export const integrationsArea: AreaModule = {
 				},
 			},
 		),
+		page("gcp-disconnect-console", "Google Cloud: delete in the console instead", "/integrations?integration=gcp", {
+			dataset: "infra-integrations",
+			steps: async (page) => {
+				await page.getByRole("button", { name: /^Actions for / }).click()
+				await page.getByRole("menuitem", { name: "Disconnect" }).click()
+				await page.getByText("Delete them in the console instead").click()
+			},
+		}),
 		page("gcp-disconnect-submit", "Google Cloud: disconnect anyway", "/integrations?integration=gcp", {
 			dataset: "infra-integrations",
 			steps: async (page) => {

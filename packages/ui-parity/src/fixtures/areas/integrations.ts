@@ -256,7 +256,14 @@ export const fixtureArea: FixtureArea = {
 				object: "gcp_connector.setup_scripts",
 				setup_script: "#!/usr/bin/env bash\necho 'setting up Maple'\n",
 				cleanup_script: "#!/usr/bin/env bash\necho 'removing Maple'\n",
+				push_endpoint: "https://ingest.maple.dev/v1/logpush/gcp/parity",
+				log_filter: 'NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC"',
+				maple_service_account_email: "collector@maple-parity.iam.gserviceaccount.com",
+				terraform: '# Maple connection for Google Cloud\nresource "google_pubsub_topic" "maple" {\n  name = "maple-logs"\n}\n',
+				alchemy: '// Maple connection for Google Cloud\nimport alchemy from "alchemy"\nconst app = await alchemy("maple")\n',
 			}),
+		// The admin's word that the switched-off parts are gone: the connection as it stands.
+		"gcpIntegration.confirmRemoval": () => Effect.succeed(gcpConnector),
 		"gcpIntegration.createConnector": createdGcpConnector,
 		"gcpIntegration.updateConnector": updatedGcpConnector,
 		"gcpIntegration.deleteConnector": (request) =>

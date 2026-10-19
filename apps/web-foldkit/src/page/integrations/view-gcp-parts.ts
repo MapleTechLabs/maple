@@ -21,7 +21,7 @@ export const GCP_LINK = "underline underline-offset-2 hover:no-underline"
 export const SMALL = "text-xs/5 text-pretty text-muted-foreground"
 export const GCP_TITLE = "text-base/6 font-medium sm:text-sm/5"
 
-const copyOf = (
+export const copyOf = (
 	h: H,
 	model: Model,
 	id: string,

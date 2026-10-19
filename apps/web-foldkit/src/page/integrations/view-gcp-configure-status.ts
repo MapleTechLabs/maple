@@ -12,7 +12,7 @@ import { icon } from "../../ui/icon"
 import { spinner } from "../../ui/spinner"
 import { statusDot } from "../../ui/status-dot"
 import { CAPABILITIES, CAPABILITY_IDS, DOCS } from "./gcp-configure-copy"
-import type { ApplyOpened } from "./gcp-configure-schema"
+import type { ApplyOpened, SetupMethod } from "./gcp-configure-schema"
 import type { Message } from "./message"
 import { externalLink } from "./view-gcp-configure-parts"
 import { SMALL } from "./view-gcp-parts"
@@ -59,31 +59,56 @@ const overdueHelp = (h: H): Html =>
 		],
 	)
 
-/** A row per capability the run sets up or removes, ticked as its section reports. */
+/** How a setup without the script is confirmed: by the first data, as no run reports it. */
+const CONFIRMED_BY = {
+	logs: { done: "Confirmed: logs arrive", waiting: "Confirmed by the first log Maple receives" },
+	metrics: { done: "Confirmed: metrics are read", waiting: "Confirmed by the first metrics read, within 5 minutes" },
+} as const
+
+/** A row per capability set up or removed, ticked as the script reports or, without it, as data arrives. */
 export const runStatus = (
 	h: H,
 	connector: V2GcpConnector,
-	options: Readonly<{ opened: ApplyOpened; overdue: boolean; nowMs: number }>,
+	options: Readonly<{ opened: ApplyOpened; overdue: boolean; nowMs: number; method: SetupMethod }>,
 ): Html => {
-	const { overdue } = options
+	const byScript = options.method === "script"
+	const overdue = options.overdue && byScript
 	// A row ticks on a report made since the step opened, not on what an earlier run left in place.
 	const reported = connector.setup_reported_at !== options.opened.seen
 	const running = gcpSetupRunning(connector, options.nowMs)
+	const metricsState = gcpMetricsState(connector, options.nowMs)
 	const rows = CAPABILITY_IDS.flatMap((capability) => {
 		const { title, flag, run } = CAPABILITIES[capability]
 		const wanted = connector[flag]
 		const applied =
 			capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
 		if (!wanted && applied !== true) return []
-		const state: RowState = applied === wanted && reported ? "done" : running ? "running" : "pending"
-		return [{ capability, title, detail: wanted ? run.on : run.off, state }]
+		const confirmed = applied === wanted
+		const state: RowState =
+			confirmed && (reported || !byScript) ? "done" : running || !byScript ? "running" : "pending"
+		// The poller's failure, once past the grant's grace: what a setup without the script can be told.
+		const error = !byScript && capability === "metrics" && metricsState.kind === "failing" ? metricsState.error : null
+		const detail = byScript
+			? wanted
+				? run.on
+				: run.off
+			: !wanted
+				? "Waiting for you to confirm the removal"
+				: (error ?? CONFIRMED_BY[capability][confirmed ? "done" : "waiting"])
+		return [{ capability, title, detail, state, error }]
 	})
 	const done = rows.filter((row) => row.state === "done").length
 	const reporting = done > 0 || running
 	return h.div(
 		[
 			h.Role("status"),
-			h.Class(cn("flex flex-col gap-3 border-t px-6 py-4", overdue && "bg-severity-warn/6")),
+			h.Class(
+				cn(
+					// On a phone a long error would squeeze the steps above out of view: it scrolls instead.
+					"flex max-h-[40svh] shrink-0 flex-col gap-3 overflow-y-auto border-t px-6 py-4 sm:max-h-none",
+					overdue && "bg-severity-warn/6",
+				),
+			),
 		],
 		[
 			h.div(
@@ -91,11 +116,17 @@ export const runStatus = (
 				[
 					overdue
 						? icon(h, "AlertWarningIcon", { size: 14, className: "shrink-0 text-severity-warn" })
-						: spinner(h, "size-3.5 shrink-0 text-severity-debug"),
+						: done === rows.length
+							? icon(h, "CircleCheckIcon", { size: 14, className: "shrink-0 text-severity-info" })
+							: spinner(h, "size-3.5 shrink-0 text-severity-debug"),
 					h.p(
 						[h.Class(cn("text-sm font-medium", overdue && "text-severity-warn"))],
 						[
-							overdue
+							!byScript
+								? done === rows.length
+									? "Confirmed by the first data"
+									: "Waiting for Google Cloud"
+								: overdue
 								? "No report from the script yet"
 								: reporting
 									? "The script is reporting back"
@@ -104,7 +135,7 @@ export const runStatus = (
 					),
 					h.span(
 						[h.Class("ml-auto shrink-0 font-mono text-xs text-muted-foreground")],
-						[reporting ? `${done} of ${rows.length} done` : "updates on its own"],
+						[reporting ? `${done} of ${rows.length} ${byScript ? "done" : "confirmed"}` : "updates on its own"],
 					),
 				],
 			),
@@ -114,11 +145,21 @@ export const runStatus = (
 						[h.Class("flex flex-col gap-1.5 pl-6")],
 						rows.map((row) =>
 							h.li(
-								[h.Class("grid grid-cols-[auto_10rem_1fr] items-center gap-x-2.5 text-xs/5")],
+								[h.Class("grid grid-cols-[auto_1fr] items-center gap-x-2.5 text-xs/5 sm:grid-cols-[auto_10rem_1fr]")],
 								[
 									rowMarker(h, row.state),
 									h.span([h.Class("text-foreground")], [row.title]),
-									h.span([h.Class("text-muted-foreground")], [row.detail]),
+									h.span(
+										[
+											h.Class(
+												cn(
+													"col-start-2 text-pretty sm:col-start-auto",
+													row.error === null ? "text-muted-foreground" : "text-severity-error",
+												),
+											),
+										],
+										[row.detail],
+									),
 								],
 							),
 						),

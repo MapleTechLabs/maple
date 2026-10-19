@@ -1,7 +1,7 @@
 import type { Page } from "playwright"
 import type { Scenario } from "./types.ts"
 
-/** `GcpConfigure`: the Google Cloud wizard, a new connection's three steps and a connection's two. */
+/** `GcpConfigure`: the Google Cloud wizard, a new connection's four steps and a connection's three. */
 
 const PATH = "/integrations?integration=gcp"
 const CONNECTED = "infra-integrations"
@@ -69,8 +69,22 @@ const tickCloudRun = async (page: Page) => {
 	await dialog(page).getByRole("checkbox", { name: "Cloud Run" }).click()
 }
 
-const create = async (page: Page) => {
+/** The create, onto the Method step. */
+const toMethod = async (page: Page) => {
 	await dialog(page).getByRole("button", { name: "Continue" }).click()
+	await dialog(page).getByText("How do you want to connect?").waitFor()
+}
+
+/** Continue on the Method step, with `method` picked first. */
+const setUp = async (page: Page, method?: string) => {
+	if (method !== undefined) await dialog(page).getByText(method, { exact: true }).click()
+	await dialog(page).getByRole("button", { name: "Continue" }).click()
+}
+
+/** The create and the Method step, onto the script. */
+const create = async (page: Page) => {
+	await toMethod(page)
+	await setUp(page)
 	await dialog(page).getByText("Run this script in Cloud Shell").waitFor()
 }
 
@@ -79,6 +93,9 @@ const openConfigure = async (page: Page) => {
 	await page.getByRole("menuitem", { name: "Configure" }).click()
 	await dialog(page).getByText("What should Maple collect?").waitFor()
 }
+
+/** The Method step's legend once something of the connection is set up. */
+const CHANGE = "How do you want to apply the change?"
 
 const metricsOff = (page: Page) => dialog(page).getByRole("switch", { name: "Metrics and resources" }).click()
 
@@ -127,7 +144,11 @@ const newConnection: ReadonlyArray<Scenario> = [
 		await toData(page)
 		await dialog(page).getByRole("button", { name: "Back" }).click()
 	}),
-	wizard("create", "create, then the run step", async (page) => {
+	wizard("create", "create, then the Method step", async (page) => {
+		await toData(page)
+		await toMethod(page)
+	}),
+	wizard("create-script", "the script on the Set up step", async (page) => {
 		await toData(page)
 		await create(page)
 	}),
@@ -241,22 +262,25 @@ const connection: ReadonlyArray<Scenario> = [
 	),
 	wizard(
 		"rerun",
-		"continue unchanged to the run step",
+		"continue unchanged through the Method step to the script",
 		async (page) => {
 			await openConfigure(page)
 			await dialog(page).getByRole("button", { name: "Continue" }).click()
+			await dialog(page).getByText(CHANGE).waitFor()
+			await setUp(page)
 			await dialog(page).getByText("Run this script in Cloud Shell").waitFor()
 		},
 		{ dataset: CONNECTED },
 	),
 	wizard(
 		"rerun-edit",
-		"edit from the run step",
+		"edit from the Set up step, back on the Method step",
 		async (page) => {
 			await openConfigure(page)
 			await dialog(page).getByRole("button", { name: "Continue" }).click()
+			await setUp(page)
 			await dialog(page).getByRole("button", { name: "Edit" }).click()
-			await dialog(page).getByText("What should Maple collect?").waitFor()
+			await dialog(page).getByText(CHANGE).waitFor()
 		},
 		{ dataset: CONNECTED },
 	),
@@ -307,8 +331,10 @@ const controls: ReadonlyArray<Scenario> = [
 			await metricsOff(page)
 			await create(page)
 			await dialog(page).getByRole("button", { name: "Edit" }).click()
+			await dialog(page).getByRole("button", { name: "Back" }).click()
 			await dialog(page).getByRole("switch", { name: "Metrics and resources" }).click()
 			await dialog(page).getByRole("button", { name: "Save and continue" }).click()
+			await setUp(page)
 			await dialog(page).getByText("Run this script in Cloud Shell").waitFor()
 		},
 		{ dataset: CONNECTED },
@@ -321,6 +347,8 @@ const controls: ReadonlyArray<Scenario> = [
 			await metricsOff(page)
 			await dialog(page).getByRole("button", { name: "Save and continue" }).click()
 			await page.getByRole("alertdialog").getByRole("button", { name: "Turn off and continue" }).click()
+			await dialog(page).getByText(CHANGE).waitFor()
+			await setUp(page)
 			await dialog(page).getByRole("button", { name: "Done" }).click()
 			await dialog(page).waitFor({ state: "detached" })
 		},
@@ -328,8 +356,52 @@ const controls: ReadonlyArray<Scenario> = [
 	),
 ]
 
+/** The Method step and the setups without the script: console steps, Terraform and Alchemy. */
+const methods: ReadonlyArray<Scenario> = [
+	wizard("method-code", "infrastructure as code picked on the Method step", async (page) => {
+		await toData(page)
+		await toMethod(page)
+		await dialog(page).getByText("Infrastructure as code", { exact: true }).click()
+	}),
+	wizard("manual", "the console steps", async (page) => {
+		await toData(page)
+		await toMethod(page)
+		await setUp(page, "Manual setup")
+		await dialog(page).getByText("Create these in the Google Cloud console").waitFor()
+	}),
+	wizard("manual-step", "another console step opened", async (page) => {
+		await toData(page)
+		await toMethod(page)
+		await setUp(page, "Manual setup")
+		await dialog(page).getByRole("button", { expanded: false }).last().click()
+	}),
+	wizard("terraform", "the Terraform file", async (page) => {
+		await toData(page)
+		await toMethod(page)
+		await setUp(page, "Infrastructure as code")
+		await dialog(page).getByText("Add this to your Terraform configuration").waitFor()
+	}),
+	wizard("alchemy", "the Alchemy file, shown in full", async (page) => {
+		await toData(page)
+		await toMethod(page)
+		await dialog(page).getByText("Infrastructure as code", { exact: true }).click()
+		await dialog(page).getByRole("button", { name: "Alchemy" }).click()
+		await setUp(page)
+		await dialog(page).getByText("Add this to your Alchemy app").waitFor()
+		await dialog(page).getByRole("button", { name: "Show all" }).click()
+	}),
+	wizard("method-back", "edit from the console steps, back on the Method step", async (page) => {
+		await toData(page)
+		await toMethod(page)
+		await setUp(page, "Manual setup")
+		await dialog(page).getByRole("button", { name: "Edit" }).click()
+		await dialog(page).getByText("How do you want to connect?").waitFor()
+	}),
+]
+
 export const gcpConfigureScenarios: ReadonlyArray<Scenario> = [
 	...newConnection,
+	...methods,
 	...newConnectionFaults,
 	...connection,
 	...controls,

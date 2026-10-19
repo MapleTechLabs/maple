@@ -48,7 +48,7 @@ export const chip = (h: H, children: Children): Html =>
 export const footerNote = (h: H, children: Children): Html =>
 	h.p([h.Class("text-xs/5 text-pretty text-muted-foreground sm:mr-auto sm:self-center")], children)
 
-export type StepIndex = 0 | 1 | 2
+export type StepIndex = 0 | 1 | 2 | 3
 
 /** Where the flow is: done steps are checked, the current one is filled, later ones are outlined. */
 const stepper = (h: H, current: StepIndex): Html =>

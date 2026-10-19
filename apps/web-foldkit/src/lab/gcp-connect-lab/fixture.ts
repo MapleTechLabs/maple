@@ -2,7 +2,8 @@ import type { V2GcpConnector, V2GcpSetupScripts } from "@maple/domain/http/v2"
 import { AsyncData } from "foldkit"
 import type { Keyed } from "../../data/keyed"
 import { type LoadFailure, toLoadFailure } from "../../data/load-failure"
-import type { ApplyOpened, LogFilterDraft } from "../../page/integrations/gcp-configure-schema"
+import { GCP_SETUP_FIXTURES } from "@maple/web/lab/gcp-setup-fixtures"
+import type { ApplyOpened, LogFilterDraft, SetupMethod } from "../../page/integrations/gcp-configure-schema"
 import { agoOf, connectorOf } from "../gcp-host"
 
 // apps/web `lab/gcp-connect-lab.tsx`'s fixtures: minutes old against the lab's clock.
@@ -20,6 +21,26 @@ export const STATES = {
 	failed: { label: "Run · script failed", note: "The script couldn't be loaded." },
 	connected: { label: "Connected", note: "First run confirmed, data not in yet." },
 	applied: { label: "Applied", note: "A reconfigured organization, receiving." },
+	method: { label: "Method", note: "The Method step, on the script." },
+	"method-code": { label: "Method · code", note: "Infrastructure as code picked, Terraform." },
+	"manual-project": { label: "Manual · project", note: "A project with logs and metrics, nothing confirmed." },
+	"manual-org": { label: "Manual · org logs", note: "An organization forwarding logs only." },
+	"manual-failed": {
+		label: "Manual · metrics failing",
+		note: "Logs arrive; past the grant's grace, the poller's read is still denied.",
+	},
+	"manual-removal": { label: "Manual · removal", note: "Log forwarding switched off: what to delete." },
+	terraform: { label: "Terraform", note: "Click Copy prompt for coding agent for the prompt." },
+	"terraform-removal": { label: "Terraform · removal", note: "The regenerated file without log forwarding." },
+	alchemy: { label: "Alchemy", note: "The same project as an Alchemy stack." },
+	"alchemy-org": {
+		label: "Alchemy · org metrics",
+		note: "An organization's read roles, granted by the file's own ScopeIamMember resource.",
+	},
+	"method-confirmed": {
+		label: "Manual · confirmed",
+		note: "Both confirmed: the steps stay in view for a change or a repair.",
+	},
 } as const
 
 export const LAB_STATES = [
@@ -32,8 +53,22 @@ export const LAB_STATES = [
 	"failed",
 	"connected",
 	"applied",
+	"method",
+	"method-code",
+	"manual-project",
+	"manual-org",
+	"manual-failed",
+	"manual-removal",
+	"terraform",
+	"terraform-removal",
+	"alchemy",
+	"alchemy-org",
+	"method-confirmed",
 ] as const satisfies ReadonlyArray<keyof typeof STATES>
 export type LabState = (typeof LAB_STATES)[number]
+export type MethodState = "method" | "method-code"
+export type MethodApplyState = Exclude<LabState, "new" | "configure" | MethodState | ScriptState>
+export type ScriptState = "waiting" | "reporting" | "overdue" | "removing" | "failed" | "connected" | "applied"
 
 export const SCRIPT = `#!/usr/bin/env bash
 # Maple setup for Google Cloud project acme-prod
@@ -72,18 +107,25 @@ export type ApplyFixture = Readonly<{
 
 export type Fixtures = Readonly<{
 	configured: V2GcpConnector
-	apply: Readonly<Record<Exclude<LabState, "new" | "configure">, ApplyFixture>>
+	apply: Readonly<Record<ScriptState, ApplyFixture>>
+	method: Readonly<Record<MethodState, Readonly<{ connector: V2GcpConnector; method: SetupMethod }>>>
+	methodApply: Readonly<Record<MethodApplyState, MethodApplyFixture>>
 }>
+
+/** `GcpMethodApplyView`'s props as state: the run step's, with the method. */
+export type MethodApplyFixture = ApplyFixture & Readonly<{ method: SetupMethod }>
 
 const PLATFORM_LOGS: LogFilterDraft = { keep: null, runtimes: null }
 const CURRENT_FILTER: LogFilterDraft = { keep: null, runtimes: null }
 /** Once the sink exists, "Platform logs" is a replaced filter. */
 const REPLACED_PLATFORM_LOGS: LogFilterDraft = { keep: false, runtimes: null }
 
-const script = (text: string): Keyed<V2GcpSetupScripts, LoadFailure> => ({
+type SetupFields = (typeof GCP_SETUP_FIXTURES)[keyof typeof GCP_SETUP_FIXTURES]
+
+const script = (text: string, setup: SetupFields = GCP_SETUP_FIXTURES.project): Keyed<V2GcpSetupScripts, LoadFailure> => ({
 	key: null,
 	data: AsyncData.Success({
-		data: { object: "gcp_connector.setup_scripts", setup_script: text, cleanup_script: "" },
+		data: { object: "gcp_connector.setup_scripts", setup_script: text, cleanup_script: "", ...setup },
 	}),
 })
 
@@ -91,6 +133,73 @@ const script = (text: string): Keyed<V2GcpSetupScripts, LoadFailure> => ({
 const FAILED_SCRIPT: Keyed<V2GcpSetupScripts, LoadFailure> = {
 	key: null,
 	data: AsyncData.Failure({ error: toLoadFailure("lab fixture: the script read failed") }),
+}
+
+type Over = Readonly<Record<string, unknown>>
+
+/** `METHOD_APPLY`: "Platform logs" over an existing sink is a replaced filter. */
+const methodApplyFixtures = (
+	connector: (over?: Over) => V2GcpConnector,
+	organization: Over,
+	ago: (minutes: number) => string,
+	opened: ApplyOpened,
+): Fixtures["methodApply"] => {
+	const removingLogs = connector({
+		...organization,
+		logs_enabled: false,
+		applied_logs_enabled: true,
+		applied_metrics_enabled: true,
+		setup_reported_at: ago(60 * 24),
+		last_metrics_received_at: ago(3),
+		discovered_project_count: 14,
+	})
+	const fixture = (
+		shown: V2GcpConnector,
+		method: SetupMethod,
+		setup: SetupFields,
+		created = true,
+	): MethodApplyFixture => ({
+		connector: shown,
+		created,
+		filter: shown.applied_logs_enabled === true ? REPLACED_PLATFORM_LOGS : PLATFORM_LOGS,
+		scripts: script("", setup),
+		opened,
+		method,
+	})
+	const failing =
+		"Google denied Maple's read of project acme-prod: the read-only roles are missing. Grant them with the setup script, the console steps or your Terraform. A new grant can take a few minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED)"
+	return {
+		"manual-project": fixture(connector(), "manual", GCP_SETUP_FIXTURES.project),
+		"manual-org": fixture(
+			connector({ ...organization, created_at: ago(2), metrics_enabled: false }),
+			"manual",
+			GCP_SETUP_FIXTURES.organization,
+		),
+		"manual-failed": fixture(
+			connector({ created_at: ago(20), applied_logs_enabled: true, last_log_received_at: ago(0.2), last_metrics_error: failing }),
+			"manual",
+			GCP_SETUP_FIXTURES.project,
+		),
+		"manual-removal": fixture(removingLogs, "manual", GCP_SETUP_FIXTURES.organizationMetrics, false),
+		terraform: fixture(connector(), "terraform", GCP_SETUP_FIXTURES.project),
+		"terraform-removal": fixture(removingLogs, "terraform", GCP_SETUP_FIXTURES.organizationMetrics, false),
+		alchemy: fixture(connector(), "alchemy", GCP_SETUP_FIXTURES.project),
+		"alchemy-org": fixture(
+			connector({ ...organization, created_at: ago(1), logs_enabled: false, applied_logs_enabled: false }),
+			"alchemy",
+			GCP_SETUP_FIXTURES.organizationMetrics,
+		),
+		"method-confirmed": fixture(
+			connector({
+				applied_logs_enabled: true,
+				applied_metrics_enabled: true,
+				setup_reported_at: ago(0.5),
+				last_log_received_at: ago(0.3),
+			}),
+			"manual",
+			GCP_SETUP_FIXTURES.project,
+		),
+	}
 }
 
 export const fixturesAt = (nowMs: number): Fixtures => {
@@ -166,5 +275,10 @@ export const fixturesAt = (nowMs: number): Fixtures => {
 				opened: { at: nowMs - 8 * 60_000, rerun: true, seen: ago(60 * 24) },
 			},
 		},
+		method: {
+			method: { connector: connector(), method: "script" },
+			"method-code": { connector: connector(), method: "terraform" },
+		},
+		methodApply: methodApplyFixtures(connector, organization, ago, firstRun),
 	}
 }

@@ -1,5 +1,6 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { REPLAY_BLOCK_CLASS } from "@maple/web/components/common/replay-privacy"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import * as CopyButton from "../../ui/copy-button"
@@ -8,23 +9,67 @@ import { skeleton } from "../../ui/skeleton"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { openCloudShellButton, type ScriptFailure } from "./view-gcp-parts"
+import type { ScriptFailure } from "./view-gcp-parts"
 
-// `ScriptCard`: the setup script, copied or run straight from Cloud Shell; the start shows.
+// `FileCard` and `LoadFailure`: a generated file to copy, the start in view, the rest on request.
 
 type H = HtmlBuilder<Message>
 
-const COPY_ID = "configure-setup-script"
+const COPY_ID = "configure-file"
+const LINK = "h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground"
 
-export const scriptCard = (
-	h: H,
-	model: Model,
-	configure: ConfigureModel,
-	options: Readonly<{ script: string | null; failure: ScriptFailure | null; projectId: string }>,
-): Html => {
-	const { script, failure } = options
+/** Why a file couldn't be loaded, and the way to load it again. */
+export const loadFailure = (h: H, failure: ScriptFailure): Html =>
+	h.div(
+		[h.Class("flex flex-wrap items-center gap-2")],
+		[
+			h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [failure.message]),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					isLoading: failure.isRetrying,
+					attributes: [h.OnClick(Message.ClickedGcpConfigureScriptRetry())],
+				},
+				["Try again"],
+			),
+		],
+	)
+
+export type FileCardOptions = Readonly<{
+	name: string
+	text: string | null
+	failure: ScriptFailure | null
+	/** The setup script embeds the connection's secret; a setup as code carries none. */
+	secret: boolean
+	/** With a prompt, copying it shows the coding-agent prompt in the file's place. */
+	prompt?: string | null
+	/** After the copy button. */
+	children?: ReadonlyArray<Html>
+}>
+
+const promptButton = (h: H, configure: ConfigureModel, prompt: string | null): Html => {
+	const isCopied = configure.isPromptShown && configure.promptCopied === true
+	return button(
+		h,
+		{
+			size: "sm",
+			variant: "outline",
+			isDisabled: prompt === null,
+			attributes: prompt === null ? [] : [h.OnClick(Message.ClickedGcpCopyPrompt({ prompt }))],
+		},
+		[...(isCopied ? [icon(h, "CheckIcon", { size: 12 })] : []), isCopied ? "Prompt copied" : "Copy prompt for coding agent"],
+	)
+}
+
+export const fileCard = (h: H, model: Model, configure: ConfigureModel, options: FileCardOptions): Html => {
+	const { name, text, failure, secret, prompt, children } = options
+	const promptShown = configure.isPromptShown
 	const expanded = configure.isScriptExpanded
-	const text = script?.trimEnd() ?? null
+	// Copy takes whatever is on screen.
+	const copyable = promptShown ? (prompt ?? null) : text
+	const shown = promptShown ? (prompt?.trimEnd() ?? null) : (text?.trimEnd() ?? null)
 	return h.div(
 		[h.Class("overflow-clip rounded-lg border")],
 		[
@@ -34,56 +79,46 @@ export const scriptCard = (
 					h.span(
 						[h.Class("font-mono text-xs text-muted-foreground")],
 						[
-							"setup.sh",
-							...(text === null ? [] : [` · ${countLabel(text.split("\n").length, "line")}`]),
+							promptShown ? "Prompt for a coding agent" : name,
+							...(shown === null || promptShown ? [] : [` · ${countLabel(shown.split("\n").length, "line")}`]),
 						],
 					),
 					h.span(
-						[h.Class("ml-auto flex items-center gap-2")],
+						[h.Class("ml-auto flex flex-wrap items-center justify-end gap-2")],
 						[
+							...(prompt === undefined ? [] : [promptButton(h, configure, prompt)]),
 							CopyButton.view(h, {
 								model: model.gcpCard.copies[COPY_ID] ?? CopyButton.init(),
-								toParentMessage: (message) =>
-									Message.GotGcpCopyMessage({ id: COPY_ID, message }),
-								value: script ?? "",
-								label: "script",
-								idleLabel: "Copy script",
-								variant: "outline",
+								toParentMessage: (message) => Message.GotGcpCopyMessage({ id: COPY_ID, message }),
+								value: copyable ?? "",
+								label: promptShown ? "prompt" : name,
+								idleLabel: secret ? "Copy script" : "Copy",
+								variant: children === undefined ? "default" : "outline",
 								size: "sm",
-								attributes: script === null ? [h.Disabled(true)] : [],
+								className: cn(children === undefined && "text-primary-foreground hover:text-primary-foreground"),
+								attributes: copyable === null ? [h.Disabled(true)] : [],
 							}),
-							openCloudShellButton(h, options.projectId, "default"),
+							...(children ?? []),
 						],
 					),
 				],
 			),
 			failure !== null
-				? h.div(
-						[h.Class("flex flex-wrap items-center gap-2 p-3")],
-						[
-							h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [failure.message]),
-							button(
-								h,
-								{
-									size: "sm",
-									variant: "outline",
-									isLoading: failure.isRetrying,
-									attributes: [h.OnClick(Message.ClickedGcpConfigureScriptRetry())],
-								},
-								["Try again"],
-							),
-						],
-					)
-				: text === null
+				? h.div([h.Class("p-3")], [loadFailure(h, failure)])
+				: shown === null
 					? h.div([h.Class("p-3")], [skeleton(h, "h-26 w-full")])
-					: scriptText(h, text, expanded),
-			footer(h, text !== null && failure === null, expanded),
+					: fileText(h, shown, { expanded, promptShown, secret, name }),
+			footer(h, configure, { name, secret, canExpand: shown !== null && failure === null }),
 		],
 	)
 }
 
-/** The dashboard records itself with rrweb, which serializes plain text verbatim (`rr-block`). */
-const scriptText = (h: H, text: string, expanded: boolean): Html =>
+/** The dashboard records itself with rrweb, which serializes plain text verbatim. */
+const fileText = (
+	h: H,
+	shown: string,
+	options: Readonly<{ expanded: boolean; promptShown: boolean; secret: boolean; name: string }>,
+): Html =>
 	h.div(
 		[h.Class("relative")],
 		[
@@ -91,20 +126,20 @@ const scriptText = (h: H, text: string, expanded: boolean): Html =>
 				[
 					h.Tabindex(0),
 					h.Role("region"),
-					h.AriaLabel("The setup script"),
+					h.AriaLabel(options.promptShown ? "The prompt for a coding agent" : options.name),
 					h.Class(
 						cn(
-							"p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
-							expanded
-								? "max-h-80 overflow-auto"
-								: "max-h-32 overflow-x-auto overflow-y-hidden",
-							"rr-block",
+							"overflow-x-auto p-3 font-mono text-xs/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+							// The prompt is prose; code keeps its lines.
+							options.promptShown && "whitespace-pre-wrap",
+							options.expanded ? "max-h-80 overflow-y-auto" : "max-h-32 overflow-y-hidden",
+							options.secret && REPLAY_BLOCK_CLASS,
 						),
 					),
 				],
-				[text],
+				[shown],
 			),
-			...(expanded
+			...(options.expanded
 				? []
 				: [
 						h.div([
@@ -117,30 +152,57 @@ const scriptText = (h: H, text: string, expanded: boolean): Html =>
 		],
 	)
 
-const footer = (h: H, canExpand: boolean, expanded: boolean): Html =>
+const footerText = (configure: ConfigureModel, name: string, secret: boolean): string => {
+	if (!configure.isPromptShown)
+		return secret ? "Holds this connection's secret. Don't share or commit it." : "No secrets in this file. Safe to commit."
+	const copied = configure.promptCopied
+	const status = copied === false ? "Couldn't copy: select the prompt and copy it." : copied === true ? "Copied." : "Copying."
+	return `${status} It ends with the full ${name}.`
+}
+
+const footer = (
+	h: H,
+	configure: ConfigureModel,
+	options: Readonly<{ name: string; secret: boolean; canExpand: boolean }>,
+): Html =>
 	h.div(
-		[h.Class("flex items-center gap-1.5 border-t px-3 py-1.5 text-xs/5 text-muted-foreground")],
+		[h.Class("flex items-center gap-3 border-t px-3 py-1.5 text-xs/5 text-muted-foreground")],
 		[
-			icon(h, "LockIcon", { size: 12, className: "shrink-0" }),
 			h.span(
-				[h.Class("min-w-0 flex-1 text-pretty")],
-				["Holds this connection's secret. Don't share or commit it."],
+				[h.Class("flex min-w-0 flex-1 items-center gap-1.5 text-pretty")],
+				[
+					icon(h, "LockIcon", { size: 12, className: "shrink-0" }),
+					footerText(configure, options.name, options.secret),
+				],
 			),
-			...(canExpand
+			...(configure.isPromptShown
 				? [
 						button(
 							h,
 							{
 								variant: "link",
 								size: "xs",
-								className:
-									"h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground",
+								className: LINK,
+								attributes: [h.OnClick(Message.ClickedGcpPromptBack())],
+							},
+							[`Back to ${options.name}`],
+						),
+					]
+				: []),
+			...(options.canExpand
+				? [
+						button(
+							h,
+							{
+								variant: "link",
+								size: "xs",
+								className: LINK,
 								attributes: [
-									h.AriaExpanded(expanded),
+									h.AriaExpanded(configure.isScriptExpanded),
 									h.OnClick(Message.ClickedGcpScriptExpand()),
 								],
 							},
-							[expanded ? "Show less" : "Show all"],
+							[configure.isScriptExpanded ? "Show less" : "Show all"],
 						),
 					]
 				: []),

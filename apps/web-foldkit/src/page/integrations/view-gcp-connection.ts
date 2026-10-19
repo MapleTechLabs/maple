@@ -9,6 +9,7 @@ import {
 	type GcpCapability,
 	gcpLogState,
 	gcpMetricsState,
+	gcpNothingSeen,
 	gcpPendingChanges,
 	gcpRunAsked,
 	gcpScopeLabel,
@@ -106,7 +107,7 @@ const connectionIssues = (
 	const needed = gcpScriptNeeded(connector, nowMs)
 	const repairs = needed === null ? gcpRunAsked(connector, nowMs)[0] : undefined
 	const rerun = (capability: GcpCapability) =>
-		repairs === capability && IS_ADMIN ? runScript(h, connector, "Run the script again") : undefined
+		repairs === capability && IS_ADMIN ? runScript(h, connector, "Set up again") : undefined
 	const cleanedUp = connector.applied_logs_enabled === false && connector.applied_metrics_enabled === false
 	const issues: Array<Issue> = []
 	if (log.kind === "failing")
@@ -129,9 +130,9 @@ const connectionIssues = (
 		const lines =
 			needed === "setup-pending"
 				? [
-						connector.setup_reported_at === null
-							? "Google Cloud has nothing of Maple's yet. Running the setup script takes about a minute."
-							: "The last run stopped part of the way. Run the script again: it continues where it stopped.",
+						gcpNothingSeen(connector)
+							? "Maple hasn't confirmed any of the setup yet. Finish it with the script, in the console or as code."
+							: "Part of the setup isn't confirmed yet. A script run continues where it stopped; a setup in the console or as code is confirmed by its first data.",
 					]
 				: gcpPendingChanges(connector, nowMs)
 		issues.push({
@@ -202,8 +203,8 @@ const connectionIssues = (
 			{
 				key: "running",
 				tone: "live",
-				title: "The setup script is still running",
-				body: ["Logs and metrics start once it has finished."],
+				title: "Setup in progress",
+				body: ["Logs and metrics start once it is complete."],
 			},
 		]
 	if (log.kind === "waiting" || metrics.kind === "waiting")
