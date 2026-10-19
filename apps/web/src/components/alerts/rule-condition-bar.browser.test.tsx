@@ -37,3 +37,19 @@ describe("RuleConditionFields tiers", () => {
 		expect(screen.queryByLabelText("Recovers below")).toBeNull()
 	})
 })
+
+describe("RuleConditionFields check cadence", () => {
+	it("says how often the window is checked as the window changes", () => {
+		render(<Harness initial={defaultRuleForm()} />)
+		const window = screen.getByLabelText("Window")
+
+		fireEvent.change(window, { target: { value: "5" } })
+		expect(screen.getByText(/checked every minute\./)).toBeTruthy()
+
+		fireEvent.change(window, { target: { value: "15" } })
+		expect(screen.getByText(/checked every 3 min\./)).toBeTruthy()
+
+		fireEvent.change(window, { target: { value: "60" } })
+		expect(screen.getByText(/checked every 5 min\./)).toBeTruthy()
+	})
+})
