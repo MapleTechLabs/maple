@@ -136,6 +136,15 @@ describe("replays list", () => {
 		expect(pageUpdate(settled, Message.ReachedListEnd()).commands?.[0]?.args).toMatchObject({ cursor: "cursor-2" })
 	})
 
+	test("after a Reload a browser filter reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(loaded(page([session("a")])), Message.ClickedReload()).model
+		const filtered = routeChanged(reloaded, { search: { browser: "Safari" } }, context)
+		expect(names(filtered.commands)).toContain(FetchFirstPage.name)
+		expect(names(filtered.commands)).not.toContain("ResolveReplaysWindow")
+		const moved = routeChanged(filtered.model, { search: { browser: "Safari", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveReplaysWindow", "Refresh"]])
+	})
+
 	test("a Reload under the same key drops the page 2 already in flight: it is appended once", () => {
 		const model = loaded(page([session("a")], "cursor-1"))
 		const first = pageUpdate(model, Message.ReachedListEnd())

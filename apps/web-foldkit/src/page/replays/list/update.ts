@@ -10,6 +10,7 @@ import { parseRange } from "../../../ui/filters/range-format"
 import { HistogramMessage } from "../../../ui/filters/range-histogram"
 import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
 import { SignalPresenceData } from "../../kit/signal-presence"
+import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReloadSpin,
@@ -187,7 +188,11 @@ export const routeChanged = (model: Model, route: { readonly search: Search }, c
 				? model.activeDraft
 				: draftOf(search.activeMin, search.activeMax),
 	}
-	return { model: next, commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	return routeWindowStep(previous, search, {
+		resolve,
+		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+	})
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
