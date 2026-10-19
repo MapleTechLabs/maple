@@ -11,7 +11,8 @@ import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { AuditEventsDlq, AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import type { ApiPortsLayer } from "./bindings"
 import { runEvent } from "./events"
-import { auditEventsModule, planetScaleWebhookModule, vcsSyncModule } from "./modules"
+import { auditEventsModule, planetScaleWebhookModule } from "./modules"
+import { consumeVcsSyncBatch } from "./vcs-sync"
 
 // Consumer settings. The audit consumer's `maxRetries` must stay in sync with
 // AUDIT_EVENTS_MAX_RETRIES in audit-events-runtime.ts, which logs the drop on
@@ -40,16 +41,12 @@ const auditEventsConsumer = (deadLetterQueue: string | undefined): Cloudflare.Qu
  * so the deploy migrates their state rows instead of re-creating the
  * consumers; drop it once every stage has deployed past it.
  */
-export const registerQueueConsumers = (ports: ApiPortsLayer) =>
+export const registerQueueConsumers = (ports: ApiPortsLayer, env: Record<string, unknown>) =>
 	Effect.gen(function* () {
+		// Handed to the placed fetch handler over the self binding (`./vcs-sync.ts`), inline without it.
 		yield* Cloudflare.Queues.consumeQueueMessages(yield* VcsSyncQueue, VCS_SYNC_CONSUMER, (stream) =>
-			Effect.flatMap(vcsSyncModule, ({ VcsSyncLive, processBatch, vcsSyncTelemetry }) =>
-				Effect.flatMap(Stream.runCollect(stream), (messages) =>
-					runEvent(
-						processBatch({ messages }),
-						VcsSyncLive.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
-					),
-				),
+			Effect.flatMap(Stream.runCollect(stream), (messages) =>
+				consumeVcsSyncBatch(ports, env, messages),
 			),
 		).pipe(renamedFrom({ fqn: "vcs-sync-consumer" }))
 		yield* Cloudflare.Queues.consumeQueueMessages(
