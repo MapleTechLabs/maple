@@ -531,7 +531,8 @@ const loadRoute: Step = (model) =>
 		Resolving: () => ({ model }),
 		SignedOut: () => ({ model }),
 		SignedIn: ({ maybeOrgId }) =>
-			Option.isNone(maybeOrgId) || isPublicRoute(model.route)
+			// `WrongRegionScreen` replaces the whole frame: no shell, no chat sheet, nothing it reads.
+			Option.isNone(maybeOrgId) || isPublicRoute(model.route) || isWrongRegion(model)
 				? { model }
 				: rendersShell(model.route)
 					? foldShellStep(Shell.enter(maybeOrgId.value))(model)

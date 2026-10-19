@@ -261,11 +261,11 @@ export const onboardingArea: AreaModule = {
 			),
 			fullPage: true,
 		},
-		scenario("wrong-region", "Wrong region: an EU organization on the US dashboard", "/traces", "clerk-eu"),
+		scenario("wrong-region", "Wrong region: an EU organization on the US dashboard", "/", "clerk-eu"),
 		scenario(
 			"wrong-region-menu",
 			"Wrong region: organization switcher open",
-			"/traces",
+			"/",
 			"clerk-eu",
 			click("Switch organization"),
 		),
