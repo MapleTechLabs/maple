@@ -4,7 +4,7 @@ import {
 	getServiceOverview,
 	type GetServiceOverviewInput,
 } from "@maple/web-data/warehouse/services"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -213,16 +213,45 @@ export const MountEmptyState = Mount.define("MountServicesEmptyState", {
 		}),
 })
 
-/** The loaded table is on screen. */
-export const MountTable = Mount.define("MountServicesTable", {
-	messages: [Message.PaintedTable],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedTable>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedTable()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
+/** Where a click in the table goes: a service link is the link's alone (legacy `stopPropagation`). */
+export const tableLinkClick = (
+	click: Readonly<{ href: string | null; button: number; hasModifier: boolean }>,
+): "Row" | "Browser" | "Navigate" =>
+	click.href === null ? "Row" : click.button !== 0 || click.hasModifier ? "Browser" : "Navigate"
+
+type TableMessage = typeof Message.PaintedTable.Type | typeof Message.ClickedServiceLink.Type
+
+/** The loaded table is on screen; its service links navigate once, never through the row too. */
+export const MountTable = Mount.defineStream("MountServicesTable", {
+	messages: [Message.PaintedTable, Message.ClickedServiceLink],
+	execute: ({ element }) =>
+		Stream.callback<TableMessage>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() => {
+					const onClick = (event: Event) => {
+						if (!(event instanceof MouseEvent) || !(event.target instanceof Element)) return
+						const href = event.target.closest("a[href]")?.getAttribute("href") ?? null
+						const hasModifier = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+						const intent = tableLinkClick({ href, button: event.button, hasModifier })
+						if (intent === "Row" || href === null) return
+						event.stopPropagation()
+						if (intent === "Browser") return
+						event.preventDefault()
+						Queue.offerUnsafe(queue, Message.ClickedServiceLink({ url: href }))
+					}
+					element.addEventListener("click", onClick, true)
+					const handle = requestAnimationFrame(() =>
+						requestAnimationFrame(() => Queue.offerUnsafe(queue, Message.PaintedTable())),
+					)
+					return { onClick, handle }
+				}),
+				({ onClick, handle }) =>
+					Effect.sync(() => {
+						cancelAnimationFrame(handle)
+						element.removeEventListener("click", onClick, true)
+					}),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
 })
 
 export const LoadSignalPresence = Command.define("LoadSignalPresence", {

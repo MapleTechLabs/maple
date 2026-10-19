@@ -29,7 +29,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
-import { init, overviewInput, update } from "./update"
+import { init, overviewInput, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -219,5 +219,31 @@ describe("services list", () => {
 			Message.CompletedReloadSpin({ version: reloaded.model.refreshVersion }),
 		)
 		expect(settled.model.isReloading).toBe(false)
+	})
+
+	test("after a Reload, a grouping change keeps the window and refetches nothing", () => {
+		const reloaded = pageUpdate(loaded([row("checkout")]), Message.ClickedReload()).model
+		const settled = pageUpdate(
+			reloaded,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
+		).model
+		const regrouped = routeChanged(settled, { search: { groupBy: "environment" } }, context)
+		expect(names(regrouped.commands)).not.toContain("ResolveServicesWindow")
+		expect(regrouped.model.overview.key).toBe(settled.overview.key)
+	})
+
+	test("a window change re-resolves the clock", () => {
+		const changed = routeChanged(windowed(), { search: { timePreset: "1h" } }, context)
+		expect(names(changed.commands)).toEqual(["ResolveServicesWindow"])
+	})
+
+	test("a service link click navigates once, pushing history", () => {
+		const opened = pageUpdate(
+			loaded([row("checkout")]),
+			Message.ClickedServiceLink({ url: "/services/checkout" }),
+		)
+		expect(opened.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/services/checkout", isReplace: false }),
+		)
 	})
 })

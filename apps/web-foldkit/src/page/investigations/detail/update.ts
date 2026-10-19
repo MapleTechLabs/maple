@@ -67,8 +67,11 @@ const followOverview = (model: Model, context: PageContext): Return =>
 					? { model }
 					: chain(
 							(() => {
-								const key = requestKey(context.orgId, "getServiceOverview", { startTime: window.startTime, endTime: window.endTime })
-								return slotStep(model, model.traces, (traces) => ({ traces }), key, FetchSignalTraces({ key, startTime: window.startTime, endTime: window.endTime }))
+								// `getServiceOverviewResultAtom` is `globalNamespace: "top"`.
+								const namespaces = context.pinnedNamespace === null ? undefined : [context.pinnedNamespace]
+								const input = { startTime: window.startTime, endTime: window.endTime, namespaces }
+								const key = requestKey(context.orgId, "getServiceOverview", input)
+								return slotStep(model, model.traces, (traces) => ({ traces }), key, FetchSignalTraces({ key, ...input }))
 							})(),
 							(next) => {
 								const key = requestKey(context.orgId, "getCustomChartTimeSeries", { service, window })
@@ -121,6 +124,9 @@ export const routeChanged = (model: Model, route: InvestigationRoute, context: P
 	chain(chain(followOverview({ ...model, search: route.search }, context), sheetFor), (next) =>
 		followConversation(next, context),
 	)
+
+/** A pin change re-keys the signals card's overview read. */
+export const contextChanged = (model: Model, context: PageContext): Return => followOverview(model, context)
 
 const navigateSearch = (model: Model, search: Model["search"], isReplace: boolean): Return => ({
 	model,

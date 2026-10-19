@@ -6,6 +6,7 @@ import type { PageSubscriptionInput } from "../../contract"
 import { searchPreset } from "../../kit/time-controls"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { isInspectingOf } from "./derive"
 import { DEFAULT_PRESET } from "./update"
 
 type Input = PageSubscriptionInput<Model>
@@ -26,15 +27,14 @@ export const subscriptions = Subscription.make<Input, Message>()((entry) => ({
 	),
 	/**
 	 * `PageRefreshProvider`'s `useIntervalRefresh`: the `?refresh=` cadence, held while the reader
-	 * inspects and off for a custom range (a fixed window has nothing new to tail).
+	 * inspects, skipped in a hidden tab and off for a custom range (a fixed window has nothing new to tail).
 	 */
 	autoRefresh: entry(
 		{ intervalSeconds: Schema.Number },
 		{
 			modelToDependencies: ({ model }) => ({
 				intervalSeconds:
-					model.isInspecting ||
-					model.selectedIndex !== null ||
+					isInspectingOf(model) ||
 					searchPreset(model.search, DEFAULT_PRESET) === undefined
 						? 0
 						: resolveRefreshIntervalSeconds(model.search.refresh, undefined),
@@ -43,6 +43,7 @@ export const subscriptions = Subscription.make<Input, Message>()((entry) => ({
 				intervalSeconds > 0
 					? Stream.tick(Duration.seconds(intervalSeconds)).pipe(
 							Stream.drop(1),
+							Stream.filter(() => typeof document === "undefined" || !document.hidden),
 							Stream.map(() => Message.TickedAutoRefresh()),
 						)
 					: Stream.empty,

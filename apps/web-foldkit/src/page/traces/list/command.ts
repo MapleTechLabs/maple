@@ -37,6 +37,7 @@ export const ResolveWindow = Command.define("ResolveTracesWindow", {
 				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
 				nowMs,
 				mode,
+				timeZone,
 			}),
 		),
 })
@@ -185,6 +186,9 @@ export const CompleteReloadSpin = Command.define("CompleteTracesReloadSpin", {
 		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
 })
 
+/** `useIsMobile`'s query (the shell's `MOBILE_QUERY`, which reads `window` as it loads). */
+export const MOBILE_QUERY = "(max-width: 767px)"
+
 /**
  * `onPeek`: a plain click on a row's stretched link peeks; a modified, middle or right click still
  * follows it. Foldkit links route through a document listener that skips a prevented click.
@@ -208,7 +212,9 @@ export const MountPeekRows = Mount.defineStream("MountTracesPeekRows", {
 								? event.target.closest("a[data-peek-index]")
 								: null
 						const index = Number(link?.getAttribute("data-peek-index") ?? Number.NaN)
-						if (!isPlain || !Number.isInteger(index)) return
+						// Below `md` the peek is off: the tap follows the link to the trace page.
+						const isMobile = window.matchMedia(MOBILE_QUERY).matches
+						if (!isPlain || isMobile || !Number.isInteger(index)) return
 						event.preventDefault()
 						Queue.offerUnsafe(queue, Message.ClickedPeekRow({ index }))
 					}

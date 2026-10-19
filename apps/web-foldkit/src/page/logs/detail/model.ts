@@ -27,6 +27,8 @@ export const Model = Schema.Struct({
 	id: Schema.String,
 	/** The org the panel reads are keyed under, given at `open`. */
 	orgId: Schema.String,
+	/** The org's namespace pin at `open`: `listLogsResultAtom` is `globalNamespace: "top"`. */
+	pinnedNamespace: Schema.NullOr(Schema.String),
 	/** `/logs/$logId`: every panel shows at once, so the trace and context read without a tab. */
 	isPage: Schema.Boolean,
 	/** `ErrorSection`'s Show more. */

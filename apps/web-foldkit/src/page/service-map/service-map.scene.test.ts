@@ -8,6 +8,7 @@ import { PageOutMessage, type PageContext } from "../contract"
 import { CompleteReloadSpin, FetchBundle, FetchFacets, LoadSignalPresence, MountEmptyState, ResolveWindow } from "./command"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
+import { ALL_ENVIRONMENTS, selectedEnvironment } from "./derive"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -258,5 +259,24 @@ describe("service map page: view", () => {
 		expect(names(pageUpdate(empty, Message.PaintedEmptyState()).commands)).toEqual([
 			"LoadServiceMapSignalPresence",
 		])
+	})
+})
+
+describe("service map page: environment default across a refetch", () => {
+	test("a refetch keeps a confirmed no-production org on all environments and the mount's facets window", () => {
+		const model = windowed()
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchFacets({ key: model.facets.key ?? "", result: Result.succeed(["staging"]) }),
+		).model
+		expect(selectedEnvironment(loaded)).toBe(ALL_ENVIRONMENTS)
+		const later = { startTime: "2026-09-30 13:00:00", endTime: "2026-10-01 13:00:00" }
+		const refreshed = pageUpdate(
+			loaded,
+			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow: later, nowMs: NOW, mode: "Refresh" }),
+		)
+		expect(selectedEnvironment(refreshed.model)).toBe(ALL_ENVIRONMENTS)
+		expect(refreshed.model.facetsWindow).toEqual(facetsWindow)
+		expect(refreshed.model.bundle.key).toBe(loaded.bundle.key)
 	})
 })

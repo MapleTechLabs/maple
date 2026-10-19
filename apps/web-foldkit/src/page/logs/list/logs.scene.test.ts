@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
 import {
 	Command,
 	expect as expectView,
@@ -14,6 +14,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Chart from "../../../charts/chart"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { requestKey } from "../../../data/request-key"
 import * as LogsStream from "../../../ui/logs/logs-stream"
@@ -238,5 +239,32 @@ describe("logs list", () => {
 		const reloaded = pageUpdate(withFirstPage(), Message.ClickedReload())
 		expect(names(reloaded.commands)).toEqual(["ResolveLogsWindow", "CompleteLogsReloadSpin"])
 		expect(reloaded.model.isReloading).toBe(true)
+	})
+
+	test("dragging across the volume bars zooms to those buckets, as a replace", () => {
+		const base = windowed({ timePreset: "1h" })
+		const buckets = ["11:00", "11:05", "11:10"].map((t) => ({ bucket: `2026-10-01 ${t}:00`, counts: { INFO: 4 } }))
+		const loaded = pageUpdate(
+			base,
+			Message.CompletedFetchVolume({ key: base.volume.key ?? "", result: Result.succeed(buckets) }),
+		).model
+		const focus = (key: string) =>
+			Message.GotVolumeChartMessage({ message: Chart.Message.ChangedChartFocus({ maybeKey: Option.some(key) }) })
+		const pressed = [focus(buckets[0].bucket), Message.PressedVolumeChart(), focus(buckets[1].bucket)].reduce(
+			(model, message) => pageUpdate(model, message).model,
+			loaded,
+		)
+		expect(pressed.volumeBrush).toEqual({ left: buckets[0].bucket, right: buckets[1].bucket, isSelecting: true })
+		const released = pageUpdate(pressed, Message.ReleasedVolumeChart())
+		expect(released.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/logs?startTime=2026-10-01+11%3A00%3A00&endTime=2026-10-01+11%3A10%3A00",
+				isReplace: true,
+			}),
+		)
+		expect(released.model.volumeBrush.isSelecting).toBe(false)
+		// A click without a drag does not zoom.
+		const clicked = pageUpdate(released.model, Message.PressedVolumeChart()).model
+		expect(pageUpdate(clicked, Message.ReleasedVolumeChart()).outMessage).toBeUndefined()
 	})
 })

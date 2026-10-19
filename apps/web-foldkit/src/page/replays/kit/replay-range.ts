@@ -7,14 +7,14 @@ import type { ReplayPartitionWindow } from "./replay-window"
  *
  * A session's rrweb payload can run to hundreds of megabytes, so the player
  * fetches it a range at a time rather than all at once. These helpers decide
- * *which* ranges — and, just as importantly, keep those ranges stable so the
+ * *which* ranges and, just as importantly, keep those ranges stable so the
  * atom cache can actually hit.
  */
 
 /**
  * Upper bound on chunks per fetched range.
  *
- * A range can be shorter — `planRanges` closes one early when its payload would
+ * A range can be shorter: `planRanges` closes one early when its payload would
  * exceed the server's byte budget. Must stay <= the server's
  * `max_chunks_per_request` (40); the manifest echoes the real cap so a mismatch
  * is detectable rather than silent.
@@ -25,7 +25,7 @@ export const MAX_CHUNKS_PER_RANGE = 16
  * Fallback byte budget for one range, used before the manifest reports the
  * server's own `max_bytes_per_request`. Matches the server default.
  *
- * This is a *payload* budget — the sum of the range's `byte_size` — and is
+ * This is a *payload* budget (the sum of the range's `byte_size`) and is
  * deliberately below the server's 8 MB encoded-response ceiling, which counts
  * the JSON-escaped row rather than the payload inside it. Budgeting to the
  * encoded ceiling made a full range fail that guard by construction: 413
@@ -45,7 +45,7 @@ export const INITIAL_WINDOW_BYTES = 2_000_000
 /** Playback time to keep buffered ahead of the playhead. */
 export const PREFETCH_AHEAD_MS = 20_000
 
-/** One chunk's manifest entry — the subset of the v2 manifest the player needs. */
+/** One chunk's manifest entry: the subset of the v2 manifest the player needs. */
 export interface ReplayChunkMeta {
 	readonly chunk_seq: number
 	readonly timestamp: string
@@ -66,7 +66,7 @@ export interface ReplayRange {
  * Two properties matter, and a fixed-size grid only delivers one of them:
  *
  * 1. **Every range fits the server's byte budget.** Chunk sizes vary by more
- *    than an order of magnitude — a flush is ~100 KB but a full DOM snapshot
+ *    than an order of magnitude: a flush is ~100 KB but a full DOM snapshot
  *    runs to several hundred KB or more, and real sessions carry 838 KB chunks.
  *    A fixed 16-chunk slot of those is ~13 MB, well past the budget, so
  *    the request comes back 413 and that stretch of the recording is unplayable.
@@ -78,7 +78,7 @@ export interface ReplayRange {
  * on chunks at or before them, so a live session appending chunks extends the
  * plan without moving any boundary already in it.
  *
- * A single chunk always gets a range even if it alone exceeds the budget — the
+ * A single chunk always gets a range even if it alone exceeds the budget. The
  * SDK caps a chunk at 4 MB, so under a 6 MB budget that can't happen, but
  * emitting nothing would stall playback rather than fail it.
  */
@@ -115,7 +115,7 @@ export const rangeContaining = (
 ): ReplayRange | undefined =>
 	plan.find((range) => chunkSeq >= range.fromChunkSeq && chunkSeq <= range.toChunkSeq)
 
-/** Stable key for a range — must match `replayRangeInput`'s identity exactly. */
+/** Stable key for a range; must match `replayRangeInput`'s identity exactly. */
 export const rangeKey = (range: ReplayRange) => `${range.fromChunkSeq}:${range.toChunkSeq}`
 
 /**
@@ -140,7 +140,7 @@ export const replayRangeInput = (
  * Where a chunk sits on the playback timeline.
  *
  * `timestamp` is the ingest gateway's receipt time, so it trails the recording's
- * own clock by the upload latency — usually well inside one chunk's duration.
+ * own clock by the upload latency, usually well inside one chunk's duration.
  * The exception is the chunk a page was flushing as it unloaded: the SDK sends
  * it from the next page load, so it is received a page load or more late (up to
  * ten minutes) and can be received after the chunk that follows it. Either way
@@ -166,7 +166,7 @@ export const manifestStartMs = (chunks: ReadonlyArray<ReplayChunkMeta>): number 
  * Total playable length.
  *
  * Derived from the manifest rather than the player's `getMetaData()`, which
- * reads live context and would therefore *grow* as chunks stream in — the
+ * reads live context and would therefore *grow* as chunks stream in, so the
  * scrubber would stretch while you watched.
  */
 export const manifestDurationMs = (chunks: ReadonlyArray<ReplayChunkMeta>): number => {
@@ -202,7 +202,7 @@ export const chunkAtOffset = (
  * The seek anchor for a target chunk: the nearest checkpoint at or before it.
  *
  * rrweb can only start from a full DOM snapshot, so seeking into an unloaded
- * region means loading from here — not from the target chunk, which on its own
+ * region means loading from here, not from the target chunk, which on its own
  * is a stream of mutations against a DOM that was never built.
  *
  * Falls back to the first chunk when no checkpoint precedes the target, which
@@ -226,7 +226,7 @@ export const checkpointAtOrBefore = (
  * byte budget is met.
  *
  * Starting at the first checkpoint rather than chunk 0 matters for sessions
- * whose first chunks are pre-snapshot noise — without a snapshot there is
+ * whose first chunks are pre-snapshot noise: without a snapshot there is
  * nothing to render, so those bytes would buy a blank screen.
  */
 export const initialRanges = (

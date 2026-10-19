@@ -34,6 +34,8 @@ export const Model = Schema.Struct({
 	search: TraceSearch,
 	/** The clock at entry, for "16m ago" (legacy reads `Date.now()` at render). */
 	nowMs: Schema.Number,
+	/** The list filters on the URL (`list-query.ts`), kept on every navigation and the crumb. */
+	listQuery: Schema.String,
 	hierarchy: KeyedSchema(TraceData, LoadFailure),
 	spanEvents: KeyedSchema(SpanEvents, LoadFailure),
 	productEvents: KeyedSchema(Schema.Array(ProductEvent), LoadFailure),

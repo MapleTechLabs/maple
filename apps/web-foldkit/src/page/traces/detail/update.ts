@@ -6,6 +6,7 @@ import { requestKey } from "../../../data/request-key"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as TraceFlow from "../../../service-map/trace-flow/trace-flow"
+import * as Dialog from "../../../ui/dialog"
 import * as Resizable from "../../../ui/resizable"
 import * as Tabs from "../../../ui/tabs"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
@@ -21,7 +22,9 @@ import {
 	FetchReplays,
 	FetchSpanEvents,
 	ReadClock,
+	ReadListQuery,
 } from "./command"
+import { withListQuery } from "./list-query"
 import { Message, type TraceView } from "./message"
 import type { Model } from "./model"
 import { type LoadedTrace, loadedTrace, selectedSpanOf } from "./select"
@@ -52,10 +55,18 @@ const liftPanel = lift((message: SpanPanel.Message) => Message.GotSpanPanelMessa
 const navigate = (model: Model, search: Model["search"]): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
-		url: hrefOf(AppRoute.Trace({ traceId: model.traceId, search })),
+		url: withListQuery(hrefOf(AppRoute.Trace({ traceId: model.traceId, search })), model.listQuery),
 		isReplace: true,
 	}),
 })
+
+/** The mobile span sheet's state, derived from the selection (`open={selectedSpan != null}`). */
+export const spanSheetOf = (model: Model): Dialog.Model =>
+	Dialog.init("trace-span-sheet", "sheet", { isOpen: model.spanPanel !== null })
+
+/** `handleCloseSpanDetails`: `spanId` leaves the URL, replacing history. */
+const closeSpanPanel = (model: Model): Return =>
+	model.search.spanId === undefined ? { model } : navigate(model, { ...model.search, spanId: undefined })
 
 /** `handleSelectSpan`: re-selecting the selected span is a no-op. */
 const selectSpan = (model: Model, spanId: string): Return =>
@@ -248,6 +259,7 @@ export const init = (route: Route, context: PageContext, isPeek = false): Return
 		traceId: route.traceId,
 		search: route.search,
 		nowMs: 0,
+		listQuery: "",
 		hierarchy: Keyed.idle(),
 		spanEvents: Keyed.idle(),
 		productEvents: Keyed.idle(),
@@ -266,7 +278,8 @@ export const init = (route: Route, context: PageContext, isPeek = false): Return
 		isPeek,
 	}
 	const requested = requestHierarchy(model, context)
-	return { model: requested.model, commands: [ReadClock(), ...(requested.commands ?? [])] }
+	const reads = isPeek ? [ReadClock()] : [ReadClock(), ReadListQuery()]
+	return { model: requested.model, commands: [...reads, ...(requested.commands ?? [])] }
 }
 
 /** A search change: a new `t` re-keys the hierarchy, a new view swaps the tab, a new span the panel. */
@@ -331,6 +344,12 @@ const withSlot = <K extends "spanEvents" | "productEvents" | "logsCount" | "repl
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		CompletedReadListQuery: ({ listQuery }) => ({ model: { ...model, listQuery } }),
+		PressedPageEscape: () => closeSpanPanel(model),
+		GotSpanSheetMessage: ({ message: inner }) =>
+			Dialog.update(spanSheetOf(model), inner).outMessage?._tag === "Closed"
+				? closeSpanPanel(model)
+				: { model },
 		CompletedFetchHierarchy: ({ key, result }) => {
 			const hierarchy = Keyed.accept(model.hierarchy, key, result)
 			return hierarchy === model.hierarchy ? { model } : onLoaded({ ...model, hierarchy }, context)
@@ -435,8 +454,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 			const out = next.outMessage
 			if (out === undefined) return lifted
-			if (out._tag === "Closed")
-				return chain(lifted, (m) => navigate(m, { ...m.search, spanId: undefined }))
+			if (out._tag === "Closed") return chain(lifted, closeSpanPanel)
 			if (out._tag === "SelectedSpanId") return chain(lifted, (m) => selectSpan(m, out.spanId))
 			return {
 				...lifted,

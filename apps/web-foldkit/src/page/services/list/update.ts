@@ -326,10 +326,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
-/** The search changed (a filter, the window, grouping): re-resolve and re-request. */
 /**
  * `servicesRouteAtoms(search)`, warmed on link intent: the facets, overview and sparklines for the
- * snapped window. Built from search alone, so the namespace pin is not applied (legacy's loader).
+ * snapped window. The atoms pin overview and sparklines before keying ("top"), so the page reuses them.
  */
 export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
@@ -343,13 +342,14 @@ export const preload = (route: { readonly search: Search }, context: PageContext
 		},
 		nowMs,
 	)
-	return pickCommands(requestAll(model, { ...context, pinnedNamespace: null }, window, "Load"), [
+	return pickCommands(requestAll(model, context, window, "Load"), [
 		FetchOverview.name,
 		FetchSparklines.name,
 		FetchFacets.name,
 	])
 }
 
+/** The search changed (a filter, the window, grouping): re-request, re-resolving a new window. */
 export const routeChanged = (
 	model: Model,
 	route: { readonly search: Search },
@@ -357,12 +357,18 @@ export const routeChanged = (
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search, rowRevision: model.rowRevision + 1 }
+	// Legacy re-resolves only on a window change; filters and grouping keep the window.
+	if (!isWindowChange(model.search, route.search) && model.window !== null)
+		return followData(context)(requestAll(next, context, model.window, "Load"))
 	// After a Reload the mount keeps resolving unsnapped (`refreshVersion > 0`), like legacy.
 	return {
 		model: next,
 		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
 	}
 }
+
+const isWindowChange = (a: Search, b: Search) =>
+	a.startTime !== b.startTime || a.endTime !== b.endTime || a.timePreset !== b.timePreset
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Services({ search }))
 
@@ -463,6 +469,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				url: serviceHref(model, serviceName, environment),
 				isReplace: false,
 			}),
+		}),
+		ClickedServiceLink: ({ url }) => ({
+			model,
+			outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
 		}),
 		GotFilterSectionsMessage: ({ message }) => {
 			const next = FilterSections.update(model.filterSections, message)

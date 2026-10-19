@@ -6,7 +6,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message } from "./message"
 import { ReleasesData, type Model } from "./model"
-import { init, update } from "./update"
+import { contextChanged, init, update } from "./update"
 import { view as pageView } from "./view"
 
 const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
@@ -79,5 +79,14 @@ describe("releases list", () => {
 		expect(pageUpdate(filtered, Message.ToggledHealthOption({ name: "regressed" })).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/releases", isReplace: false }),
 		)
+	})
+
+	test("the namespace pin narrows the releases read and its key, and a pin change re-reads", () => {
+		const pinned: PageContext = { ...context, pinnedNamespace: "payments" }
+		const entered = init({ search: {} }, pinned).model
+		const resolved = update(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }), pinned)
+		expect(resolved.commands?.[0]?.args).toMatchObject({ input: { namespaces: ["payments"] } })
+		expect(resolved.model.releases.key).not.toEqual(loaded().releases.key)
+		expect(names(contextChanged(loaded(), pinned).commands)).toEqual(["FetchReleases"])
 	})
 })

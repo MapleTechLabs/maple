@@ -122,6 +122,8 @@ const tabs = (h: H, model: Model): Html => {
 					h.Class(cn(underlineTabClass(isCurrent), isLinkActive && "active")),
 					...(isLinkActive ? [h.DataAttribute("status", "active")] : []),
 					h.Href(searchHref(model.serviceName, tabSearch(model.search, tab.value))),
+					// Legacy `<Link replace>`: a tab switch replaces the entry; the href stays for new tabs.
+					h.OnClick(Message.ClickedTab({ tab: tab.value }), { defaultAction: "Prevent" }),
 				],
 				[tab.label],
 			)

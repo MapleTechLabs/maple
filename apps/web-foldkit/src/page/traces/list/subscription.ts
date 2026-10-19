@@ -2,6 +2,7 @@ import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import type { PageSubscriptionInput } from "../../contract"
+import { MOBILE_QUERY } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { allRows } from "./update"
@@ -29,7 +30,8 @@ const keys = (isPeeking: boolean): Stream.Stream<Message> =>
 			if (event.key === "Enter" && keepsEnter(event.target)) return Option.none()
 			// The sheet's Escape is the Dialog's; without a peek, a dialog owns the keyboard.
 			if (isPeeking ? event.key === "Escape" : isDialogOpen()) return Option.none()
-			return Option.some(Message.PressedListKey({ key: event.key }))
+			const isMobile = window.matchMedia(MOBILE_QUERY).matches
+			return Option.some(Message.PressedListKey({ key: event.key, isMobile }))
 		},
 	})
 

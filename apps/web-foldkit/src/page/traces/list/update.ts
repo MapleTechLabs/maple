@@ -24,7 +24,15 @@ import { sidebarHandlers, tableHandlers } from "./handlers"
 import * as Dialog from "../../../ui/dialog"
 import { advancedDialogStep, advancedHandlers, openedAdvanced } from "./advanced"
 import { initAdvanced } from "./advanced-model"
-import { openPeekedTrace, peekDialogStep, peekRow, peekStep, steppedPeek, syncPeek } from "./peek"
+import {
+	openPeekedTrace,
+	peekDialogStep,
+	peekRow,
+	peekStep,
+	steppedPeek,
+	syncPeek,
+	traceHrefFrom,
+} from "./peek"
 import { Message, type RequestMode } from "./message"
 import type { Model, Pagination, TraceRow } from "./model"
 import { durationDraftOf } from "./search-edits"
@@ -129,7 +137,9 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 					? Option.getOrElse(firstPage, () => model.firstPage)
 					: { key: listKey, data: AsyncData.Success({ data: cached }) },
 			pagination:
-				model.pagination.key === listKey ? model.pagination : freshPagination(listKey, model.pagination.generation + 1),
+				model.pagination.key === listKey
+					? model.pagination
+					: freshPagination(listKey, model.pagination.generation + 1),
 		},
 		commands,
 	}
@@ -180,6 +190,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	const model: Model = {
 		search: route.search,
 		window: null,
+		windowZone: null,
 		nowMs: 0,
 		facets: Keyed.idle(),
 		firstPage: Keyed.idle(),
@@ -261,8 +272,16 @@ export const routeChanged = (
 	}
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return =>
-	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
+/** A pin re-requests the same window; a new zone re-resolves it, as "today" moves. */
+export const contextChanged = (model: Model, context: PageContext): Return => {
+	if (model.window === null) return { model }
+	if (model.windowZone !== null && model.windowZone !== context.timeZone)
+		return {
+			model,
+			commands: [resolveCommand(model, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
+		}
+	return requestAll(model, context, model.window, "Load")
+}
 
 const lift = <A>(
 	model: Model,
@@ -277,11 +296,30 @@ const lift = <A>(
 /** A settled first page or later page, then the reach-end check `useVirtualReachEnd` re-runs. */
 const settled = (model: Model, context: PageContext): Return => reachEnd(model, context)
 
+/** `onTraceClick` below `md`: the row's trace page, keeping the list's search. */
+const openRow = (model: Model, index: number): Return => {
+	const row = allRows(model)[index]
+	return row === undefined
+		? { model }
+		: {
+				model,
+				outMessage: PageOutMessage.RequestedNavigation({
+					url: traceHrefFrom(
+						model.search,
+						row.traceId,
+						row.startTime,
+						row.isRootSpan ? undefined : row.spanId,
+					),
+					isReplace: false,
+				}),
+			}
+}
+
 /** `useListNavigation` over the rows, and the peek's own keys while it is open. */
-const pressedListKey = (model: Model, key: string, context: PageContext): Return => {
+const pressedListKey = (model: Model, key: string, isMobile: boolean, context: PageContext): Return => {
 	const isDown = key === "j" || key === "J" || key === "ArrowDown"
 	const isUp = key === "k" || key === "K" || key === "ArrowUp"
-	if (model.search.peek !== undefined) {
+	if (model.search.peek !== undefined && !isMobile) {
 		if (isDown || isUp) return steppedPeek(model, isDown ? 1 : -1)
 		return key === "Enter" ? openPeekedTrace(model) : { model }
 	}
@@ -297,7 +335,8 @@ const pressedListKey = (model: Model, key: string, context: PageContext): Return
 				: current - 1
 		return { model: { ...model, focusedIndex: next } }
 	}
-	if (key === "Enter" && model.focusedIndex !== null) return peekRow(model, model.focusedIndex)
+	if (key === "Enter" && model.focusedIndex !== null)
+		return isMobile ? openRow(model, model.focusedIndex) : peekRow(model, model.focusedIndex)
 	if (key === "Escape") return { model: { ...model, focusedIndex: null } }
 	if (key === "f" || key === "F") return openedAdvanced(model, context)
 	return { model }
@@ -305,8 +344,8 @@ const pressedListKey = (model: Model, key: string, context: PageContext): Return
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, nowMs, mode }) =>
-			requestAll({ ...model, nowMs }, context, window, mode),
+		CompletedResolveWindow: ({ window, nowMs, mode, timeZone }) =>
+			requestAll({ ...model, nowMs, windowZone: timeZone }, context, window, mode),
 		CompletedFetchFacets: ({ key, result }) => ({
 			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
 		}),
@@ -327,7 +366,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// Accepted only for the exact request it answers: the key, its set of pages and the offset.
 		CompletedFetchNextPage: ({ key, generation, offset, result }) => {
 			const { pagination: current } = model
-			if (key !== current.key || generation !== current.generation || !current.isFetching || offset !== nextOffset(current))
+			if (
+				key !== current.key ||
+				generation !== current.generation ||
+				!current.isFetching ||
+				offset !== nextOffset(current)
+			)
 				return { model }
 			const pagination: Pagination = Result.match(result, {
 				onSuccess: (page) => ({
@@ -383,7 +427,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		...advancedHandlers(model),
 		ClickedPeekStep: ({ step }) => steppedPeek(model, step),
 		ClickedOpenTrace: () => openPeekedTrace(model),
-		PressedListKey: ({ key }) => pressedListKey(model, key, context),
+		PressedListKey: ({ key, isMobile }) => pressedListKey(model, key, isMobile, context),
+		PressedOpenRow: ({ index }) => openRow(model, index),
 		GotPeekMessage: ({ message: inner }) => peekStep(model, inner, context),
 		GotPeekDialogMessage: ({ message: inner }) => peekDialogStep(model, inner),
 		GotFilterSectionsMessage: ({ message: inner }) => {
