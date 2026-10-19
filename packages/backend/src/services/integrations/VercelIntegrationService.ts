@@ -44,6 +44,11 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
+	ensureIntegrationSource,
+	integrationSourceName,
+	stampableSourceId,
+} from "@maple/backend/services/org/integration-sources"
+import {
 	createDrain,
 	deleteDrain,
 	listDeployments,
@@ -97,6 +102,13 @@ export interface VercelForwarding {
 
 /** The connection fields a reconcile reads. */
 type DrainOwner = Pick<VercelConnectionRow, "orgId" | "teamId" | "logDrainId" | "traceDrainId">
+
+/** The drains' header values, and the hash stored once every drain carries them. */
+interface DrainKey {
+	readonly key: string
+	readonly sourceId: string | undefined
+	readonly hash: string
+}
 
 interface DrainOutcome {
 	readonly id: string | null
@@ -336,13 +348,18 @@ export class VercelIntegrationService extends Context.Service<
 				tokenAad(connection.orgId),
 			)
 
-		/** The org's private ingest key for the drains' Authorization header, and its lookup hash. */
-		const drainKey = (orgId: OrgId, userId: UserId) =>
-			ingestKeys.getOrCreate(orgId, userId).pipe(
-				Effect.map((keys) => ({
-					key: keys.privateKey,
-					hash: hashIngestKey(keys.privateKey, lookupHmacKey),
-				})),
+		/**
+		 * What the drains send as headers: the org's private ingest key and the connection's pull
+		 * source (`x-maple-source-id`, left out when the lookup fails). `hash` covers both, since
+		 * Vercel's listing does not show the headers a drain has.
+		 */
+		const drainKey = Effect.fnUntraced(function* (
+			connection: Pick<VercelConnectionRow, "id" | "orgId" | "teamName">,
+			userId: UserId,
+			now: number,
+		) {
+			const { orgId } = connection
+			const keys = yield* ingestKeys.getOrCreate(orgId, userId).pipe(
 				Effect.mapError(
 					(error) =>
 						new IntegrationsPersistenceError({
@@ -350,6 +367,28 @@ export class VercelIntegrationService extends Context.Service<
 						}),
 				),
 			)
+			const sourceId = yield* stampableSourceId(
+				dbExecute((db) =>
+					ensureIntegrationSource(
+						db,
+						orgId,
+						{
+							platform: "vercel",
+							integrationId: connection.id,
+							name: integrationSourceName.vercel(connection),
+						},
+						now,
+					),
+				),
+				{ orgId, platform: "vercel" },
+			)
+			const key = keys.privateKey
+			return {
+				key,
+				sourceId,
+				hash: hashIngestKey(sourceId === undefined ? key : `${key}:${sourceId}`, lookupHmacKey),
+			} satisfies DrainKey
+		})
 
 		/** The delivery URL of the org's drain; the `maple_org` marker is how Maple finds it again. */
 		const drainEndpoint = (kind: DrainKind, orgId: OrgId) =>
@@ -359,11 +398,16 @@ export class VercelIntegrationService extends Context.Service<
 			kind: DrainKind,
 			orgId: OrgId,
 			forwarding: VercelForwarding,
-			ingestKey: string,
+			ingestKey: DrainKey,
 			update: boolean,
 			reenable: boolean,
 		): VercelDrainBody => {
-			const headers = { authorization: `Bearer ${ingestKey}` }
+			const headers = {
+				authorization: `Bearer ${ingestKey.key}`,
+				...(ingestKey.sourceId === undefined
+					? undefined
+					: { "x-maple-source-id": ingestKey.sourceId }),
+			}
 			const endpoint = drainEndpoint(kind, orgId)
 			const sampling =
 				forwarding.samplingRate < 1
@@ -446,7 +490,7 @@ export class VercelIntegrationService extends Context.Service<
 			owner: DrainOwner & Pick<VercelConnectionRow, "drainKeyHash">,
 			token: string,
 			forwarding: VercelForwarding,
-			ingestKey: { readonly key: string; readonly hash: string },
+			ingestKey: DrainKey,
 			reenable: boolean,
 		) {
 			const own = ownDrains(drains, kind, owner)
@@ -473,7 +517,7 @@ export class VercelIntegrationService extends Context.Service<
 				)
 			const extras = own.filter((drain) => drain !== kept).map((drain) => drain.id)
 			const extraError = yield* deleteEach(token, owner.teamId, extras)
-			// Vercel may redact headers in the listing, so the stored key hash says whether they are current.
+			// Vercel may redact headers in the listing, so the stored hash says whether they are current.
 			const rekey = owner.drainKeyHash !== ingestKey.hash
 			// Every picked project was deleted on Vercel: there is nothing to forward, and no valid body.
 			const nothingPicked = forwarding.projectScope === "some" && forwarding.projectIds.length === 0
@@ -484,7 +528,7 @@ export class VercelIntegrationService extends Context.Service<
 							httpClient,
 							token,
 							owner.teamId,
-							drainBody(kind, owner.orgId, forwarding, ingestKey.key, false, reenable),
+							drainBody(kind, owner.orgId, forwarding, ingestKey, false, reenable),
 						)
 					: rekey || drifted(kind, owner.orgId, kept, forwarding, reenable)
 						? updateDrain(
@@ -492,7 +536,7 @@ export class VercelIntegrationService extends Context.Service<
 								token,
 								owner.teamId,
 								kept.id,
-								drainBody(kind, owner.orgId, forwarding, ingestKey.key, true, reenable),
+								drainBody(kind, owner.orgId, forwarding, ingestKey, true, reenable),
 							).pipe(Effect.map((drain) => ({ ...drain, id: kept.id })))
 						: undefined
 			if (write === undefined) {
@@ -532,7 +576,7 @@ export class VercelIntegrationService extends Context.Service<
 			owner: DrainOwner & Pick<VercelConnectionRow, "drainKeyHash">,
 			token: string,
 			forwarding: VercelForwarding,
-			ingestKey: { readonly key: string; readonly hash: string },
+			ingestKey: DrainKey,
 			/** Settings saves turn disabled drains back on; the poll does not. */
 			reenable: boolean,
 		) {
@@ -931,7 +975,6 @@ export class VercelIntegrationService extends Context.Service<
 								}).pipe(Effect.as(false)),
 							),
 						)
-			const ingestKey = yield* drainKey(orgId, userId)
 			const encrypted = yield* encryptAes256Gcm(
 				token,
 				encryptionKey,
@@ -987,6 +1030,7 @@ export class VercelIntegrationService extends Context.Service<
 				})
 			}
 			yield* storeProjects(orgId, team.id, projects, now)
+			const ingestKey = yield* drainKey(connection, userId, now)
 			const reconciled = yield* Effect.result(reconcileDrains(connection, token, request, ingestKey, true))
 			if (Result.isSuccess(reconciled)) {
 				yield* saveOutcomes(connection, reconciled.success, ingestKey.hash, now)
@@ -1031,7 +1075,7 @@ export class VercelIntegrationService extends Context.Service<
 			// Saved first: whatever the drains end up as, the next poll converges them on this.
 			yield* updateConnection(orgId, connection.teamId, { ...forwarding, updatedAt: now })
 			const token = yield* decryptToken(connection)
-			const ingestKey = yield* drainKey(orgId, SYSTEM_USER_ID)
+			const ingestKey = yield* drainKey(connection, SYSTEM_USER_ID, now)
 			const outcomes = yield* reconcileDrains(connection, token, forwarding, ingestKey, true).pipe(
 				Effect.mapError(toDrainError),
 			)
@@ -1173,7 +1217,7 @@ export class VercelIntegrationService extends Context.Service<
 				}
 
 				let drainsRepaired = 0
-				const ingestKey = yield* Effect.result(drainKey(orgId, SYSTEM_USER_ID))
+				const ingestKey = yield* Effect.result(drainKey(claimed, SYSTEM_USER_ID, now))
 				if (Result.isFailure(ingestKey)) {
 					yield* recordError(ingestKey.failure.message)
 				} else {

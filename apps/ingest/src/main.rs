@@ -5031,6 +5031,7 @@ async fn handle_signal_inner(
         parse_span.record("maple.ingest.item_count", decoded.item_count());
         decoded
     };
+    apply_header_source_claim(&mut decoded, headers, &resolved_key);
     let kept_claim = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
     if matches!(ingress, Ingress::VercelLogDrain) {
         stamp_vercel_log_drain_source(&mut decoded);
@@ -6072,6 +6073,51 @@ fn stamp_vercel_log_drain_source(decoded: &mut DecodedPayload) {
                 "maple_ingest_source",
                 vercel_logs::INGEST_SOURCE,
             );
+        }
+    }
+}
+
+/// Names the sender's source for senders that cannot set resource attributes (Vercel drains).
+const SOURCE_ID_HEADER: &str = "x-maple-source-id";
+
+/// Copies the `x-maple-source-id` header onto every resource without a `maple_source_id`
+/// of its own, so it is verified and stamped exactly like an attribute claim.
+fn apply_header_source_claim(
+    decoded: &mut DecodedPayload,
+    headers: &HeaderMap,
+    resolved_key: &ResolvedIngestKey,
+) {
+    if !resolved_key.accepts_source_claims() {
+        return;
+    }
+    let Some(claim) = headers
+        .get(SOURCE_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|claim| !claim.is_empty() && claim.len() <= MAX_PUBLIC_ID_LEN)
+    else {
+        return;
+    };
+    let resources: Vec<&mut Resource> = match decoded {
+        DecodedPayload::Traces(request) => request
+            .resource_spans
+            .iter_mut()
+            .map(|r| r.resource.get_or_insert_with(Resource::default))
+            .collect(),
+        DecodedPayload::Logs(request) => request
+            .resource_logs
+            .iter_mut()
+            .map(|r| r.resource.get_or_insert_with(Resource::default))
+            .collect(),
+        DecodedPayload::Metrics(request) => request
+            .resource_metrics
+            .iter_mut()
+            .map(|r| r.resource.get_or_insert_with(Resource::default))
+            .collect(),
+    };
+    for resource in resources {
+        if source_id_claim(&resource.attributes).is_none() {
+            upsert_string_attribute(&mut resource.attributes, SOURCE_ID_ATTRIBUTE, claim);
         }
     }
 }
@@ -13540,6 +13586,148 @@ mod tests {
         assert_eq!(
             recorded_key_uses(&store).await,
             vec![DEFAULT_SOURCE_UUID.to_owned()]
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    fn header_claimed_logs(header: Option<&str>, own_claim: Option<&str>) -> DecodedPayload {
+        let mut request = test_log_request("header claim");
+        let mut claimed = request.resource_logs[0].clone();
+        if let Some(own_claim) = own_claim {
+            claimed
+                .resource
+                .as_mut()
+                .expect("resource")
+                .attributes
+                .push(string_attribute("maple_source_id", own_claim));
+        }
+        request.resource_logs.push(claimed);
+        request.resource_logs.push(ResourceLogs::default());
+        let mut decoded = DecodedPayload::Logs(request);
+        let mut headers = HeaderMap::new();
+        if let Some(header) = header {
+            headers.insert(SOURCE_ID_HEADER, header.parse().expect("header value"));
+        }
+        apply_header_source_claim(&mut decoded, &headers, &test_key());
+        decoded
+    }
+
+    fn resource_claims(decoded: &DecodedPayload) -> Vec<Option<String>> {
+        let DecodedPayload::Logs(request) = decoded else {
+            panic!("logs");
+        };
+        request
+            .resource_logs
+            .iter()
+            .map(|r| {
+                r.resource
+                    .as_ref()
+                    .and_then(|resource| source_id_claim(&resource.attributes))
+                    .map(str::to_owned)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_source_header_claims_every_resource_without_its_own() {
+        let header = public_id(INTEGRATION_SOURCE_UUID);
+        let own = public_id(SOURCE_UUID);
+        assert_eq!(
+            resource_claims(&header_claimed_logs(Some(&header), Some(&own))),
+            vec![Some(header.clone()), Some(own), Some(header)]
+        );
+        assert_eq!(
+            resource_claims(&header_claimed_logs(Some("  "), None)),
+            vec![None, None, None]
+        );
+        let oversized = "s".repeat(MAX_PUBLIC_ID_LEN + 1);
+        assert_eq!(
+            resource_claims(&header_claimed_logs(Some(&oversized), None)),
+            vec![None, None, None]
+        );
+    }
+
+    #[test]
+    fn the_source_header_is_ignored_for_source_tokens() {
+        let mut decoded = DecodedPayload::Logs(test_log_request("token"));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            SOURCE_ID_HEADER,
+            public_id(INTEGRATION_SOURCE_UUID)
+                .parse()
+                .expect("header value"),
+        );
+        let token = ResolvedIngestKey {
+            key_type: IngestKeyType::Source,
+            ..test_key()
+        };
+        apply_header_source_claim(&mut decoded, &headers, &token);
+        assert_eq!(resource_claims(&decoded), vec![None]);
+    }
+
+    #[tokio::test]
+    async fn header_claims_are_verified_like_attribute_claims() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("header-source-claim");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_header_source_claim";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_header_claim".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        store.insert_source_row("org_header_claim", DEFAULT_SOURCE_UUID, true, None);
+        store.insert_source_row(
+            "org_header_claim",
+            INTEGRATION_SOURCE_UUID,
+            false,
+            Some(("vercel", "vc_1")),
+        );
+        store.insert_source_row("org_someone_else", SOURCE_UUID, false, None);
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+
+        let mut stamped = Vec::new();
+        for header in [public_id(INTEGRATION_SOURCE_UUID), public_id(SOURCE_UUID)] {
+            let mut headers = test_headers(raw_key);
+            headers.insert(SOURCE_ID_HEADER, header.parse().expect("header value"));
+            let (response, ..) = handle_signal_inner(
+                &state,
+                &headers,
+                Bytes::from(test_log_request("header claim").encode_to_vec()),
+                Ingress::Otlp(Signal::Logs),
+            )
+            .await
+            .expect("default key traffic is accepted");
+            assert_eq!(response.status(), StatusCode::OK);
+            let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+                .await
+                .expect("the export is forwarded")
+                .expect("forward channel should stay open");
+            let forwarded =
+                ExportLogsServiceRequest::decode(forwarded).expect("forwarded protobuf");
+            let resource = forwarded.resource_logs[0]
+                .resource
+                .as_ref()
+                .expect("resource");
+            stamped.push(string_attributes(&resource.attributes)["maple_source_id"].clone());
+        }
+        // The org's own source is kept; another org's id gives way to the default source.
+        assert_eq!(
+            stamped,
+            vec![
+                public_id(INTEGRATION_SOURCE_UUID),
+                public_id(DEFAULT_SOURCE_UUID)
+            ]
         );
 
         drop(std::fs::remove_dir_all(&queue_dir));

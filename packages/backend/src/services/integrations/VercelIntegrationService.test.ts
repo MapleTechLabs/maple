@@ -4,8 +4,10 @@ import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, VercelConnectRequest } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { SourceId } from "@maple/domain/primitives"
 import { VercelIntegrationService } from "./VercelIntegrationService"
 
 const now = Date.UTC(2026, 9, 19, 12, 0, 0)
@@ -270,6 +272,16 @@ const drainsTo = (fake: Fake, endpoint: string, teamId = "team_1") =>
 const isTraceCreate = (call: VercelCall) =>
 	call.method === "POST" && call.path === "/v1/drains" && JSON.stringify(call.body).includes("Maple traces")
 
+/** The `src_` id of the connection's pull source, as the drains send it. */
+const vercelSourceId = (testDb: TestDb) =>
+	Effect.promise(() =>
+		queryFirstRow<{ id: string }>(
+			testDb,
+			"SELECT s.id FROM sources s JOIN vercel_connections c ON s.integration_id = c.id WHERE s.platform = 'vercel' AND c.org_id = $1",
+			[orgId],
+		),
+	).pipe(Effect.map((row) => publicSourceId(Schema.decodeSync(SourceId)(row!.id))))
+
 const vercelError = (status: number, message: string) => json({ error: { message } }, status)
 
 const poll = () => VercelIntegrationService.use((vercel) => vercel.pollOrg(orgId))
@@ -277,7 +289,7 @@ const status = () => VercelIntegrationService.use((vercel) => vercel.getStatus(o
 const disconnect = () => VercelIntegrationService.use((vercel) => vercel.disconnect(orgId))
 
 describe("VercelIntegrationService", () => {
-	it.effect("connect creates a log drain and a trace drain carrying the org's private ingest key", () => {
+	it.effect("connect creates a log drain and a trace drain carrying the org's ingest key and source", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFake()
 		return run(
@@ -286,7 +298,10 @@ describe("VercelIntegrationService", () => {
 			Effect.gen(function* () {
 				const connected = yield* connect()
 				const keys = yield* OrgIngestKeysService.use((service) => service.getOrCreate(orgId, userId))
-				const headers = { authorization: `Bearer ${keys.privateKey}` }
+				const headers = {
+					authorization: `Bearer ${keys.privateKey}`,
+					"x-maple-source-id": yield* vercelSourceId(testDb),
+				}
 				const created = callsTo(fake, "POST", "/v1/drains").map((call) => call.body)
 				assert.deepStrictEqual(created, [
 					{
@@ -714,11 +729,39 @@ describe("VercelIntegrationService", () => {
 										endpoint: { traces: TRACES_ENDPOINT },
 										encoding: "proto",
 									}),
-							headers: { authorization: `Bearer ${rolled.privateKey}` },
+							headers: {
+								authorization: `Bearer ${rolled.privateKey}`,
+								"x-maple-source-id": yield* vercelSourceId(testDb),
+							},
 						},
 					})
 				}
 				// Re-keyed once: the next poll only reads the drains.
+				yield* poll()
+				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 2)
+			}),
+		)
+	})
+
+	it.effect("a poll after the connection's source changed rewrites both drains once", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect()
+				const before = yield* vercelSourceId(testDb)
+				yield* Effect.promise(() =>
+					executeSql(testDb, "DELETE FROM sources WHERE platform = 'vercel'"),
+				)
+				yield* poll()
+				const after = yield* vercelSourceId(testDb)
+				assert.notStrictEqual(after, before)
+				const sentSourceIds = callsTo(fake, "PATCH", "/v1/drains").map(
+					(call) => asObject(asObject(asObject(call.body).delivery).headers)["x-maple-source-id"],
+				)
+				assert.deepStrictEqual(sentSourceIds, [after, after])
 				yield* poll()
 				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 2)
 			}),
