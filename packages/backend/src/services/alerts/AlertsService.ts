@@ -66,6 +66,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import * as Orm from "@maple-dev/effect-orm/database"
 import {
 	AlertDeliveryEvents,
 	type AlertDeliveryEventRow,
@@ -108,6 +109,7 @@ import {
 import { HttpClient } from "effect/http"
 import * as AlertingMetrics from "@maple/backend/observability/AlertingMetrics"
 import { escalateAlertIssue, upsertAlertIssue } from "@maple/backend/services/errors/issue-hub"
+import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import {
 	maybeEnqueueTriage,
 	type MaybeEnqueueTriageInput,
@@ -212,8 +214,7 @@ type RuleStateWrites = Ref.Ref<RuleStateBuffer>
 
 const emptyRuleStateBuffer: RuleStateBuffer = { rows: HashMap.empty(), checks: Chunk.empty() }
 
-// 11 bind parameters per row; keeps one statement far below Postgres' 65,535.
-const RULE_STATE_FLUSH_CHUNK_SIZE = 500
+const FenceResultRow = Schema.Struct({ fenced: Schema.Number })
 
 type AlertDestinationStorageError = AlertDestinationDecryptionError | AlertDestinationStoredConfigInvalidError
 
@@ -323,7 +324,8 @@ const DESTINATION_DISABLE_AFTER_FAILURES = 3
 /** Bound on the stored `disabled_reason`; it is a provider sentence, not a log. */
 const DISABLED_REASON_MAX_LENGTH = 500
 const ALERT_TEST_DELIVERY_CONCURRENCY = 5
-const ALERT_CHECK_INGEST_CONCURRENCY = 4
+// A Worker invocation has six simultaneous outbound connections; more only queue.
+const ALERT_CHECK_INGEST_CONCURRENCY = 6
 
 /** A warehouse outage (5xx or unreachable), not a fault of the rule being evaluated. */
 const warehouseOutageOf = (error: unknown): Option.Option<WarehouseUpstreamError> =>
@@ -678,7 +680,101 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				)
 
 			/**
-			 * Write a rule's buffered state rows in one claim-fenced transaction.
+			 * `writeUnderClaim` for the state upsert, in one statement instead of five round
+			 * trips. FOR SHARE on the claim, then the rule (the edit path's lock order), makes
+			 * a re-claim or an edit wait for this write, and a write after one finds no fence
+			 * row and changes nothing. Non-finite `lastValue`s travel as null in the JSON.
+			 */
+			const upsertStatesUnderClaim = Effect.fnUntraced(function* (
+				claim: RuleClaim,
+				rows: ReadonlyArray<AlertRuleStateRow>,
+			) {
+				const payload = JSON.stringify(
+					rows.map((row) => ({
+						org_id: row.orgId,
+						rule_id: row.ruleId,
+						group_key: row.groupKey,
+						consecutive_breaches: row.consecutiveBreaches,
+						consecutive_healthy: row.consecutiveHealthy,
+						history_json: row.historyJson,
+						last_status: row.lastStatus,
+						last_value: row.lastValue,
+						last_sample_count: row.lastSampleCount,
+						last_evaluated_at:
+							row.lastEvaluatedAt === null ? null : msToSqlTimestamp(row.lastEvaluatedAt),
+						last_error: row.lastError,
+						updated_at: msToSqlTimestamp(row.updatedAt),
+					})),
+				)
+				const result = yield* dbExecute((db) =>
+					db.query(
+						Orm.sql`
+						with claim as (
+							select 1 from alert_rule_claims
+							where rule_id = ${claim.ruleId}
+								and last_scheduled_at = ${msToSqlTimestamp(claim.claimedAt)}::timestamptz
+							for share
+						), rule as (
+							select 1 from alert_rules
+							where id = ${claim.ruleId}
+								and updated_at = ${msToSqlTimestamp(claim.ruleUpdatedAt)}::timestamptz
+								and exists (select 1 from claim)
+							for share
+						), written as (
+							insert into alert_rule_states (
+								org_id, rule_id, group_key, consecutive_breaches, consecutive_healthy, history_json,
+								last_status, last_value, last_sample_count, last_evaluated_at, last_error, updated_at
+							)
+							select
+								r.org_id, r.rule_id, r.group_key, r.consecutive_breaches, r.consecutive_healthy,
+								nullif(r.history_json, 'null'::jsonb), r.last_status, r.last_value,
+								r.last_sample_count, r.last_evaluated_at, r.last_error, r.updated_at
+							from jsonb_to_recordset(${payload}::jsonb) as r(
+								org_id text, rule_id text, group_key text, consecutive_breaches int4,
+								consecutive_healthy int4, history_json jsonb, last_status text, last_value float8,
+								last_sample_count int4, last_evaluated_at timestamptz, last_error text,
+								updated_at timestamptz
+							)
+							where exists (select 1 from rule)
+							on conflict (org_id, rule_id, group_key) do update set
+								consecutive_breaches = excluded.consecutive_breaches,
+								consecutive_healthy = excluded.consecutive_healthy,
+								history_json = excluded.history_json,
+								last_status = excluded.last_status,
+								last_value = excluded.last_value,
+								last_sample_count = excluded.last_sample_count,
+								last_evaluated_at = excluded.last_evaluated_at,
+								last_error = excluded.last_error,
+								updated_at = excluded.updated_at
+							returning 1
+						)
+						select (select count(*) from rule)::int as fenced`,
+						FenceResultRow,
+					),
+				)
+				if ((result[0]?.fenced ?? 0) > 0) return
+				// Lost. Only this path pays the read that says to whom.
+				const current = yield* dbExecute((db) =>
+					db.run(
+						PG.from(AlertRuleClaims)
+							.select("lastScheduledAt")
+							.where(($) => [$.ruleId.eq(claim.ruleId)]),
+					),
+				)
+				const currentClaimAt = current[0]?.lastScheduledAt ?? null
+				return yield* new AlertRuleClaimLostError({
+					message:
+						currentClaimAt === claim.claimedAt
+							? "Alert rule was edited after this tick loaded it"
+							: "Alert rule was re-claimed by a later scheduler tick",
+					ruleId: claim.ruleId,
+					claimedAt: claim.claimedAt,
+					currentClaimAt,
+				})
+			})
+
+			/**
+			 * Write a rule's buffered state rows in one claim-fenced statement.
 			 * Per-group transactions ran back to back and took ~950 ms each at peak,
 			 * so a 30-group rule kept the tick open ~30 s past its deadline.
 			 */
@@ -691,31 +787,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const rows = Arr.fromIterable(HashMap.values(buffer.rows))
 				yield* Effect.annotateCurrentSpan("maple.alerting.state_rows", rows.length)
 				if (Arr.isReadonlyArrayEmpty(rows)) return
-				yield* writeUnderClaim(claim, (db) =>
-					Effect.forEach(
-						Arr.chunksOf(rows, RULE_STATE_FLUSH_CHUNK_SIZE),
-						(chunk) =>
-							db.run(
-								PG.insertInto(AlertRuleStates)
-									.values(chunk)
-									.onConflictDoUpdate({
-										target: ["orgId", "ruleId", "groupKey"],
-										set: (_, excluded) => ({
-											consecutiveBreaches: excluded.consecutiveBreaches,
-											consecutiveHealthy: excluded.consecutiveHealthy,
-											historyJson: excluded.historyJson,
-											lastStatus: excluded.lastStatus,
-											lastValue: excluded.lastValue,
-											lastSampleCount: excluded.lastSampleCount,
-											lastEvaluatedAt: excluded.lastEvaluatedAt,
-											lastError: excluded.lastError,
-											updatedAt: excluded.updatedAt,
-										}),
-									}),
-							),
-						{ discard: true },
-					),
-				).pipe(
+				yield* upsertStatesUnderClaim(claim, rows).pipe(
 					// One write now carries every deferred group, so a transient failure
 					// would drop the whole rule's progress. The upsert is idempotent and
 					// re-fenced, so retry once; a lost claim or an edit stays final.
@@ -4497,7 +4569,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					{ discard: true },
 				)
 
-				yield* flushRuleStateHousekeeping(
+				const housekeeping = flushRuleStateHousekeeping(
 					Chunk.toReadonlyArray(yield* Ref.get(selfHealTargets)),
 					Chunk.toReadonlyArray(yield* Ref.get(clearErrorTargets)),
 					tickStart,
@@ -4508,7 +4580,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// broke across forty groups is one digest rather than one per chunk.
 				// Best-effort like every other push: a digest is a courtesy, and it
 				// must never fail the tick that produced it.
-				yield* Effect.forEach(
+				const digests = Effect.forEach(
 					yield* pushBudget.suppressed,
 					(rule) =>
 						mobilePush
@@ -4518,65 +4590,72 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				).pipe(Effect.withSpan("AlertsService.notifyIncidentDigests"))
 
 				// Resolve stale incidents for disabled rules
-				const disabledRulesWithOpenIncidents = yield* dbExecute((db) =>
-					db.run(
-						PG.from(AlertIncidents, "i")
-							.innerJoin(AlertRules, "r", (incident, rule) => incident.ruleId.eq(rule.id))
-							.select(($) => ({ ruleId: $.ruleId, orgId: $.orgId }))
-							.where(($) => [$.status.eq("open"), $.r.enabled.eq(false)])
-							.distinct(),
-					),
-				)
-				yield* Effect.forEach(disabledRulesWithOpenIncidents, ({ ruleId, orgId }) =>
-					Effect.gen(function* () {
-						const ruleRow = (yield* dbExecute((db) =>
-							db.run(
-								selectStoredAlertRules()
-									.where(($) => [$.id.eq(ruleId)])
-									.limit(1),
-							),
-						))[0]
-						if (!ruleRow) return
-						const normalized = yield* normalizeRuleRow(ruleRow)
-						// Budgeted: a sweep that resolves every incident of every
-						// disabled rule is exactly the shape that storms phones.
-						yield* resolveStaleIncidents(orgId, normalized.id, normalized, {
-							resolveAll: true,
-							pushBudget,
-						})
-					}).pipe(isolate("Disabled alert rule sweep failed", { ruleId, orgId })),
-				)
+				const sweepDisabledRules = Effect.gen(function* () {
+					const disabledRulesWithOpenIncidents = yield* dbExecute((db) =>
+						db.run(
+							PG.from(AlertIncidents, "i")
+								.innerJoin(AlertRules, "r", (incident, rule) => incident.ruleId.eq(rule.id))
+								.select(($) => ({ ruleId: $.ruleId, orgId: $.orgId }))
+								.where(($) => [$.status.eq("open"), $.r.enabled.eq(false)])
+								.distinct(),
+						),
+					)
+					yield* Effect.forEach(disabledRulesWithOpenIncidents, ({ ruleId, orgId }) =>
+						Effect.gen(function* () {
+							const ruleRow = (yield* dbExecute((db) =>
+								db.run(
+									selectStoredAlertRules()
+										.where(($) => [$.id.eq(ruleId)])
+										.limit(1),
+								),
+							))[0]
+							if (!ruleRow) return
+							const normalized = yield* normalizeRuleRow(ruleRow)
+							// Budgeted: a sweep that resolves every incident of every
+							// disabled rule is exactly the shape that storms phones.
+							yield* resolveStaleIncidents(orgId, normalized.id, normalized, {
+								resolveAll: true,
+								pushBudget,
+							})
+						}).pipe(isolate("Disabled alert rule sweep failed", { ruleId, orgId })),
+					)
+				})
 
 				// Flush accumulated alert_check audit rows to Tinybird, one POST per
 				// orgId. Awaited so the Cloudflare Worker isolate stays alive until
 				// the writes complete; errors are logged then swallowed because the
 				// authoritative state already lives in Postgres above.
 				const accumulatedChecks = yield* Ref.getAndSet(pendingChecks, Chunk.empty())
-				if (accumulatedChecks.length > 0) {
-					yield* Effect.forEach(
-						Object.entries(
-							Arr.groupBy(Chunk.toReadonlyArray(accumulatedChecks), (check) => check.OrgId),
-						),
-						([orgId, checks]) =>
-							// Not metered to Autumn: internal bookkeeping rows, not customer
-							// telemetry.
-							warehouse
-								.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", checks)
-								.pipe(
-									Effect.tapCause((cause) =>
-										Effect.logWarning("Failed to ingest alert_checks audit rows").pipe(
-											Effect.annotateLogs({
-												orgId,
-												rowCount: checks.length,
-												cause: summarizeCause(cause),
-											}),
-										),
-									),
-									Effect.ignore,
+				const ingestChecks = Effect.forEach(
+					Object.entries(
+						Arr.groupBy(Chunk.toReadonlyArray(accumulatedChecks), (check) => check.OrgId),
+					),
+					([orgId, checks]) =>
+						// Not metered to Autumn: internal bookkeeping rows, not customer
+						// telemetry.
+						warehouse.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", checks).pipe(
+							Effect.tapCause((cause) =>
+								Effect.logWarning("Failed to ingest alert_checks audit rows").pipe(
+									Effect.annotateLogs({
+										orgId,
+										rowCount: checks.length,
+										cause: summarizeCause(cause),
+									}),
 								),
-						{ concurrency: ALERT_CHECK_INGEST_CONCURRENCY },
-					).pipe(Effect.withSpan("AlertsService.ingestAlertChecks"))
-				}
+							),
+							Effect.ignore,
+						),
+					{ concurrency: ALERT_CHECK_INGEST_CONCURRENCY, discard: true },
+				).pipe(Effect.withSpan("AlertsService.ingestAlertChecks"))
+
+				// Every rule's writes are done, and these steps do not read each other's writes:
+				// disabled rules are never in the housekeeping lists, and the sweep only resolves,
+				// which adds nothing to the digests. Run together; a failure still fails the tick.
+				const tail = yield* Effect.all(
+					Arr.map([housekeeping, digests, sweepDisabledRules, ingestChecks], Effect.exit),
+					{ concurrency: "unbounded" },
+				)
+				yield* Effect.forEach(tail, (exit) => exit, { discard: true })
 
 				yield* Fiber.join(triages)
 
