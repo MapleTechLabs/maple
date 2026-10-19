@@ -14,6 +14,10 @@ export type Search = typeof AgentSessionsSearch.Type
 export const PAGE_SIZE = 50
 export const MAX_RETAINED_SESSIONS = 500
 
+/** A page's ranked count, falling back to its row count for a server that predates the field. */
+export const rankedOf = (page: { readonly data: ReadonlyArray<unknown>; readonly ranked?: number }): number =>
+	page.ranked ?? page.data.length
+
 export const FILTER_KEYS = [
 	"vendors",
 	"services",

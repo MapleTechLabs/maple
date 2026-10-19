@@ -80,20 +80,39 @@ const isTyping = (event: KeyboardEvent): boolean =>
 	event.altKey ||
 	(event.target instanceof HTMLElement && event.target.closest("input, textarea, [contenteditable='true']") !== null)
 
-const MODAL_KEYS = new Map<string, ModalKey>([
-	["ArrowUp", "StepUp"],
-	["ArrowDown", "StepDown"],
+/** Where the open group sits in the Errors read: ↑/↓ step (and claim the key) only inside it. */
+export type GroupPosition = Readonly<{ index: number; total: number }>
+
+/** ↑/↓: the group step a press makes, none past either end (the scroll area keeps the key then). */
+export const arrowStepOf = (key: string, position: GroupPosition): Option.Option<ModalKey> => {
+	if (key === "ArrowUp" && position.index > 0) return Option.some("StepUp")
+	if (key === "ArrowDown" && position.index >= 0 && position.index < position.total - 1)
+		return Option.some("StepDown")
+	return Option.none()
+}
+
+const SAMPLE_KEYS = new Map<string, ModalKey>([
 	["j", "OlderSample"],
 	["k", "NewerSample"],
 ])
 
-/** `useWindowKeydown`: ↑/↓ read the next group, j/k the next sample, for as long as the modal is open. */
-export const modalKeys: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
-	target: () => window,
-	type: "keydown",
-	filterMapEvent: (event) => {
-		const key = MODAL_KEYS.get(event.key)
-		if (key === undefined || isTyping(event)) return Option.none()
-		return Option.some(Message.PressedModalKey({ key }))
-	},
-})
+/** `useWindowKeydown`: ↑/↓ read the next group (default prevented), j/k the next sample. */
+export const modalKeys = (position: GroupPosition): Stream.Stream<Message> =>
+	Stream.merge(
+		Dom.streamFromEventFilterMapPreventDefault({
+			target: () => window,
+			type: "keydown",
+			filterMapEvent: (event) =>
+				isTyping(event)
+					? Option.none()
+					: Option.map(arrowStepOf(event.key, position), (key) => Message.PressedModalKey({ key })),
+		}),
+		Dom.streamFromEventFilterMap({
+			target: () => window,
+			type: "keydown",
+			filterMapEvent: (event) => {
+				const key = SAMPLE_KEYS.get(event.key)
+				return key === undefined || isTyping(event) ? Option.none() : Option.some(Message.PressedModalKey({ key }))
+			},
+		}),
+	)

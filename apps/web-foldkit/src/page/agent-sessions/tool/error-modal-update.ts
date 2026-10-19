@@ -34,6 +34,8 @@ export type Return = Readonly<{
 /** The page facts the modal reads: the org, the window's selection, the URL, the table's groups. */
 export type ModalContext = Readonly<{
 	orgId: string
+	/** `Refresh` on the Reload's window: the group's facts revalidate under an unchanged key. */
+	detailMode: Keyed.RequestMode
 	selection: Selection | null
 	error: string | undefined
 	session: string | undefined
@@ -93,7 +95,7 @@ export const follow = (model: Model, context: ModalContext): Return => {
 	const base: Model = model.fingerprint === fingerprint ? model : { ...init(), dialog: model.dialog, fingerprint }
 	const opened = base.dialog.isOpen ? { model: base } : liftDialog(base, Dialog.open(base.dialog))
 	const detailKey = requestKey(context.orgId, "getAiToolErrorDetail", { data: { ...selection, fingerprint } })
-	const detail: Return = Option.match(Keyed.request(opened.model.detail, detailKey, "Load"), {
+	const detail: Return = Option.match(Keyed.request(opened.model.detail, detailKey, context.detailMode), {
 		onNone: () => ({ model: opened.model }),
 		onSome: (slot) => ({
 			model: { ...opened.model, detail: slot },

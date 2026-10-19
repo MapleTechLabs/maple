@@ -1,7 +1,8 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
+import { arrowStepOf } from "./error-modal-command"
 import * as ErrorModal from "./error-modal-model"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -112,5 +113,29 @@ describe("agent tool error modal", () => {
 			PageOutMessage.RequestedNavigation({ url: "/agent-sessions/tools/Bash", isReplace: false }),
 		)
 		expect(closed.model.errorModal.dialog.isOpen).toBe(false)
+	})
+
+	test("↑/↓ claim the key only when they step: past either end the scroll area keeps it", () => {
+		expect(arrowStepOf("ArrowUp", { index: 0, total: 2 })).toEqual(Option.none())
+		expect(arrowStepOf("ArrowDown", { index: 0, total: 2 })).toEqual(Option.some("StepDown"))
+		expect(arrowStepOf("ArrowUp", { index: 1, total: 2 })).toEqual(Option.some("StepUp"))
+		expect(arrowStepOf("ArrowDown", { index: 1, total: 2 })).toEqual(Option.none())
+		expect(arrowStepOf("j", { index: 0, total: 2 })).toEqual(Option.none())
+	})
+
+	test("Reload re-reads the open group's facts even when the window is unchanged", () => {
+		const opened = withErrors({ error: "42" }).model
+		const answered = pageUpdate(
+			opened,
+			modal(
+				ErrorModal.Message.CompletedFetchDetail({
+					key: opened.errorModal.detail.key ?? "",
+					result: Result.succeed({ sessions: [], variants: [], breakdown: [] }),
+				}),
+			),
+		).model
+		const reloaded = pageUpdate(answered, Message.ClickedReload()).model
+		const resolved = pageUpdate(reloaded, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }))
+		expect(names(resolved.commands)).toContain("FetchAgentToolErrorDetail")
 	})
 })

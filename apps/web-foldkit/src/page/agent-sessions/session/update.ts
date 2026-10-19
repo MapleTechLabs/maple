@@ -370,8 +370,16 @@ const pressedSpanKey = (model: Model, key: SpanKey): Return => {
 	}
 }
 
-export const update = (model: Model, message: Message, context: PageContext): Return =>
-	followMarkdown(followPopover(context)(followLanding(step(model, message, context))))
+// A scroll tick or the close tooltip changes no transcript row, so no markdown body can be new.
+const isMarkdownNeutral = (message: Message): boolean =>
+	message._tag === "ChangedTranscriptWindow" ||
+	message._tag === "ChangedWaterfallWindow" ||
+	message._tag === "GotCloseTooltipMessage"
+
+export const update = (model: Model, message: Message, context: PageContext): Return => {
+	const followed = followPopover(context)(followLanding(step(model, message, context)))
+	return isMarkdownNeutral(message) ? followed : followMarkdown(followed)
+}
 
 const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
