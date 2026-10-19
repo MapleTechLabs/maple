@@ -18,7 +18,6 @@ import { input } from "../../../ui/input"
 import type { SelectOption } from "../../../ui/select-view"
 import { whereEditor } from "../../kit/query-builder/where-editor"
 import { autocompleteFor, populationField } from "./where-fields"
-import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { ProductEdit, type StepScope } from "./product-edit"
@@ -134,7 +133,13 @@ export const rowLabel = (
 ): Html => h.span([h.Class(className)], [text])
 
 /** The population filter and its parse error (or what it means). */
-export const populationFilter = (h: H, model: Model, scope: StepScope, value: string, ariaLabel: string): Html => {
+export const populationFilter = (
+	h: H,
+	model: Model,
+	scope: StepScope,
+	value: string,
+	ariaLabel: string,
+): Html => {
 	const parsed = parseProductEventsFilterClause(value)
 	return h.div(
 		[h.Class("space-y-1")],
@@ -301,5 +306,3 @@ export const runRow = (h: H, error: string | null): Html =>
 			h.span([h.Class("text-2xs text-muted-foreground ml-auto")], ["A"]),
 		],
 	)
-
-export type FunnelPanelState = Pick<EditorState, "funnel">

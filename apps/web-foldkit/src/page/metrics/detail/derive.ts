@@ -154,6 +154,3 @@ export const appendWhereFilter = (where: string, key: string, value: string): st
 	if (sameKeyClause.test(trimmed)) return trimmed.replace(sameKeyClause, clause)
 	return `${trimmed} AND ${clause}`
 }
-
-/** `buildBackToMetricsHref`'s params: the browse page keeps the time range only. */
-export const DETAIL_ONLY_PARAMS = ["type", "agg", "where", "groupBy", "step", "bd"] as const

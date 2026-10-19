@@ -1,9 +1,9 @@
 import { getRailwayServices, getRailwayServiceTimeseries } from "@maple/web-data/warehouse/railway-infra"
-import { Effect, type Result } from "effect"
+import { Effect } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "../../../data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
-import type { RailwayServiceRow, RailwayServiceTimeseriesRow, RailwayStatus } from "./model"
+import type { RailwayServiceRow, RailwayServiceTimeseriesRow } from "./model"
 
 // The Railway reads as Effects; each page wraps them in its own Commands (`railwayServicesResultAtom`,
 // `railwayServiceTimeseriesResultAtom`, `railwayStatusAtom`).
@@ -14,8 +14,6 @@ export const loadRailwayServices = (window: TimeWindow) =>
 		Effect.mapError(toLoadFailure),
 		Effect.result,
 	)
-
-export type RailwayResult<A> = Result.Result<A, LoadFailure>
 
 export const loadRailwayStatus = (refresh: boolean) =>
 	Effect.gen(function* () {
@@ -35,5 +33,3 @@ export const loadRailwayTimeseries = (
 		Effect.mapError(toLoadFailure),
 		Effect.result,
 	)
-
-export type { RailwayStatus }

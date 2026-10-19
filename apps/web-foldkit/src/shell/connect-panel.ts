@@ -1,5 +1,5 @@
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { currentWindow, TimeWindow } from "../data/time-range"
@@ -89,7 +89,11 @@ export const FetchKeys = Command.define("FetchConnectIngestKeys", {
 	execute: ({ orgId }) =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
 			Effect.map((keys) =>
-				Message.SucceededLoadKeys({ orgId, publicKey: keys.public_key, privateKey: keys.private_key }),
+				Message.SucceededLoadKeys({
+					orgId,
+					publicKey: keys.public_key,
+					privateKey: keys.private_key,
+				}),
 			),
 			Effect.orElseSucceed(() => Message.FailedLoadKeys({ orgId })),
 		),
@@ -100,9 +104,9 @@ export const ResolveWindow = Command.define("ResolveConnectWindow", {
 	args: { orgId: Schema.String },
 	messages: [Message.ResolvedWindow],
 	execute: ({ orgId }) =>
-		Effect.flatMap(readEffectiveTimeZone, (timeZone) => currentWindow({ preset: "1h", snap: true, timeZone })).pipe(
-			Effect.map((window) => Message.ResolvedWindow({ orgId, window })),
-		),
+		Effect.flatMap(readEffectiveTimeZone, (timeZone) =>
+			currentWindow({ preset: "1h", snap: true, timeZone }),
+		).pipe(Effect.map((window) => Message.ResolvedWindow({ orgId, window }))),
 })
 
 /** `getServiceOverviewResultAtom({ data: { startTime, endTime } })`, the pin applied ("top"). */
@@ -117,7 +121,10 @@ export const FetchOverview = Command.define("FetchConnectOverview", {
 				Message.SucceededLoadOverview({
 					orgId,
 					window,
-					services: response.data.map((row) => ({ serviceName: String(row.serviceName), spanCount: row.spanCount ?? 0 })),
+					services: response.data.map((row) => ({
+						serviceName: String(row.serviceName),
+						spanCount: row.spanCount ?? 0,
+					})),
 				}),
 			),
 			Effect.orElseSucceed(() => Message.FailedLoadOverview({ orgId, window })),
@@ -170,7 +177,9 @@ const copyStep = (model: Model, field: CopyField, message: CopyButton.Message): 
 	const next = CopyButton.update(model.copies[field], message)
 	return {
 		model: { ...model, copies: { ...model.copies, [field]: next.model } },
-		commands: Command.mapMessages(next.commands ?? [], (child) => Message.GotCopyMessage({ field, message: child })),
+		commands: Command.mapMessages(next.commands ?? [], (child) =>
+			Message.GotCopyMessage({ field, message: child }),
+		),
 	}
 }
 
@@ -178,13 +187,18 @@ export const update = (model: Model, message: Message, context: Context): Update
 	Message.match<UpdateReturn>(message, {
 		GotPopoverMessage: ({ message: child }) => popoverStep(model, child, context),
 		SucceededLoadKeys: ({ orgId, publicKey, privateKey }) =>
-			model.orgId === orgId ? { model: { ...model, keys: { _tag: "Ready", publicKey, privateKey } } } : { model },
-		FailedLoadKeys: ({ orgId }) => (model.orgId === orgId ? { model: { ...model, keys: { _tag: "Failed" } } } : { model }),
+			model.orgId === orgId
+				? { model: { ...model, keys: { _tag: "Ready", publicKey, privateKey } } }
+				: { model },
+		FailedLoadKeys: ({ orgId }) =>
+			model.orgId === orgId ? { model: { ...model, keys: { _tag: "Failed" } } } : { model },
 		ResolvedWindow: ({ orgId, window }) =>
 			model.orgId === orgId && model.popover.isOpen && model.window === null
 				? {
 						model: { ...model, window },
-						commands: [FetchOverview({ orgId, window, pinnedNamespace: context.pinnedNamespace })],
+						commands: [
+							FetchOverview({ orgId, window, pinnedNamespace: context.pinnedNamespace }),
+						],
 					}
 				: { model },
 		SucceededLoadOverview: ({ orgId, window, services }) =>
@@ -196,13 +210,21 @@ export const update = (model: Model, message: Message, context: Context): Update
 				? {
 						model,
 						commands: [
-							FetchOverview({ orgId: model.orgId, window: model.window, pinnedNamespace: context.pinnedNamespace }),
+							FetchOverview({
+								orgId: model.orgId,
+								window: model.window,
+								pinnedNamespace: context.pinnedNamespace,
+							}),
 						],
 					}
 				: { model },
 		GotCopyMessage: ({ field, message: child }) => copyStep(model, field, child),
-		ClickedRevealPublicKey: () => ({ model: { ...model, isPublicKeyVisible: !model.isPublicKeyVisible } }),
-		ClickedRevealPrivateKey: () => ({ model: { ...model, isPrivateKeyVisible: !model.isPrivateKeyVisible } }),
+		ClickedRevealPublicKey: () => ({
+			model: { ...model, isPublicKeyVisible: !model.isPublicKeyVisible },
+		}),
+		ClickedRevealPrivateKey: () => ({
+			model: { ...model, isPrivateKeyVisible: !model.isPrivateKeyVisible },
+		}),
 	})
 
 /** The 15 s poll runs while the panel is open on a resolved window. */
@@ -214,5 +236,3 @@ export const isPolling = (model: Model): boolean => model.popover.isOpen && mode
 export const realServices = (model: Model): ReadonlyArray<typeof ServiceRow.Type> =>
 	model.services.filter((row) => !row.serviceName.startsWith("demo-"))
 
-export const keysOf = (model: Model): Option.Option<Readonly<{ publicKey: string; privateKey: string }>> =>
-	model.keys._tag === "Ready" ? Option.some(model.keys) : Option.none()

@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Combobox from "../../ui/combobox"
 import * as Dialog from "../../ui/dialog"
-import { PaletteAction, SearchEntry } from "./entries"
+import { PaletteAction } from "./entries"
 
 // `CommandPalette` (apps/web components/command-palette/command-palette.tsx): mounted while open, so
 // the Model exists only then, and a close drops it without an exit transition.
@@ -60,5 +60,3 @@ export const OutMessage = defineMessageUnion({
 	RanAction: { action: PaletteAction },
 })
 export type OutMessage = typeof OutMessage.Type
-
-export { SearchEntry }

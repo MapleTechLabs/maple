@@ -56,11 +56,21 @@ export const CHART_GALLERY: ReadonlyArray<
 	{ id: "query-builder-area", name: "Area", category: "area", sampleData: latencyTimeSeriesData },
 	{ id: "query-builder-line", name: "Line", category: "line", sampleData: latencyTimeSeriesData },
 	{ id: "latency-line", name: "Latency Line", category: "line", sampleData: latencyTimeSeriesData },
-	{ id: "throughput-area", name: "Throughput Area", category: "area", sampleData: throughputTimeSeriesData },
+	{
+		id: "throughput-area",
+		name: "Throughput Area",
+		category: "area",
+		sampleData: throughputTimeSeriesData,
+	},
 	{ id: "apdex-area", name: "Apdex Area", category: "area", sampleData: apdexTimeSeriesData },
 	{ id: "error-rate-area", name: "Error Rate Area", category: "area", sampleData: errorRateTimeSeriesData },
 	{ id: "query-builder-pie", name: "Pie", category: "pie", sampleData: pieSampleData },
-	{ id: "query-builder-histogram", name: "Histogram", category: "histogram", sampleData: histogramSampleData },
+	{
+		id: "query-builder-histogram",
+		name: "Histogram",
+		category: "histogram",
+		sampleData: histogramSampleData,
+	},
 	{ id: "query-builder-heatmap", name: "Heatmap", category: "heatmap", sampleData: heatmapSampleData },
 	{ id: "query-builder-funnel", name: "Funnel", category: "funnel", sampleData: funnelSampleData },
 	{ id: "query-builder-paths", name: "Paths", category: "paths", sampleData: pathsSampleData },
@@ -76,12 +86,6 @@ const REMOVED_CHART_IDS = new Map([
 	["gradient-area", "query-builder-area"],
 	["dotted-line", "query-builder-line"],
 ])
-
-/** The chart id a stored `chartId` resolves to, or `undefined` for an unknown one. */
-export const resolveChartId = (id: string): string | undefined => {
-	const resolved = REMOVED_CHART_IDS.get(id) ?? id
-	return CATEGORY_BY_ID.has(resolved) ? resolved : undefined
-}
 
 export const chartCategoryOf = (id: string): ChartCategory | undefined =>
 	CATEGORY_BY_ID.get(REMOVED_CHART_IDS.get(id) ?? id)

@@ -91,7 +91,9 @@ const forwardLocal = (request: Request, url: URL, dataset: string) =>
 			const bytes = yield* response.arrayBuffer
 			return new Response(bytes, { status: response.status, headers: response.headers })
 		}).pipe(
-			Effect.catch(() => Effect.succeed(new Response("fixture backend unreachable", { status: 502 }))),
+			Effect.orElseSucceed(() => new Response("fixture backend unreachable", { status: 502 })),
+			// Each forwarded request is its own `runPromise` entry point.
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
 			Effect.provide(FetchHttpClient.layer),
 		),
 	)

@@ -11,7 +11,7 @@ export {
 	smallViewportChanges,
 	viewportChanges,
 } from "./subscription"
-export { DASHBOARD_FAVORITES_EVENT, DASHBOARD_FAVORITES_KEY } from "./favorites"
+
 export { pinnedDashboardRows } from "./dashboards-shape"
 export { BUILT_COMMIT, versionChecks } from "./version"
 export {

@@ -3,7 +3,6 @@ import { BoltIcon, ChartLineIcon, CircleWarningIcon, FileIcon, PulseIcon } from 
 
 // The React-free formatting lives in `@maple/web-data/anomalies/format` (shared with the Foldkit app).
 export {
-	ANOMALY_STALE_AFTER_MS,
 	anomalyAffectsServiceHealth,
 	deviation,
 	formatSignalValue,
@@ -15,7 +14,6 @@ export {
 	SIGNAL_LABEL,
 	TRIAGE_STATUS_CHIP,
 } from "@maple/web-data/anomalies/format"
-export type { AnomalyDeviation, SeverityTone } from "@maple/web-data/anomalies/format"
 
 export const SIGNAL_ICON: Record<AnomalySignalType, typeof PulseIcon> = {
 	error_rate: CircleWarningIcon,

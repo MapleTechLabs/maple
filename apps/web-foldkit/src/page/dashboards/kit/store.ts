@@ -1,5 +1,5 @@
 import { type DashboardDocument, IsoDateTimeString } from "@maple/domain/http"
-import { Cause, Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { OrgCollections } from "../../../data/collections/org-collections"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { PageOutMessage } from "../../contract"
@@ -93,7 +93,8 @@ export const behindToast = () =>
 	PageOutMessage.RequestedToast({
 		type: "warning",
 		title: "Saved, but this tab is behind",
-		description: "The change reached the server; this tab’s live sync didn’t catch up, so it isn’t shown yet.",
+		description:
+			"The change reached the server; this tab’s live sync didn’t catch up, so it isn’t shown yet.",
 		timeoutMs: 10000,
 		action: null,
 		rootAction: { label: "Reconnect", action: { _tag: "ReconnectOrgCollections" } },
@@ -153,10 +154,3 @@ export const awaitTxid = (orgId: string, txid: string | undefined) =>
 		: Effect.flatMap(dashboardsOf(orgId), (collection) =>
 				Effect.ignore(Effect.tryPromise(() => collection.utils.awaitTxId(Number(txid)))),
 			)
-
-/** The failure of a write as the text the persistence banner shows. */
-export const failureText = (cause: Cause.Cause<unknown>): string =>
-	Option.match(Cause.findErrorOption(cause), {
-		onNone: () => PERSISTENCE_UNAVAILABLE,
-		onSome: (error) => errorMessageOf(error),
-	})

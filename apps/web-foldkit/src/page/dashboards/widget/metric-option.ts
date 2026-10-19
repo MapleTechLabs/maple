@@ -13,4 +13,3 @@ export const MetricPageSchema = Schema.Struct({
 	options: Schema.Array(MetricOptionSchema),
 	services: Schema.Array(Schema.String),
 })
-export type MetricPage = typeof MetricPageSchema.Type

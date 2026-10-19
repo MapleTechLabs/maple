@@ -42,9 +42,6 @@ export const MAX_BYTES_PER_RANGE = 6_000_000
  */
 export const INITIAL_WINDOW_BYTES = 2_000_000
 
-/** Playback time to keep buffered ahead of the playhead. */
-export const PREFETCH_AHEAD_MS = 20_000
-
 /** One chunk's manifest entry: the subset of the v2 manifest the player needs. */
 export interface ReplayChunkMeta {
 	readonly chunk_seq: number

@@ -100,5 +100,3 @@ export const makeDashboardsCollection = (config: {
 				return { txid: yield* requireTxid(result.txid) }
 			}),
 	})
-
-export type DashboardsCollection = ReturnType<typeof makeDashboardsCollection>

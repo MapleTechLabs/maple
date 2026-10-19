@@ -56,13 +56,6 @@ export const group = (transform: Transform, children: ReadonlyArray<Child>): THR
 	return node
 }
 
-/** Adds children to an existing object (a mesh with child props), keeping JSX order. */
-export const withChildren = <T extends THREE.Object3D>(object: T, children: ReadonlyArray<Child>): T => {
-	const objects = flatten(children)
-	if (objects.length > 0) object.add(...objects)
-	return object
-}
-
 /** Frees every geometry, material and texture under `root`. */
 export const disposeTree = (root: THREE.Object3D): void => {
 	root.traverse((object) => {

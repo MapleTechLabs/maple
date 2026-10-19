@@ -9,7 +9,7 @@ import * as Conversation from "../conversation/model"
 
 // `/chat` (apps/web routes/chat.tsx, components/chat/chat-page.tsx + `useChatTabs`).
 
-export { ChatTab, DEFAULT_TAB_ID, TabsState } from "../kit/tab-store"
+export { ChatTab, TabsState } from "../kit/tab-store"
 
 /** `?shared=`: a teammate's conversation, read-only, never added to the viewer's own tabs. */
 export const SharedView = Schema.Struct({

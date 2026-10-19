@@ -6,7 +6,7 @@ import { countHostScopes, type HostScope } from "./host-scopes"
 import { FleetBand, FleetBandLoading } from "./primitives/fleet-band"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 
-export { HOST_LIST_LIMIT, countHostScopes, hostInScope, hostPeak, type HostScope } from "./host-scopes"
+export { HOST_LIST_LIMIT, hostInScope, type HostScope } from "./host-scopes"
 
 export function HostSummaryBand({
 	hosts,

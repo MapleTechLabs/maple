@@ -7,7 +7,7 @@ import { TONE_FILL } from "@maple/ui/lib/tone"
 
 import type { ContainerScope, ContainerScopeCounts } from "./container-scopes"
 
-export type { ContainerScope, ContainerScopeCounts } from "./container-scopes"
+export type { ContainerScope } from "./container-scopes"
 
 interface ContainerSummaryBandProps {
 	counts: ContainerScopeCounts

@@ -22,7 +22,7 @@ import { LogVolume, RemovedConnector } from "./gcp-schema"
 
 // `GcpIntegrationCard` and `GcpUsageBand` (components/integrations/gcp-*.tsx): state and reads.
 
-export { LogVolume, RemovedConnector } from "./gcp-schema"
+export { RemovedConnector } from "./gcp-schema"
 
 export const GcpCardModel = Schema.Struct({
 	/** The band's 24h window, resolved from the page clock. */

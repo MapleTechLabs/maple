@@ -46,5 +46,3 @@ export const TOKEN_BUCKETS = [
 	text: string
 	icon: IconName
 }>
-
-export type TokenBucketKey = (typeof TOKEN_BUCKETS)[number]["key"]

@@ -40,7 +40,9 @@ export const init = (flags: WidgetLabFlags): Return => {
 			orgId: Option.getOrNull(flags.maybeOrgId),
 		},
 		commands: [
-			...(shell.commands ?? []).map(Command.mapMessage((message) => Message.GotShellMessage({ message }))),
+			...(shell.commands ?? []).map(
+				Command.mapMessage((message) => Message.GotShellMessage({ message })),
+			),
 			ReadClock(),
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
@@ -77,25 +79,33 @@ export const update = (model: Model, message: Message): Return =>
 			const values = next.model.values.length === 0 ? model.mode.values : next.model.values
 			return {
 				model: { ...model, mode: { ...next.model, values } },
-				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotModeMessage({ message: m })),
+				commands: Command.mapMessages(next.commands ?? [], (m) =>
+					Message.GotModeMessage({ message: m }),
+				),
 			}
 		},
 		CompletedReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		GotChartMessage: ({ slot, message: inner }) => {
 			const next = Chart.update(model.charts[slot] ?? Chart.init(), inner)
 			return {
 				model: { ...model, charts: { ...model.charts, [slot]: next.model } },
-				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotChartMessage({ slot, message: m })),
+				commands: Command.mapMessages(next.commands ?? [], (m) =>
+					Message.GotChartMessage({ slot, message: m }),
+				),
 			}
 		},
 		GotCopyMessage: ({ slot, message: inner }) => {
 			const next = CopyButton.update(model.copies[slot] ?? CopyButton.init(), inner)
 			return {
 				model: { ...model, copies: { ...model.copies, [slot]: next.model } },
-				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotCopyMessage({ slot, message: m })),
+				commands: Command.mapMessages(next.commands ?? [], (m) =>
+					Message.GotCopyMessage({ slot, message: m }),
+				),
 			}
 		},
 		GotDetailsMessage: ({ slot, message: inner }) => {
@@ -112,11 +122,16 @@ export const update = (model: Model, message: Message): Return =>
 			const next = Menu.update(current, inner)
 			return {
 				model: { ...model, menuId: slot, menu: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotMenuMessage({ slot, message: m })),
+				commands: Command.mapMessages(next.commands ?? [], (m) =>
+					Message.GotMenuMessage({ slot, message: m }),
+				),
 			}
 		},
 		ClickedSortColumn: ({ slot, field, isText }) => ({
-			model: { ...model, tableSorts: { ...model.tableSorts, [slot]: nextSort(model, slot, field, isText) } },
+			model: {
+				...model,
+				tableSorts: { ...model.tableSorts, [slot]: nextSort(model, slot, field, isText) },
+			},
 		}),
 		ClickedWidgetAction: () => ({ model }),
 		UpdatedDashboards: () => ({ model }),
@@ -124,4 +139,3 @@ export const update = (model: Model, message: Message): Return =>
 
 export const isEditMode = (model: Model): boolean => model.mode.values.includes("edit")
 
-export const chartOf = (model: Model, slot: string) => Option.getOrElse(Option.fromNullishOr(model.charts[slot]), Chart.init)

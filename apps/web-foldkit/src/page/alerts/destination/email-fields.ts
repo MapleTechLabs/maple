@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
@@ -42,25 +42,26 @@ export type Message = typeof Message.Type
 
 export const FetchEmailMembers = Command.define("FetchAlertEmailMembers", {
 	messages: [Message.CompletedFetchMembers],
-	execute:
-		currentClerkOrganization.pipe(
-			Effect.flatMap((organization) =>
-				clerkTry("Failed to load members", () => organization.getMemberships({ initialPage: 1, pageSize: PAGE_SIZE })),
+	execute: currentClerkOrganization.pipe(
+		Effect.flatMap((organization) =>
+			clerkTry("Failed to load members", () =>
+				organization.getMemberships({ initialPage: 1, pageSize: PAGE_SIZE }),
 			),
-			Effect.map((result) =>
-				result.data.flatMap((member): ReadonlyArray<MemberOption> => {
-					const user = member.publicUserData
-					const userId = user?.userId
-					const email = user?.identifier
-					if (userId === undefined || userId === null || email === undefined || email === "") return []
-					const name = [user?.firstName, user?.lastName].filter((part) => part).join(" ")
-					return [{ userId, label: name || email, meta: name ? email : null }]
-				}),
-			),
-			Effect.mapError((error) => error.message),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMembers({ result })),
 		),
+		Effect.map((result) =>
+			result.data.flatMap((member): ReadonlyArray<MemberOption> => {
+				const user = member.publicUserData
+				const userId = user?.userId
+				const email = user?.identifier
+				if (userId === undefined || userId === null || email === undefined || email === "") return []
+				const name = [user?.firstName, user?.lastName].filter((part) => part).join(" ")
+				return [{ userId, label: name || email, meta: name ? email : null }]
+			}),
+		),
+		Effect.mapError((error) => error.message),
+		Effect.result,
+		Effect.map((result) => Message.CompletedFetchMembers({ result })),
+	),
 })
 
 export type Return = Readonly<{
@@ -76,15 +77,18 @@ const fetchMembers = (model: Model): Return => ({
 
 /** The picker mounts: the selection is the form's, and the first page is read once. */
 export const reset = (model: Model, form: DestinationForm): Return => {
-	const next = { ...model, combobox: Combobox.init(MEMBER_COMBOBOX_ID, "multiple", { selected: form.memberUserIds }) }
+	const next = {
+		...model,
+		combobox: Combobox.init(MEMBER_COMBOBOX_ID, "multiple", { selected: form.memberUserIds }),
+	}
 	return AsyncData.isIdle(model.members) ? fetchMembers(next) : { model: next, commands: [] }
 }
 
-export const optionsOf = (model: Model): ReadonlyArray<MemberOption> =>
-	Option.getOrElse(AsyncData.getData(model.members), () => [])
-
 /** `itemToStringLabel`: the typeahead matches the label, never the id. */
-export const visibleIds = (options: ReadonlyArray<MemberOption>, inputValue: string): ReadonlyArray<string> => {
+export const visibleIds = (
+	options: ReadonlyArray<MemberOption>,
+	inputValue: string,
+): ReadonlyArray<string> => {
 	const query = inputValue.trim().toLocaleLowerCase()
 	return options
 		.filter((option) => query === "" || option.label.toLocaleLowerCase().includes(query))
@@ -93,10 +97,15 @@ export const visibleIds = (options: ReadonlyArray<MemberOption>, inputValue: str
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		CompletedFetchMembers: ({ result }) => ({ model: { ...model, members: AsyncData.settle(model.members, result) }, commands: [] }),
+		CompletedFetchMembers: ({ result }) => ({
+			model: { ...model, members: AsyncData.settle(model.members, result) },
+			commands: [],
+		}),
 		GotComboboxMessage: ({ message: inner }) => {
 			const step = Combobox.update(model.combobox, inner)
-			const commands = Command.mapMessages(step.commands ?? [], (child) => Message.GotComboboxMessage({ message: child }))
+			const commands = Command.mapMessages(step.commands ?? [], (child) =>
+				Message.GotComboboxMessage({ message: child }),
+			)
 			const out = step.outMessage
 			const next: Return = { model: { ...model, combobox: step.model }, commands }
 			if (out?._tag !== "ChangedSelection") return next

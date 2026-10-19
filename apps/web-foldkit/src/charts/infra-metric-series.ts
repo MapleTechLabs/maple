@@ -10,7 +10,6 @@ import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 export {
 	type ChartUnit,
 	chartBucketSeconds,
-	formatSeconds,
 	formatValueWithUnit,
 	UNNAMED_SERIES_KEY,
 } from "@maple/web/components/infra/chart-units"

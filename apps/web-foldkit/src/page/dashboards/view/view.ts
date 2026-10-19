@@ -20,7 +20,6 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { isEditing } from "./update"
 import { dashboardSections } from "./view-grid"
 import * as TagEditor from "../kit/tag-editor"
 import * as VariablesManagerView from "../kit/variables-manager/view"
@@ -230,7 +229,15 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 		const { collapsed: _c, expanded: _e, tab: _t, widget: _w, ...controls } = model.search
 		const search = { ...controls, ...model.history.sectionView }
 		const canvas = (snap: DashboardDocument) =>
-			dashboardSections(h, { model: { ...model, document: snap, search }, timeZone, variables: variablesOf(model, context).values }, snap)
+			dashboardSections(
+				h,
+				{
+					model: { ...model, document: snap, search },
+					timeZone,
+					variables: variablesOf(model, context).values,
+				},
+				snap,
+			)
 		// `PreviewedCanvas`: the snapshot through the sectioned canvas, read-only.
 		const snapshot = AsyncData.match(model.history.snapshot, {
 			onIdle: () => viewSkeleton(h),
@@ -246,7 +253,11 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 		...banner,
 		isBlank
 			? blankDashboard(h, model.persistenceError !== null)
-			: dashboardSections(h, { model, timeZone, variables: variablesOf(model, context).values }, document),
+			: dashboardSections(
+					h,
+					{ model, timeZone, variables: variablesOf(model, context).values },
+					document,
+				),
 	]
 }
 
@@ -293,5 +304,3 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		],
 	),
 )
-
-export { isEditing }

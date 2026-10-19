@@ -12,8 +12,6 @@ export {
 } from "@maple/web-data/investigations/display"
 export type {
 	Elapsed,
-	InvestigationFinding,
 	InvestigationKindKey,
 	InvestigationSortKey,
-	SortDirection,
 } from "@maple/web-data/investigations/display"

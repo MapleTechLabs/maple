@@ -1,6 +1,6 @@
 import type { AlertRuleDocument } from "@maple/domain/http"
 import { comparatorLabels, formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
-import { AsyncData, Submodel } from "foldkit"
+import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { linkButton } from "../../../ui/button"
@@ -61,7 +61,10 @@ const header = (h: H, model: Model, rule: AlertRuleDocument) => {
 					[
 						...rule.thresholds.map((tier) => severityBadge(h, tier.severity)),
 						isFiring
-							? alertStatusBadge(h, openIncidents.every((i) => i.holdReason != null) ? "held" : "firing")
+							? alertStatusBadge(
+									h,
+									openIncidents.every((i) => i.holdReason != null) ? "held" : "firing",
+								)
 							: alertStatusBadge(h, rule.enabled ? "ok" : "disabled"),
 						h.span([h.Class("text-muted-foreground text-sm")], [ruleSubtitle(rule)]),
 					],
@@ -87,7 +90,8 @@ const header = (h: H, model: Model, rule: AlertRuleDocument) => {
 							viewInputs: {
 								label,
 								selectedPreset:
-									model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
+									model.search.timePreset ??
+									(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
 								presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
 							},
 						}),
@@ -167,5 +171,3 @@ export const breadcrumbsOf = (model: Model) => {
 	]
 }
 
-export const isChecksLoading = (model: Model) =>
-	AsyncData.isIdle(model.checks.data) || AsyncData.isLoading(model.checks.data)

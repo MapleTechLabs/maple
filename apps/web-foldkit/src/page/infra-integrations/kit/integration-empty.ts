@@ -8,9 +8,7 @@ import { panel } from "../../../ui/panel"
 // `IntegrationEmpty` and its parts (apps/web/src/components/integrations/integration-empty-state.tsx)
 // and `IntegrationIconPlate` (integration-catalog.tsx).
 
-export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
-export const GCP_ACCENT = "#4285F4"
 
 export type IntegrationBrand = Readonly<{
 	icon: IconName

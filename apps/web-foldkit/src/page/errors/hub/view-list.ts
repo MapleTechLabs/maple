@@ -1,5 +1,4 @@
 import type { ErrorSignal } from "@maple/web/lib/models/error-signal"
-import type { HubView } from "@maple/web/lib/errors/hub-params"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -22,8 +21,6 @@ const LIST_FAILURE = toLoadFailure("The errors list could not be loaded.")
 
 const SKELETON_ROWS = 8
 const LOAD_MORE_SKELETON_ROWS = 3
-
-export const VIEW_LABEL = { open: "Open", closed: "Closed", all: "All" } satisfies Record<HubView, string>
 
 const loadingBody = (h: H): ReadonlyArray<Html> => [
 	signalHeader(h, null),

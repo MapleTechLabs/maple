@@ -38,47 +38,58 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 			commands: [FetchTraceFacets({ key: facetsKey, window })],
 		}),
 	})
-	return AUTOCOMPLETE_LOOKUPS.filter((lookup) => lookup !== "tracesFacets").reduce<Planned>((step, lookup) => {
-		const key = requestKey(context.orgId, `autocomplete.${lookup}`, window)
-		return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {
-			onNone: () => step,
-			onSome: (slot) => ({
-				model: { ...step.model, autocomplete: { ...step.model.autocomplete, [lookup]: slot } },
-				commands: [...step.commands, FetchEditorAutocomplete({ key, lookup, window })],
-			}),
-		})
-	}, facets)
+	return AUTOCOMPLETE_LOOKUPS.filter((lookup) => lookup !== "tracesFacets").reduce<Planned>(
+		(step, lookup) => {
+			const key = requestKey(context.orgId, `autocomplete.${lookup}`, window)
+			return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {
+				onNone: () => step,
+				onSome: (slot) => ({
+					model: { ...step.model, autocomplete: { ...step.model.autocomplete, [lookup]: slot } },
+					commands: [...step.commands, FetchEditorAutocomplete({ key, lookup, window })],
+				}),
+			})
+		},
+		facets,
+	)
 }
 
 /** Whether the saved rule evaluates differently from the draft (`evaluationChanged`). */
 export const isEvaluationChanged = (model: Model): boolean =>
-	model.savedForm !== null && model.form !== null && previewIdentityKey(model.savedForm) !== previewIdentityKey(model.form)
+	model.savedForm !== null &&
+	model.form !== null &&
+	previewIdentityKey(model.savedForm) !== previewIdentityKey(model.form)
 
 /** `useAlertRulePreview` for the draft and, once it evaluates differently, the saved rule. */
 export const planPreviews = (model: Model, context: PageContext): Planned => {
 	const window = model.previewWindow
 	if (window === null || model.form === null) return none(model)
-	const slot = (isSaved: boolean, form: Model["form"]) => (current: Model): Planned => {
-		const payload = form === null ? Option.none() : previewPayload(form, window)
-		if (Option.isNone(payload)) return none(current)
-		const key = requestKey(context.orgId, "alertRules.preview", payload.value)
-		const existing = isSaved ? current.savedPreview : current.preview
-		const other = isSaved ? current.preview : current.savedPreview
-		if (existing.key !== key && other.key === key)
-			return none(isSaved ? { ...current, savedPreview: other } : { ...current, preview: other })
-		return Option.match(Keyed.request(existing, key, "Load"), {
-			onNone: () => none(current),
-			onSome: (next) => ({
-				model: isSaved ? { ...current, savedPreview: next } : { ...current, preview: next },
-				commands: [FetchEditorPreview({ key, payload: payload.value, isSaved })],
-			}),
-		})
-	}
+	const slot =
+		(isSaved: boolean, form: Model["form"]) =>
+		(current: Model): Planned => {
+			const payload = form === null ? Option.none() : previewPayload(form, window)
+			if (Option.isNone(payload)) return none(current)
+			const key = requestKey(context.orgId, "alertRules.preview", payload.value)
+			const existing = isSaved ? current.savedPreview : current.preview
+			const other = isSaved ? current.preview : current.savedPreview
+			if (existing.key !== key && other.key === key)
+				return none(isSaved ? { ...current, savedPreview: other } : { ...current, preview: other })
+			return Option.match(Keyed.request(existing, key, "Load"), {
+				onNone: () => none(current),
+				onSome: (next) => ({
+					model: isSaved ? { ...current, savedPreview: next } : { ...current, preview: next },
+					commands: [FetchEditorPreview({ key, payload: payload.value, isSaved })],
+				}),
+			})
+		}
 	// The saved rule's replay is the draft's first preview: one retained atom in legacy, never refetched.
 	const savedPayload = model.savedForm === null ? Option.none() : previewPayload(model.savedForm, window)
-	const savedKey = Option.map(savedPayload, (payload) => requestKey(context.orgId, "alertRules.preview", payload))
+	const savedKey = Option.map(savedPayload, (payload) =>
+		requestKey(context.orgId, "alertRules.preview", payload),
+	)
 	const seeded: Model =
-		Option.isSome(savedKey) && model.savedPreview.key !== savedKey.value && model.preview.key === savedKey.value
+		Option.isSome(savedKey) &&
+		model.savedPreview.key !== savedKey.value &&
+		model.preview.key === savedKey.value
 			? { ...model, savedPreview: model.preview }
 			: model
 	const draft = slot(false, seeded.form)(seeded)
@@ -88,7 +99,12 @@ export const planPreviews = (model: Model, context: PageContext): Planned => {
 /** A new rule starts on the destination the org's rules use most, once both lists answered. */
 export const applyDefaultDestination = (model: Model): Model => {
 	const destinations = destinationsOf(model)
-	if (model.isDefaultDestinationApplied || model.form === null || destinations.length === 0 || model.rules === null)
+	if (
+		model.isDefaultDestinationApplied ||
+		model.form === null ||
+		destinations.length === 0 ||
+		model.rules === null
+	)
 		return model
 	const states = buildRuleStatesByRuleId(model.states ?? [])
 	const fallback = pickDefaultDestination(
@@ -99,9 +115,10 @@ export const applyDefaultDestination = (model: Model): Model => {
 	return {
 		...model,
 		isDefaultDestinationApplied: true,
-		form: fallback !== null && form.destinationIds.length === 0 ? { ...form, destinationIds: [fallback] } : form,
+		form:
+			fallback !== null && form.destinationIds.length === 0
+				? { ...form, destinationIds: [fallback] }
+				: form,
 	}
 }
 
-export const sequence = (model: Model, steps: ReadonlyArray<(model: Model) => Planned>): Planned =>
-	steps.reduce<Planned>((step, next) => then(step, next), none(model))

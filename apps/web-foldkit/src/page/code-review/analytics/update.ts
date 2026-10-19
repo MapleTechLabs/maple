@@ -31,8 +31,6 @@ type Search = typeof CodeReviewSearch.Type
 export const DEFAULT_PRESET = "30d"
 const FRAME_ID = "code-review-analytics"
 
-export const VOLUME_METRICS = ["pullRequests", "reviews"] as const
-export const SEVERITY_FILTERS = ["all", "critical", "warn", "info"] as const
 
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReview({ search }))
 
@@ -136,7 +134,14 @@ export const routeChanged = (
 		? { model }
 		: liftFrame(
 				{ ...model, search: route.search },
-				frameRouteChanged(model.frame, model.search, route.search, route.search.author, DEFAULT_PRESET, context),
+				frameRouteChanged(
+					model.frame,
+					model.search,
+					route.search,
+					route.search.author,
+					DEFAULT_PRESET,
+					context,
+				),
 				context,
 			)
 

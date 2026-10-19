@@ -17,7 +17,10 @@ const withHistory = (model: Model, history: Partial<HistoryState>): Model => ({
 	history: { ...model.history, ...history },
 })
 const toAsync = <A, E>(result: Result.Result<A, E>) =>
-	Result.match(result, { onSuccess: (data) => AsyncData.succeed<A, E>(data), onFailure: (error) => AsyncData.fail<E, A>(error) })
+	Result.match(result, {
+		onSuccess: (data) => AsyncData.succeed<A, E>(data),
+		onFailure: (error) => AsyncData.fail<E, A>(error),
+	})
 
 /** `openHistory`: the panel mounts and reads the version list. */
 export const openHistory = (model: Model): Return =>
@@ -27,9 +30,6 @@ export const openHistory = (model: Model): Return =>
 				model: withHistory(model, { isOpen: true, versions: AsyncData.Loading() }),
 				commands: [FetchVersions({ dashboardId: model.dashboardId })],
 			}
-
-/** A previewed version forces view mode, as legacy's `mode` does. */
-export const isPreviewing = (model: Model): boolean => model.history.previewed !== null
 
 type HistoryMessage = Extract<
 	Message,
@@ -64,7 +64,10 @@ const toast = (type: "success" | "error", title: string, description: string) =>
 
 const restored = (model: Model, versionNumber: number, error: string | null): Return => {
 	if (error !== null)
-		return { model: withHistory(model, { isRestoring: false }), outMessage: toast("error", "Restore failed", error) }
+		return {
+			model: withHistory(model, { isRestoring: false }),
+			outMessage: toast("error", "Restore failed", error),
+		}
 	const closed = Dialog.close(model.history.restoreDialog)
 	return {
 		model: withHistory(closePreview(model), { isRestoring: false, restoreDialog: closed.model }),

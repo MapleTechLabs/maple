@@ -1,5 +1,4 @@
 import { OrgId } from "@maple/domain"
-import { QUERY_BUILDER_SIGNAL_SOURCES } from "@maple/query-model"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../data/keyed"
@@ -69,8 +68,6 @@ export type ScrollMetrics = typeof ScrollMetrics.Type
 
 export const FormulaField = Schema.Literals(["expression", "legend"])
 export type FormulaField = typeof FormulaField.Type
-
-export const SignalSource = Schema.Literals(QUERY_BUILDER_SIGNAL_SOURCES)
 
 export const Model = Schema.Struct({
 	session: Session,

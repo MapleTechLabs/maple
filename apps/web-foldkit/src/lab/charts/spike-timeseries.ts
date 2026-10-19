@@ -268,5 +268,3 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 		tooltipOf: tooltipOf(series, axisContext, formatNumber, focus.highlight),
 	}
 }
-
-export type { Point as TimeseriesSpikePoint }

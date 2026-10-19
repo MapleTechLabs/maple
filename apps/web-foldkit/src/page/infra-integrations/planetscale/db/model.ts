@@ -15,11 +15,9 @@ import { sortStateOf } from "../../../kit/table-sort"
 import {
 	BranchStat,
 	DatabaseList,
-	EpochWindowInput,
 	EventEntry,
 	PlanetscaleStatus,
 	QueryInsights,
-	TimeseriesInput,
 	TimeseriesRow,
 } from "../data"
 
@@ -72,7 +70,12 @@ const result = <A extends Schema.Top>(schema: A) => ({
 })
 
 export const Message = defineMessageUnion({
-	CompletedResolveWindow: { window: TimeWindow, localWindow: LocalWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedResolveWindow: {
+		window: TimeWindow,
+		localWindow: LocalWindow,
+		nowMs: Schema.Number,
+		mode: RequestMode,
+	},
 	CompletedLoadStatus: result(PlanetscaleStatus),
 	CompletedFetchDatabases: result(DatabaseList),
 	CompletedFetchBranchStats: result(Schema.Array(BranchStat)),
@@ -101,5 +104,3 @@ export const Message = defineMessageUnion({
 	GotTooltipMessage: { message: Tooltip.Message },
 })
 export type Message = typeof Message.Type
-
-export { EpochWindowInput, TimeseriesInput }

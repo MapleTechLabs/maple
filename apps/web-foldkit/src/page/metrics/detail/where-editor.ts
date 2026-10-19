@@ -17,7 +17,6 @@ export {
 	CaretMessage,
 	caretEvents,
 	isOpenOf,
-	listboxStyle,
 	placeCaret,
 } from "../../kit/where-autocomplete"
 

@@ -4,17 +4,8 @@ import { bunting } from "./decor"
 import { type Child, group, inkBox, inkLines, inkPlate, inkSolid, type Scope, type Vec3 } from "./kit"
 import { grain, inkParts, type MapleFinish, mapleSmoke, type Part, range, variant } from "./props-kit"
 
-export {
-	grain,
-	inkParts,
-	type MachineFinish,
-	type MapleFinish,
-	mapleSmoke,
-	type Part,
-	seedOf,
-	variant,
-} from "./props-kit"
-export { boardedWindow, doorSteps, flowerBox, mapleState, worker, yard } from "./props-life"
+export { inkParts, type MachineFinish, type MapleFinish, type Part, seedOf, variant } from "./props-kit"
+export { boardedWindow, doorSteps, flowerBox, mapleState, yard } from "./props-life"
 
 /** A closed octagon round the y axis, aligned with the vats' turned facets. */
 function octagon(radius: number, y: number) {

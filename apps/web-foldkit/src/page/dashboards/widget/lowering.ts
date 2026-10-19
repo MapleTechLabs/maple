@@ -52,26 +52,8 @@ export type Widget = DashboardDocument["widgets"][number]
 type Display = Widget["display"]
 type DataSource = Widget["dataSource"]
 
-/** The panel types whose queries this editor builds (`queryEditor: "builder"`). */
-const BUILDER_PANELS: ReadonlySet<PanelType> = new Set<PanelType>([
-	"line",
-	"bar",
-	"area",
-	"stat",
-	"gauge",
-	"table",
-	"pie",
-	"hbar",
-	"heatmap",
-	"histogram",
-	"funnel",
-])
-
 const panelOf = (state: Pick<EditorState, "visualization" | "chartId">): PanelType =>
 	toPanelType(state.visualization, state.chartId)
-
-export const isBuilderPanel = (state: Pick<EditorState, "visualization" | "chartId">): boolean =>
-	BUILDER_PANELS.has(panelOf(state))
 
 export const isNote = (state: Pick<EditorState, "visualization" | "chartId">): boolean =>
 	panelOf(state) === "markdown"
@@ -184,7 +166,10 @@ const breakdownOf = (state: EditorState, defaultLimit?: number): DataSource => {
 const scalarOf = (state: EditorState): DataSource => {
 	const { base, sharedTransform } = timeseriesOf(state)
 	const field = state.statValueField || toSeriesFieldOptions(state)[0] || "A"
-	return { ...base, transform: { ...sharedTransform, reduceToValue: { field, aggregate: state.statAggregate } } }
+	return {
+		...base,
+		transform: { ...sharedTransform, reduceToValue: { field, aggregate: state.statAggregate } },
+	}
 }
 
 const tableOf = (state: EditorState): DataSource => {
@@ -209,7 +194,9 @@ const histogramOf = (state: EditorState): DataSource => {
 		resultShape: "list",
 		queries: visible,
 		limit: parseRowLimit(state.tableLimit) ?? 200,
-		...(visible[0]?.dataSource === "traces" || visible[0] === undefined ? { columns: ["durationMs"] } : undefined),
+		...(visible[0]?.dataSource === "traces" || visible[0] === undefined
+			? { columns: ["durationMs"] }
+			: undefined),
 		...(sharedTransform === undefined ? undefined : { transform: sharedTransform }),
 	})
 }
@@ -235,10 +222,16 @@ export const buildDataSource = (state: EditorState): DataSource => {
 			return listDataSourceOf(state)
 		case "funnel":
 			return isProductEventsFunnel(state)
-				? makeProductEventsFunnelDataSource(funnelDefinitionOf(state.funnel), timeseriesOf(state).sharedTransform)
+				? makeProductEventsFunnelDataSource(
+						funnelDefinitionOf(state.funnel),
+						timeseriesOf(state).sharedTransform,
+					)
 				: breakdownOf(state)
 		case "paths":
-			return makeProductEventsPathsDataSource(pathsDefinitionOf(state.paths), timeseriesOf(state).sharedTransform)
+			return makeProductEventsPathsDataSource(
+				pathsDefinitionOf(state.paths),
+				timeseriesOf(state).sharedTransform,
+			)
 		default:
 			return timeseriesOf(state).base
 	}
@@ -289,13 +282,18 @@ const ownDisplayOf = (state: EditorState): Partial<Display> => {
 		case "stat":
 			return {
 				unit: state.unit,
-				sparkline: state.sparklineEnabled ? { enabled: true, dataSource: timeseriesOf(state).base } : undefined,
+				sparkline: state.sparklineEnabled
+					? { enabled: true, dataSource: timeseriesOf(state).base }
+					: undefined,
 				thresholds: thresholdsOf(state),
 			}
 		case "gauge":
 			return {
 				unit: state.unit,
-				gauge: { min: parseFiniteNumber(state.gaugeMin) ?? 0, max: parseFiniteNumber(state.gaugeMax) ?? 100 },
+				gauge: {
+					min: parseFiniteNumber(state.gaugeMin) ?? 0,
+					max: parseFiniteNumber(state.gaugeMax) ?? 100,
+				},
 				thresholds: thresholdsOf(state),
 			}
 		case "table":
@@ -303,7 +301,9 @@ const ownDisplayOf = (state: EditorState): Partial<Display> => {
 		case "heatmap":
 			return {
 				heatmap: {
-					...(state.heatmapColorScale === null ? undefined : { colorScale: state.heatmapColorScale }),
+					...(state.heatmapColorScale === null
+						? undefined
+						: { colorScale: state.heatmapColorScale }),
 					scaleType: state.heatmapScaleType,
 				},
 			}
@@ -311,7 +311,9 @@ const ownDisplayOf = (state: EditorState): Partial<Display> => {
 			return { funnel: funnelDisplayOf(state) }
 		case "paths": {
 			const { exclude, ...definition } = pathsDefinitionOf(state.paths)
-			return { paths: { ...definition, ...(exclude === undefined ? undefined : { exclude: [...exclude] }) } }
+			return {
+				paths: { ...definition, ...(exclude === undefined ? undefined : { exclude: [...exclude] }) },
+			}
 		}
 		case "pie":
 		case "hbar":

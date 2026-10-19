@@ -44,7 +44,7 @@ import * as Toolbar from "./toolbar"
  * split, toolbar and legend. The host reads `focus`, the prefs and `snapshots` back to persist them.
  */
 
-export { ColorMode, Focus, LayoutStatus, Positions, Snapshot } from "./state"
+export { ColorMode, Focus, Positions, Snapshot } from "./state"
 
 export const Model = Schema.Struct({
 	source: SourceGraphSchema,

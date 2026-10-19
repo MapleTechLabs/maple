@@ -1,5 +1,5 @@
 import type { DashboardDocument } from "@maple/domain/http"
-import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql } from "@maple/widgets/dashboard"
 import { DateTime, Option } from "effect"
 
@@ -75,9 +75,6 @@ export const dashboardDomains = (dashboard: DashboardDocument): ReadonlyArray<Da
 	const found = new Set(dashboard.widgets.flatMap((widget) => widgetDomains(widget.dataSource)))
 	return DOMAIN_ORDER.filter((domain) => found.has(domain))
 }
-
-export const widgetCountLabel = (dashboard: DashboardDocument): string =>
-	countLabel(dashboard.widgets.length, "widget")
 
 export const readsFromLabel = (dashboard: DashboardDocument): { short: string; full: string } => {
 	if (dashboard.widgets.length === 0) return { short: EMPTY_VALUE, full: "No widgets" }

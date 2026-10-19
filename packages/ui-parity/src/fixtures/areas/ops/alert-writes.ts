@@ -15,6 +15,14 @@ import { epochMs, iso, num, str, strings } from "./synthetic.ts"
  * so the call log carries the request and both apps render the same success path.
  */
 
+/** A write for a row the dataset never seeded: a fixture bug, answered as a failure. */
+class ParityAlertSeedError extends Schema.TaggedError<ParityAlertSeedError>()(
+	"@maple/ui-parity/ParityAlertSeedError",
+	{
+		message: Schema.String,
+	},
+) {}
+
 const record = (value: unknown): Readonly<Record<string, unknown>> =>
 	typeof value === "object" && value !== null ? Object.fromEntries(Object.entries(value)) : {}
 
@@ -107,7 +115,7 @@ const updateRule: EndpointHandler = (request) => {
 	const row = (request.dataset.synced.alert_rules ?? []).find((rule) => rule.id === idOf(request))
 	const payload = record(request.payload)
 	return row === undefined
-		? Effect.fail(new Error("alert rule not seeded"))
+		? Effect.fail(new ParityAlertSeedError({ message: "alert rule not seeded" }))
 		: Effect.sync(() =>
 				ruleWire(request.dataset, row, "enabled" in payload ? { enabled: payload.enabled } : {}),
 			)
@@ -151,7 +159,7 @@ const updateDestination: EndpointHandler = (request) => {
 	const row = destinationRow(request.dataset, idOf(request))
 	const payload = record(request.payload)
 	return row === undefined
-		? Effect.fail(new Error("alert destination not seeded"))
+		? Effect.fail(new ParityAlertSeedError({ message: "alert destination not seeded" }))
 		: Effect.sync(() => {
 				const patch: Record<string, unknown> = {}
 				if ("enabled" in payload) patch.enabled = payload.enabled

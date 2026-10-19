@@ -1,5 +1,4 @@
 import { ListPodsResponse, PodDetailSummaryResponse, PodRestartsResponse } from "@maple/domain/http"
-import { summarizePodRestarts } from "@maple/web/components/infra/pod-restarts"
 import {
 	listPods,
 	podDetailSummary,
@@ -102,7 +101,13 @@ export const fetchPodSummary = (input: PodSummaryInput) =>
 		Effect.result,
 	)
 
-export const PodMetric = Schema.Literals(["cpu_usage", "cpu_limit", "cpu_request", "memory_limit", "memory_request"])
+export const PodMetric = Schema.Literals([
+	"cpu_usage",
+	"cpu_limit",
+	"cpu_request",
+	"memory_limit",
+	"memory_request",
+])
 export type PodMetric = typeof PodMetric.Type
 
 export const PodSeriesInput = Schema.Struct({
@@ -133,5 +138,3 @@ export const POD_METRIC_LABELS = new Map<PodMetric, string>([
 
 /** `PAGE_RESTARTS_LIMIT`: a page of 50 pods with a few containers each. */
 export const PAGE_RESTARTS_LIMIT = 500
-
-export { summarizePodRestarts }

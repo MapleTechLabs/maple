@@ -12,7 +12,11 @@ export interface PlatformMeta {
 }
 
 export const PLATFORMS = {
-	opentelemetry: { label: "OpenTelemetry", description: "Any SDK or collector", icon: "FrameworkOpenTelemetryIcon" },
+	opentelemetry: {
+		label: "OpenTelemetry",
+		description: "Any SDK or collector",
+		icon: "FrameworkOpenTelemetryIcon",
+	},
 	nodejs: { label: "Node.js", description: "OpenTelemetry Node SDK", icon: "FrameworkNodejsIcon" },
 	python: { label: "Python", description: "OpenTelemetry Python SDK", icon: "FrameworkPythonIcon" },
 	go: { label: "Go", description: "OpenTelemetry Go SDK", icon: "FrameworkGoIcon" },
@@ -32,7 +36,11 @@ export const PLATFORMS = {
 	},
 	claude_code: { label: "Claude Code", description: "Agent sessions and usage", icon: "ClaudeIcon" },
 	prometheus: { label: "Prometheus", description: "Scrape a metrics endpoint", icon: "PrometheusIcon" },
-	cloudflare: { label: "Cloudflare", description: "Zone and Workers analytics", icon: "CloudflareBrandIcon" },
+	cloudflare: {
+		label: "Cloudflare",
+		description: "Zone and Workers analytics",
+		icon: "CloudflareBrandIcon",
+	},
 	gcp: { label: "Google Cloud", description: "Logs, metrics and resources", icon: "GoogleCloudIcon" },
 	railway: { label: "Railway", description: "Service metrics", icon: "RailwayIcon" },
 	planetscale: { label: "PlanetScale", description: "Database metrics", icon: "PlanetScaleIcon" },
@@ -43,13 +51,16 @@ export const platformMeta = (platform: SourcePlatform): PlatformMeta => PLATFORM
 
 export const PUSH_PLATFORMS: ReadonlyArray<PushSourcePlatform> = PUSH_SOURCE_PLATFORMS
 export const PULL_PLATFORMS = PULL_SOURCE_PLATFORMS
-export type PullPlatform = (typeof PULL_PLATFORMS)[number]
 
 /** Source name prefilled on create: the platform label. */
 export const defaultSourceName = (platform: PushSourcePlatform): string => PLATFORMS[platform].label
 
 /** Icon in a small bordered tile, the same frame the integrations catalog uses. */
-export const platformTile = <M>(h: HtmlBuilder<M>, platform: SourcePlatform, size: "sm" | "md" = "md"): Html =>
+export const platformTile = <M>(
+	h: HtmlBuilder<M>,
+	platform: SourcePlatform,
+	size: "sm" | "md" = "md",
+): Html =>
 	h.span(
 		[
 			h.AriaHidden(true),

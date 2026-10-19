@@ -5,8 +5,6 @@ import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
-export { CONFIDENCE_RANK } from "@maple/web-data/investigations/display"
-
 /**
  * The word's tint, alongside this file's other confidence vocabulary. It lived on
  * the chat report card, which meant three surfaces in `investigations/` reached

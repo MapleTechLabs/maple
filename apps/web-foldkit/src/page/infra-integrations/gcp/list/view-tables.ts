@@ -28,7 +28,6 @@ import {
 import {
 	formatGcpValue,
 	GCP_INFRA_COLUMNS,
-	gcpWorkloadId,
 	type GcpColumn,
 } from "@maple/web/components/infra/gcp/tabs"
 import { BAR_VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
@@ -692,5 +691,3 @@ export const serviceTable = (
 		),
 	)
 }
-
-export const workloadKey = (keys: ReadonlyArray<string>) => gcpWorkloadId(keys)

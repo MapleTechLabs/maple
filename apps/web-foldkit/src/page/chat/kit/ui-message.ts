@@ -64,5 +64,3 @@ export type UIMessage = typeof UIMessage.Type
 export const ChatStatus = Schema.Literals(["submitted", "streaming", "ready", "error"])
 export type ChatStatus = typeof ChatStatus.Type
 
-export const textPart = (text: string, state: "streaming" | "done" = "done"): UIMessagePart =>
-	TextPart.make({ text, state })

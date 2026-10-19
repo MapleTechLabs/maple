@@ -1,4 +1,4 @@
-import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "@maple/domain/gcp-infra"
 import {
 	GcpCloudSqlTopQueriesResponse,
 	GcpInfraTimeseriesResponse,
@@ -204,5 +204,3 @@ export const loadOverview = (input: OverviewInput) =>
 		Effect.mapError(toLoadFailure),
 		Effect.result,
 	)
-
-export type { GcpInfraServiceId }

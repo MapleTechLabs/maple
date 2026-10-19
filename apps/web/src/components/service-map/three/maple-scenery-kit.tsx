@@ -2,16 +2,7 @@ import { useState } from "react"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { createSketch, type Sketch } from "./maple-scenery-sketch"
 
-export {
-	type Bounds,
-	createSketch,
-	hash,
-	type Pose,
-	prototypes,
-	type Prototypes,
-	type Sketch,
-	sketchOf,
-} from "./maple-scenery-sketch"
+export { type Bounds, hash, prototypes, type Sketch, sketchOf } from "./maple-scenery-sketch"
 
 /** Draws a sketch once. Callers key it on whatever the drawing depends on. */
 export function SketchDrawing({ draw, ink }: { draw: (sketch: Sketch) => void; ink: string }) {

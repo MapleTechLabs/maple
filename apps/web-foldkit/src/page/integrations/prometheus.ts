@@ -16,7 +16,7 @@ import * as Select from "../../ui/select"
 import { Message } from "./message"
 import { AuthType } from "./prometheus-form-field"
 
-export { AuthType, FormFieldName } from "./prometheus-form-field"
+export { FormFieldName } from "./prometheus-form-field"
 
 // `ScrapeTargetsSection` (components/settings/scrape-targets-section.tsx): state and writes.
 

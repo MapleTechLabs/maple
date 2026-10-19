@@ -66,8 +66,11 @@ export const StepDraft = Schema.Union([
 ])
 export type StepDraft = typeof StepDraft.Type
 
-export const FunnelAddOns = Schema.Struct({ keyBy: Schema.Boolean, window: Schema.Boolean, breakdown: Schema.Boolean })
-export type FunnelAddOnKey = keyof typeof FunnelAddOns.Type
+export const FunnelAddOns = Schema.Struct({
+	keyBy: Schema.Boolean,
+	window: Schema.Boolean,
+	breakdown: Schema.Boolean,
+})
 
 /** `FunnelWidgetDraft`. */
 export const FunnelDraft = Schema.Struct({
@@ -90,7 +93,6 @@ export const PathsAddOns = Schema.Struct({
 	include: Schema.Boolean,
 	exclude: Schema.Boolean,
 })
-export type PathsAddOnKey = keyof typeof PathsAddOns.Type
 
 /** `PathsWidgetDraft`. */
 export const PathsDraft = Schema.Struct({

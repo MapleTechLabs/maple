@@ -1,7 +1,17 @@
 // The picker's preview fixtures: plausible readings and rows, so its tiles aren't empty.
 
+/** Sample readings by stat preset id. */
+interface StatPresetSamples {
+	readonly [presetId: string]: number
+}
+
+/** Sample rows by table or list preset id. */
+interface RowPresetSamples {
+	readonly [presetId: string]: ReadonlyArray<Readonly<Record<string, unknown>>>
+}
+
 /** The stat presets' sample readings. */
-export const STAT_PRESET_SAMPLE_VALUES: Readonly<Record<string, number>> = {
+export const STAT_PRESET_SAMPLE_VALUES: StatPresetSamples = {
 	"stat-total-traces": 48293,
 	"stat-total-logs": 124817,
 	"stat-error-rate": 0.032,
@@ -10,9 +20,7 @@ export const STAT_PRESET_SAMPLE_VALUES: Readonly<Record<string, number>> = {
 }
 
 /** The table presets' sample rows, by preset id. */
-export const TABLE_PRESET_SAMPLE_ROWS: Readonly<
-	Record<string, ReadonlyArray<Readonly<Record<string, unknown>>>>
-> = {
+export const TABLE_PRESET_SAMPLE_ROWS: RowPresetSamples = {
 	"table-traces": [
 		{ serviceName: "api-gw", spanName: "GET /api/users", durationMs: 142, hasError: false },
 		{ serviceName: "order-svc", spanName: "POST /api/orders", durationMs: 891, hasError: true },
@@ -31,9 +39,7 @@ export const TABLE_PRESET_SAMPLE_ROWS: Readonly<
 }
 
 /** The list presets' sample rows, by preset id. */
-export const LIST_PRESET_SAMPLE_ROWS: Readonly<
-	Record<string, ReadonlyArray<Readonly<Record<string, unknown>>>>
-> = {
+export const LIST_PRESET_SAMPLE_ROWS: RowPresetSamples = {
 	"list-traces": [
 		{ serviceName: "api-gw", spanName: "GET /api/users", durationMs: 142, statusCode: "Ok" },
 		{ serviceName: "order-svc", spanName: "POST /api/orders", durationMs: 891, statusCode: "Error" },

@@ -24,8 +24,6 @@ import { fleetSync, groupRailwayServices, type RailwaySync } from "./list-model"
 
 import { toView, type RailwayRowView } from "./railway-scope"
 
-export { railwayInScope, type RailwayScope } from "./railway-scope"
-
 /** Heaviest services get their own slice of the memory strip; the rest share one. */
 const STRIP_SLICES = 6
 const STRIP_FILLS = [

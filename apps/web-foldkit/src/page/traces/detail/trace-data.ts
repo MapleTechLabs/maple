@@ -1,5 +1,4 @@
-import type { SpanEventsBySpanId, TimelineSpanEvent } from "@maple/ui/lib/span-event-markers"
-import type { Span, SpanNode } from "@maple/ui/lib/types"
+import type { SpanNode } from "@maple/ui/lib/types"
 import { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
 
@@ -65,14 +64,6 @@ const TimelineEvent = Schema.Struct({ name: Schema.String, offsetMs: Schema.Numb
 export const SpanEvents = Schema.Record(Schema.String, Schema.Array(TimelineEvent))
 export type SpanEvents = typeof SpanEvents.Type
 
-export const toSpanEventsMap = (events: SpanEvents): SpanEventsBySpanId =>
-	new Map(
-		Object.entries(events).map(([spanId, list]): [string, ReadonlyArray<TimelineSpanEvent>] => [
-			spanId,
-			list,
-		]),
-	)
-
 /**
  * The legacy helpers take mutable `SpanNode`s; the Model's tree is readonly. They never mutate
  * what they are given, so the tree is copied once at the boundary into their shape.
@@ -84,8 +75,3 @@ export const toSpanNode = (node: SpanNodeData): SpanNode => ({
 	children: node.children.map(toSpanNode),
 })
 
-export const toSpan = (span: SpanData): Span => ({
-	...span,
-	spanAttributes: { ...span.spanAttributes },
-	resourceAttributes: { ...span.resourceAttributes },
-})
