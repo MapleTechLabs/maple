@@ -165,7 +165,8 @@ export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 		SignedIn: ({ maybeOrgId }) =>
 			isBarePageRoute(model.route)
 				? publicContextOf(model, maybeOrgId)
-				: Option.filter(maybeOrgId, () => rendersShell(model.route)).pipe(
+				: // `WrongRegionScreen` replaces the page, so it reads nothing this region would refuse.
+					Option.filter(maybeOrgId, () => rendersShell(model.route) && !isWrongRegion(model)).pipe(
 				Option.map((orgId) => ({
 					orgId,
 					pinnedNamespace: model.shell.pinnedNamespaces[orgId] ?? null,
@@ -503,6 +504,8 @@ export const planGateOf = (model: Model): Option.Option<Gate> =>
 				),
 			),
 	})
+
+const isWrongRegion = (model: Model): boolean => Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
 
 const followRedirects: Step = (model) => {
 	const maybeRedirect = Session.match(model.session, {

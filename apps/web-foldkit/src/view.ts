@@ -196,8 +196,13 @@ const content = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 		Resolving: () => [bootSplash(h)],
 		SignedOut: () => (isPublicRoute(model.route) ? routeView(model, h) : []),
 		// `ClerkReverseRedirects` holds the app on the splash until the plan is known.
+		// `WrongRegionScreen` (an onboarding screen) replaces every route, `/chat` included.
 		SignedIn: () =>
-			Option.exists(planGateOf(model), (gate) => gate.isSplash) ? [bootSplash(h)] : routeView(model, h),
+			Option.exists(planGateOf(model), (gate) => gate.isSplash)
+				? [bootSplash(h)]
+				: Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
+					? Option.match(onboardingView(model, h), { onNone: () => [], onSome: (screen) => [screen] })
+					: routeView(model, h),
 	})
 
 const body = (model: Model, h: HtmlBuilder<Message>): Html =>

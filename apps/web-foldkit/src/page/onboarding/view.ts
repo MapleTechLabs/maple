@@ -4,8 +4,10 @@ import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as OrgSwitcherView from "../../shell/clerk-org-switcher-view"
 import { accountLayout } from "../../layout/account-layout"
-import { button } from "../../ui/button"
+import { currentRegion, MAPLE_REGION_LABELS, regionAppUrl } from "@maple/web/lib/region"
+import { button, linkButton } from "../../ui/button"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
+import type * as ClerkScreens from "./clerk-screens"
 import { clerkCard } from "./clerk-card"
 import * as ClerkSignInView from "./clerk-sign-in-view"
 import * as AccountMenu from "./account-menu"
@@ -156,6 +158,29 @@ const orgRequiredView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs):
 		),
 	])
 
+/** `WrongRegionScreen`: this region has nothing to show for an org another region serves. */
+const wrongRegionView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, screen: ClerkScreens.WrongRegion): Html => {
+	const orgName = Option.match(inputs.maybeOrganization, { onNone: () => "This organization", onSome: (org) => org.name })
+	const target = MAPLE_REGION_LABELS[screen.region]
+	const here = MAPLE_REGION_LABELS[currentRegion]
+	const url = regionAppUrl(screen.region)
+	return authLayout(h, "max-w-lg", [
+		authTitle(h, [`${orgName} is in the ${target.short} region`]),
+		authDescription(h, [
+			`Its data is stored in the ${target.name}. You are on the ${here.short} dashboard, which keeps a separate set of organizations.`,
+		]),
+		switcher(h, model, inputs, "start", ({ trigger, withTrigger }) =>
+			h.div(
+				[h.Class("mt-6 flex flex-wrap items-center gap-2")],
+				[
+					...(url === undefined ? [] : [linkButton(h, { href: `${url}${screen.href}` }, [`Open in ${target.short}`])]),
+					...withTrigger(button(h, { variant: "outline", attributes: trigger }, ["Switch organization"])),
+				],
+			),
+		),
+	])
+}
+
 const screenView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): Html => {
 	const screen: Screen = model.screen
 	const slotId = `onboarding:${screen._tag}`
@@ -177,6 +202,8 @@ const screenView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): Html
 			return accountLayout(h, [clerkCard(h, "SignUp", screen.target)])
 		case "OrgRequired":
 			return orgRequiredView(h, model, inputs)
+		case "WrongRegion":
+			return wrongRegionView(h, model, inputs, screen)
 		case "SelectPlan":
 			return h.submodel({ slotId, model: screen, view: selectPlanView, viewInputs, toParentMessage: toSelectPlan })
 		case "QuickStart":

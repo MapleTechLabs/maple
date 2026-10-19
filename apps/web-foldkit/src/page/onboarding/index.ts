@@ -7,7 +7,8 @@ import { load } from "foldkit/navigation"
 import { clearSessionToken } from "../../platform/auth-api"
 import { signOutOfClerk } from "../../platform/clerk"
 import type { Resources } from "../../platform/resources"
-import { AppRoute } from "../../route"
+import { AppRoute, hrefOf } from "../../route"
+import { wrongRegionOf } from "./plan-gate"
 import * as OrgSwitcher from "../../shell/clerk-org-switcher"
 import * as Menu from "../../ui/menu"
 import * as CliLogin from "./cli-login"
@@ -38,6 +39,7 @@ export const Screen = Schema.Union([
 	ClerkSignIn.Model,
 	ClerkScreens.OrgRequired,
 	ClerkScreens.SignUp,
+	ClerkScreens.WrongRegion,
 	QuickStart.Model,
 	SelectPlan.Model,
 ])
@@ -109,6 +111,11 @@ export const keyOf = (route: AppRoute, inputs: Inputs): Option.Option<string> =>
 	const isSignedOut = inputs.session === "SignedOut"
 	const withOrg = (key: string) =>
 		!isSignedOut && Option.isSome(inputs.maybeOrgId) ? Option.some(key) : Option.none()
+	// `WrongRegionScreen` replaces every org-scoped route; the auth pages redirect first.
+	const isWrongRegion =
+		isClerkAuthEnabled && Option.isSome(wrongRegionOf(inputs.maybeOrganization)) && Option.isSome(withOrg(""))
+	if (isWrongRegion && !AppRoute.isAnyOf(["Unsubscribe", "SignIn", "SignUp", "OrgRequired"])(route))
+		return Option.some(`WrongRegion:${hrefOf(route)}`)
 	return AppRoute.matchOrElse<Option.Option<string>>(
 		route,
 		{
@@ -136,7 +143,11 @@ const fresh = <ScreenModel extends Screen, ScreenMessage>(
 	Option.some(withScreen({ key, screen: result.model, switcher: OrgSwitcher.init("onboarding-org-switcher"), userMenu: Menu.init("onboarding-user-menu") }, result, wrap))
 
 export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Option<Step> =>
-	AppRoute.matchOrElse<Option.Option<Step>>(
+	key.startsWith("WrongRegion:")
+		? Option.flatMap(wrongRegionOf(inputs.maybeOrganization), (region) =>
+				fresh(key, { model: ClerkScreens.WrongRegion.make({ region, href: hrefOf(route) }) }, toClerkSignIn),
+			)
+		: AppRoute.matchOrElse<Option.Option<Step>>(
 		route,
 		{
 			CliLogin: ({ search }) => fresh(key, CliLogin.init(search.user_code), toCliLogin),
