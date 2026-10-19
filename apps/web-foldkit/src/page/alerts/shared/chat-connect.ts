@@ -80,7 +80,8 @@ export const update = (model: Model, message: Message): Step =>
 		SucceededStart: ({ attempt }) =>
 			Option.match(current(model, attempt), {
 				onNone: () => settled(model),
-				onSome: (active) => settled(patch(model, active, { isStarting: false })),
+				// The install mutation's `reactivityKeys: ["chatIntegration"]` re-read the connectors.
+				onSome: (active) => settled(patch(model, active, { isStarting: false }), true),
 			}),
 		FailedStart: ({ attempt, description }) =>
 			Option.isNone(current(model, attempt))
