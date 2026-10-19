@@ -171,7 +171,16 @@ export const alertsArea: AreaModule = {
 				waitForText("Destination created"),
 			),
 		}),
-		alert("hub-new-destination-hazel", "Hub, add a Hazel channel destination", ROUTING, {
+		// An org without a Slack workspace: the tile links one in a popup and says to finish there.
+		alert("hub-new-destination-slack-connect", "Hub, link Slack from the add destination dialog", ROUTING, {
+			dataset: "empty",
+			steps: act(
+				clickButton("New destination"),
+				clickButton(/^Slack/),
+				waitForText("Finish in the Slack window. This form stays as it is."),
+			),
+		}),
+		alert("hub-new-destination-hazel","Hub, add a Hazel channel destination", ROUTING, {
 			steps: act(
 				clickButton("New destination"),
 				clickButton(/^Hazel/),
