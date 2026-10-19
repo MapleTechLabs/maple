@@ -19,7 +19,7 @@ import type { WidgetDataState } from "./data-state"
 import { renderMarkdown } from "./markdown"
 import { widgetEmptyState, widgetFrame, widgetShell } from "./tile-shell"
 import { chartWidgetTile, CHART_WIDGETS } from "./tiles-chart"
-import { frame, titleOf } from "./tiles-frame"
+import { frame, timeRangeLabelOf, titleOf } from "./tiles-frame"
 import { gaugeDial } from "./gauge-view"
 import { statTile, thresholdColor } from "./tiles-stat"
 
@@ -29,7 +29,7 @@ export { formatStatValue } from "./tiles-stat"
 // chart through `chartWidgetTile` (./tiles-chart.ts).
 
 /** What a tile reads of its widget; a share's redacted widget satisfies it too. */
-export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "display"> &
+export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "display" | "timeRange"> &
 	Readonly<{ visualization: string; dataSource: unknown }>
 type Widget = TileWidget
 type Row = Readonly<Record<string, unknown>>
@@ -361,6 +361,7 @@ const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget)
 			hasGrip: ctx.hasGrip,
 			menu: ctx.menu,
 			isMenuOpen: ctx.isMenuOpen,
+			timeRangeLabel: timeRangeLabelOf(ctx, widget),
 			contentClassName: "flex-1 min-h-0 overflow-auto p-2 @min-[220px]/widget:p-3",
 		},
 		[
