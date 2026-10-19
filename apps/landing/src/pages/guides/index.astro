@@ -73,6 +73,13 @@ const investigationGuides = [
         description: "Measure the right latency clock, isolate the slow requests, and trace a regression to the release and operation responsible.",
         read: "14 min",
     },
+    {
+        href: "/guides/incident-response",
+        label: "On-call",
+        title: "Incident response steps for software teams",
+        description: "The NIST and SANS incident response phases, then the on-call steps from detection to postmortem, with severity levels, roles, MTTR and a postmortem template.",
+        read: "12 min",
+    },
 ];
 
 const fieldNotes = (await getCollection("blog") as BlogPost[])
