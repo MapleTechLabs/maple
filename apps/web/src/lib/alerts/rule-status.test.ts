@@ -138,8 +138,8 @@ describe("deriveRuleStatus", () => {
 	})
 
 	it("applies the same missed-tick SLA regardless of the rule's window", () => {
-		// The scheduler evaluates every enabled rule about once a minute; the
-		// window sizes what an evaluation reads, not how often it runs. Scaling
+		// The scheduler checks a rule every 1-5 minutes whatever its window, so
+		// staleness does not scale with the window. Scaling
 		// staleness by it hid a dead scheduler for 72h on a 24h-window rule.
 		const gap = staleThresholdMs() + 60_000
 		for (const windowMinutes of [5, 60, 1440]) {

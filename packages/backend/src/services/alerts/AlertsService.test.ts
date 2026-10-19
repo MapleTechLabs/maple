@@ -4304,6 +4304,51 @@ describe("AlertsService evaluation error persistence", () => {
 		}
 	}
 
+	it.effect("retries a failed long-window rule on the next tick, then settles onto its interval", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			rows: [] as ReadonlyArray<Record<string, unknown>>,
+			ingested: [] as Array<Record<string, unknown>>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_retry")
+			const userId = asUserId("user_alert_retry")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Retry rule",
+					severity: "warning",
+					enabled: true,
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 30,
+					destinationIds: [destination.id],
+				}),
+			)
+			const tickAndCount = Effect.gen(function* () {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				return state.ingested.length
+			})
+
+			// Two failing ticks then a clean one, each a minute apart.
+			const failing = yield* Effect.forEach(Arr.range(1, 2), () => tickAndCount)
+			state.failing = false
+			const recovered = yield* tickAndCount
+			assert.deepStrictEqual([...failing, recovered], [1, 2, 3])
+			// Healthy again, it waits for its 5-minute slot.
+			const later = yield* Effect.forEach(Arr.range(1, 4), () => tickAndCount)
+			assert.isBelow(later[3]! - recovered, 4)
+		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
+	})
+
 	it.effect("persists scheduler failures to lastError + audit log, gated, and clears on recovery", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {

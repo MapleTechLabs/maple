@@ -353,10 +353,10 @@ describe("isAlertRuleDue", () => {
 		).toBe(true)
 	})
 
-	it("catches up a rule that missed its slot instead of waiting a full interval", () => {
+	it("catches up a rule that missed its slot on the minute after it", () => {
 		const claimedAt = minute(1000) + 17_000
-		// 4 minutes after a 3-minute rule's claim, it is due whatever its phase.
-		expect(isAlertRuleDue({ ...base, lastClaimedAt: claimedAt, windowEndMs: minute(1005) })).toBe(true)
+		// A 3-minute rule claimed in minute 1000 is due in minute 1004 whatever its phase.
+		expect(isAlertRuleDue({ ...base, lastClaimedAt: claimedAt, windowEndMs: minute(1004) })).toBe(true)
 	})
 })
 

@@ -1045,8 +1045,7 @@ export const ALERT_MAX_EVALUATION_INTERVAL_MINUTES = 5
 
 /**
  * Minutes between a rule's checks: a fifth of its window, 1 to 5. Every check
- * still reads the whole window, so consecutive windows overlap and no data
- * goes unchecked; checking a 15-minute window every minute re-read it 15 times.
+ * reads the whole window, so consecutive windows overlap and no data goes unchecked.
  */
 export const alertEvaluationIntervalMinutes = (windowMinutes: number): number =>
 	Math.min(ALERT_MAX_EVALUATION_INTERVAL_MINUTES, Math.max(1, Math.floor(windowMinutes / 5)))
@@ -1076,12 +1075,16 @@ export interface AlertRuleDueInput {
  * was never claimed, was edited since, or missed its last slot.
  */
 export const isAlertRuleDue = (input: AlertRuleDueInput): boolean => {
+	const tickMs = ALERT_TICK_SECONDS * 1000
 	const intervalMinutes = alertEvaluationIntervalMinutes(input.windowMinutes)
 	const lastClaimedAt = input.lastClaimedAt ?? 0
 	if (lastClaimedAt <= 0 || input.updatedAt > lastClaimedAt) return true
-	if (input.windowEndMs - lastClaimedAt >= (intervalMinutes + 1) * 60_000) return true
-	const minute = Math.floor(input.windowEndMs / 60_000)
-	return minute % intervalMinutes === alertRulePhase(input.ruleId, intervalMinutes)
+	// Claims land seconds into their minute, so compare on the minute.
+	if (input.windowEndMs - floorToBucketMs(lastClaimedAt, ALERT_TICK_SECONDS) > intervalMinutes * tickMs) {
+		return true
+	}
+	const tick = Math.floor(input.windowEndMs / tickMs)
+	return tick % intervalMinutes === alertRulePhase(input.ruleId, intervalMinutes)
 }
 
 const floorToBucketMs = (epochMs: number, bucketSeconds: number): number => {

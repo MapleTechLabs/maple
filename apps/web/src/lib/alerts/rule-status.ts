@@ -1,3 +1,4 @@
+import { ALERT_MAX_EVALUATION_INTERVAL_MINUTES } from "@maple/query-engine/datetime"
 import type { AlertDeliveryEventDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import type { AlertRuleStateRow } from "@/lib/collections/alerts"
 import { countLabel } from "@maple/ui/lib/format"
@@ -23,14 +24,13 @@ export interface DerivedRuleStatus {
 }
 
 /**
- * A rule counts as stale after 3× the server's state heartbeat: the scheduler
- * checks a rule every 1-5 minutes (`alertEvaluationIntervalMinutes`), and
- * republishes `last_evaluated_at` at most every ~5 minutes to keep the Electric
- * shape quiet. Not scaled by `windowMinutes`: that hid scheduler outages for up
+ * A rule counts as stale after 3× its longest check interval: the scheduler
+ * checks a rule every 1-5 minutes (`alertEvaluationIntervalMinutes`) and
+ * republishes `last_evaluated_at` about as often (a 5-minute heartbeat). Not scaled by `windowMinutes`: that hid scheduler outages for up
  * to 3× the window (72h on a daily rule).
  * Shared with the diagnosis panel so both surfaces agree on "stale".
  */
-export const staleThresholdMs = (): number => 3 * 5 * 60_000
+export const staleThresholdMs = (): number => 3 * ALERT_MAX_EVALUATION_INTERVAL_MINUTES * 60_000
 
 const lastEvaluatedMs = (
 	rule: AlertRuleDocument,
