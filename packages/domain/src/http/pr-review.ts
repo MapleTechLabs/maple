@@ -903,7 +903,7 @@ export const confidencePrReview = (
 		}
 	}
 	// The floor is shown like a cap, so the footer's points always add up to the number.
-	if (PR_REVIEW_CONFIDENCE_MAX - total < floor) {
+	if (floor > 1 && PR_REVIEW_CONFIDENCE_MAX - total < floor) {
 		return {
 			confidence,
 			reason: `Kept at ${floor}: ordinary warnings and soft signals never read below ${floor}.`,

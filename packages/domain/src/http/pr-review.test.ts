@@ -391,6 +391,10 @@ describe("confidencePrReview", () => {
 		assert.equal(floored?.factors.at(-1), "floor 5")
 		assert.equal(floored?.reason, "Kept at 5: ordinary warnings and soft signals never read below 5.")
 		assert.notInclude(confidencePrReview(reportWith([finding("warn")]))?.factors ?? [], "floor 5")
+		// Under a danger cap there is no floor to name, however far the points fall.
+		const sunk = confidencePrReview(reportWith([finding("critical"), ...many], { tests: "missing" }))
+		assert.equal(sunk?.confidence, 1)
+		assert.notInclude(sunk?.factors.join(" ") ?? "", "floor")
 	})
 
 	it("caps on a critical, a security warning or an early end, and says why", () => {
