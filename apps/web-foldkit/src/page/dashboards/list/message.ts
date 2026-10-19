@@ -15,7 +15,8 @@ const Created = Schema.Struct({ id: Schema.String, name: Schema.String, isPerses
 const WriteResult = Schema.Result(WriteSync, Schema.String)
 
 export const Message = defineMessageUnion({
-	CompletedReadClock: { nowMs: Schema.Number },
+	/** The clock and the browser's locale, read together before the list renders. */
+	CompletedReadClock: { nowMs: Schema.Number, locale: Schema.String },
 	CompletedLoadPreferences: { favorites: Schema.Array(Schema.String), sort: Schema.String },
 	UpdatedDashboards: { orgId: Schema.String, dashboards: Schema.Array(ListDashboard) },
 	ChangedSearchDraft: { value: Schema.String },

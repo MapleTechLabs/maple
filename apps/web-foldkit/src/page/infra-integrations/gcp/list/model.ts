@@ -18,6 +18,8 @@ export const Model = Schema.Struct({
 	search: InfraGcpSearch,
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,
+	/** `toLocaleString`'s locale for the instance and connection counts. */
+	locale: Schema.String,
 	status: KeyedSchema(GcpStatus, LoadFailure),
 	fleet: KeyedSchema(Schema.Array(FleetRead), LoadFailure),
 	sparks: KeyedSchema(Schema.Array(SparkRead), LoadFailure),
@@ -45,7 +47,7 @@ const result = <A extends Schema.Top>(schema: A) => ({
 })
 
 export const Message = defineMessageUnion({
-	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, locale: Schema.String, mode: RequestMode },
 	CompletedLoadStatus: result(GcpStatus),
 	CompletedFetchFleet: result(Schema.Array(FleetRead)),
 	CompletedFetchSparks: result(Schema.Array(SparkRead)),

@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { autocompleteOf } from "./advanced"
+import { listboxPlacement } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -57,5 +58,13 @@ describe("traces advanced filter", () => {
 		expect(
 			pageUpdate(dismissed, Message.MovedAdvancedCursor({ cursor: 0 })).model.advanced.isDismissed,
 		).toBe(false)
+	})
+
+	test("the suggestion listbox flips above a textarea near the bottom and back, one side at a time", () => {
+		const rect = (top: number) => ({ left: 10, width: 300, top, bottom: top + 40 })
+		const below = listboxPlacement(rect(100), 800)
+		expect([below.top, below.bottom]).toEqual(["144px", ""])
+		const above = listboxPlacement(rect(700), 800)
+		expect([above.top, above.bottom]).toEqual(["", "104px"])
 	})
 })

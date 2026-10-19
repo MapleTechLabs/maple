@@ -29,6 +29,7 @@ import {
 	ScrollToTools,
 } from "./command"
 import { loadedSpans, progressOf, sessionData, viewOf } from "./derive"
+import { INITIAL_LOCALE } from "../../kit/locale"
 import { Message } from "./message"
 import { type Model, SESSION_VIEWS, type SpansPage } from "./model"
 import { layoutLanes, MAX_ZOOM, MIN_ZOOM } from "./flow-layout"
@@ -208,6 +209,7 @@ export const init = (
 		search: route.search,
 		searchStr: searchStrOf(route.sessionId, route.search),
 		nowMs: 0,
+		locale: INITIAL_LOCALE,
 		firstPage: Keyed.idle(),
 		more: nothingLoaded(""),
 		totals: Keyed.idle(),
@@ -370,7 +372,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 
 const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		CompletedResolveClock: ({ nowMs, locale }) => ({ model: { ...model, nowMs, locale } }),
 		CompletedFetchFirstPage: ({ key, result }) => {
 			if (key !== model.firstPage.key) return { model }
 			const accepted: Model = {

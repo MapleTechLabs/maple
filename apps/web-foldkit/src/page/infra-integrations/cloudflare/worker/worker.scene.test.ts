@@ -2,10 +2,12 @@ import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../../contract"
-import type { Release, WorkerRow } from "../data"
+import { type Release, Status, type WorkerRow } from "../data"
 import { pageOf } from "./derive"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
+import { ingestPhaseOf } from "../ingest"
+import { dataOf } from "../list/derive"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -86,5 +88,29 @@ describe("cloudflare worker", () => {
 		expect(data.row?.accountId).toBe("acc_a")
 		expect(data.traced).toBeNull()
 		expect(data.markers).toEqual([])
+	})
+
+	test("the ingest poll advances the clock, so a silent connection turns stalled", () => {
+		const status = Schema.decodeUnknownSync(Status)({
+			connected: true,
+			accountId: "acc_a",
+			accountName: "Acme",
+			connectedByUserId: null,
+			scope: null,
+			analyticsCapable: true,
+			connectedAt: 0,
+			accounts: [],
+			zones: [],
+			workers: null,
+		})
+		const model = windowed().model
+		const connected = pageUpdate(
+			model,
+			Message.CompletedLoadStatus({ key: model.status.key ?? "", result: Result.succeed(status) }),
+		).model
+		const phase = (m: Model) => ingestPhaseOf(dataOf(m.status.data), dataOf(m.usage.data), m.nowMs)?.kind
+		expect(phase(connected)).toBe("discovering")
+		const ticked = pageUpdate(connected, Message.TickedIngestPoll({ nowMs: 31 * 60_000 })).model
+		expect(phase(ticked)).toBe("stalled")
 	})
 })

@@ -6,6 +6,7 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { detectModels } from "../kit/detected-models"
+import { readLocale } from "../../kit/locale"
 import { Message, SpanScope } from "./message"
 import { parseMarkdownTexts } from "../../kit/message-response"
 
@@ -27,7 +28,9 @@ const sessionInput = (sessionId: string, window: TimeWindow | null) =>
 /** The clock the header's relative times read, resolved once on entry. */
 export const ResolveClock = Command.define("ResolveAgentSessionClock", {
 	messages: [Message.CompletedResolveClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveClock({ nowMs })),
+	execute: Effect.zipWith(Clock.currentTimeMillis, readLocale, (nowMs, locale) =>
+		Message.CompletedResolveClock({ nowMs, locale }),
+	),
 })
 
 /** The first page: the session's opening, bounded by the link's window when it carries one. */

@@ -340,6 +340,7 @@ const infraView = (
 			isChartReady: model.chartRuntime._tag !== "Loading",
 			isWaiting: AsyncData.isRefreshing(fleetData),
 			projectMenu: model.projectMenu,
+			locale: model.locale,
 		}),
 	]
 }
@@ -368,6 +369,8 @@ export type ListPageInput = Readonly<{
 	isChartReady: boolean
 	isWaiting: boolean
 	projectMenu: Menu.Model
+	/** `toLocaleString`'s locale for the counts. */
+	locale: string
 }>
 
 /** `GcpListPage`: header, projects strip, and the current view's band, search and table. */
@@ -386,6 +389,7 @@ export const gcpListPage = (h: H, input: ListPageInput): Html => {
 		showProject: multiProject && project === undefined,
 		theme: input.theme,
 		isChartReady: input.isChartReady,
+		locale: input.locale,
 	}
 	const section = (children: ReadonlyArray<Html>) =>
 		h.div(

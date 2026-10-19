@@ -75,13 +75,13 @@ const axisGrid = (h: H, ticks: ReadonlyArray<AxisTick>): ReadonlyArray<Html> =>
 		),
 	)
 
-const tokenCell = (h: H, tokens: SessionTokenTotals | undefined, isErrored = false): Html => {
+const tokenCell = (h: H, tokens: SessionTokenTotals | undefined, locale: string, isErrored = false): Html => {
 	const drawn = tokens === undefined ? [] : TOKEN_BUCKETS.filter((bucket) => tokens[bucket.key] > 0)
 	if (tokens === undefined || tokens.total === 0 || drawn.length === 0)
 		return h.span([h.Class(cn(COL_TOKENS, isErrored && "text-severity-error"))], [EMPTY_VALUE])
 	const title = [
 		`${formatNumber(tokens.total)} tokens`,
-		...drawn.map((bucket) => `${bucket.label}: ${tokens[bucket.key].toLocaleString()}`),
+		...drawn.map((bucket) => `${bucket.label}: ${tokens[bucket.key].toLocaleString(locale)}`),
 	].join("\n")
 	return h.span(
 		[h.Class(COL_TOKENS_SPLIT), h.Title(title)],
@@ -168,6 +168,7 @@ const turnHeader = (
 	turns: ReadonlyArray<SessionTurn>,
 	axis: SessionAxis,
 	isCollapsed: boolean,
+	locale: string,
 ): Html => {
 	const { turn } = row
 	const left = axis.fraction(turn.startMs) * 100
@@ -197,7 +198,7 @@ const turnHeader = (
 				],
 			),
 			h.span([h.Class(COL_MODEL)], [turn.agentName ?? EMPTY_VALUE]),
-			tokenCell(h, countTurnTokens(turn, turns)),
+			tokenCell(h, countTurnTokens(turn, turns), locale),
 			h.span(
 				[h.Class(COL_AXIS)],
 				[
@@ -268,7 +269,7 @@ const spanBar = (
 	)
 }
 
-type SpanRowState = Readonly<{ isSelected: boolean; isRevealed: boolean; isFocused: boolean }>
+type SpanRowState = Readonly<{ isSelected: boolean; isRevealed: boolean; isFocused: boolean; locale: string }>
 
 const spanCell = (
 	h: H,
@@ -351,7 +352,7 @@ const spanRow = (
 						: modelLabel(h, { detected: detect(model), size: 12, title: target }),
 				],
 			),
-			tokenCell(h, isLlmCall(span) ? spanTokenBuckets(span) : undefined, isErrored),
+			tokenCell(h, isLlmCall(span) ? spanTokenBuckets(span) : undefined, state.locale, isErrored),
 			h.span(
 				[h.Class(COL_AXIS)],
 				[...axisGrid(h, axis.ticks), spanBar(h, span, axis, category, isErrored)],
@@ -454,12 +455,13 @@ export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 	const rows = waterfallRowsOf(model, data)
 	const rowView = (row: WaterfallRow): Html => {
 		if (row.kind === "turn")
-			return turnHeader(h, row, turns, axis, model.collapsedTurns.includes(row.turn.id))
+			return turnHeader(h, row, turns, axis, model.collapsedTurns.includes(row.turn.id), model.locale)
 		if (row.kind === "gap") return gapRow(h, row.gap.durationMs)
 		return spanRow(h, row, axis, spansById, detect, {
 			isSelected: model.search.span === row.span.spanId,
 			isRevealed: model.revealedSpanId === row.span.spanId,
 			isFocused: model.focusedSpanId === row.span.spanId,
+			locale: model.locale,
 		})
 	}
 	const { items, scrollMargin, totalSize } = model.waterfallWindow

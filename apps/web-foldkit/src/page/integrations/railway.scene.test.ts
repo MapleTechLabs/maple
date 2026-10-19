@@ -44,4 +44,12 @@ describe("railway card", () => {
 		)
 		expect(done.model.railwayCard.connect.isSubmitting).toBe(false)
 	})
+
+	test("a poll joins the status read in flight; a finished sync asks again anyway", () => {
+		const entered = init({ search: { integration: "railway" } }, context).model
+		expect(names(pageUpdate(entered, Message.TickedRailwaySettle()).commands)).toEqual([])
+		expect(names(pageUpdate(entered, Message.CompletedRailwaySync({ failure: null })).commands)).toEqual([
+			"LoadIntegrationsRailwayStatus",
+		])
+	})
 })

@@ -79,6 +79,8 @@ export const Model = Schema.Struct({
 	search: ServiceMapSearch,
 	/** The map's window and the 24 h facets window, resolved at the same clock; `null` until resolved. */
 	window: Schema.NullOr(TimeWindow),
+	/** The zone `window` was resolved in: legacy's memo re-resolves on a zone change. */
+	windowZone: Schema.NullOr(Schema.String),
 	facetsWindow: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,
 	/** Environment names from `getServicesFacets` over the fixed 24 h window. */

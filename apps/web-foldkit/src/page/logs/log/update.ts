@@ -76,6 +76,11 @@ const liftDetail = (model: Model, result: ReturnType<typeof LogDetail.update>): 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchLog: ({ key, result }) => {
+			// Only an awaited answer opens the panels; a stale or repeated one would reset them.
+			const isAwaited =
+				model.log.key === key &&
+				(AsyncData.isLoading(model.log.data) || AsyncData.isRefreshing(model.log.data))
+			if (!isAwaited) return { model }
 			const log = Keyed.accept(model.log, key, result)
 			const next = { ...model, log }
 			return Option.match(Option.flatMap(AsyncData.getData(log.data), Option.fromNullishOr), {

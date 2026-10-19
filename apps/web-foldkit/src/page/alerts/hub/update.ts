@@ -33,6 +33,7 @@ import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
+type Requested = Readonly<{ model: Model; commands: Commands }>
 type HubRoute = Extract<AppRoute, { readonly _tag: "Alerts" }>
 
 const DELETE_DIALOG_ID = "alerts-delete-destination"
@@ -51,27 +52,27 @@ const deliveriesKey = (context: PageContext) =>
 	requestKey(context.orgId, "alertDeliveries.list", { query: { limit: 100 } })
 
 /** One `Keyed.request` on the deliveries slot; `Refresh` is the `alertDeliveryEvents` invalidation. */
-const requestDeliveries = (model: Model, context: PageContext, mode: Keyed.RequestMode) => {
+const requestDeliveries = (model: Model, context: PageContext, mode: Keyed.RequestMode): Requested => {
 	const key = deliveriesKey(context)
 	return Option.match(Keyed.request(model.deliveries, key, mode), {
-		onNone: () => ({ model, commands: [] as Commands }),
+		onNone: () => ({ model, commands: [] }),
 		onSome: (deliveries) => ({
 			model: { ...model, deliveries },
-			commands: [FetchHubDeliveries({ key })] as Commands,
+			commands: [FetchHubDeliveries({ key })],
 		}),
 	})
 }
 
 /** The Routing tab mounts its own deliveries read; the overview's stays mounted with the tab counts. */
-const requestRoutingDeliveries = (model: Model, context: PageContext, mode: Keyed.RequestMode) => {
+const requestRoutingDeliveries = (model: Model, context: PageContext, mode: Keyed.RequestMode): Requested => {
 	const key = deliveriesKey(context)
 	return resolveTab(model.search.tab) !== "routing"
-		? { model, commands: [] as Commands }
+		? { model, commands: [] }
 		: Option.match(Keyed.request(model.routingDeliveries, key, mode), {
-				onNone: () => ({ model, commands: [] as Commands }),
+				onNone: () => ({ model, commands: [] }),
 				onSome: (routingDeliveries) => ({
 					model: { ...model, routingDeliveries },
-					commands: [FetchRoutingDeliveries({ key })] as Commands,
+					commands: [FetchRoutingDeliveries({ key })],
 				}),
 			})
 }

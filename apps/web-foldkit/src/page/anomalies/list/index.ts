@@ -1,5 +1,5 @@
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
-import { Duration, Option, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Option, Schema, Stream } from "effect"
 import { AsyncData, Dom, Subscription } from "foldkit"
 import { definePage, type PageSubscriptionInput } from "../../contract"
 import { isLiveOf } from "./derive"
@@ -58,7 +58,9 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()
 					? Stream.tick(LIVE_REFRESH_INTERVAL).pipe(
 							Stream.drop(1),
 							Stream.filter(() => typeof document === "undefined" || !document.hidden),
-							Stream.map(() => Message.TickedLiveRefresh()),
+							Stream.mapEffect(() =>
+								Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveRefresh({ nowMs })),
+							),
 						)
 					: Stream.empty,
 		},

@@ -26,6 +26,8 @@ export type RowsContext = Readonly<{
 	/** Sparklines draw once the theme and the chart runtime are in. */
 	theme: ThemeColors | null
 	isChartReady: boolean
+	/** The browser's locale, read with the window. */
+	locale: string
 }>
 
 export const NAME = "w-0 min-w-[220px] flex-1"

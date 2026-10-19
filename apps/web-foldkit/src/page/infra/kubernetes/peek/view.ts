@@ -35,6 +35,8 @@ export type ViewInputs = Readonly<{
 	nowMs: number
 	timeZone: string
 	timeSearch: TimeSearch
+	/** The browser's locale for the "1 of N" counter. */
+	locale: string
 }>
 
 const compactItem = (h: H, eyebrow: string, value: number, isToned: boolean): Html =>
@@ -97,7 +99,7 @@ const stepButton = (h: H, label: string, iconName: "ArrowUpIcon" | "ArrowDownIco
 		[icon(h, iconName)],
 	)
 
-const peekFooter = (h: H, peek: Peek, timeSearch: TimeSearch): Html =>
+const peekFooter = (h: H, peek: Peek, timeSearch: TimeSearch, locale: string): Html =>
 	DialogView.dialogFooter(
 		h,
 		"sheet",
@@ -109,7 +111,7 @@ const peekFooter = (h: H, peek: Peek, timeSearch: TimeSearch): Html =>
 					stepButton(h, "Next pod", "ArrowDownIcon", peek.index < peek.count - 1, 1),
 					h.span(
 						[h.Class("ml-1 font-mono text-2xs tabular-nums text-muted-foreground")],
-						[(peek.index + 1).toLocaleString(), " of", " ", peek.count.toLocaleString()],
+						[(peek.index + 1).toLocaleString(locale), " of", " ", peek.count.toLocaleString(locale)],
 					),
 					h.span(
 						[h.Class("ml-2 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex")],
@@ -149,7 +151,7 @@ const content = (h: H, model: Model, peek: Peek, inputs: ViewInputs): ReadonlyAr
 		[peekSummary(h, model, peek.pod), peekCharts(h, model, peek.pod, inputs.timeZone)],
 		"space-y-5",
 	),
-	peekFooter(h, peek, inputs.timeSearch),
+	peekFooter(h, peek, inputs.timeSearch, inputs.locale),
 ]
 
 /** The sheet; its content renders only while a row is peeked (legacy's `{pod ? ... : null}`). */

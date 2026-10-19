@@ -39,6 +39,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	const model: Model = {
 		search: route.search,
 		window: null,
+		windowZone: null,
 		facetsWindow: null,
 		nowMs: 0,
 		facets: Keyed.idle(),
@@ -218,8 +219,14 @@ export const routeChanged = (
 	return applyUrlFocus(requested, context)
 }
 
-/** The namespace pin scopes the rows on the client: rebuild the graph. */
-export const contextChanged = (model: Model, context: PageContext): Return => syncMap(context)({ model })
+/** The namespace pin scopes the rows on the client: rebuild the graph. A new zone re-resolves "today". */
+export const contextChanged = (model: Model, context: PageContext): Return => {
+	const synced = syncMap(context)({ model })
+	const isNewZone = model.windowZone !== null && model.windowZone !== context.timeZone
+	if (!isNewZone) return synced
+	const mode = model.refreshVersion === 0 ? "Load" : "Refresh"
+	return { ...synced, commands: [...(synced.commands ?? []), resolveCommand(synced.model, context, mode)] }
+}
 
 const withEnvironmentSelect = (model: Model, message: Select.Message): Return => {
 	const next = Select.update(model.environmentSelect, message)
@@ -284,8 +291,8 @@ const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return 
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, facetsWindow, nowMs, mode }) =>
-			requestAll({ ...model, window, facetsWindow, nowMs }, context, mode),
+		CompletedResolveWindow: ({ window, timeZone, facetsWindow, nowMs, mode }) =>
+			requestAll({ ...model, window, windowZone: timeZone, facetsWindow, nowMs }, context, mode),
 		CompletedReadStored: ({ stored }) =>
 			syncMap(context)({ model: { ...model, stored: Option.some(stored) } }),
 		CompletedSaveStored: () => ({ model }),

@@ -15,6 +15,7 @@ import {
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { LoadSignalPresence, MountEmptyState, MountFilterRail, MountTable, VirtualizeSessions } from "./command"
+import { pageRows } from "./derive"
 import { Message } from "./message"
 import type { Facets, Model, SessionRow } from "./model"
 import { init, update } from "./update"
@@ -165,6 +166,17 @@ describe("agent sessions list", () => {
 		expect(names(reached.commands)).toEqual(["FetchAgentSessionsNextPage"])
 		expect(reached.model.isFetchingNextPage).toBe(true)
 		expect(names(pageUpdate(reached.model, Message.ReachedListEnd()).commands)).toEqual([])
+	})
+
+	test("a second answer for an offset already filled is dropped, not appended", () => {
+		const rows = Array.from({ length: 50 }, (_, index) => session(`conv_${index}`))
+		const reached = pageUpdate(loaded(rows), Message.ReachedListEnd()).model
+		const key = reached.morePages.filterKey
+		const more = Array.from({ length: 50 }, (_, index) => session(`more_${index}`))
+		const answer = Message.CompletedFetchNextPage({ key, offset: 50, result: Result.succeed({ data: more, ranked: 50 }) })
+		const once = pageUpdate(reached, answer).model
+		const twice = pageUpdate(once, answer).model
+		expect(pageRows(twice, key)).toHaveLength(100)
 	})
 
 	test("rows render and a column header sorts through the URL", () => {

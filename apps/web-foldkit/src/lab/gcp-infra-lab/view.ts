@@ -1,3 +1,4 @@
+import { INITIAL_LOCALE } from "../../page/kit/locale"
 import {
 	BUCKET_SECONDS,
 	CLOUD_SQL_INSTANCES,
@@ -41,6 +42,7 @@ const listView = Submodel.defineView<Model, GcpList.Message>((model, h) =>
 					isChartReady: model.chartRuntime._tag !== "Loading",
 					isWaiting: false,
 					projectMenu: model.projectMenu,
+					locale: INITIAL_LOCALE,
 				}),
 			]),
 		],

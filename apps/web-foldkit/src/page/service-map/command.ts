@@ -44,6 +44,7 @@ export const ResolveWindow = Command.define("ResolveServiceMapWindow", {
 		Effect.map(Clock.currentTimeMillis, (nowMs) =>
 			Message.CompletedResolveWindow({
 				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
+				timeZone,
 				facetsWindow: snapRangeForCache({
 					startTime: formatWarehouseDateTime(nowMs - FACETS_RANGE_MS),
 					endTime: formatWarehouseDateTime(nowMs),

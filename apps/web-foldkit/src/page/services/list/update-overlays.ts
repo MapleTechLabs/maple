@@ -1,11 +1,10 @@
 import type { Result } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as CopyButton from "../../../ui/copy-button"
 import * as HoverCard from "../../../ui/hover-card"
 import * as Tooltip from "../../../ui/tooltip"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { type CommitDetail, type CommitFailure, commitDetailKey, OPEN_DELAY_MS } from "../../kit/commit-card"
-import { ArmCommitLookup, FetchCommitDetail } from "./command"
+import { ArmCommitLookup, CopyCommitSha, FetchCommitDetail } from "./command"
 import { Message, type RowTooltip } from "./message"
 import type { Model } from "./model"
 
@@ -100,25 +99,17 @@ export const completedCommitDetail = (
  */
 export const clickedCopySha = (model: Model, sha: string, rowUrl: string): Return => ({
 	model,
-	commands: Command.mapMessages([CopyButton.WriteClipboard({ text: sha, generation: 0 })], (message) =>
-		Message.GotCopyMessage({ message }),
-	),
+	commands: [CopyCommitSha({ sha, rowUrl })],
+})
+
+/** The navigation carries the write's outcome, so a failure is not lost with this page. */
+export const copiedSha = (model: Model, rowUrl: string, isCopied: boolean): Return => ({
+	model,
 	outMessage: PageOutMessage.RequestedNavigation({
 		url: rowUrl,
 		isReplace: false,
-		toast: { type: "success", title: "commit SHA copied", description: "" },
+		toast: isCopied
+			? { type: "success", title: "commit SHA copied", description: "" }
+			: { type: "error", title: "Failed to copy commit sha", description: "" },
 	}),
 })
-
-/** Only a failed write is news; the page has usually closed by then. */
-export const copyMessage = (model: Model, message: CopyButton.Message): Return =>
-	message._tag === "FailedCopy"
-		? {
-				model,
-				outMessage: PageOutMessage.RequestedToast({
-					type: "error",
-					title: "Failed to copy commit sha",
-					description: "",
-				}),
-			}
-		: { model }

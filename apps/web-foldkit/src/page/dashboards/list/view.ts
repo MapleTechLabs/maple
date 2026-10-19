@@ -80,7 +80,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		isReady && model.dashboards !== null && model.nowMs !== null
 			? h.div(
 					[h.Class("text-muted-foreground mt-1 font-mono text-2xs")],
-					[headerSummary(model.dashboards, model.nowMs, inputs.context.timeZone)],
+					[headerSummary(model.dashboards, model.nowMs, inputs.context.timeZone, model.locale)],
 				)
 			: undefined
 	const isReadOnly = model.persistenceError !== null

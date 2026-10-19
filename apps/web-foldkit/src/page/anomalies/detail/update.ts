@@ -153,8 +153,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchLinkIssues: ({ key, result }) => ({
 			model: { ...model, linkIssues: Keyed.accept(model.linkIssues, key, result) },
 		}),
-		TickedLiveRefresh: () =>
-			chain(loadIncident(model, context, "Refresh"), (next) => followIncident(next, context, "Refresh")),
+		TickedLiveRefresh: ({ nowMs }) =>
+			chain(loadIncident({ ...model, nowMs }, context, "Refresh"), (next) => followIncident(next, context, "Refresh")),
 		ClickedRetry: () => loadIncident(model, context, "Refresh"),
 		ClickedInvestigate: () =>
 			model.busy !== null

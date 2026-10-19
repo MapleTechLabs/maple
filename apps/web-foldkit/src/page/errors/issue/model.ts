@@ -75,6 +75,8 @@ export const Model = Schema.Struct({
 	commentDraft: Schema.String,
 	isCommenting: Schema.Boolean,
 	severityConfirm: Dialog.Model,
+	/** Counts severity picks; an escalation preview for an older pick is dropped. */
+	severityPick: Schema.Number,
 	pendingSeverity: Schema.NullOr(
 		Schema.Struct({ severity: IssueSeverity, destinationNames: Schema.Array(Schema.String) }),
 	),

@@ -8,7 +8,7 @@ import { PageOutMessage, type PageContext } from "../contract"
 import { LoadSignalPresence, MountEmptyState } from "./command"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
-import { init, routeChanged, update } from "./update"
+import { contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -85,7 +85,7 @@ const windowed = (search: Model["search"] = {}): Model => {
 	const entered = init({ search }, context).model
 	const resolved = pageUpdate(
 		entered,
-		Message.CompletedResolveWindow({ window, facetsWindow, nowMs: NOW, mode: "Load" }),
+		Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Load" }),
 	).model
 	return pageUpdate(resolved, Message.CompletedReadStored({ stored: STORED })).model
 }
@@ -109,7 +109,7 @@ describe("service map page: requests", () => {
 		)
 		const resolved = pageUpdate(
 			entry.model,
-			Message.CompletedResolveWindow({ window, facetsWindow, nowMs: NOW, mode: "Load" }),
+			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Load" }),
 		)
 		expect(names(resolved.commands)).toEqual([
 			"FetchServiceMapFacets",
@@ -119,6 +119,17 @@ describe("service map page: requests", () => {
 			"FetchPlanetScaleInventory",
 			"FetchCloudflareHyperdrives",
 		])
+	})
+
+	test("a zone change re-resolves the window in the new zone; a pin change does not", () => {
+		const model = windowed({ timePreset: "today" })
+		const rezoned = contextChanged(model, { ...context, timeZone: "Europe/Berlin" })
+		expect(rezoned.commands?.find((command) => command.name === "ResolveServiceMapWindow")?.args).toMatchObject({
+			preset: "today",
+			timeZone: "Europe/Berlin",
+		})
+		const pinned = contextChanged(model, { ...context, pinnedNamespace: "shop" })
+		expect(names(pinned.commands)).not.toContain("ResolveServiceMapWindow")
 	})
 
 	test("before facets land the bundle is scoped to production; a no-production org widens it", () => {

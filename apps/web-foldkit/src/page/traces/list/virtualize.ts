@@ -26,13 +26,22 @@ type WindowMessage = typeof Message.ChangedVirtualWindow.Type
  * and measuring of every mounted row (`VirtualTableBody`'s `measureRef`). Like React, changes raised
  * while measuring are batched to a microtask; a scroll renders synchronously.
  */
+/** The virtualizer's running state between its measure and scroll callbacks. */
+type VirtualizerState = {
+	count: number
+	rows: ReadonlyArray<VirtualRow>
+	totalSize: number
+	isMeasuring: boolean
+	isEmitScheduled: boolean
+}
+
 const virtualize = (scroller: HTMLElement): Stream.Stream<WindowMessage> =>
 	Stream.callback<WindowMessage>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() => {
-				const state = {
+				const state: VirtualizerState = {
 					count: countOf(scroller),
-					rows: [] as ReadonlyArray<VirtualRow>,
+					rows: [],
 					totalSize: -1,
 					isMeasuring: false,
 					isEmitScheduled: false,

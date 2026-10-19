@@ -121,4 +121,14 @@ describe("email preferences tab", () => {
 			args: { submitted: { dayOfWeek: 2, sendHour: 9, timezone: "Europe/London", environments: ["production"] } },
 		})
 	})
+
+	test("Save waits while a digest toggle is in flight, so it cannot resend the old enabled state", () => {
+		const saved = EmailPreferences.update(
+			entered,
+			EmailPreferencesMessage.CompletedFetchSubscription({ result: Result.succeed(subscription) }),
+		).model
+		const edited = EmailPreferences.update(saved, EmailPreferencesMessage.ChangedSchedule({ field: "dayOfWeek", value: "2" })).model
+		const toggling = EmailPreferences.update(edited, EmailPreferencesMessage.ToggledOps()).model
+		expect(EmailPreferences.update(toggling, EmailPreferencesMessage.ClickedSave()).commands ?? []).toEqual([])
+	})
 })

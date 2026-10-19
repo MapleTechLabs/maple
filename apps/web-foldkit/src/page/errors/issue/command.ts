@@ -308,9 +308,9 @@ export const CopyText = Command.define("CopyErrorIssueText", {
 
 /** The escalation preview a manual severity raise asks for before it writes. */
 export const EvaluateEscalation = Command.define("EvaluateErrorIssueEscalation", {
-	args: { severity: IssueSeverity },
+	args: { severity: IssueSeverity, pick: Schema.Number },
 	messages: [Message.CompletedEvaluateEscalation],
-	execute: ({ severity }) =>
+	execute: ({ severity, pick }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			const preview = yield* client.errors.evaluateEscalationPolicy({
@@ -319,6 +319,6 @@ export const EvaluateEscalation = Command.define("EvaluateErrorIssueEscalation",
 			return { outcome: preview.outcome, destinationIds: preview.destinationIds }
 		}).pipe(
 			settle,
-			Effect.map((result) => Message.CompletedEvaluateEscalation({ severity, result })),
+			Effect.map((result) => Message.CompletedEvaluateEscalation({ severity, pick, result })),
 		),
 })

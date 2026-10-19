@@ -261,6 +261,7 @@ export const init = (
 		commentDraft: "",
 		isCommenting: false,
 		severityConfirm: Dialog.init("issue-severity-confirm", "alert-dialog"),
+		severityPick: 0,
 		pendingSeverity: null,
 		refreshVersion: 0,
 		isReloading: false,
@@ -628,7 +629,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				commands: [...(done.commands ?? []), ...refreshed.commands],
 			}
 		},
-		CompletedEvaluateEscalation: ({ severity, result }) => evaluatedEscalation(model, severity, result),
+		CompletedEvaluateEscalation: ({ severity, pick, result }) =>
+			pick === model.severityPick ? evaluatedEscalation(model, severity, result) : { model },
 		GotSeverityConfirmMessage: ({ message: inner }) => severityConfirmStep(model, inner),
 		ClickedConfirmSeverity: () => confirmedSeverity(model),
 		GotOverflowMenuMessage: ({ message: inner }) =>

@@ -42,16 +42,21 @@ describe("services list overlays", () => {
 		expect(names(enter(looked.model).commands)).toEqual(["WaitHoverDelay"])
 	})
 
-	test("copying the sha writes the clipboard and opens the row with the toast", () => {
+	test("copying the sha writes the clipboard, then opens the row with the write's toast", () => {
+		const url = "/services/storefront?environments=%5B%22production%22%5D"
 		const copied = pageUpdate(
 			entered(),
 			Message.ClickedCopyCommitSha({ sha: SHA, serviceName: "storefront", environment: "production" }),
 		)
-		expect(names(copied.commands)).toEqual(["WriteClipboard"])
-		expect(copied.outMessage).toMatchObject({
+		expect(names(copied.commands)).toEqual(["CopyServicesCommitSha"])
+		expect(copied.outMessage).toBeUndefined()
+		const landed = (isCopied: boolean) =>
+			pageUpdate(copied.model, Message.CompletedCopyCommitSha({ rowUrl: url, isCopied })).outMessage
+		expect(landed(true)).toMatchObject({ _tag: "RequestedNavigation", url, toast: { type: "success", title: "commit SHA copied" } })
+		expect(landed(false)).toMatchObject({
 			_tag: "RequestedNavigation",
-			url: "/services/storefront?environments=%5B%22production%22%5D",
-			toast: { title: "commit SHA copied" },
+			url,
+			toast: { type: "error", title: "Failed to copy commit sha" },
 		})
 	})
 

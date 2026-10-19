@@ -5,7 +5,6 @@ import * as Chart from "../../../charts/chart"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { LoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
-import * as CopyButton from "../../../ui/copy-button"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as HoverCard from "../../../ui/hover-card"
 import * as Tooltip from "../../../ui/tooltip"
@@ -79,6 +78,7 @@ export const Message = defineMessageUnion({
 	ElapsedCommitArm: { sha: Schema.String, generation: Schema.Number },
 	CompletedFetchCommitDetail: { sha: Schema.String, result: Schema.Result(CommitDetail, CommitFailure) },
 	ClickedCopyCommitSha: { sha: Schema.String, serviceName: Schema.String, environment: Schema.String },
-	GotCopyMessage: { message: CopyButton.Message },
+	/** The SHA write landed; the row opens with its toast now that the outcome is known. */
+	CompletedCopyCommitSha: { rowUrl: Schema.String, isCopied: Schema.Boolean },
 })
 export type Message = typeof Message.Type

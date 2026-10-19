@@ -4,7 +4,7 @@ import { integrationOfSearch } from "./catalog"
 import { ConnectProvider, type ConnectModel, PROVIDERS } from "./connect"
 import type { Message } from "./message"
 import type { Model, Statuses } from "./model"
-import { chain, requestStatus } from "./update-status"
+import { chain, requestStatus, type StatusMode } from "./update-status"
 import * as Cloudflare from "./update-cloudflare"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
@@ -31,8 +31,12 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 const isCurrent = (model: Model, attempt: number) => model.connect.active?.attempt === attempt
 
 /** `refreshStatus` of the provider (Cloudflare's usage and prime ride along, see its card). */
-export const refreshProvider = (model: Model, context: PageContext, provider: ConnectProvider): Return =>
-	requestStatus(model, context, STATUS_OF[provider], "Refresh")
+export const refreshProvider = (
+	model: Model,
+	context: PageContext,
+	provider: ConnectProvider,
+	mode: StatusMode = "Refresh",
+): Return => requestStatus(model, context, STATUS_OF[provider], mode)
 
 export const clickedConnect = (model: Model): Return => {
 	const integration = integrationOfSearch(model.search.integration)
@@ -84,7 +88,7 @@ export const blockedPopup = (model: Model, context: PageContext, attempt: number
 export const polled = (model: Model, context: PageContext, attempt: number): Return => {
 	const active = model.connect.active
 	return active !== null && active.attempt === attempt
-		? refreshProvider(model, context, active.provider)
+		? refreshProvider(model, context, active.provider, "Poll")
 		: { model }
 }
 

@@ -230,7 +230,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				},
 			},
 		}),
-		TickedTargetsRefresh: () => requestStatus(model, context, "scrapeTargets", "Refresh"),
+		TickedTargetsRefresh: () => requestStatus(model, context, "scrapeTargets", "Poll"),
 		TickedChecksRefresh: () => Prometheus.requestChecks(model, context, "Refresh"),
 		ClickedProbe: ({ id }) => Prometheus.clickedProbe(model, id),
 		CompletedProbe: ({ id, failure, success, error }) =>
@@ -259,7 +259,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedRailwaySync: ({ failure }) => Railway.completedSync(model, context, failure),
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
-		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
+		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Poll"),
 		CompletedFetchOrganizations: ({ key, result }) =>
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),
@@ -305,7 +305,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		TickedPlanetscaleWatch: () => {
-			const refreshed = requestStatus(model, context, "planetscale", "Refresh")
+			const refreshed = requestStatus(model, context, "planetscale", "Poll")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
 		},
 		CompletedGcpLogVolume: ({ key, result }) =>
@@ -360,7 +360,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedGcpConfigureScriptRetry: () => Configure.retriedScripts(model, context),
 		ClickedGcpScriptExpand: () => Configure.clickedScriptExpand(model),
 		TickedGcpRefresh: () => {
-			const refreshed = requestStatus(model, context, "gcp", "Refresh")
+			const refreshed = requestStatus(model, context, "gcp", "Poll")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
 		},
 		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),
@@ -368,7 +368,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledCiTraces: () => Github.toggledCiTraces(model),
 		CompletedCiTraces: ({ enabled, failure }) =>
 			Github.completedCiTraces(model, context, enabled, failure),
-		TickedGithubPoll: () => requestStatus(model, context, "github", "Refresh"),
+		TickedGithubPoll: () => requestStatus(model, context, "github", "Poll"),
 		EndedGithubForcePoll: ({ version }) => Github.endedForcePoll(model, version),
 		ClickedRepoDelete: ({ repoId }) => Github.clickedRepoDelete(model, repoId),
 		GotRepoDeleteDialogMessage: ({ message: child }) => Github.gotRepoDeleteDialog(model, child),

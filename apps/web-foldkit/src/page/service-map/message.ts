@@ -33,6 +33,7 @@ const result = <A extends Schema.Top>(schema: A) => ({
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: {
 		window: TimeWindow,
+		timeZone: Schema.String,
 		facetsWindow: TimeWindow,
 		nowMs: Schema.Number,
 		mode: RequestMode,

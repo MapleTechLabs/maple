@@ -13,7 +13,7 @@ import type { ChartEventMarker, EventTone } from "../../../../charts/event-marke
 import type { TimeWindow } from "../../../../data/time-range"
 import type { EpochWindowInput, EventEntry, TimeseriesInput } from "../data"
 import { filtersFromSearch, type PlanetScaleFilters, soleSelectedBranch } from "../filters"
-import type { Model } from "./model"
+import type { LocalWindow, Model } from "./model"
 
 // The page's derivations: the branch universe, the resolved scope and the request inputs.
 
@@ -70,14 +70,13 @@ export const timeseriesInputOf = (model: Model, window: TimeWindow): TimeseriesI
 		selectedBranchOf(model)?.name,
 	)
 
-/** `Date.parse(startTime)`: legacy reads the warehouse string as local time (UTC in every capture). */
-const localMs = (value: string) => new Date(value).getTime()
 /** `warehouseTimeToMs`: Query Insights reads it as UTC. */
 const utcMs = (value: string) => new Date(`${value.replace(" ", "T")}Z`).getTime()
 
-export const eventsInputOf = (model: Model, window: TimeWindow): EpochWindowInput =>
+/** The local epochs come from `ResolveWindow`, which reads the browser zone. */
+export const eventsInputOf = (model: Model, window: LocalWindow): EpochWindowInput =>
 	withBranch(
-		{ database: model.dbName, startTime: localMs(window.startTime), endTime: localMs(window.endTime) },
+		{ database: model.dbName, startTime: window.startMs, endTime: window.endMs },
 		selectedBranchOf(model)?.name,
 	)
 

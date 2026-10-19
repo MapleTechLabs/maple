@@ -1,4 +1,4 @@
-import { Duration, Effect, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import type { Resources } from "../../../../platform/resources"
 import type { PageSubscriptionInput } from "../../../contract"
@@ -23,7 +23,9 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ isSettling: settling }) =>
 					settling
 						? Stream.fromEffectRepeat(
-								Effect.as(Effect.sleep(INGEST_POLL), Message.TickedIngestPoll()),
+								Effect.andThen(Effect.sleep(INGEST_POLL), () =>
+									Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedIngestPoll({ nowMs })),
+								),
 							)
 						: Stream.empty,
 			},

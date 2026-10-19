@@ -336,7 +336,8 @@ export const update = (model: Model, message: Message): Return =>
 			updateScope(model, "environments", child, (inner) => Message.GotEnvironmentsMessage({ message: inner })),
 		ClickedDiscard: () => ({ model: { ...model, draft: Draft.discard() } }),
 		ClickedSave: () => {
-			if (model.email === null || model.isSaving) return { model }
+			// Save resends the pre-toggle `enabled`, which would undo a toggle in flight.
+			if (model.email === null || isBusy(model)) return { model }
 			const submitted = draftOf(model)
 			return {
 				model: { ...model, isSaving: true, draft: Draft.submit(model.draft, baselineOf(model)) },

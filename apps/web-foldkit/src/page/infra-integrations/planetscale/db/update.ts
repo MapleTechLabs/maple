@@ -62,11 +62,11 @@ const slot = requestSlot
 
 /** The scoped reads (`PlanetScaleDatabaseData`): they re-key whenever the resolved branch moves. */
 const requestScoped = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
-	const window = model.window
-	if (window === null) return { model }
+	const { window, localWindow } = model
+	if (window === null || localWindow === null) return { model }
 	const org = context.orgId
 	const tsInput = timeseriesInputOf(model, window)
-	const eventsInput = eventsInputOf(model, window)
+	const eventsInput = eventsInputOf(model, localWindow)
 	const insightsInput = insightsInputOf(model, window)
 	const [timeseries, a] = slot(
 		model.timeseries,
@@ -125,6 +125,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		search: route.search,
 		window: null,
 		nowMs: 0,
+		localWindow: null,
 		status: { key: statusKey, data: AsyncData.Loading() },
 		databases: { key: databasesKey, data: AsyncData.Loading() },
 		branchStats: Keyed.idle(),
@@ -195,8 +196,8 @@ const lift = <S, I>(
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, nowMs, mode }) =>
-			requestWindowed({ ...model, window, nowMs }, context, mode),
+		CompletedResolveWindow: ({ window, localWindow, nowMs, mode }) =>
+			requestWindowed({ ...model, window, localWindow, nowMs }, context, mode),
 		CompletedLoadStatus: ({ key, result }) =>
 			settled({ ...model, status: Keyed.accept(model.status, key, result) }, context),
 		CompletedFetchDatabases: ({ key, result }) =>

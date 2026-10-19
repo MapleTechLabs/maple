@@ -15,7 +15,7 @@ const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
-const resolved = Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })
+const resolved = Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" })
 
 describe("workloads", () => {
 	test("the kind pivot writes the kind and drops a name filter of the old kind", () => {

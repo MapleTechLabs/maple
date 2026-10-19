@@ -24,6 +24,7 @@ import {
 } from "./command"
 import { stepProjectMenu } from "./project-menu"
 import { fleetOf, listScopeOf, pageStateOf, sparksWindow, statusOf } from "./derive"
+import { INITIAL_LOCALE } from "../../../kit/locale"
 import { Message, type Model, type RequestMode } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -117,6 +118,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		search: route.search,
 		window: null,
 		nowMs: 0,
+		locale: INITIAL_LOCALE,
 		status: { key, data: AsyncData.Loading() },
 		fleet: Keyed.idle(),
 		sparks: Keyed.idle(),
@@ -180,7 +182,8 @@ const resourceFilter = (model: Model, key: "type" | "project", value: string): R
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, nowMs, mode }) => sync({ ...model, window, nowMs }, context, mode),
+		CompletedResolveWindow: ({ window, nowMs, locale, mode }) =>
+			sync({ ...model, window, nowMs, locale }, context, mode),
 		CompletedLoadStatus: ({ key, result }) =>
 			sync({ ...model, status: Keyed.accept(model.status, key, result) }, context, "Load"),
 		CompletedFetchFleet: ({ key, result }) =>

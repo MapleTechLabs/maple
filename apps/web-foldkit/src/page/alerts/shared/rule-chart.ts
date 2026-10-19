@@ -481,6 +481,17 @@ const chartView = Submodel.defineView<
 
 // THE RAIL: evaluations as discrete cells, incidents as a continuous bar.
 
+/** One rail cell's tally while the checks are folded in. */
+type RailBucket = {
+	breached: number
+	healthy: number
+	skipped: number
+	noData: number
+	errored: number
+	opened: boolean
+	errorMessage: string | null
+}
+
 const rail = <M>(
 	h: HtmlBuilder<M>,
 	inputs: RuleChartInputs<M>,
@@ -490,14 +501,14 @@ const rail = <M>(
 	formatTime: (value: number, mode: "tick" | "tooltip") => string,
 ): Html => {
 	const range = Math.max(1, domain.max - domain.min)
-	const empty = () => ({
+	const empty = (): RailBucket => ({
 		breached: 0,
 		healthy: 0,
 		skipped: 0,
 		noData: 0,
 		errored: 0,
 		opened: false,
-		errorMessage: null as string | null,
+		errorMessage: null,
 	})
 	const buckets = checks.reduce(
 		(acc, check) => {

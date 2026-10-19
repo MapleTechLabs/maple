@@ -6,7 +6,9 @@ import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { type PageContext, PageOutMessage } from "../../contract"
+import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { LoadSignalPresence, MountBody } from "./command"
+import { allIncidentsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -132,5 +134,32 @@ describe("anomalies list", () => {
 			...painted(),
 			expectView(text("No open anomalies")).toExist(),
 		)
+	})
+
+	test("a live tick reads the clock, so a quiet open row turns stale", () => {
+		const model = loaded([incident(1, "critical")])
+		const ticked = pageUpdate(model, Message.TickedLiveRefresh({ nowMs: NOW + 3 * 3_600_000 })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(ticked),
+			measured(),
+			...painted(),
+			expectView(text(`last seen ${formatRelativeTime(NOW - 60_000, NOW + 3 * 3_600_000)}`)).toExist(),
+		)
+	})
+
+	test("a load-more answer for a cursor a live tick discarded is dropped", () => {
+		const entered = init({ search: {} }, context).model
+		const first = (rows: ReadonlyArray<V2AnomalyIncident>) =>
+			Message.CompletedFetchFirstPage({ key: entered.firstPage.key ?? "", result: Result.succeed({ data: rows, nextCursor: "c1" }) })
+		const model = [
+			first([incident(1, "critical")]),
+			Message.CompletedLoadMore({ status: "open", cursor: "c1", result: Result.succeed({ data: [incident(2, "critical")], nextCursor: "c2" }) }),
+			Message.TickedLiveRefresh({ nowMs: NOW }),
+			first([incident(1, "critical")]),
+			Message.CompletedLoadMore({ status: "open", cursor: "c2", result: Result.succeed({ data: [incident(3, "critical")], nextCursor: null }) }),
+		].reduce((next, message) => pageUpdate(next, message).model, entered)
+		expect(allIncidentsOf(model).map((row) => row.id.slice(-1))).toEqual(["1"])
+		expect(model.isLoadingMore).toBe(false)
 	})
 })

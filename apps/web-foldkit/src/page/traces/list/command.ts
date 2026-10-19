@@ -345,19 +345,33 @@ const LISTBOX_MAX_HEIGHT = 208
 const LISTBOX_GAP = 4
 const LISTBOX_MIN_SPACE_BELOW = 160
 
-/** `computeListboxPosition`: under the textarea, or above it when there is no room below. */
-const placeListbox = (listbox: HTMLElement, textarea: Element) => {
-	const rect = textarea.getBoundingClientRect()
-	const viewportHeight = window.innerHeight
+type ListboxRect = Readonly<{ left: number; width: number; top: number; bottom: number }>
+
+/**
+ * `computeListboxPosition`: under the textarea, or above it when there is no room below. Both
+ * `top` and `bottom` are always written, so a flip clears the side the last placement used.
+ */
+export const listboxPlacement = (rect: ListboxRect, viewportHeight: number) => {
 	const spaceBelow = viewportHeight - rect.bottom - LISTBOX_GAP
 	const spaceAbove = rect.top - LISTBOX_GAP
 	const flipUp = spaceBelow < LISTBOX_MIN_SPACE_BELOW && spaceAbove > spaceBelow
 	const available = flipUp ? spaceAbove : spaceBelow
-	listbox.style.left = `${rect.left}px`
-	listbox.style.width = `${rect.width}px`
-	listbox.style.maxHeight = `${Math.max(0, Math.min(LISTBOX_MAX_HEIGHT, available - LISTBOX_GAP))}px`
-	if (flipUp) listbox.style.bottom = `${viewportHeight - rect.top + LISTBOX_GAP}px`
-	else listbox.style.top = `${rect.bottom + LISTBOX_GAP}px`
+	return {
+		left: `${rect.left}px`,
+		width: `${rect.width}px`,
+		maxHeight: `${Math.max(0, Math.min(LISTBOX_MAX_HEIGHT, available - LISTBOX_GAP))}px`,
+		top: flipUp ? "" : `${rect.bottom + LISTBOX_GAP}px`,
+		bottom: flipUp ? `${viewportHeight - rect.top + LISTBOX_GAP}px` : "",
+	}
+}
+
+const placeListbox = (listbox: HTMLElement, textarea: Element) => {
+	const placement = listboxPlacement(textarea.getBoundingClientRect(), window.innerHeight)
+	listbox.style.left = placement.left
+	listbox.style.width = placement.width
+	listbox.style.maxHeight = placement.maxHeight
+	listbox.style.top = placement.top
+	listbox.style.bottom = placement.bottom
 }
 
 /** The suggestion listbox, portaled to `<body>` and pinned to the textarea while it resizes or scrolls. */

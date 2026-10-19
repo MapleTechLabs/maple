@@ -51,7 +51,7 @@ export const LoadMoreIncidents = Command.define("LoadMoreAnomalyIncidents", {
 	args: { status: StatusTab, cursor: Schema.String },
 	messages: [Message.CompletedLoadMore],
 	execute: ({ status, cursor }) =>
-		Effect.map(fetchPage(status, cursor), (result) => Message.CompletedLoadMore({ status, result })),
+		Effect.map(fetchPage(status, cursor), (result) => Message.CompletedLoadMore({ status, cursor, result })),
 })
 
 export const LoadSignalPresence = Command.define("LoadAnomaliesSignalPresence", {

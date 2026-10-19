@@ -73,10 +73,12 @@ export const pickedState = (model: Model, value: string): Return => {
 }
 
 /** `changeSeverity`: clearing writes at once, a level asks the escalation policy first. */
-export const pickedSeverity = (model: Model, severity: IssueSeverity | null): Return =>
-	severity === null
-		? startWrite(model, { _tag: "SetSeverity", severity: null })
-		: { model, commands: [EvaluateEscalation({ severity })] }
+export const pickedSeverity = (model: Model, severity: IssueSeverity | null): Return => {
+	const picked = { ...model, severityPick: model.severityPick + 1 }
+	return severity === null
+		? startWrite(picked, { _tag: "SetSeverity", severity: null })
+		: { model: picked, commands: [EvaluateEscalation({ severity, pick: picked.severityPick })] }
+}
 
 const liftConfirm = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, severityConfirm: step.model },
