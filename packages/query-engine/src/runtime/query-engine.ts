@@ -1756,32 +1756,27 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(
 					result: { kind: "sparklines", source: "metrics", data: [] },
 				})
 			}
-			// Google Cloud metrics are not read for previews; they keep empty points.
-			const warehouseMetricNames = metricNames.filter((name) => !isGcpMetricType(name))
 
 			const sparklineBucketSeconds =
 				request.query.bucketSeconds ?? computeBucketSeconds(range.startMs, range.endMs)
 			yield* Effect.annotateCurrentSpan("query.bucketSeconds", sparklineBucketSeconds)
 			yield* Effect.annotateCurrentSpan("query.metricCount", metricNames.length)
 
-			const rows =
-				warehouseMetricNames.length === 0
-					? []
-					: yield* executeCHQuery(
-							warehouse,
-							tenant,
-							CH.metricsSparklinesQuery({
-								metricType: request.query.metricType,
-								metricNames: warehouseMetricNames,
-							}),
-							{
-								orgId: tenant.orgId,
-								startTime: request.startTime,
-								endTime: request.endTime,
-								bucketSeconds: sparklineBucketSeconds,
-							},
-							"metricsSparklines",
-						)
+			const rows = yield* executeCHQuery(
+				warehouse,
+				tenant,
+				CH.metricsSparklinesQuery({
+					metricType: request.query.metricType,
+					metricNames,
+				}),
+				{
+					orgId: tenant.orgId,
+					startTime: request.startTime,
+					endTime: request.endTime,
+					bucketSeconds: sparklineBucketSeconds,
+				},
+				"metricsSparklines",
+			)
 
 			// Numbers are coerced here (not via a rowSchema) because BYO-ClickHouse
 			// serializes 64-bit aggregates as JSON strings.

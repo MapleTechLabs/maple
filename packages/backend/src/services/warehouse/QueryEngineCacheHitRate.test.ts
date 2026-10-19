@@ -5,6 +5,7 @@ import { OrgId, UserId } from "@maple/domain"
 import { baselineWarehouseCapabilities, QueryEngineExecuteRequest, type QuerySpec } from "@maple/query-engine"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { QueryEngineService } from "./QueryEngineService"
+import { GcpLiveMetricsService } from "@maple/backend/services/integrations/GcpLiveMetricsService"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService, type WarehouseQueryServiceApi } from "./WarehouseQueryService"
 import { BucketCacheService } from "@maple/query-engine/caching"
@@ -151,6 +152,7 @@ const makeLayer = (
 	config = makeConfig(),
 ) =>
 	Layer.effect(QueryEngineService, QueryEngineService.make).pipe(
+		Layer.provide(Layer.mock(GcpLiveMetricsService, {})),
 		Layer.provide(Layer.succeed(WarehouseQueryService, makeStub(counter))),
 		Layer.provide(edge.layer),
 		Layer.provide(BucketCacheService.layer.pipe(Layer.provide(edge.layer))),

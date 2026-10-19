@@ -1,6 +1,11 @@
 import { afterEach, assert, beforeAll, describe, it } from "@effect/vitest"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgId } from "@maple/domain/primitives"
+import {
+	GcpLiveQueryFailedError,
+	GcpLiveQueryRejectedError,
+	GcpLiveQueryUnavailableError,
+} from "@maple/domain/http/gcp-live-query-errors"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
@@ -52,6 +57,8 @@ const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
 const denied = () => json({ error: { code: 403, status: "PERMISSION_DENIED", message: "denied" } }, 403)
+const rateLimited = () =>
+	json({ error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "slow down" } }, 429)
 
 const googleError = (status: number, code: string, reason?: string) =>
 	json(
@@ -84,16 +91,16 @@ interface Calls {
 	readonly promql: Array<PromQlCall>
 	/** `project pageToken` per descriptor page read. */
 	readonly descriptors: Array<string>
-	readonly assets: Array<string>
 	readonly scopes: Array<string>
+	/** Requests no stub answers for: every test expects none. */
+	readonly unexpected: Array<string>
 }
 
 interface StubOptions {
+	readonly oauth?: () => Response | undefined
 	readonly impersonate?: (account: string) => Response | undefined
-	readonly promql?: (call: PromQlCall) => Response | undefined
-	/** Projects under `folders/123`, as `[projectId, state]`. */
-	readonly folderProjects?: ReadonlyArray<readonly [string, string]>
-	readonly assets?: () => Response | undefined
+	/** A rejected promise stands for a transport failure. */
+	readonly promql?: (call: PromQlCall) => Response | Promise<Response> | undefined
 	/** A project's active descriptors, by page token (`""` for the first page). */
 	readonly descriptors?: (project: string, pageToken: string) => Response | undefined
 	/** Projects a project's metrics scope reads besides itself. */
@@ -108,7 +115,7 @@ const matrix = (
 	...result: ReadonlyArray<{ metric: Record<string, string>; values: Array<[number, string]> }>
 ) => json({ status: "success", data: { resultType: "matrix", result } })
 
-const stubFetch = (calls: Calls, options: StubOptions = {}) =>
+const stubFetch = (calls: Calls, options: StubOptions) =>
 	(async (input: string | URL | Request, init?: RequestInit) => {
 		const url = new URL(
 			typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
@@ -117,7 +124,7 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 		const reader = (headers.get("authorization") ?? "").replace("Bearer reader:", "")
 		if (url.host === "oauth2.googleapis.com") {
 			calls.oauth += 1
-			return json({ access_token: "ya29.maple", expires_in: 600 })
+			return options.oauth?.() ?? json({ access_token: "ya29.maple", expires_in: 600 })
 		}
 		if (url.host === "iamcredentials.googleapis.com") {
 			const account = decodeURIComponent(
@@ -127,20 +134,6 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 			)
 			calls.impersonate.push(account)
 			return options.impersonate?.(account) ?? json({ accessToken: `reader:${account}` })
-		}
-		if (url.host === "cloudasset.googleapis.com") {
-			calls.assets.push(`${url.pathname} ${url.searchParams.get("assetTypes")}`)
-			return (
-				options.assets?.() ??
-				json({
-					results: (options.folderProjects ?? []).map(([projectId, state]) => ({
-						name: `//cloudresourcemanager.googleapis.com/projects/${projectId.length}0001`,
-						assetType: "cloudresourcemanager.googleapis.com/Project",
-						state,
-						additionalAttributes: { projectId },
-					})),
-				})
-			)
 		}
 		const promql = /^\/v1\/projects\/([^/]+)\/location\/global\/prometheus\/api\/v1\/(.+)$/.exec(
 			url.pathname,
@@ -156,7 +149,7 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 				quotaProject: headers.get("x-goog-user-project"),
 			}
 			calls.promql.push(call)
-			return options.promql?.(call) ?? matrix()
+			return (await options.promql?.(call)) ?? matrix()
 		}
 		const scope = /^\/v1\/locations\/global\/metricsScopes\/(.+)$/.exec(url.pathname)
 		if (url.host === "monitoring.googleapis.com" && scope !== null) {
@@ -170,13 +163,17 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 			})
 		}
 		const descriptors = /^\/v3\/projects\/([^/]+)\/metricDescriptors$/.exec(url.pathname)
-		if (url.host === "monitoring.googleapis.com" && descriptors !== null) {
+		if (
+			url.host === "monitoring.googleapis.com" &&
+			descriptors !== null &&
+			url.searchParams.get("activeOnly") === "true"
+		) {
 			const pageToken = url.searchParams.get("pageToken") ?? ""
 			calls.descriptors.push(`${descriptors[1]} ${pageToken}`.trim())
-			assert.strictEqual(url.searchParams.get("activeOnly"), "true")
 			return options.descriptors?.(descriptors[1]!, pageToken) ?? json({})
 		}
-		throw new Error(`unexpected request to ${url.href}`)
+		calls.unexpected.push(url.href)
+		return json({}, 418)
 	}) as typeof fetch
 
 const makeCalls = (): Calls => ({
@@ -184,25 +181,28 @@ const makeCalls = (): Calls => ({
 	impersonate: [],
 	promql: [],
 	descriptors: [],
-	assets: [],
 	scopes: [],
+	unexpected: [],
 })
 
 const run = <A, E>(
 	testDb: TestDb,
-	stub: typeof fetch,
+	calls: Calls,
+	stub: StubOptions,
 	effect: Effect.Effect<A, E, GcpLiveMetricsService>,
 	options: { readonly key?: string | null } = {},
 ) => {
 	const key = options.key === undefined ? encodedKey : options.key
 	return Effect.gen(function* () {
 		yield* TestClock.setTime(now)
-		return yield* effect
+		const result = yield* effect
+		assert.deepStrictEqual(calls.unexpected, [])
+		return result
 	}).pipe(
 		Effect.provide(
 			Layer.effect(GcpLiveMetricsService, GcpLiveMetricsService.make).pipe(
 				Layer.provide(FetchHttpClient.layer),
-				Layer.provide(Layer.succeed(FetchHttpClient.Fetch, stub)),
+				Layer.provide(Layer.succeed(FetchHttpClient.Fetch, stubFetch(calls, stub))),
 				Layer.provide(EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive))),
 				Layer.provide(testDb.layer),
 				Layer.provide(Env.layer),
@@ -257,42 +257,59 @@ const insertConnector = (
 	)
 }
 
-/** The org's two connections: project `acme-prod`, and folder 123 hosted in `acme-host`. */
-const insertConnectors = (testDb: TestDb) =>
-	Effect.all([
-		insertConnector(testDb, PROJECT_CONNECTOR),
-		insertConnector(testDb, FOLDER_CONNECTOR, { projectId: "acme-host", folder: "123" }),
-		insertConnector(testDb, OTHER_CONNECTOR, { orgId: OTHER_ORG, projectId: "rival-prod" }),
-	])
+/** The projects a folder connection's inventory sync found, as `[projectId, state]`. */
+const insertInventory = (
+	testDb: TestDb,
+	connectorId: string,
+	projects: ReadonlyArray<readonly [string, string | null]>,
+) =>
+	Effect.forEach(projects, ([projectId, state], index) =>
+		Effect.promise(() =>
+			executeSql(
+				testDb,
+				`INSERT INTO gcp_resources
+				   (connector_id, org_id, name, asset_type, project_id, state, labels, last_seen_at)
+				 VALUES ($1, $2, $3, 'cloudresourcemanager.googleapis.com/Project', $4, $5, '{}', now())`,
+				[
+					connectorId,
+					ORG,
+					`//cloudresourcemanager.googleapis.com/projects/${index + 1}0001`,
+					projectId,
+					state,
+				],
+			),
+		),
+	)
 
 const FOLDER_PROJECTS = [
 	["acme-shop", "ACTIVE"],
-	["acme-data", "ACTIVE"],
+	["acme-data", null],
 	["acme-gone", "DELETE_REQUESTED"],
 ] as const
 
+/** The org's two connections: project `acme-prod`, and folder 123 hosted in `acme-host`. */
+const insertConnectors = (testDb: TestDb) =>
+	Effect.gen(function* () {
+		yield* insertConnector(testDb, PROJECT_CONNECTOR)
+		yield* insertConnector(testDb, FOLDER_CONNECTOR, { projectId: "acme-host", folder: "123" })
+		yield* insertConnector(testDb, OTHER_CONNECTOR, { orgId: OTHER_ORG, projectId: "rival-prod" })
+		yield* insertInventory(testDb, FOLDER_CONNECTOR, FOLDER_PROJECTS)
+	})
+
 const T0 = Date.UTC(2026, 9, 15, 11, 0) / 1000
 
-const range = (query: string, projects?: ReadonlyArray<string>) =>
+const range = (query: string, scope: { projects?: ReadonlyArray<string>; requireComplete?: boolean } = {}) =>
 	GcpLiveMetricsService.use((gcp) =>
 		gcp.queryRange(TENANT, {
 			query,
 			startSeconds: T0,
 			endSeconds: T0 + 3600,
 			stepSeconds: 600,
-			...(projects === undefined ? undefined : { projects }),
+			...scope,
 		}),
 	)
 
-const failureScopes = (error: { readonly _tag: string }) =>
-	"failures" in error && Array.isArray(error.failures)
-		? error.failures.map((failure: { readonly scope: string }) => failure.scope)
-		: []
-
-const firstFailure = (error: { readonly _tag: string }) =>
-	"failures" in error && Array.isArray(error.failures)
-		? (error.failures[0] as { readonly message: string }).message
-		: error._tag
+const oneSeries = (call: PromQlCall) => matrix({ metric: { project_id: call.project }, values: [[T0, "1"]] })
 
 describe("GcpLiveMetricsService.queryRange", () => {
 	it.effect("reads every project of the org's connections, each with its connection's reader", () => {
@@ -300,8 +317,8 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls, {
-				folderProjects: FOLDER_PROJECTS,
+			calls,
+			{
 				promql: (call) =>
 					call.project === "acme-prod"
 						? // Google left out `project_id`, and two points are not numbers.
@@ -323,11 +340,10 @@ describe("GcpLiveMetricsService.queryRange", () => {
 								},
 								values: [[T0, "7"]],
 							}),
-			}),
+			},
 			Effect.gen(function* () {
 				yield* insertConnectors(testDb)
 				const series = yield* range("sum by (service) (rate(x[5m]))")
-
 				assert.sameDeepMembers(
 					[...series],
 					[
@@ -342,10 +358,8 @@ describe("GcpLiveMetricsService.queryRange", () => {
 						{ labels: { service: "checkout", project_id: "acme-monitored" }, points: [[T0, 7]] },
 					],
 				)
-				// Only the folder is searched, for projects only; the other org's connection is never read.
-				assert.deepStrictEqual(calls.assets, [
-					"/v1/folders/123:searchAllResources cloudresourcemanager.googleapis.com/Project",
-				])
+				// The folder's projects come from its inventory: a project pending deletion is not read,
+				// and the other org's connection never is.
 				assert.sameDeepMembers(
 					calls.promql.map(({ project, reader, quotaProject }) => ({
 						project,
@@ -369,27 +383,28 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		)
 	})
 
-	it.effect("reads only the projects asked for, and refuses one the connections do not reach", () => {
+	it.effect("reads only the projects asked for, or all when one is not a connection's own", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls, { folderProjects: FOLDER_PROJECTS }),
+			calls,
+			{},
 			Effect.gen(function* () {
 				yield* insertConnectors(testDb)
-				yield* range("up", ["acme-shop"])
+				yield* range("up", { projects: ["acme-shop"] })
 				assert.deepStrictEqual(
 					calls.promql.map((call) => call.project),
 					["acme-shop"],
 				)
 
-				for (const outside of ["rival-prod", "acme-gone"]) {
-					const error = yield* Effect.flip(range("up", ["acme-shop", outside]))
-					assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryRejectedError")
-					assert.strictEqual("reason" in error ? error.reason : undefined, "invalid_query")
-					assert.include(error.message, outside)
-				}
-				assert.lengthOf(calls.promql, 1)
+				// `acme-monitored` is reached only through a metrics scope: every project is read,
+				// and the query's own `project_id` matcher keeps it alone.
+				yield* range('up{project_id="acme-monitored"}', { projects: ["acme-shop", "acme-monitored"] })
+				assert.sameMembers(
+					calls.promql.slice(1).map((call) => call.project),
+					["acme-prod", "acme-shop", "acme-data"],
+				)
 			}),
 		)
 	})
@@ -400,22 +415,24 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		const many = Array.from({ length: 20 }, (_, index) => [`acme-team-${index + 10}`, "ACTIVE"] as const)
 		return run(
 			testDb,
-			stubFetch(calls, { folderProjects: many }),
+			calls,
+			{},
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, FOLDER_CONNECTOR, { projectId: "acme-host", folder: "123" })
+				yield* insertInventory(testDb, FOLDER_CONNECTOR, many)
 				yield* range("up")
 				assert.lengthOf(calls.promql, 20)
 
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
 				const error = yield* Effect.flip(range("down"))
-				assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryRejectedError")
-				assert.strictEqual("reason" in error ? error.reason : undefined, "too_many_projects")
+				assert.instanceOf(error, GcpLiveQueryRejectedError)
+				assert.strictEqual(error.reason, "too_many_projects")
 				assert.include(error.message, "21 projects")
 				assert.include(error.message, "project_id")
 				assert.include(error.message, "acme-prod")
 				assert.lengthOf(calls.promql, 20)
 
-				yield* range("up", ["acme-team-10", "acme-prod"])
+				yield* range("up", { projects: ["acme-team-10", "acme-prod"] })
 				assert.sameMembers(
 					calls.promql.slice(20).map((call) => call.project),
 					["acme-prod", "acme-team-10"],
@@ -424,56 +441,104 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		)
 	})
 
-	it.effect("returns what answered when part fails, and fails only when nothing answered", () => {
+	it.effect("returns what answered when part fails, unless every project must answer", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls, {
-				folderProjects: FOLDER_PROJECTS,
-				promql: (call) =>
-					call.project === "acme-prod"
-						? matrix({ metric: { project_id: "acme-prod" }, values: [[T0, "1"]] })
-						: denied(),
-			}),
+			calls,
+			{ promql: (call) => (call.project === "acme-prod" ? oneSeries(call) : denied()) },
 			Effect.gen(function* () {
 				yield* insertConnectors(testDb)
 				const series = yield* range("up")
 				assert.deepStrictEqual(series, [{ labels: { project_id: "acme-prod" }, points: [[T0, 1]] }])
 
-				const error = yield* Effect.flip(range("up", ["acme-data", "acme-shop"]))
-				assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryFailedError")
-				assert.sameMembers(failureScopes(error), ["projects/acme-data", "projects/acme-shop"])
-				assert.strictEqual(
-					firstFailure(error),
-					"Google denied Maple's read of folder 123: the read-only roles are missing. Grant them with the setup script, the console steps or your Terraform. A new grant can take a few minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED)",
-				)
+				// An alert must not resolve on the projects that answered.
+				const error = yield* Effect.flip(range("up", { requireComplete: true }))
+				assert.instanceOf(error, GcpLiveQueryUnavailableError)
+				assert.include(error.message, "projects/acme-data: Google denied Maple's read of folder 123")
+				assert.include(error.message, "projects/acme-shop")
 			}),
 		)
 	})
 
-	it.effect("reads the rest when a connection cannot sign in or its projects cannot be listed", () => {
+	it.effect("fails by cause when nothing answers: setup, Google's refusal, or worth a retry", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
+		const answers = new Map<string, () => Response>([
+			["denied", denied],
+			["busy", rateLimited],
+			["down", () => googleError(503, "UNAVAILABLE")],
+			[
+				"slow",
+				() =>
+					json(
+						{
+							status: "error",
+							errorType: "execution",
+							error: "query processing would load too many samples",
+						},
+						422,
+					),
+			],
+			// Google's front end answers a rate limit with a small HTML page.
+			[
+				"html",
+				() =>
+					new Response("<html><body>Too Many Requests</body></html>", {
+						status: 429,
+						headers: { "content-type": "text/html" },
+					}),
+			],
+		])
 		return run(
 			testDb,
-			stubFetch(calls, {
-				assets: denied,
-				promql: (call) => matrix({ metric: { project_id: call.project }, values: [[T0, "1"]] }),
-			}),
+			calls,
+			{
+				promql: (call) =>
+					call.params.query === "unplugged"
+						? Promise.reject(new TypeError("network connection lost"))
+						: call.params.query === "mixed"
+							? call.project === "acme-prod"
+								? denied()
+								: rateLimited()
+							: answers.get(call.params.query)?.(),
+			},
 			Effect.gen(function* () {
-				yield* insertConnectors(testDb)
-				const series = yield* range("up")
-				assert.deepStrictEqual(
-					series.map((one) => one.labels.project_id),
-					["acme-prod"],
+				yield* insertConnector(testDb, PROJECT_CONNECTOR)
+				const setup = yield* Effect.flip(range("denied"))
+				assert.instanceOf(setup, GcpLiveQueryUnavailableError)
+				assert.include(setup.message, "the read-only roles are missing")
+
+				for (const transient of ["busy", "down", "html", "unplugged"]) {
+					const error = yield* Effect.flip(range(transient))
+					assert.instanceOf(error, GcpLiveQueryFailedError)
+					assert.deepStrictEqual(
+						error.failures.map((failure) => failure.scope),
+						["projects/acme-prod"],
+					)
+				}
+				const busy = yield* Effect.flip(range("html"))
+				assert.instanceOf(busy, GcpLiveQueryFailedError)
+				assert.strictEqual(
+					busy.failures[0]?.message,
+					"Google refused the read for the project acme-prod: a rate limit, or an answer past Google's size limit. Narrow the query, or try again in a few minutes. (Cloud Monitoring returned 429)",
+				)
+				const unplugged = yield* Effect.flip(range("unplugged"))
+				assert.instanceOf(unplugged, GcpLiveQueryFailedError)
+				assert.include(unplugged.failures[0]?.message ?? "", "(Cloud Monitoring request failed)")
+
+				const slow = yield* Effect.flip(range("slow"))
+				assert.instanceOf(slow, GcpLiveQueryRejectedError)
+				assert.include(
+					slow.message,
+					"Google could not finish the query on this project. Narrow the query or widen the step. (Cloud Monitoring returned 422 execution: query processing would load too many samples)",
 				)
 
-				// A project the failed listing may hold is not refused as unknown.
-				const error = yield* Effect.flip(range("up", ["acme-shop"]))
-				assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryFailedError")
-				assert.deepStrictEqual(failureScopes(error), ["folders/123"])
-				assert.include(firstFailure(error), "Cloud Asset Viewer is missing")
+				// A setup problem anywhere outweighs a retry elsewhere.
+				yield* insertConnector(testDb, FOLDER_CONNECTOR, { projectId: "acme-host", folder: "123" })
+				yield* insertInventory(testDb, FOLDER_CONNECTOR, [["acme-shop", "ACTIVE"]])
+				assert.instanceOf(yield* Effect.flip(range("mixed")), GcpLiveQueryUnavailableError)
 			}),
 		)
 	})
@@ -484,43 +549,14 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		const refusal = `invalid parameter "query": ${"x".repeat(2_000)}`
 		return run(
 			testDb,
-			stubFetch(calls, {
-				promql: (call) =>
-					call.params.query === "slow"
-						? json(
-								{
-									status: "error",
-									errorType: "execution",
-									error: "query processing would load too many samples",
-								},
-								422,
-							)
-						: call.params.query === "busy"
-							? // Google's front end answers a rate limit with a small HTML page.
-								new Response("<html><body>Too Many Requests</body></html>", {
-									status: 429,
-									headers: { "content-type": "text/html" },
-								})
-							: json({ status: "error", errorType: "bad_data", error: refusal }, 400),
-			}),
+			calls,
+			{ promql: () => json({ status: "error", errorType: "bad_data", error: refusal }, 400) },
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
 				const error = yield* Effect.flip(range('{"serviceruntime.googleapis.com/api/request_count"}'))
-				assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryRejectedError")
-				assert.strictEqual("reason" in error ? error.reason : undefined, "invalid_query")
+				assert.instanceOf(error, GcpLiveQueryRejectedError)
+				assert.strictEqual(error.reason, "invalid_query")
 				assert.strictEqual(error.message, refusal.slice(0, 1_000))
-
-				const slow = yield* Effect.flip(range("slow"))
-				assert.strictEqual(
-					firstFailure(slow),
-					"Google could not finish the query on this project. Narrow the query or widen the step. (Cloud Monitoring returned 422 execution: query processing would load too many samples)",
-				)
-				const busy = yield* Effect.flip(range("busy"))
-				assert.strictEqual(busy._tag, "@maple/http/errors/GcpLiveQueryFailedError")
-				assert.strictEqual(
-					firstFailure(busy),
-					"Google refused the read for the project acme-prod: a rate limit, or an answer past Google's size limit. Narrow the query, or try again in a few minutes. (Cloud Monitoring returned 429)",
-				)
 			}),
 		)
 	})
@@ -530,8 +566,8 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls, {
-				folderProjects: FOLDER_PROJECTS,
+			calls,
+			{
 				// 250 series from each project: 750 in all, 500 from the folder alone.
 				promql: (call) =>
 					matrix(
@@ -540,15 +576,15 @@ describe("GcpLiveMetricsService.queryRange", () => {
 							values: [[T0, "1"]] as Array<[number, string]>,
 						})),
 					),
-			}),
+			},
 			Effect.gen(function* () {
 				yield* insertConnectors(testDb)
 				const error = yield* Effect.flip(range("up"))
-				assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryRejectedError")
-				assert.strictEqual("reason" in error ? error.reason : undefined, "too_many_series")
+				assert.instanceOf(error, GcpLiveQueryRejectedError)
+				assert.strictEqual(error.reason, "too_many_series")
 				assert.include(error.message, "group by fewer labels")
 
-				const atTheCap = yield* range("up", ["acme-shop", "acme-data"])
+				const atTheCap = yield* range("up", { projects: ["acme-shop", "acme-data"] })
 				assert.lengthOf(atTheCap, 500)
 			}),
 		)
@@ -559,14 +595,13 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls, {
-				promql: () => matrix({ metric: { pod: "x".repeat(9 * 1024 * 1024) }, values: [[T0, "1"]] }),
-			}),
+			calls,
+			{ promql: () => matrix({ metric: { pod: "x".repeat(9 * 1024 * 1024) }, values: [[T0, "1"]] }) },
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
 				const error = yield* Effect.flip(range("up"))
-				assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryRejectedError")
-				assert.strictEqual("reason" in error ? error.reason : undefined, "too_many_series")
+				assert.instanceOf(error, GcpLiveQueryRejectedError)
+				assert.strictEqual(error.reason, "too_many_series")
 				assert.include(error.message, "larger than 8 MB")
 			}),
 		)
@@ -577,16 +612,16 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls, {
-				folderProjects: FOLDER_PROJECTS,
+			calls,
+			{
 				scopes: { "acme-data": ["acme-shop"] },
-				// What Google answers for `sum by (service)`: no `project_id`.
+				// An answer without `project_id`.
 				promql: (call) =>
 					matrix({
 						metric: { service: "checkout" },
 						values: [[T0, call.project === "acme-data" ? "9" : "3"]],
 					}),
-			}),
+			},
 			Effect.gen(function* () {
 				yield* insertConnectors(testDb)
 				const series = yield* range("sum by (service) (rate(x[5m]))")
@@ -612,10 +647,8 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		const other = Schema.decodeSync(OrgId)(OTHER_ORG)
 		return run(
 			testDb,
-			stubFetch(calls, {
-				folderProjects: FOLDER_PROJECTS,
-				promql: (call) => matrix({ metric: { project_id: call.project }, values: [[T0, "1"]] }),
-			}),
+			calls,
+			{ promql: oneSeries },
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
 				yield* insertConnector(testDb, FOLDER_CONNECTOR, {
@@ -623,6 +656,7 @@ describe("GcpLiveMetricsService.queryRange", () => {
 					folder: "123",
 					metricsOn: null,
 				})
+				yield* insertInventory(testDb, FOLDER_CONNECTOR, FOLDER_PROJECTS)
 				yield* insertConnector(testDb, OTHER_CONNECTOR, {
 					orgId: OTHER_ORG,
 					projectId: "rival-prod",
@@ -633,7 +667,6 @@ describe("GcpLiveMetricsService.queryRange", () => {
 					series.map((one) => one.labels.project_id),
 					["acme-prod"],
 				)
-				assert.deepStrictEqual(calls.assets, [])
 				assert.deepStrictEqual(calls.impersonate, [PROJECT_READER])
 
 				const error = yield* Effect.flip(
@@ -644,7 +677,7 @@ describe("GcpLiveMetricsService.queryRange", () => {
 						),
 					),
 				)
-				assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryUnavailableError")
+				assert.instanceOf(error, GcpLiveQueryUnavailableError)
 				assert.strictEqual(
 					error.message,
 					"Connect Google Cloud with metrics on to query Google Cloud metrics.",
@@ -658,14 +691,55 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls),
+			calls,
+			{},
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
 				const error = yield* Effect.flip(range("up"))
-				assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryUnavailableError")
+				assert.instanceOf(error, GcpLiveQueryUnavailableError)
+				assert.strictEqual(
+					error.message,
+					"Google Cloud metrics are not available on this Maple deployment.",
+				)
 				assert.deepStrictEqual(calls, makeCalls())
 			}),
 			{ key: null },
+		)
+	})
+
+	it.effect("fails as worth a retry when Maple cannot sign in to Google, before any connection's", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			calls,
+			{ oauth: () => googleError(500, "INTERNAL") },
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, PROJECT_CONNECTOR)
+				const error = yield* Effect.flip(range("up"))
+				assert.instanceOf(error, GcpLiveQueryFailedError)
+				assert.include(error.message, "Maple could not sign in to Google Cloud")
+				assert.deepStrictEqual(calls.impersonate, [])
+			}),
+		)
+	})
+
+	it.effect("fails as worth a retry when Maple cannot read its connections", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			calls,
+			{},
+			Effect.gen(function* () {
+				yield* Effect.promise(() => executeSql(testDb, "DROP TABLE gcp_connectors CASCADE"))
+				const error = yield* Effect.flip(range("up"))
+				assert.instanceOf(error, GcpLiveQueryFailedError)
+				assert.strictEqual(
+					error.message,
+					"Maple could not read its Google Cloud connections. Try again in a few minutes.",
+				)
+			}),
 		)
 	})
 
@@ -674,32 +748,41 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls, {
-				impersonate: () => googleError(403, "PERMISSION_DENIED", "SERVICE_DISABLED"),
-			}),
+			calls,
+			{ impersonate: () => googleError(403, "PERMISSION_DENIED", "SERVICE_DISABLED") },
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
 				const error = yield* Effect.flip(range("up"))
-				assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryFailedError")
+				assert.instanceOf(error, GcpLiveQueryFailedError)
 				assert.strictEqual(
-					firstFailure(error),
+					error.failures[0]?.message,
 					"Maple's request to Google's IAM Credentials API failed. Try again in a few minutes. If this repeats, write to support@maple.dev. (IAM Credentials returned 403 PERMISSION_DENIED, SERVICE_DISABLED)",
 				)
 			}),
 		)
 	})
 
-	it.effect("tells a connection whose grant is missing what to do", () => {
+	it.effect("tells a connection whose grant is missing what to do, and reads the rest", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls, { impersonate: denied }),
+			calls,
+			{
+				impersonate: (account) => (account === FOLDER_READER ? denied() : undefined),
+				promql: oneSeries,
+			},
 			Effect.gen(function* () {
-				yield* insertConnector(testDb, PROJECT_CONNECTOR)
-				const error = yield* Effect.flip(range("up"))
-				assert.deepStrictEqual(failureScopes(error), ["projects/acme-prod"])
-				assert.include(firstFailure(error), "run the setup script again")
+				yield* insertConnectors(testDb)
+				const series = yield* range("up")
+				assert.deepStrictEqual(
+					series.map((one) => one.labels.project_id),
+					["acme-prod"],
+				)
+				const error = yield* Effect.flip(range("up", { projects: ["acme-shop"] }))
+				assert.instanceOf(error, GcpLiveQueryUnavailableError)
+				assert.include(error.message, "folders/123: ")
+				assert.include(error.message, "run the setup script again")
 			}),
 		)
 	})
@@ -709,15 +792,15 @@ describe("GcpLiveMetricsService.queryRange", () => {
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls, { folderProjects: FOLDER_PROJECTS }),
+			calls,
+			{},
 			Effect.gen(function* () {
 				yield* insertConnectors(testDb)
 				yield* range("up")
 				yield* range("down")
 				assert.strictEqual(calls.oauth, 1)
 				assert.sameMembers(calls.impersonate, [PROJECT_READER, FOLDER_READER])
-				// The folder's projects and each project's metrics scope are read once an hour, not per query.
-				assert.lengthOf(calls.assets, 1)
+				// Each project's metrics scope is read once an hour, not per query.
 				assert.lengthOf(calls.scopes, 3)
 				// Answers are not cached: each query reads Google.
 				assert.lengthOf(calls.promql, 6)
@@ -733,14 +816,15 @@ describe("GcpLiveMetricsService.queryRange", () => {
 })
 
 describe("GcpLiveMetricsService.queryInstant", () => {
-	it.effect("reads one point per series, a scalar as one series, and refuses a string", () => {
+	it.effect("reads one point per series, and fails on an answer that is not a vector", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
 		const instant = (query: string) =>
 			GcpLiveMetricsService.use((gcp) => gcp.queryInstant(TENANT, { query, timeSeconds: T0 }))
 		return run(
 			testDb,
-			stubFetch(calls, {
+			calls,
+			{
 				promql: (call) =>
 					call.params.query === "up"
 						? json({
@@ -752,13 +836,8 @@ describe("GcpLiveMetricsService.queryInstant", () => {
 									],
 								},
 							})
-						: call.params.query === '"text"'
-							? json({
-									status: "success",
-									data: { resultType: "string", result: [T0, "text"] },
-								})
-							: json({ status: "success", data: { resultType: "scalar", result: [T0, "2"] } }),
-			}),
+						: json({ status: "success", data: { resultType: "scalar", result: [T0, "2"] } }),
+			},
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
 				assert.deepStrictEqual(yield* instant("up"), [
@@ -767,13 +846,9 @@ describe("GcpLiveMetricsService.queryInstant", () => {
 				assert.strictEqual(calls.promql[0]!.path, "query")
 				assert.deepInclude(calls.promql[0]!.params, { query: "up", time: String(T0) })
 
-				assert.deepStrictEqual(yield* instant("1 + 1"), [
-					{ labels: { project_id: "acme-prod" }, points: [[T0, 2]] },
-				])
-
-				const text = yield* Effect.flip(instant('"text"'))
-				assert.strictEqual(text._tag, "@maple/http/errors/GcpLiveQueryRejectedError")
-				assert.include(text.message, "String results are not supported")
+				const scalar = yield* Effect.flip(instant("1 + 1"))
+				assert.instanceOf(scalar, GcpLiveQueryFailedError)
+				assert.include(scalar.failures[0]?.message ?? "", "answered with an unexpected body")
 			}),
 		)
 	})
@@ -788,15 +863,18 @@ const descriptor = (type: string, extra: Record<string, unknown> = {}) => ({
 	...extra,
 })
 
-describe("GcpLiveMetricsService discovery", () => {
+const CPU = "cloudsql.googleapis.com/database/cpu/utilization"
+
+describe("GcpLiveMetricsService.listMetrics", () => {
 	it.effect("lists the active metrics of every project, merged per type, and caches them", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
-		const CPU = "cloudsql.googleapis.com/database/cpu/utilization"
+		const list = (scope: { projects?: ReadonlyArray<string> } = {}) =>
+			GcpLiveMetricsService.use((gcp) => gcp.listMetrics(TENANT, scope))
 		return run(
 			testDb,
-			stubFetch(calls, {
-				folderProjects: FOLDER_PROJECTS,
+			calls,
+			{
 				descriptors: (project, pageToken) => {
 					if (project === "acme-prod") {
 						return pageToken === ""
@@ -844,10 +922,10 @@ describe("GcpLiveMetricsService discovery", () => {
 					}
 					return denied()
 				},
-			}),
+			},
 			Effect.gen(function* () {
 				yield* insertConnectors(testDb)
-				const metrics = yield* GcpLiveMetricsService.use((gcp) => gcp.listMetrics(TENANT))
+				const metrics = yield* list()
 				assert.deepStrictEqual(metrics, [
 					{
 						type: CPU,
@@ -884,14 +962,51 @@ describe("GcpLiveMetricsService discovery", () => {
 					"acme-data",
 				])
 
-				// From the cache: only the project that failed is read again.
-				const described = yield* GcpLiveMetricsService.use((gcp) => gcp.describeMetric(TENANT, CPU))
-				assert.deepStrictEqual(described?.labels, ["database", "replica"])
+				// From the cache, and only the projects a project_id filter names.
+				const shop = yield* list({ projects: ["acme-shop"] })
+				assert.deepStrictEqual(
+					shop.map((metric) => metric.type),
+					[CPU],
+				)
+				assert.lengthOf(calls.descriptors, 4)
+
+				// acme-data failed and is not cached: it is read again, and an alert's listing fails on it.
+				const error = yield* Effect.flip(
+					GcpLiveMetricsService.use((gcp) => gcp.listMetrics(TENANT, { requireComplete: true })),
+				)
+				assert.instanceOf(error, GcpLiveQueryUnavailableError)
+				assert.include(error.message, "projects/acme-data")
 				assert.lengthOf(calls.descriptors, 5)
-				assert.isUndefined(
-					yield* GcpLiveMetricsService.use((gcp) =>
-						gcp.describeMetric(TENANT, "custom.googleapis.com/odd"),
-					),
+			}),
+		)
+	})
+
+	it.effect("reads past the first 20 projects when a project_id filter names one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		const many = Array.from({ length: 25 }, (_, index) => [`acme-team-${index + 10}`, "ACTIVE"] as const)
+		return run(
+			testDb,
+			calls,
+			{
+				descriptors: (project) =>
+					json({ metricDescriptors: project === "acme-team-34" ? [descriptor(CPU)] : [] }),
+			},
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, FOLDER_CONNECTOR, { projectId: "acme-host", folder: "123" })
+				yield* insertInventory(testDb, FOLDER_CONNECTOR, many)
+				// Without a filter the listing reads the first 20 projects only.
+				assert.deepStrictEqual(
+					yield* GcpLiveMetricsService.use((gcp) => gcp.listMetrics(TENANT, {})),
+					[],
+				)
+				assert.lengthOf(calls.descriptors, 20)
+				const named = yield* GcpLiveMetricsService.use((gcp) =>
+					gcp.listMetrics(TENANT, { projects: ["acme-team-34"] }),
+				)
+				assert.deepStrictEqual(
+					named.map((metric) => metric.type),
+					[CPU],
 				)
 			}),
 		)
@@ -902,12 +1017,18 @@ describe("GcpLiveMetricsService discovery", () => {
 		const calls = makeCalls()
 		return run(
 			testDb,
-			stubFetch(calls, { descriptors: denied }),
+			calls,
+			{ descriptors: rateLimited },
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, PROJECT_CONNECTOR)
-				const error = yield* Effect.flip(GcpLiveMetricsService.use((gcp) => gcp.listMetrics(TENANT)))
-				assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryFailedError")
-				assert.deepStrictEqual(failureScopes(error), ["projects/acme-prod"])
+				const error = yield* Effect.flip(
+					GcpLiveMetricsService.use((gcp) => gcp.listMetrics(TENANT, {})),
+				)
+				assert.instanceOf(error, GcpLiveQueryFailedError)
+				assert.deepStrictEqual(
+					error.failures.map((failure) => failure.scope),
+					["projects/acme-prod"],
+				)
 			}),
 		)
 	})

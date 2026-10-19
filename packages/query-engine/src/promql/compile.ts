@@ -3,10 +3,12 @@
 // Google flattens metric and resource labels onto one label set, so `attr.X` and `resource.X`
 // both read the label `X`. A metric written for several monitored resource types only answers a
 // selector with an exact `monitored_resource` matcher, so each type gets its own range function
-// and the outer aggregation unions them with `or`.
+// and the outer aggregation unions them with `or`. Every aggregation keeps `project_id`: the
+// engine reads each project separately and combines a group's projects itself (`GcpPromQl.merge`).
 
 import { DateTime, Effect } from "effect"
-import type { GcpMetricDescriptor, GcpMetricKind } from "@maple/domain/gcp-live-metrics"
+import { absurd } from "effect/Function"
+import type { GcpMetricDescriptor } from "@maple/domain/gcp-live-metrics"
 import { gcpMetricMapleType } from "@maple/domain/gcp-live-metrics"
 import { QueryEngineValidationError } from "@maple/domain/http"
 import type {
@@ -16,8 +18,8 @@ import type {
 	MetricsMetric,
 } from "@maple/domain/query-engine"
 
-const reject = (detail: string) =>
-	new QueryEngineValidationError({ message: "Unsupported Google Cloud metrics query", details: [detail] })
+/** A Google Cloud metrics query the engine cannot run, the reason as its message. */
+export const reject = (message: string) => new QueryEngineValidationError({ message, details: [] })
 
 /** A double-quoted PromQL string literal. */
 export const promQlString = (value: string): string =>
@@ -85,26 +87,44 @@ const filterMatcher = (filter: AttributeFilter): Effect.Effect<Matcher, QueryEng
 	return Effect.succeed({ label: filter.key, op: "=~", value: anyOf(values.flatMap((v) => v ?? [])) })
 }
 
-interface Scope {
-	/** One selector per monitored resource type, for the given series name. */
-	readonly selectors: (metricName: string) => ReadonlyArray<string>
-	readonly projects?: ReadonlyArray<string>
+const labelFilters = (filters: MetricsFilters): ReadonlyArray<AttributeFilter> => [
+	...(filters.attributeFilters ?? []),
+	...(filters.resourceAttributeFilters ?? []),
+]
+
+/**
+ * The projects a plain positive `project_id` filter names, which the engine reads instead of
+ * all; undefined reads all. Narrowing only: the filter's matcher stays in the query.
+ */
+export const gcpFilterProjects = (filters: MetricsFilters): ReadonlyArray<string> | undefined => {
+	let projects: ReadonlyArray<string> | undefined
+	for (const filter of labelFilters(filters)) {
+		const values = filter.key === "project_id" && !filter.or?.length ? positiveValues(filter) : undefined
+		if (values?.length) projects = values
+	}
+	return projects
 }
 
-const compileScope = Effect.fnUntraced(function* (
+/** `fn` over one selector of `metricName` per monitored resource type, unioned with `or`. */
+type Union = (metricName: string, fn: string, windowSeconds: number) => string
+
+const compileUnion = Effect.fnUntraced(function* (
 	descriptor: GcpMetricDescriptor,
 	filters: ReadonlyArray<AttributeFilter>,
 ) {
 	const matchers: Matcher[] = []
 	let resourceTypes: ReadonlyArray<string> | undefined
-	let projects: ReadonlyArray<string> | undefined
 	for (const filter of filters) {
+		// ClickHouse's `IN ()` matches nothing; the empty regex would match series without the label.
+		const empty = [filter, ...(filter.or ?? [])].find(
+			(leaf) => leaf.mode === "in" && !leaf.values?.length,
+		)
+		if (empty !== undefined) return yield* reject(`The in filter on ${empty.key} lists no values`)
 		const values = filter.or?.length ? undefined : positiveValues(filter)
 		if (filter.key === "monitored_resource" && values) {
 			resourceTypes = values
 			continue
 		}
-		if (filter.key === "project_id" && values) projects = values
 		matchers.push(yield* filterMatcher(filter))
 	}
 	const types = resourceTypes ?? descriptor.monitoredResourceTypes
@@ -113,51 +133,46 @@ const compileScope = Effect.fnUntraced(function* (
 			`Google Cloud lists no monitored resource for ${descriptor.type}; filter on monitored_resource (e.g. resource.monitored_resource = cloudsql_database)`,
 		)
 	}
-	return {
-		selectors: (metricName) =>
-			types.map((type) =>
-				renderSelector(metricName, [
-					{ label: "monitored_resource", op: "=", value: type },
-					...matchers,
-				]),
-			),
-		...(projects === undefined ? undefined : { projects }),
-	} satisfies Scope
+	const union: Union = (metricName, fn, windowSeconds) =>
+		types
+			.map(
+				(type) =>
+					`${fn}(${renderSelector(metricName, [{ label: "monitored_resource", op: "=", value: type }, ...matchers])}[${windowSeconds}s])`,
+			)
+			.join(" or ")
+	return union
 })
 
-const rangeFunction = (kind: GcpMetricKind, metric: MetricsMetric): string => {
-	switch (metric) {
-		case "avg":
-		case "min":
-		case "max":
-			return `${metric}_over_time`
-		case "count":
-			return "count_over_time"
-		case "sum":
-			return kind === "CUMULATIVE" ? "increase" : "sum_over_time"
-		case "increase":
-			return kind === "DELTA" ? "sum_over_time" : "increase"
-		case "rate":
-			return kind === "DELTA" ? "sum_over_time" : "rate"
-	}
-}
+/** The `by` labels: the group's, and always `project_id`. */
+const byLabels = (groupLabel: string | undefined): string =>
+	groupLabel === undefined || groupLabel === "project_id"
+		? "project_id"
+		: `${labelName(groupLabel)}, project_id`
 
-const outerAggregation = (metric: MetricsMetric): string =>
-	metric === "avg" || metric === "min" || metric === "max" ? metric : "sum"
+/** The series discovery and sample counts read: a distribution answers as `_count` / `_sum`. */
+const seriesName = (descriptor: GcpMetricDescriptor): string =>
+	descriptor.valueType === "DISTRIBUTION" ? `${descriptor.type}_count` : descriptor.type
+
+/** An average's two parts, each summed across projects before the engine divides them. */
+const avgParts = (sum: string, count: string) =>
+	`label_replace(${sum}, "maple_part", "sum", "", "") or label_replace(${count}, "maple_part", "count", "", "")`
 
 export interface GcpPromQlRequest {
 	readonly metric: MetricsMetric
 	readonly filters: MetricsFilters
 	/** Flat label the result is grouped by; undefined is one ungrouped series. */
 	readonly groupLabel: string | undefined
-	/** Range-function window, in seconds. */
+	/** Range-function window, in seconds: the step, or the whole range for an instant query. */
 	readonly windowSeconds: number
 }
 
 export interface GcpPromQl {
 	readonly query: string
-	/** Projects a `project_id` filter narrows the fan-out to. */
-	readonly projects?: ReadonlyArray<string>
+	/**
+	 * How the engine combines a group's series across projects. `avg` answers as two parts,
+	 * `maple_part="sum"` and `maple_part="count"`, and is their summed ratio.
+	 */
+	readonly merge: "sum" | "min" | "max" | "avg"
 }
 
 /** One value per group per evaluation step, matching the ClickHouse metrics semantics. */
@@ -180,25 +195,27 @@ export const compileGcpMetricQuery = Effect.fnUntraced(function* (
 		return yield* reject(`${descriptor.type} has ${descriptor.valueType} values, which cannot be charted`)
 	}
 
-	const scope = yield* compileScope(descriptor, [
-		...(filters.attributeFilters ?? []),
-		...(filters.resourceAttributeFilters ?? []),
-	])
+	const union = yield* compileUnion(descriptor, labelFilters(filters))
 	const w = request.windowSeconds
-	const by = request.groupLabel === undefined ? "" : ` by (${labelName(request.groupLabel)})`
-	const aggregate = (aggregation: string, metricName: string, fn: string) =>
-		`${aggregation}${by} (${scope
-			.selectors(metricName)
-			.map((selector) => `${fn}(${selector}[${w}s])`)
-			.join(" or ")})`
+	const by = byLabels(request.groupLabel)
+	const aggregate = (aggregation: string, metricName: string, fn: string, window = w) =>
+		`${aggregation} by (${by}) (${union(metricName, fn, window)})`
+
+	// A cumulative counter needs two samples in its window, so its rate reads at least two
+	// minutes, and its increase is that rate times the step: adjacent steps' `increase` windows
+	// would overlap and count a sample twice.
+	const cumulative = descriptor.metricKind === "CUMULATIVE"
+	const counterWindow = Math.max(w, 120)
+	// A delta counter's samples are already increments: summing them is exact, unlike `increase`.
+	const total = (metricName: string) =>
+		cumulative
+			? `${aggregate("sum", metricName, "rate", counterWindow)} * ${w}`
+			: aggregate("sum", metricName, "sum_over_time")
+	const perSecond = (metricName: string) =>
+		cumulative ? aggregate("sum", metricName, "rate", counterWindow) : `${total(metricName)} / ${w}`
 
 	const type = descriptor.type
-	const compiled = (query: string): GcpPromQl =>
-		scope.projects === undefined ? { query } : { query, projects: scope.projects }
-
 	if (descriptor.valueType === "DISTRIBUTION") {
-		// Distributions answer as `_count` / `_sum` counters; the bare name returns nothing.
-		const counter = descriptor.metricKind === "CUMULATIVE" ? "increase" : "sum_over_time"
 		switch (metric) {
 			case "min":
 			case "max":
@@ -206,53 +223,83 @@ export const compileGcpMetricQuery = Effect.fnUntraced(function* (
 					`${metric} is not available for the distribution ${type}; use avg, sum, count or rate`,
 				)
 			case "avg":
-				return compiled(
-					`${aggregate("sum", `${type}_sum`, counter)} / ${aggregate("sum", `${type}_count`, counter)}`,
-				)
+				return {
+					query: avgParts(total(`${type}_sum`), total(`${type}_count`)),
+					merge: "avg",
+				} satisfies GcpPromQl
 			case "sum":
-				return compiled(aggregate("sum", `${type}_sum`, counter))
+				return { query: total(`${type}_sum`), merge: "sum" } satisfies GcpPromQl
 			case "count":
 			case "increase":
-				return compiled(aggregate("sum", `${type}_count`, counter))
+				return { query: total(`${type}_count`), merge: "sum" } satisfies GcpPromQl
 			case "rate":
-				return compiled(
-					descriptor.metricKind === "CUMULATIVE"
-						? aggregate("sum", `${type}_count`, "rate")
-						: `${aggregate("sum", `${type}_count`, counter)} / ${w}`,
-				)
+				return { query: perSecond(`${type}_count`), merge: "sum" } satisfies GcpPromQl
+			default:
+				return absurd<GcpPromQl>(metric)
 		}
 	}
 
-	const expression = aggregate(outerAggregation(metric), type, rangeFunction(descriptor.metricKind, metric))
-	// A delta counter's samples are already increments: sum them (exact, unlike `increase`).
-	return compiled(
-		descriptor.metricKind === "DELTA" && metric === "rate" ? `${expression} / ${w}` : expression,
-	)
+	const gauge = descriptor.metricKind === "GAUGE"
+	switch (metric) {
+		case "avg":
+			return {
+				query: avgParts(
+					aggregate("sum", type, "avg_over_time"),
+					aggregate("count", type, "avg_over_time"),
+				),
+				merge: "avg",
+			} satisfies GcpPromQl
+		case "min":
+		case "max":
+			return {
+				query: aggregate(metric, type, `${metric}_over_time`),
+				merge: metric,
+			} satisfies GcpPromQl
+		case "count":
+			return { query: aggregate("sum", type, "count_over_time"), merge: "sum" } satisfies GcpPromQl
+		case "sum":
+			return { query: total(type), merge: "sum" } satisfies GcpPromQl
+		case "increase":
+			return {
+				query: gauge ? aggregate("sum", type, "increase") : total(type),
+				merge: "sum",
+			} satisfies GcpPromQl
+		case "rate":
+			return {
+				query: gauge ? aggregate("sum", type, "rate") : perSecond(type),
+				merge: "sum",
+			} satisfies GcpPromQl
+		default:
+			return absurd<GcpPromQl>(metric)
+	}
 })
 
-const discoverySeries = (descriptor: GcpMetricDescriptor): string =>
-	descriptor.valueType === "DISTRIBUTION" ? `${descriptor.type}_count` : descriptor.type
+/** Samples per group per step, an alert's sample count: a distribution's are its `_count` samples. */
+export const compileGcpSampleCount = Effect.fnUntraced(function* (
+	request: GcpPromQlRequest,
+	descriptor: GcpMetricDescriptor,
+) {
+	const union = yield* compileUnion(descriptor, labelFilters(request.filters))
+	return {
+		query: `sum by (${byLabels(request.groupLabel)}) (${union(seriesName(descriptor), "count_over_time", request.windowSeconds)})`,
+		merge: "sum",
+	} satisfies GcpPromQl
+})
 
 /** A few recent series of the metric, to read which labels it carries. */
 export const compileGcpLabelSample = Effect.fnUntraced(function* (descriptor: GcpMetricDescriptor) {
-	const scope = yield* compileScope(descriptor, [])
-	return `topk(5, ${scope
-		.selectors(discoverySeries(descriptor))
-		.map((selector) => `last_over_time(${selector}[1h])`)
-		.join(" or ")})`
+	const union = yield* compileUnion(descriptor, [])
+	return `topk(5, ${union(seriesName(descriptor), "last_over_time", 3_600)})`
 })
 
-/** Series per value of one label over the window. */
+/** Series per value of one label (and project) over the window. */
 export const compileGcpLabelValues = Effect.fnUntraced(function* (
 	descriptor: GcpMetricDescriptor,
 	label: string,
 	windowSeconds: number,
 ) {
-	const scope = yield* compileScope(descriptor, [])
-	return `count by (${labelName(label)}) (${scope
-		.selectors(discoverySeries(descriptor))
-		.map((selector) => `last_over_time(${selector}[${windowSeconds}s])`)
-		.join(" or ")})`
+	const union = yield* compileUnion(descriptor, [])
+	return `count by (${byLabels(label)}) (${union(seriesName(descriptor), "last_over_time", windowSeconds)})`
 })
 
 /**

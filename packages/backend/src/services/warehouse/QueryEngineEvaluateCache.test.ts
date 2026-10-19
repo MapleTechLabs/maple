@@ -10,6 +10,7 @@ import {
 	type AlertEvaluateRequest,
 } from "@maple/query-engine/runtime"
 import { QueryEngineService } from "./QueryEngineService"
+import { GcpLiveMetricsService } from "@maple/backend/services/integrations/GcpLiveMetricsService"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	WarehouseQueryService,
@@ -313,6 +314,7 @@ describe("QueryEngineService.cachedDirect TTL", () => {
 		const recordingEdge = Layer.succeed(EdgeCacheService, makeRecordingEdge(calls))
 		const counter = { n: 0 }
 		const layer = Layer.effect(QueryEngineService, QueryEngineService.make).pipe(
+			Layer.provide(Layer.mock(GcpLiveMetricsService, {})),
 			Layer.provide(Layer.succeed(WarehouseQueryService, makeFullStub([], counter))),
 			Layer.provide(recordingEdge),
 			Layer.provide(BucketCacheService.layer.pipe(Layer.provide(recordingEdge))),
@@ -347,6 +349,7 @@ describe("QueryEngineService.cachedDirect TTL", () => {
 		const recordingEdge = Layer.succeed(EdgeCacheService, makeRecordingEdge(calls))
 		const counter = { n: 0 }
 		const layer = Layer.effect(QueryEngineService, QueryEngineService.make).pipe(
+			Layer.provide(Layer.mock(GcpLiveMetricsService, {})),
 			Layer.provide(Layer.succeed(WarehouseQueryService, makeFullStub([], counter))),
 			Layer.provide(recordingEdge),
 			Layer.provide(BucketCacheService.layer.pipe(Layer.provide(recordingEdge))),
@@ -400,6 +403,7 @@ describe("QueryEngineService.cachedDirect TTL", () => {
 		const recordingEdge = Layer.succeed(EdgeCacheService, makeRecordingEdge(calls))
 		const counter = { n: 0 }
 		const layer = Layer.effect(QueryEngineService, QueryEngineService.make).pipe(
+			Layer.provide(Layer.mock(GcpLiveMetricsService, {})),
 			Layer.provide(Layer.succeed(WarehouseQueryService, makeFullStub([], counter))),
 			Layer.provide(recordingEdge),
 			Layer.provide(BucketCacheService.layer.pipe(Layer.provide(recordingEdge))),

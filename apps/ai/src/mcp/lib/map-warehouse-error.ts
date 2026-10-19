@@ -89,7 +89,8 @@ const toMcpError = (pipe: string, error: WarehouseError) => {
  * A budget breach gets its own error with guidance: the raw text is the vendor's ("Upgrade your
  * plan for higher capacity"), which no model can act on. A metrics read answered live by Google
  * fails like the tool's other dependencies: a refused query is the caller's to fix, no connection
- * is unavailable, and Google not answering is worth a retry.
+ * or one Google refuses (a missing role, API or billing account) is unavailable, and Google not
+ * answering is worth a retry.
  */
 export const toMcpQueryError =
 	(pipe: string) =>

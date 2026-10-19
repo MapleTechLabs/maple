@@ -1,9 +1,11 @@
 import { assert, describe, it } from "@effect/vitest"
 import { MetricName, OrgId } from "@maple/domain"
 import type { GcpMetricDescriptor, GcpPromQlSeries } from "@maple/domain/gcp-live-metrics"
+import { GcpLiveQueryUnavailableError } from "@maple/domain/http/gcp-live-query-errors"
+import { QueryEngineValidationError } from "@maple/domain/http"
 import { QueryEngineExecuteRequest, type QueryEngineResult, type QuerySpec } from "@maple/domain/query-engine"
 import { Effect } from "effect"
-import type { GcpLiveMetrics } from "./live-metrics"
+import type { GcpLiveMetrics, GcpReadScope } from "./live-metrics"
 import {
 	makeQueryEngineEvaluate,
 	makeQueryEngineEvaluateSeries,
@@ -24,17 +26,27 @@ const transactions: GcpMetricDescriptor = {
 	monitoredResourceTypes: ["cloudsql_database"],
 	labels: ["transaction_type"],
 }
+const LAT = "serviceruntime.googleapis.com/api/request_latencies"
+const latencies: GcpMetricDescriptor = {
+	...transactions,
+	type: LAT,
+	valueType: "DISTRIBUTION",
+	monitoredResourceTypes: ["consumed_api"],
+	labels: [],
+}
+const SELECTOR = `{"${TX}", monitored_resource="cloudsql_database"}`
 
 const seconds = (iso: string) => Date.parse(iso) / 1000
 
 interface Calls {
 	readonly range: Array<Parameters<GcpLiveMetrics["queryRange"]>[1]>
 	readonly instant: Array<Parameters<GcpLiveMetrics["queryInstant"]>[1]>
+	readonly listed: Array<GcpReadScope>
 	warehouse: number
 }
 
 const makeFakes = (answer: (query: string) => ReadonlyArray<GcpPromQlSeries> = () => []) => {
-	const calls: Calls = { range: [], instant: [], warehouse: 0 }
+	const calls: Calls = { range: [], instant: [], listed: [], warehouse: 0 }
 	const gcp: GcpLiveMetrics = {
 		queryRange: (_tenant, request) => {
 			calls.range.push(request)
@@ -44,8 +56,10 @@ const makeFakes = (answer: (query: string) => ReadonlyArray<GcpPromQlSeries> = (
 			calls.instant.push(request)
 			return Effect.succeed(answer(request.query))
 		},
-		listMetrics: () => Effect.succeed([transactions]),
-		describeMetric: (_tenant, type) => Effect.succeed(type === TX ? transactions : undefined),
+		listMetrics: (_tenant, request) => {
+			calls.listed.push(request)
+			return Effect.succeed([transactions, latencies])
+		},
 	}
 	const warehouse: QueryEngineWarehouse = {
 		rawSqlQuery: () => Effect.die("unexpected rawSqlQuery"),
@@ -99,34 +113,37 @@ const timeseries = (overrides: Partial<Extract<QuerySpec, { kind: "timeseries"; 
 		...overrides,
 	}) satisfies QuerySpec
 
+const byDatabase = (overrides: Partial<Extract<QuerySpec, { kind: "timeseries"; source: "metrics" }>> = {}) =>
+	timeseries({
+		groupBy: ["attribute"],
+		filters: { ...metricFilters(TX), groupByAttributeKey: "database_id" },
+		...overrides,
+	})
+
 describe("Google Cloud metrics routing", () => {
 	it.effect(
 		"answers a Cloud Monitoring metric from Google and labels points by the bucket they close",
 		() =>
 			Effect.gen(function* () {
 				const fakes = makeFakes(() => [
-					series({ database_id: "p:main" }, [
+					series({ database_id: "p:main", project_id: "alpha" }, [
 						["2026-10-19T10:05:00Z", 4],
 						["2026-10-19T10:10:00Z", 7],
 					]),
-					series({}, [["2026-10-19T10:10:00Z", 1]]),
+					series({ project_id: "alpha" }, [["2026-10-19T10:10:00Z", 1]]),
 				])
 
-				const response = yield* execute(
-					fakes,
-					timeseries({
-						groupBy: ["attribute"],
-						filters: { ...metricFilters(TX), groupByAttributeKey: "database_id" },
-					}),
-				)
+				const response = yield* execute(fakes, byDatabase())
 
 				assert.strictEqual(fakes.calls.warehouse, 0)
 				assert.deepStrictEqual(fakes.calls.range, [
 					{
-						query: `sum by (database_id) (sum_over_time({"${TX}", monitored_resource="cloudsql_database"}[300s]))`,
+						query: `sum by (database_id, project_id) (sum_over_time(${SELECTOR}[300s]))`,
 						startSeconds: seconds("2026-10-19T10:05:00Z"),
 						endSeconds: seconds("2026-10-19T10:20:00Z"),
 						stepSeconds: 300,
+						projects: undefined,
+						requireComplete: undefined,
 					},
 				])
 				assert.deepStrictEqual(dataOf(response, "timeseries"), [
@@ -149,35 +166,76 @@ describe("Google Cloud metrics routing", () => {
 
 	it.effect("returns one ungrouped series, ignoring a service group-by", () =>
 		Effect.gen(function* () {
-			const fakes = makeFakes(() => [series({}, [["2026-10-19T10:05:00Z", 3]])])
+			const fakes = makeFakes(() => [series({ project_id: "alpha" }, [["2026-10-19T10:05:00Z", 3]])])
 			const response = yield* execute(fakes, timeseries({ groupBy: ["service"] }))
 			assert.deepStrictEqual(dataOf(response, "timeseries")[0], {
 				bucket: "2026-10-19T10:00:00.000Z",
 				series: { all: 3 },
 			})
-			assert.notInclude(fakes.calls.range[0]?.query ?? "", " by ")
+			assert.include(fakes.calls.range[0]?.query ?? "", "sum by (project_id) (")
 		}),
 	)
 
-	it.effect("caps a grouped series to the highest peaks", () =>
+	it.effect("sums a group across projects, and reads a project two metrics scopes answer once", () =>
 		Effect.gen(function* () {
 			const fakes = makeFakes(() => [
-				series({ database_id: "low" }, [["2026-10-19T10:05:00Z", 1]]),
-				series({ database_id: "high" }, [["2026-10-19T10:05:00Z", 9]]),
-				series({ database_id: "mid" }, [["2026-10-19T10:10:00Z", 5]]),
+				series({ database_id: "main", project_id: "alpha" }, [["2026-10-19T10:05:00Z", 4]]),
+				series({ database_id: "main", project_id: "beta" }, [["2026-10-19T10:05:00Z", 3]]),
+				// beta again, from a second scope that also monitors it.
+				series({ project_id: "beta", database_id: "main" }, [["2026-10-19T10:05:00Z", 3]]),
+				series({ database_id: "replica", project_id: "beta" }, [["2026-10-19T10:05:00Z", 1]]),
 			])
-			const response = yield* execute(
-				fakes,
-				timeseries({
-					groupBy: ["attribute"],
-					filters: { ...metricFilters(TX), groupByAttributeKey: "database_id" },
-					seriesLimit: 2,
-				}),
+			const response = yield* execute(fakes, byDatabase())
+			assert.deepStrictEqual(dataOf(response, "timeseries")[0], {
+				bucket: "2026-10-19T10:00:00.000Z",
+				series: { main: 7, replica: 1 },
+			})
+		}),
+	)
+
+	it.effect("merges min, max and avg across projects by their own reducer", () =>
+		Effect.gen(function* () {
+			const at = (value: number) => [["2026-10-19T10:05:00Z", value]] as const
+			const merged = (metric: "min" | "max" | "avg", answer: ReadonlyArray<GcpPromQlSeries>) =>
+				execute(
+					makeFakes(() => answer),
+					timeseries({ metric }),
+				).pipe(Effect.map((response) => dataOf(response, "timeseries")[0]?.series))
+
+			const extremes = [
+				series({ project_id: "alpha" }, at(4)),
+				series({ project_id: "beta" }, at(9)),
+				series({ project_id: "gamma" }, at(2)),
+			]
+			assert.deepStrictEqual(yield* merged("min", extremes), { all: 2 })
+			assert.deepStrictEqual(yield* merged("max", extremes), { all: 9 })
+			// alpha averages 4 over 2 series, beta 2 over 1: 6 / 3, not the mean of 2 and 2.
+			assert.deepStrictEqual(
+				yield* merged("avg", [
+					series({ project_id: "alpha", maple_part: "sum" }, at(4)),
+					series({ project_id: "alpha", maple_part: "count" }, at(2)),
+					series({ project_id: "beta", maple_part: "sum" }, at(2)),
+					series({ project_id: "beta", maple_part: "count" }, at(1)),
+				]),
+				{ all: 2 },
 			)
+		}),
+	)
+
+	it.effect("caps the merged groups to the highest peaks", () =>
+		Effect.gen(function* () {
+			const fakes = makeFakes(() => [
+				series({ database_id: "low", project_id: "alpha" }, [["2026-10-19T10:05:00Z", 6]]),
+				// Highest across projects only once alpha and beta are summed.
+				series({ database_id: "split", project_id: "alpha" }, [["2026-10-19T10:05:00Z", 5]]),
+				series({ database_id: "split", project_id: "beta" }, [["2026-10-19T10:05:00Z", 5]]),
+				series({ database_id: "mid", project_id: "beta" }, [["2026-10-19T10:10:00Z", 7]]),
+			])
+			const response = yield* execute(fakes, byDatabase({ seriesLimit: 2 }))
 			const names = new Set(
 				dataOf(response, "timeseries").flatMap((point) => Object.keys(point.series)),
 			)
-			assert.deepStrictEqual([...names].sort(), ["high", "mid"])
+			assert.deepStrictEqual([...names].sort(), ["mid", "split"])
 		}),
 	)
 
@@ -198,11 +256,15 @@ describe("Google Cloud metrics routing", () => {
 	it.effect("fails as unavailable when the deployment has no Google port", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(execute({ warehouse: makeFakes().warehouse }, timeseries()))
-			assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryUnavailableError")
+			assert.instanceOf(error, GcpLiveQueryUnavailableError)
+			assert.strictEqual(
+				error.message,
+				"Google Cloud metrics are not available on this Maple deployment.",
+			)
 		}),
 	)
 
-	it.effect("narrows the fan-out to the filtered projects", () =>
+	it.effect("narrows the metric listing and the query to the filtered projects", () =>
 		Effect.gen(function* () {
 			const fakes = makeFakes()
 			yield* execute(
@@ -214,7 +276,27 @@ describe("Google Cloud metrics routing", () => {
 					},
 				}),
 			)
+			assert.deepStrictEqual(fakes.calls.listed, [{ projects: ["alpha"], requireComplete: undefined }])
 			assert.deepStrictEqual(fakes.calls.range[0]?.projects, ["alpha"])
+			assert.include(fakes.calls.range[0]?.query ?? "", `project_id="alpha"`)
+		}),
+	)
+
+	it.effect("says why a query is refused in the message", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				execute(
+					makeFakes(),
+					timeseries({
+						filters: {
+							...metricFilters(TX),
+							attributeFilters: [{ key: "database_id", mode: "in", values: [] }],
+						},
+					}),
+				),
+			)
+			assert.instanceOf(error, QueryEngineValidationError)
+			assert.include(error.message, "database_id")
 		}),
 	)
 })
@@ -232,23 +314,26 @@ describe("Google Cloud metrics breakdown", () => {
 			...overrides,
 		}) satisfies QuerySpec
 
-	it.effect("ranks groups from one instant query over the whole range", () =>
+	it.effect("ranks groups, summed across projects, from one instant query over the whole range", () =>
 		Effect.gen(function* () {
 			const fakes = makeFakes(() => [
-				series({ database_id: "a" }, [["2026-10-19T10:15:00Z", 2]]),
-				series({ database_id: "b" }, [["2026-10-19T10:15:00Z", 5]]),
-				series({ database_id: "c" }, [["2026-10-19T10:15:00Z", 1]]),
+				series({ database_id: "a", project_id: "alpha" }, [["2026-10-19T10:15:00Z", 2]]),
+				series({ database_id: "a", project_id: "beta" }, [["2026-10-19T10:15:00Z", 4]]),
+				series({ database_id: "b", project_id: "alpha" }, [["2026-10-19T10:15:00Z", 5]]),
+				series({ database_id: "c", project_id: "alpha" }, [["2026-10-19T10:15:00Z", 1]]),
 			])
 			const response = yield* execute(fakes, breakdown({ limit: 2 }))
 			assert.deepStrictEqual(fakes.calls.instant, [
 				{
-					query: `sum by (database_id) (sum_over_time({"${TX}", monitored_resource="cloudsql_database"}[900s])) / 900`,
+					query: `sum by (database_id, project_id) (sum_over_time(${SELECTOR}[900s])) / 900`,
 					timeSeconds: seconds("2026-10-19T10:15:00Z"),
+					projects: undefined,
+					requireComplete: undefined,
 				},
 			])
 			assert.deepStrictEqual(dataOf(response, "breakdown"), [
+				{ name: "a", value: 6 },
 				{ name: "b", value: 5 },
-				{ name: "a", value: 2 },
 			])
 		}),
 	)
@@ -256,7 +341,8 @@ describe("Google Cloud metrics breakdown", () => {
 	it.effect("asks for a label group instead of service", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(execute(makeFakes(), breakdown({ groupBy: "service" })))
-			assert.strictEqual(error._tag, "@maple/http/errors/QueryEngineValidationError")
+			assert.instanceOf(error, QueryEngineValidationError)
+			assert.include(error.message, "no service.name")
 		}),
 	)
 })
@@ -290,12 +376,13 @@ describe("Google Cloud metric discovery", () => {
 		}),
 	)
 
-	it.effect("lists a label's values with their series counts", () =>
+	it.effect("lists a label's values with their series counts summed across projects", () =>
 		Effect.gen(function* () {
 			const fakes = makeFakes(() => [
-				series({ database_id: "a" }, [["2026-10-19T10:15:00Z", 1]]),
-				series({ database_id: "b" }, [["2026-10-19T10:15:00Z", 3]]),
-				series({}, [["2026-10-19T10:15:00Z", 9]]),
+				series({ database_id: "a", project_id: "alpha" }, [["2026-10-19T10:15:00Z", 1]]),
+				series({ database_id: "b", project_id: "alpha" }, [["2026-10-19T10:15:00Z", 1]]),
+				series({ database_id: "b", project_id: "beta" }, [["2026-10-19T10:15:00Z", 2]]),
+				series({ project_id: "beta" }, [["2026-10-19T10:15:00Z", 9]]),
 			])
 			const response = yield* execute(fakes, {
 				kind: "attributeValues",
@@ -306,26 +393,12 @@ describe("Google Cloud metric discovery", () => {
 			})
 			assert.strictEqual(
 				fakes.calls.instant[0]?.query,
-				`count by (database_id) (last_over_time({"${TX}", monitored_resource="cloudsql_database"}[900s]))`,
+				`count by (database_id, project_id) (last_over_time(${SELECTOR}[900s]))`,
 			)
 			assert.deepStrictEqual(dataOf(response, "attributeValues"), [
 				{ value: "b", count: 3 },
 				{ value: "a", count: 1 },
 			])
-		}),
-	)
-
-	it.effect("leaves Google Cloud metrics out of the warehouse sparklines read", () =>
-		Effect.gen(function* () {
-			const fakes = makeFakes()
-			const response = yield* execute(fakes, {
-				kind: "sparklines",
-				source: "metrics",
-				metricType: "sum",
-				metricNames: [MetricName.make(TX)],
-			})
-			assert.strictEqual(fakes.calls.warehouse, 0)
-			assert.deepStrictEqual(dataOf(response, "sparklines"), [{ metricName: TX, points: [] }])
 		}),
 	)
 })
@@ -340,18 +413,18 @@ describe("Google Cloud metric alerts", () => {
 	})
 	const answer = (query: string) =>
 		query.includes("count_over_time")
-			? [series({ database_id: "a" }, [["2026-10-19T10:05:00Z", 5]])]
-			: [
-					series({ database_id: "a" }, [["2026-10-19T10:05:00Z", 42]]),
-					series({ database_id: "b" }, [["2026-10-19T10:05:00Z", 7]]),
+			? [
+					series({ database_id: "a", project_id: "alpha" }, [["2026-10-19T10:05:00Z", 3]]),
+					series({ database_id: "a", project_id: "beta" }, [["2026-10-19T10:05:00Z", 2]]),
 				]
-	const grouped = timeseries({
-		groupBy: ["attribute"],
-		filters: { ...metricFilters(TX), groupByAttributeKey: "database_id" },
-		bucketSeconds: 60,
-	})
+			: [
+					series({ database_id: "a", project_id: "alpha" }, [["2026-10-19T10:05:00Z", 40]]),
+					series({ database_id: "a", project_id: "beta" }, [["2026-10-19T10:05:00Z", 2]]),
+					series({ database_id: "b", project_id: "alpha" }, [["2026-10-19T10:05:00Z", 7]]),
+				]
+	const grouped = byDatabase({ bucketSeconds: 60 })
 
-	it.effect("evaluates the window as one instant query per group, with sample counts", () =>
+	it.effect("evaluates the window as one instant query per group, merged across projects", () =>
 		Effect.gen(function* () {
 			const fakes = makeFakes(answer)
 			const result = yield* makeQueryEngineEvaluate(fakes.warehouse, fakes.gcp)(
@@ -362,11 +435,11 @@ describe("Google Cloud metric alerts", () => {
 				fakes.calls.instant.map((call) => [call.query, call.timeSeconds]),
 				[
 					[
-						`sum by (database_id) (sum_over_time({"${TX}", monitored_resource="cloudsql_database"}[300s]))`,
+						`sum by (database_id, project_id) (sum_over_time(${SELECTOR}[300s]))`,
 						seconds("2026-10-19T10:05:00Z"),
 					],
 					[
-						`sum by (database_id) (count_over_time({"${TX}", monitored_resource="cloudsql_database"}[300s]))`,
+						`sum by (database_id, project_id) (count_over_time(${SELECTOR}[300s]))`,
 						seconds("2026-10-19T10:05:00Z"),
 					],
 				],
@@ -375,6 +448,34 @@ describe("Google Cloud metric alerts", () => {
 				{ groupKey: "a", value: 42, sampleCount: 5, hasData: true },
 				{ groupKey: "b", value: null, sampleCount: 0, hasData: false },
 			])
+		}),
+	)
+
+	it.effect("requires every project to answer, for the listing and both queries", () =>
+		Effect.gen(function* () {
+			const fakes = makeFakes(answer)
+			yield* makeQueryEngineEvaluate(fakes.warehouse, fakes.gcp)(tenant, alertRequest(grouped))
+			yield* makeQueryEngineEvaluateSeries(fakes.warehouse, fakes.gcp)(tenant, alertRequest(grouped))
+			assert.isTrue(
+				[...fakes.calls.listed, ...fakes.calls.instant, ...fakes.calls.range].every(
+					(call) => call.requireComplete === true,
+				),
+			)
+			assert.lengthOf(fakes.calls.listed, 2)
+		}),
+	)
+
+	it.effect("counts a distribution's samples, not its observations", () =>
+		Effect.gen(function* () {
+			const fakes = makeFakes(() => [])
+			yield* makeQueryEngineEvaluate(fakes.warehouse, fakes.gcp)(
+				tenant,
+				alertRequest(timeseries({ metric: "avg", filters: metricFilters(LAT) })),
+			)
+			assert.strictEqual(
+				fakes.calls.instant[1]?.query,
+				`sum by (project_id) (count_over_time({"${LAT}_count", monitored_resource="consumed_api"}[300s]))`,
+			)
 		}),
 	)
 
@@ -401,7 +502,7 @@ describe("Google Cloud metric alerts", () => {
 			const error = yield* Effect.flip(
 				makeQueryEngineEvaluate(fakes.warehouse)(tenant, alertRequest(grouped)),
 			)
-			assert.strictEqual(error._tag, "@maple/http/errors/GcpLiveQueryUnavailableError")
+			assert.instanceOf(error, GcpLiveQueryUnavailableError)
 		}),
 	)
 })

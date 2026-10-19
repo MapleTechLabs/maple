@@ -1,9 +1,10 @@
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Exit, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import type { GcpMetricDescriptor } from "@maple/domain/gcp-live-metrics"
 import {
 	GcpLiveQueryFailedError,
+	GcpLiveQueryRejectedError,
 	GcpLiveQueryUnavailableError,
 	type GcpLiveQueryError,
 } from "@maple/domain/http/gcp-live-query-errors"
@@ -46,7 +47,6 @@ const fakePort = (answer: Effect.Effect<ReadonlyArray<GcpMetricDescriptor>, GcpL
 	const port: GcpLiveMetrics = {
 		queryRange: unused,
 		queryInstant: unused,
-		describeMetric: unused,
 		listMetrics: () => {
 			calls.listMetrics += 1
 			return answer
@@ -126,17 +126,24 @@ describe("listGcpMetricCatalog", () => {
 		run(
 			Effect.gen(function* () {
 				const failures = [
-					fakePort(Effect.fail(new GcpLiveQueryUnavailableError({ message: "not connected" })))
-						.port,
-					fakePort(
-						Effect.fail(new GcpLiveQueryFailedError({ message: "Google is down", failures: [] })),
-					).port,
-					fakePort(Effect.die("connector read failed")).port,
-					undefined,
+					new GcpLiveQueryUnavailableError({ message: "not connected" }),
+					new GcpLiveQueryFailedError({ message: "Google is down", failures: [] }),
+					new GcpLiveQueryRejectedError({ message: "refused", reason: "invalid_query" }),
 				]
-				for (const port of failures) {
+				for (const failure of failures) {
+					const { port } = fakePort(Effect.fail(failure))
 					assert.deepStrictEqual(yield* listGcpMetricCatalog(port, TENANT, {}), [])
 				}
+			}),
+		),
+	)
+
+	it.effect("lets a defect through: a bug is not Google being unavailable", () =>
+		run(
+			Effect.gen(function* () {
+				const { port } = fakePort(Effect.die("bug"))
+				const exit = yield* Effect.exit(listGcpMetricCatalog(port, TENANT, {}))
+				assert.isTrue(Exit.hasDies(exit))
 			}),
 		),
 	)

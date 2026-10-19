@@ -12,12 +12,11 @@
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import {
 	GCP_ASSET_TYPES,
-	GCP_PROJECT_ASSET_TYPE,
 	gcpMetricAligner,
 	type GcpMetric,
 	type GcpMetricGroup,
 } from "@maple/domain/gcp-metrics"
-import type { GcpMetricDescriptor, GcpPromQlSeries } from "@maple/domain/gcp-live-metrics"
+import { GcpMetricDescriptor, type GcpPromQlSeries } from "@maple/domain/gcp-live-metrics"
 import { GcpLiveQueryRejectedError } from "@maple/domain/http/gcp-live-query-errors"
 import type { GcpConnectorId, GcpProjectId } from "@maple/domain/primitives"
 import { Duration, Effect, Option, Redacted, Schema, Stream } from "effect"
@@ -124,14 +123,16 @@ const errorReason = (body: unknown, kind: GcpApiError["kind"]): string | undefin
  * The largest answer a live query reads: four in flight stay far below the Worker's 128 MB.
  * The poller's calls are not capped.
  */
-export const MAX_BODY_BYTES = 8 * 1024 * 1024
-const parseJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+const MAX_BODY_BYTES = 8 * 1024 * 1024
+const parseJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 
 interface CallOptions<E> {
 	/** Turns a failed answer into the caller's own error. */
 	readonly refuse?: (status: number, body: unknown) => E | undefined
-	/** Reads at most `MAX_BODY_BYTES` of a successful answer; `tooLarge` is the caller's error past it. */
-	readonly capped?: { readonly tooLarge?: () => E }
+	/** Reads at most this many bytes of the answer (default: all of it). */
+	readonly maxBytes?: number
+	/** The caller's error for an answer past `maxBytes`. */
+	readonly tooLarge?: () => E
 }
 
 /** One JSON call. `api` names the Google service in the error. */
@@ -143,25 +144,22 @@ const call = <A, E = never>(
 	options: CallOptions<E> = {},
 ): Effect.Effect<A, GcpApiError | E> => {
 	const failed = (what: string) => new GcpApiError({ message: `${api} ${what}`, api, kind: "upstream" })
+	const maxBytes = options.maxBytes ?? Infinity
 	return Effect.gen(function* () {
 		const response = yield* httpClient.execute(request)
-		if (options.capped === undefined) {
-			const body: unknown = yield* response.json.pipe(Effect.orElseSucceed(() => null))
-			return { status: response.status, body, overflow: false }
-		}
 		// Read as it arrives, never trusting Content-Length: past the cap the rest is left unread.
 		const chunks: Array<Uint8Array> = []
 		let size = 0
 		yield* Stream.runForEachWhile(response.stream, (chunk) =>
 			Effect.sync(() => {
 				size += chunk.byteLength
-				if (size > MAX_BODY_BYTES) return false
+				if (size > maxBytes) return false
 				chunks.push(chunk)
 				return true
 			}),
 		)
-		const overflow = size > MAX_BODY_BYTES
-		// A small non-JSON body (an HTML error page) is no body, never an overflow.
+		const overflow = size > maxBytes
+		// A non-JSON body (an HTML error page) is no body, never an overflow.
 		const body = overflow ? null : Option.getOrNull(parseJson(Buffer.concat(chunks).toString("utf8")))
 		return { status: response.status, body, overflow }
 	}).pipe(
@@ -186,7 +184,8 @@ const call = <A, E = never>(
 				}
 				if (overflow) {
 					return yield* Effect.fail(
-						options.capped?.tooLarge?.() ?? failed("answered with more than 8 MB"),
+						options.tooLarge?.() ??
+							failed(`answered with more than ${maxBytes / 1024 / 1024} MB`),
 					)
 				}
 				return yield* decode(body).pipe(
@@ -468,9 +467,6 @@ const decodePromQlResult = Schema.decodeUnknownEffect(
 				resultType: Schema.Literal("vector"),
 				result: Schema.Array(Schema.Struct({ metric: Labels, value: Sample })),
 			}),
-			// `1 + 1`, `time()`: answered as one series without labels.
-			Schema.Struct({ resultType: Schema.Literal("scalar"), result: Sample }),
-			Schema.Struct({ resultType: Schema.Literal("string"), result: Schema.Unknown }),
 		]),
 	}),
 )
@@ -510,10 +506,7 @@ export type GcpPromQlParams =
 	| { readonly query: string; readonly time: number }
 	| { readonly query: string; readonly start: number; readonly end: number; readonly step: number }
 
-/**
- * One instant or range query against one project, times in epoch seconds. A scalar answers as
- * one series without labels.
- */
+/** One instant or range query against one project, times in epoch seconds. */
 export const promQlQuery = (
 	httpClient: HttpClient.HttpClient,
 	reader: GcpReader,
@@ -530,38 +523,24 @@ export const promQlQuery = (
 		decodePromQlResult,
 		{
 			refuse: refuseQuery,
-			capped: {
-				tooLarge: () =>
-					new GcpLiveQueryRejectedError({
-						message: `Google's answer for project ${projectId} is larger than 8 MB: too many series or points. Narrow the query or group by fewer labels.`,
-						reason: "too_many_series",
-					}),
-			},
+			maxBytes: MAX_BODY_BYTES,
+			tooLarge: () =>
+				new GcpLiveQueryRejectedError({
+					message: `Google's answer for project ${projectId} is larger than 8 MB: too many series or points. Narrow the query or group by fewer labels.`,
+					reason: "too_many_series",
+				}),
 		},
 	).pipe(
-		Effect.flatMap(({ data }) =>
-			Effect.gen(function* () {
-				switch (data.resultType) {
-					case "matrix":
-						return data.result.map((series): GcpPromQlSeries => ({
-							labels: series.metric,
-							points: toPoints(series.values),
-						}))
-					case "vector":
-						return data.result.map((series): GcpPromQlSeries => ({
-							labels: series.metric,
-							points: toPoints([series.value]),
-						}))
-					case "scalar":
-						return [{ labels: {}, points: toPoints([data.result]) } satisfies GcpPromQlSeries]
-					case "string":
-						return yield* new GcpLiveQueryRejectedError({
-							message:
-								"String results are not supported: query a vector, a range vector or a scalar.",
-							reason: "invalid_query",
-						})
-				}
-			}),
+		Effect.map(({ data }) =>
+			data.resultType === "matrix"
+				? data.result.map((series): GcpPromQlSeries => ({
+						labels: series.metric,
+						points: toPoints(series.values),
+					}))
+				: data.result.map((series): GcpPromQlSeries => ({
+						labels: series.metric,
+						points: toPoints([series.value]),
+					})),
 		),
 	)
 
@@ -573,6 +552,9 @@ const decodeMetricsScope = Schema.decodeUnknownEffect(
 )
 
 const lastSegment = (name: string) => name.slice(name.lastIndexOf("/") + 1)
+
+/** A project's metrics scope: its number, and the numbers of the projects it reads, itself included. */
+export const MetricsScope = Schema.Struct({ number: Schema.String, monitored: Schema.Array(Schema.String) })
 
 /**
  * The metrics scope a query on the project reads: its own project number, and the numbers of
@@ -591,27 +573,17 @@ export const getMetricsScope = (
 			`https://monitoring.googleapis.com/v1/locations/global/metricsScopes/${projectId}`,
 		).pipe(asReader(reader)),
 		decodeMetricsScope,
-		{ capped: {} },
+		{ maxBytes: MAX_BODY_BYTES },
 	).pipe(
-		Effect.map((scope) => ({
+		Effect.map((scope): typeof MetricsScope.Type => ({
 			number: lastSegment(scope.name),
 			monitored: (scope.monitoredProjects ?? []).map((project) => lastSegment(project.name)),
 		})),
 	)
 
-/** A `GcpMetricDescriptor`, as the live reader caches it. */
-export const ActiveMetricDescriptor = Schema.Struct({
-	type: Schema.String,
-	metricKind: Schema.Literals(["GAUGE", "DELTA", "CUMULATIVE"]),
-	valueType: Schema.Literals(["BOOL", "INT64", "DOUBLE", "STRING", "DISTRIBUTION", "MONEY"]),
-	unit: Schema.String,
-	description: Schema.String,
-	monitoredResourceTypes: Schema.Array(Schema.String),
-	labels: Schema.Array(Schema.String),
-})
 // A kind or value type Google leaves unspecified is neither.
-const isMetricKind = Schema.is(ActiveMetricDescriptor.fields.metricKind)
-const isValueType = Schema.is(ActiveMetricDescriptor.fields.valueType)
+const isMetricKind = Schema.is(GcpMetricDescriptor.fields.metricKind)
+const isValueType = Schema.is(GcpMetricDescriptor.fields.valueType)
 
 const decodeMetricDescriptorsPage = Schema.decodeUnknownEffect(
 	Schema.Struct({
@@ -652,7 +624,7 @@ export const listActiveMetricDescriptorsPage = (
 			HttpClientRequest.setUrlParams({ activeOnly: true, pageSize: 10_000, pageToken }),
 		),
 		decodeMetricDescriptorsPage,
-		{ capped: {} },
+		{ maxBytes: MAX_BODY_BYTES },
 	).pipe(
 		Effect.map((page) => ({
 			descriptors: (page.metricDescriptors ?? []).flatMap((descriptor): Array<GcpMetricDescriptor> => {
@@ -698,13 +670,11 @@ const decodeResourcePage = Schema.decodeUnknownEffect(
 	}),
 )
 
-const resourcePage = (
+export const searchResourcesPage = (
 	httpClient: HttpClient.HttpClient,
 	reader: GcpReader,
 	scope: string,
 	pageToken: string | undefined,
-	assetTypes: ReadonlyArray<string>,
-	options: CallOptions<never> = {},
 ) =>
 	call(
 		httpClient,
@@ -712,31 +682,14 @@ const resourcePage = (
 		HttpClientRequest.get(`https://cloudasset.googleapis.com/v1/${scope}:searchAllResources`).pipe(
 			asReader(reader),
 			HttpClientRequest.setUrlParams({
-				assetTypes,
+				assetTypes: GCP_ASSET_TYPES,
 				readMask: Object.keys(ResourceSearchResult.fields).join(","),
 				pageSize: RESOURCE_PAGE_SIZE,
 				pageToken,
 			}),
 		),
 		decodeResourcePage,
-		options,
 	)
-
-/** One page of the resource inventory sync. */
-export const searchResourcesPage = (
-	httpClient: HttpClient.HttpClient,
-	reader: GcpReader,
-	scope: string,
-	pageToken: string | undefined,
-) => resourcePage(httpClient, reader, scope, pageToken, GCP_ASSET_TYPES)
-
-/** One page of the projects in a folder or organization, for a live query. */
-export const searchProjectsPage = (
-	httpClient: HttpClient.HttpClient,
-	reader: GcpReader,
-	scope: string,
-	pageToken: string | undefined,
-) => resourcePage(httpClient, reader, scope, pageToken, [GCP_PROJECT_ASSET_TYPE], { capped: {} })
 
 /** What Maple reads of a Cloud SQL instance: the Cloud SQL Admin API's `DatabaseInstance`. */
 const SqlInstanceData = Schema.Struct({

@@ -152,15 +152,12 @@ Every hour Maple lists projects, Cloud Run services and jobs, Cloud Functions, G
 
 ## Query any Cloud Monitoring metric live
 
-Besides the `gcp.*` metrics Maple stores, you can query any Cloud Monitoring metric with data in the last 25 hours. Maple reads it live from Google. Use its metric type as the metric name, for example `cloudsql.googleapis.com/database/cpu/utilization`, in dashboards, alert rules and the MCP tools. The metrics explorer and the metric pickers list these metrics under the service **Google Cloud**. It needs a connection with **Metrics and resources** on.
+With **Metrics and resources** on, you can chart and alert on any Cloud Monitoring metric that had data in the last day. Maple reads it live from Google. The metrics explorer lists them under the service **Google Cloud**. In dashboards, alert rules and the MCP tools, use the metric type as the metric name, e.g. `cloudsql.googleapis.com/database/cpu/utilization`.
 
-- Metric and resource labels form one set. Filter and group by them as `attr.<label>`, for example `attr.database_id` or `attr.project_id`. There is no `service.name` or `deployment.environment`.
-- `monitored_resource` is the resource type. Maple queries each type Google lists for the metric. When Google lists none, filter on it, for example `attr.monitored_resource = cloudsql_database`.
-- A query reads at most 20 projects. To query more, filter on `project_id`.
-- A query returns at most 500 series. Filter, or group by fewer labels.
-- Metrics with string or money values can't be charted.
+- Filter and group by the metric's labels as `attr.<label>` (e.g. `attr.database_id`, `attr.project_id`). There is no `service.name` or `deployment.environment`.
+- One query reads up to 20 projects and returns up to 500 series. Filter on `project_id` or other labels to stay under.
 
-Google bills these reads per time series returned. See [Google Cloud Observability pricing](https://cloud.google.com/stackdriver/pricing).
+Google bills these reads per time series returned ([pricing](https://cloud.google.com/stackdriver/pricing)).
 
 ## Infrastructure → Google Cloud
 

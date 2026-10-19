@@ -4,6 +4,10 @@ import { HttpTaggedError } from "./error-policy"
 // Failures of a metrics query the engine answered live from Google Cloud Monitoring.
 // Error-only module (no effect/http-api), so the query engine can import it.
 
+/** Why a deployment without a Google identity cannot read Google Cloud metrics. */
+export const GCP_LIVE_METRICS_NOT_AVAILABLE =
+	"Google Cloud metrics are not available on this Maple deployment."
+
 /** The query cannot run as asked: Google refused it, or it reaches too many projects or series. */
 export class GcpLiveQueryRejectedError extends HttpTaggedError<GcpLiveQueryRejectedError>()(
 	"@maple/http/errors/GcpLiveQueryRejectedError",
@@ -21,7 +25,11 @@ export class GcpLiveQueryRejectedError extends HttpTaggedError<GcpLiveQueryRejec
 	},
 ) {}
 
-/** No Google Cloud connection with metrics on, or this deployment has no Google identity. */
+/**
+ * Nothing to read with, or nothing Maple can fix by retrying: no connection with metrics on, no
+ * Google identity in this deployment, or a connection Google refuses (a missing role, API or
+ * billing account).
+ */
 export class GcpLiveQueryUnavailableError extends HttpTaggedError<GcpLiveQueryUnavailableError>()(
 	"@maple/http/errors/GcpLiveQueryUnavailableError",
 	{
@@ -30,14 +38,14 @@ export class GcpLiveQueryUnavailableError extends HttpTaggedError<GcpLiveQueryUn
 	{
 		status: 409,
 		code: "gcp_live_query_unavailable",
-		title: "Google Cloud metrics are not connected",
+		title: "Google Cloud metrics are not available",
 		retry: "never",
 		recovery: "none",
 		exposure: "public_message",
 	},
 ) {}
 
-/** Google failed or refused the read on every project the query reaches. */
+/** Google did not answer (errors, rate limits): worth a retry. */
 export class GcpLiveQueryFailedError extends HttpTaggedError<GcpLiveQueryFailedError>()(
 	"@maple/http/errors/GcpLiveQueryFailedError",
 	{
@@ -60,4 +68,7 @@ export const gcpLiveQueryHttpErrors = [
 	GcpLiveQueryFailedError,
 ] as const
 
-export type GcpLiveQueryError = GcpLiveQueryRejectedError | GcpLiveQueryUnavailableError | GcpLiveQueryFailedError
+export type GcpLiveQueryError =
+	| GcpLiveQueryRejectedError
+	| GcpLiveQueryUnavailableError
+	| GcpLiveQueryFailedError

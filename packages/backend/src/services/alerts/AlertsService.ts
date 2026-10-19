@@ -132,7 +132,6 @@ import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgCli
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { GcpLiveMetricsPort } from "@maple/backend/services/warehouse/GcpLiveMetricsPort"
 import { withAlertEvaluationScope, type GroupedAlertObservation } from "@maple/query-engine/runtime"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { chartImageUrl, chartWindow, loadChartSeries } from "./alert-chart-series"
@@ -4647,7 +4646,5 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				AlertRulesService.layer,
 			),
 		),
-		// Rules on Cloud Monitoring metrics evaluate live against Google.
-		Layer.provide(GcpLiveMetricsPort.layer),
 	)
 }

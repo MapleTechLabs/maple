@@ -1,28 +1,29 @@
 /**
  * Google Cloud Monitoring metrics, read live through Google's Prometheus-compatible API: the query
  * engine's `GcpLiveMetrics` port. A connection with metrics on (its read-only account in place)
- * is a target: a project scope is its project, a folder or organization the active projects
- * Cloud Asset finds under it. Each project is read with its connection's read-only account, one
- * call per metrics scope. What answered is returned; only when nothing did is it a failure.
+ * is a target: a project scope is its project, a folder or organization the active projects its
+ * last inventory sync found. Each project is read with its connection's read-only account, one
+ * call per metrics scope. What answered is returned, unless the read requires every project.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { EdgeCacheService } from "@maple/cache"
-import { GcpConnectors, type GcpConnectorRow } from "@maple/db/tables"
-import type { GcpMetricDescriptor, GcpPromQlSeries } from "@maple/domain/gcp-live-metrics"
+import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
+import { GcpMetricDescriptor, type GcpPromQlSeries } from "@maple/domain/gcp-live-metrics"
+import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
+	GCP_LIVE_METRICS_NOT_AVAILABLE,
 	GcpLiveQueryFailedError,
 	GcpLiveQueryRejectedError,
 	GcpLiveQueryUnavailableError,
 } from "@maple/domain/http/gcp-live-query-errors"
 import { GcpProjectId, type OrgId } from "@maple/domain/primitives"
-import type { GcpLiveMetrics, QueryTenant } from "@maple/query-engine/runtime"
+import type { GcpLiveMetrics, GcpReadScope, QueryTenant } from "@maple/query-engine/runtime"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import {
-	ActiveMetricDescriptor,
 	fetchMapleAccessToken,
 	getMetricsScope,
 	type GcpApiError,
@@ -31,20 +32,18 @@ import {
 	importServiceAccountKey,
 	impersonateReader,
 	listActiveMetricDescriptorsPage,
+	MetricsScope,
 	promQlQuery,
-	searchProjectsPage,
 } from "./gcp/api"
 import { describeGcpApiError } from "./gcp/explain"
-import { mapGcpResource } from "./gcp/mapping"
 
 /** Google's tokens live 600 s. Three minutes to spare outlast the slowest fan-out. */
 const TOKEN_REUSE_MS = 7 * 60_000
 const CONCURRENCY = 4
 /** The engine has no project picker: past this a query must filter on `project_id`. */
 const MAX_PROJECTS = 20
+/** Series Google returns across a query's projects. */
 const MAX_SERIES = 500
-/** Projects a folder or organization search reads, 500 a page. */
-const MAX_PROJECT_PAGES = 4
 /** 10,000 descriptors a page; a project rarely fills one. */
 const MAX_DESCRIPTOR_PAGES = 5
 const HOUR_SECONDS = 3_600
@@ -55,7 +54,6 @@ const API_ERROR = "@maple/api/integrations/GcpApiError"
 const isProjectId = Schema.is(GcpProjectId)
 
 type Connector = Pick<GcpConnectorRow, "id" | "scopeType" | "scopeId" | "projectId" | "lastMetricsReceivedAt">
-type Failure = GcpLiveQueryFailedError["failures"][number]
 type Port = GcpLiveMetrics<QueryTenant>
 interface Target {
 	readonly projectId: GcpProjectId
@@ -64,14 +62,59 @@ interface Target {
 
 const scopeName = (connector: Connector) => `${connector.scopeType}s/${connector.scopeId}`
 
-/** A project's metrics scope: its number, and the numbers of the projects it reads, itself included. */
-const MetricsScope = Schema.Struct({ number: Schema.String, monitored: Schema.Array(Schema.String) })
+/** A connection or project Google did not answer for, and why. */
+interface Failure {
+	readonly scope: string
+	readonly message: string
+	readonly error: GcpApiError
+}
 
-const nothingRead = (failures: ReadonlyArray<Failure>) =>
-	new GcpLiveQueryFailedError({
-		message: `Google Cloud could not be read. ${failures.map((failure) => `${failure.scope}: ${failure.message}`).join(" ")}`,
-		failures,
-	})
+/** A `catchTag` handler that records a Google failure and goes on without the answer. */
+const recordFailure =
+	(failures: Array<Failure>, scope: string, connector: Connector) => (error: GcpApiError) => {
+		failures.push({ scope, message: describeGcpApiError(error, connector, "live"), error })
+		return Effect.succeed(undefined)
+	}
+
+const isTransient = (error: GcpApiError) => error.kind === "rate_limited" || error.kind === "upstream"
+/** Google refused to finish the query itself (422 `execution`). */
+const isQueryRefusal = (error: GcpApiError) => error.kind === "invalid" && error.reason === "QUERY_EXECUTION"
+
+/**
+ * A read that failed. Worth a retry only when Google did not answer; a query Google would not
+ * finish is the caller's to narrow; anything else (a missing role, API or billing account) is
+ * setup that no retry fixes.
+ */
+const readFailed = (failures: ReadonlyArray<Failure>) => {
+	const text = `Google Cloud could not be read. ${failures.map((failure) => `${failure.scope}: ${failure.message}`).join(" ")}`
+	if (failures.every((failure) => isTransient(failure.error))) {
+		return new GcpLiveQueryFailedError({
+			message: text,
+			failures: failures.map(({ scope, message }) => ({ scope, message })),
+		})
+	}
+	if (failures.every((failure) => isTransient(failure.error) || isQueryRefusal(failure.error))) {
+		return new GcpLiveQueryRejectedError({ message: text, reason: "invalid_query" })
+	}
+	return new GcpLiveQueryUnavailableError({ message: text })
+}
+
+/** Partial answers have no warnings channel: the failures go to the span and the log. */
+const logFailures = (failures: ReadonlyArray<Failure>) => {
+	const [first] = failures
+	return first === undefined
+		? Effect.void
+		: Effect.annotateCurrentSpan({
+				"maple.gcp.failed_projects": failures.length,
+				"maple.gcp.failure": first.message,
+			}).pipe(
+				Effect.andThen(
+					Effect.logWarning("gcp live read failed in part", {
+						failures: failures.map(({ scope, message }) => ({ scope, message })),
+					}),
+				),
+			)
+}
 
 const mapleSignInFailed = () =>
 	new GcpLiveQueryFailedError({
@@ -79,6 +122,19 @@ const mapleSignInFailed = () =>
 			"Maple could not sign in to Google Cloud. Try again in a few minutes. If this repeats, write to support@maple.dev.",
 		failures: [],
 	})
+
+/**
+ * The targets a read covers: the projects it names when each is a target, else all of them. A
+ * project reached only through another's metrics scope is read through that one, and the
+ * query's `project_id` matcher keeps it alone.
+ */
+const selectTargets = (targets: ReadonlyArray<Target>, requested: ReadonlyArray<string> | undefined) => {
+	if (requested === undefined) return targets
+	const named = targets.filter((target) => requested.includes(target.projectId))
+	return requested.every((projectId) => named.some((target) => target.projectId === projectId))
+		? named
+		: targets
+}
 
 /** Every project's descriptors as one list: a type's resource types and labels are the union. */
 const mergeDescriptors = (lists: ReadonlyArray<ReadonlyArray<GcpMetricDescriptor>>) => {
@@ -116,16 +172,21 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
 			const edgeCache = yield* EdgeCacheService
-			// A failed connector read is a defect: the port has no persistence error.
-			const dbExecute = makeDbExecute(database, "GcpLiveMetricsService", (error) => error)
+			const dbExecute = makeDbExecute(
+				database,
+				"GcpLiveMetricsService",
+				() =>
+					new GcpLiveQueryFailedError({
+						message:
+							"Maple could not read its Google Cloud connections. Try again in a few minutes.",
+						failures: [],
+					}),
+			)
 
 			const signingKey = Option.match(env.MAPLE_GCP_SERVICE_ACCOUNT_KEY, {
 				onNone: () =>
 					Effect.fail(
-						new GcpLiveQueryUnavailableError({
-							message:
-								"Google Cloud metrics are not available on this Maple deployment: it has no Google service account key (MAPLE_GCP_SERVICE_ACCOUNT_KEY).",
-						}),
+						new GcpLiveQueryUnavailableError({ message: GCP_LIVE_METRICS_NOT_AVAILABLE }),
 					),
 				onSome: Effect.succeed,
 			})
@@ -158,34 +219,8 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 				return reader
 			})
 
-			const searchProjects = Effect.fnUntraced(function* (
-				key: Redacted.Redacted<string>,
-				connector: Connector,
-			) {
-				const reader = yield* readerFor(key, connector)
-				// The id is validated when the connector is created; encoding keeps it inside the path.
-				const scope = `${connector.scopeType}s/${encodeURIComponent(connector.scopeId)}`
-				const projects: Array<GcpProjectId> = []
-				let pageToken: string | undefined
-				for (let page = 0; page < MAX_PROJECT_PAGES; page++) {
-					const body = yield* searchProjectsPage(httpClient, reader, scope, pageToken)
-					for (const result of body.results ?? []) {
-						const projectId = mapGcpResource(result)?.projectId
-						// A project pending deletion answers nothing but errors.
-						if ((result.state ?? "ACTIVE") === "ACTIVE" && isProjectId(projectId))
-							projects.push(projectId)
-					}
-					pageToken = body.nextPageToken
-					if (pageToken === undefined) break
-				}
-				return projects
-			})
-
-			/**
-			 * Every project the org's metrics-on connections reach, each with the connection that
-			 * reads it, and the connections whose projects could not be listed.
-			 */
-			const targetsOf = Effect.fnUntraced(function* (orgId: OrgId, key: Redacted.Redacted<string>) {
+			/** Every project the org's metrics-on connections reach, each with the connection that reads it, by id. */
+			const targetsOf = Effect.fnUntraced(function* (orgId: OrgId) {
 				const connectors = yield* dbExecute((db) =>
 					db.run(
 						PG.from(GcpConnectors)
@@ -196,145 +231,91 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 								[$.id, "asc"],
 							]),
 					),
-				).pipe(Effect.orDie)
+				)
 				if (connectors.length === 0) {
 					return yield* new GcpLiveQueryUnavailableError({
 						message: "Connect Google Cloud with metrics on to query Google Cloud metrics.",
 					})
 				}
-				// One connection at a time, so a cold isolate signs in as Maple once.
-				const listed = yield* Effect.forEach(connectors, (connector) =>
-					connector.scopeType === "project"
-						? Effect.succeed({ connector, projects: [connector.projectId] })
-						: edgeCache
-								.getOrCompute(
-									{
-										bucket: "gcp-projects",
-										key: `${orgId}:${connector.id}`,
-										ttlSeconds: HOUR_SECONDS,
-										readTimeoutMs: CACHE_READ_TIMEOUT_MS,
-										schema: Schema.Array(GcpProjectId),
-									},
-									searchProjects(key, connector),
-								)
-								.pipe(
-									Effect.map(({ value }) => ({ connector, projects: value })),
-									Effect.catchTag(API_ERROR, (error) =>
-										Effect.succeed({
-											connector,
-											projects: [],
-											failure: {
-												scope: scopeName(connector),
-												message: describeGcpApiError(error, connector, "live"),
-											},
-										}),
-									),
+				const folders = connectors.filter((connector) => connector.scopeType !== "project")
+				// A project pending deletion answers nothing but errors.
+				const inventory =
+					folders.length === 0
+						? []
+						: yield* dbExecute((db) =>
+								db.run(
+									PG.from(GcpResources)
+										.select("connectorId", "projectId")
+										.where(($) => [
+											$.connectorId.in_(...folders.map((connector) => connector.id)),
+											$.assetType.eq(GCP_PROJECT_ASSET_TYPE),
+											PG.or($.state.isNull(), $.state.eq("ACTIVE")),
+										]),
 								),
-				)
+							)
 				// Overlapping connections read a project through the oldest.
-				const projects = new Map<string, Target>()
-				for (const { connector, projects: ids } of listed) {
-					for (const projectId of ids) {
-						if (!projects.has(projectId)) projects.set(projectId, { projectId, connector })
+				const targets = new Map<string, Target>()
+				for (const connector of connectors) {
+					const projectIds =
+						connector.scopeType === "project"
+							? [connector.projectId]
+							: inventory
+									.filter((row) => row.connectorId === connector.id)
+									.map((row) => row.projectId)
+					for (const projectId of projectIds) {
+						if (isProjectId(projectId) && !targets.has(projectId))
+							targets.set(projectId, { projectId, connector })
 					}
 				}
-				return {
-					projects,
-					failures: listed.flatMap((entry) => ("failure" in entry ? [entry.failure] : [])),
-				}
+				return [...targets.values()].sort((a, b) => a.projectId.localeCompare(b.projectId))
 			})
 
 			/** Signs each connection in once, so one that cannot fails once, not once per project. */
 			const signIn = Effect.fnUntraced(function* (
 				key: Redacted.Redacted<string>,
 				targets: ReadonlyArray<Target>,
+				failures: Array<Failure>,
 			) {
-				const signedIn = new Map<Connector, GcpReader>()
-				const failures: Array<Failure> = []
+				const signedIn = new Map<Connector, GcpReader | undefined>()
 				for (const connector of new Set(targets.map((target) => target.connector))) {
-					const reader = yield* readerFor(key, connector).pipe(
-						Effect.catchTag(API_ERROR, (error) => {
-							failures.push({
-								scope: scopeName(connector),
-								message: describeGcpApiError(error, connector, "live"),
-							})
-							return Effect.succeed(undefined)
-						}),
+					signedIn.set(
+						connector,
+						yield* readerFor(key, connector).pipe(
+							Effect.catchTag(
+								API_ERROR,
+								recordFailure(failures, scopeName(connector), connector),
+							),
+						),
 					)
-					if (reader !== undefined) signedIn.set(connector, reader)
 				}
-				return {
-					reads: targets.flatMap((target) => {
-						const reader = signedIn.get(target.connector)
-						return reader === undefined ? [] : [{ ...target, reader }]
-					}),
-					failures,
-				}
-			})
-
-			const projectFailure = (target: Target, error: GcpApiError): Failure => ({
-				scope: `projects/${target.projectId}`,
-				message: describeGcpApiError(error, target.connector, "live"),
-			})
-
-			/** Partial answers have no warnings channel: the failures go to the span and the log. */
-			const recordFailures = (failures: ReadonlyArray<Failure>) => {
-				const [first] = failures
-				return first === undefined
-					? Effect.void
-					: Effect.annotateCurrentSpan({
-							"maple.gcp.failed_projects": failures.length,
-							"maple.gcp.failure": first.message,
-						}).pipe(
-							Effect.andThen(Effect.logWarning("gcp live read failed in part", { failures })),
-						)
-			}
-
-			/** The projects a query reads: the ones it names, else all, at most `MAX_PROJECTS`. */
-			const selectTargets = Effect.fnUntraced(function* (
-				targets: Effect.Success<ReturnType<typeof targetsOf>>,
-				requested: ReadonlyArray<string> | undefined,
-			) {
-				const all = [...targets.projects.values()].sort((a, b) =>
-					a.projectId.localeCompare(b.projectId),
-				)
-				if (requested !== undefined) {
-					const unknown = requested.filter((projectId) => !targets.projects.has(projectId))
-					if (unknown.length > 0) {
-						// A connection whose projects could not be listed may hold them.
-						if (targets.failures.length > 0) return yield* nothingRead(targets.failures)
-						return yield* new GcpLiveQueryRejectedError({
-							message: `Not among the projects this organization's Google Cloud connections can read: ${unknown.join(", ")}.`,
-							reason: "invalid_query",
-						})
-					}
-					return all.filter((target) => requested.includes(target.projectId))
-				}
-				if (all.length > MAX_PROJECTS) {
-					const named = all.slice(0, 5).map((target) => target.projectId)
-					return yield* new GcpLiveQueryRejectedError({
-						message: `The Google Cloud connections reach ${all.length} projects, and one query reads at most ${MAX_PROJECTS}. Filter on project_id to choose them, e.g. ${named.join(", ")}.`,
-						reason: "too_many_projects",
-					})
-				}
-				return all
+				return targets.flatMap((target) => {
+					const reader = signedIn.get(target.connector)
+					return reader === undefined ? [] : [{ ...target, reader }]
+				})
 			})
 
 			const runQuery = Effect.fnUntraced(function* (
 				orgId: OrgId,
-				requested: ReadonlyArray<string> | undefined,
+				options: GcpReadScope,
 				params: GcpPromQlParams,
 			) {
 				const key = yield* signingKey
-				const targets = yield* targetsOf(orgId, key)
-				const selected = yield* selectTargets(targets, requested)
+				const selected = selectTargets(yield* targetsOf(orgId), options.projects)
+				if (selected.length > MAX_PROJECTS) {
+					const named = selected.slice(0, 5).map((target) => target.projectId)
+					return yield* new GcpLiveQueryRejectedError({
+						message: `The Google Cloud connections reach ${selected.length} projects, and one query reads at most ${MAX_PROJECTS}. Filter on project_id to choose them, e.g. ${named.join(", ")}.`,
+						reason: "too_many_projects",
+					})
+				}
 				yield* Effect.annotateCurrentSpan({ "maple.gcp.project_count": selected.length })
-				const signedIn = yield* signIn(key, selected)
+				const failures: Array<Failure> = []
+				const signedIn = yield* signIn(key, selected, failures)
 
 				// A query on a project reads its whole metrics scope, so a target that another target's
 				// scope holds is answered through that one, not read twice.
 				const scoped = yield* Effect.forEach(
-					signedIn.reads,
+					signedIn,
 					(target) =>
 						edgeCache
 							.getOrCompute(
@@ -349,23 +330,23 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 							)
 							.pipe(
 								Effect.map(({ value }) => ({ ...target, scope: value })),
-								Effect.catchTag(API_ERROR, (error) =>
-									Effect.succeed({ ...target, failure: projectFailure(target, error) }),
+								Effect.catchTag(
+									API_ERROR,
+									recordFailure(failures, `projects/${target.projectId}`, target.connector),
 								),
 							),
 					{ concurrency: CONCURRENCY },
 				)
-				const withScope = scoped.flatMap((target) => ("scope" in target ? [target] : []))
 				const covered = new Set<string>()
-				const reads: typeof withScope = []
-				// Widest scopes first.
-				for (const target of withScope.sort(
-					(a, b) => b.scope.monitored.length - a.scope.monitored.length,
-				)) {
-					if (covered.has(target.scope.number)) continue
-					for (const number of target.scope.monitored) covered.add(number)
-					reads.push(target)
-				}
+				const reads = scoped
+					.filter((target) => target !== undefined)
+					// Widest scopes first.
+					.sort((a, b) => b.scope.monitored.length - a.scope.monitored.length)
+					.filter((target) => {
+						if (covered.has(target.scope.number)) return false
+						for (const number of target.scope.monitored) covered.add(number)
+						return true
+					})
 
 				let seriesCount = 0
 				const answers = yield* Effect.forEach(
@@ -384,26 +365,21 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 										)
 									: Effect.succeed({ read, series })
 							}),
-							Effect.catchTag(API_ERROR, (error) =>
-								Effect.succeed({ read, failure: projectFailure(read, error) }),
+							Effect.catchTag(
+								API_ERROR,
+								recordFailure(failures, `projects/${read.projectId}`, read.connector),
 							),
 						),
 					{ concurrency: CONCURRENCY },
 				)
-
-				const failures = [
-					...targets.failures,
-					...signedIn.failures,
-					...scoped.flatMap((target) => ("failure" in target ? [target.failure] : [])),
-					...answers.flatMap((answer) => ("failure" in answer ? [answer.failure] : [])),
-				]
-				yield* recordFailures(failures)
-				const answered = answers.flatMap((answer) => ("series" in answer ? [answer] : []))
-				if (answered.length === 0 && failures.length > 0) return yield* nothingRead(failures)
+				const answered = answers.filter((answer) => answer !== undefined)
+				yield* logFailures(failures)
+				if (failures.length > 0 && (options.requireComplete || answered.length === 0)) {
+					return yield* readFailed(failures)
+				}
 				const series = answered.flatMap(({ read, series }) =>
 					series.map((one): GcpPromQlSeries => ({
-						// Identical label sets from two projects stay apart. A scope of several projects
-						// names itself, not a project its series may not come from.
+						// A scope of several projects names itself, not a project its series may not come from.
 						labels:
 							one.labels.project_id === undefined
 								? {
@@ -436,76 +412,73 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 				return descriptors
 			})
 
-			const listMetrics = Effect.fn("GcpLiveMetrics.listMetrics")(function* (tenant: QueryTenant) {
-				const key = yield* signingKey
-				const targets = yield* targetsOf(tenant.orgId, key)
-				// Discovery has no `project_id` filter to narrow it: past the cap, the first projects speak.
-				const selected = [...targets.projects.values()]
-					.sort((a, b) => a.projectId.localeCompare(b.projectId))
-					.slice(0, MAX_PROJECTS)
-				yield* Effect.annotateCurrentSpan({ "maple.gcp.project_count": selected.length })
-				const signedIn = yield* signIn(key, selected)
-				const listed = yield* Effect.forEach(
-					signedIn.reads,
-					(target) =>
-						edgeCache
-							.getOrCompute(
-								{
-									bucket: "gcp-metric-descriptors",
-									key: `${tenant.orgId}:${target.projectId}`,
-									ttlSeconds: HOUR_SECONDS,
-									readTimeoutMs: CACHE_READ_TIMEOUT_MS,
-									schema: Schema.Array(ActiveMetricDescriptor),
-								},
-								listDescriptors(target.reader, target.projectId),
-							)
-							.pipe(
-								Effect.map(({ value }) => ({ descriptors: value })),
-								Effect.catchTag(API_ERROR, (error) =>
-									Effect.succeed({ failure: projectFailure(target, error) }),
-								),
-							),
-					{ concurrency: CONCURRENCY },
-				)
-				const failures = [
-					...targets.failures,
-					...signedIn.failures,
-					...listed.flatMap((entry) => ("failure" in entry ? [entry.failure] : [])),
-				]
-				yield* recordFailures(failures)
-				const lists = listed.flatMap((entry) => ("descriptors" in entry ? [entry.descriptors] : []))
-				if (lists.length === 0 && failures.length > 0) return yield* nothingRead(failures)
-				return mergeDescriptors(lists)
-			})
-
 			return {
-				queryRange: Effect.fn("GcpLiveMetrics.queryRange")(function* (
+				queryRange: Effect.fn("GcpLiveMetricsService.queryRange")(function* (
 					tenant: QueryTenant,
 					request: Parameters<Port["queryRange"]>[1],
 				) {
-					return yield* runQuery(tenant.orgId, request.projects, {
+					return yield* runQuery(tenant.orgId, request, {
 						query: request.query,
 						start: request.startSeconds,
 						end: request.endSeconds,
 						step: request.stepSeconds,
 					})
 				}),
-				queryInstant: Effect.fn("GcpLiveMetrics.queryInstant")(function* (
+				queryInstant: Effect.fn("GcpLiveMetricsService.queryInstant")(function* (
 					tenant: QueryTenant,
 					request: Parameters<Port["queryInstant"]>[1],
 				) {
-					return yield* runQuery(tenant.orgId, request.projects, {
+					return yield* runQuery(tenant.orgId, request, {
 						query: request.query,
 						time: request.timeSeconds,
 					})
 				}),
-				listMetrics,
-				describeMetric: Effect.fn("GcpLiveMetrics.describeMetric")(function* (
+				listMetrics: Effect.fn("GcpLiveMetricsService.listMetrics")(function* (
 					tenant: QueryTenant,
-					metricType: string,
+					options: GcpReadScope,
 				) {
-					const metrics = yield* listMetrics(tenant)
-					return metrics.find((metric) => metric.type === metricType)
+					const key = yield* signingKey
+					// Discovery has no project picker: past the cap, the first projects speak.
+					const selected = selectTargets(yield* targetsOf(tenant.orgId), options.projects).slice(
+						0,
+						MAX_PROJECTS,
+					)
+					yield* Effect.annotateCurrentSpan({ "maple.gcp.project_count": selected.length })
+					const failures: Array<Failure> = []
+					const signedIn = yield* signIn(key, selected, failures)
+					const listed = yield* Effect.forEach(
+						signedIn,
+						(target) =>
+							edgeCache
+								.getOrCompute(
+									{
+										bucket: "gcp-metric-descriptors",
+										key: `${tenant.orgId}:${target.projectId}`,
+										ttlSeconds: HOUR_SECONDS,
+										readTimeoutMs: CACHE_READ_TIMEOUT_MS,
+										schema: Schema.Array(GcpMetricDescriptor),
+									},
+									listDescriptors(target.reader, target.projectId),
+								)
+								.pipe(
+									Effect.map(({ value }) => value),
+									Effect.catchTag(
+										API_ERROR,
+										recordFailure(
+											failures,
+											`projects/${target.projectId}`,
+											target.connector,
+										),
+									),
+								),
+						{ concurrency: CONCURRENCY },
+					)
+					const lists = listed.filter((list) => list !== undefined)
+					yield* logFailures(failures)
+					if (failures.length > 0 && (options.requireComplete || lists.length === 0)) {
+						return yield* readFailed(failures)
+					}
+					return mergeDescriptors(lists)
 				}),
 			} satisfies Port
 		}),

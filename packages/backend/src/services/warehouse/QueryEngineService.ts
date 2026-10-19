@@ -1,5 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
-import { Clock, Context, Effect, Layer, Metric, Option, type Schema } from "effect"
+import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
 import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
 import type { QueryEngineTimeoutError } from "@maple/domain/http"
@@ -42,7 +42,7 @@ import {
 import { EdgeCacheService } from "@maple/cache"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import * as QueryEngineMetrics from "@maple/backend/observability/QueryEngineMetrics"
-import { GcpLiveMetricsPort } from "@maple/backend/services/warehouse/GcpLiveMetricsPort"
+import { GcpLiveMetricsService } from "@maple/backend/services/integrations/GcpLiveMetricsService"
 import {
 	listGcpMetricCatalog,
 	type GcpMetricCatalogRequest,
@@ -109,7 +109,7 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 			const warehouse = yield* WarehouseQueryService
 			const edgeCache = yield* EdgeCacheService
 			const bucketCache = yield* BucketCacheService
-			const gcp = Option.getOrUndefined(yield* Effect.serviceOption(GcpLiveMetricsPort))
+			const gcp = yield* GcpLiveMetricsService
 			const executeImpl = makeQueryEngineExecute(warehouse, gcp)
 			const evaluateImpl = makeQueryEngineEvaluate(warehouse, gcp)
 			const evaluateSeriesImpl = makeQueryEngineEvaluateSeries(warehouse, gcp)
@@ -517,6 +517,12 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, BucketCacheService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				BucketCacheService.layer,
+				GcpLiveMetricsService.layer,
+			),
+		),
 	)
 }

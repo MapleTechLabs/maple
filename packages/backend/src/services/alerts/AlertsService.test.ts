@@ -63,6 +63,7 @@ import { EmailService } from "@maple/backend/platform/EmailService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { GcpLiveMetricsService } from "@maple/backend/services/integrations/GcpLiveMetricsService"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -291,6 +292,7 @@ const makeLayer = (
 	const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 	const bucketCacheLive = BucketCacheService.layer.pipe(Layer.provide(edgeCacheLive))
 	const queryEngineLive = Layer.effect(QueryEngineService, QueryEngineService.make).pipe(
+		Layer.provide(Layer.mock(GcpLiveMetricsService, {})),
 		Layer.provide(warehouseLive),
 		Layer.provide(edgeCacheLive),
 		Layer.provide(bucketCacheLive),

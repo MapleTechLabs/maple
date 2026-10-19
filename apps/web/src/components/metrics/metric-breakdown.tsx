@@ -20,6 +20,7 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { MetricsQueryDraft } from "@maple/query-engine/query-builder"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
 
 const SERVICE_KEY = "service.name"
@@ -92,7 +93,10 @@ export function MetricBreakdown({
 		.onSuccess((r) => r.data.map((row) => row.attributeKey))
 		.orElse(() => [])
 
-	const effectiveKey = breakdownKey ?? SERVICE_KEY
+	// Google Cloud metrics have no service.name: they break down by their first label until one is chosen.
+	const isGcp = isGcpMetricType(draft.metricName)
+	const chosenKey = isGcp && breakdownKey === SERVICE_KEY ? undefined : breakdownKey
+	const effectiveKey = chosenKey ?? (isGcp ? attributeKeys[0] : SERVICE_KEY)
 	const groupBy = effectiveKey === SERVICE_KEY ? SERVICE_KEY : `attr.${effectiveKey}`
 
 	const breakdownDraft = React.useMemo(
@@ -113,7 +117,7 @@ export function MetricBreakdown({
 				title={`Top values · ${breakdownAggregation(draft.aggregation)} per value`}
 				action={
 					<Combobox
-						value={effectiveKey}
+						value={effectiveKey ?? null}
 						onValueChange={(value) => {
 							if (value) onBreakdownKeyChange(value)
 						}}
@@ -121,7 +125,9 @@ export function MetricBreakdown({
 						<ComboboxInput placeholder="Break down by..." className="h-7 w-52 text-xs" />
 						<ComboboxContent>
 							<ComboboxList>
-								<ComboboxItem value={SERVICE_KEY}>{SERVICE_KEY}</ComboboxItem>
+								{isGcp ? null : (
+									<ComboboxItem value={SERVICE_KEY}>{SERVICE_KEY}</ComboboxItem>
+								)}
 								{attributeKeys.map((key) => (
 									<ComboboxItem key={key} value={key}>
 										{key}
@@ -133,13 +139,19 @@ export function MetricBreakdown({
 				}
 			/>
 			<div className="p-3">
-				<BreakdownBars
-					draft={breakdownDraft}
-					startTime={startTime}
-					endTime={endTime}
-					filterKey={groupBy}
-					onAddFilter={(value) => onAddFilter(groupBy, value)}
-				/>
+				{effectiveKey !== undefined ? (
+					<BreakdownBars
+						draft={breakdownDraft}
+						startTime={startTime}
+						endTime={endTime}
+						filterKey={groupBy}
+						onAddFilter={(value) => onAddFilter(groupBy, value)}
+					/>
+				) : Result.isInitial(keysResult) ? (
+					<SkeletonList rows={5} rowClassName="h-6" gap="2" />
+				) : (
+					<EmptyMessage>No labels to break down by in the selected range.</EmptyMessage>
+				)}
 			</div>
 		</Panel>
 	)

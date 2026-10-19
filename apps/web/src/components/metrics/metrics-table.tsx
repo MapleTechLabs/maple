@@ -191,7 +191,6 @@ export function MetricsTable({
 										)}
 									</TableCell>
 									<TableCell className="hidden md:table-cell font-mono text-xs">
-										{/* Google Cloud metrics are read live; Maple stores no points for them. */}
 										{isGcpMetricType(metric.metricName)
 											? EMPTY_VALUE
 											: formatNumber(metric.dataPointCount)}
