@@ -22,6 +22,10 @@ import type { TemplateDefinition, WidgetDef } from "@maple/backend/dashboard-tem
 // tables and every AI Gateway widget are SQL, which the logs builder (no attribute group-by) and the
 // traces builder (no span-kind filter, no attribute sums) cannot express.
 
+/** Zero-fills empty buckets so a burst draws as a spike rather than a lone, invisible point. */
+const FILL =
+	"WITH FILL FROM toStartOfInterval($__startTime, INTERVAL $__interval_s SECOND) TO $__endTime STEP INTERVAL $__interval_s SECOND"
+
 const REQUESTS_WHERE = `resource.cloud.provider = "vercel" AND attr.http.request.method exists`
 
 function logsSql(projectName?: string): string {
@@ -131,7 +135,7 @@ function widgets(projectName?: string): WidgetDef[] {
 			visualization: "chart",
 			sql: `SELECT $__timeGroup(Timestamp) AS bucket, ${[2, 3, 4, 5]
 				.map((digit) => `countIf(intDiv(${STATUS_SQL}, 100) = ${digit}) AS \`${digit}xx\``)
-				.join(", ")} FROM logs WHERE ${requests} GROUP BY bucket ORDER BY bucket`,
+				.join(", ")} FROM logs WHERE ${requests} GROUP BY bucket ORDER BY bucket ${FILL}`,
 			display: { title: "Requests by Status Class", ...CHART_DISPLAY_AREA, unit: "number" },
 			layout: { x: 6, y: 2, w: 6, h: 6 },
 		}),
@@ -139,6 +143,7 @@ function widgets(projectName?: string): WidgetDef[] {
 			id: "cache-hit-rate",
 			visualization: "chart",
 			sql: `SELECT $__timeGroup(Timestamp) AS bucket, ${CACHE_HIT_RATIO_SQL} AS hit_rate FROM logs WHERE ${requests} GROUP BY bucket ORDER BY bucket`,
+			// Not gap-filled: an empty bucket has no rate, not 0%.
 			display: { title: "Cache Hit Rate", ...CHART_DISPLAY_LINE, unit: "percent" },
 			layout: { x: 0, y: 8, w: 6, h: 6 },
 		}),
@@ -159,7 +164,7 @@ function widgets(projectName?: string): WidgetDef[] {
 		sqlWidget({
 			id: "error-logs",
 			visualization: "table",
-			sql: `SELECT ServiceName AS project, substring(Body, 1, 300) AS message, count() AS count, max(Timestamp) AS last_seen FROM logs WHERE ${logs} AND SeverityNumber >= 17 GROUP BY project, message ORDER BY count DESC LIMIT 20`,
+			sql: `SELECT ServiceName AS project, substring(Body, 1, 300) AS message, count() AS count, formatDateTime(max(Timestamp), '%Y-%m-%d %H:%i UTC') AS last_seen FROM logs WHERE ${logs} AND SeverityNumber >= 17 AND Body != '' GROUP BY project, message ORDER BY count DESC LIMIT 20`,
 			display: {
 				title: "Error Logs",
 				columns: [
@@ -204,21 +209,21 @@ function widgets(projectName?: string): WidgetDef[] {
 		sqlWidget({
 			id: "gateway-spend",
 			visualization: "chart",
-			sql: `SELECT $__timeGroup(Timestamp) AS bucket, ${COST_SQL} AS spend_usd FROM traces WHERE ${GATEWAY_SQL} GROUP BY bucket ORDER BY bucket`,
+			sql: `SELECT $__timeGroup(Timestamp) AS bucket, ${COST_SQL} AS spend_usd FROM traces WHERE ${GATEWAY_SQL} GROUP BY bucket ORDER BY bucket ${FILL}`,
 			display: { title: "AI Gateway Spend (USD)", ...CHART_DISPLAY_AREA, unit: "number" },
 			layout: { x: 0, y: 22, w: 6, h: 6 },
 		}),
 		sqlWidget({
 			id: "gateway-tokens",
 			visualization: "chart",
-			sql: `SELECT $__timeGroup(Timestamp) AS bucket, ${INPUT_TOKENS_SQL} AS input_tokens, ${OUTPUT_TOKENS_SQL} AS output_tokens FROM traces WHERE ${GATEWAY_SQL} GROUP BY bucket ORDER BY bucket`,
+			sql: `SELECT $__timeGroup(Timestamp) AS bucket, ${INPUT_TOKENS_SQL} AS input_tokens, ${OUTPUT_TOKENS_SQL} AS output_tokens FROM traces WHERE ${GATEWAY_SQL} GROUP BY bucket ORDER BY bucket ${FILL}`,
 			display: { title: "AI Gateway Tokens", ...CHART_DISPLAY_AREA, unit: "number" },
 			layout: { x: 6, y: 22, w: 6, h: 6 },
 		}),
 		sqlWidget({
 			id: "gateway-requests",
 			visualization: "chart",
-			sql: `SELECT $__timeGroup(Timestamp) AS bucket, count() AS requests, countIf(StatusCode = 'Error') AS errors FROM traces WHERE ${GATEWAY_SQL} GROUP BY bucket ORDER BY bucket`,
+			sql: `SELECT $__timeGroup(Timestamp) AS bucket, count() AS requests, countIf(StatusCode = 'Error') AS errors FROM traces WHERE ${GATEWAY_SQL} GROUP BY bucket ORDER BY bucket ${FILL}`,
 			display: { title: "AI Gateway Requests", ...CHART_DISPLAY_AREA, unit: "number" },
 			layout: { x: 0, y: 28, w: 6, h: 6 },
 		}),
