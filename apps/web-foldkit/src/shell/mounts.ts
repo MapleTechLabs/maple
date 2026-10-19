@@ -2,6 +2,7 @@ import { Effect, Queue, Schema, Stream } from "effect"
 import { Dom, Mount } from "foldkit"
 import { Align, measurePosition, Side } from "../ui/anchor"
 import { applyScrollOverflow } from "../ui/scroll-area"
+import { containSearchKeys } from "./namespace-search"
 import { Menu, Message } from "./message"
 
 /**
@@ -27,7 +28,9 @@ export const PositionMenu = Mount.defineStream("PositionMenu", {
 		}
 		const initial = Stream.suspend(() => {
 			const popup = element.ownerDocument.getElementById(popupId)
-			if (popup instanceof HTMLElement) popup.focus({ preventScroll: true })
+			// An `autoFocus` field inside (the namespace search) keeps the focus it took.
+			if (popup instanceof HTMLElement && !popup.contains(element.ownerDocument.activeElement))
+				popup.focus({ preventScroll: true })
 			return measure()
 		})
 		const resized = Dom.streamFromEvent({
@@ -37,6 +40,18 @@ export const PositionMenu = Mount.defineStream("PositionMenu", {
 		}).pipe(Stream.flatMap(measure))
 		return Stream.concat(initial, resized)
 	},
+})
+
+/** The namespace menu's search input: focused as it mounts, its keys kept from the menu. */
+export const MountNamespaceSearch = Mount.defineStream("MountNamespaceSearch", {
+	messages: [Message.CompletedMountNamespaceSearch],
+	execute: ({ element }) =>
+		Stream.callback<typeof Message.CompletedMountNamespaceSearch.Type>((queue) =>
+			containSearchKeys(element).pipe(
+				Effect.andThen(Effect.sync(() => Queue.offerUnsafe(queue, Message.CompletedMountNamespaceSearch()))),
+				Effect.andThen(Effect.never),
+			),
+		),
 })
 
 /** The sidebar nav's `ScrollArea` overflow (its bottom fade), kept current on scroll and resize. */

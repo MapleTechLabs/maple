@@ -1,6 +1,6 @@
 import { InfraPresenceRequest } from "@maple/domain/http"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
-import { Clock, Effect } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../data/integration-statuses"
 import { loadServicesFacets } from "../data/services-facets-probe"
@@ -32,77 +32,91 @@ export const LoadTenant = Command.define("LoadTenant", {
 	}).pipe(failed(Message.FailedLoadTenant())),
 })
 
+
 /** `infraPresenceResultAtom`: which OTel infrastructure surfaces reported in the last hour. */
 export const LoadInfraPresence = Command.define("LoadInfraPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.SucceededLoadInfraPresence, Message.FailedLoadInfraPresence],
-	execute: Effect.gen(function* () {
-		const now = yield* Clock.currentTimeMillis
-		const end = Math.floor(now / PRESENCE_BUCKET_MS) * PRESENCE_BUCKET_MS
-		const client = yield* MapleInternalApiClient
-		const response = yield* client.queryEngine.infraPresence({
-			payload: new InfraPresenceRequest({
-				startTime: formatWarehouseDateTime(end - PRESENCE_WINDOW_MS),
-				endTime: formatWarehouseDateTime(end),
-			}),
-		})
-		return Message.SucceededLoadInfraPresence({ surfaces: response.surfaces })
-	}).pipe(failed(Message.FailedLoadInfraPresence())),
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const now = yield* Clock.currentTimeMillis
+			const end = Math.floor(now / PRESENCE_BUCKET_MS) * PRESENCE_BUCKET_MS
+			const client = yield* MapleInternalApiClient
+			const response = yield* client.queryEngine.infraPresence({
+				payload: new InfraPresenceRequest({
+					startTime: formatWarehouseDateTime(end - PRESENCE_WINDOW_MS),
+					endTime: formatWarehouseDateTime(end),
+				}),
+			})
+			return Message.SucceededLoadInfraPresence({ orgId, surfaces: response.surfaces })
+		}).pipe(failed(Message.FailedLoadInfraPresence({ orgId }))),
 })
 // INTEGRATIONS
 
 const integrationMessages = [Message.SucceededLoadIntegration, Message.FailedLoadIntegration] as const
+const orgArgs = { orgId: Schema.String }
 
 /** The four integration statuses `useInfraSurfaces` mounts in the sidebar (connected or not). */
 export const LoadCloudflareStatus = Command.define("LoadCloudflareStatus", {
+	args: orgArgs,
 	messages: integrationMessages,
-	execute: Effect.gen(function* () {
-		const status = yield* (yield* IntegrationStatuses).cloudflare()
-		return Message.SucceededLoadIntegration({ integration: "cloudflare", isConnected: status.connected })
-	}).pipe(failed(Message.FailedLoadIntegration({ integration: "cloudflare" }))),
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const status = yield* (yield* IntegrationStatuses).cloudflare({ orgId })
+			return Message.SucceededLoadIntegration({ orgId, integration: "cloudflare", isConnected: status.connected })
+		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "cloudflare" }))),
 })
 
 export const LoadRailwayStatus = Command.define("LoadRailwayStatus", {
+	args: orgArgs,
 	messages: integrationMessages,
-	execute: Effect.gen(function* () {
-		const status = yield* (yield* IntegrationStatuses).railway()
-		return Message.SucceededLoadIntegration({ integration: "railway", isConnected: status.connected })
-	}).pipe(failed(Message.FailedLoadIntegration({ integration: "railway" }))),
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const status = yield* (yield* IntegrationStatuses).railway({ orgId })
+			return Message.SucceededLoadIntegration({ orgId, integration: "railway", isConnected: status.connected })
+		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "railway" }))),
 })
 
 export const LoadPlanetscaleStatus = Command.define("LoadPlanetscaleStatus", {
+	args: orgArgs,
 	messages: integrationMessages,
-	execute: Effect.gen(function* () {
-		const status = yield* (yield* IntegrationStatuses).planetscale()
-		return Message.SucceededLoadIntegration({ integration: "planetscale", isConnected: status.connected })
-	}).pipe(failed(Message.FailedLoadIntegration({ integration: "planetscale" }))),
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const status = yield* (yield* IntegrationStatuses).planetscale({ orgId })
+			return Message.SucceededLoadIntegration({ orgId, integration: "planetscale", isConnected: status.connected })
+		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "planetscale" }))),
 })
 
 /** Google Cloud counts only with metrics on: the page reads metrics, not logs. */
 export const LoadGcpStatus = Command.define("LoadGcpStatus", {
+	args: orgArgs,
 	messages: integrationMessages,
-	execute: Effect.gen(function* () {
-		const status = yield* (yield* IntegrationStatuses).gcp()
-		const isConnected = status.connectors.some((connector) => connector.metrics_enabled)
-		return Message.SucceededLoadIntegration({ integration: "gcp", isConnected })
-	}).pipe(failed(Message.FailedLoadIntegration({ integration: "gcp" }))),
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const status = yield* (yield* IntegrationStatuses).gcp({ orgId })
+			const isConnected = status.connectors.some((connector) => connector.metrics_enabled)
+			return Message.SucceededLoadIntegration({ orgId, integration: "gcp", isConnected })
+		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "gcp" }))),
 })
 
 // DASHBOARDS AND NAMESPACES
 
 /**
  * `NamespaceScopeList`: the same snapped 24 h services facets probe the overview runs, read through
- * the shared probe so an answer the Overview page already has is not requested again.
+ * the shared probe under the shell's org, so an answer the Overview page already has is reused.
  */
 export const LoadNamespaces = Command.define("LoadNamespaces", {
+	args: orgArgs,
 	messages: [Message.SucceededLoadNamespaces, Message.FailedLoadNamespaces],
-	execute: Effect.gen(function* () {
-		const now = yield* Clock.currentTimeMillis
-		const range = snapRangeForCache({
-			startTime: formatWarehouseDateTime(now - 24 * 60 * 60 * 1000),
-			endTime: formatWarehouseDateTime(now),
-		})
-		const response = yield* loadServicesFacets(range)
-		const namespaces = response.data.namespaces.map((facet) => facet.name).filter((name) => name !== "")
-		return Message.SucceededLoadNamespaces({ namespaces })
-	}).pipe(failed(Message.FailedLoadNamespaces())),
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const now = yield* Clock.currentTimeMillis
+			const range = snapRangeForCache({
+				startTime: formatWarehouseDateTime(now - 24 * 60 * 60 * 1000),
+				endTime: formatWarehouseDateTime(now),
+			})
+			const response = yield* loadServicesFacets(range, { orgId })
+			const namespaces = response.data.namespaces.map((facet) => facet.name).filter((name) => name !== "")
+			return Message.SucceededLoadNamespaces({ orgId, namespaces })
+		}).pipe(failed(Message.FailedLoadNamespaces({ orgId }))),
 })

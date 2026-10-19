@@ -90,6 +90,20 @@ describe("ReadCache", () => {
 			}),
 		))
 
+	test("a reader naming its org is not answered from the open org's entry", () =>
+		run(
+			Effect.gen(function* () {
+				const { runs, load } = yield* counting
+				const cache = yield* Effect.service(ReadCache)
+				const spec = { operation: "getServicesFacets", input: {}, idleTtlMs: TTL_MS, schema: Count }
+				yield* cache.scopeTo("org_a")
+				yield* cache.readInOrg(spec, load)
+				// The org switched; the root has not scoped the cache to the new org yet.
+				expect(yield* cache.readInOrg({ ...spec, orgId: "org_b" }, load)).toEqual({ count: 2 })
+				expect(yield* Ref.get(runs)).toBe(2)
+			}),
+		))
+
 	test("a refresh reads again and replaces the entry", () =>
 		run(
 			Effect.gen(function* () {

@@ -1,7 +1,17 @@
 import { Option } from "effect"
 import { describe, expect, test } from "vitest"
+import * as Dialog from "../ui/dialog"
 import * as Menu from "../ui/menu"
-import { CREATE_VALUE, init, Message, NAMESPACE_PREFIX, OutMessage, update } from "./clerk-org-switcher"
+import * as RadioGroup from "../ui/radio-group"
+import {
+	CREATE_VALUE,
+	createdTargetOf,
+	init,
+	Message,
+	NAMESPACE_PREFIX,
+	OutMessage,
+	update,
+} from "./clerk-org-switcher"
 
 const clickItem = (value: string) =>
 	Message.GotMenuMessage({ message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value } }) })
@@ -26,7 +36,7 @@ describe("Clerk org switcher", () => {
 		const submitted = update(named, Message.SubmittedCreateOrganization())
 		expect(submitted.model.isCreating).toBe(true)
 		expect((submitted.commands ?? []).map((command) => [command.name, command.args])).toEqual([
-			["CreateOrganization", { name: "  Orbit  " }],
+			["CreateOrganization", { name: "  Orbit  ", region: "us" }],
 		])
 		expect(commandNames(update(submitted.model, Message.SubmittedCreateOrganization()))).toEqual([])
 	})
@@ -38,6 +48,23 @@ describe("Clerk org switcher", () => {
 		])
 		const failed = update(creating, Message.FailedCreateOrganization({ message: "Name taken" })).model
 		expect(failed).toMatchObject({ isCreating: false, errorMessage: "Name taken" })
+	})
+
+	test("the picked data region is sent; an org in another region lands on that region's app", () => {
+		const named = update(
+			update(opened(), clickItem(CREATE_VALUE)).model,
+			Message.ChangedOrganizationName({ value: "Orbit" }),
+		).model
+		const picked = update(
+			named,
+			Message.GotRegionMessage({ message: RadioGroup.Message.SelectedRadio({ value: "eu" }) }),
+		).model
+		const submitted = update(picked, Message.SubmittedCreateOrganization())
+		expect((submitted.commands ?? []).map((command) => command.args)).toEqual([{ name: "Orbit", region: "eu" }])
+		expect(createdTargetOf("eu", () => "https://eu.example")).toBe("https://eu.example")
+		expect(createdTargetOf("us", () => "https://us.example")).toBeNull()
+		const closed = update(picked, Message.GotCreateDialogMessage({ message: Dialog.Message.ClickedClose() })).model
+		expect(closed.region).toBe("us")
 	})
 
 	test("a namespace row pins it; All namespaces clears the pin", () => {

@@ -34,6 +34,12 @@ export const Integrations = Schema.Struct({
 	planetscale: Schema.Boolean,
 	gcp: Schema.Boolean,
 })
+export const NO_INTEGRATIONS: typeof Integrations.Type = {
+	cloudflare: false,
+	railway: false,
+	planetscale: false,
+	gcp: false,
+}
 
 export const Model = Schema.Struct({
 	/** Desktop rail expanded (`SidebarProvider` `open`). */
@@ -63,6 +69,8 @@ export const Model = Schema.Struct({
 	integrations: Integrations,
 	dashboards: DashboardsData.schema,
 	namespaces: NamespacesData.schema,
+	/** The self-hosted namespace menu's search query; each opening starts blank. */
+	namespaceQuery: Schema.String,
 	/** The collapsed rail's tooltips: one Tooltip shared by every rail button. */
 	railTooltip: Tooltip.Model,
 	/** Clerk: the org switcher (`ClerkOrgSwitcherMenu namespaceScope`). */
@@ -135,9 +143,10 @@ export const init = (flags: ShellFlags): Model => ({
 	dashboardFavorites: flags.dashboardFavorites,
 	tenant: TenantData.Idle(),
 	infraPresence: InfraPresenceData.Idle(),
-	integrations: { cloudflare: false, railway: false, planetscale: false, gcp: false },
+	integrations: NO_INTEGRATIONS,
 	dashboards: DashboardsData.Idle(),
 	namespaces: NamespacesData.Idle(),
+	namespaceQuery: "",
 	isAppOutdated: false,
 	railTooltip: initRailTooltip(),
 	clerkOrgMenu: ClerkOrgSwitcher.init("shell-clerk-org-switcher"),

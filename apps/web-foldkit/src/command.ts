@@ -7,6 +7,7 @@ import { clearSessionToken, MapleAuthApi, readSessionToken, saveSessionToken } f
 import { saveSelectedPlanKnown } from "./page/onboarding/plan-gate"
 import { loadClerk, signOutOfClerk } from "./platform/clerk"
 import { BillingCustomerCache } from "./data/billing-customer"
+import { IntegrationStatuses } from "./data/integration-statuses"
 import { ReadCache } from "./data/read-cache"
 import { OrgCollections } from "./data/collections/org-collections"
 import { readSessionTimeRange, writeSessionTimeRange } from "./platform/session-time-range"
@@ -137,7 +138,11 @@ export const ReleaseReads = Command.define("ReleaseReads", {
 	execute: ({ orgId, keys }) =>
 		Effect.gen(function* () {
 			const cache = yield* ReadCache
-			if (orgId !== null) yield* cache.scopeTo(orgId)
+			if (orgId !== null) {
+				yield* cache.scopeTo(orgId)
+				// Pages read the integration statuses without naming their org.
+				yield* (yield* IntegrationStatuses).scopeTo(orgId)
+			}
 			yield* cache.release(keys)
 			return Message.CompletedReleaseReads()
 		}),

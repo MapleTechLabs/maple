@@ -9,6 +9,8 @@ import { menuGroup, menuItem, menuLabel, menuSeparator, menuShortcut } from "../
 import { icon, iconColor } from "../ui/icon"
 import { switchControl } from "../ui/switch"
 import { popupIdOf } from "./menus"
+import { MountNamespaceSearch } from "./mounts"
+import { hasNamespaceSearch, namespaceRows, namespaceSearchRow, noNamespacesMatch } from "./namespace-search"
 import { Menu, Message } from "./message"
 import type { Model, ShellClerk } from "./model"
 import { partitionSubItems } from "./nav"
@@ -149,7 +151,7 @@ const namespaceItem = (
 	onSelect: Message.ClickedNamespace({ maybeNamespace }),
 })
 
-/** `NamespaceScopeList emptyNotice` (no search row yet: it appears from eight namespaces). */
+/** `NamespaceScopeList emptyNotice`: the search row appears from eight namespaces. */
 const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): ReadonlyArray<Html> => {
 	const pinned = pinnedNamespaceOf(model)
 	const observed: ReadonlyArray<string> = AsyncData.getOrElse(
@@ -172,30 +174,38 @@ const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): Reado
 		]
 	if (observed.length === 0 && Option.isNone(pinned))
 		return [h.div([h.Class("px-2 py-1.5 text-xs text-muted-foreground")], ["No namespaces detected"])]
-	const pinnedIsObserved = Option.match(pinned, {
-		onNone: () => true,
-		onSome: (name) => observed.includes(name),
-	})
+	const rows = namespaceRows(observed, pinned, model.namespaceQuery)
 	const entries: ReadonlyArray<Item> = [
-		namespaceItem(h, "All namespaces", Option.none(), Option.isNone(pinned)),
-		...observed.map((name) => namespaceItem(h, name, Option.some(name), Option.contains(pinned, name))),
-		...(pinnedIsObserved
-			? []
-			: Option.match(pinned, {
-					onNone: () => [],
-					onSome: (name): ReadonlyArray<Item> => [
-						{
-							content: [
-								h.span([h.Class("truncate")], [name]),
-								h.span([h.Class("ml-2 text-xs text-muted-foreground")], ["no recent data"]),
-								checkIcon(h),
-							],
-							onSelect: Message.ClickedNamespace({ maybeNamespace: Option.some(name) }),
-						},
+		...(rows.isFiltered ? [] : [namespaceItem(h, "All namespaces", Option.none(), Option.isNone(pinned))]),
+		...rows.matches.map((name) => namespaceItem(h, name, Option.some(name), Option.contains(pinned, name))),
+		...Option.match(rows.unseenPin, {
+			onNone: () => [],
+			onSome: (name): ReadonlyArray<Item> => [
+				{
+					content: [
+						h.span([h.Class("truncate")], [name]),
+						h.span([h.Class("ml-2 text-xs text-muted-foreground")], ["no recent data"]),
+						checkIcon(h),
 					],
-				})),
+					onSelect: Message.ClickedNamespace({ maybeNamespace: Option.some(name) }),
+				},
+			],
+		}),
 	]
-	return [h.div([h.Class("max-h-72 overflow-y-auto")], items(h, menu, entries))]
+	const list = [...items(h, menu, entries), ...(rows.isNoMatch ? [noNamespacesMatch(h)] : [])]
+	return [
+		...(hasNamespaceSearch(observed)
+			? [
+					namespaceSearchRow(h, {
+						id: `${popupIdOf(menu)}-search`,
+						query: model.namespaceQuery,
+						rowAttributes: [h.OnMount(MountNamespaceSearch())],
+						attributes: [h.OnInput((value) => Message.ChangedNamespaceQuery({ value }))],
+					}),
+				]
+			: []),
+		h.div([h.Class("max-h-72 overflow-y-auto")], list),
+	]
 }
 
 const orgMenu = (h: HtmlBuilder<Message>, model: Model, menu: Menu): ReadonlyArray<Html> => {

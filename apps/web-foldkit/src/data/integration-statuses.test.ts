@@ -24,6 +24,18 @@ describe("IntegrationStatuses loader", () => {
 			}),
 		))
 
+	test("an answer is kept per org: another org asks again", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const { runs, load } = yield* counting([])
+				const status = yield* sharedLoader(load)
+				expect(yield* status({ orgId: "org_a" })).toBe(1)
+				expect(yield* status({ orgId: "org_b" })).toBe(2)
+				expect(yield* status({ orgId: "org_b" })).toBe(2)
+				expect(yield* Ref.get(runs)).toBe(2)
+			}),
+		))
+
 	test("a failed load is not kept: the next reader asks again", () =>
 		Effect.runPromise(
 			Effect.gen(function* () {

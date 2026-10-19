@@ -26,7 +26,7 @@ export const ServicesFacetsResponse = Schema.Struct({
  */
 export const loadServicesFacets = (
 	window: TimeWindow,
-	options?: { readonly refresh?: boolean; readonly key?: RequestKey },
+	options?: { readonly refresh?: boolean; readonly key?: RequestKey; readonly orgId?: string },
 ) =>
 	Effect.flatMap(Effect.service(ReadCache), (cache) => {
 		const spec = {
@@ -37,6 +37,14 @@ export const loadServicesFacets = (
 		const load = getServicesFacets({ data: window })
 		// A page passes its slot key (its org); the shell and the chat read under the open org.
 		return options?.key === undefined
-			? cache.readInOrg({ ...spec, operation: SERVICES_FACETS, input: { data: window } }, load)
+			? cache.readInOrg(
+					{
+						...spec,
+						operation: SERVICES_FACETS,
+						input: { data: window },
+						orgId: options?.orgId,
+					},
+					load,
+				)
 			: cache.read({ ...spec, key: options.key }, load)
 	})

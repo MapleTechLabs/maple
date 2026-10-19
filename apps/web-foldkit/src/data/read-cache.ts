@@ -136,6 +136,8 @@ export const readThrough = <S extends Schema.Top, E, R>(
 export interface OrgReadSpec<S extends Schema.Top> extends Omit<ReadSpec<S>, "key"> {
 	readonly operation: string
 	readonly input: unknown
+	/** The reader's own org, when it knows it: wins over the open org, which may not be set yet. */
+	readonly orgId?: string
 }
 
 export class ReadCache extends Context.Service<
@@ -170,7 +172,7 @@ export class ReadCache extends Context.Service<
 					load: Effect.Effect<S["Type"], E, R>,
 				) =>
 					Effect.flatMap(Ref.get(openOrg), (orgId) =>
-						Option.match(orgId, {
+						Option.match(spec.orgId === undefined ? orgId : Option.some(spec.orgId), {
 							onNone: () => load,
 							onSome: (org) =>
 								read({ ...spec, key: requestKey(org, spec.operation, spec.input) }, load),

@@ -75,6 +75,8 @@ export type MenuSubmenuEntry = Readonly<{
 	itemsClassName?: string
 	/** Rows that are not items (loading, an empty notice), shown when there are no entries. */
 	placeholder?: ReadonlyArray<Html>
+	/** Rows drawn above the items, outside their scroller (a search field). */
+	header?: ReadonlyArray<Html>
 }>
 
 /** The menu's content, as data: `update` addresses highlightable entries by document order. */
@@ -297,12 +299,14 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 	const body = (rows: ReadonlyArray<Html>): ReadonlyArray<Html> =>
 		Option.match(maybeEntry, {
 			onNone: () => rows,
-			onSome: (entry) =>
-				rows.length === 0
+			onSome: (entry) => [
+				...(entry.header ?? []),
+				...(rows.length === 0
 					? (entry.placeholder ?? [])
 					: entry.itemsClassName === undefined
 						? rows
-						: [h.div([h.Class(entry.itemsClassName)], rows)],
+						: [h.div([h.Class(entry.itemsClassName)], rows)]),
+			],
 		})
 	const subClassName = Option.getOrUndefined(Option.flatMapNullishOr(maybeEntry, (entry) => entry.className))
 	const separatorAfter = Option.match(maybeEntry, { onNone: () => undefined, onSome: (entry) => entry.separatorAfter })

@@ -1,7 +1,8 @@
 import { CreateOrganizationRequest } from "@maple/domain/http"
+import { MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
 import { currentRegion, regionAppUrl } from "@maple/web/lib/region"
-import { Cause, Effect, Option, Schema } from "effect"
-import { Command, type Update } from "foldkit"
+import { Cause, Effect, Option, Queue, Schema, Stream } from "effect"
+import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { load } from "foldkit/navigation"
 import { modifyFields } from "foldkit/struct"
@@ -10,6 +11,8 @@ import { setActiveOrganization } from "../platform/clerk"
 import type { Resources } from "../platform/resources"
 import * as Dialog from "../ui/dialog"
 import * as Menu from "../ui/menu"
+import * as RadioGroup from "../ui/radio-group"
+import { containSearchKeys } from "./namespace-search"
 
 /**
  * `ClerkOrgSwitcherMenu` (apps/web/src/components/dashboard/org-switcher-menu.tsx): the active
@@ -21,8 +24,12 @@ export const Model = Schema.Struct({
 	menu: Menu.Model,
 	createDialog: Dialog.Model,
 	name: Schema.String,
+	/** The data region the new org lives in (only offered with several regions). */
+	region: MapleRegion,
 	isCreating: Schema.Boolean,
 	errorMessage: Schema.NullOr(Schema.String),
+	/** The namespace submenu's search query; each opening starts blank. */
+	namespaceQuery: Schema.String,
 })
 export type Model = typeof Model.Type
 
@@ -30,18 +37,23 @@ export const init = (id: string): Model => ({
 	menu: Menu.init(id),
 	createDialog: Dialog.init(`${id}-create`, "dialog"),
 	name: "",
+	region: currentRegion,
 	isCreating: false,
 	errorMessage: null,
+	namespaceQuery: "",
 })
 
 export const Message = defineMessageUnion({
 	GotMenuMessage: { message: Menu.Message },
 	GotCreateDialogMessage: { message: Dialog.Message },
 	ChangedOrganizationName: { value: Schema.String },
+	GotRegionMessage: { message: RadioGroup.Message },
 	SubmittedCreateOrganization: {},
 	SucceededCreateOrganization: { orgId: Schema.String },
 	FailedCreateOrganization: { message: Schema.String },
 	CompletedSwitchOrganization: {},
+	ChangedNamespaceQuery: { value: Schema.String },
+	CompletedMountNamespaceSearch: {},
 })
 export type Message = typeof Message.Type
 
@@ -74,6 +86,7 @@ const withDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Updat
 		model: modifyFields(model, {
 			createDialog: () => step.model,
 			name: (name) => (isClosed ? "" : name),
+			region: (region) => (isClosed ? currentRegion : region),
 			errorMessage: (message) => (isClosed ? null : message),
 		}),
 		commands: Command.mapMessages(step.commands ?? [], toCreateDialog),
@@ -89,7 +102,13 @@ const updateMenu = (model: Model, message: Menu.Message): UpdateReturn => {
 	const out = next.outMessage
 	if (out === undefined) {
 		const opened = model.menu.submenu === null && next.model.submenu !== null
-		return opened ? { ...menuStep, outMessage: OutMessage.OpenedNamespaces() } : menuStep
+		return opened
+			? {
+					...menuStep,
+					model: modifyFields(menuStep.model, { namespaceQuery: () => "" }),
+					outMessage: OutMessage.OpenedNamespaces(),
+				}
+			: menuStep
 	}
 	return Menu.OutMessage.match<UpdateReturn>(out, {
 		SelectedItem: ({ value }) => {
@@ -119,23 +138,47 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		GotCreateDialogMessage: ({ message: child }) =>
 			model.isCreating ? { model } : withDialog(model, Dialog.update(model.createDialog, child)),
 		ChangedOrganizationName: ({ value }) => ({ model: modifyFields(model, { name: () => value }) }),
+		GotRegionMessage: ({ message: child }) => {
+			if (model.isCreating) return { model }
+			const next = RadioGroup.update(RadioGroup.init(model.region), child)
+			return {
+				model: modifyFields(model, {
+					region: (region) => Option.match(next.model.maybeValue, { onNone: () => region, onSome: parseMapleRegion }),
+				}),
+				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotRegionMessage({ message })),
+			}
+		},
 		SubmittedCreateOrganization: () =>
 			model.isCreating || model.name.trim() === ""
 				? { model }
 				: {
 						model: modifyFields(model, { isCreating: () => true, errorMessage: () => null }),
-						commands: [CreateOrganization({ name: model.name })],
+						commands: [CreateOrganization({ name: model.name, region: model.region })],
 					},
 		// Stays pending while the page reloads onto the new org.
 		SucceededCreateOrganization: ({ orgId }) => ({
 			model,
-			commands: [SwitchOrganization({ orgId, targetUrl: null })],
+			commands: [SwitchOrganization({ orgId, targetUrl: createdTargetOf(model.region) })],
 		}),
 		FailedCreateOrganization: ({ message: failure }) => ({
 			model: modifyFields(model, { isCreating: () => false, errorMessage: () => failure }),
 		}),
 		CompletedSwitchOrganization: () => ({ model }),
+		ChangedNamespaceQuery: ({ value }) => ({ model: modifyFields(model, { namespaceQuery: () => value }) }),
+		CompletedMountNamespaceSearch: () => ({ model }),
 	})
+
+/** The submenu's search input: focused as it mounts, its keys kept from the menu. */
+export const MountNamespaceSearch = Mount.defineStream("MountSwitcherNamespaceSearch", {
+	messages: [Message.CompletedMountNamespaceSearch],
+	execute: ({ element }) =>
+		Stream.callback<typeof Message.CompletedMountNamespaceSearch.Type>((queue) =>
+			containSearchKeys(element).pipe(
+				Effect.andThen(Effect.sync(() => Queue.offerUnsafe(queue, Message.CompletedMountNamespaceSearch()))),
+				Effect.andThen(Effect.never),
+			),
+		),
+})
 
 // COMMANDS
 
@@ -147,6 +190,12 @@ export const switchTargetOf = (organization: {
 	organization.isRegionOpen || organization.homeRegion === currentRegion
 		? null
 		: (regionAppUrl(organization.homeRegion) ?? null)
+
+/** The create dialog's ending: another region's dashboard for an org created there, else a reload. */
+export const createdTargetOf = (
+	region: MapleRegion,
+	appUrlOf: (region: MapleRegion) => string | undefined = regionAppUrl,
+): string | null => (region === currentRegion ? null : (appUrlOf(region) ?? null))
 
 const landOn = (targetUrl: string | null): Effect.Effect<void> =>
 	targetUrl === null ? Effect.sync(() => window.location.reload()) : load(`${targetUrl}/`)
@@ -164,13 +213,13 @@ export const SwitchOrganization = Command.define("SwitchOrganization", {
 
 /** `organizationCreation.create`: the org starts life with its region set. */
 export const CreateOrganization = Command.define("CreateOrganization", {
-	args: { name: Schema.String },
+	args: { name: Schema.String, region: MapleRegion },
 	messages: [Message.SucceededCreateOrganization, Message.FailedCreateOrganization],
-	execute: ({ name }) =>
+	execute: ({ name, region }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			const result = yield* client.organizationCreation.create({
-				payload: new CreateOrganizationRequest({ name: name.trim(), region: currentRegion }),
+				payload: new CreateOrganizationRequest({ name: name.trim(), region }),
 			})
 			return Message.SucceededCreateOrganization({ orgId: result.orgId })
 		}).pipe(

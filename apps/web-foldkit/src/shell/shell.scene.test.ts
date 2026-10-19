@@ -16,6 +16,7 @@ import {
 	scene,
 	selector,
 	text,
+	type as typeInto,
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
@@ -29,8 +30,8 @@ import {
 	LoadRailwayStatus,
 } from "./data"
 import { Menu, Message, OutMessage } from "./message"
-import { init, type Model } from "./model"
-import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
+import { init, type Model, NamespacesData } from "./model"
+import { MeasureSidebarOverflow, MountNamespaceSearch, PositionMenu } from "./mounts"
 import { enter, update } from "./update"
 import * as Tooltip from "../ui/tooltip"
 import { CheckDeployedCommit, ReloadPage } from "./version"
@@ -141,11 +142,11 @@ describe("sidebar collapse", () => {
 			...open(),
 			Command.expectExact(LoadInfraPresence, LoadCloudflareStatus, LoadPlanetscaleStatus, LoadRailwayStatus, LoadGcpStatus),
 			Command.resolveAll(
-				[LoadInfraPresence, Message.SucceededLoadInfraPresence({ surfaces: [] })],
-				[LoadCloudflareStatus, Message.SucceededLoadIntegration({ integration: "cloudflare", isConnected: false })],
-				[LoadPlanetscaleStatus, Message.SucceededLoadIntegration({ integration: "planetscale", isConnected: false })],
-				[LoadRailwayStatus, Message.SucceededLoadIntegration({ integration: "railway", isConnected: false })],
-				[LoadGcpStatus, Message.SucceededLoadIntegration({ integration: "gcp", isConnected: false })],
+				[LoadInfraPresence, Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: [] })],
+				[LoadCloudflareStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "cloudflare", isConnected: false })],
+				[LoadPlanetscaleStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "planetscale", isConnected: false })],
+				[LoadRailwayStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "railway", isConnected: false })],
+				[LoadGcpStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "gcp", isConnected: false })],
 			),
 			...close(),
 			...open(),
@@ -219,18 +220,18 @@ describe("menus", () => {
 // ORG SWITCHER
 
 describe("org switcher", () => {
-	test("opening loads the namespaces once; picking one pins it for this org and reports it", () => {
+	test("each opening re-reads the namespaces; picking one pins it for this org and reports it", () => {
 		scene(
 			{ update, view },
 			given(signedIn()),
 			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			click(role("button", { name: /Self Hosted/ })),
-			Command.expectExact(LoadNamespaces()),
+			Command.expectExact(LoadNamespaces({ orgId: "org_parity" })),
 			Mount.resolve(PositionMenu, position(Menu.Org())),
 			expect(text(/Loading namespaces/)).toExist(),
 			Command.resolve(
 				LoadNamespaces,
-				Message.SucceededLoadNamespaces({ namespaces: ["checkout", "shop"] }),
+				Message.SucceededLoadNamespaces({ orgId: "org_parity", namespaces: ["checkout", "shop"] }),
 			),
 			expect(role("menuitem", { name: "All namespaces" })).toExist(),
 			click(role("menuitem", { name: "shop" })),
@@ -241,13 +242,80 @@ describe("org switcher", () => {
 			Mount.expectEnded(PositionMenu),
 			expect(role("button", { name: /^Self Hosted\s*shop$/ })).toExist(),
 			click(role("button", { name: /^Self Hosted\s*shop$/ })),
-			Command.expectNone(),
+			Command.expectExact(LoadNamespaces({ orgId: "org_parity" })),
 			Mount.resolve(PositionMenu, position(Menu.Org())),
+			// The listed names stay up while the fresh window is read.
+			expect(role("menuitem", { name: "shop" })).toExist(),
+			Command.resolve(
+				LoadNamespaces,
+				Message.SucceededLoadNamespaces({ orgId: "org_parity", namespaces: ["checkout", "shop"] }),
+			),
 			click(role("menuitem", { name: "All namespaces" })),
 			Command.resolve(SaveNamespace, Message.CompletedSaveNamespace()),
 			Mount.expectEnded(PositionMenu),
 			expect(role("button", { name: "Self Hosted" })).toExist(),
 		)
+	})
+})
+
+describe("namespace search", () => {
+	const many = ["api", "billing", "checkout", "edge", "mail", "search", "shop", "web"]
+	const openWith = (namespaces: ReadonlyArray<string>) => [
+		given(signedIn({ namespaces: NamespacesData.Success({ data: namespaces }) })),
+		Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+		click(role("button", { name: /Self Hosted/ })),
+		Command.resolve(LoadNamespaces, Message.SucceededLoadNamespaces({ orgId: "org_parity", namespaces })),
+		Mount.resolve(PositionMenu, position(Menu.Org())),
+	]
+
+	test("from eight namespaces a search row filters the list; no match says so", () => {
+		const search = role("textbox")
+		scene(
+			{ update, view },
+			...openWith(many),
+			Mount.resolve(MountNamespaceSearch, Message.CompletedMountNamespaceSearch()),
+			expect(search).toHaveAttr("placeholder", "Search namespaces…"),
+			typeInto(search, "sh"),
+			expect(role("menuitem", { name: "shop" })).toExist(),
+			expect(role("menuitem", { name: "api" })).toBeAbsent(),
+			expect(role("menuitem", { name: "All namespaces" })).toBeAbsent(),
+			typeInto(search, "zzz"),
+			expect(text("No namespaces match")).toExist(),
+		)
+	})
+
+	test("below eight namespaces there is no search row", () => {
+		scene(
+			{ update, view },
+			...openWith(many.slice(0, 7)),
+			expect(role("textbox")).toBeAbsent(),
+			expect(role("menuitem", { name: "All namespaces" })).toExist(),
+		)
+	})
+})
+
+describe("in-place org change", () => {
+	test("entering another org drops the previous org's namespaces and integrations and its late answers", () => {
+		const onA = {
+			...signedIn({ maybeOrgId: Option.some("org_a") }),
+			namespaces: NamespacesData.Success({ data: ["a-only"] }),
+			integrations: { cloudflare: true, railway: true, planetscale: false, gcp: false },
+		}
+		const onB = enter("org_b")(onA).model
+		expectVitest(onB.namespaces._tag).toBe("Idle")
+		expectVitest(onB.integrations).toEqual({ cloudflare: false, railway: false, planetscale: false, gcp: false })
+		const lateNamespaces = update(onB, Message.SucceededLoadNamespaces({ orgId: "org_a", namespaces: ["a-only"] }))
+		expectVitest(lateNamespaces.model.namespaces._tag).toBe("Idle")
+		const lateStatus = update(
+			onB,
+			Message.SucceededLoadIntegration({ orgId: "org_a", integration: "cloudflare", isConnected: true }),
+		)
+		expectVitest(lateStatus.model.integrations.cloudflare).toBe(false)
+		const ownStatus = update(
+			onB,
+			Message.SucceededLoadIntegration({ orgId: "org_b", integration: "railway", isConnected: true }),
+		)
+		expectVitest(ownStatus.model.integrations.railway).toBe(true)
 	})
 })
 

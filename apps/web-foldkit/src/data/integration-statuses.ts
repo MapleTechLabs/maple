@@ -1,6 +1,6 @@
 import type { CloudflareIntegrationStatus, RailwayIntegrationStatus } from "@maple/domain/http"
 import type { V2GcpIntegration, V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import { Context, Effect, Layer, Option, SynchronizedRef } from "effect"
+import { Context, Effect, Layer, Option, Ref, SynchronizedRef } from "effect"
 import { MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
 
 /**
@@ -14,27 +14,38 @@ export type GcpStatus = V2GcpIntegration
 
 export interface LoadOptions {
 	readonly refresh?: boolean
+	/** The org the answer is for; without it, the org the root opened last (`scopeTo`). */
+	readonly orgId?: string
 }
 
 type Loader<A> = (options?: LoadOptions) => Effect.Effect<A, unknown>
+type Held<A> = Readonly<{ orgId: string | null; shared: Effect.Effect<A, unknown> }>
 
-/** One shared load per status. A failure is not kept: the next reader asks again, like the atom. */
+/**
+ * One shared load per status and org (legacy keys the atoms by the active org): another org's
+ * answer is never served. A failure is not kept: the next reader asks again, like the atom.
+ */
 export const sharedLoader = <A>(load: Effect.Effect<A, unknown>): Effect.Effect<Loader<A>> =>
-	Effect.map(SynchronizedRef.make(Option.none<Effect.Effect<A, unknown>>()), (ref) => {
+	Effect.map(SynchronizedRef.make(Option.none<Held<A>>()), (ref) => {
 		const forget = (failed: Effect.Effect<A, unknown>) =>
-			SynchronizedRef.update(ref, (held) => (Option.isSome(held) && held.value === failed ? Option.none() : held))
-		const start = Effect.map(Effect.cached(load), (memo) => {
-			const shared: Effect.Effect<A, unknown> = Effect.tapError(memo, () => forget(shared))
-			return shared
-		})
-		return (options) =>
-			Effect.flatten(
+			SynchronizedRef.update(ref, (held) =>
+				Option.isSome(held) && held.value.shared === failed ? Option.none() : held,
+			)
+		const start = (orgId: string | null) =>
+			Effect.map(Effect.cached(load), (memo): Held<A> => {
+				const shared: Effect.Effect<A, unknown> = Effect.tapError(memo, () => forget(shared))
+				return { orgId, shared }
+			})
+		return (options) => {
+			const orgId = options?.orgId ?? null
+			return Effect.flatten(
 				SynchronizedRef.modifyEffect(ref, (current) =>
-					Option.isSome(current) && options?.refresh !== true
-						? Effect.succeed([current.value, current] as const)
-						: Effect.map(start, (next) => [next, Option.some(next)] as const),
+					Option.isSome(current) && current.value.orgId === orgId && options?.refresh !== true
+						? Effect.succeed([current.value.shared, current] as const)
+						: Effect.map(start(orgId), (next) => [next.shared, Option.some(next)] as const),
 				),
 			)
+		}
 	})
 
 export class IntegrationStatuses extends Context.Service<
@@ -44,6 +55,8 @@ export class IntegrationStatuses extends Context.Service<
 		readonly railway: Loader<RailwayIntegrationStatus>
 		readonly planetscale: Loader<PlanetscaleStatus>
 		readonly gcp: Loader<GcpStatus>
+		/** The open org: readers that do not name one read under it. */
+		readonly scopeTo: (orgId: string) => Effect.Effect<void>
 	}
 >()("@maple/web-foldkit/IntegrationStatuses") {
 	static readonly layer = Layer.effect(
@@ -51,11 +64,19 @@ export class IntegrationStatuses extends Context.Service<
 		Effect.gen(function* () {
 			const internal = yield* MapleInternalApiClient
 			const v2 = yield* MapleApiV2Client
+			const openOrg = yield* Ref.make(Option.none<string>())
+			const inOrg =
+				<A>(loader: Loader<A>): Loader<A> =>
+				(options) =>
+					Effect.flatMap(Ref.get(openOrg), (org) =>
+						loader({ ...options, orgId: options?.orgId ?? Option.getOrUndefined(org) }),
+					)
 			return {
-				cloudflare: yield* sharedLoader(internal.integrations.cloudflareStatus()),
-				railway: yield* sharedLoader(internal.integrations.railwayStatus()),
-				planetscale: yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status()),
-				gcp: yield* sharedLoader<GcpStatus>(v2.gcpIntegration.status()),
+				cloudflare: inOrg(yield* sharedLoader(internal.integrations.cloudflareStatus())),
+				railway: inOrg(yield* sharedLoader(internal.integrations.railwayStatus())),
+				planetscale: inOrg(yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status())),
+				gcp: inOrg(yield* sharedLoader<GcpStatus>(v2.gcpIntegration.status())),
+				scopeTo: (orgId: string) => Ref.set(openOrg, Option.some(orgId)),
 			}
 		}),
 	)

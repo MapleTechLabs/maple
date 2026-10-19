@@ -41,6 +41,7 @@ import {
 	initRightSheet,
 	type Model,
 	NamespacesData,
+	NO_INTEGRATIONS,
 	TenantData,
 } from "./model"
 
@@ -64,7 +65,10 @@ export const enter =
 			maybeOrgId: () => Option.some(orgId),
 			tenant: () => TenantData.Loading(),
 			hasRequestedSidebarData: () => false,
+			// Nothing read for the previous org (an in-place org change) carries over.
 			infraPresence: () => InfraPresenceData.Idle(),
+			integrations: () => NO_INTEGRATIONS,
+			namespaces: () => NamespacesData.Idle(),
 		})
 		const sidebar = model.isMobile ? { model: entered } : requestSidebarData(entered)
 		return {
@@ -96,18 +100,42 @@ const requestSidebarData = (model: Model): UpdateReturn => {
 
 /** `useInfraSurfaces`: the last hour's presence probe and the four integration statuses, once. */
 const requestInfraSurfaces = (model: Model): UpdateReturn =>
-	!AsyncData.isIdle(model.infraPresence) || Option.isNone(model.maybeOrgId)
-		? { model }
-		: {
-				model: modifyFields(model, { infraPresence: () => InfraPresenceData.Loading() }),
-				commands: [
-					LoadInfraPresence(),
-					LoadCloudflareStatus(),
-					LoadPlanetscaleStatus(),
-					LoadRailwayStatus(),
-					LoadGcpStatus(),
-				],
-			}
+	Option.match(model.maybeOrgId, {
+		onNone: () => ({ model }),
+		onSome: (orgId) =>
+			!AsyncData.isIdle(model.infraPresence)
+				? { model }
+				: {
+						model: modifyFields(model, { infraPresence: () => InfraPresenceData.Loading() }),
+						commands: [
+							LoadInfraPresence({ orgId }),
+							LoadCloudflareStatus({ orgId }),
+							LoadPlanetscaleStatus({ orgId }),
+							LoadRailwayStatus({ orgId }),
+							LoadGcpStatus({ orgId }),
+						],
+					},
+	})
+
+/**
+ * `NamespaceScopeList` mounts with each menu open and probes a fresh 24 h window (cached while the
+ * snapped window holds). Listed names stay up while it reads; only a first read shows the spinner.
+ */
+const readNamespaces = (model: Model): UpdateReturn =>
+	Option.match(model.maybeOrgId, {
+		onNone: () => ({ model }),
+		onSome: (orgId) => ({
+			model: AsyncData.isSuccess(model.namespaces)
+				? model
+				: modifyFields(model, { namespaces: () => NamespacesData.Loading() }),
+			commands: [LoadNamespaces({ orgId })],
+		}),
+	})
+
+/** An org-stamped answer applies only while the shell is still on that org. */
+const forOrg = (model: Model, orgId: string, apply: (model: Model) => Model): UpdateReturn => ({
+	model: Option.contains(model.maybeOrgId, orgId) ? apply(model) : model,
+})
 
 const toChecklist = Command.mapMessage((message: Checklist.Message) => Message.GotChecklistMessage({ message }))
 
@@ -182,14 +210,9 @@ const clickedMenuTrigger =(model: Model, menu: Menu): UpdateReturn => {
 	if (Option.exists(openMenuOf(model), (open) => isSameMenu(open, menu))) return { model: closeMenu(model) }
 	const opened = modifyFields(model, {
 		openMenu: () => Option.some({ menu, maybePosition: Option.none() }),
+		namespaceQuery: () => "",
 	})
-	const needsNamespaces = menu._tag === "Org" && AsyncData.isIdle(model.namespaces)
-	return needsNamespaces
-		? {
-				model: modifyFields(opened, { namespaces: () => NamespacesData.Loading() }),
-				commands: [LoadNamespaces()],
-			}
-		: { model: opened }
+	return menu._tag === "Org" ? readNamespaces(opened) : { model: opened }
 }
 // MENU KEYS
 
@@ -250,13 +273,10 @@ const clerkOrgMenu = (model: Model, message: ClerkOrgSwitcher.Message): UpdateRe
 			const pinned = clickedNamespace(stepped.model, maybeNamespace)
 			return { ...pinned, commands: [...(stepped.commands ?? []), ...(pinned.commands ?? [])] }
 		},
-		OpenedNamespaces: () =>
-			AsyncData.isIdle(model.namespaces)
-				? {
-						model: modifyFields(stepped.model, { namespaces: () => NamespacesData.Loading() }),
-						commands: [...(stepped.commands ?? []), LoadNamespaces()],
-					}
-				: stepped,
+		OpenedNamespaces: () => {
+			const read = readNamespaces(stepped.model)
+			return { model: read.model, commands: [...(stepped.commands ?? []), ...(read.commands ?? [])] }
+		},
 	})
 }
 
@@ -306,6 +326,8 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 			return { model: modifyFields(model, { theme: () => theme }), commands: [SaveTheme({ theme })] }
 		},
 		ClickedNamespace: ({ maybeNamespace }) => clickedNamespace(model, maybeNamespace),
+		ChangedNamespaceQuery: ({ value }) => ({ model: modifyFields(model, { namespaceQuery: () => value }) }),
+		CompletedMountNamespaceSearch: () => ({ model }),
 		// Clerk signs out through the root (`useClerk().signOut()`); self-hosted clears its token.
 		ClickedLogOut: () =>
 			isClerkAuthEnabled
@@ -334,24 +356,19 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 		FailedLoadTenant: () => ({
 			model: modifyFields(model, { tenant: () => TenantData.Failure({ error: "Failed" }) }),
 		}),
-		SucceededLoadInfraPresence: ({ surfaces }) => ({
-			model: modifyFields(model, {
-				infraPresence: () => InfraPresenceData.Success({ data: surfaces }),
-			}),
-		}),
-		FailedLoadInfraPresence: () => ({
-			model: modifyFields(model, {
-				infraPresence: () => InfraPresenceData.Failure({ error: "Failed" }),
-			}),
-		}),
-		SucceededLoadIntegration: ({ integration, isConnected }) => ({
-			model: modifyFields(model, {
-				integrations: (current) => ({ ...current, [integration]: isConnected }),
-			}),
-		}),
-		FailedLoadIntegration: ({ integration }) => ({
-			model: modifyFields(model, { integrations: (current) => ({ ...current, [integration]: false }) }),
-		}),
+		// Org-stamped answers: one for an org the shell has left is dropped.
+		SucceededLoadInfraPresence: ({ orgId, surfaces }) =>
+			forOrg(model, orgId, (current) => modifyFields(current, { infraPresence: () => InfraPresenceData.Success({ data: surfaces }) })),
+		FailedLoadInfraPresence: ({ orgId }) =>
+			forOrg(model, orgId, (current) => modifyFields(current, { infraPresence: () => InfraPresenceData.Failure({ error: "Failed" }) })),
+		SucceededLoadIntegration: ({ orgId, integration, isConnected }) =>
+			forOrg(model, orgId, (current) =>
+				modifyFields(current, { integrations: (known) => ({ ...known, [integration]: isConnected }) }),
+			),
+		FailedLoadIntegration: ({ orgId, integration }) =>
+			forOrg(model, orgId, (current) =>
+				modifyFields(current, { integrations: (known) => ({ ...known, [integration]: false }) }),
+			),
 		// A result for an org the shell has left is dropped.
 		SucceededLoadDashboards: ({ orgId, dashboards }) =>
 			Option.contains(model.maybeOrgId, orgId)
@@ -372,9 +389,8 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 						}),
 					}
 				: { model },
-		SucceededLoadNamespaces: ({ namespaces }) => ({
-			model: modifyFields(model, { namespaces: () => NamespacesData.Success({ data: namespaces }) }),
-		}),
+		SucceededLoadNamespaces: ({ orgId, namespaces }) =>
+			forOrg(model, orgId, (current) => modifyFields(current, { namespaces: () => NamespacesData.Success({ data: namespaces }) })),
 		GotRailTooltipMessage: ({ message: child }) => {
 			const next = Tooltip.update(model.railTooltip, child)
 			return {
@@ -416,9 +432,8 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 			commands: [DismissQuotaBanner()],
 		}),
 		CompletedDismissQuotaBanner: () => ({ model }),
-		FailedLoadNamespaces: () => ({
-			model: modifyFields(model, { namespaces: () => NamespacesData.Failure({ error: "Failed" }) }),
-		}),
+		FailedLoadNamespaces: ({ orgId }) =>
+			forOrg(model, orgId, (current) => modifyFields(current, { namespaces: () => NamespacesData.Failure({ error: "Failed" }) })),
 		ClickedSearch: () => openPalette(model),
 		// Legacy's popup closes on Mod+K and its document listener reopens it in the same batch: a no-op.
 		PressedPaletteShortcut: () => openPalette(model),
