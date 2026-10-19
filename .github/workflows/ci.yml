@@ -138,7 +138,7 @@ jobs:
               env:
                   CHANGED_FILES: ${{ steps.filter.outputs.base != 'true' && fromJSON(steps.filter.outputs.changed_count) <= 1000 && steps.filter.outputs.changed_files || '' }}
               run: |
-                  bun test scripts/ci/plan-tests.test.ts
+                  bun test scripts/ci/plan-tests.test.ts scripts/lib/pr-state.test.ts
                   matrix="$(bun scripts/ci/plan-tests.ts)"
                   echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
                   echo "has-tests=$(jq '.include | length > 0' <<< "$matrix")" >> "$GITHUB_OUTPUT"

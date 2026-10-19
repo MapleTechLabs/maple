@@ -3,10 +3,10 @@
  * the database and the warehouse. The fire hands its tick to this Worker's own fetch handler
  * over a self service binding instead, and that invocation is placed.
  */
+import { internalTokenFor, selfFetcher } from "@maple/backend/platform/self-binding"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
-import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Config, Effect, Option, Redacted, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { isLaneOf, type TickLane } from "./schedule.ts"
 
@@ -43,25 +43,6 @@ export class TickRequestRefused extends Schema.TaggedError<TickRequestRefused>()
 	},
 ) {}
 
-const isFetcher = (value: unknown): value is Fetcher =>
-	typeof value === "object" && value !== null && "fetch" in value && typeof value.fetch === "function"
-
-/** Surfaces a 3xx as the response instead of following it, so the bearer never leaves the hop. */
-const withManualRedirects = (binding: Fetcher): Fetcher => ({
-	fetch: (input, init) => binding.fetch(input, { ...init, redirect: "manual" }),
-	connect: (address, options) => binding.connect(address, options),
-})
-
-/** The internal token as this invocation's env says; unreadable reads as unset. */
-const internalTokenFor = (env: Record<string, unknown>) =>
-	Config.option(Config.Redacted("INTERNAL_SERVICE_TOKEN")).pipe(
-		Effect.map(Option.map(Redacted.value)),
-		Effect.orElseSucceed(() => Option.none<string>()),
-		// The invocation's env is the boundary this config belongs to.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(workerEnvLayer(env)),
-	)
-
 /**
  * Runs one lane of `cron` in the placed fetch handler. Fails with `TickDispatchUnavailable` when it
  * did not run there (no binding, no token, or the handler refused it), so the caller runs it inline.
@@ -72,9 +53,9 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 	env: Record<string, unknown>,
 ) {
 	yield* Effect.annotateCurrentSpan("maple.alerting.lane", lane)
-	const binding = env[SELF_BINDING]
+	const binding = selfFetcher(env, SELF_BINDING)
 	const token = yield* internalTokenFor(env)
-	if (!isFetcher(binding)) {
+	if (Option.isNone(binding)) {
 		return yield* new TickDispatchUnavailable({
 			message: "No self service binding",
 			reason: "no-binding",
@@ -87,7 +68,7 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 		})
 	}
 
-	const client = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(withManualRedirects(binding)))
+	const client = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(binding.value))
 	const request = HttpClientRequest.post(TICK_URL).pipe(
 		HttpClientRequest.setUrlParam("cron", cron),
 		HttpClientRequest.setUrlParam("lane", lane),

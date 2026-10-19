@@ -13,6 +13,7 @@ import {
 import {
 	ENGINE_UNGROUPED_GROUP_KEY,
 	formatWarehouseDateTime,
+	isAlertRuleDue,
 	snapAlertWindowEndMs,
 	warehouseDateTime64,
 	parseWarehouseDateTime,
@@ -1522,9 +1523,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * evaluation window, so what this returns is what the tracking chart
 			 * shows once the rule is live.
 			 *
-			 * Fidelity caveat: the live scheduler slides its window every tick
-			 * (~1 min) while the preview uses tumbling windows, so `wouldFire` spans
-			 * are approximate between bucket boundaries.
+			 * Fidelity caveat: the live scheduler slides its window every check
+			 * (`alertEvaluationIntervalMinutes`) while the preview uses tumbling
+			 * windows, so `wouldFire` spans are approximate between bucket boundaries.
 			 */
 			const previewRule = Effect.fn("AlertsService.previewRule")(function* (
 				orgId: OrgId,
@@ -3555,14 +3556,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const SCHEDULER_SPREAD_TAIL_MS = 10_000
 
 			// Unchanged-state ticks skip the alert_rule_states upsert so the Electric
-			// shape stays quiet; lastEvaluatedAt is refreshed at most this often.
-			const STATE_HEARTBEAT_MS = 5 * 60_000
+			// shape stays quiet; lastEvaluatedAt is refreshed at most this often. Under
+			// the 5-minute longest check interval, so claim jitter cannot skip a refresh.
+			const STATE_HEARTBEAT_MS = 4.5 * 60_000
 
 			// `alert_rules.last_scheduled_at` is still exposed on the API and read by the
 			// web diagnosis panel, but it is only refreshed this often — the per-minute
 			// claim itself lives in the unpublished `alert_rule_claims` table so it never
 			// enters Electric's replication stream. Mirrors STATE_HEARTBEAT_MS above.
-			const SCHEDULER_HEARTBEAT_MS = 5 * 60_000
+			const SCHEDULER_HEARTBEAT_MS = STATE_HEARTBEAT_MS
 
 			/**
 			 * Rules are claimed a chunk at a time, not one statement per rule.
@@ -3666,8 +3668,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							),
 						)
 
-			// Expires this tick's own claims (the timestamp predicate leaves a newer
-			// claim alone), so the next tick can take them and orders them first.
+			// Expires each claim at the given timestamp (the predicate leaves a newer
+			// claim alone), so the next tick finds the rule due and orders it first.
 			// Best-effort: an unreleased claim still expires after SCHEDULER_LOCK_TTL_MS.
 			const releaseClaims = (claims: ReadonlyArray<{ id: AlertRuleId; timestamp: number }>) =>
 				Effect.forEach(
@@ -3686,9 +3688,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 					},
 					{ discard: true },
-				).pipe(
-					Effect.ignore({ log: "Warn", message: "Failed to release unstarted alert rule claims" }),
-				)
+				).pipe(Effect.ignore({ log: "Warn", message: "Failed to release alert rule claims" }))
 
 			/**
 			 * The two per-rule reads the scheduler used to issue inside its loop,
@@ -3931,7 +3931,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				)
 				yield* Metric.update(AlertingMetrics.activeRulesGauge, rows.length)
 
-				const prefetch = yield* loadTickPrefetch(rows)
+				// A rule is checked every fifth of its window (1-5 min), not every tick.
+				const lastClaimedAt = yield* loadLastClaimTimes(rows)
+				const dueRows = Arr.filter(rows, (row) =>
+					isAlertRuleDue({
+						ruleId: row.id,
+						windowMinutes: row.windowMinutes,
+						updatedAt: row.updatedAt,
+						lastClaimedAt: lastClaimedAt.get(row.id),
+						windowEndMs: tickWindowEndMs,
+					}),
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.alerting.rules_enabled": rows.length,
+					"maple.alerting.rules_due": dueRows.length,
+				})
+
+				const prefetch = yield* loadTickPrefetch(dueRows)
 
 				// Warm the org warehouse-config memo for the whole tick in one read,
 				// before the per-rule forEach below fans out at concurrency 5.
@@ -3947,7 +3963,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Best-effort: priming is an optimization, and a failure here must not
 				// take down a tick that would otherwise resolve each config on demand.
 				yield* orgChSettings
-					.primeRuntimeConfigs(Arr.dedupe(Arr.map(rows, (row) => row.orgId)))
+					.primeRuntimeConfigs(Arr.dedupe(Arr.map(dueRows, (row) => row.orgId)))
 					.pipe(Effect.ignore({ log: "Warn", message: "Failed to prime alert runtime configs" }))
 
 				// Incremented from fibers running under the concurrent per-rule forEach
@@ -4163,8 +4179,24 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					)
 				const deferredRules = yield* Ref.make(0)
 				const deferRules = (count: number) => Ref.update(deferredRules, (n) => n + count)
-				// Claims won but never started, released after the pool drains.
-				const unstartedClaims = yield* Ref.make(Chunk.empty<{ id: AlertRuleId; timestamp: number }>())
+				// Claims released after the pool drains, so these rules are due next tick: won but
+				// never started, failed, or (with their earlier claim) never claimed this tick.
+				const retryClaims = yield* Ref.make(Chunk.empty<{ id: AlertRuleId; timestamp: number }>())
+				const retryUnclaimed = (chunk: ReadonlyArray<StoredAlertRuleRow>) =>
+					Ref.update(
+						retryClaims,
+						Chunk.appendAll(
+							Chunk.fromIterable(
+								Arr.filterMap(chunk, (row) => {
+									// A live claim belongs to another tick still evaluating the rule.
+									const claimedAt = lastClaimedAt.get(row.id) ?? 0
+									return claimedAt > 0 && claimedAt < tickStart - SCHEDULER_LOCK_TTL_MS
+										? Result.succeed({ id: row.id, timestamp: claimedAt })
+										: Result.failVoid
+								}),
+							),
+						),
+					)
 				const evaluatedRules = yield* Ref.make(0)
 				// Orgs whose warehouse was down (5xx or unreachable) on a rule this tick.
 				// Their other rules are skipped rather than evaluated: each would fail the
@@ -4338,6 +4370,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						Effect.tap(() =>
 							Ref.update(clearErrorTargets, Chunk.append({ orgId: row.orgId, ruleId: row.id })),
 						),
+						// A rule that did not finish cleanly retries next tick, not a full interval later.
+						Effect.tapCause(() =>
+							Ref.update(retryClaims, Chunk.append({ id: row.id, timestamp })),
+						),
 						// Not an evaluation failure: the tick that re-claimed the rule owns
 						// its state now, so record nothing and leave the rest to it.
 						Effect.catchTag("@maple/alerts/AlertRuleClaimLostError", (lost) =>
@@ -4414,8 +4450,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// next chunk is claimed only when the current one is fully handed out.
 				// Lock ages stay bounded by a chunk's queueing, as before, but one slow
 				// rule no longer idles the other lanes until its chunk drains.
-				const lastClaimedAt = yield* loadLastClaimTimes(rows)
-
 				// Space rule starts across the spread so a tick is not one warehouse CPU burst.
 				// Windows snap to the minute, so a later start reads the same data; a tick that
 				// starts late gets a shorter spread, never deferrals.
@@ -4424,7 +4458,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					0,
 					Math.min(runtime.schedulerSpreadMs(), deadline - SCHEDULER_SPREAD_TAIL_MS - spreadStart),
 				)
-				const startSpacingMs = rows.length > 0 ? spreadMs / rows.length : 0
+				const startSpacingMs = dueRows.length > 0 ? spreadMs / dueRows.length : 0
 				yield* Effect.annotateCurrentSpan("maple.alerting.spread_ms", Math.round(spreadMs))
 				const waitForStartSlot = (index: number) =>
 					Effect.flatMap(now, (time) => {
@@ -4434,7 +4468,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				yield* Stream.fromIterable(
 					Arr.chunksOf(
-						interleaveAlertRulesByOrg(orderAlertRulesByLastClaim(rows, lastClaimedAt)),
+						interleaveAlertRulesByOrg(orderAlertRulesByLastClaim(dueRows, lastClaimedAt)),
 						RULE_CLAIM_CHUNK_SIZE,
 					),
 				).pipe(
@@ -4443,6 +4477,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							const timestamp = yield* now
 							if (timestamp >= deadline) {
 								yield* deferRules(chunk.length)
+								yield* retryUnclaimed(chunk)
 								return []
 							}
 							// A failed claim skips this chunk; its rules are claimed next tick.
@@ -4453,6 +4488,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										cause: summarizeCause(cause),
 									}),
 									Effect.andThen(deferRules(chunk.length)),
+									Effect.andThen(retryUnclaimed(chunk)),
 									Effect.as([]),
 								)
 							const claimed = yield* claimRuleChunk(chunk, timestamp).pipe(
@@ -4475,7 +4511,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									? deferRules(1).pipe(
 											Effect.andThen(
 												Ref.update(
-													unstartedClaims,
+													retryClaims,
 													Chunk.append({ id: row.id, timestamp }),
 												),
 											),
@@ -4489,7 +4525,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Stream.runDrain,
 				)
 
-				yield* releaseClaims(Chunk.toReadonlyArray(yield* Ref.get(unstartedClaims))).pipe(
+				yield* releaseClaims(Chunk.toReadonlyArray(yield* Ref.get(retryClaims))).pipe(
 					Effect.withSpan("AlertsService.releaseClaims"),
 				)
 
