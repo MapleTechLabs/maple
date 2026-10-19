@@ -93,6 +93,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedTest: (completed) => completeTest(model, completed),
 		ClickedSave: () => save(model),
 		CompletedSave: (completed) => completeSave(model, completed),
+		TrackedRuleCreated: () => ({ model }),
 		ClickedShowTemplates: () => liftTemplates(model, Dialog.open(model.templates)),
 		GotTemplatesMessage: ({ message: inner }) => liftTemplates(model, Dialog.update(model.templates, inner)),
 		ClickedTemplate: ({ id }) => {

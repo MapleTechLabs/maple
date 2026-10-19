@@ -90,6 +90,14 @@ describe("alert rule editor", () => {
 		expect(saved.outMessage?._tag).toBe("RequestedNavigation")
 	})
 
+	test("a created rule records alert_rule_created with its signal; a failed save does not", () => {
+		const saving = pageUpdate(withLists(entered({ template: "slow_p95" })), Message.ClickedSave()).model
+		const saved = pageUpdate(saving, Message.CompletedSave({ result: Result.succeed(undefined) }))
+		expect(names(saved.commands)).toEqual(["TrackAlertRuleCreated"])
+		const failed = pageUpdate(saving, Message.CompletedSave({ result: Result.fail({ title: "Bad", message: "nope" }) }))
+		expect(names(failed.commands)).toEqual([])
+	})
+
 	test("an incomplete rule cannot be saved", () => {
 		const unnamed = pageUpdate(withLists(entered()), Message.ChangedField({ field: "name", value: "" }))
 		expect(names(pageUpdate(unnamed.model, Message.ClickedSave()).commands)).toEqual([])

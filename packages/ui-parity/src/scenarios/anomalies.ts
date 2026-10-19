@@ -114,6 +114,17 @@ export const anomaliesArea: AreaModule = {
 				waitForText("Linked to issue"),
 			),
 		}),
+		anomaly("detail-link-keyboard", "Detail, an issue linked by keyboard", DETAIL, {
+			steps: act(
+				clickButton("Link issue"),
+				waitForText(/^Scoped to/),
+				(page) => page.getByRole("combobox").fill("payment-svc"),
+				(page) => page.getByRole("option").first().waitFor({ state: "visible" }),
+				(page) => page.keyboard.press("ArrowDown"),
+				(page) => page.keyboard.press("Enter"),
+				waitForText("Linked to issue"),
+			),
+		}),
 		anomaly("list-keys", "The row cursor moved with j and ArrowDown", ALL, {
 			steps: async (page) => {
 				await page.keyboard.press("j")

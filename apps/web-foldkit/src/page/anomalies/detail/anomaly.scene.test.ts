@@ -1,12 +1,26 @@
 import { OrgId } from "@maple/domain"
 import { AnomalyIncidentId, AnomalyIncidentNotFoundError } from "@maple/domain/http"
-import { encodePublicId, PublicIdPrefixes, V2AnomalyIncident } from "@maple/domain/http/v2"
+import { encodePublicId, PublicIdPrefixes, V2AnomalyIncident, V2ErrorIssue } from "@maple/domain/http/v2"
+import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	Command,
+	expect as expectView,
+	given,
+	keydown,
+	Mount,
+	role,
+	scene,
+	text,
+	type,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
+import * as Dialog from "../../../ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
+import { SetIncidentIssue } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -103,5 +117,69 @@ describe("anomaly detail", () => {
 		scene({ update: pageUpdate, view }, given(model), themed(), expectView(text(/^Stale/)).not.toExist())
 		const ticked = pageUpdate(model, Message.TickedLiveRefresh({ nowMs: NOW + 30 * 86_400_000 })).model
 		scene({ update: pageUpdate, view }, given(ticked), themed(), expectView(text(/^Stale/)).toExist())
+	})
+})
+
+const issueRow = (id: string, exceptionType: string) =>
+	Schema.decodeUnknownSync(V2ErrorIssue)({
+		id,
+		object: "error_issue",
+		kind: "error",
+		fingerprint_hash: "1",
+		service_name: "payment-svc",
+		exception_type: exceptionType,
+		exception_message: "",
+		error_label: exceptionType,
+		top_frame: "",
+		workflow_state: "triage",
+		priority: 1,
+		severity: "critical",
+		severity_source: "detector",
+		source_ref: null,
+		assigned_actor: null,
+		lease_holder: null,
+		lease_expires_at: null,
+		claimed_at: null,
+		notes: null,
+		first_seen_at: new Date(NOW - 7_200_000).toISOString(),
+		last_seen_at: new Date(NOW - 60_000).toISOString(),
+		occurrence_count: 12,
+		resolved_at: null,
+		last_resolved_at: null,
+		last_regressed_at: null,
+		regression_count: 0,
+		resolved_versions: [],
+		snooze_until: null,
+		archived_at: null,
+		has_open_incident: false,
+		comment_count: 0,
+		open_pull_request_count: 0,
+		merged_pull_request_count: 0,
+	})
+
+describe("anomaly link dialog by keyboard", () => {
+	test("typing a query, ArrowDown and Enter link the matching issue", () => {
+		const opened = pageUpdate(loaded().model, Message.ClickedLinkIssue()).model
+		const issues = [issueRow("iss_YoxMYDoXSr3tsBZyBLmNMv", "NullPointer"), issueRow("iss_YoxMYDoXSr3tsBZyBLmNMw", "ConnectionTimeout")]
+		const model = pageUpdate(
+			opened,
+			Message.CompletedFetchLinkIssues({ key: opened.linkIssues.key ?? "", result: Result.succeed(issues) }),
+		).model
+		const timeout = errorIssueFromV2(issues[1] ?? issues[0]).id
+		const input = role("combobox")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themed(),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			type(input, "Timeout"),
+			keydown(input, "ArrowDown"),
+			keydown(input, "Enter"),
+			Command.expectHas(SetIncidentIssue({ id: ID, issueId: timeout })),
+			Command.resolve(
+				SetIncidentIssue,
+				Message.CompletedSetIssue({ issueId: timeout, result: Result.fail(toLoadFailure(new Error("down"))) }),
+			),
+		)
 	})
 })

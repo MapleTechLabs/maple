@@ -97,6 +97,8 @@ export const Message = defineMessageUnion({
 	},
 	ClickedSave: {},
 	CompletedSave: { result: Schema.Result(Schema.Void, Failure) },
+	/** `trackProduct("alert_rule_created")` was handed to the session SDK. */
+	TrackedRuleCreated: {},
 	ClickedShowTemplates: {},
 	GotTemplatesMessage: { message: Dialog.Message },
 	ClickedTemplate: { id: Schema.String },

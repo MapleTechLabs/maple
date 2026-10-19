@@ -9,6 +9,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-lookups"
+import { trackProduct } from "../shared/analytics"
 import { readIsAdmin } from "../shared/commands"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
@@ -136,6 +137,13 @@ export const FocusSqlCaret = Command.define("FocusAlertSqlCaret", {
 			}
 			return Message.CompletedFocusSql()
 		}),
+})
+
+/** `trackProduct("alert_rule_created", { signal })` after a create lands. */
+export const TrackRuleCreated = Command.define("TrackAlertRuleCreated", {
+	args: { signal: Schema.String },
+	messages: [Message.TrackedRuleCreated],
+	execute: ({ signal }) => Effect.as(trackProduct("alert_rule_created", { signal }), Message.TrackedRuleCreated()),
 })
 
 /** `handleSave`: create, or update the rule being edited. */

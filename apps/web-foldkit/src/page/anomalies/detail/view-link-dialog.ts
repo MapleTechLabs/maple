@@ -148,6 +148,7 @@ export const linkIssueDialog = (h: H, model: Model, incident: AnomalyIncidentDoc
 								model.linkCombobox,
 								{
 									hasDismissButton: true,
+									isUnfiltered: true,
 									placeholder: `Search issues${model.linkAllServices ? "" : ` in ${incident.serviceName}`}…`,
 									groups: [
 										{

@@ -381,7 +381,7 @@ const fieldHelper = (h: H, type: AlertDestinationType): ReadonlyArray<Html> => {
 
 export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>>((model, inputs, h) => {
 	const isEditing = model.editingId !== null
-	const provider = providerOf(model.form.type)
+	const provider = destinationProvider(model.form.type, model.form.chatConnector)
 	const nameIds = ids("name")
 	return h.submodel({
 		slotId: `${inputs.id}-dialog`,
@@ -400,7 +400,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 							h.Id(titleId(model.dialog.id)),
 						],
 						[
-							...(isEditing ? [logo(h, model, model.form.type, 28)] : []),
+							...(isEditing ? [logo(h, model, model.form.type, 28, model.form.chatConnector)] : []),
 							isEditing ? `Edit ${provider.label} destination` : "Add destination",
 						],
 					),
@@ -426,7 +426,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 														h.span(
 															[h.Class("flex min-w-0 items-center gap-2.5")],
 															[
-																logo(h, model, model.form.type, 28),
+																logo(h, model, model.form.type, 28, model.form.chatConnector),
 																h.span([h.Class("truncate text-sm font-medium")], [provider.label]),
 															],
 														),
