@@ -143,7 +143,16 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 					vercelProjects: db.run(
 						PG.from(VercelProjects)
 							.select(() => ({ count: PG.count() }))
-							.where(($) => [$.orgId.eq(orgId)]),
+							.where(($) => [
+								$.orgId.eq(orgId),
+								// Only the current connection's: rows a disconnect raced with do not count.
+								PG.inSubquery(
+									$.connectionId,
+									PG.from(VercelConnections)
+										.select("id")
+										.where(($c) => [$c.orgId.eq(orgId)]),
+								),
+							]),
 					),
 					planetscaleConnections: db.run(
 						PG.from(PlanetscaleConnections)

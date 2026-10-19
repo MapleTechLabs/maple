@@ -67,6 +67,8 @@ const REACTIVITY = [VERCEL_STATUS_REACTIVITY_KEY]
 
 /** Until the first sync lands, re-read often enough to see the drains and projects arrive. */
 const SETTLING_REFRESH_MS = 15_000
+/** A first sync that has not succeeded by then is a failure the card shows, not something to poll for. */
+const SETTLING_WINDOW_MS = 10 * 60_000
 
 /** The card's 24h window: no times, so the reads default to the last 24 hours and keep one key. */
 const DAY = {} as const
@@ -587,7 +589,12 @@ export function VercelIntegrationCard() {
 
 	// Keep the last loaded status if a refetch fails.
 	const status = Option.getOrNull(AsyncResult.value(statusResult))
-	const settling = status?.connected === true && !status.authFailed && status.lastSuccessAt === null
+	const settling =
+		status?.connected === true &&
+		!status.authFailed &&
+		status.lastSuccessAt === null &&
+		status.connectedAt !== null &&
+		Date.now() - status.connectedAt < SETTLING_WINDOW_MS
 	useIntervalRefresh(refreshStatus, { intervalMs: SETTLING_REFRESH_MS, enabled: settling })
 
 	if (Result.isInitial(statusResult) && status === null) {

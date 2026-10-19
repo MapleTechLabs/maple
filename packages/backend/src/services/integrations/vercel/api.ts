@@ -300,7 +300,8 @@ export const listDeployments = Effect.fn("VercelApi.listDeployments")(function* 
 export interface VercelDrainBody {
 	readonly name: string
 	readonly projects: "all" | "some"
-	readonly projectIds?: ReadonlyArray<string>
+	/** Null on an update clears the list a `some` drain had. */
+	readonly projectIds?: ReadonlyArray<string> | null
 	readonly schemas: Readonly<Record<string, { readonly version: string }>>
 	readonly delivery: Readonly<Record<string, unknown>>
 	readonly sampling?: ReadonlyArray<{ readonly type: "head_sampling"; readonly rate: number }>
@@ -360,14 +361,74 @@ export const updateDrain = Effect.fn("VercelApi.updateDrain")(function* (
 	return toDrainInfo(drain)
 })
 
-export const getDrain = Effect.fn("VercelApi.getDrain")(function* (
+export interface VercelListedDrain extends VercelDrainInfo {
+	readonly createdAt: number
+	/** The delivery URL: the endpoint of an HTTP drain, `endpoint.traces` of an OTLP one. */
+	readonly endpoint: string | null
+	/** Empty for a drain that forwards every project. */
+	readonly projectIds: ReadonlyArray<string>
+	readonly sampling: ReadonlyArray<{
+		readonly type: string
+		readonly rate: number
+		readonly env?: string
+		readonly requestPath?: string
+	}>
+	/** The data kinds it carries (`log`, `trace`, ...). */
+	readonly schemas: ReadonlyArray<string>
+}
+
+const ListedDrainsBody = Schema.Struct({
+	drains: Schema.Array(
+		Schema.Struct({
+			...DrainBody.fields,
+			createdAt: Schema.Number,
+			projectIds: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.String))),
+			sampling: Schema.optionalKey(
+				Schema.NullOr(
+					Schema.Array(
+						Schema.Struct({
+							type: Schema.String,
+							rate: Schema.Number,
+							env: Schema.optionalKey(Schema.String),
+							requestPath: Schema.optionalKey(Schema.String),
+						}),
+					),
+				),
+			),
+			schemas: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
+			// Unknown: drains of other delivery types (S3, ClickHouse, ...) list here too.
+			delivery: Schema.optionalKey(Schema.Struct({ endpoint: Schema.optionalKey(Schema.Unknown) })),
+		}),
+	),
+})
+
+const endpointOf = (endpoint: unknown): string | null =>
+	typeof endpoint === "string"
+		? endpoint
+		: typeof endpoint === "object" &&
+			  endpoint !== null &&
+			  "traces" in endpoint &&
+			  typeof endpoint.traces === "string"
+			? endpoint.traces
+			: null
+
+/** Every drain of the team, Maple's or not. Delivery headers are not read: Vercel may redact them. */
+export const listDrains = Effect.fn("VercelApi.listDrains")(function* (
 	httpClient: HttpClient.HttpClient,
 	token: string,
 	teamId: string,
-	drainId: string,
 ) {
-	return toDrainInfo(
-		yield* call(httpClient, token, HttpClientRequest.get(drainUrl(teamId, drainId)), DrainBody),
+	const body = yield* call(httpClient, token, HttpClientRequest.get(drainUrl(teamId)), ListedDrainsBody)
+	yield* Effect.annotateCurrentSpan("maple.vercel.drains", body.drains.length)
+	return body.drains.map(
+		(drain): VercelListedDrain => ({
+			...toDrainInfo(drain),
+			createdAt: drain.createdAt,
+			endpoint: endpointOf(drain.delivery?.endpoint),
+			projectIds: drain.projectIds ?? [],
+			sampling: drain.sampling ?? [],
+			schemas: Object.keys(drain.schemas ?? {}),
+		}),
 	)
 })
 

@@ -88,7 +88,7 @@ describe("IntegrationInventoryService", () => {
 		)
 	})
 
-	it.effect("reports a Vercel drain the poller found missing", () => {
+	it.effect("reports a Vercel drain the poller found missing and counts only the connection's projects", () => {
 		const testDb = createTestDb(createdDbs)
 		const orgId = asOrgId("org_v")
 		return Effect.gen(function* () {
@@ -119,10 +119,11 @@ describe("IntegrationInventoryService", () => {
 					),
 					db.run(
 						PG.insertInto(VercelProjects).values(
-							["p1", "p2"].map((projectId) => ({
+							["p1", "p2", "p3"].map((projectId) => ({
 								id: `row_${projectId}`,
 								orgId,
-								connectionId: "vc_1",
+								// p3 is left from an earlier connection.
+								connectionId: projectId === "p3" ? "vc_0" : "vc_1",
 								projectId,
 								name: projectId,
 								createdAt: NOW,

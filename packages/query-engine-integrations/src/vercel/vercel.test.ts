@@ -80,13 +80,13 @@ describe("vercelProjectTopErrorsSQL", () => {
 })
 
 describe("vercelProjectLatencySQL", () => {
-	it("reads root spans of deployment traces by Vercel's project attribute", () => {
+	it("reads request (server) spans of deployment traces by Vercel's project attribute", () => {
 		const { sql } = compileUnsafe(vercelProjectLatencySQL(), window)
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("ResourceAttributes['vercel.projectId'] AS projectId")
 		expect(sql).toContain("AND mapContains(traces.ResourceAttributes, 'vercel.projectId')")
 		expect(sql).toContain("AND traces.ResourceAttributes['vercel.projectId'] != ''")
-		expect(sql).toContain("traces.ParentSpanId = ''")
+		expect(sql).toContain("traces.SpanKind = 'Server'")
 		expect(sql).toContain("quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs")
 	})
 })

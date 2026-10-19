@@ -4225,7 +4225,7 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
           AND traces.ResourceAttributes['vercel.projectId'] != ''
-          AND traces.ParentSpanId = ''
+          AND traces.SpanKind = 'Server'
         GROUP BY projectId
         LIMIT 1000
         FORMAT JSON

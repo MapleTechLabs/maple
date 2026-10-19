@@ -150,7 +150,8 @@ export function vercelProjectLatencySQL() {
 			// granules of non-Vercel traces; the value test drops empty ids.
 			CH.mapContains($.ResourceAttributes, "vercel.projectId"),
 			$.ResourceAttributes.get("vercel.projectId").neq(""),
-			$.ParentSpanId.eq(""),
+			// Server spans, not roots: a caller's propagated context gives the request span a parent.
+			$.SpanKind.eq("Server"),
 		])
 		.groupBy("projectId")
 		.limit(1000)

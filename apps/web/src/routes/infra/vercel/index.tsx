@@ -166,8 +166,8 @@ function VercelConnected({
 
 	const projectsEmpty = projects !== null && projects.length === 0
 	const aiEmpty = aiGateway !== null && aiGateway.summary.requests === 0
-	// Without the logs drain an empty page has nothing on the way worth polling for.
-	const pollEmpty = projectsEmpty && status.logsEnabled
+	// With neither drain on, an empty page has nothing on the way worth polling for.
+	const pollEmpty = projectsEmpty && (status.logsEnabled || status.tracesEnabled)
 	useIntervalRefresh(refreshProjects, { intervalMs: EMPTY_REFRESH_MS, enabled: pollEmpty })
 	useIntervalRefresh(refreshTimeseries, { intervalMs: EMPTY_REFRESH_MS, enabled: pollEmpty })
 	useIntervalRefresh(refreshAi, {
