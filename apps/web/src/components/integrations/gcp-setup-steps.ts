@@ -73,11 +73,13 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 		{
 			title: "Enable the APIs",
 			summary: `${plan.apis.length} APIs`,
-			intro: `In APIs & Services › Library, search for each API and enable it in ${host}.`,
+			intro: `In APIs & Services › Library, search for each API, open it and click Enable in ${host}. One that shows Manage and “API Enabled” is on already.`,
 			consoleUrl: hostPage("apis/library", plan),
 			fields: [field("APIs", plan.apis)],
-			notes:
-				reader === null ? [] : ["Cloud Monitoring only answers for a project with billing linked."],
+			notes: [
+				"pubsub.googleapis.com is the Cloud Pub/Sub API, not Pub/Sub Lite.",
+				...(reader === null ? [] : ["Cloud Monitoring only answers for a project with billing linked."]),
+			],
 		},
 	]
 	if (logs !== null) {
@@ -86,7 +88,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			{
 				title: "Create the Pub/Sub topic",
 				summary: logs.topic,
-				intro: "In Pub/Sub › Topics, create a topic.",
+				intro: "In Pub/Sub › Topics, click Create topic and click Create. The topic then warns that messages will be lost: the subscription in step 4 takes care of that.",
 				consoleUrl: hostPage("cloudpubsub/topic/list", plan),
 				fields: [field("Topic ID", logs.topic), field("Add a default subscription", "Off", false)],
 				notes: ["The default subscription is on by default: left on, it keeps a copy of every log."],
@@ -94,7 +96,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			{
 				title: "Create the push service account",
 				summary: logs.pushServiceAccountId,
-				intro: "In IAM & Admin › Service accounts, create the account and click Done without a role. Then open its Permissions tab and grant access.",
+				intro: "In IAM & Admin › Service accounts, click Create service account, fill in the name, then replace the ID the console fills in, and click Create and close. Then open the account, its Principals with access tab, and click Grant access.",
 				consoleUrl: hostPage("iam-admin/serviceaccounts", plan),
 				fields: [
 					field("Service account name", "Maple log push identity"),
@@ -104,14 +106,15 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 					field("Role", "Service Account Token Creator", false),
 				],
 				notes: [
-					"Only needed where the Pub/Sub service agent was created before April 8, 2021; harmless elsewhere.",
-					`PROJECT_NUMBER is on the ${host} dashboard, or: gcloud projects describe ${host} --format='value(projectNumber)'`,
+					"In New principals, type gcp-sa-pubsub and pick “Cloud Pub/Sub Service Account for Project …”: that fills in PROJECT_NUMBER.",
+					"The role picker starts on Service Account Admin: replace it with Service Account Token Creator.",
+					"Only needed where the Pub/Sub service agent was created before April 8, 2021; harmless elsewhere. Google lists the grant only with Include Google-provided role grants ticked.",
 				],
 			},
 			{
 				title: "Create the push subscription",
 				summary: logs.subscription,
-				intro: "In Pub/Sub › Subscriptions, create a subscription on the topic with these settings.",
+				intro: "In Pub/Sub › Subscriptions, click Create subscription, set these, and click Create.",
 				consoleUrl: hostPage("cloudpubsub/subscription/list", plan),
 				fields: [
 					field("Subscription ID", logs.subscription),
@@ -120,11 +123,11 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 					field("Endpoint URL", logs.pushEndpoint),
 					field("Enable authentication", "On", false),
 					field("Service account", logs.pushServiceAccountEmail),
-					field("Audience", logs.pushEndpoint),
+					field("Audience (marked optional)", logs.pushEndpoint),
 					field("Enable payload unwrapping", "On, Write metadata off", false),
 					field(
 						"Retry policy",
-						`Exponential backoff, ${GCP_PUSH_SUBSCRIPTION.minRetryDelaySeconds} to ${GCP_PUSH_SUBSCRIPTION.maxRetryDelaySeconds} seconds`,
+						`Retry after exponential backoff delay, ${GCP_PUSH_SUBSCRIPTION.minRetryDelaySeconds} to ${GCP_PUSH_SUBSCRIPTION.maxRetryDelaySeconds} seconds`,
 						false,
 					),
 					field(
@@ -132,12 +135,12 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 						`${GCP_PUSH_SUBSCRIPTION.ackDeadlineSeconds} seconds`,
 						false,
 					),
-					field("Message retention duration", "1 day", false),
-					field("Expiration period", "Never expire", false),
+					field("Message retention duration", "1 day, 0 hours, 0 minutes", false),
+					field("Expiry period", "Never expire", false),
 				],
 				notes: [
 					"Without payload unwrapping Maple can't read what Pub/Sub sends, and drops it.",
-					"The expiration period defaults to 31 days: an idle subscription would be deleted.",
+					"The expiry period defaults to 31 days: an idle subscription would be deleted.",
 				],
 			},
 			{
@@ -148,7 +151,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 				fields: [
 					field("Sink name", logs.sink),
 					...(plan.scopeType === "project"
-						? [field("Sink service", "Pub/Sub topic", false), field("Topic", topicPath)]
+						? [field("Sink service", "Cloud Pub/Sub topic", false), field("Topic", topicPath)]
 						: [
 								field("Sink service", "Other resource", false),
 								field("Destination", logs.sinkDestination),
@@ -158,7 +161,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 									false,
 								),
 							]),
-					field("Inclusion filter", logs.logFilter),
+					field("Build inclusion filter", logs.logFilter),
 				],
 				notes: [
 					...(plan.scopeType === "project"
@@ -172,15 +175,18 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			{
 				title: "Let the sink publish to the topic",
 				summary: "Pub/Sub Publisher",
-				intro: "In Log Router, open the sink's ⋮ menu › View sink details and copy its writer identity. In Pub/Sub › Topics, tick the topic and grant it in Show info panel › Permissions.",
-				consoleUrl: hostPage("cloudpubsub/topic/list", plan),
+				intro: "In Log Router, open the sink's ⋮ menu › View sink details and copy its Writer identity. In Pub/Sub › Topics, tick the topic; in the info panel on the right (Show info panel if it's hidden) open Permissions › Add principal, paste the identity and grant the role.",
+				consoleUrl: scopePage("logs/router", plan),
 				fields: [field(`Topic ${logs.topic}`, "Pub/Sub Publisher", false)],
-				notes: ["Grant it on the topic: on the IAM page it would cover every topic in the project."],
+				notes: [
+					"Paste the writer identity without its leading serviceAccount:, or the console refuses it.",
+					"Grant it on the topic: on the IAM page it would cover every topic in the project.",
+				],
 			},
 			{
 				title: "Send a test message",
 				summary: "Optional",
-				intro: "In the topic's Messages tab, publish this message. It proves the topic, subscription and push reach Maple, which confirms log forwarding; the sink is proven by the first real log.",
+				intro: "In the topic's Messages tab, click Publish message, paste this as the message and click Publish. It proves the topic, subscription and push reach Maple, which confirms log forwarding; the sink is proven by the first real log.",
 				consoleUrl: hostPage("cloudpubsub/topic/list", plan),
 				fields: [
 					field(
@@ -200,7 +206,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			{
 				title: "Create the read-only service account",
 				summary: reader.serviceAccountId,
-				intro: "In IAM & Admin › Service accounts, create the account and click Done. It gets no key.",
+				intro: "In IAM & Admin › Service accounts, click Create service account, fill in the name, replace the ID the console fills in, and click Create and close. It gets no key.",
 				consoleUrl: hostPage("iam-admin/serviceaccounts", plan),
 				fields: [
 					field("Service account name", "Maple metrics and resource reader"),
@@ -211,13 +217,14 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			{
 				title: "Let Maple use the read-only account",
 				summary: "Token Creator",
-				intro: "Open the read-only account's Permissions tab and grant access.",
+				intro: "Open the read-only account, its Principals with access tab, and click Grant access.",
 				consoleUrl: hostPage("iam-admin/serviceaccounts", plan),
 				fields: [
 					field("Grant access to", reader.mapleServiceAccountEmail),
 					field("Role", "Service Account Token Creator", false),
 				],
 				notes: [
+					"The role picker starts on Service Account Admin: replace it with Service Account Token Creator.",
 					"Before the roles: an organization policy that restricts members to your domain refuses this grant, and then nothing is left behind.",
 				],
 			},
@@ -225,7 +232,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 				? {
 						title: "Grant the read-only roles",
 						summary: `${GCP_READER_SCOPE_ROLES.length + 1} roles`,
-						intro: `${onScope("IAM & Admin › IAM", plan)} grant the account access.`,
+						intro: `${onScope("IAM & Admin › IAM", plan)} click Grant access, paste the account as a new principal and add the roles, each after the first with Add another role.`,
 						consoleUrl: scopePage("iam-admin/iam", plan),
 						fields: [
 							field("Principal", reader.serviceAccountEmail),
@@ -240,7 +247,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 				: {
 						title: `Grant the read-only roles on the ${plan.scopeType}`,
 						summary: `${GCP_READER_SCOPE_ROLES.length} roles`,
-						intro: `${onScope("IAM & Admin › IAM", plan)} grant the account access.`,
+						intro: `${onScope("IAM & Admin › IAM", plan)} click Grant access, paste the account as a new principal and add the roles, each after the first with Add another role.`,
 						consoleUrl: scopePage("iam-admin/iam", plan),
 						fields: [
 							field("Principal", reader.serviceAccountEmail),
@@ -271,37 +278,62 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 }
 
 /**
- * What a connection that switched something off still has in Google Cloud, in the order to delete
- * it: the sink first, two minutes before the topic. Leaves the shared Logs Writer grant alone.
+ * What a connection still has in Google Cloud, in the order to delete it: the sink first, two
+ * minutes before the topic. `switched-off`: only what was switched off; `all`: everything not known
+ * to be gone, for a disconnect. Leaves the shared Logs Writer grant alone.
  */
 export function gcpRemovalList(
 	connector: V2GcpConnector,
-): ReadonlyArray<{ readonly what: string; readonly name: string; readonly confirmed: boolean }> {
+	which: "switched-off" | "all" = "switched-off",
+): ReadonlyArray<{
+	readonly what: string
+	readonly name: string
+	readonly consoleUrl: string
+	readonly confirmed: boolean
+}> {
 	const names = gcpConnectorResourceNames(connector.id)
 	const host = connector.project_id
+	const scope: Scope = { scopeType: connector.scope_type, scopeId: connector.scope_id, projectId: host }
 	const readerEmail = gcpServiceAccountEmail(names.serviceAccountId, host)
+	const listed = (enabled: boolean, applied: boolean | null) =>
+		(which === "all" || !enabled) && applied !== false
 	return [
-		...(!connector.logs_enabled && connector.applied_logs_enabled !== false
+		...(listed(connector.logs_enabled, connector.applied_logs_enabled)
 			? [
 					{
 						what: `Log Router sink on the ${connector.scope_type}, then wait two minutes`,
 						name: names.sink,
+						consoleUrl: scopePage("logs/router", scope),
 					},
-					{ what: "Pub/Sub subscription", name: names.subscription },
-					{ what: "Pub/Sub topic", name: names.topic },
+					{
+						what: "Pub/Sub subscription",
+						name: names.subscription,
+						consoleUrl: hostPage("cloudpubsub/subscription/list", scope),
+					},
+					{
+						what: "Pub/Sub topic: type delete to confirm",
+						name: names.topic,
+						consoleUrl: hostPage("cloudpubsub/topic/list", scope),
+					},
 					{
 						what: "Push service account, if present",
 						name: gcpServiceAccountEmail(names.pushServiceAccountId, host),
+						consoleUrl: hostPage("iam-admin/serviceaccounts", scope),
 					},
 				]
 			: []),
-		...(!connector.metrics_enabled && connector.applied_metrics_enabled !== false
+		...(listed(connector.metrics_enabled, connector.applied_metrics_enabled)
 			? [
 					{
-						what: `The read-only account's roles on the ${connector.scope_type} and ${host}`,
+						what: `The read-only account's roles on the ${connector.scope_type}${connector.scope_type === "project" ? "" : ` and ${host}`}: Remove access`,
 						name: readerEmail,
+						consoleUrl: scopePage("iam-admin/iam", scope),
 					},
-					{ what: "Read-only service account", name: readerEmail },
+					{
+						what: "Read-only service account",
+						name: readerEmail,
+						consoleUrl: hostPage("iam-admin/serviceaccounts", scope),
+					},
 				]
 			: []),
 	].map((item) => ({
@@ -312,7 +344,6 @@ export function gcpRemovalList(
 				: connector.applied_logs_enabled === true,
 	}))
 }
-
 
 /**
  * What a coding agent is asked to do with the generated file: put it in place, plan and apply only

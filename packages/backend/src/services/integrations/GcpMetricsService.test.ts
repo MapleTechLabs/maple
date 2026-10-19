@@ -168,7 +168,7 @@ const NO_BILLING_ANSWER = {
 const READ_DENIED =
 	"Google denied Maple's read of project acme-prod: the read-only roles are missing. Grant them with the setup script, the console steps or your Terraform. A new grant can take a few minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED)"
 const CANNOT_SIGN_IN =
-	"Maple can't sign in as this connection's read-only service account yet. Google needs a few minutes to accept a new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: run the setup script again or check the read-only steps. (IAM Credentials returned 403 PERMISSION_DENIED)"
+	"Maple can't sign in as this connection's read-only service account yet. Google needs a few minutes to accept a new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: finish the read-only account steps of a manual setup, or run the setup script again. (IAM Credentials returned 403 PERMISSION_DENIED)"
 const NO_BILLING =
 	"The project acme-prod has no active billing account, and Cloud Monitoring only answers for projects that have one. Link one: https://console.cloud.google.com/billing/linkedaccount?project=acme-prod Maple retries every 5 minutes. (Cloud Monitoring returned 403 PERMISSION_DENIED, BILLING_DISABLED)"
 const queriesFailed = (failed: number, type: string, answer: string) =>

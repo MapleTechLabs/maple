@@ -143,11 +143,21 @@ describe("gcpRemovalList", () => {
 		const unconfirmed = gcpRemovalList(connector({ logs_enabled: false, applied_logs_enabled: null }))
 		expect(unconfirmed.map((item) => item.name)).toHaveLength(4)
 		expect(unconfirmed.some((item) => item.confirmed)).toBe(false)
-		expect(
-			gcpRemovalList(connector({ metrics_enabled: false, applied_metrics_enabled: true })).map(
-				(item) => item.what,
-			),
-		).toEqual(["The read-only account's roles on the project and acme-prod", "Read-only service account"])
+		const reader = gcpRemovalList(connector({ metrics_enabled: false, applied_metrics_enabled: true }))
+		expect(reader.map((item) => item.name)).toEqual([
+			"maple-018f2b3c4d5e6f708192a3b4@acme-prod.iam.gserviceaccount.com",
+			"maple-018f2b3c4d5e6f708192a3b4@acme-prod.iam.gserviceaccount.com",
+		])
+		expect(reader[0]?.consoleUrl).toContain("iam-admin/iam?project=acme-prod")
+	})
+
+	it("lists everything not known to be gone for a disconnect", () => {
+		const loggingOnly = connector({ logs_enabled: true, applied_logs_enabled: true, applied_metrics_enabled: false })
+		expect(gcpRemovalList(loggingOnly)).toEqual([])
+		expect(gcpRemovalList(loggingOnly, "all").map((item) => item.name)).toHaveLength(4)
+		expect(gcpRemovalList(connector({ applied_logs_enabled: false, applied_metrics_enabled: false }), "all")).toEqual(
+			[],
+		)
 	})
 })
 

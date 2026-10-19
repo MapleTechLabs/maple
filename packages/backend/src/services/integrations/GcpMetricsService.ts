@@ -144,7 +144,7 @@ const explainApiError = (
 			}
 			// Shown both before any setup and for the minutes after one in which Google does not
 			// accept the new grant yet, so it has to read right in both.
-			return "Maple can't sign in as this connection's read-only service account yet. Google needs a few minutes to accept a new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: run the setup script again or check the read-only steps."
+			return "Maple can't sign in as this connection's read-only service account yet. Google needs a few minutes to accept a new grant, and Maple retries every 5 minutes. If this stays, the account does not exist, or the grant to Maple is missing or blocked by an organization policy: finish the read-only account steps of a manual setup, or run the setup script again."
 		}
 		return reading === "metrics"
 			? `Google denied Maple's read of ${scope}: the read-only roles are missing. Grant them with the setup script, the console steps or your Terraform. A new grant can take a few minutes.`

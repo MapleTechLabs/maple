@@ -37,16 +37,21 @@ const HINTS = { terraform: "maple.tf for the google provider", alchemy: "maple.t
 export function GcpMethodChoice({
 	method,
 	onMethod,
+	changing,
 }: {
 	method: GcpSetupMethod
 	onMethod: (method: GcpSetupMethod) => void
+	/** Something of the connection is set up already: the choice applies a change. */
+	changing: boolean
 }) {
 	const id = useId()
 	const row = method === "terraform" || method === "alchemy" ? "code" : method
 	const flavour = method === "alchemy" ? "alchemy" : "terraform"
 	return (
 		<fieldset className="flex flex-col gap-3">
-			<legend className={cn(GCP_TITLE, "mb-3")}>How do you want to connect?</legend>
+			<legend className={cn(GCP_TITLE, "mb-3")}>
+				{changing ? "How do you want to apply the change?" : "How do you want to connect?"}
+			</legend>
 			<RadioGroup
 				value={row}
 				onValueChange={(value) => onMethod(value === "code" ? flavour : (value as GcpSetupMethod))}

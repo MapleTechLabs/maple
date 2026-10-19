@@ -62,6 +62,7 @@ import {
 	gcpLogFilterChoice,
 	gcpLogState,
 	gcpMetricsState,
+	gcpNothingSeen,
 	gcpOverlapNote,
 	gcpScopeRoles,
 	gcpScriptNeeded,
@@ -1819,10 +1820,14 @@ export function GcpMethodStage({
 			<ConfigureHeader title={title} step={2} />
 			<DialogPanel className="flex flex-col gap-5">
 				<RunSummary connector={connector} logFilter={logFilter} onEdit={onBack} byScript={false} />
-				<GcpMethodChoice method={method} onMethod={onMethod} />
+				<GcpMethodChoice method={method} onMethod={onMethod} changing={!gcpNothingSeen(connector)} />
 			</DialogPanel>
 			<DialogFooter>
-				<FooterNote>Each method creates the same resources.</FooterNote>
+				<FooterNote>
+					{gcpNothingSeen(connector)
+						? "Each method creates the same resources."
+						: "Each method makes the same change."}
+				</FooterNote>
 				<Button variant="outline" onClick={onBack}>
 					Back
 				</Button>
@@ -1912,7 +1917,8 @@ export function GcpMethodApplyView({
 					{removal.map((item) => (
 						<li key={item.what}>
 							<span className="text-muted-foreground">{item.what}</span>{" "}
-							<GcpValue value={item.name} />
+							<GcpValue value={item.name} />{" "}
+							<GcpExternalLink href={item.consoleUrl}>Open in console</GcpExternalLink>
 						</li>
 					))}
 				</ol>
@@ -2026,7 +2032,9 @@ function MethodApplyStage({
 	filter: FilterState
 }) {
 	const { connector } = view
-	const choice = gcpLogFilterChoice(filter, connector.applied_logs_enabled === true)
+	// Fixed when the step opens: logs confirmed while it is open don't turn a new sink into one to replace.
+	const [sinkExisted] = useState(connector.applied_logs_enabled === true)
+	const choice = gcpLogFilterChoice(filter, sinkExisted)
 	const { scripts, failure } = useGcpScripts(connector, choice.applicationLogs)
 	const confirm = useAtomSet(MapleApiV2AtomClient.mutation("gcpIntegration", "confirmRemoval"), {
 		mode: "promiseExit",
@@ -2299,16 +2307,11 @@ export function GcpDisconnectDialog({
 									</>
 								) : (
 									<>
-										{`Run the cleanup script in Cloud Shell. Takes ${connector.applied_logs_enabled === true ? "one to two minutes" : "about a minute"}. `}
-										Set up as code or in the console? Remove them there (
+										{`Run the cleanup script in Cloud Shell, about ${connector.applied_logs_enabled === true ? "two minutes" : "a minute"}, or delete them in the console below. Set up with Terraform or Alchemy? `}
 										<a href={`${IAC_DOCS}#change-or-remove`} target="_blank" rel="noreferrer" className="underline">
-											Terraform
+											Destroy it there
 										</a>
-										,{" "}
-										<a href={`${MANUAL_DOCS}#removing`} target="_blank" rel="noreferrer" className="underline">
-											console
-										</a>
-										), then disconnect.
+										, then disconnect.
 									</>
 								)
 							}
@@ -2318,7 +2321,18 @@ export function GcpDisconnectDialog({
 									<dl className="grid grid-cols-[auto_1fr] gap-x-3 text-xs/5">
 										<dt className="text-foreground">Deletes</dt>
 										<dd className="text-pretty text-muted-foreground">
-											The log sink, topic, subscription and read-only service account.
+											{[
+												connector.applied_logs_enabled === false
+													? null
+													: "the log sink, subscription, topic and push service account",
+												connector.applied_metrics_enabled === false
+													? null
+													: "the read-only service account and its roles",
+											]
+												.filter((part) => part !== null)
+												.join(", and ")
+												.replace(/^./, (first) => first.toUpperCase())}
+											.
 										</dd>
 										<dt className="text-foreground">Keeps</dt>
 										<dd className="text-muted-foreground">The APIs it switched on.</dd>
@@ -2330,6 +2344,18 @@ export function GcpDisconnectDialog({
 									>
 										<GcpOpenCloudShellButton projectId={connector.project_id} />
 									</Script>
+									<details className="text-xs/5">
+										<summary className="cursor-pointer text-foreground">Delete them in the console instead</summary>
+										<ol className="mt-2 flex list-decimal flex-col gap-2 pl-5">
+											{gcpRemovalList(connector, "all").map((item) => (
+												<li key={item.what}>
+													<span className="text-muted-foreground">{item.what}</span>{" "}
+													<GcpValue value={item.name} />{" "}
+													<GcpExternalLink href={item.consoleUrl}>Open in console</GcpExternalLink>
+												</li>
+											))}
+										</ol>
+									</details>
 									<p className={cn(SMALL, "text-foreground/80")}>
 										{connector.setup_reported_at === null
 											? "Maple sees the cleanup script finish. Removed them another way? Disconnect anyway."
