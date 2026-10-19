@@ -16,10 +16,13 @@ import {
 	VCS_SYNC_BATCH_MAX_BYTES,
 	VCS_SYNC_BATCH_PATH,
 	VCS_SYNC_BATCH_SIZE,
+	VCS_SYNC_HOP_SECRET,
 } from "./vcs-sync-dispatch"
 
-const TOKEN = "secret-token"
-const ENV = { INTERNAL_SERVICE_TOKEN: TOKEN }
+const TOKEN = "hop-secret"
+const INTERNAL_TOKEN = "internal-token"
+// The Worker holds both; only the hop secret opens the route.
+const ENV = { [VCS_SYNC_HOP_SECRET]: TOKEN, INTERNAL_SERVICE_TOKEN: INTERNAL_TOKEN }
 
 // The route takes only real jobs; the installation id says how the fake service treats one.
 const Job = Schema.Struct({ externalInstallationId: Schema.Literals(["ok", "rate-limited", "broken"]) })
@@ -115,8 +118,8 @@ describe("VCS sync batches over the self binding", () => {
 			const settled: Array<string> = []
 			const batch = [message("a", "ok", settled)]
 			assert.deepStrictEqual(yield* handOffVcsSyncBatch(ENV, batch), { run: "inline" })
-			// The handler holds a different token: a 401, so nothing ran there.
-			const refusing = selfBinding({ INTERNAL_SERVICE_TOKEN: "other" }, placedRun([]))
+			// The handler holds a different secret: a 401, so nothing ran there.
+			const refusing = selfBinding({ ...ENV, [VCS_SYNC_HOP_SECRET]: "other" }, placedRun([]))
 			assert.deepStrictEqual(yield* handOffVcsSyncBatch({ ...ENV, [SELF_BINDING]: refusing }, batch), {
 				run: "inline",
 			})
@@ -207,6 +210,15 @@ describe("the VCS sync batch route", () => {
 	it.effect("serves a full queue batch of real jobs", () =>
 		Effect.gen(function* () {
 			assert.deepStrictEqual(yield* serve({}, batchOf(VCS_SYNC_BATCH_SIZE)), { status: 200, ran: [10] })
+		}),
+	)
+
+	it.effect("refuses the internal service token, which other Workers hold", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(yield* serve({ authorization: `Bearer ${INTERNAL_TOKEN}` }, batchOf(1)), {
+				status: 401,
+				ran: [],
+			})
 		}),
 	)
 

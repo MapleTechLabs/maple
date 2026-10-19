@@ -2,7 +2,7 @@
 /**
  * Cloudflare places only fetch handlers, so a cron fire or a queue batch runs wherever it lands,
  * far from the database. A Worker hands that work to its own placed fetch handler over a self
- * service binding, authenticated with the internal service token.
+ * service binding, authenticated with a bearer secret.
  */
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { Config, Effect, Option, Redacted } from "effect"
@@ -22,12 +22,16 @@ export const selfFetcher = (env: Record<string, unknown>, name: string): Option.
 	return isFetcher(binding) ? Option.some(withManualRedirects(binding)) : Option.none()
 }
 
-/** The internal token as this invocation's env says; unreadable reads as unset. */
-export const internalTokenFor = (env: Record<string, unknown>) =>
-	Config.option(Config.Redacted("INTERNAL_SERVICE_TOKEN")).pipe(
+/** The secret `name` as this invocation's env says; unreadable reads as unset. */
+export const workerSecretFor = (env: Record<string, unknown>, name: string) =>
+	Config.option(Config.Redacted(name)).pipe(
 		Effect.map(Option.map(Redacted.value)),
 		Effect.orElseSucceed(() => Option.none<string>()),
 		// The invocation's env is the boundary this config belongs to.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(workerEnvLayer(env)),
 	)
+
+/** The internal token as this invocation's env says; unreadable reads as unset. */
+export const internalTokenFor = (env: Record<string, unknown>) =>
+	workerSecretFor(env, "INTERNAL_SERVICE_TOKEN")

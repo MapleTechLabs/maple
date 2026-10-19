@@ -4,7 +4,7 @@
  * fetch handler over a self service binding instead, and that invocation is placed. The handler
  * answers one outcome per message, which the consumer applies to the messages it holds.
  */
-import { internalTokenFor, selfFetcher } from "@maple/backend/platform/self-binding"
+import { selfFetcher, workerSecretFor } from "@maple/backend/platform/self-binding"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import type { Message } from "@cloudflare/workers-types"
 // The subpath, not the barrel: this module loads with the Worker.
@@ -22,6 +22,11 @@ export const vcsSyncTelemetry = eventTelemetry({ serviceName: "maple-vcs-sync" }
 
 /** The service binding to this Worker itself, declared in the Worker's props. */
 export const SELF_BINDING = "API_SELF"
+/**
+ * The bearer the hop carries: a random secret bound only to this Worker, so no other holder of
+ * an internal credential can post jobs to the route.
+ */
+export const VCS_SYNC_HOP_SECRET = "VCS_SYNC_HOP_SECRET"
 export const VCS_SYNC_BATCH_PATH = "/internal/vcs-sync/batch"
 // The binding routes by name; the origin is the formality `Request` insists on.
 const VCS_SYNC_BATCH_URL = `https://maple-api.internal${VCS_SYNC_BATCH_PATH}`
@@ -100,7 +105,7 @@ export const dispatchVcsSyncBatch = Effect.fnUntraced(function* (
 	env: Record<string, unknown>,
 ) {
 	const binding = selfFetcher(env, SELF_BINDING)
-	const token = yield* internalTokenFor(env)
+	const token = yield* workerSecretFor(env, VCS_SYNC_HOP_SECRET)
 	if (Option.isNone(binding)) {
 		return yield* new VcsSyncDispatchUnavailable({
 			message: "No self service binding",
@@ -109,7 +114,7 @@ export const dispatchVcsSyncBatch = Effect.fnUntraced(function* (
 	}
 	if (Option.isNone(token)) {
 		return yield* new VcsSyncDispatchUnavailable({
-			message: "No internal service token",
+			message: "No hop secret",
 			reason: "no-token",
 		})
 	}
@@ -124,7 +129,7 @@ export const dispatchVcsSyncBatch = Effect.fnUntraced(function* (
 			(cause) => new VcsSyncDispatchError({ message: "Placed batch request failed", cause }),
 		),
 	)
-	// Refused before running anything: a token mismatch, a bad body, or a version without the route.
+	// Refused before running anything: a secret mismatch, a bad body, or a version without the route.
 	if (response.status === 400 || response.status === 401 || response.status === 404) {
 		return yield* new VcsSyncDispatchUnavailable({
 			message: `Placed batch refused with ${response.status}`,
@@ -190,8 +195,8 @@ const readBoundedBody = (request: HttpServerRequest.HttpServerRequest) =>
 
 /**
  * Validates a request to the batch route and decodes its messages. The route serves only the self
- * binding: Cloudflare stamps `cf-connecting-ip` on every request from the internet and a client
- * cannot remove it, while a binding call carries only the headers the consumer set.
+ * binding: the bearer is a secret no other Worker holds, and a request from the internet, which
+ * Cloudflare stamps with `cf-connecting-ip`, is refused before the bearer is checked.
  */
 export const authorizeVcsSyncBatchRequest = Effect.fnUntraced(function* (env: Record<string, unknown>) {
 	const request = yield* HttpServerRequest.HttpServerRequest
@@ -199,12 +204,12 @@ export const authorizeVcsSyncBatchRequest = Effect.fnUntraced(function* (env: Re
 	if (request.headers["cf-connecting-ip"] !== undefined) {
 		return yield* refused(404, "Not found")
 	}
-	const authorized = Option.match(yield* internalTokenFor(env), {
+	const authorized = Option.match(yield* workerSecretFor(env, VCS_SYNC_HOP_SECRET), {
 		onNone: () => false,
 		onSome: (expected) => isValidInternalBearer(request.headers["authorization"], expected),
 	})
 	if (!authorized) {
-		return yield* refused(401, "Missing or invalid internal bearer")
+		return yield* refused(401, "Missing or invalid hop secret")
 	}
 	if (Number(request.headers["content-length"] ?? 0) > VCS_SYNC_BATCH_MAX_BYTES) {
 		return yield* refused(400, "Batch too large")

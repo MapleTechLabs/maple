@@ -9,6 +9,7 @@ import { IsolateAge } from "@maple/infra/isolate-age"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
+import { makeRandom } from "alchemy/Random"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer } from "effect"
 import { ApiObservabilityLive } from "./http/api-observability"
@@ -18,7 +19,7 @@ import { registerQueueConsumers } from "./worker/consumers"
 import { registerCrons } from "./worker/crons"
 import { makeAppGraphs, makeFetch } from "./worker/http"
 import { vcsSyncBatchRoute } from "./worker/vcs-sync"
-import { SELF_BINDING } from "./worker/vcs-sync-dispatch"
+import { SELF_BINDING, VCS_SYNC_HOP_SECRET } from "./worker/vcs-sync-dispatch"
 import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWorkflow"
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
@@ -45,6 +46,8 @@ const props = Effect.gen(function* () {
 			AI_WORKER: ai,
 			// VCS sync batches hop through it so they run where placement applies.
 			[SELF_BINDING]: Cloudflare.Workers.Self,
+			// Minted once and kept in state; bound to this Worker alone.
+			[VCS_SYNC_HOP_SECRET]: yield* makeRandom("VcsSyncHopSecret"),
 			...configuredEnv,
 			...devEnv,
 		},
