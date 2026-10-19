@@ -149,7 +149,7 @@ describe("Google Cloud metrics routing", () => {
 				assert.strictEqual(fakes.calls.warehouse, 0)
 				assert.deepStrictEqual(fakes.calls.range, [
 					{
-						query: `sum by (database_id, project_id) (sum_over_time(${SELECTOR}[300s]))`,
+						query: `sum by (database_id, project_id) (sum_over_time(${SELECTOR}[299999ms]))`,
 						startSeconds: seconds("2026-10-19T10:05:00Z"),
 						endSeconds: seconds("2026-10-19T10:20:00Z"),
 						stepSeconds: 300,
@@ -353,7 +353,7 @@ describe("Google Cloud metrics breakdown", () => {
 			const response = yield* execute(fakes, breakdown({ limit: 2 }))
 			assert.deepStrictEqual(fakes.calls.instant, [
 				{
-					query: `sum by (database_id, project_id) (sum_over_time(${SELECTOR}[900s])) / 900`,
+					query: `sum by (database_id, project_id) (sum_over_time(${SELECTOR}[899999ms])) / 900`,
 					timeSeconds: seconds("2026-10-19T10:15:00Z"),
 					projects: undefined,
 					requireComplete: undefined,
@@ -435,7 +435,10 @@ describe("Google Cloud metric discovery", () => {
 				execute({ warehouse: fakes.warehouse, gcp }, timeseries({ filters: metricFilters(ENTRIES) })),
 			)
 			assert.instanceOf(chart, QueryEngineValidationError)
-			assert.include(chart.message, "filter on monitored_resource")
+			assert.strictEqual(
+				chart.message,
+				`${ENTRIES} is reported for several resource types. Filter on one, e.g. resource.monitored_resource = "cloudsql_database".`,
+			)
 		}),
 	)
 
@@ -481,7 +484,7 @@ describe("Google Cloud metric discovery", () => {
 			})
 			assert.strictEqual(
 				fakes.calls.instant[0]?.query,
-				`count by (database_id, project_id) (last_over_time(${SELECTOR}[900s]))`,
+				`count by (database_id, project_id) (last_over_time(${SELECTOR}[899999ms]))`,
 			)
 			assert.deepStrictEqual(dataOf(response, "attributeValues"), [
 				{ value: "b", count: 3 },
@@ -524,11 +527,11 @@ describe("Google Cloud metric alerts", () => {
 				fakes.calls.instant.map((call) => [call.query, call.timeSeconds]),
 				[
 					[
-						`sum by (database_id, project_id) (sum_over_time(${SELECTOR}[300s]))`,
+						`sum by (database_id, project_id) (sum_over_time(${SELECTOR}[299999ms]))`,
 						seconds("2026-10-19T10:01:00Z"),
 					],
 					[
-						`sum by (database_id, project_id) (count_over_time(${SELECTOR}[300s]))`,
+						`sum by (database_id, project_id) (count_over_time(${SELECTOR}[299999ms]))`,
 						seconds("2026-10-19T10:01:00Z"),
 					],
 				],
@@ -563,7 +566,7 @@ describe("Google Cloud metric alerts", () => {
 			)
 			assert.strictEqual(
 				fakes.calls.instant[1]?.query,
-				`sum by (project_id) (count_over_time({"${LAT}_count", monitored_resource="consumed_api"}[300s]))`,
+				`sum by (project_id) (count_over_time({"${LAT}_count", monitored_resource="consumed_api"}[299999ms]))`,
 			)
 		}),
 	)

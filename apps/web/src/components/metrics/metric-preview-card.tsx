@@ -58,6 +58,15 @@ export function MetricPreviewCard({
 		[entry.metricType, points],
 	)
 
+	// Google metric types share a long domain prefix: cut the start, keep the path.
+	const name = isGcpMetricType(entry.metricName) ? (
+		<TruncatedText text={entry.metricName} mono className="text-xs font-medium [direction:rtl] text-left">
+			<bdi dir="ltr">{entry.metricName}</bdi>
+		</TruncatedText>
+	) : (
+		<TruncatedText text={entry.metricName} mono className="text-xs font-medium" />
+	)
+
 	return (
 		<button
 			type="button"
@@ -65,7 +74,7 @@ export function MetricPreviewCard({
 			className="group flex flex-col gap-2 rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/40"
 		>
 			<div className="flex w-full items-start justify-between gap-2">
-				<TruncatedText text={entry.metricName} mono className="text-xs font-medium" />
+				{name}
 				<MetricTypeBadge type={entry.metricType} />
 			</div>
 

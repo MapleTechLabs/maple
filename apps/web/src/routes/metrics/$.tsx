@@ -33,14 +33,16 @@ function buildBackToMetricsHref(searchStr: string): string {
 	return nextSearch ? `/metrics?${nextSearch}` : "/metrics"
 }
 
-export const Route = createFileRoute("/metrics/$metricName")({
+// A splat, not `$metricName`: Google metric types hold slashes, and an encoded slash in one
+// segment does not survive a reload.
+export const Route = createFileRoute("/metrics/$")({
 	component: MetricDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(metricDetailSearchSchema),
 	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function MetricDetailPage() {
-	const { metricName } = Route.useParams()
+	const { _splat: metricName = "" } = Route.useParams()
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 

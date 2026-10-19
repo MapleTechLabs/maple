@@ -105,6 +105,13 @@ export const gcpFilterProjects = (filters: MetricsFilters): ReadonlyArray<string
 	return projects
 }
 
+/**
+ * A range of `seconds`, open at its start. Google's ranges include a sample exactly `seconds`
+ * back, and its samples sit on the minute, so `[300s]` would also count the previous step's last
+ * sample: one millisecond less keeps adjacent steps apart.
+ */
+const range = (seconds: number): string => `[${seconds * 1000 - 1}ms]`
+
 /** `fn` over one selector of `metricName` per monitored resource type, unioned with `or`. */
 type Union = (metricName: string, fn: string, windowSeconds: number) => string
 
@@ -130,14 +137,14 @@ const compileUnion = Effect.fnUntraced(function* (
 	const types = resourceTypes ?? descriptor.monitoredResourceTypes
 	if (types.length === 0) {
 		return yield* reject(
-			`Google Cloud lists no monitored resource for ${descriptor.type}; filter on monitored_resource (e.g. resource.monitored_resource = cloudsql_database)`,
+			`${descriptor.type} is reported for several resource types. Filter on one, e.g. resource.monitored_resource = "cloudsql_database".`,
 		)
 	}
 	const union: Union = (metricName, fn, windowSeconds) =>
 		types
 			.map(
 				(type) =>
-					`${fn}(${renderSelector(metricName, [{ label: "monitored_resource", op: "=", value: type }, ...matchers])}[${windowSeconds}s])`,
+					`${fn}(${renderSelector(metricName, [{ label: "monitored_resource", op: "=", value: type }, ...matchers])}${range(windowSeconds)})`,
 			)
 			.join(" or ")
 	return union

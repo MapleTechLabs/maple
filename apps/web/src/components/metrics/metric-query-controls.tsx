@@ -1,5 +1,6 @@
 import { Panel } from "@maple/ui/components/ui/panel"
 import * as React from "react"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 
 import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -139,7 +140,9 @@ export function MetricQueryControls({
 					<ComboboxContent>
 						<ComboboxList>
 							<ComboboxItem value={GROUP_BY_NONE}>Everything (no breakdown)</ComboboxItem>
-							<ComboboxItem value="service.name">service.name</ComboboxItem>
+							{isGcpMetricType(metricName) ? null : (
+								<ComboboxItem value="service.name">service.name</ComboboxItem>
+							)}
 							{scopedAutocomplete.groupByKeys.map((key) => (
 								<ComboboxItem key={key} value={`attr.${key}`}>
 									attr.{key}

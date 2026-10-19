@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest"
 
 import { QuerySetNoDataError } from "@maple/query-engine/query-set"
 import * as breakdownModule from "@/api/warehouse/query-builder-breakdown"
+import { makeWarehouseExecutor, recordingFailureTitle } from "@/api/warehouse/query-set-executor"
+import { GcpLiveQueryUnavailableError } from "@maple/domain/http/gcp-live-query-errors"
+import { displayError } from "@/lib/error-messages"
 
 /**
  * The timeseries adapter stopped failing on an empty window — an empty window is
@@ -35,5 +38,29 @@ describe("empty window", () => {
 		)
 
 		expect(Exit.isFailure(exit)).toBe(true)
+	})
+})
+
+describe("a failed query's title", () => {
+	it("titles the chart error with the failure's own title, not a generic one", async () => {
+		const run = recordingFailureTitle(makeWarehouseExecutor("test"))
+		// The runner describes each failed query as text; the run keeps the first one's title.
+		run.executor.describeError(
+			new GcpLiveQueryUnavailableError({
+				message: "Connect Google Cloud with metrics on to query Google Cloud metrics.",
+			}),
+		)
+		const error = await Effect.runPromise(
+			Effect.flip(
+				breakdownModule.__testables.onNoData(
+					new QuerySetNoDataError({
+						message: "Connect Google Cloud with metrics on to query Google Cloud metrics.",
+						details: ["Connect Google Cloud with metrics on to query Google Cloud metrics."],
+					}),
+					run.failureTitle(),
+				),
+			),
+		)
+		expect(displayError(error).title).toBe("Google Cloud metrics are not available")
 	})
 })

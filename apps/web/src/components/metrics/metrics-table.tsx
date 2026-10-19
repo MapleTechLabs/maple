@@ -146,8 +146,8 @@ export function MetricsTable({
 									<TableCell>
 										<div className="flex min-w-0 flex-col gap-0.5">
 											<Link
-												to="/metrics/$metricName"
-												params={{ metricName: metric.metricName }}
+												to="/metrics/$"
+												params={{ _splat: metric.metricName }}
 												search={{
 													...linkTime,
 													type:

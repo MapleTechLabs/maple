@@ -102,17 +102,17 @@ describe("compileGcpMetricQuery", () => {
 			[
 				"avg",
 				avgParts(
-					`sum by (project_id) (sum_over_time(${CPU}[60s]))`,
-					`sum by (project_id) (count_over_time(${CPU}[60s]))`,
+					`sum by (project_id) (sum_over_time(${CPU}[59999ms]))`,
+					`sum by (project_id) (count_over_time(${CPU}[59999ms]))`,
 				),
 				"avg",
 			],
-			["min", `min by (project_id) (min_over_time(${CPU}[60s]))`, "min"],
-			["max", `max by (project_id) (max_over_time(${CPU}[60s]))`, "max"],
-			["sum", `sum by (project_id) (sum_over_time(${CPU}[60s]))`, "sum"],
-			["count", `sum by (project_id) (count_over_time(${CPU}[60s]))`, "sum"],
-			["rate", `sum by (project_id) (rate(${CPU}[120s]))`, "sum"],
-			["increase", `sum by (project_id) (rate(${CPU}[120s])) * 60`, "sum"],
+			["min", `min by (project_id) (min_over_time(${CPU}[59999ms]))`, "min"],
+			["max", `max by (project_id) (max_over_time(${CPU}[59999ms]))`, "max"],
+			["sum", `sum by (project_id) (sum_over_time(${CPU}[59999ms]))`, "sum"],
+			["count", `sum by (project_id) (count_over_time(${CPU}[59999ms]))`, "sum"],
+			["rate", `sum by (project_id) (rate(${CPU}[119999ms]))`, "sum"],
+			["increase", `sum by (project_id) (rate(${CPU}[119999ms])) * 60`, "sum"],
 		]))
 
 	describe("DELTA", () =>
@@ -120,11 +120,11 @@ describe("compileGcpMetricQuery", () => {
 			transactions,
 			[
 				// Summing the deltas is exact; `increase` would extrapolate.
-				["sum", `sum by (project_id) (sum_over_time(${TX}[300s]))`, "sum"],
-				["increase", `sum by (project_id) (sum_over_time(${TX}[300s]))`, "sum"],
-				["rate", `sum by (project_id) (sum_over_time(${TX}[300s])) / 300`, "sum"],
-				["count", `sum by (project_id) (count_over_time(${TX}[300s]))`, "sum"],
-				["max", `max by (project_id) (max_over_time(${TX}[300s]))`, "max"],
+				["sum", `sum by (project_id) (sum_over_time(${TX}[299999ms]))`, "sum"],
+				["increase", `sum by (project_id) (sum_over_time(${TX}[299999ms]))`, "sum"],
+				["rate", `sum by (project_id) (sum_over_time(${TX}[299999ms])) / 300`, "sum"],
+				["count", `sum by (project_id) (count_over_time(${TX}[299999ms]))`, "sum"],
+				["max", `max by (project_id) (max_over_time(${TX}[299999ms]))`, "max"],
 			],
 			300,
 		))
@@ -132,17 +132,17 @@ describe("compileGcpMetricQuery", () => {
 	describe("CUMULATIVE", () => {
 		// A 60 s step reads two minutes, so the window holds two samples.
 		cases(coreUsage, [
-			["rate", `sum by (project_id) (rate(${CORE}[120s]))`, "sum"],
-			["increase", `sum by (project_id) (rate(${CORE}[120s])) * 60`, "sum"],
-			["sum", `sum by (project_id) (rate(${CORE}[120s])) * 60`, "sum"],
-			["count", `sum by (project_id) (count_over_time(${CORE}[60s]))`, "sum"],
-			["max", `max by (project_id) (max_over_time(${CORE}[60s]))`, "max"],
+			["rate", `sum by (project_id) (rate(${CORE}[119999ms]))`, "sum"],
+			["increase", `sum by (project_id) (rate(${CORE}[119999ms])) * 60`, "sum"],
+			["sum", `sum by (project_id) (rate(${CORE}[119999ms])) * 60`, "sum"],
+			["count", `sum by (project_id) (count_over_time(${CORE}[59999ms]))`, "sum"],
+			["max", `max by (project_id) (max_over_time(${CORE}[59999ms]))`, "max"],
 		])
 		it.effect("reads a step wider than two minutes as its own window", () =>
 			Effect.gen(function* () {
 				assert.strictEqual(
 					yield* query(coreUsage, "increase", { windowSeconds: 300 }),
-					`sum by (project_id) (rate(${CORE}[300s])) * 300`,
+					`sum by (project_id) (rate(${CORE}[299999ms])) * 300`,
 				)
 			}),
 		)
@@ -153,8 +153,8 @@ describe("compileGcpMetricQuery", () => {
 			Effect.gen(function* () {
 				assert.deepStrictEqual(yield* compile(latencies, "avg", { groupLabel: "method" }), {
 					query: avgParts(
-						`sum by (method, project_id) (sum_over_time(${LAT("sum")}[60s]))`,
-						`sum by (method, project_id) (sum_over_time(${LAT("count")}[60s]))`,
+						`sum by (method, project_id) (sum_over_time(${LAT("sum")}[59999ms]))`,
+						`sum by (method, project_id) (sum_over_time(${LAT("count")}[59999ms]))`,
 					),
 					merge: "avg",
 				})
@@ -164,11 +164,11 @@ describe("compileGcpMetricQuery", () => {
 			Effect.gen(function* () {
 				assert.strictEqual(
 					yield* query(latencies, "sum"),
-					`sum by (project_id) (sum_over_time(${LAT("sum")}[60s]))`,
+					`sum by (project_id) (sum_over_time(${LAT("sum")}[59999ms]))`,
 				)
 				assert.strictEqual(
 					yield* query(latencies, "count"),
-					`sum by (project_id) (sum_over_time(${LAT("count")}[60s]))`,
+					`sum by (project_id) (sum_over_time(${LAT("count")}[59999ms]))`,
 				)
 			}),
 		)
@@ -176,7 +176,7 @@ describe("compileGcpMetricQuery", () => {
 			Effect.gen(function* () {
 				assert.strictEqual(
 					yield* query(latencies, "rate"),
-					`sum by (project_id) (sum_over_time(${LAT("count")}[60s])) / 60`,
+					`sum by (project_id) (sum_over_time(${LAT("count")}[59999ms])) / 60`,
 				)
 			}),
 		)
@@ -185,11 +185,11 @@ describe("compileGcpMetricQuery", () => {
 				const cumulative = { ...latencies, metricKind: "CUMULATIVE" as const }
 				assert.strictEqual(
 					yield* query(cumulative, "rate"),
-					`sum by (project_id) (rate(${LAT("count")}[120s]))`,
+					`sum by (project_id) (rate(${LAT("count")}[119999ms]))`,
 				)
 				assert.strictEqual(
 					yield* query(cumulative, "sum"),
-					`sum by (project_id) (rate(${LAT("sum")}[120s])) * 60`,
+					`sum by (project_id) (rate(${LAT("sum")}[119999ms])) * 60`,
 				)
 			}),
 		)
@@ -206,15 +206,15 @@ describe("compileGcpMetricQuery", () => {
 		Effect.gen(function* () {
 			assert.strictEqual(
 				yield* query(transactions, "sum", { groupLabel: "database_id" }),
-				`sum by (database_id, project_id) (sum_over_time(${TX}[60s]))`,
+				`sum by (database_id, project_id) (sum_over_time(${TX}[59999ms]))`,
 			)
 			assert.strictEqual(
 				yield* query(cpu, "max", { groupLabel: "k8s.pod.name" }),
-				`max by ("k8s.pod.name", project_id) (max_over_time(${CPU}[60s]))`,
+				`max by ("k8s.pod.name", project_id) (max_over_time(${CPU}[59999ms]))`,
 			)
 			assert.strictEqual(
 				yield* query(cpu, "max", { groupLabel: "project_id" }),
-				`max by (project_id) (max_over_time(${CPU}[60s]))`,
+				`max by (project_id) (max_over_time(${CPU}[59999ms]))`,
 			)
 		}),
 	)
@@ -248,7 +248,7 @@ describe("compileGcpMetricQuery", () => {
 			monitoredResourceTypes: ["gce_instance", "k8s_container"],
 		})
 		const entriesIn = (type: string) =>
-			`sum_over_time({"logging.googleapis.com/log_entry_count", monitored_resource="${type}"}[60s])`
+			`sum_over_time({"logging.googleapis.com/log_entry_count", monitored_resource="${type}"}[59999ms])`
 
 		it.effect("unions one exact selector per listed resource type inside the aggregation", () =>
 			Effect.gen(function* () {
@@ -277,7 +277,10 @@ describe("compileGcpMetricQuery", () => {
 		it.effect("asks for a monitored_resource filter when Google lists no type", () =>
 			Effect.gen(function* () {
 				const unlisted = { ...entries, monitoredResourceTypes: [] }
-				assert.include(yield* rejection(unlisted, "sum"), "filter on monitored_resource")
+				assert.include(
+					yield* rejection(unlisted, "sum"),
+					"is reported for several resource types. Filter on one",
+				)
 				assert.strictEqual(
 					yield* query(unlisted, "sum", {
 						filters: {
@@ -299,7 +302,7 @@ describe("compileGcpMetricQuery", () => {
 					promQl.slice(
 						`max by (project_id) (max_over_time({"cloudsql.googleapis.com/database/cpu/utilization", monitored_resource="cloudsql_database", `
 							.length,
-						-"}[60s]))".length,
+						-"}[59999ms]))".length,
 					),
 				),
 			)
@@ -456,7 +459,7 @@ describe("compileGcpSampleCount", () => {
 				latencies,
 			)
 			assert.deepStrictEqual(compiled, {
-				query: `sum by (method, project_id) (count_over_time(${LAT("count")}[300s]))`,
+				query: `sum by (method, project_id) (count_over_time(${LAT("count")}[299999ms]))`,
 				merge: "sum",
 			})
 		}),
@@ -465,7 +468,7 @@ describe("compileGcpSampleCount", () => {
 	it.effect("counts a plain metric's samples", () =>
 		Effect.gen(function* () {
 			const compiled = yield* compileGcpSampleCount(request(cpu, "avg"), cpu)
-			assert.strictEqual(compiled.query, `sum by (project_id) (count_over_time(${CPU}[60s]))`)
+			assert.strictEqual(compiled.query, `sum by (project_id) (count_over_time(${CPU}[59999ms]))`)
 		}),
 	)
 })
@@ -475,7 +478,7 @@ describe("discovery", () => {
 		Effect.gen(function* () {
 			assert.strictEqual(
 				yield* compileGcpLabelValues(cpu, "database_id", 86400),
-				`count by (database_id, project_id) (last_over_time(${CPU}[86400s]))`,
+				`count by (database_id, project_id) (last_over_time(${CPU}[86399999ms]))`,
 			)
 		}),
 	)

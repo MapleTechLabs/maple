@@ -65,8 +65,8 @@ export function GcpWorkloadCharts({
 				const metric = gcpChartMetric(chart, points)
 				const explore = (
 					<Link
-						to="/metrics/$metricName"
-						params={{ metricName: metric.name }}
+						to="/metrics/$"
+						params={{ _splat: metric.name }}
 						search={{ ...timeSearch, type: metric.type, where, groupBy: metric.groupBy }}
 						title={`Open ${metric.name} in the metrics explorer`}
 						aria-label={`Open ${metric.name} in the metrics explorer`}

@@ -2,6 +2,7 @@ import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 
 import { normalizeRuleQueryDraft, rawSqlHasValueColumn, type RuleFormState } from "@/lib/alerts/form-utils"
 import { buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { SERIES_REDUCER_TO_ALERT_REDUCER, toQueryBuilderDataSource } from "@maple/query-model"
 import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@maple/widgets/dashboard"
 
@@ -87,6 +88,12 @@ function queryToForm(
 		// error_rate is entered as a percent in every mode (see formThresholdToDomain),
 		// so the blank form's "5" carries over as 5%.
 		threshold: base.threshold,
+		// A Google metric reports a sample a minute per series: a 5-minute window holds a few dozen,
+		// never the warehouse default of 50.
+		minimumSampleCount:
+			queryBuilderDraft.dataSource === "metrics" && isGcpMetricType(queryBuilderDraft.metricName)
+				? "1"
+				: base.minimumSampleCount,
 		groupBy: [],
 	}
 }

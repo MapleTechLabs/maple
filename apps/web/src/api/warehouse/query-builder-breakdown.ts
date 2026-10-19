@@ -12,7 +12,7 @@ import {
 	type WarehouseInvalidInputError,
 	type WarehouseUnreachableError,
 } from "@/api/warehouse/effect-utils"
-import { makeWarehouseExecutor } from "@/api/warehouse/query-set-executor"
+import { makeWarehouseExecutor, recordingFailureTitle } from "@/api/warehouse/query-set-executor"
 
 const executor = makeWarehouseExecutor("queryEngine.breakdownQuery")
 
@@ -44,10 +44,11 @@ export type QueryBuilderBreakdownInput = Schema.Schema.Type<typeof QueryBuilderB
  */
 const onNoData = (
 	error: QuerySetNoDataError,
+	failureTitle?: string,
 ): Effect.Effect<BreakdownQuerySetResult, WarehouseInvalidInputError | WarehouseUnreachableError> =>
 	error.details.length === 0
 		? Effect.succeed({ rows: [], diagnostics: [] })
-		: querySetFailure("getQueryBuilderBreakdown", error.message)
+		: querySetFailure("getQueryBuilderBreakdown", error.message, failureTitle)
 
 export function getQueryBuilderBreakdown({ data }: { data: QueryBuilderBreakdownInput }) {
 	return getQueryBuilderBreakdownEffect({ data })
@@ -60,7 +61,8 @@ const getQueryBuilderBreakdownEffect = Effect.fn("QueryEngine.getQueryBuilderBre
 }) {
 	const input = yield* decodeInput(QueryBuilderBreakdownInputSchema, data, "getQueryBuilderBreakdown")
 
-	const outcome = yield* runBreakdownQuerySet(executor, {
+	const run = recordingFailureTitle(executor)
+	const outcome = yield* runBreakdownQuerySet(run.executor, {
 		querySet: { queries: input.queries },
 		startTime: input.startTime,
 		endTime: input.endTime,
@@ -69,7 +71,8 @@ const getQueryBuilderBreakdownEffect = Effect.fn("QueryEngine.getQueryBuilderBre
 		Effect.catchTags({
 			"@maple/query-engine/query-set/QuerySetInputError": (error) =>
 				invalidWarehouseInput("getQueryBuilderBreakdown", error.message),
-			"@maple/query-engine/query-set/QuerySetNoDataError": onNoData,
+			"@maple/query-engine/query-set/QuerySetNoDataError": (error) =>
+				onNoData(error, run.failureTitle()),
 		}),
 	)
 

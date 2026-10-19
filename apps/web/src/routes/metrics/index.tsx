@@ -82,8 +82,8 @@ function MetricsPage() {
 				onPatch={handlePatch}
 				onOpenMetric={(metric) => {
 					navigate({
-						to: "/metrics/$metricName",
-						params: { metricName: metric.metricName },
+						to: "/metrics/$",
+						params: { _splat: metric.metricName },
 						search: {
 							startTime: search.startTime,
 							endTime: search.endTime,

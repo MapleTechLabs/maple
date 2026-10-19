@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 
 import { Eyebrow } from "@maple/ui/components/ui/eyebrow"
 import { EmptyMessage } from "@maple/ui/components/ui/empty"
@@ -559,7 +560,9 @@ function MetricsBody({
 					<ComboboxContent>
 						<ComboboxList>
 							<ComboboxItem value="__none__">Everything (no breakdown)</ComboboxItem>
-							<ComboboxItem value="service.name">service.name</ComboboxItem>
+							{query.dataSource === "metrics" && isGcpMetricType(query.metricName) ? null : (
+								<ComboboxItem value="service.name">service.name</ComboboxItem>
+							)}
 							{scopedAutocomplete.groupByKeys.map((key) => (
 								<ComboboxItem key={key} value={`attr.${key}`}>
 									attr.{key}

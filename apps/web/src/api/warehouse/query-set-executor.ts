@@ -36,3 +36,22 @@ export const makeWarehouseExecutor = (operation: string): QuerySetExecutor<Query
 		}),
 	describeError: (error) => displayError(error).message,
 })
+
+/**
+ * `executor` for one run, keeping the first failure's own title. The runner reports a failed
+ * query as text, and the chart titles its error card with this ("Google Cloud metrics are not
+ * available") instead of a generic "Invalid query".
+ */
+export const recordingFailureTitle = (executor: QuerySetExecutor<QuerySetExecuteError>) => {
+	let title: string | undefined
+	return {
+		executor: {
+			...executor,
+			describeError: (error: QuerySetExecuteError) => {
+				title ??= displayError(error).title
+				return executor.describeError(error)
+			},
+		} satisfies QuerySetExecutor<QuerySetExecuteError>,
+		failureTitle: () => title,
+	}
+}

@@ -82,7 +82,7 @@ import { Route as LabWorstCaseRouteImport } from './routes/lab/worst-case'
 import { Route as LogsIndexRouteImport } from './routes/logs/index'
 import { Route as LogsLogIdRouteImport } from './routes/logs/$logId'
 import { Route as MetricsIndexRouteImport } from './routes/metrics/index'
-import { Route as MetricsMetricNameRouteImport } from './routes/metrics/$metricName'
+import { Route as MetricsSplatRouteImport } from './routes/metrics/$'
 import { Route as RecommendationsRecommendationKeyRouteImport } from './routes/recommendations/$recommendationKey'
 import { Route as ReleasesIndexRouteImport } from './routes/releases/index'
 import { Route as ReleasesCommitShaRouteImport } from './routes/releases/$commitSha'
@@ -495,9 +495,9 @@ const MetricsIndexRoute = MetricsIndexRouteImport.update({
   path: '/metrics/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MetricsMetricNameRoute = MetricsMetricNameRouteImport.update({
-  id: '/metrics/$metricName',
-  path: '/metrics/$metricName',
+const MetricsSplatRoute = MetricsSplatRouteImport.update({
+  id: '/metrics/$',
+  path: '/metrics/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecommendationsRecommendationKeyRoute =
@@ -807,7 +807,7 @@ export interface FileRoutesByFullPath {
   '/lab/widgets': typeof LabWidgetsRoute
   '/lab/worst-case': typeof LabWorstCaseRoute
   '/logs/$logId': typeof LogsLogIdRoute
-  '/metrics/$metricName': typeof MetricsMetricNameRoute
+  '/metrics/$': typeof MetricsSplatRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/releases/$commitSha': typeof ReleasesCommitShaRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
@@ -928,7 +928,7 @@ export interface FileRoutesByTo {
   '/lab/widgets': typeof LabWidgetsRoute
   '/lab/worst-case': typeof LabWorstCaseRoute
   '/logs/$logId': typeof LogsLogIdRoute
-  '/metrics/$metricName': typeof MetricsMetricNameRoute
+  '/metrics/$': typeof MetricsSplatRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/releases/$commitSha': typeof ReleasesCommitShaRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
@@ -1051,7 +1051,7 @@ export interface FileRoutesById {
   '/lab/widgets': typeof LabWidgetsRoute
   '/lab/worst-case': typeof LabWorstCaseRoute
   '/logs/$logId': typeof LogsLogIdRoute
-  '/metrics/$metricName': typeof MetricsMetricNameRoute
+  '/metrics/$': typeof MetricsSplatRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/releases/$commitSha': typeof ReleasesCommitShaRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
@@ -1175,7 +1175,7 @@ export interface FileRouteTypes {
     | '/lab/widgets'
     | '/lab/worst-case'
     | '/logs/$logId'
-    | '/metrics/$metricName'
+    | '/metrics/$'
     | '/recommendations/$recommendationKey'
     | '/releases/$commitSha'
     | '/replays/$sessionId'
@@ -1296,7 +1296,7 @@ export interface FileRouteTypes {
     | '/lab/widgets'
     | '/lab/worst-case'
     | '/logs/$logId'
-    | '/metrics/$metricName'
+    | '/metrics/$'
     | '/recommendations/$recommendationKey'
     | '/releases/$commitSha'
     | '/replays/$sessionId'
@@ -1418,7 +1418,7 @@ export interface FileRouteTypes {
     | '/lab/widgets'
     | '/lab/worst-case'
     | '/logs/$logId'
-    | '/metrics/$metricName'
+    | '/metrics/$'
     | '/recommendations/$recommendationKey'
     | '/releases/$commitSha'
     | '/replays/$sessionId'
@@ -1512,7 +1512,7 @@ export interface RootRouteChildren {
   InfraDiscoverRoute: typeof InfraDiscoverRoute
   InvestigationsIdRoute: typeof InvestigationsIdRoute
   LogsLogIdRoute: typeof LogsLogIdRoute
-  MetricsMetricNameRoute: typeof MetricsMetricNameRoute
+  MetricsSplatRoute: typeof MetricsSplatRoute
   RecommendationsRecommendationKeyRoute: typeof RecommendationsRecommendationKeyRoute
   ReleasesCommitShaRoute: typeof ReleasesCommitShaRoute
   ReplaysSessionIdRoute: typeof ReplaysSessionIdRoute
@@ -2077,11 +2077,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MetricsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/metrics/$metricName': {
-      id: '/metrics/$metricName'
-      path: '/metrics/$metricName'
-      fullPath: '/metrics/$metricName'
-      preLoaderRoute: typeof MetricsMetricNameRouteImport
+    '/metrics/$': {
+      id: '/metrics/$'
+      path: '/metrics/$'
+      fullPath: '/metrics/$'
+      preLoaderRoute: typeof MetricsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recommendations/$recommendationKey': {
@@ -2528,7 +2528,7 @@ const rootRouteChildren: RootRouteChildren = {
   InfraDiscoverRoute: InfraDiscoverRoute,
   InvestigationsIdRoute: InvestigationsIdRoute,
   LogsLogIdRoute: LogsLogIdRoute,
-  MetricsMetricNameRoute: MetricsMetricNameRoute,
+  MetricsSplatRoute: MetricsSplatRoute,
   RecommendationsRecommendationKeyRoute: RecommendationsRecommendationKeyRoute,
   ReleasesCommitShaRoute: ReleasesCommitShaRoute,
   ReplaysSessionIdRoute: ReplaysSessionIdRoute,
